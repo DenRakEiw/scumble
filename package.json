@@ -31,8 +31,11 @@
       "electron/**/*",
       "renderer/**/*",
       "recipes/**/*",
+      "build/icon.png",
+      "build/icon.ico",
       "package.json"
     ],
+    "icon": "build/icon.png",
     "asar": true,
     "win": {
       "target": [

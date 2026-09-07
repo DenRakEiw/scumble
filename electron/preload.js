@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld("scumble", {
         disconnect: () => ipcRenderer.invoke("comfy:disconnect"),
         status: () => ipcRenderer.invoke("comfy:status"),
         clientId: () => ipcRenderer.invoke("comfy:clientId"),
+        ensure: (refs) => ipcRenderer.invoke("comfy:ensure", refs),
         onEvent: (cb) => on("comfy:event", cb),
         onStatus: (cb) => on("comfy:status", cb),
     },
@@ -33,6 +34,9 @@ contextBridge.exposeInMainWorld("scumble", {
         open: () => ipcRenderer.invoke("file:open"),
         save: (args) => ipcRenderer.invoke("file:save", args),
         onOpened: (cb) => on("file:opened", cb),
+    },
+    files: {
+        stats: () => ipcRenderer.invoke("files:stats"),
     },
     recipes: {
         list: () => ipcRenderer.invoke("recipes:list"),

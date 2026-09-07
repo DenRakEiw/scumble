@@ -34,13 +34,21 @@ that spot.
 | export uploads to ComfyUI's `output/` | `host.saveExport(blob, name)`: native save dialog (or a fixed path for scripts) |
 | PNG `workflow` chunk = graph serialize | `host.workflowForPng()`: recipe id, prompt, node params |
 | `referencedFiles()` scans graph nodes and workflow tabs | scans `host.editors()` only |
+| `exportLayerPng()` / `exportMaskPng()` upload to ComfyUI's `output/` | `host.saveExport(blob, name)` like `exportImage` |
+| Title span "Inpaint Canvas" in the editor's top bar | removed (the shell bar carries the name) |
+| Generate section ends with the Refine button | `host.buildGenerateExtras(editor, sec)` adds the node's own widgets (padding, target_size, feather, multiple_of) |
 | `app.registerExtension` block (node widget, queuePrompt wrapper, `executed` / `execution_error` routing) | dropped; `host.js` routes the websocket events to the one editor |
 
-Unchanged and still true in the app: uploads go to the server's `input/inpaint_canvas`
-(`n{id}_...` names, hash de-duplicated), helper prompts (SAM3, RMBG, Qwen-VL) are queued
-at the front with `api.queuePrompt(-1, ...)`, results arrive as `executed` events with
-`inpaint_result` / `inpaint_mask` / `inpaint_text`, the state JSON is the node's
-`canvas_state` (see the node's DEVELOPMENT.md §4).
+Unchanged and still true in the app: uploads go to `/upload/image` with
+`input/inpaint_canvas` (`n{id}_...` names, hash de-duplicated), helper prompts (SAM3,
+RMBG, Qwen-VL) are queued at the front with `api.queuePrompt(-1, ...)`, results arrive
+as `executed` events with `inpaint_result` / `inpaint_mask` / `inpaint_text`, the state
+JSON is the node's `canvas_state` (see the node's DEVELOPMENT.md §4). The editor does
+not know that `/comfy/upload/image` and `/comfy/view` are answered by the local file
+mirror (`electron/main/files.js`) rather than the server: uploads are stored under
+`<userData>/files/<type>/<subfolder>/` and forwarded when connected, views come from
+the mirror first (server fetches are kept, except `temp`), and `host.queueGenerate`
+calls `ensureOnServer` with the refs from the state JSON before every run.
 
 ## Things the node has that the app does not use yet
 

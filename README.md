@@ -7,9 +7,13 @@ later, through API providers. The editor is the same code as the ComfyUI node
 [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas); the app is the
 standalone window around it.
 
-Status: **phase 0 spike** (2026-09-07). Electron window, editor, ComfyUI connection,
-one recipe (Flux.2 Klein 9B local), open image, select, generate, save PNG, NSIS
-installer. See `docs/BRIEF.md` for the plan and `CLAUDE.md` for the working notes.
+Status: **phase 1 light** (2026-09-07). Electron window, editor, ComfyUI connection,
+one recipe (Flux.2 Klein 9B local), open image, select, generate, save PNG / PSD / ORA,
+layer and mask export to files, the node's crop parameters in the Generate panel, a
+local file store (the document no longer depends on the server), all helpers verified
+in the app (SAM3 select by text, RMBG cutout, Qwen-VL prompt upsampling, SAM2 objects),
+NSIS installer with icon. See `docs/BRIEF.md` for the plan and `CLAUDE.md` for the
+working notes.
 
 ## Run from source
 
@@ -27,6 +31,12 @@ Type the ComfyUI URL in the top bar (default `http://127.0.0.1:8188`), Connect, 
 image (Ctrl+O, drop, paste), paint a selection, type a prompt, Generate (Ctrl+Enter).
 Ctrl+S saves the visible image.
 
+Every image the editor uploads or receives is kept under `%APPDATA%/Scumble/files/`
+(`input/` and `output/`, mirroring ComfyUI's folders). The server only holds copies:
+before a run the app checks which files it lacks and uploads them, so a fresh or
+restarted ComfyUI (RunPod) works without re-loading the document, and the last session
+is restored at start even while no server is connected.
+
 ## Build the installer
 
 ```
@@ -36,7 +46,7 @@ npm run dist        # dist/Scumble Setup <version>.exe (NSIS, unsigned)
 ## Layout
 
 ```
-electron/main/     main process: window, scumble:// scheme with the ComfyUI proxy, websocket, menu, dialogs, settings
+electron/main/     main process: window, scumble:// scheme with the ComfyUI proxy, websocket, menu, dialogs, settings, file mirror
 electron/preload.js
 renderer/          shell (connection bar, recipe picker, progress) and the editor
 renderer/editor/   synced copy of the node's editor, see docs/SYNC.md; host.js is the app side of it

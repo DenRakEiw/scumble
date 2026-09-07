@@ -8,10 +8,12 @@ const fsp = require("node:fs/promises");
 const { app, BrowserWindow, protocol, net, ipcMain, dialog, Menu, shell } = require("electron");
 const settings = require("./settings");
 const { ComfyClient } = require("./comfy");
+const { FileMirror } = require("./files");
 
 const ROOT = path.join(__dirname, "..", "..");
 const RENDERER_DIR = path.join(ROOT, "renderer");
 const RECIPES_DIR = path.join(ROOT, "recipes");
+const ICON = path.join(ROOT, "build", process.platform === "win32" ? "icon.ico" : "icon.png");
 const SCHEME = "scumble";
 const ORIGIN = `${SCHEME}://app`;
 
@@ -27,6 +29,10 @@ const comfy = new ComfyClient({
     onEvent: (ev) => { if (win && !win.isDestroyed()) win.webContents.send("comfy:event", ev); },
     onStatus: (st) => { if (win && !win.isDestroyed()) win.webContents.send("comfy:status", st); },
 });
+
+// Every upload and view goes through the local file mirror: the document lives on
+// this machine, the server only gets copies (electron/main/files.js).
+const mirror = new FileMirror(comfy);
 
 protocol.registerSchemesAsPrivileged([
     { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } },
@@ -52,7 +58,15 @@ function installProtocol() {
         const url = new URL(request.url);
         if (url.host !== "app") return new Response("unknown host", { status: 404 });
         if (url.pathname.startsWith("/comfy/")) {
-            return comfy.proxy(request, url.pathname.slice("/comfy".length) + url.search);
+            const rel = url.pathname.slice("/comfy".length);
+            try {
+                if (rel === "/upload/image" && request.method === "POST") return await mirror.handleUpload(request);
+                if (rel === "/view" && (request.method === "GET" || request.method === "HEAD")) return await mirror.handleView(url.search);
+            } catch (err) {
+                console.error("mirror", rel, err);
+                return new Response("file mirror error: " + (err.message || err), { status: 500 });
+            }
+            return comfy.proxy(request, rel + url.search);
         }
         return serveFile(url.pathname);
     });
@@ -69,6 +83,7 @@ function createWindow() {
         minWidth: 1100, minHeight: 700,
         backgroundColor: "#181818",
         title: "Scumble",
+        icon: fs.existsSync(ICON) ? ICON : undefined,
         show: false,
         webPreferences: {
             preload: path.join(__dirname, "..", "preload.js"),
@@ -192,6 +207,8 @@ function installIpc() {
     ipcMain.handle("comfy:disconnect", () => { comfy.disconnect(); return comfy.status; });
     ipcMain.handle("comfy:status", () => comfy.status);
     ipcMain.handle("comfy:clientId", () => comfy.clientId);
+    ipcMain.handle("comfy:ensure", (_e, refs) => mirror.ensureOnServer(refs));
+    ipcMain.handle("files:stats", () => mirror.stats());
     ipcMain.handle("file:open", () => openImage());
     ipcMain.handle("file:save", (_e, args) => saveFile(args));
     ipcMain.handle("recipes:list", () => listRecipes());

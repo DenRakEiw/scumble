@@ -117,21 +117,36 @@ export const host = {
         this.connected = true;
         const ed = this.editor;
         if (ed) {
+            // Uploads are cached per hash; a (possibly different) server may not have them.
+            // The mirror re-uploads what a run needs (ensureOnServer), the reset only makes
+            // sure the next run hashes the composite again.
+            ed.uploaded = ed.makeUploaded();
             if (!status.node) ed.setStatus("ComfyUI is connected but the Inpaint Canvas node pack is missing: install ComfyUI-InpaintCanvas on that server (ComfyUI Manager or git clone).");
             else if (!ed.base) ed.setStatus(`Connected to ${status.message}. Load an image (Ctrl+O, drop a file, or paste).`);
             ed.refreshSegmentBackends();
             ed.settingsChanged();
         }
-        if (this._pendingState) {
+        if (this._pendingState && ed) {
             const s = this._pendingState;
             this._pendingState = null;
-            try { await ed.setValue(s); ed.setStatus("Last session restored."); } catch (err) { console.warn("restore failed", err); }
+            try { await ed.setValue(s); if (ed.base) ed.setStatus("Last session restored."); } catch (err) { console.warn("restore failed", err); }
         }
     },
 
-    restoreWhenConnected(stateJson) {
-        if (this.connected && this.editor) this.editor.setValue(stateJson).catch((err) => console.warn(err));
-        else this._pendingState = stateJson;
+    /**
+     * Restore the autosaved state. The layer files normally sit in the local mirror, so
+     * this works offline; only when the base image is not there (state from before the
+     * mirror existed) the restore waits for the server.
+     */
+    async restore(stateJson) {
+        const ed = this.editor;
+        if (!ed) return false;
+        try { await ed.setValue(stateJson); } catch (err) { console.warn("restore from the mirror failed", err); }
+        if (ed.base) { ed.setStatus("Last session restored."); return true; }
+        if (this.connected) return false;
+        this._pendingState = stateJson;
+        ed.setStatus("Last session will be restored once ComfyUI is connected (its files are not in the local store).");
+        return false;
     },
 
     // ---- recipe: the graph the editor is wired into ------------------------------------
@@ -189,6 +204,7 @@ export const host = {
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
         const state = await editor.serializeForPrompt();
+        await this.ensureOnServer(state, editor);
         const prompt = JSON.parse(JSON.stringify(r.prompt));
         const canvas = prompt[r.canvas];
         if (!canvas) throw new Error(`Recipe "${r.id}" has no canvas node "${r.canvas}".`);
@@ -206,9 +222,78 @@ export const host = {
         return res;
     },
 
+    /** The file refs a canvas_state JSON makes the node read: base, mask, control, references. */
+    stateRefs(stateJson) {
+        let s = null;
+        try { s = typeof stateJson === "string" ? JSON.parse(stateJson) : stateJson; } catch (_) { return []; }
+        if (!s) return [];
+        const refs = [];
+        const add = (ref) => { if (ref && typeof ref.filename === "string") refs.push({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" }); };
+        add(s.base); add(s.mask); add(s.control);
+        for (const ref of s.references || []) add(ref);
+        return refs;
+    },
+
+    /**
+     * Files live in the local mirror (electron/main/files.js); the server only has copies.
+     * Before a run, upload those it lacks (a fresh server, a restarted RunPod, a cleanup).
+     */
+    async ensureOnServer(stateJson, editor) {
+        const refs = this.stateRefs(stateJson);
+        if (!refs.length) return null;
+        const report = await window.scumble.comfy.ensure(refs);
+        if (report && report.uploaded.length && editor) editor.setStatus(`Uploaded ${report.uploaded.length} file${report.uploaded.length > 1 ? "s" : ""} to the server. Waiting for the result ...`);
+        if (report && report.missing.length) throw new Error("These files are neither on the server nor in the local store: " + report.missing.join(", "));
+        return report;
+    },
+
     /** What goes into the PNG's tEXt chunk in place of the litegraph workflow. */
     workflowForPng(editor) {
         return { app: "scumble", recipe: this.recipe ? this.recipe.id : null, prompt: this.recipe ? this.recipe.prompt : null, nodeParams: this.nodeParams };
+    },
+
+    /**
+     * The InpaintCanvas node's own widgets, which the litegraph node showed under the
+     * editor button: crop padding, target size, feather, multiple_of. Built into the
+     * editor's Generate section (patched in by tools/sync_editor.py), stored in
+     * settings.nodeParams and filled into the recipe's canvas node on every run.
+     */
+    buildGenerateExtras(editor, sec) {
+        const grid = document.createElement("div");
+        grid.className = "ipc-row4 scumble-node-params";
+        const fields = [
+            ["padding", "Padding", 0, 4096, 8, "Pixels of context around the selection that go into the crop (ignored when Crop is set to auto context)"],
+            ["target_size", "Target", 0, 8192, 8, "Long side of the crop sent to the model; 0 keeps the crop at its own size"],
+            ["feather", "Feather", 0, 512, 1, "Edge feather in pixels when the result is stitched back (used when the crop's edge setting is not auto)"],
+            ["multiple_of", "Multiple", 1, 256, 1, "Crop width and height are rounded to a multiple of this (64 for Flux and SDXL, 16 for SD 1.5)"],
+        ];
+        this.nodeParamInputs = {};
+        for (const [key, label, min, max, step, title] of fields) {
+            const lab = document.createElement("span");
+            lab.textContent = label; lab.title = title;
+            grid.appendChild(lab);
+            const input = document.createElement("input");
+            input.type = "number"; input.className = "ipc-num"; input.style.width = "64px";
+            input.min = min; input.max = max; input.step = step; input.title = title;
+            input.value = this.nodeParams[key];
+            input.addEventListener("keydown", (e) => e.stopPropagation());
+            input.addEventListener("change", () => {
+                const v = Math.min(max, Math.max(min, Math.round(+input.value || 0)));
+                input.value = v;
+                this.setNodeParam(key, v);
+            });
+            grid.appendChild(input);
+            this.nodeParamInputs[key] = input;
+        }
+        sec.appendChild(grid);
+    },
+
+    setNodeParam(key, value) {
+        this.nodeParams = { ...this.nodeParams, [key]: value };
+        if (this.nodeParamInputs && this.nodeParamInputs[key]) this.nodeParamInputs[key].value = value;
+        window.scumble.settings.set({ nodeParams: this.nodeParams }).catch((err) => console.warn("nodeParams not saved", err));
+        const ed = this.editor;
+        if (ed) { ed.renderInfo(); ed.draw(); }
     },
 
     async saveExport(blob, name) {

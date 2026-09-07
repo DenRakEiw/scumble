@@ -52,52 +52,35 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   is merged (contributions that only land in the node and are never copied into the
   app do not affect the app). Only MIT/Apache/BSD/OFL dependencies in the app.
 
-## Where things stand (2026-09-07, late)
+## Where things stand (2026-09-07, night)
 
-Phase 0 is built and verified with a real Flux.2 Klein 9B run: `npm start` opens the
-editor, connects to ComfyUI, the recipe `recipes/flux2_klein_local.json` is filled from
-`serializeForPrompt()` and queued, the stitched result comes back over the websocket as
-a layer, Ctrl+S saves a PNG through a native dialog, `npm run dist` makes
-`dist/Scumble Setup 0.0.1.exe` (unsigned, default icon). Next: phase 1 from
-`docs/BRIEF.md` §5 (all tools verified in the app, WebGL2 filters, tabs, settings UI
-for the node params, local document store instead of server-side layer uploads).
+Phase 0 and the slimmed **phase 1 light** are built and verified with real runs
+(`tools/smoke_test.py`: Flux.2 Klein 9B generate 96 s, then SAM3 select by text, RMBG
+cutout, Qwen-VL upsampling, SAM2 objects, grain filter layer, layer / mask / PSD export,
+all PASS). What landed in phase 1 light:
 
-## Phase 1 light: in progress (2026-09-07, late evening)
+- **Local file mirror** (`electron/main/files.js`, wired in `main.js` `installProtocol`):
+  `/comfy/upload/image` stores under `<userData>/files/<type>/<subfolder>/<name>` and
+  forwards when connected; `/comfy/view` serves the mirror first, else fetches and keeps
+  a copy (not `temp`). IPC `comfy:ensure` → `ensureOnServer(refs)` (HEAD-check, upload
+  what is missing; a per-server "known" set skips repeats); `host.queueGenerate` calls
+  it with base / mask / control / references from the state JSON. `host.onConnected`
+  resets `editor.uploaded`. `host.restore(state)` restores the autosave at start from
+  the mirror, offline too; only a state whose base is not mirrored waits for connect.
+- **Node params UI** (`host.buildGenerateExtras`, patched in after the Refine button):
+  padding, target_size, feather, multiple_of → `settings.nodeParams`, info panel follows.
+- **Layer / mask export** go through `host.saveExport` (native dialog / fixed path).
+- **Icon** on the window and in the installer; the editor's own title span is gone.
 
-Agreed with the user: a slimmed phase 1 before phase 2 (WebGL2 filters and tabs
-postponed). Steps, in order; tick them off here as they land:
+Postponed from the full phase 1 (`docs/BRIEF.md` §5): WebGL2 filters, tabs for several
+documents, a settings dialog (mirror size / cleanup: `window.scumble.files.stats()`
+exists, no UI yet), autosave per file. Next: decide with the user whether phase 2
+(fal.ai and direct adapters, key storage, RunPod connection dialog, recipe import)
+comes before those.
 
-1. [ ] **Local file mirror** so the document no longer depends on the server.
-   `electron/main/files.js` is written but not wired yet: every `/comfy/upload/image`
-   is stored under `<userData>/files/<type>/<subfolder>/<name>` and forwarded to the
-   server when connected; `/comfy/view` serves the mirror first, else fetches from the
-   server and keeps a copy (not `temp`). `ensureOnServer(refs)` HEAD-checks and
-   re-uploads before a run. To do: route those two paths in `main.js` `installProtocol`
-   (instead of the plain proxy), IPC `comfy:ensure`, call it from `host.queueGenerate`
-   with every `{filename, subfolder, type}` found in the state JSON, reset
-   `editor.uploaded = editor.makeUploaded()` in `host.onConnected`, restore the
-   autosaved state immediately (mirror) and only fall back to "after connect" when
-   `editor.base` stays null. No editor patch needed for this.
-2. [ ] **Node params UI** (padding, target_size, feather, multiple_of): one-line patch
-   in `tools/sync_editor.py` after `sec.appendChild(this.refineBtn);` in the Generate
-   section: `host.buildGenerateExtras(this, sec);`. The controls live in host.js,
-   commit to `settings.nodeParams` via `window.scumble.settings.set`, then
-   `editor.renderInfo(); editor.draw()`.
-3. [ ] **Layer / mask export** (`exportLayerPng`, `exportMaskPng`, lines ~5418-5445 of
-   the synced file) still upload to the server's output folder: patch to
-   `host.saveExport(blob, name)` like `exportImage`.
-4. [ ] **Helpers verified in the app**: extend `tools/smoke_test.py` with select by text
-   (SAM3, `segmentByText()` with `segInput.value`, wait for `!segmentPending` and the
-   status leaving "Segmenting"), cutout of the result layer (`cutoutLayer(layer)`, wait
-   for `!cutoutPending`, then `layer.mask`), `upsamplePrompt()` (`!upsamplePending`),
-   `ensureObjects()` (`!objectsPending`, `objects.count`), `addFilterLayer("grain")`
-   plus `undoStep()`, PSD export via the `saveExport` override with `saveFormatSel.value = "psd"`.
-   Run after a generate so Flux is loaded first; the node frees helpers before local runs.
-5. [ ] **Icon and polish**: `build/icon.png` / `build/icon.ico` exist (drawn by a PIL
-   script, gold scumble stroke over a blue block); set `"icon": "build/icon.png"` in the
-   `build` config and `icon` on the BrowserWindow (guard with existsSync). Remove the
-   editor's own "Scumble" title span (patch `top.appendChild(el("span", "ipc-title", "Scumble"));` to nothing).
-6. [ ] Update README, SYNC.md, this file; `npm run dist`; commit and push as DenRakEiw.
+Known small things: `loadFile` uploads with `overwrite=false`, so re-loading an image
+with a name already in the mirror yields `name (1).png` (ComfyUI's own rule, harmless).
+The mirror never deletes; the node's `cleanupFiles()` only cleans the server.
 
 ## How the app is put together
 
@@ -114,8 +97,9 @@ postponed). Steps, in order; tick them off here as they land:
   Settings-panel values into the recipe nodes directly (`settings: [{index, node,
   input, label}]`), so `setting_n` outputs are not used.
 - State: `getValue()` JSON autosaved to `%APPDATA%/Scumble/autosave.json` and restored
-  on the next start once connected; layer pixels are still uploaded to the server's
-  `input/inpaint_canvas` like in the node (phase 1 replaces this with a local store).
+  at the next start from the local file mirror (`%APPDATA%/Scumble/files/`), no server
+  needed. Layer pixels are uploaded like in the node (`input/inpaint_canvas`), but the
+  upload lands in the mirror and is forwarded; `ensureOnServer` re-uploads before a run.
 
 ## Working rules
 
@@ -128,7 +112,8 @@ postponed). Steps, in order; tick them off here as they land:
   once truncated a 7,000-line file.
 - Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-port=9555`
   (9333 is usually taken by the node's headless tab), then `python tools/cdp.py eval|shot|log`
-  and `python tools/smoke_test.py` (load, select, generate through the recipe, save).
+  and `python tools/smoke_test.py` (load, select, generate through the recipe, save,
+  then the helpers and exports; `--no-helpers` for the short version).
   `window.editor` and `import("./editor/host.js")` are reachable from the console.
   Only one instance runs at a time (single-instance lock); stop the dev instance before
   starting `dist/win-unpacked/Scumble.exe`. `Stop-Process -Name electron` in PowerShell.

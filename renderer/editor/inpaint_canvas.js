@@ -1027,7 +1027,6 @@ class InpaintEditor {
 
         // top bar
         const top = el("div", "ipc-top");
-        top.appendChild(el("span", "ipc-title", "Scumble"));
         this.fileInput = document.createElement("input");
         this.fileInput.type = "file";
         this.fileInput.accept = "image/*";
@@ -1446,10 +1445,10 @@ class InpaintEditor {
             const dl = iconButton("download", "Save the image to a file (Ctrl+S)", () => this.exportImage({ download: true }), "Save as");
             dl.classList.add("ipc-small");
             exp.appendChild(dl);
-            const lay = iconButton("image", "Save the active layer alone as a PNG with transparency (output folder)", () => this.exportLayerPng(), "Layer");
+            const lay = iconButton("image", "Save the active layer alone as a PNG file with transparency", () => this.exportLayerPng(), "Layer");
             lay.classList.add("ipc-small");
             exp.appendChild(lay);
-            const msk = iconButton("mask", "Save the selection as a black and white mask PNG (output folder)", () => this.exportMaskPng(), "Mask");
+            const msk = iconButton("mask", "Save the selection as a black and white mask PNG file", () => this.exportMaskPng(), "Mask");
             msk.classList.add("ipc-small");
             exp.appendChild(msk);
             d.appendChild(exp);
@@ -1550,6 +1549,7 @@ class InpaintEditor {
             }, "Refine");
             this.refineBtn.classList.add("ipc-small");
             sec.appendChild(this.refineBtn);
+            host.buildGenerateExtras(this, sec);
             d.appendChild(sec);
         });
 
@@ -5423,9 +5423,10 @@ class InpaintEditor {
             c.getContext("2d").drawImage(this.layerPixels(l), l.x, l.y, l.w, l.h);
             const blob = await new Promise((r) => c.toBlob(r, "image/png"));
             const stem = (l.name || "layer").replace(/[^a-z0-9._ -]/gi, "_");
-            const ref = await uploadBlob(blob, `${stem}.png`, { overwrite: false, type: "output", subfolder: "" });
-            this.setStatus(`Saved output/${ref.filename} (${l.name}, ${this.width} × ${this.height} with transparency).`);
-            return ref;
+            const saved = await host.saveExport(blob, `${stem}.png`);
+            if (!saved) { this.setStatus("Save cancelled."); return null; }
+            this.setStatus(`Saved ${saved.path} (${l.name}, ${this.width} × ${this.height} with transparency).`);
+            return saved;
         } catch (err) { console.error(err); this.setStatus("Save failed: " + (err.message || err)); return null; }
     }
 
@@ -5435,9 +5436,10 @@ class InpaintEditor {
         try {
             const blob = await new Promise((r) => this.maskToCanvas().toBlob(r, "image/png"));
             const stem = ((this.saveNameInput && this.saveNameInput.value) || "inpaint_canvas").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._ -]/gi, "_") || "inpaint_canvas";
-            const ref = await uploadBlob(blob, `${stem}_mask.png`, { overwrite: false, type: "output", subfolder: "" });
-            this.setStatus(`Saved output/${ref.filename} (mask, white = selected).`);
-            return ref;
+            const saved = await host.saveExport(blob, `${stem}_mask.png`);
+            if (!saved) { this.setStatus("Save cancelled."); return null; }
+            this.setStatus(`Saved ${saved.path} (mask, white = selected).`);
+            return saved;
         } catch (err) { console.error(err); this.setStatus("Save failed: " + (err.message || err)); return null; }
     }
 

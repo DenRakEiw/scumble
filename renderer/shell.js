@@ -87,7 +87,7 @@ window.scumble.onMenu((cmd) => {
 
 try {
     const state = await window.scumble.state.load();
-    if (state) host.restoreWhenConnected(state);
+    if (state) await host.restore(state);
 } catch (err) {
     console.warn("no autosaved state", err);
 }

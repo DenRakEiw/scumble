@@ -36,7 +36,7 @@ PATCHES = [
      'const t = host.nodeTypes()["CheckpointLoaderSimple"];', 1),
 
     # --- the editor is the window, not an overlay: it mounts into the shell and Escape never closes it
-    ("inpaint_canvas.js", 'top.appendChild(el("span", "ipc-title", "Inpaint Canvas"));', 'top.appendChild(el("span", "ipc-title", "Scumble"));', 1),
+    ("inpaint_canvas.js", '        top.appendChild(el("span", "ipc-title", "Inpaint Canvas"));\n', "", 1),
     ("inpaint_canvas.js", "        document.body.appendChild(this.root);\n", "        host.mount(this.root);\n", 1),
     ("inpaint_canvas.js",
      'this.setStatus("Compare ended."); }\n                else this.close();',
@@ -84,6 +84,32 @@ PATCHES = [
      "            const kb = Math.round(blob.size / 1024);\n"
      "            this.setStatus(`Saved ${saved.path} (${this.width} × ${this.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + \" MB\" : kb + \" kB\"}${fmt === \"png\" ? \", recipe embedded\" : \"\"}${note}).`);\n"
      "            return saved;\n", 1),
+
+    ("inpaint_canvas.js",
+     "            const ref = await uploadBlob(blob, `${stem}.png`, { overwrite: false, type: \"output\", subfolder: \"\" });\n"
+     "            this.setStatus(`Saved output/${ref.filename} (${l.name}, ${this.width} × ${this.height} with transparency).`);\n"
+     "            return ref;\n",
+     "            const saved = await host.saveExport(blob, `${stem}.png`);\n"
+     "            if (!saved) { this.setStatus(\"Save cancelled.\"); return null; }\n"
+     "            this.setStatus(`Saved ${saved.path} (${l.name}, ${this.width} × ${this.height} with transparency).`);\n"
+     "            return saved;\n", 1),
+    ("inpaint_canvas.js",
+     "            const ref = await uploadBlob(blob, `${stem}_mask.png`, { overwrite: false, type: \"output\", subfolder: \"\" });\n"
+     "            this.setStatus(`Saved output/${ref.filename} (mask, white = selected).`);\n"
+     "            return ref;\n",
+     "            const saved = await host.saveExport(blob, `${stem}_mask.png`);\n"
+     "            if (!saved) { this.setStatus(\"Save cancelled.\"); return null; }\n"
+     "            this.setStatus(`Saved ${saved.path} (mask, white = selected).`);\n"
+     "            return saved;\n", 1),
+    ("inpaint_canvas.js",
+     '"Save the active layer alone as a PNG with transparency (output folder)"', '"Save the active layer alone as a PNG file with transparency"', 1),
+    ("inpaint_canvas.js",
+     '"Save the selection as a black and white mask PNG (output folder)"', '"Save the selection as a black and white mask PNG file"', 1),
+
+    # --- the node's own widgets (padding, target_size, feather, multiple_of) get controls in the Generate section
+    ("inpaint_canvas.js",
+     "            sec.appendChild(this.refineBtn);\n",
+     "            sec.appendChild(this.refineBtn);\n            host.buildGenerateExtras(this, sec);\n", 1),
 
     # --- node widgets, setting outputs, result inputs: the recipe answers instead of the graph
     ("inpaint_canvas.js",
