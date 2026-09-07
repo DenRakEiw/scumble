@@ -1,0 +1,7 @@
+node_modules/
+dist/
+out/
+.env
+*.log
+__pycache__/
+models/
