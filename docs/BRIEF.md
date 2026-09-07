@@ -1,4 +1,4 @@
-# Project brief: standalone Inpaint Canvas desktop app
+# Project brief: Scumble, the standalone Inpaint Canvas desktop app
 
 Written 2026-09-07 at the end of the ComfyUI node session, as the hand-over into this
 folder. Everything the next session needs to start building is here or linked.
@@ -147,7 +147,7 @@ final.
 
 ## 6. Open questions for the user
 
-- Name (see `docs/NAMES.md`).
+- Name: decided, **Scumble** (see `docs/NAMES.md`); domains and trademark check still to do by the user.
 - UI framework for the shell around the editor: plain DOM like the node, or Vue.
   Recommendation: plain DOM for the editor, Vue only if the settings/recipe UI grows.
 - Code signing certificate for Windows (about 200–400 € per year, or Azure Trusted

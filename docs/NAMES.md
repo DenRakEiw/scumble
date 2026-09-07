@@ -46,7 +46,12 @@ Domain status was checked live against the registries' RDAP servers (Verisign fo
 | Relayer | too close to Relay.app |
 | Retoucha / Retouchr | "Retouch" apps everywhere |
 
-## Recommendation
+## Decision
+
+**Scumble**, chosen by the user on 2026-09-07. To do: register `scumble.app` and
+`scumble.de`, run the trademark checks below, claim the GitHub org and the npm name.
+
+## Recommendation (before the decision)
 
 1. **Brushwright** — clean everywhere, craft feel, all three domains free.
 2. **Paintfold** — the modern-product alternative, also clean everywhere.

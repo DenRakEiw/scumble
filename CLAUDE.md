@@ -1,7 +1,15 @@
-# CLAUDE.md — Inpaint Canvas desktop app (working title)
+# CLAUDE.md — Scumble (desktop app)
 
-Read this first, then `docs/BRIEF.md` (vision, decisions, architecture, phases) and
-`docs/NAMES.md` (name research). `docs/RUNPOD.md` covers the Docker template.
+Read this first, then `docs/BRIEF.md` (vision, decisions, architecture, phases).
+`docs/NAMES.md` holds the name research, `docs/RUNPOD.md` the Docker template notes.
+
+**Name: Scumble** (decided 2026-09-07). A scumble is a thin, semi-opaque layer of paint
+brushed over a dry layer so the one below shows through; that is what an inpaint result
+over the image is. Pronounced "skum-bl". Domains `scumble.app` and `scumble.de` were free
+on 2026-09-07 (`scumble.com` is taken); the user registers them and checks trademarks
+(DPMA, EUIPO, USPTO, classes 9 and 42) before the first public mention. Use the name in
+the app, the installer (`Scumble Setup.exe`), the MCP server name (`scumble`) and the
+repo; the ComfyUI node keeps its name Inpaint Canvas.
 
 ## Who and what
 
