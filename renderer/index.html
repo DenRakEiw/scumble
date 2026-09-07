@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' scumble://app blob: data:; img-src 'self' scumble://app blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' scumble://app blob: data:; connect-src 'self' scumble://app blob: data:; script-src 'self'">
+<title>Scumble</title>
+<link rel="stylesheet" href="shell.css">
+</head>
+<body>
+<div id="shell">
+  <div id="shell-bar">
+    <span id="shell-logo" title="Scumble">Scumble</span>
+    <label class="shell-field">Recipe <select id="shell-recipe"></select></label>
+    <span id="shell-recipe-note" class="shell-note"></span>
+    <span class="shell-spacer"></span>
+    <span id="shell-progress" hidden><span id="shell-progress-bar"></span><span id="shell-progress-text"></span></span>
+    <label class="shell-field">ComfyUI <input id="shell-url" type="text" spellcheck="false" placeholder="http://127.0.0.1:8188"></label>
+    <button id="shell-connect" type="button">Connect</button>
+    <span id="shell-status"><span id="shell-dot" class="dot"></span><span id="shell-status-text">not connected</span></span>
+  </div>
+  <div id="editor-host"></div>
+</div>
+<script type="module" src="shell.js"></script>
+</body>
+</html>

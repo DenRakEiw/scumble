@@ -52,6 +52,34 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   is merged (contributions that only land in the node and are never copied into the
   app do not affect the app). Only MIT/Apache/BSD/OFL dependencies in the app.
 
+## Where things stand (2026-09-07, late)
+
+Phase 0 is built and verified with a real Flux.2 Klein 9B run: `npm start` opens the
+editor, connects to ComfyUI, the recipe `recipes/flux2_klein_local.json` is filled from
+`serializeForPrompt()` and queued, the stitched result comes back over the websocket as
+a layer, Ctrl+S saves a PNG through a native dialog, `npm run dist` makes
+`dist/Scumble Setup 0.0.1.exe` (unsigned, default icon). Next: phase 1 from
+`docs/BRIEF.md` §5 (all tools verified in the app, WebGL2 filters, tabs, settings UI
+for the node params, local document store instead of server-side layer uploads).
+
+## How the app is put together
+
+- `electron/main/main.js`: window, `scumble://app/` scheme (renderer files) with
+  `scumble://app/comfy/*` proxied to the ComfyUI server by `electron/main/comfy.js`
+  (auth headers live there; the websocket too, events are forwarded over IPC).
+  Same-origin, so `<img>` from `/comfy/view` never taints a canvas.
+- `renderer/editor/`: the node's editor, copied and patched by `tools/sync_editor.py`
+  (`docs/SYNC.md` lists every patch). `renderer/editor/host.js` is the app side:
+  `api` (fetchApi, apiURL, queuePrompt, events) and `host` (recipe, settings targets,
+  generate, autosave, export). Do not edit the synced files by hand.
+- Recipes are API-format prompts; `host.queueGenerate` injects `canvas_state`,
+  `result_source[_local]` and the node params into the canvas node and writes the
+  Settings-panel values into the recipe nodes directly (`settings: [{index, node,
+  input, label}]`), so `setting_n` outputs are not used.
+- State: `getValue()` JSON autosaved to `%APPDATA%/Scumble/autosave.json` and restored
+  on the next start once connected; layer pixels are still uploaded to the server's
+  `input/inpaint_canvas` like in the node (phase 1 replaces this with a local store).
+
 ## Working rules
 
 - Development folder is `F:\canvas`. Scratch files go to the session scratchpad, not here.
@@ -61,6 +89,10 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   queueing anything, never restart it unasked, delete own test prompts from the queue.
 - Python patch scripts must write with `newline=chr(10)`; a mistyped `newline="\\n"`
   once truncated a 7,000-line file.
-- Test with real runs (headless Chromium over DevTools worked well for the node; for the
-  app use Electron's own test runner or Playwright for Electron).
+- Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-port=9555`
+  (9333 is usually taken by the node's headless tab), then `python tools/cdp.py eval|shot|log`
+  and `python tools/smoke_test.py` (load, select, generate through the recipe, save).
+  `window.editor` and `import("./editor/host.js")` are reachable from the console.
+  Only one instance runs at a time (single-instance lock); stop the dev instance before
+  starting `dist/win-unpacked/Scumble.exe`. `Stop-Process -Name electron` in PowerShell.
 - Answer in German; code, comments and docs in English.

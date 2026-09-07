@@ -1,0 +1,63 @@
+{
+  "name": "scumble",
+  "productName": "Scumble",
+  "version": "0.0.1",
+  "description": "Desktop editor for AI inpainting: layers, selection by text, retouch, filters, rendered through your own ComfyUI or API providers.",
+  "author": "DenRakEiw",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "electron/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis",
+    "dist:dir": "electron-builder --dir",
+    "sync-editor": "python tools/sync_editor.py",
+    "smoke": "python tools/smoke_test.py"
+  },
+  "dependencies": {
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "app.scumble.desktop",
+    "productName": "Scumble",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "renderer/**/*",
+      "recipes/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Scumble Setup ${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Scumble",
+      "perMachine": false
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Graphics",
+      "artifactName": "scumble-${version}.${ext}"
+    }
+  }
+}

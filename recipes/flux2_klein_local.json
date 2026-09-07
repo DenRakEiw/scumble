@@ -1,0 +1,48 @@
+{
+  "id": "flux2_klein_local",
+  "name": "Flux.2 Klein 9B (local)",
+  "description": "Edit model: the crop plus the original crop as references, 20 steps, CFG 5. Needs flux-2-klein-base-9b, qwen3_8b text encoder and the Flux.2 VAE on the ComfyUI server.",
+  "mode": "local",
+  "canvas": "canvas",
+  "result": "decode:0",
+  "needs": ["InpaintCanvas", "ImageFromBatch", "UNETLoader", "CLIPLoader", "VAELoader", "ImageScaleToTotalPixels", "GetImageSize", "EmptyFlux2LatentImage", "Flux2Scheduler", "CLIPTextEncode", "VAEEncode", "ReferenceLatent", "CFGGuider", "RandomNoise", "KSamplerSelect", "SamplerCustomAdvanced", "VAEDecode"],
+  "settings": [
+    { "index": 1, "node": "unet", "input": "unet_name", "label": "Model" },
+    { "index": 2, "node": "clip", "input": "clip_name", "label": "Text encoder" },
+    { "index": 3, "node": "vae", "input": "vae_name", "label": "VAE" },
+    { "index": 4, "node": "sigmas", "input": "steps", "label": "Steps" },
+    { "index": 5, "node": "guider", "input": "cfg", "label": "CFG" },
+    { "index": 6, "node": "scale0", "input": "megapixels", "label": "Megapixels" }
+  ],
+  "models": {
+    "diffusion_models": ["flux-2-klein-base-9b-fp8.safetensors (https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9b-fp8)"],
+    "text_encoders": ["qwen_3_8b_fp8mixed.safetensors (https://huggingface.co/Comfy-Org/flux2-klein-9B/resolve/main/split_files/text_encoders/qwen_3_8b_fp8mixed.safetensors)"],
+    "vae": ["full_encoder_small_decoder.safetensors (https://huggingface.co/black-forest-labs/FLUX.2-small-decoder/resolve/main/full_encoder_small_decoder.safetensors)"]
+  },
+  "prompt": {
+    "canvas": { "class_type": "InpaintCanvas", "inputs": { "padding": 64, "target_size": 1024, "feather": 16, "multiple_of": 64 } },
+    "img0": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 0, "length": 1 } },
+    "img1": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 1, "length": 1 } },
+    "unet": { "class_type": "UNETLoader", "inputs": { "unet_name": "flux-2-klein-base-9b.safetensors", "weight_dtype": "default" } },
+    "clip": { "class_type": "CLIPLoader", "inputs": { "clip_name": "qwen3_8b.safetensors", "type": "flux2", "device": "default" } },
+    "vae": { "class_type": "VAELoader", "inputs": { "vae_name": "flux2-vae.safetensors" } },
+    "scale0": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["img0", 0], "upscale_method": "lanczos", "megapixels": 1, "resolution_steps": 1 } },
+    "scale1": { "class_type": "ImageScaleToTotalPixels", "inputs": { "image": ["img1", 0], "upscale_method": "lanczos", "megapixels": 1, "resolution_steps": 1 } },
+    "size": { "class_type": "GetImageSize", "inputs": { "image": ["scale0", 0] } },
+    "latent": { "class_type": "EmptyFlux2LatentImage", "inputs": { "width": ["size", 0], "height": ["size", 1], "batch_size": 1 } },
+    "sigmas": { "class_type": "Flux2Scheduler", "inputs": { "steps": 20, "width": ["size", 0], "height": ["size", 1] } },
+    "pos": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["clip", 0], "text": ["canvas", 7] } },
+    "neg": { "class_type": "CLIPTextEncode", "inputs": { "clip": ["clip", 0], "text": "" } },
+    "enc0": { "class_type": "VAEEncode", "inputs": { "pixels": ["scale0", 0], "vae": ["vae", 0] } },
+    "enc1": { "class_type": "VAEEncode", "inputs": { "pixels": ["scale1", 0], "vae": ["vae", 0] } },
+    "ref_pos0": { "class_type": "ReferenceLatent", "inputs": { "conditioning": ["pos", 0], "latent": ["enc0", 0] } },
+    "ref_neg0": { "class_type": "ReferenceLatent", "inputs": { "conditioning": ["neg", 0], "latent": ["enc0", 0] } },
+    "ref_pos1": { "class_type": "ReferenceLatent", "inputs": { "conditioning": ["ref_pos0", 0], "latent": ["enc1", 0] } },
+    "ref_neg1": { "class_type": "ReferenceLatent", "inputs": { "conditioning": ["ref_neg0", 0], "latent": ["enc1", 0] } },
+    "guider": { "class_type": "CFGGuider", "inputs": { "model": ["unet", 0], "positive": ["ref_pos1", 0], "negative": ["ref_neg1", 0], "cfg": 5 } },
+    "noise": { "class_type": "RandomNoise", "inputs": { "noise_seed": ["canvas", 10] } },
+    "sampler": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+    "run": { "class_type": "SamplerCustomAdvanced", "inputs": { "noise": ["noise", 0], "guider": ["guider", 0], "sampler": ["sampler", 0], "sigmas": ["sigmas", 0], "latent_image": ["latent", 0] } },
+    "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["run", 0], "vae": ["vae", 0] } }
+  }
+}
