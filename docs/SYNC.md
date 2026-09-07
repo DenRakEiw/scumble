@@ -37,6 +37,8 @@ that spot.
 | `exportLayerPng()` / `exportMaskPng()` upload to ComfyUI's `output/` | `host.saveExport(blob, name)` like `exportImage` |
 | Title span "Inpaint Canvas" in the editor's top bar | removed (the shell bar carries the name) |
 | Generate section ends with the Refine button | `host.buildGenerateExtras(editor, sec)` adds the node's own widgets (padding, target_size, feather, multiple_of) |
+| window-level keydown handler runs for every open editor | `host.isActive(this)` guard: several editors share the window (tabs), only the active one gets shortcuts |
+| `applyFilter()` in inpaint_filters.js runs the CPU code | asks `applyFilterGL()` (renderer/editor/inpaint_filters_gl.js) first; `info.cpu = true` forces the CPU path; the table builders are exported for the GL module |
 | `app.registerExtension` block (node widget, queuePrompt wrapper, `executed` / `execution_error` routing) | dropped; `host.js` routes the websocket events to the one editor |
 
 Unchanged and still true in the app: uploads go to `/upload/image` with
@@ -49,6 +51,20 @@ mirror (`electron/main/files.js`) rather than the server: uploads are stored und
 `<userData>/files/<type>/<subfolder>/` and forwarded when connected, views come from
 the mirror first (server fetches are kept, except `temp`), and `host.queueGenerate`
 calls `ensureOnServer` with the refs from the state JSON before every run.
+
+## WebGL2 filters (app-only, to go back into the node)
+
+`renderer/editor/inpaint_filters_gl.js` runs levels, curves, brightness / contrast,
+hue / saturation, colour balance, black & white, invert, LUT and grain as one fragment
+shader pass; blur, sharpen and vignette stay on Canvas 2D (`ctx.filter`, gradients).
+The shader mirrors the CPU maths including the 8-bit rounding between passes, so both
+paths agree within one level (LUT: two, its nodes are stored as RGBA8). The grain noise
+field is generated exactly like in `applyGrain` (the generator is duplicated there for
+now; when the module moves into the node, split `noiseCanvas()` out of `applyGrain` and
+share it) and uploaded as a texture straight from the canvas, never read back. The curve
+editor's histogram comes from a 256 px thumbnail. Measured on a 4000 × 3000 image:
+grain 325 ms → 7 ms, curves 61 → 4 ms, colour balance 100 → 5 ms (cached noise, warm
+context). `compareFilterPaths()` in the module is the regression check.
 
 ## Things the node has that the app does not use yet
 

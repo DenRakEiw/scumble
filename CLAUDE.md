@@ -52,12 +52,32 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   is merged (contributions that only land in the node and are never copied into the
   app do not affect the app). Only MIT/Apache/BSD/OFL dependencies in the app.
 
-## Where things stand (2026-09-07, night)
+## Where things stand (2026-09-08, early)
 
-Phase 0 and the slimmed **phase 1 light** are built and verified with real runs
-(`tools/smoke_test.py`: Flux.2 Klein 9B generate 96 s, then SAM3 select by text, RMBG
+**Phase 1 is complete.** Next session: **phase 2** (`docs/BRIEF.md` §5: fal.ai and direct
+adapters, key storage via safeStorage, connection dialog for remote ComfyUI / RunPod,
+recipe import). Everything below is built and verified with real runs
+(`tools/smoke_test.py`: Flux.2 Klein 9B generate, then SAM3 select by text, RMBG
 cutout, Qwen-VL upsampling, SAM2 objects, grain filter layer, layer / mask / PSD export,
-all PASS). What landed in phase 1 light:
+all PASS; a generate queued from a background tab landed in that tab).
+
+Landed on 2026-09-08 after the light version:
+
+- **Tabs**: one `InpaintEditor` per document, all mounted in `#editor-host`, inactive
+  ones hidden with `.shell-hidden`; `host._editors` / `host.editor` (active) /
+  `host.activate()`; the keydown handler is patched to `host.isActive(this)`. Events:
+  results by `prompt_id` (`host.editorByPrompt`), helper masks / texts by
+  `info.canvas_node` = `editor.node.id` (`host.editorById`). Autosave is a bundle
+  `{version: 2, active, nextId, docs: [{id, state}]}` in `autosave.json`; `host.restore`
+  also reads the old single-state format. Menu: Ctrl+T / Ctrl+W / Ctrl+Tab.
+  Open image goes into the active tab while it is empty, otherwise into a new one.
+- **WebGL2 filters** in `renderer/editor/inpaint_filters_gl.js` (see `docs/SYNC.md`),
+  hooked into `applyFilter` by a sync patch; CPU fallback stays.
+- **Settings dialog** (`<dialog id="shell-settings">` in the shell, Ctrl+,): server URL
+  and connect, local file store (stats, open folder, remove files no open document
+  references and older than an hour: IPC `files:prune`), rendering path, about.
+
+Landed on 2026-09-07 (phase 1 light):
 
 - **Local file mirror** (`electron/main/files.js`, wired in `main.js` `installProtocol`):
   `/comfy/upload/image` stores under `<userData>/files/<type>/<subfolder>/<name>` and
@@ -71,12 +91,6 @@ all PASS). What landed in phase 1 light:
   padding, target_size, feather, multiple_of → `settings.nodeParams`, info panel follows.
 - **Layer / mask export** go through `host.saveExport` (native dialog / fixed path).
 - **Icon** on the window and in the installer; the editor's own title span is gone.
-
-Postponed from the full phase 1 (`docs/BRIEF.md` §5): WebGL2 filters, tabs for several
-documents, a settings dialog (mirror size / cleanup: `window.scumble.files.stats()`
-exists, no UI yet), autosave per file. Next: decide with the user whether phase 2
-(fal.ai and direct adapters, key storage, RunPod connection dialog, recipe import)
-comes before those.
 
 Known small things: `loadFile` uploads with `overwrite=false`, so re-loading an image
 with a name already in the mirror yields `name (1).png` (ComfyUI's own rule, harmless).
@@ -96,10 +110,14 @@ The mirror never deletes; the node's `cleanupFiles()` only cleans the server.
   `result_source[_local]` and the node params into the canvas node and writes the
   Settings-panel values into the recipe nodes directly (`settings: [{index, node,
   input, label}]`), so `setting_n` outputs are not used.
-- State: `getValue()` JSON autosaved to `%APPDATA%/Scumble/autosave.json` and restored
-  at the next start from the local file mirror (`%APPDATA%/Scumble/files/`), no server
-  needed. Layer pixels are uploaded like in the node (`input/inpaint_canvas`), but the
-  upload lands in the mirror and is forwarded; `ensureOnServer` re-uploads before a run.
+- State: every tab's `getValue()` JSON in one bundle, autosaved to
+  `%APPDATA%/Scumble/autosave.json` and restored at the next start from the local file
+  mirror (`%APPDATA%/Scumble/files/`), no server needed. Layer pixels are uploaded like
+  in the node (`input/inpaint_canvas`), but the upload lands in the mirror and is
+  forwarded; `ensureOnServer` re-uploads before a run.
+- `renderer/shell.js`: tab bar, settings dialog, menu commands, restore at start;
+  exports `newDocument`, `activate`, `closeDocument`, `openSettings` for tests
+  (`import("./shell.js")` from the console). `window.editor` is always the active tab.
 
 ## Working rules
 

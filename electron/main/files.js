@@ -148,7 +148,44 @@ class FileMirror {
         return report;
     }
 
-    /** Size and count of the mirror, for the settings UI later. */
+    root() {
+        return root();
+    }
+
+    /**
+     * Delete mirrored files that no open document references (keep: mirror keys
+     * "type/subfolder/filename"). dryRun only counts. Fresh files (younger than an hour)
+     * stay: a helper result may not be in any state yet.
+     */
+    async prune({ keep = [], dryRun = false } = {}) {
+        const keepSet = new Set(keep);
+        const report = { files: 0, bytes: 0, deleted: [] };
+        const base = root();
+        const now = Date.now();
+        const walk = async (dir) => {
+            let entries = [];
+            try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch (_) { return; }
+            for (const e of entries) {
+                const p = path.join(dir, e.name);
+                if (e.isDirectory()) { await walk(p); continue; }
+                const rel = path.relative(base, p).split(path.sep);
+                const type = rel.shift();
+                const filename = rel.pop();
+                const key = `${type}/${rel.join("/")}/${filename}`;
+                if (keepSet.has(key)) continue;
+                let st;
+                try { st = await fsp.stat(p); } catch (_) { continue; }
+                if (now - st.mtimeMs < 3600 * 1000) continue;
+                report.files++; report.bytes += st.size;
+                if (!dryRun) { try { await fsp.unlink(p); report.deleted.push(key); } catch (err) { console.warn("prune", key, err.message); } }
+            }
+        };
+        await walk(base);
+        if (!dryRun) this.known.clear();
+        return report;
+    }
+
+    /** Size and count of the mirror, for the settings UI. */
     async stats() {
         let files = 0, bytes = 0;
         const walk = async (dir) => {

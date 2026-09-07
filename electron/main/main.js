@@ -114,8 +114,13 @@ function buildMenu() {
         {
             label: "&File",
             submenu: [
+                { label: "New Tab", accelerator: "CmdOrCtrl+T", click: () => send("menu", "new-tab") },
                 { label: "Open Image...", accelerator: "CmdOrCtrl+O", click: () => openImage() },
                 { label: "Save Image...", accelerator: "CmdOrCtrl+S", click: () => send("menu", "save") },
+                { label: "Close Tab", accelerator: "CmdOrCtrl+W", click: () => send("menu", "close-tab") },
+                { type: "separator" },
+                { label: "Next Tab", accelerator: "CmdOrCtrl+Tab", click: () => send("menu", "next-tab") },
+                { label: "Previous Tab", accelerator: "CmdOrCtrl+Shift+Tab", click: () => send("menu", "prev-tab") },
                 { type: "separator" },
                 { label: "Settings...", accelerator: "CmdOrCtrl+,", click: () => send("menu", "settings") },
                 { type: "separator" },
@@ -209,6 +214,8 @@ function installIpc() {
     ipcMain.handle("comfy:clientId", () => comfy.clientId);
     ipcMain.handle("comfy:ensure", (_e, refs) => mirror.ensureOnServer(refs));
     ipcMain.handle("files:stats", () => mirror.stats());
+    ipcMain.handle("files:prune", (_e, args) => mirror.prune(args || {}));
+    ipcMain.handle("files:openFolder", async () => { const r = mirror.root(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(r); });
     ipcMain.handle("file:open", () => openImage());
     ipcMain.handle("file:save", (_e, args) => saveFile(args));
     ipcMain.handle("recipes:list", () => listRecipes());

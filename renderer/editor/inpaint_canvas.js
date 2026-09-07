@@ -1972,7 +1972,7 @@ class InpaintEditor {
         // Ctrl+Z, keybindings) never see the keys; otherwise Ctrl+Z would undo the
         // whole workflow state and reset the canvas.
         this._docKey = (e) => {
-            if (!this.isOpen) return;
+            if (!this.isOpen || !host.isActive(this)) return;
             const t = e.target;
             const inField = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT");
             if (e.key === "Escape") {

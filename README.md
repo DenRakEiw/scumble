@@ -7,13 +7,15 @@ later, through API providers. The editor is the same code as the ComfyUI node
 [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas); the app is the
 standalone window around it.
 
-Status: **phase 1 light** (2026-09-07). Electron window, editor, ComfyUI connection,
+Status: **phase 1 complete** (2026-09-08). Electron window, editor, ComfyUI connection,
 one recipe (Flux.2 Klein 9B local), open image, select, generate, save PNG / PSD / ORA,
 layer and mask export to files, the node's crop parameters in the Generate panel, a
-local file store (the document no longer depends on the server), all helpers verified
-in the app (SAM3 select by text, RMBG cutout, Qwen-VL prompt upsampling, SAM2 objects),
-NSIS installer with icon. See `docs/BRIEF.md` for the plan and `CLAUDE.md` for the
-working notes.
+local file store (the document no longer depends on the server), tabs for several
+documents with the whole session restored at start, filter layers on the GPU (WebGL2),
+a settings dialog, all helpers verified in the app (SAM3 select by text, RMBG cutout,
+Qwen-VL prompt upsampling, SAM2 objects), NSIS installer with icon. Next: phase 2
+(API providers, key storage, remote ComfyUI dialog, recipe import). See `docs/BRIEF.md`
+for the plan and `CLAUDE.md` for the working notes.
 
 ## Run from source
 
@@ -29,7 +31,10 @@ Flux.2 VAE (the recipe's Settings panel lets you pick the file names you have).
 
 Type the ComfyUI URL in the top bar (default `http://127.0.0.1:8188`), Connect, open an
 image (Ctrl+O, drop, paste), paint a selection, type a prompt, Generate (Ctrl+Enter).
-Ctrl+S saves the visible image.
+Ctrl+S saves the visible image. Every document is a tab (Ctrl+T new, Ctrl+W close,
+Ctrl+Tab next); a run or helper keeps going while another tab is in front, and its
+result lands in the tab that asked. Ctrl+, opens the settings (server, local files,
+rendering).
 
 Every image the editor uploads or receives is kept under `%APPDATA%/Scumble/files/`
 (`input/` and `output/`, mirroring ComfyUI's folders). The server only holds copies:
@@ -49,7 +54,8 @@ npm run dist        # dist/Scumble Setup <version>.exe (NSIS, unsigned)
 electron/main/     main process: window, scumble:// scheme with the ComfyUI proxy, websocket, menu, dialogs, settings, file mirror
 electron/preload.js
 renderer/          shell (connection bar, recipe picker, progress) and the editor
-renderer/editor/   synced copy of the node's editor, see docs/SYNC.md; host.js is the app side of it
+renderer/editor/   synced copy of the node's editor, see docs/SYNC.md; host.js is the app side of it,
+                   inpaint_filters_gl.js the WebGL2 filter path (app-only until it goes back into the node)
 recipes/           workflow templates in ComfyUI API format with a fixed canvas node id
 tools/             sync_editor.py, cdp.py (DevTools driver), smoke_test.py
 docs/              BRIEF.md (vision, decisions, phases), SYNC.md, NAMES.md, RUNPOD.md

@@ -54,6 +54,22 @@ PATCHES = [
      'iconButton("download", "Save and also download the file in the browser", () => this.exportImage({ download: true }), "Download");',
      'iconButton("download", "Save the image to a file (Ctrl+S)", () => this.exportImage({ download: true }), "Save as");', 1),
 
+    # --- several editors share the window (tabs): shortcuts go to the active one only
+    ("inpaint_canvas.js",
+     "            if (!this.isOpen) return;\n            const t = e.target;\n",
+     "            if (!this.isOpen || !host.isActive(this)) return;\n            const t = e.target;\n", 1),
+
+    # --- WebGL2 filters (renderer/editor/inpaint_filters_gl.js, app-only for now) get the first go
+    ("inpaint_filters.js",
+     'import { curveDefaults, curvesToTables, buildCurvesControl } from "./inpaint_curves.js";\n',
+     'import { curveDefaults, curvesToTables, buildCurvesControl } from "./inpaint_curves.js";\nimport { applyFilterGL } from "./inpaint_filters_gl.js";\n', 1),
+    ("inpaint_filters.js",
+     "export const FILTER_IDS = Object.keys(FILTERS);\n",
+     "export const FILTER_IDS = Object.keys(FILTERS);\n\n// table builders shared with the WebGL2 path\nexport { levelsTable, brightnessContrastTable, hueSatMatrix, lightnessTable, colorBalanceTables, hueToRgb, LOOK_DEFAULT };\n", 1),
+    ("inpaint_filters.js",
+     "    const f = FILTERS[id];\n    if (!f) return src;\n    return f.apply(src, params || {}, info);\n",
+     "    const f = FILTERS[id];\n    if (!f) return src;\n    if (!info.cpu) { const gl = applyFilterGL(id, src, params || {}, info); if (gl) return gl; }\n    return f.apply(src, params || {}, info);\n", 1),
+
     # --- files still referenced (cleanup): no graph, no workflow tabs
     ("inpaint_canvas.js",
      "        for (const n of (app.graph && app.graph._nodes) || []) {\n            const ed = n.inpaintEditor;\n            if (!ed) continue;\n",

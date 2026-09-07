@@ -6,6 +6,10 @@
 //           addEventListener, clientId. Requests go to scumble://app/comfy/*, which the main
 //           process proxies to the server, so images and uploads stay same-origin.
 //   host  - the document-level services: recipe, settings targets, generate, autosave.
+//           Several editors can be open (tabs in the shell); `host.editor` is the active
+//           one, `host.editors()` all of them. Server events are routed to the editor
+//           that asked: results by prompt id, helper masks / texts by the canvas_node id
+//           the helper prompt carried (= editor.node.id).
 
 const PROXY = "/comfy";
 
@@ -68,24 +72,74 @@ export const api = {
 // ---- host --------------------------------------------------------------------------------
 
 export const host = {
-    editor: null,
+    editor: null,          // the active editor
+    _editors: [],          // every open editor, in tab order
+    nextId: 1,             // editor ids (node.id): upload name prefix and helper routing key
+    createDocument: null,  // set by the shell: (id) => editor, used by restore()
+    onDocsChanged: null,   // set by the shell: () => void, after autosave (tab labels)
     mountEl: null,
     recipe: null,
     objectInfo: null,
     nodeParams: { padding: 64, target_size: 1024, feather: 16, multiple_of: 64 },
     connected: false,
-    _pendingState: null,
+    _pendingStates: [],
     _saveTimer: null,
     _types: {},
 
-    attach(editor, { mount, nodeParams } = {}) {
-        this.editor = editor;
+    /** Shell setup: where editors mount and the persisted node params. */
+    configure({ mount, nodeParams } = {}) {
         this.mountEl = mount || document.body;
         if (nodeParams) this.nodeParams = { ...this.nodeParams, ...nodeParams };
     },
 
+    /** Compatibility with the single-editor shell: configure + addEditor + activate. */
+    attach(editor, opts = {}) {
+        this.configure(opts);
+        this.addEditor(editor);
+        this.activate(editor);
+    },
+
+    addEditor(editor) {
+        if (!this._editors.includes(editor)) this._editors.push(editor);
+        const id = +editor.node.id;
+        if (Number.isFinite(id) && id >= this.nextId) this.nextId = id + 1;
+        if (!this.editor) this.editor = editor;
+        editor.root.classList.toggle("shell-hidden", editor !== this.editor);
+        this.applyRecipe(editor);
+    },
+
+    removeEditor(editor) {
+        const i = this._editors.indexOf(editor);
+        if (i >= 0) this._editors.splice(i, 1);
+        if (this.editor === editor) this.editor = this._editors[Math.min(i, this._editors.length - 1)] || null;
+        if (this.editor) this.activate(this.editor);
+    },
+
+    /** Show this editor, hide the others; only the active editor gets keyboard shortcuts. */
+    activate(editor) {
+        if (!editor || !this._editors.includes(editor)) return;
+        this.editor = editor;
+        for (const e of this._editors) e.root.classList.toggle("shell-hidden", e !== editor);
+        try { editor.resizeCanvas(); editor.draw(); } catch (_) { /* not open yet */ }
+    },
+
+    isActive(editor) {
+        return editor === this.editor;
+    },
+
     editors() {
-        return this.editor ? [this.editor] : [];
+        return this._editors.slice();
+    },
+
+    editorById(id) {
+        return this._editors.find((e) => String(e.node.id) === String(id)) || null;
+    },
+
+    /** The editor whose generate / helper prompt has this id, if any. */
+    editorByPrompt(promptId) {
+        if (!promptId) return null;
+        return this._editors.find((e) => e.lastPromptId === promptId || e.segmentPromptId === promptId || e.objectsPromptId === promptId
+            || e.upsamplePromptId === promptId || e.cutoutPromptId === promptId) || null;
     },
 
     mount(rootEl) {
@@ -115,8 +169,7 @@ export const host = {
         api.clientId = await window.scumble.comfy.clientId();
         try { await this.loadObjectInfo(); } catch (err) { console.warn(err); this.objectInfo = null; this._types = {}; }
         this.connected = true;
-        const ed = this.editor;
-        if (ed) {
+        for (const ed of this._editors) {
             // Uploads are cached per hash; a (possibly different) server may not have them.
             // The mirror re-uploads what a run needs (ensureOnServer), the reset only makes
             // sure the next run hashes the composite again.
@@ -126,36 +179,55 @@ export const host = {
             ed.refreshSegmentBackends();
             ed.settingsChanged();
         }
-        if (this._pendingState && ed) {
-            const s = this._pendingState;
-            this._pendingState = null;
-            try { await ed.setValue(s); if (ed.base) ed.setStatus("Last session restored."); } catch (err) { console.warn("restore failed", err); }
+        const pending = this._pendingStates;
+        this._pendingStates = [];
+        for (const { editor: ed, state } of pending) {
+            if (!this._editors.includes(ed)) continue;
+            try { await ed.setValue(state); if (ed.base) ed.setStatus("Last session restored."); } catch (err) { console.warn("restore failed", err); }
         }
     },
 
     /**
-     * Restore the autosaved state. The layer files normally sit in the local mirror, so
-     * this works offline; only when the base image is not there (state from before the
-     * mirror existed) the restore waits for the server.
+     * Restore the autosaved session: either a bundle { version: 2, docs: [{id, state}],
+     * active, nextId } or, from older builds, one editor's state JSON. Editors are
+     * created through this.createDocument. The layer files normally sit in the local
+     * mirror, so this works offline; a document whose base is not mirrored (state from
+     * before the mirror existed) waits for the server.
      */
-    async restore(stateJson) {
-        const ed = this.editor;
-        if (!ed) return false;
-        try { await ed.setValue(stateJson); } catch (err) { console.warn("restore from the mirror failed", err); }
-        if (ed.base) { ed.setStatus("Last session restored."); return true; }
-        if (this.connected) return false;
-        this._pendingState = stateJson;
-        ed.setStatus("Last session will be restored once ComfyUI is connected (its files are not in the local store).");
-        return false;
+    async restore(saved) {
+        if (!saved) return false;
+        let bundle = null;
+        try { bundle = JSON.parse(saved); } catch (_) { bundle = null; }
+        const docs = bundle && Array.isArray(bundle.docs) ? bundle.docs : [{ id: this.nextId, state: saved }];
+        if (bundle && +bundle.nextId > this.nextId) this.nextId = +bundle.nextId;
+        let any = false;
+        for (const doc of docs) {
+            if (!doc || typeof doc.state !== "string" || doc.state.length < 3) continue;
+            let ed = this.editorById(doc.id);
+            if (!ed) ed = this.createDocument ? this.createDocument(+doc.id || this.nextId++) : this.editor;
+            if (!ed) continue;
+            try { await ed.setValue(doc.state); } catch (err) { console.warn("restore from the mirror failed", err); }
+            if (ed.base) { ed.setStatus("Last session restored."); any = true; }
+            else if (!this.connected) { this._pendingStates.push({ editor: ed, state: doc.state }); ed.setStatus("This document will be restored once ComfyUI is connected (its files are not in the local store)."); }
+        }
+        const active = bundle && this.editorById(bundle.active);
+        if (active) this.activate(active);
+        if (this.onDocsChanged) this.onDocsChanged();
+        return any;
     },
 
     // ---- recipe: the graph the editor is wired into ------------------------------------
 
     setRecipe(recipe) {
         this.recipe = recipe;
-        const ed = this.editor;
-        if (!ed) return;
-        const mode = recipe && recipe.mode === "api" ? "api" : "local";
+        for (const ed of this._editors) this.applyRecipe(ed);
+    },
+
+    /** The recipe decides the mode (local / api) and the Settings panel of every editor. */
+    applyRecipe(ed) {
+        const r = this.recipe;
+        if (!r) return;
+        const mode = r.mode === "api" ? "api" : "local";
         if (ed.genSettings.mode !== mode) { ed.genSettings.mode = mode; ed.syncGenControls(); }
         ed.settingsChanged();
         ed.renderInfo();
@@ -267,7 +339,7 @@ export const host = {
             ["feather", "Feather", 0, 512, 1, "Edge feather in pixels when the result is stitched back (used when the crop's edge setting is not auto)"],
             ["multiple_of", "Multiple", 1, 256, 1, "Crop width and height are rounded to a multiple of this (64 for Flux and SDXL, 16 for SD 1.5)"],
         ];
-        this.nodeParamInputs = {};
+        const inputs = {};
         for (const [key, label, min, max, step, title] of fields) {
             const lab = document.createElement("span");
             lab.textContent = label; lab.title = title;
@@ -283,17 +355,20 @@ export const host = {
                 this.setNodeParam(key, v);
             });
             grid.appendChild(input);
-            this.nodeParamInputs[key] = input;
+            inputs[key] = input;
         }
         sec.appendChild(grid);
+        editor._nodeParamInputs = inputs;
     },
 
+    /** One value for every open editor: the node params are app settings, not per document. */
     setNodeParam(key, value) {
         this.nodeParams = { ...this.nodeParams, [key]: value };
-        if (this.nodeParamInputs && this.nodeParamInputs[key]) this.nodeParamInputs[key].value = value;
         window.scumble.settings.set({ nodeParams: this.nodeParams }).catch((err) => console.warn("nodeParams not saved", err));
-        const ed = this.editor;
-        if (ed) { ed.renderInfo(); ed.draw(); }
+        for (const ed of this._editors) {
+            if (ed._nodeParamInputs && ed._nodeParamInputs[key]) ed._nodeParamInputs[key].value = value;
+            ed.renderInfo(); ed.draw();
+        }
     },
 
     async saveExport(blob, name) {
@@ -301,15 +376,43 @@ export const host = {
         return window.scumble.file.save({ name, data });
     },
 
-    /** The editor changed: autosave its state (debounced). */
+    /** An editor changed: autosave every open document (debounced) and refresh the tabs. */
     changed(editor) {
         clearTimeout(this._saveTimer);
-        this._saveTimer = setTimeout(() => {
-            try {
-                const v = editor.getValue();
-                if (v && v !== "{}") window.scumble.state.save(v).catch(() => {});
-            } catch (err) { console.warn("autosave", err); }
-        }, 1500);
+        this._saveTimer = setTimeout(() => this.saveAll(), 1500);
+    },
+
+    /** The autosave bundle: every open document's state, the active one, the id counter. */
+    bundle() {
+        const docs = [];
+        for (const ed of this._editors) {
+            let state = "{}";
+            try { state = ed.getValue(); } catch (err) { console.warn("getValue", err); }
+            docs.push({ id: ed.node.id, state });
+        }
+        return { version: 2, active: this.editor ? this.editor.node.id : null, nextId: this.nextId, docs };
+    },
+
+    saveAll() {
+        clearTimeout(this._saveTimer);
+        try { window.scumble.state.save(JSON.stringify(this.bundle())).catch(() => {}); } catch (err) { console.warn("autosave", err); }
+        if (this.onDocsChanged) { try { this.onDocsChanged(); } catch (err) { console.warn(err); } }
+    },
+
+    /** Every file ref ({filename, subfolder, type}) any open document mentions, as mirror keys. */
+    referencedFileKeys() {
+        const keys = new Set();
+        const walk = (v) => {
+            if (!v || typeof v !== "object") return;
+            if (Array.isArray(v)) { for (const x of v) walk(x); return; }
+            if (typeof v.filename === "string") keys.add(`${v.type || "input"}/${v.subfolder || ""}/${v.filename}`);
+            for (const x of Object.values(v)) walk(x);
+        };
+        for (const ed of this._editors) {
+            try { walk(JSON.parse(ed.getValue())); } catch (_) { /* empty document */ }
+            if (ed.base && ed.base.ref) walk(ed.base.ref);
+        }
+        return Array.from(keys);
     },
 };
 
@@ -318,12 +421,19 @@ export const host = {
 window.scumble.comfy.onEvent((ev) => api.dispatch(ev.type, ev.data));
 
 api.addEventListener("executed", ({ detail }) => {
-    const ed = host.editor;
     const out = detail && detail.output;
-    if (!ed || !out) return;
-    if (out.inpaint_result) ed.addResults(out.inpaint_result);
-    if (out.inpaint_text) for (const info of out.inpaint_text) ed.applyTextResult(info);
+    if (!out) return;
+    // Results: the recipe's canvas node id is the same for every tab, so the prompt id
+    // decides; helper outputs carry the editor id the helper prompt was queued with.
+    if (out.inpaint_result) {
+        const ed = host.editorByPrompt(detail.prompt_id) || host.editor;
+        if (ed) ed.addResults(out.inpaint_result);
+    }
+    const forNode = (info) => host.editorById(info && info.canvas_node) || host.editorByPrompt(detail.prompt_id) || host.editor;
+    if (out.inpaint_text) for (const info of out.inpaint_text) { const ed = forNode(info); if (ed) ed.applyTextResult(info); }
     for (const info of out.inpaint_mask || []) {
+        const ed = forNode(info);
+        if (!ed) continue;
         if (info.purpose === "segments") ed.applySegmentsFile(info);
         else if (info.purpose === "cutout") ed.applyCutoutFile(info);
         else ed.applyMaskFile(info);
@@ -331,8 +441,9 @@ api.addEventListener("executed", ({ detail }) => {
 });
 
 api.addEventListener("execution_error", ({ detail }) => {
-    const ed = host.editor;
-    if (!ed || !detail) return;
+    if (!detail) return;
+    const ed = host.editorByPrompt(detail.prompt_id) || host.editor;
+    if (!ed) return;
     const msg = detail.exception_message || "execution failed";
     if (ed.segmentPromptId && detail.prompt_id === ed.segmentPromptId) {
         ed.segmentPending = null; if (ed.segBtn) ed.segBtn.disabled = false;

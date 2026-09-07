@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld("scumble", {
     },
     files: {
         stats: () => ipcRenderer.invoke("files:stats"),
+        prune: (args) => ipcRenderer.invoke("files:prune", args),
+        openFolder: () => ipcRenderer.invoke("files:openFolder"),
     },
     recipes: {
         list: () => ipcRenderer.invoke("recipes:list"),

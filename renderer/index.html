@@ -18,8 +18,35 @@
     <button id="shell-connect" type="button">Connect</button>
     <span id="shell-status"><span id="shell-dot" class="dot"></span><span id="shell-status-text">not connected</span></span>
   </div>
+  <div id="shell-tabs"><div id="shell-tab-list"></div><button id="shell-tab-add" type="button" title="New tab (Ctrl+T)">+</button></div>
   <div id="editor-host"></div>
 </div>
+<dialog id="shell-settings">
+  <form method="dialog">
+    <h2>Settings</h2>
+    <section>
+      <h3>ComfyUI</h3>
+      <label class="shell-field">Server URL <input id="set-url" type="text" spellcheck="false" placeholder="http://127.0.0.1:8188"></label>
+      <div class="shell-row"><button id="set-connect" type="button">Connect</button><span id="set-conn" class="shell-note"></span></div>
+      <p class="shell-help">Local or remote (RunPod: the proxy URL of port 8188). The Inpaint Canvas node pack must be installed there.</p>
+    </section>
+    <section>
+      <h3>Local files</h3>
+      <p id="set-files" class="shell-help"></p>
+      <div class="shell-row"><button id="set-open-files" type="button">Open folder</button><button id="set-prune" type="button">Remove unreferenced files</button><span id="set-prune-note" class="shell-note"></span></div>
+      <p class="shell-help">Every image the editor uploads or receives is kept here, mirroring ComfyUI's input and output folders; the server only holds copies. Removing keeps everything the open documents reference and anything younger than an hour.</p>
+    </section>
+    <section>
+      <h3>Rendering</h3>
+      <p id="set-gpu" class="shell-help"></p>
+    </section>
+    <section>
+      <h3>About</h3>
+      <p id="set-about" class="shell-help"></p>
+    </section>
+    <div class="shell-row shell-right"><button id="set-close" type="submit">Close</button></div>
+  </form>
+</dialog>
 <script type="module" src="shell.js"></script>
 </body>
 </html>

@@ -13,6 +13,7 @@
 // editor control lives in inpaint_curves.js.
 
 import { curveDefaults, curvesToTables, buildCurvesControl } from "./inpaint_curves.js";
+import { applyFilterGL } from "./inpaint_filters_gl.js";
 
 function makeCanvas(w, h) {
     const c = document.createElement("canvas");
@@ -820,6 +821,9 @@ export const FILTERS = {
 
 export const FILTER_IDS = Object.keys(FILTERS);
 
+// table builders shared with the WebGL2 path
+export { levelsTable, brightnessContrastTable, hueSatMatrix, lightnessTable, colorBalanceTables, hueToRgb, LOOK_DEFAULT };
+
 export function filterDefaults(id) {
     const out = {};
     for (const p of (FILTERS[id] || FILTERS.grain).params) out[p.key] = p.default;
@@ -833,5 +837,6 @@ export function filterDefaults(id) {
 export function applyFilter(id, src, params, info = {}) {
     const f = FILTERS[id];
     if (!f) return src;
+    if (!info.cpu) { const gl = applyFilterGL(id, src, params || {}, info); if (gl) return gl; }
     return f.apply(src, params || {}, info);
 }
