@@ -62,6 +62,43 @@ a layer, Ctrl+S saves a PNG through a native dialog, `npm run dist` makes
 `docs/BRIEF.md` §5 (all tools verified in the app, WebGL2 filters, tabs, settings UI
 for the node params, local document store instead of server-side layer uploads).
 
+## Phase 1 light: in progress (2026-09-07, late evening)
+
+Agreed with the user: a slimmed phase 1 before phase 2 (WebGL2 filters and tabs
+postponed). Steps, in order; tick them off here as they land:
+
+1. [ ] **Local file mirror** so the document no longer depends on the server.
+   `electron/main/files.js` is written but not wired yet: every `/comfy/upload/image`
+   is stored under `<userData>/files/<type>/<subfolder>/<name>` and forwarded to the
+   server when connected; `/comfy/view` serves the mirror first, else fetches from the
+   server and keeps a copy (not `temp`). `ensureOnServer(refs)` HEAD-checks and
+   re-uploads before a run. To do: route those two paths in `main.js` `installProtocol`
+   (instead of the plain proxy), IPC `comfy:ensure`, call it from `host.queueGenerate`
+   with every `{filename, subfolder, type}` found in the state JSON, reset
+   `editor.uploaded = editor.makeUploaded()` in `host.onConnected`, restore the
+   autosaved state immediately (mirror) and only fall back to "after connect" when
+   `editor.base` stays null. No editor patch needed for this.
+2. [ ] **Node params UI** (padding, target_size, feather, multiple_of): one-line patch
+   in `tools/sync_editor.py` after `sec.appendChild(this.refineBtn);` in the Generate
+   section: `host.buildGenerateExtras(this, sec);`. The controls live in host.js,
+   commit to `settings.nodeParams` via `window.scumble.settings.set`, then
+   `editor.renderInfo(); editor.draw()`.
+3. [ ] **Layer / mask export** (`exportLayerPng`, `exportMaskPng`, lines ~5418-5445 of
+   the synced file) still upload to the server's output folder: patch to
+   `host.saveExport(blob, name)` like `exportImage`.
+4. [ ] **Helpers verified in the app**: extend `tools/smoke_test.py` with select by text
+   (SAM3, `segmentByText()` with `segInput.value`, wait for `!segmentPending` and the
+   status leaving "Segmenting"), cutout of the result layer (`cutoutLayer(layer)`, wait
+   for `!cutoutPending`, then `layer.mask`), `upsamplePrompt()` (`!upsamplePending`),
+   `ensureObjects()` (`!objectsPending`, `objects.count`), `addFilterLayer("grain")`
+   plus `undoStep()`, PSD export via the `saveExport` override with `saveFormatSel.value = "psd"`.
+   Run after a generate so Flux is loaded first; the node frees helpers before local runs.
+5. [ ] **Icon and polish**: `build/icon.png` / `build/icon.ico` exist (drawn by a PIL
+   script, gold scumble stroke over a blue block); set `"icon": "build/icon.png"` in the
+   `build` config and `icon` on the BrowserWindow (guard with existsSync). Remove the
+   editor's own "Scumble" title span (patch `top.appendChild(el("span", "ipc-title", "Scumble"));` to nothing).
+6. [ ] Update README, SYNC.md, this file; `npm run dist`; commit and push as DenRakEiw.
+
 ## How the app is put together
 
 - `electron/main/main.js`: window, `scumble://app/` scheme (renderer files) with
