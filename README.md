@@ -3,7 +3,7 @@
 A desktop editor for AI inpainting. Krita-style layers, selection by brush, shape,
 magic wand, object hover or text, retouch tools, filter layers, text layers, colour
 match, PSD / ORA export. Rendering happens on your own ComfyUI (local or remote) or
-through API providers (fal.ai, Black Forest Labs, OpenAI, Google Gemini). The editor is the same code as the ComfyUI node
+through API providers (fal.ai, Replicate, Black Forest Labs, OpenAI, Google Gemini). The editor is the same code as the ComfyUI node
 [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas); the app is the
 standalone window around it.
 
@@ -11,7 +11,7 @@ Status: **phase 2 complete** (2026-09-08). Everything from phase 1 (Electron win
 editor, ComfyUI connection, open / select / generate / save PNG / PSD / ORA, layer and
 mask export, local file store, tabs with session restore, WebGL2 filter layers,
 settings dialog, helpers verified, NSIS installer) plus: API provider recipes (fal.ai,
-Black Forest Labs, OpenAI gpt-image, Google Gemini) with crop and stitch in the app,
+Replicate, Black Forest Labs, OpenAI gpt-image, Google Gemini) with crop and stitch in the app,
 API keys in the OS credential store, a connection dialog for remote ComfyUI with auth
 and a Test button (version, node pack, model files per recipe), import of your own
 ComfyUI workflow as a recipe (subgraphs flattened), and a RunPod template draft. Next:
@@ -56,7 +56,7 @@ npm run dist        # dist/Scumble Setup <version>.exe (NSIS, unsigned)
 
 ```
 electron/main/     main process: window, scumble:// scheme with the ComfyUI proxy, websocket, menu, dialogs, settings,
-                   file mirror, keys.js (safeStorage), recipes.js (list / import), providers/ (fal, bfl, openai, gemini)
+                   file mirror, keys.js (safeStorage), recipes.js (list / import), providers/ (fal, replicate, bfl, openai, gemini)
 electron/preload.js
 renderer/          shell (connection bar, recipe picker, progress) and the editor
 renderer/editor/   synced copy of the node's editor, see docs/SYNC.md; host.js is the app side of it,

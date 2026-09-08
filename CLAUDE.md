@@ -64,16 +64,18 @@ Verified with real runs on 2026-09-08 (`tools/smoke_test.py`, all PASS): the shi
 Flux.2 Klein recipe and the *imported* node example workflow (subgraph flattened)
 through the user's ComfyUI, the loopback provider round trip (crop → main process →
 stitch → result layer equals the base inside the selection), the key store (DPAPI),
-the probe / Test button, and the recipe import of UI and API format. **The four real
-provider adapters ran against their documented schemas only, not against the live
-APIs: no keys were available in this session.** First thing to do with a key: pick the
+the probe / Test button, and the recipe import of UI and API format. **The five real
+provider adapters (fal, Replicate, BFL, OpenAI, Gemini) ran against their documented
+schemas only, not against the live APIs: no keys were available in this session.** First thing to do with a key: pick the
 provider's recipe, run once on a small selection, and fix what the API answers.
 
 Landed on 2026-09-08 (phase 2):
 
 - **Provider recipes** (`kind: "provider"`, `docs/RECIPES.md`): fal.ai (Flux Fill pro,
-  Qwen Image Edit inpaint, Flux.2 pro edit), BFL (Flux Fill pro, Flux.2 / Kontext edit
-  with an endpoint combo), OpenAI gpt-image edit, Gemini image edit. Adapters in
+  Qwen Image Edit inpaint, Flux.2 pro edit), Replicate (flux-fill-pro, nano-banana,
+  qwen-image-edit; `owner/name[:version]`, per-recipe `fields` for the input names,
+  Files API for inputs over 256 kB), BFL (Flux Fill pro, Flux.2 / Kontext edit with an
+  endpoint combo), OpenAI gpt-image edit, Gemini image edit. Adapters in
   `electron/main/providers/<id>.js` with one interface (`edit(request, ctx)`); the
   crop and the stitch happen in the renderer (`renderer/editor/stitch.js`, a port of the
   node's `run` / `stitch`; not ported: ECC align, Lanczos, Navier-Stokes border fill).

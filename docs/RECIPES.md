@@ -56,17 +56,21 @@ One call to an API provider; crop and stitch happen in the app
 ```
 {
   "id": "fal_flux_fill", "kind": "provider",
-  "provider": "fal" | "bfl" | "openai" | "gemini",
+  "provider": "fal" | "bfl" | "openai" | "gemini" | "replicate",
   "model": "fal-ai/flux-pro/v1/fill",   // endpoint / model id
   "input": "fill" | "edit",             // fill: crop + mask; edit: instruction on the crop (+ references)
   "settings": [ { "index": 1, "key": "steps", "label": "Steps", "spec": ["INT", {"default": 50, "min": 15, "max": 50}] } ],
-  "fixed": { "output_format": "png" }   // parameters sent as they are
+  "fixed": { "output_format": "png" },  // parameters sent as they are
+  "fields": { "image": "image", "mask": "mask", "images": "image_input" }   // Replicate: the model's input names
 }
 ```
 
 `settings[].key` is the parameter name the adapter sends (fal: passed through by name;
 BFL: steps, guidance, safety_tolerance, prompt_upsampling, `endpoint` picks the model;
-OpenAI: model, quality, input_fidelity, size; Gemini: model, aspect_ratio, image_size).
+OpenAI: model, quality, input_fidelity, size; Gemini: model, aspect_ratio, image_size;
+Replicate: passed through by name, `model` is `owner/name` for official models or
+`owner/name:version`, `fields` names the image / mask / images inputs, files over
+256 kB go through Replicate's Files API first).
 The key of the provider comes from the credential store (Settings › API providers).
 
 What a provider run does: `prepareCrop` builds the crop like the node (selection bbox

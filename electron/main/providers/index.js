@@ -18,6 +18,7 @@ const PROVIDERS = {
     bfl: require("./bfl"),
     openai: require("./openai"),
     gemini: require("./gemini"),
+    replicate: require("./replicate"),
     loopback: require("./loopback"),
 };
 
@@ -45,6 +46,7 @@ async function edit(request) {
         image: toBuffer(request.image),
         mask: toBuffer(request.mask),
         maskAlpha: toBuffer(request.maskAlpha),   // RGBA mask, alpha 0 where to repaint (OpenAI's convention)
+        fields: request.fields || null,           // model-specific input names (Replicate)
         references: (request.references || []).map(toBuffer).filter(Boolean),
         params: request.params || {},
     };

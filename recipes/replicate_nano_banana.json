@@ -1,0 +1,17 @@
+{
+  "id": "replicate_nano_banana",
+  "kind": "provider",
+  "provider": "replicate",
+  "model": "google/nano-banana",
+  "input": "edit",
+  "fields": {
+    "images": "image_input"
+  },
+  "name": "Nano Banana (Gemini image) via Replicate",
+  "description": "Instruction-based editing of the crop plus reference layers; no mask input, the stitch keeps the selection. For area-directed edits set Fill to green and say \"fill the green area\". Needs a Replicate token.",
+  "fixed": {
+    "aspect_ratio": "match_input_image",
+    "output_format": "png"
+  },
+  "settings": []
+}

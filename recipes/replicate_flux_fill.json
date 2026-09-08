@@ -1,0 +1,69 @@
+{
+  "id": "replicate_flux_fill",
+  "kind": "provider",
+  "provider": "replicate",
+  "model": "black-forest-labs/flux-fill-pro",
+  "input": "fill",
+  "fields": {
+    "image": "image",
+    "mask": "mask"
+  },
+  "name": "FLUX.1 Fill [pro] via Replicate",
+  "description": "Mask-based inpainting through Replicate's official flux-fill-pro model. Needs a Replicate token (Settings).",
+  "fixed": {
+    "output_format": "png"
+  },
+  "settings": [
+    {
+      "index": 1,
+      "key": "steps",
+      "label": "Steps",
+      "spec": [
+        "INT",
+        {
+          "default": 50,
+          "min": 15,
+          "max": 50
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "key": "guidance",
+      "label": "Guidance",
+      "spec": [
+        "FLOAT",
+        {
+          "default": 60,
+          "min": 2,
+          "max": 100,
+          "step": 0.5
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "key": "safety_tolerance",
+      "label": "Safety tolerance",
+      "spec": [
+        "INT",
+        {
+          "default": 2,
+          "min": 1,
+          "max": 6
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "key": "prompt_upsampling",
+      "label": "Prompt upsampling",
+      "spec": [
+        "BOOLEAN",
+        {
+          "default": false
+        }
+      ]
+    }
+  ]
+}
