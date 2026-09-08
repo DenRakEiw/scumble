@@ -12,6 +12,9 @@ const DEFAULTS = {
     recipe: "flux2_klein_local",
     // InpaintCanvas node widgets, filled into the recipe's canvas node on every run
     nodeParams: { padding: 64, target_size: 1024, feather: 16, multiple_of: 64 },
+    // in-app helper models (electron/main/onnx): device auto|gpu|cpu, model folder (null =
+    // <userData>/models, or a ComfyUI models folder), the SAM2 and matting model ids
+    helpers: { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite" },
     window: null,
 };
 

@@ -527,7 +527,7 @@ const CUTOUT_BACKENDS = [
 
 function availableCutoutBackends() {
     const types = host.nodeTypes();
-    return CUTOUT_BACKENDS.filter((b) => b.needs.every((n) => !!types[n]));
+    return [...host.cutoutBackends(), ...CUTOUT_BACKENDS.filter((b) => b.needs.every((n) => !!types[n]))];
 }
 
 const isSettingOutput = (o) => !!(o && typeof o.name === "string" && /^setting_\d+$/.test(o.name));
@@ -559,6 +559,7 @@ const OBJECT_BACKEND = {
 };
 
 function objectBackendAvailable() {
+    if (host.objectsInApp()) return true;
     const types = host.nodeTypes();
     return OBJECT_BACKEND.needs.every((n) => !!types[n]);
 }
@@ -4203,11 +4204,12 @@ class InpaintEditor {
     /** Make sure the object map matches the current source; run SAM2 if not. */
     async ensureObjects() {
         if (!this.base || this.objectsPending) return;
-        if (!objectBackendAvailable()) { this.setStatus("Object selection needs ComfyUI-segment-anything-2 (Kijai) for the SAM2 automatic mask generator."); return; }
+        if (!objectBackendAvailable()) { this.setStatus("Object selection needs a SAM2 model: download one in Settings › Helpers, or install ComfyUI-segment-anything-2 (Kijai) on the server."); return; }
         this.objectsPending = { stage: "upload" };
         try {
             const { ref, hash, layer } = await this.segmentSource();
             if (this.objects && this.objects.hash === hash && this.objects.w === this.width && this.objects.h === this.height) { this.objectsPending = null; return; }
+            if (host.objectsInApp()) { await host.findObjects(this, { hash, layer }); return; }
             this.setStatus(`Finding objects with ${OBJECT_BACKEND.label} ...`);
             const prompt = {
                 obj_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(ref) } },
@@ -4241,19 +4243,26 @@ class InpaintEditor {
             const d = ctx.getImageData(0, 0, w, h).data;
             const ids = new Uint16Array(w * h);
             for (let i = 0, j = 0; i < d.length; i += 4, j++) ids[j] = d[i] + (d[i + 1] << 8);
+            this.applySegmentIds(ids, w, h, info.count || 0, pending);
+        } catch (err) {
+            console.error(err);
+            this.setStatus("Could not read the object map: " + (err.message || err));
+        }
+    }
+
+    /** An object label map (0 = none) at w × h becomes this.objects, clipped to the source layer. */
+    applySegmentIds(ids, w, h, count, pending = {}) {
+        {
             if (pending.layer && w === this.width && h === this.height) {
                 const clip = this.layerAlpha(pending.layer);
                 for (let j = 0; j < ids.length; j++) if (!clip[j]) ids[j] = 0;
             }
-            this.objects = { hash: pending.hash, w, h, ids, count: info.count || 0, layerId: pending.layer ? pending.layer.id : null };
+            this.objects = { hash: pending.hash, w, h, ids, count, layerId: pending.layer ? pending.layer.id : null };
             this.objectShapeCache.clear();
             this.hoverObjectId = 0; this.hoverObjectCanvas = null;
-            this.setStatus(`${info.count || 0} objects found. Hover to preview, click to select, click again to deselect (Shift adds, Alt subtracts).`);
+            this.setStatus(`${count} objects found. Hover to preview, click to select, click again to deselect (Shift adds, Alt subtracts).`);
             if (this.hover) this.updateObjectHover(this.hover[0], this.hover[1]);
             this.draw();
-        } catch (err) {
-            console.error(err);
-            this.setStatus("Could not read the object map: " + (err.message || err));
         }
     }
 
@@ -4299,7 +4308,7 @@ class InpaintEditor {
     toggleObjectAt(ix, iy, p = {}) {
         if (!this.objects) { this.ensureObjects(); return; }
         const id = this.objectIdAt(ix, iy);
-        if (!id) { this.setStatus("No object here. Use the brush or lasso for this spot."); return; }
+        if (!id) { if (host.objectsInApp()) { host.selectPoint(this, ix, iy, p); return; } this.setStatus("No object here. Use the brush or lasso for this spot."); return; }
         const x = Math.floor(ix), y = Math.floor(iy);
         const already = this.selection.getContext("2d").getImageData(x, y, 1, 1).data[3] > 0;
         const subtract = p.alt ? true : (p.shift ? false : already);
@@ -4831,20 +4840,22 @@ class InpaintEditor {
         const cur = this.cutoutSettings.backend;
         this.cutoutSel.innerHTML = "";
         for (const b of avail) { const o = document.createElement("option"); o.value = b.id; o.textContent = b.label; this.cutoutSel.appendChild(o); }
-        if (!avail.length) { const o = document.createElement("option"); o.value = ""; o.textContent = "no RMBG nodes"; this.cutoutSel.appendChild(o); }
+        if (!avail.length) { const o = document.createElement("option"); o.value = ""; o.textContent = "no model (Settings › Helpers)"; this.cutoutSel.appendChild(o); }
         this.cutoutSel.value = avail.some((b) => b.id === cur) ? cur : (avail[0] ? avail[0].id : "");
     }
 
     /** Remove the background of a layer with an RMBG node; the result becomes its transparency mask. */
     async cutoutLayer(layer) {
         if (!layer || !layer.canvas) return;
-        const backend = CUTOUT_BACKENDS.find((b) => b.id === this.cutoutSettings.backend && availableCutoutBackends().includes(b)) || availableCutoutBackends()[0];
-        if (!backend) { this.setStatus("No background removal nodes installed (comfyui-rmbg or ComfyUI-BRIA_AI-RMBG)."); return; }
+        const availCut = availableCutoutBackends();
+        const backend = availCut.find((b) => b.id === this.cutoutSettings.backend) || availCut[0];
+        if (!backend) { this.setStatus("No background removal model: download one in Settings › Helpers, or install comfyui-rmbg on the server."); return; }
         if (this.cutoutPending) { this.setStatus(`Still removing the background of ${this.cutoutPending.layer.name} ...`); return; }
         try {
             this.cutoutPending = { layer, backend };
             this.renderLayers();
             this.setStatus(`Removing the background of ${layer.name} with ${backend.label} ...`);
+            if (backend.inApp) { const img = await host.cutoutInApp(this, layer, backend); await this.applyCutoutImage(img, this.cutoutPending); return; }
             // The layer's own pixels (transparent parts turn black on the way to RGB).
             const up = await uploadCanvas(layer.canvas, `n${this.node.id}_cutsrc`);
             const prompt = {
@@ -4875,6 +4886,19 @@ class InpaintEditor {
         if (!this.layers.includes(layer)) { this.cutoutPending = null; this.renderLayers(); return; }
         try {
             const img = await loadImageEl(viewUrl({ filename: info.filename, subfolder: info.subfolder || SUBFOLDER, type: info.type || "temp" }));
+            await this.applyCutoutImage(img, pending);
+        } catch (err) {
+            console.error(err);
+            this.setStatus("Could not apply the cutout: " + (err.message || err));
+            if (this.cutoutPending === pending) this.cutoutPending = null;
+            this.renderLayers();
+        }
+    }
+
+    /** A grayscale mask (any size, white = keep) for the pending cutout's layer -> its transparency mask. */
+    async applyCutoutImage(img, pending) {
+        const layer = pending.layer;
+        try {
             const W = layer.canvas.width, H = layer.canvas.height;
             const tmp = makeCanvas(W, H);
             const tctx = tmp.getContext("2d");
@@ -6949,6 +6973,8 @@ Size as width x height:`, cur);
 
     /** Drop the helper models from VRAM: ComfyUI's /free resets the executor, which releases the node instances holding them. */
     async freeHelperModels() {
+        try { await host.freeHelpers(); } catch (err) { console.warn(err); }
+        if (!host.connected) { this.helperUsed = false; this.setStatus("In-app helper models freed."); return; }
         try {
             this.setStatus("Freeing helper models (SAM, Qwen-VL) from VRAM ...");
             const r = await api.fetchApi("/free", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ unload_models: true, free_memory: true }) });

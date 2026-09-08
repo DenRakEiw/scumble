@@ -510,6 +510,224 @@ export const host = {
         }
         return Array.from(keys);
     },
+
+    // ---- in-app helpers: SAM2 objects and background removal through ONNX Runtime -----------
+    //
+    // The main process (electron/main/onnx) holds the models; the renderer scales the
+    // source to the model's 1024 × 1024 input with Canvas 2D and scales the answer back.
+    // The editor asks through objectBackendAvailable() / ensureObjects() and
+    // availableCutoutBackends() / cutoutLayer() (patched in tools/sync_editor.py); when
+    // no in-app model is present, the ComfyUI helper prompts run as in the node.
+
+    helpers: { models: [], sam2: null, matting: null, runtime: null },
+    onHelpersChanged: null,   // set by the shell: (status) => void
+
+    /** Ask the main process what is downloaded and refresh the editors' model lists. */
+    async refreshHelpers() {
+        try { this.helpers = await window.scumble.helpers.status(); } catch (err) { console.warn("helpers status", err); this.helpers = { models: [] }; }
+        for (const ed of this._editors) { try { ed.refreshCutoutBackends(); } catch (_) { /* not built yet */ } }
+        if (this.onHelpersChanged) { try { this.onHelpersChanged(this.helpers); } catch (err) { console.warn(err); } }
+        return this.helpers;
+    },
+
+    presentHelpers(kind) {
+        return (this.helpers.models || []).filter((m) => m.kind === kind && m.present);
+    },
+
+    /** The SAM2 model the object tool uses: the chosen one when present, else the first present. */
+    sam2Model() {
+        const all = this.presentHelpers("sam2");
+        return all.find((m) => m.id === this.helpers.sam2) || all[0] || null;
+    },
+
+    objectsInApp() {
+        return !!this.sam2Model();
+    },
+
+    /** Cutout backends in the shape of the editor's CUTOUT_BACKENDS entries (id "app:<model>"). */
+    cutoutBackends() {
+        return this.presentHelpers("matting").map((m) => ({ id: "app:" + m.id, label: `${m.label} (in-app)`, inApp: true, model: m.id, needs: [] }));
+    },
+
+    /** What a helper looks at, as a canvas: the flattened image, or one layer on neutral grey. */
+    sourceCanvas(editor, layer) {
+        if (!layer) return editor.flattenToCanvas({ forRun: true });
+        const c = document.createElement("canvas");
+        c.width = editor.width; c.height = editor.height;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#808080";
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(editor.layerPixels(layer), layer.x, layer.y, layer.w, layer.h);
+        return c;
+    },
+
+    /** RGBA bytes of a source drawn (squashed) into size × size, on `background` where it is transparent. */
+    modelInput(source, size, background) {
+        const c = document.createElement("canvas");
+        c.width = size; c.height = size;
+        const ctx = c.getContext("2d");
+        if (background) { ctx.fillStyle = background; ctx.fillRect(0, 0, size, size); }
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(source, 0, 0, size, size);
+        return new Uint8Array(ctx.getImageData(0, 0, size, size).data.buffer);
+    },
+
+    /**
+     * The object map for the hover tool from SAM2 in-app. Called by the editor's
+     * ensureObjects() with the source hash and layer; fills editor.objects through
+     * applySegmentIds like the ComfyUI path does through applySegmentsFile.
+     */
+    async findObjects(editor, pending) {
+        const model = this.sam2Model();
+        if (!model) { editor.objectsPending = null; editor.setStatus("No SAM2 model is downloaded (Settings › Helpers)."); return; }
+        editor.objectsPending = { stage: "run", ...pending };
+        try {
+            const src = this.sourceCanvas(editor, pending.layer);
+            editor.setStatus(`Finding objects with ${model.label} (in-app) ...`);
+            const image = this.modelInput(src, 1024, null);
+            const W = editor.width, H = editor.height;
+            const s = Math.min(1, 2048 / Math.max(W, H));
+            const outW = Math.max(1, Math.round(W * s)), outH = Math.max(1, Math.round(H * s));
+            editor.helperUsed = true;   // the ONNX sessions hold VRAM; freed before a local run like the ComfyUI helpers
+            const res = await window.scumble.helpers.objects({ model: model.id, key: `${editor.node.id}:${pending.hash}`, image, outWidth: outW, outHeight: outH });
+            if (editor.objectsPending && editor.objectsPending.hash !== pending.hash) return;   // a newer request took over
+            let ids;
+            if (res.width === W && res.height === H) {
+                ids = new Uint16Array(res.ids.buffer, res.ids.byteOffset, W * H);
+            } else {
+                ids = new Uint16Array(W * H);
+                const sx = res.width / W, sy = res.height / H;
+                for (let y = 0; y < H; y++) {
+                    const row = Math.min(res.height - 1, Math.floor((y + 0.5) * sy)) * res.width, o = y * W;
+                    for (let x = 0; x < W; x++) ids[o + x] = res.ids[row + Math.min(res.width - 1, Math.floor((x + 0.5) * sx))];
+                }
+            }
+            editor.objectsPending = null;
+            editor.applySegmentIds(ids, W, H, res.count, pending);
+            editor.setStatus(`${res.count} objects found with ${model.label} in ${res.seconds.toFixed(1)} s (${res.provider}). Hover to preview, click to select, click again to deselect (Shift adds, Alt subtracts).${this.slowHelperHint(res)}`);
+        } catch (err) {
+            console.error(err);
+            editor.objectsPending = null;
+            editor.setStatus("Object detection failed: " + (err.message || err));
+        }
+    },
+
+    /**
+     * Background removal of one layer in-app. Called by the editor's cutoutLayer() with
+     * cutoutPending already set; returns a grayscale canvas (white = keep) at the model
+     * size that applyCutoutImage scales onto the layer.
+     */
+    async cutoutInApp(editor, layer, backend) {
+        const model = (this.helpers.models || []).find((m) => m.id === backend.model);
+        if (!model || !model.present) throw new Error(`${backend.label} is not downloaded any more (Settings › Helpers).`);
+        // like the ComfyUI path: the layer's own pixels, transparent parts on black
+        const image = this.modelInput(layer.canvas, 1024, "#000000");
+        editor.helperUsed = true;
+        const res = await window.scumble.helpers.cutout({ model: model.id, image });
+        const c = document.createElement("canvas");
+        c.width = res.size; c.height = res.size;
+        const ctx = c.getContext("2d");
+        const out = ctx.createImageData(res.size, res.size);
+        const d = out.data;
+        for (let i = 0, j = 0; i < res.alpha.length; i++, j += 4) { const a = res.alpha[i]; d[j] = a; d[j + 1] = a; d[j + 2] = a; d[j + 3] = 255; }
+        ctx.putImageData(out, 0, 0);
+        editor.setStatus(`${layer.name}: background removed with ${model.label} in ${res.seconds.toFixed(1)} s (${res.provider}).`);
+        const hint = this.slowHelperHint(res);
+        if (hint) setTimeout(() => editor.setStatus(editor.status + hint), 50);   // after applyCutoutImage's own status line
+        return c;
+    },
+
+    /**
+     * One SAM2 point prompt on the current object-tool source (its embedding is cached in
+     * the main process by the hash ensureObjects used): a Uint8 mask at image size.
+     */
+    async segmentPoint(editor, points, box) {
+        const model = this.sam2Model();
+        if (!model || !editor.objects) throw new Error("run the object tool first");
+        const W = editor.width, H = editor.height;
+        const s = Math.min(1, 2048 / Math.max(W, H));
+        const outW = Math.max(1, Math.round(W * s)), outH = Math.max(1, Math.round(H * s));
+        const pts = points.map((p) => ({ x: p.x / W * 1024, y: p.y / H * 1024, label: p.label }));
+        const bx = box ? [box[0] / W * 1024, box[1] / H * 1024, box[2] / W * 1024, box[3] / H * 1024] : null;
+        const key = `${editor.node.id}:${editor.objects.hash}`;
+        let res;
+        try {
+            res = await window.scumble.helpers.segment({ model: model.id, key, points: pts, box: bx, outWidth: outW, outHeight: outH });
+        } catch (err) {
+            // embedding gone (freed, restarted): encode again from the same source
+            const layer = editor.objects.layerId != null ? editor.layers.find((l) => l.id === editor.objects.layerId) : null;
+            const image = this.modelInput(this.sourceCanvas(editor, layer), 1024, null);
+            res = await window.scumble.helpers.segment({ model: model.id, key, image, points: pts, box: bx, outWidth: outW, outHeight: outH });
+        }
+        if (res.width === W && res.height === H) return { mask: res.mask, score: res.score };
+        const mask = new Uint8Array(W * H);
+        const sx = res.width / W, sy = res.height / H;
+        for (let y = 0; y < H; y++) {
+            const row = Math.min(res.height - 1, Math.floor((y + 0.5) * sy)) * res.width, o = y * W;
+            for (let x = 0; x < W; x++) mask[o + x] = res.mask[row + Math.min(res.width - 1, Math.floor((x + 0.5) * sx))];
+        }
+        return { mask, score: res.score };
+    },
+
+    /**
+     * Object tool, click where the object map has nothing: segment with one SAM2 point
+     * prompt and toggle that mask in the selection (Shift adds, Alt subtracts, otherwise
+     * a click on a selected pixel subtracts). Called by the editor's toggleObjectAt().
+     */
+    async selectPoint(editor, ix, iy, p = {}) {
+        if (editor.objectsPending || editor._pointPending) return;
+        editor._pointPending = true;
+        try {
+            editor.setStatus("Segmenting what is under the cursor with SAM2 ...");
+            const { mask, score } = await this.segmentPoint(editor, [{ x: ix, y: iy, label: 1 }], null);
+            const W = editor.width, H = editor.height;
+            const layer = editor.objects && editor.objects.layerId != null ? editor.layers.find((l) => l.id === editor.objects.layerId) : null;
+            const clip = layer ? editor.layerAlpha(layer) : null;
+            let count = 0;
+            for (let i = 0; i < mask.length; i++) { if (clip && !clip[i]) mask[i] = 0; count += mask[i]; }
+            if (!count) { editor.setStatus("SAM2 found nothing at this spot. Use the brush or lasso here."); return; }
+            const x = Math.floor(ix), y = Math.floor(iy);
+            const already = editor.selection.getContext("2d").getImageData(x, y, 1, 1).data[3] > 0;
+            const subtract = p.alt ? true : (p.shift ? false : already);
+            editor.pushUndo({ kind: "selection" });
+            const shape = document.createElement("canvas");
+            shape.width = W; shape.height = H;
+            const sctx = shape.getContext("2d");
+            const im = sctx.createImageData(W, H);
+            const d = im.data;
+            for (let i = 0, j = 0; i < mask.length; i++, j += 4) if (mask[i]) { d[j] = 255; d[j + 3] = 255; }
+            sctx.putImageData(im, 0, 0);
+            const ctx = editor.selection.getContext("2d");
+            ctx.globalCompositeOperation = subtract ? "destination-out" : "source-over";
+            ctx.drawImage(shape, 0, 0);
+            ctx.globalCompositeOperation = "source-over";
+            editor.markSelectionChanged();
+            editor.draw();
+            editor.setStatus(`${subtract ? "Removed" : "Added"} what SAM2 sees at this point (${Math.round(100 * count / (W * H))}% of the image, score ${score.toFixed(2)}).`);
+        } catch (err) {
+            console.error(err);
+            editor.setStatus("Point segmentation failed: " + (err.message || err));
+        } finally {
+            editor._pointPending = false;
+        }
+    },
+
+    /**
+     * A GPU run that took far longer than it should: the card is most likely full with
+     * ComfyUI's models (measured: 125 s instead of 1.6 s with 29 of 32 GB in use), and
+     * DirectML pages through system memory. Say what helps.
+     */
+    slowHelperHint(res) {
+        if (!res || res.seconds < 15 || res.provider === "cpu") return "";
+        return this.connected
+            ? " Slow: the GPU memory is probably full with ComfyUI's models; Free VRAM (also unloads them on the server) or set the helper device to CPU in Settings."
+            : " Slow: the GPU memory is probably full; close what else uses it, or set the helper device to CPU in Settings.";
+    },
+
+    /** Release the in-app models (VRAM); the editor's "Free VRAM" button and the pre-run free call this. */
+    async freeHelpers() {
+        return window.scumble.helpers.free();
+    },
 };
 
 // ---- server events ------------------------------------------------------------------------

@@ -40,6 +40,14 @@ that spot.
 | window-level keydown handler runs for every open editor | `host.isActive(this)` guard: several editors share the window (tabs), only the active one gets shortcuts |
 | `applyFilter()` in inpaint_filters.js runs the CPU code | asks `applyFilterGL()` (renderer/editor/inpaint_filters_gl.js) first; `info.cpu = true` forces the CPU path; the table builders are exported for the GL module |
 | `app.registerExtension` block (node widget, queuePrompt wrapper, `executed` / `execution_error` routing) | dropped; `host.js` routes the websocket events to the one editor |
+| `objectBackendAvailable()` needs Kijai's SAM2 loader on the server | true as well when `host.objectsInApp()` (a SAM2 ONNX model is downloaded); the "needs Kijai" status names Settings › Helpers |
+| `ensureObjects()` queues the SAM2 helper prompt | after the staleness check: `host.findObjects(this, {hash, layer})` when a model is present (phase 3), else the helper prompt |
+| `applySegmentsFile()` decodes the label PNG and fills `this.objects` | split: the decode stays, the rest is `applySegmentIds(ids, w, h, count, pending)` which the in-app path calls directly |
+| `toggleObjectAt()` says "No object here" | with a SAM2 model in-app: `host.selectPoint(this, ix, iy, p)`, one point prompt on the cached embedding |
+| `availableCutoutBackends()` filters `CUTOUT_BACKENDS` by node types | `host.cutoutBackends()` (`app:<model>`, `inApp: true`) listed first |
+| `cutoutLayer()` uploads the layer and queues the RMBG helper prompt | picks the backend from the merged list; `inApp` → `host.cutoutInApp()` + `applyCutoutImage()`; the "no nodes" texts name Settings › Helpers |
+| `applyCutoutFile()` loads the mask PNG and applies it | split: the load stays, the rest is `applyCutoutImage(img, pending)` (any drawable, scaled onto the layer) |
+| `freeHelperModels()` POSTs `/free` | first `host.freeHelpers()` (ONNX sessions); without a server only that |
 
 Unchanged and still true in the app: uploads go to `/upload/image` with
 `input/inpaint_canvas` (`n{id}_...` names, hash de-duplicated), helper prompts (SAM3,

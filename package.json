@@ -12,9 +12,11 @@
     "dist": "electron-builder --win nsis",
     "dist:dir": "electron-builder --dir",
     "sync-editor": "python tools/sync_editor.py",
-    "smoke": "python tools/smoke_test.py"
+    "smoke": "python tools/smoke_test.py",
+    "helpers-test": "node tools/helpers_test.js"
   },
   "dependencies": {
+    "onnxruntime-node": "^1.29.0",
     "ws": "^8.21.3"
   },
   "devDependencies": {
@@ -61,6 +63,9 @@
       ],
       "category": "Graphics",
       "artifactName": "scumble-${version}.${ext}"
-    }
+    },
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/bin/**"
+    ]
   }
 }

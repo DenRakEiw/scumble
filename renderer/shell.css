@@ -64,3 +64,14 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 .shell-recipe .shell-recipe-name { color: #ddd; }
 .shell-recipe .shell-recipe-meta { color: #888; font-size: 12px; margin-left: 6px; }
 #shell-settings a { color: #f0c674; }
+
+/* helpers: one row per model */
+.shell-model { display: grid; grid-template-columns: 120px 1fr auto; gap: 4px 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+.shell-model:last-child { border-bottom: 0; }
+.shell-model .shell-model-info { color: #888; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-model .shell-model-info.present { color: #7cc47f; }
+.shell-model .shell-model-info.error { color: #e0533d; white-space: normal; }
+.shell-model .shell-model-bar { grid-column: 1 / -1; height: 3px; background: #2a2a2a; border-radius: 2px; overflow: hidden; }
+.shell-model .shell-model-bar > div { height: 100%; background: #f0c674; width: 0; }
+.shell-model button { padding: 2px 8px; font-size: 12px; }
+#shell-settings code { color: #bbb; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }

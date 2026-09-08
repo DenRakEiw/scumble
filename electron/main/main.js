@@ -12,6 +12,7 @@ const { FileMirror } = require("./files");
 const keys = require("./keys");
 const providers = require("./providers");
 const recipes = require("./recipes");
+const helpers = require("./onnx");
 
 const ROOT = path.join(__dirname, "..", "..");
 const RENDERER_DIR = path.join(ROOT, "renderer");
@@ -263,6 +264,19 @@ function installIpc() {
     ipcMain.handle("keys:clear", (_e, name) => keys.clear(name));
     ipcMain.handle("providers:list", () => providers.describeAll());
     ipcMain.handle("provider:edit", (_e, request) => providers.edit(request));
+    // in-app helper models (electron/main/onnx): SAM2 objects, background removal
+    helpers.setProgressSink((ev) => send("helpers:progress", ev));
+    ipcMain.handle("helpers:status", () => helpers.status());
+    ipcMain.handle("helpers:configure", (_e, patch) => helpers.configure(patch));
+    ipcMain.handle("helpers:browseDir", () => helpers.browseDir(win));
+    ipcMain.handle("helpers:openFolder", () => helpers.openFolder());
+    ipcMain.handle("helpers:download", (_e, id) => helpers.download(id));
+    ipcMain.handle("helpers:cancel", (_e, id) => helpers.cancel(id));
+    ipcMain.handle("helpers:remove", (_e, id) => helpers.remove(id));
+    ipcMain.handle("helpers:free", () => helpers.free());
+    ipcMain.handle("helpers:objects", (_e, req) => helpers.objects(req));
+    ipcMain.handle("helpers:segment", (_e, req) => helpers.segment(req));
+    ipcMain.handle("helpers:cutout", (_e, req) => helpers.cutout(req));
     ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: app.getPath("userData") }));
     ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
 }

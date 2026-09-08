@@ -52,68 +52,62 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   is merged (contributions that only land in the node and are never copied into the
   app do not affect the app). Only MIT/Apache/BSD/OFL dependencies in the app.
 
-## Where things stand (2026-09-08, evening)
+## Where things stand (2026-09-08, night)
 
-**Phase 2 is complete** except for the first real RunPod test. Next session: **phase 3**
-(`docs/BRIEF.md` §5: SAM2 and RMBG in-app via ONNX Runtime, model download or linked
-ComfyUI `models/` folder, object hover from SAM2 automask). Before that, if the user
-has a RunPod account ready: build and push `docker/runpod/`, start a pod, Test +
-Connect from the app, one Flux.2 Klein run (see `docker/runpod/README.md`).
+**Phase 3 is complete.** Next session: **phase 4** (`docs/BRIEF.md` §5: `--mcp` stdio
+server, the node's bridge command table as the app's command core, windowless mode,
+docs). Still open from earlier phases: the first real RunPod pod (`docker/runpod/`), and
+the five API provider adapters have never run against a live API (no keys yet; run one
+small selection per provider first and fix what the API answers).
 
-Verified with real runs on 2026-09-08 (`tools/smoke_test.py`, all PASS): the shipped
-Flux.2 Klein recipe and the *imported* node example workflow (subgraph flattened)
-through the user's ComfyUI, the loopback provider round trip (crop → main process →
-stitch → result layer equals the base inside the selection), the key store (DPAPI),
-the probe / Test button, and the recipe import of UI and API format. **The five real
-provider adapters (fal, Replicate, BFL, OpenAI, Gemini) ran against their documented
-schemas only, not against the live APIs: no keys were available in this session.** First thing to do with a key: pick the
-provider's recipe, run once on a small selection, and fix what the API answers.
+Landed on 2026-09-08 (phase 3, `docs/HELPERS.md` has the details):
 
-Landed on 2026-09-08 (phase 2):
-
-- **Provider recipes** (`kind: "provider"`, `docs/RECIPES.md`): fal.ai (Flux Fill pro,
-  Qwen Image Edit inpaint, Flux.2 pro edit), Replicate (flux-fill-pro, nano-banana,
-  qwen-image-edit; `owner/name[:version]`, per-recipe `fields` for the input names,
-  Files API for inputs over 256 kB), BFL (Flux Fill pro, Flux.2 / Kontext edit with an
-  endpoint combo), OpenAI gpt-image edit, Gemini image edit. Adapters in
-  `electron/main/providers/<id>.js` with one interface (`edit(request, ctx)`); the
-  crop and the stitch happen in the renderer (`renderer/editor/stitch.js`, a port of the
-  node's `run` / `stitch`; not ported: ECC align, Lanczos, Navier-Stokes border fill).
-  `host.runProvider` builds the request, `host.uploadResult` stores the RGBA patch in
-  the mirror as `output/inpaint_canvas/n<id>_result_<stamp>.png`, `addResults` adds the
-  layer like a node result. The Settings panel shows the recipe's `settings[]` with
-  their own `spec`. Busy state: `editor.providerPending`, indeterminate progress bar
-  via `host.onProviderRuns`. Hidden `loopback` provider for tests.
-- **Keys** in `electron/main/keys.js` (safeStorage, `<userData>/secrets.json`, the
-  renderer sees only set / last four chars). Settings › API providers: one row per
-  provider (Save / Clear / get-a-key link). The recipe note in the top bar says when
-  the selected recipe's key is missing.
-- **Remote ComfyUI**: `settings.comfy.auth` = `{type: none|basic|bearer|header, user,
-  header}`, secret under key `comfy-auth`; `authHeaders()` in `comfy.js` is applied to
-  every proxied request and the websocket. `ComfyClient.probe()` behind the Test button
-  (version, devices with VRAM, queue, node pack version via `/inpaint_canvas/info`,
-  loader combo lists → per-recipe "model files present / missing" line in the dialog).
-  `comfy:connect` takes a string (URL) or `{url, auth, secret}`.
-- **Recipe import** (`electron/main/recipes.js`): Settings › Recipes › Import, or
-  File › Import Workflow as Recipe. UI format (needs `/object_info`; subgraphs
-  flattened with `instance:inner` ids, promoted widgets, reroutes, primitives, bypass,
-  mute), API format (`result_source[_local]`, setting links), Scumble recipe files.
-  User recipes live in `<userData>/recipes/`, listed before the shipped ones, Remove
-  in the dialog. Combo specs are stored as the single chosen value; the live list
-  comes from `/object_info`.
-- **RunPod template draft** in `docker/runpod/` (ai-dock base, `provision.sh` with
-  `SCUMBLE_RECIPES` / `SCUMBLE_HELPERS` / `HF_TOKEN`), untested on a pod.
-- `backgroundThrottling: false` on the window: with the window hidden, `canvas.toBlob`
-  and timers were throttled to one per second (a provider run took 5 s instead of 1).
-- Menu: File › Import Workflow as Recipe. `shell.js` exports `selectRecipe`,
-  `loadRecipes`, `importRecipe`, `testConnection`, `connect` for tests.
+- **In-app helper models** through `onnxruntime-node` 1.29 in the main process
+  (`electron/main/onnx/`): `runtime.js` (one session per file, DirectML → CPU on
+  Windows, CUDA → CPU on Linux, CoreML on macOS; `logSeverityLevel 3`), `models.js`
+  (registry, lookup in the model folder and its `onnx/`, `sam2/`, `RMBG/` subfolders,
+  resumable downloads with progress and a Hugging Face token for gated repos),
+  `sam2.js` (encoder, decoder, automatic mask generator ported from SAM2 with the same
+  parameters as the node's `InpaintCanvasObjectMap`, point prompts), `matting.js`
+  (BiRefNet / RMBG, sigmoid when the output is a logit), `index.js` (the IPC facade:
+  status, configure, downloads, objects, segment, cutout, free).
+- **Models** (`models.js`): SAM2 tiny / small / base+ / large from
+  `vietanhdev/segment-anything-2-onnx-models` (Apache-2.0; encoder `image`
+  1×3×1024×1024 → `high_res_feats_0/1`, `image_embed`; decoder with dynamic batch);
+  BiRefNet lite and BiRefNet (`onnx-community`, MIT), RMBG-1.4 (free download,
+  non-commercial), RMBG-2.0 (gated, needs the token). All fp32. Model folder default
+  `<userData>/models`, or a ComfyUI `models` folder (downloads then go to its `onnx/`).
+- **Editor integration** (patches in `tools/sync_editor.py`, rows in `docs/SYNC.md`):
+  `objectBackendAvailable()` / `ensureObjects()` prefer `host.findObjects()` when a
+  SAM2 model is present (label map at ≤ 2048 px long side, nearest-scaled to the image,
+  `applySegmentIds()` split out of `applySegmentsFile()`); `availableCutoutBackends()`
+  lists `host.cutoutBackends()` (`app:<model>`) first and `cutoutLayer()` calls
+  `host.cutoutInApp()` (`applyCutoutImage()` split out of `applyCutoutFile()`); a click
+  beside every object in the object tool runs one SAM2 point prompt on the cached
+  embedding (`host.selectPoint`, Shift adds, Alt subtracts); Free VRAM also releases
+  the ONNX sessions, and `helperUsed` is set so a local run frees them first.
+- **Settings › Helpers** (`shell.js` `renderHelpers`): device auto / GPU / CPU, the SAM2
+  model for the object tool, model folder (Change / App folder / Open), one row per
+  model with Download (progress bar, Cancel, resume of `.part` files) or Remove, the
+  Hugging Face token (key `hf-token`), a runtime line (version, providers tried, what
+  is loaded on which provider, failures).
+- Measured on the RTX 5090 (DirectML): SAM2 base+ objects on the 512 × 384 test image
+  1.2 s warm (4.2 s with session creation), point prompt 0.4 s, BiRefNet lite cutout
+  2.5 s warm (10 s cold), RMBG-1.4 0.9 s. With the card full of ComfyUI's models (29 of
+  32 GB) DirectML pages and the object map takes 125 s; Free VRAM fixes it and the
+  status line says so after a slow run (`host.slowHelperHint`). CPU path: about 24 s. `node tools/helpers_test.js` checks the
+  modules without Electron on a synthetic image (PASS 2026-09-08).
+- `package.json`: `onnxruntime-node` dependency, `asarUnpack` for its `bin/` (DLLs next
+  to the `.node` binding), `npm run helpers-test`.
 
 Known small things: `loadFile` uploads with `overwrite=false`, so re-loading an image
 with a name already in the mirror yields `name (1).png` (ComfyUI's own rule, harmless).
 The mirror never deletes; the node's `cleanupFiles()` only cleans the server. The
 editor's per-document `settings` keep their value when a recipe with the same target
 id is re-selected (by design); the Settings panel falls back to the first combo entry
-when the stored file name is not on the server.
+when the stored file name is not on the server. The helper input is squashed to
+1024 × 1024 (SAM2's own transform and what the RMBG node does too), so very wide
+images get coarser masks; the object map is computed at ≤ 2048 px long side.
 
 ## How the app is put together
 
@@ -135,10 +129,15 @@ when the stored file name is not on the server.
   in the node (`input/inpaint_canvas`), but the upload lands in the mirror and is
   forwarded; `ensureOnServer` re-uploads before a run.
 - `renderer/shell.js`: tab bar, settings dialog (ComfyUI + auth + Test, API keys,
-  recipes, local files), menu commands, restore at start; exports `newDocument`,
+  recipes, helpers, local files), menu commands, restore at start; exports `newDocument`,
   `activate`, `closeDocument`, `openSettings`, `selectRecipe`, `loadRecipes`,
   `importRecipe`, `testConnection`, `connect` for tests (`import("./shell.js")` from
   the console). `window.editor` is always the active tab.
+- Helpers in-app: editor → `host.findObjects` / `host.cutoutInApp` / `host.selectPoint`
+  (source scaled to 1024² in the renderer) → IPC `helpers:objects|cutout|segment` →
+  `electron/main/onnx/index.js` → `sam2.js` / `matting.js` on the `Runtime` → label
+  map / alpha back, scaled to the image in the renderer. Models and folder in
+  `docs/HELPERS.md`.
 - Provider runs: `host.runProvider` → `renderer/editor/stitch.js` (crop) → IPC
   `provider:edit` → `electron/main/providers/index.js` picks the adapter and the key
   (`keys.js`) → `stitch.js` (composite mask, colour match) → mirror upload → `addResults`.
@@ -157,6 +156,8 @@ when the stored file name is not on the server.
   (9333 is usually taken by the node's headless tab), then `python tools/cdp.py eval|shot|log`
   and `python tools/smoke_test.py` (load, select, generate through the recipe, save,
   then the helpers and exports; `--no-helpers` for the short version).
+  `node tools/helpers_test.js` runs the ONNX modules without Electron. Start the dev
+  instance with the Bash tool's `run_in_background`; a plain `&` job dies with the shell.
   `window.editor` and `import("./editor/host.js")` are reachable from the console.
   Only one instance runs at a time (single-instance lock); stop the dev instance before
   starting `dist/win-unpacked/Scumble.exe`. `Stop-Process -Name electron` in PowerShell.

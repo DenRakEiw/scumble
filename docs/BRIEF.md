@@ -139,7 +139,10 @@ dialog for remote ComfyUI (RunPod, see `docs/RUNPOD.md`), recipe import. Done
 draft that still needs its first real pod.
 
 **Phase 3, helpers in-app (1 week):** SAM2 and RMBG through ONNX Runtime, model
-download or linked ComfyUI folder, object hover from SAM2 automask.
+download or linked ComfyUI folder, object hover from SAM2 automask. Done 2026-09-08
+(`electron/main/onnx/`, `docs/HELPERS.md`): SAM2 tiny/small/base+/large and BiRefNet
+lite/BiRefNet/RMBG-1.4/RMBG-2.0 as ONNX, DirectML on Windows, a point prompt in the
+object tool on top; text segmentation (SAM3) stays a ComfyUI helper.
 
 **Phase 4, MCP and headless (3–4 days):** `--mcp` server, command table shared with
 the node, windowless mode, docs.

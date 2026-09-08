@@ -151,6 +151,100 @@ PATCHES = [
     ("inpaint_canvas.js",
      "    notifyChanged() {\n        try { this.node.graph && this.node.graph.setDirtyCanvas && this.node.graph.setDirtyCanvas(true, true); } catch (_) { /* ignore */ }\n        try { app.canvas && app.canvas.setDirty && app.canvas.setDirty(true, true); } catch (_) { /* ignore */ }\n    }\n",
      "    notifyChanged() {\n        host.changed(this);\n    }\n", 1),
+
+    # --- in-app helpers (phase 3): SAM2 objects and background removal through ONNX Runtime in
+    #     the main process take precedence over the ComfyUI helper prompts when a model is present
+    ("inpaint_canvas.js",
+     "function objectBackendAvailable() {\n    const types = host.nodeTypes();\n",
+     "function objectBackendAvailable() {\n    if (host.objectsInApp()) return true;\n    const types = host.nodeTypes();\n", 1),
+    ("inpaint_canvas.js",
+     'this.setStatus("Object selection needs ComfyUI-segment-anything-2 (Kijai) for the SAM2 automatic mask generator."); return; }',
+     'this.setStatus("Object selection needs a SAM2 model: download one in Settings › Helpers, or install ComfyUI-segment-anything-2 (Kijai) on the server."); return; }', 1),
+    ("inpaint_canvas.js",
+     "            if (this.objects && this.objects.hash === hash && this.objects.w === this.width && this.objects.h === this.height) { this.objectsPending = null; return; }\n"
+     "            this.setStatus(`Finding objects with ${OBJECT_BACKEND.label} ...`);\n",
+     "            if (this.objects && this.objects.hash === hash && this.objects.w === this.width && this.objects.h === this.height) { this.objectsPending = null; return; }\n"
+     "            if (host.objectsInApp()) { await host.findObjects(this, { hash, layer }); return; }\n"
+     "            this.setStatus(`Finding objects with ${OBJECT_BACKEND.label} ...`);\n", 1),
+    # applySegmentsFile = decode the PNG + applySegmentIds (the in-app path hands over the ids directly)
+    ("inpaint_canvas.js",
+     "            for (let i = 0, j = 0; i < d.length; i += 4, j++) ids[j] = d[i] + (d[i + 1] << 8);\n"
+     "            if (pending.layer && w === this.width && h === this.height) {\n",
+     "            for (let i = 0, j = 0; i < d.length; i += 4, j++) ids[j] = d[i] + (d[i + 1] << 8);\n"
+     "            this.applySegmentIds(ids, w, h, info.count || 0, pending);\n"
+     "        } catch (err) {\n"
+     "            console.error(err);\n"
+     "            this.setStatus(\"Could not read the object map: \" + (err.message || err));\n"
+     "        }\n"
+     "    }\n"
+     "\n"
+     "    /** An object label map (0 = none) at w × h becomes this.objects, clipped to the source layer. */\n"
+     "    applySegmentIds(ids, w, h, count, pending = {}) {\n"
+     "        {\n"
+     "            if (pending.layer && w === this.width && h === this.height) {\n", 1),
+    ("inpaint_canvas.js",
+     "            this.objects = { hash: pending.hash, w, h, ids, count: info.count || 0, layerId: pending.layer ? pending.layer.id : null };\n",
+     "            this.objects = { hash: pending.hash, w, h, ids, count, layerId: pending.layer ? pending.layer.id : null };\n", 1),
+    ("inpaint_canvas.js",
+     "            this.setStatus(`${info.count || 0} objects found. Hover to preview, click to select, click again to deselect (Shift adds, Alt subtracts).`);\n"
+     "            if (this.hover) this.updateObjectHover(this.hover[0], this.hover[1]);\n"
+     "            this.draw();\n"
+     "        } catch (err) {\n"
+     "            console.error(err);\n"
+     "            this.setStatus(\"Could not read the object map: \" + (err.message || err));\n"
+     "        }\n"
+     "    }\n",
+     "            this.setStatus(`${count} objects found. Hover to preview, click to select, click again to deselect (Shift adds, Alt subtracts).`);\n"
+     "            if (this.hover) this.updateObjectHover(this.hover[0], this.hover[1]);\n"
+     "            this.draw();\n"
+     "        }\n"
+     "    }\n", 1),
+    # a click beside every object: one SAM2 point prompt on the cached embedding (in-app only)
+    ("inpaint_canvas.js",
+     '        if (!id) { this.setStatus("No object here. Use the brush or lasso for this spot."); return; }\n',
+     '        if (!id) { if (host.objectsInApp()) { host.selectPoint(this, ix, iy, p); return; } this.setStatus("No object here. Use the brush or lasso for this spot."); return; }\n', 1),
+    # cutout: in-app matting models are listed first
+    ("inpaint_canvas.js",
+     "function availableCutoutBackends() {\n    const types = host.nodeTypes();\n    return CUTOUT_BACKENDS.filter((b) => b.needs.every((n) => !!types[n]));\n}\n",
+     "function availableCutoutBackends() {\n    const types = host.nodeTypes();\n    return [...host.cutoutBackends(), ...CUTOUT_BACKENDS.filter((b) => b.needs.every((n) => !!types[n]))];\n}\n", 1),
+    ("inpaint_canvas.js",
+     '{ const o = document.createElement("option"); o.value = ""; o.textContent = "no RMBG nodes"; this.cutoutSel.appendChild(o); }',
+     '{ const o = document.createElement("option"); o.value = ""; o.textContent = "no model (Settings › Helpers)"; this.cutoutSel.appendChild(o); }', 1),
+    ("inpaint_canvas.js",
+     "        const backend = CUTOUT_BACKENDS.find((b) => b.id === this.cutoutSettings.backend && availableCutoutBackends().includes(b)) || availableCutoutBackends()[0];\n"
+     '        if (!backend) { this.setStatus("No background removal nodes installed (comfyui-rmbg or ComfyUI-BRIA_AI-RMBG)."); return; }\n',
+     "        const availCut = availableCutoutBackends();\n"
+     "        const backend = availCut.find((b) => b.id === this.cutoutSettings.backend) || availCut[0];\n"
+     '        if (!backend) { this.setStatus("No background removal model: download one in Settings › Helpers, or install comfyui-rmbg on the server."); return; }\n', 1),
+    ("inpaint_canvas.js",
+     "            this.setStatus(`Removing the background of ${layer.name} with ${backend.label} ...`);\n"
+     "            // The layer's own pixels (transparent parts turn black on the way to RGB).\n",
+     "            this.setStatus(`Removing the background of ${layer.name} with ${backend.label} ...`);\n"
+     "            if (backend.inApp) { const img = await host.cutoutInApp(this, layer, backend); await this.applyCutoutImage(img, this.cutoutPending); return; }\n"
+     "            // The layer's own pixels (transparent parts turn black on the way to RGB).\n", 1),
+    # applyCutoutFile = load the PNG + applyCutoutImage (the in-app path hands over a canvas)
+    ("inpaint_canvas.js",
+     "            const img = await loadImageEl(viewUrl({ filename: info.filename, subfolder: info.subfolder || SUBFOLDER, type: info.type || \"temp\" }));\n"
+     "            const W = layer.canvas.width, H = layer.canvas.height;\n",
+     "            const img = await loadImageEl(viewUrl({ filename: info.filename, subfolder: info.subfolder || SUBFOLDER, type: info.type || \"temp\" }));\n"
+     "            await this.applyCutoutImage(img, pending);\n"
+     "        } catch (err) {\n"
+     "            console.error(err);\n"
+     "            this.setStatus(\"Could not apply the cutout: \" + (err.message || err));\n"
+     "            if (this.cutoutPending === pending) this.cutoutPending = null;\n"
+     "            this.renderLayers();\n"
+     "        }\n"
+     "    }\n"
+     "\n"
+     "    /** A grayscale mask (any size, white = keep) for the pending cutout's layer -> its transparency mask. */\n"
+     "    async applyCutoutImage(img, pending) {\n"
+     "        const layer = pending.layer;\n"
+     "        try {\n"
+     "            const W = layer.canvas.width, H = layer.canvas.height;\n", 1),
+    # Free VRAM also releases the in-app sessions; without a server only those
+    ("inpaint_canvas.js",
+     "    async freeHelperModels() {\n        try {\n            this.setStatus(\"Freeing helper models (SAM, Qwen-VL) from VRAM ...\");\n",
+     "    async freeHelperModels() {\n        try { await host.freeHelpers(); } catch (err) { console.warn(err); }\n        if (!host.connected) { this.helperUsed = false; this.setStatus(\"In-app helper models freed.\"); return; }\n        try {\n            this.setStatus(\"Freeing helper models (SAM, Qwen-VL) from VRAM ...\");\n", 1),
 ]
 
 # Everything from this marker to the end of the file is the litegraph extension

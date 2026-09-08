@@ -3,8 +3,9 @@
 Loads the node's test image (from the local mirror or the connected ComfyUI:
 input/inpaint_canvas/test_base.png), selects a rectangle, sets a prompt, generates through
 the selected recipe, waits for the result layer, saves a PNG without a dialog, then runs
-the helpers against the result (select by text with SAM3, cutout with RMBG, prompt
-upsampling with Qwen-VL, object detection with SAM2, a grain filter layer plus undo, the
+the helpers against the result (select by text with SAM3, cutout with RMBG on the server
+and with the in-app matting model, prompt upsampling with Qwen-VL, object detection with
+SAM2 on the server and in-app plus a point prompt, a grain filter layer plus undo, the
 layer and mask exports, a PSD export) and screenshots the window.
 
     python tools/smoke_test.py [out_dir] ["prompt"] [--no-helpers] [--no-provider]
@@ -123,14 +124,31 @@ HELPER_STEPS = [
 """),
     ("segment-wait", wait_js("!editor.segmentPending && !/Segmenting/.test(editor.status)", "editor.getBounds()")),
     # RMBG: cut the result layer out (its mask is set when done)
+    # RMBG on the server (the in-app models would be picked first, so the ComfyUI backend is forced)
     ("cutout", """
 (async () => {
   const layer = editor.layers.find((l) => l.kind === "result") || editor.layers[editor.layers.length - 1];
+  editor.cutoutSettings.backend = "rmbg2";
   await editor.cutoutLayer(layer);
   return { status: editor.status, layer: layer && layer.name, pending: !!editor.cutoutPending };
 })()
 """),
     ("cutout-wait", wait_js("!editor.cutoutPending", "(() => { const l = editor.layers.find((l) => l.kind === 'result') || editor.layers[editor.layers.length - 1]; return l && !!l.mask; })()")),
+    # in-app matting (ONNX Runtime in the main process); skipped as done when no model is downloaded
+    ("cutout-app", """
+(async () => {
+  const host = (await import("./editor/host.js")).host;
+  const b = host.cutoutBackends()[0];
+  if (!b) return { done: true, skipped: "no in-app matting model downloaded" };
+  const layer = editor.layers.find((l) => l.kind === "result") || editor.layers[editor.layers.length - 1];
+  layer.mask = null;
+  editor.cutoutSettings.backend = b.id;
+  const t0 = Date.now();
+  await editor.cutoutLayer(layer);
+  while (editor.cutoutPending && Date.now() - t0 < 120000) await new Promise((r) => setTimeout(r, 100));
+  return { done: !!layer.mask && /in-app/.test(editor.status), status: editor.status, backend: b.id, seconds: (Date.now() - t0) / 1000 };
+})()
+"""),
     # Qwen-VL: rewrite the prompt for the selection
     ("upsample", """
 (async () => {
@@ -141,15 +159,39 @@ HELPER_STEPS = [
 """),
     ("upsample-wait", wait_js("!editor.upsamplePending", "editor.promptInput.value")),
     # SAM2 automask: object hover data
+    # SAM2 on the server (the in-app model is stubbed away for this step)
     ("objects", """
 (async () => {
-  editor.objects = null;
-  await editor.ensureObjects();
-  return { status: editor.status, pending: !!editor.objectsPending };
+  const host = (await import("./editor/host.js")).host;
+  const orig = host.objectsInApp;
+  host.objectsInApp = () => false;
+  try {
+    editor.objects = null;
+    await editor.ensureObjects();
+    return { status: editor.status, pending: !!editor.objectsPending };
+  } finally { host.objectsInApp = orig; }
 })()
 """),
     # objectsPending clears before the segments image is decoded; wait for the objects too
     ("objects-wait", wait_js("!editor.objectsPending && editor.objects", "editor.objects && editor.objects.count")),
+    # SAM2 in-app: the object map, then one point prompt on the cached embedding
+    ("objects-app", """
+(async () => {
+  const host = (await import("./editor/host.js")).host;
+  if (!host.objectsInApp()) return { done: true, skipped: "no SAM2 model downloaded" };
+  editor.objects = null;
+  const t0 = Date.now();
+  await editor.ensureObjects();
+  while (editor.objectsPending && Date.now() - t0 < 120000) await new Promise((r) => setTimeout(r, 100));
+  const o = editor.objects;
+  const before = editor.status;
+  editor.selectNone && editor.selectNone();
+  await host.selectPoint(editor, editor.width * 0.5, editor.height * 0.5, { shift: true });
+  const sel = editor.selection.getContext("2d").getImageData(0, 0, editor.width, editor.height).data;
+  let n = 0; for (let i = 3; i < sel.length; i += 4) if (sel[i]) n++;
+  return { done: !!(o && o.count) && n > 0, objects: o && o.count, status: before, point: editor.status, selectedPct: Math.round(100 * n / (editor.width * editor.height)), seconds: (Date.now() - t0) / 1000 };
+})()
+"""),
     # filter layer, then remove it again (undo of a filter step restores its params, not its existence)
     ("filter", """
 (async () => {

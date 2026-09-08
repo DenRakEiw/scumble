@@ -16,6 +16,8 @@ const ui = {
     providers: $("set-providers"), keysNote: $("set-keys-note"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setAbout: $("set-about"),
+    helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"),
+    helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
 };
 
 let settings = await window.scumble.settings.get();
@@ -345,6 +347,116 @@ async function renderProviders() {
         : "This system offers no credential store (safeStorage unavailable): keys cannot be saved.";
 }
 
+// ---- helpers (in-app models) ---------------------------------------------------------------
+
+const downloadErrors = {};   // model id -> last error text
+
+function renderHelpers(status) {
+    const st = status || host.helpers || { models: [] };
+    ui.helpersDevice.value = st.device || "auto";
+    const sam2s = (st.models || []).filter((m) => m.kind === "sam2");
+    ui.helpersSam2.innerHTML = "";
+    for (const m of sam2s) {
+        const o = document.createElement("option");
+        o.value = m.id; o.textContent = m.label + (m.present ? "" : " (not downloaded)");
+        ui.helpersSam2.appendChild(o);
+    }
+    ui.helpersSam2.value = st.sam2 || (sam2s[0] && sam2s[0].id) || "";
+    ui.helpersDir.textContent = (st.dir || "") + (st.isComfyDir ? " (ComfyUI models folder, downloads go to onnx/)" : st.isDefaultDir ? " (app folder)" : "");
+    ui.helpersDir.title = st.downloadDir || "";
+    ui.helpersDefault.disabled = !!st.isDefaultDir;
+    ui.helpersModels.innerHTML = "";
+    for (const m of st.models || []) {
+        const row = document.createElement("div");
+        row.className = "shell-model";
+        const name = document.createElement("span");
+        name.textContent = m.label;
+        name.title = `${m.kind === "sam2" ? "objects (SAM2)" : "background removal"} · ${m.source} · ${m.license}`;
+        row.appendChild(name);
+        const info = document.createElement("span");
+        info.className = "shell-model-info";
+        const dl = st.downloads && st.downloads[m.id];
+        const err = downloadErrors[m.id];
+        if (dl) {
+            info.textContent = `downloading ${dl.file} · ${fmtBytes(dl.received)} of ${fmtBytes(dl.total || m.size)}`;
+        } else if (err) {
+            info.textContent = err; info.classList.add("error");
+        } else if (m.present) {
+            info.textContent = `${fmtBytes(m.bytes)} · ${m.license}${m.note ? " · " + m.note : ""}`; info.classList.add("present");
+        } else {
+            const part = m.files.reduce((a, f) => a + (f.partial || 0), 0);
+            info.textContent = `${fmtBytes(m.size)} download · ${m.license}${m.note ? " · " + m.note : ""}${part ? ` · ${fmtBytes(part)} partial, resumes` : ""}`;
+        }
+        row.appendChild(info);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        if (dl) {
+            btn.textContent = "Cancel";
+            btn.addEventListener("click", () => window.scumble.helpers.cancel(m.id));
+        } else if (m.present) {
+            btn.textContent = "Remove";
+            btn.addEventListener("click", async () => {
+                if (!window.confirm(`Delete the files of ${m.label} (${fmtBytes(m.bytes)})?`)) return;
+                try { renderHelpers(await window.scumble.helpers.remove(m.id)); } catch (e) { downloadErrors[m.id] = String(e.message || e); renderHelpers(); }
+                host.refreshHelpers();
+            });
+        } else {
+            btn.textContent = "Download";
+            btn.addEventListener("click", async () => {
+                delete downloadErrors[m.id];
+                btn.disabled = true;
+                try {
+                    renderHelpers(await window.scumble.helpers.status());
+                    const r = await window.scumble.helpers.download(m.id);
+                    if (r) renderHelpers(r);
+                } catch (e) {
+                    downloadErrors[m.id] = String(e.message || e);
+                }
+                renderHelpers(await host.refreshHelpers());
+            });
+        }
+        row.appendChild(btn);
+        if (dl) {
+            const bar = document.createElement("div");
+            bar.className = "shell-model-bar";
+            const fill = document.createElement("div");
+            fill.style.width = Math.round(100 * dl.received / (dl.total || m.size || 1)) + "%";
+            bar.appendChild(fill);
+            row.appendChild(bar);
+        }
+        ui.helpersModels.appendChild(row);
+    }
+    const hf = st.hfToken || {};
+    ui.hfState.textContent = hf.set ? `token set (…${hf.hint})` : "no token";
+    ui.hfState.classList.toggle("set", !!hf.set);
+    ui.hfClear.disabled = !hf.set;
+    const rt = st.runtime || {};
+    const active = Object.values(rt.active || {});
+    const used = active.length ? Array.from(new Set(active)).map((p) => (rt.labels || {})[p] || p).join(", ") : null;
+    const fails = Object.entries(rt.failures || {}).map(([p, e]) => `${(rt.labels || {})[p] || p}: ${e}`).join("; ");
+    ui.helpersNote.textContent = `ONNX Runtime ${rt.version || "?"} · will try ${(rt.candidates || []).map((p) => (rt.labels || {})[p] || p).join(", then ")}` + (used ? ` · loaded on ${used} (${rt.loaded} session${rt.loaded === 1 ? "" : "s"})` : " · nothing loaded yet") + (fails ? ` · failed: ${fails}` : "");
+}
+
+ui.helpersDevice.addEventListener("change", async () => renderHelpers(await window.scumble.helpers.configure({ device: ui.helpersDevice.value })));
+ui.helpersSam2.addEventListener("change", async () => { renderHelpers(await window.scumble.helpers.configure({ sam2: ui.helpersSam2.value })); host.refreshHelpers(); });
+ui.helpersBrowse.addEventListener("click", async () => { const r = await window.scumble.helpers.browseDir(); if (r) { renderHelpers(r); host.refreshHelpers(); } });
+ui.helpersDefault.addEventListener("click", async () => { renderHelpers(await window.scumble.helpers.configure({ dir: null })); host.refreshHelpers(); });
+ui.helpersOpen.addEventListener("click", () => window.scumble.helpers.openFolder());
+ui.hfToken.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); ui.hfSave.click(); } });
+ui.hfSave.addEventListener("click", async () => {
+    try { await window.scumble.keys.set("hf-token", ui.hfToken.value); ui.hfToken.value = ""; renderHelpers(await window.scumble.helpers.status()); } catch (e) { ui.hfState.textContent = String(e.message || e); }
+});
+ui.hfClear.addEventListener("click", async () => { await window.scumble.keys.clear("hf-token"); renderHelpers(await window.scumble.helpers.status()); });
+
+let helpersRenderTimer = null;
+window.scumble.helpers.onProgress((ev) => {
+    if (ev.error) downloadErrors[ev.id] = ev.error;
+    if (!ui.settings.open) return;
+    clearTimeout(helpersRenderTimer);
+    helpersRenderTimer = setTimeout(async () => { try { renderHelpers(await window.scumble.helpers.status()); } catch (_) { /* closing */ } }, ev.done || ev.error ? 0 : 250);
+});
+host.onHelpersChanged = (st) => { if (ui.settings.open) renderHelpers(st); };
+
 // ---- progress ----------------------------------------------------------------------------
 
 api.addEventListener("progress", ({ detail }) => {
@@ -410,6 +522,7 @@ async function openSettings() {
     await loadProviders();
     await renderProviders();
     renderRecipeList();
+    try { renderHelpers(await window.scumble.helpers.status()); } catch (err) { ui.helpersNote.textContent = String(err.message || err); }
     if (!ui.settings.open) ui.settings.showModal();
 }
 
@@ -462,6 +575,7 @@ if (!host.editors().length) newDocument();
 activate(host.editor);
 await loadProviders();
 await loadRecipes();
+await host.refreshHelpers();
 selectRecipe(settings.recipe);
 showStatus(await window.scumble.comfy.status());
 

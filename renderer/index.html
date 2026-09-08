@@ -54,6 +54,28 @@
       <p class="shell-help">Import a ComfyUI workflow that contains an Inpaint Canvas node (saved from the ComfyUI UI, or exported in API format) to run it as a recipe. Its result input decides the mode, wired setting outputs become controls in the Settings panel. A workflow in UI format needs a connected ComfyUI (node definitions).</p>
     </section>
     <section>
+      <h3>Helpers (in-app models)</h3>
+      <div class="shell-grid">
+        <label class="shell-field">Device <select id="set-helpers-device">
+          <option value="auto">auto (GPU, CPU as fallback)</option>
+          <option value="gpu">GPU</option>
+          <option value="cpu">CPU</option>
+        </select></label>
+        <label class="shell-field">Object tool <select id="set-helpers-sam2"></select></label>
+      </div>
+      <div class="shell-row"><span class="shell-note" id="set-helpers-dir" title=""></span><button id="set-helpers-browse" type="button">Change folder ...</button><button id="set-helpers-default" type="button">App folder</button><button id="set-helpers-open" type="button">Open folder</button></div>
+      <div id="set-helpers-models"></div>
+      <div class="shell-provider" id="set-hf-row">
+        <span>Hugging Face token</span>
+        <input id="set-hf-token" type="password" placeholder="hf_... (only for gated models such as RMBG-2.0)" autocomplete="off" spellcheck="false">
+        <button id="set-hf-save" type="button">Save</button>
+        <button id="set-hf-clear" type="button">Clear</button>
+        <span id="set-hf-state" class="shell-key-state"></span>
+      </div>
+      <p id="set-helpers-note" class="shell-help"></p>
+      <p class="shell-help">The object tool (O) and layer cutouts run these models inside the app through ONNX Runtime, no ComfyUI needed. Point the folder at a ComfyUI <code>models</code> folder to share the files (they go to its <code>onnx</code> subfolder); the app looks in <code>onnx</code>, <code>sam2</code> and <code>RMBG</code> there. Selection by text (SAM3) still runs on the server.</p>
+    </section>
+    <section>
       <h3>Local files</h3>
       <p id="set-files" class="shell-help"></p>
       <div class="shell-row"><button id="set-open-files" type="button">Open folder</button><button id="set-prune" type="button">Remove unreferenced files</button><span id="set-prune-note" class="shell-note"></span></div>
