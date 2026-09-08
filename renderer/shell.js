@@ -1,5 +1,6 @@
 // The shell around the editor: connection bar, recipe picker, progress, tabs (one editor
-// per document), the settings dialog and the menu commands.
+// per document), the settings dialog (ComfyUI connection with auth, API provider keys,
+// recipes, local files) and the menu commands.
 import { host, api } from "./editor/host.js";
 import { InpaintEditor } from "./editor/inpaint_canvas.js";
 import { glFiltersAvailable } from "./editor/inpaint_filters_gl.js";
@@ -9,12 +10,17 @@ const ui = {
     recipe: $("shell-recipe"), recipeNote: $("shell-recipe-note"), url: $("shell-url"), connect: $("shell-connect"),
     dot: $("shell-dot"), statusText: $("shell-status-text"), progress: $("shell-progress"), progressBar: $("shell-progress-bar"), progressText: $("shell-progress-text"),
     tabs: $("shell-tab-list"), tabAdd: $("shell-tab-add"),
-    settings: $("shell-settings"), setUrl: $("set-url"), setConnect: $("set-connect"), setConn: $("set-conn"), setFiles: $("set-files"),
-    setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setAbout: $("set-about"),
+    settings: $("shell-settings"), setUrl: $("set-url"), setConnect: $("set-connect"), setTest: $("set-test"), setConn: $("set-conn"), setProbe: $("set-probe"),
+    authType: $("set-auth-type"), authUser: $("set-auth-user"), authUserRow: $("set-auth-user-row"), authHeader: $("set-auth-header"), authHeaderRow: $("set-auth-header-row"),
+    authSecret: $("set-auth-secret"), authSecretRow: $("set-auth-secret-row"), authSecretLabel: $("set-auth-secret-label"),
+    providers: $("set-providers"), keysNote: $("set-keys-note"),
+    recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
+    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setAbout: $("set-about"),
 };
 
 let settings = await window.scumble.settings.get();
 let lastStatus = { state: "disconnected", message: "not connected" };
+let lastProbe = null;
 ui.url.value = (settings.comfy && settings.comfy.url) || "http://127.0.0.1:8188";
 
 // ---- documents (tabs) --------------------------------------------------------------------
@@ -41,7 +47,7 @@ function docName(editor) {
 }
 
 function busy(editor) {
-    return !!(editor.pending || editor.segmentPending || editor.cutoutPending || editor.upsamplePending || editor.objectsPending || editor._loading);
+    return !!(editor.pending || editor.segmentPending || editor.cutoutPending || editor.upsamplePending || editor.objectsPending || editor._loading || editor.providerPending);
 }
 
 let tabSignature = "";
@@ -109,54 +115,265 @@ function showStatus(st) {
     lastStatus = st;
     ui.dot.className = "dot " + (st.state || "");
     ui.statusText.textContent = st.message || st.state || "";
-    ui.statusText.title = [st.url, st.devices].filter(Boolean).join("\n");
+    ui.statusText.title = [st.url, st.devices, st.auth ? "with auth headers" : ""].filter(Boolean).join("\n");
     ui.setConn.textContent = st.message || st.state || "";
     if (st.state === "connected" || st.state === "missing-node") host.onConnected(st).catch((err) => console.error(err));
 }
 
-async function connect(url) {
-    url = (url || ui.url.value).trim();
+/** The auth fields of the dialog as the main process wants them; secret only when typed. */
+function authFromDialog() {
+    const type = ui.authType.value || "none";
+    const auth = { type, user: ui.authUser.value.trim(), header: ui.authHeader.value.trim() };
+    const conn = { url: ui.setUrl.value.trim(), auth };
+    if (type !== "none" && ui.authSecret.value !== "") conn.secret = ui.authSecret.value;
+    if (type === "none") conn.secret = "";
+    return conn;
+}
+
+function syncAuthRows() {
+    const t = ui.authType.value;
+    ui.authUserRow.hidden = t !== "basic";
+    ui.authHeaderRow.hidden = t !== "header";
+    ui.authSecretRow.hidden = t === "none";
+    ui.authSecretLabel.textContent = t === "basic" ? "Password" : t === "bearer" ? "Token" : "Value";
+}
+ui.authType.addEventListener("change", syncAuthRows);
+
+/** Connect: from the top bar (URL only, stored auth) or from the dialog (URL + auth). */
+async function connect(conn) {
+    if (!conn) conn = ui.url.value.trim();
+    const url = typeof conn === "string" ? conn : conn.url;
     ui.url.value = url; ui.setUrl.value = url;
-    settings = await window.scumble.settings.set({ comfy: { ...(settings.comfy || {}), url } });
-    showStatus(await window.scumble.comfy.connect(url));
+    const st = await window.scumble.comfy.connect(conn);
+    settings = await window.scumble.settings.get();
+    if (typeof conn === "object") ui.authSecret.value = "";
+    showStatus(st);
 }
 
 ui.connect.addEventListener("click", () => connect());
 ui.url.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); connect(); } });
 window.scumble.comfy.onStatus(showStatus);
 
+function fmtGb(b) { return (b / 1024 ** 3).toFixed(1) + " GB"; }
+
+/** The Test button: probe without connecting, then compare the recipe's model files with the server's lists. */
+async function testConnection() {
+    ui.setTest.disabled = true;
+    ui.setProbe.hidden = false;
+    ui.setProbe.textContent = "probing " + ui.setUrl.value.trim() + " ...";
+    try {
+        const p = await window.scumble.comfy.probe(authFromDialog());
+        lastProbe = p;
+        const lines = [];
+        const line = (cls, text) => { const s = document.createElement("span"); s.className = cls; s.textContent = text; return s; };
+        lines.push(line("ok", `ComfyUI ${p.version} reached in ${p.latency} ms` + (p.os ? ` (${p.os}, Python ${p.python})` : "")));
+        for (const d of p.devices) lines.push(line("", `  ${d.name}` + (d.vramTotal ? `, VRAM ${fmtGb(d.vramFree)} free of ${fmtGb(d.vramTotal)}` : "")));
+        if (p.queue) lines.push(line("", `  queue: ${p.queue.running} running, ${p.queue.pending} pending`));
+        lines.push(line(p.node ? "ok" : "bad", p.node ? `Inpaint Canvas node pack ${p.nodeVersion || "present"}` : "Inpaint Canvas node pack missing: install ComfyUI-InpaintCanvas there (Manager or git clone)"));
+        for (const r of recipes.filter((x) => x.kind !== "provider")) {
+            const report = recipeModelReport(r, p);
+            if (report) lines.push(line(report.missing.length ? "bad" : "ok", `${r.name || r.id}: ${report.text}`));
+        }
+        ui.setProbe.replaceChildren(...lines.flatMap((l, i) => (i ? ["\n", l] : [l])));
+    } catch (err) {
+        ui.setProbe.replaceChildren(Object.assign(document.createElement("span"), { className: "bad", textContent: String(err.message || err) }));
+    } finally {
+        ui.setTest.disabled = false;
+    }
+}
+
+/** Which of the recipe's loader settings name a file the probed server lists. */
+function recipeModelReport(recipe, probe) {
+    if (!recipe.prompt || !probe.models) return null;
+    const checks = [];
+    for (const s of recipe.settings || []) {
+        const node = recipe.prompt[s.node];
+        if (!node) continue;
+        const list = probe.models[`${node.class_type}.${s.input}`];
+        if (!list) continue;
+        const want = node.inputs && node.inputs[s.input];
+        if (typeof want !== "string") continue;
+        checks.push({ label: s.label || s.input, want, ok: list.includes(want), list });
+    }
+    if (!checks.length) return null;
+    const missing = checks.filter((c) => !c.ok);
+    const text = missing.length
+        ? `${checks.length - missing.length} of ${checks.length} model files found; missing: ${missing.map((c) => `${c.label} "${c.want}"`).join(", ")} (pick another in the Settings panel)`
+        : `all ${checks.length} model files present`;
+    return { checks, missing, text };
+}
+
+ui.setTest.addEventListener("click", () => testConnection());
+ui.setConnect.addEventListener("click", () => connect(authFromDialog()));
+ui.setUrl.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); connect(authFromDialog()); } });
+
 // ---- recipes ---------------------------------------------------------------------------
 
-const recipes = await window.scumble.recipes.list();
-for (const r of recipes) {
-    const o = document.createElement("option");
-    o.value = r.id; o.textContent = r.name || r.id;
-    ui.recipe.appendChild(o);
+let recipes = [];
+let providers = [];
+
+async function loadRecipes() {
+    recipes = await window.scumble.recipes.list();
+    ui.recipe.innerHTML = "";
+    const groups = [["ComfyUI", (r) => r.kind !== "provider"], ["API providers", (r) => r.kind === "provider"]];
+    for (const [label, test] of groups) {
+        const items = recipes.filter(test);
+        if (!items.length) continue;
+        const g = document.createElement("optgroup");
+        g.label = label;
+        for (const r of items) {
+            const o = document.createElement("option");
+            o.value = r.id; o.textContent = (r.name || r.id) + (r.source === "user" ? " (imported)" : "");
+            g.appendChild(o);
+        }
+        ui.recipe.appendChild(g);
+    }
 }
+
+function providerKeyState(r) {
+    if (r.kind !== "provider") return null;
+    const p = providers.find((x) => x.id === r.provider);
+    if (!p) return r.provider === "loopback" ? { ok: true } : { ok: false, text: `unknown provider "${r.provider}"` };
+    return p.key && p.key.set ? { ok: true } : { ok: false, text: `no ${p.label} key yet: Settings (Ctrl+,) › API providers` };
+}
+
 function selectRecipe(id) {
     const r = recipes.find((x) => x.id === id) || recipes[0];
     if (!r) { ui.recipeNote.textContent = "no recipes found"; return; }
     ui.recipe.value = r.id;
-    ui.recipeNote.textContent = r.description || "";
+    const ks = providerKeyState(r);
+    ui.recipeNote.textContent = ks && !ks.ok ? ks.text : (r.description || "");
     ui.recipeNote.title = r.description || "";
+    ui.recipeNote.style.color = ks && !ks.ok ? "#e0a05a" : "";
+    if (r.kind === "provider") r.providerLabel = (providers.find((x) => x.id === r.provider) || {}).label || r.provider;
     host.setRecipe(r);
     if (settings.recipe !== r.id) window.scumble.settings.set({ recipe: r.id }).then((s) => { settings = s; });
 }
 ui.recipe.addEventListener("change", () => selectRecipe(ui.recipe.value));
+
+function renderRecipeList() {
+    ui.recipes.innerHTML = "";
+    for (const r of recipes) {
+        const row = document.createElement("div");
+        row.className = "shell-recipe";
+        const name = document.createElement("span");
+        name.className = "shell-recipe-name";
+        name.textContent = r.name || r.id;
+        const meta = document.createElement("span");
+        meta.className = "shell-recipe-meta";
+        meta.textContent = r.kind === "provider" ? `${(providers.find((x) => x.id === r.provider) || {}).label || r.provider} · ${r.model || ""}` : `ComfyUI · ${r.mode || "local"} · ${Object.keys(r.prompt || {}).length} nodes`;
+        name.appendChild(meta);
+        row.appendChild(name);
+        const use = document.createElement("button");
+        use.type = "button"; use.textContent = "Use";
+        use.addEventListener("click", () => selectRecipe(r.id));
+        row.appendChild(use);
+        const del = document.createElement("button");
+        del.type = "button"; del.textContent = "Remove"; del.disabled = r.source !== "user"; del.title = r.source === "user" ? "Delete this imported recipe" : "Shipped recipe";
+        del.addEventListener("click", async () => {
+            if (!window.confirm(`Remove the recipe "${r.name || r.id}"?`)) return;
+            try { await window.scumble.recipes.remove(r.id); await loadRecipes(); renderRecipeList(); selectRecipe(settings.recipe); } catch (err) { ui.recipeNoteSet.textContent = String(err.message || err); }
+        });
+        row.appendChild(del);
+        ui.recipes.appendChild(row);
+    }
+}
+
+async function importRecipe(file) {
+    ui.recipeNoteSet.textContent = "";
+    try {
+        const r = await window.scumble.recipes.import(file || undefined);
+        if (!r) return null;
+        await loadRecipes();
+        renderRecipeList();
+        selectRecipe(r.id);
+        ui.recipeNoteSet.textContent = `Imported "${r.name}" (${r.mode}, ${Object.keys(r.prompt || {}).length} nodes, ${(r.settings || []).length} settings)` + (r.notes && r.notes.length ? ": " + r.notes.join("; ") : ".");
+        return r;
+    } catch (err) {
+        ui.recipeNoteSet.textContent = String(err.message || err);
+        return null;
+    }
+}
+ui.recipeImport.addEventListener("click", () => importRecipe());
+ui.recipeFolder.addEventListener("click", () => window.scumble.recipes.openFolder());
+
+// ---- providers (keys) ----------------------------------------------------------------
+
+async function loadProviders() {
+    providers = await window.scumble.providers.list();
+}
+
+async function renderProviders() {
+    const info = await window.scumble.keys.list();
+    ui.providers.innerHTML = "";
+    for (const p of providers) {
+        const row = document.createElement("div");
+        row.className = "shell-provider";
+        const label = document.createElement("span");
+        label.textContent = p.label;
+        row.appendChild(label);
+        const input = document.createElement("input");
+        input.type = "password"; input.placeholder = p.keyHint || "API key"; input.autocomplete = "off"; input.spellcheck = false;
+        input.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); save.click(); } });
+        row.appendChild(input);
+        const save = document.createElement("button");
+        save.type = "button"; save.textContent = "Save";
+        save.addEventListener("click", async () => {
+            try { await window.scumble.keys.set(p.id, input.value); input.value = ""; await loadProviders(); await renderProviders(); selectRecipe(ui.recipe.value); } catch (err) { state.textContent = String(err.message || err); }
+        });
+        row.appendChild(save);
+        const clear = document.createElement("button");
+        clear.type = "button"; clear.textContent = "Clear";
+        clear.addEventListener("click", async () => { await window.scumble.keys.clear(p.id); await loadProviders(); await renderProviders(); selectRecipe(ui.recipe.value); });
+        row.appendChild(clear);
+        const state = document.createElement("span");
+        const k = p.key || {};
+        state.className = "shell-key-state" + (k.set ? " set" : "");
+        clear.disabled = !k.set;
+        state.textContent = k.set ? `key set (…${k.hint})` : "no key";
+        if (p.keyUrl) {
+            state.append(" · ");
+            const a = document.createElement("a");
+            a.href = "#"; a.textContent = "get a key"; a.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal(p.keyUrl); });
+            state.appendChild(a);
+        }
+        row.appendChild(state);
+        ui.providers.appendChild(row);
+    }
+    ui.keysNote.textContent = info.available
+        ? `Keys are encrypted with the system credential store (${info.backend}) and stored in secrets.json; they never leave this machine except in the request to the provider itself.`
+        : "This system offers no credential store (safeStorage unavailable): keys cannot be saved.";
+}
 
 // ---- progress ----------------------------------------------------------------------------
 
 api.addEventListener("progress", ({ detail }) => {
     if (!detail || !detail.max) return;
     ui.progress.hidden = false;
+    ui.progress.classList.remove("indeterminate");
     const pct = Math.round((detail.value / detail.max) * 100);
     ui.progressBar.style.width = pct + "%";
     ui.progressText.textContent = `${detail.value} / ${detail.max}`;
-    if (detail.value >= detail.max) setTimeout(() => { ui.progress.hidden = true; }, 800);
+    if (detail.value >= detail.max) setTimeout(() => { if (!host._providerRuns.size) ui.progress.hidden = true; }, 800);
 });
-api.addEventListener("execution_error", () => { ui.progress.hidden = true; });
-api.addEventListener("execution_interrupted", () => { ui.progress.hidden = true; });
+api.addEventListener("execution_error", () => { if (!host._providerRuns.size) ui.progress.hidden = true; });
+api.addEventListener("execution_interrupted", () => { if (!host._providerRuns.size) ui.progress.hidden = true; });
 api.addEventListener("executed", () => setTimeout(renderTabs, 50));
+
+let providerTimer = null;
+host.onProviderRuns = (runs) => {
+    clearInterval(providerTimer); providerTimer = null;
+    if (!runs.length) { ui.progress.hidden = true; ui.progress.classList.remove("indeterminate"); ui.progressBar.style.left = ""; renderTabs(); return; }
+    ui.progress.hidden = false;
+    ui.progress.classList.add("indeterminate");
+    const tick = () => {
+        const r = runs[0];
+        ui.progressText.textContent = `${r.label || r.provider} · ${Math.round((Date.now() - r.started) / 1000)} s${runs.length > 1 ? ` (+${runs.length - 1})` : ""}`;
+    };
+    tick();
+    providerTimer = setInterval(tick, 1000);
+    renderTabs();
+};
 
 // ---- settings dialog ---------------------------------------------------------------------
 
@@ -172,20 +389,30 @@ async function refreshFileStats() {
 }
 
 async function openSettings() {
-    ui.setUrl.value = ui.url.value;
+    settings = await window.scumble.settings.get();
+    ui.setUrl.value = (settings.comfy && settings.comfy.url) || ui.url.value;
+    const auth = (settings.comfy && settings.comfy.auth) || { type: "none" };
+    ui.authType.value = auth.type || "none";
+    ui.authUser.value = auth.user || "";
+    ui.authHeader.value = auth.header || "";
+    ui.authSecret.value = "";
+    syncAuthRows();
     ui.setConn.textContent = lastStatus.message || lastStatus.state || "";
+    ui.setProbe.hidden = true;
     ui.setPruneNote.textContent = "";
+    ui.recipeNoteSet.textContent = "";
     ui.setGpu.textContent = glFiltersAvailable() ? "Filter layers run on the GPU (WebGL2); the CPU code is the fallback." : "WebGL2 is not available here: filter layers run on the CPU.";
     try {
         const info = await window.scumble.info();
         ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}`;
     } catch (_) { /* ignore */ }
     refreshFileStats();
+    await loadProviders();
+    await renderProviders();
+    renderRecipeList();
     if (!ui.settings.open) ui.settings.showModal();
 }
 
-ui.setConnect.addEventListener("click", () => connect(ui.setUrl.value));
-ui.setUrl.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); connect(ui.setUrl.value); } });
 ui.setOpenFiles.addEventListener("click", () => window.scumble.files.openFolder());
 ui.setPrune.addEventListener("click", async () => {
     ui.setPrune.disabled = true;
@@ -220,6 +447,7 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "close-tab") closeDocument(host.editor);
     else if (cmd === "next-tab") cycleTab(1);
     else if (cmd === "prev-tab") cycleTab(-1);
+    else if (cmd === "import-recipe") importRecipe();
 });
 
 // ---- start: restore the last session, then connect ---------------------------------------
@@ -232,7 +460,9 @@ try {
 }
 if (!host.editors().length) newDocument();
 activate(host.editor);
+await loadProviders();
+await loadRecipes();
 selectRecipe(settings.recipe);
 showStatus(await window.scumble.comfy.status());
 
-export { newDocument, activate, closeDocument, openSettings };
+export { newDocument, activate, closeDocument, openSettings, selectRecipe, loadRecipes, importRecipe, testConnection, connect };

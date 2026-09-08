@@ -1,0 +1,73 @@
+{
+  "id": "openai_gpt_image",
+  "kind": "provider",
+  "provider": "openai",
+  "model": "gpt-image-1.5",
+  "input": "fill",
+  "name": "gpt-image edit via OpenAI",
+  "description": "OpenAI image edit with the selection as mask. The three fixed sizes are used unless the model is gpt-image-2 (then the crop's own size); a different aspect is center-cropped on stitch. Needs an OpenAI key.",
+  "settings": [
+    {
+      "index": 1,
+      "key": "model",
+      "label": "Model",
+      "spec": [
+        [
+          "gpt-image-1.5",
+          "gpt-image-1",
+          "gpt-image-1-mini",
+          "gpt-image-2"
+        ],
+        {
+          "default": "gpt-image-1.5"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "key": "quality",
+      "label": "Quality",
+      "spec": [
+        [
+          "auto",
+          "low",
+          "medium",
+          "high"
+        ],
+        {
+          "default": "auto"
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "key": "input_fidelity",
+      "label": "Input fidelity",
+      "spec": [
+        [
+          "low",
+          "high"
+        ],
+        {
+          "default": "high"
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "key": "size",
+      "label": "Size",
+      "spec": [
+        [
+          "auto",
+          "1024x1024",
+          "1536x1024",
+          "1024x1536"
+        ],
+        {
+          "default": "auto"
+        }
+      ]
+    }
+  ]
+}

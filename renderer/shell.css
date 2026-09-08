@@ -31,7 +31,7 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 #shell-tab-add:hover { background: #1e1e1e; color: #eee; }
 #editor-host { position: relative; flex: 1; min-height: 0; }
 #editor-host > .ipc-modal { position: absolute; inset: 0; }
-.shell-hidden { display: none !important; }
+.shell-hidden, [hidden] { display: none !important; }
 
 #shell-settings { background: #202020; color: #ddd; border: 1px solid #444; border-radius: 6px; padding: 0; width: 560px; max-width: 92vw; font: 13px/1.4 system-ui, sans-serif; }
 #shell-settings::backdrop { background: rgba(0, 0, 0, 0.55); }
@@ -47,3 +47,20 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 .shell-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .shell-row.shell-right { justify-content: flex-end; margin-top: 4px; }
 .shell-help { color: #888; margin: 6px 0 0; font-size: 12px; }
+#shell-progress.indeterminate #shell-progress-bar { width: 40%; animation: shell-slide 1.2s ease-in-out infinite alternate; background: #8a6fb5; }
+@keyframes shell-slide { from { left: 0; } to { left: 60%; } }
+#shell-settings { max-height: 92vh; overflow-y: auto; }
+.shell-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 8px; }
+.shell-grid .shell-field select { width: 100%; }
+.shell-report { background: #141414; border: 1px solid #333; border-radius: 3px; padding: 6px 8px; margin: 8px 0 0; font: 12px/1.4 ui-monospace, Consolas, monospace; color: #bbb; white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
+.shell-report .ok { color: #7cc47f; }
+.shell-report .bad { color: #e0533d; }
+.shell-provider, .shell-recipe { display: grid; grid-template-columns: 130px 1fr auto auto; gap: 6px 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
+.shell-recipe { grid-template-columns: 1fr auto auto; }
+.shell-provider:last-child, .shell-recipe:last-child { border-bottom: 0; }
+.shell-provider input { width: 100%; background: #111; color: #ddd; border: 1px solid #333; border-radius: 3px; padding: 3px 6px; font: inherit; }
+.shell-provider .shell-key-state { grid-column: 1 / -1; color: #888; font-size: 12px; }
+.shell-provider .shell-key-state.set { color: #7cc47f; }
+.shell-recipe .shell-recipe-name { color: #ddd; }
+.shell-recipe .shell-recipe-meta { color: #888; font-size: 12px; margin-left: 6px; }
+#shell-settings a { color: #f0c674; }

@@ -38,8 +38,15 @@ models a recipe needs, reachable from the desktop app over HTTPS with an auth to
   running from the uploaded crop; check `nodes.py` `InpaintCanvas` inputs.
 - Latency: the websocket keeps the connection; results are fetched with `/view`.
 
-## Not yet done
+## Where it stands (2026-09-08)
 
-Nothing of this exists yet. Phase 2 item. Start from ai-dock's ComfyUI image, write
-`docker/runpod/Dockerfile` + `provision.sh` here, test with a real pod, then publish
-the template on RunPod under the app's name.
+- App side: done. Settings › ComfyUI has URL, auth (none / basic / bearer / custom
+  header; the secret goes into the credential store via `electron/main/keys.js`),
+  Test (`ComfyClient.probe`: version, devices, queue, node pack version, and for every
+  ComfyUI recipe whether its model files are in the server's loader lists) and
+  Connect. Every proxied request and the websocket handshake carry the auth headers
+  (`electron/main/comfy.js`).
+- Template: `docker/runpod/Dockerfile`, `provision.sh`, `README.md` written on top of
+  ai-dock's image, **not yet run on a real pod**. First test: build, push, create the
+  template with the fields in that README, start a pod, Test + Connect from the app,
+  run the Flux.2 Klein recipe. Then publish the template under the app's name.

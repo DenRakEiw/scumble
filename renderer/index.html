@@ -26,9 +26,32 @@
     <h2>Settings</h2>
     <section>
       <h3>ComfyUI</h3>
-      <label class="shell-field">Server URL <input id="set-url" type="text" spellcheck="false" placeholder="http://127.0.0.1:8188"></label>
-      <div class="shell-row"><button id="set-connect" type="button">Connect</button><span id="set-conn" class="shell-note"></span></div>
-      <p class="shell-help">Local or remote (RunPod: the proxy URL of port 8188). The Inpaint Canvas node pack must be installed there.</p>
+      <label class="shell-field">Server URL <input id="set-url" type="text" spellcheck="false" placeholder="http://127.0.0.1:8188 or https://<pod>-8188.proxy.runpod.net"></label>
+      <div class="shell-grid">
+        <label class="shell-field">Auth <select id="set-auth-type">
+          <option value="none">none</option>
+          <option value="basic">basic (user + password)</option>
+          <option value="bearer">bearer token</option>
+          <option value="header">custom header</option>
+        </select></label>
+        <label class="shell-field" id="set-auth-user-row">User <input id="set-auth-user" type="text" spellcheck="false" autocomplete="off"></label>
+        <label class="shell-field" id="set-auth-header-row">Header <input id="set-auth-header" type="text" spellcheck="false" autocomplete="off" placeholder="X-Api-Key"></label>
+        <label class="shell-field" id="set-auth-secret-row"><span id="set-auth-secret-label">Password</span> <input id="set-auth-secret" type="password" spellcheck="false" autocomplete="off" placeholder="unchanged"></label>
+      </div>
+      <div class="shell-row"><button id="set-test" type="button">Test</button><button id="set-connect" type="button">Connect</button><span id="set-conn" class="shell-note"></span></div>
+      <pre id="set-probe" class="shell-report" hidden></pre>
+      <p class="shell-help">Local or remote (RunPod: the proxy URL of port 8188, see docs/RUNPOD.md). The Inpaint Canvas node pack must be installed there. The secret is kept in the system credential store, the rest in settings.json.</p>
+    </section>
+    <section>
+      <h3>API providers</h3>
+      <div id="set-providers"></div>
+      <p id="set-keys-note" class="shell-help"></p>
+    </section>
+    <section>
+      <h3>Recipes</h3>
+      <div id="set-recipes"></div>
+      <div class="shell-row"><button id="set-recipe-import" type="button">Import workflow ...</button><button id="set-recipe-folder" type="button">Open folder</button><span id="set-recipe-note" class="shell-note"></span></div>
+      <p class="shell-help">Import a ComfyUI workflow that contains an Inpaint Canvas node (saved from the ComfyUI UI, or exported in API format) to run it as a recipe. Its result input decides the mode, wired setting outputs become controls in the Settings panel. A workflow in UI format needs a connected ComfyUI (node definitions).</p>
     </section>
     <section>
       <h3>Local files</h3>

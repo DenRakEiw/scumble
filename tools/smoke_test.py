@@ -7,7 +7,12 @@ the helpers against the result (select by text with SAM3, cutout with RMBG, prom
 upsampling with Qwen-VL, object detection with SAM2, a grain filter layer plus undo, the
 layer and mask exports, a PSD export) and screenshots the window.
 
-    python tools/smoke_test.py [out_dir] ["prompt"] [--no-helpers]
+    python tools/smoke_test.py [out_dir] ["prompt"] [--no-helpers] [--no-provider]
+
+The provider step (after the ComfyUI run) generates once more through the hidden
+"loopback" provider recipe: the crop is built in the app, sent to the main process and
+stitched back, so it checks the API-provider path without a key; the layer must equal
+the base inside the selection.
 
 A real model run: check GET /queue on the server first, it must be idle. The helpers run
 after the generate on purpose: the node frees helper models before a local run, so this
@@ -24,6 +29,7 @@ from cdp import session  # noqa: E402
 
 ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 HELPERS = "--no-helpers" not in sys.argv
+PROVIDER = "--no-provider" not in sys.argv
 OUT = os.path.abspath(ARGS[0] if ARGS else os.path.join(os.path.dirname(__file__), "..", "dist", "smoke"))
 PROMPT = ARGS[1] if len(ARGS) > 1 else "Change the white rectangle into a red apple on a wooden table, keeping the rest unchanged."
 os.makedirs(OUT, exist_ok=True)
@@ -168,6 +174,43 @@ HELPER_STEPS = [
 ]
 
 
+PROVIDER_STEPS = [
+    ("provider", """
+(async () => {
+  const { host } = await import("./editor/host.js");
+  const ed = editor;
+  const prev = host.recipe;
+  const W = ed.width, H = ed.height;
+  const m = new Uint8Array(W * H);
+  const x0 = 40, y0 = 40, x1 = 200, y1 = 200;
+  for (let y = y0; y < y1; y++) m.fill(1, y * W + x0, y * W + x1);
+  ed.applyMaskToSelection(m, "replace");
+  host.setRecipe({ id: "loopback_test", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "", input: "fill", name: "Loopback", settings: [] });
+  const before = ed.history.length;
+  const t0 = Date.now();
+  try { await ed.generate(); } finally { host.setRecipe(prev); }
+  const h = ed.history[ed.history.length - 1];
+  const layer = h && ed.layers.find((l) => l.id === h.layerId);
+  let diff = 0, n = 0, alphaIn = 0, nIn = 0;
+  if (layer) {
+    const base = ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(layer.x, layer.y, layer.w, layer.h).data;
+    const lp = layer.canvas.getContext("2d").getImageData(0, 0, layer.w, layer.h).data;
+    for (let yy = 0; yy < layer.h; yy++) for (let xx = 0; xx < layer.w; xx++) {
+      const gx = xx + layer.x, gy = yy + layer.y;
+      if (gx < x0 + 8 || gx >= x1 - 8 || gy < y0 + 8 || gy >= y1 - 8) continue;
+      const i = (yy * layer.w + xx) * 4;
+      alphaIn += lp[i + 3]; nIn++;
+      diff += Math.abs(lp[i] - base[i]) + Math.abs(lp[i + 1] - base[i + 1]) + Math.abs(lp[i + 2] - base[i + 2]); n += 3;
+    }
+    ed.removeLayer(layer.id);
+  }
+  const meanDiff = n ? diff / n : null, alpha = nIn ? alphaIn / nIn : null;
+  return { status: ed.status, seconds: (Date.now() - t0) / 1000, added: ed.history.length - before, layer: layer && { x: layer.x, y: layer.y, w: layer.w, h: layer.h }, meanDiff, alpha, done: !!layer && meanDiff !== null && meanDiff < 1 && alpha > 250 };
+})()
+"""),
+]
+
+
 async def run(c):
     ok = True
     history_before = 0
@@ -198,6 +241,18 @@ async def run(c):
             print(f"== {name} ({time.time() - t0:.1f}s)")
             print(json.dumps(v, indent=1, ensure_ascii=False)[:3000])
             if isinstance(v, dict) and (v.get("error") or v.get("done") is False or v.get("saved") is None and "saved" in v):
+                ok = False
+    if ok and PROVIDER:
+        for name, js in PROVIDER_STEPS:
+            t0 = time.time()
+            try:
+                v = await c.eval(js, timeout=300)
+            except Exception as err:
+                v = {"error": str(err)}
+                ok = False
+            print(f"== {name} ({time.time() - t0:.1f}s)")
+            print(json.dumps(v, indent=1, ensure_ascii=False)[:3000])
+            if not isinstance(v, dict) or v.get("error") or v.get("done") is not True:
                 ok = False
     await c.screenshot(os.path.join(OUT, "smoke_shot.png"))
     for k, m in await c.logs():

@@ -11,7 +11,10 @@
 //           that asked: results by prompt id, helper masks / texts by the canvas_node id
 //           the helper prompt carried (= editor.node.id).
 
+import { prepareCrop, finishResult, canvasBytes, bytesToImage } from "./stitch.js";
+
 const PROXY = "/comfy";
+const SUBFOLDER = "inpaint_canvas";
 
 // ---- api ---------------------------------------------------------------------------------
 
@@ -227,7 +230,7 @@ export const host = {
     applyRecipe(ed) {
         const r = this.recipe;
         if (!r) return;
-        const mode = r.mode === "api" ? "api" : "local";
+        const mode = r.kind === "provider" || r.mode === "api" ? "api" : "local";
         if (ed.genSettings.mode !== mode) { ed.genSettings.mode = mode; ed.syncGenControls(); }
         ed.settingsChanged();
         ed.renderInfo();
@@ -236,14 +239,28 @@ export const host = {
     /** The recipe's editable inputs in the shape settingTargets() had in the node. */
     settingTargets(editor) {
         const r = this.recipe;
-        if (!r || !r.prompt) return [];
+        if (!r) return [];
         const out = [];
+        if (r.kind === "provider") {
+            // provider parameters: the recipe carries the spec itself (no /object_info)
+            for (const s of r.settings || []) {
+                const spec = s.spec || ["STRING", {}];
+                const value = s.default !== undefined ? s.default : (spec[1] && spec[1].default !== undefined ? spec[1].default : (Array.isArray(spec[0]) ? spec[0][0] : undefined));
+                out.push({
+                    index: s.index, output: { name: `setting_${s.index}` },
+                    node: { id: "provider", title: s.label || s.key, type: r.provider },
+                    inputName: s.key, spec, widget: value !== undefined ? { value } : null,
+                });
+            }
+            return out;
+        }
+        if (!r.prompt) return [];
         for (const s of r.settings || []) {
             const node = r.prompt[s.node];
             if (!node) continue;
             const info = this.objectInfo && this.objectInfo[node.class_type];
             const inp = info && info.input;
-            const spec = inp && ((inp.required && inp.required[s.input]) || (inp.optional && inp.optional[s.input])) || null;
+            const spec = inp && ((inp.required && inp.required[s.input]) || (inp.optional && inp.optional[s.input])) || s.spec || null;
             const current = node.inputs ? node.inputs[s.input] : undefined;
             const value = s.default !== undefined ? s.default : (Array.isArray(current) ? undefined : current);
             out.push({
@@ -258,6 +275,7 @@ export const host = {
     resultInputState(editor) {
         const r = this.recipe;
         if (!r) return { name: "result_local", wired: false, fallback: false };
+        if (r.kind === "provider") return { name: "result", wired: true, fallback: editor.genSettings.mode === "local" };
         const want = editor.genSettings.mode === "local" ? "result_local" : "result";
         const has = r.mode === "api" ? "result" : "result_local";
         return { name: has, wired: !!r.result, fallback: want !== has };
@@ -268,10 +286,87 @@ export const host = {
         return v == null ? fallback : +v;
     },
 
+    /** The provider recipe's parameter values from the editor's Settings panel plus the recipe's fixed ones. */
+    providerParams(editor) {
+        const r = this.recipe;
+        const params = {};
+        for (const s of (r && r.settings) || []) {
+            const entry = editor.settings[String(s.index)];
+            if (entry && entry.value != null && entry.value !== "") params[s.key] = entry.value;
+        }
+        for (const [k, v] of Object.entries((r && r.fixed) || {})) params[k] = v;
+        return params;
+    },
+
+    /**
+     * A run through an API provider: crop in the app (stitch.js), one request to the
+     * main process (electron/main/providers), the answer stitched back into an RGBA
+     * patch that is stored in the file mirror as a result and added like a result from
+     * the node. No ComfyUI involved.
+     */
+    async runProvider(editor) {
+        const r = this.recipe;
+        if (!editor.base) throw new Error("Load an image first.");
+        const label = r.providerLabel || r.provider;
+        const token = { provider: r.provider, label, started: Date.now(), editor };
+        editor.providerPending = token;
+        this._providerRuns.add(token);
+        this.notifyProviderRuns();
+        let res, info, sel, x, y, w, h;
+        try {
+            const prep = prepareCrop(editor, this.nodeParams);
+            const { crop, mask, maskAlpha, references } = prep;
+            info = prep.info; sel = prep.sel;
+            [x, y, w, h] = info.bbox;
+        editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label} ...`);
+            const [image, maskBytes, maskAlphaBytes, ...refBytes] = await Promise.all([canvasBytes(crop), canvasBytes(mask), canvasBytes(maskAlpha), ...references.map((c) => canvasBytes(c))]);
+            const request = {
+                provider: r.provider, model: r.model, kind: r.input === "edit" ? "edit" : "fill",
+                prompt: editor.promptText || "", negative: editor.negativeText || "", seed: editor.genSettings.seed,
+                image, mask: maskBytes, maskAlpha: maskAlphaBytes, width: crop.width, height: crop.height, references: refBytes,
+                params: this.providerParams(editor),
+            };
+            res = await window.scumble.providers.edit(request);
+        } finally {
+            if (editor.providerPending === token) editor.providerPending = null;
+            this._providerRuns.delete(token);
+            this.notifyProviderRuns();
+        }
+        const img = await bytesToImage(res.bytes, res.mime);
+        const { patch, align } = finishResult(editor, info, sel, img);
+        const blob = await new Promise((resolve) => patch.toBlob(resolve, "image/png"));
+        const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+        const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
+        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
+        await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider }]);
+        return { provider: r.provider, seconds: res.seconds, x, y, w, h };
+    },
+
+    /** Store a result patch in the mirror's output folder (where the node's stitch writes its results). */
+    async uploadResult(blob, filename) {
+        const form = new FormData();
+        form.append("image", new File([blob], filename, { type: "image/png" }));
+        form.append("subfolder", SUBFOLDER);
+        form.append("type", "output");
+        const resp = await api.fetchApi("/upload/image", { method: "POST", body: form });
+        if (resp.status !== 200) throw new Error("storing the result failed (" + resp.status + ")");
+        const data = await resp.json();
+        return { filename: data.name, subfolder: data.subfolder || SUBFOLDER, type: data.type || "output" };
+    },
+
+    _providerRuns: new Set(),
+    onProviderRuns: null,   // set by the shell: (runs: [{provider, label, started, editor}]) => void
+
+    notifyProviderRuns() {
+        if (this.onProviderRuns) { try { this.onProviderRuns(Array.from(this._providerRuns)); } catch (err) { console.warn(err); } }
+    },
+
     /** Fill the recipe with the editor state and queue it. Called by editor.generate(). */
     async queueGenerate(editor) {
         const r = this.recipe;
-        if (!r || !r.prompt) throw new Error("No recipe selected.");
+        if (!r) throw new Error("No recipe selected.");
+        if (r.kind === "provider") return this.runProvider(editor);
+        if (!r.prompt) throw new Error("No recipe selected.");
         if (!this.connected) throw new Error("Not connected to ComfyUI.");
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
@@ -321,7 +416,8 @@ export const host = {
 
     /** What goes into the PNG's tEXt chunk in place of the litegraph workflow. */
     workflowForPng(editor) {
-        return { app: "scumble", recipe: this.recipe ? this.recipe.id : null, prompt: this.recipe ? this.recipe.prompt : null, nodeParams: this.nodeParams };
+        const r = this.recipe;
+        return { app: "scumble", recipe: r ? r.id : null, kind: r ? r.kind || "comfy" : null, provider: (r && r.provider) || null, model: (r && r.model) || null, prompt: r ? r.prompt || null : null, nodeParams: this.nodeParams };
     },
 
     /**

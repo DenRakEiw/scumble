@@ -22,7 +22,8 @@ contextBridge.exposeInMainWorld("scumble", {
         save: (state) => ipcRenderer.invoke("state:save", state),
     },
     comfy: {
-        connect: (url) => ipcRenderer.invoke("comfy:connect", url),
+        connect: (conn) => ipcRenderer.invoke("comfy:connect", conn),
+        probe: (conn) => ipcRenderer.invoke("comfy:probe", conn),
         disconnect: () => ipcRenderer.invoke("comfy:disconnect"),
         status: () => ipcRenderer.invoke("comfy:status"),
         clientId: () => ipcRenderer.invoke("comfy:clientId"),
@@ -42,6 +43,18 @@ contextBridge.exposeInMainWorld("scumble", {
     },
     recipes: {
         list: () => ipcRenderer.invoke("recipes:list"),
+        import: (file) => ipcRenderer.invoke("recipes:import", file),
+        remove: (id) => ipcRenderer.invoke("recipes:remove", id),
+        openFolder: () => ipcRenderer.invoke("recipes:openFolder"),
+    },
+    keys: {
+        list: () => ipcRenderer.invoke("keys:list"),
+        set: (name, value) => ipcRenderer.invoke("keys:set", { name, value }),
+        clear: (name) => ipcRenderer.invoke("keys:clear", name),
+    },
+    providers: {
+        list: () => ipcRenderer.invoke("providers:list"),
+        edit: (request) => ipcRenderer.invoke("provider:edit", request),
     },
     onMenu: (cb) => on("menu", cb),
 });

@@ -66,6 +66,16 @@ editor's histogram comes from a 256 px thumbnail. Measured on a 4000 × 3000 ima
 grain 325 ms → 7 ms, curves 61 → 4 ms, colour balance 100 → 5 ms (cached noise, warm
 context). `compareFilterPaths()` in the module is the regression check.
 
+## Crop and stitch in the app (app-only)
+
+`renderer/editor/stitch.js` ports the node's `InpaintCanvas.run` (crop) and
+`InpaintCanvasStitch.stitch` to Canvas 2D and typed arrays, for recipes that render
+through an API provider without ComfyUI (`host.runProvider`). Same formulas and order
+as nodes.py (auto params, min span, multiple rounding, fill modes, denoise and
+composite masks, colour match); differences and what is not ported are listed at the
+top of the file and in docs/RECIPES.md. The node keeps its Python version; nothing
+here changes the synced editor files.
+
 ## Things the node has that the app does not use yet
 
 - `inpaint_bridge.js` (46 commands) - phase 4.

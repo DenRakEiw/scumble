@@ -7,8 +7,11 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const { app, BrowserWindow, protocol, net, ipcMain, dialog, Menu, shell } = require("electron");
 const settings = require("./settings");
-const { ComfyClient } = require("./comfy");
+const { ComfyClient, authHeaders } = require("./comfy");
 const { FileMirror } = require("./files");
+const keys = require("./keys");
+const providers = require("./providers");
+const recipes = require("./recipes");
 
 const ROOT = path.join(__dirname, "..", "..");
 const RENDERER_DIR = path.join(ROOT, "renderer");
@@ -91,6 +94,9 @@ function createWindow() {
             nodeIntegration: false,
             sandbox: true,
             spellcheck: false,
+            // runs and helpers keep going while another window is in front; without this,
+            // canvas.toBlob and timers in a hidden window are throttled to one per second
+            backgroundThrottling: false,
         },
     });
     if (saved.maximized) win.maximize();
@@ -118,6 +124,8 @@ function buildMenu() {
                 { label: "Open Image...", accelerator: "CmdOrCtrl+O", click: () => openImage() },
                 { label: "Save Image...", accelerator: "CmdOrCtrl+S", click: () => send("menu", "save") },
                 { label: "Close Tab", accelerator: "CmdOrCtrl+W", click: () => send("menu", "close-tab") },
+                { type: "separator" },
+                { label: "Import Workflow as Recipe...", click: () => send("menu", "import-recipe") },
                 { type: "separator" },
                 { label: "Next Tab", accelerator: "CmdOrCtrl+Tab", click: () => send("menu", "next-tab") },
                 { label: "Previous Tab", accelerator: "CmdOrCtrl+Shift+Tab", click: () => send("menu", "prev-tab") },
@@ -184,21 +192,48 @@ async function saveFile({ name, data, filters, path: target }) {
 
 // ---- recipes -------------------------------------------------------------------------
 
-async function listRecipes() {
-    const out = [];
-    let names = [];
-    try { names = (await fsp.readdir(RECIPES_DIR)).filter((n) => n.endsWith(".json")).sort(); } catch (_) { names = []; }
-    for (const n of names) {
-        try {
-            const r = JSON.parse(await fsp.readFile(path.join(RECIPES_DIR, n), "utf8"));
-            r.id = r.id || n.replace(/\.json$/, "");
-            r.file = n;
-            out.push(r);
-        } catch (err) {
-            console.warn("recipe", n, "unreadable:", err.message);
-        }
+function listRecipes() {
+    return recipes.list(RECIPES_DIR);
+}
+
+/** Import a ComfyUI workflow (UI or API format) as a user recipe; UI format needs /object_info. */
+async function importRecipe(file) {
+    if (!file) {
+        const r = await dialog.showOpenDialog(win, { title: "Import workflow as recipe", properties: ["openFile"], filters: [{ name: "Workflow / recipe (JSON)", extensions: ["json"] }, { name: "All files", extensions: ["*"] }] });
+        if (r.canceled || !r.filePaths.length) return null;
+        file = r.filePaths[0];
     }
-    return out;
+    let objectInfo = null;
+    if (comfy.status.state === "connected" || comfy.status.state === "missing-node") {
+        try { objectInfo = await comfy.json("/object_info"); } catch (err) { console.warn("object_info for the import:", err.message); }
+    }
+    return recipes.importFile(file, objectInfo);
+}
+
+// ---- ComfyUI connection with auth ------------------------------------------------------
+
+const COMFY_SECRET = "comfy-auth";
+
+/** Connect with the stored URL / auth, or the given ones (which are then stored). */
+async function connectComfy(conn) {
+    let { comfy: saved } = settings.get();
+    saved = saved || {};
+    if (conn && typeof conn === "object") {
+        const auth = conn.auth && conn.auth.type && conn.auth.type !== "none" ? { type: conn.auth.type, user: conn.auth.user || "", header: conn.auth.header || "" } : { type: "none" };
+        saved = settings.set({ comfy: { ...saved, url: conn.url || saved.url, auth } }).comfy;
+        if (typeof conn.secret === "string") keys.set(COMFY_SECRET, conn.secret);
+    } else if (typeof conn === "string" && conn) {
+        saved = settings.set({ comfy: { ...saved, url: conn } }).comfy;
+    }
+    return comfy.connect(saved.url, authHeaders(saved.auth, keys.get(COMFY_SECRET)));
+}
+
+async function probeComfy(conn) {
+    const saved = settings.get().comfy || {};
+    const url = (conn && conn.url) || saved.url;
+    const auth = conn && conn.auth ? conn.auth : saved.auth;
+    const secret = conn && typeof conn.secret === "string" && conn.secret !== "" ? conn.secret : keys.get(COMFY_SECRET);
+    return ComfyClient.probe(url, authHeaders(auth, secret));
 }
 
 // ---- IPC -----------------------------------------------------------------------------
@@ -208,7 +243,8 @@ function installIpc() {
     ipcMain.handle("settings:set", (_e, patch) => settings.set(patch));
     ipcMain.handle("state:load", () => settings.loadState());
     ipcMain.handle("state:save", (_e, state) => { settings.saveState(state); return true; });
-    ipcMain.handle("comfy:connect", (_e, url) => comfy.connect(url));
+    ipcMain.handle("comfy:connect", (_e, conn) => connectComfy(conn));
+    ipcMain.handle("comfy:probe", (_e, conn) => probeComfy(conn));
     ipcMain.handle("comfy:disconnect", () => { comfy.disconnect(); return comfy.status; });
     ipcMain.handle("comfy:status", () => comfy.status);
     ipcMain.handle("comfy:clientId", () => comfy.clientId);
@@ -219,6 +255,14 @@ function installIpc() {
     ipcMain.handle("file:open", () => openImage());
     ipcMain.handle("file:save", (_e, args) => saveFile(args));
     ipcMain.handle("recipes:list", () => listRecipes());
+    ipcMain.handle("recipes:import", (_e, file) => importRecipe(file));
+    ipcMain.handle("recipes:remove", (_e, id) => recipes.remove(id));
+    ipcMain.handle("recipes:openFolder", async () => { const r = recipes.userDir(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(r); });
+    ipcMain.handle("keys:list", () => keys.list());
+    ipcMain.handle("keys:set", (_e, { name, value }) => keys.set(name, value));
+    ipcMain.handle("keys:clear", (_e, name) => keys.clear(name));
+    ipcMain.handle("providers:list", () => providers.describeAll());
+    ipcMain.handle("provider:edit", (_e, request) => providers.edit(request));
     ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: app.getPath("userData") }));
     ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
 }
@@ -236,7 +280,7 @@ if (!app.requestSingleInstanceLock()) {
         buildMenu();
         createWindow();
         const url = settings.get().comfy && settings.get().comfy.url;
-        if (url) comfy.connect(url).catch(() => {});
+        if (url) connectComfy().catch((err) => console.warn("connect at start:", err.message));
         app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
     });
     app.on("window-all-closed", () => { comfy.disconnect(); app.quit(); });

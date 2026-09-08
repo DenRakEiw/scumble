@@ -1,0 +1,40 @@
+{
+  "id": "fal_flux_fill",
+  "kind": "provider",
+  "provider": "fal",
+  "model": "fal-ai/flux-pro/v1/fill",
+  "input": "fill",
+  "name": "FLUX.1 Fill [pro] via fal.ai",
+  "description": "Mask-based inpainting: the crop and the selection mask go to fal.ai, the result is stitched back. Needs a fal.ai key (Settings).",
+  "settings": [
+    {
+      "index": 1,
+      "key": "safety_tolerance",
+      "label": "Safety tolerance",
+      "spec": [
+        [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6"
+        ],
+        {
+          "default": "2"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "key": "enhance_prompt",
+      "label": "Enhance prompt",
+      "spec": [
+        "BOOLEAN",
+        {
+          "default": false
+        }
+      ]
+    }
+  ]
+}

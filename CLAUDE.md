@@ -52,49 +52,66 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   is merged (contributions that only land in the node and are never copied into the
   app do not affect the app). Only MIT/Apache/BSD/OFL dependencies in the app.
 
-## Where things stand (2026-09-08, early)
+## Where things stand (2026-09-08, evening)
 
-**Phase 1 is complete.** Next session: **phase 2** (`docs/BRIEF.md` §5: fal.ai and direct
-adapters, key storage via safeStorage, connection dialog for remote ComfyUI / RunPod,
-recipe import). Everything below is built and verified with real runs
-(`tools/smoke_test.py`: Flux.2 Klein 9B generate, then SAM3 select by text, RMBG
-cutout, Qwen-VL upsampling, SAM2 objects, grain filter layer, layer / mask / PSD export,
-all PASS; a generate queued from a background tab landed in that tab).
+**Phase 2 is complete** except for the first real RunPod test. Next session: **phase 3**
+(`docs/BRIEF.md` §5: SAM2 and RMBG in-app via ONNX Runtime, model download or linked
+ComfyUI `models/` folder, object hover from SAM2 automask). Before that, if the user
+has a RunPod account ready: build and push `docker/runpod/`, start a pod, Test +
+Connect from the app, one Flux.2 Klein run (see `docker/runpod/README.md`).
 
-Landed on 2026-09-08 after the light version:
+Verified with real runs on 2026-09-08 (`tools/smoke_test.py`, all PASS): the shipped
+Flux.2 Klein recipe and the *imported* node example workflow (subgraph flattened)
+through the user's ComfyUI, the loopback provider round trip (crop → main process →
+stitch → result layer equals the base inside the selection), the key store (DPAPI),
+the probe / Test button, and the recipe import of UI and API format. **The four real
+provider adapters ran against their documented schemas only, not against the live
+APIs: no keys were available in this session.** First thing to do with a key: pick the
+provider's recipe, run once on a small selection, and fix what the API answers.
 
-- **Tabs**: one `InpaintEditor` per document, all mounted in `#editor-host`, inactive
-  ones hidden with `.shell-hidden`; `host._editors` / `host.editor` (active) /
-  `host.activate()`; the keydown handler is patched to `host.isActive(this)`. Events:
-  results by `prompt_id` (`host.editorByPrompt`), helper masks / texts by
-  `info.canvas_node` = `editor.node.id` (`host.editorById`). Autosave is a bundle
-  `{version: 2, active, nextId, docs: [{id, state}]}` in `autosave.json`; `host.restore`
-  also reads the old single-state format. Menu: Ctrl+T / Ctrl+W / Ctrl+Tab.
-  Open image goes into the active tab while it is empty, otherwise into a new one.
-- **WebGL2 filters** in `renderer/editor/inpaint_filters_gl.js` (see `docs/SYNC.md`),
-  hooked into `applyFilter` by a sync patch; CPU fallback stays.
-- **Settings dialog** (`<dialog id="shell-settings">` in the shell, Ctrl+,): server URL
-  and connect, local file store (stats, open folder, remove files no open document
-  references and older than an hour: IPC `files:prune`), rendering path, about.
+Landed on 2026-09-08 (phase 2):
 
-Landed on 2026-09-07 (phase 1 light):
-
-- **Local file mirror** (`electron/main/files.js`, wired in `main.js` `installProtocol`):
-  `/comfy/upload/image` stores under `<userData>/files/<type>/<subfolder>/<name>` and
-  forwards when connected; `/comfy/view` serves the mirror first, else fetches and keeps
-  a copy (not `temp`). IPC `comfy:ensure` → `ensureOnServer(refs)` (HEAD-check, upload
-  what is missing; a per-server "known" set skips repeats); `host.queueGenerate` calls
-  it with base / mask / control / references from the state JSON. `host.onConnected`
-  resets `editor.uploaded`. `host.restore(state)` restores the autosave at start from
-  the mirror, offline too; only a state whose base is not mirrored waits for connect.
-- **Node params UI** (`host.buildGenerateExtras`, patched in after the Refine button):
-  padding, target_size, feather, multiple_of → `settings.nodeParams`, info panel follows.
-- **Layer / mask export** go through `host.saveExport` (native dialog / fixed path).
-- **Icon** on the window and in the installer; the editor's own title span is gone.
+- **Provider recipes** (`kind: "provider"`, `docs/RECIPES.md`): fal.ai (Flux Fill pro,
+  Qwen Image Edit inpaint, Flux.2 pro edit), BFL (Flux Fill pro, Flux.2 / Kontext edit
+  with an endpoint combo), OpenAI gpt-image edit, Gemini image edit. Adapters in
+  `electron/main/providers/<id>.js` with one interface (`edit(request, ctx)`); the
+  crop and the stitch happen in the renderer (`renderer/editor/stitch.js`, a port of the
+  node's `run` / `stitch`; not ported: ECC align, Lanczos, Navier-Stokes border fill).
+  `host.runProvider` builds the request, `host.uploadResult` stores the RGBA patch in
+  the mirror as `output/inpaint_canvas/n<id>_result_<stamp>.png`, `addResults` adds the
+  layer like a node result. The Settings panel shows the recipe's `settings[]` with
+  their own `spec`. Busy state: `editor.providerPending`, indeterminate progress bar
+  via `host.onProviderRuns`. Hidden `loopback` provider for tests.
+- **Keys** in `electron/main/keys.js` (safeStorage, `<userData>/secrets.json`, the
+  renderer sees only set / last four chars). Settings › API providers: one row per
+  provider (Save / Clear / get-a-key link). The recipe note in the top bar says when
+  the selected recipe's key is missing.
+- **Remote ComfyUI**: `settings.comfy.auth` = `{type: none|basic|bearer|header, user,
+  header}`, secret under key `comfy-auth`; `authHeaders()` in `comfy.js` is applied to
+  every proxied request and the websocket. `ComfyClient.probe()` behind the Test button
+  (version, devices with VRAM, queue, node pack version via `/inpaint_canvas/info`,
+  loader combo lists → per-recipe "model files present / missing" line in the dialog).
+  `comfy:connect` takes a string (URL) or `{url, auth, secret}`.
+- **Recipe import** (`electron/main/recipes.js`): Settings › Recipes › Import, or
+  File › Import Workflow as Recipe. UI format (needs `/object_info`; subgraphs
+  flattened with `instance:inner` ids, promoted widgets, reroutes, primitives, bypass,
+  mute), API format (`result_source[_local]`, setting links), Scumble recipe files.
+  User recipes live in `<userData>/recipes/`, listed before the shipped ones, Remove
+  in the dialog. Combo specs are stored as the single chosen value; the live list
+  comes from `/object_info`.
+- **RunPod template draft** in `docker/runpod/` (ai-dock base, `provision.sh` with
+  `SCUMBLE_RECIPES` / `SCUMBLE_HELPERS` / `HF_TOKEN`), untested on a pod.
+- `backgroundThrottling: false` on the window: with the window hidden, `canvas.toBlob`
+  and timers were throttled to one per second (a provider run took 5 s instead of 1).
+- Menu: File › Import Workflow as Recipe. `shell.js` exports `selectRecipe`,
+  `loadRecipes`, `importRecipe`, `testConnection`, `connect` for tests.
 
 Known small things: `loadFile` uploads with `overwrite=false`, so re-loading an image
 with a name already in the mirror yields `name (1).png` (ComfyUI's own rule, harmless).
-The mirror never deletes; the node's `cleanupFiles()` only cleans the server.
+The mirror never deletes; the node's `cleanupFiles()` only cleans the server. The
+editor's per-document `settings` keep their value when a recipe with the same target
+id is re-selected (by design); the Settings panel falls back to the first combo entry
+when the stored file name is not on the server.
 
 ## How the app is put together
 
@@ -115,9 +132,15 @@ The mirror never deletes; the node's `cleanupFiles()` only cleans the server.
   mirror (`%APPDATA%/Scumble/files/`), no server needed. Layer pixels are uploaded like
   in the node (`input/inpaint_canvas`), but the upload lands in the mirror and is
   forwarded; `ensureOnServer` re-uploads before a run.
-- `renderer/shell.js`: tab bar, settings dialog, menu commands, restore at start;
-  exports `newDocument`, `activate`, `closeDocument`, `openSettings` for tests
-  (`import("./shell.js")` from the console). `window.editor` is always the active tab.
+- `renderer/shell.js`: tab bar, settings dialog (ComfyUI + auth + Test, API keys,
+  recipes, local files), menu commands, restore at start; exports `newDocument`,
+  `activate`, `closeDocument`, `openSettings`, `selectRecipe`, `loadRecipes`,
+  `importRecipe`, `testConnection`, `connect` for tests (`import("./shell.js")` from
+  the console). `window.editor` is always the active tab.
+- Provider runs: `host.runProvider` → `renderer/editor/stitch.js` (crop) → IPC
+  `provider:edit` → `electron/main/providers/index.js` picks the adapter and the key
+  (`keys.js`) → `stitch.js` (composite mask, colour match) → mirror upload → `addResults`.
+  Recipe formats in `docs/RECIPES.md`.
 
 ## Working rules
 

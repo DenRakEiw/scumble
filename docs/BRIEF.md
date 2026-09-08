@@ -133,7 +133,10 @@ in the app, WebGL2 filters, native file dialogs, drag and drop, tabs for several
 images, autosave of the editor state per file, settings.
 
 **Phase 2, backends (1 week):** fal.ai and direct adapters, key storage, connection
-dialog for remote ComfyUI (RunPod, see `docs/RUNPOD.md`), recipe import.
+dialog for remote ComfyUI (RunPod, see `docs/RUNPOD.md`), recipe import. Done
+2026-09-08 (adapters in `electron/main/providers/`, crop and stitch in the app in
+`renderer/editor/stitch.js`, formats in `docs/RECIPES.md`); the RunPod template is a
+draft that still needs its first real pod.
 
 **Phase 3, helpers in-app (1 week):** SAM2 and RMBG through ONNX Runtime, model
 download or linked ComfyUI folder, object hover from SAM2 automask.

@@ -1,5 +1,5 @@
 // Settings and the autosaved editor state, both plain JSON files in the user data folder.
-// Secrets (API keys, remote auth) never go here: they belong to safeStorage (phase 2).
+// Secrets (API keys, remote auth) never go here: they belong to keys.js (safeStorage).
 "use strict";
 
 const fs = require("node:fs");
@@ -7,7 +7,8 @@ const path = require("node:path");
 const { app } = require("electron");
 
 const DEFAULTS = {
-    comfy: { url: "http://127.0.0.1:8188" },
+    // auth: { type: "none" | "basic" | "bearer" | "header", user, header }; the secret is in keys.js
+    comfy: { url: "http://127.0.0.1:8188", auth: { type: "none" } },
     recipe: "flux2_klein_local",
     // InpaintCanvas node widgets, filled into the recipe's canvas node on every run
     nodeParams: { padding: 64, target_size: 1024, feather: 16, multiple_of: 64 },

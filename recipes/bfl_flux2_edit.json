@@ -1,0 +1,43 @@
+{
+  "id": "bfl_flux2_edit",
+  "kind": "provider",
+  "provider": "bfl",
+  "model": "flux-2-pro",
+  "input": "edit",
+  "name": "FLUX.2 edit via BFL",
+  "description": "FLUX.2 [pro] / [flex] / [max] / [klein] editing through BFL's API: the crop as input image, reference layers as further inputs, the stitch keeps the selection. Needs a BFL key.",
+  "settings": [
+    {
+      "index": 1,
+      "key": "endpoint",
+      "label": "Model",
+      "spec": [
+        [
+          "flux-2-pro",
+          "flux-2-flex",
+          "flux-2-max",
+          "flux-2-klein-9b",
+          "flux-2-klein-4b",
+          "flux-kontext-pro",
+          "flux-kontext-max"
+        ],
+        {
+          "default": "flux-2-pro"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "key": "safety_tolerance",
+      "label": "Safety tolerance",
+      "spec": [
+        "INT",
+        {
+          "default": 2,
+          "min": 0,
+          "max": 6
+        }
+      ]
+    }
+  ]
+}
