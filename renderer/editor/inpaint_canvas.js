@@ -6093,7 +6093,7 @@ class InpaintEditor {
                 const sel = document.createElement("select");
                 sel.className = "ipc-sel";
                 sel.style.gridColumn = "2 / -1";
-                sel.title = "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT's job). Values assume a picture of about 2000 px.";
+                sel.title = "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT's job). Values assume a picture of about 2000 px. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products.";
                 let group = null;
                 for (const o of p.options) {
                     const opt = document.createElement("option"); opt.value = o.id; opt.textContent = o.label;

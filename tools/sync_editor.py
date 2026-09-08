@@ -241,6 +241,11 @@ PATCHES = [
      "        const layer = pending.layer;\n"
      "        try {\n"
      "            const W = layer.canvas.width, H = layer.canvas.height;\n", 1),
+    # trademark note on the film preset list (decided 2026-09-08: keep the real names, add the disclaimer)
+    ("inpaint_canvas.js",
+     'sel.title = "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT\'s job). Values assume a picture of about 2000 px.";',
+     'sel.title = "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT\'s job). Values assume a picture of about 2000 px. Film names are trademarks of their owners; the looks are Scumble\'s own approximations, not licensed products.";', 1),
+
     # Free VRAM also releases the in-app sessions; without a server only those
     ("inpaint_canvas.js",
      "    async freeHelperModels() {\n        try {\n            this.setStatus(\"Freeing helper models (SAM, Qwen-VL) from VRAM ...\");\n",

@@ -516,7 +516,7 @@ async function openSettings() {
     ui.setGpu.textContent = glFiltersAvailable() ? "Filter layers run on the GPU (WebGL2); the CPU code is the fallback." : "WebGL2 is not available here: filter layers run on the CPU.";
     try {
         const info = await window.scumble.info();
-        ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}`;
+        ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products.`;
     } catch (_) { /* ignore */ }
     refreshFileStats();
     await loadProviders();

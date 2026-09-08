@@ -91,6 +91,16 @@ fragment shaders on the composite; CPU implementation kept as fallback and for t
 node until it is ported back. Preview at screen resolution while dragging, full
 resolution on release.
 
+**Film names (decided 2026-09-08):** the grain presets keep the real film names
+(Kodak Portra 400, Fujifilm Velvia 50, Ilford HP5 ...) as a descriptive reference, and
+the film pack may do the same; the values behind them are Scumble's own parameters,
+never copied manufacturer LUTs or profiles. A disclaimer sits in the preset tooltip and
+the About dialog ("Film names are trademarks of their owners; the looks are Scumble's
+own approximations, not licensed products"). Names never go into the product name,
+logo or marketing. Referential use of this kind is industry practice (DxO FilmPack,
+Dehancer, RawTherapee) and, as long as the app is free and open, hardly a target; a
+lawyer confirms it before any sale, together with the licence model.
+
 **Licence**: open by design. The node stays GPL-3.0. The app repo starts as "All
 rights reserved" with the option of a commercial licence or dual licensing later.
 Precondition: the user stays the sole copyright holder of the app code, so a CLA is
@@ -144,8 +154,28 @@ download or linked ComfyUI folder, object hover from SAM2 automask. Done 2026-09
 lite/BiRefNet/RMBG-1.4/RMBG-2.0 as ONNX, DirectML on Windows, a point prompt in the
 object tool on top; text segmentation (SAM3) stays a ComfyUI helper.
 
-**Phase 4, MCP and headless (3–4 days):** `--mcp` server, command table shared with
-the node, windowless mode, docs.
+**Phase 4, command core and plugins (3–4 days), planned 2026-09-08:** the node's
+bridge command table (`inpaint_bridge.js`, 46 commands) becomes the app's command core
+in the renderer, typed and documented. On it, a plugin system like Krita's: a plugin is a
+folder in `<userData>/plugins/<name>/` with `plugin.json` (name, version, entry, what it
+registers) and a JavaScript module loaded with an API object `scumble` (document,
+layers, selection, pixel access as ImageData in and out, undo, status line, files, the
+command core). Extension points: filter type (parameter schema for the UI, apply
+function, optional GLSL fragment for the WebGL2 path), panel / docker (own DOM area),
+menu action, tool. Settings › Plugins: list, enable, open folder, errors, reload without
+restart. Python plugins (stdio process) later, not now.
+
+**Phase 4b, film pack (1–2 weeks):** a Nik Collection / DxO FilmPack style package,
+built as the first built-in plugin so the API is proven on it: parametric film looks
+(colour matrix, tone curve, grain by ISO on the existing grain presets), halation and
+glow, light leaks, split toning, tonal contrast, structure / detail, bleach bypass, cross
+processing, Silver-Efex-like black and white with colour filters, frames; U-Point-style
+control points for local adjustments last (the biggest single item). Own parametric
+looks only, no third-party LUT or profile data (users load free LUT sets through the
+LUT filter layer). Film names may be used referentially with the disclaimer (see §3).
+
+**Phase 4c, MCP and headless (3–4 days):** `--mcp` server on the same command core,
+windowless mode, docs.
 
 **Phase 5, release (1 week):** code signing (Windows certificate needed, otherwise
 SmartScreen warnings), auto-update, Linux AppImage/deb, website, name and licence

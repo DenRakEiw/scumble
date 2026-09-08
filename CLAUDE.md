@@ -47,6 +47,12 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   SDK); headless = the app without a window.
 - Filters move to **WebGL2** (grain, curves, colour balance, LUT as shaders), CPU path as
   fallback; the same code goes back into the node.
+- Film names: **keep the real names in the grain presets and the film pack**, own
+  parametric values only (no manufacturer LUTs), disclaimer in the preset tooltip and
+  the About dialog, never in product name or marketing; lawyer check before a sale.
+- Plugins: **JavaScript plugins on the command core** (Krita-style folders with
+  `plugin.json`, filter / panel / action / tool extension points), the film pack is the
+  first built-in plugin; Python plugins later, not now. Plan in `docs/BRIEF.md` §5.
 - Licence: **left open on purpose.** The node stays GPL-3.0. The app repo starts as
   "All rights reserved" until decided; a CLA goes in before any outside contribution
   is merged (contributions that only land in the node and are never copied into the
@@ -54,9 +60,11 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-08, night)
 
-**Phase 3 is complete.** Next session: **phase 4** (`docs/BRIEF.md` §5: `--mcp` stdio
-server, the node's bridge command table as the app's command core, windowless mode,
-docs). Still open from earlier phases: the first real RunPod pod (`docker/runpod/`), and
+**Phase 3 is complete.** Next session: **phase 4** as re-planned on 2026-09-08
+(`docs/BRIEF.md` §5): the command core from the node's bridge table, then the plugin
+system (Krita-style JS plugins, Settings › Plugins), then the film pack as the first
+built-in plugin (4b), then MCP and headless on the same core (4c). The film-name
+decision (keep the names, disclaimer) is already in the tooltip and About dialog. Still open from earlier phases: the first real RunPod pod (`docker/runpod/`), and
 the five API provider adapters have never run against a live API (no keys yet; run one
 small selection per provider first and fix what the API answers).
 
