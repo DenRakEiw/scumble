@@ -7,15 +7,17 @@ through API providers (fal.ai, Replicate, Black Forest Labs, OpenAI, Google Gemi
 [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas); the app is the
 standalone window around it.
 
-Status: **phase 2 complete** (2026-09-08). Everything from phase 1 (Electron window,
-editor, ComfyUI connection, open / select / generate / save PNG / PSD / ORA, layer and
-mask export, local file store, tabs with session restore, WebGL2 filter layers,
-settings dialog, helpers verified, NSIS installer) plus: API provider recipes (fal.ai,
-Replicate, Black Forest Labs, OpenAI gpt-image, Google Gemini) with crop and stitch in the app,
-API keys in the OS credential store, a connection dialog for remote ComfyUI with auth
-and a Test button (version, node pack, model files per recipe), import of your own
-ComfyUI workflow as a recipe (subgraphs flattened), and a RunPod template draft. Next:
-phase 3 (SAM2 / RMBG in-app via ONNX). See `docs/BRIEF.md` for the plan,
+Status: **phase 4 complete** (2026-09-08). Phases 1 to 3: Electron window, the editor,
+ComfyUI connection, open / select / generate / save PNG / PSD / ORA, layer and mask export,
+local file store, tabs with session restore, WebGL2 filter layers, settings dialog, NSIS
+installer; API provider recipes (fal.ai, Replicate, Black Forest Labs, OpenAI gpt-image,
+Google Gemini) with crop and stitch in the app, API keys in the OS credential store, remote
+ComfyUI with auth and a Test button, import of your own workflow as a recipe; SAM2 objects
+and background removal in-app through ONNX Runtime. Phase 4 adds the **command core**
+(59 documented commands, `docs/COMMANDS.md`) and **JavaScript plugins** (filter types with
+CPU and WebGL2 paths, side panels, menu actions, tools, commands; `docs/PLUGINS.md`,
+`plugins/sample`). Next: phase 4b, the film pack as the first real plugin, then 4c, the MCP
+server and headless mode on the command core. See `docs/BRIEF.md` for the plan,
 `docs/RECIPES.md` for the recipe formats and `CLAUDE.md` for the working notes.
 
 ## Run from source
@@ -56,15 +58,18 @@ npm run dist        # dist/Scumble Setup <version>.exe (NSIS, unsigned)
 
 ```
 electron/main/     main process: window, scumble:// scheme with the ComfyUI proxy, websocket, menu, dialogs, settings,
-                   file mirror, keys.js (safeStorage), recipes.js (list / import), providers/ (fal, replicate, bfl, openai, gemini)
+                   file mirror, keys.js (safeStorage), recipes.js (list / import), providers/ (fal, replicate, bfl, openai, gemini),
+                   onnx/ (SAM2, matting), plugins.js (plugin folders and manifests)
 electron/preload.js
-renderer/          shell (connection bar, recipe picker, progress) and the editor
+renderer/          shell.js (connection bar, recipe picker, tabs, settings), commands.js (the command core),
+                   plugins.js (plugin loader and the `scumble` API)
 renderer/editor/   synced copy of the node's editor, see docs/SYNC.md; host.js is the app side of it,
                    inpaint_filters_gl.js the WebGL2 filter path, stitch.js the in-app crop / stitch for provider runs
 recipes/           ComfyUI recipes (API-format prompts with a fixed canvas node id) and provider recipes, docs/RECIPES.md
+plugins/           built-in plugins (sample: one of every extension point), docs/PLUGINS.md
 docker/runpod/     Dockerfile + provision.sh for a ComfyUI box on RunPod (draft, docs/RUNPOD.md)
-tools/             sync_editor.py, cdp.py (DevTools driver), smoke_test.py
-docs/              BRIEF.md (vision, decisions, phases), RECIPES.md, SYNC.md, NAMES.md, RUNPOD.md
+tools/             sync_editor.py, cdp.py (DevTools driver), smoke_test.py, commands_test.py, commands_doc.py, helpers_test.js
+docs/              BRIEF.md (vision, decisions, phases), COMMANDS.md, PLUGINS.md, RECIPES.md, HELPERS.md, SYNC.md, NAMES.md, RUNPOD.md
 ```
 
 ## Licence

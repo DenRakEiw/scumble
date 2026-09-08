@@ -167,6 +167,7 @@ function context() {
         const aPos = gl.getAttribLocation(prog, "a_pos");
         gl.enableVertexAttribArray(aPos);
         gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+        for (const pg of PLUGIN_GL.values()) pg.prog = null;   // programs of a lost context
         const u = {};
         for (const name of ["u_src", "u_table", "u_offsets", "u_noise", "u_lut", "u_size", "u_mode", "u_matrix", "u_useTable", "u_weights", "u_tint", "u_strength", "u_lutN", "u_k", "u_center",
             "u_lookOn", "u_useMix", "u_mix", "u_useMono", "u_mono", "u_wb", "u_satK", "u_conK", "u_fade", "u_lookStrength"]) u[name] = gl.getUniformLocation(prog, name);
@@ -187,7 +188,7 @@ function context() {
         const emptyLut = gl.createTexture();
         gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_3D, emptyLut);
         gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
-        G = { gl, canvas, prog, u, texSrc, texTable, texOffsets, emptyNoise, emptyLut, max, gen, lost: false, max3d: gl.getParameter(gl.MAX_3D_TEXTURE_SIZE) };
+        G = { gl, canvas, prog, u, aPos, texSrc, texTable, texOffsets, emptyNoise, emptyLut, max, gen, lost: false, max3d: gl.getParameter(gl.MAX_3D_TEXTURE_SIZE) };
         return G;
     } catch (err) {
         console.warn("WebGL2 filters unavailable:", err.message || err);
@@ -446,12 +447,112 @@ const SETUP = {
     },
 };
 
+// ---- plugin filters: one fragment shader per registered filter (renderer/plugins.js) -------
+//
+// A plugin hands in GLSL that defines `vec4 shade(vec4 color, vec2 uv)` (`filter` is a
+// reserved word in GLSL ES); it gets u_src
+// (the input, sample neighbours with uv + vec2(dx, dy) / u_size), u_size, u_scale (1 at
+// full resolution, smaller for previews) and u_seed, plus its own uniforms (declared by
+// name and type, values from values(params, info) per run).
+
+const PLUGIN_GL = new Map();   // id -> { def: { code, uniforms, values }, prog, u, failed }
+const PLUGIN_TYPES = { float: "1f", int: "1i", bool: "1i", vec2: "2fv", vec3: "3fv", vec4: "4fv" };
+
+export function registerGLFilter(id, def) {
+    for (const [name, type] of Object.entries(def.uniforms || {})) {
+        if (!PLUGIN_TYPES[type]) throw new Error(`uniform ${name}: type must be one of ${Object.keys(PLUGIN_TYPES).join(", ")}`);
+        if (!/^[A-Za-z_]\w*$/.test(name)) throw new Error(`uniform "${name}" is not a valid GLSL name`);
+    }
+    PLUGIN_GL.set(id, { def, prog: null, u: null, failed: false });
+}
+
+export function unregisterGLFilter(id) {
+    const pg = PLUGIN_GL.get(id);
+    if (pg && pg.prog && G && !G.lost) { try { G.gl.deleteProgram(pg.prog); } catch (_) { /* ignore */ } }
+    PLUGIN_GL.delete(id);
+}
+
+function pluginSource(def) {
+    const decls = Object.entries(def.uniforms || {}).map(([n, t]) => `uniform ${t} ${n};`).join("\n");
+    return `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D u_src;
+uniform vec2 u_size;
+uniform float u_scale;
+uniform float u_seed;
+${decls}
+out vec4 o;
+${def.code}
+void main() {
+    vec2 uv = gl_FragCoord.xy / u_size;
+    vec2 suv = vec2(uv.x, 1.0 - uv.y);
+    o = shade(texture(u_src, suv), suv);
+}`;
+}
+
+function pluginProgram(g, pg) {
+    if (pg.prog) return pg.prog;
+    const { gl } = g;
+    const prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VS));
+    gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, pluginSource(pg.def)));
+    gl.bindAttribLocation(prog, g.aPos, "a_pos");
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error("program: " + gl.getProgramInfoLog(prog));
+    pg.prog = prog;
+    pg.u = {};
+    for (const name of ["u_src", "u_size", "u_scale", "u_seed", ...Object.keys(pg.def.uniforms || {})]) pg.u[name] = gl.getUniformLocation(prog, name);
+    return prog;
+}
+
+function applyPluginGL(id, pg, src, params, info) {
+    if (pg.failed) return null;
+    const g = context();
+    if (!g) return null;
+    const W = src.width, H = src.height;
+    if (!W || !H || W > g.max || H > g.max || W * H > MAX_PIXELS) return null;
+    const { gl } = g;
+    try {
+        const prog = pluginProgram(g, pg);
+        gl.useProgram(prog);
+        gl.uniform1i(pg.u.u_src, 0);
+        gl.uniform1f(pg.u.u_scale, info.scale || 1);
+        gl.uniform1f(pg.u.u_seed, +info.seed || 0);
+        const values = pg.def.values(params || {}, info) || {};
+        for (const [name, type] of Object.entries(pg.def.uniforms || {})) {
+            const v = values[name];
+            if (v == null || pg.u[name] == null) continue;
+            const setter = PLUGIN_TYPES[type];
+            if (setter === "1f") gl.uniform1f(pg.u[name], +v);
+            else if (setter === "1i") gl.uniform1i(pg.u[name], v === true ? 1 : v === false ? 0 : Math.round(+v));
+            else gl["uniform" + setter](pg.u[name], Float32Array.from(v));
+        }
+        if (g.canvas.width !== W || g.canvas.height !== H) { g.canvas.width = W; g.canvas.height = H; }
+        gl.viewport(0, 0, W, H);
+        gl.uniform2f(pg.u.u_size, W, H);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, g.texSrc);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        const err = gl.getError();
+        if (err !== gl.NO_ERROR) { console.warn("plugin WebGL2 filter", id, "GL error", err); return null; }
+        const out = makeCanvas(W, H);
+        out.getContext("2d").drawImage(g.canvas, 0, 0);
+        return out;
+    } catch (err) {
+        console.warn("plugin WebGL2 filter", id, "failed, using the CPU path:", err.message || err);
+        if (gl.isContextLost && gl.isContextLost()) g.lost = true; else pg.failed = true;
+        return null;
+    }
+}
+
 /**
  * Apply filter `id` to `src` on the GPU. Returns the filtered canvas, or null when this
  * filter or this machine is not covered (the caller then runs the CPU code).
  */
 export function applyFilterGL(id, src, params, info = {}) {
-    if (!SUPPORTED.has(id)) return null;
+    if (!SUPPORTED.has(id)) { const pg = PLUGIN_GL.get(id); return pg ? applyPluginGL(id, pg, src, params, info) : null; }
     const g = context();
     if (!g) return null;
     const W = src.width, H = src.height;

@@ -154,7 +154,10 @@ download or linked ComfyUI folder, object hover from SAM2 automask. Done 2026-09
 lite/BiRefNet/RMBG-1.4/RMBG-2.0 as ONNX, DirectML on Windows, a point prompt in the
 object tool on top; text segmentation (SAM3) stays a ComfyUI helper.
 
-**Phase 4, command core and plugins (3–4 days), planned 2026-09-08:** the node's
+**Phase 4, command core and plugins (3–4 days), planned 2026-09-08, done 2026-09-08**
+(`renderer/commands.js` with 59 commands in `docs/COMMANDS.md`, `renderer/plugins.js` and
+`electron/main/plugins.js` with the API in `docs/PLUGINS.md`, `plugins/sample` as the
+reference plugin, Settings › Plugins and a Plugins menu, `tools/commands_test.py`)**:** the node's
 bridge command table (`inpaint_bridge.js`, 46 commands) becomes the app's command core
 in the renderer, typed and documented. On it, a plugin system like Krita's: a plugin is a
 folder in `<userData>/plugins/<name>/` with `plugin.json` (name, version, entry, what it

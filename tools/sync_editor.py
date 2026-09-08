@@ -250,12 +250,45 @@ PATCHES = [
     ("inpaint_canvas.js",
      "    async freeHelperModels() {\n        try {\n            this.setStatus(\"Freeing helper models (SAM, Qwen-VL) from VRAM ...\");\n",
      "    async freeHelperModels() {\n        try { await host.freeHelpers(); } catch (err) { console.warn(err); }\n        if (!host.connected) { this.helperUsed = false; this.setStatus(\"In-app helper models freed.\"); return; }\n        try {\n            this.setStatus(\"Freeing helper models (SAM, Qwen-VL) from VRAM ...\");\n", 1),
+    # --- phase 4: command core and plugins (renderer/commands.js, renderer/plugins.js) ----------
+    # the tool column and its addTool helper are reachable, so plugin tools get a button
+    ("inpaint_canvas.js",
+     '        const tools = el("div", "ipc-tools");\n',
+     '        const tools = el("div", "ipc-tools");\n        this.toolsEl = tools;\n', 1),
+    ("inpaint_canvas.js",
+     "        // Tool groups: one button per family, the button shows the family's current tool; hover,\n",
+     "        this._addTool = addTool;\n        // Tool groups: one button per family, the button shows the family's current tool; hover,\n", 1),
+    # plugin panels: a section in either side pane, added after the editor is built
+    ("inpaint_canvas.js",
+     "            build(d, sum);\n            pane.appendChild(d);\n            return d;\n        };\n",
+     "            build(d, sum);\n            pane.appendChild(d);\n            return d;\n        };\n"
+     "        this.addSection = (title, open, build, paneId) => { const prev = pane; pane = this.panes[paneId] || prev; try { return section(title, open, build); } finally { pane = prev; } };\n", 1),
+    ("inpaint_canvas.js",
+     "        this.resizeObserver.observe(this.viewEl);\n    }\n\n    buildSubbar() {\n",
+     "        this.resizeObserver.observe(this.viewEl);\n        host.editorBuilt(this);\n    }\n\n    buildSubbar() {\n", 1),
+    # plugin tools: the pointer gestures and single-key shortcuts are offered to the host first
+    ("inpaint_canvas.js",
+     "        if (e.button !== 0) return;\n        const [ix, iy] = this.toImage(e);\n        if (this.base) {\n",
+     "        if (e.button !== 0) return;\n        const [ix, iy] = this.toImage(e);\n        if (host.pluginPointer(this, \"down\", e, ix, iy)) return;\n        if (this.base) {\n", 1),
+    ("inpaint_canvas.js",
+     "        this.hover = [ix, iy];\n        const p = this.pointer;\n        if (!p) {\n",
+     "        this.hover = [ix, iy];\n        if (host.pluginPointer(this, \"move\", e, ix, iy)) return;\n        const p = this.pointer;\n        if (!p) {\n", 1),
+    ("inpaint_canvas.js",
+     "        this.pointer = null;\n        this.viewEl.classList.remove(\"ipc-panning\");\n        try { this.canvas.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }\n",
+     "        this.pointer = null;\n        this.viewEl.classList.remove(\"ipc-panning\");\n        try { this.canvas.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }\n"
+     "        if (p.kind === \"plugin\") { host.pluginPointer(this, \"up\", e, ...this.toImage(e), p); return; }\n", 1),
+    ("inpaint_canvas.js",
+     '        switch (k) {\n            case "1": this.zoomTo(1); break;\n',
+     '        if (host.pluginKey(this, e, k)) return;\n        switch (k) {\n            case "1": this.zoomTo(1); break;\n', 1),
+    ("inpaint_canvas.js",
+     "        this.tool = tool;\n        if (this.hardCtl) {\n",
+     "        const prevTool = this.tool;\n        this.tool = tool;\n        host.toolChanged(this, tool, prevTool);\n        if (this.hardCtl) {\n", 1),
 ]
 
 # Everything from this marker to the end of the file is the litegraph extension
 # (node widget, queuePrompt wrapper, event routing); host.js does that part.
 EXTENSION_MARKER = "// ---------------------------------------------------------------------------\n// extension registration\n"
-EXPORTS = "\nexport { InpaintEditor, viewUrl, loadImageEl, makeCanvas, uploadBlob, uploadCanvas, CROP_DEFAULTS, GEN_DEFAULTS, FIXED_OUTPUTS, SETTING_SLOTS };\n"
+EXPORTS = "\nexport { InpaintEditor, viewUrl, loadImageEl, makeCanvas, uploadBlob, uploadCanvas, CROP_DEFAULTS, GEN_DEFAULTS, FIXED_OUTPUTS, SETTING_SLOTS, el, icon, iconButton, miniButton, selectInput, numberInput };\n"
 
 
 def read(p):

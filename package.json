@@ -13,7 +13,8 @@
     "dist:dir": "electron-builder --dir",
     "sync-editor": "python tools/sync_editor.py",
     "smoke": "python tools/smoke_test.py",
-    "helpers-test": "node tools/helpers_test.js"
+    "helpers-test": "node tools/helpers_test.js",
+    "commands-test": "python tools/commands_test.py"
   },
   "dependencies": {
     "onnxruntime-node": "^1.29.0",
@@ -33,6 +34,7 @@
       "electron/**/*",
       "renderer/**/*",
       "recipes/**/*",
+      "plugins/**/*",
       "build/icon.png",
       "build/icon.ico",
       "package.json"

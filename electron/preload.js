@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("scumble", {
     file: {
         open: () => ipcRenderer.invoke("file:open"),
         save: (args) => ipcRenderer.invoke("file:save", args),
+        read: (file) => ipcRenderer.invoke("file:read", file),
         onOpened: (cb) => on("file:opened", cb),
     },
     files: {
@@ -69,6 +70,14 @@ contextBridge.exposeInMainWorld("scumble", {
         segment: (req) => ipcRenderer.invoke("helpers:segment", req),
         cutout: (req) => ipcRenderer.invoke("helpers:cutout", req),
         onProgress: (cb) => on("helpers:progress", cb),
+    },
+    plugins: {
+        list: () => ipcRenderer.invoke("plugins:list"),
+        setEnabled: (id, enabled) => ipcRenderer.invoke("plugins:setEnabled", { id, enabled }),
+        openFolder: () => ipcRenderer.invoke("plugins:openFolder"),
+        menu: (actions) => ipcRenderer.invoke("plugins:menu", actions),
+        getData: (id) => ipcRenderer.invoke("plugins:getData", id),
+        setData: (id, patch) => ipcRenderer.invoke("plugins:setData", { id, patch }),
     },
     onMenu: (cb) => on("menu", cb),
 });

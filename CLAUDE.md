@@ -58,15 +58,53 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   is merged (contributions that only land in the node and are never copied into the
   app do not affect the app). Only MIT/Apache/BSD/OFL dependencies in the app.
 
-## Where things stand (2026-09-08, night)
+## Where things stand (2026-09-08, late night)
 
-**Phase 3 is complete.** Next session: **phase 4** as re-planned on 2026-09-08
-(`docs/BRIEF.md` §5): the command core from the node's bridge table, then the plugin
-system (Krita-style JS plugins, Settings › Plugins), then the film pack as the first
-built-in plugin (4b), then MCP and headless on the same core (4c). The film-name
-decision (keep the names, disclaimer) is already in the tooltip and About dialog. Still open from earlier phases: the first real RunPod pod (`docker/runpod/`), and
-the five API provider adapters have never run against a live API (no keys yet; run one
-small selection per provider first and fix what the API answers).
+**Phase 4 is complete** (command core + plugin system). Next session: **phase 4b**, the
+film pack as the first real plugin on this API (`docs/BRIEF.md` §5; parametric film
+looks, halation, light leaks, split toning, B&W with colour filters, frames; control
+points last), then **4c**, the MCP server and headless mode on the command core
+(`commands.describe()` already yields the tool list; `app.exe --mcp` with the TypeScript
+SDK in the main process, one IPC round trip per tool). Still open from earlier phases:
+the first real RunPod pod (`docker/runpod/`), and the five API provider adapters have
+never run against a live API (no keys yet; run one small selection per provider first).
+
+Landed on 2026-09-08 (phase 4, `docs/COMMANDS.md` and `docs/PLUGINS.md` have the details):
+
+- **Command core** `renderer/commands.js`: the node's bridge table ported to documents
+  (tabs) instead of graph nodes, 59 commands, each with `description`, `params` schema
+  (type, description, default, required, enum), `scope` app / doc, `needsImage`.
+  `commands.run(name, args)` throws, `commands.call` returns `{ok, ...}`, `describe()` is
+  the table as data, `register(name, def, owner)` for plugins. Document commands take
+  `doc`; `export*` take a `path` (`host.exportPath` bypasses the dialog); `load_image` /
+  `add_image_layer` take a `path` (IPC `file:read`) or a mirror ref. `host.shell`
+  (newDocument, activate, closeDocument with `{force}`, selectRecipe, recipes) is how
+  commands reach the shell. `tools/commands_doc.py` regenerates `docs/COMMANDS.md` from
+  the running app.
+- **Plugins** `renderer/plugins.js` + `electron/main/plugins.js`: folders in
+  `<userData>/plugins/<id>/` and built-in `plugins/<id>/` (shipped in the asar,
+  `build.files`), `plugin.json` manifest, ES module served as
+  `scumble://app/plugins/<id>/...` (main.js `serveFile`, path-checked), loaded with
+  `import()` plus a cache-busting query so *Reload plugins* works without restart.
+  `activate(scumble)` gets the API (`makeApi`): `Document` wrapper (getPixels /
+  setPixels as ImageData with undo, addLayer, selection mask in / out, run), command
+  core, `filters` (into `FILTERS` / `FILTER_IDS`, optional GLSL through
+  `registerGLFilter` in `inpaint_filters_gl.js`: the fragment defines `vec4 shade(vec4,
+  vec2)`, `filter` is a reserved GLSL word), `panels` (`editor.addSection`), `actions`
+  (Plugins menu built in main.js from IPC `plugins:menu`, `menu` event `plugin:<id>`),
+  `tools` (button in the tool column, pointer routing through `host.pluginPointer`,
+  keys through `host.pluginKey`, select / deselect through `host.toolChanged`), events
+  (`host.on`: built, activate, changed, tool, removed), `storage` (settings.json
+  `pluginData`). Every registration is tracked per plugin and removed on disable /
+  reload. Settings › Plugins lists state, registrations and errors.
+- **Sample plugin** `plugins/sample`: Posterize filter (CPU + GLSL, bit-exact), a panel,
+  two actions, the colour-probe tool (K), the `sample.mean_color` command.
+- **Editor patches** (`tools/sync_editor.py`, rows in `docs/SYNC.md`): exports of the DOM
+  helpers, `toolsEl` / `_addTool`, `addSection`, `host.editorBuilt`, the three pointer
+  hooks, `pluginKey` before the tool switch, `toolChanged` in `setTool`.
+- **Tests**: `python tools/commands_test.py` (12 steps, PASS 2026-09-08; needs the app on
+  port 9555 and the test image in the mirror), `python tools/smoke_test.py --no-helpers`
+  PASS after the change (76 s Flux run + loopback provider).
 
 Landed on 2026-09-08 (phase 3, `docs/HELPERS.md` has the details):
 
@@ -163,7 +201,8 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
 - Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-port=9555`
   (9333 is usually taken by the node's headless tab), then `python tools/cdp.py eval|shot|log`
   and `python tools/smoke_test.py` (load, select, generate through the recipe, save,
-  then the helpers and exports; `--no-helpers` for the short version).
+  then the helpers and exports; `--no-helpers` for the short version) and
+  `python tools/commands_test.py` (command core + sample plugin, no ComfyUI needed).
   `node tools/helpers_test.js` runs the ONNX modules without Electron. Start the dev
   instance with the Bash tool's `run_in_background`; a plain `&` job dies with the shell.
   `window.editor` and `import("./editor/host.js")` are reachable from the console.

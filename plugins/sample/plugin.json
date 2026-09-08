@@ -1,0 +1,9 @@
+{
+  "name": "Sample plugin",
+  "version": "1.0.0",
+  "description": "Shows every extension point: a Posterize filter (CPU and WebGL2), a side panel, two menu actions, a colour probe tool and a command. Copy this folder to start your own plugin.",
+  "author": "Scumble",
+  "entry": "main.js",
+  "registers": ["filter", "panel", "action", "tool", "command"],
+  "enabledByDefault": true
+}

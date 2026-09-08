@@ -76,6 +76,12 @@
       <p class="shell-help">The object tool (O) and layer cutouts run these models inside the app through ONNX Runtime, no ComfyUI needed. Point the folder at a ComfyUI <code>models</code> folder to share the files (they go to its <code>onnx</code> subfolder); the app looks in <code>onnx</code>, <code>sam2</code> and <code>RMBG</code> there. Selection by text (SAM3) still runs on the server.</p>
     </section>
     <section>
+      <h3>Plugins</h3>
+      <div id="set-plugins"></div>
+      <div class="shell-row"><button id="set-plugins-reload" type="button">Reload plugins</button><button id="set-plugins-folder" type="button">Open folder</button><span id="set-plugins-note" class="shell-note"></span></div>
+      <p id="set-plugins-help" class="shell-help">A plugin is a folder with a <code>plugin.json</code> and a JavaScript module in the plugin folder; it can add filter types, side panels, menu actions and tools (docs/PLUGINS.md). Changes to a plugin's files take effect after Reload, no restart needed.</p>
+    </section>
+    <section>
       <h3>Local files</h3>
       <p id="set-files" class="shell-help"></p>
       <div class="shell-row"><button id="set-open-files" type="button">Open folder</button><button id="set-prune" type="button">Remove unreferenced files</button><span id="set-prune-note" class="shell-note"></span></div>

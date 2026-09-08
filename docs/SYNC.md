@@ -21,7 +21,7 @@ that spot.
 | Node | App |
 |---|---|
 | `import { app } / { api }` from ComfyUI | `import { api, host } from "./host.js"` |
-| `installBridge(...)` (MCP command bridge) | not imported yet (phase 4: the bridge becomes the command core) |
+| `installBridge(...)` (MCP command bridge) | not imported: `renderer/commands.js` is the port of its table (docs/COMMANDS.md) |
 | `LiteGraph.registered_node_types` (helper backend availability) | `host.nodeTypes()` built from `/object_info` |
 | Escape closes the editor overlay | `host.onEscape(editor)`: the editor is the window |
 | `document.body.appendChild(root)` | `host.mount(root)` into `#editor-host` |
@@ -48,6 +48,13 @@ that spot.
 | `cutoutLayer()` uploads the layer and queues the RMBG helper prompt | picks the backend from the merged list; `inApp` → `host.cutoutInApp()` + `applyCutoutImage()`; the "no nodes" texts name Settings › Helpers |
 | `applyCutoutFile()` loads the mask PNG and applies it | split: the load stays, the rest is `applyCutoutImage(img, pending)` (any drawable, scaled onto the layer) |
 | `freeHelperModels()` POSTs `/free` | first `host.freeHelpers()` (ONNX sessions); without a server only that |
+| exports at the end | also `el, icon, iconButton, miniButton, selectInput, numberInput` (DOM helpers for plugins.js) |
+| tool column `tools` and its `addTool` closure | `this.toolsEl`, `this._addTool` (plugin tools get a button) |
+| `section()` closure over the current pane | `this.addSection(title, open, build, paneId)` (plugin panels) |
+| end of the constructor | `host.editorBuilt(this)` (plugins add their panels and tools to new editors) |
+| `onPointerDown` after `toImage`, `onPointerMove` after `this.hover`, `onPointerUp` after the capture release | `host.pluginPointer(this, phase, e, ix, iy[, p])`: a plugin tool takes the gesture (`pointer.kind === "plugin"`) |
+| `onKey` before the tool `switch` | `host.pluginKey(this, e, k)`: single-key shortcuts of plugin tools / actions |
+| `setTool` | `host.toolChanged(this, tool, prev)` (plugin tools' onSelect / onDeselect) |
 
 Unchanged and still true in the app: uploads go to `/upload/image` with
 `input/inpaint_canvas` (`n{id}_...` names, hash de-duplicated), helper prompts (SAM3,
@@ -86,7 +93,6 @@ here changes the synced editor files.
 
 ## Things the node has that the app does not use yet
 
-- `inpaint_bridge.js` (46 commands) - phase 4.
 - The `/inpaint_canvas/fonts` user font route: proxied through, so user fonts uploaded
   from the node show up, but the app has no own upload path yet.
 - `cleanupFiles()`: works through the proxy against the node's cleanup route; the keep

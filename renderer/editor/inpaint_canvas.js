@@ -1097,12 +1097,14 @@ class InpaintEditor {
         const body = el("div", "ipc-body");
 
         const tools = el("div", "ipc-tools");
+        this.toolsEl = tools;
         this.toolButtons = {};
         const addTool = (id, title) => {
             const b = iconButton(id, title, () => this.setTool(id));
             this.toolButtons[id] = b;
             tools.appendChild(b);
         };
+        this._addTool = addTool;
         // Tool groups: one button per family, the button shows the family's current tool; hover,
         // right-click or hold opens the flyout with all of them (Photoshop / Krita style).
         this.toolGroups = [];
@@ -1218,6 +1220,7 @@ class InpaintEditor {
             pane.appendChild(d);
             return d;
         };
+        this.addSection = (title, open, build, paneId) => { const prev = pane; pane = this.panes[paneId] || prev; try { return section(title, open, build); } finally { pane = prev; } };
 
         const layersHead = el("h4", null, "Layers");
         layersHead.appendChild(el("span", "ipc-grow"));
@@ -1644,6 +1647,7 @@ class InpaintEditor {
         this.renderInfo();
         this.resizeObserver = new ResizeObserver(() => this.resizeCanvas());
         this.resizeObserver.observe(this.viewEl);
+        host.editorBuilt(this);
     }
 
     buildSubbar() {
@@ -2099,7 +2103,9 @@ class InpaintEditor {
     setTool(tool) {
         if (this.pending && tool !== "transform") this.cancelPending();
         if (this.polyPoints && tool !== "polygon") this.polyPoints = null;
+        const prevTool = this.tool;
         this.tool = tool;
+        host.toolChanged(this, tool, prevTool);
         if (this.hardCtl) {
             const v = Math.round(this.activeHardness() * 100);
             this.hardCtl.input.value = v;
@@ -2168,6 +2174,7 @@ class InpaintEditor {
         if (e.shiftKey && k === "r") { this.setTool("ellipse"); return; }
         if (e.shiftKey && k === "t") { this.setTool("text"); return; }
         if (e.key === "\\") { e.preventDefault(); if (!e.repeat && !this.peekBase) { this.peekBase = true; this.peekHold = true; this.draw(); } return; }
+        if (host.pluginKey(this, e, k)) return;
         switch (k) {
             case "1": this.zoomTo(1); break;
             case "4": this.rotateView(-Math.PI / 12); break;
@@ -2984,6 +2991,7 @@ class InpaintEditor {
         }
         if (e.button !== 0) return;
         const [ix, iy] = this.toImage(e);
+        if (host.pluginPointer(this, "down", e, ix, iy)) return;
         if (this.base) {
             const [cx, cy] = this.toCanvasPx(e);
             const dpr = window.devicePixelRatio || 1;
@@ -3169,6 +3177,7 @@ class InpaintEditor {
         if (!this.width) return;
         const [ix, iy] = this.toImage(e);
         this.hover = [ix, iy];
+        if (host.pluginPointer(this, "move", e, ix, iy)) return;
         const p = this.pointer;
         if (!p) {
             if (this.tool === "transform") this.updateTransformCursor(ix, iy);
@@ -3283,6 +3292,7 @@ class InpaintEditor {
         this.pointer = null;
         this.viewEl.classList.remove("ipc-panning");
         try { this.canvas.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+        if (p.kind === "plugin") { host.pluginPointer(this, "up", e, ...this.toImage(e), p); return; }
         if (p.kind === "rect") {
             const [x0, y0] = p.start;
             const [x1, y1] = p.cur;
@@ -7244,4 +7254,4 @@ Size as width x height:`, cur);
     }
 }
 
-export { InpaintEditor, viewUrl, loadImageEl, makeCanvas, uploadBlob, uploadCanvas, CROP_DEFAULTS, GEN_DEFAULTS, FIXED_OUTPUTS, SETTING_SLOTS };
+export { InpaintEditor, viewUrl, loadImageEl, makeCanvas, uploadBlob, uploadCanvas, CROP_DEFAULTS, GEN_DEFAULTS, FIXED_OUTPUTS, SETTING_SLOTS, el, icon, iconButton, miniButton, selectInput, numberInput };

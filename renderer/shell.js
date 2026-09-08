@@ -4,6 +4,8 @@
 import { host, api } from "./editor/host.js";
 import { InpaintEditor } from "./editor/inpaint_canvas.js";
 import { glFiltersAvailable } from "./editor/inpaint_filters_gl.js";
+import { commands } from "./commands.js";
+import * as plugins from "./plugins.js";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -15,6 +17,7 @@ const ui = {
     authSecret: $("set-auth-secret"), authSecretRow: $("set-auth-secret-row"), authSecretLabel: $("set-auth-secret-label"),
     providers: $("set-providers"), keysNote: $("set-keys-note"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
+    plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setAbout: $("set-about"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"),
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
@@ -82,10 +85,10 @@ function renderTabs() {
     }
 }
 
-function closeDocument(editor) {
+function closeDocument(editor, { force = false } = {}) {
     if (!editor) return;
-    if (editor.base && busy(editor) && !window.confirm(`${docName(editor)} is still working. Close it anyway?`)) return;
-    if (editor.base && !window.confirm(`Close ${docName(editor)}? The document stays in the local file store, but it leaves the tab bar.`)) return;
+    if (!force && editor.base && busy(editor) && !window.confirm(`${docName(editor)} is still working. Close it anyway?`)) return;
+    if (!force && editor.base && !window.confirm(`Close ${docName(editor)}? The document stays in the local file store, but it leaves the tab bar.`)) return;
     host.removeEditor(editor);
     try { editor.destroy(); } catch (err) { console.warn(err); }
     if (!host.editors().length) newDocument();
@@ -109,6 +112,8 @@ function openInto(file) {
 
 host.createDocument = (id) => newDocument(id);
 host.onDocsChanged = () => renderTabs();
+// the command core (renderer/commands.js) reaches the shell through this
+host.shell = { newDocument, activate, closeDocument, selectRecipe: (id) => selectRecipe(id), recipes: () => recipes, openSettings };
 ui.tabAdd.addEventListener("click", () => activate(newDocument()));
 
 // ---- connection --------------------------------------------------------------------------
@@ -457,6 +462,62 @@ window.scumble.helpers.onProgress((ev) => {
 });
 host.onHelpersChanged = (st) => { if (ui.settings.open) renderHelpers(st); };
 
+// ---- plugins (Settings › Plugins) -------------------------------------------------------------
+
+function renderPlugins() {
+    const list = plugins.listPlugins();
+    ui.plugins.innerHTML = "";
+    if (!list.length) ui.plugins.appendChild(Object.assign(document.createElement("p"), { className: "shell-help", textContent: "No plugins found." }));
+    for (const p of list) {
+        const row = document.createElement("div");
+        row.className = "shell-plugin";
+        const cb = document.createElement("input");
+        cb.type = "checkbox"; cb.checked = p.enabled; cb.title = p.enabled ? "Disable this plugin" : "Enable this plugin";
+        cb.addEventListener("change", async () => {
+            cb.disabled = true;
+            try { await plugins.setEnabled(p.id, cb.checked); } catch (err) { ui.pluginsNote.textContent = String(err.message || err); }
+            renderPlugins();
+        });
+        row.appendChild(cb);
+        const body = document.createElement("div");
+        const name = document.createElement("div");
+        name.className = "shell-plugin-name";
+        name.textContent = p.name;
+        const small = document.createElement("small");
+        small.textContent = [p.version, p.author, p.source === "builtin" ? "built-in" : "user folder"].filter(Boolean).join(" · ");
+        name.appendChild(small);
+        body.appendChild(name);
+        if (p.description) body.appendChild(Object.assign(document.createElement("div"), { className: "shell-plugin-desc", textContent: p.description }));
+        const r = p.registered;
+        const regs = [];
+        if (r.filters.length) regs.push(`${r.filters.length} filter${r.filters.length > 1 ? "s" : ""}`);
+        if (r.panels.length) regs.push(`${r.panels.length} panel${r.panels.length > 1 ? "s" : ""}`);
+        if (r.actions.length) regs.push(`${r.actions.length} action${r.actions.length > 1 ? "s" : ""}`);
+        if (r.tools.length) regs.push(`${r.tools.length} tool${r.tools.length > 1 ? "s" : ""}`);
+        if (r.commands.length) regs.push(`${r.commands.length} command${r.commands.length > 1 ? "s" : ""}`);
+        if (p.loaded) body.appendChild(Object.assign(document.createElement("div"), { className: "shell-plugin-regs", textContent: regs.length ? "registers " + regs.join(", ") : "registers nothing", title: [...r.filters, ...r.panels, ...r.actions.map((a) => a.id), ...r.tools, ...r.commands].join("\n") }));
+        if (p.error) body.appendChild(Object.assign(document.createElement("div"), { className: "shell-plugin-error", textContent: p.error.split("\n").slice(0, 3).join("\n") }));
+        else if (p.errors.length) body.appendChild(Object.assign(document.createElement("div"), { className: "shell-plugin-error", textContent: "last errors: " + p.errors.slice(-3).join(" · ") }));
+        row.appendChild(body);
+        const state = document.createElement("span");
+        state.className = "shell-plugin-state" + (p.error ? " bad" : p.loaded ? "" : " off");
+        state.textContent = p.error ? "error" : p.loaded ? "loaded" : p.enabled ? "not loaded" : "disabled";
+        state.title = p.dir || "";
+        row.appendChild(state);
+        ui.plugins.appendChild(row);
+    }
+}
+
+plugins.setOnChanged(() => { if (ui.settings.open) renderPlugins(); });
+ui.pluginsReload.addEventListener("click", async () => {
+    ui.pluginsReload.disabled = true;
+    ui.pluginsNote.textContent = "reloading ...";
+    try { const list = await plugins.reloadPlugins(); ui.pluginsNote.textContent = `${list.filter((p) => p.loaded).length} of ${list.length} loaded.`; }
+    catch (err) { ui.pluginsNote.textContent = String(err.message || err); }
+    finally { ui.pluginsReload.disabled = false; renderPlugins(); }
+});
+ui.pluginsFolder.addEventListener("click", () => window.scumble.plugins.openFolder());
+
 // ---- progress ----------------------------------------------------------------------------
 
 api.addEventListener("progress", ({ detail }) => {
@@ -523,6 +584,9 @@ async function openSettings() {
     await renderProviders();
     renderRecipeList();
     try { renderHelpers(await window.scumble.helpers.status()); } catch (err) { ui.helpersNote.textContent = String(err.message || err); }
+    try { await plugins.fetchList(); } catch (_) { /* ignore */ }
+    ui.pluginsNote.textContent = "";
+    renderPlugins();
     if (!ui.settings.open) ui.settings.showModal();
 }
 
@@ -561,10 +625,18 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "next-tab") cycleTab(1);
     else if (cmd === "prev-tab") cycleTab(-1);
     else if (cmd === "import-recipe") importRecipe();
+    else if (cmd === "reload-plugins") plugins.reloadPlugins().then((list) => { if (host.editor) host.editor.setStatus(`Plugins reloaded: ${list.filter((p) => p.loaded).length} of ${list.length} loaded.`); });
+    else if (cmd === "settings-plugins") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Plugins"); if (h) h.scrollIntoView(); });
+    else if (cmd.startsWith("plugin:")) plugins.runAction(cmd.slice(7)).catch(() => { /* reported by the plugin host */ });
 });
 
-// ---- start: restore the last session, then connect ---------------------------------------
+// ---- start: plugins, restore the last session, then connect -------------------------------
 
+try {
+    await plugins.loadPlugins();
+} catch (err) {
+    console.warn("plugins", err);
+}
 try {
     const saved = await window.scumble.state.load();
     if (saved) await host.restore(saved);
@@ -579,4 +651,4 @@ await host.refreshHelpers();
 selectRecipe(settings.recipe);
 showStatus(await window.scumble.comfy.status());
 
-export { newDocument, activate, closeDocument, openSettings, selectRecipe, loadRecipes, importRecipe, testConnection, connect };
+export { newDocument, activate, closeDocument, openSettings, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins };

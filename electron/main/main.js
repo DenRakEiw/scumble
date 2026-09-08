@@ -13,6 +13,7 @@ const keys = require("./keys");
 const providers = require("./providers");
 const recipes = require("./recipes");
 const helpers = require("./onnx");
+const plugins = require("./plugins");
 
 const ROOT = path.join(__dirname, "..", "..");
 const RENDERER_DIR = path.join(ROOT, "renderer");
@@ -46,8 +47,16 @@ protocol.registerSchemesAsPrivileged([
 
 async function serveFile(pathname) {
     const rel = decodeURIComponent(pathname === "/" ? "/index.html" : pathname);
-    const abs = path.normalize(path.join(RENDERER_DIR, rel));
-    if (!abs.startsWith(RENDERER_DIR + path.sep) && abs !== RENDERER_DIR) return new Response("forbidden", { status: 403 });
+    let abs;
+    if (rel.startsWith("/plugins/")) {
+        // plugin files (renderer/plugins.js imports the module from here): built-in or user folder
+        const m = rel.match(/^\/plugins\/([^/]+)\/(.+)$/);
+        abs = m ? plugins.resolve(m[1], m[2]) : null;
+        if (!abs) return new Response("no such plugin file: " + rel, { status: 404 });
+    } else {
+        abs = path.normalize(path.join(RENDERER_DIR, rel));
+        if (!abs.startsWith(RENDERER_DIR + path.sep) && abs !== RENDERER_DIR) return new Response("forbidden", { status: 403 });
+    }
     try {
         const data = await fsp.readFile(abs);
         const type = MIME[path.extname(abs).toLowerCase()] || "application/octet-stream";
@@ -114,8 +123,20 @@ function send(channel, payload) {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
+let pluginActions = [];   // [{id, label, accelerator}] from renderer/plugins.js
+
 function buildMenu() {
     const isMac = process.platform === "darwin";
+    const pluginMenu = {
+        label: "&Plugins",
+        submenu: [
+            ...pluginActions.map((a) => ({ label: a.label, accelerator: a.accelerator || undefined, click: () => send("menu", "plugin:" + a.id) })),
+            ...(pluginActions.length ? [{ type: "separator" }] : []),
+            { label: "Reload plugins", click: () => send("menu", "reload-plugins") },
+            { label: "Open plugin folder", click: () => plugins.openFolder() },
+            { label: "Manage plugins...", click: () => send("menu", "settings-plugins") },
+        ],
+    };
     const template = [
         ...(isMac ? [{ role: "appMenu" }] : []),
         {
@@ -146,6 +167,7 @@ function buildMenu() {
                 { role: "togglefullscreen" },
             ],
         },
+        pluginMenu,
         {
             label: "&Help",
             submenu: [
@@ -171,6 +193,12 @@ async function openImage() {
     const payload = { name: path.basename(file), path: file, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
     send("file:opened", payload);
     return payload;
+}
+
+/** Read a file for the renderer (commands with a `path` argument: load_image, add_image_layer). */
+async function readFile(file) {
+    const data = await fsp.readFile(file);
+    return { name: path.basename(file), path: file, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
 }
 
 /** Write bytes to a file. With `path` given (scripts, MCP export) no dialog is shown. */
@@ -255,6 +283,7 @@ function installIpc() {
     ipcMain.handle("files:openFolder", async () => { const r = mirror.root(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(r); });
     ipcMain.handle("file:open", () => openImage());
     ipcMain.handle("file:save", (_e, args) => saveFile(args));
+    ipcMain.handle("file:read", (_e, file) => readFile(String(file)));
     ipcMain.handle("recipes:list", () => listRecipes());
     ipcMain.handle("recipes:import", (_e, file) => importRecipe(file));
     ipcMain.handle("recipes:remove", (_e, id) => recipes.remove(id));
@@ -277,7 +306,14 @@ function installIpc() {
     ipcMain.handle("helpers:objects", (_e, req) => helpers.objects(req));
     ipcMain.handle("helpers:segment", (_e, req) => helpers.segment(req));
     ipcMain.handle("helpers:cutout", (_e, req) => helpers.cutout(req));
-    ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: app.getPath("userData") }));
+    // plugins (electron/main/plugins.js): folders and manifests; the renderer loads the modules
+    ipcMain.handle("plugins:list", () => plugins.list());
+    ipcMain.handle("plugins:setEnabled", (_e, { id, enabled }) => plugins.setEnabled(String(id), !!enabled));
+    ipcMain.handle("plugins:openFolder", () => plugins.openFolder());
+    ipcMain.handle("plugins:menu", (_e, actions) => { pluginActions = Array.isArray(actions) ? actions.map((a) => ({ id: String(a.id), label: String(a.label || a.id), accelerator: a.accelerator ? String(a.accelerator) : null })) : []; buildMenu(); return true; });
+    ipcMain.handle("plugins:getData", (_e, id) => plugins.getData(String(id)));
+    ipcMain.handle("plugins:setData", (_e, { id, patch }) => plugins.setData(String(id), patch));
+    ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: app.getPath("userData"), pluginDir: plugins.userDir() }));
     ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
 }
 

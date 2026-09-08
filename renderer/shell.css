@@ -75,3 +75,21 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 .shell-model .shell-model-bar > div { height: 100%; background: #f0c674; width: 0; }
 .shell-model button { padding: 2px 8px; font-size: 12px; }
 #shell-settings code { color: #bbb; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+
+/* plugins (Settings and the editor) */
+.shell-plugin { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: start; padding: 6px 0; border-bottom: 1px solid #2a2a2a; }
+.shell-plugin:last-child { border-bottom: 0; }
+.shell-plugin input[type=checkbox] { margin-top: 3px; }
+.shell-plugin-name { font-weight: 600; }
+.shell-plugin-name small { color: #888; font-weight: normal; margin-left: 6px; }
+.shell-plugin-desc, .shell-plugin-regs { color: #999; font-size: 12px; }
+.shell-plugin-error { color: #e07a7a; font-size: 12px; white-space: pre-wrap; }
+.shell-plugin-state { color: #7cc47f; font-size: 12px; text-align: right; white-space: nowrap; }
+.shell-plugin-state.off { color: #888; }
+.shell-plugin-state.bad { color: #e07a7a; }
+.scumble-plugin-panel { display: flex; flex-direction: column; gap: 6px; }
+.scumble-plugin-row { display: grid; grid-template-columns: 70px 1fr 48px; gap: 6px; align-items: center; font-size: 12px; }
+.scumble-plugin-row input[type=range] { width: 100%; }
+.scumble-plugin-value { text-align: right; color: #bbb; }
+.scumble-plugin-error { color: #e07a7a; font-size: 12px; white-space: pre-wrap; }
+.scumble-tool-glyph { font-size: 12px; font-weight: 700; letter-spacing: .02em; }

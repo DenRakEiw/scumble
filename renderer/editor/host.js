@@ -80,6 +80,11 @@ export const host = {
     nextId: 1,             // editor ids (node.id): upload name prefix and helper routing key
     createDocument: null,  // set by the shell: (id) => editor, used by restore()
     onDocsChanged: null,   // set by the shell: () => void, after autosave (tab labels)
+    shell: null,           // set by the shell: newDocument, activate, closeDocument, selectRecipe, recipes (for renderer/commands.js)
+    commands: null,        // renderer/commands.js: the command core, set by the shell
+    plugins: null,         // renderer/plugins.js: pointer / key / tool hooks for plugin tools, set by the shell
+    exportPath: null,      // a fixed target for the next saveExport (commands, scripts); no dialog then
+    _listeners: new Map(),
     mountEl: null,
     recipe: null,
     objectInfo: null,
@@ -116,14 +121,63 @@ export const host = {
         if (i >= 0) this._editors.splice(i, 1);
         if (this.editor === editor) this.editor = this._editors[Math.min(i, this._editors.length - 1)] || null;
         if (this.editor) this.activate(this.editor);
+        this.emit("removed", { editor });
     },
 
     /** Show this editor, hide the others; only the active editor gets keyboard shortcuts. */
     activate(editor) {
         if (!editor || !this._editors.includes(editor)) return;
+        const prev = this.editor;
         this.editor = editor;
         for (const e of this._editors) e.root.classList.toggle("shell-hidden", e !== editor);
         try { editor.resizeCanvas(); editor.draw(); } catch (_) { /* not open yet */ }
+        if (prev !== editor) this.emit("activate", { editor });
+    },
+
+    // ---- events for the shell and plugins ---------------------------------------------------
+    //   built (editor)            an editor finished building its UI (plugins add panels / tools)
+    //   activate (editor)         another tab became active
+    //   changed (editor)          a document changed (debounced autosave follows)
+    //   tool (editor, tool, prev) the active tool changed
+    //   removed (editor)          a tab was closed
+
+    on(type, fn) {
+        if (!this._listeners.has(type)) this._listeners.set(type, new Set());
+        this._listeners.get(type).add(fn);
+        return () => this.off(type, fn);
+    },
+
+    off(type, fn) {
+        const s = this._listeners.get(type);
+        if (s) s.delete(fn);
+    },
+
+    emit(type, data) {
+        const s = this._listeners.get(type);
+        if (!s) return;
+        for (const fn of Array.from(s)) { try { fn(data); } catch (err) { console.error("host listener", type, err); } }
+    },
+
+    /** Patched into the end of the editor constructor (tools/sync_editor.py). */
+    editorBuilt(editor) {
+        this.emit("built", { editor });
+    },
+
+    toolChanged(editor, tool, prev) {
+        this.emit("tool", { editor, tool, prev });
+    },
+
+    /**
+     * Pointer gestures on the canvas are offered to plugin tools first (patched into
+     * onPointerDown / Move / Up). Returns true when a plugin tool took the event.
+     */
+    pluginPointer(editor, phase, e, ix, iy, p) {
+        return this.plugins ? this.plugins.pointer(editor, phase, e, ix, iy, p) : false;
+    },
+
+    /** Single-key shortcuts of plugin tools and actions (patched into onKey before the tool switch). */
+    pluginKey(editor, e, k) {
+        return this.plugins ? this.plugins.key(editor, e, k) : false;
     },
 
     isActive(editor) {
@@ -469,13 +523,14 @@ export const host = {
 
     async saveExport(blob, name) {
         const data = new Uint8Array(await blob.arrayBuffer());
-        return window.scumble.file.save({ name, data });
+        return window.scumble.file.save({ name, data, path: this.exportPath || undefined });
     },
 
     /** An editor changed: autosave every open document (debounced) and refresh the tabs. */
     changed(editor) {
         clearTimeout(this._saveTimer);
         this._saveTimer = setTimeout(() => this.saveAll(), 1500);
+        this.emit("changed", { editor });
     },
 
     /** The autosave bundle: every open document's state, the active one, the id counter. */
