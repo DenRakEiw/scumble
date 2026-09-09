@@ -1,0 +1,155 @@
+{
+  "id": "flux2_flex",
+  "kind": "provider",
+  "name": "FLUX.2 [flex]",
+  "family": "Black Forest Labs",
+  "description": "FLUX.2 with exposed steps and guidance, up to ten references. Adapter written from the provider's docs, not run against the live API yet.",
+  "default": "bfl",
+  "providers": {
+    "bfl": {
+      "model": "flux-2-flex",
+      "input": "edit",
+      "settings": [
+        {
+          "index": 1,
+          "key": "steps",
+          "label": "Steps",
+          "spec": [
+            "INT",
+            {
+              "default": 50,
+              "min": 1,
+              "max": 50
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "guidance",
+          "label": "Guidance",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 2.5,
+              "min": 1,
+              "max": 10,
+              "step": 0.1
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "safety_tolerance",
+          "label": "Safety tolerance",
+          "spec": [
+            "INT",
+            {
+              "default": 2,
+              "min": 0,
+              "max": 6
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "fal": {
+      "model": "fal-ai/flux-2-flex/edit",
+      "input": "edit",
+      "settings": [
+        {
+          "index": 1,
+          "key": "num_inference_steps",
+          "label": "Steps",
+          "spec": [
+            "INT",
+            {
+              "default": 50,
+              "min": 1,
+              "max": 50
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "guidance_scale",
+          "label": "Guidance",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 2.5,
+              "min": 1,
+              "max": 10,
+              "step": 0.1
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "key": "safety_tolerance",
+          "label": "Safety tolerance",
+          "spec": [
+            [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ],
+            {
+              "default": "2"
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "replicate": {
+      "model": "black-forest-labs/flux-2-flex",
+      "input": "edit",
+      "fields": {
+        "images": "input_images"
+      },
+      "fixed": {
+        "output_format": "png",
+        "aspect_ratio": "match_input_image"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "steps",
+          "label": "Steps",
+          "spec": [
+            "INT",
+            {
+              "default": 50,
+              "min": 1,
+              "max": 50
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "guidance",
+          "label": "Guidance",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 2.5,
+              "min": 1,
+              "max": 10,
+              "step": 0.1
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "openrouter": {
+      "model": "black-forest-labs/flux.2-flex",
+      "input": "fill",
+      "settings": [],
+      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+    }
+  }
+}

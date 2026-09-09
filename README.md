@@ -1,9 +1,9 @@
 # Scumble
 
 > **Work in progress.** Scumble is in an early state (0.1.x). Not every feature has been
-> tested end to end yet, and the API provider adapters (fal.ai, Replicate, Black Forest
-> Labs, OpenAI, Google Gemini) have been written from the providers' documentation but
-> have not run against the live APIs so far. Expect rough edges, keep backups of your
+> tested end to end yet, and the API provider adapters (Google Gemini, OpenAI, Black Forest
+> Labs, fal.ai, Replicate, OpenRouter, LetzAI) have been written from the providers'
+> documentation but have not run against the live APIs so far. Expect rough edges, keep backups of your
 > images, and please report what breaks in the
 > [issues](https://github.com/DenRakEiw/scumble/issues).
 
@@ -14,8 +14,10 @@ regenerated, stacked with filter and text layers, and exported with all layers t
 OpenRaster.
 
 Rendering happens on your own [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
-(local or remote, for example on RunPod) or through API providers (fal.ai, Replicate,
-Black Forest Labs, OpenAI gpt-image, Google Gemini). Object masks and background removal
+(local or remote, for example on RunPod) or through API providers: Google (Nano Banana
+2 / 2 Lite / Pro), OpenAI (GPT Image 2.5 Flare / Sunburst, 2, 1.5), Black Forest Labs
+(FLUX.2 max / pro / flex / klein, FLUX.1 Fill), ByteDance Seedream 5, Qwen Image Edit,
+each through the model's own API or through fal.ai, Replicate and OpenRouter, plus LetzAI. Object masks and background removal
 run inside the app through ONNX Runtime (SAM2, BiRefNet, RMBG). The editor is the same
 code as the ComfyUI node [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas);
 Scumble is the standalone window around it, plus recipes, plugins and an MCP server.
@@ -35,8 +37,9 @@ untested (see the note above).
   balance, HSL, LUT (.cube), vignette, sharpen, blur and more; a film pack plugin with
   film looks, halation, glow, bleach bypass, cross processing, split toning, light leaks,
   frames and control points.
-- Recipes instead of node graphs: pick "Flux.2 Klein local", "SDXL inpaint" or an API
-  provider; import your own ComfyUI workflow as a recipe if it holds an Inpaint Canvas node.
+- Recipes instead of node graphs: pick a model ("FLUX.2 [max]", "Nano Banana 2") and the
+  provider it runs on (its own API, fal.ai, Replicate, OpenRouter); import your own ComfyUI
+  workflow as a recipe if it holds an Inpaint Canvas node.
 - Export PNG, JPEG, WebP, PSD and ORA with layers, masks and selections.
 - JavaScript plugins (filters with CPU and WebGL2 paths, panels, menu actions, tools,
   commands) and a command core with 60+ documented commands.
@@ -95,14 +98,14 @@ the sample plugin), `film_test.py` (GPU and CPU paths of the film pack), `mcp_te
 
 ```
 electron/main/     main process: window, scumble:// scheme with the ComfyUI proxy, websocket, menu, dialogs, settings,
-                   file mirror, keys.js (safeStorage), recipes.js, providers/ (fal, replicate, bfl, openai, gemini),
+                   file mirror, keys.js (safeStorage), recipes.js, providers/ (fal, replicate, bfl, openai, gemini, openrouter, letz),
                    onnx/ (SAM2, matting), plugins.js, updater.js (GitHub releases), bridge.js + local.js + mcp/ (agents)
 electron/preload.js
 renderer/          shell.js (connection bar, recipe picker, tabs, settings), commands.js (the command core),
                    plugins.js (plugin loader and the `scumble` API)
 renderer/editor/   synced copy of the node's editor, see docs/SYNC.md; host.js is the app side of it,
                    inpaint_filters_gl.js the WebGL2 filter path, stitch.js the in-app crop / stitch for provider runs
-recipes/           ComfyUI recipes (API-format prompts with a fixed canvas node id) and provider recipes, docs/RECIPES.md
+recipes/           ComfyUI recipes (API-format prompts with a fixed canvas node id) and model recipes (one per model, a variant per provider), docs/RECIPES.md
 plugins/           built-in plugins: sample (one of every extension point) and film (the film pack), docs/PLUGINS.md, docs/FILM.md
 docker/runpod/     Dockerfile + provision.sh for a ComfyUI box on RunPod (draft, docs/RUNPOD.md)
 tools/             sync_editor.py, cdp.py (DevTools driver), the tests, commands_doc.py

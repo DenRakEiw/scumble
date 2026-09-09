@@ -1,0 +1,97 @@
+{
+  "id": "seedream_5_lite",
+  "kind": "provider",
+  "name": "Seedream 5.0 Lite",
+  "family": "ByteDance",
+  "description": "ByteDance's fast Seedream 5 with built-in reasoning, up to 3K. Adapter written from the provider's docs, not run against the live API yet.",
+  "default": "fal",
+  "providers": {
+    "fal": {
+      "model": "fal-ai/bytedance/seedream/v5/lite/edit",
+      "input": "edit",
+      "settings": [
+        {
+          "index": 1,
+          "key": "image_size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto_2K",
+              "auto_3K",
+              "auto_4K"
+            ],
+            {
+              "default": "auto_2K"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "enable_safety_checker",
+          "label": "Safety checker",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": true
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "options": {
+        "sizing": "none"
+      }
+    },
+    "replicate": {
+      "model": "bytedance/seedream-5-lite",
+      "input": "edit",
+      "fields": {
+        "images": "image_input"
+      },
+      "fixed": {
+        "output_format": "png",
+        "aspect_ratio": "match_input_image"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "size",
+          "label": "Size",
+          "spec": [
+            [
+              "2K",
+              "3K",
+              "4K"
+            ],
+            {
+              "default": "2K"
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "openrouter": {
+      "model": "bytedance-seed/seedream-5-0-lite",
+      "input": "fill",
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+    }
+  }
+}

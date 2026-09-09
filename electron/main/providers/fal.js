@@ -5,6 +5,9 @@
 // Two request shapes, chosen by the recipe's `kind`:
 //   fill: { image_url, mask_url, prompt, ... }        (flux-pro/v1/fill, flux-lora-fill, qwen-image-edit/inpaint, ...)
 //   edit: { image_urls: [crop, references...], prompt } (flux-2-pro/edit, flux-2/edit, nano-banana/edit, ...)
+// A recipe variant may rename the inputs with `fields` ({ image, images, mask }; gpt-image-2 on fal
+// takes image_urls plus mask_url) and switch the size hint off with options.sizing = "none" for
+// endpoints without a free image_size (nano-banana, seedream, gpt-image).
 "use strict";
 
 const { dataUri, fetchImage, readError, sleep, num } = require("./util");
@@ -15,14 +18,16 @@ function inputFor(req) {
     const p = req.params;
     const input = { prompt: req.prompt || "", output_format: "png", num_images: 1 };
     if (req.seed != null && !p.random_seed) input.seed = req.seed >>> 0;
-    if (req.kind === "edit") {
-        input.image_urls = [dataUri(req.image), ...req.references.map((r) => dataUri(r))];
+    const f = req.fields || {};
+    const sizing = (req.options && req.options.sizing) || "image_size";
+    if (req.kind === "edit" || f.images) {
+        input[f.images || "image_urls"] = [dataUri(req.image), ...req.references.map((r) => dataUri(r))];
         // keep the crop's size: the stitch stretches only a same-aspect result back exactly
-        input.image_size = { width: req.width, height: req.height };
+        if (sizing === "image_size" && req.kind === "edit") input.image_size = { width: req.width, height: req.height };
     } else {
-        input.image_url = dataUri(req.image);
-        if (req.mask) input.mask_url = dataUri(req.mask);
+        input[f.image || "image_url"] = dataUri(req.image);
     }
+    if (req.mask && req.kind !== "edit") input[f.mask || "mask_url"] = dataUri(req.mask);
     // recipe settings are passed through by name; the recipe decides which exist for the model
     for (const [k, v] of Object.entries(p)) {
         if (k === "random_seed" || k === "model" || v === "" || v == null) continue;

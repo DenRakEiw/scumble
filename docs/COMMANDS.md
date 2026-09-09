@@ -2,8 +2,7 @@
 
 The command core (`renderer/commands.js`) is the one place every operation of the editor is
 reachable from outside the UI: plugins (`scumble.commands.run`), tests (`tools/commands_test.py`),
-the devtools console, and the MCP server (`Scumble --mcp`, `docs/MCP.md`), which maps every entry
-below to a tool (`.` in a name becomes `_`); `Scumble --cmd <name> [json]` runs one from a shell.
+the devtools console, and in phase 4c the MCP server, which maps every entry below to a tool.
 It is the port of the ComfyUI node's bridge table (`js/inpaint_bridge.js`, 46 commands); the
 node addressed graph nodes, the app addresses documents (tabs).
 
@@ -75,11 +74,12 @@ The recipes (ComfyUI workflows and API providers) and which one is selected.
 
 ### `select_recipe` *(app)*
 
-Select the recipe every tab generates with.
+Select the recipe every tab generates with; model recipes take the provider to run on (gemini, openai, bfl, fal, replicate, openrouter, letz), else the remembered or default one.
 
 | param | type | description |
 |---|---|---|
 | `id` | string | recipe id (from list_recipes) (required) |
+| `provider` | string | provider id for a model recipe (one of its providers from list_recipes) |
 
 ### `set_node_params` *(app)*
 

@@ -19,6 +19,8 @@ const PROVIDERS = {
     openai: require("./openai"),
     gemini: require("./gemini"),
     replicate: require("./replicate"),
+    openrouter: require("./openrouter"),
+    letz: require("./letz"),
     loopback: require("./loopback"),
 };
 
@@ -46,7 +48,8 @@ async function edit(request) {
         image: toBuffer(request.image),
         mask: toBuffer(request.mask),
         maskAlpha: toBuffer(request.maskAlpha),   // RGBA mask, alpha 0 where to repaint (OpenAI's convention)
-        fields: request.fields || null,           // model-specific input names (Replicate)
+        fields: request.fields || null,           // model-specific input names (Replicate, fal)
+        options: request.options || null,         // adapter switches from the recipe variant (fal: sizing)
         references: (request.references || []).map(toBuffer).filter(Boolean),
         params: request.params || {},
     };

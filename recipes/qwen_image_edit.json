@@ -1,0 +1,98 @@
+{
+  "id": "qwen_image_edit",
+  "kind": "provider",
+  "name": "Qwen Image Edit",
+  "family": "Qwen",
+  "description": "Alibaba's Qwen image editor; fal's inpaint endpoint takes the mask, Replicate's edits the whole crop. Adapter written from the provider's docs, not run against the live API yet.",
+  "default": "fal",
+  "providers": {
+    "fal": {
+      "model": "fal-ai/qwen-image-edit/inpaint",
+      "input": "fill",
+      "settings": [
+        {
+          "index": 1,
+          "key": "num_inference_steps",
+          "label": "Steps",
+          "spec": [
+            "INT",
+            {
+              "default": 30,
+              "min": 2,
+              "max": 50
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "guidance_scale",
+          "label": "Guidance",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 4,
+              "min": 0,
+              "max": 20,
+              "step": 0.5
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "strength",
+          "label": "Strength",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 0.93,
+              "min": 0.01,
+              "max": 1,
+              "step": 0.01
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "key": "acceleration",
+          "label": "Acceleration",
+          "spec": [
+            [
+              "none",
+              "regular",
+              "high"
+            ],
+            {
+              "default": "regular"
+            }
+          ]
+        }
+      ],
+      "note": "Mask inpainting: the crop and the selection mask go to the model, the stitch blends the answer back."
+    },
+    "replicate": {
+      "model": "qwen/qwen-image-edit",
+      "input": "edit",
+      "fields": {
+        "image": "image"
+      },
+      "fixed": {
+        "aspect_ratio": "match_input_image",
+        "output_format": "png"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "go_fast",
+          "label": "Fast mode",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": true
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    }
+  }
+}

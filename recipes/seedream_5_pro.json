@@ -1,0 +1,67 @@
+{
+  "id": "seedream_5_pro",
+  "kind": "provider",
+  "name": "Seedream 5.0 Pro",
+  "family": "ByteDance",
+  "description": "ByteDance's full Seedream 5, 1K or 2K. Adapter written from the provider's docs, not run against the live API yet.",
+  "default": "fal",
+  "providers": {
+    "fal": {
+      "model": "bytedance/seedream/v5/pro/edit",
+      "input": "edit",
+      "settings": [
+        {
+          "index": 1,
+          "key": "image_size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto_1K",
+              "auto_2K"
+            ],
+            {
+              "default": "auto_2K"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "enable_safety_checker",
+          "label": "Safety checker",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": true
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "options": {
+        "sizing": "none"
+      }
+    },
+    "openrouter": {
+      "model": "bytedance-seed/seedream-5-0-pro",
+      "input": "fill",
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+    }
+  }
+}

@@ -380,7 +380,7 @@ export const host = {
         editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label} ...`);
             const [image, maskBytes, maskAlphaBytes, ...refBytes] = await Promise.all([canvasBytes(crop), canvasBytes(mask), canvasBytes(maskAlpha), ...references.map((c) => canvasBytes(c))]);
             const request = {
-                provider: r.provider, model: r.model, kind: r.input === "edit" ? "edit" : "fill", fields: r.fields || null,
+                provider: r.provider, model: r.model, kind: r.input === "edit" ? "edit" : "fill", fields: r.fields || null, options: r.options || null,
                 prompt: editor.promptText || "", negative: editor.negativeText || "", seed: editor.genSettings.seed,
                 image, mask: maskBytes, maskAlpha: maskAlphaBytes, width: crop.width, height: crop.height, references: refBytes,
                 params: this.providerParams(editor),

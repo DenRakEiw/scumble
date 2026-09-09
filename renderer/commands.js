@@ -200,17 +200,21 @@ const COMMANDS = {
         params: {},
         async run() {
             const cur = host.recipe;
-            return { selected: cur ? cur.id : null, recipes: host.shell.recipes().map((r) => ({ id: r.id, name: r.name || r.id, kind: r.kind || "comfy", mode: r.mode || (r.kind === "provider" ? "api" : "local"), provider: r.provider || null, model: r.model || null, description: r.description || "", source: r.source || "builtin" })) };
+            return { selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null, recipes: host.shell.recipes().map((r) => {
+                const v = host.shell.resolveRecipe(r);
+                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: r.mode || (r.kind === "provider" ? "api" : "local"), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, description: r.description || "", source: r.source || "builtin" };
+            }) };
         },
     },
     select_recipe: {
-        scope: "app", description: "Select the recipe every tab generates with.",
-        params: { id: P.str("recipe id (from list_recipes)", { required: true }) },
+        scope: "app", description: "Select the recipe every tab generates with; model recipes take the provider to run on (gemini, openai, bfl, fal, replicate, openrouter, letz), else the remembered or default one.",
+        params: { id: P.str("recipe id (from list_recipes)", { required: true }), provider: P.str("provider id for a model recipe (one of its providers from list_recipes)") },
         async run(_, a) {
             const r = host.shell.recipes().find((x) => x.id === a.id);
             if (!r) throw new Error(`no recipe "${a.id}" (${host.shell.recipes().map((x) => x.id).join(", ")})`);
-            host.shell.selectRecipe(r.id);
-            return { selected: host.recipe ? host.recipe.id : null, kind: r.kind || "comfy" };
+            if (a.provider && !(r.providerIds || []).includes(a.provider)) throw new Error(`recipe "${a.id}" has no provider "${a.provider}" (${(r.providerIds || []).join(", ") || "none"})`);
+            host.shell.selectRecipe(r.id, a.provider || undefined);
+            return { selected: host.recipe ? host.recipe.id : null, kind: r.kind || "comfy", provider: host.recipe && host.recipe.kind === "provider" ? host.recipe.provider : null };
         },
     },
     list_plugins: {

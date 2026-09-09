@@ -28,12 +28,30 @@ async function readDir(dir, source) {
             r.file = n;
             r.source = source;
             r.kind = r.kind === "provider" ? "provider" : "comfy";
-            out.push(r);
+            out.push(normalize(r));
         } catch (err) {
             console.warn("recipe", n, "unreadable:", err.message);
         }
     }
     return out;
+}
+
+/**
+ * Provider recipes are model-centric: `providers` maps a provider id to the variant that
+ * runs the model there ({ model, input, fields, fixed, settings, options, note }) and
+ * `default` names the home provider. A recipe with a top-level `provider` (the old shape,
+ * the smoke test's loopback) becomes a one-provider recipe.
+ */
+function normalize(r) {
+    if (r.kind !== "provider") return r;
+    if (!r.providers || typeof r.providers !== "object" || !Object.keys(r.providers).length) {
+        const id = r.provider || "loopback";
+        r.providers = { [id]: { model: r.model || "", input: r.input || "fill", fields: r.fields || null, fixed: r.fixed || null, settings: r.settings || [], options: r.options || null, note: r.note || "" } };
+        r.default = id;
+    }
+    r.providerIds = Object.keys(r.providers);
+    if (!r.default || !r.providers[r.default]) r.default = r.providerIds[0];
+    return r;
 }
 
 async function list(builtinDir) {

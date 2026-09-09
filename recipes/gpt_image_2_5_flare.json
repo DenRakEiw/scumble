@@ -1,0 +1,76 @@
+{
+  "id": "gpt_image_2_5_flare",
+  "kind": "provider",
+  "name": "GPT Image 2.5 Flare",
+  "family": "OpenAI",
+  "description": "OpenAI's fast image model (September 2026): custom sizes in multiples of 16, quality up to max. Adapter written from the provider's docs, not run against the live API yet.",
+  "default": "openai",
+  "providers": {
+    "openai": {
+      "model": "gpt-image-2.5-flare",
+      "input": "fill",
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto",
+              "1024x1024",
+              "1536x1024",
+              "1024x1536"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "note": "OpenAI image edit with the selection as mask (transparent = repaint)."
+    },
+    "openrouter": {
+      "model": "openai/gpt-image-2.5-flare",
+      "input": "fill",
+      "settings": [
+        {
+          "index": 2,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+    }
+  }
+}

@@ -1,7 +1,7 @@
 // OpenAI images: POST /v1/images/edits (multipart). image[] = crop plus references,
 // mask = PNG whose transparent pixels mark the area to repaint (same size as the crop),
-// prompt, model (gpt-image-1 / gpt-image-1.5 / gpt-image-1-mini / gpt-image-2), size,
-// quality, input_fidelity. The answer carries b64_json.
+// prompt, model (gpt-image-2.5-flare / -sunburst, gpt-image-2, gpt-image-1.5, gpt-image-1), size,
+// quality (2.5 adds xhigh and max), input_fidelity (1.x and 2 only). The answer carries b64_json.
 "use strict";
 
 const { readError, closestSize } = require("./util");
@@ -37,7 +37,7 @@ module.exports = {
         }
         fd.append("size", size);
         if (p.quality && p.quality !== "auto") fd.append("quality", p.quality);
-        if (p.input_fidelity && !/mini/.test(model)) fd.append("input_fidelity", p.input_fidelity);
+        if (p.input_fidelity && /gpt-image-(1|1\.5|2)$/.test(model)) fd.append("input_fidelity", p.input_fidelity);
         fd.append("output_format", "png");
         fd.append("n", "1");
         const r = await ctx.fetch("https://api.openai.com/v1/images/edits", { method: "POST", headers: { Authorization: "Bearer " + ctx.key }, body: fd });

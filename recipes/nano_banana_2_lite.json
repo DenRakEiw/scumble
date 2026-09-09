@@ -1,0 +1,72 @@
+{
+  "id": "nano_banana_2_lite",
+  "kind": "provider",
+  "name": "Nano Banana 2 Lite (Gemini 3.1 Flash-Lite Image)",
+  "family": "Google",
+  "description": "Google's fastest and cheapest image model, 1K only. Adapter written from the provider's docs, not run against the live API yet.",
+  "default": "gemini",
+  "providers": {
+    "gemini": {
+      "model": "gemini-3.1-flash-lite-image",
+      "input": "fill",
+      "settings": [
+        {
+          "index": 1,
+          "key": "aspect_ratio",
+          "label": "Aspect",
+          "spec": [
+            [
+              "auto",
+              "1:1",
+              "3:2",
+              "2:3",
+              "4:3",
+              "3:4",
+              "16:9",
+              "9:16"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "image_size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto",
+              "1K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "note": "Gemini has no mask input: the crop and the mask go along and the prompt tells the model to change the white area only; the stitch keeps the selection."
+    },
+    "openrouter": {
+      "model": "google/gemini-3.1-flash-lite-image",
+      "input": "fill",
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+    }
+  }
+}

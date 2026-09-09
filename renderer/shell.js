@@ -114,7 +114,7 @@ function openInto(file) {
 host.createDocument = (id) => newDocument(id);
 host.onDocsChanged = () => renderTabs();
 // the command core (renderer/commands.js) reaches the shell through this
-host.shell = { newDocument, activate, closeDocument, selectRecipe: (id) => selectRecipe(id), recipes: () => recipes, openSettings };
+host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, openSettings };
 ui.tabAdd.addEventListener("click", () => activate(newDocument()));
 
 // ---- connection --------------------------------------------------------------------------
@@ -220,12 +220,20 @@ ui.setUrl.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key ==
 let recipes = [];
 let providers = [];
 
+const FAMILY_ORDER = ["ComfyUI", "Google", "OpenAI", "Black Forest Labs", "ByteDance", "Qwen", "LetzAI"];
+const familyOf = (r) => (r.kind === "provider" ? (r.family || "API providers") : "ComfyUI");
+
 async function loadRecipes() {
     recipes = await window.scumble.recipes.list();
+    // ComfyUI first, then the model families in a fixed order, unknown families after, names within
+    const rank = (r) => { const i = FAMILY_ORDER.indexOf(familyOf(r)); return i < 0 ? FAMILY_ORDER.length : i; };
+    recipes.sort((a, b) => rank(a) - rank(b) || familyOf(a).localeCompare(familyOf(b)) || String(a.name || a.id).localeCompare(String(b.name || b.id)));
     ui.recipe.innerHTML = "";
-    const groups = [["ComfyUI", (r) => r.kind !== "provider"], ["API providers", (r) => r.kind === "provider"]];
-    for (const [label, test] of groups) {
-        const items = recipes.filter(test);
+    // ComfyUI recipes first, then the model recipes grouped by family (Google, OpenAI, ...)
+    const families = ["ComfyUI"];
+    for (const r of recipes) { const f = familyOf(r); if (!families.includes(f)) families.push(f); }
+    for (const label of families) {
+        const items = recipes.filter((r) => familyOf(r) === label);
         if (!items.length) continue;
         const g = document.createElement("optgroup");
         g.label = label;
@@ -238,6 +246,26 @@ async function loadRecipes() {
     }
 }
 
+function providerLabel(id) {
+    const p = providers.find((x) => x.id === id);
+    return (p && p.label) || (id === "loopback" ? "Loopback" : id);
+}
+
+/** The provider a model recipe runs on: the remembered choice, else the recipe's default. */
+function chosenProvider(r) {
+    if (r.kind !== "provider" || !r.providers) return null;
+    const want = (settings.recipeProviders || {})[r.id];
+    return want && r.providers[want] ? want : (r.default || Object.keys(r.providers)[0]);
+}
+
+/** The recipe with the chosen provider's variant merged in (what host and the commands see). */
+function resolveRecipe(r) {
+    const pid = chosenProvider(r);
+    if (!pid) return r;
+    const v = r.providers[pid] || {};
+    return { ...r, provider: pid, providerLabel: providerLabel(pid), model: v.model || "", input: v.input || "fill", fields: v.fields || null, fixed: v.fixed || null, settings: v.settings || [], options: v.options || null, note: v.note || "" };
+}
+
 function providerKeyState(r) {
     if (r.kind !== "provider") return null;
     const p = providers.find((x) => x.id === r.provider);
@@ -245,33 +273,85 @@ function providerKeyState(r) {
     return p.key && p.key.set ? { ok: true } : { ok: false, text: `no ${p.label} key yet: Settings (Ctrl+,) › API providers` };
 }
 
-function selectRecipe(id) {
-    const r = recipes.find((x) => x.id === id) || recipes[0];
-    if (!r) { ui.recipeNote.textContent = "no recipes found"; return; }
+async function rememberProvider(recipeId, providerId) {
+    const map = { ...(settings.recipeProviders || {}), [recipeId]: providerId };
+    settings = await window.scumble.settings.set({ recipeProviders: map });
+}
+
+function selectRecipe(id, providerId) {
+    const raw = recipes.find((x) => x.id === id) || recipes[0];
+    if (!raw) { ui.recipeNote.textContent = "no recipes found"; return; }
+    if (providerId && raw.providers && raw.providers[providerId]) {
+        settings.recipeProviders = { ...(settings.recipeProviders || {}), [raw.id]: providerId };
+        rememberProvider(raw.id, providerId);
+    }
+    const r = resolveRecipe(raw);
     ui.recipe.value = r.id;
     const ks = providerKeyState(r);
-    ui.recipeNote.textContent = ks && !ks.ok ? ks.text : (r.description || "");
-    ui.recipeNote.title = r.description || "";
+    const via = r.kind === "provider" ? ` (via ${r.providerLabel}${r.model ? ", " + r.model : ""})` : "";
+    ui.recipeNote.textContent = ks && !ks.ok ? ks.text : (r.description || "") + via;
+    ui.recipeNote.title = [r.description, r.note].filter(Boolean).join("\n") + via;
     ui.recipeNote.style.color = ks && !ks.ok ? "#e0a05a" : "";
-    if (r.kind === "provider") r.providerLabel = (providers.find((x) => x.id === r.provider) || {}).label || r.provider;
     host.setRecipe(r);
     if (settings.recipe !== r.id) window.scumble.settings.set({ recipe: r.id }).then((s) => { settings = s; });
+    if (ui.settings.open) syncRecipeRows();
 }
 ui.recipe.addEventListener("change", () => selectRecipe(ui.recipe.value));
+
+/** Update the meta text and the provider selects of the recipe rows without rebuilding them. */
+function syncRecipeRows() {
+    for (const row of ui.recipes.querySelectorAll(".shell-recipe")) {
+        const r = recipes.find((x) => x.id === row.dataset.id);
+        if (!r) continue;
+        row.classList.toggle("active", host.recipe && host.recipe.id === r.id);
+        const sel = row.querySelector("select");
+        if (sel) sel.value = chosenProvider(r);
+        const meta = row.querySelector(".shell-recipe-meta");
+        if (meta) meta.textContent = recipeMeta(r);
+    }
+}
+
+function recipeMeta(r) {
+    if (r.kind !== "provider") return `ComfyUI · ${r.mode || "local"} · ${Object.keys(r.prompt || {}).length} nodes`;
+    const v = resolveRecipe(r);
+    const ks = providerKeyState(v);
+    return `${v.model || ""}${ks && !ks.ok ? " · no key" : ""}`;
+}
 
 function renderRecipeList() {
     ui.recipes.innerHTML = "";
     for (const r of recipes) {
         const row = document.createElement("div");
         row.className = "shell-recipe";
+        row.dataset.id = r.id;
         const name = document.createElement("span");
         name.className = "shell-recipe-name";
         name.textContent = r.name || r.id;
+        name.title = r.description || "";
         const meta = document.createElement("span");
         meta.className = "shell-recipe-meta";
-        meta.textContent = r.kind === "provider" ? `${(providers.find((x) => x.id === r.provider) || {}).label || r.provider} · ${r.model || ""}` : `ComfyUI · ${r.mode || "local"} · ${Object.keys(r.prompt || {}).length} nodes`;
+        meta.textContent = recipeMeta(r);
         name.appendChild(meta);
         row.appendChild(name);
+        if (r.kind === "provider" && r.providerIds && r.providerIds.length) {
+            // which provider runs this model; the key state shows in the option label
+            const sel = document.createElement("select");
+            sel.title = "Provider this model runs on";
+            for (const pid of r.providerIds) {
+                const o = document.createElement("option");
+                const p = providers.find((x) => x.id === pid);
+                o.value = pid; o.textContent = providerLabel(pid) + (p && !(p.key && p.key.set) ? " (no key)" : "");
+                sel.appendChild(o);
+            }
+            sel.value = chosenProvider(r);
+            sel.addEventListener("change", async () => {
+                await rememberProvider(r.id, sel.value);
+                if (host.recipe && host.recipe.id === r.id) selectRecipe(r.id); else syncRecipeRows();
+            });
+            row.appendChild(sel);
+        } else {
+            row.appendChild(document.createElement("span"));
+        }
         const use = document.createElement("button");
         use.type = "button"; use.textContent = "Use";
         use.addEventListener("click", () => selectRecipe(r.id));
@@ -285,6 +365,7 @@ function renderRecipeList() {
         row.appendChild(del);
         ui.recipes.appendChild(row);
     }
+    syncRecipeRows();
 }
 
 async function importRecipe(file) {

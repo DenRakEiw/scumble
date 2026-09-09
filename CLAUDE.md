@@ -82,9 +82,42 @@ with the user on 2026-09-09:
   no free path, Gatekeeper blocks unsigned apps hard since Sequoia). Not planned.
 - **Android**: not sensible (Electron + Node main process: sharp exports, ONNX, named pipes,
   MCP). Tablets can use the ComfyUI node in the browser instead.
-- Still open from before: the first real RunPod pod (`docker/runpod/`), the five API provider
-  adapters against live APIs (no keys yet), film pack follow-ups (`docs/BRIEF.md` §3), a
-  Claude Code / Claude Desktop session that drives Scumble through `--mcp`, a website.
+- Still open from before: the first real RunPod pod (`docker/runpod/`), the seven API provider
+  adapters against live APIs (no keys yet; the user applied for fal / OpenAI OSS credits on
+  2026-09-09), film pack follow-ups (`docs/BRIEF.md` §3), a Claude Code / Claude Desktop
+  session that drives Scumble through `--mcp`, a website.
+
+Landed on 2026-09-09 (evening, after the release):
+
+- **Model recipes**: a provider recipe is one model with a variant per provider
+  (`providers: { gemini | openai | bfl | fal | replicate | openrouter | letz: { model,
+  input, fields, fixed, settings, options, note } }`, `default` = home provider, `family`
+  groups the lists). Settings › Recipes shows a provider select per row (choice in
+  `settings.recipeProviders`), `select_recipe(id, provider)`, `list_recipes` lists
+  `providers`. `electron/main/recipes.js` `normalize()` turns the old one-provider shape
+  (and the smoke test's loopback) into the new one; `shell.js` `resolveRecipe()` merges the
+  chosen variant into what host and commands see. 17 model recipes: Nano Banana 2 / 2 Lite
+  / Pro / 1, GPT Image 2.5 Flare / Sunburst / 2 / 1.5, FLUX.2 max / pro / flex / klein,
+  FLUX.1 Fill, Seedream 5 Lite / Pro, Qwen Image Edit, LetzAI inpainting
+  (`tools`-less: the generator script lived in the session scratchpad, edit the JSON
+  files directly). Removed gpt-image-1 and gpt-image-1-mini.
+- **New adapters**: `providers/openrouter.js` (unified image API `POST /api/v1/images`,
+  `input_references`, `b64_json` back, no mask: handled like Gemini) and
+  `providers/letz.js` (`POST /user-assets` → PUT upload → `POST /image-edits` mode `in`
+  with the base64 mask, poll `/image-edits/<id>`, `imageVersions.original`). fal adapter:
+  `fields` (`image` / `images` / `mask` names) and `options.sizing = "none"`; OpenAI adapter:
+  gpt-image-2.5-flare / -sunburst (quality xhigh / max), `input_fidelity` only for 1.x / 2.
+  **None of the seven adapters has run against a live API yet.** Replicate input names
+  for the new models (`input_images` for FLUX.2, `image_input` for Nano Banana / Seedream)
+  are the best reading of third-party docs, replicate.com blocked the schema pages.
+- Model ids checked on 2026-09-09: Google `gemini-3.1-flash-image`,
+  `gemini-3.1-flash-lite-image`, `gemini-3-pro-image`, `gemini-2.5-flash-image`; OpenAI
+  `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` (released 2026-09-08), `gpt-image-2`,
+  `gpt-image-1.5`; fal `fal-ai/nano-banana-2/edit`, `fal-ai/flux-2-max/edit`,
+  `fal-ai/bytedance/seedream/v5/lite/edit`, `bytedance/seedream/v5/pro/edit` (no `fal-ai/`
+  prefix), `openai/gpt-image-2/edit`; OpenRouter slugs from
+  `GET https://openrouter.ai/api/v1/images/models` (public, no key), e.g.
+  `black-forest-labs/flux.2-max`, `bytedance-seed/seedream-5-0-lite`.
 
 Landed on 2026-09-09 (phase 5a):
 
@@ -305,10 +338,11 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   `main.js` → the running instance over `electron/main/local.js` (named pipe) or the app
   started headless in the same process → `electron/main/bridge.js` (IPC `commands:request` /
   `commands:reply`) → `commands.call` in `renderer/shell.js`. `docs/MCP.md`.
-- Provider runs: `host.runProvider` → `renderer/editor/stitch.js` (crop) → IPC
-  `provider:edit` → `electron/main/providers/index.js` picks the adapter and the key
-  (`keys.js`) → `stitch.js` (composite mask, colour match) → mirror upload → `addResults`.
-  Recipe formats in `docs/RECIPES.md`.
+- Provider runs: `host.runProvider` (the recipe resolved to the chosen provider's variant by
+  `shell.js`) → `renderer/editor/stitch.js` (crop) → IPC `provider:edit` →
+  `electron/main/providers/index.js` picks the adapter and the key (`keys.js`) →
+  `stitch.js` (composite mask, colour match) → mirror upload → `addResults`. Recipe
+  formats in `docs/RECIPES.md`.
 
 ## Working rules
 

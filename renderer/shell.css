@@ -56,7 +56,9 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 .shell-report .ok { color: #7cc47f; }
 .shell-report .bad { color: #e0533d; }
 .shell-provider, .shell-recipe { display: grid; grid-template-columns: 130px 1fr auto auto; gap: 6px 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid #2a2a2a; }
-.shell-recipe { grid-template-columns: 1fr auto auto; }
+.shell-recipe { grid-template-columns: 1fr auto auto auto; }
+.shell-recipe select { min-width: 150px; max-width: 190px; }
+.shell-recipe.active .shell-recipe-name { color: #fff; font-weight: 600; }
 .shell-provider:last-child, .shell-recipe:last-child { border-bottom: 0; }
 .shell-provider input { width: 100%; background: #111; color: #ddd; border: 1px solid #333; border-radius: 3px; padding: 3px 6px; font: inherit; }
 .shell-provider .shell-key-state { grid-column: 1 / -1; color: #888; font-size: 12px; }

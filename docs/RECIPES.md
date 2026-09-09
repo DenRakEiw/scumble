@@ -52,25 +52,45 @@ folder and is selected right away; Remove deletes it, Use selects it.
 
 One call to an API provider; crop and stitch happen in the app
 (`renderer/editor/stitch.js`, a port of the node's `run` / `stitch`), no ComfyUI needed.
+A provider recipe is **one model** with one variant per provider that hosts it; the user
+picks the provider in Settings › Recipes (a select per row, remembered in
+`settings.recipeProviders`) or through `select_recipe(id, provider)`. The home provider
+(`default`) is the model's own API: Google for the Nano Banana family, OpenAI for GPT
+Image, Black Forest Labs for FLUX; fal.ai, Replicate and OpenRouter carry most models as
+well, LetzAI has its own inpainting.
 
 ```
 {
-  "id": "fal_flux_fill", "kind": "provider",
-  "provider": "fal" | "bfl" | "openai" | "gemini" | "replicate",
-  "model": "fal-ai/flux-pro/v1/fill",   // endpoint / model id
-  "input": "fill" | "edit",             // fill: crop + mask; edit: instruction on the crop (+ references)
-  "settings": [ { "index": 1, "key": "steps", "label": "Steps", "spec": ["INT", {"default": 50, "min": 15, "max": 50}] } ],
-  "fixed": { "output_format": "png" },  // parameters sent as they are
-  "fields": { "image": "image", "mask": "mask", "images": "image_input" }   // Replicate: the model's input names
+  "id": "flux2_max", "kind": "provider", "name": "FLUX.2 [max]", "family": "Black Forest Labs",
+  "description": "...", "default": "bfl",
+  "providers": {
+    "bfl":        { "model": "flux-2-max", "input": "edit", "settings": [ ... ] },
+    "fal":        { "model": "fal-ai/flux-2-max/edit", "input": "edit", "settings": [ ... ] },
+    "replicate":  { "model": "black-forest-labs/flux-2-max", "input": "edit", "fields": { "images": "input_images" }, "fixed": { "output_format": "png" } },
+    "openrouter": { "model": "black-forest-labs/flux.2-max", "input": "fill" }
+  }
 }
 ```
 
-`settings[].key` is the parameter name the adapter sends (fal: passed through by name;
-BFL: steps, guidance, safety_tolerance, prompt_upsampling, `endpoint` picks the model;
-OpenAI: model, quality, input_fidelity, size; Gemini: model, aspect_ratio, image_size;
-Replicate: passed through by name, `model` is `owner/name` for official models or
-`owner/name:version`, `fields` names the image / mask / images inputs, files over
-256 kB go through Replicate's Files API first).
+Variant fields: `model` (endpoint / model id), `input` (`fill`: crop + mask; `edit`:
+instruction on the crop plus references), `settings` (Settings-panel controls, `key` is
+the parameter the adapter sends), `fixed` (parameters sent as they are), `fields`
+(input names: Replicate and fal, `{ image, images, mask }`), `options` (adapter switches:
+fal `sizing: "none"` for endpoints without a free `image_size`), `note` (shown as the
+tooltip). `family` groups the top-bar list. A recipe with a top-level `provider` instead
+of `providers` (the old shape, the smoke test's loopback) is read as a one-provider recipe.
+
+Adapters (`electron/main/providers/`): **fal** (queue API, settings passed by name),
+**bfl** (`steps`, `guidance`, `safety_tolerance`, `prompt_upsampling`; the variant's
+`model` is the endpoint), **openai** (`quality`, `size`, `input_fidelity` for 1.x / 2;
+gpt-image-2 and 2.5 take any size in multiples of 16), **gemini** (`aspect_ratio`,
+`image_size`; no mask input, the mask goes along as an image and the prompt names the
+white area), **replicate** (settings by name, `model` is `owner/name` or
+`owner/name:version`, files over 256 kB through the Files API), **openrouter** (unified
+image API `/api/v1/images`, `resolution`, `quality`, `aspect_ratio`; no mask input, handled
+like Gemini), **letz** (crop uploaded as a user asset, `/image-edits` mode `in` with the
+mask, `resolution` 2k / 4k). Every adapter is written from the provider's documentation and
+has not run against the live API yet; the recipe descriptions say so.
 The key of the provider comes from the credential store (Settings › API providers).
 
 What a provider run does: `prepareCrop` builds the crop like the node (selection bbox
