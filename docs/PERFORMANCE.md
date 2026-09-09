@@ -424,7 +424,59 @@ The original plan for reference:
    result transferred back as an `ImageBitmap`. The viewport preview from phase 1 stays on
    the main thread, so the screen never waits for the full render.
 
-### Phase 4: dirty rectangles and tiles (3–4 days)
+### Phase 4: dirty rectangles and the selection — **done 2026-09-10**
+
+What the plan asked for, measured against what was left after phase 3:
+
+1. **Dirty rectangles for painting** were already there: phase 1 put the stroke into its own
+   preview canvas and phase 2 added `touchSourceRect`, which refreshes the display levels
+   inside the painted box instead of dropping them. A brush dab and its frame cost 0.1 ms on
+   a 96 MP document, and the stroke's undo copy 0.4 ms, so nothing was left to do here.
+2. **The selection work moved into the worker.** Grow, shrink, feather, invert, the magic
+   wand and the bucket used to run on the main thread over the whole image; each of them
+   held it for one to four seconds at 96 MP.
+3. **Layer tiles** are deliberately not built: they are the data structure the WebGL2
+   compositor needs, and building them before it would mean writing the upload path twice.
+   Phase 5 brings them.
+
+The selection work in detail:
+
+- `inpaint_raster.js` owns the shared pieces now (`distanceTransform`, `growMask`,
+  `invertMask`, `maskBounds`, and a canvas helper that works without a `document`), so the
+  editor and the worker run the same code.
+- The worker got two jobs: `selection` (grow, shrink, feather, invert) and `flood` (the
+  wand's and the bucket's region, clipped to the selection, as a coloured shape). Pixels go
+  over as ImageBitmaps and come back the same way.
+- **Grow and shrink only touch the band around the selection**: the distance transform runs
+  on the selection's bounding box padded by the radius, not on the whole image.
+- **Every answer carries the new bounding box**, computed where the pixels already are, so
+  the editor stops scanning for it afterwards. That was the largest part of what was left
+  after the algorithms moved out (`markSelectionChanged` asks `renderInfo` for the size,
+  which forced a scan of the whole selection).
+- The results are pixel-identical to the main-thread path, and the reported bounds agree
+  with an exact scan; undo and redo of a worker operation restore the previous selection.
+
+| Operation, 96 MP | main thread blocked before | after |
+|---|---|---|
+| grow +16 | 3923 ms | 344 ms |
+| shrink −16 | 3286 ms | 131 ms |
+| invert | 1329 ms | 91 ms |
+| feather 8 | 1014 ms | 113 ms |
+| magic wand | 1964 ms | 261 ms |
+| bucket fill | 1477 ms | 261 ms |
+
+What is left blocking (100–350 ms) is the display level of the changed selection being
+rebuilt once, plus `createImageBitmap`; it happens once per action, not per frame.
+
+**Not done, on purpose: the selection as a `Uint8Array`.** The plan wanted one byte per
+pixel instead of an RGBA canvas, for the memory. The canvas is what the marching ants, the
+brush clip, the layer masks, every selection tool and the mask export draw from, so the
+change is thirty call sites and buys memory, not speed. It rides along with phase 5, where
+the selection becomes a texture anyway.
+
+The original plan for reference:
+
+### Phase 4 (planned)
 
 1. **Dirty-rect compositing for painting.** A stroke marks the union rect of its dabs;
    the composite and the pyramid levels update only that rect (Krita's model). Brush

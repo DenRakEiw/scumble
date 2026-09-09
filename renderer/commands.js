@@ -291,9 +291,9 @@ const COMMANDS = {
     },
     select_all: { needsImage: true, description: "Select the whole image.", params: {}, async run(ed) { ed.applyMaskToSelection(rectMask(ed, 0, 0, ed.width, ed.height), "replace"); return { selection: bounds(ed) }; } },
     select_none: { needsImage: true, description: "Clear the selection.", params: {}, async run(ed) { ed.clearSelection(); return { selection: bounds(ed) }; } },
-    select_invert: { needsImage: true, description: "Invert the selection.", params: {}, async run(ed) { ed.invertSelection(); return { selection: bounds(ed) }; } },
-    select_feather: { needsImage: true, description: "Soften the selection edge by a gaussian blur.", params: { radius: P.num("radius in pixels", { default: 8 }) }, async run(ed, a) { ed.featherSelection(+a.radius || 8); return { selection: bounds(ed), status: ed.status }; } },
-    select_grow: { needsImage: true, description: "Grow (positive) or shrink (negative) the selection.", params: { px: P.int("pixels (alias pixels)", { required: true }) }, async run(ed, a) { const n = Math.round(+(a.px != null ? a.px : a.pixels) || 0); if (n) ed.growSelection(n); return { selection: bounds(ed) }; } },
+    select_invert: { needsImage: true, description: "Invert the selection.", params: {}, async run(ed) { await ed.invertSelection(); return { selection: bounds(ed) }; } },
+    select_feather: { needsImage: true, description: "Soften the selection edge by a gaussian blur.", params: { radius: P.num("radius in pixels", { default: 8 }) }, async run(ed, a) { await ed.featherSelection(+a.radius || 8); return { selection: bounds(ed), status: ed.status }; } },
+    select_grow: { needsImage: true, description: "Grow (positive) or shrink (negative) the selection.", params: { px: P.int("pixels (alias pixels)", { required: true }) }, async run(ed, a) { const n = Math.round(+(a.px != null ? a.px : a.pixels) || 0); if (n) await ed.growSelection(n); return { selection: bounds(ed) }; } },
     select_from_layer: {
         needsImage: true, description: "Selection from a layer's opaque pixels (its alpha).",
         params: { layer: P.layer() },
