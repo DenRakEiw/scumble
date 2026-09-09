@@ -285,7 +285,82 @@ Expected result: 66 MP opacity tick from 250 ms to under 10 ms; match tick from 
 under 20 ms (statistics unchanged, application at viewport size); pan and zoom at 60 fps;
 no multi-second stalls after a selection change or at the start of a stroke.
 
-### Phase 2: colour match and filter chain on the GPU (1–2 days)
+### Phase 2: colour match and filter work on the GPU — **done 2026-09-10**
+
+After phase 1 the compositor was no longer the cost (a zoom step at 24 MP with the filter
+and the match switched off: 0.1 ms). What was left was measured piece by piece on a 6 MP
+viewport: the colour match pixel loop **19 ms** per composite, and the grain filter
+**100–190 ms** whenever the viewport size changed, because it generated its noise field
+cell by cell for exactly that size.
+
+- **Colour match as a shader pass.** The pixel loop moved out of the editor into
+  `matchCanvas(src, stats, strength)` in `inpaint_filters.js` (the node keeps it as the CPU
+  path); the app patches it to try `applyMatchGL` first, mode 6 of the filter shader with
+  the six statistics as uniforms. 19 ms → 4.6 ms. The two paths differ only through the
+  premultiplied-alpha quantisation of the canvas round trip: at alpha 255 at most one
+  level, growing as alpha falls (85 levels at alpha 1, where the pixel contributes about
+  one level to the composite).
+- **The grain field is a cached tile.** `grainNoiseCanvas()` in `inpaint_filters.js` repeats
+  one 1024 × 1024 tile of cells (`grainTileCanvas`, cached per speckle / colour share /
+  seed) at the cell size, and anchors it at the image origin through the new `info.origin`,
+  so the grain sits still while the view pans and the preview size changes. The GPU module
+  imports the same function instead of keeping its own copy, so both paths always see the
+  same field. 194 ms → 2 ms per zoom step; the film look's CPU / GPU twins stay within the
+  same 3 levels as before.
+- **Incremental pyramid updates.** `touchSourceRect(src, x0, y0, x1, y1)` refreshes the
+  cached levels inside a rectangle (each level from the one above it, `globalCompositeOperation
+  = "copy"`) instead of dropping them. Selection dabs, a finished brush stroke and a
+  selection stroke use it, so a dab no longer rebuilds a 96 MP pyramid (200 ms per frame).
+- **Selection bounds through a level.** `selectionBounds()` scans the ⅛₆ level first (a
+  covered cell keeps alpha: a single pixel is still 4 after four halvings) and only makes
+  the box exact inside that region. 478 ms → 82 ms at 96 MP.
+- **Renders larger than the drawing buffer go into a texture.** `renderToTexture()` renders
+  the whole picture once into an off-screen RGBA8 texture (framebuffer attachments go up to
+  `MAX_TEXTURE_SIZE`, not the drawing buffer's 33 MP) and copies it out with
+  `blitFramebuffer` in pieces the drawing buffer can hold, instead of running the shader
+  again for every tile with a canvas resize in between. Verified against the CPU path at
+  2000 × 1000, 7000 × 5000 and 10864 × 6062: identical pixels, corner markers in place.
+
+Measured afterwards (same setup as §1b, medians):
+
+| Gesture | 2048 × 1152 | 6000 × 4000 | 12000 × 8000 (96 MP) |
+|---|---|---|---|
+| opacity slider tick | 8.8 | 6.2 | 8.2 |
+| colour match tick | 8.5 | 6.1 | 7.6 |
+| filter slider tick | 6.9 | 6.5 | 8.2 |
+| pan, per frame | 1.1 | 1.2 | 1.4 |
+| wheel zoom step | 2.1 | 2.1 | 6.2 |
+| redraw, nothing changed | 0.0 | 0.0 | 0.0 |
+| brush dab + frame | 0.1 | 0.1 | 0.1 |
+| undo step | 37 | 46 | 80 |
+| selection bounds scan | 6 | 19 | 81 |
+| full composite (export path) | 14 | 32 | 150 |
+
+A realistic film stack (film look + halation + grain) on a 96 MP document: 12–17 ms per
+frame while dragging a slider, 7–9 ms for pan and zoom, 0.7 s for the full-resolution
+export.
+
+**Not done, on purpose: the ping-pong texture chain between filter layers.** The plan wanted
+consecutive filter layers to stay on the GPU (one upload, one download for the whole chain).
+The measurements above say a three-filter stack already fits the 16 ms budget, and the
+remaining round trips are between *plugin passes* (halation blurs through `gl.shade`), which
+would need the whole filter API to work on textures rather than canvases. That is the same
+refactor the WebGL2 compositor in phase 5 brings anyway, so it waits for it rather than
+being built twice.
+
+**Which GPUs this needs.** Nothing here is vendor-specific: the editor draws through
+Canvas 2D and WebGL2, which Chromium runs on ANGLE (D3D11 on Windows, GL/Vulkan on Linux)
+for AMD, Intel and NVIDIA alike; CUDA is not involved anywhere in the editor. Every limit
+that differs per card is read at run time (`MAX_TEXTURE_SIZE`, `MAX_VIEWPORT_DIMS`,
+`drawingBufferWidth/Height`) and every GPU path falls back to the CPU twin when the context
+is missing, lost or too small, which is also what the CPU / GPU comparison in
+`tools/film_test.py` keeps honest. `blitFramebuffer`, `texStorage2D` and RGBA8 render
+targets are core WebGL2, not extensions. Only the ONNX helpers (SAM2, background removal)
+are hardware-specific, and they use DirectML on Windows, which covers AMD and Intel as well.
+
+The original plan for reference:
+
+### Phase 2 (planned)
 
 1. Colour match as a GL filter (`match` shader with the six statistics as uniforms;
    statistics still computed on the 256 px thumbnails). The CPU loop stays as the

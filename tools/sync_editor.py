@@ -62,7 +62,11 @@ PATCHES = [
     # --- WebGL2 filters (renderer/editor/inpaint_filters_gl.js, app-only for now) get the first go
     ("inpaint_filters.js",
      'import { curveDefaults, curvesToTables, buildCurvesControl } from "./inpaint_curves.js";\n',
-     'import { curveDefaults, curvesToTables, buildCurvesControl } from "./inpaint_curves.js";\nimport { applyFilterGL } from "./inpaint_filters_gl.js";\n', 1),
+     'import { curveDefaults, curvesToTables, buildCurvesControl } from "./inpaint_curves.js";\nimport { applyFilterGL, applyMatchGL } from "./inpaint_filters_gl.js";\n', 1),
+    # colour match: one shader pass instead of the pixel loop (phase 2)
+    ("inpaint_filters.js",
+     "export function matchCanvas(src, stats, strength) {\n    const W = src.width, H = src.height;\n",
+     "export function matchCanvas(src, stats, strength) {\n    const gl = applyMatchGL(src, stats, strength);\n    if (gl) return gl;\n    const W = src.width, H = src.height;\n", 1),
     ("inpaint_filters.js",
      "export const FILTER_IDS = Object.keys(FILTERS);\n",
      "export const FILTER_IDS = Object.keys(FILTERS);\n\n// table builders shared with the WebGL2 path\nexport { levelsTable, brightnessContrastTable, hueSatMatrix, lightnessTable, colorBalanceTables, hueToRgb, LOOK_DEFAULT };\n", 1),

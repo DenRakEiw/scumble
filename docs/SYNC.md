@@ -39,6 +39,7 @@ that spot.
 | Generate section ends with the Refine button | `host.buildGenerateExtras(editor, sec)` adds the node's own widgets (padding, target_size, feather, multiple_of) |
 | window-level keydown handler runs for every open editor | `host.isActive(this)` guard: several editors share the window (tabs), only the active one gets shortcuts |
 | `applyFilter()` in inpaint_filters.js runs the CPU code | asks `applyFilterGL()` (renderer/editor/inpaint_filters_gl.js) first; `info.cpu = true` forces the CPU path; the table builders are exported for the GL module |
+| `matchCanvas()` in inpaint_filters.js runs the colour match pixel loop | asks `applyMatchGL()` first (mode 6 of the filter shader, the six statistics as uniforms); the CPU loop stays the fallback |
 | `app.registerExtension` block (node widget, queuePrompt wrapper, `executed` / `execution_error` routing) | dropped; `host.js` routes the websocket events to the one editor |
 | `objectBackendAvailable()` needs Kijai's SAM2 loader on the server | true as well when `host.objectsInApp()` (a SAM2 ONNX model is downloaded); the "needs Kijai" status names Settings › Helpers |
 | `ensureObjects()` queues the SAM2 helper prompt | after the staleness check: `host.findObjects(this, {hash, layer})` when a model is present (phase 3), else the helper prompt |
@@ -82,9 +83,12 @@ hue / saturation, colour balance, black & white, invert, LUT and grain as one fr
 shader pass; blur, sharpen and vignette stay on Canvas 2D (`ctx.filter`, gradients).
 The shader mirrors the CPU maths including the 8-bit rounding between passes, so both
 paths agree within one level (LUT: two, its nodes are stored as RGBA8). The grain noise
-field is generated exactly like in `applyGrain` (the generator is duplicated there for
-now; when the module moves into the node, split `noiseCanvas()` out of `applyGrain` and
-share it) and uploaded as a texture straight from the canvas, never read back. The curve
+field comes from `grainNoiseCanvas()` in `inpaint_filters.js` itself (one cached tile of
+cells, repeated and anchored at the image origin), so both paths always see the same
+field; it is uploaded as a texture straight from the canvas, never read back. The colour
+match is mode 6 of the same shader. Pictures larger than the drawing buffer (about 33 MP)
+render once into an off-screen texture and are copied out with `blitFramebuffer`
+(`renderToTexture`), instead of running the shader again per tile. The curve
 editor's histogram comes from a 256 px thumbnail. Measured on a 4000 × 3000 image:
 grain 325 ms → 7 ms, curves 61 → 4 ms, colour balance 100 → 5 ms (cached noise, warm
 context). `compareFilterPaths()` in the module is the regression check.

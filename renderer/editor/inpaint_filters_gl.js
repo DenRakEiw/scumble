@@ -14,7 +14,7 @@
 // together with the applyFilter hook once it has proven itself here.
 
 import { curvesToTables } from "./inpaint_curves.js";
-import { levelsTable, brightnessContrastTable, hueSatMatrix, lightnessTable, colorBalanceTables, hueToRgb, LOOK_DEFAULT } from "./inpaint_filters.js";
+import { levelsTable, brightnessContrastTable, hueSatMatrix, lightnessTable, colorBalanceTables, hueToRgb, LOOK_DEFAULT, grainNoiseCanvas } from "./inpaint_filters.js";
 
 const VS = `#version 300 es
 in vec2 a_pos;
@@ -50,6 +50,10 @@ uniform float u_satK;
 uniform float u_conK;
 uniform float u_fade;
 uniform float u_lookStrength;
+uniform vec3 u_meanS;          // colour match: mean of what is below, 0..255
+uniform vec3 u_meanT;          // mean of the layer itself
+uniform vec3 u_mScale;         // spread ratio per channel, clamped 0.5..2 by the caller
+uniform float u_mStrength;
 out vec4 o;
 
 const vec3 LUMA = vec3(0.299, 0.587, 0.114);
@@ -95,6 +99,12 @@ void main() {
     } else if (u_mode == 4) {
         vec3 t = texture(u_lut, (c * (u_lutN - 1.0) + 0.5) / u_lutN).rgb;
         c = c + (t - c) * u_strength;
+    } else if (u_mode == 6) {
+        if (s.a > 0.0) {
+            vec3 p = c * 255.0;
+            vec3 v = (p - u_meanT) * u_mScale + u_meanS;
+            c = clamp(p + (v - p) * u_mStrength, 0.0, 255.0) / 255.0;
+        }
     } else if (u_mode == 5) {
         if (u_lookOn) c = q8(look(c));
         if (u_k > 0.0) {
@@ -137,6 +147,14 @@ function renderTiled(g, uTile, W, H, label) {
         octx.drawImage(g.canvas, 0, 0);
         return out;
     }
+    // Too large for the drawing buffer: render the whole picture once into a texture
+    // (framebuffer attachments go up to MAX_TEXTURE_SIZE, not the drawing buffer's 33 MP)
+    // and copy it out in pieces. The shader then runs once instead of once per tile.
+    if (W <= g.max && H <= g.max) {
+        const done = renderToTexture(g, uTile, W, H, label, octx);
+        if (done) return out;
+        if (done === null) return null;
+    }
     tw = Math.max(1, Math.min(W, tw)); th = Math.max(1, Math.min(H, th));
     for (let y0 = 0; y0 < H; y0 += th) {
         for (let x0 = 0; x0 < W; x0 += tw) {
@@ -154,6 +172,66 @@ function renderTiled(g, uTile, W, H, label) {
         }
     }
     return out;
+}
+
+/**
+ * Render the current program into an off-screen RGBA8 texture of W x H and copy that into
+ * `octx` with blitFramebuffer, in pieces the drawing buffer can hold. Returns true when it
+ * worked, false to fall back to per-tile rendering, null after a GL error.
+ */
+function renderToTexture(g, uTile, W, H, label, octx) {
+    const { gl } = g;
+    let tex = null, fbo = null;
+    try {
+        tex = gl.createTexture();
+        gl.activeTexture(gl.TEXTURE6);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, W, H);
+        fbo = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            return false;
+        }
+        gl.viewport(0, 0, W, H);
+        gl.uniform2f(uTile, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        let err = gl.getError();
+        if (err !== gl.NO_ERROR) { console.warn("WebGL2 filter", label, "GL error", err); gl.bindFramebuffer(gl.FRAMEBUFFER, null); return null; }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        // the texture holds the result bottom up, like the canvas: tile y0 sits at H - y0 - h
+        let tw = Math.max(1, Math.min(W, gl.drawingBufferWidth));
+        let th = Math.max(1, Math.min(H, gl.drawingBufferHeight));
+        for (let y0 = 0; y0 < H; y0 += th) {
+            for (let x0 = 0; x0 < W; x0 += tw) {
+                const w = Math.min(tw, W - x0), h = Math.min(th, H - y0);
+                if (g.canvas.width !== w || g.canvas.height !== h) { g.canvas.width = w; g.canvas.height = h; }
+                if (gl.drawingBufferWidth < w || gl.drawingBufferHeight < h) { console.warn("WebGL2 filter", label, "drawing buffer too small for a", w, "x", h, "piece"); return null; }
+                gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fbo);
+                gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+                const sy = H - y0 - h;
+                gl.blitFramebuffer(x0, sy, x0 + w, sy + h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+                err = gl.getError();
+                gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+                gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+                if (err !== gl.NO_ERROR) { console.warn("WebGL2 filter", label, "blit error", err); return null; }
+                octx.drawImage(g.canvas, 0, 0, w, h, x0, y0, w, h);
+            }
+        }
+        return true;
+    } catch (err) {
+        console.warn("WebGL2 filter", label, "off-screen target failed:", err.message || err);
+        try { gl.bindFramebuffer(gl.FRAMEBUFFER, null); } catch (_) { /* ignore */ }
+        return false;
+    } finally {
+        if (fbo) { try { gl.deleteFramebuffer(fbo); } catch (_) { /* ignore */ } }
+        if (tex) { try { gl.deleteTexture(tex); } catch (_) { /* ignore */ } }
+    }
 }
 
 let G = null;          // the shared context, created on first use
@@ -218,7 +296,8 @@ function context() {
         for (const pg of PLUGIN_GL.values()) pg.prog = null;   // programs of a lost context
         const u = {};
         for (const name of ["u_src", "u_table", "u_offsets", "u_noise", "u_lut", "u_size", "u_mode", "u_matrix", "u_useTable", "u_weights", "u_tint", "u_strength", "u_lutN", "u_k", "u_center",
-            "u_lookOn", "u_useMix", "u_mix", "u_useMono", "u_mono", "u_wb", "u_satK", "u_conK", "u_fade", "u_lookStrength", "u_tile"]) u[name] = gl.getUniformLocation(prog, name);
+            "u_lookOn", "u_useMix", "u_mix", "u_useMono", "u_mono", "u_wb", "u_satK", "u_conK", "u_fade", "u_lookStrength", "u_tile",
+            "u_meanS", "u_meanT", "u_mScale", "u_mStrength"]) u[name] = gl.getUniformLocation(prog, name);
         // fixed texture units: 0 source, 1 table, 2 offsets, 3 noise, 4 lut
         const texSrc = texture2d(gl, 0, gl.NEAREST);
         const texTable = texture2d(gl, 1, gl.NEAREST);
@@ -268,61 +347,9 @@ function mat3(m) {
 // canvas that becomes the noise texture; never read back to the CPU)
 // ---------------------------------------------------------------------------
 
-function rng(seed) {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
-
-function hashString(s) {
-    let h = 2166136261;
-    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-    return h >>> 0;
-}
-
-function noiseCanvas(W, H, { usePlate, plate, sc, size, sigma, chroma, seed }) {
-    const big = makeCanvas(W, H);
-    const bctx = big.getContext("2d");
-    if (usePlate) {
-        const pat = bctx.createPattern(plate, "repeat");
-        try { pat.setTransform(new DOMMatrix().scale(sc, sc)); } catch (_) { /* old browsers */ }
-        bctx.fillStyle = pat;
-        bctx.fillRect(0, 0, W, H);
-        return big;
-    }
-    const gs = Math.max(1, size);
-    const nw = Math.max(1, Math.round(W / gs)), nh = Math.max(1, Math.round(H / gs));
-    const noise = makeCanvas(nw, nh);
-    const nctx = noise.getContext("2d");
-    const nd = nctx.createImageData(nw, nh);
-    const d = nd.data;
-    const rand = rng(hashString(String(seed || "grain")));
-    const e1 = Math.exp(sigma * sigma / 2), norm = Math.sqrt((Math.exp(sigma * sigma) - 1) * Math.exp(sigma * sigma)) || 1;
-    const gauss = () => { const u = Math.max(1e-12, rand()), v = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
-    const TN = 65536;
-    const table = new Float32Array(TN);
-    for (let i = 0; i < TN; i++) table[i] = (sigma > 0.005 ? (Math.exp(sigma * gauss()) - e1) / norm : gauss()) * 40;
-    const sample = () => table[(rand() * TN) | 0];
-    for (let i = 0; i < d.length; i += 4) {
-        const g = sample();
-        if (chroma <= 0) { d[i] = d[i + 1] = d[i + 2] = 128 + g; }
-        else {
-            d[i] = 128 + g * (1 - chroma) + sample() * chroma;
-            d[i + 1] = 128 + g * (1 - chroma) + sample() * chroma;
-            d[i + 2] = 128 + g * (1 - chroma) + sample() * chroma;
-        }
-        d[i + 3] = 255;
-    }
-    nctx.putImageData(nd, 0, 0);
-    bctx.imageSmoothingEnabled = gs > 1;
-    bctx.drawImage(noise, 0, 0, W, H);
-    return big;
-}
+// The noise field itself comes from inpaint_filters.js (grainNoiseCanvas): one cached
+// tile of cells, repeated and anchored at the image origin. Both paths must see exactly
+// the same field, so there is no second implementation here.
 
 // ---------------------------------------------------------------------------
 // per-filter setup: uniforms and textures. Return false for "nothing to do" (the CPU
@@ -476,7 +503,8 @@ const SETUP = {
         const usePlate = !!(info.plate && info.plate.width);
         const sigma = Math.max(0, Math.min(0.5, (p.speckle ?? 25) / 100 * 0.5));
         const sc = Math.max(0.1, (p.plate_scale ?? 1) * (info.scale || 1));
-        const noiseKey = JSON.stringify(usePlate ? ["plate", info.plateKey || "", sc, W, H] : ["synth", size, sigma, chroma, String(info.seed || "grain"), W, H]);
+        const org = info.origin || [0, 0];
+        const noiseKey = JSON.stringify(usePlate ? ["plate", info.plateKey || "", sc, W, H, org] : ["synth", size, sigma, chroma, String(info.seed || "grain"), W, H, org]);
         let center = 128, gain = 1.3;
         if (usePlate) { center = info.plateMean ?? 128; gain = 40 / Math.max(8, info.plateStd ?? 40); }
         gl.activeTexture(gl.TEXTURE3);
@@ -484,7 +512,10 @@ const SETUP = {
             gl.bindTexture(gl.TEXTURE_2D, cache.glNoise.tex);
         } else {
             if (cache.glNoise && cache.glNoise.gen === g.gen) { try { gl.deleteTexture(cache.glNoise.tex); } catch (_) { /* ignore */ } }
-            const big = noiseCanvas(W, H, { usePlate, plate: info.plate, sc, size, sigma, chroma, seed: info.seed });
+            const big = grainNoiseCanvas(W, H, {
+                gs: Math.max(1, size), sigma, chroma, seed: info.seed,
+                plate: usePlate ? info.plate : null, plateScale: sc, origin: org,
+            });
             const tex = texture2d(gl, 3, gl.NEAREST);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, big);
             cache.glNoise = { key: noiseKey, tex, gen: g.gen };
@@ -669,6 +700,37 @@ export function applyFilterGL(id, src, params, info = {}) {
         return renderTiled(g, u.u_tile, W, H, id);
     } catch (err) {
         console.warn("WebGL2 filter", id, "failed, using the CPU path:", err.message || err);
+        if (gl.isContextLost && gl.isContextLost()) g.lost = true;
+        return null;
+    }
+}
+
+/**
+ * The colour match of a layer (inpaint_filters.js matchCanvas) as one shader pass:
+ * (value - meanT) * scale + meanS per channel, mixed in by `strength`. Returns the
+ * matched canvas, or null when there is no GPU path (the caller runs the pixel loop).
+ */
+export function applyMatchGL(src, stats, strength) {
+    if (!stats || !stats.meanS || !stats.meanT || !stats.scale) return null;
+    const g = context();
+    if (!g) return null;
+    const W = src.width, H = src.height;
+    if (!W || !H || W > g.max || H > g.max) return null;
+    const { gl, u } = g;
+    try {
+        gl.useProgram(g.prog);
+        gl.uniform1i(u.u_mode, 6);
+        gl.uniform3f(u.u_meanS, stats.meanS[0], stats.meanS[1], stats.meanS[2]);
+        gl.uniform3f(u.u_meanT, stats.meanT[0], stats.meanT[1], stats.meanT[2]);
+        gl.uniform3f(u.u_mScale, stats.scale[0], stats.scale[1], stats.scale[2]);
+        gl.uniform1f(u.u_mStrength, Math.max(0, Math.min(1, strength)));
+        gl.uniform2f(u.u_size, W, H);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, g.texSrc);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
+        return renderTiled(g, u.u_tile, W, H, "match");
+    } catch (err) {
+        console.warn("WebGL2 colour match failed, using the CPU path:", err.message || err);
         if (gl.isContextLost && gl.isContextLost()) g.lost = true;
         return null;
     }
