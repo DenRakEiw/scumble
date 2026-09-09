@@ -66,27 +66,37 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-10)
 
-**Landed on 2026-09-10 (night): high-res performance phases 1 and 2** (pushed in both
-repos; `commands_test.py`, `film_test.py`, `smoke_test.py --no-helpers` PASS, the new
-`tools/perf_test.py` is the benchmark). `docs/PERFORMANCE.md` §1b and the phase 1 / 2
-sections have the details and the numbers, the node's `DEVELOPMENT.md` §21 / §21b the
-mechanisms. In short: every source canvas has a display pyramid, the screen composites
-only the visible region at screen resolution (`viewPass`), the composited scene is cached
-behind a signature so overlays cost nothing, brush undo is a copy of the touched rectangle
-and every other snapshot encodes off the main thread, the selection's bounding box comes
-from a level and from hints instead of a full scan, the colour match runs as a shader pass
-and the grain field is one cached tile anchored at the image origin. Interactive gestures
-on a **96 MP** document are now 0.1–8 ms (they were 250–900 ms at 66 MP), a full-resolution
-export with a three-filter film stack 0.7 s. Deliberately left for later: the ping-pong
-texture chain between filter layers (phase 5 brings that refactor anyway).
+**Landed on 2026-09-10 (night): high-res performance phases 1 to 4** (pushed in both repos;
+`commands_test.py`, `film_test.py`, `smoke_test.py --no-helpers`, `mcp_test.py` PASS, the
+new `tools/perf_test.py` is the benchmark). `docs/PERFORMANCE.md` §1b and the phase
+sections have the details and the numbers, the node's `DEVELOPMENT.md` §21 to §21d the
+mechanisms. In short:
+
+- **Phase 1**: a display pyramid per source canvas, the screen composites only the visible
+  region at screen resolution (`viewPass`), the composited scene is cached behind a
+  signature so overlays cost nothing, brush undo is a copy of the touched rectangle and
+  every other snapshot encodes off the main thread, the selection's box comes from hints.
+- **Phase 2**: colour match as a shader pass, the grain field is one cached tile anchored at
+  the image origin, dabs refresh the display levels in place, renders above the drawing
+  buffer go through an off-screen texture.
+- **Phase 3**: `js/inpaint_worker.js`, a module worker both hosts serve from next to the
+  editor, takes PNG encoding, the upload hashes and the PSD / ORA writers.
+- **Phase 4**: grow, shrink, feather, invert, the magic wand and the bucket run in the
+  worker and hand back the new bounds; grow only touches the band around the selection.
+
+Interactive gestures on a **96 MP** document are 0.1–8 ms (they were 250–900 ms at 66 MP),
+a full export with a three-filter film stack 0.7 s, and the discrete operations that used
+to freeze the window for 1–4 s now hold it for 100–400 ms. Deliberately left for phase 5,
+which brings the same refactor anyway: the ping-pong texture chain between filter layers,
+the selection as a typed array, and layer tiles.
 
 - **Fix, the New button did nothing in the app**: Electron has no `window.prompt` (it
   throws "prompt() is not supported"), so the size question never appeared. The editor has
   its own small modal now (`InpaintEditor.ask({title, message, value})`, `.ipc-ask` styles,
   `askOpen` guard in the window key handler); `window.confirm` does work in Electron.
-- Next from the plan: phase 3 (worker for PNG encoding, undo transfers, mirror uploads and
-  the full-resolution filter renders), then phase 4 (dirty rectangles, the selection as a
-  typed array, layer tiles).
+- Next from the plan: phase 5 (the WebGL2 compositor: layers as textures in tiles, blend
+  modes and the filter chain in shaders, the 2D canvas only for overlays), then phase 6
+  (memory: undo as compressed tiles, the objects map bounded, layers evicted to the mirror).
 
 **Landed on 2026-09-10** (tested on the dev instance: `commands_test.py` PASS, the
 preset row and the mode switch exercised through CDP, the three LLM adapters up to the

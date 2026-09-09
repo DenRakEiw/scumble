@@ -185,6 +185,49 @@ BENCH = """
     out.draw_with_ants = bench(() => { ed.pixelVersion++; ed.draw(); }, 10);
     out.full_composite = bench(() => { ed.flatCache = null; ed.flattenToCanvas({ forRun: true }); }, 3);
 
+    // --- operations that are not per frame: how long do they hold the main thread? -----
+    // (sample it every millisecond and take the longest gap; wall time and blocking are
+    // very different things once the worker does the work)
+    const probe = () => {
+        let last = performance.now(), worst = 0, stop = false;
+        const tick = () => { const now = performance.now(); if (now - last > worst) worst = now - last; last = now; if (!stop) setTimeout(tick, 0); };
+        setTimeout(tick, 0);
+        return () => { stop = true; return +worst.toFixed(1); };
+    };
+    const op = async (fn) => {
+        await new Promise((r) => setTimeout(r, 60));
+        const done = probe();
+        const t0 = performance.now();
+        await fn();
+        const wall = +(performance.now() - t0).toFixed(1);
+        await new Promise((r) => setTimeout(r, 30));
+        return [done(), wall];   // [blocked, wall]
+    };
+    const rect = () => {
+        const s = ed.selection.getContext("2d");
+        s.globalCompositeOperation = "source-over";
+        s.clearRect(0, 0, W, H);
+        s.fillStyle = "#ff0000";
+        s.fillRect(Math.round(W * 0.2), Math.round(H * 0.2), Math.round(W * 0.4), Math.round(H * 0.4));
+        ed.markSelectionChanged();
+        ed.getBounds();
+    };
+    rect();
+    out.grow = await op(() => ed.growSelection(16));
+    out.shrink = await op(() => ed.growSelection(-16));
+    out.invert = await op(() => ed.invertSelection());
+    rect();
+    out.feather = await op(() => ed.featherSelection(8));
+    rect();
+    out.wand = await op(() => ed.wandSelect(Math.round(W * 0.1), Math.round(H * 0.1), "replace"));
+    rect();
+    ed.activeLayerId = paintLayer.id;
+    out.bucket = await op(() => ed.bucketFill(Math.round(W * 0.25), Math.round(H * 0.25)));
+    const flat = ed.flattenToCanvas({ forRun: true });
+    // the editor's own path (the worker when there is one), and the plain main-thread encode
+    out.png = await op(async () => { const u = await ed.snapUrl(flat); URL.revokeObjectURL(u); });
+    out.png_main = await op(() => new Promise((r) => flat.toBlob(r, "image/png")));
+
     let mem = null;
     try { mem = Math.round((await performance.measureUserAgentSpecificMemory()).bytes / 1048576); } catch (_) { /* needs isolation */ }
 
@@ -213,6 +256,18 @@ ROWS = [
     ("full composite", "full_composite"),
 ]
 
+# operations, not frames: [main thread blocked, wall time]
+OP_ROWS = [
+    ("grow +16", "grow"),
+    ("shrink -16", "shrink"),
+    ("invert", "invert"),
+    ("feather 8", "feather"),
+    ("magic wand", "wand"),
+    ("bucket fill", "bucket"),
+    ("PNG of the composite", "png"),
+    ("the same without the worker", "png_main"),
+]
+
 
 async def main():
     async def run(c):
@@ -235,6 +290,15 @@ async def main():
         for r in results:
             v = r.get(key)
             cells.append("%22s" % ("-" if not v else f"{v[0]:.1f} ms  [{v[1]:.1f}]"))
+        print("%-28s%s" % (label, "".join(cells)))
+    print()
+    print("%-28s%s" % ("operations, blocked [wall]", ""))
+    print("-" * len(head))
+    for label, key in OP_ROWS:
+        cells = []
+        for r in results:
+            v = r.get(key)
+            cells.append("%22s" % ("-" if not v else f"{v[0]:.0f} ms  [{v[1]:.0f}]"))
         print("%-28s%s" % (label, "".join(cells)))
     print()
     for r in results:
