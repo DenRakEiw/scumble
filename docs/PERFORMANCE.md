@@ -25,6 +25,35 @@ canvas drawn at 25 % costs 20–50 ms; a prebuilt quarter-size copy under 3 ms. 
 is GPU-accelerated in the app (fresh canvas blits run in fractions of a millisecond);
 readbacks with `getImageData` do not de-accelerate a canvas in this Chromium.
 
+### 1b. After phase 1 (2026-09-10, `tools/perf_test.py`, same machine)
+
+Synthetic documents, base image plus three full-size paint layers, one result layer with
+colour match at 60 % and one grain filter layer, view 3326 × 1808 device pixels. Median of
+the repeats, milliseconds:
+
+| Gesture | 2048 × 1152 | 6000 × 4000 (24 MP) |
+|---|---|---|
+| opacity slider tick | 15.5 | 18.3 |
+| colour match tick | 14.6 | 18.1 |
+| filter slider tick | 10.9 | 18.2 |
+| pan, per frame | 0.7 | 0.8 |
+| wheel zoom step | 70 | 190 |
+| redraw, nothing changed (hover, ants) | 0.0 | 0.0 |
+| brush dab + frame | 0.1 | 0.1 |
+| stroke commit (undo copy) | 0.5 | 0.6 |
+| getValue (autosave) | 0.2 | 0.0 |
+| full composite (export path) | 67 | 264 |
+
+The compositor itself is no longer the cost: with the filter and the colour match switched
+off a zoom step at 24 MP is **0.1 ms**. What is left is filter work, measured separately
+(6 MP viewport): the colour match CPU loop **19 ms** per composite, and the grain filter
+**100 ms** whenever the viewport size changes, because its noise field is generated pixel
+by pixel on the CPU for exactly that size. Both are phase 2.
+
+The viewport composite is exact: at 100 % zoom it is bit-identical to the full-resolution
+composite (max difference 0 over blend modes, opacity, colour match, a levels filter and
+the film look).
+
 ## 2. Why it is slow: the pipeline as it is
 
 From the full map of `renderer/editor/inpaint_canvas.js` (line numbers of 2026-09-10):
@@ -156,7 +185,68 @@ in A regardless of the compositor, because none of it is a drawing problem.
 Each phase ends with the benchmark in §7 and a sync into the app. Effort is for one
 person, tested.
 
-### Phase 1: stop doing full-resolution work per frame (2–3 days)
+### Phase 1: stop doing full-resolution work per frame — **done 2026-09-10**
+
+What landed in the node (`js/inpaint_canvas.js`, synced into the app), in the order of the
+list below; §1b has the numbers.
+
+- `touchSource(src)` / `displaySource(src, scale)`: the display pyramid, halvings cached
+  per source canvas in a `WeakMap` and dropped when the source's version is bumped. Live
+  stroke previews carry `_livePreview` and are never cached. At most **one new level per
+  frame** (`_pyramidBudget`); a frame that still wants a finer level draws with what it has
+  and asks for another frame, otherwise the first zoom step after a change builds the chain
+  of every source at once (200 ms at 24 MP).
+- `baseSource()`: the base image is converted to a canvas once. As an `<img>` larger than
+  Chromium's image cache it was re-decoded on every draw.
+- `viewportRegion()` / `drawViewComposite()` / `viewPass`: the screen is composited only
+  for the visible rectangle, at screen resolution, out of the pyramid levels; filters and
+  colour match run on that small input. The region's **size** depends only on zoom,
+  rotation and window size, never on the pan position, and it may reach outside the image:
+  a size that changes per frame reallocated the viewport canvas on every pan step, which
+  cost more (72 ms at 24 MP) than the composite. `flattenToCanvas` (export, run, upload,
+  clipboard) always takes the full-resolution path.
+- **Deviation from the plan:** the screen uses the viewport composite *always*, not only
+  while a gesture runs. The plan wanted a full-resolution composite after the release; at
+  24 MP with a film look that is a 3–4 s stall after every slider, and it buys nothing,
+  because the viewport pass is bit-identical at 100 % zoom and below it only differs the
+  way a downscale differs.
+- Scene cache: `sceneSignature()` covers everything the composited image depends on
+  (`pixelVersion`, `compositeVersion`, view, canvas size, per-layer geometry / opacity /
+  blend / filter params / match, pointer, pending). While it stays the same the last scene
+  canvas is blitted and only the overlays are redrawn, so the marching-ants timer, hover
+  and rubber bands cost nothing. `drawScene` is split into `drawSceneImage` (cached) and
+  `drawSceneOverlays` (every frame).
+- The node thumbnail composites through a region pass at thumbnail scale instead of a
+  second full-size composite, and the layer-row thumbnails draw from the pyramid.
+- Marching ants, the selection tint and the object hover shape draw from the pyramid: nine
+  draws of a 24 MP selection canvas per frame became nine draws of a level.
+- One draw per frame: pointer move, wheel, brush size and the ants timer use `drawSoon()`.
+- **Undo without full-image PNGs.** A brush stroke pushes a copy of the rectangle it
+  touched (`snapshotRect`, tracked in `strokeBounds` during the dabs, taken in
+  `commitStroke` before the stroke is applied) instead of a `toDataURL` of the whole layer
+  at pointerdown. Everything else (`selection`, `layer`, `mask`, `text`, `layerfull`,
+  `canvas`) encodes through `canvas.toBlob` into a blob URL off the main thread; the step
+  holds the promise, `snapImage()` awaits it on undo, `releaseSnapshot()` revokes it.
+  `MAX_UNDO_BYTES` (384 MB) caps the rect copies alongside `MAX_UNDO`.
+- **Selection bounds without scanning.** `markSelectionChanged(bounds)` takes the new box
+  when the caller knows it; `boundsAfter(mode, box)` computes it for rectangle, ellipse,
+  lasso and polygon (a subtract still scans), and a selection move shifts the old box. The
+  scan itself now reads the alpha as one 32-bit test per pixel with a per-row early exit.
+- `getValue()` no longer blocks on `selection.toDataURL` above 16 MP: `encodeSelectionSoon`
+  encodes in the background and calls `notifyChanged()` when it lands, so the autosave that
+  follows carries the fresh selection; below 16 MP it stays synchronous and exact.
+- Eyedropper, clone, heal, bucket and wand read `compositeCanvas()`, one cached
+  full-resolution composite per composite version, instead of flattening on every press.
+
+Known effects to keep in mind: the colour match statistics are cached per composite version
+and taken from whatever the view showed when the composite last changed, so panning and
+zooming never shift a matched layer's colours (the full-resolution path keeps its own
+statistics); a layer change drops that layer's pyramid, so the next frame pays one halving
+(phase 4's dirty rectangles fix that).
+
+The original plan for reference:
+
+### Phase 1 (planned)
 
 1. **Display pyramid per source.** `displaySource(source, scale)` returns a cached
    level (½, ¼, ⅛ … built with `drawImage` chains or `createImageBitmap` with
