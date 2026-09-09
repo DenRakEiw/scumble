@@ -1,0 +1,9 @@
+{
+  "name": "Film pack",
+  "version": "1.0.0",
+  "description": "Parametric film looks (colour matrix, tone curve, grain by speed, halation), halation, glow, light leaks, split toning, tonal contrast, structure, bleach bypass, cross processing, black & white film with colour filters and toners, frames, and control points for local adjustments. Own approximations; film names are trademarks of their owners.",
+  "author": "Scumble",
+  "entry": "main.js",
+  "registers": ["filter", "panel", "action", "tool", "command"],
+  "enabledByDefault": true
+}

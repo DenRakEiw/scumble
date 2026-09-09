@@ -93,3 +93,20 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 .scumble-plugin-value { text-align: right; color: #bbb; }
 .scumble-plugin-error { color: #e07a7a; font-size: 12px; white-space: pre-wrap; }
 .scumble-tool-glyph { font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+
+/* film pack plugin */
+.film-panel { display: flex; flex-direction: column; gap: 6px; }
+.film-head { display: flex; gap: 6px; align-items: center; }
+.film-head .ipc-sel { max-width: 150px; }
+.film-note { flex: 1; font-size: 11px; color: #888; line-height: 1.3; }
+.film-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.film-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; border-radius: 4px; padding: 3px; border: 1px solid transparent; }
+.film-cell:hover { background: #262626; border-color: #3a3a3a; }
+.film-cell canvas { width: 96px; height: auto; max-height: 64px; border-radius: 2px; background: #111; }
+.film-cell span { font-size: 10px; color: #aaa; text-align: center; line-height: 1.2; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.film-points { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.film-chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.film-chip { font: 11px system-ui, sans-serif; padding: 1px 7px; border-radius: 10px; border: 1px solid #3a3a3a; background: #161616; color: #aaa; cursor: pointer; }
+.film-chip-on { border-color: #ffd166; color: #ffd166; }
+.film-row.scumble-plugin-row { grid-template-columns: 62px 1fr 48px; }
+.film-del { align-self: flex-start; }

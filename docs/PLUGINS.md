@@ -68,6 +68,8 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `documents.active()` | the active tab as a `Document`, or `null` |
 | `documents.all()`, `documents.byId(id)` | every tab / one tab |
 | `filters.register(def)` / `unregister(id)` | filter types |
+| `filters.apply(id, canvas, params, info)` / `filters.ids()` | run any filter type (built-in or plugin) on a canvas, GPU path when available: the film pack chains the built-in grain this way |
+| `gl.shade(shader, canvas, values, info)` / `gl.available()` | one shader pass over a canvas (`shader = { code, uniforms, label }`, compiled once per object) for multi-pass filters; null without a GPU path |
 | `panels.register(def)` / `unregister(id)` | side panels |
 | `actions.register(def)` / `unregister(id)` / `run(id)` | Plugins menu entries |
 | `tools.register(def)` / `unregister(id)` | tools in the tool column |
@@ -98,6 +100,8 @@ One tab. Pixel access is ImageData in and out; every write is one undo step.
 | `selection()` | `{ mask: Uint8Array(width × height), bounds: {x, y, w, h}, width, height }` or `null` |
 | `setSelection(mask, mode)` | from a `Uint8Array` (>0 = selected); `replace`, `add`, `subtract` |
 | `undo()`, `redo()` | |
+| `draw()` | repaint the canvas and overlays (no cache invalidation) |
+| `setFilterParams(layer, patch, { preview })` | change a filter layer's params: `preview: true` during a drag (low-res, no undo step yet), the final call without it pushes one undo step |
 | `refresh()` | after changes on raw layer objects: caches off, lists and canvas redrawn |
 | `editor` | the raw editor (unstable) |
 
@@ -115,17 +119,23 @@ scumble.filters.register({
     params: [
         { key: "levels", label: "Levels", type: "number", min: 2, max: 32, step: 1, default: 6, unit: "" },
         { key: "mono", label: "Monochrome", type: "bool", default: false },
-        // { key: "mode", type: "select", options: [{ id: "a", label: "A" }, "b"], default: "a" }
+        // { key: "mode", type: "select", options: [{ id: "a", label: "A" }, "b"], default: "a", title: "tooltip" }
+        // { key: "preset", type: "select", options: [{ id: "x", label: "X", amount: 3 }, { id: "custom", label: "Custom" }] }
         // { key: "curve", type: "custom", default: {...} }  with control(layer, param, callbacks) -> element
     ],
     apply(src, params, info) { ... return canvas; },   // CPU path, required
     glsl: {                                            // optional WebGL2 path
-        uniforms: { u_levels: "float", u_mono: "bool" },    // float, int, bool, vec2, vec3, vec4
-        values: (params, info) => ({ u_levels: params.levels, u_mono: !!params.mono }),
+        uniforms: { u_levels: "float", u_mono: "bool" },    // float, int, bool, vec2, vec3, vec4, sampler2D
+        values: (params, info, src) => ({ u_levels: params.levels, u_mono: !!params.mono }),
         code: `vec4 shade(vec4 c, vec2 uv) { ... }`,        // must define shade(); "filter" is reserved in GLSL
     },
 });
 ```
+
+A select param named `preset` is a preset list: picking an entry copies its other fields
+(`amount: 3` above) into the params, renames the layer after it, and a drag on any slider
+without `keepPreset: true` switches it back to the `custom` entry (so give it one). Any
+other select (a mode, a style) just sets its value. `title` is the tooltip of a param.
 
 The filter appears in the type list of every filter layer, works in `add_filter` /
 `set_filter`, and is stored in documents by its full id. `apply(src, params, info)` gets a
@@ -135,7 +145,19 @@ canvas and returns a canvas of the same size (returning nothing keeps the input)
 between runs. The GLSL fragment gets `u_src` (the input; sample neighbours with
 `uv + vec2(dx, dy) / u_size`), `u_size`, `u_scale`, `u_seed` and the declared uniforms, and
 is compiled lazily on first use; when it fails to compile the CPU path runs and a warning
-names the error in the console. Keep both paths in agreement; `compareFilterPaths` in
+names the error in the console. `values(params, info, src)` also gets the source canvas.
+A `sampler2D` uniform's value is a canvas, ImageData or image (uploaded as RGBA8, sample
+it with the `uv` handed to `shade`), or `{ data, width, height }` with a Uint8ClampedArray
+(RGBA8; a 256 × 1 table, say) or a Float32Array (RGBA32F, read with `texelFetch`); add
+`linear: true` for bilinear filtering of 8-bit sources. Plugin samplers sit on texture
+units 5 and up. `u_seed` and `u_size` are taken (do not redeclare them), and `filter`,
+`half`, `sample` are reserved GLSL words.
+
+Filters that need more than one pass (a blur between two shader stages) skip the `glsl`
+block and orchestrate in `apply`: blur with Canvas 2D, then `scumble.gl.shade(shader, canvas,
+values, info)` with the blurred canvas as a `sampler2D` value, falling back to a pixel loop
+when it returns null (or when `info.cpu` is set). `plugins/film/common.js` has the runner
+and the shared maths; `docs/FILM.md` the filters built that way. Keep both paths in agreement; `compareFilterPaths` in
 `renderer/editor/inpaint_filters_gl.js` measures the difference (the sample's posterize
 matches to the bit). A document that holds a plugin filter shows a plain "grain" layer when
 the plugin is missing at load time; plugins load before the session is restored.
@@ -173,6 +195,8 @@ scumble.tools.register({
     hint: "status line when selected", allowEmpty: false,
     onSelect(doc), onDeselect(doc),
     onHover(doc, ev), onDown(doc, ev), onMove(doc, ev), onUp(doc, ev),
+    onKey(doc, { key, lower, shift, raw }) -> true when handled,   // Delete, Escape, arrows ... while the tool is active
+    draw(doc, ctx, { scale, dpr, angle, active }), drawAlways: false,   // overlay in image coordinates
 });
 ```
 
@@ -180,8 +204,12 @@ A button in the tool column under *Plugins* (one per tab); `icon` is one of the 
 names, an inline SVG, or up to two characters. While the tool is active, pointer gestures on
 the canvas go to the plugin instead of the editor: `ev = { x, y (image pixels), inside, shift,
 alt, ctrl, button, pressure, pointerType, raw }`. Panning (space, middle button), zoom and the
-usual shortcuts keep working. The editor's overlay is not drawable by plugins yet; give
-feedback through the status line, a layer, or the selection.
+usual shortcuts keep working. `onKey` sees single keys (no Ctrl / Alt) before the editor's
+own shortcuts while the tool is active. `draw` paints on the canvas overlay after the grid
+and guides, with the view transform applied: draw in image pixels and divide line widths
+and font sizes by `scale` (times `dpr`); it runs while the tool is active, or always with
+`drawAlways: true` (the film pack's control points show while their layer is active). Call
+`doc.draw()` to repaint after a state change.
 
 ## Commands
 
@@ -202,7 +230,9 @@ and (phase 4c) MCP. `params` is the same schema the built-in commands use (`type
 The list shows every plugin with its state (loaded, disabled, error with the first lines of
 the stack), what it registered, and a checkbox to enable / disable it. *Reload plugins*
 unloads everything and loads the folders again, so editing a plugin's files and reloading is
-the development loop; the *Plugins* menu has the same entries. Runtime errors from callbacks
+the development loop (the entry is imported with a fresh `?v=` query and the app rewrites
+the relative imports inside plugin modules to carry it, so submodules reload too); the
+*Plugins* menu has the same entries. Runtime errors from callbacks
 are collected per plugin (the last eight) and shown there too.
 
 ## Testing
@@ -210,3 +240,13 @@ are collected per plugin (the last eight) and shown there too.
 `python tools/commands_test.py` (app running with `--remote-debugging-port=9555`) exercises the
 command core and the sample plugin: filter on the GPU and CPU path, panel, actions with undo,
 the tool through the pointer hooks, the command, reload and disable / enable.
+`python tools/film_test.py` does the same for the film pack (`docs/FILM.md`): every filter on
+both paths, the commands, the control point tool with undo, the overlay, the panel.
+
+## Built-in plugins
+
+- `plugins/sample`: one of every extension point, the template (~150 lines).
+- `plugins/film`: the film pack (`docs/FILM.md`), the first real plugin: eleven filter types
+  with shader and CPU paths, a tool with overlay and keys, a thumbnail panel, actions,
+  commands. It imports the app's `GRAIN_PRESETS` by absolute path (`/editor/inpaint_filters.js`),
+  which built-in plugins may do; user plugins should treat the app's modules as unstable.

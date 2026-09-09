@@ -58,16 +58,56 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   is merged (contributions that only land in the node and are never copied into the
   app do not affect the app). Only MIT/Apache/BSD/OFL dependencies in the app.
 
-## Where things stand (2026-09-08, late night)
+## Where things stand (2026-09-09, evening)
 
-**Phase 4 is complete** (command core + plugin system). Next session: **phase 4b**, the
-film pack as the first real plugin on this API (`docs/BRIEF.md` §5; parametric film
-looks, halation, light leaks, split toning, B&W with colour filters, frames; control
-points last), then **4c**, the MCP server and headless mode on the command core
-(`commands.describe()` already yields the tool list; `app.exe --mcp` with the TypeScript
-SDK in the main process, one IPC round trip per tool). Still open from earlier phases:
-the first real RunPod pod (`docker/runpod/`), and the five API provider adapters have
-never run against a live API (no keys yet; run one small selection per provider first).
+**Phase 4b is complete** (film pack as the first real plugin, `docs/FILM.md`). Next session:
+**phase 4c**, the MCP server and headless mode on the command core (`commands.describe()`
+already yields the tool list, 62 commands incl. the plugins'; `app.exe --mcp` with the
+TypeScript SDK in the main process, one IPC round trip per tool; headless = no window).
+Still open from earlier phases: the first real RunPod pod (`docker/runpod/`), and the five
+API provider adapters have never run against a live API (no keys yet; one small selection
+per provider first). Film pack follow-ups if the user wants them: a real-photo look check
+(only the synthetic test image was used), more frame styles, and the film names / trademark
+review before a sale (`docs/BRIEF.md` §3).
+
+Landed on 2026-09-09 (phase 4b, `docs/FILM.md` and `docs/PLUGINS.md` have the details):
+
+- **Film pack** `plugins/film/` (built in): eleven filter types, each with a GLSL path and a
+  CPU twin (`common.js` holds the shared maths, `tools/film_test.py` checks both paths on 35
+  parameter sets, worst difference 3 levels in the three-stage film look): `film.look`
+  (stock colour matrix / mono weights, warmth, tint, saturation, parametric tone curve with
+  toe / shoulder per film class, fade, push, grain by speed through the built-in grain
+  filter, halation default per stock), `film.halation`, `film.glow`, `film.tonal_contrast`,
+  `film.structure`, `film.bleach_bypass`, `film.cross_process`, `film.split_tone`,
+  `film.light_leak`, `film.frame`, `film.bw` (colour filters, toners, structure, grain), and
+  `film.points` (control points: radial falloff × colour similarity, tool U with overlay,
+  Delete / Escape, sliders in the layer row, one undo step per gesture). "Film looks" panel
+  with one thumbnail per stock (46 stocks from the grain presets, `looks.js` adds tone class,
+  halation and ISO), six Plugins-menu actions, commands `film.looks`, `film.apply_look`,
+  `film.add_point`. Trademark note in the stock tooltip and About.
+- **Plugin API additions** (`renderer/plugins.js`, `renderer/editor/inpaint_filters_gl.js`):
+  `sampler2D` uniforms (canvas / ImageData / `{data, width, height}` as RGBA8 or RGBA32F,
+  units 5+; `precision highp sampler2D` in the plugin source), `values(params, info, src)`,
+  `scumble.gl.shade(shader, canvas, values, info)` for multi-pass filters (program cached per
+  definition object), `scumble.filters.apply(id, ...)` / `filters.ids()`, tool `draw(doc, ctx,
+  view)` + `drawAlways` and `onKey`, `Document.draw()` and `setFilterParams(layer, patch,
+  {preview})` (undo like the editor's sliders), select params with `title`; only the select
+  named `preset` fills params / renames the layer, other selects just set a value. *Reload
+  plugins* now reloads submodules too: `main.js` `serveFile` rewrites relative imports in
+  plugin modules to carry the `?v=` query.
+- **Editor patches** (`tools/sync_editor.py`, rows in `docs/SYNC.md`): `host.pluginOverlay`
+  in `drawOverlays`, the preset-select rule and `p.title` in the filter controls.
+- **Tests**: `python tools/film_test.py` (9 steps, PASS 2026-09-09), `python
+  tools/commands_test.py` PASS, `python tools/smoke_test.py --no-helpers` PASS after the
+  change. Contact sheet of every filter: `dist/smoke/film/sheet.jpg` (made by hand this
+  session, not part of a script).
+
+Known small things (film pack): the CPU path of the control points is O(pixels × points)
+(a 12 MP image with ten points takes a few seconds without a GPU); the rough frame edge and
+light leak jitter use an integer hash that JS and GLSL compute identically, the value-noise
+interpolation on top differs in the last float bits (never more than a level). Plugin
+`custom` params are stored as-is in the document JSON (the points list); `filter_types`
+omits their default.
 
 Landed on 2026-09-08 (phase 4, `docs/COMMANDS.md` and `docs/PLUGINS.md` have the details):
 

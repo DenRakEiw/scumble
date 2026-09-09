@@ -456,7 +456,9 @@ const SETUP = {
 // name and type, values from values(params, info) per run).
 
 const PLUGIN_GL = new Map();   // id -> { def: { code, uniforms, values }, prog, u, failed }
-const PLUGIN_TYPES = { float: "1f", int: "1i", bool: "1i", vec2: "2fv", vec3: "3fv", vec4: "4fv" };
+const PLUGIN_TYPES = { float: "1f", int: "1i", bool: "1i", vec2: "2fv", vec3: "3fv", vec4: "4fv", sampler2D: "tex" };
+const PLUGIN_TEX_UNIT = 5;     // plugin samplers start above the built-in units (0 source, 1 table, 2 offsets, 3 noise, 4 lut)
+const ADHOC = new WeakMap();   // shader definition object -> program record (gl.shade for multi-pass plugin filters)
 
 export function registerGLFilter(id, def) {
     for (const [name, type] of Object.entries(def.uniforms || {})) {
@@ -477,6 +479,7 @@ function pluginSource(def) {
     return `#version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D u_src;
 uniform vec2 u_size;
 uniform float u_scale;
@@ -492,8 +495,10 @@ void main() {
 }
 
 function pluginProgram(g, pg) {
-    if (pg.prog) return pg.prog;
+    if (pg.prog && pg.gen === g.gen) return pg.prog;
     const { gl } = g;
+    pg.gen = g.gen;
+    pg.samplers = [];
     const prog = gl.createProgram();
     gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VS));
     gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, pluginSource(pg.def)));
@@ -503,10 +508,35 @@ function pluginProgram(g, pg) {
     pg.prog = prog;
     pg.u = {};
     for (const name of ["u_src", "u_size", "u_scale", "u_seed", ...Object.keys(pg.def.uniforms || {})]) pg.u[name] = gl.getUniformLocation(prog, name);
+    for (const [name, type] of Object.entries(pg.def.uniforms || {})) if (type === "sampler2D") pg.samplers.push({ name, unit: PLUGIN_TEX_UNIT + pg.samplers.length, tex: null });
     return prog;
 }
 
-function applyPluginGL(id, pg, src, params, info) {
+/**
+ * Upload one plugin sampler: a canvas / ImageData / image, or { data, width, height } with a
+ * Uint8(Clamped)Array (RGBA8) or a Float32Array (RGBA32F, e.g. control point tables); `linear`
+ * on the value picks bilinear filtering (8-bit sources only).
+ */
+function uploadSampler(gl, s, v) {
+    gl.activeTexture(gl.TEXTURE0 + s.unit);
+    if (!s.tex) s.tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, s.tex);
+    const isFloat = !!(v && v.data instanceof Float32Array);
+    const f = v && v.linear && !isFloat ? gl.LINEAR : gl.NEAREST;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, f);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (v && v.data && v.width) {
+        const w = v.width | 0, h = (v.height | 0) || 1;
+        if (isFloat) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, v.data);
+        else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, v.data instanceof Uint8Array ? v.data : new Uint8Array(v.data.buffer, v.data.byteOffset, v.data.byteLength));
+    } else {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, v.canvas || v.image || v);
+    }
+}
+
+function applyPluginGL(id, pg, src, params, info, override) {
     if (pg.failed) return null;
     const g = context();
     if (!g) return null;
@@ -519,14 +549,21 @@ function applyPluginGL(id, pg, src, params, info) {
         gl.uniform1i(pg.u.u_src, 0);
         gl.uniform1f(pg.u.u_scale, info.scale || 1);
         gl.uniform1f(pg.u.u_seed, +info.seed || 0);
-        const values = pg.def.values(params || {}, info) || {};
+        const values = override || pg.def.values(params || {}, info, src) || {};
         for (const [name, type] of Object.entries(pg.def.uniforms || {})) {
             const v = values[name];
             if (v == null || pg.u[name] == null) continue;
             const setter = PLUGIN_TYPES[type];
+            if (setter === "tex") continue;
             if (setter === "1f") gl.uniform1f(pg.u[name], +v);
             else if (setter === "1i") gl.uniform1i(pg.u[name], v === true ? 1 : v === false ? 0 : Math.round(+v));
             else gl["uniform" + setter](pg.u[name], Float32Array.from(v));
+        }
+        for (const s of pg.samplers) {
+            const v = values[s.name];
+            if (v == null || pg.u[s.name] == null) continue;
+            uploadSampler(gl, s, v);
+            gl.uniform1i(pg.u[s.name], s.unit);
         }
         if (g.canvas.width !== W || g.canvas.height !== H) { g.canvas.width = W; g.canvas.height = H; }
         gl.viewport(0, 0, W, H);
@@ -545,6 +582,26 @@ function applyPluginGL(id, pg, src, params, info) {
         if (gl.isContextLost && gl.isContextLost()) g.lost = true; else pg.failed = true;
         return null;
     }
+}
+
+/**
+ * Run an ad-hoc shader (`{ code, uniforms, label }`, the same contract as a filter's `glsl`
+ * block) on a canvas with the given uniform values; the program is compiled once per
+ * definition object. For plugin filters that need several passes (blur between shader
+ * stages, halation, control points). Returns the canvas, or null without a GPU path.
+ */
+export function runShader(def, src, values, info = {}) {
+    if (!def || typeof def.code !== "string") throw new Error("gl.shade needs { code, uniforms } with the fragment defining vec4 shade(vec4 color, vec2 uv)");
+    let pg = ADHOC.get(def);
+    if (!pg) {
+        for (const [name, type] of Object.entries(def.uniforms || {})) {
+            if (!PLUGIN_TYPES[type]) throw new Error(`uniform ${name}: type must be one of ${Object.keys(PLUGIN_TYPES).join(", ")}`);
+            if (!/^[A-Za-z_]\w*$/.test(name)) throw new Error(`uniform "${name}" is not a valid GLSL name`);
+        }
+        pg = { def: { code: def.code, uniforms: def.uniforms || {}, values: () => ({}) }, prog: null, u: null, failed: false, label: def.label || "shader" };
+        ADHOC.set(def, pg);
+    }
+    return applyPluginGL(pg.label, pg, src, {}, info, values || {});
 }
 
 /**

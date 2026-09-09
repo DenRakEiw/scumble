@@ -168,7 +168,10 @@ function, optional GLSL fragment for the WebGL2 path), panel / docker (own DOM a
 menu action, tool. Settings › Plugins: list, enable, open folder, errors, reload without
 restart. Python plugins (stdio process) later, not now.
 
-**Phase 4b, film pack (1–2 weeks):** a Nik Collection / DxO FilmPack style package,
+**Phase 4b, film pack (1–2 weeks), done 2026-09-09** (`plugins/film`, `docs/FILM.md`,
+`tools/film_test.py`; the API grew `sampler2D` uniforms, `gl.shade` for multi-pass filters,
+`filters.apply`, tool `draw` / `onKey`, `Document.setFilterParams`, preset-select rules)**:**
+a Nik Collection / DxO FilmPack style package,
 built as the first built-in plugin so the API is proven on it: parametric film looks
 (colour matrix, tone curve, grain by ISO on the existing grain presets), halation and
 glow, light leaks, split toning, tonal contrast, structure / detail, bleach bypass, cross

@@ -626,6 +626,41 @@ A JPEG of the image (what = image: the flattened picture; editor: with hidden he
 Plugins add commands with `scumble.commands.register(name, def)`; the name is prefixed with
 the plugin id. With the built-in sample plugin loaded:
 
+### `film.add_point` *(plugin film)*
+
+Add a control point (local adjustment) to the control points layer (the active one, the topmost one, or a new one). Weights: radial falloff times colour similarity to the pixel under the point.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `x` | number | centre x in image pixels (required) |
+| `y` | number | centre y in image pixels (required) |
+| `radius` | number | radius in pixels (default 10 % of the long side) |
+| `tolerance` | number | colour tolerance 0..100 (default 50; low = only the colour under the point) |
+| `exposure` | number | EV -2..2 |
+| `contrast` | number | -100..100 |
+| `saturation` | number | -100..100 |
+| `warmth` | number | -100..100 |
+| `structure` | number | -100..100 (local detail, negative softens) |
+
+### `film.looks` *(plugin film)*
+
+The film stocks of the film look filter: id, label, group, ISO, grain character, tone curve class.
+
+| param | type | description |
+|---|---|---|
+| `group` | string | only this group (Colour negative, Slide, Black & white, Cine, Special & artistic) |
+
+### `film.apply_look` *(plugin film)*
+
+Apply a film stock: changes the active film look layer, or adds one on top (see film.looks for the ids).
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `preset` | string | stock id (film.looks), or custom (required) |
+| `strength` | number | 0..100 |
+
 ### `sample.mean_color` *(plugin sample)*
 
 Mean colour of the selection (or the whole picture) as rgb and hex.

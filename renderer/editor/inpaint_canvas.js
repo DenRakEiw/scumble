@@ -2581,6 +2581,7 @@ class InpaintEditor {
             }
             ctx.restore();
         }
+        host.pluginOverlay(this, ctx);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         if (this.compare && this.compare.a && this.compare.b) {
             const split = Math.min(0.95, Math.max(0.05, this.compare.split ?? 0.5));
@@ -6103,7 +6104,7 @@ class InpaintEditor {
                 const sel = document.createElement("select");
                 sel.className = "ipc-sel";
                 sel.style.gridColumn = "2 / -1";
-                sel.title = "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT's job). Values assume a picture of about 2000 px. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products.";
+                sel.title = p.title || (p.key !== "preset" ? p.label : "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT's job). Values assume a picture of about 2000 px. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products.");
                 let group = null;
                 for (const o of p.options) {
                     const opt = document.createElement("option"); opt.value = o.id; opt.textContent = o.label;
@@ -6120,6 +6121,7 @@ class InpaintEditor {
                     if (!preset) return;
                     this.pushUndo({ kind: "filter", id: layer.id });
                     layer.params[p.key] = preset.id;
+                    if (p.key !== "preset") { this.markFilterChanged(layer); return; }
                     for (const [k, v] of Object.entries(preset)) if (k !== "id" && k !== "label" && k !== "group") layer.params[k] = v;
                     if (!("look" in preset)) layer.params.look = null;
                     // layer names are not editable, so the preset may name the layer
@@ -6127,7 +6129,7 @@ class InpaintEditor {
                     this.markFilterChanged(layer);
                     this.renderLayers();
                 });
-                presetSel = sel;
+                if (p.key === "preset") presetSel = sel;
                 box.appendChild(sel);
                 continue;
             }

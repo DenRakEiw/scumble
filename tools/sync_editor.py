@@ -244,7 +244,7 @@ PATCHES = [
     # trademark note on the film preset list (decided 2026-09-08: keep the real names, add the disclaimer)
     ("inpaint_canvas.js",
      'sel.title = "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT\'s job). Values assume a picture of about 2000 px.";',
-     'sel.title = "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT\'s job). Values assume a picture of about 2000 px. Film names are trademarks of their owners; the looks are Scumble\'s own approximations, not licensed products.";', 1),
+     'sel.title = p.title || (p.key !== "preset" ? p.label : "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT\'s job). Values assume a picture of about 2000 px. Film names are trademarks of their owners; the looks are Scumble\'s own approximations, not licensed products.");', 1),
 
     # Free VRAM also releases the in-app sessions; without a server only those
     ("inpaint_canvas.js",
@@ -283,6 +283,18 @@ PATCHES = [
     ("inpaint_canvas.js",
      "        this.tool = tool;\n        if (this.hardCtl) {\n",
      "        const prevTool = this.tool;\n        this.tool = tool;\n        host.toolChanged(this, tool, prevTool);\n        if (this.hardCtl) {\n", 1),
+    # --- phase 4b: only the select param named "preset" fills the other params and renames the layer;
+    #     plugin selects for a mode / style / colour just set their value
+    ("inpaint_canvas.js",
+     "                    this.pushUndo({ kind: \"filter\", id: layer.id });\n                    layer.params[p.key] = preset.id;\n                    for (const [k, v] of Object.entries(preset))",
+     "                    this.pushUndo({ kind: \"filter\", id: layer.id });\n                    layer.params[p.key] = preset.id;\n                    if (p.key !== \"preset\") { this.markFilterChanged(layer); return; }\n                    for (const [k, v] of Object.entries(preset))", 1),
+    ("inpaint_canvas.js",
+     "                presetSel = sel;\n                box.appendChild(sel);\n",
+     "                if (p.key === \"preset\") presetSel = sel;\n                box.appendChild(sel);\n", 1),
+    # --- phase 4b: plugin tools draw on the overlay (image coordinates, before the screen-space part)
+    ("inpaint_canvas.js",
+     "        ctx.setTransform(1, 0, 0, 1, 0, 0);\n        if (this.compare && this.compare.a && this.compare.b) {\n",
+     "        host.pluginOverlay(this, ctx);\n        ctx.setTransform(1, 0, 0, 1, 0, 0);\n        if (this.compare && this.compare.a && this.compare.b) {\n", 1),
 ]
 
 # Everything from this marker to the end of the file is the litegraph extension

@@ -8,8 +8,8 @@
 
 import { host } from "./editor/host.js";
 import { commands, findLayer, layerSummary, touch, bounds } from "./commands.js";
-import { FILTERS, FILTER_IDS, filterDefaults } from "./editor/inpaint_filters.js";
-import { registerGLFilter, unregisterGLFilter } from "./editor/inpaint_filters_gl.js";
+import { FILTERS, FILTER_IDS, filterDefaults, applyFilter } from "./editor/inpaint_filters.js";
+import { registerGLFilter, unregisterGLFilter, runShader, glFiltersAvailable } from "./editor/inpaint_filters_gl.js";
 import { el, icon, makeCanvas } from "./editor/inpaint_canvas.js";
 
 export const API_VERSION = 1;
@@ -139,6 +139,26 @@ export class Document {
 
     undo() { return this.editor.undoStep(); }
     redo() { return this.editor.redoStep(); }
+    /** Redraw the canvas (overlays included) without touching caches. */
+    draw() { this.editor.draw(); }
+    /**
+     * Change a filter layer's parameters. `preview: true` during a drag (no undo step yet, low-res
+     * preview, the undo snapshot is taken before the first preview change); the final call without
+     * it pushes one undo step and renders at full resolution.
+     */
+    setFilterParams(layerKey, patch, { preview = false } = {}) {
+        const ed = this.editor;
+        const l = findLayer(ed, layerKey);
+        if (l.kind !== "filter") throw new Error(`${l.name} is not a filter layer`);
+        if (!l._undoPending) l._undoPending = ed.snapshot({ kind: "filter", id: l.id });
+        Object.assign(l.params, patch || {});
+        if (preview) { ed.filterPreview = l.id; ed.markFilterChanged(l, { soon: true }); return layerSummary(ed, l); }
+        ed.filterPreview = null;
+        ed.pushUndoSnapshot(l._undoPending);
+        l._undoPending = null;
+        ed.markFilterChanged(l);
+        return layerSummary(ed, l);
+    }
     /** After changes made on raw layer objects: caches off, lists and canvas fresh. */
     refresh() { touch(this.editor); }
 
@@ -167,6 +187,7 @@ function registerFilter(entry, def) {
         else if (type === "custom") { /* the plugin's own control */ }
         else throw new Error(`filter "${id}": unknown param type "${type}" (number, select, bool, custom)`);
         for (const k of ["keepPreset", "notWithPlate", "onlyWithPlate"]) if (p[k]) out[k] = true;
+        if (p.title) out.title = String(p.title);
         return out;
     });
     const apply = (src, p, info) => {
@@ -357,8 +378,28 @@ function pointer(ed, phase, e, ix, iy, p) {
     return false;
 }
 
+/** Called by host.pluginOverlay from the editor's drawOverlays (view transform applied: draw in image pixels). */
+function overlay(ed, ctx) {
+    const view = { scale: ed.view.scale, dpr: window.devicePixelRatio || 1, angle: ed.view.angle || 0 };
+    for (const entry of plugins.values()) {
+        for (const reg of entry.regs.tools.values()) {
+            if (!reg.def.draw || (ed.tool !== reg.id && !reg.def.drawAlways)) continue;
+            ctx.save();
+            try { reg.def.draw(new Document(ed), ctx, { ...view, active: ed.tool === reg.id }); }
+            catch (err) { report(entry, `tool ${reg.def.id} draw`, err); }
+            finally { ctx.restore(); }
+        }
+    }
+}
+
 /** Called by host.pluginKey for single-key shortcuts (no Ctrl / Alt); "Shift+X" allowed. */
 function key(ed, e, k) {
+    // the active plugin tool sees the key first (Delete, arrows, Escape ...)
+    const active = toolReg(ed.tool);
+    if (active && active.reg.def.onKey) {
+        try { if (active.reg.def.onKey(new Document(ed), { key: e.key, lower: k, shift: !!e.shiftKey, raw: e })) { e.preventDefault(); return true; } }
+        catch (err) { report(active.entry, `tool ${active.reg.def.id} key`, err); }
+    }
     const match = (spec) => {
         if (!spec) return false;
         const parts = String(spec).toLowerCase().split("+").map((s) => s.trim());
@@ -416,7 +457,25 @@ function makeApi(entry) {
             byId: (id) => docOf(host.editorById(id)),
         },
 
-        filters: { register: (def) => registerFilter(entry, def), unregister: (id) => unregisterFilter(entry, id.includes(".") ? id : `${entry.id}.${id}`) },
+        filters: {
+            register: (def) => registerFilter(entry, def),
+            unregister: (id) => unregisterFilter(entry, id.includes(".") ? id : `${entry.id}.${id}`),
+            /** Run any filter type (built-in or plugin) on a canvas: the GPU path when available, else the CPU code. */
+            apply: (id, src, params, info) => applyFilter(id, src, params || {}, info || {}),
+            ids: () => FILTER_IDS.slice(),
+        },
+        gl: {
+            available: () => glFiltersAvailable(),
+            /**
+             * One shader pass over a canvas: `def` = { code, uniforms, label } like a filter's glsl
+             * block (compiled once per object), `values` the uniform values (sampler2D values are
+             * canvases, ImageData or { data, width, height }). Null without a GPU path: run the CPU code.
+             */
+            shade(def, src, values, info) {
+                try { return runShader(def, src, values || {}, info || {}); }
+                catch (err) { report(entry, `gl.shade ${def && def.label || ""}`, err); return null; }
+            },
+        },
         panels: { register: (def) => registerPanel(entry, def), unregister: (id) => unregisterPanel(entry, id.includes(".") ? id : `${entry.id}.${id}`) },
         actions: { register: (def) => registerAction(entry, def), unregister: (id) => unregisterAction(entry, id.includes(".") ? id : `${entry.id}.${id}`), run: (id) => runAction(id.includes(".") ? id : `${entry.id}.${id}`) },
         tools: { register: (def) => registerTool(entry, def), unregister: (id) => unregisterTool(entry, id.includes(".") ? id : `${entry.id}.${id}`) },
@@ -568,5 +627,5 @@ host.on("built", ({ editor }) => {
 });
 host.on("tool", toolChanged);
 
-export const pluginHost = { pointer, key, runAction, list: () => listPlugins(), reload: reloadPlugins, load: loadPlugins, setEnabled, entries: () => plugins };
+export const pluginHost = { pointer, key, overlay, runAction, list: () => listPlugins(), reload: reloadPlugins, load: loadPlugins, setEnabled, entries: () => plugins };
 host.plugins = pluginHost;

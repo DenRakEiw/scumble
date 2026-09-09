@@ -180,6 +180,11 @@ export const host = {
         return this.plugins ? this.plugins.key(editor, e, k) : false;
     },
 
+    /** Plugin tools draw on the canvas overlay (patched into drawOverlays, view transform applied). */
+    pluginOverlay(editor, ctx) {
+        if (this.plugins) this.plugins.overlay(editor, ctx);
+    },
+
     isActive(editor) {
         return editor === this.editor;
     },

@@ -55,6 +55,8 @@ that spot.
 | `onPointerDown` after `toImage`, `onPointerMove` after `this.hover`, `onPointerUp` after the capture release | `host.pluginPointer(this, phase, e, ix, iy[, p])`: a plugin tool takes the gesture (`pointer.kind === "plugin"`) |
 | `onKey` before the tool `switch` | `host.pluginKey(this, e, k)`: single-key shortcuts of plugin tools / actions |
 | `setTool` | `host.toolChanged(this, tool, prev)` (plugin tools' onSelect / onDeselect) |
+| `drawOverlays()` before the screen-space part | `host.pluginOverlay(this, ctx)` (plugin tools draw in image coordinates, phase 4b) |
+| the filter preset select: every select fills params and renames the layer | only the param named `preset` does; other selects (mode, style, colour) set their value; `p.title` is the tooltip (phase 4b) |
 
 Unchanged and still true in the app: uploads go to `/upload/image` with
 `input/inpaint_canvas` (`n{id}_...` names, hash de-duplicated), helper prompts (SAM3,

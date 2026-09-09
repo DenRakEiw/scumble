@@ -45,10 +45,12 @@ protocol.registerSchemesAsPrivileged([
 
 // ---- scumble://app -------------------------------------------------------------------
 
-async function serveFile(pathname) {
+async function serveFile(pathname, search = "") {
     const rel = decodeURIComponent(pathname === "/" ? "/index.html" : pathname);
     let abs;
+    let plugin = false;
     if (rel.startsWith("/plugins/")) {
+        plugin = true;
         // plugin files (renderer/plugins.js imports the module from here): built-in or user folder
         const m = rel.match(/^\/plugins\/([^/]+)\/(.+)$/);
         abs = m ? plugins.resolve(m[1], m[2]) : null;
@@ -58,8 +60,12 @@ async function serveFile(pathname) {
         if (!abs.startsWith(RENDERER_DIR + path.sep) && abs !== RENDERER_DIR) return new Response("forbidden", { status: 403 });
     }
     try {
-        const data = await fsp.readFile(abs);
+        let data = await fsp.readFile(abs);
         const type = MIME[path.extname(abs).toLowerCase()] || "application/octet-stream";
+        // Reload plugins: the entry is imported with ?v=N; relative imports inside plugin modules get
+        // the same query so the browser's module map does not hand back the previous submodules
+        const v = plugin && /\.(m?js)$/i.test(abs) ? new URLSearchParams(search).get("v") : null;
+        if (v) data = data.toString("utf8").replace(/((?:^|[^\w$.])(?:import|export)\s*(?:[^;'"]*?\sfrom\s*)?|\bimport\s*\(\s*)(["'])(\.{1,2}\/[^"'?]+)\2/g, (m, head, q, spec) => `${head}${q}${spec}?v=${v}${q}`);
         return new Response(data, { status: 200, headers: { "content-type": type, "cache-control": "no-cache" } });
     } catch (_) {
         return new Response("not found: " + rel, { status: 404 });
@@ -81,7 +87,7 @@ function installProtocol() {
             }
             return comfy.proxy(request, rel + url.search);
         }
-        return serveFile(url.pathname);
+        return serveFile(url.pathname, url.search);
     });
 }
 
