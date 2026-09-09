@@ -2,7 +2,7 @@
 
 > **Work in progress.** Scumble is in an early state (0.1.x). Not every feature has been
 > tested end to end yet, and the API provider adapters (Google Gemini, OpenAI, Black Forest
-> Labs, fal.ai, Replicate, OpenRouter, LetzAI) have been written from the providers'
+> Labs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud) have been written from the providers'
 > documentation but have not run against the live APIs so far. Expect rough edges, keep backups of your
 > images, and please report what breaks in the
 > [issues](https://github.com/DenRakEiw/scumble/issues).
@@ -17,7 +17,7 @@ Rendering happens on your own [ComfyUI](https://github.com/comfyanonymous/ComfyU
 (local or remote, for example on RunPod) or through API providers: Google (Nano Banana
 2 / 2 Lite / Pro), OpenAI (GPT Image 2.5 Flare / Sunburst, 2, 1.5), Black Forest Labs
 (FLUX.2 max / pro / flex / klein, FLUX.1 Fill), ByteDance Seedream 5, Qwen Image Edit,
-each through the model's own API or through fal.ai, Replicate and OpenRouter, plus LetzAI. Object masks and background removal
+each through the model's own API or through fal.ai, Replicate, WaveSpeedAI and Comfy Cloud. Object masks and background removal
 run inside the app through ONNX Runtime (SAM2, BiRefNet, RMBG). The editor is the same
 code as the ComfyUI node [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas);
 Scumble is the standalone window around it, plus recipes, plugins and an MCP server.
@@ -38,7 +38,7 @@ untested (see the note above).
   film looks, halation, glow, bleach bypass, cross processing, split toning, light leaks,
   frames and control points.
 - Recipes instead of node graphs: pick a model ("FLUX.2 [max]", "Nano Banana 2") and the
-  provider it runs on (its own API, fal.ai, Replicate, OpenRouter); import your own ComfyUI
+  provider it runs on (its own API, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud); import your own ComfyUI
   workflow as a recipe if it holds an Inpaint Canvas node.
 - Export PNG, JPEG, WebP, PSD and ORA with layers, masks and selections.
 - JavaScript plugins (filters with CPU and WebGL2 paths, panels, menu actions, tools,
@@ -98,7 +98,7 @@ the sample plugin), `film_test.py` (GPU and CPU paths of the film pack), `mcp_te
 
 ```
 electron/main/     main process: window, scumble:// scheme with the ComfyUI proxy, websocket, menu, dialogs, settings,
-                   file mirror, keys.js (safeStorage), recipes.js, providers/ (fal, replicate, bfl, openai, gemini, openrouter, letz),
+                   file mirror, keys.js (safeStorage), recipes.js, providers/ (fal, replicate, bfl, openai, gemini, wavespeed, comfycloud),
                    onnx/ (SAM2, matting), plugins.js, updater.js (GitHub releases), bridge.js + local.js + mcp/ (agents)
 electron/preload.js
 renderer/          shell.js (connection bar, recipe picker, tabs, settings), commands.js (the command core),

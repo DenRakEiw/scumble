@@ -74,7 +74,7 @@ The recipes (ComfyUI workflows and API providers) and which one is selected.
 
 ### `select_recipe` *(app)*
 
-Select the recipe every tab generates with; model recipes take the provider to run on (gemini, openai, bfl, fal, replicate, openrouter, letz), else the remembered or default one.
+Select the recipe every tab generates with; model recipes take the provider to run on (gemini, openai, bfl, fal, replicate, wavespeed, comfycloud), else the remembered or default one.
 
 | param | type | description |
 |---|---|---|

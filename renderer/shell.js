@@ -220,7 +220,7 @@ ui.setUrl.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key ==
 let recipes = [];
 let providers = [];
 
-const FAMILY_ORDER = ["ComfyUI", "Google", "OpenAI", "Black Forest Labs", "ByteDance", "Qwen", "LetzAI"];
+const FAMILY_ORDER = ["ComfyUI", "Google", "OpenAI", "Black Forest Labs", "ByteDance", "Qwen"];
 const familyOf = (r) => (r.kind === "provider" ? (r.family || "API providers") : "ComfyUI");
 
 async function loadRecipes() {

@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "FLUX.2 [klein] 9B (hosted)",
   "family": "Black Forest Labs",
-  "description": "The small FLUX.2, hosted; the local recipe runs the same model on your ComfyUI. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "The small FLUX.2, hosted; the local recipe runs the same model on your ComfyUI. Also on WaveSpeedAI. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "bfl",
   "providers": {
     "bfl": {
@@ -44,6 +44,12 @@
           ]
         }
       ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "wavespeed": {
+      "model": "wavespeed-ai/flux-2-klein-9b/edit",
+      "input": "edit",
+      "settings": [],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     }
   }

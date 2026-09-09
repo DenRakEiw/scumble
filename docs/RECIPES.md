@@ -56,8 +56,8 @@ A provider recipe is **one model** with one variant per provider that hosts it; 
 picks the provider in Settings › Recipes (a select per row, remembered in
 `settings.recipeProviders`) or through `select_recipe(id, provider)`. The home provider
 (`default`) is the model's own API: Google for the Nano Banana family, OpenAI for GPT
-Image, Black Forest Labs for FLUX; fal.ai, Replicate and OpenRouter carry most models as
-well, LetzAI has its own inpainting.
+Image, Black Forest Labs for FLUX; fal.ai, Replicate, WaveSpeedAI and Comfy Cloud carry most
+models as well.
 
 ```
 {
@@ -67,7 +67,8 @@ well, LetzAI has its own inpainting.
     "bfl":        { "model": "flux-2-max", "input": "edit", "settings": [ ... ] },
     "fal":        { "model": "fal-ai/flux-2-max/edit", "input": "edit", "settings": [ ... ] },
     "replicate":  { "model": "black-forest-labs/flux-2-max", "input": "edit", "fields": { "images": "input_images" }, "fixed": { "output_format": "png" } },
-    "openrouter": { "model": "black-forest-labs/flux.2-max", "input": "fill" }
+    "wavespeed":  { "model": "wavespeed-ai/flux-2-max/edit", "input": "edit" },
+    "comfycloud": { "model": "Flux.2 [max]", "input": "edit", "options": { "node": "Flux2ImageNode" } }
   }
 }
 ```
@@ -86,10 +87,17 @@ Adapters (`electron/main/providers/`): **fal** (queue API, settings passed by na
 gpt-image-2 and 2.5 take any size in multiples of 16), **gemini** (`aspect_ratio`,
 `image_size`; no mask input, the mask goes along as an image and the prompt names the
 white area), **replicate** (settings by name, `model` is `owner/name` or
-`owner/name:version`, files over 256 kB through the Files API), **openrouter** (unified
-image API `/api/v1/images`, `resolution`, `quality`, `aspect_ratio`; no mask input, handled
-like Gemini), **letz** (crop uploaded as a user asset, `/image-edits` mode `in` with the
-mask, `resolution` 2k / 4k). Every adapter is written from the provider's documentation and
+`owner/name:version`, files over 256 kB through the Files API), **wavespeed** (`POST
+/api/v3/<model>`, poll `predictions/<id>/result`; inputs are URLs only, so crop, mask and
+references go through the media upload first; `options.aspect_ratios` picks the preset
+closest to the crop, `options.size = "star"` sends `W*H` for the fill models; the key link
+carries the WaveSpeed referral code), **comfycloud** (Comfy Cloud API with `X-API-Key`:
+the adapter builds a workflow from LoadImage, one Partner Node named in `options.node`
+(`OpenAIGPTImageNodeV2`, `GeminiNanoBanana2V2`, `GeminiImage2Node`, `GeminiImageNode`,
+`ByteDanceSeedreamNodeV3`, `Flux2ImageNode`, `FluxProFillNode`, `QwenImageEditApi`) and
+SaveImage, submits it to `/api/prompt`, polls `/api/job/<id>/status`, reads the image from
+`/api/history/<id>` and `/api/view`; settings keys are the node's full input keys, dotted
+for the model combos such as `model.quality`; needs a paid plan). Every adapter is written from the provider's documentation and
 has not run against the live API yet; the recipe descriptions say so.
 The key of the provider comes from the credential store (Settings › API providers).
 

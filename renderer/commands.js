@@ -207,7 +207,7 @@ const COMMANDS = {
         },
     },
     select_recipe: {
-        scope: "app", description: "Select the recipe every tab generates with; model recipes take the provider to run on (gemini, openai, bfl, fal, replicate, openrouter, letz), else the remembered or default one.",
+        scope: "app", description: "Select the recipe every tab generates with; model recipes take the provider to run on (gemini, openai, bfl, fal, replicate, wavespeed, comfycloud), else the remembered or default one.",
         params: { id: P.str("recipe id (from list_recipes)", { required: true }), provider: P.str("provider id for a model recipe (one of its providers from list_recipes)") },
         async run(_, a) {
             const r = host.shell.recipes().find((x) => x.id === a.id);

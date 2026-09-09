@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "FLUX.2 [flex]",
   "family": "Black Forest Labs",
-  "description": "FLUX.2 with exposed steps and guidance, up to ten references. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "FLUX.2 with exposed steps and guidance, up to ten references. Also on WaveSpeedAI. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "bfl",
   "providers": {
     "bfl": {
@@ -145,11 +145,11 @@
       ],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     },
-    "openrouter": {
-      "model": "black-forest-labs/flux.2-flex",
-      "input": "fill",
+    "wavespeed": {
+      "model": "wavespeed-ai/flux-2-flex/edit",
+      "input": "edit",
       "settings": [],
-      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     }
   }
 }

@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Nano Banana 2 Lite (Gemini 3.1 Flash-Lite Image)",
   "family": "Google",
-  "description": "Google's fastest and cheapest image model, 1K only. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Google's fastest and cheapest image model, 1K only. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {
     "gemini": {
@@ -47,26 +47,34 @@
       ],
       "note": "Gemini has no mask input: the crop and the mask go along and the prompt tells the model to change the white area only; the stitch keeps the selection."
     },
-    "openrouter": {
-      "model": "google/gemini-3.1-flash-lite-image",
-      "input": "fill",
-      "settings": [
-        {
-          "index": 1,
-          "key": "resolution",
-          "label": "Resolution",
-          "spec": [
-            [
-              "auto",
-              "1K"
-            ],
-            {
-              "default": "auto"
-            }
-          ]
-        }
-      ],
-      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+    "wavespeed": {
+      "model": "google/nano-banana-2-lite/edit",
+      "input": "edit",
+      "options": {
+        "aspect_ratios": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "21:9"
+        ]
+      },
+      "settings": [],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". WaveSpeed sends the aspect preset closest to the crop."
+    },
+    "comfycloud": {
+      "model": "Nano Banana 2 Lite",
+      "input": "edit",
+      "options": {
+        "node": "GeminiNanoBanana2V2"
+      },
+      "settings": [],
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     }
   }
 }

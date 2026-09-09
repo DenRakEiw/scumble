@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Seedream 5.0 Pro",
   "family": "ByteDance",
-  "description": "ByteDance's full Seedream 5, 1K or 2K. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "ByteDance's full Seedream 5, 1K or 2K. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -41,9 +41,28 @@
         "sizing": "none"
       }
     },
-    "openrouter": {
-      "model": "bytedance-seed/seedream-5-0-pro",
-      "input": "fill",
+    "wavespeed": {
+      "model": "bytedance/seedream-v5.0-pro/edit",
+      "input": "edit",
+      "options": {
+        "aspect_ratios": [
+          "1:1",
+          "1:2",
+          "2:1",
+          "1:3",
+          "3:1",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "9:21",
+          "21:9"
+        ]
+      },
       "settings": [
         {
           "index": 1,
@@ -51,17 +70,26 @@
           "label": "Resolution",
           "spec": [
             [
-              "auto",
-              "1K",
-              "2K"
+              "1k",
+              "1.5k",
+              "2k"
             ],
             {
-              "default": "auto"
+              "default": "1k"
             }
           ]
         }
       ],
-      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". WaveSpeed sends the aspect preset closest to the crop."
+    },
+    "comfycloud": {
+      "model": "seedream 5.0 pro",
+      "input": "edit",
+      "options": {
+        "node": "ByteDanceSeedreamNodeV3"
+      },
+      "settings": [],
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Custom size fitted to the crop (1024 to 2496 px). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     }
   }
 }

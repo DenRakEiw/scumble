@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Nano Banana (Gemini 2.5 Flash Image)",
   "family": "Google",
-  "description": "The first Nano Banana; Google recommends moving to Nano Banana 2 Lite. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "The first Nano Banana; Google recommends moving to Nano Banana 2 Lite. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {
     "gemini": {
@@ -90,11 +90,34 @@
       "settings": [],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     },
-    "openrouter": {
-      "model": "google/gemini-2.5-flash-image",
-      "input": "fill",
+    "wavespeed": {
+      "model": "google/nano-banana/edit",
+      "input": "edit",
+      "options": {
+        "aspect_ratios": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "21:9"
+        ]
+      },
       "settings": [],
-      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". WaveSpeed sends the aspect preset closest to the crop."
+    },
+    "comfycloud": {
+      "model": "gemini-2.5-flash-image",
+      "input": "edit",
+      "options": {
+        "node": "GeminiImageNode"
+      },
+      "settings": [],
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). One image input: the references are not sent. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     }
   }
 }

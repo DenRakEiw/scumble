@@ -2,8 +2,9 @@
 // contrast, hue / saturation, colour balance, black & white, invert), the 3D LUT and the
 // grain run as one fragment shader pass instead of a getImageData / putImageData loop
 // over every pixel. applyFilter() in inpaint_filters.js asks applyFilterGL() first and
-// falls back to the CPU code when this returns null (no WebGL2, texture too large, a
-// context loss, a GL error). The maths mirrors the CPU functions, including their 8-bit
+// falls back to the CPU code when this returns null (no WebGL2, a side longer than the
+// texture limit, a context loss, a GL error). Pictures larger than the drawing buffer
+// Chromium grants (about 33 MP) are rendered in tiles, see renderTiled(). The maths mirrors the CPU functions, including their 8-bit
 // quantisation between steps, so both paths give the same picture within rounding.
 //
 // Blur, sharpen and vignette stay in inpaint_filters.js: they already run through
@@ -29,6 +30,7 @@ uniform sampler2D u_offsets;   // 256 x 1 RGBA32F: colour balance offsets by lum
 uniform sampler2D u_noise;     // W x H RGBA8: the grain field
 uniform sampler3D u_lut;       // N x N x N RGBA8, red fastest
 uniform vec2 u_size;
+uniform vec2 u_tile;
 uniform int u_mode;            // 0 tables, 1 matrix (+ table), 2 colour balance, 3 black & white, 4 lut, 5 grain
 uniform mat3 u_matrix;
 uniform bool u_useTable;
@@ -73,7 +75,7 @@ vec3 look(vec3 c) {
 }
 
 void main() {
-    vec2 uv = gl_FragCoord.xy / u_size;
+    vec2 uv = (gl_FragCoord.xy + u_tile) / u_size;
     vec2 suv = vec2(uv.x, 1.0 - uv.y);
     vec4 s = texture(u_src, suv);
     vec3 c = s.rgb;
@@ -106,7 +108,53 @@ void main() {
 }`;
 
 const SUPPORTED = new Set(["levels", "curves", "brightness_contrast", "hue_sat", "color_balance", "bw", "invert", "lut", "grain"]);
-const MAX_PIXELS = 64 * 1024 * 1024;   // beyond this a canvas read-back is the bottleneck anyway
+
+/**
+ * Draw the full-screen triangle for a W x H result and return it as a 2D canvas.
+ *
+ * Chromium caps the WebGL drawing buffer at about 33 megapixels (5760 x 5760 on an RTX
+ * 5090 with D3D11, whatever MAX_VIEWPORT_DIMS and MAX_RENDERBUFFER_SIZE say) and keeps
+ * that quiet: the canvas reports the requested size, drawingBufferWidth / Height are
+ * smaller, and a single pass leaves only the lower-left corner of the picture in the
+ * buffer, which drawImage then stretches to full size (seen with a 10864 x 6062 image
+ * and the film look). So the picture is rendered in tiles that fit the buffer: the
+ * canvas takes the tile's size and u_tile shifts gl_FragCoord to the tile's origin, so
+ * every fragment sees the same uv, u_size and neighbours as in a single pass.
+ * Returns null after a GL error (the caller falls back to the CPU path).
+ */
+function renderTiled(g, uTile, W, H, label) {
+    const { gl } = g;
+    if (g.canvas.width !== W || g.canvas.height !== H) { g.canvas.width = W; g.canvas.height = H; }
+    const out = makeCanvas(W, H);
+    const octx = out.getContext("2d");
+    let tw = gl.drawingBufferWidth, th = gl.drawingBufferHeight;
+    if (tw >= W && th >= H) {
+        gl.viewport(0, 0, W, H);
+        gl.uniform2f(uTile, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        const err = gl.getError();
+        if (err !== gl.NO_ERROR) { console.warn("WebGL2 filter", label, "GL error", err); return null; }
+        octx.drawImage(g.canvas, 0, 0);
+        return out;
+    }
+    tw = Math.max(1, Math.min(W, tw)); th = Math.max(1, Math.min(H, th));
+    for (let y0 = 0; y0 < H; y0 += th) {
+        for (let x0 = 0; x0 < W; x0 += tw) {
+            const w = Math.min(tw, W - x0), h = Math.min(th, H - y0);
+            // the canvas is exactly the tile, so buffer and canvas agree; buffer row 0 is the
+            // bottom of the tile, which is image row y0 + h - 1 (the shader flips v)
+            if (g.canvas.width !== w || g.canvas.height !== h) { g.canvas.width = w; g.canvas.height = h; }
+            if (gl.drawingBufferWidth < w || gl.drawingBufferHeight < h) { console.warn("WebGL2 filter", label, "drawing buffer too small for a", w, "x", h, "tile"); return null; }
+            gl.viewport(0, 0, w, h);
+            gl.uniform2f(uTile, x0, H - y0 - h);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+            const err = gl.getError();
+            if (err !== gl.NO_ERROR) { console.warn("WebGL2 filter", label, "GL error", err); return null; }
+            octx.drawImage(g.canvas, 0, 0, w, h, x0, y0, w, h);
+        }
+    }
+    return out;
+}
 
 let G = null;          // the shared context, created on first use
 let unavailable = false;
@@ -170,7 +218,7 @@ function context() {
         for (const pg of PLUGIN_GL.values()) pg.prog = null;   // programs of a lost context
         const u = {};
         for (const name of ["u_src", "u_table", "u_offsets", "u_noise", "u_lut", "u_size", "u_mode", "u_matrix", "u_useTable", "u_weights", "u_tint", "u_strength", "u_lutN", "u_k", "u_center",
-            "u_lookOn", "u_useMix", "u_mix", "u_useMono", "u_mono", "u_wb", "u_satK", "u_conK", "u_fade", "u_lookStrength"]) u[name] = gl.getUniformLocation(prog, name);
+            "u_lookOn", "u_useMix", "u_mix", "u_useMono", "u_mono", "u_wb", "u_satK", "u_conK", "u_fade", "u_lookStrength", "u_tile"]) u[name] = gl.getUniformLocation(prog, name);
         // fixed texture units: 0 source, 1 table, 2 offsets, 3 noise, 4 lut
         const texSrc = texture2d(gl, 0, gl.NEAREST);
         const texTable = texture2d(gl, 1, gl.NEAREST);
@@ -482,13 +530,14 @@ precision highp int;
 precision highp sampler2D;
 uniform sampler2D u_src;
 uniform vec2 u_size;
+uniform vec2 u_tile;
 uniform float u_scale;
 uniform float u_seed;
 ${decls}
 out vec4 o;
 ${def.code}
 void main() {
-    vec2 uv = gl_FragCoord.xy / u_size;
+    vec2 uv = (gl_FragCoord.xy + u_tile) / u_size;
     vec2 suv = vec2(uv.x, 1.0 - uv.y);
     o = shade(texture(u_src, suv), suv);
 }`;
@@ -507,7 +556,7 @@ function pluginProgram(g, pg) {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error("program: " + gl.getProgramInfoLog(prog));
     pg.prog = prog;
     pg.u = {};
-    for (const name of ["u_src", "u_size", "u_scale", "u_seed", ...Object.keys(pg.def.uniforms || {})]) pg.u[name] = gl.getUniformLocation(prog, name);
+    for (const name of ["u_src", "u_size", "u_scale", "u_seed", "u_tile", ...Object.keys(pg.def.uniforms || {})]) pg.u[name] = gl.getUniformLocation(prog, name);
     for (const [name, type] of Object.entries(pg.def.uniforms || {})) if (type === "sampler2D") pg.samplers.push({ name, unit: PLUGIN_TEX_UNIT + pg.samplers.length, tex: null });
     return prog;
 }
@@ -541,7 +590,7 @@ function applyPluginGL(id, pg, src, params, info, override) {
     const g = context();
     if (!g) return null;
     const W = src.width, H = src.height;
-    if (!W || !H || W > g.max || H > g.max || W * H > MAX_PIXELS) return null;
+    if (!W || !H || W > g.max || H > g.max) return null;
     const { gl } = g;
     try {
         const prog = pluginProgram(g, pg);
@@ -565,18 +614,11 @@ function applyPluginGL(id, pg, src, params, info, override) {
             uploadSampler(gl, s, v);
             gl.uniform1i(pg.u[s.name], s.unit);
         }
-        if (g.canvas.width !== W || g.canvas.height !== H) { g.canvas.width = W; g.canvas.height = H; }
-        gl.viewport(0, 0, W, H);
         gl.uniform2f(pg.u.u_size, W, H);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, g.texSrc);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
-        const err = gl.getError();
-        if (err !== gl.NO_ERROR) { console.warn("plugin WebGL2 filter", id, "GL error", err); return null; }
-        const out = makeCanvas(W, H);
-        out.getContext("2d").drawImage(g.canvas, 0, 0);
-        return out;
+        return renderTiled(g, pg.u.u_tile, W, H, id);
     } catch (err) {
         console.warn("plugin WebGL2 filter", id, "failed, using the CPU path:", err.message || err);
         if (gl.isContextLost && gl.isContextLost()) g.lost = true; else pg.failed = true;
@@ -613,25 +655,18 @@ export function applyFilterGL(id, src, params, info = {}) {
     const g = context();
     if (!g) return null;
     const W = src.width, H = src.height;
-    if (!W || !H || W > g.max || H > g.max || W * H > MAX_PIXELS) return null;
+    if (!W || !H || W > g.max || H > g.max) return null;
     const { gl, u } = g;
     try {
         gl.useProgram(g.prog);
         const ok = SETUP[id](g, params || {}, info, src);
         if (ok === false) return copyCanvas(src);
         if (ok === null) return null;
-        if (g.canvas.width !== W || g.canvas.height !== H) { g.canvas.width = W; g.canvas.height = H; }
-        gl.viewport(0, 0, W, H);
         gl.uniform2f(u.u_size, W, H);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, g.texSrc);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
-        const err = gl.getError();
-        if (err !== gl.NO_ERROR) { console.warn("WebGL2 filter", id, "GL error", err); return null; }
-        const out = makeCanvas(W, H);
-        out.getContext("2d").drawImage(g.canvas, 0, 0);
-        return out;
+        return renderTiled(g, u.u_tile, W, H, id);
     } catch (err) {
         console.warn("WebGL2 filter", id, "failed, using the CPU path:", err.message || err);
         if (gl.isContextLost && gl.isContextLost()) g.lost = true;

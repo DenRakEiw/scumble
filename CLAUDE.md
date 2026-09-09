@@ -66,6 +66,34 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-09, late)
 
+**Landed on 2026-09-09 (night, uncommitted tests: the user's packaged Scumble held the
+single-instance lock, so nothing below has run in the app yet; do that first):**
+
+- **Bug fix, large images**: Chromium caps the WebGL drawing buffer at about 33 MP (5760²
+  on the RTX 5090, whatever MAX_VIEWPORT_DIMS says) and keeps the canvas size, so a filter on
+  a 10864 × 6062 image showed only its lower-left corner stretched to full size (film look,
+  grain, every GL filter). `renderer/editor/inpaint_filters_gl.js` now checks
+  `drawingBufferWidth/Height` and renders in tiles (`renderTiled`, uniform `u_tile` shifts
+  `gl_FragCoord`); the 64 MP area limit is gone, only the 16384 px side limit remains.
+  Verified on a standalone page (scratchpad `tiletest.html` importing the module; invert and
+  a plugin shader at 2000 × 1000, 10864 × 6062, 12000 × 8000 all exact, 100–200 ms). **Still
+  to run**: `python tools/film_test.py`, `tools/commands_test.py`, `tools/smoke_test.py
+  --no-helpers`, and a real look at the user's 10k image; then release 0.1.1 (the user's
+  desktop 0.1.0 predates the model recipes / provider select).
+- **Providers**: LetzAI and OpenRouter removed (adapters, recipe variants, docs). New
+  `providers/wavespeed.js` (WaveSpeedAI, `POST /api/v3/<model>`, poll
+  `predictions/<id>/result`, URL-only inputs so crop / mask / refs go through
+  `media/uploads`; keyUrl is the user's referral link `https://wavespeed.ai/?ref=dennisi6`,
+  WaveSpeed pays 10 % on a referred user's first 30 days) with variants in all 16 model
+  recipes, and `providers/comfycloud.js` (Comfy Cloud v1 API, builds LoadImage → Partner
+  Node → SaveImage, node class names and dotted dynamic-input keys read from the local
+  ComfyUI 0.35 `comfy_api_nodes/`; needs a paid plan) with variants in 14 recipes (no
+  FLUX.2 flex / klein partner node). The user applied to the Comfy.org affiliate program
+  (30 % recurring for 3 months on subscriptions); once the link exists, put it into
+  `comfycloud.js` `keyUrl`. **Neither adapter has run against the live API.** Research
+  notes: Segmind pays up to 30 % for 12 months but lacks FLUX.2 / Nano Banana 2; fal and
+  Replicate only have unverified third-party listings; OpenAI, Google, BFL have nothing.
+
 **Phase 5 has its first half**: the repo is public, GPL-3.0, release 0.1.0 is on GitHub
 (unsigned), auto-update works end to end (a 0.0.9 build found, downloaded and installed
 0.1.0 from the release). Phases 1–4c and 5a are in. What is still open in phase 5, decided
@@ -90,7 +118,7 @@ with the user on 2026-09-09:
 Landed on 2026-09-09 (evening, after the release):
 
 - **Model recipes**: a provider recipe is one model with a variant per provider
-  (`providers: { gemini | openai | bfl | fal | replicate | openrouter | letz: { model,
+  (`providers: { gemini | openai | bfl | fal | replicate | wavespeed | comfycloud: { model,
   input, fields, fixed, settings, options, note } }`, `default` = home provider, `family`
   groups the lists). Settings › Recipes shows a provider select per row (choice in
   `settings.recipeProviders`), `select_recipe(id, provider)`, `list_recipes` lists

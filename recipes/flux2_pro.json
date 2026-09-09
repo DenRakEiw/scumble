@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "FLUX.2 [pro]",
   "family": "Black Forest Labs",
-  "description": "BFL's production FLUX.2: text rendering, photorealism, multi-reference editing. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "BFL's production FLUX.2: text rendering, photorealism, multi-reference editing. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "bfl",
   "providers": {
     "bfl": {
@@ -77,11 +77,20 @@
       ],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     },
-    "openrouter": {
-      "model": "black-forest-labs/flux.2-pro",
-      "input": "fill",
+    "wavespeed": {
+      "model": "wavespeed-ai/flux-2-pro/edit",
+      "input": "edit",
       "settings": [],
-      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "comfycloud": {
+      "model": "Flux.2 [pro]",
+      "input": "edit",
+      "options": {
+        "node": "Flux2ImageNode"
+      },
+      "settings": [],
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Size fitted to the crop (256 to 2048 px, multiples of 32). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     }
   }
 }

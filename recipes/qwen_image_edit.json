@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Qwen Image Edit",
   "family": "Qwen",
-  "description": "Alibaba's Qwen image editor; fal's inpaint endpoint takes the mask, Replicate's edits the whole crop. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Alibaba's Qwen image editor; fal's inpaint endpoint takes the mask, Replicate's edits the whole crop. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -93,6 +93,21 @@
         }
       ],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "wavespeed": {
+      "model": "wavespeed-ai/qwen-image/edit-plus",
+      "input": "edit",
+      "settings": [],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "comfycloud": {
+      "model": "qwen-image-3.0",
+      "input": "edit",
+      "options": {
+        "node": "QwenImageEditApi"
+      },
+      "settings": [],
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Qwen Image 3.0 edit (up to three images). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     }
   }
 }

@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Seedream 5.0 Lite",
   "family": "ByteDance",
-  "description": "ByteDance's fast Seedream 5 with built-in reasoning, up to 3K. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "ByteDance's fast Seedream 5 with built-in reasoning, up to 3K. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -71,27 +71,20 @@
       ],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     },
-    "openrouter": {
-      "model": "bytedance-seed/seedream-5-0-lite",
-      "input": "fill",
-      "settings": [
-        {
-          "index": 1,
-          "key": "resolution",
-          "label": "Resolution",
-          "spec": [
-            [
-              "auto",
-              "2K",
-              "4K"
-            ],
-            {
-              "default": "auto"
-            }
-          ]
-        }
-      ],
-      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+    "wavespeed": {
+      "model": "bytedance/seedream-v5.0-lite/edit",
+      "input": "edit",
+      "settings": [],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "comfycloud": {
+      "model": "seedream 5.0 lite",
+      "input": "edit",
+      "options": {
+        "node": "ByteDanceSeedreamNodeV3"
+      },
+      "settings": [],
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Custom size fitted to the crop. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     }
   }
 }

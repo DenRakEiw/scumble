@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Nano Banana 2 (Gemini 3.1 Flash Image)",
   "family": "Google",
-  "description": "Google's generalist image model, 0.5K to 4K. Keys: Google AI Studio, fal.ai or Replicate. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Google's generalist image model, 0.5K to 4K. Keys: Google AI Studio, fal.ai or Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {
     "gemini": {
@@ -123,9 +123,27 @@
       ],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     },
-    "openrouter": {
-      "model": "google/gemini-3.1-flash-image",
-      "input": "fill",
+    "wavespeed": {
+      "model": "google/nano-banana-2/edit",
+      "input": "edit",
+      "options": {
+        "aspect_ratios": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "21:9",
+          "1:4",
+          "4:1",
+          "1:8",
+          "8:1"
+        ]
+      },
       "settings": [
         {
           "index": 1,
@@ -133,19 +151,43 @@
           "label": "Resolution",
           "spec": [
             [
-              "auto",
-              "512",
+              "0.5k",
+              "1k",
+              "2k",
+              "4k"
+            ],
+            {
+              "default": "1k"
+            }
+          ]
+        }
+      ],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". WaveSpeed sends the aspect preset closest to the crop."
+    },
+    "comfycloud": {
+      "model": "Nano Banana 2 (Gemini 3.1 Flash Image)",
+      "input": "edit",
+      "options": {
+        "node": "GeminiNanoBanana2V2"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "model.resolution",
+          "label": "Resolution",
+          "spec": [
+            [
               "1K",
               "2K",
               "4K"
             ],
             {
-              "default": "auto"
+              "default": "1K"
             }
           ]
         }
       ],
-      "note": "OpenRouter's unified image API; no mask input, the mask goes along as a reference and the prompt names the area."
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     }
   }
 }

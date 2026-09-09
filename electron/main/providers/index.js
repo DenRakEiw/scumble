@@ -19,8 +19,8 @@ const PROVIDERS = {
     openai: require("./openai"),
     gemini: require("./gemini"),
     replicate: require("./replicate"),
-    openrouter: require("./openrouter"),
-    letz: require("./letz"),
+    wavespeed: require("./wavespeed"),
+    comfycloud: require("./comfycloud"),
     loopback: require("./loopback"),
 };
 
