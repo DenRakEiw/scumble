@@ -1,15 +1,22 @@
 {
   "name": "scumble",
   "productName": "Scumble",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Desktop editor for AI inpainting: layers, selection by text, retouch, filters, rendered through your own ComfyUI or API providers.",
   "author": "DenRakEiw",
-  "license": "UNLICENSED",
+  "license": "GPL-3.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DenRakEiw/scumble.git"
+  },
+  "homepage": "https://github.com/DenRakEiw/scumble",
   "main": "electron/main/main.js",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win nsis",
+    "dist:linux": "electron-builder --linux",
+    "release": "electron-builder --win nsis --publish always",
     "dist:dir": "electron-builder --dir",
     "sync-editor": "python tools/sync_editor.py",
     "smoke": "python tools/smoke_test.py",
@@ -20,6 +27,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "electron-updater": "^6.8.9",
     "onnxruntime-node": "^1.29.0",
     "ws": "^8.21.3"
   },
@@ -40,9 +48,16 @@
       "plugins/**/*",
       "build/icon.png",
       "build/icon.ico",
-      "package.json"
+      "package.json",
+      "LICENSE"
     ],
     "icon": "build/icon.png",
+    "publish": {
+      "provider": "github",
+      "owner": "DenRakEiw",
+      "repo": "scumble",
+      "releaseType": "draft"
+    },
     "asar": true,
     "win": {
       "target": [

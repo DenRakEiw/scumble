@@ -15,6 +15,7 @@ const DEFAULTS = {
     // in-app helper models (electron/main/onnx): device auto|gpu|cpu, model folder (null =
     // <userData>/models, or a ComfyUI models folder), the SAM2 and matting model ids
     helpers: { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite" },
+    updates: { check: true },   // check GitHub Releases at start (electron/main/updater.js)
     window: null,
 };
 

@@ -17,6 +17,7 @@
     <label class="shell-field">ComfyUI <input id="shell-url" type="text" spellcheck="false" placeholder="http://127.0.0.1:8188"></label>
     <button id="shell-connect" type="button">Connect</button>
     <span id="shell-status"><span id="shell-dot" class="dot"></span><span id="shell-status-text">not connected</span></span>
+    <button id="shell-update" type="button" hidden title="A new version is downloaded; restart to install it"></button>
   </div>
   <div id="shell-tabs"><div id="shell-tab-list"></div><button id="shell-tab-add" type="button" title="New tab (Ctrl+T)">+</button></div>
   <div id="editor-host"></div>
@@ -92,8 +93,14 @@
       <p id="set-gpu" class="shell-help"></p>
     </section>
     <section>
+      <h3>Updates</h3>
+      <div class="shell-row"><label class="shell-check"><input id="set-update-auto" type="checkbox"> Check for updates at start</label><button id="set-update-check" type="button">Check now</button><button id="set-update-install" type="button" hidden>Restart and install</button><span id="set-update-note" class="shell-note"></span></div>
+      <p class="shell-help">Updates come from the GitHub releases of <code>DenRakEiw/scumble</code>. A new version is downloaded in the background and installed when you restart from here, or on the next quit. Nothing is sent to GitHub apart from the version request.</p>
+    </section>
+    <section>
       <h3>About</h3>
       <p id="set-about" class="shell-help"></p>
+      <p class="shell-help">Scumble is free software under the GNU General Public License v3.0, source at <a id="set-about-repo" href="#">github.com/DenRakEiw/scumble</a>. The editor is the same code as the ComfyUI node Inpaint Canvas.</p>
     </section>
     <div class="shell-row shell-right"><button id="set-close" type="submit">Close</button></div>
   </form>

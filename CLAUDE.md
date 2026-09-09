@@ -53,10 +53,16 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 - Plugins: **JavaScript plugins on the command core** (Krita-style folders with
   `plugin.json`, filter / panel / action / tool extension points), the film pack is the
   first built-in plugin; Python plugins later, not now. Plan in `docs/BRIEF.md` §5.
-- Licence: **left open on purpose.** The node stays GPL-3.0. The app repo starts as
-  "All rights reserved" until decided; a CLA goes in before any outside contribution
-  is merged (contributions that only land in the node and are never copied into the
-  app do not affect the app). Only MIT/Apache/BSD/OFL dependencies in the app.
+- Licence: **GPL-3.0** (decided 2026-09-09; `LICENSE`, `package.json`, About, README).
+  The same licence as the node, no CLA, no dual licensing (that is also what the free
+  SignPath Foundation signing requires). Only MIT/Apache/BSD/OFL dependencies in the app.
+- Release channel: **GitHub Releases** of `DenRakEiw/scumble` (public since 2026-09-09).
+  `electron-updater` reads `latest.yml` there; `.github/workflows/build.yml` builds the
+  installer on `windows-latest` and publishes a **draft** release on a `v<version>` tag
+  (the tag must match `package.json`); publishing the draft makes it visible to the app.
+  First releases are **unsigned**; code signing goes through the SignPath Foundation
+  (free for OSS) once the project has a public release and some use, fallback Certum
+  Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
 ## Where things stand (2026-09-09, night)
 

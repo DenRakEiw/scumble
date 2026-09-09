@@ -16,6 +16,7 @@ const helpers = require("./onnx");
 const plugins = require("./plugins");
 const { Bridge } = require("./bridge");
 const { LocalServer, LocalClient } = require("./local");
+const { Updater } = require("./updater");
 
 // ---- command line -------------------------------------------------------------------------
 //
@@ -193,6 +194,8 @@ function showAgents() {
 }
 
 let pluginActions = [];   // [{id, label, accelerator}] from renderer/plugins.js
+const updater = new Updater();
+updater.on("status", (s) => send("update:status", s));
 
 function buildMenu() {
     const isMac = process.platform === "darwin";
@@ -241,9 +244,12 @@ function buildMenu() {
             label: "&Help",
             submenu: [
                 { label: "Editor guide", click: () => send("menu", "guide") },
+                { label: "Scumble on GitHub", click: () => shell.openExternal("https://github.com/DenRakEiw/scumble") },
                 { label: "Inpaint Canvas node on GitHub", click: () => shell.openExternal("https://github.com/DenRakEiw/ComfyUI-InpaintCanvas") },
                 { type: "separator" },
-                { label: `Scumble ${app.getVersion()} · Electron ${process.versions.electron}`, enabled: false },
+                { label: "Check for updates...", click: () => { updater.check({ manual: true }); send("menu", "settings-updates"); } },
+                { type: "separator" },
+                { label: `Scumble ${app.getVersion()} · Electron ${process.versions.electron} · GPL-3.0`, enabled: false },
             ],
         },
     ];
@@ -387,6 +393,10 @@ function installIpc() {
     ipcMain.handle("plugins:setData", (_e, { id, patch }) => plugins.setData(String(id), patch));
     ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: app.getPath("userData"), pluginDir: plugins.userDir() }));
     ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
+    // updates (electron/main/updater.js): GitHub Releases feed, checked at start unless switched off
+    ipcMain.handle("update:status", () => updater.status);
+    ipcMain.handle("update:check", () => updater.check({ manual: true }));
+    ipcMain.handle("update:install", () => updater.install());
 }
 
 // ---- lifecycle ------------------------------------------------------------------------
@@ -401,6 +411,8 @@ function startApp() {
     local.on("clients", () => { showAgents(); maybeQuit(); });
     const url = settings.get().comfy && settings.get().comfy.url;
     if (url) connectComfy().catch((err) => console.warn("connect at start:", err.message));
+    const upd = settings.get().updates || {};
+    if (app.isPackaged && !headless && !agentMode && upd.check !== false) setTimeout(() => updater.check().catch(() => {}), 8000);
     app.on("activate", () => showWindow());
     app.on("window-all-closed", () => { comfy.disconnect(); app.quit(); });
 }

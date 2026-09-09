@@ -86,5 +86,11 @@ contextBridge.exposeInMainWorld("scumble", {
         ready: () => ipcRenderer.send("commands:ready"),
         changed: () => ipcRenderer.send("commands:changed"),
     },
+    updates: {
+        status: () => ipcRenderer.invoke("update:status"),
+        check: () => ipcRenderer.invoke("update:check"),
+        install: () => ipcRenderer.invoke("update:install"),
+        onStatus: (cb) => on("update:status", cb),
+    },
     onMenu: (cb) => on("menu", cb),
 });

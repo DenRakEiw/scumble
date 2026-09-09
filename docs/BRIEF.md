@@ -101,13 +101,13 @@ logo or marketing. Referential use of this kind is industry practice (DxO FilmPa
 Dehancer, RawTherapee) and, as long as the app is free and open, hardly a target; a
 lawyer confirms it before any sale, together with the licence model.
 
-**Licence**: open by design. The node stays GPL-3.0. The app repo starts as "All
-rights reserved" with the option of a commercial licence or dual licensing later.
-Precondition: the user stays the sole copyright holder of the app code, so a CLA is
-added before any outside contribution is merged. Contributions that only land in the
-node repo and are not copied into the app do not touch the app's licence. Only
-MIT/Apache/BSD/OFL dependencies. Not legal advice; a lawyer should confirm the final
-model before the first sale.
+**Licence**: **GPL-3.0**, decided 2026-09-09 (was "all rights reserved, open by design"
+until then). The app is a derivative of the GPL-3.0 node, the same licence keeps the two
+repos exchangeable, and it is what the free SignPath Foundation code signing requires (an
+OSI licence without commercial dual licensing). No CLA: contributions come in under the
+GPL like everywhere else. Money, if any, comes from affiliate links (RunPod, API providers),
+sponsoring and paid services around the app, never from a closed edition. Only
+MIT/Apache/BSD/OFL dependencies. Not legal advice.
 
 ## 4. Architecture sketch
 
@@ -184,17 +184,23 @@ LUT filter layer). Film names may be used referentially with the disclaimer (see
 windowless mode, docs. Landed 2026-09-09 (`docs/MCP.md`): `Scumble --mcp` drives the running
 instance over a local socket or starts the app headless, `--headless`, `--cmd`.
 
-**Phase 5, release (1 week):** code signing (Windows certificate needed, otherwise
-SmartScreen warnings), auto-update, Linux AppImage/deb, website, name and licence
-final.
+**Phase 5, release (1 week):** auto-update through GitHub Releases (landed 2026-09-09:
+`electron/main/updater.js`, Settings > Updates, Help > Check for updates, the build
+workflow `.github/workflows/build.yml` publishes a draft release on a `v*` tag), licence
+GPL-3.0 and the repo public (2026-09-09), first releases unsigned (SmartScreen shows the
+"unknown publisher" screen once per download). Code signing: apply at the SignPath
+Foundation (free for OSS; needs the public repo, CI builds, a code signing policy page and
+some visible use), fallback Certum Open Source (about 70 EUR the first year). Azure
+Trusted Signing is paid and, for individuals, US/Canada only. Then Linux AppImage/deb,
+website, macOS only with an Apple Developer account (99 USD a year, no free path).
 
 ## 6. Open questions for the user
 
 - Name: decided, **Scumble** (see `docs/NAMES.md`); domains and trademark check still to do by the user.
 - UI framework for the shell around the editor: plain DOM like the node, or Vue.
   Recommendation: plain DOM for the editor, Vue only if the settings/recipe UI grows.
-- Code signing certificate for Windows (about 200–400 € per year, or Azure Trusted
-  Signing), needed before public release.
+- Code signing for Windows: SignPath Foundation application once the project has a
+  public release and a few users (see phase 5); until then unsigned.
 - Whether the node repo becomes a git submodule of the app (shared editor code) or the
   editor moves here and the node consumes a built bundle. Recommendation: editor
   source lives here in `shared/editor`, the node repo gets a build step that copies the

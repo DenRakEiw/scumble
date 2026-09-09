@@ -18,7 +18,8 @@ const ui = {
     providers: $("set-providers"), keysNote: $("set-keys-note"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
-    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setAbout: $("set-about"),
+    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
+    updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"),
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
 };
@@ -579,6 +580,8 @@ async function openSettings() {
         const info = await window.scumble.info();
         ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products.`;
     } catch (_) { /* ignore */ }
+    ui.updateAuto.checked = !(settings.updates && settings.updates.check === false);
+    try { renderUpdate(await window.scumble.updates.status()); } catch (_) { /* ignore */ }
     refreshFileStats();
     await loadProviders();
     await renderProviders();
@@ -607,6 +610,33 @@ ui.setPrune.addEventListener("click", async () => {
         ui.setPrune.disabled = false;
     }
 });
+// ---- updates (electron/main/updater.js) ---------------------------------------------------
+
+function updateText(s) {
+    if (!s) return "";
+    if (s.state === "dev") return "Not packaged: updates are checked in the installed app only.";
+    if (s.state === "checking") return "Checking for updates ...";
+    if (s.state === "latest") return s.manual ? `Scumble ${s.current} is up to date.` : "";
+    if (s.state === "downloading") return `Downloading Scumble ${s.version} ... ${s.percent == null ? "" : s.percent + "%"}`;
+    if (s.state === "downloaded") return `Scumble ${s.version} is downloaded; restart to install it.`;
+    if (s.state === "error") return `Update check failed: ${s.error}`;
+    return "";
+}
+
+function renderUpdate(s) {
+    ui.updateNote.textContent = updateText(s);
+    ui.updateInstall.hidden = !(s && s.state === "downloaded");
+    ui.updateCheck.disabled = !!(s && (s.state === "checking" || s.state === "downloading"));
+    ui.updateBar.hidden = !(s && s.state === "downloaded");
+    if (s && s.state === "downloaded") ui.updateBar.textContent = `Update to ${s.version}`;
+}
+window.scumble.updates.onStatus(renderUpdate);
+ui.updateCheck.addEventListener("click", async () => { renderUpdate(await window.scumble.updates.check()); });
+ui.updateInstall.addEventListener("click", () => window.scumble.updates.install());
+ui.updateBar.addEventListener("click", () => window.scumble.updates.install());
+ui.updateAuto.addEventListener("change", async () => { settings = await window.scumble.settings.set({ updates: { ...(settings.updates || {}), check: ui.updateAuto.checked } }); });
+ui.aboutRepo.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal("https://github.com/DenRakEiw/scumble"); });
+
 // keys typed into the dialog must not reach the editor's window-level shortcut handler
 ui.settings.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopPropagation(); });
 
@@ -626,6 +656,7 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "prev-tab") cycleTab(-1);
     else if (cmd === "import-recipe") importRecipe();
     else if (cmd === "reload-plugins") plugins.reloadPlugins().then((list) => { if (host.editor) host.editor.setStatus(`Plugins reloaded: ${list.filter((p) => p.loaded).length} of ${list.length} loaded.`); });
+    else if (cmd === "settings-updates") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Updates"); if (h) h.scrollIntoView(); });
     else if (cmd === "settings-plugins") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Plugins"); if (h) h.scrollIntoView(); });
     else if (cmd.startsWith("plugin:")) plugins.runAction(cmd.slice(7)).catch(() => { /* reported by the plugin host */ });
 });
