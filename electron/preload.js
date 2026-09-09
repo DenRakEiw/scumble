@@ -79,5 +79,12 @@ contextBridge.exposeInMainWorld("scumble", {
         getData: (id) => ipcRenderer.invoke("plugins:getData", id),
         setData: (id, patch) => ipcRenderer.invoke("plugins:setData", { id, patch }),
     },
+    // the command bridge (electron/main/bridge.js): main asks, the renderer runs commands.call
+    commands: {
+        onRequest: (cb) => on("commands:request", cb),
+        reply: (payload) => ipcRenderer.send("commands:reply", payload),
+        ready: () => ipcRenderer.send("commands:ready"),
+        changed: () => ipcRenderer.send("commands:changed"),
+    },
     onMenu: (cb) => on("menu", cb),
 });

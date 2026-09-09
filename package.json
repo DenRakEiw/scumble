@@ -14,9 +14,12 @@
     "sync-editor": "python tools/sync_editor.py",
     "smoke": "python tools/smoke_test.py",
     "helpers-test": "node tools/helpers_test.js",
-    "commands-test": "python tools/commands_test.py"
+    "commands-test": "python tools/commands_test.py",
+    "mcp-test": "python tools/mcp_test.py",
+    "mcp": "electron . --mcp"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "onnxruntime-node": "^1.29.0",
     "ws": "^8.21.3"
   },

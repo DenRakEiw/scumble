@@ -508,7 +508,7 @@ function renderPlugins() {
     }
 }
 
-plugins.setOnChanged(() => { if (ui.settings.open) renderPlugins(); });
+plugins.setOnChanged(() => { if (ui.settings.open) renderPlugins(); window.scumble.commands.changed(); });
 ui.pluginsReload.addEventListener("click", async () => {
     ui.pluginsReload.disabled = true;
     ui.pluginsNote.textContent = "reloading ...";
@@ -630,6 +630,16 @@ window.scumble.onMenu((cmd) => {
     else if (cmd.startsWith("plugin:")) plugins.runAction(cmd.slice(7)).catch(() => { /* reported by the plugin host */ });
 });
 
+// ---- the command bridge: main (MCP server, --cmd, the local socket) runs commands here -----
+
+window.scumble.commands.onRequest(async ({ id, name, args }) => {
+    const r = await commands.call(name, args || {});
+    let payload;
+    try { payload = JSON.parse(JSON.stringify({ id, ...r })); }   // results are JSON by contract; anything else is an error, not a crash
+    catch (err) { payload = { id, ok: false, error: "the result is not JSON: " + (err.message || err) }; }
+    window.scumble.commands.reply(payload);
+});
+
 // ---- start: plugins, restore the last session, then connect -------------------------------
 
 try {
@@ -650,5 +660,6 @@ await loadRecipes();
 await host.refreshHelpers();
 selectRecipe(settings.recipe);
 showStatus(await window.scumble.comfy.status());
+window.scumble.commands.ready();
 
 export { newDocument, activate, closeDocument, openSettings, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins };

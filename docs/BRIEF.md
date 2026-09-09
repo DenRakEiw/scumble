@@ -181,7 +181,8 @@ looks only, no third-party LUT or profile data (users load free LUT sets through
 LUT filter layer). Film names may be used referentially with the disclaimer (see §3).
 
 **Phase 4c, MCP and headless (3–4 days):** `--mcp` server on the same command core,
-windowless mode, docs.
+windowless mode, docs. Landed 2026-09-09 (`docs/MCP.md`): `Scumble --mcp` drives the running
+instance over a local socket or starts the app headless, `--headless`, `--cmd`.
 
 **Phase 5, release (1 week):** code signing (Windows certificate needed, otherwise
 SmartScreen warnings), auto-update, Linux AppImage/deb, website, name and licence

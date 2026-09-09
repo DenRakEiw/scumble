@@ -222,7 +222,7 @@ scumble.commands.register("mean_color", {
 ```
 
 Registered as `<plugin>.<name>`, listed by `list_commands`, callable by other plugins, tests
-and (phase 4c) MCP. `params` is the same schema the built-in commands use (`type`,
+and MCP (`docs/MCP.md`; the tool name replaces `.` with `_`). `params` is the same schema the built-in commands use (`type`,
 `description`, `default`, `required`, `enum`).
 
 ## Settings › Plugins

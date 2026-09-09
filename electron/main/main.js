@@ -14,6 +14,33 @@ const providers = require("./providers");
 const recipes = require("./recipes");
 const helpers = require("./onnx");
 const plugins = require("./plugins");
+const { Bridge } = require("./bridge");
+const { LocalServer, LocalClient } = require("./local");
+
+// ---- command line -------------------------------------------------------------------------
+//
+//   Scumble                     the editor window
+//   Scumble --headless          the app without a window (scripts talk to it through --cmd)
+//   Scumble --mcp               stdio MCP server; drives the running instance, or starts one
+//                               headless when none runs (docs/MCP.md)
+//   Scumble --cmd <name> [json] run one command against the running (or a headless) instance,
+//                               print the result as JSON and exit
+function parseArgs(argv) {
+    const out = { mcp: false, headless: false, cmd: null, cmdArgs: null };
+    for (let i = 0; i < argv.length; i++) {
+        const a = argv[i];
+        if (a === "--mcp") out.mcp = true;
+        else if (a === "--headless") out.headless = true;
+        else if (a === "--cmd") { out.cmd = argv[++i] || "ping"; if (argv[i + 1] && !argv[i + 1].startsWith("--")) out.cmdArgs = argv[++i]; }
+    }
+    return out;
+}
+const ARGS = parseArgs(process.argv.slice(1));
+if (ARGS.mcp) {
+    // stdout carries the protocol: every console line goes to stderr
+    const util = require("node:util");
+    for (const k of ["log", "info", "debug", "warn"]) console[k] = (...a) => process.stderr.write(util.format(...a) + "\n");
+}
 
 const ROOT = path.join(__dirname, "..", "..");
 const RENDERER_DIR = path.join(ROOT, "renderer");
@@ -30,6 +57,10 @@ const MIME = {
 };
 
 let win = null;
+let headless = ARGS.headless;   // no window shown; a second start of Scumble shows it
+let agentMode = null;           // "mcp" while the stdio MCP server runs in this process
+const bridge = new Bridge();    // commands in the renderer, run from here (bridge.js)
+const local = new LocalServer(bridge);   // the command socket other Scumble processes use
 const comfy = new ComfyClient({
     onEvent: (ev) => { if (win && !win.isDestroyed()) win.webContents.send("comfy:event", ev); },
     onStatus: (st) => { if (win && !win.isDestroyed()) win.webContents.send("comfy:status", st); },
@@ -115,18 +146,50 @@ function createWindow() {
             backgroundThrottling: false,
         },
     });
-    if (saved.maximized) win.maximize();
-    win.once("ready-to-show", () => win.show());
-    win.on("close", () => {
+    if (saved.maximized && !headless) win.maximize();
+    win.once("ready-to-show", () => { if (!headless) win.show(); });
+    win.on("close", (e) => {
         const b = win.getNormalBounds();
         settings.set({ window: { ...b, maximized: win.isMaximized() } });
+        // while an agent drives the app, closing the window only hides it; the app ends
+        // with the MCP session (or stays when a script still talks to the socket)
+        if (agentMode) { e.preventDefault(); win.hide(); headless = true; }
     });
     win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
+    bridge.attach(win.webContents);
     win.loadURL(ORIGIN + "/index.html");
+}
+
+/** Show the (headless or hidden) window: a second start of Scumble, or macOS activate. */
+function showWindow() {
+    headless = false;
+    if (!win || win.isDestroyed()) { createWindow(); return; }
+    if (!win.isVisible()) {
+        win.show();
+        // a window that was never shown stays hidden after show() on Windows; restore() brings it up
+        if (!win.isVisible()) win.restore();
+    }
+    if (win.isMinimized()) win.restore();
+    win.focus();
+}
+
+function windowVisible() {
+    return !!(win && !win.isDestroyed() && win.isVisible());
+}
+
+/** Dialogs need a window the user can see; headless callers pass paths instead. */
+function needWindow(what) {
+    if (!windowVisible()) throw new Error(`${what} needs the Scumble window (none is shown): pass a path instead`);
 }
 
 function send(channel, payload) {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+}
+
+/** Title suffix and a status line while agents (MCP, --cmd, scripts) are connected. */
+function showAgents() {
+    const n = local.clients.size + (agentMode ? 1 : 0);
+    if (win && !win.isDestroyed()) win.setTitle(n ? `Scumble · ${n} agent${n > 1 ? "s" : ""} connected` : "Scumble");
 }
 
 let pluginActions = [];   // [{id, label, accelerator}] from renderer/plugins.js
@@ -192,6 +255,7 @@ function buildMenu() {
 const IMAGE_FILTERS = [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff"] }, { name: "All files", extensions: ["*"] }];
 
 async function openImage() {
+    needWindow("Open image");
     const r = await dialog.showOpenDialog(win, { title: "Open image", properties: ["openFile"], filters: IMAGE_FILTERS });
     if (r.canceled || !r.filePaths.length) return null;
     const file = r.filePaths[0];
@@ -212,6 +276,7 @@ async function saveFile({ name, data, filters, path: target }) {
     const ext = path.extname(name || "").slice(1).toLowerCase();
     let filePath = target;
     if (!filePath) {
+        needWindow("Save");
         const r = await dialog.showSaveDialog(win, {
             title: "Save image",
             defaultPath: path.join(settings.get().lastSaveDir || app.getPath("pictures"), name || "scumble.png"),
@@ -234,6 +299,7 @@ function listRecipes() {
 /** Import a ComfyUI workflow (UI or API format) as a user recipe; UI format needs /object_info. */
 async function importRecipe(file) {
     if (!file) {
+        needWindow("Import recipe");
         const r = await dialog.showOpenDialog(win, { title: "Import workflow as recipe", properties: ["openFile"], filters: [{ name: "Workflow / recipe (JSON)", extensions: ["json"] }, { name: "All files", extensions: ["*"] }] });
         if (r.canceled || !r.filePaths.length) return null;
         file = r.filePaths[0];
@@ -303,7 +369,7 @@ function installIpc() {
     helpers.setProgressSink((ev) => send("helpers:progress", ev));
     ipcMain.handle("helpers:status", () => helpers.status());
     ipcMain.handle("helpers:configure", (_e, patch) => helpers.configure(patch));
-    ipcMain.handle("helpers:browseDir", () => helpers.browseDir(win));
+    ipcMain.handle("helpers:browseDir", () => { needWindow("Choose folder"); return helpers.browseDir(win); });
     ipcMain.handle("helpers:openFolder", () => helpers.openFolder());
     ipcMain.handle("helpers:download", (_e, id) => helpers.download(id));
     ipcMain.handle("helpers:cancel", (_e, id) => helpers.cancel(id));
@@ -325,19 +391,98 @@ function installIpc() {
 
 // ---- lifecycle ------------------------------------------------------------------------
 
+/** The app proper (after whenReady, holding the single-instance lock): window, socket, ComfyUI. */
+function startApp() {
+    installProtocol();
+    installIpc();
+    buildMenu();
+    createWindow();
+    local.listen(app.getPath("userData"));
+    local.on("clients", () => { showAgents(); maybeQuit(); });
+    const url = settings.get().comfy && settings.get().comfy.url;
+    if (url) connectComfy().catch((err) => console.warn("connect at start:", err.message));
+    app.on("activate", () => showWindow());
+    app.on("window-all-closed", () => { comfy.disconnect(); app.quit(); });
+}
+
+/** An agent-started app ends when nobody talks to it any more and no window is shown. */
+function maybeQuit() {
+    if (ARGS.mcp && !agentMode && !windowVisible() && local.clients.size === 0) { comfy.disconnect(); app.quit(); }
+}
+
+/**
+ * The command backend for --mcp and --cmd: the running Scumble instance over the local socket
+ * when there is one, otherwise this process starts the app headless and runs the commands in
+ * it. A proxy whose instance went away reconnects, or takes over, at the next call.
+ */
+class AgentBackend extends require("node:events").EventEmitter {
+    constructor() { super(); this.client = null; this.own = false; }
+
+    async ensure() {
+        if (this.own) return bridge;
+        if (this.client && !this.client.closed) return this.client;
+        const userData = app.getPath("userData");
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                this.client = await LocalClient.connect(userData);
+                this.client.on("commands", () => this.emit("changed"));
+                this.client.on("close", () => { this.client = null; });
+                return this.client;
+            } catch (_) { /* nobody listens */ }
+            if (app.requestSingleInstanceLock()) {
+                app.on("second-instance", () => showWindow());
+                await app.whenReady();
+                headless = true;
+                startApp();
+                bridge.on("changed", () => this.emit("changed"));
+                this.own = true;
+                return bridge;
+            }
+            await new Promise((r) => setTimeout(r, 1500));   // another instance is starting: its socket comes up in a moment
+        }
+        throw new Error("Scumble is running in another process but does not answer on the local socket");
+    }
+
+    async run(name, args) { return (await this.ensure()).run(name, args); }
+    async describe() { return (await this.ensure()).describe(); }
+    info() { return { mode: this.own ? (windowVisible() ? "window" : "headless") : "proxy", pid: process.pid }; }
+}
+
+async function agentMain() {
+    const backend = new AgentBackend();
+    if (ARGS.cmd) {
+        let args = {};
+        if (ARGS.cmdArgs) { try { args = JSON.parse(ARGS.cmdArgs); } catch (err) { throw new Error("the arguments must be JSON: " + err.message); } }
+        let r;
+        try { r = { ok: true, result: await backend.run(ARGS.cmd, args) }; }
+        catch (err) { r = { ok: false, error: String((err && err.message) || err) }; }
+        const out = r.ok ? JSON.stringify(r.result, null, 2) : "error: " + r.error;
+        process.stdout.write(out + "\n", () => app.exit(r.ok ? 0 : 1));
+        return;
+    }
+    // --mcp: serve stdio; the app (own or remote) is started right away so the first tool call is quick
+    agentMode = "mcp";
+    const mcp = require("./mcp/server");
+    await mcp.serve(backend, {
+        version: app.getVersion(),
+        info: () => backend.info(),
+        onClose: () => {
+            agentMode = null;
+            if (!backend.own) { if (backend.client) backend.client.close(); app.exit(0); return; }
+            showAgents();
+            maybeQuit();   // stays alive while the window is shown or a script is connected
+        },
+    });
+    backend.ensure().then(() => { showAgents(); return backend.run("set_status", { text: "MCP client connected." }); })
+        .catch((err) => console.error("MCP backend:", err.message));
+}
+
 app.setName("Scumble");
-if (!app.requestSingleInstanceLock()) {
+if (ARGS.mcp || ARGS.cmd) {
+    agentMain().catch((err) => { process.stderr.write("scumble: " + (err.message || err) + "\n"); app.exit(1); });
+} else if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
-    app.on("second-instance", () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-    app.whenReady().then(() => {
-        installProtocol();
-        installIpc();
-        buildMenu();
-        createWindow();
-        const url = settings.get().comfy && settings.get().comfy.url;
-        if (url) connectComfy().catch((err) => console.warn("connect at start:", err.message));
-        app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
-    });
-    app.on("window-all-closed", () => { comfy.disconnect(); app.quit(); });
+    app.on("second-instance", () => showWindow());
+    app.whenReady().then(startApp);
 }

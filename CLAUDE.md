@@ -58,17 +58,48 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   is merged (contributions that only land in the node and are never copied into the
   app do not affect the app). Only MIT/Apache/BSD/OFL dependencies in the app.
 
-## Where things stand (2026-09-09, evening)
+## Where things stand (2026-09-09, night)
 
-**Phase 4b is complete** (film pack as the first real plugin, `docs/FILM.md`). Next session:
-**phase 4c**, the MCP server and headless mode on the command core (`commands.describe()`
-already yields the tool list, 62 commands incl. the plugins'; `app.exe --mcp` with the
-TypeScript SDK in the main process, one IPC round trip per tool; headless = no window).
-Still open from earlier phases: the first real RunPod pod (`docker/runpod/`), and the five
-API provider adapters have never run against a live API (no keys yet; one small selection
-per provider first). Film pack follow-ups if the user wants them: a real-photo look check
-(only the synthetic test image was used), more frame styles, and the film names / trademark
-review before a sale (`docs/BRIEF.md` §3).
+**Phase 4c is complete** (MCP server and headless mode, `docs/MCP.md`). Phases 1–4c are in.
+Next: **phase 5, release** (`docs/BRIEF.md` §5: code signing, auto-update, Linux
+AppImage/deb, website, name and licence final), unless the user wants the open items first:
+the first real RunPod pod (`docker/runpod/`), the five API provider adapters that have never
+run against a live API (no keys yet; one small selection per provider first), the film pack
+follow-ups (real-photo look check, more frame styles, film names / trademark review before a
+sale, `docs/BRIEF.md` §3), and a Claude Code / Claude Desktop session that actually drives
+Scumble through `--mcp` (only the SDK clients in `tools/mcp_test.py` and a raw TS-SDK client
+have talked to it so far; `.mcp.json` in the repo registers the dev server for Claude Code).
+
+Landed on 2026-09-09 (phase 4c, `docs/MCP.md` has the details):
+
+- **`Scumble --mcp`**: stdio MCP server (`electron/main/mcp/server.js`,
+  `@modelcontextprotocol/sdk` 1.30, MIT) with one tool per command of the command core, plugin
+  commands included (`film.apply_look` → `film_apply_look`; tool names allow `[A-Za-z0-9_-]`
+  only). Schemas from `describe()`, `screenshot` as image content, errors as `isError` text,
+  `readOnlyHint` on the read-only commands, `tools/list_changed` after a plugin reload, `ping`
+  reports `mcp: {mode, pid}`. If Scumble is running the server drives that instance, otherwise
+  it starts the app headless in its own process and quits it when the client goes.
+- **`--headless`** (the app without a window; a second start of Scumble shows it) and
+  **`--cmd <name> [json]`** (one command against the running or a short-lived headless
+  instance, JSON on stdout, exit 1 on error).
+- **Plumbing**: `electron/main/bridge.js` (main → renderer request / reply over IPC, ready
+  gating, timeouts), `electron/main/local.js` (named pipe `\\.\pipe\scumble-<hash>` / unix
+  socket, NDJSON, opened by every running instance), `AgentBackend` in `main.js` (socket, else
+  take the lock and start headless), `needWindow()` in front of every dialog, close = hide while
+  an MCP client is attached, window title `Scumble · n agents connected`, `preload.js`
+  `scumble.commands`, `shell.js` answers `commands:request` and sends `commands:ready` at the
+  end of its start.
+- **Electron on Windows, three traps** (all handled, keep them in mind): `process.stdin` in
+  the main process never emits `data` from a pipe (read fd 0 with `fs.createReadStream`);
+  Electron prints a CR LF to stdout before any JS runs (clients skip it with one warning, it
+  cannot be suppressed); a window created hidden stays hidden after `show()`, `restore()`
+  brings it up.
+- **Tests**: `python tools/mcp_test.py [--exe dist/win-unpacked/Scumble.exe]` (Python `mcp`
+  client; PASS 2026-09-09 in proxy mode with the app open, 1.5 s, and headless with the dev
+  electron and the packaged exe, about 5 s, the process ends with the session), `python
+  tools/commands_test.py` PASS, `python tools/smoke_test.py --no-helpers` PASS after the
+  change (one run right after the commands test reported FAIL with only its tail captured; the
+  re-runs passed, cause not identified).
 
 Landed on 2026-09-09 (phase 4b, `docs/FILM.md` and `docs/PLUGINS.md` have the details):
 
@@ -224,6 +255,10 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   `electron/main/onnx/index.js` → `sam2.js` / `matting.js` on the `Runtime` → label
   map / alpha back, scaled to the image in the renderer. Models and folder in
   `docs/HELPERS.md`.
+- Agents: MCP client → `Scumble --mcp` (`electron/main/mcp/server.js`) → `AgentBackend` in
+  `main.js` → the running instance over `electron/main/local.js` (named pipe) or the app
+  started headless in the same process → `electron/main/bridge.js` (IPC `commands:request` /
+  `commands:reply`) → `commands.call` in `renderer/shell.js`. `docs/MCP.md`.
 - Provider runs: `host.runProvider` → `renderer/editor/stitch.js` (crop) → IPC
   `provider:edit` → `electron/main/providers/index.js` picks the adapter and the key
   (`keys.js`) → `stitch.js` (composite mask, colour match) → mirror upload → `addResults`.
@@ -243,6 +278,8 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   and `python tools/smoke_test.py` (load, select, generate through the recipe, save,
   then the helpers and exports; `--no-helpers` for the short version) and
   `python tools/commands_test.py` (command core + sample plugin, no ComfyUI needed).
+  `python tools/mcp_test.py` talks to `--mcp` over stdio (proxy mode while the dev instance
+  runs, headless when nothing runs; `--exe dist/win-unpacked/Scumble.exe` for the package).
   `node tools/helpers_test.js` runs the ONNX modules without Electron. Start the dev
   instance with the Bash tool's `run_in_background`; a plain `&` job dies with the shell.
   `window.editor` and `import("./editor/host.js")` are reachable from the console.

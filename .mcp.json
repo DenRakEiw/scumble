@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "scumble": {
+      "command": "node_modules/electron/dist/electron.exe",
+      "args": [
+        ".",
+        "--mcp"
+      ]
+    }
+  }
+}

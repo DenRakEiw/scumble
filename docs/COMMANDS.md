@@ -2,7 +2,8 @@
 
 The command core (`renderer/commands.js`) is the one place every operation of the editor is
 reachable from outside the UI: plugins (`scumble.commands.run`), tests (`tools/commands_test.py`),
-the devtools console, and in phase 4c the MCP server, which maps every entry below to a tool.
+the devtools console, and the MCP server (`Scumble --mcp`, `docs/MCP.md`), which maps every entry
+below to a tool (`.` in a name becomes `_`); `Scumble --cmd <name> [json]` runs one from a shell.
 It is the port of the ComfyUI node's bridge table (`js/inpaint_bridge.js`, 46 commands); the
 node addressed graph nodes, the app addresses documents (tabs).
 
