@@ -34,6 +34,17 @@ jobs:
           v=$(node -p "require('./package.json').version")
           [ "refs/tags/v$v" = "$GITHUB_REF" ] || { echo "tag $GITHUB_REF but package.json says $v"; exit 1; }
 
+      # electron-builder runs one publisher per file and races itself into two draft releases
+      # when none exists yet; creating the draft first makes both find it
+      - name: Create the draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          tag=${GITHUB_REF#refs/tags/}
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "Scumble ${tag#v}" --notes "Draft made by the build workflow; the installer, its blockmap and latest.yml are uploaded by electron-builder."
+
       - name: Build installer
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

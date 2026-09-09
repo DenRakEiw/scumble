@@ -64,21 +64,57 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
-## Where things stand (2026-09-09, night)
+## Where things stand (2026-09-09, late)
 
-**Phase 4c is complete** (MCP server and headless mode, `docs/MCP.md`). Phases 1–4c are in.
-Next session, decided by the user on 2026-09-09: **phase 5, release, in this order: Windows
-code signing first, then auto-update; Linux (AppImage/deb) later, not now** (`docs/BRIEF.md`
-§5 and §6: a certificate or Azure Trusted Signing is needed for signing, the user has none
-yet; electron-builder's `publish` + `electron-updater` for the update path, decide the
-channel: GitHub Releases is the obvious one for a public repo). Still open, but not the next
-step:
-the first real RunPod pod (`docker/runpod/`), the five API provider adapters that have never
-run against a live API (no keys yet; one small selection per provider first), the film pack
-follow-ups (real-photo look check, more frame styles, film names / trademark review before a
-sale, `docs/BRIEF.md` §3), and a Claude Code / Claude Desktop session that actually drives
-Scumble through `--mcp` (only the SDK clients in `tools/mcp_test.py` and a raw TS-SDK client
-have talked to it so far; `.mcp.json` in the repo registers the dev server for Claude Code).
+**Phase 5 has its first half**: the repo is public, GPL-3.0, release 0.1.0 is on GitHub
+(unsigned), auto-update works end to end (a 0.0.9 build found, downloaded and installed
+0.1.0 from the release). Phases 1–4c and 5a are in. What is still open in phase 5, decided
+with the user on 2026-09-09:
+
+- **Code signing**: apply at the SignPath Foundation (`signpath.org/terms`) once the project
+  has some visible use; needs a "code signing policy" page in the repo (roles: committers,
+  reviewers, approvers), MFA on the GitHub account and the SignPath GitHub Actions step in
+  `build.yml`. Fallback Certum Open Source (about 70 EUR first year, smartcard). No paid
+  Microsoft signing (user's decision).
+- **Linux** AppImage/deb: `npm run dist:linux` and an `ubuntu-latest` job in `build.yml`,
+  then a real test (`local.js` unix socket, ONNX CUDA/CPU providers, icons). About a day.
+- **macOS** only with an Apple Developer account (99 USD/year for Developer ID + notarization;
+  no free path, Gatekeeper blocks unsigned apps hard since Sequoia). Not planned.
+- **Android**: not sensible (Electron + Node main process: sharp exports, ONNX, named pipes,
+  MCP). Tablets can use the ComfyUI node in the browser instead.
+- Still open from before: the first real RunPod pod (`docker/runpod/`), the five API provider
+  adapters against live APIs (no keys yet), film pack follow-ups (`docs/BRIEF.md` §3), a
+  Claude Code / Claude Desktop session that drives Scumble through `--mcp`, a website.
+
+Landed on 2026-09-09 (phase 5a):
+
+- **Auto-update** `electron/main/updater.js` (`electron-updater` 6.8, MIT): GitHub Releases
+  feed from `build.publish` in `package.json` (electron-builder writes
+  `resources/app-update.yml` into the NSIS build only, **not** into `--dir` builds), check
+  8 s after start in the windowed packaged app (never headless / agent-started / dev),
+  background download, `autoInstallOnAppQuit`, `quitAndInstall(silent, run after)`.
+  Settings › Updates (check at start on/off = `settings.updates.check`, Check now, Restart
+  and install, status line), a blue `Update to x.y.z` button in the top bar once
+  downloaded, Help › Check for updates. IPC `update:status|check|install`, event
+  `update:status`. States dev / idle / checking / latest / downloading / downloaded / error;
+  a 404 on the feed reads "No release published yet.".
+- **Releases**: `.github/workflows/build.yml` builds the NSIS installer on `windows-latest`
+  (Node 22, `npm ci`); on a `v<version>` tag (must equal `package.json`, checked) it creates
+  the draft release first (electron-builder otherwise races itself into two drafts, seen on
+  v0.1.0), then `electron-builder --publish always` uploads the installer, `.blockmap` and
+  `latest.yml`; other pushes keep the installer as a workflow artifact. Publishing the draft
+  by hand (`gh release edit v0.1.0 --draft=false`) makes it visible to the app. Release
+  0.1.0: https://github.com/DenRakEiw/scumble/releases/tag/v0.1.0. Assets get hyphens
+  instead of spaces (`Scumble-Setup-0.1.0.exe`), electron-updater expects exactly that.
+- **Licence** GPL-3.0 everywhere (LICENSE, package.json, About, Help menu, README, BRIEF);
+  README rewritten for the public repo (SmartScreen paragraph).
+- **Tests**: Settings dialog and `python tools/commands_test.py` PASS on the dev instance;
+  the packaged 0.1.0 reported "up to date" against the release; a local 0.0.9 build found
+  and downloaded 0.1.0 within 30 s (blue button in the top bar) and installed it silently
+  through Restart and install. Test recipe: set the version to 0.0.9 in `package.json`
+  (Python, never PowerShell `Set-Content`: it writes a BOM and electron-builder refuses the
+  file), `npm run dist`, run `dist/win-unpacked/Scumble.exe --remote-debugging-port=9555`,
+  `python tools/cdp.py eval "window.scumble.updates.status()"`, restore the version.
 
 Landed on 2026-09-09 (phase 4c, `docs/MCP.md` has the details):
 
