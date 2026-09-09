@@ -31,6 +31,23 @@ node's `setting_n` outputs), `node`/`input` where the value goes. The control's 
 comes from the server's `/object_info` when connected, else from `spec` (ComfyUI's
 input spec format: `["INT", {default, min, max}]`, `[["a", "b"], {}]` for a combo).
 
+### Presets
+
+The Settings section starts with a **Preset** row when the recipe has two or more file
+combos (inputs named `*_name` whose options are files: `unet_name`, `ckpt_name`,
+`clip_name`, `vae_name`, `lora_name`). Save stores the current combination under a name
+(`settings.recipePresets[recipeId] = [{ name, values: { "node:input": file } }]`),
+picking a preset writes the files back into the controls, the select shows `(custom)`
+while the current files match no preset. A file that is not on the server is skipped
+with a note in the status line. Presets are per recipe id and shared by all documents.
+
+### The local / api select
+
+The recipe select in the top bar lists the recipes of one mode: ComfyUI recipes on the
+`result_local` chain under *local*, provider recipes (and ComfyUI recipes with `mode:
+"api"`) under *api*. The editor's local / api select next to Generate switches between
+the two groups and picks the recipe last used in that mode (`settings.recipeByMode`).
+
 ### Import
 
 Settings › Recipes › Import workflow (or File › Import Workflow as Recipe) reads

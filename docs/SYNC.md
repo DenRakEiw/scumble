@@ -55,6 +55,12 @@ that spot.
 | `onPointerDown` after `toImage`, `onPointerMove` after `this.hover`, `onPointerUp` after the capture release | `host.pluginPointer(this, phase, e, ix, iy[, p])`: a plugin tool takes the gesture (`pointer.kind === "plugin"`) |
 | `onKey` before the tool `switch` | `host.pluginKey(this, e, k)`: single-key shortcuts of plugin tools / actions |
 | `setTool` | `host.toolChanged(this, tool, prev)` (plugin tools' onSelect / onDeselect) |
+| `modeSel` change sets `genSettings.mode` | also `host.modeChanged(this, mode)`: the shell switches to the recipe last used in that mode (`settings.recipeByMode`) |
+| `renderSettings()` starts with the setting rows | `host.renderPresets(this, list, targets)` first: a Preset row (saved model / text encoder / VAE combinations per recipe, `settings.recipePresets`) |
+| `availableUpsampleBackends()` filters `UPSAMPLE_BACKENDS` by node types | plus `host.upsampleBackends()` (`app:<provider>:<model>`, `inApp: true`) after them: API language models with a stored key |
+| `upsamplePrompt()` uploads the context crop and queues the VLM helper prompt | picks the backend from the merged list; `inApp` → `host.upsampleInApp(this, backend, instruction)` (IPC `llm:ask`, then `applyTextResult`) |
+| `segmentByText()` links the VLM's STRING output into the segmentation prompt | with an `inApp` model: `host.askLLM()` names the object first, the term goes into the prompt as text |
+| "no language model nodes installed" texts | mention Settings › API providers |
 | `drawOverlays()` before the screen-space part | `host.pluginOverlay(this, ctx)` (plugin tools draw in image coordinates, phase 4b) |
 | the filter preset select: every select fills params and renames the layer | only the param named `preset` does; other selects (mode, style, colour) set their value; `p.title` is the tooltip (phase 4b) |
 

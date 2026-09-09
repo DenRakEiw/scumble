@@ -222,18 +222,28 @@ let providers = [];
 
 const FAMILY_ORDER = ["ComfyUI", "Google", "OpenAI", "Black Forest Labs", "ByteDance", "Qwen"];
 const familyOf = (r) => (r.kind === "provider" ? (r.family || "API providers") : "ComfyUI");
+/** local = a ComfyUI recipe on the result_local chain, api = a provider recipe or a ComfyUI recipe of API nodes. */
+const modeOf = (r) => (r.kind === "provider" || r.mode === "api" ? "api" : "local");
 
 async function loadRecipes() {
     recipes = await window.scumble.recipes.list();
     // ComfyUI first, then the model families in a fixed order, unknown families after, names within
     const rank = (r) => { const i = FAMILY_ORDER.indexOf(familyOf(r)); return i < 0 ? FAMILY_ORDER.length : i; };
     recipes.sort((a, b) => rank(a) - rank(b) || familyOf(a).localeCompare(familyOf(b)) || String(a.name || a.id).localeCompare(String(b.name || b.id)));
+    const cur = recipes.find((r) => r.id === (ui.recipe.value || settings.recipe));
+    renderRecipeOptions(cur ? modeOf(cur) : (ui.recipe.dataset.mode || "local"));
+}
+
+/** The recipe select lists the recipes of one mode: the editor's local / api select switches between them. */
+function renderRecipeOptions(mode) {
     ui.recipe.innerHTML = "";
+    ui.recipe.dataset.mode = mode;
+    const shown = recipes.filter((r) => modeOf(r) === mode);
     // ComfyUI recipes first, then the model recipes grouped by family (Google, OpenAI, ...)
     const families = ["ComfyUI"];
-    for (const r of recipes) { const f = familyOf(r); if (!families.includes(f)) families.push(f); }
+    for (const r of shown) { const f = familyOf(r); if (!families.includes(f)) families.push(f); }
     for (const label of families) {
-        const items = recipes.filter((r) => familyOf(r) === label);
+        const items = shown.filter((r) => familyOf(r) === label);
         if (!items.length) continue;
         const g = document.createElement("optgroup");
         g.label = label;
@@ -286,6 +296,7 @@ function selectRecipe(id, providerId) {
         rememberProvider(raw.id, providerId);
     }
     const r = resolveRecipe(raw);
+    if (ui.recipe.dataset.mode !== modeOf(raw)) renderRecipeOptions(modeOf(raw));
     ui.recipe.value = r.id;
     const ks = providerKeyState(r);
     const via = r.kind === "provider" ? ` (via ${r.providerLabel}${r.model ? ", " + r.model : ""})` : "";
@@ -293,10 +304,22 @@ function selectRecipe(id, providerId) {
     ui.recipeNote.title = [r.description, r.note].filter(Boolean).join("\n") + via;
     ui.recipeNote.style.color = ks && !ks.ok ? "#e0a05a" : "";
     host.setRecipe(r);
-    if (settings.recipe !== r.id) window.scumble.settings.set({ recipe: r.id }).then((s) => { settings = s; });
+    const byMode = { ...(settings.recipeByMode || {}), [modeOf(raw)]: raw.id };
+    if (settings.recipe !== r.id || (settings.recipeByMode || {})[modeOf(raw)] !== raw.id) window.scumble.settings.set({ recipe: r.id, recipeByMode: byMode }).then((s) => { settings = s; });
     if (ui.settings.open) syncRecipeRows();
 }
 ui.recipe.addEventListener("change", () => selectRecipe(ui.recipe.value));
+
+// The editor's local / api select: switch to the recipe last used in that mode (else the first one).
+host.onModeChanged = (mode, editor) => {
+    const cur = recipes.find((x) => x.id === ui.recipe.value);
+    if (cur && modeOf(cur) === mode) return;
+    const want = (settings.recipeByMode || {})[mode];
+    const r = recipes.find((x) => x.id === want && modeOf(x) === mode) || recipes.find((x) => modeOf(x) === mode);
+    if (r) { selectRecipe(r.id); return; }
+    if (cur) { editor.genSettings.mode = modeOf(cur); editor.syncGenControls(); }
+    editor.setStatus(mode === "api" ? "No API recipe: add a provider key in Settings (Ctrl+,) › API providers." : "No ComfyUI recipe installed.");
+};
 
 /** Update the meta text and the provider selects of the recipe rows without rebuilding them. */
 function syncRecipeRows() {
@@ -417,12 +440,12 @@ async function renderProviders() {
         const save = document.createElement("button");
         save.type = "button"; save.textContent = "Save";
         save.addEventListener("click", async () => {
-            try { await window.scumble.keys.set(p.id, input.value); input.value = ""; await loadProviders(); await renderProviders(); selectRecipe(ui.recipe.value); } catch (err) { state.textContent = String(err.message || err); }
+            try { await window.scumble.keys.set(p.id, input.value); input.value = ""; await loadProviders(); await renderProviders(); selectRecipe(ui.recipe.value); host.refreshLLMs(); } catch (err) { state.textContent = String(err.message || err); }
         });
         row.appendChild(save);
         const clear = document.createElement("button");
         clear.type = "button"; clear.textContent = "Clear";
-        clear.addEventListener("click", async () => { await window.scumble.keys.clear(p.id); await loadProviders(); await renderProviders(); selectRecipe(ui.recipe.value); });
+        clear.addEventListener("click", async () => { await window.scumble.keys.clear(p.id); await loadProviders(); await renderProviders(); selectRecipe(ui.recipe.value); host.refreshLLMs(); });
         row.appendChild(clear);
         const state = document.createElement("span");
         const k = p.key || {};
@@ -778,7 +801,9 @@ if (!host.editors().length) newDocument();
 activate(host.editor);
 await loadProviders();
 await loadRecipes();
+host.presets = settings.recipePresets || {};
 await host.refreshHelpers();
+await host.refreshLLMs();
 selectRecipe(settings.recipe);
 showStatus(await window.scumble.comfy.status());
 window.scumble.commands.ready();

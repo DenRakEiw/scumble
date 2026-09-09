@@ -11,6 +11,7 @@ const { ComfyClient, authHeaders } = require("./comfy");
 const { FileMirror } = require("./files");
 const keys = require("./keys");
 const providers = require("./providers");
+const llm = require("./llm");
 const recipes = require("./recipes");
 const helpers = require("./onnx");
 const plugins = require("./plugins");
@@ -371,6 +372,9 @@ function installIpc() {
     ipcMain.handle("keys:clear", (_e, name) => keys.clear(name));
     ipcMain.handle("providers:list", () => providers.describeAll());
     ipcMain.handle("provider:edit", (_e, request) => providers.edit(request));
+    // vision language models on the provider keys (prompt upsampling)
+    ipcMain.handle("llm:list", () => llm.list());
+    ipcMain.handle("llm:ask", (_e, req) => llm.ask(req));
     // in-app helper models (electron/main/onnx): SAM2 objects, background removal
     helpers.setProgressSink((ev) => send("helpers:progress", ev));
     ipcMain.handle("helpers:status", () => helpers.status());

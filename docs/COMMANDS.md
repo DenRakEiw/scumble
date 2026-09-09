@@ -333,7 +333,7 @@ Values for the recipe's Settings panel (the editable inputs of the workflow, or 
 
 ### `upsample_prompt` *(image)*
 
-Let the language model the editor is set to rewrite the prompt with the image in view (needs ComfyUI).
+Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, or an API key for OpenAI / Google / Anthropic).
 
 | param | type | description |
 |---|---|---|

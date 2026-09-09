@@ -425,13 +425,13 @@ const COMMANDS = {
         },
     },
     upsample_prompt: {
-        needsImage: true, description: "Let the language model the editor is set to rewrite the prompt with the image in view (needs ComfyUI).",
+        needsImage: true, description: "Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, or an API key for OpenAI / Google / Anthropic).",
         params: { timeout: P.timeout(300) },
         async run(ed, a) {
             if (ed.upsamplePending) throw new Error("an upsampling is still running");
             const before = ed.promptText;
-            await ed.upsamplePrompt();
-            if (!ed.upsamplePending) throw new Error(ed.status);
+            await ed.upsamplePrompt();   // an API model answers before this resolves, a ComfyUI helper prompt keeps upsamplePending
+            if (!ed.upsamplePending && ed.promptText === before) throw new Error(ed.status);
             const ok = await until(() => !ed.upsamplePending, clampInt(a.timeout, 5, 3600, 300) * 1000);
             if (!ok) throw new Error("upsampling timed out: " + ed.status);
             if (/failed/i.test(ed.status)) throw new Error(ed.status);

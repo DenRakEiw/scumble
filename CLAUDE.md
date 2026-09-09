@@ -64,7 +64,41 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
-## Where things stand (2026-09-09, late)
+## Where things stand (2026-09-10)
+
+**Landed on 2026-09-10** (tested on the dev instance: `commands_test.py` PASS, the
+preset row and the mode switch exercised through CDP, the three LLM adapters up to the
+providers' "invalid key" answers with dummy keys; not committed as a release yet):
+
+- **Old models removed**: `recipes/nano_banana.json` (gemini-2.5-flash-image) and
+  `recipes/gpt_image_1_5.json`; `openai.js` sends `input_fidelity` only for gpt-image-2,
+  `gemini.js` falls back to `gemini-3.1-flash-lite-image`. 15 model recipes remain.
+- **Prompt upsampling through the provider keys** (`electron/main/llm.js`, IPC
+  `llm:list` / `llm:ask`, `docs/HELPERS.md`): GPT-5.6 Luna / Terra (OpenAI Responses
+  API), Gemini 3.8 Flash / 3.5 Flash Lite, Claude Opus 5 / Haiku 4.5 (new key row
+  `providers/anthropic.js`, key only). They appear in the editor's upsample select after
+  the ComfyUI nodes once the key is stored (`host.upsampleBackends()`, refreshed by
+  `host.refreshLLMs()` after a key is saved or cleared). `upsample_prompt` and "select by
+  text from the prompt" use them too. Model ids checked on 2026-09-09 (OpenAI
+  `developers.openai.com/api/docs/models`, Google `ai.google.dev/gemini-api/docs/models`).
+  Not yet: a generic OpenAI-compatible endpoint (Ollama / LM Studio / OpenRouter) with
+  its own URL + model fields, which would give a free local upsampler without ComfyUI.
+- **The local / api select switches recipes**: the recipe select shows only the recipes
+  of the current mode, the editor's select switches the group and picks the recipe last
+  used there (`settings.recipeByMode`, `host.onModeChanged` in `shell.js`). Before, the
+  select changed the mode while the recipe stayed, so "api" still showed the local list.
+- **Setting presets** for ComfyUI recipes (`host.renderPresets`, `settings.recipePresets`,
+  `docs/RECIPES.md`): a Preset row at the top of the Settings section saves the model /
+  text encoder / VAE combination (every `*_name` file combo) under a name; Save turns the
+  select into a name field (Enter / Escape), `(custom)` while nothing matches.
+- **High-res performance plan** in `docs/PERFORMANCE.md` (measurements, pipeline map, Chromium
+  limits, six phases: pyramid + viewport composite, GPU match / filter chain, worker, dirty
+  rects, WebGL2 compositor, memory). Decided with the user on 2026-09-10; phase 1 is next.
+  Also fixed: a filter layer is renamed on every type change (node repo, uncommitted there).
+- The sync brought the node's new large-upload path along (`uploadCanvas` uses
+  `/inpaint_canvas/upload` above 64 MB or on a 413), untested in the app.
+
+## Where things stood (2026-09-09, late)
 
 **Release 0.1.1 (2026-09-09, night)**: the night's work below is tested in the app and
 released. `package.json` is 0.1.1, tag `v0.1.1` pushed, the workflow builds the installer
@@ -156,9 +190,8 @@ Landed on 2026-09-09 (evening, after the release):
   for the new models (`input_images` for FLUX.2, `image_input` for Nano Banana / Seedream)
   are the best reading of third-party docs, replicate.com blocked the schema pages.
 - Model ids checked on 2026-09-09: Google `gemini-3.1-flash-image`,
-  `gemini-3.1-flash-lite-image`, `gemini-3-pro-image`, `gemini-2.5-flash-image`; OpenAI
-  `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` (released 2026-09-08), `gpt-image-2`,
-  `gpt-image-1.5`; fal `fal-ai/nano-banana-2/edit`, `fal-ai/flux-2-max/edit`,
+  `gemini-3.1-flash-lite-image`, `gemini-3-pro-image`; OpenAI
+  `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` (released 2026-09-08), `gpt-image-2`; fal `fal-ai/nano-banana-2/edit`, `fal-ai/flux-2-max/edit`,
   `fal-ai/bytedance/seedream/v5/lite/edit`, `bytedance/seedream/v5/pro/edit` (no `fal-ai/`
   prefix), `openai/gpt-image-2/edit`; OpenRouter slugs from
   `GET https://openrouter.ai/api/v1/images/models` (public, no key), e.g.

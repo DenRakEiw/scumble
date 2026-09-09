@@ -203,6 +203,43 @@ PATCHES = [
     ("inpaint_canvas.js",
      '        if (!id) { this.setStatus("No object here. Use the brush or lasso for this spot."); return; }\n',
      '        if (!id) { if (host.objectsInApp()) { host.selectPoint(this, ix, iy, p); return; } this.setStatus("No object here. Use the brush or lasso for this spot."); return; }\n', 1),
+    # the local / api select switches the recipe (host.onModeChanged in the shell)
+    ("inpaint_canvas.js",
+     '        this.modeSel.addEventListener("change", () => { this.genSettings.mode = this.modeSel.value; this.syncGenControls(); this.renderInfo(); this.notifyChanged(); });\n',
+     '        this.modeSel.addEventListener("change", () => { this.genSettings.mode = this.modeSel.value; this.syncGenControls(); this.renderInfo(); this.notifyChanged(); host.modeChanged(this, this.modeSel.value); });\n', 1),
+    # setting presets (model / text encoder / VAE) at the top of the Settings section
+    ("inpaint_canvas.js",
+     "        for (const t of targets) {\n            const key = String(t.index);\n            const entry = this.settings[key];\n            if (!entry) continue;\n            const k = this.settingKind(t);\n            const lab = el(\"label\", null, entry.label);\n",
+     "        host.renderPresets(this, list, targets);\n        for (const t of targets) {\n            const key = String(t.index);\n            const entry = this.settings[key];\n            if (!entry) continue;\n            const k = this.settingKind(t);\n            const lab = el(\"label\", null, entry.label);\n", 1),
+    # prompt upsampling: API language models (host.upsampleBackends, provider keys) after the ComfyUI nodes
+    ("inpaint_canvas.js",
+     "function availableUpsampleBackends() {\n    const types = host.nodeTypes();\n    return UPSAMPLE_BACKENDS.filter((b) => b.needs.every((n) => !!types[n]));\n}\n",
+     "function availableUpsampleBackends() {\n    const types = host.nodeTypes();\n    return [...UPSAMPLE_BACKENDS.filter((b) => b.needs.every((n) => !!types[n])), ...host.upsampleBackends()];\n}\n", 1),
+    ("inpaint_canvas.js",
+     '{ const o = document.createElement("option"); o.value = ""; o.textContent = "no language model nodes installed"; this.upBackendSel.appendChild(o); }',
+     '{ const o = document.createElement("option"); o.value = ""; o.textContent = "no language model (Settings › API providers, or ComfyUI-QwenVL)"; this.upBackendSel.appendChild(o); }', 1),
+    ("inpaint_canvas.js",
+     "        const backend = UPSAMPLE_BACKENDS.find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0];\n"
+     '        if (!backend) { this.setStatus("No language model nodes installed (ComfyUI-QwenVL, or the Gemini API node)."); return; }\n',
+     "        const backend = availableUpsampleBackends().find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0];\n"
+     '        if (!backend) { this.setStatus("No language model: add an OpenAI, Google or Anthropic key in Settings › API providers, or install ComfyUI-QwenVL on the server."); return; }\n', 1),
+    ("inpaint_canvas.js",
+     "            this.setStatus(`Upsampling the prompt for \"${useCase}\" with ${backend.label} ...`);\n"
+     "            const { ref } = await uploadCanvas(this.promptContextCanvas(), `n${this.node.id}_promptctx`);\n",
+     "            this.setStatus(`Upsampling the prompt for \"${useCase}\" with ${backend.label} ...`);\n"
+     "            if (backend.inApp) { await host.upsampleInApp(this, backend, upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : \"\")); return; }\n"
+     "            const { ref } = await uploadCanvas(this.promptContextCanvas(), `n${this.node.id}_promptctx`);\n", 1),
+    # select by text from the prompt: an API language model names the object before the segmentation prompt is built
+    ("inpaint_canvas.js",
+     "        const llm = fromPrompt ? (UPSAMPLE_BACKENDS.find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0]) : null;\n",
+     "        const llm = fromPrompt ? (availableUpsampleBackends().find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0]) : null;\n", 1),
+    ("inpaint_canvas.js",
+     "            if (fromPrompt) {\n                // term_run: VLM -> STRING, linked straight into the segmentation node's prompt input\n",
+     "            if (fromPrompt && llm.inApp) {\n"
+     "                text = (await host.askLLM(llm, segmentTermInstruction(this.promptInput.value.trim()), this.promptContextCanvas())).text.replace(/[.\"']/g, \"\").trim();\n"
+     "                if (!text) throw new Error(`${llm.label} named no object`);\n"
+     "                this.setStatus(`Segmenting \"${text}\" (from the prompt, ${llm.label}) with ${backend.label} ...`);\n"
+     "            } else if (fromPrompt) {\n                // term_run: VLM -> STRING, linked straight into the segmentation node's prompt input\n", 1),
     # cutout: in-app matting models are listed first
     ("inpaint_canvas.js",
      "function availableCutoutBackends() {\n    const types = host.nodeTypes();\n    return CUTOUT_BACKENDS.filter((b) => b.needs.every((n) => !!types[n]));\n}\n",

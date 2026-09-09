@@ -115,3 +115,8 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 #shell-update { background: #2f5d9a !important; border-color: #3f74bb !important; }
 #shell-update:hover { background: #3a6fb5 !important; }
 .shell-check { display: inline-flex; align-items: center; gap: 6px; }
+
+/* preset row in the editor's Settings section (host.renderPresets) */
+.ipc-preset-row { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; justify-content: flex-end; }
+.ipc-preset-row select, .ipc-preset-row input { flex: 1 1 100%; min-width: 0; }
+.ipc-preset-row .ipc-ib { padding: 2px 8px; }

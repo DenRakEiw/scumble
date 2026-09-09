@@ -21,6 +21,7 @@ const PROVIDERS = {
     replicate: require("./replicate"),
     wavespeed: require("./wavespeed"),
     comfycloud: require("./comfycloud"),
+    anthropic: require("./anthropic"),   // key row only: prompt upsampling (llm.js)
     loopback: require("./loopback"),
 };
 

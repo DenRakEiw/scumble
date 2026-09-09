@@ -1,9 +1,26 @@
 # In-app helper models (phase 3)
 
 The object tool (hover / click, key O) and layer cutouts run inside the app through
-ONNX Runtime (`onnxruntime-node`), no ComfyUI needed. Selection by text (SAM3) and
-prompt upsampling (Qwen-VL) still run as ComfyUI helper prompts; when no in-app model
-is downloaded, objects and cutouts fall back to the ComfyUI helper prompts too.
+ONNX Runtime (`onnxruntime-node`), no ComfyUI needed. Selection by text (SAM3) still
+runs as a ComfyUI helper prompt; when no in-app model is downloaded, objects and
+cutouts fall back to the ComfyUI helper prompts too.
+
+## Prompt upsampling through the provider keys (`electron/main/llm.js`)
+
+Besides the ComfyUI language model nodes (Qwen3-VL, the Gemini API node), the
+upsample select in the Prompt section lists API vision language models once their key
+is stored under Settings › API providers: GPT-5.6 Luna / Terra (OpenAI key, Responses
+API, `reasoning.effort: low`), Gemini 3.8 Flash / 3.5 Flash Lite (Google key,
+`generateContent`, `thinkingLevel: low` on Gemini 3), Claude Opus 5 / Haiku 4.5
+(Anthropic key, Messages API; Anthropic has no image model, so its key row exists for
+this alone). The editor sends the same instruction and context crop it builds for the
+ComfyUI path (`promptContextCanvas`, long side ≤ 1024, the selection outlined), the
+answer lands in the prompt field like the helper prompt's `InpaintCanvasTextOut`
+result. "Select by text" with an empty field and a prompt asks the same model for the
+object name. Model ids checked on 2026-09-09; none of the three adapters has run
+against a live key yet (the wiring was verified up to the providers' "invalid key"
+answers). IPC `llm:list` / `llm:ask`, `host.upsampleBackends()`, `host.askLLM()`,
+`host.upsampleInApp()`; the sync patches are listed in docs/SYNC.md.
 
 ## Modules (`electron/main/onnx/`)
 

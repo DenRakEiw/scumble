@@ -69,15 +69,32 @@ async function hashBlob(blob) {
     return Array.from(new Uint8Array(digest)).slice(0, 6).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// ComfyUI's /upload/image stops at --max-upload-size (100 MB by default). Files above this
+// go through the node's own streaming route, which has no such limit; a 413 from ComfyUI
+// falls back to it as well.
+const LARGE_UPLOAD = 64 * 1024 * 1024;
+
 async function uploadBlob(blob, filename, { overwrite = true, type = "input", subfolder = SUBFOLDER } = {}) {
-    const form = new FormData();
-    form.append("image", new File([blob], filename, { type: "image/png" }));
-    form.append("subfolder", subfolder);
-    form.append("type", type);
-    if (overwrite) form.append("overwrite", "true");
-    const resp = await api.fetchApi("/upload/image", { method: "POST", body: form });
+    if (blob.size < LARGE_UPLOAD) {
+        const form = new FormData();
+        form.append("image", new File([blob], filename, { type: "image/png" }));
+        form.append("subfolder", subfolder);
+        form.append("type", type);
+        if (overwrite) form.append("overwrite", "true");
+        const resp = await api.fetchApi("/upload/image", { method: "POST", body: form });
+        if (resp.status === 200) {
+            const data = await resp.json();
+            return { filename: data.name, subfolder: data.subfolder || subfolder, type: data.type || type };
+        }
+        if (resp.status !== 413) throw new Error("Inpaint Canvas: upload failed (" + resp.status + ")");
+    }
+    const q = new URLSearchParams({ filename, subfolder, type, overwrite: overwrite ? "true" : "false" });
+    const resp = await api.fetchApi("/inpaint_canvas/upload?" + q, { method: "POST", body: blob, headers: { "Content-Type": "application/octet-stream" } });
+    if (resp.status === 404) throw new Error(`Inpaint Canvas: ${Math.round(blob.size / 1048576)} MB is over ComfyUI's upload limit and the node's own upload route is missing: restart ComfyUI after updating the node (or start it with --max-upload-size 1000).`);
     if (resp.status !== 200) {
-        throw new Error("Inpaint Canvas: upload failed (" + resp.status + ")");
+        let msg = "";
+        try { msg = (await resp.json()).error || ""; } catch (_) { /* ignore */ }
+        throw new Error("Inpaint Canvas: upload failed (" + resp.status + (msg ? ", " + msg : "") + ")");
     }
     const data = await resp.json();
     return { filename: data.name, subfolder: data.subfolder || subfolder, type: data.type || type };
@@ -434,7 +451,7 @@ const UPSAMPLE_BACKENDS = [
 
 function availableUpsampleBackends() {
     const types = host.nodeTypes();
-    return UPSAMPLE_BACKENDS.filter((b) => b.needs.every((n) => !!types[n]));
+    return [...UPSAMPLE_BACKENDS.filter((b) => b.needs.every((n) => !!types[n])), ...host.upsampleBackends()];
 }
 
 const UPSAMPLE_CASES = ["auto", "fill", "add", "remove", "edit", "outpaint"];
@@ -1086,7 +1103,7 @@ class InpaintEditor {
         top.appendChild(el("span", "ipc-grow"));
         this.modeSel = selectInput(["api", "local"], "api", "Which chain the result comes back from: API = the result input, Local = the result_local input. Only that chain runs.");
         this.modeSel.classList.add("ipc-mode");
-        this.modeSel.addEventListener("change", () => { this.genSettings.mode = this.modeSel.value; this.syncGenControls(); this.renderInfo(); this.notifyChanged(); });
+        this.modeSel.addEventListener("change", () => { this.genSettings.mode = this.modeSel.value; this.syncGenControls(); this.renderInfo(); this.notifyChanged(); host.modeChanged(this, this.modeSel.value); });
         top.appendChild(this.modeSel);
         this.generateBtn = iconButton("play", "Queue the workflow (Ctrl+Enter). The result comes back as a new layer.", () => this.generate(), "Generate");
         this.generateBtn.classList.add("ipc-primary");
@@ -4006,7 +4023,7 @@ class InpaintEditor {
             const curUp = this.upsampleSettings.backend;
             this.upBackendSel.innerHTML = "";
             for (const b of ups) { const o = document.createElement("option"); o.value = b.id; o.textContent = b.label; this.upBackendSel.appendChild(o); }
-            if (!ups.length) { const o = document.createElement("option"); o.value = ""; o.textContent = "no language model nodes installed"; this.upBackendSel.appendChild(o); }
+            if (!ups.length) { const o = document.createElement("option"); o.value = ""; o.textContent = "no language model (Settings › API providers, or ComfyUI-QwenVL)"; this.upBackendSel.appendChild(o); }
             if (ups.some((b) => b.id === curUp)) this.upBackendSel.value = curUp;
             this.upBtn.disabled = !ups.length;
         }
@@ -4023,7 +4040,7 @@ class InpaintEditor {
         let text = (this.segInput.value || "").trim();
         // Empty field but a prompt: let the language model name the object the prompt is about.
         const fromPrompt = !text && !!(this.promptInput.value || "").trim();
-        const llm = fromPrompt ? (UPSAMPLE_BACKENDS.find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0]) : null;
+        const llm = fromPrompt ? (availableUpsampleBackends().find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0]) : null;
         if (!text && !fromPrompt) { this.setStatus("Type what to select, e.g. \"shirt\", or write a prompt and press Go to select what it is about."); this.segInput.focus(); return; }
         if (fromPrompt && !llm) { this.setStatus("Type what to select: no language model nodes installed to derive it from the prompt."); this.segInput.focus(); return; }
         const backend = SEGMENT_BACKENDS.find((b) => b.id === this.segBackendSel.value) || availableSegmentBackends()[0];
@@ -4036,7 +4053,11 @@ class InpaintEditor {
             const prompt = {
                 seg_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(ref) } },
             };
-            if (fromPrompt) {
+            if (fromPrompt && llm.inApp) {
+                text = (await host.askLLM(llm, segmentTermInstruction(this.promptInput.value.trim()), this.promptContextCanvas())).text.replace(/[."']/g, "").trim();
+                if (!text) throw new Error(`${llm.label} named no object`);
+                this.setStatus(`Segmenting "${text}" (from the prompt, ${llm.label}) with ${backend.label} ...`);
+            } else if (fromPrompt) {
                 // term_run: VLM -> STRING, linked straight into the segmentation node's prompt input
                 Object.assign(prompt, llm.build("seg_load", segmentTermInstruction(this.promptInput.value.trim())));
                 prompt.term_run = prompt.up_run; delete prompt.up_run;
@@ -4155,8 +4176,8 @@ class InpaintEditor {
     async upsamplePrompt() {
         if (!this.base) { this.setStatus("Load an image first."); return; }
         if (this.upsamplePending) { this.setStatus("Upsampling is already running."); return; }
-        const backend = UPSAMPLE_BACKENDS.find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0];
-        if (!backend) { this.setStatus("No language model nodes installed (ComfyUI-QwenVL, or the Gemini API node)."); return; }
+        const backend = availableUpsampleBackends().find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0];
+        if (!backend) { this.setStatus("No language model: add an OpenAI, Google or Anthropic key in Settings › API providers, or install ComfyUI-QwenVL on the server."); return; }
         const text = (this.promptInput.value || "").trim();
         const useCase = this.resolveUseCase();
         const region = this.getBounds() ? (this.cropSettings.fill === "green" ? "the solid green area" : "the area inside the magenta outline") : "the whole image";
@@ -4164,6 +4185,7 @@ class InpaintEditor {
             this.upBtn.disabled = true;
             this.upsamplePending = { previous: this.promptInput.value, useCase };
             this.setStatus(`Upsampling the prompt for "${useCase}" with ${backend.label} ...`);
+            if (backend.inApp) { await host.upsampleInApp(this, backend, upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : "")); return; }
             const { ref } = await uploadCanvas(this.promptContextCanvas(), `n${this.node.id}_promptctx`);
             const prompt = {
                 up_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(ref) } },
@@ -4703,10 +4725,10 @@ class InpaintEditor {
     setFilterType(layer, id) {
         if (!FILTERS[id] || layer.filter === id) return;
         this.pushUndo({ kind: "filter", id: layer.id });
-        const auto = FILTER_IDS.some((k) => (layer.name || "").startsWith(FILTERS[k].label + " "));
         layer.filter = id;
         layer.params = filterDefaults(id);
-        if (auto) layer.name = `${FILTERS[id].label} ${this.filterCounter}`;
+        // layer names are not editable: the type (or a preset, see the preset select) names the layer
+        layer.name = `${FILTERS[id].label} ${this.filterCounter}`;
         this.markFilterChanged(layer);
         this.renderLayers();
     }
@@ -6923,6 +6945,7 @@ Size as width x height:`, cur);
             list.appendChild(el("span", null, "Wire a setting output of the node into any widget (lora_name, ckpt_name, steps ...) and it shows up here."));
             return;
         }
+        host.renderPresets(this, list, targets);
         for (const t of targets) {
             const key = String(t.index);
             const entry = this.settings[key];

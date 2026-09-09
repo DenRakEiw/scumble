@@ -285,6 +285,110 @@ export const host = {
         for (const ed of this._editors) this.applyRecipe(ed);
     },
 
+    onModeChanged: null,   // set by the shell: (mode, editor) => void
+
+    /** The editor's local / api select: the shell switches to a recipe of that kind. */
+    modeChanged(editor, mode) {
+        if (this.onModeChanged) { try { this.onModeChanged(mode, editor); } catch (err) { console.warn(err); } }
+    },
+
+    // ---- setting presets: a named model / text encoder / VAE combination per recipe ----
+
+    presets: {},   // settings.recipePresets: { [recipeId]: [{ name, values: { "node:input": value } }] }
+
+    /** The settings a preset stores: file combos (unet_name, ckpt_name, clip_name, vae_name, lora_name ...). */
+    presetTargets(editor, targets) {
+        return targets.filter((t) => {
+            const k = editor.settingKind(t);
+            return k.kind === "combo" && /_name$/.test(t.inputName) && k.options.some((o) => /\.[a-z0-9]{2,12}$/i.test(String(o)));
+        });
+    },
+
+    async savePresets(recipeId, list) {
+        this.presets = { ...(this.presets || {}), [recipeId]: list };
+        try { await window.scumble.settings.set({ recipePresets: this.presets }); } catch (err) { console.warn("presets", err); }
+    },
+
+    /** The preset row at the top of the editor's Settings section (called by renderSettings). */
+    renderPresets(editor, list, targets) {
+        const r = this.recipe;
+        if (!r || r.kind === "provider") return;
+        const pts = this.presetTargets(editor, targets);
+        if (pts.length < 2) return;
+        const keyOf = (t) => `${t.node.id}:${t.inputName}`;
+        const current = {};
+        for (const t of pts) { const e = editor.settings[String(t.index)]; if (e) current[keyOf(t)] = String(e.value); }
+        const presets = (this.presets || {})[r.id] || [];
+        const matching = presets.find((p) => Object.entries(p.values || {}).every(([k, v]) => current[k] === String(v)));
+        const lab = document.createElement("label");
+        lab.textContent = "Preset";
+        lab.title = `A saved combination of ${pts.map((t) => t.node.title || t.inputName).join(" / ")} for this recipe. Pick the files above, then Save.`;
+        const row = document.createElement("div");
+        row.className = "ipc-preset-row";
+        const sel = document.createElement("select");
+        sel.className = "ipc-sel";
+        sel.title = lab.title;
+        const none = document.createElement("option");
+        none.value = ""; none.textContent = presets.length ? (matching ? "" : "(custom)") : "(none saved)";
+        if (!matching) sel.appendChild(none);
+        for (const p of presets) { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; sel.appendChild(o); }
+        sel.value = matching ? matching.name : "";
+        sel.addEventListener("change", () => { const p = presets.find((x) => x.name === sel.value); if (p) this.applyPreset(editor, targets, p); });
+        const save = document.createElement("button");
+        save.type = "button"; save.className = "ipc-ib"; save.textContent = "Save"; save.title = "Save the current combination under a name (Enter saves, Escape cancels).";
+        const del = document.createElement("button");
+        del.type = "button"; del.className = "ipc-ib"; del.textContent = "Delete"; del.disabled = !matching; del.title = matching ? `Delete the preset "${matching.name}"` : "Delete the selected preset";
+        save.addEventListener("click", () => {
+            // the select becomes a name field: the first file's stem is the suggestion
+            const first = pts[0] && editor.settings[String(pts[0].index)];
+            const stem = first ? String(first.value).replace(/^.*[\\/]/, "").replace(/\.[a-z0-9]+$/i, "") : "";
+            const input = document.createElement("input");
+            input.type = "text"; input.value = matching ? matching.name : stem; input.placeholder = "preset name"; input.spellcheck = false;
+            const finish = async (ok) => {
+                const name = input.value.trim();
+                if (ok && name) {
+                    const values = {};
+                    for (const t of pts) { const e = editor.settings[String(t.index)]; if (e) values[keyOf(t)] = e.value; }
+                    const next = presets.filter((p) => p.name !== name).concat([{ name, values }]).sort((a, b) => a.name.localeCompare(b.name));
+                    await this.savePresets(r.id, next);
+                    for (const ed of this._editors) { try { ed.renderSettings(); } catch (_) { /* not built */ } }
+                    editor.setStatus(`Preset "${name}" saved for ${r.name || r.id}.`);
+                } else {
+                    editor.renderSettings();
+                }
+            };
+            input.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); finish(true); } if (e.key === "Escape") { e.preventDefault(); finish(false); } });
+            row.replaceChild(input, sel);
+            save.textContent = "OK";
+            save.onclick = () => finish(true);
+            del.textContent = "Cancel"; del.disabled = false; del.onclick = () => finish(false);
+            input.focus(); input.select();
+        });
+        del.addEventListener("click", async () => {
+            if (!matching || del.textContent !== "Delete") return;
+            await this.savePresets(r.id, presets.filter((p) => p.name !== matching.name));
+            for (const ed of this._editors) { try { ed.renderSettings(); } catch (_) { /* not built */ } }
+            editor.setStatus(`Preset "${matching.name}" deleted.`);
+        });
+        row.append(sel, save, del);
+        lab.appendChild(row);
+        list.appendChild(lab);
+    },
+
+    applyPreset(editor, targets, preset) {
+        const missing = [];
+        for (const t of this.presetTargets(editor, targets)) {
+            const v = (preset.values || {})[`${t.node.id}:${t.inputName}`];
+            const e = editor.settings[String(t.index)];
+            if (v == null || !e) continue;
+            const k = editor.settingKind(t);
+            if (k.options.map(String).includes(String(v))) e.value = v; else missing.push(String(v));
+        }
+        editor.renderSettings();
+        editor.notifyChanged();
+        editor.setStatus(missing.length ? `Preset "${preset.name}": ${missing.join(", ")} not on the server, kept the current choice there.` : `Preset "${preset.name}" applied.`);
+    },
+
     /** The recipe decides the mode (local / api) and the Settings panel of every editor. */
     applyRecipe(ed) {
         const r = this.recipe;
@@ -588,6 +692,50 @@ export const host = {
         for (const ed of this._editors) { try { ed.refreshCutoutBackends(); } catch (_) { /* not built yet */ } }
         if (this.onHelpersChanged) { try { this.onHelpersChanged(this.helpers); } catch (err) { console.warn(err); } }
         return this.helpers;
+    },
+
+    // ---- language models on the provider keys (electron/main/llm.js) ----------------
+
+    llms: [],   // [{ id, provider, model, label, key }] from the main process
+
+    /** Which API language models have a key, then refresh the editors' upsample lists. */
+    async refreshLLMs() {
+        try { this.llms = await window.scumble.llm.list(); } catch (err) { console.warn("llm list", err); this.llms = []; }
+        for (const ed of this._editors) { try { ed.refreshSegmentBackends(); } catch (_) { /* not built yet */ } }
+        return this.llms;
+    },
+
+    /** Upsample backends in the shape of the editor's UPSAMPLE_BACKENDS entries (id "app:<provider>:<model>"). */
+    upsampleBackends() {
+        return this.llms.filter((l) => l.key).map((l) => ({ id: "app:" + l.id, label: l.label, inApp: true, llm: l.id, needs: [] }));
+    },
+
+    /** One question to an API language model with a canvas in view; { text, seconds }. */
+    async askLLM(backend, instruction, canvas) {
+        let image = null;
+        if (canvas) {
+            const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+            image = new Uint8Array(await blob.arrayBuffer());
+        }
+        try {
+            return await window.scumble.llm.ask({ id: backend.llm, instruction, image });
+        } catch (err) {
+            // strip Electron's "Error invoking remote method 'llm:ask': Error: " wrapper
+            throw new Error(String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
+        }
+    },
+
+    /**
+     * Prompt upsampling through an API language model. Called by the editor's
+     * upsamplePrompt() with upsamplePending set; hands the text to applyTextResult like
+     * the ComfyUI path does through the InpaintCanvasTextOut event. Throws on failure
+     * (the editor's catch resets the pending state).
+     */
+    async upsampleInApp(editor, backend, instruction) {
+        const res = await this.askLLM(backend, instruction, editor.promptContextCanvas());
+        if (!editor.upsamplePending) return;   // cancelled meanwhile
+        editor.applyTextResult({ text: res.text });
+        editor.setStatus(editor.status.replace(/\.$/, "") + ` (${backend.label.replace(/ \(.*\)$/, "")}, ${res.seconds.toFixed(1)} s).`);
     },
 
     presentHelpers(kind) {

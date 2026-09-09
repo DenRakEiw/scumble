@@ -15,7 +15,7 @@ OpenRaster.
 
 Rendering happens on your own [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
 (local or remote, for example on RunPod) or through API providers: Google (Nano Banana
-2 / 2 Lite / Pro), OpenAI (GPT Image 2.5 Flare / Sunburst, 2, 1.5), Black Forest Labs
+2 / 2 Lite / Pro), OpenAI (GPT Image 2.5 Flare / Sunburst, 2), Black Forest Labs
 (FLUX.2 max / pro / flex / klein, FLUX.1 Fill), ByteDance Seedream 5, Qwen Image Edit,
 each through the model's own API or through fal.ai, Replicate, WaveSpeedAI and Comfy Cloud. Object masks and background removal
 run inside the app through ONNX Runtime (SAM2, BiRefNet, RMBG). The editor is the same

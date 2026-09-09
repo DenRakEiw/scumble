@@ -15,7 +15,7 @@ module.exports = {
     keyHint: "API key from Google AI Studio",
     async edit(req, ctx) {
         const p = req.params;
-        const model = String(p.model || req.model || "gemini-2.5-flash-image");
+        const model = String(p.model || req.model || "gemini-3.1-flash-lite-image");
         const parts = [];
         let text = req.prompt || "";
         if (req.mask && req.kind !== "edit") {
