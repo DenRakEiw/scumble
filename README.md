@@ -1,5 +1,12 @@
 # Scumble
 
+> **Work in progress.** Scumble is in an early state (0.1.x). Not every feature has been
+> tested end to end yet, and the API provider adapters (fal.ai, Replicate, Black Forest
+> Labs, OpenAI, Google Gemini) have been written from the providers' documentation but
+> have not run against the live APIs so far. Expect rough edges, keep backups of your
+> images, and please report what breaks in the
+> [issues](https://github.com/DenRakEiw/scumble/issues).
+
 A desktop editor for AI inpainting. Open an image, select an area (brush, shape, magic
 wand, object hover or a text description), write a prompt, generate. The result lands as a
 layer over the selection and can be blended in with colour match, erased in parts,
@@ -14,6 +21,9 @@ code as the ComfyUI node [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-I
 Scumble is the standalone window around it, plus recipes, plugins and an MCP server.
 
 Windows first (installer below), Linux builds are planned. Free software, GPL-3.0.
+What has been verified so far: local rendering through ComfyUI, the in-app helper models,
+the film pack, the command core, the MCP server and auto-update; the API providers are
+untested (see the note above).
 
 ## Features
 
