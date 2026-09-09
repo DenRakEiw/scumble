@@ -61,8 +61,12 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 ## Where things stand (2026-09-09, night)
 
 **Phase 4c is complete** (MCP server and headless mode, `docs/MCP.md`). Phases 1–4c are in.
-Next: **phase 5, release** (`docs/BRIEF.md` §5: code signing, auto-update, Linux
-AppImage/deb, website, name and licence final), unless the user wants the open items first:
+Next session, decided by the user on 2026-09-09: **phase 5, release, in this order: Windows
+code signing first, then auto-update; Linux (AppImage/deb) later, not now** (`docs/BRIEF.md`
+§5 and §6: a certificate or Azure Trusted Signing is needed for signing, the user has none
+yet; electron-builder's `publish` + `electron-updater` for the update path, decide the
+channel: GitHub Releases is the obvious one for a public repo). Still open, but not the next
+step:
 the first real RunPod pod (`docker/runpod/`), the five API provider adapters that have never
 run against a live API (no keys yet; one small selection per provider first), the film pack
 follow-ups (real-photo look check, more frame styles, film names / trademark review before a
