@@ -305,10 +305,20 @@ function syncRecipeRows() {
         if (!r) continue;
         row.classList.toggle("active", host.recipe && host.recipe.id === r.id);
         const sel = row.querySelector("select");
-        if (sel) sel.value = chosenProvider(r);
+        if (sel) {
+            // the option labels carry the key state, so they need a refresh after a key was saved or cleared
+            for (const o of sel.options) o.textContent = providerOptionLabel(o.value);
+            sel.value = chosenProvider(r);
+        }
         const meta = row.querySelector(".shell-recipe-meta");
         if (meta) meta.textContent = recipeMeta(r);
     }
+}
+
+/** Provider name for the recipe select; "(no key)" marks a provider with no API key stored yet. */
+function providerOptionLabel(pid) {
+    const p = providers.find((x) => x.id === pid);
+    return providerLabel(pid) + (p && !(p.key && p.key.set) ? " (no key)" : "");
 }
 
 function recipeMeta(r) {
@@ -339,8 +349,7 @@ function renderRecipeList() {
             sel.title = "Provider this model runs on";
             for (const pid of r.providerIds) {
                 const o = document.createElement("option");
-                const p = providers.find((x) => x.id === pid);
-                o.value = pid; o.textContent = providerLabel(pid) + (p && !(p.key && p.key.set) ? " (no key)" : "");
+                o.value = pid; o.textContent = providerOptionLabel(pid);
                 sel.appendChild(o);
             }
             sel.value = chosenProvider(r);

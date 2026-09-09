@@ -66,8 +66,27 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-09, late)
 
-**Landed on 2026-09-09 (night, uncommitted tests: the user's packaged Scumble held the
-single-instance lock, so nothing below has run in the app yet; do that first):**
+**Release 0.1.1 (2026-09-09, night)**: the night's work below is tested in the app and
+released. `package.json` is 0.1.1, tag `v0.1.1` pushed, the workflow builds the installer
+and opens a draft release; **publishing the draft is still a manual step**
+(`gh release edit v0.1.1 --draft=false`), only then does the user's desktop app see the
+update. Tests run on the dev instance: `film_test.py` PASS (35 cases, worst 3 levels),
+`commands_test.py` PASS (twice, before and after the shell.js fix), `smoke_test.py
+--no-helpers` PASS (96 s Flux run + loopback provider).
+
+- **Fix, stale key state**: the provider select in Settings › Recipes kept its "(no key)"
+  option labels after a key was saved or cleared (`syncRecipeRows` only refreshed the meta
+  line and the selected value). New `providerOptionLabel(pid)` in `renderer/shell.js`,
+  called both when the options are built and in `syncRecipeRows`. Verified live: with a
+  dummy WaveSpeed key all 16 rows switched from "WaveSpeedAI (no key)" to "WaveSpeedAI"
+  without reopening the dialog (the dummy key was cleared again, `secrets.json` is empty —
+  the user has no provider key stored at all, which is why every row reads "no key").
+- **Large-image filter verified in the app**: synthetic 10864 × 6062 image (grid every
+  256 px, coloured corner markers), film look Portra 400 with grain and halation off,
+  3.9 s. Against the same look on the image downscaled to 1358 × 757 the tiled result
+  differs by 0.38 levels mean / 16 max (resampling only), corners in the right places.
+
+**Landed on 2026-09-09 (night):**
 
 - **Bug fix, large images**: Chromium caps the WebGL drawing buffer at about 33 MP (5760²
   on the RTX 5090, whatever MAX_VIEWPORT_DIMS says) and keeps the canvas size, so a filter on
@@ -76,10 +95,8 @@ single-instance lock, so nothing below has run in the app yet; do that first):**
   `drawingBufferWidth/Height` and renders in tiles (`renderTiled`, uniform `u_tile` shifts
   `gl_FragCoord`); the 64 MP area limit is gone, only the 16384 px side limit remains.
   Verified on a standalone page (scratchpad `tiletest.html` importing the module; invert and
-  a plugin shader at 2000 × 1000, 10864 × 6062, 12000 × 8000 all exact, 100–200 ms). **Still
-  to run**: `python tools/film_test.py`, `tools/commands_test.py`, `tools/smoke_test.py
-  --no-helpers`, and a real look at the user's 10k image; then release 0.1.1 (the user's
-  desktop 0.1.0 predates the model recipes / provider select).
+  a plugin shader at 2000 × 1000, 10864 × 6062, 12000 × 8000 all exact, 100–200 ms), and in
+  the app on a 10864 × 6062 image (see the release note above).
 - **Providers**: LetzAI and OpenRouter removed (adapters, recipe variants, docs). New
   `providers/wavespeed.js` (WaveSpeedAI, `POST /api/v3/<model>`, poll
   `predictions/<id>/result`, URL-only inputs so crop / mask / refs go through
