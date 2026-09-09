@@ -66,6 +66,28 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-10)
 
+**Landed on 2026-09-10 (night): high-res performance phases 1 and 2** (pushed in both
+repos; `commands_test.py`, `film_test.py`, `smoke_test.py --no-helpers` PASS, the new
+`tools/perf_test.py` is the benchmark). `docs/PERFORMANCE.md` §1b and the phase 1 / 2
+sections have the details and the numbers, the node's `DEVELOPMENT.md` §21 / §21b the
+mechanisms. In short: every source canvas has a display pyramid, the screen composites
+only the visible region at screen resolution (`viewPass`), the composited scene is cached
+behind a signature so overlays cost nothing, brush undo is a copy of the touched rectangle
+and every other snapshot encodes off the main thread, the selection's bounding box comes
+from a level and from hints instead of a full scan, the colour match runs as a shader pass
+and the grain field is one cached tile anchored at the image origin. Interactive gestures
+on a **96 MP** document are now 0.1–8 ms (they were 250–900 ms at 66 MP), a full-resolution
+export with a three-filter film stack 0.7 s. Deliberately left for later: the ping-pong
+texture chain between filter layers (phase 5 brings that refactor anyway).
+
+- **Fix, the New button did nothing in the app**: Electron has no `window.prompt` (it
+  throws "prompt() is not supported"), so the size question never appeared. The editor has
+  its own small modal now (`InpaintEditor.ask({title, message, value})`, `.ipc-ask` styles,
+  `askOpen` guard in the window key handler); `window.confirm` does work in Electron.
+- Next from the plan: phase 3 (worker for PNG encoding, undo transfers, mirror uploads and
+  the full-resolution filter renders), then phase 4 (dirty rectangles, the selection as a
+  typed array, layer tiles).
+
 **Landed on 2026-09-10** (tested on the dev instance: `commands_test.py` PASS, the
 preset row and the mode switch exercised through CDP, the three LLM adapters up to the
 providers' "invalid key" answers with dummy keys; not committed as a release yet):
@@ -438,8 +460,13 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   `python tools/commands_test.py` (command core + sample plugin, no ComfyUI needed).
   `python tools/mcp_test.py` talks to `--mcp` over stdio (proxy mode while the dev instance
   runs, headless when nothing runs; `--exe dist/win-unpacked/Scumble.exe` for the package).
-  `node tools/helpers_test.js` runs the ONNX modules without Electron. Start the dev
-  instance with the Bash tool's `run_in_background`; a plain `&` job dies with the shell.
+  `node tools/helpers_test.js` runs the ONNX modules without Electron.
+  `python tools/perf_test.py [2048x1152 6000x4000 12000x8000]` is the drawing benchmark
+  (synthetic documents in their own tab, no ComfyUI; `docs/PERFORMANCE.md` §7). Scripted
+  waits must use `setTimeout`, never `requestAnimationFrame`: rAF does not fire while the
+  window is hidden, and `drawSoon()` is rAF-based, so a hidden window draws nothing.
+  Start the dev instance with the Bash tool's `run_in_background`; a plain `&` job dies
+  with the shell.
   `window.editor` and `import("./editor/host.js")` are reachable from the console.
   Only one instance runs at a time (single-instance lock); stop the dev instance before
   starting `dist/win-unpacked/Scumble.exe`. `Stop-Process -Name electron` in PowerShell.
