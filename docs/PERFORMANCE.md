@@ -373,7 +373,47 @@ The original plan for reference:
 3. Full-resolution filter renders above 33 MP keep the tiling but render into a texture
    array instead of resizing the GL canvas per tile.
 
-### Phase 3: off the main thread (2–3 days)
+### Phase 3: off the main thread — **done 2026-09-10**
+
+Measured first, on a 96 MP canvas, how long each operation actually blocks the main thread
+(sampling the thread every millisecond and taking the longest gap), because wall time and
+blocking are not the same thing here: `canvas.toBlob` runs 7.7 s but only holds the thread
+for 0.75 s, `crypto.subtle.digest` almost not at all, and the PSD writer holds it for all
+of its 4.1 s.
+
+- **The editor has a worker** (`js/inpaint_worker.js`, synced into the app): a module
+  worker created from `new URL("./inpaint_worker.js", import.meta.url)`, so the ComfyUI page
+  and `scumble://app/` both serve it from next to the editor. Every reply carries the
+  request's id; a job that fails, times out (`WORKER_TIMEOUT`, 3 min) or a worker that will
+  not start makes the caller do the work on the main thread instead, so nothing depends on
+  it being there.
+- **PNG encoding and the upload hash** go through it (`encodeCanvas`, used by
+  `uploadCanvas`, the undo snapshots and the autosave's selection PNG). The main thread only
+  pays `createImageBitmap`, which snapshots the canvas at call time, so an undo step still
+  captures the pixels as they were when the step was pushed (checked).
+- **The layered exports** (PSD, ORA) go through it as well. The writers in
+  `inpaint_export.js` became `PsdWriter` / `OraWriter`, which take their layers one at a
+  time, so the worker packs each layer as its pixels arrive and only one layer is ever in
+  flight; `buildPsd` / `buildOra` stayed as wrappers for the fallback. The module works
+  without a `document` now (`OffscreenCanvas`, `convertToBlob`).
+
+| Operation, 96 MP | main thread blocked before | after |
+|---|---|---|
+| PNG encode (upload, undo, autosave) | 738 ms | 17 ms |
+| PSD export, one layer plus composite | 4146 ms | 101 ms |
+
+The files are byte-identical to what the main thread produced, PNG, PSD and ORA alike, and
+the upload hash matches.
+
+**Not done, on purpose: the full-resolution filter and match renders in a worker.** The plan
+wanted them on a second WebGL2 context. After phase 2 the full-resolution composite is
+12–150 ms and a three-filter film stack export 0.7 s, all of it once per export or run, and
+moving it would mean making the GL filter module and its plugin shader API work on
+`OffscreenCanvas` in a worker. Phase 5 moves that code onto the GPU pipeline anyway.
+
+The original plan for reference:
+
+### Phase 3 (planned)
 
 1. A worker with `OffscreenCanvas`: PNG encoding for autosave, undo snapshots (the
    dirty-rect copies from phase 1 as `ImageBitmap` transfers), layer uploads to the
