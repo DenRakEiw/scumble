@@ -11,6 +11,11 @@ const { app } = require("electron");
 
 const SAFE_NAME = /^[^\\/:*?"<>|\x00-\x1f]+$/;
 
+// Above this a file goes to the node's streaming upload route instead of ComfyUI's
+// multipart one, which stops at --max-upload-size (100 MB by default). The editor uses
+// the same threshold in uploadBlob.
+const LARGE_UPLOAD = 64 * 1024 * 1024;
+
 function root() {
     return path.join(app.getPath("userData"), "files");
 }
@@ -85,14 +90,67 @@ class FileMirror {
         return Response.json({ name: filename, subfolder, type });
     }
 
+    /**
+     * POST /inpaint_canvas/upload?filename&subfolder&type&overwrite: the editor's route for
+     * files above 64 MB (a 12k PNG is easily 150 MB, over ComfyUI's --max-upload-size). The
+     * body is the raw file. The node serves this route on the server; in the app it has to
+     * land in the mirror like every other upload, otherwise loading a large image would
+     * need a reachable ComfyUI, and a proxied one answered 502.
+     */
+    async handleRawUpload(request, search) {
+        const q = new URLSearchParams(search || "");
+        let filename = path.basename(String(q.get("filename") || ""));
+        if (!filename) return Response.json({ error: "filename missing" }, { status: 400 });
+        const type = String(q.get("type") || "input");
+        const subfolder = String(q.get("subfolder") || "");
+        const overwrite = String(q.get("overwrite") || "").toLowerCase() === "true";
+        let target;
+        try { target = mirrorPath(type, subfolder, filename); } catch (err) { return Response.json({ error: err.message }, { status: 400 }); }
+        const dir = path.dirname(target);
+        await fsp.mkdir(dir, { recursive: true });
+        if (!overwrite) { filename = await freeName(dir, filename); target = path.join(dir, filename); }
+        const buf = Buffer.from(await request.arrayBuffer());
+        if (!buf.length) return Response.json({ error: "empty body" }, { status: 400 });
+        if (overwrite || !fs.existsSync(target)) await fsp.writeFile(target, buf);
+        if (this.serverUp()) {
+            try {
+                await this.pushToServer(type, subfolder, filename, buf, mimeOf(filename));
+            } catch (err) {
+                console.warn("upload not forwarded:", filename, err.message);
+            }
+        }
+        return Response.json({ name: filename, subfolder, type, size: buf.length });
+    }
+
+    /**
+     * Copy a mirrored file to the server. Multipart through ComfyUI's own route for normal
+     * files, the node's streaming route above its --max-upload-size (100 MB by default;
+     * the multipart body is a little larger than the file, so the switch sits below it).
+     */
     async pushToServer(type, subfolder, filename, buf, mime) {
+        if (buf.length >= LARGE_UPLOAD) return this.pushLargeToServer(type, subfolder, filename, buf);
         const fd = new FormData();
         fd.append("image", new Blob([buf], { type: mime || mimeOf(filename) }), filename);
         fd.append("subfolder", subfolder || "");
         fd.append("type", type);
         fd.append("overwrite", "true");
         const r = await this.comfy.fetch("/upload/image", { method: "POST", body: fd });
+        if (r.status === 413) return this.pushLargeToServer(type, subfolder, filename, buf);
         if (r.status !== 200) throw new Error(`/upload/image answered ${r.status}`);
+        const data = await r.json().catch(() => ({}));
+        if (data.name && data.name !== filename) console.warn("server renamed", filename, "to", data.name);
+        this.knownSet().add(this.key(type, subfolder, filename));
+    }
+
+    async pushLargeToServer(type, subfolder, filename, buf) {
+        const q = new URLSearchParams({ filename, subfolder: subfolder || "", type, overwrite: "true" });
+        const r = await this.comfy.fetch("/inpaint_canvas/upload?" + q, {
+            method: "POST",
+            body: buf,
+            headers: { "Content-Type": "application/octet-stream" },
+        });
+        if (r.status === 404) throw new Error(`${Math.round(buf.length / 1048576)} MB needs the node's upload route: update ComfyUI-InpaintCanvas on the server and restart ComfyUI`);
+        if (r.status !== 200) throw new Error(`/inpaint_canvas/upload answered ${r.status}`);
         const data = await r.json().catch(() => ({}));
         if (data.name && data.name !== filename) console.warn("server renamed", filename, "to", data.name);
         this.knownSet().add(this.key(type, subfolder, filename));

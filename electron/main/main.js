@@ -113,6 +113,7 @@ function installProtocol() {
             const rel = url.pathname.slice("/comfy".length);
             try {
                 if (rel === "/upload/image" && request.method === "POST") return await mirror.handleUpload(request);
+                if (rel === "/inpaint_canvas/upload" && request.method === "POST") return await mirror.handleRawUpload(request, url.search);
                 if (rel === "/view" && (request.method === "GET" || request.method === "HEAD")) return await mirror.handleView(url.search);
             } catch (err) {
                 console.error("mirror", rel, err);

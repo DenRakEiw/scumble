@@ -94,6 +94,19 @@ the selection as a typed array, and layer tiles.
   throws "prompt() is not supported"), so the size question never appeared. The editor has
   its own small modal now (`InpaintEditor.ask({title, message, value})`, `.ipc-ask` styles,
   `askOpen` guard in the window key handler); `window.confirm` does work in Electron.
+- **Fix, images above 64 MB could not be loaded** (reported 2026-09-10, app only, not a
+  side effect of the performance work): `uploadBlob` sends files over `LARGE_UPLOAD`
+  (64 MB, a 10k photo easily) through the node's streaming route
+  `/inpaint_canvas/upload`, and `main.js` only knew `/upload/image` and `/view`, so that
+  route went to `comfy.proxy` and the file never reached the local mirror. With ComfyUI
+  down the upload answered 502; with a stale connection state the upload went to the
+  server but the following `/comfy/view` found nothing, and the image silently never
+  appeared. `mirror.handleRawUpload()` now serves the route like every other upload
+  (query params in, raw body, `{name, subfolder, type, size}` back), and `pushToServer`
+  picks the streaming route above 64 MB or after a 413, which also fixes `ensureOnServer`
+  for runs with large layers. Regression step `large_upload_route` in
+  `tools/commands_test.py` (it uploads twice and watches the mirror grow, so it fails on
+  the bug even when ComfyUI is connected; verified by reverting the fix).
 - Next from the plan: phase 5 (the WebGL2 compositor: layers as textures in tiles, blend
   modes and the filter chain in shaders, the 2D canvas only for overlays), then phase 6
   (memory: undo as compressed tiles, the objects map bounded, layers evicted to the mirror).

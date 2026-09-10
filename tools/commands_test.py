@@ -178,6 +178,52 @@ if (!editor.toolButtons["sample.probe"]) throw new Error("tool button not back")
 if ((await c("list_layers")).layers.length !== n0) throw new Error("layer count changed");
 return { loaded: s.loaded, registered: s.registered };
 """),
+    # Files above 64 MB take the editor's streaming upload route. That route has to land in
+    # the local mirror like every other upload: proxied to ComfyUI instead, loading a large
+    # image answered 502 with the server down, and the view found nothing afterwards.
+    ("large_upload_route", """
+const name = "commands_test_raw.png";
+const png = async (w, h, noisy) => {
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    const cx = cv.getContext("2d");
+    cx.fillStyle = "#2277cc"; cx.fillRect(0, 0, w, h);
+    if (noisy) {   // noise does not compress: the second upload is clearly larger
+        const img = cx.getImageData(0, 0, w, h);
+        for (let off = 0; off < img.data.length; off += 65536) crypto.getRandomValues(img.data.subarray(off, Math.min(img.data.length, off + 65536)));
+        for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+        cx.putImageData(img, 0, 0);
+    }
+    return new Promise((r) => cv.toBlob(r, "image/png"));
+};
+const send = (blob) => fetch("/comfy/inpaint_canvas/upload?" + new URLSearchParams({
+    filename: name, subfolder: "inpaint_canvas", type: "input", overwrite: "true",
+}), { method: "POST", body: blob, headers: { "Content-Type": "application/octet-stream" } });
+
+const small = await png(64, 48, false), big = await png(400, 300, true);
+if (big.size <= small.size) throw new Error("the test blobs are the wrong way round");
+let up = await send(small);
+if (up.status !== 200) throw new Error("raw upload answered " + up.status + " " + (await up.text()).slice(0, 120));
+// replace it with the larger one and watch the local store: only a mirrored upload changes
+// it. A proxied one puts the file on the server alone, and with the server down (or with a
+// stale connection state) nothing finds it again, which is what broke loading large images.
+const before = await window.scumble.files.stats();
+up = await send(big);
+if (up.status !== 200) throw new Error("second raw upload answered " + up.status);
+const info = await up.json();
+if (info.name !== name) throw new Error("wrong name back: " + JSON.stringify(info));
+const after = await window.scumble.files.stats();
+if (after.bytes - before.bytes < big.size - small.size) {
+    throw new Error(`the local store grew by ${after.bytes - before.bytes} bytes, expected ${big.size - small.size}: the upload was proxied instead of mirrored`);
+}
+const back = await fetch("/comfy/view?filename=" + name + "&subfolder=inpaint_canvas&type=input");
+if (back.status !== 200) throw new Error("view answered " + back.status + ": the file did not reach the local store");
+const got = (await back.arrayBuffer()).byteLength;
+if (got !== big.size) throw new Error(`view returned ${got} bytes, uploaded ${big.size}`);
+const img = await c("load_image", { filename: name, subfolder: "inpaint_canvas", type: "input", doc: window.__testDoc });
+if (img.width !== 400 || img.height !== 300) throw new Error("loading it back gave " + img.width + "x" + img.height);
+return { bytes: got, grew: after.bytes - before.bytes };
+"""),
     ("close", """
 const before = (await c("list_documents")).documents.length;
 const r = await c("close_document", { doc: window.__testDoc });
