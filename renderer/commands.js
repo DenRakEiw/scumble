@@ -438,7 +438,7 @@ const COMMANDS = {
         },
     },
     upsample_prompt: {
-        needsImage: true, description: "Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, or an API key for OpenAI / Google / Anthropic).",
+        needsImage: true, description: "Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, an API key for OpenAI / Google / Anthropic, or a local OpenAI-compatible server).",
         params: { timeout: P.timeout(300) },
         async run(ed, a) {
             if (ed.upsamplePending) throw new Error("an upsampling is still running");

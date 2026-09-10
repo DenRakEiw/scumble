@@ -5,7 +5,7 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
-const { app, BrowserWindow, protocol, net, ipcMain, dialog, Menu, shell } = require("electron");
+const { app, BrowserWindow, protocol, net, ipcMain, dialog, Menu, shell, clipboard } = require("electron");
 const settings = require("./settings");
 const { ComfyClient, authHeaders } = require("./comfy");
 const { FileMirror } = require("./files");
@@ -27,6 +27,10 @@ const { Updater } = require("./updater");
 //                               headless when none runs (docs/MCP.md)
 //   Scumble --cmd <name> [json] run one command against the running (or a headless) instance,
 //                               print the result as JSON and exit
+//
+// Electron writes a CR LF to stdout before any JavaScript runs, which strict MCP clients
+// reject; it cannot be suppressed from here. Clients register mcp/launch.js instead, which
+// runs in Node mode (prints nothing), spawns this process and drops those bytes.
 function parseArgs(argv) {
     const out = { mcp: false, headless: false, cmd: null, cmdArgs: null };
     for (let i = 0; i < argv.length; i++) {
@@ -249,6 +253,9 @@ function buildMenu() {
                 { label: "Scumble on GitHub", click: () => shell.openExternal("https://github.com/DenRakEiw/scumble") },
                 { label: "Inpaint Canvas node on GitHub", click: () => shell.openExternal("https://github.com/DenRakEiw/ComfyUI-InpaintCanvas") },
                 { type: "separator" },
+                { label: "Copy MCP registration (Claude Code)", click: () => copyMcpRegistration("code") },
+                { label: "Copy MCP registration (Claude Desktop JSON)", click: () => copyMcpRegistration("desktop") },
+                { type: "separator" },
                 { label: "Check for updates...", click: () => { updater.check({ manual: true }); send("menu", "settings-updates"); } },
                 { type: "separator" },
                 { label: `Scumble ${app.getVersion()} · Electron ${process.versions.electron} · GPL-3.0`, enabled: false },
@@ -256,6 +263,28 @@ function buildMenu() {
         },
     ];
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/**
+ * The registration line for an MCP client, with the paths of this installation. Clients get
+ * the Node-mode launcher (electron/main/mcp/launch.js), never the exe with `--mcp`: Electron
+ * writes a CR LF to stdout before any of our code runs and strict clients reject it.
+ * Nobody types an asar path by hand, hence the menu entry.
+ */
+function mcpRegistration(kind) {
+    const exe = app.isPackaged ? app.getPath("exe") : process.execPath;
+    const launcher = app.isPackaged
+        ? path.join(process.resourcesPath, "app.asar", "electron", "main", "mcp", "launch.js")
+        : path.join(ROOT, "electron", "main", "mcp", "launch.js");
+    if (kind === "desktop") {
+        return JSON.stringify({ mcpServers: { scumble: { command: exe, args: [launcher, "--mcp"], env: { ELECTRON_RUN_AS_NODE: "1" } } } }, null, 2);
+    }
+    return `claude mcp add scumble -e ELECTRON_RUN_AS_NODE=1 -- "${exe}" "${launcher}" --mcp`;
+}
+
+function copyMcpRegistration(kind) {
+    clipboard.writeText(mcpRegistration(kind));
+    send("menu", "mcp-copied");
 }
 
 // ---- dialogs -------------------------------------------------------------------------
@@ -376,6 +405,7 @@ function installIpc() {
     // vision language models on the provider keys (prompt upsampling)
     ipcMain.handle("llm:list", () => llm.list());
     ipcMain.handle("llm:ask", (_e, req) => llm.ask(req));
+    ipcMain.handle("llm:models", (_e, url) => llm.compatModels(url));
     // in-app helper models (electron/main/onnx): SAM2 objects, background removal
     helpers.setProgressSink((ev) => send("helpers:progress", ev));
     ipcMain.handle("helpers:status", () => helpers.status());

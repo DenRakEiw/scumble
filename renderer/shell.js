@@ -16,6 +16,9 @@ const ui = {
     authType: $("set-auth-type"), authUser: $("set-auth-user"), authUserRow: $("set-auth-user-row"), authHeader: $("set-auth-header"), authHeaderRow: $("set-auth-header-row"),
     authSecret: $("set-auth-secret"), authSecretRow: $("set-auth-secret-row"), authSecretLabel: $("set-auth-secret-label"),
     providers: $("set-providers"), keysNote: $("set-keys-note"),
+    compatUrl: $("set-compat-url"), compatModel: $("set-compat-model"), compatModels: $("set-compat-models"),
+    compatKey: $("set-compat-key"), compatKeySave: $("set-compat-key-save"), compatKeyClear: $("set-compat-key-clear"),
+    compatKeyState: $("set-compat-key-state"), compatTest: $("set-compat-test"), compatState: $("set-compat-state"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setGpuMem: $("set-gpu-mem"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
@@ -466,6 +469,69 @@ async function renderProviders() {
         : "This system offers no credential store (safeStorage unavailable): keys cannot be saved.";
 }
 
+// ---- local / OpenAI-compatible endpoint (prompt upsampling, electron/main/llm.js) ----------
+
+/**
+ * The URL and the model of the endpoint, plus its optional key. Saving either one writes
+ * settings.llm.compat and refreshes the editors' upsample lists, so the new backend shows
+ * up without reopening the dialog (same as the provider key rows).
+ */
+async function renderCompat() {
+    const set = await window.scumble.settings.get();
+    const c = (set.llm || {}).compat || {};
+    ui.compatUrl.value = c.url || "";
+    ui.compatModel.value = c.model || "";
+    const info = await window.scumble.keys.list();
+    const k = (info.keys || {}).compat || {};
+    ui.compatKeyState.className = "shell-key-state" + (k.set ? " set" : "");
+    ui.compatKeyState.textContent = k.set ? `key set (…${k.hint})` : "no key";
+    ui.compatKeyClear.disabled = !k.set;
+}
+
+async function saveCompat() {
+    const set = await window.scumble.settings.get();
+    const llm = { ...(set.llm || {}), compat: { url: ui.compatUrl.value.trim(), model: ui.compatModel.value.trim() } };
+    await window.scumble.settings.set({ llm });
+    await host.refreshLLMs();
+}
+
+for (const el of [ui.compatUrl, ui.compatModel]) {
+    el.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); el.blur(); } });
+    el.addEventListener("change", () => { saveCompat().catch((err) => { ui.compatState.textContent = String(err.message || err); }); });
+}
+
+ui.compatKey.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); ui.compatKeySave.click(); } });
+ui.compatKeySave.addEventListener("click", async () => {
+    try { await window.scumble.keys.set("compat", ui.compatKey.value); ui.compatKey.value = ""; await renderCompat(); await host.refreshLLMs(); }
+    catch (err) { ui.compatState.textContent = String(err.message || err); }
+});
+ui.compatKeyClear.addEventListener("click", async () => {
+    await window.scumble.keys.clear("compat");
+    await renderCompat();
+    await host.refreshLLMs();
+});
+
+ui.compatTest.addEventListener("click", async () => {
+    const url = ui.compatUrl.value.trim();
+    if (!url) { ui.compatState.textContent = "Enter a URL first."; return; }
+    ui.compatTest.disabled = true;
+    ui.compatState.textContent = "asking " + url + " ...";
+    try {
+        await saveCompat();
+        const models = await window.scumble.llm.models(url);
+        ui.compatModels.innerHTML = "";
+        for (const id of models) { const o = document.createElement("option"); o.value = id; ui.compatModels.appendChild(o); }
+        ui.compatState.textContent = models.length
+            ? `${models.length} model${models.length === 1 ? "" : "s"}: ${models.slice(0, 3).join(", ")}${models.length > 3 ? " ..." : ""}`
+            : "the server answered, but lists no models";
+        if (!ui.compatModel.value && models.length) { ui.compatModel.value = models[0]; await saveCompat(); }
+    } catch (err) {
+        ui.compatState.textContent = String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+    } finally {
+        ui.compatTest.disabled = false;
+    }
+});
+
 // ---- helpers (in-app models) ---------------------------------------------------------------
 
 const downloadErrors = {};   // model id -> last error text
@@ -745,6 +811,7 @@ async function openSettings() {
     refreshFileStats();
     await loadProviders();
     await renderProviders();
+    await renderCompat();
     renderRecipeList();
     try { renderHelpers(await window.scumble.helpers.status()); } catch (err) { ui.helpersNote.textContent = String(err.message || err); }
     try { await plugins.fetchList(); } catch (_) { /* ignore */ }
@@ -826,6 +893,7 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "prev-tab") cycleTab(-1);
     else if (cmd === "import-recipe") importRecipe();
     else if (cmd === "reload-plugins") plugins.reloadPlugins().then((list) => { if (host.editor) host.editor.setStatus(`Plugins reloaded: ${list.filter((p) => p.loaded).length} of ${list.length} loaded.`); });
+    else if (cmd === "mcp-copied") host.editor && host.editor.setStatus("MCP registration copied. Paste it into your client; see docs/MCP.md.");
     else if (cmd === "settings-updates") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Updates"); if (h) h.scrollIntoView(); });
     else if (cmd === "settings-plugins") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Plugins"); if (h) h.scrollIntoView(); });
     else if (cmd.startsWith("plugin:")) plugins.runAction(cmd.slice(7)).catch(() => { /* reported by the plugin host */ });

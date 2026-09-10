@@ -22,6 +22,35 @@ against a live key yet (the wiring was verified up to the providers' "invalid ke
 answers). IPC `llm:list` / `llm:ask`, `host.upsampleBackends()`, `host.askLLM()`,
 `host.upsampleInApp()`; the sync patches are listed in docs/SYNC.md.
 
+### A local or self-hosted OpenAI-compatible endpoint
+
+Any server that speaks `POST /v1/chat/completions` joins the same list without a provider
+key: Ollama (`http://localhost:11434`), LM Studio (`http://localhost:1234`), vLLM, a proxy,
+OpenRouter. Settings › Local / OpenAI-compatible endpoint has the URL, the model and an
+optional key (secret name `compat`; local servers want none). The values live in
+`settings.llm.compat = { url, model }`, the entry appears as `compat:<model>` in `llm.list()`
+and as `app:compat:<model>` in the editor's upsample select as soon as both fields are
+filled; saving either field calls `host.refreshLLMs()`, so the select updates without
+reopening the dialog.
+
+- The URL may end in `/v1` or not, a trailing slash is stripped.
+- *Test* asks `GET <base>/models` (IPC `llm:models`) and fills a `<datalist>` on the model
+  field with what came back; the state line names the first three.
+- The image goes as a `data:` URI in an `image_url` content part. **A text-only model gets
+  one retry without the image** (a 4xx answer, or an error that mentions images or vision),
+  and the status line then ends with "text only" so it is clear the model never saw the crop.
+- A `<think>...</think>` block is stripped from the answer (Ollama's Qwen3 and DeepSeek put
+  their thinking into the content); `reasoning_content` is ignored. The quote and code-fence
+  stripping of the other backends applies afterwards.
+- Timeout 120 s (a local model on the CPU is slow). A refused connection reads
+  "No server at &lt;url&gt; (is Ollama / LM Studio running?)".
+
+**No real local server has been tried.** The gate is `python tools/llm_test.py`, which runs
+`tools/llm_mock.py` (a mock endpoint with a vision model and a text-only one) in a thread and
+drives the running app over CDP: the backend is listed, the vision model sees the crop, the
+text-only model triggers exactly one retry without the image, and with the mock stopped the
+error names the URL. It puts `settings.llm` back at the end.
+
 ## Modules (`electron/main/onnx/`)
 
 | File | What |

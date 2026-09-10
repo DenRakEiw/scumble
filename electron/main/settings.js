@@ -17,6 +17,9 @@ const DEFAULTS = {
     // <userData>/models, or a ComfyUI models folder), the SAM2 and matting model ids
     helpers: { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite" },
     updates: { check: true },   // check GitHub Releases at start (electron/main/updater.js)
+    // prompt upsampling on a local or self-hosted OpenAI-compatible server (Ollama, LM
+    // Studio, vLLM, a proxy); an optional key lives in keys.js under the name "compat"
+    llm: { compat: { url: "", model: "" } },
     // above this many MB in the GPU process the shell releases the caches of the tabs that
     // are not in front (renderer/shell.js watchMemory); 0 switches the watch off
     memory: { gpuLimitMB: 3072 },

@@ -117,7 +117,7 @@ The filter layer types (built-in and from plugins) with their parameters.
 
 ### `status`
 
-What the document holds: image size, prompt, generation settings, selection bounds, every layer, pending jobs, the recipe.
+What the document holds: image size, prompt, generation settings, selection bounds, every layer, pending jobs, the recipe, and what the app is using in memory.
 
 | param | type | description |
 |---|---|---|
@@ -333,7 +333,7 @@ Values for the recipe's Settings panel (the editable inputs of the workflow, or 
 
 ### `upsample_prompt` *(image)*
 
-Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, or an API key for OpenAI / Google / Anthropic).
+Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, an API key for OpenAI / Google / Anthropic, or a local OpenAI-compatible server).
 
 | param | type | description |
 |---|---|---|

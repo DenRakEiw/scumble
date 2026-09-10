@@ -738,7 +738,8 @@ export const host = {
         const res = await this.askLLM(backend, instruction, editor.promptContextCanvas());
         if (!editor.upsamplePending) return;   // cancelled meanwhile
         editor.applyTextResult({ text: res.text });
-        editor.setStatus(editor.status.replace(/\.$/, "") + ` (${backend.label.replace(/ \(.*\)$/, "")}, ${res.seconds.toFixed(1)} s).`);
+        const note = res.note ? `, ${res.note}` : "";   // "text only": the model refused the crop and answered on the words alone
+        editor.setStatus(editor.status.replace(/\.$/, "") + ` (${backend.label.replace(/ \(.*\)$/, "")}, ${res.seconds.toFixed(1)} s${note}).`);
     },
 
     presentHelpers(kind) {

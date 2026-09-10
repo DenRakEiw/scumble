@@ -22,12 +22,14 @@ const PROVIDERS = {
     wavespeed: require("./wavespeed"),
     comfycloud: require("./comfycloud"),
     anthropic: require("./anthropic"),   // key row only: prompt upsampling (llm.js)
+    compat: require("./compat"),         // key row only: the OpenAI-compatible endpoint (llm.js)
     loopback: require("./loopback"),
 };
 
 /** What the settings dialog shows: id, label, key name, where to get a key. */
 function describeAll() {
-    return Object.entries(PROVIDERS).filter(([id]) => id !== "loopback").map(([id, p]) => ({ id, label: p.label, keyUrl: p.keyUrl, keyHint: p.keyHint || "", key: keys.describe(id) }));
+    // loopback is the smoke test's own provider, compat has its own settings section (URL, model, key)
+    return Object.entries(PROVIDERS).filter(([id]) => id !== "loopback" && id !== "compat").map(([id, p]) => ({ id, label: p.label, keyUrl: p.keyUrl, keyHint: p.keyHint || "", key: keys.describe(id) }));
 }
 
 function toBuffer(v) {

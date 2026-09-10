@@ -49,6 +49,22 @@
       <p id="set-keys-note" class="shell-help"></p>
     </section>
     <section>
+      <h3>Local / OpenAI-compatible endpoint</h3>
+      <div class="shell-grid">
+        <label class="shell-field">URL <input id="set-compat-url" type="text" spellcheck="false" autocomplete="off" placeholder="http://localhost:11434"></label>
+        <label class="shell-field">Model <input id="set-compat-model" type="text" spellcheck="false" autocomplete="off" placeholder="qwen2.5vl:7b" list="set-compat-models"><datalist id="set-compat-models"></datalist></label>
+      </div>
+      <div class="shell-provider" id="set-compat-key-row">
+        <span>API key (optional)</span>
+        <input id="set-compat-key" type="password" spellcheck="false" autocomplete="off" placeholder="only for servers that ask for one">
+        <button id="set-compat-key-save" type="button">Save</button>
+        <button id="set-compat-key-clear" type="button">Clear</button>
+        <span id="set-compat-key-state" class="shell-key-state"></span>
+      </div>
+      <div class="shell-row"><button id="set-compat-test" type="button">Test</button><span id="set-compat-state" class="shell-note"></span></div>
+      <p class="shell-help">Any server that speaks <code>/v1/chat/completions</code> - Ollama (<code>http://localhost:11434</code>), LM Studio (<code>http://localhost:1234</code>), vLLM, a proxy - becomes a prompt upsampler in the editor's Upsample list. A model that can see gets the crop with the instruction; a text-only model answers on the words alone and the status line says so.</p>
+    </section>
+    <section>
       <h3>Recipes</h3>
       <div id="set-recipes"></div>
       <div class="shell-row"><button id="set-recipe-import" type="button">Import workflow ...</button><button id="set-recipe-folder" type="button">Open folder</button><span id="set-recipe-note" class="shell-note"></span></div>

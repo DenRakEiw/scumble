@@ -3,13 +3,18 @@
 // is the rewritten prompt. Same keys as the image providers, so a stored OpenAI or
 // Google key also gives an upsampler; Anthropic is a key of its own (no image model).
 //
+// A local or self-hosted OpenAI-compatible server (Ollama, LM Studio, vLLM, a proxy) joins
+// the list through settings.llm.compat = { url, model } and needs no key.
+//
 //   list()            -> [{ id, provider, model, label, key: bool }]
-//   ask({ id, instruction, image, maxTokens }) -> { text, seconds, model }
+//   ask({ id, instruction, image, maxTokens }) -> { text, seconds, model, note }
+//   compatModels(url) -> [model id] from GET <url>/v1/models
 //
 // `image` is PNG bytes (Uint8Array / Buffer) or null. Model ids checked on 2026-09-09.
 "use strict";
 
 const keys = require("./keys");
+const settings = require("./settings");
 const { b64, dataUri, readError } = require("./providers/util");
 
 const MODELS = [
@@ -21,10 +26,54 @@ const MODELS = [
     { provider: "anthropic", model: "claude-haiku-4-5", label: "Claude Haiku 4.5 (Anthropic key)" },
 ];
 
-const PROVIDER_LABEL = { openai: "OpenAI", gemini: "Google Gemini", anthropic: "Anthropic" };
+const PROVIDER_LABEL = { openai: "OpenAI", gemini: "Google Gemini", anthropic: "Anthropic", compat: "OpenAI-compatible endpoint" };
+
+/** settings.llm.compat = { url, model }: an Ollama / LM Studio / any /v1/chat/completions server. */
+function compatConfig() {
+    const c = (settings.get().llm || {}).compat || {};
+    return { url: String(c.url || "").trim(), model: String(c.model || "").trim() };
+}
+
+/** "http://host:port" or ".../v1" -> ".../v1" (no trailing slash). */
+function compatBase(url) {
+    const u = String(url || "").trim().replace(/\/+$/, "");
+    if (!u) throw new Error("No endpoint URL. Set one under Settings › Local / OpenAI-compatible endpoint.");
+    return /\/v\d+$/.test(u) ? u : u + "/v1";
+}
+
+function compatHost(url) {
+    try { return new URL(compatBase(url)).host; } catch (_) { return String(url || ""); }
+}
+
+function compatUnreachable(err, base) {
+    const m = String((err && (err.message || err)) || "");
+    if (/abort|timeout/i.test(m)) return `No answer from ${base} within the timeout.`;
+    return `No server at ${base} (is Ollama / LM Studio running?) - ${m}`;
+}
 
 function list() {
-    return MODELS.map((m) => ({ id: `${m.provider}:${m.model}`, ...m, key: !!keys.describe(m.provider).set }));
+    const out = MODELS.map((m) => ({ id: `${m.provider}:${m.model}`, ...m, key: !!keys.describe(m.provider).set }));
+    const c = compatConfig();
+    // `key` is what the editor filters on (host.upsampleBackends), so a keyless local
+    // server counts as "set" as soon as it has a URL and a model.
+    if (c.url && c.model) out.push({ id: `compat:${c.model}`, provider: "compat", model: c.model, label: `${c.model} (${compatHost(c.url)})`, key: true });
+    return out;
+}
+
+/** The model ids the endpoint serves (GET <base>/models); used by the Test button. */
+async function compatModels(url) {
+    const base = compatBase(url || compatConfig().url);
+    const key = keys.get("compat");
+    let r;
+    try {
+        r = await fetch(base + "/models", { headers: key ? { Authorization: "Bearer " + key } : {}, signal: AbortSignal.timeout(15000) });
+    } catch (err) {
+        throw new Error(compatUnreachable(err, base));
+    }
+    if (!r.ok) throw new Error(`${base}/models: ${await readError(r)}`);
+    const out = await r.json();
+    const rows = Array.isArray(out) ? out : (out.data || out.models || []);
+    return rows.map((m) => (typeof m === "string" ? m : m.id || m.name)).filter(Boolean);
 }
 
 function toBuffer(v) {
@@ -105,25 +154,96 @@ async function askAnthropic({ model, key, instruction, image, maxTokens }) {
     return text;
 }
 
+/**
+ * Any OpenAI-compatible /v1/chat/completions server: Ollama, LM Studio, vLLM, a proxy.
+ * The key is optional (local servers want none, OpenRouter and some proxies do).
+ * A text-only model answers 400 on the image; we retry once without it and say so, so the
+ * user learns the model never saw the crop.
+ */
+async function askCompatible({ model, key, instruction, image, maxTokens, url }) {
+    const base = compatBase(url);
+    const endpoint = base + "/chat/completions";
+    const headers = { "Content-Type": "application/json", ...(key ? { Authorization: "Bearer " + key } : {}) };
+
+    async function once(withImage) {
+        const content = withImage
+            ? [{ type: "text", text: instruction }, { type: "image_url", image_url: { url: dataUri(image) } }]
+            : instruction;                                   // a plain string is what every server understands
+        const body = { model, messages: [{ role: "user", content }], max_tokens: maxTokens, stream: false };
+        let r;
+        try {
+            r = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
+        } catch (err) {
+            throw new Error(compatUnreachable(err, base));
+        }
+        if (!r.ok) {
+            const e = new Error(`${model} at ${compatHost(url)}: ${await readError(r)}`);
+            e.status = r.status;
+            throw e;
+        }
+        return await r.json();
+    }
+
+    let textOnly = false;
+    let out;
+    if (image) {
+        try {
+            out = await once(true);
+        } catch (err) {
+            // a 4xx, or a message about images: the model has no vision, ask again without it
+            if (!(err.status >= 400 && err.status < 500) && !/image|vision|multimodal|content part/i.test(String(err.message))) throw err;
+            textOnly = true;
+            out = await once(false);
+        }
+    } else {
+        out = await once(false);
+    }
+
+    const msg = (out.choices && out.choices[0] && out.choices[0].message) || {};
+    let text = msg.content;                                  // reasoning_content, when there is one, is not the answer
+    if (Array.isArray(text)) text = text.filter((p) => p && (p.type === "text" || p.text)).map((p) => p.text || "").join("\n");
+    text = String(text || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();   // Qwen3 / DeepSeek think inside the content
+    if (!text) {
+        const why = (out.choices && out.choices[0] && out.choices[0].finish_reason) || (out.error && out.error.message) || "no text in the answer";
+        throw new Error(`${model} at ${compatHost(url)}: ${why}`);
+    }
+    return { text, textOnly };
+}
+
 const ADAPTERS = { openai: askOpenAI, gemini: askGemini, anthropic: askAnthropic };
 
 // ---- entry ----------------------------------------------------------------------------
 
 async function ask(req) {
     const id = String(req.id || "");
-    const m = MODELS.find((x) => `${x.provider}:${x.model}` === id);
-    if (!m) throw new Error("Unknown language model: " + id);
-    const key = keys.get(m.provider);
-    if (!key) throw new Error(`No API key for ${PROVIDER_LABEL[m.provider]}. Add it under Settings › API providers.`);
     const instruction = String(req.instruction || "").trim();
     if (!instruction) throw new Error("empty instruction");
+    const maxTokens = Math.max(256, Math.min(8192, +req.maxTokens || 4096));
+    const image = toBuffer(req.image);
     const t0 = Date.now();
-    let text = await ADAPTERS[m.provider]({ model: m.model, key, instruction, image: toBuffer(req.image), maxTokens: Math.max(256, Math.min(8192, +req.maxTokens || 4096)) });
+    let text;
+    let note = "";
+    let model;
+    if (id.startsWith("compat:")) {
+        const c = compatConfig();
+        model = id.slice("compat:".length) || c.model;
+        if (!c.url) throw new Error("No endpoint URL. Set one under Settings › Local / OpenAI-compatible endpoint.");
+        const res = await askCompatible({ model, key: keys.get("compat"), instruction, image, maxTokens, url: c.url });
+        text = res.text;
+        if (res.textOnly) note = "text only";
+    } else {
+        const m = MODELS.find((x) => `${x.provider}:${x.model}` === id);
+        if (!m) throw new Error("Unknown language model: " + id);
+        const key = keys.get(m.provider);
+        if (!key) throw new Error(`No API key for ${PROVIDER_LABEL[m.provider]}. Add it under Settings › API providers.`);
+        model = m.model;
+        text = await ADAPTERS[m.provider]({ model: m.model, key, instruction, image, maxTokens });
+    }
     // Models like to wrap the prompt in quotes or a code fence even when told not to.
     text = text.replace(/^```[a-z]*\s*|\s*```$/g, "").trim();
     if (/^".*"$/s.test(text) && !text.slice(1, -1).includes('"')) text = text.slice(1, -1).trim();
-    console.log(`[llm] ${id} ${((Date.now() - t0) / 1000).toFixed(1)} s, ${text.split(/\s+/).length} words`);
-    return { text, seconds: (Date.now() - t0) / 1000, model: m.model };
+    console.log(`[llm] ${id} ${((Date.now() - t0) / 1000).toFixed(1)} s, ${text.split(/\s+/).length} words${note ? ", " + note : ""}`);
+    return { text, seconds: (Date.now() - t0) / 1000, model, note };
 }
 
-module.exports = { list, ask, MODELS };
+module.exports = { list, ask, compatModels, MODELS };
