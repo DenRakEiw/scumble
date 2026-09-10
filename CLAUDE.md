@@ -86,9 +86,11 @@ mechanisms. In short:
 
 Interactive gestures on a **96 MP** document are 0.1–8 ms (they were 250–900 ms at 66 MP),
 a full export with a three-filter film stack 0.7 s, and the discrete operations that used
-to freeze the window for 1–4 s now hold it for 100–400 ms. Deliberately left for phase 5,
-which brings the same refactor anyway: the ping-pong texture chain between filter layers,
-the selection as a typed array, and layer tiles.
+to freeze the window for 1–4 s now hold it for 100–400 ms. Deliberately left for later: the
+ping-pong texture chain between filter layers, the selection as a typed array, layer tiles.
+
+**Releases**: 0.1.2 carries the phases 1–4 and the large-image fix, 0.1.3 adds the GPU
+compositor. Both are published on GitHub Releases, so the installed app updates itself.
 
 - **Fix, the New button did nothing in the app**: Electron has no `window.prompt` (it
   throws "prompt() is not supported"), so the size question never appeared. The editor has
@@ -107,6 +109,7 @@ the selection as a typed array, and layer tiles.
   for runs with large layers. Regression step `large_upload_route` in
   `tools/commands_test.py` (it uploads twice and watches the mirror grow, so it fails on
   the bug even when ComfyUI is connected; verified by reverting the fix).
+
 **Phase 5 has its first step** (2026-09-10): `js/inpaint_compositor.js` stacks the visible
 region on the GPU, one shader pass per layer, sources cached as textures by the version
 `touchSource` bumps. It agrees with Canvas 2D to **1 level over 1.5 million pixels** in the
@@ -499,6 +502,9 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   `python tools/mcp_test.py` talks to `--mcp` over stdio (proxy mode while the dev instance
   runs, headless when nothing runs; `--exe dist/win-unpacked/Scumble.exe` for the package).
   `node tools/helpers_test.js` runs the ONNX modules without Electron.
+  `python tools/composite_test.py` compares the GPU compositor against Canvas 2D and two
+  stored references in `tools/refs/` (`--update` rewrites them, `--tolerance n` allows n
+  levels); run it after anything that touches drawing.
   `python tools/perf_test.py [2048x1152 6000x4000 12000x8000]` is the drawing benchmark
   (synthetic documents in their own tab, no ComfyUI; `docs/PERFORMANCE.md` §7). Scripted
   waits must use `setTimeout`, never `requestAnimationFrame`: rAF does not fire while the

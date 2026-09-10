@@ -1,7 +1,7 @@
 {
   "name": "scumble",
   "productName": "Scumble",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Desktop editor for AI inpainting: layers, selection by text, retouch, filters, rendered through your own ComfyUI or API providers.",
   "author": "DenRakEiw",
   "license": "GPL-3.0",
