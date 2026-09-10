@@ -13,23 +13,32 @@ module.exports = {
     label: "Google Gemini",
     keyUrl: "https://aistudio.google.com/apikey",
     keyHint: "API key from Google AI Studio",
+    generate(req, ctx) {
+        return this.edit(req, ctx);   // edit() leaves every image part out for kind "text"
+    },
     async edit(req, ctx) {
         const p = req.params;
         const model = String(p.model || req.model || "gemini-3.1-flash-lite-image");
         const parts = [];
         let text = req.prompt || "";
-        if (req.mask && req.kind !== "edit") {
+        if (req.kind === "text") {
+            // from the prompt alone: no image part at all, the shape comes from imageConfig
+            parts.push({ text });
+        } else if (req.mask && req.kind !== "edit") {
             text = `Edit the first image. The second image is a mask: change only the white area of the mask, keep everything else exactly as it is, and keep the image size and framing. ${text}`;
         } else {
             text = `Edit this image and keep its size and framing. ${text}`;
         }
-        if (req.references.length) text += ` The remaining image${req.references.length > 1 ? "s are" : " is"} reference material.`;
-        parts.push({ text });
-        parts.push({ inline_data: { mime_type: "image/png", data: b64(req.image) } });
-        if (req.mask && req.kind !== "edit") parts.push({ inline_data: { mime_type: "image/png", data: b64(req.mask) } });
-        for (const r of req.references) parts.push({ inline_data: { mime_type: "image/png", data: b64(r) } });
+        if (req.kind !== "text") {
+            if (req.references.length) text += ` The remaining image${req.references.length > 1 ? "s are" : " is"} reference material.`;
+            parts.push({ text });
+            parts.push({ inline_data: { mime_type: "image/png", data: b64(req.image) } });
+            if (req.mask && req.kind !== "edit") parts.push({ inline_data: { mime_type: "image/png", data: b64(req.mask) } });
+            for (const r of req.references) parts.push({ inline_data: { mime_type: "image/png", data: b64(r) } });
+        }
         const generationConfig = { responseModalities: ["IMAGE"] };
         const imageConfig = {};
+        if (req.kind === "text" && req.aspect && !p.aspect_ratio) imageConfig.aspectRatio = req.aspect;
         if (p.aspect_ratio && p.aspect_ratio !== "auto") imageConfig.aspectRatio = p.aspect_ratio;
         if (p.image_size && p.image_size !== "auto") imageConfig.imageSize = p.image_size;
         if (Object.keys(imageConfig).length) generationConfig.imageConfig = imageConfig;

@@ -98,6 +98,29 @@ fal `sizing: "none"` for endpoints without a free `image_size`), `note` (shown a
 tooltip). `family` groups the top-bar list. A recipe with a top-level `provider` instead
 of `providers` (the old shape, the smoke test's loopback) is read as a one-provider recipe.
 
+### Generating without an image (`text`)
+
+"Generate new" makes the base image from the prompt alone. Every variant therefore also has
+a `text` shape, filled in by `normalize()` in `electron/main/recipes.js`: the model id is
+the editing one with a trailing `/edit`, `/inpaint` or `/fill` removed (fal and WaveSpeed
+put the editing model under such a path, the others use the same id without the image
+field). A variant overrides it with `"text": { "model": "...", "sizes": [...], "fixed": {} }`
+or switches it off with `"text": false`. Providers that can do it at all: OpenAI, Gemini,
+BFL, fal, Replicate, WaveSpeed. Comfy Cloud builds a graph around a partner node and has
+none.
+
+The run goes through `host.runGenerate()` with `kind: "text"`: no crop, no mask, no
+references, only prompt, size, aspect and seed. The adapter's `generate()` picks the right
+call (OpenAI switches from `images/edits` to `images/generations`, the others send the same
+body without the image field). The answer replaces the document's base image through
+`editor.setBaseFromCanvas()`. **The size is a request**: a model answers with the shape it
+supports, and the document takes whatever comes back.
+
+For a ComfyUI recipe there is nothing to declare. The local path renders a flat canvas of
+the wanted size through the recipe and flattens the result into the base, which is what
+`generate_new` does; a chain that starts its sampler from an empty latent (the Flux.2 Klein
+recipe does) then ignores the flat input entirely.
+
 Adapters (`electron/main/providers/`): **fal** (queue API, settings passed by name),
 **bfl** (`steps`, `guidance`, `safety_tolerance`, `prompt_upsampling`; the variant's
 `model` is the endpoint), **openai** (`quality`, `size`, `input_fidelity` for 1.x / 2;

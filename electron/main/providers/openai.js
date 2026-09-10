@@ -47,4 +47,25 @@ module.exports = {
         if (!item || !item.b64_json) throw new Error("OpenAI: no b64_json in the answer");
         return { bytes: Buffer.from(item.b64_json, "base64"), mime: "image/png", seed: req.seed, info: { model, size, revised_prompt: item.revised_prompt || null } };
     },
+
+    /** From the prompt alone: POST /v1/images/generations, no image and no mask. */
+    async generate(req, ctx) {
+        const p = req.params;
+        const model = String(p.model || req.model || "gpt-image-2");
+        let size = p.size || "auto";
+        if (size === "auto") {
+            size = /gpt-image-2/.test(model) && req.width % 16 === 0 && req.height % 16 === 0
+                ? `${req.width}x${req.height}` : closestSize(req.width, req.height, STANDARD_SIZES);
+        }
+        const body = { model, prompt: req.prompt || "", size, n: 1, output_format: "png" };
+        if (p.quality && p.quality !== "auto") body.quality = p.quality;
+        const r = await ctx.fetch("https://api.openai.com/v1/images/generations", {
+            method: "POST", headers: { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error(`OpenAI ${model}: ${await readError(r)}`);
+        const out = await r.json();
+        const item = out.data && out.data[0];
+        if (!item || !item.b64_json) throw new Error("OpenAI: no b64_json in the answer");
+        return { bytes: Buffer.from(item.b64_json, "base64"), mime: "image/png", seed: req.seed, info: { model, size, revised_prompt: item.revised_prompt || null } };
+    },
 };

@@ -508,6 +508,61 @@ export const host = {
         return { provider: r.provider, seconds: res.seconds, x, y, w, h };
     },
 
+    /**
+     * "Generate new": one call to the provider with the prompt alone, no crop, no mask and
+     * no references, and the answer becomes the document's base image. The recipe variant's
+     * `text` shape says which model id does that at this provider (docs/RECIPES.md).
+     */
+    async runGenerate(editor, opts = {}) {
+        const r = this.recipe;
+        if (!r || r.kind !== "provider") throw new Error("Pick an API recipe first.");
+        const t = r.text;
+        if (!t || !t.model) throw new Error(`${r.providerLabel || r.provider} cannot make an image from the prompt alone for this model.`);
+        const label = r.providerLabel || r.provider;
+        const width = Math.max(64, Math.round(opts.width || editor.width || 1024));
+        const height = Math.max(64, Math.round(opts.height || editor.height || 1024));
+        const token = { provider: r.provider, label, started: Date.now(), editor };
+        editor.providerPending = token;
+        this._providerRuns.add(token);
+        this.notifyProviderRuns();
+        let res;
+        try {
+            editor.setStatus(`Asking ${label} for a new ${width} × ${height} image ...`);
+            const request = {
+                provider: r.provider, model: t.model, kind: "text",
+                prompt: String(opts.prompt != null ? opts.prompt : editor.promptText || ""),
+                negative: String(opts.negative != null ? opts.negative : editor.negativeText || ""),
+                seed: opts.seed != null ? opts.seed : editor.genSettings.seed,
+                width, height, aspect: opts.aspect || null,
+                image: null, mask: null, maskAlpha: null, references: [],
+                fields: r.fields || null, options: r.options || null,
+                params: { ...this.providerParams(editor), ...(t.fixed || {}) },
+            };
+            res = await window.scumble.providers.edit(request);
+        } finally {
+            if (editor.providerPending === token) editor.providerPending = null;
+            this._providerRuns.delete(token);
+            this.notifyProviderRuns();
+        }
+        const img = await bytesToImage(res.bytes, res.mime);
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth || img.width;
+        c.height = img.naturalHeight || img.height;
+        c.getContext("2d").drawImage(img, 0, 0);
+        await editor.setBaseFromCanvas(c);
+        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image.`);
+        return { provider: r.provider, model: t.model, seconds: res.seconds, width: c.width, height: c.height };
+    },
+
+    /** Whether the editor should show the "Generate new" button at all. */
+    generateNewAvailable() {
+        return !!(this.shell && this.shell.openGenerateNew);
+    },
+
+    openGenerateNew(editor) {
+        if (this.shell && this.shell.openGenerateNew) this.shell.openGenerateNew(editor);
+    },
+
     /** Store a result patch in the mirror's output folder (where the node's stitch writes its results). */
     async uploadResult(blob, filename) {
         const form = new FormData();

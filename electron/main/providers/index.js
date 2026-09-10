@@ -40,10 +40,17 @@ function toBuffer(v) {
     return Buffer.from(v);
 }
 
+/** Which providers can make an image from the prompt alone (Generate new). */
+function textProviders() {
+    return Object.entries(PROVIDERS).filter(([, p]) => typeof p.generate === "function").map(([id]) => id);
+}
+
 async function edit(request) {
     const id = String(request.provider || "");
     const p = PROVIDERS[id];
     if (!p) throw new Error("Unknown provider: " + id);
+    const text = request.kind === "text";
+    if (text && typeof p.generate !== "function") throw new Error(`${p.label} has no text-to-image endpoint in Scumble; pick another provider for this model.`);
     const key = p.needsKey === false ? "" : keys.get(id);
     if (p.needsKey !== false && !key) throw new Error(`No API key for ${p.label}. Add it under Settings › API providers.`);
     const req = {
@@ -57,10 +64,11 @@ async function edit(request) {
         params: request.params || {},
     };
     const t0 = Date.now();
-    const out = await p.edit(req, { key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a) });
+    const ctx = { key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a) };
+    const out = text ? await p.generate(req, ctx) : await p.edit(req, ctx);
     if (!out || !out.bytes) throw new Error(p.label + " returned no image.");
     const bytes = toBuffer(out.bytes);
     return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000 };
 }
 
-module.exports = { edit, describeAll, PROVIDERS };
+module.exports = { edit, describeAll, textProviders, PROVIDERS };

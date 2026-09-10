@@ -19,6 +19,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   which models it has and offers them in the field. A model that can see gets the same crop
   the other backends get; one that cannot is asked again without it, and the status line then
   says "text only" so you know the rewrite is based on your words alone.
+- **Generate a new image from the prompt alone.** *Generate new* in the top bar opens a
+  dialog: where it runs (your ComfyUI or an API provider), which model, the prompt with the
+  upsample button beside it, aspect ratio and size, and the seed. The answer becomes the
+  tab's image, so you can start from nothing and then edit as usual. On an API provider
+  nothing but the prompt is sent, no blank canvas travels with it. Providers that can do
+  this: OpenAI, Google, Black Forest Labs, fal.ai, Replicate and WaveSpeedAI; Comfy Cloud
+  cannot and says so.
 - **New asks for width and height in two boxes.** One field that wanted "1440x1440" was
   awkward to type and easy to get wrong. There are two number boxes now, with a *Keep the
   ratio* tick if you want the second to follow the first.

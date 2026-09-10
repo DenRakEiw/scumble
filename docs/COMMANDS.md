@@ -622,6 +622,24 @@ A JPEG of the image (what = image: the flattened picture; editor: with hidden he
 | `show_selection` | boolean | tint and outline the selection (default `true`) |
 | `show_layers` | boolean | outline and label the layers (default `false`) |
 
+## Other
+
+### `generate_new`
+
+Make this tab's base image from the prompt alone, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image endpoint. Replaces the image, the layers and the history of this tab.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `prompt` | string | what to make; the tab's current prompt when left out |
+| `negative` | string | negative prompt (local chains only) |
+| `width` | integer | width in pixels (default `1024`) |
+| `height` | integer | height in pixels (default `1024`) |
+| `aspect` | string | aspect ratio like 16:9; used with resolution instead of width and height |
+| `resolution` | integer | long side in pixels when aspect is given (default `1024`) |
+| `seed` | integer | seed; a new random one when left out |
+| `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
+
 ## Plugin commands
 
 Plugins add commands with `scumble.commands.register(name, def)`; the name is prefixed with

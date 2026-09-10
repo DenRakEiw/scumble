@@ -15,7 +15,10 @@ function bodyFor(req) {
     const p = req.params;
     const body = { prompt: req.prompt || "", output_format: "png" };
     if (req.seed != null && !p.random_seed) body.seed = req.seed >>> 0;
-    if (req.kind === "edit") {
+    if (req.kind === "text") {
+        // no input_image: the flux-2 endpoints then generate from the prompt alone
+        body.width = req.width; body.height = req.height;
+    } else if (req.kind === "edit") {
         body.input_image = b64(req.image);
         req.references.slice(0, 7).forEach((r, i) => { body[`input_image_${i + 2}`] = b64(r); });
         body.width = req.width; body.height = req.height;
@@ -31,6 +34,9 @@ module.exports = {
     label: "Black Forest Labs",
     keyUrl: "https://dashboard.bfl.ai/",
     keyHint: "API key from dashboard.bfl.ai",
+    generate(req, ctx) {
+        return this.edit(req, ctx);   // bodyFor() leaves the image out for kind "text"
+    },
     async edit(req, ctx) {
         const endpoint = String(req.params.endpoint || req.model || "flux-pro-1.0-fill").replace(/^\/+|\/+$/g, "").replace(/^v1\//, "");
         const headers = { "x-key": ctx.key, "Content-Type": "application/json", accept: "application/json" };

@@ -124,6 +124,39 @@
     <div class="shell-row shell-right"><button id="set-close" type="submit">Close</button></div>
   </form>
 </dialog>
+<dialog id="gen-dialog">
+  <form method="dialog">
+    <h2>Generate a new image</h2>
+    <p class="shell-help">No image needed: the model works from the prompt alone. The answer becomes this tab's base image and replaces what is in it.</p>
+    <div class="shell-grid">
+      <label class="shell-field">Where <select id="gen-mode">
+        <option value="local">local (your ComfyUI)</option>
+        <option value="api">API provider</option>
+      </select></label>
+      <label class="shell-field">Model <select id="gen-recipe"></select></label>
+      <label class="shell-field" id="gen-provider-row">Provider <select id="gen-provider"></select></label>
+    </div>
+    <p id="gen-note" class="shell-note"></p>
+    <label class="shell-field gen-wide">Prompt <textarea id="gen-prompt" rows="4" spellcheck="false" placeholder="what the picture shows"></textarea></label>
+    <div class="shell-row">
+      <select id="gen-upsample" title="The language model that rewrites the prompt"></select>
+      <button id="gen-upsample-go" type="button">Upsample prompt</button>
+      <span id="gen-upsample-note" class="shell-note"></span>
+    </div>
+    <div class="shell-grid">
+      <label class="shell-field">Aspect ratio <select id="gen-aspect"></select></label>
+      <label class="shell-field" id="gen-res-row">Long side <select id="gen-resolution"></select></label>
+      <label class="shell-field gen-free">Width <input id="gen-width" type="number" min="64" max="8192"></label>
+      <label class="shell-field gen-free">Height <input id="gen-height" type="number" min="64" max="8192"></label>
+    </div>
+    <div class="shell-row">
+      <label class="shell-field">Seed <input id="gen-seed" type="number" min="0" step="1"></label>
+      <label class="shell-check"><input id="gen-seed-random" type="checkbox"> random</label>
+      <span id="gen-size-note" class="shell-note"></span>
+    </div>
+    <div class="shell-row shell-right"><span id="gen-state" class="shell-note"></span><button id="gen-cancel" type="submit" formnovalidate>Cancel</button><button id="gen-go" type="button">Generate</button></div>
+  </form>
+</dialog>
 <script type="module" src="shell.js"></script>
 </body>
 </html>

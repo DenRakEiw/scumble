@@ -39,7 +39,10 @@ async function inputFor(req, ctx) {
     const fields = { ...(req.fields || {}) };
     const input = { prompt: req.prompt || "" };
     if (req.seed != null && !p.random_seed) input.seed = req.seed >>> 0;
-    if (req.kind === "edit") {
+    if (req.kind === "text") {
+        // no image field at all; the shape goes as the model's aspect_ratio
+        if (req.aspect && input.aspect_ratio === undefined) input.aspect_ratio = req.aspect;
+    } else if (req.kind === "edit") {
         const crop = await fileUrl(req.image, "crop.png", ctx);
         if (fields.images || !fields.image) {
             const refs = [];
@@ -64,6 +67,9 @@ module.exports = {
     label: "Replicate",
     keyUrl: "https://replicate.com/account/api-tokens",
     keyHint: "r8_... API token from replicate.com",
+    generate(req, ctx) {
+        return this.edit(req, ctx);   // inputFor() leaves the image out for kind "text"
+    },
     async edit(req, ctx) {
         const model = String(req.model || "").replace(/^\/+|\/+$/g, "");
         if (!model) throw new Error("Replicate recipe has no model (owner/name or owner/name:version).");

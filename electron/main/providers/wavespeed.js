@@ -71,7 +71,9 @@ async function inputFor(req, ctx) {
     const stamp = Date.now().toString(36);
     const input = { prompt: req.prompt || "" };
     if (req.seed != null && !p.random_seed) input.seed = req.seed >>> 0;
-    if (req.kind === "edit" || f.images) {
+    if (req.kind === "text") {
+        if (o.size === "star") input.size = `${req.width}*${req.height}`;
+    } else if (req.kind === "edit" || f.images) {
         const urls = [await upload(ctx, req.image, `scumble-${stamp}-crop.png`)];
         for (let i = 0; i < req.references.length; i++) urls.push(await upload(ctx, req.references[i], `scumble-${stamp}-ref${i + 1}.png`));
         input[f.images || "images"] = urls;
@@ -79,7 +81,7 @@ async function inputFor(req, ctx) {
         input[f.image || "image"] = await upload(ctx, req.image, `scumble-${stamp}-crop.png`);
         if (req.mask) input[f.mask || "mask_image"] = await upload(ctx, req.mask, `scumble-${stamp}-mask.png`);
     }
-    if (o.size === "star") input.size = starSize(req.width, req.height, num(o.max_side, 1536));
+    if (o.size === "star" && req.kind !== "text") input.size = starSize(req.width, req.height, num(o.max_side, 1536));
     // recipe settings are passed through by name; the recipe decides which exist for the model
     for (const [k, v] of Object.entries(p)) {
         if (k === "random_seed" || k === "model" || v === "" || v == null || v === "auto") continue;
@@ -93,6 +95,9 @@ async function inputFor(req, ctx) {
 
 module.exports = {
     label: "WaveSpeedAI",
+    generate(req, ctx) {
+        return this.edit(req, ctx);   // inputFor() leaves the images out for kind "text"
+    },
     keyUrl: "https://wavespeed.ai/?ref=dennisi6",
     keyHint: "API key from wavespeed.ai > Access Keys (the link carries Scumble's referral code)",
     async edit(req, ctx) {

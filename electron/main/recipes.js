@@ -36,11 +36,40 @@ async function readDir(dir, source) {
     return out;
 }
 
+// Which providers can make an image from the prompt alone, and how the model id differs
+// from the editing one. fal and WaveSpeed put the editing model under an /edit path, the
+// others use the same id without the image field. A variant overrides this with
+// `text: { model, sizes }`, or switches it off with `text: false`.
+const TEXT_PROVIDERS = new Set(["openai", "gemini", "bfl", "fal", "replicate", "wavespeed", "loopback"]);
+
+function textModelOf(providerId, model) {
+    const m = String(model || "");
+    if (providerId === "fal" || providerId === "wavespeed") return m.replace(/\/(edit|inpaint|fill)$/, "");
+    return m;
+}
+
+/** The text-to-image shape of one provider variant, or null when it has none. */
+function textVariant(providerId, v) {
+    if (v.text === false) return null;
+    if (!TEXT_PROVIDERS.has(providerId)) return null;
+    const t = v.text && typeof v.text === "object" ? v.text : {};
+    const model = t.model || textModelOf(providerId, v.model);
+    if (!model && providerId !== "loopback") return null;
+    return {
+        model,
+        sizes: Array.isArray(t.sizes) ? t.sizes : null,   // null: the provider's own default list
+        fixed: t.fixed || v.fixed || null,
+        settings: Array.isArray(t.settings) ? t.settings : (v.settings || []),
+        note: t.note || "",
+    };
+}
+
 /**
  * Provider recipes are model-centric: `providers` maps a provider id to the variant that
  * runs the model there ({ model, input, fields, fixed, settings, options, note }) and
  * `default` names the home provider. A recipe with a top-level `provider` (the old shape,
- * the smoke test's loopback) becomes a one-provider recipe.
+ * the smoke test's loopback) becomes a one-provider recipe. Every variant also gets its
+ * `text` shape filled in, which is what "Generate new" uses.
  */
 function normalize(r) {
     if (r.kind !== "provider") return r;
@@ -49,6 +78,7 @@ function normalize(r) {
         r.providers = { [id]: { model: r.model || "", input: r.input || "fill", fields: r.fields || null, fixed: r.fixed || null, settings: r.settings || [], options: r.options || null, note: r.note || "" } };
         r.default = id;
     }
+    for (const [id, v] of Object.entries(r.providers)) v.text = textVariant(id, v);
     r.providerIds = Object.keys(r.providers);
     if (!r.default || !r.providers[r.default]) r.default = r.providerIds[0];
     return r;

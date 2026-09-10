@@ -16,6 +16,12 @@ const ui = {
     authType: $("set-auth-type"), authUser: $("set-auth-user"), authUserRow: $("set-auth-user-row"), authHeader: $("set-auth-header"), authHeaderRow: $("set-auth-header-row"),
     authSecret: $("set-auth-secret"), authSecretRow: $("set-auth-secret-row"), authSecretLabel: $("set-auth-secret-label"),
     providers: $("set-providers"), keysNote: $("set-keys-note"),
+    gen: $("gen-dialog"), genMode: $("gen-mode"), genRecipe: $("gen-recipe"), genProvider: $("gen-provider"),
+    genProviderRow: $("gen-provider-row"), genNote: $("gen-note"), genPrompt: $("gen-prompt"),
+    genUpsample: $("gen-upsample"), genUpsampleGo: $("gen-upsample-go"), genUpsampleNote: $("gen-upsample-note"),
+    genAspect: $("gen-aspect"), genResolution: $("gen-resolution"), genWidth: $("gen-width"), genHeight: $("gen-height"),
+    genSeed: $("gen-seed"), genSeedRandom: $("gen-seed-random"), genSizeNote: $("gen-size-note"),
+    genState: $("gen-state"), genGo: $("gen-go"), genCancel: $("gen-cancel"),
     compatUrl: $("set-compat-url"), compatModel: $("set-compat-model"), compatModels: $("set-compat-models"),
     compatKey: $("set-compat-key"), compatKeySave: $("set-compat-key-save"), compatKeyClear: $("set-compat-key-clear"),
     compatKeyState: $("set-compat-key-state"), compatTest: $("set-compat-test"), compatState: $("set-compat-state"),
@@ -117,7 +123,7 @@ function openInto(file) {
 host.createDocument = (id) => newDocument(id);
 host.onDocsChanged = () => renderTabs();
 // the command core (renderer/commands.js) reaches the shell through this
-host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, openSettings };
+host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, openSettings, openGenerateNew: (ed) => openGenerateNew(ed) };
 ui.tabAdd.addEventListener("click", () => activate(newDocument()));
 
 // ---- connection --------------------------------------------------------------------------
@@ -276,7 +282,7 @@ function resolveRecipe(r) {
     const pid = chosenProvider(r);
     if (!pid) return r;
     const v = r.providers[pid] || {};
-    return { ...r, provider: pid, providerLabel: providerLabel(pid), model: v.model || "", input: v.input || "fill", fields: v.fields || null, fixed: v.fixed || null, settings: v.settings || [], options: v.options || null, note: v.note || "" };
+    return { ...r, provider: pid, providerLabel: providerLabel(pid), model: v.model || "", input: v.input || "fill", fields: v.fields || null, fixed: v.fixed || null, settings: v.settings || [], options: v.options || null, note: v.note || "", text: v.text || null };
 }
 
 function providerKeyState(r) {
@@ -529,6 +535,211 @@ ui.compatTest.addEventListener("click", async () => {
         ui.compatState.textContent = String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
     } finally {
         ui.compatTest.disabled = false;
+    }
+});
+
+// ---- Generate new: a base image from the prompt alone --------------------------------
+
+const GEN_ASPECTS = ["free", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
+const GEN_RESOLUTIONS = [768, 1024, 1280, 1536, 2048];
+
+let genEditor = null;
+
+/** The recipes that can start from nothing, for the mode the dialog is on. */
+function genRecipesFor(mode) {
+    return recipes.filter((r) => (mode === "local" ? r.kind === "comfy" : r.kind === "provider" && genProviderIds(r).length));
+}
+
+/** The providers of a model recipe that have a text-to-image shape. */
+function genProviderIds(r) {
+    return (r.providerIds || []).filter((pid) => r.providers && r.providers[pid] && r.providers[pid].text);
+}
+
+function genFillRecipes() {
+    const mode = ui.genMode.value;
+    const list = genRecipesFor(mode);
+    const keep = ui.genRecipe.value;
+    ui.genRecipe.innerHTML = "";
+    for (const r of list) {
+        const o = document.createElement("option");
+        o.value = r.id;
+        o.textContent = r.name || r.id;
+        ui.genRecipe.appendChild(o);
+    }
+    if (!list.length) {
+        const o = document.createElement("option");
+        o.value = "";
+        o.textContent = mode === "local" ? "no ComfyUI recipe installed" : "no API model with a text-to-image endpoint";
+        ui.genRecipe.appendChild(o);
+    }
+    if (list.some((r) => r.id === keep)) ui.genRecipe.value = keep;
+    else if (list.some((r) => r.id === settings.recipe)) ui.genRecipe.value = settings.recipe;
+    genFillProviders();
+}
+
+function genFillProviders() {
+    const r = recipes.find((x) => x.id === ui.genRecipe.value);
+    const ids = r && r.kind === "provider" ? genProviderIds(r) : [];
+    ui.genProviderRow.hidden = !ids.length;
+    const keep = ui.genProvider.value;
+    ui.genProvider.innerHTML = "";
+    for (const pid of ids) {
+        const o = document.createElement("option");
+        o.value = pid;
+        o.textContent = providerOptionLabel(pid);
+        ui.genProvider.appendChild(o);
+    }
+    if (ids.includes(keep)) ui.genProvider.value = keep;
+    else if (ids.includes((settings.recipeProviders || {})[r && r.id])) ui.genProvider.value = settings.recipeProviders[r.id];
+    else if (r && ids.includes(r.default)) ui.genProvider.value = r.default;
+    genSyncNote();
+}
+
+function genSyncNote() {
+    const r = recipes.find((x) => x.id === ui.genRecipe.value);
+    if (!r) { ui.genNote.textContent = ""; return; }
+    if (r.kind === "comfy") {
+        ui.genNote.textContent = "Runs on your ComfyUI: a flat canvas of the size below goes through the recipe and the answer becomes the image. Any size, the model settings are the ones in the Settings panel.";
+        return;
+    }
+    const v = (r.providers || {})[ui.genProvider.value] || {};
+    const t = v.text || {};
+    const key = (providers.find((p) => p.id === ui.genProvider.value) || {}).key;
+    const missing = key && key.set ? "" : " No key stored for this provider yet.";
+    ui.genNote.textContent = `${t.model || "?"} at ${providerLabel(ui.genProvider.value)}. The size is a request, the model answers with what it supports.${missing}`;
+}
+
+function genAspectFree() {
+    return ui.genAspect.value === "free";
+}
+
+function genSyncSize() {
+    ui.gen.classList.toggle("gen-free-size", genAspectFree());
+    ui.gen.classList.toggle("gen-fixed", !genAspectFree());
+    const [w, h] = genSize();
+    ui.genSizeNote.textContent = `${w} × ${h} px`;
+}
+
+/** What the dialog asks for, always a multiple of 16. */
+function genSize() {
+    const round16 = (v) => Math.max(64, Math.min(8192, Math.round(v / 16) * 16));
+    if (genAspectFree()) return [round16(+ui.genWidth.value || 1024), round16(+ui.genHeight.value || 1024)];
+    const [aw, ah] = ui.genAspect.value.split(":").map(Number);
+    const long = +ui.genResolution.value || 1024;
+    return aw >= ah ? [round16(long), round16(long * ah / aw)] : [round16(long * aw / ah), round16(long)];
+}
+
+function genFillUpsample() {
+    const list = host.upsampleBackends();
+    const keep = ui.genUpsample.value;
+    ui.genUpsample.innerHTML = "";
+    for (const b of list) {
+        const o = document.createElement("option");
+        o.value = b.id;
+        o.textContent = b.label;
+        ui.genUpsample.appendChild(o);
+    }
+    if (!list.length) {
+        const o = document.createElement("option");
+        o.value = "";
+        o.textContent = "no language model (Settings › API providers, or a local endpoint)";
+        ui.genUpsample.appendChild(o);
+    }
+    if (list.some((b) => b.id === keep)) ui.genUpsample.value = keep;
+    ui.genUpsampleGo.disabled = !list.length;
+}
+
+/**
+ * The dialog. It writes nothing until Generate is pressed; then it selects the recipe (and
+ * the provider) the user picked, so the tab keeps working with that model afterwards, and
+ * runs the `generate_new` command, which is the same path the MCP tool and the test take.
+ */
+export async function openGenerateNew(editor) {
+    genEditor = editor || host.editor;
+    if (!genEditor) return;
+    if (!ui.genAspect.options.length) {
+        for (const a of GEN_ASPECTS) {
+            const o = document.createElement("option");
+            o.value = a;
+            o.textContent = a === "free" ? "free (width × height)" : a;
+            ui.genAspect.appendChild(o);
+        }
+        for (const r of GEN_RESOLUTIONS) {
+            const o = document.createElement("option");
+            o.value = String(r);
+            o.textContent = `${r} px`;
+            ui.genResolution.appendChild(o);
+        }
+        ui.genAspect.value = "1:1";
+        ui.genResolution.value = "1024";
+    }
+    ui.genMode.value = genRecipesFor(host.recipe && host.recipe.kind === "comfy" ? "local" : "api").length
+        ? (host.recipe && host.recipe.kind === "comfy" ? "local" : "api")
+        : (genRecipesFor("local").length ? "local" : "api");
+    genFillRecipes();
+    genFillUpsample();
+    ui.genPrompt.value = genEditor.promptText || "";
+    ui.genWidth.value = genEditor.width || 1024;
+    ui.genHeight.value = genEditor.height || 1024;
+    ui.genSeed.value = genEditor.genSettings.seed;
+    ui.genSeedRandom.checked = !!genEditor.genSettings.seedRandom;
+    ui.genState.textContent = "";
+    ui.genUpsampleNote.textContent = "";
+    genSyncSize();
+    ui.gen.showModal();
+    ui.genPrompt.focus();
+}
+
+ui.genMode.addEventListener("change", genFillRecipes);
+ui.genRecipe.addEventListener("change", genFillProviders);
+ui.genProvider.addEventListener("change", genSyncNote);
+ui.genAspect.addEventListener("change", genSyncSize);
+ui.genResolution.addEventListener("change", genSyncSize);
+for (const el of [ui.genWidth, ui.genHeight]) el.addEventListener("input", genSyncSize);
+ui.gen.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopPropagation(); });
+
+ui.genUpsampleGo.addEventListener("click", async () => {
+    const backend = host.upsampleBackends().find((b) => b.id === ui.genUpsample.value);
+    if (!backend) return;
+    const text = (ui.genPrompt.value || "").trim();
+    if (!text) { ui.genUpsampleNote.textContent = "Write something first."; return; }
+    ui.genUpsampleGo.disabled = true;
+    ui.genUpsampleNote.textContent = "asking " + backend.label.replace(/ \(.*\)$/, "") + " ...";
+    try {
+        const instruction = `Rewrite this into one rich prompt for a text-to-image model. Keep every subject, colour and material the request names. Describe only what is seen, as one paragraph, no lists, no preamble, no quotes. Request: ${text}`;
+        const res = await host.askLLM(backend, instruction, null);
+        ui.genPrompt.value = res.text;
+        ui.genUpsampleNote.textContent = `${res.text.split(/\s+/).length} words in ${res.seconds.toFixed(1)} s${res.note ? ", " + res.note : ""}.`;
+    } catch (err) {
+        ui.genUpsampleNote.textContent = String(err.message || err);
+    } finally {
+        ui.genUpsampleGo.disabled = false;
+    }
+});
+
+ui.genGo.addEventListener("click", async () => {
+    const ed = genEditor || host.editor;
+    if (!ed) return;
+    const id = ui.genRecipe.value;
+    if (!id) { ui.genState.textContent = "No model to run this on."; return; }
+    const prompt = (ui.genPrompt.value || "").trim();
+    if (!prompt) { ui.genState.textContent = "Write a prompt first."; ui.genPrompt.focus(); return; }
+    const [w, h] = genSize();
+    ui.genGo.disabled = true;
+    ui.genState.textContent = "running ...";
+    try {
+        await selectRecipe(id, ui.genProvider.value || undefined);
+        const args = { doc: ed.node.id, prompt, width: w, height: h, timeout: 900 };
+        if (!ui.genSeedRandom.checked) args.seed = Math.abs(Math.round(+ui.genSeed.value) || 0);
+        const out = await commands.run("generate_new", args);
+        ui.gen.close();
+        ui.genState.textContent = "";
+        activate(ed);
+        console.log("[generate_new]", out);
+    } catch (err) {
+        ui.genState.textContent = String(err.message || err);
+    } finally {
+        ui.genGo.disabled = false;
     }
 });
 

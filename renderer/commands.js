@@ -451,6 +451,47 @@ const COMMANDS = {
             return { prompt: ed.promptText, previous: before, status: ed.status };
         },
     },
+    generate_new: {
+        description: "Make this tab's base image from the prompt alone, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image endpoint. Replaces the image, the layers and the history of this tab.",
+        params: {
+            prompt: P.str("what to make; the tab's current prompt when left out"),
+            negative: P.str("negative prompt (local chains only)"),
+            width: P.int("width in pixels", { default: 1024 }),
+            height: P.int("height in pixels", { default: 1024 }),
+            aspect: P.str("aspect ratio like 16:9; used with resolution instead of width and height"),
+            resolution: P.int("long side in pixels when aspect is given", { default: 1024 }),
+            seed: P.int("seed; a new random one when left out"),
+            timeout: P.timeout(600),
+        },
+        async run(ed, a) {
+            const r = host.recipe;
+            if (!r) throw new Error("no recipe selected");
+            let w = clampInt(a.width, 64, 8192, 1024), h = clampInt(a.height, 64, 8192, 1024);
+            if (a.aspect) {
+                const [aw, ah] = sizeForAspect(a.aspect, clampInt(a.resolution, 64, 8192, 1024));
+                w = aw; h = ah;
+            }
+            if (a.prompt != null) { ed.promptText = String(a.prompt); if (ed.promptInput) ed.promptInput.value = ed.promptText; }
+            if (a.negative != null) { ed.negativeText = String(a.negative); if (ed.negativeInput) ed.negativeInput.value = ed.negativeText; }
+            if (!String(ed.promptText || "").trim()) throw new Error("write a prompt first");
+            if (a.seed != null) { ed.genSettings.seed = Math.abs(Math.round(+a.seed)) >>> 0; ed.genSettings.seedRandom = false; if (ed.seedInput) ed.seedInput.value = ed.genSettings.seed; }
+            const t0 = Date.now();
+            if (r.kind === "provider") {
+                const out = await host.runGenerate(ed, { width: w, height: h, aspect: a.aspect || null, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed });
+                ed.notifyChanged();
+                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, status: ed.status };
+            }
+            // local: a flat canvas of the wanted size, everything selected, the recipe run,
+            // then the result flattened into the base. Nothing of the flat canvas survives.
+            await ed.newCanvas(`${w}x${h}`);
+            if (ed.width !== w || ed.height !== h) throw new Error(ed.status);
+            ed.applyMaskToSelection(rectMask(ed, 0, 0, ed.width, ed.height), "replace");
+            const res = await COMMANDS.generate.run(ed, { timeout: a.timeout });
+            await ed.flatten();
+            ed.notifyChanged();
+            return { mode: "local", recipe: r.id, width: ed.width, height: ed.height, seconds: Math.round((Date.now() - t0) / 1000), result: res && res.layer ? res.layer : null, status: ed.status };
+        },
+    },
     generate: {
         needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it.",
         params: { timeout: P.timeout(600) },
@@ -753,6 +794,16 @@ function editorFor(name, args) {
     const ed = host.editor;
     if (!ed) throw new Error("no document is open");
     return ed;
+}
+
+/** "16:9" plus a long side -> [width, height], both a multiple of 16. */
+function sizeForAspect(aspect, longSide) {
+    const m = /^\s*(\d+(?:\.\d+)?)\s*[:x\/]\s*(\d+(?:\.\d+)?)\s*$/.exec(String(aspect || ""));
+    if (!m) throw new Error(`aspect "${aspect}" is not W:H, e.g. 16:9`);
+    const aw = +m[1], ah = +m[2];
+    if (!(aw > 0) || !(ah > 0)) throw new Error(`aspect "${aspect}" is not W:H, e.g. 16:9`);
+    const round16 = (v) => Math.max(64, Math.round(v / 16) * 16);
+    return aw >= ah ? [round16(longSide), round16(longSide * ah / aw)] : [round16(longSide * aw / ah), round16(longSide)];
 }
 
 export const commands = {

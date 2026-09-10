@@ -40,6 +40,8 @@ untested (see the note above).
 - Recipes instead of node graphs: pick a model ("FLUX.2 [max]", "Nano Banana 2") and the
   provider it runs on (its own API, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud); import your own ComfyUI
   workflow as a recipe if it holds an Inpaint Canvas node.
+- Start from nothing: *Generate new* makes the base image from the prompt alone, locally
+  or through a provider, and you edit it from there.
 - Export PNG, JPEG, WebP, PSD and ORA with layers, masks and selections.
 - JavaScript plugins (filters with CPU and WebGL2 paths, panels, menu actions, tools,
   commands) and a command core with 60+ documented commands.
@@ -96,7 +98,8 @@ unsigned). Releases are built by GitHub Actions: pushing a tag `v<version>` that
 Tests (`tools/`): `smoke_test.py` (needs a ComfyUI), `commands_test.py` (command core and
 the sample plugin), `film_test.py` (GPU and CPU paths of the film pack), `mcp_test.py`
 (the MCP server over stdio), `llm_test.py` (the OpenAI-compatible upsample endpoint against
-a mock server), `editor_test.py` (editor behaviour that is easy to break again),
+a mock server), `editor_test.py` (editor behaviour that is easy to break again), `generate_test.py`
+(making an image from the prompt alone, against the loopback provider),
 `helpers_test.js` (ONNX modules without Electron). See `CLAUDE.md` for the development
 notes.
 

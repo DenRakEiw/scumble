@@ -20,7 +20,10 @@ function inputFor(req) {
     if (req.seed != null && !p.random_seed) input.seed = req.seed >>> 0;
     const f = req.fields || {};
     const sizing = (req.options && req.options.sizing) || "image_size";
-    if (req.kind === "edit" || f.images) {
+    if (req.kind === "text") {
+        if (sizing === "image_size") input.image_size = { width: req.width, height: req.height };
+        else if (req.aspect) input.aspect_ratio = req.aspect;
+    } else if (req.kind === "edit" || f.images) {
         input[f.images || "image_urls"] = [dataUri(req.image), ...req.references.map((r) => dataUri(r))];
         // keep the crop's size: the stitch stretches only a same-aspect result back exactly
         if (sizing === "image_size" && req.kind === "edit") input.image_size = { width: req.width, height: req.height };
@@ -41,6 +44,9 @@ module.exports = {
     label: "fal.ai",
     keyUrl: "https://fal.ai/dashboard/keys",
     keyHint: "FAL_KEY from the fal.ai dashboard",
+    generate(req, ctx) {
+        return this.edit(req, ctx);   // inputFor() leaves the images out for kind "text"
+    },
     async edit(req, ctx) {
         const model = String(req.model || "").replace(/^\/+|\/+$/g, "");
         if (!model) throw new Error("fal.ai recipe has no model id.");

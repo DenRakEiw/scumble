@@ -114,6 +114,23 @@ recommendation *not now*; the editor source moving into this repo, recommendatio
   not shown twice. **No real Ollama / LM Studio has been tried**: the gate is
   `tools/llm_test.py` against `tools/llm_mock.py`.
 
+- **"Generate new", a base image from the prompt alone** (asked for during the bug hunt,
+  because on an API provider the blank canvas was being uploaded as the image to edit). A
+  button in the editor's top bar opens a shell dialog (`openGenerateNew` in `shell.js`,
+  app-only): local or API, the model, the prompt with the upsample backends beside it,
+  aspect ratio and long side or a free width and height, and the seed. It all runs through
+  one command, `generate_new`, so the MCP tool and the test take the same path. **Local**
+  renders a flat canvas of the wanted size through the recipe and flattens the result into
+  the base; the Flux.2 Klein chain starts its sampler from an empty latent, so the flat
+  input carries nothing (measured: the same seed with fill "neutral" and with no fill gives
+  near-identical pictures). **API** goes through `host.runGenerate` with `kind: "text"`, no
+  crop, no mask, no references, and `editor.setBaseFromCanvas()` puts the answer in.
+  Recipes did not have to be edited: `normalize()` in `recipes.js` derives every variant's
+  `text` shape (fal and WaveSpeed lose a trailing `/edit`, the others keep the id), and a
+  variant can override it or set `text: false`. Comfy Cloud has no text path and says so.
+  `providers/loopback.js` writes a real PNG of the asked-for size with zlib, which is what
+  makes `tools/generate_test.py` a gate without any key.
+
 **Gates for 0.1.5, all on one fresh dev instance on 2026-09-10** (the user closed their own
 Scumble first; both share the single-instance lock and the named pipe):
 `mcp_test.py` PASS in all three modes — proxy 0.8 s, headless 2.5 s, `--exe
@@ -693,6 +710,8 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   old registration, which the Python client rejects by design).
   `python tools/llm_test.py` checks the OpenAI-compatible upsample endpoint against
   `tools/llm_mock.py` (a mock server it starts itself; no ComfyUI, no key, no local model).
+  `python tools/generate_test.py` covers "Generate new" (a base image from the prompt
+  alone) against the loopback provider, no ComfyUI and no key needed.
   `python tools/editor_test.py` covers the editor behaviour reported broken in 0.1.5: the
   New dialog's two size boxes and its focus, the click that deselects, the outline that has
   to stay visible on white, and copy / paste of a layer between tabs.
