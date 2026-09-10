@@ -177,12 +177,18 @@ VIEW = """
 # The phase 5 gate: the same view drawn by the GPU compositor and by Canvas 2D, in one run.
 # The filter layer is hidden because the filter chain still goes through Canvas 2D, and a
 # stroke or a transform would too - see glCompositeUsable.
+# Two things the step is careful about, both of which hid a bug until 2026-09-10: the colour
+# match's statistics are dropped before every shot, so each path takes them off its own
+# backdrop instead of inheriting the other's cache, and a layer is erased into beforehand
+# the way the eraser commits a stroke (a rectangle touch that keeps the cached levels), so a
+# stale texture in the compositor's cache shows up as a difference.
 GL_VS_2D = """
 (async () => {
     const ed = window.__cmp;
     const fx = ed.layers.find((l) => l.kind === "filter");
     if (fx) fx.visible = false;
     const shot = () => {
+        for (const l of ed.layers) ed.markMatchChanged(l);
         ed.sceneSig = null;
         ed.flatCache = null;
         ed.draw();
@@ -191,6 +197,22 @@ GL_VS_2D = """
         c.getContext("2d").drawImage(ed.canvas, 0, 0);
         return c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
     };
+    // the GPU path first, so its textures are uploaded, then the erase
+    ed.compositorOff = false;
+    ed.sceneSig = null;
+    ed.draw();
+    const victim = ed.layers.find((l) => l.kind === "paint" && !l.mask && l.visible && !l.maskEdit);
+    if (victim) {
+        const w = Math.max(4, Math.round(victim.canvas.width * 0.5));
+        const h = Math.max(4, Math.round(victim.canvas.height * 0.5));
+        const cx = victim.canvas.getContext("2d");
+        cx.save();
+        cx.globalCompositeOperation = "destination-out";
+        cx.fillStyle = "#000";
+        cx.fillRect(2, 2, w, h);
+        cx.restore();
+        ed.markLayerChanged(victim, [2, 2, 2 + w, 2 + h]);
+    }
     ed.compositorOff = true;
     const cpu = shot();
     ed.compositorOff = false;
@@ -211,7 +233,7 @@ GL_VS_2D = """
         if (d > 2) over++;
         sum += d; n++;
     }
-    return { max: +max.toFixed(2), mean: +(sum / n).toFixed(4), pixelsOver2: over, pixels: n, ms };
+    return { max: +max.toFixed(2), mean: +(sum / n).toFixed(4), pixelsOver2: over, pixels: n, ms, erased: !!victim };
 })()
 """
 
@@ -390,7 +412,8 @@ async def run(c, args):
             print(f"[skip] gpu vs 2d: {gl['skipped']}")
         elif gl["max"] <= args.tolerance:
             print(f"[ok] gpu vs 2d: max {gl['max']} levels, mean {gl['mean']}, "
-                  f"{gl['pixelsOver2']} of {gl['pixels']} pixels over 2, draw {gl['ms']} ms")
+                  f"{gl['pixelsOver2']} of {gl['pixels']} pixels over 2, draw {gl['ms']} ms"
+                  f"{'' if gl.get('erased') else ' (no layer to erase into)'}")
         else:
             ok = False
             print(f"[FAIL] gpu vs 2d: max {gl['max']} levels, mean {gl['mean']}, "

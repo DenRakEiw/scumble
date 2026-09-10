@@ -3,6 +3,19 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.4 — unreleased
+
+- **Fixed: painting or erasing on a layer snapped back.** The stroke was in the image the
+  whole time - it was saved, exported and rendered with - but the screen kept showing the
+  layer as it was before. A regression of the graphics-card compositor in 0.1.3.
+- **Fixed: the colour match slider did nothing.** On the same path the match had nothing to
+  measure itself against and quietly stayed at zero, whatever the slider said. Also from
+  0.1.3, and also only on screen: a flatten or a run applied the match correctly.
+- **A reference image keeps the layer's mask tools.** Turning a layer into a reference used
+  to take away background removal (RMBG) and the mask buttons, which is where a reference
+  needs them most. The selected reference now has the same row as an image layer, and the
+  cut-out travels into the image that is sent with the crop.
+
 ## 0.1.3 — 2026-09-10
 
 - **The view is composited on the graphics card.** Every layer is now stacked in one shader

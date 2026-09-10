@@ -70,6 +70,33 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-10)
 
+**Three bugs fixed on 2026-09-10 (after 0.1.3), all reported by the user, two of them
+regressions of the GPU compositor** (`docs/PERFORMANCE.md`, "Phase 5, the two bugs the
+compositor shipped with"; the node's `DEVELOPMENT.md` §21e has the two new rules). Gates on
+the dev instance after the fix: `composite_test.py`, `commands_test.py`, `film_test.py`,
+`smoke_test.py --no-helpers` (real Flux run), `perf_test.py` unchanged within noise.
+
+- **A brush stroke or an erase did not reach the screen.** `touchSourceRect` refreshes the
+  pyramid levels inside a rectangle and deliberately left `_dispVer` alone; the compositor
+  keys its texture cache on that number, so it kept drawing the texture from before the
+  stroke. The pixels were never lost (exports and runs were correct), the screen showed the
+  old ones. The rect touch now raises the version, carries the pyramid entry to it and
+  raises the version of every level it redrew.
+- **Colour match did nothing.** Its statistics come from what is under the layer, which
+  Canvas 2D reads off the target it has drawn into; a GPU pass clears that target first, so
+  `matchStats` found no samples and returned null. `glViewComposite` now passes a thunk
+  (`glMatchBackdrop`) that composites the stack below the layer, resolved only on a cache
+  miss: pan 0.1 ms unchanged, a slider tick 4.3 ms against 3.4 ms on Canvas 2D at 24 MP.
+- **A reference layer lost the mask row** (RMBG cutout, mask from selection, edit / apply /
+  remove) because references are drawn by `renderReferences`. The row is `buildMaskRow()`
+  now and the selected reference gets it; a cut-out reference uploads its masked pixels,
+  which the run path already supported.
+- **Why the gate missed both compositor bugs, and what it does now**: `composite_test.py`
+  drew the Canvas 2D shot first and the GPU shot re-used its cached match canvas, so the two
+  paths shared one cache, and nothing in the test ever changed pixels through a rectangle
+  touch. The gpu-vs-2d step drops the match statistics before every shot and erases into a
+  paint layer first. Verified by reverting the fix: 174 levels on 51,300 pixels, FAIL.
+
 **Landed on 2026-09-10 (night): high-res performance phases 1 to 4** (pushed in both repos;
 `commands_test.py`, `film_test.py`, `smoke_test.py --no-helpers`, `mcp_test.py` PASS, the
 new `tools/perf_test.py` is the benchmark). `docs/PERFORMANCE.md` §1b and the phase

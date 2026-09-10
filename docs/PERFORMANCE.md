@@ -643,6 +643,41 @@ to 1.5 ms, slider ticks 6 to 7.4 ms, redraw 0.0 ms at 2.4 / 24 / 96 MP. It also 
 film look again instead of falling back to grain — it asked `window.FILTERS`, which the app
 does not define.
 
+### Phase 5, the two bugs the compositor shipped with — **fixed 2026-09-10**
+
+Both were reported by the user on 0.1.3 and both come from the same place: the GPU path
+takes its input from caches that the Canvas 2D path never needed.
+
+1. **A brush stroke or an erase did not reach the screen.** `touchSourceRect` refreshes the
+   cached pyramid levels inside a rectangle instead of dropping them, which is what makes a
+   dab cheap (phase 1), and for that it deliberately left `_dispVer` alone. The compositor
+   keys its texture cache on exactly that number, so after the stroke it re-used the
+   texture from before it. The stroke was in the layer canvas and in every export; only the
+   screen showed the old pixels, which reads as "the layer jumps back". Now the rect touch
+   raises the version, carries the pyramid entry to the new version (the levels were
+   refreshed, so they stay valid) and raises the version of every level it redrew.
+2. **Colour match did nothing.** The match takes its statistics from what is under the
+   layer, and Canvas 2D reads that off the target it has been drawing into. In a GPU pass
+   nothing is drawn into that target yet - `drawViewComposite` clears it before the pass -
+   so the ring around the layer was empty, `matchStats` found no samples and returned null,
+   and the slider moved without an effect. `glViewComposite` now hands
+   `layerMatchedPixels` a thunk that composites the stack below the layer into a canvas of
+   its own (`glMatchBackdrop`); `matchStats` resolves it only on a cache miss, so panning
+   pays nothing and a slider tick pays one extra composite. Measured on a 24 MP document
+   with a 2.8 MP matched layer: pan 0.1 ms with and without the match, a slider tick 4.3 ms
+   on the GPU path against 3.4 ms on Canvas 2D. If the extra composite fails, the frame
+   falls back to Canvas 2D (`err.glBail`) instead of drawing the layer unmatched.
+
+**Why `composite_test.py` passed anyway**, and what it does now. Its document always had a
+colour-matched layer, but the test drew the Canvas 2D shot first and `layerMatchedPixels`
+caches its result per composite version, so the GPU shot re-used the canvas the 2D path had
+matched - the two paths agreed because they shared one cache. And nothing in the test ever
+changed pixels through a rectangle touch, so the stale texture never showed. The gpu-vs-2d
+step now drops the match statistics before every shot, so each path takes them off its own
+backdrop, and erases into a paint layer the way the eraser commits a stroke before it
+compares. On the code before the fix that step fails with 174 levels of difference on
+51,300 pixels; after it, 1 level, as before.
+
 The original plan for reference:
 
 ### Phase 5 (planned)
