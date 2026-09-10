@@ -3,8 +3,22 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.4 — 2026-09-10
+## 0.1.5 — 2026-09-10
 
+- **MCP clients that refused to talk to Scumble now connect.** Before the app itself starts,
+  Electron writes one empty line to the channel the client is listening on, and a client that
+  follows the specification to the letter counts that as a broken message and drops the whole
+  session. Scumble is now started through a small launcher that keeps the channel clean.
+  Help › Copy MCP registration puts the right line for Claude Code or the JSON block for
+  Claude Desktop on the clipboard, with the paths of your installation filled in - nobody
+  should have to type those by hand. An already working registration keeps working.
+- **Prompt upsampling on your own machine, without a key.** Settings › Local /
+  OpenAI-compatible endpoint takes the address of a server that speaks the OpenAI chat API -
+  Ollama, LM Studio, vLLM, a proxy - and a model name, and that model joins the Upsample list
+  in the Prompt section next to the ComfyUI nodes and the API models. Test asks the server
+  which models it has and offers them in the field. A model that can see gets the same crop
+  the other backends get; one that cannot is asked again without it, and the status line then
+  says "text only" so you know the rewrite is based on your words alone.
 - **Fixed: the app got slower the longer you worked in it.** Opening and closing several
   large images in one session left every one of them in memory, with all of its layers. After
   four 12k documents a slider drag cost 50 ms per step instead of 9, panning stuttered, and
