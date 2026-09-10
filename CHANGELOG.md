@@ -19,6 +19,24 @@ the section for its version; `docs/` and the commit history hold the technical d
   which models it has and offers them in the field. A model that can see gets the same crop
   the other backends get; one that cannot is asked again without it, and the status line then
   says "text only" so you know the rewrite is based on your words alone.
+- **New asks for width and height in two boxes.** One field that wanted "1440x1440" was
+  awkward to type and easy to get wrong. There are two number boxes now, with a *Keep the
+  ratio* tick if you want the second to follow the first.
+- **Fixed: the size in that dialog could not always be typed.** The dialog put the cursor in
+  the field, and the click that had opened it took the cursor straight back to the canvas.
+- **A click deselects again, as in Photoshop and Krita.** Clicking inside an existing
+  selection with the rectangle or ellipse tool started moving its outline and kept the
+  selection even when nothing moved. A lasso click did nothing at all. Both clear the
+  selection now, so you can start a new one straight away. The selection brush is unchanged:
+  a click sets a dab there, which is what a brush does in both programs too.
+- **The selection outline stays visible on a white image.** While you drag a rectangle,
+  ellipse, lasso or polygon, the outline was a white dashed line and vanished on anything
+  light. It is now drawn black first with the white dashes over it, the same two-colour trick
+  the finished selection already used.
+- **Copy and paste whole layers, also from one tab into another.** Ctrl+C with nothing
+  selected used to refuse; it now copies the whole active layer, Ctrl+X cuts it out, and
+  Ctrl+V pastes it as a new layer in any tab. The layer row also has a duplicate button now,
+  for what Ctrl+J could always do.
 
 ## 0.1.4 — 2026-09-10
 

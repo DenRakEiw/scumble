@@ -693,6 +693,9 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   old registration, which the Python client rejects by design).
   `python tools/llm_test.py` checks the OpenAI-compatible upsample endpoint against
   `tools/llm_mock.py` (a mock server it starts itself; no ComfyUI, no key, no local model).
+  `python tools/editor_test.py` covers the editor behaviour reported broken in 0.1.5: the
+  New dialog's two size boxes and its focus, the click that deselects, the outline that has
+  to stay visible on white, and copy / paste of a layer between tabs.
   `node tools/helpers_test.js` runs the ONNX modules without Electron.
   `python tools/composite_test.py` compares the GPU compositor against Canvas 2D and two
   stored references in `tools/refs/` (`--update` rewrites them, `--tolerance n` allows n

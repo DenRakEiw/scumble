@@ -96,8 +96,9 @@ unsigned). Releases are built by GitHub Actions: pushing a tag `v<version>` that
 Tests (`tools/`): `smoke_test.py` (needs a ComfyUI), `commands_test.py` (command core and
 the sample plugin), `film_test.py` (GPU and CPU paths of the film pack), `mcp_test.py`
 (the MCP server over stdio), `llm_test.py` (the OpenAI-compatible upsample endpoint against
-a mock server), `helpers_test.js` (ONNX modules without Electron). See `CLAUDE.md` for the
-development notes.
+a mock server), `editor_test.py` (editor behaviour that is easy to break again),
+`helpers_test.js` (ONNX modules without Electron). See `CLAUDE.md` for the development
+notes.
 
 ## Layout
 
