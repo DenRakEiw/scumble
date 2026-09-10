@@ -380,6 +380,54 @@ export function releaseSurface(s) {
     trimPool();
 }
 
+/**
+ * A census of the surface pool for the memory report (docs/PHASE6_PLAN.md step 1d):
+ * idle surfaces per size, their bytes, how many belong to a context that is already
+ * gone, and how many surfaces the open scopes are still holding.
+ */
+export function glPoolStats() {
+    const gen = G ? G.gen : -1;
+    const sizes = [];
+    let foreign = 0, foreignBytes = 0;
+    for (const [key, list] of POOL) {
+        if (!list.length) continue;
+        let bytes = 0;
+        for (const s of list) {
+            bytes += s.bytes;
+            if (s.gen !== gen) { foreign++; foreignBytes += s.bytes; }
+        }
+        sizes.push({ size: key, count: list.length, bytes });
+    }
+    sizes.sort((a, b) => b.bytes - a.bytes);
+    let held = 0, heldBytes = 0;
+    for (const list of SCOPES) for (const s of list) { held++; heldBytes += s.bytes; }
+    return { bytes: poolBytes, budget: POOL_BUDGET, sizes, foreign, foreignBytes, scopes: SCOPES.length, held, heldBytes, gen };
+}
+
+/**
+ * Give the GPU everything back: the idle surfaces, the source texture and the drawing
+ * buffer of the shared context. Returns the bytes it dropped. Only safe between frames -
+ * ed.releaseCaches({ deep: true }) and the Free VRAM button are the callers. The next
+ * filter run rebuilds what it needs.
+ */
+export function glReleasePool() {
+    let freed = poolBytes;
+    for (const list of POOL.values()) while (list.length) destroySurface(list.pop());
+    POOL.clear();
+    poolBytes = 0;
+    if (G && !G.lost) {
+        try {
+            const { gl } = G;
+            freed += G.canvas.width * G.canvas.height * 4 * 2;   // the drawing buffer, double buffered
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, G.texSrc);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            G.canvas.width = G.canvas.height = 1;
+        } catch (_) { /* context gone */ }
+    }
+    return freed;
+}
+
 /** Open a scope: every surface acquired until endScope() goes back to the pool there. */
 export function beginScope() { SCOPES.push([]); }
 

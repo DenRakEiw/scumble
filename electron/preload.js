@@ -2,7 +2,7 @@
 // see host.js for how the editor uses it.
 "use strict";
 
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 function on(channel, cb) {
     const handler = (_e, payload) => cb(payload);
@@ -12,6 +12,17 @@ function on(channel, cb) {
 
 contextBridge.exposeInMainWorld("scumble", {
     info: () => ipcRenderer.invoke("app:info"),
+    // memory (docs/PHASE6_PLAN.md step 1a): the process table from main plus what this
+    // renderer can say about itself. All sizes are KB.
+    metrics: async () => ({
+        ...(await ipcRenderer.invoke("app:metrics")),
+        renderer: {
+            process: await process.getProcessMemoryInfo(),   // { residentSet, private, shared }
+            blink: process.getBlinkMemoryInfo(),             // { allocated, total }
+            heap: process.getHeapStatistics(),
+            resources: webFrame.getResourceUsage(),          // images / fonts / other: { count, size, liveSize }
+        },
+    }),
     openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
     settings: {
         get: () => ipcRenderer.invoke("settings:get"),

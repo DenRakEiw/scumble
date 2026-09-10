@@ -235,25 +235,53 @@ function registerPanel(entry, def) {
     return id;
 }
 
+/**
+ * While a panel is being built, the listeners it registers belong to that panel instance:
+ * `events.on` pushes their off() here. A panel is built once per tab and closes over its
+ * Document, so a listener that outlives the tab pins the whole document - its layers, its
+ * pyramids and the canvas backing store behind them. Measured on 2026-09-10: four 96 MP
+ * documents built and closed left 19 GB in the GPU process and made a pan frame ten times
+ * as expensive, and every one of them hung from one of these listeners. The scope is a
+ * module variable rather than an argument because a plugin usually keeps the `scumble` it
+ * got in activate() instead of the one build() is handed (both bundled plugins do).
+ */
+let buildScope = null;
+
+/** Undo one panel instance: its listeners, the plugin's destroy hook, its element. */
+function unmountPanel(entry, reg, ed) {
+    const inst = reg.els.get(ed);
+    if (!inst) return;
+    reg.els.delete(ed);
+    for (const off of inst.offs) {
+        try { off(); } catch (_) { /* already gone */ }
+        const i = entry.regs.listeners.indexOf(off);
+        if (i >= 0) entry.regs.listeners.splice(i, 1);
+    }
+    try { if (typeof reg.def.destroy === "function") reg.def.destroy(inst.el.querySelector(".scumble-plugin-panel"), new Document(ed)); } catch (err) { report(entry, `panel ${reg.def.id} destroy`, err); }
+    inst.el.remove();
+}
+
 function mountPanel(entry, reg, ed) {
     if (!ed.addSection || reg.els.has(ed)) return;
+    const offs = [];
     try {
         const d = ed.addSection(reg.def.title, reg.def.open, (details) => {
             const box = el("div", "ipc-sec scumble-plugin-panel");
             details.appendChild(box);
-            try { reg.def.build(box, new Document(ed), entry.api); } catch (err) { report(entry, `panel ${reg.def.id}`, err); box.appendChild(el("div", "scumble-plugin-error", String((err && err.message) || err))); }
+            const outer = buildScope;
+            buildScope = offs;   // the build runs later, when the section is first opened
+            try { reg.def.build(box, new Document(ed), entry.api); }
+            catch (err) { report(entry, `panel ${reg.def.id}`, err); box.appendChild(el("div", "scumble-plugin-error", String((err && err.message) || err))); }
+            finally { buildScope = outer; }
         }, reg.def.pane);
-        reg.els.set(ed, d);
+        reg.els.set(ed, { el: d, offs });
     } catch (err) { report(entry, `panel ${reg.def.id}`, err); }
 }
 
 function unregisterPanel(entry, id) {
     const reg = entry.regs.panels.get(id);
     if (!reg) return;
-    for (const [ed, d] of reg.els) {
-        try { if (typeof reg.def.destroy === "function") reg.def.destroy(d.querySelector(".scumble-plugin-panel"), new Document(ed)); } catch (err) { report(entry, `panel ${reg.def.id} destroy`, err); }
-        d.remove();
-    }
+    for (const ed of [...reg.els.keys()]) unmountPanel(entry, reg, ed);
     entry.regs.panels.delete(id);
 }
 
@@ -498,6 +526,7 @@ function makeApi(entry) {
                 const wrapped = (data) => { try { fn({ ...data, doc: docOf(data.editor) }); } catch (err) { report(entry, `on ${type}`, err); } };
                 const off = host.on(type, wrapped);
                 entry.regs.listeners.push(off);
+                if (buildScope) buildScope.push(off);   // registered inside a panel build: it goes with the panel
                 return off;
             },
         },
@@ -635,6 +664,20 @@ host.on("built", ({ editor }) => {
     for (const entry of plugins.values()) {
         for (const reg of entry.regs.panels.values()) mountPanel(entry, reg, editor);
         for (const reg of entry.regs.tools.values()) mountTool(entry, reg, editor);
+    }
+});
+/**
+ * A closed tab, taken out of every registry. `reg.els` and `reg.buttons` are Maps keyed
+ * by the editor, so one forgotten entry keeps the whole document alive - its layers, its
+ * pyramids and the canvas backing store behind them. Measured on 2026-09-10: four 96 MP
+ * documents built and closed left 19 GB in the GPU process and made a pan frame ten times
+ * as expensive; with the plugins switched off nothing was left. The editor is still
+ * usable in this event (host.removeEditor emits it before shell.js calls destroy()).
+ */
+host.on("removed", ({ editor }) => {
+    for (const entry of plugins.values()) {
+        for (const reg of entry.regs.panels.values()) unmountPanel(entry, reg, editor);
+        for (const reg of entry.regs.tools.values()) reg.buttons.delete(editor);
     }
 });
 host.on("tool", toolChanged);

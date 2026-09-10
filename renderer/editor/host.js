@@ -12,6 +12,7 @@
 //           the helper prompt carried (= editor.node.id).
 
 import { prepareCrop, finishResult, canvasBytes, bytesToImage } from "./stitch.js";
+import { glReleasePool } from "./inpaint_filters_gl.js";
 
 const PROXY = "/comfy";
 const SUBFOLDER = "inpaint_canvas";
@@ -109,6 +110,8 @@ export const host = {
 
     addEditor(editor) {
         if (!this._editors.includes(editor)) this._editors.push(editor);
+        // the app-only GPU path behind releaseCaches({ deep: true }); the node has none
+        editor.releaseGpu = glReleasePool;
         const id = +editor.node.id;
         if (Number.isFinite(id) && id >= this.nextId) this.nextId = id + 1;
         if (!this.editor) this.editor = editor;

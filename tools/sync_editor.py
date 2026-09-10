@@ -289,8 +289,8 @@ PATCHES = [
 
     # Free VRAM also releases the in-app sessions; without a server only those
     ("inpaint_canvas.js",
-     "    async freeHelperModels() {\n        try {\n            this.setStatus(\"Freeing helper models (SAM, Qwen-VL) from VRAM ...\");\n",
-     "    async freeHelperModels() {\n        try { await host.freeHelpers(); } catch (err) { console.warn(err); }\n        if (!host.connected) { this.helperUsed = false; this.setStatus(\"In-app helper models freed.\"); return; }\n        try {\n            this.setStatus(\"Freeing helper models (SAM, Qwen-VL) from VRAM ...\");\n", 1),
+     "        this.drawSoon();\n        try {\n",
+     "        this.drawSoon();\n        try { await host.freeHelpers(); } catch (err) { console.warn(err); }\n        if (!host.connected) { this.helperUsed = false; this.setStatus(`Freed ${mb} MB of caches; the in-app helper models are unloaded too.`); return; }\n        try {\n", 1),
     # --- phase 4: command core and plugins (renderer/commands.js, renderer/plugins.js) ----------
     # the tool column and its addTool helper are reachable, so plugin tools get a button
     ("inpaint_canvas.js",

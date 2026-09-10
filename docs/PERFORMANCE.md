@@ -692,105 +692,119 @@ visible layers and their mips, tiles of hidden layers may be dropped and re-uplo
 Behind the same interface a WebGPU backend can follow when the plugin shader API is
 ported (a compatibility shim for `shade(vec4, vec2)` is possible with WGSL).
 
-### Phase 6: memory, and what a long session does to the GPU — **the plan, 2026-09-10**
+### Phase 6: memory, and what a long session does to the GPU — **done, 2026-09-10**
 
-> The implementation plan for this phase, with the code read and the hypotheses ranked,
-> is `docs/PHASE6_PLAN.md`. This section is the background it builds on.
+> The plan this phase was worked through is `docs/PHASE6_PLAN.md`; the node's
+> `DEVELOPMENT.md` §21f holds the rules that came out of it. What follows is the
+> measurement and what it changed.
 
-This phase was written as a list of guesses (undo tiles, a bounded object map, layer
-eviction). Two measurements since then say the list is largely wrong, and one of them
-found something worse than anything on it. So the plan below starts with instrumentation
-and treats the old list as candidates, not as work items.
+**The symptom.** A `levels` slider tick cost 45 ms instead of 8 and a pan frame 47 ms
+instead of 4 after four 96 MP documents had been built and closed in one page. Seen twice
+before the phase started, on builds either side of phase 5 step 2, so neither new nor
+caused by the filter chain.
 
-**What is already known**
+**Step 1, the instrumentation** (`tools/mem_test.py`, and it stays):
 
-1. **Undo is not the problem it was assumed to be.** It is already capped by bytes
-   (`MAX_UNDO_BYTES`, 384 MB) and phase 1 turned a brush step into a copy of the touched
-   rectangle: `tools/perf_test.py` reaches **3.4 MB** of undo on a 96 MP document, not 384.
-   Rebuilding it as compressed tiles buys nothing until a measurement of a real painting
-   session says otherwise.
-2. **The thing to chase.** After several large documents in one page the GPU path degrades
-   badly: a `levels` filter that costs 0.8 ms on a fresh instance measured **12 ms** after
-   four 96 MP documents had been built and closed, and a film stack 70 ms instead of 6.
-   Seen twice, including on the build before the phase 5 step 2 changes, so it is not new
-   and not caused by the filter chain. The cause is unknown. If users hit this in normal
-   work - open three 12k images one after another - it matters far more than any
-   millisecond per frame in phases 1 to 5, because the app simply feels broken after a
-   while. Everything else in this phase is secondary to finding out whether it is real.
-3. **A smaller, understood instance of the same mechanism**: the filter chain's surface
-   pool (see phase 5 step 2 above). The moment the working set stops fitting the pool,
-   every frame creates and destroys textures and the GPU path becomes two to three times
-   slower than the canvas one. That is exactly the shape of symptom 2.
+- a new IPC `app:metrics` (`electron/main/main.js`, `electron/preload.js`) returns
+  `app.getAppMetrics()` plus what the renderer can say about itself. The bytes that matter
+  are in the **GPU process**, which is why nothing measured before phase 6 ever saw them.
+  `performance.measureUserAgentSpecificMemory()` was never an option: it needs cross-origin
+  isolation, which `scumble://` does not have, so it had been returning null all along.
+- `ed.memoryReport()` (node repo) says what one editor holds: layers, masks, the four cache
+  slots per layer, the display pyramids, undo (rect copies and the layer canvases the
+  snapshots hold), the compositor's textures, the objects map, the scratch canvases.
+  `GLCompositor.stats()` and `glPoolStats()` are the GPU-side counterparts.
+- **a census of every canvas the page ever made**: the test wraps `document.createElement`
+  before anything is built and keeps a `WeakRef` plus the line that allocated it. After a
+  forced collection it reports what is still alive, how much, and where it came from.
+  That is the instrument that did the work.
 
-**Step 1: instrumentation. Nothing else until this works.**
+**What it found, and it was none of the six hypotheses.** With four 96 MP documents built
+and closed, 301 canvases holding **18.8 GB** were still alive and the GPU process stood at
+19 GB. A heap snapshot (`HeapProfiler.takeHeapSnapshot` through CDP, then the shortest path
+from the GC root) named the retainer in one line: `host._listeners` to a wrapped handler, to
+the plugin's own handler, to its closure, to a `Document`, to the editor. **Every panel a
+plugin builds registers listeners that close over that tab's document, and nothing ever
+removed them.** Both bundled plugins do it (`plugins/film/main.js`,
+`plugins/sample/main.js`), so every document ever opened stayed alive with its whole layer
+stack.
 
-`tools/mem_test.py`, driving the dev instance like the other tools. Per step it prints:
+The fix is in `renderer/plugins.js`, not in the drawing code:
 
-- the renderer heap from `performance.measureUserAgentSpecificMemory()` (it forces a
-  collection, which is also how "leaked" is told apart from "not collected yet");
-- **memory per process, including the GPU process**, through a new IPC `app:metrics` that
-  returns Electron's `app.getAppMetrics()`. Canvas backing stores and textures live there
-  and not in the renderer heap, which is why nothing measured so far has seen them;
-- `ed.undoBytes`, the display pyramid's canvases and bytes per source, the compositor's
-  `textures.size` and their bytes, `glChainStats().pooledBytes`, and the number and total
-  area of live canvases;
-- a short fixed drawing benchmark (a pan with one filter layer) so that "it got slower" is
-  a number.
+- listeners registered while a panel is being built belong to that panel instance
+  (`buildScope`), and go when the panel does;
+- `host.on("removed")` unmounts the panel of a closed tab and takes it out of `reg.els`
+  and `reg.buttons`, which are Maps keyed by the editor;
+- the panel's own `destroy` hook runs there too. The editor is still usable in that event:
+  `removeEditor` emits it before the shell calls `destroy()`.
 
-The script walks a session: fresh → load a 12k image → filter and pan → close → repeat
-four times; then the same again without closing (four tabs). After each round it asks the
-three questions that separate the causes: does the number come back **after closing**,
-after a **forced collection**, after **Free VRAM**?
+Because the plugins bypass the api handed to `build()` and keep the one from `activate()`,
+the scope is a module variable rather than an argument: it catches the mistake whichever
+object the plugin uses.
 
-Targets to hold afterwards: after opening and closing three 96 MP documents the drawing
-benchmark is within 20 % of the fresh instance, and the GPU process is back within 300 MB
-of its baseline.
+**Measured, 96 MP, four rounds of build, bench, close, forced collection**
+(`python tools/mem_test.py 12000x8000 --rounds 4`, fresh instance, medians):
 
-**Step 2: fix what step 1 points at.** In the order I would check them:
+| | round 1 | round 4 | round 4, before the fix |
+|---|---|---|---|
+| pan frame | 3.6 ms | 4.1 ms | 47.2 ms |
+| levels slider tick | 9.0 ms | 10.0 ms | 50.0 ms |
+| live canvases after the collection | 1 (4 MB) | 7 (34 MB) | 301 (18830 MB) |
+| renderer, private | 94 MB | 97 MB | 1588 MB |
+| GPU process, private | 1784 MB | 1526 MB | 17617 MB |
 
-- **Canvas backing stores are freed at collection, not when dropped.** Chromium keeps a
-  discarded canvas's pixels until the JS object is collected; `canvas.width =
-  canvas.height = 0` releases them at once. Candidates: `destroy()` (layer canvases,
-  masks, the pyramid, `flatCanvas`, `_fcache*` / `_fcacheView`, the objects map),
-  `touchSource()` when a pyramid level is replaced, the filter caches. Cheap to try, and it
-  matches the symptom: it recovers slowly rather than never.
-- **The compositor's texture cache is capped by count, not by bytes.** `TEXTURE_CACHE = 48`
-  in `inpaint_compositor.js`, and at 96 MP one source texture is up to 384 MB, so the cap
-  permits gigabytes. Worse, `forget(source)` exists but is **never called**, so the
-  textures of superseded pyramid levels stay until the LRU happens to push them out. Make
-  the cap a byte budget and call `forget` where a source is thrown away (`touchSource`,
-  `destroy`). (`closeDocument` does call `editor.destroy()`, which disposes the whole
-  compositor, so a closed document's textures are not the leak - within a living document
-  they may well be.)
-- **The filter chain's surface pool**, same disease: `POOL_BUDGET` is a fixed 320 MB. Give
-  it a policy - hold the measured working set (the peak number of surfaces alive at once
-  per size), drop the rest by age - and then raise `CHAIN_MAX_PIXELS` as far as the
-  measurement allows. The numbers are in phase 5 step 2.
-- **Fewer live surfaces per chain**: seven for a film stack today where two or three would
-  do, because a scope holds everything it acquired until it ends. Needs refcounting or a
-  plugin hint ("this input is dead"), since halation holds its source across two passes.
-  Worth doing because it multiplies with the pool budget: half the working set is twice
-  the image size at the same memory.
-- **The objects id map** at a bounded resolution (≤ 2048 px on the long side, already the
-  SAM2 output size) and scaled on use.
-- **Undo as dirty-rect tiles**, only if step 1 shows it growing in a real session.
-- **Layers, hidden layers and old results evicted to the mirror** (which already holds
-  every layer PNG), only if step 1 shows layer pixels dominating.
+**Three smaller things went with it**, each measured, none of them the cause:
 
-**Step 3: the escape hatch.** Extend the existing *Free VRAM* action so it also drops the
-pyramids, filter caches, compositor textures and pooled surfaces of documents that are not
-the active tab, says in the status line how much it freed, and runs by itself when
-`app.getAppMetrics()` crosses a threshold. That turns a bad session into a recoverable one
-even where the root cause is Chromium's and not ours.
+- `GLCompositor.dispose()` **loses its context** (`WEBGL_lose_context`) and zeroes its
+  canvas. A context is otherwise only dropped when its canvas is collected and Chromium
+  keeps at most 16 per page. Worth about 130 MB of the floor.
+- the compositor's texture cache is bounded **in bytes** (`TEXTURE_BUDGET`, 1 GB) with a
+  count cap behind it, and never evicts a texture the current frame used. A count of 48 was
+  meaningless: one level-0 texture of a 96 MP source is 384 MB. In practice one open 96 MP
+  document holds 206 MB there.
+- `ed.releaseCaches({ deep })` gives the caches back and returns the bytes; **Free VRAM**
+  calls it and says "Freed N MB of caches".
 
-**Not without a measurement**: raising the V8 heap (`js-flags --max-old-space-size`).
-Nothing so far points at the JS heap, and the 8 GB process limit cannot be raised anyway.
+**The GPU floor, and what it is.** After the leak was gone, opening and closing four 96 MP
+documents left the GPU process about **1.3 GB above** its 240 MB start, flat across rounds
+and scaling with the largest document seen (660 MB after 2 MP documents). It is not lost:
+`releaseCaches({ deep: true })`, the surface pool plus the shared context's drawing buffer
+and source texture, brings it back to **+58 MB**. So the floor is memory the GL path holds
+for reuse, and the escape hatch reclaims it.
 
-**Gates**: `composite_test.py` (the pixels must not move), `film_test.py`,
-`commands_test.py`, `perf_test.py` and `perf_test.py --chain` (no regression),
-`smoke_test.py --no-helpers`, plus the new `mem_test.py` against the targets in step 1.
-Restart the app between benchmark runs - otherwise the numbers are nonsense, which is the
-very symptom this phase exists to remove.
+**What still costs, and is not a leak.** Four 96 MP documents *open at the same time* are
+19 GB of live layer pixels, and a pan frame there costs 40 ms
+(`python tools/mem_test.py 12000x8000 --rounds 4 --keep`). Nothing is retained wrongly:
+close them and everything comes back within a few seconds. It is simply more than Chromium
+will accelerate, and it is what the memory watch is for.
+
+**Step 3, the escape hatch** (`renderer/shell.js` `watchMemory`): every 30 seconds, while
+the GPU process is above `settings.memory.gpuLimitMB` (default 3072, the row is in
+Settings › Rendering, 0 switches it off), the caches of the tabs that are not in front are
+released; a tab that is busy or under the pointer is skipped, and the active document is
+never touched. One console line per trigger with the numbers. `releaseCaches` deliberately
+does **not** draw: a background tab that redrew there would rebuild everything it just gave
+up. The `status` command reports `memory: { gpuMB, rendererMB }`, so an MCP client can see
+it too.
+
+**Hypotheses from the plan, ticked.** H1 (canvas churn on the hot path) real but small: the
+GL filter path made 24 canvases holding 3 GB across four documents, all of them collected
+once the retainer was gone. H2 (a closed document releases late) **wrong in its diagnosis**:
+the documents were not waiting for a collection, they were reachable. H3 (texture cache
+capped by count) real, 206 MB per open document, now bounded in bytes. H4 (the surface pool)
+not a factor: 34.5 MB, no foreign-generation surfaces in any run. H5 (the shared GL canvas
+resized per call) part of the GPU floor, released by `glReleasePool()`. H6 (context count)
+fixed as a precaution. **Not built, and not needed**: `dropCanvas` and explicit canvas
+ownership, undo as dirty-rect tiles, layer eviction to the mirror, the objects map at a
+bounded resolution. Once nothing holds a canvas, the collector and the GPU process do the
+rest within a second or two, measured rather than assumed.
+
+**Traps worth keeping.** Reading GPU memory needs patience: the shared image behind a
+collected canvas is released asynchronously, and a document that was just closed keeps its
+layers until the upload `close()` started has read them. Closing four 96 MP tabs at once
+held 19 GB for a few seconds and then dropped to 34 MB, so `mem_test.py` reads both numbers
+until they stop falling instead of waiting a fixed time. And take the heap snapshot early:
+the census tells you *what* survived, only the retaining path tells you *why*.
 
 ## 7. Benchmark and test plan
 
@@ -809,6 +823,17 @@ with `performance.now()` around `draw()` and with frame timestamps over 60 frame
 `python tools/perf_test.py --chain [size]` is the second entry point: one document, five
 stacks of filter layers, panned with the GPU filter chain on and off, with the round trip
 counters from `glChainStats()` next to the times (phase 5, step 2).
+
+`tools/mem_test.py` (phase 6) is the memory walk. It builds one 96 MP film-look document
+per round, benchmarks a pan frame and a levels slider tick, closes the tab and forces a
+collection, and prints one row per phase: the private bytes of the renderer and of the GPU
+process, the canvases that are still alive with their total size, the compositor's
+textures, the surface pool, undo, and the three timings. At the end it lists what survived,
+the line that allocated it, and whether the targets held. `--rounds n` sets the number of
+rounds, `--keep` leaves every tab open instead (four 96 MP documents at once), and a size
+argument replaces the default `12000x8000`. It needs no ComfyUI and uploads nothing.
+Restart the app before every run: the numbers drift within a session, which is the whole
+reason the phase exists.
 
 Targets: interactive frames ≤ 16 ms at 12k; full composite after release ≤ 1 s at 12k
 without filters, ≤ 3 s with a film look; no synchronous main-thread block above 100 ms

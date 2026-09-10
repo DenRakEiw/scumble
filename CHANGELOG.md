@@ -5,6 +5,25 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.4 — unreleased
 
+- **Fixed: the app got slower the longer you worked in it.** Opening and closing several
+  large images in one session left every one of them in memory, with all of its layers. After
+  four 12k documents a slider drag cost 50 ms per step instead of 9, panning stuttered, and
+  the graphics card was holding 19 GB it could not use for anything. The documents are let go
+  properly now: the same four rounds end within a few percent of the first one, and with
+  35 MB left over instead of 19 GB. The cause was in the plugin system, so it also applies to
+  any plugin you write yourself.
+- **Filter layers stay on the graphics card.** A stack of filter layers used to hand the
+  picture back and forth between the processor and the card once per layer. It now stays
+  there for the whole chain: five filter layers on a 24 megapixel document cost 1.5 ms a
+  frame instead of 2.9, and a film look with halation and grain 2.7 ms instead of 3.4. The
+  picture is unchanged, checked layer by layer including opacity, blend modes and masks.
+- **Free VRAM gives the caches back too.** The button in the toolbar already unloaded the
+  helper models; it now also releases the filtered copies, the display pyramids and the
+  textures the current documents are holding, and says how many megabytes that was.
+- **Background tabs release their caches when memory runs short.** Above a limit you can set
+  in Settings › Rendering (3 GB by default, 0 switches it off) the tabs that are not in front
+  give up what they can rebuild. The document in front is never touched, and neither is a tab
+  that is working on something.
 - **Fixed: painting or erasing on a layer snapped back.** The stroke was in the image the
   whole time - it was saved, exported and rendered with - but the screen kept showing the
   layer as it was before. A regression of the graphics-card compositor in 0.1.3.

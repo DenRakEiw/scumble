@@ -70,6 +70,55 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-10)
 
+**Phase 6 (memory) is done** — `docs/PERFORMANCE.md` "Phase 6" has the measurement, the
+node's `DEVELOPMENT.md` §21f the rules, `docs/PHASE6_PLAN.md` the plan it was worked
+through. The symptom (a session got slower the more large documents it had seen) was
+**not** in the drawing code: every closed document stayed reachable through one event
+listener, and with it its whole layer stack.
+
+- **The leak**: a plugin panel's `build` closes over that tab's `Document`, and the
+  listeners it registered were never removed. Both bundled plugins do it. Four 96 MP
+  documents built and closed left **301 canvases holding 18.8 GB** alive and the GPU
+  process at 19 GB; a pan frame cost 47 ms instead of 4. Found with a heap snapshot
+  (`HeapProfiler.takeHeapSnapshot` through CDP, then the shortest path from the GC root) —
+  the canvas census says *what* survived, only the retaining path says *why*. Take the
+  snapshot early next time.
+- **The fix** is in `renderer/plugins.js`: listeners registered while a panel is being
+  built belong to that panel instance (`buildScope`, a module variable because both
+  plugins keep the `scumble` from `activate()` instead of the one `build()` is handed),
+  and `host.on("removed")` unmounts the panel, runs its `destroy`, and clears `reg.els` /
+  `reg.buttons` (Maps keyed by the editor). `docs/PLUGINS.md` says so for plugin authors.
+- **After**: the same four rounds end at 7 canvases / 34 MB, pan 3.6 → 4.1 ms, levels tick
+  9.0 → 10.0 ms, renderer 97 MB.
+- **Instrumentation that stays**: IPC `app:metrics` (`main.js` + `preload.js`,
+  `app.getAppMetrics()` plus the renderer's own numbers — the bytes are in the **GPU
+  process**), `ed.memoryReport()`, `GLCompositor.stats()`, `glPoolStats()`, and
+  `tools/mem_test.py`. Do not reach for `performance.measureUserAgentSpecificMemory()`:
+  `scumble://` is not cross-origin isolated, so it has always returned null.
+- **Smaller, measured, not the cause**: the compositor loses its GL context in `dispose()`
+  and its texture cache is bounded in bytes (1 GB) instead of by a count of 48;
+  `ed.releaseCaches({ deep })` gives caches back and returns the bytes; **Free VRAM** calls
+  it and says how much; `renderer/shell.js` `watchMemory` releases the caches of background
+  tabs every 30 s above `settings.memory.gpuLimitMB` (default 3072, row in Settings ›
+  Rendering, 0 = off); the `status` command reports `memory: { gpuMB, rendererMB }`.
+- **What is left and is not a leak**: after four 96 MP documents the GPU process sits about
+  1.3 GB above its start, flat across rounds — `releaseCaches({ deep: true })` brings it to
+  +58 MB, so it is memory the GL path holds for reuse. And four 96 MP documents *open at
+  once* really are 19 GB of live pixels: 40 ms a frame, which is what the memory watch is
+  for. `dropCanvas`, undo tiles and layer eviction were **not** built and are not needed.
+- **Gates, all on fresh instances**: `composite_test.py`, `commands_test.py`,
+  `film_test.py`, `perf_test.py` at 2048x1152 / 6000x4000 / 12000x8000 and
+  `perf_test.py --chain 6000x4000` (both within noise of the recorded numbers),
+  `smoke_test.py --no-helpers` (real Flux run), `mem_test.py` in both variants.
+- **`tools/mcp_test.py` fails, and it is not phase 6**: the installed 0.1.3 fails the same
+  way. The Python `mcp` client now treats the stray carriage return Electron prints before
+  any JS runs as a fatal parse error instead of a warning. Own task, still open.
+
+**Release 0.1.4 is prepared but not tagged.** `package.json` is 0.1.4 and `CHANGELOG.md`
+has its section (phase 6 and phase 5 step 2 together, as decided with the user). The tag
+and the draft release wait for the user's go-ahead: `git tag v0.1.4 && git push --tags`,
+then `gh release edit v0.1.4 --draft=false`.
+
 **Three bugs fixed on 2026-09-10 (after 0.1.3), all reported by the user, two of them
 regressions of the GPU compositor** (`docs/PERFORMANCE.md`, "Phase 5, the two bugs the
 compositor shipped with"; the node's `DEVELOPMENT.md` §21e has the two new rules). Gates on
@@ -141,21 +190,12 @@ compositor. Both are published on GitHub Releases, so the installed app updates 
   `tools/commands_test.py` (it uploads twice and watches the mirror grow, so it fails on
   the bug even when ComfyUI is connected; verified by reverting the fix).
 
-**Next up: phase 6.** The step-by-step implementation plan is **`docs/PHASE6_PLAN.md`**
-(written 2026-09-10 after reading the code: six ranked hypotheses, the instrumentation to
-build first, the fixes in order with file and line references, the escape hatch, gates and
-release). Work through it top to bottom. Background in `docs/PERFORMANCE.md` § "Phase 6:
-memory, and what a long session does to the GPU"; the short version is that the
-old list (undo tiles, object map, layer eviction) is mostly guesswork that the measurements
-have overtaken, that **step 1 is instrumentation and nothing happens before it works**
-(`tools/mem_test.py`, and the memory that matters is in the GPU process, so it needs
-`app.getAppMetrics()` through a new IPC), and that the one thing worth chasing is why the
-GPU path degrades after several large documents in one session. Two concrete leads are
-already written down there: canvas backing stores that only free at collection
-(`canvas.width = 0`), and the compositor's texture cache being capped by count (48) rather
-than by bytes with `forget()` never called. Decided with the user on 2026-09-10: phase 6
-first, then one release 0.1.4 with phase 6 and phase 5 step 2 together. **No release yet**:
-`package.json` is still 0.1.3 and `CHANGELOG.md` has no section for the next version.
+**Phase 6 is finished** (see the top of this section). Its plan, `docs/PHASE6_PLAN.md`, is
+kept as written: the six hypotheses it ranked are ticked off in `docs/PERFORMANCE.md`, and
+the measurement overturned most of them. What the performance work leaves open on purpose:
+layer tiles above 16384 px on a side (the compositor returns null there and Canvas 2D takes
+over), the full-resolution GPU path, and a blur as a shader pass, which is a decision about
+the film pack's output and belongs to the user.
 
 **Phase 5 has its second step** (2026-09-10): the filter chain stays on the GPU
 (`docs/PERFORMANCE.md`, phase 5 step 2). Measured first, as asked: a round trip
@@ -597,7 +637,11 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   stored references in `tools/refs/` (`--update` rewrites them, `--tolerance n` allows n
   levels); run it after anything that touches drawing.
   `python tools/perf_test.py [2048x1152 6000x4000 12000x8000]` is the drawing benchmark
-  (synthetic documents in their own tab, no ComfyUI; `docs/PERFORMANCE.md` §7). Scripted
+  (synthetic documents in their own tab, no ComfyUI; `docs/PERFORMANCE.md` §7).
+  `python tools/mem_test.py [12000x8000] [--rounds 4] [--keep]` is the memory walk: a
+  document per round, benchmarked, closed and collected, with the private bytes of the
+  renderer and of the GPU process, a census of every live canvas and the line that made it.
+  Restart the app before every benchmark or memory run. Scripted
   waits must use `setTimeout`, never `requestAnimationFrame`: rAF does not fire while the
   window is hidden, and `drawSoon()` is rAF-based, so a hidden window draws nothing.
   Start the dev instance with the Bash tool's `run_in_background`; a plain `&` job dies

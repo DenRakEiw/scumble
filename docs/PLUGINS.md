@@ -196,6 +196,14 @@ A collapsible section at the end of the Image or Generate pane, once per tab (ex
 future ones). `build` runs per tab with that tab's `Document`; keep state on `container` or
 in closures, and use `scumble.events.on("changed", ...)` to refresh.
 
+**Listeners you register inside `build` belong to that panel**: when the tab closes they are
+removed, `destroy` runs, and the section goes with it. That matters because `build` closes
+over a whole document - one listener that outlived its tab used to keep every image ever
+opened in memory (docs/PERFORMANCE.md, phase 6). A listener registered in `activate` lives as
+long as the plugin, as before, so keep document state out of it: hold `doc.id`, not `doc`.
+Only listeners registered while `build` itself is running are scoped, so register them
+directly rather than from a later timeout.
+
 ## Actions
 
 ```js

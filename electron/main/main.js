@@ -398,6 +398,18 @@ function installIpc() {
     ipcMain.handle("plugins:setData", (_e, { id, patch }) => plugins.setData(String(id), patch));
     ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: app.getPath("userData"), pluginDir: plugins.userDir() }));
     ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
+    // memory (docs/PHASE6_PLAN.md step 1a): the bytes that matter live in the GPU process, and
+    // only the main process can see them. Sizes are KB, as Electron reports them.
+    ipcMain.handle("app:metrics", () => ({
+        processes: app.getAppMetrics().map((p) => ({
+            pid: p.pid,
+            type: p.type,
+            name: p.name || p.serviceName || "",
+            workingSetKB: p.memory ? p.memory.workingSetSize : 0,
+            peakWorkingSetKB: p.memory ? p.memory.peakWorkingSetSize : 0,
+            privateKB: p.memory ? p.memory.privateBytes : undefined, // Windows only
+        })),
+    }));
     // updates (electron/main/updater.js): GitHub Releases feed, checked at start unless switched off
     ipcMain.handle("update:status", () => updater.status);
     ipcMain.handle("update:check", () => updater.check({ manual: true }));

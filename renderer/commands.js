@@ -141,6 +141,19 @@ export function status(ed) {
     };
 }
 
+/** What the app is using, in MB: the GPU process and this renderer (docs/PERFORMANCE.md phase 6). */
+async function memoryMB() {
+    try {
+        const m = await window.scumble.metrics();
+        let gpuKB = 0;
+        for (const p of m.processes || []) if (p.type === "GPU") gpuKB += p.privateKB || p.workingSetKB || 0;
+        const r = m.renderer && m.renderer.process;
+        return { gpuMB: Math.round(gpuKB / 1024), rendererMB: r ? Math.round((r.private || r.residentSet || 0) / 1024) : 0 };
+    } catch (_) {
+        return null;
+    }
+}
+
 // ---- parameter schema helpers ---------------------------------------------------------------
 
 const P = {
@@ -230,9 +243,9 @@ const COMMANDS = {
 
     // -- document --
     status: {
-        description: "What the document holds: image size, prompt, generation settings, selection bounds, every layer, pending jobs, the recipe.",
+        description: "What the document holds: image size, prompt, generation settings, selection bounds, every layer, pending jobs, the recipe, and what the app is using in memory.",
         params: {},
-        async run(ed) { return status(ed); },
+        async run(ed) { return { ...status(ed), memory: await memoryMB() }; },
     },
     new_canvas: {
         description: "Start a new white canvas of the given size in this tab (discards its image and layers).",

@@ -18,7 +18,7 @@ const ui = {
     providers: $("set-providers"), keysNote: $("set-keys-note"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
-    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
+    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setGpuMem: $("set-gpu-mem"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"),
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
@@ -662,6 +662,48 @@ host.onProviderRuns = (runs) => {
     renderTabs();
 };
 
+// ---- memory watch ------------------------------------------------------------------------
+//
+// A document that is not in front still holds its filtered and matched copies, its display
+// pyramids and the compositor's textures - a few hundred MB at 96 MP. When the GPU process
+// grows past the limit those caches are given back; the next time the tab comes forward it
+// rebuilds them. The active document is never touched, and neither is anything that is
+// working (docs/PERFORMANCE.md phase 6).
+let memoryBusy = false;
+
+/** The GPU process's private bytes in MB, or 0 when the platform does not report them. */
+async function gpuMemoryMB() {
+    const m = await window.scumble.metrics();
+    let kb = 0;
+    for (const p of m.processes || []) if (p.type === "GPU") kb += p.privateKB || p.workingSetKB || 0;
+    return Math.round(kb / 1024);
+}
+
+async function watchMemory() {
+    if (memoryBusy) return;
+    // read the limit rather than trusting the copy in `settings`: the value can be
+    // changed from the settings dialog of another window, and it makes the watch testable
+    const conf = await window.scumble.settings.get();
+    const limit = (conf.memory && conf.memory.gpuLimitMB) || 0;
+    if (!limit) return;
+    const others = host.editors().filter((ed) => ed !== host.editor && !busy(ed) && !ed.pointer);
+    if (!others.length) return;
+    memoryBusy = true;
+    try {
+        const before = await gpuMemoryMB();
+        if (before <= limit) return;
+        let freed = 0;
+        for (const ed of others) { try { freed += ed.releaseCaches({ deep: false }) || 0; } catch (err) { console.warn(err); } }
+        const after = await gpuMemoryMB();
+        console.log(`memory watch: GPU ${before} MB over the ${limit} MB limit, released ${Math.round(freed / 1048576)} MB of caches in ${others.length} background tab${others.length === 1 ? "" : "s"}, now ${after} MB`);
+    } catch (err) {
+        console.warn("memory watch", err);
+    } finally {
+        memoryBusy = false;
+    }
+}
+setInterval(() => { watchMemory(); }, 30000);
+
 // ---- settings dialog ---------------------------------------------------------------------
 
 function fmtBytes(b) {
@@ -689,6 +731,11 @@ async function openSettings() {
     ui.setPruneNote.textContent = "";
     ui.recipeNoteSet.textContent = "";
     ui.setGpu.textContent = glFiltersAvailable() ? "Filter layers run on the GPU (WebGL2); the CPU code is the fallback." : "WebGL2 is not available here: filter layers run on the CPU.";
+    ui.setGpuLimit.value = (settings.memory && settings.memory.gpuLimitMB) != null ? settings.memory.gpuLimitMB : 3072;
+    try {
+        const mb = await gpuMemoryMB();
+        ui.setGpuMem.textContent = `The GPU process is using ${mb} MB right now. A background tab keeps its filtered copies, its display pyramids and the compositor's textures until they are released here.`;
+    } catch (_) { ui.setGpuMem.textContent = ""; }
     try {
         const info = await window.scumble.info();
         ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products.`;
@@ -753,6 +800,11 @@ ui.updateCheck.addEventListener("click", async () => { renderUpdate(await window
 ui.updateInstall.addEventListener("click", () => window.scumble.updates.install());
 ui.updateBar.addEventListener("click", () => window.scumble.updates.install());
 ui.updateAuto.addEventListener("change", async () => { settings = await window.scumble.settings.set({ updates: { ...(settings.updates || {}), check: ui.updateAuto.checked } }); });
+ui.setGpuLimit.addEventListener("change", async () => {
+    const v = Math.max(0, Math.round(Number(ui.setGpuLimit.value) || 0));
+    ui.setGpuLimit.value = v;
+    settings = await window.scumble.settings.set({ memory: { ...(settings.memory || {}), gpuLimitMB: v } });
+});
 ui.aboutRepo.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal("https://github.com/DenRakEiw/scumble"); });
 
 // keys typed into the dialog must not reach the editor's window-level shortcut handler
@@ -813,4 +865,4 @@ selectRecipe(settings.recipe);
 showStatus(await window.scumble.comfy.status());
 window.scumble.commands.ready();
 
-export { newDocument, activate, closeDocument, openSettings, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins };
+export { newDocument, activate, closeDocument, openSettings, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory };
