@@ -5,7 +5,7 @@
 // the sky changes the sky and not the roof inside the circle. The tool (U) places, moves and
 // resizes points on the canvas; the layer row shows sliders for the selected point.
 
-import { PRELUDE, luma, clamp01, sstep, mix, loop, blur, num, pct, makeRunner, shader, makeCanvas } from "./common.js";
+import { PRELUDE, luma, clamp01, sstep, mix, loop, blur, num, pct, makeRunner, shader, makeCanvas, resolve } from "./common.js";
 
 const FILTER_ID = "film.points";
 const MAX_POINTS = 64;
@@ -95,7 +95,7 @@ export function makePoints(scumble) {
             const imgW = src.width / scale, imgH = src.height / scale;
             const k = Math.min(1, 256 / Math.max(src.width, src.height));
             const small = makeCanvas(Math.round(src.width * k), Math.round(src.height * k));
-            small.getContext("2d").drawImage(src, 0, 0, small.width, small.height);
+            small.getContext("2d").drawImage(resolve(src), 0, 0, small.width, small.height);   // src may be a GPU surface
             cache.sample = { canvas: small, sx: small.width / imgW, sy: small.height / imgH };
             const points = Array.isArray(p.points) ? p.points : [];
             const strength = pct(p.strength, 100);

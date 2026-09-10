@@ -16,9 +16,12 @@ export function activate(scumble) {
     const run = makeRunner(scumble);
 
     // ---- filters ----------------------------------------------------------------------------------
-    for (const def of makeFilters(scumble)) scumble.filters.register(def);
+    // chain: every filter here runs through makeRunner / common.js, which resolve a GPU
+    // surface only where they really read pixels, so the editor's filter chain can hand
+    // them a texture instead of a canvas (docs/PERFORMANCE.md, phase 5 step 2).
+    for (const def of makeFilters(scumble)) scumble.filters.register({ ...def, chain: true });
     const points = makePoints(scumble);
-    scumble.filters.register(points.filter);
+    scumble.filters.register({ ...points.filter, chain: true });
     scumble.tools.register(points.tool);
     scumble.commands.register(points.command.name, points.command.def);
 

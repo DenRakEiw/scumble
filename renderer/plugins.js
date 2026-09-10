@@ -9,7 +9,7 @@
 import { host } from "./editor/host.js";
 import { commands, findLayer, layerSummary, touch, bounds } from "./commands.js";
 import { FILTERS, FILTER_IDS, filterDefaults, applyFilter } from "./editor/inpaint_filters.js";
-import { registerGLFilter, unregisterGLFilter, runShader, glFiltersAvailable } from "./editor/inpaint_filters_gl.js";
+import { registerGLFilter, unregisterGLFilter, runShader, glFiltersAvailable, glToCanvas, isGLSurface } from "./editor/inpaint_filters_gl.js";
 import { el, icon, makeCanvas } from "./editor/inpaint_canvas.js";
 
 export const API_VERSION = 1;
@@ -194,7 +194,9 @@ function registerFilter(entry, def) {
         try { return def.apply(src, p, info) || src; }
         catch (err) { report(entry, `filter ${def.id}`, err); return src; }
     };
-    FILTERS[id] = { label: def.label || def.id, params, apply, plugin: entry.id, control: typeof def.control === "function" ? def.control : undefined };
+    // chain: this apply() runs its own shader stages, so it can take a GPU surface as input
+    // (and hand one back). Without it the framework resolves the input to a canvas first.
+    FILTERS[id] = { label: def.label || def.id, params, apply, plugin: entry.id, chain: !!def.chain, control: typeof def.control === "function" ? def.control : undefined };
     FILTER_IDS.push(id);
     if (def.glsl) {
         if (typeof def.glsl.code !== "string") throw new Error(`filter "${id}": glsl.code must be the fragment source defining vec4 shade(vec4 color, vec2 uv)`);
@@ -470,11 +472,21 @@ function makeApi(entry) {
              * One shader pass over a canvas: `def` = { code, uniforms, label } like a filter's glsl
              * block (compiled once per object), `values` the uniform values (sampler2D values are
              * canvases, ImageData or { data, width, height }). Null without a GPU path: run the CPU code.
+             *
+             * With `info.chain` (the editor sets it while a filter stack runs) the result is a GPU
+             * surface instead of a canvas, and so is an input that came from an earlier stage: the
+             * chain then costs one upload and one read back instead of one of each per pass. A
+             * surface has width and height and can be handed to the next shade() or to
+             * scumble.filters.apply(); anything that reads pixels calls scumble.gl.toCanvas() first.
              */
             shade(def, src, values, info) {
                 try { return runShader(def, src, values || {}, info || {}); }
                 catch (err) { report(entry, `gl.shade ${def && def.label || ""}`, err); return null; }
             },
+            /** A surface (or a canvas, unchanged) as a canvas the CPU code can read. */
+            toCanvas: (v) => glToCanvas(v),
+            /** Is this a GPU surface rather than a canvas? */
+            isSurface: (v) => isGLSurface(v),
         },
         panels: { register: (def) => registerPanel(entry, def), unregister: (id) => unregisterPanel(entry, id.includes(".") ? id : `${entry.id}.${id}`) },
         actions: { register: (def) => registerAction(entry, def), unregister: (id) => unregisterAction(entry, id.includes(".") ? id : `${entry.id}.${id}`), run: (id) => runAction(id.includes(".") ? id : `${entry.id}.${id}`) },

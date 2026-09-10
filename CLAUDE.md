@@ -114,6 +114,50 @@ compositor. Both are published on GitHub Releases, so the installed app updates 
   `tools/commands_test.py` (it uploads twice and watches the mirror grow, so it fails on
   the bug even when ComfyUI is connected; verified by reverting the fix).
 
+**Phase 5 has its second step** (2026-09-10): the filter chain stays on the GPU
+(`docs/PERFORMANCE.md`, phase 5 step 2). Measured first, as asked: a round trip
+canvas -> texture -> canvas costs **0.6 to 1.0 ms whatever the size** (it synchronises the
+2D canvas with the WebGL context at both ends, it is not pixel work), a ping-pong prototype
+ran five passes in 0.1 ms, and a film stack paid seven round trips per frame. So
+`inpaint_filters_gl.js` grew render targets: a `GLSurface` is an RGBA8 texture with a
+framebuffer, `info.chain` makes a pass write into one and read one, `u_dstTop` keeps every
+texture top down so nothing downstream notices, `beginScope()` / `endScope(keep)` pool them
+and `glChainStats()` counts the round trips. Two users: the stages inside one filter (a
+plugin declares `chain: true` and resolves with `scumble.gl.toCanvas()` where it really
+reads pixels - the film pack does that in `common.js`) and consecutive filter layers
+(`drawLayersInto` carries the chain, `flushFilterChain` puts it down, `applyFilterLayer`
+keeps it only when the layer covers its input one to one).
+
+- **The pixels do not change.** A result that goes onto the canvas is still drawn over the
+  composite in the old order, and the chain is flushed underneath it first, so only the
+  *upload of the next filter's input* is saved. `tools/composite_test.py` has a new step
+  that renders the same stack with the chain on and off in one run, including a layer with
+  opacity + blend and a masked one: **identical, 0 levels**, view and full resolution.
+- **What it bought** (`python tools/perf_test.py --chain 6000x4000`, pan, median ms):
+  five filter layers 2.9 -> 1.5, three 1.8 -> 1.4, film look alone 3.4 -> 2.7, one filter
+  layer unchanged. An extra filter layer costs 0.6 ms before and 0.15 ms after. Round trips
+  for the film stack: 14 per frame -> 5.
+- **What it did not buy, and why**: the full film stack stayed at 5.5 ms. What is left in
+  it is the two **Canvas 2D blurs** inside halation (`ctx.filter = blur(σ)`): the chain has
+  to touch down there and wait. The next lever for that stack is a blur as a shader pass -
+  **not built**, because it changes the look of every blur-based film filter (Skia's box
+  blurs against a gaussian) and `film_test.py` compares the two paths against each other,
+  not against a picture. That is a decision about the film pack's output, for the user.
+- **`CHAIN_MAX_PIXELS` is 10 MP.** Measured on the full-resolution composite: up to 8 MP the
+  chain is about twice as fast, at 12 MP even, at 16 MP and above clearly slower (the
+  surfaces stop fitting the 320 MB pool, so textures are created and destroyed per frame).
+  A screen pass is 2 to 8 MP, so exports, runs and thumbnails keep the path they had.
+  `ed.filterChainOff = true` switches the chain off at run time.
+- Gates on the dev instance: `composite_test.py`, `film_test.py` (35 cases, worst 3),
+  `commands_test.py`, `smoke_test.py --no-helpers` (real Flux run) all PASS; the ordinary
+  `perf_test.py` is unchanged within noise at 2.4 / 24 / 96 MP. The editor changes are sync
+  patches (`tools/sync_editor.py`, round trip verified), the node repo is untouched: the GL
+  filter module is still app-only and the chain goes back with it.
+- Watch out when measuring: after several large documents in one page the GL path degrades
+  badly (a `levels` filter that costs 0.8 ms cold-clean measured 12 ms after four 96 MP
+  documents had been built and closed). Restart the app between benchmark runs, or the
+  numbers are nonsense. That is phase 6 (memory) territory.
+
 **Phase 5 has its first step** (2026-09-10): `js/inpaint_compositor.js` stacks the visible
 region on the GPU, one shader pass per layer, sources cached as textures by the version
 `touchSource` bumps. It agrees with Canvas 2D to **1 level over 1.5 million pixels** in the

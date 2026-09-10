@@ -1,9 +1,11 @@
 """Pixel reference test for the editor's compositing (docs/PERFORMANCE.md §7).
 
-The acceptance gate for phase 5: the WebGL2 compositor has to produce the same picture the
-Canvas 2D one does. The test builds a deterministic document with every blend mode, a
-masked layer, a colour-matched layer, a filter layer and text, renders the full-resolution
-composite and the on-screen view, and compares both against stored references.
+The acceptance gate for phase 5: the GPU paths have to produce the same picture Canvas 2D
+does. The test builds a deterministic document with every blend mode, a masked layer, a
+colour-matched layer, a filter layer and text, renders the full-resolution composite and
+the on-screen view and compares both against stored references, then compares the two GPU
+paths against their Canvas 2D twin in the same run: the filter chain (step 2, a stack of
+filter layers that hand their result on as a texture) and the compositor (step 1).
 
     python tools/composite_test.py                # compare against tools/refs/
     python tools/composite_test.py --update       # write the references (do this on a
@@ -213,6 +215,93 @@ GL_VS_2D = """
 })()
 """
 
+# The phase 5 step 2 gate: a stack of filter layers rendered with the GPU filter chain (the
+# result of one filter stays a texture for the next) and with it switched off, in one run.
+# The two paths must agree; where they cannot is the 8-bit premultiplied storage of a canvas
+# against the straight RGBA8 of a texture, which only shows below full alpha.
+FILTER_CHAIN = """
+(async () => {
+    const ed = window.__cmp;
+    const { FILTERS } = await import("./editor/inpaint_filters.js");
+    // A realistic stack on top of the reference document. Ids are pinned: grain seeds its
+    // field from the layer id, so without that no two runs match.
+    const want = [["film.look", "chain-look", { preset: "portra400" }], ["film.halation", "chain-hal", null], ["grain", "chain-grain", { amount: 30, size: 2 }]];
+    const added = [];
+    for (const [type, id, params] of want) {
+        if (!FILTERS[type]) continue;
+        const l = ed.addFilterLayer(type);
+        if (!l) continue;
+        l.id = id;
+        if (params) l.params = { ...(l.params || {}), ...params };
+        added.push(l);
+    }
+    if (added.length < 2) return { skipped: "not enough filter types for a stack" };
+    const clear = () => { for (const l of ed.layers) { l._fcache = null; l._fcacheView = null; l._fxCache = null; l._fxCacheView = null; } };
+    const view = (off) => {
+        ed.filterChainOff = off;
+        clear();
+        ed.sceneSig = null;
+        ed.flatCache = null;
+        ed.draw();
+        const c = document.createElement("canvas");
+        c.width = ed.canvas.width; c.height = ed.canvas.height;
+        c.getContext("2d").drawImage(ed.canvas, 0, 0);
+        return c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    };
+    const full = (off) => {
+        ed.filterChainOff = off;
+        clear();
+        ed.flatCache = null;
+        const c = ed.flattenToCanvas({ forRun: true });
+        return c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    };
+    const diff = (a, b) => {
+        let max = 0, sum = 0, over = 0;
+        for (let i = 0; i < a.length; i++) {
+            const d = Math.abs(a[i] - b[i]);
+            if (d > max) max = d;
+            if (d > 2) over++;
+            sum += d;
+        }
+        return { max, mean: +(sum / a.length).toFixed(4), over2: over, samples: a.length };
+    };
+    const t0 = performance.now();
+    const chained = view(false);
+    const msChain = +(performance.now() - t0).toFixed(2);
+    const t1 = performance.now();
+    const plain = view(true);
+    const msPlain = +(performance.now() - t1).toFixed(2);
+    const v = diff(plain, chained);
+    const f = diff(full(true), full(false));
+
+    // The same stack again with the chain broken in the middle: the first filter layer is
+    // half transparent on a blend mode and the second carries a mask, so both have to be
+    // composited onto the canvas and the chain has to be flushed underneath them.
+    added[0].opacity = 0.6;
+    added[0].blend = "multiply";
+    if (added[1]) {
+        const m = document.createElement("canvas");
+        m.width = ed.width; m.height = ed.height;
+        const mx = m.getContext("2d");
+        const mg = mx.createLinearGradient(0, 0, ed.width, 0);
+        mg.addColorStop(0, "rgba(255,255,255,0)"); mg.addColorStop(1, "rgba(255,255,255,1)");
+        mx.fillStyle = mg; mx.fillRect(0, 0, ed.width, ed.height);
+        added[1].mask = m;
+        added[1].maskDirty = true;
+        ed.markMaskChanged(added[1]);
+    }
+    ed.renderLayers();
+    const mixedView = diff(view(true), view(false));
+    const mixedFull = diff(full(true), full(false));
+
+    ed.filterChainOff = false;
+    for (const l of added) ed.removeLayer(l.id);
+    ed.flatCache = null;
+    ed.sceneSig = null;
+    return { layers: added.map((l) => l.filter), view: v, full: f, mixedView, mixedFull, msChain, msPlain };
+})()
+"""
+
 CLOSE = """
 (async () => {
     const shell = await import("./shell.js");
@@ -280,6 +369,21 @@ async def run(c, args):
                 ok = False
                 print(f"[FAIL] {name}: max {diff['max']} levels, mean {diff['mean']:.3f}, "
                       f"{diff['differing']} of {diff['bytes']} bytes differ. Current: {cur}, reference: {ref}")
+        # the GPU filter chain against the canvas round trips, same document, same run
+        fc = await c.eval(FILTER_CHAIN, timeout=300)
+        if fc.get("skipped"):
+            print(f"[skip] filter chain: {fc['skipped']}")
+        else:
+            worst = max(fc["view"]["max"], fc["full"]["max"], fc["mixedView"]["max"], fc["mixedFull"]["max"])
+            line = (f"filter chain {'+'.join(fc['layers'])}: view max {fc['view']['max']} mean {fc['view']['mean']}, "
+                    f"full max {fc['full']['max']} mean {fc['full']['mean']}, "
+                    f"with opacity/blend/mask max {max(fc['mixedView']['max'], fc['mixedFull']['max'])}, "
+                    f"draw {fc['msChain']} ms vs {fc['msPlain']} ms")
+            if worst <= args.tolerance:
+                print(f"[ok] {line}")
+            else:
+                ok = False
+                print(f"[FAIL] {line}")
         # the GPU compositor against Canvas 2D, same document, same run
         gl = await c.eval(GL_VS_2D, timeout=300)
         if gl.get("skipped"):

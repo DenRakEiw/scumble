@@ -70,6 +70,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `filters.register(def)` / `unregister(id)` | filter types |
 | `filters.apply(id, canvas, params, info)` / `filters.ids()` | run any filter type (built-in or plugin) on a canvas, GPU path when available: the film pack chains the built-in grain this way |
 | `gl.shade(shader, canvas, values, info)` / `gl.available()` | one shader pass over a canvas (`shader = { code, uniforms, label }`, compiled once per object) for multi-pass filters; null without a GPU path |
+| `gl.toCanvas(v)` / `gl.isSurface(v)` | a GPU surface (what `gl.shade` hands back inside a filter chain) as a canvas, or a canvas unchanged; see "Staying on the GPU" |
 | `panels.register(def)` / `unregister(id)` | side panels |
 | `actions.register(def)` / `unregister(id)` / `run(id)` | Plugins menu entries |
 | `tools.register(def)` / `unregister(id)` | tools in the tool column |
@@ -157,7 +158,26 @@ Filters that need more than one pass (a blur between two shader stages) skip the
 block and orchestrate in `apply`: blur with Canvas 2D, then `scumble.gl.shade(shader, canvas,
 values, info)` with the blurred canvas as a `sampler2D` value, falling back to a pixel loop
 when it returns null (or when `info.cpu` is set). `plugins/film/common.js` has the runner
-and the shared maths; `docs/FILM.md` the filters built that way. Keep both paths in agreement; `compareFilterPaths` in
+and the shared maths; `docs/FILM.md` the filters built that way.
+
+### Staying on the GPU (`chain`)
+
+Every stage that goes through a canvas costs a synchronisation between the 2D canvas and
+the GPU, about 0.6 to 1.0 ms whatever the size, and a filter with four stages paid eight of
+them per frame. So the editor runs a **filter chain**: with `info.chain` set (it does that
+for every filter layer at screen resolution) `gl.shade` and `scumble.filters.apply` hand
+back a *surface* — a texture — instead of a canvas, and take one as input.
+
+A filter opts in with `chain: true` in its definition, which is a promise about its
+`apply`: it may be handed a surface instead of a canvas, so **anything in it that reads
+pixels calls `scumble.gl.toCanvas(src)` first** (`drawImage`, `getImageData`, `ctx.filter`).
+A surface has `width` and `height` and can be passed straight to the next `gl.shade`, to
+`scumble.filters.apply` and as a `sampler2D` value. Without the flag the framework resolves
+the input to a canvas before calling `apply`, which is always safe and always costs one
+round trip. The film pack sets the flag and resolves inside `common.js` (`open`,
+`copyCanvas`, `blur`), so its own filters never see the difference.
+
+Do not hold on to a surface after `apply` returns: it goes back to the editor's pool. Keep both paths in agreement; `compareFilterPaths` in
 `renderer/editor/inpaint_filters_gl.js` measures the difference (the sample's posterize
 matches to the bit). A document that holds a plugin filter shows a plain "grain" layer when
 the plugin is missing at load time; plugins load before the session is restored.

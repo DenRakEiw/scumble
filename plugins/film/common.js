@@ -70,6 +70,16 @@ export function vnoise(px, py, seed) {
 
 // ---- canvases ---------------------------------------------------------------------------------
 
+// With the editor's GPU filter chain a stage's input can be a texture (a surface) instead of a
+// canvas; makeRunner() installs the resolver, and everything below that reads pixels calls it.
+let toCanvas = (v) => v;
+
+/** Called by makeRunner(scumble): how to turn a GPU surface into a canvas. */
+export function setResolve(fn) { if (typeof fn === "function") toCanvas = fn; }
+
+/** A stage's input as something drawImage / getImageData can read. */
+export const resolve = (v) => toCanvas(v);
+
 export function makeCanvas(w, h) {
     const c = document.createElement("canvas");
     c.width = Math.max(1, w | 0);
@@ -78,6 +88,7 @@ export function makeCanvas(w, h) {
 }
 
 export function copyCanvas(src) {
+    src = toCanvas(src);
     const out = makeCanvas(src.width, src.height);
     out.getContext("2d").drawImage(src, 0, 0);
     return out;
@@ -85,6 +96,7 @@ export function copyCanvas(src) {
 
 /** Read a canvas as ImageData plus a canvas to write the result into. */
 export function open(src) {
+    src = toCanvas(src);
     const W = src.width, H = src.height;
     const out = makeCanvas(W, H);
     const ctx = out.getContext("2d");
@@ -100,7 +112,7 @@ export function open(src) {
  */
 export function loop(src, fn, extra) {
     const { out, ctx, img, d, W, H } = open(src);
-    const e = extra ? extra.getContext("2d").getImageData(0, 0, W, H).data : null;
+    const e = extra ? toCanvas(extra).getContext("2d").getImageData(0, 0, W, H).data : null;
     const c = [0, 0, 0], b = [0, 0, 0];
     for (let y = 0, i = 0, j = 0; y < H; y++) {
         for (let x = 0; x < W; x++, i += 4, j++) {
@@ -119,6 +131,7 @@ export function loop(src, fn, extra) {
  * edges blur into themselves. sigma in pixels of `src` (scale it with info.scale first).
  */
 export function blur(src, sigma) {
+    src = toCanvas(src);   // ctx.filter needs a canvas: this is the one place a GPU chain touches down
     const W = src.width, H = src.height;
     if (sigma < 0.05) return copyCanvas(src);
     const pad = Math.min(W, H, Math.ceil(sigma * 3) + 2);
@@ -224,6 +237,7 @@ export const TRADEMARK = "Film names are trademarks of their owners; the looks a
  * module constants (the program is cached per object).
  */
 export function makeRunner(scumble) {
+    if (scumble.gl && scumble.gl.toCanvas) setResolve(scumble.gl.toCanvas);
     return (shader, src, values, info, cpu) => {
         if (!info || !info.cpu) {
             const out = scumble.gl.shade(shader, src, values, info || {});

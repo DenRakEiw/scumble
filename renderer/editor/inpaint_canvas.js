@@ -15,6 +15,7 @@
 
 import { api, host } from "./host.js";
 import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromCube, lutToCanvas, lutFromImage, plateStats } from "./inpaint_filters.js";
+import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText } from "./inpaint_text.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { buildPsd, buildOra } from "./inpaint_export.js";
@@ -5133,13 +5134,20 @@ class InpaintEditor {
         this.setStatus(`${layer.name}: back to synthetic grain.`);
     }
 
-    /** Filtered copy of `below` for a filter layer, cached until the composite or the parameters change. */
-    filteredCanvas(layer, below, forRun, preview) {
+    /**
+     * Filtered copy of `below` for a filter layer, cached until the composite or the parameters
+     * change. `below` is the composite so far: a canvas, or the GPU surface the filter layer
+     * before this one left behind. With `keepSurface` the result stays a surface for the next
+     * filter layer and is not cached; without it the surface is read back into a canvas. The
+     * stages inside one filter (the film look is colour, halation and grain) always chain on
+     * the GPU, which is where most of the canvas round trips were.
+     */
+    filteredCanvas(layer, below, forRun, preview, keepSurface = false) {
         const vp = this.viewPass;
         const key = JSON.stringify([layer.filter, layer.params, layer.lut && layer.lut.ref && layer.lut.ref.filename, layer.plate && layer.plate.ref && layer.plate.ref.filename, !!forRun, !!preview, below.width, below.height, vp ? [vp.x, vp.y] : 0]);
         const slot = vp ? "_fcacheView" : "_fcache";
         const c = layer[slot];
-        if (c && c.version === this.compositeVersion && c.key === key) return c.canvas;
+        if (!keepSurface && c && c.version === this.compositeVersion && c.key === key) return c.canvas;
         let input = below, scale = vp ? vp.sx : 1;
         if (preview) {
             const s = Math.min(1, 1024 / Math.max(below.width, below.height));
@@ -5157,14 +5165,30 @@ class InpaintEditor {
         // where the input sits in the image, in its own pixels: filters with a field of
         // their own (grain) anchor it there instead of at the corner of the preview
         const origin = vp ? [vp.x * vp.sx, vp.y * vp.sy] : [0, 0];
-        try { canvas = applyFilter(layer.filter, input, layer.params, { scale, origin, seed: layer.id, lut: layer._lutData, plate: layer._plateImg || null, plateKey: layer.plate && layer.plate.ref && layer.plate.ref.filename, plateMean: layer.plate && layer.plate.mean, plateStd: layer.plate && layer.plate.std, cache: layer[fxSlot] }); }
+        const chain = !this.filterChainOff && glChainUsable(input.width, input.height);   // filterChainOff: the Canvas 2D path, for composite_test
+        beginScope();
+        try { canvas = applyFilter(layer.filter, input, layer.params, { scale, origin, seed: layer.id, lut: layer._lutData, plate: layer._plateImg || null, plateKey: layer.plate && layer.plate.ref && layer.plate.ref.filename, plateMean: layer.plate && layer.plate.mean, plateStd: layer.plate && layer.plate.std, cache: layer[fxSlot], chain }); }
         catch (err) { console.error(err); }
+        canvas = endScope(canvas);
+        if (isGLSurface(canvas)) {
+            if (keepSurface) return canvas;                    // the next filter layer reads the texture
+            const flat = surfaceToCanvas(canvas);
+            if (canvas !== input) releaseSurface(canvas);      // a filter that did nothing hands its input back
+            canvas = flat;
+        }
         layer[slot] = { version: this.compositeVersion, key, canvas };
         return canvas;
     }
 
-    /** Draw a filter layer onto `ctx` (an image-sized canvas holding everything below it). */
-    applyFilterLayer(ctx, layer, index, forRun) {
+    /**
+     * Draw a filter layer onto `ctx` (a canvas holding everything below it), or hand its result
+     * on to the next filter layer as a GPU surface. `chain` is what the filter layer before it
+     * left there, `more` says another filter layer follows; the return value is the new chain,
+     * null once everything has been drawn. The pixels are the same either way: a result that
+     * goes onto the canvas is drawn over the composite exactly as before, and the held chain is
+     * flushed first (flushFilterChain), so only the upload of the next filter's input is saved.
+     */
+    applyFilterLayer(ctx, layer, index, forRun, chain = null, more = false) {
         if (!forRun) {
             // While something below the filter is being painted or moved, the cached
             // result would hide the live change: show the layers unfiltered instead.
@@ -5172,16 +5196,26 @@ class InpaintEditor {
             const gestureLayer = (p && p.layer) || (this.pending && this.pending.layer) || null;
             if (gestureLayer && gestureLayer !== layer) {
                 const gi = this.layers.indexOf(gestureLayer);
-                if (gi >= 0 && gi < index) return;
+                if (gi >= 0 && gi < index) return chain;
             }
         }
         const vp = this.viewPass;
         // the region pass already works at screen resolution; the 1024 px preview is for the full-size path
         const preview = !forRun && !vp && (this.filterPreview === layer.id || this.filterPreview === "*");
-        const out = this.filteredCanvas(layer, ctx.canvas, forRun, preview);
-        if (!out) return;
+        if (chain && preview) chain = this.flushFilterChain(ctx, chain);   // the preview downscales on a canvas
+        // A filter layer that covers its input one to one can leave its result on the GPU; a
+        // mask, an opacity or a blend mode has to composite it onto the canvas.
+        const plain = !layer.mask && layer.opacity >= 1 && (!layer.blend || layer.blend === "normal") && !preview;
+        const keepSurface = plain && more && !this.filterChainOff && glChainUsable(ctx.canvas.width, ctx.canvas.height);
+        const out = this.filteredCanvas(layer, chain ? chain.surface : ctx.canvas, forRun, preview, keepSurface);
         const rx = vp ? vp.x : 0, ry = vp ? vp.y : 0;
         const rw = vp ? vp.w : this.width, rh = vp ? vp.h : this.height;
+        if (isGLSurface(out)) {
+            if (chain && out !== chain.surface) releaseSurface(chain.surface);
+            return { surface: out, x: rx, y: ry, w: rw, h: rh };
+        }
+        chain = this.flushFilterChain(ctx, chain);   // the result goes onto the canvas, so the composite has to be there
+        if (!out) return null;
         let src = out;
         if (layer.mask) {
             if (!this.filterMaskCanvas || this.filterMaskCanvas.width !== out.width || this.filterMaskCanvas.height !== out.height) this.filterMaskCanvas = makeCanvas(out.width, out.height);
@@ -5203,6 +5237,33 @@ class InpaintEditor {
         ctx.drawImage(src, rx, ry, rw, rh);
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
+        return null;
+    }
+
+    /** Draw what the filter chain left on the GPU onto `ctx` and give the surface back. */
+    flushFilterChain(ctx, chain) {
+        if (!chain) return null;
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = "source-over";
+        if (!drawSurfaceTo(ctx, chain.surface, chain.x, chain.y, chain.w, chain.h)) {
+            const flat = surfaceToCanvas(chain.surface);
+            if (flat) ctx.drawImage(flat, chain.x, chain.y, chain.w, chain.h);
+        }
+        releaseSurface(chain.surface);
+        return null;
+    }
+
+    /** Is the next layer that gets drawn after `i` a filter layer? (may the chain go on?) */
+    nextIsFilterLayer(i, forRun) {
+        for (let j = i + 1; j < this.layers.length; j++) {
+            const l = this.layers[j];
+            if (this.compareShow && l.kind === "result" && l.id !== this.compareShow) continue;
+            if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.canvas) continue;
+            if (l.kind === "filter") return true;
+            if (forRun && (this.isControl(l) || this.isReference(l))) continue;
+            return false;
+        }
+        return false;
     }
 
     markMaskChanged(layer) {
@@ -7044,18 +7105,21 @@ Size as width x height:` : "Size as width x height:",
             const vp = this.viewPass;
             if (bs) ctx.drawImage(this.displaySource(bs, vp ? vp.sx : 1), 0, 0, this.width, this.height);
         }
+        let chain = null;   // filter layers that follow each other keep the composite on the GPU
         for (let i = 0; i < this.layers.length; i++) {
             const layer = this.layers[i];
             if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
             if ((!layer.visible && !(this.compareShow && layer.id === this.compareShow)) || !layer.canvas) continue;
-            if (layer.kind === "filter") { if (!controlOnly) this.applyFilterLayer(ctx, layer, i, forRun); continue; }
+            if (layer.kind === "filter") { if (!controlOnly) chain = this.applyFilterLayer(ctx, layer, i, forRun, chain, this.nextIsFilterLayer(i, forRun)); continue; }
             const ctrl = this.isControl(layer);
             if (controlOnly && !ctrl) continue;
             if (forRun && (ctrl || this.isReference(layer))) continue;
+            chain = this.flushFilterChain(ctx, chain);
             ctx.globalAlpha = layer.opacity;
             ctx.globalCompositeOperation = (!controlOnly && layer.blend && layer.blend !== "normal") ? layer.blend : "source-over";
             this.drawLayer(ctx, layer);
         }
+        chain = this.flushFilterChain(ctx, chain);
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
     }

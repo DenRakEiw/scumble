@@ -542,10 +542,90 @@ measurement at a time rather than built out on the strength of the original esti
 
 1. **The filter chain on the GPU** (ping-pong textures between filter layers, no canvas
    round trip per layer per frame) - this is where time still goes and is worth doing next.
+   **Done, see step 2 below**: it removed the round trips (14 per frame to 5 for a film
+   stack) and with them 0.45 ms per extra filter layer, and it found the next thing in the
+   way, the Canvas 2D blur inside halation.
 2. **Layer tiles** above `MAX_TEXTURE_SIZE`, needed for sources over 16384 px on a side;
    today the compositor returns null there and Canvas 2D takes over, which works.
 3. **The full-resolution path** (export, run, thumbnail) through the same passes - only
-   worth it if a measurement shows the 2D path costing something at that point.
+   worth it if a measurement shows the 2D path costing something at that point. Step 2
+   measured it: above about 12 MP the GPU chain is slower than the canvas path, so this
+   needs the memory work of phase 6 first, not more passes.
+
+### Phase 5, step 2: the filter chain stays on the GPU — **done 2026-09-10**
+
+**What was measured first.** The cost of the filter path is not the shader and not the
+pixels: a round trip canvas → texture → canvas costs **0.6 to 1.0 ms whatever the size**
+(0.70 ms at 1865 × 1205, 1.00 at 2560 × 1440, 0.60 at 3400 × 1900), because each end of it
+synchronises the 2D canvas with the WebGL context. A hand-written ping-pong prototype (one
+upload, five shader passes between two framebuffer textures, one blit out) ran the same
+five passes in **0.1 ms**, against 3.2 ms for five `applyFilterGL` calls. And a realistic
+film stack pays seven of those round trips per frame, because the film look alone is four
+stages (colour, halation extract, halation, grain) and every stage went through a canvas.
+So the mechanism was worth building; how much it buys depends on what else the stack does.
+
+**What it is.** `inpaint_filters_gl.js` grew render targets. A `GLSurface` is an RGBA8
+texture with a framebuffer; with `info.chain` a pass writes into one instead of a canvas,
+and reads one instead of uploading. Surfaces are stored top down like a canvas texture
+(the new `u_dstTop` uniform flips the fragment mapping when the target is a surface), so no
+shader, plugin or caller has to know where its input came from. `beginScope()` /
+`endScope(keep)` give every surface a run took back to a pool except the one it returns;
+`glChainStats()` counts uploads, read backs and passes, which is what the benchmark reads.
+
+Two places had to learn about it:
+
+- **Inside one filter.** `applyFilter` hands a plugin's `apply()` the texture as it is when
+  the filter declares `chain` (the film pack does: everything there runs through
+  `makeRunner` and the helpers in `common.js`, which resolve a surface only where they
+  really read pixels — `open`, `copyCanvas`, `blur`). Every other `apply()` is a pixel loop
+  and still gets a canvas through `glToCanvas`. Without that distinction the resolve at the
+  top of `applyFilter` broke the chain at every plugin filter, which is exactly what the
+  first measurement showed (3 uploads instead of 1).
+- **Between filter layers.** `drawLayersInto` carries the chain through the layer loop;
+  `applyFilterLayer` takes it in and hands it on when the layer covers its input one to one
+  (no mask, opacity 1, blend normal, no preview downscale) and another filter layer follows,
+  otherwise `flushFilterChain` draws it onto the canvas. **The pixels do not change**: a
+  result that goes onto the canvas is drawn over the composite exactly as before, and the
+  chain is flushed underneath it first, so only the *upload of the next filter's input* is
+  saved, never the compositing order. `tools/composite_test.py` checks this in one run,
+  chain on against chain off: view and full-resolution composite are **identical, 0 levels**.
+
+**The result** (`python tools/perf_test.py --chain 6000x4000`, 1865 × 1205 view, pan,
+median ms per frame; "round trips" are uploads + read backs per frame):
+
+| filter layers | chain | chain off | round trips, chain | off |
+|---|---|---|---|---|
+| invert | 0.8 | 0.7 | 1 + 1 | 1 + 1 |
+| invert × 3 | 1.4 | 1.8 | 1 + 2 | 3 + 3 |
+| invert × 5 | 1.5 | 2.9 | 1 + 2 | 5 + 5 |
+| film look | 2.7 | 3.4 | 1 + 2 | 4 + 4 |
+| film look + halation + grain | 5.5 | 5.8 | 1 + 4 | 7 + 7 |
+
+So an extra filter layer costs about **0.6 ms before and 0.15 ms after**, a single filter
+layer is unchanged, and the film look alone is a fifth faster. The full film stack barely
+moves, and that is the honest finding of this step: **what is left in it is the two
+Canvas 2D blurs inside halation.** `blur()` uses `ctx.filter = blur(σ)`, so the chain has
+to touch down on a canvas there and then wait for that blur before it can go on — the
+round trips fell from 14 to 5 and the frame stayed at 5.5 ms. The next lever for the film
+stack is therefore a **blur as a shader pass**, not more chaining. It is not built here
+because it would change the look of every blur-based film filter (Skia's three box blurs
+against a separable gaussian) and `tools/film_test.py` compares the two paths against each
+other, not against a fixed picture: that is a decision about the film pack's output, not a
+performance detail, and it belongs to the user.
+
+**Where the chain is used, and where it is not.** `CHAIN_MAX_PIXELS` is 10 MP. Measured on
+the full-resolution composite with the film stack (`chain` / `off`, median of 3): 2.4 MP
+5.5 / 10.0 ms, 8.3 MP 5.2 / 8.8, 12 MP 10.9 / 10.6, 16 MP 26.8 / 14.3, 24 MP 31.0 / 13.9.
+Above about 12 MP the chain loses: the surfaces no longer fit the pool (`POOL_BUDGET`, 320
+MB), so every frame creates and destroys textures again, and each read back carries an
+extra full-size blit. A screen pass is 2 to 8 MP even on a 4K window, so the cap keeps the
+interactive path on the chain and leaves export, run and thumbnail on the path they had.
+`ed.filterChainOff = true` switches it off at run time (that is what the test uses).
+
+`tools/perf_test.py` (the ordinary run) is unchanged within noise after this step: pan 1.3
+to 1.5 ms, slider ticks 6 to 7.4 ms, redraw 0.0 ms at 2.4 / 24 / 96 MP. It also picks the
+film look again instead of falling back to grain — it asked `window.FILTERS`, which the app
+does not define.
 
 The original plan for reference:
 
@@ -585,6 +665,10 @@ with `performance.now()` around `draw()` and with frame timestamps over 60 frame
 - full-resolution composite after release, export to PNG
 - autosave tick after a selection change, undo push at stroke start
 - memory: `performance.measureUserAgentSpecificMemory()` and the process working set
+
+`python tools/perf_test.py --chain [size]` is the second entry point: one document, five
+stacks of filter layers, panned with the GPU filter chain on and off, with the round trip
+counters from `glChainStats()` next to the times (phase 5, step 2).
 
 Targets: interactive frames ≤ 16 ms at 12k; full composite after release ≤ 1 s at 12k
 without filters, ≤ 3 s with a film look; no synchronous main-thread block above 100 ms

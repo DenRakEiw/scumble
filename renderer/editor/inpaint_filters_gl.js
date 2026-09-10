@@ -54,6 +54,7 @@ uniform vec3 u_meanS;          // colour match: mean of what is below, 0..255
 uniform vec3 u_meanT;          // mean of the layer itself
 uniform vec3 u_mScale;         // spread ratio per channel, clamped 0.5..2 by the caller
 uniform float u_mStrength;
+uniform bool u_dstTop;         // the target's first row is the image's top (a surface) instead of its bottom (the drawing buffer)
 out vec4 o;
 
 const vec3 LUMA = vec3(0.299, 0.587, 0.114);
@@ -80,7 +81,7 @@ vec3 look(vec3 c) {
 
 void main() {
     vec2 uv = (gl_FragCoord.xy + u_tile) / u_size;
-    vec2 suv = vec2(uv.x, 1.0 - uv.y);
+    vec2 suv = vec2(uv.x, u_dstTop ? uv.y : 1.0 - uv.y);
     vec4 s = texture(u_src, suv);
     vec3 c = s.rgb;
     if (u_mode == 0) {
@@ -132,8 +133,11 @@ const SUPPORTED = new Set(["levels", "curves", "brightness_contrast", "hue_sat",
  * every fragment sees the same uv, u_size and neighbours as in a single pass.
  * Returns null after a GL error (the caller falls back to the CPU path).
  */
-function renderTiled(g, uTile, W, H, label) {
+function renderTiled(g, uTile, uDstTop, W, H, label) {
     const { gl } = g;
+    gl.uniform1i(uDstTop, 0);   // the drawing buffer's first row is the image's bottom
+    STATS.passes++;
+    STATS.readbacks++;
     if (g.canvas.width !== W || g.canvas.height !== H) { g.canvas.width = W; g.canvas.height = H; }
     const out = makeCanvas(W, H);
     const octx = out.getContext("2d");
@@ -151,7 +155,7 @@ function renderTiled(g, uTile, W, H, label) {
     // (framebuffer attachments go up to MAX_TEXTURE_SIZE, not the drawing buffer's 33 MP)
     // and copy it out in pieces. The shader then runs once instead of once per tile.
     if (W <= g.max && H <= g.max) {
-        const done = renderToTexture(g, uTile, W, H, label, octx);
+        const done = renderToTexture(g, uTile, uDstTop, W, H, label, octx);
         if (done) return out;
         if (done === null) return null;
     }
@@ -179,7 +183,7 @@ function renderTiled(g, uTile, W, H, label) {
  * `octx` with blitFramebuffer, in pieces the drawing buffer can hold. Returns true when it
  * worked, false to fall back to per-tile rendering, null after a GL error.
  */
-function renderToTexture(g, uTile, W, H, label, octx) {
+function renderToTexture(g, uTile, uDstTop, W, H, label, octx) {
     const { gl } = g;
     let tex = null, fbo = null;
     try {
@@ -232,6 +236,255 @@ function renderToTexture(g, uTile, W, H, label, octx) {
         if (fbo) { try { gl.deleteFramebuffer(fbo); } catch (_) { /* ignore */ } }
         if (tex) { try { gl.deleteTexture(tex); } catch (_) { /* ignore */ } }
     }
+}
+
+// ---- render targets: a chain of filters stays on the GPU (docs/PERFORMANCE.md, phase 5 step 2) ----
+//
+// What costs time in the path above is not the shader: a round trip canvas -> texture ->
+// canvas costs 0.6 to 1.0 ms whatever the picture's size, because it synchronises the 2D
+// canvas with the WebGL context twice, and a realistic film stack pays seven of them per
+// frame (the film look alone is four: colour, halation extract, halation, grain). A
+// GLSurface is an RGBA8 texture with a framebuffer, so a stage can write into one and the
+// next stage read it without touching a canvas: one upload for the whole chain, one read
+// back at the end.
+//
+// A surface is asked for with `info.chain` and can come back from applyFilterGL, runShader
+// and therefore from applyFilter; the caller has to expect either and turn a surface into a
+// canvas with glToCanvas() (or draw it with drawSurfaceTo()) when it needs pixels. Surfaces
+// are stored top down like a canvas texture - u_dstTop flips the fragment mapping when the
+// target is a surface - so nothing downstream has to know where its input came from.
+//
+// Lifetime: beginScope() / endScope(keep) around one run. Every surface a run acquires goes
+// back into the pool at endScope except the one it returns, which the caller owns and
+// releases with releaseSurface() (or hands on to the next stage). The pool keeps idle
+// textures per size, capped by POOL_BUDGET.
+
+// Measured crossover (film look + halation + grain, tools/composite_test.py's document at
+// several sizes): up to about 8 MP a chain is roughly twice as fast as the canvas round
+// trips, at 12 MP the two are even, and above that the chain loses - the surfaces no longer
+// fit the pool, so every frame creates and destroys textures again, and each read back
+// carries an extra full-size blit. A screen-resolution pass is 2 to 8 MP, so the cap keeps
+// the interactive path on the chain and leaves the full-resolution renders (export, run) on
+// the path they had.
+const CHAIN_MAX_PIXELS = 10e6;
+// What the chain is for, counted: `uploads` and `readbacks` are the round trips between the
+// 2D canvas and the GPU (0.6 ms and up each, whatever the size), `passes` the shader runs.
+// tools/perf_test.py and tools/composite_test.py read them through glChainStats().
+const STATS = { uploads: 0, readbacks: 0, passes: 0, surfacePasses: 0, surfacesMade: 0 };
+
+/** The round trip counters; `reset` zeroes them and returns what they were. */
+export function glChainStats(reset = false) {
+    const out = { ...STATS, pooledBytes: poolBytes };
+    if (reset) for (const k of Object.keys(STATS)) STATS[k] = 0;
+    return out;
+}
+const POOL_BUDGET = 320 * 1024 * 1024;     // bytes of idle surfaces kept for reuse
+const POOL = new Map();                    // "w x h" -> [GLSurface]
+const SCOPES = [];
+let poolBytes = 0;
+
+class GLSurface {
+    constructor(gen, w, h, tex, fbo) {
+        this.isGLSurface = true;
+        this.gen = gen;
+        this.width = w;
+        this.height = h;
+        this.tex = tex;
+        this.fbo = fbo;
+        this.pooled = false;
+    }
+
+    get bytes() { return this.width * this.height * 4; }
+}
+
+/** Is this a GPU surface rather than a canvas? */
+export function isGLSurface(v) { return !!(v && v.isGLSurface); }
+
+/** Can a chain of that size run on the GPU at all? (the editor asks before it starts one) */
+export function glChainUsable(w, h) {
+    const g = context();
+    return !!g && w > 0 && h > 0 && w * h <= CHAIN_MAX_PIXELS && w <= g.max && h <= g.max;
+}
+
+function createSurface(g, w, h) {
+    const { gl } = g;
+    let tex = null, fbo = null;
+    try {
+        tex = gl.createTexture();
+        gl.activeTexture(gl.TEXTURE7);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
+        fbo = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        if (!ok) throw new Error("framebuffer incomplete");
+        STATS.surfacesMade++;
+        return new GLSurface(g.gen, w, h, tex, fbo);
+    } catch (err) {
+        console.warn("WebGL2 filter surface", w, "x", h, "failed:", err.message || err);
+        try { gl.bindFramebuffer(gl.FRAMEBUFFER, null); } catch (_) { /* ignore */ }
+        if (fbo) { try { gl.deleteFramebuffer(fbo); } catch (_) { /* ignore */ } }
+        if (tex) { try { gl.deleteTexture(tex); } catch (_) { /* ignore */ } }
+        return null;
+    }
+}
+
+function destroySurface(s) {
+    if (!G || G.lost || !s || s.gen !== G.gen) return;
+    try { G.gl.deleteFramebuffer(s.fbo); G.gl.deleteTexture(s.tex); } catch (_) { /* ignore */ }
+}
+
+function acquireSurface(g, w, h) {
+    const free = POOL.get(w + "x" + h);
+    let s = null;
+    while (free && free.length) {
+        const c = free.pop();
+        poolBytes -= c.bytes;
+        if (c.gen === g.gen) { s = c; break; }
+        destroySurface(c);
+    }
+    if (!s) s = createSurface(g, w, h);
+    if (!s) return null;
+    s.pooled = false;
+    if (SCOPES.length) SCOPES[SCOPES.length - 1].push(s);
+    return s;
+}
+
+function trimPool() {
+    while (poolBytes > POOL_BUDGET) {
+        let biggest = null;
+        for (const list of POOL.values()) if (list.length && (!biggest || list[0].bytes > biggest[0].bytes)) biggest = list;
+        if (!biggest) break;
+        const s = biggest.shift();
+        poolBytes -= s.bytes;
+        destroySurface(s);
+    }
+}
+
+/** Give a surface back for reuse. Anything else (a canvas, null) is ignored. */
+export function releaseSurface(s) {
+    if (!isGLSurface(s) || s.pooled) return;
+    if (!G || G.lost || s.gen !== G.gen) return;
+    const key = s.width + "x" + s.height;
+    let free = POOL.get(key);
+    if (!free) POOL.set(key, free = []);
+    s.pooled = true;
+    free.push(s);
+    poolBytes += s.bytes;
+    trimPool();
+}
+
+/** Open a scope: every surface acquired until endScope() goes back to the pool there. */
+export function beginScope() { SCOPES.push([]); }
+
+/** Close the scope; `keep` (the run's result) survives and belongs to the caller. */
+export function endScope(keep) {
+    const list = SCOPES.pop() || [];
+    for (const s of list) if (s !== keep) releaseSurface(s);
+    if (isGLSurface(keep) && SCOPES.length) SCOPES[SCOPES.length - 1].push(keep);
+    return keep;
+}
+
+/** Bind the source of a pass to unit 0: a surface is already a texture, a canvas is uploaded. */
+function bindSource(g, src) {
+    const { gl } = g;
+    gl.activeTexture(gl.TEXTURE0);
+    if (isGLSurface(src)) { gl.bindTexture(gl.TEXTURE_2D, src.tex); return; }
+    gl.bindTexture(gl.TEXTURE_2D, g.texSrc);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    STATS.uploads++;
+}
+
+/** Should this pass write into a surface? */
+function wantSurface(g, info, W, H) {
+    return !!(info && info.chain) && W * H <= CHAIN_MAX_PIXELS && W <= g.max && H <= g.max;
+}
+
+/** Draw the current program into a pooled surface (its first row is the image's top). */
+function renderToSurface(g, uTile, uDstTop, W, H, label) {
+    const { gl } = g;
+    const s = acquireSurface(g, W, H);
+    if (!s) return null;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, s.fbo);
+    gl.viewport(0, 0, W, H);
+    gl.uniform2f(uTile, 0, 0);
+    gl.uniform1i(uDstTop, 1);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    STATS.passes++;
+    STATS.surfacePasses++;
+    const err = gl.getError();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.uniform1i(uDstTop, 0);
+    if (err !== gl.NO_ERROR) { console.warn("WebGL2 filter", label, "GL error", err); releaseSurface(s); return null; }
+    return s;
+}
+
+/** One pass: into a surface when the caller is chaining, otherwise into a canvas as before. */
+function renderOut(g, uTile, uDstTop, W, H, label, info) {
+    if (wantSurface(g, info, W, H)) {
+        const s = renderToSurface(g, uTile, uDstTop, W, H, label);
+        if (s) return s;
+    }
+    return renderTiled(g, uTile, uDstTop, W, H, label);
+}
+
+/**
+ * Copy a surface into the drawing buffer and hand every piece that fits to
+ * `draw(x0, y0, w, h)` (image coordinates). The blit flips y: the surface holds the image
+ * top down, the drawing buffer bottom up, and drawImage flips it back.
+ */
+function readSurface(g, s, draw) {
+    const { gl } = g;
+    STATS.readbacks++;
+    const W = s.width, H = s.height;
+    if (g.canvas.width !== W || g.canvas.height !== H) { g.canvas.width = W; g.canvas.height = H; }
+    const piece = (x0, y0, w, h) => {
+        if (g.canvas.width !== w || g.canvas.height !== h) { g.canvas.width = w; g.canvas.height = h; }
+        if (gl.drawingBufferWidth < w || gl.drawingBufferHeight < h) { console.warn("WebGL2 surface read: drawing buffer too small for", w, "x", h); return false; }
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, s.fbo);
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+        gl.blitFramebuffer(x0, y0 + h, x0 + w, y0, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+        const err = gl.getError();
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+        if (err !== gl.NO_ERROR) { console.warn("WebGL2 surface blit error", err); return false; }
+        draw(x0, y0, w, h);
+        return true;
+    };
+    if (gl.drawingBufferWidth >= W && gl.drawingBufferHeight >= H) return piece(0, 0, W, H);
+    const tw = Math.max(1, Math.min(W, gl.drawingBufferWidth)), th = Math.max(1, Math.min(H, gl.drawingBufferHeight));
+    for (let y0 = 0; y0 < H; y0 += th) {
+        for (let x0 = 0; x0 < W; x0 += tw) {
+            if (!piece(x0, y0, Math.min(tw, W - x0), Math.min(th, H - y0))) return false;
+        }
+    }
+    return true;
+}
+
+/** A surface as a fresh 2D canvas, or null when it cannot be read back. */
+export function surfaceToCanvas(s) {
+    const g = context();
+    if (!g || !isGLSurface(s) || s.gen !== g.gen) return null;
+    const out = makeCanvas(s.width, s.height);
+    const octx = out.getContext("2d");
+    return readSurface(g, s, (x0, y0, w, h) => octx.drawImage(g.canvas, 0, 0, w, h, x0, y0, w, h)) ? out : null;
+}
+
+/** Whatever came out of the filter chain, as a canvas. */
+export function glToCanvas(v) { return isGLSurface(v) ? (surfaceToCanvas(v) || v) : v; }
+
+/** Draw a surface straight onto a 2D context (no intermediate canvas). */
+export function drawSurfaceTo(ctx, s, dx, dy, dw, dh) {
+    const g = context();
+    if (!g || !isGLSurface(s) || s.gen !== g.gen) return false;
+    const sx = dw / s.width, sy = dh / s.height;
+    return readSurface(g, s, (x0, y0, w, h) => ctx.drawImage(g.canvas, 0, 0, w, h, dx + x0 * sx, dy + y0 * sy, w * sx, h * sy));
 }
 
 let G = null;          // the shared context, created on first use
@@ -296,7 +549,7 @@ function context() {
         for (const pg of PLUGIN_GL.values()) pg.prog = null;   // programs of a lost context
         const u = {};
         for (const name of ["u_src", "u_table", "u_offsets", "u_noise", "u_lut", "u_size", "u_mode", "u_matrix", "u_useTable", "u_weights", "u_tint", "u_strength", "u_lutN", "u_k", "u_center",
-            "u_lookOn", "u_useMix", "u_mix", "u_useMono", "u_mono", "u_wb", "u_satK", "u_conK", "u_fade", "u_lookStrength", "u_tile",
+            "u_lookOn", "u_useMix", "u_mix", "u_useMono", "u_mono", "u_wb", "u_satK", "u_conK", "u_fade", "u_lookStrength", "u_tile", "u_dstTop",
             "u_meanS", "u_meanT", "u_mScale", "u_mStrength"]) u[name] = gl.getUniformLocation(prog, name);
         // fixed texture units: 0 source, 1 table, 2 offsets, 3 noise, 4 lut
         const texSrc = texture2d(gl, 0, gl.NEAREST);
@@ -365,8 +618,9 @@ const SETUP = {
     },
     curves(g, p, info, src) {
         const { gl, u } = g;
-        // the curve editor draws a luma histogram of the input; a 256 px thumbnail is plenty for that
-        if (info && info.cache) {
+        // the curve editor draws a luma histogram of the input; a 256 px thumbnail is plenty for
+        // that (a chained input is a texture, which would have to be read back: no histogram then)
+        if (info && info.cache && !isGLSurface(src)) {
             const s = Math.min(1, 256 / Math.max(src.width, src.height));
             const tw = Math.max(1, Math.round(src.width * s)), th = Math.max(1, Math.round(src.height * s));
             const t = makeCanvas(tw, th);
@@ -564,12 +818,13 @@ uniform vec2 u_size;
 uniform vec2 u_tile;
 uniform float u_scale;
 uniform float u_seed;
+uniform bool u_dstTop;
 ${decls}
 out vec4 o;
 ${def.code}
 void main() {
     vec2 uv = (gl_FragCoord.xy + u_tile) / u_size;
-    vec2 suv = vec2(uv.x, 1.0 - uv.y);
+    vec2 suv = vec2(uv.x, u_dstTop ? uv.y : 1.0 - uv.y);
     o = shade(texture(u_src, suv), suv);
 }`;
 }
@@ -587,7 +842,7 @@ function pluginProgram(g, pg) {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error("program: " + gl.getProgramInfoLog(prog));
     pg.prog = prog;
     pg.u = {};
-    for (const name of ["u_src", "u_size", "u_scale", "u_seed", "u_tile", ...Object.keys(pg.def.uniforms || {})]) pg.u[name] = gl.getUniformLocation(prog, name);
+    for (const name of ["u_src", "u_size", "u_scale", "u_seed", "u_tile", "u_dstTop", ...Object.keys(pg.def.uniforms || {})]) pg.u[name] = gl.getUniformLocation(prog, name);
     for (const [name, type] of Object.entries(pg.def.uniforms || {})) if (type === "sampler2D") pg.samplers.push({ name, unit: PLUGIN_TEX_UNIT + pg.samplers.length, tex: null });
     return prog;
 }
@@ -599,6 +854,7 @@ function pluginProgram(g, pg) {
  */
 function uploadSampler(gl, s, v) {
     gl.activeTexture(gl.TEXTURE0 + s.unit);
+    if (isGLSurface(v)) { gl.bindTexture(gl.TEXTURE_2D, v.tex); return; }   // another stage's result, already a texture
     if (!s.tex) s.tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, s.tex);
     const isFloat = !!(v && v.data instanceof Float32Array);
@@ -622,6 +878,7 @@ function applyPluginGL(id, pg, src, params, info, override) {
     if (!g) return null;
     const W = src.width, H = src.height;
     if (!W || !H || W > g.max || H > g.max) return null;
+    if (isGLSurface(src) && src.gen !== g.gen) return null;
     const { gl } = g;
     try {
         const prog = pluginProgram(g, pg);
@@ -646,10 +903,8 @@ function applyPluginGL(id, pg, src, params, info, override) {
             gl.uniform1i(pg.u[s.name], s.unit);
         }
         gl.uniform2f(pg.u.u_size, W, H);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, g.texSrc);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
-        return renderTiled(g, pg.u.u_tile, W, H, id);
+        bindSource(g, src);
+        return renderOut(g, pg.u.u_tile, pg.u.u_dstTop, W, H, id, info);
     } catch (err) {
         console.warn("plugin WebGL2 filter", id, "failed, using the CPU path:", err.message || err);
         if (gl.isContextLost && gl.isContextLost()) g.lost = true; else pg.failed = true;
@@ -687,17 +942,16 @@ export function applyFilterGL(id, src, params, info = {}) {
     if (!g) return null;
     const W = src.width, H = src.height;
     if (!W || !H || W > g.max || H > g.max) return null;
+    if (isGLSurface(src) && src.gen !== g.gen) return null;   // a surface from a context that is gone
     const { gl, u } = g;
     try {
         gl.useProgram(g.prog);
         const ok = SETUP[id](g, params || {}, info, src);
-        if (ok === false) return copyCanvas(src);
+        if (ok === false) return isGLSurface(src) ? src : copyCanvas(src);   // the filter does nothing: pass the input on
         if (ok === null) return null;
         gl.uniform2f(u.u_size, W, H);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, g.texSrc);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
-        return renderTiled(g, u.u_tile, W, H, id);
+        bindSource(g, src);
+        return renderOut(g, u.u_tile, u.u_dstTop, W, H, id, info);
     } catch (err) {
         console.warn("WebGL2 filter", id, "failed, using the CPU path:", err.message || err);
         if (gl.isContextLost && gl.isContextLost()) g.lost = true;
@@ -710,7 +964,7 @@ export function applyFilterGL(id, src, params, info = {}) {
  * (value - meanT) * scale + meanS per channel, mixed in by `strength`. Returns the
  * matched canvas, or null when there is no GPU path (the caller runs the pixel loop).
  */
-export function applyMatchGL(src, stats, strength) {
+export function applyMatchGL(src, stats, strength, info = {}) {
     if (!stats || !stats.meanS || !stats.meanT || !stats.scale) return null;
     const g = context();
     if (!g) return null;
@@ -725,10 +979,8 @@ export function applyMatchGL(src, stats, strength) {
         gl.uniform3f(u.u_mScale, stats.scale[0], stats.scale[1], stats.scale[2]);
         gl.uniform1f(u.u_mStrength, Math.max(0, Math.min(1, strength)));
         gl.uniform2f(u.u_size, W, H);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, g.texSrc);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src);
-        return renderTiled(g, u.u_tile, W, H, "match");
+        bindSource(g, src);
+        return renderOut(g, u.u_tile, u.u_dstTop, W, H, "match", info);
     } catch (err) {
         console.warn("WebGL2 colour match failed, using the CPU path:", err.message || err);
         if (gl.isContextLost && gl.isContextLost()) g.lost = true;

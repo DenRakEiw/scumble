@@ -13,7 +13,7 @@
 // editor control lives in inpaint_curves.js.
 
 import { curveDefaults, curvesToTables, buildCurvesControl } from "./inpaint_curves.js";
-import { applyFilterGL, applyMatchGL } from "./inpaint_filters_gl.js";
+import { applyFilterGL, applyMatchGL, glToCanvas } from "./inpaint_filters_gl.js";
 
 function makeCanvas(w, h) {
     const c = document.createElement("canvas");
@@ -897,5 +897,7 @@ export function applyFilter(id, src, params, info = {}) {
     const f = FILTERS[id];
     if (!f) return src;
     if (!info.cpu) { const gl = applyFilterGL(id, src, params || {}, info); if (gl) return gl; }
-    return f.apply(src, params || {}, info);
+    // A plugin filter that runs its own shader stages (def.chain) takes the texture as it is;
+    // every other apply() is a pixel loop and needs a canvas.
+    return f.apply(f.chain ? src : glToCanvas(src), params || {}, info);
 }

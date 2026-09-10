@@ -67,6 +67,8 @@ that spot.
 | "no language model nodes installed" texts | mention Settings › API providers |
 | `drawOverlays()` before the screen-space part | `host.pluginOverlay(this, ctx)` (plugin tools draw in image coordinates, phase 4b) |
 | the filter preset select: every select fills params and renames the layer | only the param named `preset` does; other selects (mode, style, colour) set their value; `p.title` is the tooltip (phase 4b) |
+| `applyFilterLayer()` filters `ctx.canvas` and draws the result back, `filteredCanvas()` always returns a canvas | both take and return the GPU filter chain: filter layers that follow each other hand their result on as a texture (`drawLayersInto` carries it, `flushFilterChain` puts it on the canvas, `nextIsFilterLayer` asks whether it may go on), phase 5 step 2 |
+| `applyFilter()` runs the CPU code when the GPU path says no | the input is turned into a canvas first (`glToCanvas`) unless the filter declares `chain` (a plugin whose `apply` runs its own shader stages) |
 
 Unchanged and still true in the app: uploads go to `/upload/image` with
 `input/inpaint_canvas` (`n{id}_...` names, hash de-duplicated), helper prompts (SAM3,
@@ -95,6 +97,16 @@ render once into an off-screen texture and are copied out with `blitFramebuffer`
 editor's histogram comes from a 256 px thumbnail. Measured on a 4000 × 3000 image:
 grain 325 ms → 7 ms, curves 61 → 4 ms, colour balance 100 → 5 ms (cached noise, warm
 context). `compareFilterPaths()` in the module is the regression check.
+
+Since phase 5 step 2 the module also keeps **render targets**: a `GLSurface` is an RGBA8
+texture with a framebuffer, and with `info.chain` a pass writes into one instead of a
+canvas and reads one instead of uploading. That is what turns a stack of filter layers,
+and the stages inside one filter, into one upload and one read back. Surfaces are stored
+top down like a canvas texture (`u_dstTop` flips the fragment mapping when the target is a
+surface), so nothing downstream needs to know where its input came from; `beginScope()` /
+`endScope(keep)` hand every surface a run took back to the pool except its result;
+`glChainStats()` counts the round trips. The cap is `CHAIN_MAX_PIXELS` (10 MP: a screen
+pass, not a full-resolution render, see docs/PERFORMANCE.md phase 5 step 2).
 
 ## Crop and stitch in the app (app-only)
 

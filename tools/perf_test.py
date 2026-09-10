@@ -5,6 +5,7 @@ Start the app with a debugging port first (see tools/cdp.py), then:
     python tools/perf_test.py                 # 2048x1152 and 6000x4000
     python tools/perf_test.py 12000x8000      # one size
     python tools/perf_test.py 2048x1152 6000x4000 12000x8000
+    python tools/perf_test.py --chain         # the GPU filter chain, on against off
 
 For every size it builds a synthetic document in its own tab (base image, three paint
 layers, one result layer with colour match, one film look filter layer) and measures the
@@ -21,7 +22,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
 
-SIZES = sys.argv[1:] or ["2048x1152", "6000x4000"]
+CHAIN = "--chain" in sys.argv
+SIZES = [a for a in sys.argv[1:] if not a.startswith("-")] or ["2048x1152", "6000x4000"]
 
 SETUP = """
 (async () => {
@@ -88,7 +90,8 @@ BENCH = """
     const resLayer = ed.addLayer({ name: "Result", kind: "result", canvas: res, x: Math.round(W / 4), y: Math.round(H / 4), w: rw, h: rh, dirty: true });
     resLayer.match = { strength: 60, source: "surroundings" };
     // a film look on top (the plugin's filter when it is loaded, else grain)
-    const fx = ed.addFilterLayer(window.FILTERS && window.FILTERS["film.look"] ? "film.look" : "grain");
+    const { FILTERS } = await import("./editor/inpaint_filters.js");
+    const fx = ed.addFilterLayer(FILTERS["film.look"] ? "film.look" : "grain");   // the film pack's look when the plugin is loaded
     const fxId = fx && fx.filter;
     ed.markMatchChanged(resLayer);
     ed.uploaded.baseHash = null;
@@ -269,6 +272,98 @@ OP_ROWS = [
 ]
 
 
+# --- the GPU filter chain (docs/PERFORMANCE.md, phase 5 step 2) --------------------------
+#
+# One document, one stack of filter layers, panned once with the chain on and once with it
+# off (ed.filterChainOff), plus the round trip counters from the GL module: `uploads` are
+# canvas -> texture, `readbacks` texture -> canvas, and those are what the chain removes.
+CHAIN_BENCH = """
+(async () => {
+    const W = %(w)d, H = %(h)d;
+    const shell = window.__perf.shell;
+    const GL = await import("./editor/inpaint_filters_gl.js");
+    const { FILTERS } = await import("./editor/inpaint_filters.js");
+    const before = window.editor;
+    const ed = shell.newDocument();
+    shell.activate(ed);
+    await new Promise((r) => setTimeout(r, 300));
+    ed.resizeCanvas();
+    const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    const base = mk(W, H);
+    {
+        const x = base.getContext("2d");
+        const g = x.createLinearGradient(0, 0, W, H);
+        g.addColorStop(0, "hsl(210,70%%,45%%)"); g.addColorStop(1, "hsl(300,70%%,25%%)");
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+        for (let i = 0; i < 60; i++) { x.fillStyle = `hsl(${(i * 37) %% 360},80%%,55%%)`; x.beginPath(); x.arc((i * 977) %% W, (i * 613) %% H, Math.max(8, W / 40), 0, Math.PI * 2); x.fill(); }
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W });
+    Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "perf.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+
+    const bench = (fn, n) => { const ts = []; for (let i = 0; i < n; i++) { const a = performance.now(); fn(i); ts.push(performance.now() - a); } ts.sort((x, y) => x - y); return [+ts[Math.floor(ts.length / 2)].toFixed(1), +ts[ts.length - 1].toFixed(1)]; };
+    const out = [];
+    for (const stack of %(stacks)s) {
+        const fx = [];
+        for (const id of stack) if (FILTERS[id]) fx.push(ed.addFilterLayer(id));
+        if (!fx.length) continue;
+        ed.renderLayers(); ed.fitView(); ed.draw();
+        const measure = (off) => {
+            ed.filterChainOff = off;
+            ed.draw();                       // warm this path (programs, pooled surfaces)
+            GL.glChainStats(true);
+            const n = 30;
+            const pan = bench((i) => { ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw(); }, n);
+            const st = GL.glChainStats(true);
+            return { pan, up: +(st.uploads / n).toFixed(1), down: +(st.readbacks / n).toFixed(1), passes: +(st.passes / n).toFixed(1) };
+        };
+        const chain = measure(false), plain = measure(true);
+        ed.filterChainOff = false;
+        out.push({ stack: fx.map((f) => f && f.filter), chain, plain });
+        for (const f of fx) ed.removeLayer(f.id);
+        ed.renderLayers();
+    }
+    const view = `${ed.canvas.width}x${ed.canvas.height}`;
+    shell.closeDocument(ed, { force: true });
+    if (before) shell.activate(before);
+    return JSON.stringify({ size: `${W}x${H}`, view, rows: out });
+})()
+"""
+
+STACKS = ("["
+          '["invert"],'
+          '["invert","invert","invert"],'
+          '["invert","invert","invert","invert","invert"],'
+          '["film.look"],'
+          '["film.look","film.halation","grain"]'
+          "]")
+
+
+async def chain_main():
+    async def run(c):
+        await c.eval(SETUP)
+        res = []
+        for size in SIZES:
+            w, h = (int(v) for v in size.lower().split("x"))
+            print(f"== {size} ...", flush=True)
+            res.append(json.loads(await c.eval(CHAIN_BENCH % {"w": w, "h": h, "stacks": STACKS}, timeout=900)))
+        return res
+
+    for r in await session(run):
+        print()
+        print(f"{r['size']} in a {r['view']} view - pan, milliseconds per frame (median [worst])")
+        print("%-34s %-20s %-20s %s" % ("filter layers", "chain", "chain off", "round trips/frame"))
+        print("-" * 96)
+        for row in r["rows"]:
+            name = "+".join(x.replace("film.", "") for x in row["stack"])
+            c, p = row["chain"], row["plain"]
+            print("%-34s %-20s %-20s %s" % (
+                name,
+                f"{c['pan'][0]:.1f} [{c['pan'][1]:.1f}]",
+                f"{p['pan'][0]:.1f} [{p['pan'][1]:.1f}]",
+                f"{c['up']:.0f} up {c['down']:.0f} down  vs  {p['up']:.0f} up {p['down']:.0f} down"))
+
+
 async def main():
     async def run(c):
         await c.eval(SETUP)
@@ -307,4 +402,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(chain_main() if CHAIN else main())
