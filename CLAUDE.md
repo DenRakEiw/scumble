@@ -114,6 +114,19 @@ compositor. Both are published on GitHub Releases, so the installed app updates 
   `tools/commands_test.py` (it uploads twice and watches the mirror grow, so it fails on
   the bug even when ComfyUI is connected; verified by reverting the fix).
 
+**Next up: phase 6**, planned in `docs/PERFORMANCE.md` § "Phase 6: memory, and what a long
+session does to the GPU". Read that section before starting; the short version is that the
+old list (undo tiles, object map, layer eviction) is mostly guesswork that the measurements
+have overtaken, that **step 1 is instrumentation and nothing happens before it works**
+(`tools/mem_test.py`, and the memory that matters is in the GPU process, so it needs
+`app.getAppMetrics()` through a new IPC), and that the one thing worth chasing is why the
+GPU path degrades after several large documents in one session. Two concrete leads are
+already written down there: canvas backing stores that only free at collection
+(`canvas.width = 0`), and the compositor's texture cache being capped by count (48) rather
+than by bytes with `forget()` never called. Decided with the user on 2026-09-10: phase 6
+first, then one release 0.1.4 with phase 6 and phase 5 step 2 together. **No release yet**:
+`package.json` is still 0.1.3 and `CHANGELOG.md` has no section for the next version.
+
 **Phase 5 has its second step** (2026-09-10): the filter chain stays on the GPU
 (`docs/PERFORMANCE.md`, phase 5 step 2). Measured first, as asked: a round trip
 canvas -> texture -> canvas costs **0.6 to 1.0 ms whatever the size** (it synchronises the

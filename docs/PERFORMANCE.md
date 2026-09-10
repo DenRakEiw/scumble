@@ -613,14 +613,30 @@ against a separable gaussian) and `tools/film_test.py` compares the two paths ag
 other, not against a fixed picture: that is a decision about the film pack's output, not a
 performance detail, and it belongs to the user.
 
-**Where the chain is used, and where it is not.** `CHAIN_MAX_PIXELS` is 10 MP. Measured on
-the full-resolution composite with the film stack (`chain` / `off`, median of 3): 2.4 MP
-5.5 / 10.0 ms, 8.3 MP 5.2 / 8.8, 12 MP 10.9 / 10.6, 16 MP 26.8 / 14.3, 24 MP 31.0 / 13.9.
-Above about 12 MP the chain loses: the surfaces no longer fit the pool (`POOL_BUDGET`, 320
-MB), so every frame creates and destroys textures again, and each read back carries an
-extra full-size blit. A screen pass is 2 to 8 MP even on a 4K window, so the cap keeps the
-interactive path on the chain and leaves export, run and thumbnail on the path they had.
-`ed.filterChainOff = true` switches it off at run time (that is what the test uses).
+**Where the chain is used, and where it is not.** `CHAIN_MAX_PIXELS` is 10 MP, and the
+reason is the pool, not the mechanism. Full-resolution composite with the film stack, with
+`glChainStats().surfacesMade` next to the time:
+
+| | chain | new textures per frame | chain off |
+|---|---|---|---|
+| 8.3 MP | 6.3 ms | 0 | 8.3 ms |
+| 12 MP | 7.3 ms | 2 | 9.7 ms |
+| 16.2 MP | 20.0 ms | 7 | 10.4 ms |
+| 24 MP | 35.6 ms | 7 | 13.4 ms |
+
+At 16.2 MP a surface is 65 MB and seven are alive at once, which is 455 MB against a
+`POOL_BUDGET` of 320: `trimPool` destroys all of them every frame and `texStorage2D`
+builds them again. The same run with the budget raised to 1200 MB, purely as a test:
+16.2 MP 9.0 ms against 8.7, **24 MP 10.2 ms against 19.7**, 40 MP 160 against 175, and
+zero new textures per frame. So the chain scales past 16 MP as soon as its working set
+fits; what does not scale is a fixed byte cap. A fixed *large* cap is the wrong answer
+(680 MB of idle textures on a card that ComfyUI shares is how the helpers end up paging,
+see the 125 s object map in CLAUDE.md), so the cap stays at 10 MP until phase 6 gives the
+pool a policy. A screen pass is 2 to 8 MP even on a 4K window, so the interactive path is
+on the chain and export, run and thumbnail keep the path they had. Open question for the
+user: on a 5K or 6K display the viewport pass itself is 15 to 20 MP, which would put it
+above the cap - if that is a real target, the pool policy moves up the list.
+`ed.filterChainOff = true` switches the chain off at run time (that is what the test uses).
 
 `tools/perf_test.py` (the ordinary run) is unchanged within noise after this step: pan 1.3
 to 1.5 ms, slider ticks 6 to 7.4 ms, redraw 0.0 ms at 2.4 / 24 / 96 MP. It also picks the
@@ -641,16 +657,102 @@ visible layers and their mips, tiles of hidden layers may be dropped and re-uplo
 Behind the same interface a WebGPU backend can follow when the plugin shader API is
 ported (a compatibility shim for `shade(vec4, vec2)` is possible with WGSL).
 
-### Phase 6: memory (1 week, as needed)
+### Phase 6: memory, and what a long session does to the GPU — **the plan, 2026-09-10**
 
-- Undo as dirty-rect tiles, optionally compressed (Krita compresses every tile), capped
-  by bytes instead of by step count.
-- The objects id map at a bounded resolution (≤ 2048 px long side, already the SAM2
-  output size) and scaled on use.
-- Layers larger than the image, hidden layers and old results as tiles that can be
-  evicted to the mirror on disk and reloaded (the mirror already stores every layer PNG).
-- Electron: raise the V8 heap for the renderer (`js-flags --max-old-space-size`) only if
-  a measurement shows heap pressure; the 8 GB process limit cannot be raised.
+This phase was written as a list of guesses (undo tiles, a bounded object map, layer
+eviction). Two measurements since then say the list is largely wrong, and one of them
+found something worse than anything on it. So the plan below starts with instrumentation
+and treats the old list as candidates, not as work items.
+
+**What is already known**
+
+1. **Undo is not the problem it was assumed to be.** It is already capped by bytes
+   (`MAX_UNDO_BYTES`, 384 MB) and phase 1 turned a brush step into a copy of the touched
+   rectangle: `tools/perf_test.py` reaches **3.4 MB** of undo on a 96 MP document, not 384.
+   Rebuilding it as compressed tiles buys nothing until a measurement of a real painting
+   session says otherwise.
+2. **The thing to chase.** After several large documents in one page the GPU path degrades
+   badly: a `levels` filter that costs 0.8 ms on a fresh instance measured **12 ms** after
+   four 96 MP documents had been built and closed, and a film stack 70 ms instead of 6.
+   Seen twice, including on the build before the phase 5 step 2 changes, so it is not new
+   and not caused by the filter chain. The cause is unknown. If users hit this in normal
+   work - open three 12k images one after another - it matters far more than any
+   millisecond per frame in phases 1 to 5, because the app simply feels broken after a
+   while. Everything else in this phase is secondary to finding out whether it is real.
+3. **A smaller, understood instance of the same mechanism**: the filter chain's surface
+   pool (see phase 5 step 2 above). The moment the working set stops fitting the pool,
+   every frame creates and destroys textures and the GPU path becomes two to three times
+   slower than the canvas one. That is exactly the shape of symptom 2.
+
+**Step 1: instrumentation. Nothing else until this works.**
+
+`tools/mem_test.py`, driving the dev instance like the other tools. Per step it prints:
+
+- the renderer heap from `performance.measureUserAgentSpecificMemory()` (it forces a
+  collection, which is also how "leaked" is told apart from "not collected yet");
+- **memory per process, including the GPU process**, through a new IPC `app:metrics` that
+  returns Electron's `app.getAppMetrics()`. Canvas backing stores and textures live there
+  and not in the renderer heap, which is why nothing measured so far has seen them;
+- `ed.undoBytes`, the display pyramid's canvases and bytes per source, the compositor's
+  `textures.size` and their bytes, `glChainStats().pooledBytes`, and the number and total
+  area of live canvases;
+- a short fixed drawing benchmark (a pan with one filter layer) so that "it got slower" is
+  a number.
+
+The script walks a session: fresh → load a 12k image → filter and pan → close → repeat
+four times; then the same again without closing (four tabs). After each round it asks the
+three questions that separate the causes: does the number come back **after closing**,
+after a **forced collection**, after **Free VRAM**?
+
+Targets to hold afterwards: after opening and closing three 96 MP documents the drawing
+benchmark is within 20 % of the fresh instance, and the GPU process is back within 300 MB
+of its baseline.
+
+**Step 2: fix what step 1 points at.** In the order I would check them:
+
+- **Canvas backing stores are freed at collection, not when dropped.** Chromium keeps a
+  discarded canvas's pixels until the JS object is collected; `canvas.width =
+  canvas.height = 0` releases them at once. Candidates: `destroy()` (layer canvases,
+  masks, the pyramid, `flatCanvas`, `_fcache*` / `_fcacheView`, the objects map),
+  `touchSource()` when a pyramid level is replaced, the filter caches. Cheap to try, and it
+  matches the symptom: it recovers slowly rather than never.
+- **The compositor's texture cache is capped by count, not by bytes.** `TEXTURE_CACHE = 48`
+  in `inpaint_compositor.js`, and at 96 MP one source texture is up to 384 MB, so the cap
+  permits gigabytes. Worse, `forget(source)` exists but is **never called**, so the
+  textures of superseded pyramid levels stay until the LRU happens to push them out. Make
+  the cap a byte budget and call `forget` where a source is thrown away (`touchSource`,
+  `destroy`). (`closeDocument` does call `editor.destroy()`, which disposes the whole
+  compositor, so a closed document's textures are not the leak - within a living document
+  they may well be.)
+- **The filter chain's surface pool**, same disease: `POOL_BUDGET` is a fixed 320 MB. Give
+  it a policy - hold the measured working set (the peak number of surfaces alive at once
+  per size), drop the rest by age - and then raise `CHAIN_MAX_PIXELS` as far as the
+  measurement allows. The numbers are in phase 5 step 2.
+- **Fewer live surfaces per chain**: seven for a film stack today where two or three would
+  do, because a scope holds everything it acquired until it ends. Needs refcounting or a
+  plugin hint ("this input is dead"), since halation holds its source across two passes.
+  Worth doing because it multiplies with the pool budget: half the working set is twice
+  the image size at the same memory.
+- **The objects id map** at a bounded resolution (≤ 2048 px on the long side, already the
+  SAM2 output size) and scaled on use.
+- **Undo as dirty-rect tiles**, only if step 1 shows it growing in a real session.
+- **Layers, hidden layers and old results evicted to the mirror** (which already holds
+  every layer PNG), only if step 1 shows layer pixels dominating.
+
+**Step 3: the escape hatch.** Extend the existing *Free VRAM* action so it also drops the
+pyramids, filter caches, compositor textures and pooled surfaces of documents that are not
+the active tab, says in the status line how much it freed, and runs by itself when
+`app.getAppMetrics()` crosses a threshold. That turns a bad session into a recoverable one
+even where the root cause is Chromium's and not ours.
+
+**Not without a measurement**: raising the V8 heap (`js-flags --max-old-space-size`).
+Nothing so far points at the JS heap, and the 8 GB process limit cannot be raised anyway.
+
+**Gates**: `composite_test.py` (the pixels must not move), `film_test.py`,
+`commands_test.py`, `perf_test.py` and `perf_test.py --chain` (no regression),
+`smoke_test.py --no-helpers`, plus the new `mem_test.py` against the targets in step 1.
+Restart the app between benchmark runs - otherwise the numbers are nonsense, which is the
+very symptom this phase exists to remove.
 
 ## 7. Benchmark and test plan
 
