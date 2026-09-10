@@ -72,11 +72,15 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-10)
 
-**Release 0.1.5 is prepared but not tagged** (2026-09-10, night). `package.json` is 0.1.5
-and `CHANGELOG.md` has one 0.1.5 section: **0.1.4 was never tagged and was folded into it**
-(user's decision at the start of the session), so the section carries phase 6, phase 5 step 2
-and the two items below together. The tag waits for the user's go-ahead:
-`git tag v0.1.5 && git push --tags`, then `gh release edit v0.1.5 --draft=false`.
+**Release 0.1.5 is prepared but not tagged** (2026-09-10, night). `package.json` is 0.1.5 and
+`CHANGELOG.md` has a 0.1.5 section with the two items below. The tag waits for the user's
+go-ahead: `git tag v0.1.5 && git push --tags`, then `gh release edit v0.1.5 --draft=false`.
+
+**0.1.4 was already released** (tag `v0.1.4`, published 2026-09-10 12:26 UTC with the
+installer and `latest.yml`, so the apps in the field are on it). The paragraph in this file
+that called it "prepared but not tagged" was stale, and following it cost a detour: the
+0.1.4 section was folded into 0.1.5 and had to be put back. **Check `gh release list` before
+believing a release note here.**
 
 **`docs/NEXT_PLAN.md` items 1 and 2 are done, 3 was already done, 4 is untouched.** The file
 stays as written: it is the record of the two decisions in item 4 (blur as a shader pass,

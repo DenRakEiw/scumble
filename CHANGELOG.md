@@ -19,6 +19,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   which models it has and offers them in the field. A model that can see gets the same crop
   the other backends get; one that cannot is asked again without it, and the status line then
   says "text only" so you know the rewrite is based on your words alone.
+
+## 0.1.4 — 2026-09-10
+
 - **Fixed: the app got slower the longer you worked in it.** Opening and closing several
   large images in one session left every one of them in memory, with all of its layers. After
   four 12k documents a slider drag cost 50 ms per step instead of 9, panning stuttered, and
