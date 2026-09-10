@@ -65,6 +65,12 @@
       <p class="shell-help">Any server that speaks <code>/v1/chat/completions</code> - Ollama (<code>http://localhost:11434</code>), LM Studio (<code>http://localhost:1234</code>), vLLM, a proxy - becomes a prompt upsampler in the editor's Upsample list. A model that can see gets the crop with the instruction; a text-only model answers on the words alone and the status line says so.</p>
     </section>
     <section>
+      <h3>Prompt templates</h3>
+      <div id="set-prompts"></div>
+      <div class="shell-row"><button id="set-prompt-import" type="button">Import .md ...</button><button id="set-prompt-folder" type="button">Open folder</button><span id="set-prompt-note" class="shell-note"></span></div>
+      <p class="shell-help">Markdown files that say how the language model should rewrite a prompt. A front matter with <code>name</code>, <code>description</code>, <code>use</code> (generate, upsample or both) and an optional <code>for</code> (matched against the recipe), then the instruction, with <code>{prompt}</code>, <code>{model}</code>, <code>{aspect}</code>, <code>{region}</code> as placeholders. Yours live in the app data folder and override a built-in of the same name. See docs/PROMPTS.md.</p>
+    </section>
+    <section>
       <h3>Recipes</h3>
       <div id="set-recipes"></div>
       <div class="shell-row"><button id="set-recipe-import" type="button">Import workflow ...</button><button id="set-recipe-folder" type="button">Open folder</button><span id="set-recipe-note" class="shell-note"></span></div>
@@ -139,10 +145,11 @@
     <p id="gen-note" class="shell-note"></p>
     <label class="shell-field gen-wide">Prompt <textarea id="gen-prompt" rows="4" spellcheck="false" placeholder="what the picture shows"></textarea></label>
     <div class="shell-row">
+      <select id="gen-template" title="How the prompt should be written (a .md template)"></select>
       <select id="gen-upsample" title="The language model that rewrites the prompt"></select>
       <button id="gen-upsample-go" type="button">Upsample prompt</button>
-      <span id="gen-upsample-note" class="shell-note"></span>
     </div>
+    <div class="shell-row"><span id="gen-template-note" class="shell-note"></span><span id="gen-upsample-note" class="shell-note"></span></div>
     <div class="shell-grid">
       <label class="shell-field">Aspect ratio <select id="gen-aspect"></select></label>
       <label class="shell-field" id="gen-res-row">Long side <select id="gen-resolution"></select></label>

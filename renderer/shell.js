@@ -22,6 +22,8 @@ const ui = {
     genAspect: $("gen-aspect"), genResolution: $("gen-resolution"), genWidth: $("gen-width"), genHeight: $("gen-height"),
     genSeed: $("gen-seed"), genSeedRandom: $("gen-seed-random"), genSizeNote: $("gen-size-note"),
     genState: $("gen-state"), genGo: $("gen-go"), genCancel: $("gen-cancel"),
+    genTemplate: $("gen-template"), genTemplateNote: $("gen-template-note"),
+    promptList: $("set-prompts"), promptImport: $("set-prompt-import"), promptFolder: $("set-prompt-folder"), promptNote: $("set-prompt-note"),
     compatUrl: $("set-compat-url"), compatModel: $("set-compat-model"), compatModels: $("set-compat-models"),
     compatKey: $("set-compat-key"), compatKeySave: $("set-compat-key-save"), compatKeyClear: $("set-compat-key-clear"),
     compatKeyState: $("set-compat-key-state"), compatTest: $("set-compat-test"), compatState: $("set-compat-state"),
@@ -499,6 +501,8 @@ async function saveCompat() {
     const llm = { ...(set.llm || {}), compat: { url: ui.compatUrl.value.trim(), model: ui.compatModel.value.trim() } };
     await window.scumble.settings.set({ llm });
     await host.refreshLLMs();
+host.promptTemplateIds = { upsample: "", generate: "", ...(settings.promptTemplates || {}) };
+await host.refreshPromptTemplates();
 }
 
 for (const el of [ui.compatUrl, ui.compatModel]) {
@@ -541,7 +545,7 @@ ui.compatTest.addEventListener("click", async () => {
 // ---- Generate new: a base image from the prompt alone --------------------------------
 
 const GEN_ASPECTS = ["free", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"];
-const GEN_RESOLUTIONS = [768, 1024, 1280, 1536, 2048];
+const GEN_RESOLUTIONS = [768, 1024, 1280, 1536, 2048, 3072, 4096];
 
 let genEditor = null;
 
@@ -577,6 +581,31 @@ function genFillRecipes() {
     genFillProviders();
 }
 
+/** The long sides the chosen model offers; a local recipe takes any size. */
+function genSizes() {
+    const r = recipes.find((x) => x.id === ui.genRecipe.value);
+    if (!r || r.kind !== "provider") return GEN_RESOLUTIONS;
+    const v = (r.providers || {})[ui.genProvider.value] || {};
+    const list = v.text && Array.isArray(v.text.sizes) && v.text.sizes.length ? v.text.sizes : GEN_RESOLUTIONS;
+    return list.slice().sort((a, b) => a - b);
+}
+
+function genFillSizes() {
+    const list = genSizes();
+    const keep = +ui.genResolution.value || 1024;
+    ui.genResolution.innerHTML = "";
+    for (const px of list) {
+        const o = document.createElement("option");
+        o.value = String(px);
+        o.textContent = `${px} px`;
+        ui.genResolution.appendChild(o);
+    }
+    // keep what was chosen when the model offers it, otherwise the nearest it does offer
+    const pick = list.includes(keep) ? keep : list.reduce((best, px) => (Math.abs(px - keep) < Math.abs(best - keep) ? px : best), list[0]);
+    ui.genResolution.value = String(pick);
+    genSyncSize();
+}
+
 function genFillProviders() {
     const r = recipes.find((x) => x.id === ui.genRecipe.value);
     const ids = r && r.kind === "provider" ? genProviderIds(r) : [];
@@ -592,6 +621,7 @@ function genFillProviders() {
     if (ids.includes(keep)) ui.genProvider.value = keep;
     else if (ids.includes((settings.recipeProviders || {})[r && r.id])) ui.genProvider.value = settings.recipeProviders[r.id];
     else if (r && ids.includes(r.default)) ui.genProvider.value = r.default;
+    genFillSizes();
     genSyncNote();
 }
 
@@ -606,7 +636,9 @@ function genSyncNote() {
     const t = v.text || {};
     const key = (providers.find((p) => p.id === ui.genProvider.value) || {}).key;
     const missing = key && key.set ? "" : " No key stored for this provider yet.";
-    ui.genNote.textContent = `${t.model || "?"} at ${providerLabel(ui.genProvider.value)}. The size is a request, the model answers with what it supports.${missing}`;
+    const sizes = genSizes();
+    const range = sizes.length > 1 ? `long side ${sizes[0]} to ${sizes[sizes.length - 1]} px` : `long side ${sizes[0]} px`;
+    ui.genNote.textContent = `${t.model || "?"} at ${providerLabel(ui.genProvider.value)}, ${range}. The size is a request, the model answers with what it supports.${missing}`;
 }
 
 function genAspectFree() {
@@ -627,6 +659,38 @@ function genSize() {
     const [aw, ah] = ui.genAspect.value.split(":").map(Number);
     const long = +ui.genResolution.value || 1024;
     return aw >= ah ? [round16(long), round16(long * ah / aw)] : [round16(long * aw / ah), round16(long)];
+}
+
+function genFillTemplates() {
+    const list = host.promptTemplatesFor("generate");
+    const keep = ui.genTemplate.value || (settings.promptTemplates || {}).generate || "";
+    ui.genTemplate.innerHTML = "";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "Plain rewrite (built in)";
+    ui.genTemplate.appendChild(none);
+    for (const t of list) {
+        const o = document.createElement("option");
+        o.value = t.id;
+        o.textContent = t.name + (t.source === "user" ? " (yours)" : "");
+        ui.genTemplate.appendChild(o);
+    }
+    if (list.some((t) => t.id === keep)) ui.genTemplate.value = keep;
+    genSyncTemplateNote();
+}
+
+function genSyncTemplateNote() {
+    const t = host.promptTemplates.find((x) => x.id === ui.genTemplate.value);
+    ui.genTemplateNote.textContent = t ? t.description || "" : "The prompt is rewritten richer, without a house style.";
+}
+
+/** The instruction for "Upsample prompt" in this dialog: a template, or the plain rewrite. */
+function genInstruction(text) {
+    const t = host.promptTemplates.find((x) => x.id === ui.genTemplate.value);
+    const [w, h] = genSize();
+    const ctx = { prompt: text, aspect: ui.genAspect.value === "free" ? `${w}:${h}` : ui.genAspect.value, width: w, height: h, useCase: "generate" };
+    if (t) return host.fillPromptTemplate(t, ctx);
+    return `Rewrite this into one rich prompt for a text-to-image model. Keep every subject, colour and material the request names. Describe only what is seen, as one paragraph, no lists, no preamble, no quotes. Request: ${text}`;
 }
 
 function genFillUpsample() {
@@ -664,20 +728,15 @@ export async function openGenerateNew(editor) {
             o.textContent = a === "free" ? "free (width × height)" : a;
             ui.genAspect.appendChild(o);
         }
-        for (const r of GEN_RESOLUTIONS) {
-            const o = document.createElement("option");
-            o.value = String(r);
-            o.textContent = `${r} px`;
-            ui.genResolution.appendChild(o);
-        }
         ui.genAspect.value = "1:1";
-        ui.genResolution.value = "1024";
     }
     ui.genMode.value = genRecipesFor(host.recipe && host.recipe.kind === "comfy" ? "local" : "api").length
         ? (host.recipe && host.recipe.kind === "comfy" ? "local" : "api")
         : (genRecipesFor("local").length ? "local" : "api");
+    if (!ui.genResolution.options.length) ui.genResolution.value = "1024";
     genFillRecipes();
     genFillUpsample();
+    genFillTemplates();
     ui.genPrompt.value = genEditor.promptText || "";
     ui.genWidth.value = genEditor.width || 1024;
     ui.genHeight.value = genEditor.height || 1024;
@@ -692,7 +751,11 @@ export async function openGenerateNew(editor) {
 
 ui.genMode.addEventListener("change", genFillRecipes);
 ui.genRecipe.addEventListener("change", genFillProviders);
-ui.genProvider.addEventListener("change", genSyncNote);
+ui.genProvider.addEventListener("change", () => { genFillSizes(); genSyncNote(); });
+ui.genTemplate.addEventListener("change", () => {
+    genSyncTemplateNote();
+    window.scumble.settings.set({ promptTemplates: { ...(settings.promptTemplates || {}), generate: ui.genTemplate.value } }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
+});
 ui.genAspect.addEventListener("change", genSyncSize);
 ui.genResolution.addEventListener("change", genSyncSize);
 for (const el of [ui.genWidth, ui.genHeight]) el.addEventListener("input", genSyncSize);
@@ -706,8 +769,7 @@ ui.genUpsampleGo.addEventListener("click", async () => {
     ui.genUpsampleGo.disabled = true;
     ui.genUpsampleNote.textContent = "asking " + backend.label.replace(/ \(.*\)$/, "") + " ...";
     try {
-        const instruction = `Rewrite this into one rich prompt for a text-to-image model. Keep every subject, colour and material the request names. Describe only what is seen, as one paragraph, no lists, no preamble, no quotes. Request: ${text}`;
-        const res = await host.askLLM(backend, instruction, null);
+        const res = await host.askLLM(backend, genInstruction(text), null);
         ui.genPrompt.value = res.text;
         ui.genUpsampleNote.textContent = `${res.text.split(/\s+/).length} words in ${res.seconds.toFixed(1)} s${res.note ? ", " + res.note : ""}.`;
     } catch (err) {
@@ -741,6 +803,79 @@ ui.genGo.addEventListener("click", async () => {
     } finally {
         ui.genGo.disabled = false;
     }
+});
+
+// ---- prompt templates (electron/main/prompts.js) --------------------------------------
+
+/**
+ * One row per template with what it is for, plus the select that decides which one the
+ * editor's Upsample button uses. The one for "Generate new" lives in that dialog.
+ */
+function renderPrompts() {
+    const list = host.promptTemplates;
+    ui.promptList.innerHTML = "";
+    const row = document.createElement("div");
+    row.className = "shell-provider";
+    const lab = document.createElement("span");
+    lab.textContent = "Upsample uses";
+    row.appendChild(lab);
+    const sel = document.createElement("select");
+    const none = document.createElement("option");
+    none.value = ""; none.textContent = "the built-in rules (per use case)";
+    sel.appendChild(none);
+    for (const t of list.filter((t) => !t.error && (t.use === "both" || t.use === "upsample"))) {
+        const o = document.createElement("option");
+        o.value = t.id; o.textContent = t.name + (t.source === "user" ? " (yours)" : "");
+        sel.appendChild(o);
+    }
+    sel.value = host.promptTemplateIds.upsample || "";
+    sel.addEventListener("change", async () => {
+        host.promptTemplateIds.upsample = sel.value;
+        settings = await window.scumble.settings.set({ promptTemplates: { ...(settings.promptTemplates || {}), upsample: sel.value } });
+    });
+    row.appendChild(sel);
+    ui.promptList.appendChild(row);
+    for (const t of list) {
+        const r = document.createElement("div");
+        r.className = "shell-provider";
+        const nameEl = document.createElement("span");
+        nameEl.textContent = t.name;
+        r.appendChild(nameEl);
+        const note = document.createElement("span");
+        note.className = "shell-note";
+        note.textContent = t.error ? "broken: " + t.error : `${t.description || "no description"} · ${t.use}${t.for.length ? " · for " + t.for.join(", ") : ""} · ${t.source}`;
+        r.appendChild(note);
+        if (t.source === "user") {
+            const del = document.createElement("button");
+            del.type = "button"; del.textContent = "Remove";
+            del.addEventListener("click", async () => {
+                await window.scumble.prompts.remove(t.id);
+                await host.refreshPromptTemplates();
+                renderPrompts();
+            });
+            r.appendChild(del);
+        }
+        ui.promptList.appendChild(r);
+    }
+    ui.promptNote.textContent = `${list.length} template${list.length === 1 ? "" : "s"}`;
+}
+
+ui.promptImport.addEventListener("click", async () => {
+    try {
+        const r = await window.scumble.prompts.import();
+        if (!r) return;
+        await host.refreshPromptTemplates();
+        renderPrompts();
+        ui.promptNote.textContent = `imported ${r.id}`;
+    } catch (err) {
+        ui.promptNote.textContent = String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+    }
+});
+
+ui.promptFolder.addEventListener("click", async () => {
+    await window.scumble.prompts.open();
+    await host.refreshPromptTemplates();
+    renderPrompts();
 });
 
 // ---- helpers (in-app models) ---------------------------------------------------------------
@@ -1023,6 +1158,8 @@ async function openSettings() {
     await loadProviders();
     await renderProviders();
     await renderCompat();
+    await host.refreshPromptTemplates();
+    renderPrompts();
     renderRecipeList();
     try { renderHelpers(await window.scumble.helpers.status()); } catch (err) { ui.helpersNote.textContent = String(err.message || err); }
     try { await plugins.fetchList(); } catch (_) { /* ignore */ }

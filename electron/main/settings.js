@@ -20,6 +20,8 @@ const DEFAULTS = {
     // prompt upsampling on a local or self-hosted OpenAI-compatible server (Ollama, LM
     // Studio, vLLM, a proxy); an optional key lives in keys.js under the name "compat"
     llm: { compat: { url: "", model: "" } },
+    // which prompt instruction template (electron/main/prompts.js) each use takes; "" = built in
+    promptTemplates: { upsample: "", generate: "" },
     // above this many MB in the GPU process the shell releases the caches of the tabs that
     // are not in front (renderer/shell.js watchMemory); 0 switches the watch off
     memory: { gpuLimitMB: 3072 },

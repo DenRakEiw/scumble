@@ -76,6 +76,36 @@ await wait(80);
 if (!/864 . 1536/.test(note)) throw new Error("size note wrong: " + note);
 return { note, modes, upsample, closed: !dlg.open };
 """),
+    ("prompt_templates", """
+const list = await host.refreshPromptTemplates();
+if (list.length < 4) throw new Error("built-in templates missing: " + list.length);
+const broken = list.filter((t) => t.error);
+if (broken.length) throw new Error("broken template: " + broken[0].id + " " + broken[0].error);
+const tpl = list.find((t) => t.id === "photographic");
+const filled = host.fillPromptTemplate(tpl, { prompt: "a red bicycle", aspect: "16:9", width: 2048, height: 1152, useCase: "generate" });
+if (!filled.includes("a red bicycle")) throw new Error("the placeholder was not filled");
+if (!/Output only the prompt text/.test(filled)) throw new Error("the app's output rule is missing");
+// the editor hook: nothing chosen means the built-in rules stay in charge
+host.promptTemplateIds.upsample = "";
+if (host.upsampleInstruction({ useCase: "edit", prompt: "x", region: "the whole image", hint: "" }) !== null) throw new Error("the hook answered without a template");
+host.promptTemplateIds.upsample = "edit-instruction";
+const own = host.upsampleInstruction({ useCase: "edit", prompt: "make it blue", region: "the area inside the magenta outline", hint: "a red car" });
+host.promptTemplateIds.upsample = "";
+if (!own || !own.includes("a red car") || !own.includes("magenta outline")) throw new Error("the template did not get its context");
+return { templates: list.map((t) => t.id), useOf: list.map((t) => t.use) };
+"""),
+    ("template_select_in_the_dialog", """
+const ed = ednow(window.__g);
+await host.shell.openGenerateNew(ed);
+const sel = document.getElementById("gen-template");
+const ids = Array.from(sel.options).map((o) => o.value);
+if (!ids.includes("photographic") || !ids.includes("rich-scene")) throw new Error("the generate templates are not offered: " + ids.join(", "));
+if (ids.includes("edit-instruction")) throw new Error("an upsample-only template is offered for generating");
+if (ids[0] !== "") throw new Error("the built-in entry is not first");
+document.getElementById("gen-cancel").click();
+await wait(120);
+return { options: ids };
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";

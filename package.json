@@ -45,6 +45,7 @@
       "electron/**/*",
       "renderer/**/*",
       "recipes/**/*",
+      "prompts/**/*",
       "plugins/**/*",
       "build/icon.png",
       "build/icon.ico",

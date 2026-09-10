@@ -131,6 +131,21 @@ recommendation *not now*; the editor source moving into this repo, recommendatio
   `providers/loopback.js` writes a real PNG of the asked-for size with zlib, which is what
   makes `tools/generate_test.py` a gate without any key.
 
+- **Prompt instruction templates** (`electron/main/prompts.js`, `prompts/*.md`,
+  `docs/PROMPTS.md`), asked for as "a skill .md upload". Deliberately *not* an agent: one
+  call, one instruction, no tools. A Markdown file with a front matter (`name`,
+  `description`, `use`, optional `for`) and a body with `{prompt}` `{model}` `{aspect}`
+  `{region}` `{hint}` placeholders; four built in, the user's own in `<userData>/prompts/`
+  override a built-in of the same id. `host.fillPromptTemplate()` always appends the app's
+  output rule, so a careless template still yields a prompt. The editor asks
+  `host.upsampleInstruction(ctx)` and falls back to `builtInUpsampleInstruction()`, which is
+  the only thing the node repo needed for it.
+- **The size list per model**: `TEXT_SIZES` in `recipes.js` (Gemini 1024 / 2048 / 4096 for
+  its 1K / 2K / 4K classes, OpenAI 1024 / 1536, the rest a free ladder to 4096), carried in
+  the variant's `text.sizes` and shown in the dialog. `gemini.js` turns the requested pixels
+  into `imageConfig.imageSize`. The list never depended on whether a key was stored, which
+  was the user's first guess when 2048 was the maximum for everything.
+
 **Gates for 0.1.5, all on one fresh dev instance on 2026-09-10** (the user closed their own
 Scumble first; both share the single-instance lock and the named pipe):
 `mcp_test.py` PASS in all three modes — proxy 0.8 s, headless 2.5 s, `--exe

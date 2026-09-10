@@ -554,6 +554,45 @@ export const host = {
         return { provider: r.provider, model: t.model, seconds: res.seconds, width: c.width, height: c.height };
     },
 
+    // ---- prompt instruction templates (electron/main/prompts.js) -------------------
+
+    promptTemplates: [],          // [{ id, name, description, use, for, body, source }]
+    promptTemplateIds: { upsample: "", generate: "" },   // "" = the built-in rule
+
+    async refreshPromptTemplates() {
+        try { this.promptTemplates = await window.scumble.prompts.list(); }
+        catch (err) { console.warn("prompt templates", err); this.promptTemplates = []; }
+        return this.promptTemplates;
+    },
+
+    /** The templates that apply to a use ("upsample" / "generate") and the current recipe. */
+    promptTemplatesFor(use) {
+        const r = this.recipe || {};
+        const hay = `${r.id || ""} ${r.name || ""} ${r.family || ""} ${r.model || ""}`.toLowerCase();
+        return this.promptTemplates.filter((t) => !t.error && (t.use === "both" || t.use === use) && (!t.for.length || t.for.some((f) => hay.includes(f))));
+    },
+
+    /** Fill the placeholders; the output rule is the app's, never the template's. */
+    fillPromptTemplate(tpl, ctx) {
+        const values = {
+            prompt: ctx.prompt || "", model: (this.recipe && (this.recipe.model || this.recipe.name)) || "",
+            aspect: ctx.aspect || "", width: ctx.width || "", height: ctx.height || "",
+            usecase: ctx.useCase || "", useCase: ctx.useCase || "", region: ctx.region || "the whole image",
+            hint: ctx.hint ? ` It currently shows: ${ctx.hint}.` : "",
+        };
+        const body = String(tpl.body || "").replace(/\{(\w+)\}/g, (all, k) => (values[k] !== undefined ? String(values[k]) : all));
+        return `${body}\n\nOutput only the prompt text: no preamble, no quotes, no headings, no explanation.`;
+    },
+
+    /** Called by the editor instead of its built-in rule when a template is chosen. */
+    upsampleInstruction(ctx) {
+        const id = this.promptTemplateIds.upsample;
+        if (!id) return null;
+        const tpl = this.promptTemplates.find((t) => t.id === id);
+        if (!tpl || tpl.error) return null;
+        return this.fillPromptTemplate(tpl, ctx);
+    },
+
     /** Whether the editor should show the "Generate new" button at all. */
     generateNewAvailable() {
         return !!(this.shell && this.shell.openGenerateNew);

@@ -26,6 +26,16 @@ the section for its version; `docs/` and the commit history hold the technical d
   nothing but the prompt is sent, no blank canvas travels with it. Providers that can do
   this: OpenAI, Google, Black Forest Labs, fal.ai, Replicate and WaveSpeedAI; Comfy Cloud
   cannot and says so.
+- **The size list follows the model.** Nano Banana and the other Gemini image models are
+  offered up to 4096 px, because that is what they take; OpenAI's stay at their two standard
+  sizes. Before, every model got the same list that stopped at 2048. The list has nothing to
+  do with whether a key is stored.
+- **Prompt templates as Markdown files.** How the language model rewrites your prompt is no
+  longer one fixed rule. Four come with the app - a rich scene, a photographic one, a tag
+  list for SDXL-style models, and a short edit instruction - and you can write your own,
+  import them under Settings › Prompt templates and pick one in the Generate new dialog or
+  for the editor's Upsample button. A template is a plain .md file with a short header, so a
+  prompt style can be kept and passed on like any other document. See docs/PROMPTS.md.
 - **New asks for width and height in two boxes.** One field that wanted "1440x1440" was
   awkward to type and easy to get wrong. There are two number boxes now, with a *Keep the
   ratio* tick if you want the second to follow the first.

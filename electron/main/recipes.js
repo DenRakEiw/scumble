@@ -42,6 +42,16 @@ async function readDir(dir, source) {
 // `text: { model, sizes }`, or switches it off with `text: false`.
 const TEXT_PROVIDERS = new Set(["openai", "gemini", "bfl", "fal", "replicate", "wavespeed", "loopback"]);
 
+// The long sides a provider documents for a generated image. Gemini's image models take
+// 1K, 2K or 4K (imageConfig.imageSize), OpenAI's the three standard shapes at 1024 and 1536;
+// the rest take a free size, so they get the generic ladder. A variant overrides with
+// `text: { sizes: [...] }`.
+const TEXT_SIZES = {
+    gemini: [1024, 2048, 4096],
+    openai: [1024, 1536],
+};
+const TEXT_SIZES_DEFAULT = [768, 1024, 1280, 1536, 2048, 3072, 4096];
+
 function textModelOf(providerId, model) {
     const m = String(model || "");
     if (providerId === "fal" || providerId === "wavespeed") return m.replace(/\/(edit|inpaint|fill)$/, "");
@@ -57,7 +67,7 @@ function textVariant(providerId, v) {
     if (!model && providerId !== "loopback") return null;
     return {
         model,
-        sizes: Array.isArray(t.sizes) ? t.sizes : null,   // null: the provider's own default list
+        sizes: Array.isArray(t.sizes) ? t.sizes : (TEXT_SIZES[providerId] || TEXT_SIZES_DEFAULT),
         fixed: t.fixed || v.fixed || null,
         settings: Array.isArray(t.settings) ? t.settings : (v.settings || []),
         note: t.note || "",

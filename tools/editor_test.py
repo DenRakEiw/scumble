@@ -135,7 +135,9 @@ PRE = """(async () => {
 
 
 async def run_all(c):
-    await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; return 1; })()")
+    # a modal <dialog> left open makes everything outside it inert, and the focus steps
+    # below would fail for a reason that has nothing to do with the editor
+    await c.eval("(async () => { for (const d of document.querySelectorAll('dialog[open]')) d.close(); window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; return 1; })()")
     ok = True
     for name, body in STEPS:
         try:

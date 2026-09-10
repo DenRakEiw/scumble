@@ -42,6 +42,8 @@ untested (see the note above).
   workflow as a recipe if it holds an Inpaint Canvas node.
 - Start from nothing: *Generate new* makes the base image from the prompt alone, locally
   or through a provider, and you edit it from there.
+- Prompt upsampling through a stored API key or a local Ollama / LM Studio, with your own
+  prompt-writing rules as Markdown templates.
 - Export PNG, JPEG, WebP, PSD and ORA with layers, masks and selections.
 - JavaScript plugins (filters with CPU and WebGL2 paths, panels, menu actions, tools,
   commands) and a command core with 60+ documented commands.
@@ -118,7 +120,7 @@ recipes/           ComfyUI recipes (API-format prompts with a fixed canvas node 
 plugins/           built-in plugins: sample (one of every extension point) and film (the film pack), docs/PLUGINS.md, docs/FILM.md
 docker/runpod/     Dockerfile + provision.sh for a ComfyUI box on RunPod (draft, docs/RUNPOD.md)
 tools/             sync_editor.py, cdp.py (DevTools driver), the tests, commands_doc.py
-docs/              BRIEF.md (vision, decisions, phases), COMMANDS.md, PLUGINS.md, FILM.md, MCP.md, RECIPES.md, HELPERS.md, SYNC.md, CODE_SIGNING_POLICY.md
+docs/              BRIEF.md (vision, decisions, phases), COMMANDS.md, PLUGINS.md, FILM.md, MCP.md, RECIPES.md, HELPERS.md, PROMPTS.md, SYNC.md, CODE_SIGNING_POLICY.md
 .github/workflows/ build.yml (Windows installer, draft release on a version tag)
 ```
 

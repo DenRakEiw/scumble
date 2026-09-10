@@ -39,6 +39,11 @@ module.exports = {
         const generationConfig = { responseModalities: ["IMAGE"] };
         const imageConfig = {};
         if (req.kind === "text" && req.aspect && !p.aspect_ratio) imageConfig.aspectRatio = req.aspect;
+        if (req.kind === "text" && !p.image_size) {
+            // the model takes a class, not pixels: pick the one the request is closest to
+            const long = Math.max(req.width || 0, req.height || 0);
+            imageConfig.imageSize = long >= 3072 ? "4K" : long >= 1792 ? "2K" : "1K";
+        }
         if (p.aspect_ratio && p.aspect_ratio !== "auto") imageConfig.aspectRatio = p.aspect_ratio;
         if (p.image_size && p.image_size !== "auto") imageConfig.imageSize = p.image_size;
         if (Object.keys(imageConfig).length) generationConfig.imageConfig = imageConfig;

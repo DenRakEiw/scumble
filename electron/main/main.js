@@ -13,6 +13,7 @@ const keys = require("./keys");
 const providers = require("./providers");
 const llm = require("./llm");
 const recipes = require("./recipes");
+const prompts = require("./prompts");
 const helpers = require("./onnx");
 const plugins = require("./plugins");
 const { Bridge } = require("./bridge");
@@ -51,6 +52,7 @@ if (ARGS.mcp) {
 const ROOT = path.join(__dirname, "..", "..");
 const RENDERER_DIR = path.join(ROOT, "renderer");
 const RECIPES_DIR = path.join(ROOT, "recipes");
+const PROMPTS_DIR = path.join(ROOT, "prompts");
 const ICON = path.join(ROOT, "build", process.platform === "win32" ? "icon.ico" : "icon.png");
 const SCHEME = "scumble";
 const ORIGIN = `${SCHEME}://app`;
@@ -406,6 +408,16 @@ function installIpc() {
     ipcMain.handle("llm:list", () => llm.list());
     ipcMain.handle("llm:ask", (_e, req) => llm.ask(req));
     ipcMain.handle("llm:models", (_e, url) => llm.compatModels(url));
+    // prompt instruction templates (electron/main/prompts.js)
+    ipcMain.handle("prompts:list", () => prompts.list(PROMPTS_DIR));
+    ipcMain.handle("prompts:open", () => prompts.openFolder());
+    ipcMain.handle("prompts:remove", (_e, id) => prompts.remove(id));
+    ipcMain.handle("prompts:import", async () => {
+        needWindow("Import a prompt template");
+        const r = await dialog.showOpenDialog(win, { title: "Import a prompt template", properties: ["openFile"], filters: [{ name: "Markdown", extensions: ["md"] }] });
+        if (r.canceled || !r.filePaths.length) return null;
+        return await prompts.importFile(r.filePaths[0]);
+    });
     // in-app helper models (electron/main/onnx): SAM2 objects, background removal
     helpers.setProgressSink((ev) => send("helpers:progress", ev));
     ipcMain.handle("helpers:status", () => helpers.status());
