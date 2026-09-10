@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.4 — unreleased
+## 0.1.4 — 2026-09-10
 
 - **Fixed: the app got slower the longer you worked in it.** Opening and closing several
   large images in one session left every one of them in memory, with all of its layers. After
