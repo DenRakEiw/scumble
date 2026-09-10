@@ -107,9 +107,24 @@ the selection as a typed array, and layer tiles.
   for runs with large layers. Regression step `large_upload_route` in
   `tools/commands_test.py` (it uploads twice and watches the mirror grow, so it fails on
   the bug even when ComfyUI is connected; verified by reverting the fix).
-- Next from the plan: phase 5 (the WebGL2 compositor: layers as textures in tiles, blend
-  modes and the filter chain in shaders, the 2D canvas only for overlays), then phase 6
-  (memory: undo as compressed tiles, the objects map bounded, layers evicted to the mirror).
+**Phase 5 has its first step** (2026-09-10): `js/inpaint_compositor.js` stacks the visible
+region on the GPU, one shader pass per layer, sources cached as textures by the version
+`touchSource` bumps. It agrees with Canvas 2D to **1 level over 1.5 million pixels** in the
+editor; the nine blend modes follow the W3C spec and were checked over every colour and
+alpha combination (2.3 levels premultiplied). `glCompositeUsable()` falls back to Canvas 2D
+for filter layers, a running stroke, a transform, compare, peek, exports and runs.
+`python tools/composite_test.py` is the gate: it draws the same view both ways in one run
+and compares, plus two stored references (`tools/refs/`).
+
+**The measurement is sobering and worth reading before continuing** (`docs/PERFORMANCE.md`,
+phase 5): median frame cost is the same on both paths (0.1 ms), because phases 1 and 2
+already removed what phase 5 was written to remove. The compositor's win is the worst case,
+9.8 ms to 0.2 ms at a large window with 15 layers. So judge the remaining steps by
+measurement, not by the plan's estimate: the filter chain on the GPU (ping-pong textures,
+no canvas round trip per filter layer per frame) is the one still worth doing; layer tiles
+matter only above 16384 px on a side (the compositor returns null there today and Canvas 2D
+takes over); the full-resolution path only if a measurement asks for it. Then phase 6
+(memory: undo as compressed tiles, the objects map bounded, layers evicted to the mirror).
 
 **Landed on 2026-09-10** (tested on the dev instance: `commands_test.py` PASS, the
 preset row and the mode switch exercised through CDP, the three LLM adapters up to the

@@ -18,7 +18,7 @@ ROOT = os.path.dirname(HERE)
 DEFAULT_NODE = r"F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\custom_nodes\ComfyUI-InpaintCanvas"
 DEST = os.path.join(ROOT, "renderer", "editor")
 
-FILES = ["inpaint_canvas.js", "inpaint_filters.js", "inpaint_curves.js", "inpaint_text.js", "inpaint_raster.js", "inpaint_export.js", "inpaint_worker.js"]
+FILES = ["inpaint_canvas.js", "inpaint_filters.js", "inpaint_curves.js", "inpaint_text.js", "inpaint_raster.js", "inpaint_export.js", "inpaint_worker.js", "inpaint_compositor.js"]
 
 # (file, old, new, count)
 PATCHES = [

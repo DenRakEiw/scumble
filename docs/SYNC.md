@@ -10,8 +10,8 @@ python tools/sync_editor.py --node X   # another checkout
 ```
 
 The script copies `inpaint_canvas.js`, `inpaint_filters.js`, `inpaint_curves.js`,
-`inpaint_text.js`, `inpaint_raster.js`, `inpaint_export.js`, `inpaint_worker.js` and
-`fonts/`, applies the
+`inpaint_text.js`, `inpaint_raster.js`, `inpaint_export.js`, `inpaint_worker.js`,
+`inpaint_compositor.js` and `fonts/`, applies the
 patch list, cuts the litegraph extension block at the end of `inpaint_canvas.js` and
 appends the exports. Every patch must match exactly once (or the stated count);
 otherwise it stops and names the patch, which is the signal that the node changed at
@@ -40,6 +40,7 @@ that spot.
 | Generate section ends with the Refine button | `host.buildGenerateExtras(editor, sec)` adds the node's own widgets (padding, target_size, feather, multiple_of) |
 | window-level keydown handler runs for every open editor | `host.isActive(this)` guard: several editors share the window (tabs), only the active one gets shortcuts |
 | `applyFilter()` in inpaint_filters.js runs the CPU code | asks `applyFilterGL()` (renderer/editor/inpaint_filters_gl.js) first; `info.cpu = true` forces the CPU path; the table builders are exported for the GL module |
+| `inpaint_compositor.js` (the WebGL2 layer compositor) | copied unpatched; it guards itself with `GLCompositor.available()`, so the node keeps working in a browser without WebGL2 |
 | `inpaint_worker.js` (PNG encoding, upload hashes, the PSD / ORA writers) | copied unpatched; it is created from `import.meta.url`, so it loads from `scumble://app/editor/` here and from `/extensions/...` in ComfyUI |
 | `matchCanvas()` in inpaint_filters.js runs the colour match pixel loop | asks `applyMatchGL()` first (mode 6 of the filter shader, the six statistics as uniforms); the CPU loop stays the fallback |
 | `app.registerExtension` block (node widget, queuePrompt wrapper, `executed` / `execution_error` routing) | dropped; `host.js` routes the websocket events to the one editor |

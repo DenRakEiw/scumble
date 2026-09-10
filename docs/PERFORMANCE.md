@@ -489,7 +489,67 @@ The original plan for reference:
    only dirty tiles re-upload, and the WebGL2 compositor of phase 5 can composite tile by
    tile.
 
-### Phase 5: the WebGL2 compositor (1–2 weeks)
+### Phase 5, step 1: the compositor stacks layers on the GPU — **done 2026-09-10**
+
+`js/inpaint_compositor.js` (synced into the app) composites the visible region on the GPU:
+every source canvas becomes a texture keyed by the version the editor already bumps
+(`touchSource`), and each layer is one shader pass into a viewport-sized framebuffer.
+
+**The blend modes were the risk, and they are settled.** The nine modes the editor exposes
+follow the W3C compositing spec; the shader was checked against Canvas 2D over every
+combination of colour and alpha at two opacities:
+
+| | max | mean |
+|---|---|---|
+| premultiplied (what reaches the screen) | 2.3 levels | 0.3 |
+| straight alpha | 85 levels | 0.5 |
+
+The straight-alpha outliers all sit at alpha 1/255, where dividing by the alpha turns one
+step of 8-bit rounding into 85 levels; the picture is the same. Two other things had to
+match Canvas 2D exactly: a canvas texture's first row is its top while a framebuffer's is
+its bottom (the layer pass samples flipped), and textures are uploaded **premultiplied** so
+that scaling interpolates across transparent edges the way Canvas 2D does. Before that
+second fix, 360 pixels of a test frame were up to 45 levels off, all of them on the edge of
+a transparent hole in a scaled layer.
+
+In the editor, on a document with all nine blend modes, a masked layer, a colour-matched
+layer and text: **max 1 level over 1.5 million pixels, mean 0.026, nothing above 2**
+(`tools/composite_test.py`, which renders the same view both ways in one run).
+
+**What it does not do**, by design: it stacks *prepared* layer pixels. Masks, colour match,
+the stroke preview and pending transforms stay in the editor, which hands over the canvas
+it would have drawn, so every one of those keeps working untouched. `glCompositeUsable()`
+falls back to Canvas 2D for filter layers, a running stroke, a transform, the compare
+split, peek, exports and runs.
+
+**The honest measurement.** Timing `drawViewComposite` on a 96 MP document, panning:
+
+| Output size, layers | Canvas 2D median | Canvas 2D worst | GPU median | GPU worst |
+|---|---|---|---|---|
+| 1600 × 900, 7 | 0.0 ms | 0.2 ms | 0.1 ms | 0.2 ms |
+| 3400 × 1900, 7 | 0.0 ms | 8.8 ms | 0.1 ms | 0.2 ms |
+| 3400 × 1900, 15 | 0.0 ms | 9.8 ms | 0.1 ms | 0.2 ms |
+
+The medians are the same. Phases 1 and 2 already removed the per-frame cost this phase was
+written to remove: with a display pyramid the 2D path only blits a handful of small
+canvases, and that is fast. What the compositor buys is the **worst case** - the 9 to 10 ms
+spikes at a large window with many layers are gone, and those are what drop frames.
+
+**What that means for the rest of phase 5.** The plan's premise ("the only design that makes
+ten 12k layers with filters interactive") was written before phases 1 and 2 were measured.
+Stacking is no longer the bottleneck, so the remaining steps should be judged one
+measurement at a time rather than built out on the strength of the original estimate:
+
+1. **The filter chain on the GPU** (ping-pong textures between filter layers, no canvas
+   round trip per layer per frame) - this is where time still goes and is worth doing next.
+2. **Layer tiles** above `MAX_TEXTURE_SIZE`, needed for sources over 16384 px on a side;
+   today the compositor returns null there and Canvas 2D takes over, which works.
+3. **The full-resolution path** (export, run, thumbnail) through the same passes - only
+   worth it if a measurement shows the 2D path costing something at that point.
+
+The original plan for reference:
+
+### Phase 5 (planned)
 
 `drawComposite` becomes a render pass over the visible tiles: one quad per visible layer
 tile, shader with blend modes (all Canvas 2D `globalCompositeOperation` modes the

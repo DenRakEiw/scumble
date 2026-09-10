@@ -172,6 +172,47 @@ VIEW = """
 })()
 """
 
+# The phase 5 gate: the same view drawn by the GPU compositor and by Canvas 2D, in one run.
+# The filter layer is hidden because the filter chain still goes through Canvas 2D, and a
+# stroke or a transform would too - see glCompositeUsable.
+GL_VS_2D = """
+(async () => {
+    const ed = window.__cmp;
+    const fx = ed.layers.find((l) => l.kind === "filter");
+    if (fx) fx.visible = false;
+    const shot = () => {
+        ed.sceneSig = null;
+        ed.flatCache = null;
+        ed.draw();
+        const c = document.createElement("canvas");
+        c.width = ed.canvas.width; c.height = ed.canvas.height;
+        c.getContext("2d").drawImage(ed.canvas, 0, 0);
+        return c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    };
+    ed.compositorOff = true;
+    const cpu = shot();
+    ed.compositorOff = false;
+    const used = ed.glCompositeUsable({});
+    const t0 = performance.now();
+    const gpu = shot();
+    const ms = +(performance.now() - t0).toFixed(2);
+    if (fx) fx.visible = true;
+    ed.compositorOff = false;
+    if (!used) return { skipped: "the compositor would not take this stack" };
+    // premultiplied values: that is what reaches the screen
+    let max = 0, sum = 0, n = 0, over = 0;
+    for (let i = 0; i < cpu.length; i += 4) {
+        const aa = cpu[i + 3], ba = gpu[i + 3];
+        let d = Math.abs(aa - ba);
+        for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(cpu[i + k] * aa / 255 - gpu[i + k] * ba / 255));
+        if (d > max) max = d;
+        if (d > 2) over++;
+        sum += d; n++;
+    }
+    return { max: +max.toFixed(2), mean: +(sum / n).toFixed(4), pixelsOver2: over, pixels: n, ms };
+})()
+"""
+
 CLOSE = """
 (async () => {
     const shell = await import("./shell.js");
@@ -239,6 +280,17 @@ async def run(c, args):
                 ok = False
                 print(f"[FAIL] {name}: max {diff['max']} levels, mean {diff['mean']:.3f}, "
                       f"{diff['differing']} of {diff['bytes']} bytes differ. Current: {cur}, reference: {ref}")
+        # the GPU compositor against Canvas 2D, same document, same run
+        gl = await c.eval(GL_VS_2D, timeout=300)
+        if gl.get("skipped"):
+            print(f"[skip] gpu vs 2d: {gl['skipped']}")
+        elif gl["max"] <= args.tolerance:
+            print(f"[ok] gpu vs 2d: max {gl['max']} levels, mean {gl['mean']}, "
+                  f"{gl['pixelsOver2']} of {gl['pixels']} pixels over 2, draw {gl['ms']} ms")
+        else:
+            ok = False
+            print(f"[FAIL] gpu vs 2d: max {gl['max']} levels, mean {gl['mean']}, "
+                  f"{gl['pixelsOver2']} of {gl['pixels']} pixels over 2 levels")
     finally:
         await c.eval(CLOSE)
     print("PASS" if ok else "FAIL")
