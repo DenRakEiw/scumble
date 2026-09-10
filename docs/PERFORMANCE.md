@@ -694,6 +694,9 @@ ported (a compatibility shim for `shade(vec4, vec2)` is possible with WGSL).
 
 ### Phase 6: memory, and what a long session does to the GPU — **the plan, 2026-09-10**
 
+> The implementation plan for this phase, with the code read and the hypotheses ranked,
+> is `docs/PHASE6_PLAN.md`. This section is the background it builds on.
+
 This phase was written as a list of guesses (undo tiles, a bounded object map, layer
 eviction). Two measurements since then say the list is largely wrong, and one of them
 found something worse than anything on it. So the plan below starts with instrumentation

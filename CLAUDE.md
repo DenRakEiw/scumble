@@ -141,8 +141,11 @@ compositor. Both are published on GitHub Releases, so the installed app updates 
   `tools/commands_test.py` (it uploads twice and watches the mirror grow, so it fails on
   the bug even when ComfyUI is connected; verified by reverting the fix).
 
-**Next up: phase 6**, planned in `docs/PERFORMANCE.md` § "Phase 6: memory, and what a long
-session does to the GPU". Read that section before starting; the short version is that the
+**Next up: phase 6.** The step-by-step implementation plan is **`docs/PHASE6_PLAN.md`**
+(written 2026-09-10 after reading the code: six ranked hypotheses, the instrumentation to
+build first, the fixes in order with file and line references, the escape hatch, gates and
+release). Work through it top to bottom. Background in `docs/PERFORMANCE.md` § "Phase 6:
+memory, and what a long session does to the GPU"; the short version is that the
 old list (undo tiles, object map, layer eviction) is mostly guesswork that the measurements
 have overtaken, that **step 1 is instrumentation and nothing happens before it works**
 (`tools/mem_test.py`, and the memory that matters is in the GPU process, so it needs
