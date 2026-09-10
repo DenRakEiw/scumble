@@ -1,0 +1,258 @@
+"""Pixel reference test for the editor's compositing (docs/PERFORMANCE.md §7).
+
+The acceptance gate for phase 5: the WebGL2 compositor has to produce the same picture the
+Canvas 2D one does. The test builds a deterministic document with every blend mode, a
+masked layer, a colour-matched layer, a filter layer and text, renders the full-resolution
+composite and the on-screen view, and compares both against stored references.
+
+    python tools/composite_test.py                # compare against tools/refs/
+    python tools/composite_test.py --update       # write the references (do this on a
+                                                  # known-good build, and look at them)
+    python tools/composite_test.py --tolerance 3  # allow that many levels of difference
+
+Needs the app on the debugging port (see tools/cdp.py). No ComfyUI, nothing is uploaded.
+The references are PNGs in tools/refs/, small enough to keep in git.
+"""
+import argparse
+import asyncio
+import base64
+import io
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from cdp import session  # noqa: E402
+
+REFS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "refs")
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dist", "composite")
+
+# One deterministic document, rendered two ways. Everything is drawn from fixed numbers:
+# no Math.random, no fonts beyond the editor's default, no time-dependent values.
+BUILD = """
+(async () => {
+    const shell = await import("./shell.js");
+    const W = 900, H = 600;
+    window.__cmpBefore = window.editor;
+    const ed = shell.newDocument();
+    shell.activate(ed);
+    await new Promise((r) => setTimeout(r, 300));
+    ed.resizeCanvas();
+    window.__cmp = ed;
+
+    const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    // base: a gradient with hard shapes, so blend modes have something to bite on
+    const base = mk(W, H);
+    {
+        const x = base.getContext("2d");
+        const g = x.createLinearGradient(0, 0, W, H);
+        g.addColorStop(0, "#12305a"); g.addColorStop(0.5, "#8a6a3a"); g.addColorStop(1, "#d8d0c0");
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+        for (let i = 0; i < 12; i++) {
+            x.fillStyle = `hsl(${i * 30},70%,${30 + (i % 4) * 12}%)`;
+            x.fillRect(20 + i * 70, 40 + (i % 3) * 90, 60, 120);
+        }
+        x.fillStyle = "#000"; x.fillRect(0, H - 60, W, 30);
+        x.fillStyle = "#fff"; x.fillRect(0, H - 30, W, 30);
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W });
+    Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "composite_ref.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+
+    // one small layer per blend mode, laid out in a row, each half opaque
+    const modes = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "difference"];
+    modes.forEach((mode, i) => {
+        const w = 90, h = 200;
+        const c = mk(w, h);
+        const x = c.getContext("2d");
+        const g = x.createLinearGradient(0, 0, 0, h);
+        g.addColorStop(0, "#ff5020"); g.addColorStop(0.5, "#20ff80"); g.addColorStop(1, "#3050ff");
+        x.fillStyle = g; x.fillRect(0, 0, w, h);
+        x.fillStyle = "rgba(255,255,255,0.85)"; x.fillRect(10, 20, 30, 60);
+        x.fillStyle = "rgba(0,0,0,0.85)"; x.fillRect(50, 120, 30, 60);
+        const l = ed.addLayer({ name: "blend " + mode, kind: "paint", canvas: c, x: 10 + i * 98, y: 30, w, h, dirty: true });
+        l.blend = mode;
+        l.opacity = 0.75;
+    });
+
+    // a masked layer: the mask is a gradient, so partial alpha is covered
+    {
+        const c = mk(300, 200);
+        const x = c.getContext("2d");
+        x.fillStyle = "#ffcc33"; x.fillRect(0, 0, 300, 200);
+        x.fillStyle = "#33224a"; x.fillRect(20, 20, 120, 160);
+        const l = ed.addLayer({ name: "masked", kind: "paint", canvas: c, x: 60, y: 300, w: 300, h: 200, dirty: true });
+        // the mask works through its alpha (drawn with destination-in), not its luminance
+        const m = mk(300, 200);
+        const mx = m.getContext("2d");
+        const mg = mx.createLinearGradient(0, 0, 300, 0);
+        mg.addColorStop(0, "rgba(255,255,255,0)"); mg.addColorStop(1, "rgba(255,255,255,1)");
+        mx.fillStyle = mg; mx.fillRect(0, 0, 300, 200);
+        mx.fillStyle = "rgba(255,255,255,1)"; mx.fillRect(200, 140, 80, 50);
+        l.mask = m;
+        l.maskDirty = true;
+        ed.markMaskChanged(l);
+    }
+
+    // a colour-matched result layer, like an inpaint result over its surroundings
+    {
+        const c = mk(260, 180);
+        const x = c.getContext("2d");
+        const g = x.createRadialGradient(130, 90, 10, 130, 90, 130);
+        g.addColorStop(0, "#f0e0b0"); g.addColorStop(1, "#204020");
+        x.fillStyle = g; x.fillRect(0, 0, 260, 180);
+        const l = ed.addLayer({ name: "matched", kind: "result", canvas: c, x: 430, y: 320, w: 260, h: 180, dirty: true });
+        l.match = { strength: 70, source: "surroundings" };
+        ed.markMatchChanged(l);
+    }
+
+    // a text layer (the editor's default font, fixed size)
+    {
+        const c = mk(320, 90);
+        const x = c.getContext("2d");
+        x.fillStyle = "#ffffff";
+        x.font = "600 56px system-ui, sans-serif";
+        x.textBaseline = "top";
+        x.fillText("Scumble", 6, 6);
+        ed.addLayer({ name: "text", kind: "paint", canvas: c, x: 540, y: 60, w: 320, h: 90, dirty: true });
+    }
+
+    // A filter layer on top. Grain seeds its noise field from the layer id, which differs
+    // per session, so the id is pinned here: without that no two runs match.
+    const fx = ed.addFilterLayer("grain");
+    if (fx) {
+        fx.params = { ...(fx.params || {}), amount: 35, size: 2, speckle: 25, chroma: 0 };
+        fx.opacity = 0.9;
+        fx.id = "composite-ref-grain";
+        fx._fcache = null;
+        fx._fcacheView = null;
+        ed.activeLayerId = fx.id;
+    }
+
+    // a selection, so its overlay and the crop frame are part of the view reference.
+    // Tint, not marching ants: the ants walk with the clock and would never compare equal.
+    const sctx = ed.selection.getContext("2d");
+    sctx.fillStyle = "#ff0000";
+    sctx.fillRect(120, 120, 400, 260);
+    ed.markSelectionChanged([120, 120, 520, 380]);
+    ed.selectionDisplay = "tint";
+
+    ed.uploaded.baseHash = null;
+    ed.filterPreview = null;
+    ed.flatCache = null;
+    ed.sceneSig = null;
+    ed.renderLayers();
+    ed.view = { scale: 1, x: 40, y: 30, angle: 0 };
+    ed.draw();
+    return { w: ed.width, h: ed.height, layers: ed.layers.length };
+})()
+"""
+
+# the full-resolution composite, exactly what an export or a run sees
+FULL = """
+(async () => {
+    const ed = window.__cmp;
+    ed.flatCache = null;
+    const c = ed.flattenToCanvas({ forRun: false });
+    return c.toDataURL("image/png").slice("data:image/png;base64,".length);
+})()
+"""
+
+# the on-screen view: viewport composite, overlays, marching ants, crop frame
+VIEW = """
+(async () => {
+    const ed = window.__cmp;
+    ed.sceneSig = null;
+    ed.draw();
+    await new Promise((r) => setTimeout(r, 120));
+    const c = document.createElement("canvas");
+    c.width = Math.min(1200, ed.canvas.width);
+    c.height = Math.min(800, ed.canvas.height);
+    c.getContext("2d").drawImage(ed.canvas, 0, 0, c.width, c.height, 0, 0, c.width, c.height);
+    return c.toDataURL("image/png").slice("data:image/png;base64,".length);
+})()
+"""
+
+CLOSE = """
+(async () => {
+    const shell = await import("./shell.js");
+    if (window.__cmp) shell.closeDocument(window.__cmp, { force: true });
+    if (window.__cmpBefore) shell.activate(window.__cmpBefore);
+    window.__cmp = null;
+    return 1;
+})()
+"""
+
+
+def compare(a_png, b_png):
+    """Max and mean absolute difference per channel between two PNGs of the same size."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    a = Image.open(io.BytesIO(a_png)).convert("RGBA")
+    b = Image.open(io.BytesIO(b_png)).convert("RGBA")
+    if a.size != b.size:
+        return {"size": (a.size, b.size), "max": 255, "mean": 255.0, "differing": -1}
+    da, db = a.tobytes(), b.tobytes()
+    worst = 0
+    total = 0
+    differing = 0
+    for x, y in zip(da, db):
+        d = abs(x - y)
+        if d:
+            differing += 1
+            total += d
+            if d > worst:
+                worst = d
+    return {"max": worst, "mean": total / max(1, len(da)), "differing": differing, "bytes": len(da)}
+
+
+async def run(c, args):
+    os.makedirs(REFS, exist_ok=True)
+    os.makedirs(OUT, exist_ok=True)
+    info = await c.eval(BUILD, timeout=120)
+    print("document:", info)
+    ok = True
+    try:
+        for name, js in (("full", FULL), ("view", VIEW)):
+            data = base64.b64decode(await c.eval(js, timeout=300))
+            cur = os.path.join(OUT, f"{name}.png")
+            with open(cur, "wb") as f:
+                f.write(data)
+            ref = os.path.join(REFS, f"composite_{name}.png")
+            if args.update or not os.path.exists(ref):
+                with open(ref, "wb") as f:
+                    f.write(data)
+                print(f"[ref] {name}: written ({len(data)} bytes) -> {ref}")
+                continue
+            with open(ref, "rb") as f:
+                want = f.read()
+            diff = compare(want, data)
+            if diff is None:
+                print(f"[skip] {name}: Pillow missing, cannot compare (wrote {cur})")
+                continue
+            if diff.get("differing", 0) == 0:
+                print(f"[ok] {name}: identical")
+            elif diff["max"] <= args.tolerance:
+                print(f"[ok] {name}: max {diff['max']} levels, mean {diff['mean']:.3f} (within {args.tolerance})")
+            else:
+                ok = False
+                print(f"[FAIL] {name}: max {diff['max']} levels, mean {diff['mean']:.3f}, "
+                      f"{diff['differing']} of {diff['bytes']} bytes differ. Current: {cur}, reference: {ref}")
+    finally:
+        await c.eval(CLOSE)
+    print("PASS" if ok else "FAIL")
+    return ok
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--update", action="store_true", help="write the references instead of comparing")
+    ap.add_argument("--tolerance", type=int, default=2, help="largest allowed difference per channel (default 2)")
+    args = ap.parse_args()
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.exit(0 if asyncio.run(session(lambda c: run(c, args))) else 1)
+
+
+if __name__ == "__main__":
+    main()
