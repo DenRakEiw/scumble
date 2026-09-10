@@ -24,6 +24,11 @@ jobs:
           node-version: 22
           cache: npm
 
+      # tools/release_notes.py turns CHANGELOG.md into the release body
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install
         run: npm ci
 
@@ -43,7 +48,10 @@ jobs:
         shell: bash
         run: |
           tag=${GITHUB_REF#refs/tags/}
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "Scumble ${tag#v}" --notes "Draft made by the build workflow; the installer, its blockmap and latest.yml are uploaded by electron-builder."
+          # the release body is that version's section of CHANGELOG.md; a missing section
+          # stops the release rather than shipping someone else's notes
+          python tools/release_notes.py "$tag" > release_notes.md
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "Scumble ${tag#v}" --notes-file release_notes.md
 
       - name: Build installer
         env:

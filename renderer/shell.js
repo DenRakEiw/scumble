@@ -19,7 +19,7 @@ const ui = {
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
-    updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"),
+    updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"),
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
 };
@@ -738,6 +738,11 @@ function updateText(s) {
 
 function renderUpdate(s) {
     ui.updateNote.textContent = updateText(s);
+    // the release notes of the offered version, as text: they come from GitHub, so they
+    // never touch innerHTML
+    const notes = s && s.notes && (s.state === "downloaded" || s.state === "downloading") ? s.notes : "";
+    ui.updateNotes.textContent = notes;
+    ui.updateNotes.hidden = !notes;
     ui.updateInstall.hidden = !(s && s.state === "downloaded");
     ui.updateCheck.disabled = !!(s && (s.state === "checking" || s.state === "downloading"));
     ui.updateBar.hidden = !(s && s.state === "downloaded");

@@ -60,6 +60,10 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   `electron-updater` reads `latest.yml` there; `.github/workflows/build.yml` builds the
   installer on `windows-latest` and publishes a **draft** release on a `v<version>` tag
   (the tag must match `package.json`); publishing the draft makes it visible to the app.
+  **Every release needs its section in `CHANGELOG.md` first**: the workflow builds the
+  release body from it through `tools/release_notes.py` and fails the tag build when the
+  section is missing, and the app shows the same text in Settings › Updates before you
+  restart into the new version.
   First releases are **unsigned**; code signing goes through the SignPath Foundation
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.

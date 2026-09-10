@@ -7,6 +7,8 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 .shell-field input { width: 220px; }
 .shell-note { color: #888; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shell-spacer { flex: 1; }
+/* what changed in the offered version, straight from the release notes: text only, never markup */
+.shell-notes { margin: 6px 0 0; padding: 8px 10px; max-height: 220px; overflow: auto; background: #202020; border: 1px solid #383838; border-radius: 3px; color: #bbb; font: 12px/1.5 system-ui, sans-serif; white-space: pre-wrap; }
 #shell-bar button { background: #2d2d2d; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 3px 10px; font: inherit; cursor: pointer; }
 #shell-bar button:hover { background: #3a3a3a; }
 #shell-status { display: flex; align-items: center; gap: 6px; color: #aaa; min-width: 120px; }

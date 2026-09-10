@@ -54,7 +54,8 @@ Download `Scumble Setup <version>.exe` from the
 [latest release](https://github.com/DenRakEiw/scumble/releases/latest) and run it. The
 installer is not code-signed yet, so SmartScreen shows "Windows protected your PC" once:
 click *More info*, then *Run anyway*. Updates are downloaded by the app itself (Settings >
-Updates) and do not go through SmartScreen again.
+Updates), which also shows what changed, and do not go through SmartScreen again.
+[CHANGELOG.md](CHANGELOG.md) lists every version.
 
 For local rendering you need a ComfyUI with the node pack
 [ComfyUI-InpaintCanvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas) installed and
