@@ -3,9 +3,12 @@
     "scumble": {
       "command": "node_modules/electron/dist/electron.exe",
       "args": [
-        ".",
+        "electron/main/mcp/launch.js",
         "--mcp"
-      ]
+      ],
+      "env": {
+        "ELECTRON_RUN_AS_NODE": "1"
+      }
     }
   }
 }

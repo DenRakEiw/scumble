@@ -6,7 +6,12 @@ No ComfyUI needed. Loads the test image from the local store, runs a selection, 
 filter (WebGL2 in the hidden window), a screenshot (image content), an export to a fixed
 path and an error case.
 
-    python tools/mcp_test.py [--exe <Scumble.exe | electron.exe>] [out_dir]
+    python tools/mcp_test.py [--exe <Scumble.exe | electron.exe>] [--direct] [out_dir]
+
+The server is started through `electron/main/mcp/launch.js` in Node mode, which is how
+clients register it (docs/MCP.md): Electron prints a CR LF to stdout before any JavaScript
+runs and this Python client rejects it. `--direct` runs `--mcp` on the executable itself,
+which is the documented failure and is not part of the gate.
 
 Needs the `mcp` package (pip install mcp).
 """
@@ -15,6 +20,7 @@ import base64
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -30,13 +36,39 @@ if "--exe" in args:
     i = args.index("--exe")
     EXE = args[i + 1]
     del args[i:i + 2]
+DIRECT = "--direct" in args
+if DIRECT:
+    args.remove("--direct")
 OUT = os.path.abspath(args[0] if args else os.path.join(ROOT, "dist", "smoke"))
 os.makedirs(OUT, exist_ok=True)
 
-if EXE:
-    SERVER = StdioServerParameters(command=EXE, args=["--mcp"] if "electron" not in os.path.basename(EXE).lower() else [".", "--mcp"], cwd=ROOT)
-else:
-    SERVER = StdioServerParameters(command=os.path.join(ROOT, "node_modules", "electron", "dist", "electron.exe" if os.name == "nt" else "electron"), args=[".", "--mcp"], cwd=ROOT)
+DEV_EXE = os.path.join(ROOT, "node_modules", "electron", "dist", "electron.exe" if os.name == "nt" else "electron")
+EXE = os.path.abspath(EXE) if EXE else DEV_EXE
+IS_ELECTRON = "electron" in os.path.basename(EXE).lower()
+# The launcher lives beside the sources in a dev checkout and inside the asar in a package.
+LAUNCHER = os.path.join(ROOT, "electron", "main", "mcp", "launch.js") if IS_ELECTRON else     os.path.join(os.path.dirname(EXE), "resources", "app.asar", "electron", "main", "mcp", "launch.js")
+
+
+def server_args(mode):
+    """mode is ["--mcp"] or ["--cmd", "ping"]; the launcher takes both."""
+    if DIRECT:
+        return ([ROOT] if IS_ELECTRON else []) + mode, dict(os.environ)
+    return [LAUNCHER] + mode, {**os.environ, "ELECTRON_RUN_AS_NODE": "1"}
+
+
+_mcp_args, _mcp_env = server_args(["--mcp"])
+SERVER = StdioServerParameters(command=EXE, args=_mcp_args, cwd=ROOT, env=_mcp_env)
+
+
+def raw_check():
+    """Nothing but the protocol on stdout: the first byte of a --cmd answer must be `{`."""
+    a, env = server_args(["--cmd", "ping"])
+    p = subprocess.run([EXE] + a, cwd=ROOT, env=env, capture_output=True, timeout=180)
+    if p.returncode != 0:
+        raise RuntimeError(f"--cmd ping exited {p.returncode}: {p.stderr[-300:]!r}")
+    if p.stdout[:1] != b"{":
+        raise RuntimeError(f"stdout does not start with a JSON message: {p.stdout[:40]!r}")
+    return f"{len(p.stdout)} bytes, starts with {chr(p.stdout[0])!r}"
 
 TEST_IMAGE = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~/.config")), "Scumble", "files", "input", "inpaint_canvas", "test_base.png")
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -66,6 +98,7 @@ async def main():
     if not os.path.isfile(TEST_IMAGE):
         raise SystemExit(f"test image missing: {TEST_IMAGE} (run the smoke test once)")
     report = {}
+    report["raw"] = raw_check()
     async with stdio_client(SERVER) as (read, write):
         async with ClientSession(read, write) as session:
             init = await session.initialize()

@@ -43,8 +43,9 @@ untested (see the note above).
 - Export PNG, JPEG, WebP, PSD and ORA with layers, masks and selections.
 - JavaScript plugins (filters with CPU and WebGL2 paths, panels, menu actions, tools,
   commands) and a command core with 60+ documented commands.
-- MCP server: `Scumble --mcp` lets Claude Code, Claude Desktop or any MCP client drive the
-  editor; `--headless` and `--cmd` for scripts.
+- MCP server: Claude Code, Claude Desktop or any MCP client can drive the editor (Help >
+  Copy MCP registration puts the line for your client on the clipboard); `--headless` and
+  `--cmd` for scripts.
 - Tabs with session restore, a local file mirror (no server needed to reopen your work),
   API keys in the OS credential store, auto-update from GitHub releases.
 
@@ -55,7 +56,9 @@ Download `Scumble Setup <version>.exe` from the
 installer is not code-signed yet, so SmartScreen shows "Windows protected your PC" once:
 click *More info*, then *Run anyway*. Updates are downloaded by the app itself (Settings >
 Updates), which also shows what changed, and do not go through SmartScreen again.
-[CHANGELOG.md](CHANGELOG.md) lists every version.
+[CHANGELOG.md](CHANGELOG.md) lists every version. How releases are built, who approves
+them and what the app sends over the network is in the
+[code signing policy](docs/CODE_SIGNING_POLICY.md).
 
 For local rendering you need a ComfyUI with the node pack
 [ComfyUI-InpaintCanvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas) installed and
@@ -92,8 +95,9 @@ unsigned). Releases are built by GitHub Actions: pushing a tag `v<version>` that
 
 Tests (`tools/`): `smoke_test.py` (needs a ComfyUI), `commands_test.py` (command core and
 the sample plugin), `film_test.py` (GPU and CPU paths of the film pack), `mcp_test.py`
-(the MCP server over stdio), `helpers_test.js` (ONNX modules without Electron). See
-`CLAUDE.md` for the development notes.
+(the MCP server over stdio), `llm_test.py` (the OpenAI-compatible upsample endpoint against
+a mock server), `helpers_test.js` (ONNX modules without Electron). See `CLAUDE.md` for the
+development notes.
 
 ## Layout
 
@@ -110,7 +114,7 @@ recipes/           ComfyUI recipes (API-format prompts with a fixed canvas node 
 plugins/           built-in plugins: sample (one of every extension point) and film (the film pack), docs/PLUGINS.md, docs/FILM.md
 docker/runpod/     Dockerfile + provision.sh for a ComfyUI box on RunPod (draft, docs/RUNPOD.md)
 tools/             sync_editor.py, cdp.py (DevTools driver), the tests, commands_doc.py
-docs/              BRIEF.md (vision, decisions, phases), COMMANDS.md, PLUGINS.md, FILM.md, MCP.md, RECIPES.md, HELPERS.md, SYNC.md
+docs/              BRIEF.md (vision, decisions, phases), COMMANDS.md, PLUGINS.md, FILM.md, MCP.md, RECIPES.md, HELPERS.md, SYNC.md, CODE_SIGNING_POLICY.md
 .github/workflows/ build.yml (Windows installer, draft release on a version tag)
 ```
 

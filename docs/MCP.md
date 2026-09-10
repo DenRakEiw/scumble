@@ -27,28 +27,50 @@ and the status bar says "MCP client connected." once.
 
 ## Registering with a client
 
+Register the **launcher**, not the executable directly: `electron/main/mcp/launch.js` is a
+plain Node script that the same executable runs in Node mode (`ELECTRON_RUN_AS_NODE=1`),
+spawns the real app as its child and hands the client a stdout that starts with the first
+JSON message. Help > Copy MCP registration puts the two lines below on the clipboard with
+the paths of the installation you are running.
+
 Claude Code, packaged app:
 
 ```bash
-claude mcp add scumble -- "C:\Users\<you>\AppData\Local\Programs\Scumble\Scumble.exe" --mcp
+claude mcp add scumble -e ELECTRON_RUN_AS_NODE=1 -- "C:\Users\<you>\AppData\Local\Programs\Scumble\Scumble.exe" "C:\Users\<you>\AppData\Local\Programs\Scumble\resources\app.asar\electron\main\mcp\launch.js" --mcp
 ```
 
 Claude Code, dev checkout (`.mcp.json` in the repo does this for the project scope):
 
 ```bash
-claude mcp add scumble -- F:\canvas\node_modules\electron\dist\electron.exe F:\canvas --mcp
+claude mcp add scumble -e ELECTRON_RUN_AS_NODE=1 -- F:\canvas\node_modules\electron\dist\electron.exe F:\canvas\electron\main\mcp\launch.js --mcp
 ```
 
 Claude Desktop (`claude_desktop_config.json`):
 
 ```json
-{ "mcpServers": { "scumble": { "command": "C:\\Users\\<you>\\AppData\\Local\\Programs\\Scumble\\Scumble.exe", "args": ["--mcp"] } } }
+{ "mcpServers": { "scumble": {
+  "command": "C:\Users\<you>\AppData\Local\Programs\Scumble\Scumble.exe",
+  "args": ["C:\Users\<you>\AppData\Local\Programs\Scumble\resources\app.asar\electron\main\mcp\launch.js", "--mcp"],
+  "env": { "ELECTRON_RUN_AS_NODE": "1" }
+} } }
 ```
 
-Electron writes one empty line (`\r\n`) to stdout before any JavaScript runs on Windows.
-MCP clients skip it (the TypeScript SDK reports one "Unexpected end of JSON input" through
-`onerror` and carries on, the Python client logs one validation warning); it cannot be
-suppressed from the app.
+The launcher takes `--cmd <name> [json]` too, which is the way to get JSON a script can
+parse without stripping anything. Plain `node electron/main/mcp/launch.js --mcp` works in a
+dev checkout as well (in plain Node the `electron` package exports the binary's path).
+
+### Why the launcher exists
+
+Electron writes one empty line (`\r\n`) to stdout before any JavaScript runs on Windows, and
+the MCP stdio transport forbids anything on stdout that is not a protocol message. Measured
+on 2026-09-10: the bytes appear whatever stdout is (a pipe or a file) and whatever
+`ELECTRON_NO_ATTACH_CONSOLE` says, so the app cannot suppress them; the same executable in
+Node mode prints nothing at all and can read the packaged asar. Clients differ in how much
+they mind: the TypeScript SDK (Claude Code, Claude Desktop) reports one "Unexpected end of
+JSON input" through `onerror` and carries on, the Python `mcp` client fails the whole
+session with a `json_invalid` error. `Scumble --mcp` therefore still works directly for
+tolerant clients and for scripts, and the launcher is the one that keeps to the
+specification.
 
 ## Tools
 

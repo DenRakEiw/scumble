@@ -35,6 +35,8 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 - API rendering: **fal.ai** as the aggregator, plus direct adapters (Black Forest Labs
   Flux.2, OpenAI gpt-image, Google Gemini image) and the ComfyUI API nodes as fallback.
   Keys in the OS credential store via Electron `safeStorage`, never in config files.
+  Prompt upsampling runs on the same keys, or on a local OpenAI-compatible server
+  (Ollama / LM Studio / vLLM, `settings.llm.compat`, no key needed).
 - Helper models: **SAM2 and RMBG-2.0 in-app via ONNX Runtime** (DirectML on Windows,
   CUDA/CPU on Linux); model files downloaded into the app data folder **or** read from a
   linked ComfyUI `models/` folder. SAM3 stays a ComfyUI helper (no ONNX export).
@@ -69,6 +71,62 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
 ## Where things stand (2026-09-10)
+
+**Release 0.1.5 is prepared but not tagged** (2026-09-10, night). `package.json` is 0.1.5
+and `CHANGELOG.md` has one 0.1.5 section: **0.1.4 was never tagged and was folded into it**
+(user's decision at the start of the session), so the section carries phase 6, phase 5 step 2
+and the two items below together. The tag waits for the user's go-ahead:
+`git tag v0.1.5 && git push --tags`, then `gh release edit v0.1.5 --draft=false`.
+
+**`docs/NEXT_PLAN.md` items 1 and 2 are done, 3 was already done, 4 is untouched.** The file
+stays as written: it is the record of the two decisions in item 4 (blur as a shader pass,
+recommendation *not now*; the editor source moving into this repo, recommendation *yes, after
+0.1.5*). Neither is to be built without the user's yes.
+
+- **Item 1, the MCP handshake** (`electron/main/mcp/launch.js`, `docs/MCP.md` "Why the
+  launcher exists"). Electron writes a CR LF to stdout before any of our JavaScript runs and
+  it cannot be suppressed from the app; the Python `mcp` client kills the whole session over
+  it. The launcher is a plain Node script the same executable runs in Node mode
+  (`ELECTRON_RUN_AS_NODE=1`, which prints nothing and can read the packaged asar): it spawns
+  the app as a child with that variable removed, relays stdin, and drops the **leading** run
+  of CR / LF / space bytes from the child's stdout before passing everything else through
+  untouched. `.mcp.json`, `tools/mcp_test.py` and the docs register the launcher;
+  `Scumble --mcp` still works directly for tolerant clients and for scripts. **Help > Copy
+  MCP registration** (two entries, `mcpRegistration()` in `main.js`) puts the `claude mcp
+  add` line or the Claude Desktop JSON with the real install paths on the clipboard, because
+  nobody types an asar path by hand; the renderer answers with a status line
+  (`menu` command `mcp-copied`).
+- **Item 2, prompt upsampling on a local OpenAI-compatible server** (`askCompatible` in
+  `electron/main/llm.js`, `docs/HELPERS.md`). `settings.llm.compat = { url, model }` plus an
+  optional key under the secret name `compat`; the entry appears as `compat:<model>` in
+  `llm.list()` and as `app:compat:<model>` in the editor's upsample select as soon as both
+  fields are filled. The URL may end in `/v1` or not. IPC `llm:models` (`GET <base>/models`)
+  feeds the *Test* button and a `<datalist>` on the model field. A **text-only model gets one
+  retry without the image** (a 4xx, or an error naming images / vision) and `ask()` returns
+  `note: "text only"`, which `host.upsampleInApp` appends to the status line. `<think>` blocks
+  are stripped, the timeout is 120 s, a refused connection reads "No server at &lt;url&gt;".
+  Settings › Local / OpenAI-compatible endpoint holds URL, model, key and Test;
+  `providers/compat.js` is a key-row-only entry kept **out** of `describeAll()` so the row is
+  not shown twice. **No real Ollama / LM Studio has been tried**: the gate is
+  `tools/llm_test.py` against `tools/llm_mock.py`.
+
+**Gates for 0.1.5, all on one fresh dev instance on 2026-09-10** (the user closed their own
+Scumble first; both share the single-instance lock and the named pipe):
+`mcp_test.py` PASS in all three modes — proxy 0.8 s, headless 2.5 s, `--exe
+dist/win-unpacked/Scumble.exe` 2.6 s — plus its new `raw` step, which spawns the launcher
+with `--cmd ping` and asserts the first stdout byte is `{`. `mcp_test.py --direct` is the
+documented FAIL (`b'\r\n{'`) and is deliberately not part of the gate. `llm_test.py` PASS
+(listed, vision sees the crop, the text-only model triggers exactly one retry without the
+image, the offline error names the URL, settings restored), `commands_test.py` PASS,
+`composite_test.py` PASS (gpu vs 2d max 1 level), `film_test.py` PASS (35 cases, worst 3),
+`smoke_test.py --no-helpers` PASS (19 s Flux run, the ComfyUI queue was empty before and
+after). The settings row and the two Help entries were exercised live: the *Test* button
+filled the datalist from the mock ("2 models: mock-vision, mock-text") and the menu handlers
+put the right lines on the clipboard (checked through the main-process inspector,
+`electron . --inspect=9556`, `Menu.getApplicationMenu()`). `docs/COMMANDS.md` regenerated.
+
+**Not verified here**: `claude mcp add` with the copied line, because the `claude` CLI is not
+on this machine's PATH. The Python client is the stricter of the two, and it passes.
 
 **Phase 6 (memory) is done** — `docs/PERFORMANCE.md` "Phase 6" has the measurement, the
 node's `DEVELOPMENT.md` §21f the rules, `docs/PHASE6_PLAN.md` the plan it was worked
@@ -110,14 +168,8 @@ listener, and with it its whole layer stack.
   `film_test.py`, `perf_test.py` at 2048x1152 / 6000x4000 / 12000x8000 and
   `perf_test.py --chain 6000x4000` (both within noise of the recorded numbers),
   `smoke_test.py --no-helpers` (real Flux run), `mem_test.py` in both variants.
-- **`tools/mcp_test.py` fails, and it is not phase 6**: the installed 0.1.3 fails the same
-  way. The Python `mcp` client now treats the stray carriage return Electron prints before
-  any JS runs as a fatal parse error instead of a warning. Own task, still open.
-
-**Release 0.1.4 is prepared but not tagged.** `package.json` is 0.1.4 and `CHANGELOG.md`
-has its section (phase 6 and phase 5 step 2 together, as decided with the user). The tag
-and the draft release wait for the user's go-ahead: `git tag v0.1.4 && git push --tags`,
-then `gh release edit v0.1.4 --draft=false`.
+- **`tools/mcp_test.py` failed here, and it was not phase 6**: the installed 0.1.3 failed
+  the same way. Fixed in 0.1.5 by the launcher (see the head of this section).
 
 **Three bugs fixed on 2026-09-10 (after 0.1.3), all reported by the user, two of them
 regressions of the GPU compositor** (`docs/PERFORMANCE.md`, "Phase 5, the two bugs the
@@ -442,11 +494,12 @@ Landed on 2026-09-09 (phase 4c, `docs/MCP.md` has the details):
   end of its start.
 - **Electron on Windows, three traps** (all handled, keep them in mind): `process.stdin` in
   the main process never emits `data` from a pipe (read fd 0 with `fs.createReadStream`);
-  Electron prints a CR LF to stdout before any JS runs (clients skip it with one warning, it
-  cannot be suppressed); a window created hidden stays hidden after `show()`, `restore()`
-  brings it up.
-- **Tests**: `python tools/mcp_test.py [--exe dist/win-unpacked/Scumble.exe]` (Python `mcp`
-  client; PASS 2026-09-09 in proxy mode with the app open, 1.5 s, and headless with the dev
+  Electron prints a CR LF to stdout before any JS runs and it cannot be suppressed from the
+  app — **handled since 0.1.5 by the Node-mode launcher** `electron/main/mcp/launch.js`,
+  which clients register instead of the exe; a window created hidden stays hidden after
+  `show()`, `restore()` brings it up.
+- **Tests**: `python tools/mcp_test.py [--exe dist/win-unpacked/Scumble.exe] [--direct]`
+  (Python `mcp` client, through the launcher since 0.1.5; PASS 2026-09-09 in proxy mode with the app open, 1.5 s, and headless with the dev
   electron and the packaged exe, about 5 s, the process ends with the session), `python
   tools/commands_test.py` PASS, `python tools/smoke_test.py --no-helpers` PASS after the
   change (one run right after the commands test reported FAIL with only its tail captured; the
@@ -630,8 +683,12 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   and `python tools/smoke_test.py` (load, select, generate through the recipe, save,
   then the helpers and exports; `--no-helpers` for the short version) and
   `python tools/commands_test.py` (command core + sample plugin, no ComfyUI needed).
-  `python tools/mcp_test.py` talks to `--mcp` over stdio (proxy mode while the dev instance
-  runs, headless when nothing runs; `--exe dist/win-unpacked/Scumble.exe` for the package).
+  `python tools/mcp_test.py` talks to the MCP server over stdio through
+  `electron/main/mcp/launch.js` (proxy mode while the dev instance runs, headless when
+  nothing runs; `--exe dist/win-unpacked/Scumble.exe` for the package, `--direct` for the
+  old registration, which the Python client rejects by design).
+  `python tools/llm_test.py` checks the OpenAI-compatible upsample endpoint against
+  `tools/llm_mock.py` (a mock server it starts itself; no ComfyUI, no key, no local model).
   `node tools/helpers_test.js` runs the ONNX modules without Electron.
   `python tools/composite_test.py` compares the GPU compositor against Canvas 2D and two
   stored references in `tools/refs/` (`--update` rewrites them, `--tolerance n` allows n
