@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.6 — unreleased
+## 0.1.6 — 2026-09-11
 
 - **API runs go out at the size the provider really takes.** Until now every API run sent a
   1024 px crop, whatever the model could have handled, because one number in the Generate
