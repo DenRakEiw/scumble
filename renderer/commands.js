@@ -461,6 +461,7 @@ const COMMANDS = {
             aspect: P.str("aspect ratio like 16:9; used with resolution instead of width and height"),
             resolution: P.int("long side in pixels when aspect is given", { default: 1024 }),
             seed: P.int("seed; a new random one when left out"),
+            background: P.str("transparent asks an API model that supports it (the OpenAI image models) for a cut-out on a transparent ground; the base image then keeps its alpha channel", { enum: ["auto", "opaque", "transparent"] }),
             timeout: P.timeout(600),
         },
         async run(ed, a) {
@@ -477,10 +478,11 @@ const COMMANDS = {
             if (a.seed != null) { ed.genSettings.seed = Math.abs(Math.round(+a.seed)) >>> 0; ed.genSettings.seedRandom = false; if (ed.seedInput) ed.seedInput.value = ed.genSettings.seed; }
             const t0 = Date.now();
             if (r.kind === "provider") {
-                const out = await host.runGenerate(ed, { width: w, height: h, aspect: a.aspect || null, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed });
+                const out = await host.runGenerate(ed, { width: w, height: h, aspect: a.aspect || null, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed, background: a.background || null });
                 ed.notifyChanged();
-                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, status: ed.status };
+                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, status: ed.status };
             }
+            if (a.background === "transparent" && r.kind !== "provider") throw new Error("a transparent background is an API model's parameter; this is a local ComfyUI recipe");
             // local: a flat canvas of the wanted size, everything selected, the recipe run,
             // then the result flattened into the base. Nothing of the flat canvas survives.
             await ed.newCanvas(`${w}x${h}`);

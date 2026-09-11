@@ -14,7 +14,7 @@ repo; the ComfyUI node keeps its name Inpaint Canvas.
 ## Who and what
 
 Built for and with DenRakEiw (GitHub DenRakEiw, German-speaking, answers in German).
-A standalone desktop editor for AI inpainting: Krita-style layers, selection by text,
+A standalone desktop editor for AI inpainting: layers, selection by text,
 retouch, filter layers, colour match per layer, text, PSD/ORA export. Local rendering
 through the user's own ComfyUI, API rendering through fal.ai and direct providers,
 SAM/RMBG in-app via ONNX. MCP-capable from the start. Windows first, Linux second.
@@ -52,7 +52,7 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 - Film names: **keep the real names in the grain presets and the film pack**, own
   parametric values only (no manufacturer LUTs), disclaimer in the preset tooltip and
   the About dialog, never in product name or marketing; lawyer check before a sale.
-- Plugins: **JavaScript plugins on the command core** (Krita-style folders with
+- Plugins: **JavaScript plugins on the command core** (plugin folders with
   `plugin.json`, filter / panel / action / tool extension points), the film pack is the
   first built-in plugin; Python plugins later, not now. Plan in `docs/BRIEF.md` §5.
 - Licence: **GPL-3.0** (decided 2026-09-09; `LICENSE`, `package.json`, About, README).
@@ -72,20 +72,71 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-11)
 
+**Transparent results from the OpenAI image models** (2026-09-11, asked for after reading
+`developers.openai.com/api/docs/guides/image-prompting`). `background: auto | opaque |
+transparent` is an ordinary settings row on the `openai` variant of the three gpt-image
+recipes, and the row is the whole switch: `host.supportsTransparency()` looks for it, the
+Generate-new dialog shows its checkbox for it, `docs/RECIPES.md` "Transparent results" has
+the contract.
+
+- **The stitch is where it matters.** `finishResult()` used to overwrite the answer's alpha
+  with the composite mask, which threw a cut-out away. With `info.keepAlpha` (set in
+  `host.runProvider` from the run's own parameters) the model's alpha is **multiplied** by
+  the blend mask instead: a clean cut-out keeps its edges, a model that ignored the request
+  behaves exactly as before, and there is no hard rectangle either way. Colour match is
+  skipped for such a run. `transparentPixels()` (a 128x128 grid sample) says in the status
+  line whether transparency really came back.
+- **The whole OpenAI parameter set** is in the adapter now: `background`, `output_format`,
+  `output_compression`, `moderation`, plus `sizeFor(model, w, h)`, which holds a free size
+  inside each model's own rules. A transparent JPEG is sent as PNG. **`input_fidelity` was
+  being sent to exactly the wrong model**: the docs say to omit it on gpt-image-2 (always
+  high fidelity) and it belongs to 1.5 and 1, so the recipe row is gone and the adapter
+  gates on the model id.
+- **GPT Image 2.5 reaches 3840 px** (was 2048): both edges a multiple of 16, ratio at most
+  3:1, total 655,360 to 8,294,400 px. The floor needed a new limit, **`minPixels`**
+  (`editLimits()` in `recipes.js`, honoured in `prepareCrop()`), because a small selection
+  would otherwise be refused. `text.sizes` for 2.5 is 1024 to 3840.
+- **`generate_new` takes `background`**, the dialog has a *transparent background* tick that
+  appears only for a variant with the row, and a local recipe refuses it with a clear error.
+  For an edit run the MCP path is `set_settings({ background: "transparent" })`.
+- **A built-in prompt template `transparent-asset`** writes the cut-out wording (the docs are
+  explicit that the parameter alone is not enough), offered for the OpenAI recipes.
+- **Fixed on the way**: `host.promptTemplateIds` and `refreshPromptTemplates()` sat *inside*
+  `saveCompat()` in `shell.js`, so no template was loaded until the Settings dialog had been
+  opened once and the Generate-new dialog offered none. They run at module start now.
+- **Gate: `python tools/transparent_test.py`** (8 steps; the first runs the adapter's
+  `_sizeFor` / `_common` in plain Node, the rest drive the loopback provider, which answers
+  a `background: "transparent"` request with an opaque disc on a transparent ground).
+- **Not verified**: no OpenAI key has ever run through this. fal, WaveSpeed and Comfy Cloud
+  may pass `background` to the same models and are deliberately **not** wired for it, because
+  nothing in their schemas was checked.
+
+**Photoshop and Krita are gone from the descriptive text** (2026-09-11, asked for). README,
+the MCP server instructions, the CHANGELOG entries, `docs/BRIEF.md`, `docs/PLAN_0_1_7.md`,
+this file, and two editor tooltips (changed in the node repo and synced). **Still there on
+purpose**: the code comments in the synced editor files (about 35, they explain why
+something behaves the way it does) and the prior-art citations in `docs/PERFORMANCE.md`,
+where the names carry the source links.
+
+**Gates after both changes, on a dev instance with its own `--user-data-dir`**:
+`transparent_test.py` PASS, `size_test.py` PASS, `generate_test.py` PASS,
+`commands_test.py` PASS, `composite_test.py` PASS (gpu vs 2d max 1 level),
+`smoke_test.py --no-helpers` PASS (72 s real Flux run, the ComfyUI queue empty before and
+after). `docs/COMMANDS.md` regenerated. `package.json` is **0.1.7** and `CHANGELOG.md` has
+its `## 0.1.7 — unreleased` section; the tag waits for the user.
+
+
 **The next five items are planned in `docs/PLAN_0_1_7.md`** (written 2026-09-11 with the user,
 in the order to work them): the prompt template upload under the dialog's dropdown, the
 `draw_shape` command, a console and a log file, a liquify brush, and Python plugins. Items 1 to 3
 are 0.1.7, items 4 and 5 are 0.1.8. That file also carries what stays open after them.
 
-**Both repos have unpushed commits and 0.1.6 is not tagged** (see the plan's first paragraph).
-
 **The "Generate a new image" dialog is fixed** - it no longer grows a scrollbar and no longer
 clips the Upsample button. Confirmed by the user on 2026-09-11, off the list.
 
-**0.1.5 is released** (`gh release list`: v0.1.5 published 2026-09-10 22:07 UTC). `package.json`
-is **0.1.6** now, `CHANGELOG.md` has a `## 0.1.6 — unreleased` section, and the tag waits for
-the user's go-ahead: `git tag v0.1.6 && git push --tags`, then `gh release edit v0.1.6
---draft=false`. Put a date in the heading before tagging.
+**0.1.6 is released and both repos are pushed** (`gh release list`: v0.1.6 published
+2026-09-11 10:48 UTC, `CHANGELOG.md` has its dated section). `package.json` is still 0.1.6;
+the next release needs the version bump and a new `CHANGELOG.md` section first.
 
 **The emitted crop follows the provider, not one global number** (2026-09-11, asked for as
 "beste Qualität, das Maximum der Anbieter ausreizen"; `docs/RECIPES.md` "How big the crop goes
@@ -138,7 +189,7 @@ row was checked live in the Generate section. **Not done**: no adapter has run a
 API, and the size ceilings of Nano Banana, Seedream, Qwen and the new models are the
 conservative default rather than the providers' own numbers.
 
-**A shape tool** (2026-09-11, after comparing our tool column with Krita's): rectangle,
+**A shape tool** (2026-09-11, after comparing our tool column with other editors'): rectangle,
 ellipse, polygon, polyline, Bezier and freehand, filled and/or outlined, key **Y** (U belongs to
 the film plugin's control points). Written **in the node repo** and brought over with
 `python tools/sync_editor.py`, so it is not a patch and the node has it too; the sync round trip
@@ -155,7 +206,7 @@ command for MCP yet.
 wrong. `subModeButtons` in the node's editor has scale, rotate, distort (drag the four corners,
 a perspective) and warp (a grid). Only a liquify brush is missing.
 
-**Export can save smaller** (2026-09-11, asked for with a screenshot of Photoshop's Export As):
+**Export can save smaller** (2026-09-11, asked for with a screenshot of another editor's Export As):
 a Size row under the editor's Export row takes a percentage or a free width and height, and
 JPEG / WebP got a Quality row under it. `host.exportCanvas(editor, fmt)` and
 `host.exportQuality(editor)` are two new sync patches in `exportImage()` (the third change,
@@ -166,7 +217,7 @@ down in halving steps because one bilinear draw skips pixels below half size. PS
 full size (their layers would each have to be scaled) and the row disables itself for them. The
 `export` command takes `scale`, `width`, `height`, `quality` and restores the document's own
 setting afterwards; `commands_test.py` has the step, `docs/COMMANDS.md` is regenerated.
-**Not built**: canvas size (Photoshop's Arbeitsfläche), 8-bit PNG, and a resampling choice.
+**Not built**: canvas size (the working area around the image), 8-bit PNG, and a resampling choice.
 
 **A console / log panel is on the list and not built** (asked 2026-09-11 after a Comfy Cloud
 run with gpt-image failed): an error only reaches `editor.setStatus()`, `.ipc-status` clips it
@@ -835,6 +886,9 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   `python tools/size_test.py` covers the size a crop is emitted at for an API run: the
   provider variant's `limits`, the five API size modes, the pixel budget, and that a local
   recipe keeps its `target_size`. Loopback only, no ComfyUI and no key needed.
+  `python tools/transparent_test.py` covers the OpenAI `background` parameter: the adapter's
+  size rules and parameter set in plain Node, then the loopback provider's transparent
+  answer surviving the stitch, "Generate new" with a transparent base, and the pixel floor.
   `python tools/editor_test.py` covers the editor behaviour reported broken in 0.1.5: the
   New dialog's two size boxes and its focus, the click that deselects, the outline that has
   to stay visible on white, and copy / paste of a layer between tabs.

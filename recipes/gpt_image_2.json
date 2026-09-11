@@ -43,21 +43,65 @@
           ]
         },
         {
-          "index": 3,
-          "key": "input_fidelity",
-          "label": "Input fidelity",
+          "index": 5,
+          "key": "background",
+          "label": "Background",
           "spec": [
             [
-              "high",
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "key": "output_format",
+          "label": "File format",
+          "spec": [
+            [
+              "png",
+              "webp",
+              "jpeg"
+            ],
+            {
+              "default": "png"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "key": "output_compression",
+          "label": "Compression",
+          "spec": [
+            "INT",
+            {
+              "default": 85,
+              "min": 0,
+              "max": 100,
+              "step": 5
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "key": "moderation",
+          "label": "Moderation",
+          "spec": [
+            [
+              "auto",
               "low"
             ],
             {
-              "default": "high"
+              "default": "auto"
             }
           ]
         }
       ],
-      "note": "OpenAI image edit with the selection as mask (transparent = repaint)."
+      "note": "OpenAI image edit with the selection as mask (transparent = repaint). Background \"transparent\" asks for a cut-out with a real alpha channel: the result layer keeps it instead of the selection's composite mask, and colour match is skipped. PNG or WebP only, and say it in the prompt too (the \"Transparent asset\" template does)."
     },
     "fal": {
       "model": "openai/gpt-image-2/edit",

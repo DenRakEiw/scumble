@@ -372,6 +372,13 @@ export function prepareCrop(editor, params, limits) {
             ew = Math.max(m, Math.floor(ew * k / m) * m);
             eh = Math.max(m, Math.floor(eh * k / m) * m);
         }
+        // an area *floor* (GPT Image 2.5 refuses anything under 655,360 pixels): grow the
+        // emitted size until it is met, but never past the provider's own side limit
+        if (limits && limits.minPixels && ew * eh < limits.minPixels) {
+            const k = Math.min(Math.sqrt(limits.minPixels / (ew * eh)), limits.max / Math.max(ew, eh));
+            ew = Math.min(limits.max, Math.max(m, Math.ceil(ew * k / m) * m));
+            eh = Math.min(limits.max, Math.max(m, Math.ceil(eh * k / m) * m));
+        }
         crop = drawResized(crop, ew, eh);
         denoise_mask = resizeMask(denoise_mask, ew, eh);
         for (let i = 0; i < references.length; i++) references[i] = drawResized(references[i], ew, eh);
@@ -434,6 +441,12 @@ function colorMatch(patch, region, weight) {
  * with soft edge, or the whole rectangle), colour match, and the RGBA patch the editor
  * adds as a result layer. `sel` is the full-size selection mask from prepareCrop.
  */
+/**
+ * The provider's answer stitched into an RGBA patch for the region `info.bbox`. `info` is
+ * what prepareCrop returned; `info.keepAlpha` (set by the caller for a run that asked the
+ * model for a transparent background) keeps the answer's own alpha channel instead of
+ * replacing it with the composite mask.
+ */
 export function finishResult(editor, info, sel, resultImage) {
     const [x, y, w, h] = info.bbox;
     const width = info.width, height = info.height;
@@ -466,18 +479,43 @@ export function finishResult(editor, info, sel, resultImage) {
     const region = makeCanvas(w, h);
     region.getContext("2d").drawImage(editor.flattenToCanvas({ forRun: true }), x, y, w, h, 0, 0, w, h);
     const align = { aligned: false, reason: "not available in the app" };
-    if (info.color_match) {
+    // A cut-out (the model was asked for a transparent background) is never colour matched:
+    // the statistics would read the transparent pixels' black, and the asset was never meant
+    // to sit on the backdrop the region shows.
+    if (info.color_match && !info.keepAlpha) {
         const keep = maskOf(w, h);
         for (let i = 0; i < keep.data.length; i++) keep.data[i] = 1 - blend.data[i];
         patch = colorMatch(patch, region, keep);
     }
 
-    // RGBA patch: the model's pixels with the blend mask as alpha
+    // RGBA patch: the model's pixels with the blend mask as alpha. With `keepAlpha` the
+    // model's own alpha is kept and the blend mask only multiplies it, so a clean cut-out
+    // keeps its edges and a model that ignored the request still blends in as before.
     const pd = patch.getContext("2d").getImageData(0, 0, w, h);
-    for (let i = 0, j = 3; i < w * h; i++, j += 4) pd.data[j] = Math.round(Math.min(1, Math.max(0, blend.data[i])) * 255);
+    for (let i = 0, j = 3; i < w * h; i++, j += 4) {
+        const a = Math.min(1, Math.max(0, blend.data[i]));
+        pd.data[j] = Math.round(info.keepAlpha ? a * pd.data[j] : a * 255);
+    }
     const out = makeCanvas(w, h);
     out.getContext("2d").putImageData(pd, 0, 0);
     return { patch: out, x, y, w, h, align };
+}
+
+/**
+ * Does this canvas carry real transparency? Sampled on a grid of at most 128 x 128 points,
+ * which is enough to tell a cut-out from an opaque picture and costs nothing on a big one.
+ * Used to say in the status line whether the model honoured a transparent background.
+ */
+export function transparentPixels(canvas, threshold = 250) {
+    const w = canvas.width | 0, h = canvas.height | 0;
+    if (!w || !h) return false;
+    const stepX = Math.max(1, Math.floor(w / 128)), stepY = Math.max(1, Math.floor(h / 128));
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    for (let y = 0; y < h; y += stepY) {
+        const row = ctx.getImageData(0, y, w, 1).data;
+        for (let x = 0; x < w; x += stepX) if (row[x * 4 + 3] < threshold) return true;
+    }
+    return false;
 }
 
 /** PNG bytes of a canvas. */

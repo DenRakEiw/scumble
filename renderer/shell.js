@@ -21,6 +21,7 @@ const ui = {
     genUpsample: $("gen-upsample"), genUpsampleGo: $("gen-upsample-go"), genUpsampleNote: $("gen-upsample-note"),
     genAspect: $("gen-aspect"), genResolution: $("gen-resolution"), genWidth: $("gen-width"), genHeight: $("gen-height"),
     genSeed: $("gen-seed"), genSeedRandom: $("gen-seed-random"), genSizeNote: $("gen-size-note"),
+    genAlpha: $("gen-alpha"), genAlphaRow: $("gen-alpha-row"),
     genState: $("gen-state"), genGo: $("gen-go"), genCancel: $("gen-cancel"),
     genTemplate: $("gen-template"), genTemplateNote: $("gen-template-note"),
     promptList: $("set-prompts"), promptImport: $("set-prompt-import"), promptFolder: $("set-prompt-folder"), promptNote: $("set-prompt-note"),
@@ -501,9 +502,13 @@ async function saveCompat() {
     const llm = { ...(set.llm || {}), compat: { url: ui.compatUrl.value.trim(), model: ui.compatModel.value.trim() } };
     await window.scumble.settings.set({ llm });
     await host.refreshLLMs();
+}
+
+// The template list at start. It used to sit inside saveCompat(), where only saving the
+// compatible endpoint ever ran it, so the "Generate a new image" dialog offered no template
+// until the Settings dialog had been opened once.
 host.promptTemplateIds = { upsample: "", generate: "", ...(settings.promptTemplates || {}) };
 await host.refreshPromptTemplates();
-}
 
 for (const el of [ui.compatUrl, ui.compatModel]) {
     el.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); el.blur(); } });
@@ -622,7 +627,18 @@ function genFillProviders() {
     else if (ids.includes((settings.recipeProviders || {})[r && r.id])) ui.genProvider.value = settings.recipeProviders[r.id];
     else if (r && ids.includes(r.default)) ui.genProvider.value = r.default;
     genFillSizes();
+    genTransparencyRow();
     genSyncNote();
+}
+
+/** Does the chosen provider variant take a `background` parameter (docs/RECIPES.md)? */
+function genTransparencyRow() {
+    const r = recipes.find((x) => x.id === ui.genRecipe.value);
+    const v = (r && r.providers && r.providers[ui.genProvider.value]) || {};
+    const rows = (v.text && v.text.settings) || v.settings || [];
+    const ok = !!r && r.kind === "provider" && rows.some((s) => s.key === "background");
+    ui.genAlphaRow.hidden = !ok;
+    if (!ok) ui.genAlpha.checked = false;
 }
 
 function genSyncNote() {
@@ -751,7 +767,7 @@ export async function openGenerateNew(editor) {
 
 ui.genMode.addEventListener("change", genFillRecipes);
 ui.genRecipe.addEventListener("change", genFillProviders);
-ui.genProvider.addEventListener("change", () => { genFillSizes(); genSyncNote(); });
+ui.genProvider.addEventListener("change", () => { genFillSizes(); genTransparencyRow(); genSyncNote(); });
 ui.genTemplate.addEventListener("change", () => {
     genSyncTemplateNote();
     window.scumble.settings.set({ promptTemplates: { ...(settings.promptTemplates || {}), generate: ui.genTemplate.value } }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
@@ -793,6 +809,7 @@ ui.genGo.addEventListener("click", async () => {
         await selectRecipe(id, ui.genProvider.value || undefined);
         const args = { doc: ed.node.id, prompt, width: w, height: h, timeout: 900 };
         if (!ui.genSeedRandom.checked) args.seed = Math.abs(Math.round(+ui.genSeed.value) || 0);
+        if (!ui.genAlphaRow.hidden && ui.genAlpha.checked) args.background = "transparent";
         const out = await commands.run("generate_new", args);
         ui.gen.close();
         ui.genState.textContent = "";

@@ -11,7 +11,7 @@
 //           that asked: results by prompt id, helper masks / texts by the canvas_node id
 //           the helper prompt carried (= editor.node.id).
 
-import { prepareCrop, finishResult, canvasBytes, bytesToImage } from "./stitch.js";
+import { prepareCrop, finishResult, canvasBytes, bytesToImage, transparentPixels } from "./stitch.js";
 import { glReleasePool } from "./inpaint_filters_gl.js";
 
 const PROXY = "/comfy";
@@ -678,7 +678,7 @@ export const host = {
     },
 
     /** The provider recipe's parameter values from the editor's Settings panel plus the recipe's fixed ones. */
-    providerParams(editor) {
+    providerParams(editor, overrides) {
         const r = this.recipe;
         const params = {};
         for (const s of (r && r.settings) || []) {
@@ -686,7 +686,25 @@ export const host = {
             if (entry && entry.value != null && entry.value !== "") params[s.key] = entry.value;
         }
         for (const [k, v] of Object.entries((r && r.fixed) || {})) params[k] = v;
+        for (const [k, v] of Object.entries(overrides || {})) if (v != null && v !== "") params[k] = v;
         return params;
+    },
+
+    /**
+     * Whether the chosen provider variant takes a `background` parameter, which is what an
+     * OpenAI image model answers a transparent cut-out to. The recipe says so by carrying a
+     * setting with that key (docs/RECIPES.md, "Transparent results").
+     */
+    supportsTransparency(use = "edit") {
+        const r = this.recipe;
+        if (!r || r.kind !== "provider") return false;
+        const rows = use === "text" ? ((r.text && r.text.settings) || r.settings || []) : (r.settings || []);
+        return rows.some((s) => s.key === "background");
+    },
+
+    /** True when this run asked the model for a transparent background. */
+    wantsTransparent(params) {
+        return String((params || {}).background || "").toLowerCase() === "transparent";
     },
 
     /**
@@ -695,7 +713,7 @@ export const host = {
      * patch that is stored in the file mirror as a result and added like a result from
      * the node. No ComfyUI involved.
      */
-    async runProvider(editor) {
+    async runProvider(editor, opts = {}) {
         const r = this.recipe;
         if (!editor.base) throw new Error("Load an image first.");
         const label = r.providerLabel || r.provider;
@@ -704,19 +722,21 @@ export const host = {
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
-        let res, info, sel, x, y, w, h;
+        let res, info, sel, x, y, w, h, params = {};
         try {
             const prep = prepareCrop(editor, this.nodeParams, this.cropLimits());
             const { crop, mask, maskAlpha, references } = prep;
             info = prep.info; sel = prep.sel;
             [x, y, w, h] = info.bbox;
-        editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label} ...`);
+            params = this.providerParams(editor, opts.background ? { background: opts.background } : null);
+            info.keepAlpha = this.wantsTransparent(params);
+        editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label}${info.keepAlpha ? ", transparent background" : ""} ...`);
             const [image, maskBytes, maskAlphaBytes, ...refBytes] = await Promise.all([canvasBytes(crop), canvasBytes(mask), canvasBytes(maskAlpha), ...references.map((c) => canvasBytes(c))]);
             const request = {
                 provider: r.provider, model: r.model, kind: r.input === "edit" ? "edit" : "fill", fields: r.fields || null, options: r.options || null,
                 prompt: editor.promptText || "", negative: editor.negativeText || "", seed: editor.genSettings.seed,
                 image, mask: maskBytes, maskAlpha: maskAlphaBytes, width: crop.width, height: crop.height, references: refBytes,
-                params: this.providerParams(editor),
+                params,
             };
             res = await window.scumble.providers.edit(request);
         } finally {
@@ -730,8 +750,11 @@ export const host = {
         const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
         const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
         editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
+        const cutout = info.keepAlpha ? transparentPixels(patch) : false;
         await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider }]);
-        return { provider: r.provider, seconds: res.seconds, x, y, w, h };
+        // addResults writes its own line, so the cut-out note goes on afterwards
+        if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`);
+        return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout };
     },
 
     /**
@@ -751,9 +774,11 @@ export const host = {
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
+        const genParams = { ...this.providerParams(editor, opts.background ? { background: opts.background } : null), ...(t.fixed || {}) };
+        const cutout = this.wantsTransparent(genParams);
         let res;
         try {
-            editor.setStatus(`Asking ${label} for a new ${width} × ${height} image ...`);
+            editor.setStatus(`Asking ${label} for a new ${width} × ${height} image${cutout ? " on a transparent ground" : ""} ...`);
             const request = {
                 provider: r.provider, model: t.model, kind: "text",
                 prompt: String(opts.prompt != null ? opts.prompt : editor.promptText || ""),
@@ -762,7 +787,7 @@ export const host = {
                 width, height, aspect: opts.aspect || null,
                 image: null, mask: null, maskAlpha: null, references: [],
                 fields: r.fields || null, options: r.options || null,
-                params: { ...this.providerParams(editor), ...(t.fixed || {}) },
+                params: genParams,
             };
             res = await window.scumble.providers.edit(request);
         } finally {
@@ -776,8 +801,9 @@ export const host = {
         c.height = img.naturalHeight || img.height;
         c.getContext("2d").drawImage(img, 0, 0);
         await editor.setBaseFromCanvas(c);
-        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image.`);
-        return { provider: r.provider, model: t.model, seconds: res.seconds, width: c.width, height: c.height };
+        const gotAlpha = cutout && transparentPixels(c);
+        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image${cutout ? (gotAlpha ? " with a transparent background" : " (the model returned no transparency)") : ""}.`);
+        return { provider: r.provider, model: t.model, seconds: res.seconds, width: c.width, height: c.height, transparent: !!gotAlpha };
     },
 
     // ---- prompt instruction templates (electron/main/prompts.js) -------------------

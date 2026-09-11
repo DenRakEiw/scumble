@@ -159,6 +159,7 @@
     <div class="shell-row">
       <label class="shell-field">Seed <input id="gen-seed" type="number" min="0" step="1"></label>
       <label class="shell-check"><input id="gen-seed-random" type="checkbox"> random</label>
+      <label class="shell-check" id="gen-alpha-row" hidden title="Ask the model for a cut-out on a transparent ground instead of a background. The image keeps its alpha channel, so you can paint or place anything behind it."><input id="gen-alpha" type="checkbox"> transparent background</label>
       <span id="gen-size-note" class="shell-note"></span>
     </div>
     <div class="shell-row shell-right"><span id="gen-state" class="shell-note"></span><button id="gen-cancel" type="submit" formnovalidate>Cancel</button><button id="gen-go" type="button">Generate</button></div>

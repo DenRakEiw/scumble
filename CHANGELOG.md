@@ -3,6 +3,31 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.7 — unreleased
+
+- **Transparent results from the OpenAI image models.** GPT Image 2.5 Flare, 2.5 Sunburst
+  and 2 can answer with a cut-out instead of a picture: a subject on a fully transparent
+  ground. Set *Background* to `transparent` in the Settings panel and the result layer keeps
+  the model's own alpha channel, so a logo, a product shot or an object arrives ready to
+  place over anything. "Generate a new image" has a **transparent background** tick for the
+  same thing, and the base image then keeps its alpha. Colour match is skipped for such a
+  run, and the status line says plainly when the model returned no transparency after all.
+- **A prompt template for it.** *Transparent asset* writes the cut-out wording the model
+  needs (clean alpha edges, no backdrop, no drop shadow at the border) around your request.
+  It is offered for the OpenAI models.
+- **The rest of the OpenAI image parameters.** File format (PNG, WebP, JPEG), compression
+  for the two lossy ones, and moderation are settings rows now. A transparent JPEG is sent
+  as a PNG rather than losing the cut-out, and `input_fidelity` is no longer sent to
+  GPT Image 2, which always works at high fidelity anyway.
+- **GPT Image 2.5 goes out at up to 3840 px** instead of 2048, inside the model's own rules:
+  both edges a multiple of 16, a ratio no steeper than 3:1 and a total between 655,360 and
+  8,294,400 pixels. A small selection is now grown to that lower bound instead of being
+  refused.
+- **Fixed: the prompt templates were missing from "Generate a new image"** until the
+  Settings dialog had been opened once in the session. They are loaded at start now.
+- Photoshop and Krita are no longer named in the feature list, the model descriptions or
+  the tooltips.
+
 ## 0.1.6 — 2026-09-11
 
 - **API runs go out at the size the provider really takes.** Until now every API run sent a
@@ -76,9 +101,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   ratio* tick if you want the second to follow the first.
 - **Fixed: the size in that dialog could not always be typed.** The dialog put the cursor in
   the field, and the click that had opened it took the cursor straight back to the canvas.
-- **A click deselects again, as in Photoshop and Krita.** Clicking inside an existing
-  selection with the rectangle or ellipse tool started moving its outline and kept the
-  selection even when nothing moved. A lasso click did nothing at all. Both clear the
+- **A click deselects again.** Clicking inside an existing selection with the rectangle
+  or ellipse tool started moving its outline and kept the selection even when nothing
+  moved. A lasso click did nothing at all. Both clear the
   selection now, so you can start a new one straight away. The selection brush is unchanged:
   a click sets a dab there, which is what a brush does in both programs too.
 - **The selection outline stays visible on a white image.** While you drag a rectangle,
@@ -179,8 +204,8 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 The first public release, under the GPL-3.0.
 
-- A standalone editor for AI inpainting: Krita-style layers, selection by text, retouch
-  tools, filter layers, colour match per layer, text layers, PSD and ORA export.
+- A standalone editor for AI inpainting: layers, selection by text, retouch tools,
+  filter layers, colour match per layer, text layers, PSD and ORA export.
 - Renders through your own ComfyUI, locally or remote, or through an API provider.
 - Background removal and object selection run in the app through ONNX (SAM2, BiRefNet,
   RMBG), on the graphics card where possible.

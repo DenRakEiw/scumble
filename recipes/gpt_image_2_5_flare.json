@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "GPT Image 2.5 Flare",
   "family": "OpenAI",
-  "description": "OpenAI's fast image model (September 2026): custom sizes in multiples of 16, quality up to max. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "OpenAI's fast image model (September 2026): custom sizes in multiples of 16 up to 3840 px an edge, quality up to max. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "openai",
   "providers": {
     "openai": {
@@ -43,9 +43,83 @@
               "default": "auto"
             }
           ]
+        },
+        {
+          "index": 5,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "key": "output_format",
+          "label": "File format",
+          "spec": [
+            [
+              "png",
+              "webp",
+              "jpeg"
+            ],
+            {
+              "default": "png"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "key": "output_compression",
+          "label": "Compression",
+          "spec": [
+            "INT",
+            {
+              "default": 85,
+              "min": 0,
+              "max": 100,
+              "step": 5
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "key": "moderation",
+          "label": "Moderation",
+          "spec": [
+            [
+              "auto",
+              "low"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
         }
       ],
-      "note": "OpenAI image edit with the selection as mask (transparent = repaint)."
+      "note": "OpenAI image edit with the selection as mask (transparent = repaint). Background \"transparent\" asks for a cut-out with a real alpha channel: the result layer keeps it instead of the selection's composite mask, and colour match is skipped. PNG or WebP only, and say it in the prompt too (the \"Transparent asset\" template does).",
+      "limits": {
+        "max": 3840,
+        "step": 16,
+        "pixels": 8294400,
+        "minPixels": 655360
+      },
+      "text": {
+        "sizes": [
+          1024,
+          1536,
+          2048,
+          2560,
+          3072,
+          3840
+        ]
+      }
     },
     "wavespeed": {
       "model": "openai/gpt-image-2.5-flare/edit",

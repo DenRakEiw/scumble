@@ -109,17 +109,21 @@ the crop at the size the chosen provider actually takes. `limits` says what that
 recipe (for every variant) or on a single variant:
 
 ```
-"limits": { "max": 1440, "step": 32, "min": 256, "pixels": 0 }
+"limits": { "max": 1440, "step": 32, "min": 256, "pixels": 0, "minPixels": 0 }
 ```
 
 `max` is the long side, `step` the multiple both sides are rounded to, `min` the smallest
-side the endpoint accepts and `pixels` an area cap (0 = none). Without either, the
-conservative `{ min: 256, max: 2048, step: 16, pixels: 0 }` applies - raise one with a
+side the endpoint accepts, `pixels` an area cap and `minPixels` an area *floor* (0 = none
+for both). Without either, the conservative
+`{ min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0 }` applies - raise one with a
 source, not with a guess. Today: **FLUX.2 and FLUX.1 Fill 1440** (2048 answers with an
-error), **gpt-image 2048 with an 8,294,400 px budget** (the size rules of the OpenAI partner
-node), **Seedream 5 on fal 4096 with a 4 MP budget for pro and a 16 MP one for lite** (its
-`image_size` is a free size with an area range, not a side limit), **Seedream on Comfy Cloud
-2496 / 4992** (what the partner node fits it into), everything else the conservative default.
+error), **GPT Image 2.5 Flare and Sunburst 3840 with an 8,294,400 px budget and a 655,360 px
+floor** (the model's own size rules: both edges a multiple of 16, at most 3840 an edge, a
+ratio no steeper than 3:1), **GPT Image 2 2048 with the same budget** (the size rules of the
+OpenAI partner node), **Seedream 5 on fal 4096 with a 4 MP budget for pro and a 16 MP one
+for lite** (its `image_size` is a free size with an area range, not a side limit),
+**Seedream on Comfy Cloud 2496 / 4992** (what the partner node fits it into), everything
+else the conservative default.
 
 fal answers two URLs without a key, and they are the fastest way to a real number:
 `https://fal.ai/api/models?keywords=<x>` lists endpoint ids, and
@@ -134,6 +138,38 @@ size* sends the crop as it is. All five are clamped by `min`, `max` and `pixels`
 `finishResult()` scales the answer back to the region either way. A ComfyUI recipe gets no
 limits at all (`host.cropLimits()` returns null) and keeps using `target_size`, because
 there the node does the cropping. `tools/size_test.py` is the gate.
+
+### Transparent results (`background`)
+
+An OpenAI image model can return a **cut-out**: a subject on a fully transparent ground
+instead of a background. The variant declares it as an ordinary settings row with the key
+`background` and the options `auto` / `opaque` / `transparent`, which is what the three
+gpt-image recipes carry; the row is the switch, the app needs nothing else to offer it.
+
+What the app does with it:
+
+- `host.runProvider()` reads the parameters before the run and sets `info.keepAlpha`. In
+  `finishResult()` (`renderer/editor/stitch.js`) the answer's **own alpha channel is kept**
+  and the selection's composite mask only multiplies it, instead of replacing it. A clean
+  cut-out therefore keeps its edges, and a model that ignored the request still blends in
+  exactly as before. Colour match is skipped for such a run: its statistics would read the
+  transparent pixels' black, and the asset was never meant to sit on that backdrop.
+- The status line says whether the answer really carried transparency
+  (`transparentPixels()` samples the patch), so a model that returned an opaque picture is
+  not silently passed off as a cut-out.
+- "Generate new" has a **transparent background** checkbox, shown only for a variant that
+  declares the row, and the `generate_new` command takes `background` for the same thing.
+  The new base image then has an alpha channel and the checkerboard shows through it.
+- The adapter refuses to lose the alpha: `background: "transparent"` with `output_format:
+  "jpeg"` is sent as PNG, because only PNG and WebP carry one.
+
+Say it in the prompt as well - the model follows the words, not only the parameter. The
+built-in prompt template **Transparent asset** (`prompts/transparent-asset.md`) writes that
+part for you and is offered for the OpenAI recipes.
+
+Other providers are not wired for it: fal, WaveSpeed and Comfy Cloud may or may not pass
+`background` through to the same models, and none of that is verified. Add the row to a
+variant when you have a source. `tools/transparent_test.py` is the gate.
 
 ### Generating without an image (`text`)
 
@@ -162,8 +198,10 @@ recipe does) then ignores the flat input entirely.
 
 Adapters (`electron/main/providers/`): **fal** (queue API, settings passed by name),
 **bfl** (`steps`, `guidance`, `safety_tolerance`, `prompt_upsampling`; the variant's
-`model` is the endpoint), **openai** (`quality`, `size`, `input_fidelity` for 1.x / 2;
-gpt-image-2 and 2.5 take any size in multiples of 16), **gemini** (`aspect_ratio`,
+`model` is the endpoint), **openai** (`quality`, `size`, `background`,
+`output_format`, `output_compression`, `moderation`, and `input_fidelity` on 1.5 and 1
+only - gpt-image-2 always works at high fidelity and the docs say to omit it; `sizeFor()`
+holds a free size inside each model's own rules), **gemini** (`aspect_ratio`,
 `image_size`; no mask input, the mask goes along as an image and the prompt names the
 white area), **replicate** (settings by name, `model` is `owner/name` or
 `owner/name:version`, files over 256 kB through the Files API), **wavespeed** (`POST
