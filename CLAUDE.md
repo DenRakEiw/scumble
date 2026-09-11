@@ -128,6 +128,19 @@ row was checked live in the Generate section. **Not done**: no adapter has run a
 API, and the size ceilings of Nano Banana, Seedream, Qwen and the new models are the
 conservative default rather than the providers' own numbers.
 
+**Export can save smaller** (2026-09-11, asked for with a screenshot of Photoshop's Export As):
+a Size row under the editor's Export row takes a percentage or a free width and height, and
+JPEG / WebP got a Quality row under it. `host.exportCanvas(editor, fmt)` and
+`host.exportQuality(editor)` are two new sync patches in `exportImage()` (the third change,
+the status line naming the written size, was folded into the existing `saveExport` patch -
+**patches must not overlap another patch's replacement text**). Everything else is app-side in
+`host.js`: the per-document state, the row, and `resizeForExport`, which walks a big reduction
+down in halving steps because one bilinear draw skips pixels below half size. PSD and ORA stay
+full size (their layers would each have to be scaled) and the row disables itself for them. The
+`export` command takes `scale`, `width`, `height`, `quality` and restores the document's own
+setting afterwards; `commands_test.py` has the step, `docs/COMMANDS.md` is regenerated.
+**Not built**: canvas size (Photoshop's Arbeitsfläche), 8-bit PNG, and a resampling choice.
+
 **A console / log panel is on the list and not built** (asked 2026-09-11 after a Comfy Cloud
 run with gpt-image failed): an error only reaches `editor.setStatus()`, `.ipc-status` clips it
 with an ellipsis and has no `title`, the full text lives only in the renderer DevTools console,

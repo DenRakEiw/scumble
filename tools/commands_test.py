@@ -154,8 +154,19 @@ const r = await c("export", { format: "png", path: %s });
 const l = await c("export_layer", { layer: "Title", path: %s });
 const m = await c("export_mask", { path: %s });
 const st = await c("get_state");
-return { image: r.file, layer: l.file, mask: m.file, state_layers: (st.layers || []).length };
-""" % (out_path("commands_image.png"), out_path("commands_layer.png"), out_path("commands_mask.png"))),
+// a scaled export: half the size by percent, a free width, and the full size again
+const host = (await import("./editor/host.js")).host;
+const ed = host.editor;
+const half = await c("export", { format: "png", path: %s, scale: 50 });
+if (!/256 . 192/.test(half.status)) throw new Error("scale 50 did not halve it: " + half.status);
+const wide = await c("export", { format: "jpg", path: %s, width: 300, quality: 0.6 });
+if (!/300 . 225/.test(wide.status)) throw new Error("width 300 did not keep the aspect: " + wide.status);
+if (host.exportState(ed).percent !== 100 || host.exportState(ed).width) throw new Error("the command changed the document's own export size");
+const full = await c("export", { format: "png", path: %s });
+if (!/512 . 384/.test(full.status)) throw new Error("the plain export is not full size: " + full.status);
+return { image: r.file, layer: l.file, mask: m.file, state_layers: (st.layers || []).length, half: half.file.bytes, wide: wide.file.bytes, full: full.file.bytes };
+""" % (out_path("commands_image.png"), out_path("commands_layer.png"), out_path("commands_mask.png"),
+       out_path("commands_half.png"), out_path("commands_wide.jpg"), out_path("commands_full.png"))),
     ("reload_and_toggle", """
 const P = await import("./plugins.js");
 const n0 = (await c("list_layers")).layers.length;

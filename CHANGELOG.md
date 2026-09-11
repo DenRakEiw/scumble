@@ -17,6 +17,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   the model offers, *2x crop* and *4x crop* for a high-res fix that sends a small selection
   at twice or four times its own resolution, or the two older behaviours. Local ComfyUI runs
   are untouched and keep using Target.
+- **Export can save smaller.** A Size row under the Export section takes a percentage of the
+  document, or a free width and height that keep the aspect ratio, and JPEG and WebP got a
+  quality field next to it. A large reduction is walked down in halving steps instead of one
+  jump, which keeps fine detail from breaking up. The status line names the size that was
+  actually written. PSD and ORA always keep the full size, because their layers would each
+  have to be scaled. The `export` command and the MCP tool take `scale`, `width`, `height`
+  and `quality` for the same thing.
 - **Seven more models.** Z-Image Turbo (fal, with a real mask inpainting endpoint),
   Ideogram 4, Grok Imagine 2.0 and Reve 2.1 for editing; Krea 2, Recraft V4 and Z-Image base
   make images from the prompt alone, so they appear in "Generate new" and the Generate

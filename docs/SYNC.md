@@ -33,6 +33,7 @@ that spot.
 | `app.queuePrompt(0)` (graphToPrompt + the queuePrompt wrapper) | `host.queueGenerate(editor)`: fills the recipe with `serializeForPrompt()` and POSTs `/prompt` |
 | `notifyChanged()` marks the litegraph canvas dirty | `host.changed(editor)`: debounced autosave of `getValue()` |
 | export uploads to ComfyUI's `output/` | `host.saveExport(blob, name)`: native save dialog (or a fixed path for scripts) |
+| `exportImage()` flattens and encodes at full size with quality 0.92 | `host.exportCanvas(this, fmt)` and `host.exportQuality(this)`: the Size row the app appends under the Export row (percentage or a free width and height, JPEG / WebP quality); PSD and ORA stay full size, and the status line names the size that was written |
 | PNG `workflow` chunk = graph serialize | `host.workflowForPng()`: recipe id, prompt, node params |
 | `referencedFiles()` scans graph nodes and workflow tabs | scans `host.editors()` only |
 | `exportLayerPng()` / `exportMaskPng()` upload to ComfyUI's `output/` | `host.saveExport(blob, name)` like `exportImage` |

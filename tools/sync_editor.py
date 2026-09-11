@@ -102,7 +102,7 @@ PATCHES = [
      "            const saved = await host.saveExport(blob, `${stem}.${fmt}`);\n"
      "            if (!saved) { this.setStatus(\"Save cancelled.\"); return null; }\n"
      "            const kb = Math.round(blob.size / 1024);\n"
-     "            this.setStatus(`Saved ${saved.path} (${this.width} × ${this.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + \" MB\" : kb + \" kB\"}${fmt === \"png\" ? \", recipe embedded\" : \"\"}${note}).`);\n"
+     "            this.setStatus(`Saved ${saved.path} (${canvas.width} × ${canvas.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + \" MB\" : kb + \" kB\"}${fmt === \"png\" ? \", recipe embedded\" : \"\"}${note}).`);\n"
      "            return saved;\n", 1),
 
     ("inpaint_canvas.js",
@@ -307,6 +307,16 @@ PATCHES = [
     ("inpaint_canvas.js",
      "        this.resizeObserver.observe(this.viewEl);\n    }\n\n    buildSubbar() {\n",
      "        this.resizeObserver.observe(this.viewEl);\n        host.editorBuilt(this);\n    }\n\n    buildSubbar() {\n", 1),
+
+    # --- export size and quality: the app scales the composite and picks the encoder quality
+    #     (host.exportCanvas / host.exportQuality feed the Size row the app appends to the
+    #     Export section); the node keeps exporting at full size with the fixed 0.92
+    ("inpaint_canvas.js",
+     'const canvas = this.flattenToCanvas({ forRun: true });\n            let blob, note = "";',
+     'const canvas = host.exportCanvas(this, fmt);\n            let blob, note = "";', 1),
+    ("inpaint_canvas.js",
+     'canvas.toBlob(r, fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png", 0.92)',
+     'canvas.toBlob(r, fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png", host.exportQuality(this))', 1),
     # plugin tools: the pointer gestures and single-key shortcuts are offered to the host first
     ("inpaint_canvas.js",
      "        if (e.button !== 0) return;\n        const [ix, iy] = this.toImage(e);\n        if (this.base) {\n",

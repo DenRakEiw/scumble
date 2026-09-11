@@ -6029,7 +6029,7 @@ class InpaintEditor {
         const stem = ((this.saveNameInput && this.saveNameInput.value) || "inpaint_canvas").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._ -]/gi, "_") || "inpaint_canvas";
         try {
             this.setStatus("Saving ...");
-            const canvas = this.flattenToCanvas({ forRun: true });
+            const canvas = host.exportCanvas(this, fmt);
             let blob, note = "";
             if (fmt === "psd" || fmt === "ora") {
                 const t0 = performance.now();
@@ -6037,7 +6037,7 @@ class InpaintEditor {
                 blob = await buildLayered(fmt, { width: this.width, height: this.height, layers, composite: canvas });
                 note = `, ${layers.length} layers${skipped ? `, ${skipped} filter layer${skipped > 1 ? "s" : ""} only in the merged image` : ""}, ${Math.round(performance.now() - t0)} ms`;
             } else {
-                blob = await new Promise((r) => canvas.toBlob(r, fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png", 0.92));
+                blob = await new Promise((r) => canvas.toBlob(r, fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png", host.exportQuality(this)));
             }
             if (fmt === "png") {
                 // Same metadata as SaveImage: the workflow (and the canvas prompt), so the file loads back into ComfyUI.
@@ -6049,7 +6049,7 @@ class InpaintEditor {
             const saved = await host.saveExport(blob, `${stem}.${fmt}`);
             if (!saved) { this.setStatus("Save cancelled."); return null; }
             const kb = Math.round(blob.size / 1024);
-            this.setStatus(`Saved ${saved.path} (${this.width} × ${this.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " kB"}${fmt === "png" ? ", recipe embedded" : ""}${note}).`);
+            this.setStatus(`Saved ${saved.path} (${canvas.width} × ${canvas.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " kB"}${fmt === "png" ? ", recipe embedded" : ""}${note}).`);
             return saved;
         } catch (err) {
             console.error(err);

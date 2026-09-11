@@ -580,7 +580,7 @@ Extend (positive) or crop (negative) the canvas on each side, in pixels.
 
 ### `export` *(image)*
 
-Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` no dialog is shown.
+Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; PSD and ORA always keep the full size.
 
 | param | type | description |
 |---|---|---|
@@ -588,6 +588,10 @@ Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` n
 | `format` | string | png, jpg, webp, psd or ora (default `"png"`; one of `png`, `jpg`, `webp`, `psd`, `ora`) |
 | `name` | string | file name stem for the dialog |
 | `path` | string | absolute target path (no dialog) |
+| `scale` | number | percent of the document size, 1..400 |
+| `width` | integer | width in pixels (the height follows the aspect ratio) |
+| `height` | integer | height in pixels (the width follows the aspect ratio) |
+| `quality` | number | JPEG / WebP quality 0.1..1 (default `0.92`) |
 
 ### `export_layer`
 

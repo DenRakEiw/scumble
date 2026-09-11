@@ -696,13 +696,18 @@ const COMMANDS = {
 
     // -- export --
     export: {
-        needsImage: true, description: "Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` no dialog is shown.",
-        params: { format: P.str("png, jpg, webp, psd or ora", { enum: ["png", "jpg", "webp", "psd", "ora"], default: "png" }), name: P.str("file name stem for the dialog"), path: P.str("absolute target path (no dialog)") },
+        needsImage: true, description: "Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; PSD and ORA always keep the full size.",
+        params: { format: P.str("png, jpg, webp, psd or ora", { enum: ["png", "jpg", "webp", "psd", "ora"], default: "png" }), name: P.str("file name stem for the dialog"), path: P.str("absolute target path (no dialog)"), scale: P.num("percent of the document size, 1..400"), width: P.int("width in pixels (the height follows the aspect ratio)"), height: P.int("height in pixels (the width follows the aspect ratio)"), quality: P.num("JPEG / WebP quality 0.1..1", { default: 0.92 }) },
         async run(ed, a) {
             const fmt = ["png", "jpg", "webp", "psd", "ora"].includes(a.format) ? a.format : "png";
             if (ed.saveFormatSel) ed.saveFormatSel.value = fmt;
             if (ed.saveNameInput) ed.saveNameInput.value = String(a.name || docName(ed) || "scumble");
-            const saved = await withExportPath(a.path, () => ed.exportImage({ download: false }));
+            const before = { ...host.exportState(ed) };
+            if (a.width != null || a.height != null) host.setExportSize(ed, { width: a.width, height: a.height, quality: a.quality });
+            else if (a.scale != null) host.setExportSize(ed, { percent: a.scale, quality: a.quality });
+            else if (a.quality != null) host.setExportSize(ed, { quality: a.quality });
+            const saved = await withExportPath(a.path, () => ed.exportImage({ download: false }))
+                .finally(() => { ed._export = before; host.syncExportRow(ed); });
             if (!saved) throw new Error(ed.status);
             return { file: saved, status: ed.status };
         },

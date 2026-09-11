@@ -22,6 +22,9 @@ const SUBFOLDER = "inpaint_canvas";
 // high-res fix - the crop at twice or four times its own size, still held under that maximum -
 // and the last two keep the older behaviour. Every one of them is capped by the variant's
 // `limits`, which is what keeps a model from being handed a size it answers with an error.
+const MAX_EXPORT_SIDE = 32768;
+const EXPORT_PERCENTS = [200, 150, 100, 75, 50, 33, 25, 10];
+
 const API_SIZES = [
     ["max", "Provider max", "Send the crop at the biggest size the chosen provider takes (best quality, biggest bill)"],
     ["x2", "2x crop", "High-res fix: the crop at twice its own size, capped at the provider's maximum"],
@@ -196,7 +199,196 @@ export const host = {
 
     /** Patched into the end of the editor constructor (tools/sync_editor.py). */
     editorBuilt(editor) {
+        try { this.buildExportSize(editor); } catch (err) { console.warn("export size row", err); }
         this.emit("built", { editor });
+    },
+
+    // ---- export size ---------------------------------------------------------------------
+    //
+    // The editor's Export section saves the flattened image at its own resolution. The app
+    // adds a size to it: a percentage or a free width and height, plus the encoder quality
+    // for JPEG / WebP. `exportCanvas` and `exportQuality` are what the patched exportImage()
+    // asks (tools/sync_editor.py). PSD and ORA always go out at full size, because every
+    // layer would have to be scaled on its own.
+
+    /** The per-document export settings, made on first use. */
+    exportState(editor) {
+        if (!editor._export) editor._export = { percent: 100, width: 0, height: 0, quality: 0.92 };
+        return editor._export;
+    },
+
+    /** The pixel size an export would have, [w, h], or null when it is the document's own. */
+    exportPixels(editor) {
+        const e = this.exportState(editor);
+        const dw = editor.width | 0, dh = editor.height | 0;
+        if (!dw || !dh) return null;
+        let w, h;
+        if (e.width > 0 && e.height > 0) { w = e.width; h = e.height; }
+        else { w = Math.round(dw * e.percent / 100); h = Math.round(dh * e.percent / 100); }
+        w = Math.max(1, Math.min(MAX_EXPORT_SIDE, w));
+        h = Math.max(1, Math.min(MAX_EXPORT_SIDE, h));
+        return w === dw && h === dh ? null : [w, h];
+    },
+
+    /**
+     * Down to half the size in one draw is what the browser's high-quality filter does well;
+     * below that it starts skipping pixels instead of averaging them, so a big reduction is
+     * walked down in halving steps. An enlargement is one draw.
+     */
+    resizeForExport(src, w, h) {
+        let cur = src;
+        while (cur.width >= w * 2 && cur.height >= h * 2 && cur.width > 1 && cur.height > 1) {
+            const next = document.createElement("canvas");
+            next.width = Math.max(w, Math.floor(cur.width / 2));
+            next.height = Math.max(h, Math.floor(cur.height / 2));
+            const c = next.getContext("2d");
+            c.imageSmoothingEnabled = true; c.imageSmoothingQuality = "high";
+            c.drawImage(cur, 0, 0, next.width, next.height);
+            cur = next;
+        }
+        const out = document.createElement("canvas");
+        out.width = w; out.height = h;
+        const ctx = out.getContext("2d");
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(cur, 0, 0, w, h);
+        return out;
+    },
+
+    /** What exportImage() encodes: the flattened image, scaled when the Size row asks for it. */
+    exportCanvas(editor, fmt) {
+        const canvas = editor.flattenToCanvas({ forRun: true });
+        if (fmt === "psd" || fmt === "ora") return canvas;
+        const size = this.exportPixels(editor);
+        if (!size) return canvas;
+        return this.resizeForExport(canvas, size[0], size[1]);
+    },
+
+    /** The JPEG / WebP quality exportImage() encodes with (PNG ignores it). */
+    exportQuality(editor) {
+        const q = +this.exportState(editor).quality;
+        return Number.isFinite(q) ? Math.min(1, Math.max(0.1, q)) : 0.92;
+    },
+
+    /**
+     * Set the export size from the row, a command or a script. A width or a height alone
+     * keeps the aspect ratio; `percent` clears a free size again.
+     */
+    setExportSize(editor, { percent, width, height, quality } = {}) {
+        const e = this.exportState(editor);
+        if (quality != null) e.quality = Math.min(1, Math.max(0.1, +quality || 0.92));
+        if (width != null || height != null) {
+            const dw = editor.width | 0, dh = editor.height | 0;
+            let w = Math.round(+width || 0), h = Math.round(+height || 0);
+            if (w > 0 && !h && dw) h = Math.max(1, Math.round(w * dh / dw));
+            if (h > 0 && !w && dh) w = Math.max(1, Math.round(h * dw / dh));
+            e.width = Math.max(0, Math.min(MAX_EXPORT_SIDE, w));
+            e.height = Math.max(0, Math.min(MAX_EXPORT_SIDE, h));
+            if (e.width && dw) e.percent = Math.round(e.width / dw * 1000) / 10;
+        } else if (percent != null) {
+            e.percent = Math.min(400, Math.max(1, +percent || 100));
+            e.width = 0; e.height = 0;
+        }
+        this.syncExportRow(editor);
+        return e;
+    },
+
+    /** The Size row the app appends under the editor's Export row. */
+    buildExportSize(editor) {
+        const anchor = editor.saveFormatSel && editor.saveFormatSel.parentElement;
+        if (!anchor) return;
+        const row = document.createElement("div");
+        row.className = "ipc-seg scumble-export-size";
+        const lab = document.createElement("span");
+        lab.textContent = "Size";
+        lab.title = "How big the saved file is. PSD and ORA always keep the full size.";
+        row.appendChild(lab);
+
+        const sel = document.createElement("select");
+        sel.className = "ipc-sel";
+        sel.style.maxWidth = "72px";
+        for (const p of EXPORT_PERCENTS) {
+            const o = document.createElement("option");
+            o.value = String(p); o.textContent = p + " %";
+            sel.appendChild(o);
+        }
+        const custom = document.createElement("option");
+        custom.value = "custom"; custom.textContent = "custom";
+        sel.appendChild(custom);
+        sel.title = "A percentage of the document size; typing a width or a height switches to custom.";
+        sel.addEventListener("keydown", (ev) => ev.stopPropagation());
+        sel.addEventListener("change", () => {
+            if (sel.value === "custom") {
+                const px = this.exportPixels(editor) || [editor.width, editor.height];
+                this.setExportSize(editor, { width: px[0], height: px[1] });
+            } else {
+                this.setExportSize(editor, { percent: +sel.value });
+            }
+        });
+        row.appendChild(sel);
+
+        const num = (title) => {
+            const i = document.createElement("input");
+            i.type = "number"; i.className = "ipc-num"; i.style.width = "58px"; i.style.minWidth = "0";
+            i.min = 1; i.max = MAX_EXPORT_SIDE; i.step = 1; i.title = title;
+            i.addEventListener("keydown", (ev) => ev.stopPropagation());
+            return i;
+        };
+        const wIn = num("Width in pixels; the height follows the aspect ratio");
+        const hIn = num("Height in pixels; the width follows the aspect ratio");
+        wIn.addEventListener("change", () => this.setExportSize(editor, { width: +wIn.value, height: 0 }));
+        hIn.addEventListener("change", () => this.setExportSize(editor, { width: 0, height: +hIn.value }));
+        row.appendChild(wIn);
+        const times = document.createElement("span");
+        times.textContent = "×";
+        row.appendChild(times);
+        row.appendChild(hIn);
+
+        // the quality gets its own line: the panel is too narrow for five controls, and it
+        // only concerns JPEG and WebP anyway
+        const qRow = document.createElement("div");
+        qRow.className = "ipc-seg scumble-export-quality";
+        const qLab = document.createElement("span");
+        qLab.textContent = "Quality";
+        qLab.title = "JPEG / WebP quality, 1 is the best";
+        const q = document.createElement("input");
+        q.type = "number"; q.className = "ipc-num"; q.style.width = "60px";
+        q.min = 0.1; q.max = 1; q.step = 0.02; q.title = qLab.title;
+        q.addEventListener("keydown", (ev) => ev.stopPropagation());
+        q.addEventListener("change", () => this.setExportSize(editor, { quality: +q.value }));
+        qRow.appendChild(qLab);
+        qRow.appendChild(q);
+
+        anchor.insertAdjacentElement("afterend", row);
+        row.insertAdjacentElement("afterend", qRow);
+        editor._exportRow = { row, qRow, sel, wIn, hIn, q, qLab, doc: "" };
+        editor.saveFormatSel.addEventListener("change", () => this.syncExportRow(editor));
+        // the numbers follow the document: a new image, a crop or an extended canvas changes
+        // them. Only a changed document size refreshes the row, so a number being typed in is
+        // never overwritten underneath the cursor.
+        this.on("changed", ({ editor: ed }) => {
+            if (ed !== editor || !editor._exportRow) return;
+            if (editor._exportRow.doc !== `${editor.width}x${editor.height}`) this.syncExportRow(editor);
+        });
+        this.syncExportRow(editor);
+    },
+
+    /** Put the state into the row: the numbers, the percentage, and what the format allows. */
+    syncExportRow(editor) {
+        const r = editor._exportRow;
+        if (!r) return;
+        const e = this.exportState(editor);
+        const px = this.exportPixels(editor) || [editor.width | 0, editor.height | 0];
+        r.doc = `${editor.width}x${editor.height}`;
+        r.wIn.value = px[0] || "";
+        r.hIn.value = px[1] || "";
+        r.q.value = e.quality;
+        const exact = EXPORT_PERCENTS.find((p) => Math.abs(p - e.percent) < 0.05);
+        r.sel.value = exact != null ? String(exact) : "custom";
+        const fmt = (editor.saveFormatSel && editor.saveFormatSel.value) || "png";
+        const layered = fmt === "psd" || fmt === "ora";
+        for (const el of [r.sel, r.wIn, r.hIn]) el.disabled = layered;
+        r.row.title = layered ? "PSD and ORA always keep the full size" : "";
+        r.qRow.hidden = !(fmt === "jpg" || fmt === "webp");
     },
 
     toolChanged(editor, tool, prev) {
