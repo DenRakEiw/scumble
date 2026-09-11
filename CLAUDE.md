@@ -78,11 +78,11 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 left open there: the erase that "switches to the base" (probably the same bug seen from the
 other side, one question to the user still unanswered) and the jerky 15k document.
 
-**0.1.7 is released** (v0.1.7, published 2026-09-11 16:56 UTC): transparent results from the
-OpenAI image models, the whole documented parameter set for them, GPT Image 2.5 up to
-3840 px with a `minPixels` floor, and a prompt template for cut-outs. `package.json` is
-**0.1.8** now with an unreleased CHANGELOG section holding the marquee fix and the
-*Highres fix* rename; the tag waits for the user.
+**0.1.8 is released** (v0.1.8, published 2026-09-11 21:05 UTC, installer 187 MB plus
+`latest.yml`, so the apps in the field update themselves): the vanishing-layer fix below,
+the marquee click fix and the *Highres fix* rename. 0.1.7 (16:56 UTC the same day) carried
+the transparent OpenAI results. `package.json` is still **0.1.8**; the next release needs
+the version bump and a new `CHANGELOG.md` section first.
 
 **Fixed after 0.1.7, in 0.1.8:**
 
