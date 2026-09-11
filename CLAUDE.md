@@ -72,6 +72,16 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-11)
 
+**The next five items are planned in `docs/PLAN_0_1_7.md`** (written 2026-09-11 with the user,
+in the order to work them): the prompt template upload under the dialog's dropdown, the
+`draw_shape` command, a console and a log file, a liquify brush, and Python plugins. Items 1 to 3
+are 0.1.7, items 4 and 5 are 0.1.8. That file also carries what stays open after them.
+
+**Both repos have unpushed commits and 0.1.6 is not tagged** (see the plan's first paragraph).
+
+**The "Generate a new image" dialog is fixed** - it no longer grows a scrollbar and no longer
+clips the Upsample button. Confirmed by the user on 2026-09-11, off the list.
+
 **0.1.5 is released** (`gh release list`: v0.1.5 published 2026-09-10 22:07 UTC). `package.json`
 is **0.1.6** now, `CHANGELOG.md` has a `## 0.1.6 — unreleased` section, and the tag waits for
 the user's go-ahead: `git tag v0.1.6 && git push --tags`, then `gh release edit v0.1.6
