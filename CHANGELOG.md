@@ -12,6 +12,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   dozen image pixels wide, and since brush and eraser are clipped to the selection, retouch
   stopped working with no visible reason. The drag is now measured in screen pixels, so the
   same gesture means the same thing at every zoom.
+- **The *API size* row is called *Highres fix* now.** Same five choices, clearer name: the
+  row decides how far the crop's resolution is pushed up before it goes to the provider.
 
 ## 0.1.7 — 2026-09-11
 

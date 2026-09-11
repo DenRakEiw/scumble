@@ -165,7 +165,7 @@ local *and* the API path, while the adapters pass whatever size they are handed 
   first pass got wrong. A variant may override the recipe's `limits`, which is how the fal and
   Comfy Cloud numbers sit in the same recipe.
 - `host.cropLimits()` merges those limits with **`host.apiSize`** (`settings.apiSize`, the
-  *API size* select built in `buildGenerateExtras`, app-only, no sync patch): `max` (default),
+  *Highres fix* select built in `buildGenerateExtras`, app-only, no sync patch): `max` (default),
   `x2`, `x4` (the high-res fix the user asked for: the crop at twice / four times its own
   size, still under the ceiling), `target`, `crop`. `prepareCrop(editor, params, limits)` in
   `renderer/editor/stitch.js` resolves it in `emitTarget()`; **a ComfyUI recipe gets null and
@@ -194,7 +194,7 @@ real **mask** endpoint - only the second one after Qwen and FLUX.1 Fill), `ideog
 
 **Gates after the change, all on a dev instance with its own `--user-data-dir`**:
 `size_test.py` PASS, `commands_test.py` PASS, `generate_test.py` PASS, `smoke_test.py
---no-helpers` PASS (real Flux run, the ComfyUI queue empty before and after). The *API size*
+--no-helpers` PASS (real Flux run, the ComfyUI queue empty before and after). The *Highres fix*
 row was checked live in the Generate section. **Not done**: no adapter has run against a live
 API, and the size ceilings of Nano Banana, Seedream, Qwen and the new models are the
 conservative default rather than the providers' own numbers.

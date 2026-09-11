@@ -968,12 +968,13 @@ export const host = {
         sec.appendChild(grid);
         editor._nodeParamInputs = inputs;
 
-        // API size: app-only, so it sits under the node params instead of among them
+        // Highres fix (settings.apiSize): app-only, so it sits under the node params instead
+        // of among them
         const row = document.createElement("div");
         row.className = "ipc-seg scumble-api-size";
         const lab = document.createElement("span");
-        lab.textContent = "API size";
-        lab.title = "How big the crop is sent to an API provider; a local ComfyUI recipe uses Target instead";
+        lab.textContent = "Highres fix";
+        lab.title = "How far the crop's resolution is pushed up before it goes to an API provider. A local ComfyUI recipe uses Target instead.";
         row.appendChild(lab);
         const sel = document.createElement("select");
         sel.className = "ipc-sel";

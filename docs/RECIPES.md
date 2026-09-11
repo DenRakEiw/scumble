@@ -130,7 +130,7 @@ fal answers two URLs without a key, and they are the fastest way to a real numbe
 `https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=<id>` gives the input schema with
 the size range in it.
 
-The **API size** select in the editor's Generate section (`host.apiSize`, app-only, stored
+The **Highres fix** select in the editor's Generate section (`host.apiSize`, app-only, stored
 in `settings.apiSize`) picks how the ceiling is used: *Provider max* (the default) emits at
 `max`, *2x crop* and *4x crop* are the high-res fix - the crop at twice or four times its
 own resolution, still held under `max` - *Target size* keeps the node's number and *Crop
