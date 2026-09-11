@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.7 — unreleased
+## 0.1.7 — 2026-09-11
 
 - **Transparent results from the OpenAI image models.** GPT Image 2.5 Flare, 2.5 Sunburst
   and 2 can answer with a cut-out instead of a picture: a subject on a fully transparent
