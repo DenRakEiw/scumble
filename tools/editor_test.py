@@ -91,6 +91,26 @@ if (!out.before || out.afterClickInside || out.afterLassoClick || out.afterWobbl
 if (!out.afterRealDrag || out.afterRealDrag[2] < 290) throw new Error("a real drag must still select: " + JSON.stringify(out));
 return out;
 """),
+    ("brush_ring_visible_over_its_own_colour", """
+const ed = ednow(window.__t);
+// the ring used to be a one pixel line in the paint colour, so it vanished over its own
+// paint and a brush wider than the layer looked like a tool that fills rectangles
+ed.setTool("paint");
+ed.color = "#ff0000";
+ed.brushSize = 120;
+ed.hardness = 1;
+ed.hover = [50, 50];
+const c = document.createElement("canvas"); c.width = 100; c.height = 100;
+const x = c.getContext("2d");
+x.fillStyle = ed.color; x.fillRect(0, 0, 100, 100);
+ed.drawBrushRing(x, 1);
+const d = x.getImageData(0, 0, 100, 100).data;
+let dark = 0;
+for (let i = 0; i < d.length; i += 4) if (d[i] < 128 && d[i + 1] < 128) dark++;
+ed.hover = null;
+if (!dark) throw new Error("the brush ring is invisible over its own paint colour");
+return { darkPixels: dark };
+"""),
     ("outline_visible_on_white", """
 const ed = ednow(window.__t);
 const c = document.createElement("canvas"); c.width = 100; c.height = 100;
