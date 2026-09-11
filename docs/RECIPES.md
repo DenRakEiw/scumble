@@ -117,7 +117,14 @@ side the endpoint accepts and `pixels` an area cap (0 = none). Without either, t
 conservative `{ min: 256, max: 2048, step: 16, pixels: 0 }` applies - raise one with a
 source, not with a guess. Today: **FLUX.2 and FLUX.1 Fill 1440** (2048 answers with an
 error), **gpt-image 2048 with an 8,294,400 px budget** (the size rules of the OpenAI partner
-node), everything else the conservative default.
+node), **Seedream 5 on fal 4096 with a 4 MP budget for pro and a 16 MP one for lite** (its
+`image_size` is a free size with an area range, not a side limit), **Seedream on Comfy Cloud
+2496 / 4992** (what the partner node fits it into), everything else the conservative default.
+
+fal answers two URLs without a key, and they are the fastest way to a real number:
+`https://fal.ai/api/models?keywords=<x>` lists endpoint ids, and
+`https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=<id>` gives the input schema with
+the size range in it.
 
 The **API size** select in the editor's Generate section (`host.apiSize`, app-only, stored
 in `settings.apiSize`) picks how the ceiling is used: *Provider max* (the default) emits at

@@ -36,9 +36,14 @@
           ]
         }
       ],
-      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The crop goes out under a 4 MP budget (fal's image_size is an area range, not a side limit), so a wide selection passes 2048 px on the long side; Size picks the answer's resolution.",
       "options": {
         "sizing": "none"
+      },
+      "limits": {
+        "max": 4096,
+        "step": 16,
+        "pixels": 4194304
       }
     },
     "wavespeed": {
@@ -89,7 +94,12 @@
         "node": "ByteDanceSeedreamNodeV3"
       },
       "settings": [],
-      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Custom size fitted to the crop (1024 to 2496 px). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Custom size fitted to the crop (1024 to 2496 px). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "limits": {
+        "min": 1024,
+        "max": 2496,
+        "step": 2
+      }
     }
   }
 }

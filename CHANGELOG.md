@@ -9,8 +9,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   1024 px crop, whatever the model could have handled, because one number in the Generate
   section governed both the local and the API path. Each model now carries its own ceiling
   and the crop is emitted against that: FLUX.2 and FLUX.1 Fill at most 1440 px (2048
-  answered with an error), GPT Image at most 2048 px inside its pixel budget, the rest at a
-  conservative 2048 until the provider's own number is confirmed. The new **API size** row
+  answered with an error), GPT Image at most 2048 px inside its pixel budget, Seedream 5
+  under an area budget instead of a side limit (4 megapixels for pro, 16 for lite), so a
+  wide selection goes out well past 2048 px, the rest at a conservative 2048 until the
+  provider's own number is confirmed. The new **API size** row
   under the Generate section chooses how the ceiling is used: *Provider max* for the best
   the model offers, *2x crop* and *4x crop* for a high-res fix that sends a small selection
   at twice or four times its own resolution, or the two older behaviours. Local ComfyUI runs

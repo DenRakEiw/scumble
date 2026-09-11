@@ -98,7 +98,24 @@ for (const id of ["flux2_pro", "flux2_max", "flux1_fill"]) {
     if (out[id][0] !== 1440) throw new Error(id + " should cap at 1440, has " + out[id][0]);
 }
 if (out.gpt_image_2[0] !== 2048 || out.gpt_image_2[2] !== 8294400) throw new Error("gpt_image_2 limits wrong: " + out.gpt_image_2);
+// a variant may raise the recipe's ceiling: Seedream on fal is an area budget, not a side
+const sd = list.find((x) => x.id === "seedream_5_pro");
+const fal = sd.providers.fal.limits, cloud = sd.providers.comfycloud.limits;
+if (fal.max !== 4096 || fal.pixels !== 4194304) throw new Error("seedream on fal: " + JSON.stringify(fal));
+if (cloud.max !== 2496) throw new Error("seedream on comfy cloud: " + JSON.stringify(cloud));
+out.seedream_5_pro = { fal: [fal.max, fal.step, fal.pixels], comfycloud: [cloud.max, cloud.step, cloud.pixels] };
 return out;
+"""),
+    ("an_area_budget_beats_a_side_limit", """
+const ed = ednow(window.__s);
+await run("select_rect", { doc: window.__s, x: 300, y: 600, width: 1800, height: 1000 });
+const lim = { min: 256, max: 4096, step: 16, pixels: 4194304, mode: "max" };
+const info = window.__stitch.prepareCrop(ed, host.nodeParams, lim).info;
+const [ew, eh] = info.emitted;
+if (Math.max(ew, eh) <= 2048) throw new Error("Seedream's long side should pass 2048: " + ew + "x" + eh);
+if (ew * eh > 4194304) throw new Error("over the 4 MP budget: " + ew + "x" + eh);
+await run("select_rect", { doc: window.__s, x: 900, y: 700, width: 300, height: 200 });
+return { emitted: [ew, eh], pixels: ew * eh };
 """),
     ("a_text_only_recipe_refuses_generate", """
 const prev = host.recipe;

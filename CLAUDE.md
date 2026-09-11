@@ -86,8 +86,13 @@ local *and* the API path, while the adapters pass whatever size they are handed 
   `editLimits()` in `electron/main/recipes.js`, a recipe-level `limits` covering all its
   variants). **FLUX.2 and FLUX.1 Fill are capped at 1440** - the user measured an error at
   2048 - **gpt-image at 2048 with an 8,294,400 px budget** (the OpenAI partner node's own
-  rule), everything else keeps the conservative default `{256, 2048, 16, 0}`. Raise one with
-  a source; most providers' real maxima are still unverified.
+  rule), **Seedream 5 on fal at 4096 with a 4 MP (pro) / 16 MP (lite) budget** and on Comfy
+  Cloud at 2496 / 4992, everything else keeps the conservative default `{256, 2048, 16, 0}`.
+  Raise one with a source; most providers' real maxima are still unverified. **fal serves the
+  schema without a key** - `https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=<id>` -
+  and Seedream's turned out to be an *area* budget rather than a side limit, which is what the
+  first pass got wrong. A variant may override the recipe's `limits`, which is how the fal and
+  Comfy Cloud numbers sit in the same recipe.
 - `host.cropLimits()` merges those limits with **`host.apiSize`** (`settings.apiSize`, the
   *API size* select built in `buildGenerateExtras`, app-only, no sync patch): `max` (default),
   `x2`, `x4` (the high-res fix the user asked for: the crop at twice / four times its own
