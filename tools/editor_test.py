@@ -72,7 +72,23 @@ ed.lassoPoints = [[50, 50]];
 ed.pointer = { kind: "lasso", mode: "replace" };
 ed.onPointerUp({ pointerId: 2 });
 out.afterLassoClick = !!ed.getBounds();
-if (!out.before || out.afterClickInside || out.afterLassoClick) throw new Error(JSON.stringify(out));
+// the rectangle tool *outside* the selection, a click whose hand wobbled by one screen
+// pixel. Zoomed far out that pixel is many image pixels, and it used to leave a small
+// selection right under the cursor instead of deselecting.
+await run("select_rect", { x: 100, y: 100, w: 300, h: 200, doc: window.__t });
+ed.view.scale = 0.087;   // a 15k image fitted into the window
+ed.pointer = { kind: "rect", ellipse: false, start: [600, 500], cur: [611, 509], startPx: [400, 300], mode: "replace" };
+ed.onPointerUp({ pointerId: 3, pointerType: "mouse" });
+out.afterWobbleClick = !!ed.getBounds();
+// a real drag still selects
+await run("select_none", { doc: window.__t });
+ed.pointer = { kind: "rect", ellipse: false, start: [100, 100], cur: [400, 300], startPx: [400, 300], moved: true, mode: "replace" };
+ed.onPointerUp({ pointerId: 4, pointerType: "mouse" });
+const b = ed.getBounds();
+out.afterRealDrag = b ? [b[0], b[1], b[2] - b[0], b[3] - b[1]] : null;
+ed.view.scale = 1;
+if (!out.before || out.afterClickInside || out.afterLassoClick || out.afterWobbleClick) throw new Error(JSON.stringify(out));
+if (!out.afterRealDrag || out.afterRealDrag[2] < 290) throw new Error("a real drag must still select: " + JSON.stringify(out));
 return out;
 """),
     ("outline_visible_on_white", """

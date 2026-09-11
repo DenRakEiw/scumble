@@ -82,28 +82,3 @@ the wrong target.
 **Ask the user first**: does the status line say *"Base selected."* when it happens? That one
 answer separates the auto-select path from everything else. Then whether the result layer was
 still a pending result (the row with the Discard button) or an accepted layer.
-
-### The rectangle tool does not clear the selection on a large document
-
-**Reported** 2026-09-11 by DenRakEiw, same session: clicking into the canvas with the
-rectangle selection tool normally drops the selection so the eraser is free again, but the
-blue outline stays. The eraser is clipped to the selection, so this blocks the retouch.
-
-**Not reproduced.** Both code paths do clear it: a click inside an existing selection ends as
-`selmove` with `p.moved` false and calls `clearSelection()`, and a click outside builds a
-zero-size rectangle in `replace` mode, which clears first and then fills nothing. Candidates:
-
-- **The selection is cleared but the screen keeps the old overlay.** That is the same class of
-  bug as the stroke that did not reach the screen in 0.1.5 (`touchSourceRect` left `_dispVer`
-  alone and the compositor kept its cached texture). Worth checking first, because it would
-  also explain why the erase *does* work while the blue outline is still drawn.
-- The click never reaches that branch: another tool is active, or the document is busy with
-  the run that just finished.
-
-**How to tell them apart in one step**: with the outline still on screen, run
-`window.editor.getBounds()` in the renderer console, or the `status` command, whose
-`selection` field is null for an empty one. Null while the blue outline is still drawn means
-the state is right and only the drawing is stale.
-
-**Worth doing either way**: Ctrl+D clears the selection from the keyboard and takes a
-different path, so it is both a workaround for the user and a second data point.

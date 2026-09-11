@@ -3,6 +3,16 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.8 — unreleased
+
+- **Fixed: a click with the rectangle or ellipse tool left a small selection behind.** It was
+  meant to clear the selection, and on a normal-sized image it did. Zoomed far out it did
+  not: one screen pixel is many image pixels there, so a hand that wobbled by a single pixel
+  drew a tiny rectangle right under the cursor instead. On a 15,000 px image that was a
+  dozen image pixels wide, and since brush and eraser are clipped to the selection, retouch
+  stopped working with no visible reason. The drag is now measured in screen pixels, so the
+  same gesture means the same thing at every zoom.
+
 ## 0.1.7 — 2026-09-11
 
 - **Transparent results from the OpenAI image models.** GPT Image 2.5 Flare, 2.5 Sunburst
