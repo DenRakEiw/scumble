@@ -131,10 +131,10 @@ fal answers two URLs without a key, and they are the fastest way to a real numbe
 the size range in it.
 
 The **Highres fix** select in the editor's Generate section (`host.apiSize`, app-only, stored
-in `settings.apiSize`) picks how the ceiling is used: *Provider max* (the default) emits at
-`max`, *2x crop* and *4x crop* are the high-res fix - the crop at twice or four times its
-own resolution, still held under `max` - *Target size* keeps the node's number and *Crop
-size* sends the crop as it is. All five are clamped by `min`, `max` and `pixels`, and
+in `settings.apiSize`) picks how the ceiling is used: *Maximum* (the default) emits at
+`max`, *2x crop* and *4x crop* give the crop twice or four times its own resolution, still
+held under `max`, *Target size* keeps the node's number and *Off (crop size)* sends the crop
+as it is. All five are clamped by `min`, `max` and `pixels`, and
 `finishResult()` scales the answer back to the region either way. A ComfyUI recipe gets no
 limits at all (`host.cropLimits()` returns null) and keeps using `target_size`, because
 there the node does the cropping. `tools/size_test.py` is the gate.

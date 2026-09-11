@@ -25,12 +25,14 @@ const SUBFOLDER = "inpaint_canvas";
 const MAX_EXPORT_SIDE = 32768;
 const EXPORT_PERCENTS = [200, 150, 100, 75, 50, 33, 25, 10];
 
+// The five answers to "how far up?", labelled so they read without the tooltip: the row is
+// called Highres fix, so every label finishes that sentence.
 const API_SIZES = [
-    ["max", "Provider max", "Send the crop at the biggest size the chosen provider takes (best quality, biggest bill)"],
-    ["x2", "2x crop", "High-res fix: the crop at twice its own size, capped at the provider's maximum"],
-    ["x4", "4x crop", "High-res fix: the crop at four times its own size, capped at the provider's maximum"],
+    ["max", "Maximum", "As big as the chosen provider takes: the strongest high-res fix, and the biggest bill"],
+    ["x2", "2x crop", "The crop at twice its own size, capped at the provider's maximum"],
+    ["x4", "4x crop", "The crop at four times its own size, capped at the provider's maximum"],
     ["target", "Target size", "The Target field above, the way local ComfyUI runs use it"],
-    ["crop", "Crop size", "The crop at its own resolution, capped at the provider's maximum"],
+    ["crop", "Off (crop size)", "No high-res fix: the crop goes out at its own resolution, capped at the provider's maximum"],
 ];
 
 // ---- api ---------------------------------------------------------------------------------
