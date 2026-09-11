@@ -5,9 +5,9 @@ folder. Everything the next session needs to start building is here or linked.
 
 ## 1. Vision
 
-A desktop image editor for AI inpainting that feels like Krita, not like a node graph.
-Open an image, select an area (by rectangle, brush, lasso, magic wand or by describing
-the object), write a prompt, generate. The result lands as a layer over the selection
+A desktop image editor for AI inpainting that feels like a painting program, not like a
+node graph. Open an image, select an area (by rectangle, brush, lasso, magic wand or by
+describing the object), write a prompt, generate. The result lands as a layer over the selection
 and can be blended in with colour match, erased in parts, regenerated, layered with
 filters and text, and exported with all layers to PSD or OpenRaster.
 
@@ -159,7 +159,7 @@ object tool on top; text segmentation (SAM3) stays a ComfyUI helper.
 `electron/main/plugins.js` with the API in `docs/PLUGINS.md`, `plugins/sample` as the
 reference plugin, Settings › Plugins and a Plugins menu, `tools/commands_test.py`)**:** the node's
 bridge command table (`inpaint_bridge.js`, 46 commands) becomes the app's command core
-in the renderer, typed and documented. On it, a plugin system like Krita's: a plugin is a
+in the renderer, typed and documented. On it, a plugin system of its own: a plugin is a
 folder in `<userData>/plugins/<name>/` with `plugin.json` (name, version, entry, what it
 registers) and a JavaScript module loaded with an API object `scumble` (document,
 layers, selection, pixel access as ImageData in and out, undo, status line, files, the

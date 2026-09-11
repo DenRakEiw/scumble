@@ -29,7 +29,7 @@ untested (see the note above).
 
 ## Features
 
-- Krita-style layers: paint, image, filter and text layers, masks, blend modes, opacity,
+- A full layer stack: paint, image, filter and text layers, masks, blend modes, opacity,
   colour match per layer, retouch tools (clone, heal, smudge), transform, crop and extend.
 - Selection by brush, rectangle, ellipse, lasso, magic wand, object hover (SAM2 in-app)
   or by text (SAM3 on the ComfyUI side); grow, feather, invert, from layer.

@@ -5,10 +5,9 @@ The five items are in the order they should be worked; 1 to 3 are one release (*
 4 and 5 the next one (**0.1.8**). Every item names the files it touches and the gate that
 proves it, so none of them needs this conversation to be understood.
 
-**Before anything else**: `git push` in both repos (four commits in `F:\canvas`, one in the
-node repo), and decide whether 0.1.6 is tagged first. `package.json` is 0.1.6 and
-`CHANGELOG.md` has its section; put a date in the heading, then
-`git tag v0.1.6 && git push --tags`, then `gh release edit v0.1.6 --draft=false`.
+**Done on 2026-09-11**: both repos are pushed and 0.1.6 is released (v0.1.6, published
+10:48 UTC). The next release needs the version bump in `package.json` and its own
+`CHANGELOG.md` section before the tag.
 
 **Closed on 2026-09-11**: the "Generate a new image" dialog no longer grows a scrollbar and no
 longer clips the Upsample button. The user confirmed it works; it is off the list.
@@ -176,9 +175,9 @@ Estimate: half a day.
 
 ### Why
 
-The comparison with Krita's toolbox on 2026-09-11 left exactly one gap after the shape tool:
-the transform tool has scale, rotate, distort (a free four-corner perspective) and warp (a grid),
-but no free-form push of pixels. It is the tool for a face, a fold in cloth, a horizon.
+The comparison with other painting programs' toolboxes on 2026-09-11 left exactly one gap
+after the shape tool: the transform tool has scale, rotate, distort (a free four-corner
+perspective) and warp (a grid), but no free-form push of pixels. It is the tool for a face, a fold in cloth, a horizon.
 
 ### Design
 

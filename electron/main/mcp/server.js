@@ -14,7 +14,7 @@ const { Server } = require("@modelcontextprotocol/sdk/server/index.js");
 const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");
 const { ListToolsRequestSchema, CallToolRequestSchema } = require("@modelcontextprotocol/sdk/types.js");
 
-const INSTRUCTIONS = `Scumble is a desktop image editor for AI inpainting (Krita-style layers, selection by text,
+const INSTRUCTIONS = `Scumble is a desktop image editor for AI inpainting (layers, selection by text,
 filters, colour match, text layers) that renders through the user's own ComfyUI or an API
 provider. You drive the editor through these tools; every tool is one editor command.
 
