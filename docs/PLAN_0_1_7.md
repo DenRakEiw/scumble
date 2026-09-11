@@ -1,4 +1,4 @@
-# Plan after 0.1.6: template upload, console, draw_shape, liquify, Python plugins
+# Plan after 0.1.6: template upload, console, draw_shape, liquify, Python plugins, custom brushes
 
 Written 2026-09-11 with DenRakEiw, for the sessions after this one. Read `CLAUDE.md` first.
 The five items are in the order they should be worked; 1 to 3 are one release (**0.1.7**),
@@ -267,6 +267,59 @@ Estimate: two days.
 
 ---
 
+## 6. Custom brushes: users add their own tips from .abr files
+
+Asked for on 2026-09-11 (after the 0.1.8 release): "custom Pinsel, User können ihre eigenen
+Pinsel hinzufügen, also ABR-Dateien".
+
+### Why
+
+The round dab is the only brush. Painters have libraries of Photoshop `.abr` packs (and
+GIMP `.gbr` / `.gih`, Krita `.kpp` bundles) and expect to load them; a textured tip is what
+makes retouch on a result layer look painted rather than stamped.
+
+### Where it stands
+
+**The core is built and committed, and marked unverified** (2026-09-11, `js/inpaint_brushes.js`
+in the node repo, synced; `CLAUDE.md` "Built but not verified"). `readAbr()` reads versions 1
+and 2 (a flat list) and 6 and 10 (the `8BIM` `samp` block, PackBits per row, computed round
+tips skipped), after GIMP's `gimpbrush-load.c` and scurest/abrupng, both GPL-3.0. The brush
+stamps a tip instead of the round dab with the file's own spacing (`stampDab`), and the tool
+options bar has a *Tip* select plus *Import* (`.abr`, `.png`, `.jpg`, `.webp`; a `.abr` adds
+every tip it holds). **Proven only on a synthetic version 1 file.** So this item is not "build
+the feature" but "finish it":
+
+### Design
+
+- **Verify against real packs first.** Get two or three `.abr` files (a version 6 pack with
+  sampled tips, a version 10 one, an old version 1 or 2) and check size, spacing, alpha
+  polarity and the tip count against GIMP's reading of the same file. Fix the reader where
+  it disagrees. Computed (parametric) tips are skipped by design; say so in the status line
+  ("12 tips imported, 3 computed tips skipped").
+- **Persistence.** Imported tips are lost at restart today. Store them under
+  `<userData>/brushes/<id>.png` plus a `brushes.json` (name, spacing, source file) through
+  a new IPC (`brushes:list|save|remove`), load them at editor start (`host.brushTips()`), and
+  give the select a *Remove* next to *Import*. The node keeps its in-memory list (no file
+  system there); the app patch goes through `tools/sync_editor.py`.
+- **Stroke quality.** Spacing as a slider (default from the file), a *Rotate to stroke
+  direction* tick, size jitter and angle jitter later; the Photoshop dynamics beyond that are
+  out of scope. The stamp must honour hardness = off (a tip has its own edge), opacity and
+  pressure like the round dab, and the eraser must be able to use a tip too.
+- **Preview.** A 48 px thumbnail of the tip next to the select, and the brush ring drawn as
+  the tip's bounding box when a tip is active, so the user sees what will land.
+- **Formats after `.abr`**: GIMP `.gbr` (trivial header + raw bytes) and `.gih` (an image
+  hose, first frame only), Krita `.kpp` (a PNG with the preset in a text chunk, tip only).
+  Only if asked.
+- **MCP**: `list_brush_tips` and `set_brush({ tip, size, hardness, spacing })`, so an agent can
+  pick a tip; `paint_stroke` does not exist yet and is not part of this item.
+
+### Gate
+
+`python tools/brush_test.py`: the reader on the stored sample files (`tools/refs/brushes/`,
+one per version, small, licence-checked), a stamped stroke's coverage against the round dab
+on the same path, persistence across a `location.reload()`, and one erase with a tip.
+Estimate: half a day for verify + persistence, another half for the stroke quality points.
+
 ## Order and releases
 
 | # | Item | Estimate | Release |
@@ -276,6 +329,7 @@ Estimate: two days.
 | 3 | Console and log file | half a day | 0.1.7 |
 | 4 | Liquify | 1 day | 0.1.8 |
 | 5 | Python plugins | 2 days | 0.1.8 |
+| 6 | Custom brushes from .abr, verified and persistent | 1 day | 0.1.9 |
 
 Items 4 and 5 both touch the node repo or the plugin core; 3 must land before 5, because the
 Python process's stderr has nowhere to go until it exists.
