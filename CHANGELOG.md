@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.8 — unreleased
+## 0.1.8 — 2026-09-11
 
 - **Fixed: a whole layer vanished from the picture after an erase or brush stroke that was
   nowhere near it.** Zoomed out, the screen is drawn from a reduced copy of each layer, and
