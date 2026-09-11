@@ -14,8 +14,12 @@ the ones that were performance work.
 ### A very large PNG stays jerky to work on
 
 **Reported** 2026-09-11 by DenRakEiw, on a PNG about 15,000 px on its long side. Panning
-and painting stutter badly. The user re-saved the same picture as JPEG to compare and the
-comparison is still running, so "PNG is the problem" is the *report*, not a finding.
+and painting stutter badly.
+
+**The file format is ruled out.** The user saved the same picture as JPEG and it is not
+smoother (2026-09-11), which is what the pipeline predicts: after decoding, base and layers
+are RGBA canvases and the format cannot matter. So the heading is misleading and the bug is
+about the *size*. It is the untiled full-resolution layers that are the suspect.
 
 **What is already known**
 
@@ -29,14 +33,17 @@ comparison is still running, so "PNG is the problem" is the *report*, not a find
   which is itself visible as a stutter.
 - Phase 6 measured that four 96 MP documents open at once really are 19 GB of live pixels
   and about 40 ms a frame. 150 MP in one document is the same territory.
-- **The file format should not matter once the image is decoded.** Base and layers live as
-  RGBA canvases; PNG and JPEG of the same pixel size cost exactly the same to draw. If the
-  JPEG really is smoother, the cause is somewhere else and worth finding, because it would
-  contradict the model we have of the pipeline. Two candidates:
-  - the PNG encode on the autosave and upload path (`canvasBytes`, the worker). A 150 MP PNG
-    encode is expensive and happens on a change, a run and at autosave time.
-  - the JPEG may simply be smaller: the Export row added in 0.1.6 can save at a percentage,
-    so the two files may not be the same pixel size at all.
+- **Every discrete step snapshots the whole document.** `clearSelection()`, and every
+  selection change, calls `pushUndo({ kind: "selection" })`, which copies the selection
+  canvas: 150 million pixels per step. Phase 1 made *brush* undo a copy of the touched
+  rectangle only, but the selection steps were not part of that. On a document this size
+  that alone can be the stutter.
+- **Releasing an erase stroke is its own stutter** (reported separately in the same session:
+  the stroke itself follows, the hitch comes on mouse up). The `layerpaint` pointer-up runs
+  `strokeRect`, `commitStroke` and `markLayerChanged(layer, box)`, which refreshes the display
+  pyramid over the touched rectangle and re-uploads the layer's texture. With a big eraser
+  over a big area that rectangle is most of the document, so the "only the touched rectangle"
+  saving from phase 1 buys nothing here.
 
 **What to measure first** (before touching anything)
 
@@ -53,3 +60,50 @@ comparison is still running, so "PNG is the problem" is the *report*, not a find
 **Likely fix, if the measurement confirms the memory reading**: layer tiles above a
 threshold, which is the one piece of the performance plan that was left out on purpose. That
 is a large piece of work and belongs to the user's decision, not to a quick patch.
+
+### Erasing on a result layer switches to the base
+
+**Reported** 2026-09-11 by DenRakEiw, on the same large document, on the result layer of a
+Seedream 5 Lite run over a big area: erasing with the mouse button held switches the active
+layer to the base underneath. This is the worst of the three, because the erase then goes to
+the wrong target.
+
+**Not identified.** What the code says so far:
+
+- The pointer-up branch for `layerpaint` (`inpaint_canvas.js`) touches no layer selection at
+  all, so the stroke itself is not doing it.
+- The **only** place that reports switching to the base is the Ctrl+click auto-select
+  (`e.ctrlKey && ... ["transform", "paint", "erase", "text"]`), which sets
+  `activeLayerId = null` and says *"Base selected."* in the status line when nothing is hit.
+  It needs Ctrl held, which the report does not mention.
+- A removed layer also falls back to the base (`removeLayer`), and a still-*pending* result
+  is discarded by `cancelPending()` on a layer-row click and on that same Ctrl+click path.
+
+**Ask the user first**: does the status line say *"Base selected."* when it happens? That one
+answer separates the auto-select path from everything else. Then whether the result layer was
+still a pending result (the row with the Discard button) or an accepted layer.
+
+### The rectangle tool does not clear the selection on a large document
+
+**Reported** 2026-09-11 by DenRakEiw, same session: clicking into the canvas with the
+rectangle selection tool normally drops the selection so the eraser is free again, but the
+blue outline stays. The eraser is clipped to the selection, so this blocks the retouch.
+
+**Not reproduced.** Both code paths do clear it: a click inside an existing selection ends as
+`selmove` with `p.moved` false and calls `clearSelection()`, and a click outside builds a
+zero-size rectangle in `replace` mode, which clears first and then fills nothing. Candidates:
+
+- **The selection is cleared but the screen keeps the old overlay.** That is the same class of
+  bug as the stroke that did not reach the screen in 0.1.5 (`touchSourceRect` left `_dispVer`
+  alone and the compositor kept its cached texture). Worth checking first, because it would
+  also explain why the erase *does* work while the blue outline is still drawn.
+- The click never reaches that branch: another tool is active, or the document is busy with
+  the run that just finished.
+
+**How to tell them apart in one step**: with the outline still on screen, run
+`window.editor.getBounds()` in the renderer console, or the `status` command, whose
+`selection` field is null for an empty one. Null while the blue outline is still drawn means
+the state is right and only the drawing is stale.
+
+**Worth doing either way**: Ctrl+D clears the selection from the keyboard and takes a
+different path, so it is both a workaround for the user and a second data point.
