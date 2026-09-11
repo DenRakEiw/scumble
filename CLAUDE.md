@@ -72,6 +72,50 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
+## Where things stand (2026-09-11, late)
+
+**Read `docs/BUGS.md` first.** The open list starts with a layer that vanishes when the
+eraser is nowhere near it, reported with two screen recordings. It has what was tried and
+did not reproduce it, so nobody repeats that work.
+
+**0.1.7 is released** (v0.1.7, published 2026-09-11 16:56 UTC): transparent results from the
+OpenAI image models, the whole documented parameter set for them, GPT Image 2.5 up to
+3840 px with a `minPixels` floor, and a prompt template for cut-outs. `package.json` is
+**0.1.8** now with an unreleased CHANGELOG section holding the marquee fix and the
+*Highres fix* rename; the tag waits for the user.
+
+**Fixed after 0.1.7, in 0.1.8:**
+
+- **A marquee click left a small selection behind when zoomed out.** Rectangle and ellipse
+  had no drag threshold, so a hand that wobbled by one screen pixel drew a rectangle of
+  whatever that pixel is worth in image space: on a 15k image about eleven image pixels,
+  right under the cursor, instead of the deselect the click was meant to be. Brush and
+  eraser are clipped to the selection, so retouch then stopped with nothing on screen to
+  explain why. Measured in screen pixels now, `startPx` plus a three pixel threshold.
+  Verified against the old path: the same wobble leaves 6000,5000 to 6011,5009 before and
+  nothing after. `tools/editor_test.py` has the case; it only ever exercised the click
+  *inside* a selection and the lasso, which is why it stayed green.
+- **The brush ring never disappears again.** It was a one pixel line in the paint colour, so
+  painting red over red left no cursor at all, and a 400 px brush on a small layer looked
+  like a tool that fills rectangles. Dark halo underneath now, and it moved into
+  `drawBrushRing(ctx, s)` so a test can draw it into its own canvas.
+- **The *API size* row is *Highres fix*** and its choices read without a tooltip: Maximum,
+  2x crop, 4x crop, Target size, Off (crop size).
+- **The prompt templates were never loaded at start.** `host.promptTemplateIds` and
+  `refreshPromptTemplates()` sat *inside* `saveCompat()` in `shell.js`, so no template
+  appeared until the Settings dialog had been opened once, and "Generate a new image"
+  offered none at all.
+
+**Built but not verified: brush tips from Photoshop .abr files.** `js/inpaint_brushes.js`
+(node repo, synced) reads the format after GIMP's `gimpbrush-load.c` and scurest/abrupng,
+both GPL-3.0: versions 1 and 2 are a flat list, 6 and 10 keep the sampled brushes in an
+`8BIM` `samp` block, PackBits per row, computed round tips skipped. The brush stamps a tip
+instead of the round dab, with the file's own spacing, and a Tip select plus Import sit next
+to the colour in the tool options bar; images work too. **The reader is proven only on a
+synthetic version 1 file** (size, spacing, alpha polarity, where the stored value is the
+coverage the way GIMP reads it). Nothing has met a real pack or a version 6 file, the
+stamping has no gate, and imported tips do not survive a restart.
+
 ## Where things stand (2026-09-11)
 
 **A 15k PNG is still jerky to work on** (reported 2026-09-11, the first entry in the new
