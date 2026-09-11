@@ -1,6 +1,8 @@
 # CLAUDE.md — Scumble (desktop app)
 
 Read this first, then `docs/BRIEF.md` (vision, decisions, architecture, phases).
+`docs/BUGS.md` is the bug list: what is reported and not fixed, and what has to be
+measured before anyone writes code. Put a new report there, not in this file.
 `docs/NAMES.md` holds the name research, `docs/RUNPOD.md` the Docker template notes.
 
 **Name: Scumble** (decided 2026-09-07). A scumble is a thin, semi-opaque layer of paint
@@ -71,6 +73,14 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
 ## Where things stand (2026-09-11)
+
+**A 15k PNG is still jerky to work on** (reported 2026-09-11, the first entry in the new
+`docs/BUGS.md`). Not reproduced or measured here, and the PNG-versus-JPEG part of the report
+is not confirmed: after decoding, the format cannot matter, so either the encode on the
+autosave path or a difference in pixel size explains it. The size is under the compositor's
+16,384 limit, so this is **not** the documented Canvas 2D fall-back; the first suspect is the
+memory the untiled full-resolution layers hold. The bug entry says what to measure first.
+
 
 **Transparent results from the OpenAI image models** (2026-09-11, asked for after reading
 `developers.openai.com/api/docs/guides/image-prompting`). `background: auto | opaque |
