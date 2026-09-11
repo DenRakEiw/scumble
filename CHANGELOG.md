@@ -17,6 +17,14 @@ the section for its version; `docs/` and the commit history hold the technical d
   the model offers, *2x crop* and *4x crop* for a high-res fix that sends a small selection
   at twice or four times its own resolution, or the two older behaviours. Local ComfyUI runs
   are untouched and keep using Target.
+- **A shape tool (Y).** Rectangle, ellipse, polygon, polyline, Bezier curve and freehand path,
+  filled with the paint colour, outlined in a colour and width of their own, or both. Rectangle,
+  ellipse and freehand are dragged out, and Shift keeps them square while Alt draws from the
+  centre; polygon, polyline and Bezier are clicked point by point, and a drag while clicking a
+  Bezier point curves the line into it. Enter or the first point finishes, Backspace takes one
+  point back, Escape cancels. The shape lands on the active layer, is held inside the selection
+  like every brush, follows the opacity slider and is one undo step. Rectangles take a corner
+  radius. Until now this needed a selection and a bucket fill.
 - **Export can save smaller.** A Size row under the Export section takes a percentage of the
   document, or a free width and height that keep the aspect ratio, and JPEG and WebP got a
   quality field next to it. A large reduction is walked down in halving steps instead of one

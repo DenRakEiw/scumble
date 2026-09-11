@@ -128,6 +128,23 @@ row was checked live in the Generate section. **Not done**: no adapter has run a
 API, and the size ceilings of Nano Banana, Seedream, Qwen and the new models are the
 conservative default rather than the providers' own numbers.
 
+**A shape tool** (2026-09-11, after comparing our tool column with Krita's): rectangle,
+ellipse, polygon, polyline, Bezier and freehand, filled and/or outlined, key **Y** (U belongs to
+the film plugin's control points). Written **in the node repo** and brought over with
+`python tools/sync_editor.py`, so it is not a patch and the node has it too; the sync round trip
+touched only `inpaint_canvas.js`. Rectangle / ellipse / freehand reuse the `layerpaint` pointer
+with a stroke buffer that `shapeDab()` redraws on every move, which is where the live preview,
+the clip to the selection, the brush opacity and the undo step come from; polygon / polyline /
+Bezier collect `shapePoints` and draw as an overlay until `finishShape()`. `paintShape()` sets a
+transform from image to layer pixels, so the outline width is in image pixels whatever the
+layer's own resolution is. Gate: **`python tools/shape_test.py`** (12 steps, reads the pixels
+back). **Not built**: shapes are pixels, not editable objects, and there is no `draw_shape`
+command for MCP yet.
+
+**The transform tool already has Distort and Warp** - I claimed otherwise on 2026-09-11 and was
+wrong. `subModeButtons` in the node's editor has scale, rotate, distort (drag the four corners,
+a perspective) and warp (a grid). Only a liquify brush is missing.
+
 **Export can save smaller** (2026-09-11, asked for with a screenshot of Photoshop's Export As):
 a Size row under the editor's Export row takes a percentage or a free width and height, and
 JPEG / WebP got a Quality row under it. `host.exportCanvas(editor, fmt)` and
@@ -803,6 +820,8 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   `tools/llm_mock.py` (a mock server it starts itself; no ComfyUI, no key, no local model).
   `python tools/generate_test.py` covers "Generate new" (a base image from the prompt
   alone) against the loopback provider, no ComfyUI and no key needed.
+  `python tools/shape_test.py` covers the shape tool: every kind, fill and outline, the
+  corner radius, the clip to the selection and one undo step per shape.
   `python tools/size_test.py` covers the size a crop is emitted at for an API run: the
   provider variant's `limits`, the five API size modes, the pixel budget, and that a local
   recipe keeps its `target_size`. Loopback only, no ComfyUI and no key needed.
