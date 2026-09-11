@@ -668,6 +668,25 @@ takes its input from caches that the Canvas 2D path never needed.
    on the GPU path against 3.4 ms on Canvas 2D. If the extra composite fails, the frame
    falls back to Canvas 2D (`err.glBail`) instead of drawing the layer unmatched.
 
+3. **A whole layer vanished from the screen after an erase stroke nowhere near it** (found
+   2026-09-11, fixed in 0.1.8; reported with a screen recording of a 2236 x 1853 result layer
+   on a 15k document, 400 px eraser at 43 %, the ring 550 image px clear of the cat). This one
+   is in the same function but is **not** the compositor's: `touchSourceRect` redrew the
+   touched rectangle of each pyramid level with `globalCompositeOperation = "copy"`, meant as
+   "replace the rectangle, alpha included". In Chromium `copy` applies to the **whole
+   canvas**: everything outside the drawn rectangle is cleared as well. After one stroke the
+   level held nothing but the strip around the stroke, and both paths draw from that level
+   below 0.5 zoom (Canvas 2D through `displaySource`, the GPU through the texture of the
+   level), so the picture lost the layer while its pixels, its thumbnail and every export kept
+   it. Zooming past 0.5 brought it back, a re-zoom rebuilt the level, which is why it looked
+   random. The rectangle is now cleared with `clearRect` and redrawn with `source-over`, which
+   is the same result inside the rectangle and leaves the rest alone. `tools/editor_test.py`
+   has the case (`erase_stroke_keeps_the_rest_of_the_layer_on_screen`): real pointer events
+   on a zoomed-out result layer, the strip under the stroke has to turn white on screen and a
+   block 580 px away has to stay green; on the old code the block reads white. The two
+   earlier reproductions of the report missed it because they checked the layer's pixels and
+   a full-resolution composite, and neither goes through a display level.
+
 **Why `composite_test.py` passed anyway**, and what it does now. Its document always had a
 colour-matched layer, but the test drew the Canvas 2D shot first and `layerMatchedPixels`
 caches its result per composite version, so the GPU shot re-used the canvas the 2D path had

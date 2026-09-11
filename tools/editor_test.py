@@ -3,7 +3,9 @@
 No ComfyUI needed. Checks the New dialog (two number boxes, the ratio tie, the focus that a
 button click used to steal), that a click without a drag deselects with the marquee and the
 lasso, that an outline in progress is drawn black under white so it stays visible on a white
-image, and copy and paste of a whole layer from one tab into another.
+image, copy and paste of a whole layer from one tab into another, and that an erase stroke
+through one strip of a zoomed-out result layer leaves the rest of the layer on screen (the
+cached display level used to be wiped outside the stroke's rectangle).
 
     python tools/editor_test.py
 
@@ -155,8 +157,62 @@ await wait(80);
 if (b.layers.length !== before + 1) throw new Error("the button did not duplicate: " + b.status);
 return { before, after: b.layers.length };
 """),
+    ("erase_stroke_keeps_the_rest_of_the_layer_on_screen", """
+// A result layer on a large document, viewed zoomed out, so the screen is drawn from the
+// layer's cached display level. One erase stroke through a strip of it used to wipe the
+// level everywhere except the strip: the pixels survived, the picture lost the whole
+// layer. The real pointer handlers are driven, because the gesture builds the stroke
+// buffer and the clip from the selection, and the report had a selection.
+const d3 = await run("new_document");
+window.__t3 = d3.id;
+const ed = ednow(d3.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 4000, height: 3000, doc: d3.id });
+const LX = 1000, LY = 700, LW = 2236, LH = 1853;   // over 1 MP, so the layer gets display levels
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const lc = mk(LW, LH);
+const g = lc.getContext("2d");
+g.fillStyle = "#20c040";
+g.fillRect(730, 100, 800, 200);   // the strip the stroke runs through
+g.fillRect(930, 780, 370, 300);   // the block 580 px below it, which has to stay
+const layer = ed.addLayer({ name: "Result", kind: "result", ref: null, canvas: lc, x: LX, y: LY, w: LW, h: LH, dirty: true });
+ed.markLayerChanged(layer);
+await run("select_rect", { x: LX, y: LY, w: LW, h: LH, doc: d3.id });   // the eraser is clipped to it
+ed._fitted = false;
+ed.view.scale = 0.2;
+ed.view.x = ed.canvas.width / 2 - (LX + LW / 2) * 0.2;
+ed.view.y = ed.canvas.height / 2 - (LY + LH / 2) * 0.2;
+ed.setTool("erase");
+ed.brushSize = 400; ed.eraseHardness = 0.43; ed.brushOpacity = 1;
+ed.draw(); await wait(200); ed.draw(); await wait(200);   // the level chain is built one level per frame
+const screenAt = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return Array.from(ed.canvas.getContext("2d").getImageData(Math.round(sx), Math.round(sy), 1, 1).data); };
+// the strip is sampled 100 px into the stroke, clear of the brush ring drawn at its end
+const block = [LX + 930 + 185, LY + 780 + 150], strip = [LX + 1030, LY + 200];
+const green = (p) => p[0] < 100 && p[1] > 150, white = (p) => p[0] > 200 && p[1] > 200 && p[2] > 200;
+const before = { block: screenAt(...block), strip: screenAt(...strip) };
+if (!green(before.block) || !green(before.strip)) throw new Error("the green is not on screen before the stroke: " + JSON.stringify(before));
+const rect = ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 9, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+const y = LY + 200, x0 = LX + 930, x1 = LX + 1330;
+ed.canvas.dispatchEvent(ev("pointerdown", x0, y));
+const kind = ed.pointer && ed.pointer.kind, clipped = !!(ed.pointer && ed.pointer.clip);
+for (let i = 1; i <= 10; i++) { ed.canvas.dispatchEvent(ev("pointermove", x0 + (x1 - x0) * i / 10, y)); await wait(16); }
+ed.canvas.dispatchEvent(ev("pointerup", x1, y));
+ed.hover = null;
+await wait(100); ed.draw(); await wait(100);
+const d = layer.canvas.getContext("2d").getImageData(0, 0, LW, LH).data;
+let alpha = 0;
+for (let i = 3; i < d.length; i += 4) if (d[i] > 0) alpha++;
+const after = { block: screenAt(...block), strip: screenAt(...strip), alpha, kind, clipped };
+if (kind !== "layerpaint" || !clipped) throw new Error("the gesture did not become a clipped erase stroke: " + JSON.stringify(after));
+if (alpha < 111000 || alpha >= 271000) throw new Error("the layer's own pixels are wrong: " + JSON.stringify(after));
+if (!white(after.strip)) throw new Error("the erase did not reach the screen: " + JSON.stringify(after));
+if (!green(after.block)) throw new Error("the block 580 px from the stroke vanished from the screen: " + JSON.stringify(after));
+return { before, after };
+"""),
     ("cleanup", """
-for (const id of [window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
+for (const id of [window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";
 """),
 ]

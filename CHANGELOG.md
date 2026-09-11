@@ -5,6 +5,14 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.8 — unreleased
 
+- **Fixed: a whole layer vanished from the picture after an erase or brush stroke that was
+  nowhere near it.** Zoomed out, the screen is drawn from a reduced copy of each layer, and
+  the stroke refreshed that copy inside the stroke's rectangle with a drawing mode that
+  Chromium applies to the whole copy: everything outside the rectangle was cleared. The
+  layer's pixels were never touched (exports, the thumbnail and a re-zoom still had them),
+  only the picture lost them, and erasing looked like it took rectangular chunks out of a
+  layer or removed a result layer entirely. The reduced copy is now refreshed inside the
+  rectangle only.
 - **Fixed: a click with the rectangle or ellipse tool left a small selection behind.** It was
   meant to clear the selection, and on a normal-sized image it did. Zoomed far out it did
   not: one screen pixel is many image pixels there, so a hand that wobbled by a single pixel

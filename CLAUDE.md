@@ -74,9 +74,9 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-11, late)
 
-**Read `docs/BUGS.md` first.** The open list starts with a layer that vanishes when the
-eraser is nowhere near it, reported with two screen recordings. It has what was tried and
-did not reproduce it, so nobody repeats that work.
+**Read `docs/BUGS.md` first.** The vanishing layer is fixed (first bullet below). What is
+left open there: the erase that "switches to the base" (probably the same bug seen from the
+other side, one question to the user still unanswered) and the jerky 15k document.
 
 **0.1.7 is released** (v0.1.7, published 2026-09-11 16:56 UTC): transparent results from the
 OpenAI image models, the whole documented parameter set for them, GPT Image 2.5 up to
@@ -86,6 +86,20 @@ OpenAI image models, the whole documented parameter set for them, GPT Image 2.5 
 
 **Fixed after 0.1.7, in 0.1.8:**
 
+- **A whole layer vanished from the screen after an erase nowhere near it** (the two screen
+  recordings of 2026-09-11; `docs/PERFORMANCE.md` phase 5 bug 3 has the write-up). Reproduced
+  on the first try once the *real pointer handlers* were driven on a zoomed-out view and the
+  **screen** was read, not a full-resolution composite: layer alpha 111,000 before and after,
+  the composite green, the screen white. `touchSourceRect` refreshed the stroke's rectangle in
+  each pyramid level with `globalCompositeOperation = "copy"`, and Chromium applies `copy` to
+  the whole canvas, so the level kept only the strip around the stroke; both paths draw from
+  that level below 0.5 zoom. Now `clearRect` plus `source-over`. Fixed in the node repo and
+  synced (the sync touched only those nine lines); the node's `DEVELOPMENT.md` §21e has the
+  rule. Gate: `editor_test.py` step `erase_stroke_keeps_the_rest_of_the_layer_on_screen`,
+  which reads white for the far block on the old code. `composite_test.py`, `commands_test.py`
+  and `shape_test.py` PASS after the change. It also explains the first recording (erasing
+  "took rectangular chunks out": only the last stroke's rectangle of the layer stayed visible)
+  and very likely the "erase switches to the base" report.
 - **A marquee click left a small selection behind when zoomed out.** Rectangle and ellipse
   had no drag threshold, so a hand that wobbled by one screen pixel drew a rectangle of
   whatever that pixel is worth in image space: on a 15k image about eleven image pixels,
