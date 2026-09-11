@@ -93,10 +93,40 @@ models as well.
 Variant fields: `model` (endpoint / model id), `input` (`fill`: crop + mask; `edit`:
 instruction on the crop plus references), `settings` (Settings-panel controls, `key` is
 the parameter the adapter sends), `fixed` (parameters sent as they are), `fields`
-(input names: Replicate and fal, `{ image, images, mask }`), `options` (adapter switches:
-fal `sizing: "none"` for endpoints without a free `image_size`), `note` (shown as the
-tooltip). `family` groups the top-bar list. A recipe with a top-level `provider` instead
-of `providers` (the old shape, the smoke test's loopback) is read as a one-provider recipe.
+(input names: Replicate and fal, `{ image, images, mask }`; fal takes `"mask": false` for
+an image-to-image endpoint that has no mask, such as Ideogram 4), `options` (adapter
+switches: fal `sizing: "none"` for endpoints without a free `image_size`, fal
+`omit: ["output_format", ...]` for an endpoint that refuses the fields the other models
+take), `limits` (the size ceiling, below), `edit: false` (the variant makes images from
+the prompt alone and the Generate button says so), `note` (shown as the tooltip). `family`
+groups the top-bar list. A recipe with a top-level `provider` instead of `providers` (the
+old shape, the smoke test's loopback) is read as a one-provider recipe.
+
+### How big the crop goes out (`limits`)
+
+The app is for quality, so an API run does **not** use the node's `target_size`: it emits
+the crop at the size the chosen provider actually takes. `limits` says what that is, on the
+recipe (for every variant) or on a single variant:
+
+```
+"limits": { "max": 1440, "step": 32, "min": 256, "pixels": 0 }
+```
+
+`max` is the long side, `step` the multiple both sides are rounded to, `min` the smallest
+side the endpoint accepts and `pixels` an area cap (0 = none). Without either, the
+conservative `{ min: 256, max: 2048, step: 16, pixels: 0 }` applies - raise one with a
+source, not with a guess. Today: **FLUX.2 and FLUX.1 Fill 1440** (2048 answers with an
+error), **gpt-image 2048 with an 8,294,400 px budget** (the size rules of the OpenAI partner
+node), everything else the conservative default.
+
+The **API size** select in the editor's Generate section (`host.apiSize`, app-only, stored
+in `settings.apiSize`) picks how the ceiling is used: *Provider max* (the default) emits at
+`max`, *2x crop* and *4x crop* are the high-res fix - the crop at twice or four times its
+own resolution, still held under `max` - *Target size* keeps the node's number and *Crop
+size* sends the crop as it is. All five are clamped by `min`, `max` and `pixels`, and
+`finishResult()` scales the answer back to the region either way. A ComfyUI recipe gets no
+limits at all (`host.cropLimits()` returns null) and keeps using `target_size`, because
+there the node does the cropping. `tools/size_test.py` is the gate.
 
 ### Generating without an image (`text`)
 
@@ -107,7 +137,9 @@ put the editing model under such a path, the others use the same id without the 
 field). A variant overrides it with `"text": { "model": "...", "sizes": [...], "fixed": {} }`
 or switches it off with `"text": false`. Providers that can do it at all: OpenAI, Gemini,
 BFL, fal, Replicate, WaveSpeed. Comfy Cloud builds a graph around a partner node and has
-none.
+none. The other way round exists too: a variant with `"edit": false` has **only** the text
+shape (Krea 2, Recraft V4 and Z-Image base are text-to-image endpoints), and the Generate
+button answers that the recipe belongs in "Generate new".
 
 The run goes through `host.runGenerate()` with `kind: "text"`: no crop, no mask, no
 references, only prompt, size, aspect and seed. The adapter's `generate()` picks the right
@@ -142,7 +174,7 @@ has not run against the live API yet; the recipe descriptions say so.
 The key of the provider comes from the credential store (Settings › API providers).
 
 What a provider run does: `prepareCrop` builds the crop like the node (selection bbox
-plus context, fill mode, target_size scaling to the multiple, the grown and feathered
+plus context, fill mode, scaling to the size the variant's `limits` allow, the grown and feathered
 denoise mask, "with original" and reference layers as extra images), the main process
 (`electron/main/providers/<provider>.js`) makes the request, `finishResult` resizes the
 answer to the region (center-crop when the aspect differs), builds the composite mask

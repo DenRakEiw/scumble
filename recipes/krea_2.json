@@ -1,0 +1,40 @@
+{
+  "id": "krea_2",
+  "kind": "provider",
+  "name": "Krea 2 [large]",
+  "family": "Krea",
+  "description": "Krea's own model, aimed at photographic realism. Text to image only on fal, so it works in \"Generate new\", not in Generate. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet.",
+  "default": "fal",
+  "providers": {
+    "fal": {
+      "model": "krea/v2/large/text-to-image",
+      "edit": false,
+      "options": {
+        "sizing": "none",
+        "omit": [
+          "output_format",
+          "num_images"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "creativity",
+          "label": "Creativity",
+          "spec": [
+            [
+              "raw",
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        }
+      ],
+      "note": "Text to image only, and the size comes from the aspect ratio, not from pixels: the dialog's aspect is sent, its long side is ignored."
+    }
+  }
+}

@@ -253,5 +253,9 @@
       ],
       "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Mask inpainting: the crop and the selection mask go to the Flux.1 Fill node, the stitch blends the answer back."
     }
+  },
+  "limits": {
+    "max": 1440,
+    "step": 32
   }
 }

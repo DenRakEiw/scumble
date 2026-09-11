@@ -1,0 +1,67 @@
+{
+  "id": "ideogram_4",
+  "kind": "provider",
+  "name": "Ideogram 4",
+  "family": "Ideogram",
+  "description": "Ideogram V4.0q, strong at typography and layout. Image to image without a mask: the crop goes in whole and the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet.",
+  "default": "fal",
+  "providers": {
+    "fal": {
+      "model": "ideogram/v4/image-to-image",
+      "input": "fill",
+      "fields": {
+        "mask": false
+      },
+      "text": {
+        "model": "ideogram/v4"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "strength",
+          "label": "Strength",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 0.8,
+              "min": 0.05,
+              "max": 1,
+              "step": 0.01
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "rendering_speed",
+          "label": "Rendering",
+          "spec": [
+            [
+              "TURBO",
+              "BALANCED",
+              "QUALITY"
+            ],
+            {
+              "default": "QUALITY"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "expansion_model",
+          "label": "Prompt expansion",
+          "spec": [
+            [
+              "None",
+              "Medium",
+              "Large"
+            ],
+            {
+              "default": "None"
+            }
+          ]
+        }
+      ],
+      "note": "No mask input: the whole crop is rewritten at Strength and the stitch keeps the selection. Lower Strength to hold the composition. Ideogram 4 has no masked edit endpoint; fal-ai/ideogram/v3/edit is the older model that does."
+    }
+  }
+}

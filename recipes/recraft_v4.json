@@ -1,0 +1,23 @@
+{
+  "id": "recraft_v4",
+  "kind": "provider",
+  "name": "Recraft V4",
+  "family": "Recraft",
+  "description": "Recraft's design model: text rendering, brand colours, vectors. Text to image only on fal, so it works in \"Generate new\", not in Generate. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet.",
+  "default": "fal",
+  "providers": {
+    "fal": {
+      "model": "fal-ai/recraft/v4/text-to-image",
+      "edit": false,
+      "options": {
+        "omit": [
+          "output_format",
+          "num_images",
+          "seed"
+        ]
+      },
+      "settings": [],
+      "note": "Text to image only, and the endpoint takes neither a seed nor an output format: both are left out of the request. fal-ai/recraft/v4/pro/text-to-image is the pro tier of the same model."
+    }
+  }
+}

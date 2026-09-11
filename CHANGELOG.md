@@ -3,6 +3,24 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.6 — unreleased
+
+- **API runs go out at the size the provider really takes.** Until now every API run sent a
+  1024 px crop, whatever the model could have handled, because one number in the Generate
+  section governed both the local and the API path. Each model now carries its own ceiling
+  and the crop is emitted against that: FLUX.2 and FLUX.1 Fill at most 1440 px (2048
+  answered with an error), GPT Image at most 2048 px inside its pixel budget, the rest at a
+  conservative 2048 until the provider's own number is confirmed. The new **API size** row
+  under the Generate section chooses how the ceiling is used: *Provider max* for the best
+  the model offers, *2x crop* and *4x crop* for a high-res fix that sends a small selection
+  at twice or four times its own resolution, or the two older behaviours. Local ComfyUI runs
+  are untouched and keep using Target.
+- **Seven more models.** Z-Image Turbo (fal, with a real mask inpainting endpoint),
+  Ideogram 4, Grok Imagine 2.0 and Reve 2.1 for editing; Krea 2, Recraft V4 and Z-Image base
+  make images from the prompt alone, so they appear in "Generate new" and the Generate
+  button says where they belong. None of them has run against the live API yet, as with
+  every other provider in Scumble.
+
 ## 0.1.5 — 2026-09-10
 
 - **MCP clients that refused to talk to Scumble now connect.** Before the app itself starts,

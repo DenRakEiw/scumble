@@ -70,7 +70,65 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
-## Where things stand (2026-09-10)
+## Where things stand (2026-09-11)
+
+**0.1.5 is released** (`gh release list`: v0.1.5 published 2026-09-10 22:07 UTC). `package.json`
+is **0.1.6** now, `CHANGELOG.md` has a `## 0.1.6 — unreleased` section, and the tag waits for
+the user's go-ahead: `git tag v0.1.6 && git push --tags`, then `gh release edit v0.1.6
+--draft=false`. Put a date in the heading before tagging.
+
+**The emitted crop follows the provider, not one global number** (2026-09-11, asked for as
+"beste Qualität, das Maximum der Anbieter ausreizen"; `docs/RECIPES.md` "How big the crop goes
+out"). Every API run used to send a 1024 px crop because `nodeParams.target_size` governed the
+local *and* the API path, while the adapters pass whatever size they are handed straight on.
+
+- A provider variant now carries `limits` (`{ min, max, step, pixels }`, normalised by
+  `editLimits()` in `electron/main/recipes.js`, a recipe-level `limits` covering all its
+  variants). **FLUX.2 and FLUX.1 Fill are capped at 1440** - the user measured an error at
+  2048 - **gpt-image at 2048 with an 8,294,400 px budget** (the OpenAI partner node's own
+  rule), everything else keeps the conservative default `{256, 2048, 16, 0}`. Raise one with
+  a source; most providers' real maxima are still unverified.
+- `host.cropLimits()` merges those limits with **`host.apiSize`** (`settings.apiSize`, the
+  *API size* select built in `buildGenerateExtras`, app-only, no sync patch): `max` (default),
+  `x2`, `x4` (the high-res fix the user asked for: the crop at twice / four times its own
+  size, still under the ceiling), `target`, `crop`. `prepareCrop(editor, params, limits)` in
+  `renderer/editor/stitch.js` resolves it in `emitTarget()`; **a ComfyUI recipe gets null and
+  is untouched**, because there the node crops.
+- Gate: **`python tools/size_test.py`** (9 steps, loopback only, no ComfyUI and no key).
+
+**Seven models added** (2026-09-11): `z_image_turbo` (fal `fal-ai/z-image/turbo/inpaint`, a
+real **mask** endpoint - only the second one after Qwen and FLUX.1 Fill), `ideogram_4`
+(`ideogram/v4/image-to-image`, no mask), `grok_imagine` (`xai/grok-imagine-image/v2.0/edit`),
+`reve` (WaveSpeed `reve/2.1/edit`), and three **text-to-image-only** recipes, `krea_2`,
+`recraft_v4`, `z_image`. 22 recipes now.
+
+- Ids read from fal's own model index on 2026-09-11 (`https://fal.ai/api/models?keywords=x`
+  lists endpoint ids, `https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=<id>` gives
+  the input schema - **use those two URLs, they answer without a key**). Reve came from
+  `wavespeed.ai/models/reve`; its input field names are WaveSpeed's edit convention and are
+  **not** verified.
+- New variant flag **`edit: false`**: the variant has only a `text` shape, and
+  `host.runProvider` refuses with "use Generate new, not Generate". Two small fal adapter
+  switches came with it: `fields.mask = false` (an image-to-image endpoint without a mask,
+  Ideogram 4) and `options.omit` (fields a strict endpoint refuses; Recraft V4 takes neither
+  a seed nor an output format).
+- Ideogram 4, Krea 2 and Recraft V4 have **no masked edit endpoint at all** on fal; Ideogram
+  is wired as a whole-crop image-to-image with a Strength slider and the stitch keeps the
+  selection.
+
+**Gates after the change, all on a dev instance with its own `--user-data-dir`**:
+`size_test.py` PASS, `commands_test.py` PASS, `generate_test.py` PASS, `smoke_test.py
+--no-helpers` PASS (real Flux run, the ComfyUI queue empty before and after). The *API size*
+row was checked live in the Generate section. **Not done**: no adapter has run against a live
+API, and the size ceilings of Nano Banana, Seedream, Qwen and the new models are the
+conservative default rather than the providers' own numbers.
+
+**A console / log panel is on the list and not built** (asked 2026-09-11 after a Comfy Cloud
+run with gpt-image failed): an error only reaches `editor.setStatus()`, `.ipc-status` clips it
+with an ellipsis and has no `title`, the full text lives only in the renderer DevTools console,
+and the main process - where the adapters run - logs nowhere.
+
+## Where things stood (2026-09-10)
 
 **Release 0.1.5 is prepared but not tagged** (2026-09-10, night). `package.json` is 0.1.5 and
 `CHANGELOG.md` has a 0.1.5 section with the two items below. The tag waits for the user's
@@ -727,6 +785,9 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   `tools/llm_mock.py` (a mock server it starts itself; no ComfyUI, no key, no local model).
   `python tools/generate_test.py` covers "Generate new" (a base image from the prompt
   alone) against the loopback provider, no ComfyUI and no key needed.
+  `python tools/size_test.py` covers the size a crop is emitted at for an API run: the
+  provider variant's `limits`, the five API size modes, the pixel budget, and that a local
+  recipe keeps its `target_size`. Loopback only, no ComfyUI and no key needed.
   `python tools/editor_test.py` covers the editor behaviour reported broken in 0.1.5: the
   New dialog's two size boxes and its focus, the click that deselects, the outline that has
   to stay visible on white, and copy / paste of a layer between tabs.

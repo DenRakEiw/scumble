@@ -42,7 +42,7 @@ ui.url.value = (settings.comfy && settings.comfy.url) || "http://127.0.0.1:8188"
 
 // ---- documents (tabs) --------------------------------------------------------------------
 
-host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams });
+host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize });
 
 function newDocument(id) {
     const editor = new InpaintEditor({ id: id || host.nextId++, title: "Scumble" });
@@ -284,7 +284,7 @@ function resolveRecipe(r) {
     const pid = chosenProvider(r);
     if (!pid) return r;
     const v = r.providers[pid] || {};
-    return { ...r, provider: pid, providerLabel: providerLabel(pid), model: v.model || "", input: v.input || "fill", fields: v.fields || null, fixed: v.fixed || null, settings: v.settings || [], options: v.options || null, note: v.note || "", text: v.text || null };
+    return { ...r, provider: pid, providerLabel: providerLabel(pid), model: v.model || "", input: v.input || "fill", fields: v.fields || null, fixed: v.fixed || null, settings: v.settings || [], options: v.options || null, note: v.note || "", text: v.text || null, limits: v.limits || null, edit: v.edit !== false };
 }
 
 function providerKeyState(r) {

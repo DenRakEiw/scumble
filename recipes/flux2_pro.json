@@ -92,5 +92,9 @@
       "settings": [],
       "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Size fitted to the crop (256 to 2048 px, multiples of 32). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     }
+  },
+  "limits": {
+    "max": 1440,
+    "step": 32
   }
 }

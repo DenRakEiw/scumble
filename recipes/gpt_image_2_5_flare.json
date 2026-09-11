@@ -133,5 +133,10 @@
       ],
       "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Mask inpainting through the node's mask input at the crop's size (multiples of 16)."
     }
+  },
+  "limits": {
+    "max": 2048,
+    "step": 16,
+    "pixels": 8294400
   }
 }

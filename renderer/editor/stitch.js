@@ -281,12 +281,32 @@ function drawResized(src, w, h, { crop = "disabled" } = {}) {
 }
 
 /**
+ * The long side the crop is emitted at. Without `limits` (a local ComfyUI run) that is the
+ * node's own target_size, 0 meaning "keep the crop's size". With them (an API run) the app
+ * picks the size the provider will take: `mode` "max" asks for the provider's maximum, "x2"
+ * and "x4" are the high-res fix (the crop's own size times the factor), "target" keeps the
+ * node's number and "crop" sends the crop as it is; every one of them is held inside the
+ * variant's min and max.
+ */
+function emitTarget(limits, fixedSize, cw, ch) {
+    if (!limits) return fixedSize;
+    const long = Math.max(cw, ch);
+    const mode = limits.mode || "max";
+    const want = mode === "crop" ? long
+        : mode === "target" ? (fixedSize > 0 ? fixedSize : long)
+        : mode === "x2" ? long * 2
+        : mode === "x4" ? long * 4
+        : limits.max;
+    return Math.min(limits.max, Math.max(limits.min, Math.round(want)));
+}
+
+/**
  * The crop the model gets, exactly like the node's `run`: selection bbox plus context,
  * fill mode, scaling to target_size (both sides rounded to the multiple), the denoise
  * mask at the emitted size, references. `params` = { padding, target_size, feather,
  * multiple_of } (the app's node params).
  */
-export function prepareCrop(editor, params) {
+export function prepareCrop(editor, params, limits) {
     const width = editor.width, height = editor.height;
     const gen = editor.genSettings || {};
     const mode = gen.mode === "local" ? "local" : "api";
@@ -298,8 +318,8 @@ export function prepareCrop(editor, params) {
     const autoFeather = cs.feather === "auto";
     let fillMode = cs.fill || "none";
     const withOriginal = !!cs.withOriginal;
-    const m = Math.max(1, Math.round(+params.multiple_of || 64));
-    const targetSize = Math.max(0, Math.round(+params.target_size || 0));
+    const m = Math.max(1, Math.round((limits && limits.step) || +params.multiple_of || 64));
+    const fixedSize = Math.max(0, Math.round(+params.target_size || 0));
 
     const base = editor.flattenToCanvas({ forRun: true });
     const sel = maskFromCanvasAlpha(editor.selection, 0, 0, width, height);
@@ -322,11 +342,12 @@ export function prepareCrop(editor, params) {
         [x0, x1] = ensureMinSpan(x0, x1, width, MIN_AUTO_CROP);
         [y0, y1] = ensureMinSpan(y0, y1, height, MIN_AUTO_CROP);
     }
-    if (targetSize <= 0) {
+    if (!limits && fixedSize <= 0) {
         [x0, x1] = fitSpanToMultiple(x0, x1, width, m);
         [y0, y1] = fitSpanToMultiple(y0, y1, height, m);
     }
     const cw = x1 - x0, ch = y1 - y0;
+    const targetSize = emitTarget(limits, fixedSize, cw, ch);
 
     let crop = makeCanvas(cw, ch);
     crop.getContext("2d").drawImage(base, x0, y0, cw, ch, 0, 0, cw, ch);
@@ -346,6 +367,11 @@ export function prepareCrop(editor, params) {
         const scale = targetSize / Math.max(cw, ch);
         ew = Math.max(m, Math.round(cw * scale / m) * m);
         eh = Math.max(m, Math.round(ch * scale / m) * m);
+        if (limits && limits.pixels && ew * eh > limits.pixels) {
+            const k = Math.sqrt(limits.pixels / (ew * eh));
+            ew = Math.max(m, Math.floor(ew * k / m) * m);
+            eh = Math.max(m, Math.floor(eh * k / m) * m);
+        }
         crop = drawResized(crop, ew, eh);
         denoise_mask = resizeMask(denoise_mask, ew, eh);
         for (let i = 0; i < references.length; i++) references[i] = drawResized(references[i], ew, eh);

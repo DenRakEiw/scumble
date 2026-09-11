@@ -1,0 +1,51 @@
+{
+  "id": "grok_imagine",
+  "kind": "provider",
+  "name": "Grok Imagine 2.0",
+  "family": "xAI",
+  "description": "xAI's image model. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet.",
+  "default": "fal",
+  "providers": {
+    "fal": {
+      "model": "xai/grok-imagine-image/v2.0/edit",
+      "input": "edit",
+      "options": {
+        "sizing": "none"
+      },
+      "text": {
+        "model": "xai/grok-imagine-image/v2.0/text-to-image"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1k",
+              "2k"
+            ],
+            {
+              "default": "2k"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "low",
+              "medium"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        }
+      ],
+      "note": "At most three images go in (crop plus two references). The output size is Resolution, not the crop; aspect_ratio stays auto, which keeps the crop's shape. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    }
+  }
+}

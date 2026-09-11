@@ -17,6 +17,19 @@ import { glReleasePool } from "./inpaint_filters_gl.js";
 const PROXY = "/comfy";
 const SUBFOLDER = "inpaint_canvas";
 
+// How big the crop goes to an API provider. The app is for quality, so "max" is the default:
+// the crop is emitted at the provider variant's documented maximum. "x2" / "x4" are the
+// high-res fix - the crop at twice or four times its own size, still held under that maximum -
+// and the last two keep the older behaviour. Every one of them is capped by the variant's
+// `limits`, which is what keeps a model from being handed a size it answers with an error.
+const API_SIZES = [
+    ["max", "Provider max", "Send the crop at the biggest size the chosen provider takes (best quality, biggest bill)"],
+    ["x2", "2x crop", "High-res fix: the crop at twice its own size, capped at the provider's maximum"],
+    ["x4", "4x crop", "High-res fix: the crop at four times its own size, capped at the provider's maximum"],
+    ["target", "Target size", "The Target field above, the way local ComfyUI runs use it"],
+    ["crop", "Crop size", "The crop at its own resolution, capped at the provider's maximum"],
+];
+
 // ---- api ---------------------------------------------------------------------------------
 
 const listeners = new Map();
@@ -90,15 +103,35 @@ export const host = {
     recipe: null,
     objectInfo: null,
     nodeParams: { padding: 64, target_size: 1024, feather: 16, multiple_of: 64 },
+    apiSize: "max",        // how big the crop goes to an API provider: max | x2 | x4 | target | crop
     connected: false,
     _pendingStates: [],
     _saveTimer: null,
     _types: {},
 
     /** Shell setup: where editors mount and the persisted node params. */
-    configure({ mount, nodeParams } = {}) {
+    configure({ mount, nodeParams, apiSize } = {}) {
         this.mountEl = mount || document.body;
         if (nodeParams) this.nodeParams = { ...this.nodeParams, ...nodeParams };
+        if (API_SIZES.some(([id]) => id === apiSize)) this.apiSize = apiSize;
+    },
+
+    /**
+     * The size rules for an API run: the chosen provider variant's limits plus the app's
+     * size mode. Null for a local ComfyUI recipe, where the node's own target_size rules
+     * and the app must not interfere.
+     */
+    cropLimits() {
+        const r = this.recipe;
+        if (!r || r.kind !== "provider" || !r.limits) return null;
+        return { ...r.limits, mode: this.apiSize };
+    },
+
+    setApiSize(mode) {
+        if (!API_SIZES.some(([id]) => id === mode)) return;
+        this.apiSize = mode;
+        window.scumble.settings.set({ apiSize: mode }).catch((err) => console.warn("apiSize not saved", err));
+        for (const ed of this._editors) if (ed._apiSizeSelect) ed._apiSizeSelect.value = mode;
     },
 
     /** Compatibility with the single-editor shell: configure + addEditor + activate. */
@@ -474,13 +507,14 @@ export const host = {
         const r = this.recipe;
         if (!editor.base) throw new Error("Load an image first.");
         const label = r.providerLabel || r.provider;
+        if (r.edit === false) throw new Error(`${r.name || r.id} on ${label} makes images from the prompt alone: use "Generate new", not Generate.`);
         const token = { provider: r.provider, label, started: Date.now(), editor };
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
         let res, info, sel, x, y, w, h;
         try {
-            const prep = prepareCrop(editor, this.nodeParams);
+            const prep = prepareCrop(editor, this.nodeParams, this.cropLimits());
             const { crop, mask, maskAlpha, references } = prep;
             info = prep.info; sel = prep.sel;
             [x, y, w, h] = info.bbox;
@@ -715,6 +749,29 @@ export const host = {
         }
         sec.appendChild(grid);
         editor._nodeParamInputs = inputs;
+
+        // API size: app-only, so it sits under the node params instead of among them
+        const row = document.createElement("div");
+        row.className = "ipc-seg scumble-api-size";
+        const lab = document.createElement("span");
+        lab.textContent = "API size";
+        lab.title = "How big the crop is sent to an API provider; a local ComfyUI recipe uses Target instead";
+        row.appendChild(lab);
+        const sel = document.createElement("select");
+        sel.className = "ipc-sel";
+        sel.style.flex = "1"; sel.style.maxWidth = "none"; sel.style.minWidth = "0";
+        for (const [id, label, title] of API_SIZES) {
+            const opt = document.createElement("option");
+            opt.value = id; opt.textContent = label; opt.title = title;
+            sel.appendChild(opt);
+        }
+        sel.value = this.apiSize;
+        sel.title = lab.title;
+        sel.addEventListener("keydown", (e) => e.stopPropagation());
+        sel.addEventListener("change", () => this.setApiSize(sel.value));
+        row.appendChild(sel);
+        sec.appendChild(row);
+        editor._apiSizeSelect = sel;
     },
 
     /** One value for every open editor: the node params are app settings, not per document. */

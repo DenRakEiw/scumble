@@ -1,0 +1,19 @@
+{
+  "id": "reve",
+  "kind": "provider",
+  "name": "Reve 2.1",
+  "family": "Reve",
+  "description": "Reve's plan-then-render model, cheap instruction editing. On WaveSpeedAI. Model ids from wavespeed.ai/models/reve on 2026-09-11; the input field names follow WaveSpeed's other edit models and have not been verified against the live API.",
+  "default": "wavespeed",
+  "providers": {
+    "wavespeed": {
+      "model": "reve/2.1/edit",
+      "input": "edit",
+      "text": {
+        "model": "reve/2.1/text-to-image"
+      },
+      "settings": [],
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. reve/2.1/remix is the same model as a free image-to-image variation."
+    }
+  }
+}

@@ -7,7 +7,9 @@
 //   edit: { image_urls: [crop, references...], prompt } (flux-2-pro/edit, flux-2/edit, nano-banana/edit, ...)
 // A recipe variant may rename the inputs with `fields` ({ image, images, mask }; gpt-image-2 on fal
 // takes image_urls plus mask_url) and switch the size hint off with options.sizing = "none" for
-// endpoints without a free image_size (nano-banana, seedream, gpt-image).
+// endpoints without a free image_size (nano-banana, seedream, gpt-image). `fields.mask: false`
+// drops the mask for an image-to-image endpoint that has none (Ideogram 4), and `options.omit`
+// lists input fields a strict endpoint refuses (Recraft V4, Krea 2).
 "use strict";
 
 const { dataUri, fetchImage, readError, sleep, num } = require("./util");
@@ -30,13 +32,16 @@ function inputFor(req) {
     } else {
         input[f.image || "image_url"] = dataUri(req.image);
     }
-    if (req.mask && req.kind !== "edit") input[f.mask || "mask_url"] = dataUri(req.mask);
+    if (req.mask && req.kind !== "edit" && f.mask !== false) input[f.mask || "mask_url"] = dataUri(req.mask);
     // recipe settings are passed through by name; the recipe decides which exist for the model
     for (const [k, v] of Object.entries(p)) {
         if (k === "random_seed" || k === "model" || v === "" || v == null) continue;
         input[k] = v;
     }
     if (req.negative && input.negative_prompt === undefined && req.kind !== "edit") input.negative_prompt = req.negative;
+    // endpoints that validate their input strictly (Recraft V4, Krea 2) reject the fields
+    // every other fal model takes; a variant names them in options.omit
+    for (const k of (req.options && req.options.omit) || []) delete input[k];
     return input;
 }
 
