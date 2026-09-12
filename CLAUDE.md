@@ -84,7 +84,11 @@ was built and how it differs from the plan, `docs/PERFORMANCE.md` §9 has the be
 table, `docs/BUGS.md` the 15k entry updated, `CHANGELOG.md` the 0.1.10 bullets. Gates at the
 end: editor, shape, brush, composite, commands, film, glb, ailabel, log all PASS on the dev
 instance; `docs/COMMANDS.md` regenerated (the `status` command's memory carries the card).
-**Not run**: `smoke_test.py` (a real Flux run) and the packaged exe; do both before the release.
+`smoke_test.py --no-helpers` PASS (a real Flux run, the ComfyUI queue empty before and
+after), `npm run dist` built `Scumble Setup 0.1.10.exe`, and the editor, composite, commands,
+brush, glb, ailabel and shape gates PASS against `dist/win-unpacked/Scumble.exe` on its own
+profile. Both repos are pushed. **The 0.1.10 tag waits for the user's go** (the section in
+`CHANGELOG.md` is written).
 **Not verified by the user**: nothing of phase A has been tried on their own 15k file; the
 first thing to ask for is the card's numbers from Settings › Rendering while it stutters.
 
