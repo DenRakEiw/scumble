@@ -335,6 +335,72 @@ CLOSE = """
 """
 
 
+
+# Phase A item 4 (docs/PLAN_TILES.md): a source above 16 MP is not uploaded whole. The
+# compositor keeps a window of it around what the view shows; the picture has to agree with
+# Canvas 2D at 1:1, after a pan beyond the window's margin, after a dab into the layer (a
+# new version of the same window) and at the picture's corner (the window clamped), and a
+# pan inside the margin must not upload anything.
+WINDOW = """
+(async () => {
+    const shell = await import("./shell.js");
+    const W = 6000, H = 4000;   // 24 MP: above the compositor's WINDOW_PX
+    const before = window.editor;
+    const ed = shell.newDocument();
+    shell.activate(ed);
+    await new Promise((r) => setTimeout(r, 300));
+    ed.resizeCanvas();
+    const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    const base = mk(W, H);
+    { const x = base.getContext("2d"); const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#1c4f8a"); g.addColorStop(1, "#8a1c4f"); x.fillStyle = g; x.fillRect(0, 0, W, H); for (let i = 0; i < 300; i++) { x.fillStyle = `hsl(${(i * 37) % 360},70%,55%)`; x.fillRect((i * 977) % W, (i * 613) % H, 120, 90); } }
+    Object.defineProperty(base, "naturalWidth", { value: W });
+    Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "window.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    const lc = mk(W, H);
+    { const x = lc.getContext("2d"); x.globalAlpha = 0.6; for (let k = 0; k < 200; k++) { x.fillStyle = `hsl(${(k * 53) % 360},80%,60%)`; x.beginPath(); x.arc((k * 811) % W, (k * 457) % H, 80, 0, Math.PI * 2); x.fill(); } }
+    const layer = ed.addLayer({ name: "Dots", kind: "paint", canvas: lc, x: 0, y: 0, w: W, h: H, dirty: true, blend: "screen", opacity: 0.9 });
+    ed.renderLayers();
+    if (!ed.compositor()) { shell.closeDocument(ed, { force: true }); if (before) shell.activate(before); return { skipped: "no compositor" }; }
+    ed.view.scale = 1; ed.view.angle = 0;
+    ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
+    const shot = () => { ed.sceneSig = null; ed.flatCache = null; ed.draw(); const c = mk(ed.canvas.width, ed.canvas.height); c.getContext("2d").drawImage(ed.canvas, 0, 0); return c.getContext("2d").getImageData(0, 0, c.width, c.height).data; };
+    const diff = (a, b) => { let max = 0, sum = 0, over = 0; for (let i = 0; i < a.length; i += 4) { const aa = a[i + 3], ba = b[i + 3]; let d = Math.abs(aa - ba); for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(a[i + k] * aa / 255 - b[i + k] * ba / 255)); if (d > max) max = d; if (d > 2) over++; sum += d; } return { max: +max.toFixed(2), mean: +(sum / (a.length / 4)).toFixed(4), over }; };
+    const out = { view: [ed.canvas.width, ed.canvas.height] };
+    const compare = (label) => {
+        ed.compositorOff = true; const cpu = shot();
+        ed.compositorOff = false; const used = ed.glCompositeUsable({}); const gpu = shot();
+        out[label] = { ...diff(cpu, gpu), used };
+    };
+    const stats = () => ed.compositor().stats();
+    compare("at1to1");
+    const st0 = stats();
+    out.stats = { entries: st0.entries, windows: st0.windows, MB: +(st0.bytes / 1048576).toFixed(1), windowMB: +(st0.windowBytes / 1048576).toFixed(1), uploads: st0.windowUploads, wholeMB: +(W * H * 4 * 2 / 1048576).toFixed(1) };
+    ed.view.x += Math.round(ed.canvas.width * 0.3); shot();
+    out.uploadsAfterSmallPan = stats().windowUploads - st0.windowUploads;
+    const st1 = stats();
+    ed.view.x -= Math.round(ed.canvas.width * 1.5); ed.view.y += Math.round(ed.canvas.height * 0.8);
+    compare("afterPan");
+    out.uploadsAfterBigPan = stats().windowUploads - st1.windowUploads;
+    const st2 = stats();
+    { const ix = Math.round(-ed.view.x + ed.canvas.width / 2), iy = Math.round(-ed.view.y + ed.canvas.height / 2); const x = lc.getContext("2d"); x.fillStyle = "#ffffff"; x.fillRect(ix - 60, iy - 60, 120, 120); ed.markLayerChanged(layer, [ix - 60, iy - 60, ix + 60, iy + 60]); }
+    compare("afterDab");
+    out.uploadsAfterDab = stats().windowUploads - st2.windowUploads;
+    ed.view.x = Math.round(ed.canvas.width * 0.6); ed.view.y = Math.round(ed.canvas.height * 0.6);
+    compare("atCorner");
+    ed.fitView();
+    for (let i = 0; i < 6; i++) shot();   // the display levels come one per frame; both paths have to draw from the same ones
+    compare("fit");
+    // exactly half: the source itself, drawn 2:1 by both paths. (At a fractional zoom-out, fit
+    // for one, the two paths resample a level differently, up to 50 levels on a hard edge; that
+    // is the same with and without the windows and is reported, not gated.)
+    ed.view.scale = 0.5; ed.view.x = 0; ed.view.y = 0; for (let i = 0; i < 4; i++) shot();
+    compare("half");
+    shell.closeDocument(ed, { force: true });
+    if (before) shell.activate(before);
+    return out;
+})()
+"""
+
 def compare(a_png, b_png):
     """Max and mean absolute difference per channel between two PNGs of the same size."""
     try:
@@ -418,6 +484,36 @@ async def run(c, args):
             ok = False
             print(f"[FAIL] gpu vs 2d: max {gl['max']} levels, mean {gl['mean']}, "
                   f"{gl['pixelsOver2']} of {gl['pixels']} pixels over 2 levels")
+        # the compositor's windows of a large source (phase A item 4), a document of its own
+        win = await c.eval(WINDOW, timeout=600)
+        if win.get("skipped"):
+            print(f"[skip] source windows: {win['skipped']}")
+        else:
+            shots = {k: v for k, v in win.items() if isinstance(v, dict) and "max" in v}
+            worst = max(v["max"] for k, v in shots.items() if k != "fit")
+            unused = [k for k, v in shots.items() if not v["used"]]
+            st = win["stats"]
+            problems = []
+            if worst > args.tolerance:
+                problems.append("max %s levels" % worst)
+            if unused:
+                problems.append("compositor not used for %s" % ",".join(unused))
+            if st["windows"] < 2 or st["windowMB"] * 2 > st["wholeMB"]:
+                problems.append("windows %s holding %s MB against %s MB whole" % (st["windows"], st["windowMB"], st["wholeMB"]))
+            if win["uploadsAfterSmallPan"] != 0:
+                problems.append("a pan inside the margin uploaded %s windows" % win["uploadsAfterSmallPan"])
+            if win["uploadsAfterBigPan"] < 2:
+                problems.append("a pan beyond the margin uploaded %s windows" % win["uploadsAfterBigPan"])
+            if win["uploadsAfterDab"] < 1:
+                problems.append("a dab did not re-upload the layer's window")
+            line = ("source windows: " + ", ".join(f"{k} max {v['max']}" for k, v in shots.items())
+                    + f"; {st['windows']} windows {st['windowMB']} MB for {st['wholeMB']} MB of sources, "
+                    + f"uploads small pan {win['uploadsAfterSmallPan']} / big pan {win['uploadsAfterBigPan']} / dab {win['uploadsAfterDab']}")
+            if problems:
+                ok = False
+                print(f"[FAIL] {line}: " + "; ".join(problems))
+            else:
+                print(f"[ok] {line}")
     finally:
         await c.eval(CLOSE)
     print("PASS" if ok else "FAIL")
