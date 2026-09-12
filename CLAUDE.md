@@ -74,10 +74,17 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-12, evening)
 
+**0.1.9 is released** (tag `v0.1.9`, published 2026-09-12 16:13 UTC, `Scumble-Setup-0.1.9.exe`
+plus `latest.yml`, so the apps in the field update themselves). **Before the next change ships:
+bump `package.json` to 0.1.10 and open a `## 0.1.10 — unreleased` section in `CHANGELOG.md`.**
+Both repos are clean and pushed. What the user owes: the *Help › Console › Copy all* output of a
+failed gpt-image run and of a Comfy Cloud run on 0.1.9, and whether *"Base selected."* appears
+in the erase bug (`docs/BUGS.md`). What comes next (0.1.10): those two provider fixes, then the
+15k document measured (`perf_test.py 15000x10000`, `app:metrics`) before anyone builds tiles.
+
 **The five steps of `docs/PLAN_0_1_7.md` "Build order after 0.1.8" are built, each with its
 gate, its commit and its push** (a to e, in that order, node repo first where the editor
-changed, then `tools/sync_editor.py`). `package.json` is still **0.1.9** with an unreleased
-`CHANGELOG.md` section that now holds all of it; the tag waits for the user. Per step:
+changed, then `tools/sync_editor.py`). Per step:
 
 - **a, Escape closes the Settings and Generate-new dialogs.** One line in the node's
   `_docKey`: a key whose target sits inside `dialog[open]` returns early. Gate
@@ -147,11 +154,17 @@ looking status texts logged), provider failures logged with the request's shape 
 `providers/index.js`. Gate `tools/log_test.py`. The file is `<userData>/logs/scumble.log`;
 when the user reports an error, ask for *Help › Console › Copy all* or that file.
 
+**Fourth block of 2026-09-12, last before the release: edge snapping while scaling.** Asked
+for as "wie ein Magnet leicht einrasten" when a layer is dragged to the full picture.
+`snapScale()` in the node's editor (synced) runs after `applyScale()` in the unrotated scale
+gesture: the dragged edges snap to the canvas edges, its centre and the guides within 8 screen
+px by shifting the pointer and re-applying the scale (so a kept aspect stays consistent), Alt
+keeps it free, rotated layers are not snapped, the pink guide lines show for scaling too. Gate
+step `scale_snaps_to_the_canvas_edges` in `editor_test.py`.
+
 **Also on 2026-09-12**: the GitHub description of `DenRakEiw/scumble` no longer says
-"Krita-style" (asked for during the session; changed with `gh repo edit`). The user asked
-whether a filter exists that normalises a layer's colours towards the mean with a slider:
-none does (the per-layer *Match* slider goes towards the *surroundings'* statistics); a
-"Normalise" filter is offered, not built.
+"Krita-style" (asked for during the session; changed with `gh repo edit`). The Normalise
+filter the user asked about is built (see the second block).
 
 **Traps met today, worth keeping**: a long Python heredoc in the Bash tool failed to parse
 with "unexpected EOF" (write the script with the Write tool instead); Chromium fires only
@@ -161,14 +174,11 @@ and `position: static`; the layers of a document reach the local store through
 `ed.syncLayers()`, which the autosave calls on its own timer, so a test that reloads right
 after a change has to call it first.
 
-**Gates at the end of the session, all on the dev instance with its own `--user-data-dir`**:
-`editor_test.py`, `commands_test.py`, `ailabel_test.py`, `brush_test.py`, `glb_test.py`,
-`transparent_test.py`-independent; `smoke_test.py` was **not** run today (no editor change
-touched the run path). `docs/COMMANDS.md` regenerated (71 commands).
-
-**Next**: `docs/PLAN_0_1_7.md` "What stays open after these five" and `docs/BUGS.md` (the erase
-that "switches to the base", the jerky 15k document: measure first). The "Normalise" filter if
-the user wants it. Then the 0.1.9 tag.
+**Gates at the end of the session**: every gate ran against the packaged exe on its own
+profile (`editor`, `commands`, `ailabel`, `brush`, `glb`, `mcp_test.py --exe ... --user-data-dir`,
+`smoke_test.py --no-helpers` with a real Flux run) before the release, and `log_test.py`,
+`editor_test.py`, `commands_test.py`, `ailabel_test.py` on the dev instance after the last
+changes. `docs/COMMANDS.md` regenerated (72 commands, `read_log` is the newest).
 
 ## Where things stand (2026-09-11, late)
 
