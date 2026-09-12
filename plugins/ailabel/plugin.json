@@ -1,0 +1,10 @@
+{
+  "name": "EU AI label",
+  "version": "1.0.0",
+  "description": "Stamps the EU icon for AI-generated or AI-modified content onto the picture as a layer: pick the label, its style, size, position and opacity; move and scale it like any layer afterwards.",
+  "author": "Scumble",
+  "homepage": "https://digital-strategy.ec.europa.eu/en/policies/eu-icons-labelling-ai-generated-content",
+  "entry": "main.js",
+  "registers": ["panel", "action", "command"],
+  "enabledByDefault": true
+}

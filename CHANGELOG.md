@@ -23,6 +23,14 @@ the section for its version; `docs/` and the commit history hold the technical d
   long side, the ratio kept) and rasterises it on the way in; as a layer it is rasterised to
   fit the document, so it stays sharp. `load_image` takes `width` / `height` for it. Before,
   an `.svg` silently failed to load.
+- **An EU AI label in one click.** The new *AI label* panel in the Image pane (a built-in
+  plugin) places the European Commission's icon for AI-generated or AI-modified content as a
+  layer: pick *AI GENERATED*, *AI MODIFIED* or the bare mark, white on black or dark on white,
+  a solid or translucent pill, the size as a share of the picture's width, one of nine
+  positions with a margin, and the opacity. It is an ordinary layer afterwards (move and
+  scale it with T); *Add label* again replaces it. Also in the Plugins menu and as the
+  `ailabel.add` command for agents. The icons are the Commission's own, free to use without
+  attribution; the label says the picture was made or changed by AI and nothing more.
 
 ## 0.1.8 — 2026-09-11
 

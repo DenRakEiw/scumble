@@ -1,0 +1,37 @@
+EU icons for labelling AI-generated content
+============================================
+
+The twelve SVG files in assets/ are the European Commission's "EU icons for labelling
+AI-generated content", published on 2026-06-10 as Annex 1 of the Code of Practice on
+Transparency of AI-generated Content (Article 50 of the AI Act). They are third-party data
+inside this GPL-3.0 application, not part of its licence.
+
+Source
+  https://digital-strategy.ec.europa.eu/en/policies/eu-icons-labelling-ai-generated-content
+  SVG pack: https://ec.europa.eu/newsroom/dae/redirection/document/129546
+  Code of Practice: https://ec.europa.eu/newsroom/dae/redirection/document/129555
+
+Terms, quoted from the source page (read 2026-09-12)
+  "These icons are made publicly available for everyone to use freely, without the need for
+  attribution to the Commission or the AI Office."
+  "However, signatories of the code of practice should use the icon in accordance with its
+  placement specifications."
+  "Usage of these icons by non-signatories of the code should not be construed as signaling
+  of their adherence to the code."
+
+  Code of Practice, Measure 1.1: "The letters in the acronym will have the same vertical
+  dimension. If resized, the proportions of the letters must be preserved." The icon "may
+  be expressed in different styles (e.g., contrast ratio, colour, or typography), as long as
+  it remains clear, accessible, and distinguishable".
+
+What that means here
+  The files are unchanged apart from their names (LABEL_AI GENERATED_black transparent.svg
+  became ai-generated_black_transparent.svg, and so on). The plugin only rasterises them at
+  the size the user asks for, keeping the proportions. The label is a disclosure mark: adding
+  it says that the picture was generated or modified by AI, nothing more. It does not certify
+  compliance with the AI Act or adherence to the Code of Practice.
+
+  No named licence (CC BY, CC0) accompanies the icons, and the Commission's general legal
+  notice excludes "trade marks, registered designs, logos and names" from its CC BY 4.0
+  default without saying whether the icons fall under that exclusion. The statement above is
+  what the publisher says; if you redistribute the files, keep this notice with them.

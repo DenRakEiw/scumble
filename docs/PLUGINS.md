@@ -278,3 +278,9 @@ both paths, the commands, the control point tool with undo, the overlay, the pan
   with shader and CPU paths, a tool with overlay and keys, a thumbnail panel, actions,
   commands. It imports the app's `GRAIN_PRESETS` by absolute path (`/editor/inpaint_filters.js`),
   which built-in plugins may do; user plugins should treat the app's modules as unstable.
+- `plugins/ailabel`: the EU AI label. The European Commission's icons for labelling
+  AI-generated content (twelve SVGs in `assets/`, third-party data, `NOTICE` has the source
+  and the terms) rasterised at the wanted size and placed as an ordinary paint layer: a panel
+  (label, style, ground, size, position, opacity), two Plugins-menu actions, the commands
+  `ailabel.add` / `ailabel.remove` / `ailabel.info`. Adding again replaces the label. About
+  200 lines on the plain API, no editor patch; `tools/ailabel_test.py` is its gate.

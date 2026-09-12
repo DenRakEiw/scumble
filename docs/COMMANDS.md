@@ -652,6 +652,35 @@ Make this tab's base image from the prompt alone, no image needed. A local recip
 Plugins add commands with `scumble.commands.register(name, def)`; the name is prefixed with
 the plugin id. With the built-in sample plugin loaded:
 
+### `ailabel.add` *(plugin ailabel)*
+
+Place the EU AI label as a layer (replaces an existing one). Every parameter defaults to the last setting used in the panel.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `label` | string | generated, modified, or mark (the bare AI mark) (one of `generated`, `modified`, `mark`) |
+| `style` | string | dark: white letters on a black pill; light: dark letters on white (one of `dark`, `light`) |
+| `ground` | string | solid, or translucent (the pill at 50 %) (one of `solid`, `translucent`) |
+| `size` | number | width of the label in percent of the picture's width (1..100; default 20, the mark 8) |
+| `anchor` | string | tl, tc, tr, ml, mc, mr, bl, bc, br (one of `tl`, `tc`, `tr`, `ml`, `mc`, `mr`, `bl`, `bc`, `br`) |
+| `margin` | number | distance from the edge in percent of the picture's shorter side (0..45) |
+| `opacity` | number | layer opacity in percent (0..100) |
+
+### `ailabel.remove` *(plugin ailabel)*
+
+Remove the EU AI label layer from the picture.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `ailabel.info` *(plugin ailabel)*
+
+The label variants, positions and the current defaults, plus where the icons come from.
+
+(no parameters)
+
 ### `film.add_point` *(plugin film)*
 
 Add a control point (local adjustment) to the control points layer (the active one, the topmost one, or a new one). Weights: radial falloff times colour similarity to the pixel under the point.

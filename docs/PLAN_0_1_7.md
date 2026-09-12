@@ -415,6 +415,22 @@ A built-in plugin `plugins/ailabel/` (`plugin.json`, `main.js`, `assets/*.svg`,
 - **The rasteriser is the plugin's own**, so the mirror does not need to understand SVG for
   this. General SVG import is a separate small item, see below.
 
+**Done 2026-09-12** as designed, `plugins/ailabel/` (`plugin.json`, `main.js`, `NOTICE`,
+`assets/` with the twelve SVGs under file-system-safe names such as
+`ai-generated_black_transparent.svg`). What the file names mean, read from the styles:
+`black` is a *black pill with white letters*, `white` a white pill with dark (`#1d1d1b`)
+letters, `transparent` the pill at 50 % opacity. The panel calls them *Style* (dark / light)
+and *Ground* (solid / translucent). The size is a share of the picture's width (default
+20 %, the mark 8 %), the margin a share of the shorter side (3 %). The plugin's own
+rasteriser sets width / height on the SVG root and draws it through an `<img>`, like the
+editor's SVG import. Command arguments never change the panel's stored settings, so an
+agent's call leaves the user's defaults alone. Terms of use researched on 2026-09-12: the
+Commission's page says the icons are "made publicly available for everyone to use freely,
+without the need for attribution"; no named licence, and the site's legal notice excludes
+logos from its CC BY default without saying whether these fall under it, so the folder
+carries a `NOTICE` with the source and the verbatim terms. Gate `tools/ailabel_test.py`
+(7 steps).
+
 ### Related: SVG import in general (measured 2026-09-12)
 
 **Done 2026-09-12**, in the editor rather than the mirror: `isSvgFile` / `svgSize` /
