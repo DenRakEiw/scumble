@@ -422,6 +422,7 @@ function installIpc() {
     helpers.setProgressSink((ev) => send("helpers:progress", ev));
     ipcMain.handle("helpers:status", () => helpers.status());
     ipcMain.handle("helpers:configure", (_e, patch) => helpers.configure(patch));
+    ipcMain.handle("helpers:scan", () => helpers.scan());
     ipcMain.handle("helpers:browseDir", () => { needWindow("Choose folder"); return helpers.browseDir(win); });
     ipcMain.handle("helpers:openFolder", () => helpers.openFolder());
     ipcMain.handle("helpers:download", (_e, id) => helpers.download(id));

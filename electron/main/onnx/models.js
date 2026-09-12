@@ -78,28 +78,142 @@ function findFile(dir, name) {
     return null;
 }
 
-/** The model's files on disk (or not), for one folder. */
-function locate(model, dir) {
+/**
+ * The model's files on disk (or not), for one folder: the registry name in the folder and
+ * its known subfolders first, else a link a scan made (`links[id][role]`: the same file
+ * under another name or in another place, see `scanFolder` / `matchScan`).
+ */
+function locate(model, dir, links = null) {
+    const linked = (links && links[model.id]) || null;
     const files = model.files.map((f) => {
-        const hit = findFile(dir, f.name);
+        let hit = findFile(dir, f.name);
+        let isLink = false;
+        if (!hit && linked && linked[f.role]) {
+            try {
+                const st = fs.statSync(linked[f.role]);
+                if (st.isFile() && st.size > 0) { hit = { path: linked[f.role], bytes: st.size }; isLink = true; }
+            } catch (_) { /* the linked file is gone: not present */ }
+        }
         let partial = 0;
         try { partial = fs.statSync(path.join(downloadDir(dir), f.name + ".part")).size; } catch (_) { partial = 0; }
-        return { name: f.name, role: f.role, size: f.size, path: hit ? hit.path : null, bytes: hit ? hit.bytes : 0, present: !!hit, partial };
+        return {
+            name: f.name, role: f.role, size: f.size, path: hit ? hit.path : null,
+            rel: hit ? path.relative(dir, hit.path).split(path.sep).join("/") : null,
+            bytes: hit ? hit.bytes : 0, present: !!hit, linked: isLink, partial,
+        };
     });
-    return { files, present: files.every((f) => f.present), bytes: files.reduce((a, f) => a + f.bytes, 0), size: files.reduce((a, f) => a + f.size, 0) };
+    return { files, present: files.every((f) => f.present), linked: files.some((f) => f.linked), bytes: files.reduce((a, f) => a + f.bytes, 0), size: files.reduce((a, f) => a + f.size, 0) };
 }
 
-function describeAll(dir) {
-    return MODELS.map((m) => ({ id: m.id, kind: m.kind, label: m.label, note: m.note, source: m.source, sourceUrl: m.sourceUrl, license: m.license, gated: !!m.gated, ...locate(m, dir) }));
+function describeAll(dir, links = null, elsewhere = null) {
+    return MODELS.map((m) => ({ id: m.id, kind: m.kind, label: m.label, note: m.note, source: m.source, sourceUrl: m.sourceUrl, license: m.license, gated: !!m.gated, ...locate(m, dir, links), elsewhere: (elsewhere && elsewhere[m.id]) || [] }));
 }
 
 /** Paths keyed by role for a present model, or null. */
-function paths(model, dir) {
-    const loc = locate(model, dir);
+function paths(model, dir, links = null) {
+    const loc = locate(model, dir, links);
     if (!loc.present) return null;
     const out = {};
     for (const f of loc.files) out[f.role] = f.path;
     return out;
+}
+
+// ---- scanning a folder: the same files under other names, and weights in other formats ---
+//
+// A ComfyUI models folder rarely holds our file names. The ONNX exports arrive as Hugging
+// Face snapshots (`RMBG-2.0/onnx/model.onnx`) or under the exporter's names, and the
+// ComfyUI nodes themselves keep PyTorch weights (`sam2/sam2_hiera_tiny.safetensors`,
+// `RMBG/RMBG-2.0/model.safetensors`), which ONNX Runtime cannot load. The scan walks the
+// folder once, links every ONNX file it can attribute to a registry entry (by exact name,
+// by the exact byte size the registry carries, or by the snapshot layout), and reports the
+// other formats per model, so the settings row can say why a model is not usable.
+
+const WEIGHT_EXT = new Set([".onnx", ".safetensors", ".pt", ".pth", ".bin", ".ckpt"]);
+const SKIP_DIRS = new Set(["__pycache__", "node_modules"]);
+const SCAN_MAX_FILES = 50000;
+const SCAN_MAX_DEPTH = 6;
+
+/** Where the same ONNX file sits in a Hugging Face snapshot (relative path, lower case, `/`). */
+const ONNX_ALIASES = {
+    birefnet_lite: /birefnet[^/]*lite[^/]*\/onnx\/model\.onnx$/,
+    birefnet: /birefnet(?![^/]*lite)[^/]*\/onnx\/model\.onnx$/,
+    rmbg14: /rmbg[_-]?1\.4[^/]*\/onnx\/model\.onnx$/,
+    rmbg2: /rmbg[_-]?2\.0[^/]*\/onnx\/model\.onnx$/,
+};
+
+/** The same weights in the formats the ComfyUI nodes use: reported, never loaded. */
+const OTHER_WEIGHTS = {
+    sam2_tiny: /(?:^|\/)sam2(?:\.1)?_hiera_tiny[^/]*\.(?:safetensors|pt|pth)$/,
+    sam2_small: /(?:^|\/)sam2(?:\.1)?_hiera_small[^/]*\.(?:safetensors|pt|pth)$/,
+    sam2_base_plus: /(?:^|\/)sam2(?:\.1)?_hiera_base_plus[^/]*\.(?:safetensors|pt|pth)$/,
+    sam2_large: /(?:^|\/)sam2(?:\.1)?_hiera_large[^/]*\.(?:safetensors|pt|pth)$/,
+    birefnet_lite: /birefnet[^/]*lite[^/]*\.(?:safetensors|pt|pth|bin)$/,
+    birefnet: /birefnet(?![^/]*lite)[^/]*\.(?:safetensors|pt|pth|bin)$/,
+    rmbg14: /rmbg[_-]?1\.4(?:[^/]*\.(?:safetensors|pt|pth|bin)|\/(?:model|pytorch_model)\.(?:safetensors|pth|bin))$/,
+    rmbg2: /rmbg[_-]?2\.0(?:[^/]*\.(?:safetensors|pt|pth|bin)|\/(?:model|pytorch_model)\.(?:safetensors|pth|bin))$/,
+};
+
+/** Every weight file under `dir` (depth and count bounded), with its size. Never follows symlinks. */
+async function scanFolder(dir, { maxDepth = SCAN_MAX_DEPTH, maxFiles = SCAN_MAX_FILES } = {}) {
+    const files = [];
+    let dirs = 0, truncated = false;
+    async function walk(d, depth) {
+        if (truncated) return;
+        let entries;
+        try { entries = await fsp.readdir(d, { withFileTypes: true }); } catch (_) { return; }
+        dirs++;
+        for (const e of entries) {
+            if (files.length >= maxFiles) { truncated = true; return; }
+            const p = path.join(d, e.name);
+            if (e.isDirectory()) {
+                if (e.name.startsWith(".") || SKIP_DIRS.has(e.name)) continue;
+                if (depth < maxDepth) await walk(p, depth + 1);
+            } else if (e.isFile()) {
+                const ext = path.extname(e.name).toLowerCase();
+                if (!WEIGHT_EXT.has(ext)) continue;
+                let size = 0;
+                try { size = (await fsp.stat(p)).size; } catch (_) { continue; }
+                files.push({ path: p, rel: path.relative(dir, p).split(path.sep).join("/"), name: e.name, size, ext });
+            }
+        }
+    }
+    await walk(dir, 0);
+    return { dir, files, dirs, truncated };
+}
+
+/**
+ * Attribute the scanned files to the registry: `links[id][role]` = path for every model
+ * whose files were all found, `elsewhere[id]` = relative paths of the same weights in
+ * formats the app cannot load. An ONNX file counts by its exact name, by the exact byte
+ * size the registry carries (only when that size is unique in the registry: the four SAM2
+ * decoders share one size and must not be swapped), or by the snapshot layout.
+ */
+function matchScan(walk) {
+    const links = {}, elsewhere = {};
+    const onnx = walk.files.filter((f) => f.ext === ".onnx");
+    const other = walk.files.filter((f) => f.ext !== ".onnx");
+    const sizeCount = new Map();
+    for (const m of MODELS) for (const f of m.files) sizeCount.set(f.size, (sizeCount.get(f.size) || 0) + 1);
+    for (const m of MODELS) {
+        const found = {};
+        for (const f of m.files) {
+            let best = null, bestScore = 0;
+            for (const c of onnx) {
+                let score = 0;
+                if (c.name.toLowerCase() === f.name.toLowerCase()) score += 4;
+                if (f.size && c.size === f.size && sizeCount.get(f.size) === 1) score += 2;
+                const alias = ONNX_ALIASES[m.id];
+                if (alias && m.files.length === 1 && alias.test(c.rel.toLowerCase())) score += 1;
+                if (score > bestScore) { best = c; bestScore = score; }
+            }
+            if (best) found[f.role] = best.path;
+        }
+        if (Object.keys(found).length === m.files.length) links[m.id] = found;
+        const re = OTHER_WEIGHTS[m.id];
+        const hits = re ? other.filter((c) => re.test(c.rel.toLowerCase())).map((c) => c.rel) : [];
+        if (hits.length) elsewhere[m.id] = hits;
+    }
+    return { links, elsewhere };
 }
 
 // ---- downloads ----------------------------------------------------------------------------
@@ -210,4 +324,4 @@ async function remove(id, dir) {
     return n;
 }
 
-module.exports = { MODELS, byId, locate, describeAll, paths, downloadDir, isComfyModelsDir, Downloader, remove, IMAGENET };
+module.exports = { MODELS, byId, locate, describeAll, paths, downloadDir, isComfyModelsDir, Downloader, remove, IMAGENET, scanFolder, matchScan };

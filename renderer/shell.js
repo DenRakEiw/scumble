@@ -32,7 +32,7 @@ const ui = {
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setGpuMem: $("set-gpu-mem"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateNotes: $("set-update-notes"),
-    helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"),
+    helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
 };
 
@@ -913,6 +913,19 @@ function renderHelpers(status) {
     ui.helpersDir.textContent = (st.dir || "") + (st.isComfyDir ? " (ComfyUI models folder, downloads go to onnx/)" : st.isDefaultDir ? " (app folder)" : "");
     ui.helpersDir.title = st.downloadDir || "";
     ui.helpersDefault.disabled = !!st.isDefaultDir;
+    const sc = st.scan;
+    if (sc) {
+        const all = st.models || [];
+        const linked = all.filter((m) => m.present && m.linked).length;
+        const own = all.filter((m) => m.present && !m.linked).length;
+        const other = all.filter((m) => !m.present && (m.elsewhere || []).length).length;
+        const missing = all.filter((m) => !m.present && !(m.elsewhere || []).length).length;
+        ui.helpersScanNote.textContent = `Scanned ${sc.files} weight files in ${sc.dirs} folders at ${new Date(sc.time).toLocaleTimeString()}: `
+            + `${linked} model${linked === 1 ? "" : "s"} linked from the folder, ${own} downloaded by the app, ${other} present only as PyTorch weights (not loadable here), ${missing} not found.`
+            + (sc.truncated ? " The folder has more files than the scan reads, it stopped early." : "");
+    } else {
+        ui.helpersScanNote.textContent = "Not scanned yet. Scan folder links the ONNX files it finds under any name (Hugging Face layout included) and reports weights in other formats.";
+    }
     ui.helpersModels.innerHTML = "";
     for (const m of st.models || []) {
         const row = document.createElement("div");
@@ -929,11 +942,17 @@ function renderHelpers(status) {
             info.textContent = `downloading ${dl.file} · ${fmtBytes(dl.received)} of ${fmtBytes(dl.total || m.size)}`;
         } else if (err) {
             info.textContent = err; info.classList.add("error");
+        } else if (m.present && m.linked) {
+            info.textContent = `linked: ${m.files.map((f) => f.rel || f.path).join(", ")} · ${fmtBytes(m.bytes)} · ${m.license}`;
+            info.title = m.files.map((f) => f.path).join("\n");
+            info.classList.add("present");
         } else if (m.present) {
             info.textContent = `${fmtBytes(m.bytes)} · ${m.license}${m.note ? " · " + m.note : ""}`; info.classList.add("present");
         } else {
             const part = m.files.reduce((a, f) => a + (f.partial || 0), 0);
-            info.textContent = `${fmtBytes(m.size)} download · ${m.license}${m.note ? " · " + m.note : ""}${part ? ` · ${fmtBytes(part)} partial, resumes` : ""}`;
+            const other = (m.elsewhere || []).length ? ` · in this folder only as ${m.elsewhere[0]} (PyTorch weights for the ComfyUI nodes, not loadable here)` : "";
+            info.textContent = `${fmtBytes(m.size)} download · ${m.license}${m.note ? " · " + m.note : ""}${part ? ` · ${fmtBytes(part)} partial, resumes` : ""}${other}`;
+            if (other) info.title = "Found in other formats:\n" + m.elsewhere.join("\n");
         }
         row.appendChild(info);
         const btn = document.createElement("button");
@@ -941,6 +960,13 @@ function renderHelpers(status) {
         if (dl) {
             btn.textContent = "Cancel";
             btn.addEventListener("click", () => window.scumble.helpers.cancel(m.id));
+        } else if (m.present && m.linked) {
+            btn.textContent = "Unlink";
+            btn.title = "Forget the linked files. Nothing is deleted.";
+            btn.addEventListener("click", async () => {
+                try { renderHelpers(await window.scumble.helpers.remove(m.id)); } catch (e) { downloadErrors[m.id] = String(e.message || e); renderHelpers(); }
+                host.refreshHelpers();
+            });
         } else if (m.present) {
             btn.textContent = "Remove";
             btn.addEventListener("click", async () => {
@@ -990,6 +1016,13 @@ ui.helpersSam2.addEventListener("change", async () => { renderHelpers(await wind
 ui.helpersBrowse.addEventListener("click", async () => { const r = await window.scumble.helpers.browseDir(); if (r) { renderHelpers(r); host.refreshHelpers(); } });
 ui.helpersDefault.addEventListener("click", async () => { renderHelpers(await window.scumble.helpers.configure({ dir: null })); host.refreshHelpers(); });
 ui.helpersOpen.addEventListener("click", () => window.scumble.helpers.openFolder());
+ui.helpersScan.addEventListener("click", async () => {
+    ui.helpersScan.disabled = true;
+    ui.helpersScanNote.textContent = "Scanning ...";
+    try { renderHelpers(await window.scumble.helpers.scan()); } catch (e) { ui.helpersScanNote.textContent = String(e.message || e); }
+    ui.helpersScan.disabled = false;
+    host.refreshHelpers();
+});
 ui.hfToken.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); ui.hfSave.click(); } });
 ui.hfSave.addEventListener("click", async () => {
     try { await window.scumble.keys.set("hf-token", ui.hfToken.value); ui.hfToken.value = ""; renderHelpers(await window.scumble.helpers.status()); } catch (e) { ui.hfState.textContent = String(e.message || e); }

@@ -87,15 +87,36 @@ SAM2 tensors: encoder `image` [1,3,1024,1024] (ImageNet mean / std) →
 `iou_predictions` [B,3]. All models are the fp32 files; fp16 variants exist on Hugging
 Face but their input dtype was not checked.
 
-The ComfyUI `models/sam2` folder holds PyTorch `.safetensors`, not ONNX, so a linked
-ComfyUI folder only helps once the ONNX files are downloaded into its `onnx/`
-subfolder (which the app does when the folder is a ComfyUI models folder, detected by
-a `checkpoints` or `diffusion_models` subfolder).
+**The folder scan** (`scanFolder` / `matchScan` in `models.js`, 2026-09-12). A ComfyUI
+models folder rarely holds our file names, so `locate()` alone found nothing there. The scan
+walks the folder once (depth 6, 50,000 files, hidden folders and `__pycache__` skipped,
+symlinks never followed) and attributes every `.onnx` file to a registry entry by its exact
+name, by the exact byte size the registry carries (only when that size is unique in the
+registry: the four SAM2 decoders share one size and must never be swapped), or by the
+Hugging Face snapshot layout (`ONNX_ALIASES`, e.g. `RMBG-2.0/onnx/model.onnx`). A model
+whose files were all found gets `settings.helpers.links[id][role] = path`; `locate()`,
+`paths()` and `describeAll()` take the links, and a linked model is `linked: true` with the
+relative path in `rel`. The weights the ComfyUI nodes use (`OTHER_WEIGHTS`: `.safetensors`,
+`.pt`, `.pth`, `.bin`) are reported per model in `elsewhere` and never loaded, because ONNX
+Runtime cannot read them. `helpers.configure({ dir })` scans the new folder at once,
+`helpers.scan()` (IPC `helpers:scan`) on demand; the result is kept in `settings.helpers.scan`
+until the next scan. *Remove* on a linked model only drops the link.
+
+Measured on the user's ComfyUI folder on 2026-09-12: 1,396 weight files in 123 folders in
+77 ms, **nothing linkable** - SAM2 tiny and base+ are there as `.safetensors`, RMBG-1.4 as
+`.pth`, RMBG-2.0 as a `model.safetensors` snapshot, all reported as "present only as PyTorch
+weights". So on a typical ComfyUI install the scan explains the situation rather than
+saving a download; it saves one where someone has put the ONNX exports into the folder.
+
+Gate: `node tools/scan_test.js` (a synthetic ComfyUI folder with files truncated to the
+registry sizes, twelve checks, no models needed); `node tools/scan_test.js --dir <folder>`
+prints the report for a real folder.
 
 ## Settings › Helpers
 
 Device (auto / GPU / CPU; changing it frees the sessions), the SAM2 model for the
-object tool, the model folder (Change folder … / App folder / Open folder), one row per
+object tool, the model folder (Change folder … / App folder / Open folder / Scan folder,
+with a summary line of the last scan), one row per
 model with Download (progress bar, Cancel; a `.part` resumes) or Remove, the Hugging
 Face token, and a runtime line (ONNX Runtime version, providers tried, what is loaded
 on which provider, failures). `host.refreshHelpers()` after a change refreshes the

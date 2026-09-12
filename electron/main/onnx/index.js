@@ -31,6 +31,17 @@ function modelsDir() {
     return conf().dir || path.join(app.getPath("userData"), "models");
 }
 
+/** Files a scan linked under other names, `{ modelId: { role: path } }`. */
+function links() {
+    return conf().links || {};
+}
+
+/** The last scan, when it was of the current folder. */
+function lastScan(dir) {
+    const s = conf().scan;
+    return s && s.dir === dir ? s : null;
+}
+
 const downloader = new models.Downloader(modelsDir, () => keys.get(HF_TOKEN), (ev) => {
     if (progressSink) progressSink(ev);
 });
@@ -41,10 +52,12 @@ function status() {
     const c = conf();
     runtime.setDevice(c.device);
     const dir = modelsDir();
+    const sc = lastScan(dir);
     return {
         dir, isDefaultDir: !c.dir, downloadDir: models.downloadDir(dir), isComfyDir: models.isComfyModelsDir(dir),
         device: c.device, sam2: c.sam2, matting: c.matting,
-        models: models.describeAll(dir),
+        models: models.describeAll(dir, links(), sc ? sc.elsewhere : null),
+        scan: sc,
         downloads: downloader.running(),
         runtime: runtime.status(),
         hfToken: keys.describe(HF_TOKEN),
@@ -53,10 +66,28 @@ function status() {
 }
 
 async function configure(patch) {
-    const next = { ...conf(), ...(patch || {}) };
-    if (patch && "device" in patch && next.device !== conf().device) { runtime.setDevice(next.device); await free(); }
-    if (patch && "dir" in patch && patch.dir !== conf().dir) { sam2Instances.clear(); mattingInstances.clear(); await free(); }
+    const before = conf();
+    const next = { ...before, ...(patch || {}) };
+    if (patch && "device" in patch && next.device !== before.device) { runtime.setDevice(next.device); await free(); }
+    const dirChanged = !!(patch && "dir" in patch && patch.dir !== before.dir);
+    if (dirChanged) { sam2Instances.clear(); mattingInstances.clear(); await free(); }
     settings.set({ helpers: next });
+    // a new folder is scanned at once, so a ComfyUI models folder links what it can
+    return dirChanged ? scan() : status();
+}
+
+/**
+ * Walk the model folder once: link the ONNX files found under other names or in a
+ * Hugging Face layout, and record the weights in other formats per model so the settings
+ * row can say why a model is not usable. The result is kept in the settings until the
+ * next scan or folder change.
+ */
+async function scan() {
+    const dir = modelsDir();
+    const walk = await models.scanFolder(dir);
+    const m = models.matchScan(walk);
+    settings.set({ helpers: { ...conf(), links: m.links, scan: { dir, time: Date.now(), files: walk.files.length, dirs: walk.dirs, truncated: walk.truncated, elsewhere: m.elsewhere } } });
+    sam2Instances.clear(); mattingInstances.clear();
     return status();
 }
 
@@ -80,9 +111,22 @@ async function download(id) {
 function cancel(id) { return downloader.cancel(id); }
 
 async function remove(id) {
-    sam2Instances.delete(id); mattingInstances.delete(id);
-    await runtime.free();
-    await models.remove(id, modelsDir());
+    const dir = modelsDir();
+    const model = models.byId(id);
+    if (!model) throw new Error("unknown model " + id);
+    const loc = models.locate(model, dir, links());
+    if (loc.present && loc.linked) {
+        // a linked file belongs to the user's folder (a ComfyUI models folder, mostly):
+        // forget the link, never delete the file
+        const l = { ...links() };
+        delete l[id];
+        settings.set({ helpers: { ...conf(), links: l } });
+    } else {
+        await free();
+        await models.remove(id, dir);
+    }
+    sam2Instances.delete(id);
+    mattingInstances.delete(id);
     return status();
 }
 
@@ -94,20 +138,20 @@ async function free() {
 function presentOf(kind, wanted) {
     const dir = modelsDir();
     const all = models.MODELS.filter((m) => m.kind === kind);
-    const pick = all.find((m) => m.id === wanted && models.paths(m, dir)) || all.find((m) => models.paths(m, dir));
+    const pick = all.find((m) => m.id === wanted && models.paths(m, dir, links())) || all.find((m) => models.paths(m, dir, links()));
     if (!pick) throw new Error(kind === "sam2" ? "No SAM2 model is downloaded (Settings › Helpers)." : "No background removal model is downloaded (Settings › Helpers).");
     return pick;
 }
 
 function sam2For(id) {
     const model = presentOf("sam2", id || conf().sam2);
-    if (!sam2Instances.has(model.id)) sam2Instances.set(model.id, new Sam2(runtime, models.paths(model, modelsDir())));
+    if (!sam2Instances.has(model.id)) sam2Instances.set(model.id, new Sam2(runtime, models.paths(model, modelsDir(), links())));
     return { model, sam: sam2Instances.get(model.id) };
 }
 
 function mattingFor(id) {
     const model = presentOf("matting", id || conf().matting);
-    if (!mattingInstances.has(model.id)) mattingInstances.set(model.id, new Matting(runtime, model, models.paths(model, modelsDir()).model));
+    if (!mattingInstances.has(model.id)) mattingInstances.set(model.id, new Matting(runtime, model, models.paths(model, modelsDir(), links()).model));
     return { model, matting: mattingInstances.get(model.id) };
 }
 
@@ -170,4 +214,4 @@ async function cutout(req) {
     }
 }
 
-module.exports = { status, configure, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, setProgressSink, HF_TOKEN, DEFAULTS };
+module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, setProgressSink, HF_TOKEN, DEFAULTS };

@@ -3,6 +3,19 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.9 — unreleased
+
+- **The model folder is scanned, and what it holds is linked.** Point Settings › Helpers at
+  a ComfyUI `models` folder (or press the new *Scan folder*) and every ONNX file in it that
+  belongs to one of the helper models is found and used whatever its name or subfolder: the
+  exporter's own file names, a Hugging Face snapshot such as `RMBG-2.0/onnx/model.onnx`, a
+  file recognised by its exact size. A linked model shows where its file is and gets an
+  *Unlink* button instead of *Remove*, so nothing in your ComfyUI folder is ever deleted.
+  The weights the ComfyUI nodes themselves use (`.safetensors`, `.pt`, `.pth`) are listed
+  per model too, with the plain statement that they cannot be loaded here, because the
+  in-app helpers run on ONNX Runtime and those are PyTorch files; the ONNX download stays
+  the way to get such a model. A line above the list sums the scan up.
+
 ## 0.1.8 — 2026-09-11
 
 - **Fixed: a whole layer vanished from the picture after an erase or brush stroke that was

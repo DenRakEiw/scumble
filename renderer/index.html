@@ -86,7 +86,8 @@
         </select></label>
         <label class="shell-field">Object tool <select id="set-helpers-sam2"></select></label>
       </div>
-      <div class="shell-row"><span class="shell-note" id="set-helpers-dir" title=""></span><button id="set-helpers-browse" type="button">Change folder ...</button><button id="set-helpers-default" type="button">App folder</button><button id="set-helpers-open" type="button">Open folder</button></div>
+      <div class="shell-row"><span class="shell-note" id="set-helpers-dir" title=""></span><button id="set-helpers-browse" type="button">Change folder ...</button><button id="set-helpers-default" type="button">App folder</button><button id="set-helpers-open" type="button">Open folder</button><button id="set-helpers-scan" type="button" title="Walk the folder once: ONNX files under any name or in a Hugging Face layout are linked, weights in other formats are reported per model.">Scan folder</button></div>
+      <p id="set-helpers-scan-note" class="shell-help"></p>
       <div id="set-helpers-models"></div>
       <div class="shell-provider" id="set-hf-row">
         <span>Hugging Face token</span>
@@ -96,7 +97,7 @@
         <span id="set-hf-state" class="shell-key-state"></span>
       </div>
       <p id="set-helpers-note" class="shell-help"></p>
-      <p class="shell-help">The object tool (O) and layer cutouts run these models inside the app through ONNX Runtime, no ComfyUI needed. Point the folder at a ComfyUI <code>models</code> folder to share the files (they go to its <code>onnx</code> subfolder); the app looks in <code>onnx</code>, <code>sam2</code> and <code>RMBG</code> there. Selection by text (SAM3) still runs on the server.</p>
+      <p class="shell-help">The object tool (O) and layer cutouts run these models inside the app through ONNX Runtime, no ComfyUI needed. Point the folder at a ComfyUI <code>models</code> folder to share the files: it is scanned at once, every ONNX file it holds for one of these models is linked whatever its name or subfolder, and downloads go to its <code>onnx</code> subfolder. The PyTorch weights the ComfyUI nodes use (<code>.safetensors</code>, <code>.pt</code>, <code>.pth</code>) are reported but cannot be loaded here; the ONNX download stays necessary for those. Selection by text (SAM3) still runs on the server.</p>
     </section>
     <section>
       <h3>Plugins</h3>

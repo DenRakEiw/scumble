@@ -81,8 +81,22 @@ other side, one question to the user still unanswered) and the jerky 15k documen
 **0.1.8 is released** (v0.1.8, published 2026-09-11 21:05 UTC, installer 187 MB plus
 `latest.yml`, so the apps in the field update themselves): the vanishing-layer fix below,
 the marquee click fix and the *Highres fix* rename. 0.1.7 (16:56 UTC the same day) carried
-the transparent OpenAI results. `package.json` is still **0.1.8**; the next release needs
-the version bump and a new `CHANGELOG.md` section first.
+the transparent OpenAI results. `package.json` is **0.1.9** with an unreleased
+`CHANGELOG.md` section holding the model folder scan; the tag waits for the user.
+
+**Built on 2026-09-12: the model folder scan** (Settings › Helpers, *Scan folder*; asked for
+as "den ComfyUI models folder angeben, scannen, automatisch verknüpfen"). `scanFolder` /
+`matchScan` in `electron/main/onnx/models.js` attribute every ONNX file in the folder to a
+registry entry by exact name, by the registry's exact byte size (unique sizes only: the four
+SAM2 decoders share one) or by the Hugging Face snapshot layout, store the links in
+`settings.helpers.links`, and report PyTorch weights per model in `elsewhere`. **On the
+user's own ComfyUI folder the honest result is: nothing linkable** (SAM2 and RMBG are there
+as `.safetensors` / `.pth`, which ONNX Runtime cannot load), and the row now says so instead
+of "not downloaded". `docs/HELPERS.md` "The folder scan". Gate `node tools/scan_test.js`.
+
+**The plan for the sessions after a /clear is `docs/PLAN_0_1_7.md`**, "Build order after
+0.1.8": §7 Escape in Settings, the SVG import entry, §8 EU AI label plugin, §6 .abr brushes,
+§9 GLB layer plugin. The user wants them built one after the other; each has its gate.
 
 **Fixed after 0.1.7, in 0.1.8:**
 

@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld("scumble", {
     helpers: {
         status: () => ipcRenderer.invoke("helpers:status"),
         configure: (patch) => ipcRenderer.invoke("helpers:configure", patch),
+        scan: () => ipcRenderer.invoke("helpers:scan"),
         browseDir: () => ipcRenderer.invoke("helpers:browseDir"),
         openFolder: () => ipcRenderer.invoke("helpers:openFolder"),
         download: (id) => ipcRenderer.invoke("helpers:download", id),

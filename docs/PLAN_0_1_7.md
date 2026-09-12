@@ -1,4 +1,4 @@
-# Plan after 0.1.6: template upload, console, draw_shape, liquify, Python plugins, custom brushes, Escape in Settings, EU AI label plugin
+# Plan after 0.1.6: template upload, console, draw_shape, liquify, Python plugins, custom brushes, Escape in Settings, EU AI label plugin, GLB layer
 
 Written 2026-09-11 with DenRakEiw, for the sessions after this one. Read `CLAUDE.md` first.
 The five items are in the order they should be worked; 1 to 3 are one release (**0.1.7**),
@@ -428,6 +428,62 @@ position against the percentages, read one pixel of the wordmark and one of the 
 the flattened export, add again and assert one label layer, remove it. No ComfyUI, no key.
 Estimate: half a day for the plugin, half an hour for the SVG import entry.
 
+## 9. A GLB layer: a 3D object placed in a 3D view, rasterised into the picture
+
+Asked on 2026-09-12 ("wollen wir einen glb layer einfügen, also 3D-Objekt, kann im 3D-View im
+Canvas platziert werden und wird dann an der Stelle zum 2D-Image"), recommended yes as a
+plugin in a bounded first stage.
+
+### Why
+
+The value is the inpainting workflow, not 3D rendering: place an object in the scene with
+the right pose and perspective, then *Generate* over it with a denoise below 1 so the model
+paints light, shadow and material into the scene. And a render gives an exact depth map and
+normals for free, which a local ControlNet recipe can use where a depth estimator only
+guesses.
+
+### Stage 1 (build this)
+
+A built-in plugin `plugins/glb/` on the plugin API, app-only (the node has no plugin system):
+
+- **three.js** (MIT, about 600 KB) vendored under `plugins/glb/vendor/` with `GLTFLoader`
+  and `RoomEnvironment`. No Draco, no KTX2 in stage 1 (they need WASM decoders); a file
+  that needs them fails with a clear message.
+- **Menu action *Place 3D object (.glb)*** and a **panel "3D object"** (`scumble.actions` /
+  `scumble.panels`): a file picker for `.glb` / `.gltf`; the file goes into the mirror like
+  layer pixels so a reload finds it (`host.uploadBlob`, ref stored in `pluginData`).
+- **The 3D dialog** (a `<dialog>` the plugin owns): a WebGL canvas with orbit controls, the
+  document composite as the backdrop at the dialog's size so the object is placed *in* the
+  picture, sliders for position (x, y, depth), rotation (three axes), scale, camera focal
+  length, light direction and intensity, a *Ground shadow* tick (a soft contact shadow on a
+  transparent plane). **Place** renders with alpha at the size the object covers in the
+  document (capped at the document size) and calls `doc.addLayer(canvas, { name, x, y, w, h })`.
+- **Re-editable**: the layer id, the GLB ref and every parameter are kept in
+  `scumble.storage` per document. A *Edit 3D object* action on a layer the plugin made
+  reopens the dialog with those values and **replaces** the layer pixels, so the object
+  stays an object until the user flattens or paints on it.
+- **Depth as a control layer** (a tick in the dialog): a second layer with the rendered
+  depth (near = white), role `control`, so a local recipe with a depth ControlNet gets it.
+  Normals later.
+- **Commands** `glb.place({ path | ref, position, rotation, scale, fov, size, shadow, depth })`
+  and `glb.edit(layer, patch)` for MCP, so an agent can drop an object into a scene.
+- Colour match per layer already exists and covers the base tones; matching the picture's
+  light is the generation model's job, and the plan says so in the panel's help text.
+
+### Not in stage 1
+
+A live 3D layer kind drawn inside the canvas view every frame, and a camera solved from the
+photo. A photo has no known camera; the perspective is matched by eye in the dialog, which
+is honest. Animations, Draco / KTX2, HDRI files, multiple objects in one dialog.
+
+### Gate
+
+`tools/glb_test.py`: a small GLB written by the test (a cube, valid glTF 2.0 binary with an
+embedded buffer), `glb.place` through the command, the layer's size and position against the
+parameters, the alpha of a pixel inside and outside the cube's silhouette, the depth layer's
+role and its near/far values, `glb.edit` replacing rather than stacking. No ComfyUI, no key.
+Estimate: two days for stage 1, half of it the dialog.
+
 ## Order and releases
 
 | # | Item | Estimate | Release |
@@ -440,9 +496,33 @@ Estimate: half a day for the plugin, half an hour for the SVG import entry.
 | 6 | Custom brushes from .abr, verified and persistent | 1 day | 0.1.9 |
 | 7 | Escape closes the Settings dialog | 10 min | next |
 | 8 | EU AI label plugin (plus general SVG import) | half a day | 0.1.9 |
+| 9 | GLB layer plugin, stage 1 | 2 days | 0.2.0 |
 
 Items 4 and 5 both touch the node repo or the plugin core; 3 must land before 5, because the
 Python process's stderr has nowhere to go until it exists.
+
+## Build order after 0.1.8 (written 2026-09-12, for the sessions after a /clear)
+
+Items 1 to 5 are done or released. What is left, in the order to build it, one commit and
+one gate each, `python tools/editor_test.py` and `python tools/commands_test.py` after
+every step that touches the editor or the command core:
+
+| Step | Item | Why this position | Estimate |
+|---|---|---|---|
+| a | §7 Escape closes the Settings dialog | ten minutes, node repo + sync, unblocks nothing but annoys daily | 10 min |
+| b | SVG import (the `mimeOf` entry + a size question, §8 "Related") | half an hour, needed by §8 anyway | 30 min |
+| c | §8 EU AI label plugin | small, self-contained, first user-visible plugin beyond film; **terms of use of the label set checked first** | half a day |
+| d | §6 custom brushes from .abr, verified and persistent | the reader exists; real packs, persistence, stroke quality | 1 day |
+| e | §9 GLB layer plugin, stage 1 | the largest; needs three.js vendored and a dialog | 2 days |
+
+Then the two open bugs in `docs/BUGS.md`, which are not code work until measured: the
+erase that "switches to the base" (waits for the user's answer whether *Base selected.*
+appears; most likely the fixed vanishing layer seen from the other side) and the jerky 15k
+document (measure first: `perf_test.py 15000x10000`, `app:metrics`, then decide on layer
+tiles, which is the user's call).
+
+Done outside this plan on 2026-09-12: the model folder scan in Settings › Helpers
+(`electron/main/onnx/models.js` `scanFolder` / `matchScan`, `tools/scan_test.js`).
 
 ## What stays open after these five
 
