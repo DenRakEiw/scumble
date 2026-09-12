@@ -813,6 +813,64 @@ export const host = {
     promptTemplates: [],          // [{ id, name, description, use, for, body, source }]
     promptTemplateIds: { upsample: "", generate: "" },   // "" = the built-in rule
 
+    // ---- brush tips: one library for every tab, stored as PNGs by electron/main/brushes.js ------
+    brushLibrary: [],       // { id, name, canvas, spacing, source, saved } - the editors' brushTips array itself
+
+    /** Load the stored tips into the shared library (once, at start). */
+    async loadBrushTips() {
+        if (!window.scumble || !window.scumble.brushes) return this.brushLibrary;
+        let stored = [];
+        try { stored = await window.scumble.brushes.list(); } catch (err) { console.warn("brush tips not loaded", err); return this.brushLibrary; }
+        for (const t of stored) {
+            try {
+                const img = await new Promise((resolve, reject) => {
+                    const url = URL.createObjectURL(new Blob([t.png], { type: "image/png" }));
+                    const im = new Image();
+                    im.onload = () => { URL.revokeObjectURL(url); resolve(im); };
+                    im.onerror = () => { URL.revokeObjectURL(url); reject(new Error("bad tip file " + t.id)); };
+                    im.src = url;
+                });
+                const c = document.createElement("canvas");
+                c.width = img.naturalWidth; c.height = img.naturalHeight;
+                c.getContext("2d").drawImage(img, 0, 0);
+                this.brushLibrary.push({ id: t.id, name: t.name, canvas: c, spacing: t.spacing || 0, source: t.source || "", saved: true });
+            } catch (err) { console.warn(err); }
+        }
+        for (const ed of this._editors) this.syncBrushTips(ed);
+        return this.brushLibrary;
+    },
+
+    /** Hand an editor the shared library and the save hook (called for every new tab). */
+    attachBrushTips(editor) {
+        editor.brushTips = this.brushLibrary;
+        editor.onBrushTips = () => this.saveBrushTips(editor);
+        this.syncBrushTips(editor);
+    },
+
+    syncBrushTips(editor) {
+        if (editor.brushTips !== this.brushLibrary) editor.brushTips = this.brushLibrary;
+        if (editor.renderBrushTips) editor.renderBrushTips();
+        if (editor.syncTipControls) editor.syncTipControls();
+    },
+
+    /** Persist the library (new tips as PNG, the index always) and refresh the other tabs' selects. */
+    async saveBrushTips(from) {
+        if (!window.scumble || !window.scumble.brushes) return null;
+        const tips = [];
+        for (const t of this.brushLibrary) {
+            let png = null;
+            if (!t.saved) {
+                const blob = await new Promise((resolve) => t.canvas.toBlob(resolve, "image/png"));
+                png = new Uint8Array(await blob.arrayBuffer());
+            }
+            tips.push({ id: t.id, name: t.name, spacing: t.spacing || 0, source: t.source || "", png });
+        }
+        const r = await window.scumble.brushes.save(tips);
+        for (const t of this.brushLibrary) t.saved = true;
+        for (const ed of this._editors) if (ed !== from) this.syncBrushTips(ed);
+        return r;
+    },
+
     async refreshPromptTemplates() {
         try { this.promptTemplates = await window.scumble.prompts.list(); }
         catch (err) { console.warn("prompt templates", err); this.promptTemplates = []; }

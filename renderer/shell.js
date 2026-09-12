@@ -49,6 +49,7 @@ function newDocument(id) {
     const editor = new InpaintEditor({ id: id || host.nextId++, title: "Scumble" });
     host.addEditor(editor);
     editor.open();
+    host.attachBrushTips(editor);      // the shared tip library and its save hook
     renderTabs();
     return editor;
 }
@@ -1316,6 +1317,7 @@ try {
 }
 try {
     const saved = await window.scumble.state.load();
+    await host.loadBrushTips();
     if (saved) await host.restore(saved);
 } catch (err) {
     console.warn("no autosaved state", err);

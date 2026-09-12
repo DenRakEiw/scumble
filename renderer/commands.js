@@ -752,6 +752,56 @@ const COMMANDS = {
     },
     get_state: { description: "The document's state JSON (the node's canvas_state without the selection bitmaps).", params: {}, async run(ed) { const v = JSON.parse(ed.getValue() || "{}"); delete v.selection; delete v.selections; return v; } },
     set_status: { description: "Write a line into the document's status bar.", params: { text: P.str("", { required: true }) }, async run(ed, a) { ed.setStatus(String(a.text)); return { status: ed.status }; } },
+
+    // -- brush --
+    list_brush_tips: {
+        description: "The brush tips available under Tip: the built-in round dab and the imported ones (from Photoshop .abr files or images), with the active one and the brush settings of this document.",
+        params: {},
+        async run(ed) {
+            const tips = [{ id: "round", name: "Round", builtIn: true }, ...(ed.brushTips || []).map((t) => ({ id: t.id, name: t.name, width: t.canvas.width, height: t.canvas.height, spacing: t.spacing || 0, source: t.source || "" }))];
+            return { active: ed.brushTipId || "round", size: ed.brushSize, hardness: Math.round((ed.hardness || 0) * 100), eraseHardness: Math.round((ed.eraseHardness || 0) * 100), opacity: Math.round((ed.brushOpacity == null ? 1 : ed.brushOpacity) * 100), follow: !!ed.tipRotate, tips };
+        },
+    },
+    set_brush: {
+        description: "Brush settings of this document: the tip (round, or an imported tip by id or name), size in pixels, hardness and opacity in percent, the tip's spacing in percent of its size, and whether the tip follows the stroke direction. Every parameter is optional.",
+        params: {
+            tip: P.str("round, or the id or name of an imported tip (list_brush_tips)"),
+            size: P.int("brush size in image pixels (2..400)"),
+            hardness: P.num("0..100 for the paint brush (the eraser keeps its own, see erase_hardness)"),
+            erase_hardness: P.num("0..100 for the eraser"),
+            opacity: P.num("brush opacity 0..100"),
+            spacing: P.num("stamp spacing of the active imported tip, in percent of its size (1..200)"),
+            follow: P.bool("rotate an imported tip with the stroke direction"),
+        },
+        async run(ed, a) {
+            if (a.tip != null) {
+                const want = String(a.tip);
+                if (/^round$/i.test(want) || want === "") ed.setBrushTip("");
+                else {
+                    const t = (ed.brushTips || []).find((x) => x.id === want) || (ed.brushTips || []).find((x) => x.name === want) || (ed.brushTips || []).filter((x) => x.name.toLowerCase().includes(want.toLowerCase()));
+                    const hit = Array.isArray(t) ? (t.length === 1 ? t[0] : null) : t;
+                    if (!hit) throw new Error(`no brush tip "${want}"${Array.isArray(t) && t.length > 1 ? ` (${t.length} match: ${t.map((x) => x.name).join(", ")})` : ""}`);
+                    ed.setBrushTip(hit.id);
+                }
+            }
+            if (a.size != null) { ed.brushSize = clampInt(a.size, 2, 400, ed.brushSize); if (ed.sizeCtl) { ed.sizeCtl.input.value = ed.brushSize; ed.sizeCtl.value.textContent = ed.brushSize + "px"; } }
+            const pct = (v) => Math.max(0, Math.min(1, (+v) / 100));
+            if (a.hardness != null && Number.isFinite(+a.hardness)) { ed.hardness = pct(a.hardness); if (ed.tool !== "erase" && ed.hardCtl) { ed.hardCtl.input.value = Math.round(ed.hardness * 100); ed.hardCtl.value.textContent = Math.round(ed.hardness * 100) + "%"; } }
+            if (a.erase_hardness != null && Number.isFinite(+a.erase_hardness)) { ed.eraseHardness = pct(a.erase_hardness); if (ed.tool === "erase" && ed.hardCtl) { ed.hardCtl.input.value = Math.round(ed.eraseHardness * 100); ed.hardCtl.value.textContent = Math.round(ed.eraseHardness * 100) + "%"; } }
+            if (a.opacity != null && Number.isFinite(+a.opacity)) { ed.brushOpacity = Math.max(0.01, pct(a.opacity)); if (ed.opacCtl) { ed.opacCtl.input.value = Math.round(ed.brushOpacity * 100); ed.opacCtl.value.textContent = Math.round(ed.brushOpacity * 100) + "%"; } }
+            if (a.spacing != null && Number.isFinite(+a.spacing)) {
+                const t = ed.brushTip();
+                if (!t) throw new Error("spacing belongs to an imported tip; pick one first (tip)");
+                t.spacing = Math.max(0.01, Math.min(2, (+a.spacing) / 100));
+                ed._tipStamp = null;
+                ed.syncTipControls();
+                ed.brushTipsChanged();
+            }
+            if (a.follow != null) { ed.tipRotate = !!a.follow; if (ed.tipRotateCb) ed.tipRotateCb.checked = ed.tipRotate; }
+            ed.draw();
+            return (await COMMANDS.list_brush_tips.run(ed));
+        },
+    },
 };
 
 function applyParams(ed, l, params) {

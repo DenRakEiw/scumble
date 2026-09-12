@@ -73,6 +73,11 @@ contextBridge.exposeInMainWorld("scumble", {
         ask: (req) => ipcRenderer.invoke("llm:ask", req),
         models: (url) => ipcRenderer.invoke("llm:models", url),
     },
+    brushes: {
+        list: () => ipcRenderer.invoke("brushes:list"),
+        save: (tips) => ipcRenderer.invoke("brushes:save", tips),
+        open: () => ipcRenderer.invoke("brushes:open"),
+    },
     prompts: {
         list: () => ipcRenderer.invoke("prompts:list"),
         open: () => ipcRenderer.invoke("prompts:open"),

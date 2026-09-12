@@ -31,6 +31,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   scale it with T); *Add label* again replaces it. Also in the Plugins menu and as the
   `ailabel.add` command for agents. The icons are the Commission's own, free to use without
   attribution; the label says the picture was made or changed by AI and nothing more.
+- **Custom brushes from Photoshop `.abr` files, kept across restarts.** *Import* next to the
+  *Tip* select (paint and erase tools) reads every sampled tip of a pack with its own name and
+  spacing, checked against Photoshop's own brush packs; the parametric round tips are skipped
+  and counted in the status line. A tip gets a *Spacing* slider, *Follow stroke* (the tip turns
+  with the direction of travel), a thumbnail, the cursor as the tip's box, and a trash button;
+  the eraser stamps a tip too. Imported tips are stored under the app's data folder and are
+  there again after a restart, in every tab. Agents get `list_brush_tips` and `set_brush`.
 
 ## 0.1.8 — 2026-09-11
 

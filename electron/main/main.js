@@ -14,6 +14,7 @@ const providers = require("./providers");
 const llm = require("./llm");
 const recipes = require("./recipes");
 const prompts = require("./prompts");
+const brushes = require("./brushes");
 const helpers = require("./onnx");
 const plugins = require("./plugins");
 const { Bridge } = require("./bridge");
@@ -409,6 +410,9 @@ function installIpc() {
     ipcMain.handle("llm:ask", (_e, req) => llm.ask(req));
     ipcMain.handle("llm:models", (_e, url) => llm.compatModels(url));
     // prompt instruction templates (electron/main/prompts.js)
+    ipcMain.handle("brushes:list", () => brushes.list());
+    ipcMain.handle("brushes:save", (_e, tips) => brushes.save(tips));
+    ipcMain.handle("brushes:open", () => brushes.openFolder());
     ipcMain.handle("prompts:list", () => prompts.list(PROMPTS_DIR));
     ipcMain.handle("prompts:open", () => prompts.openFolder());
     ipcMain.handle("prompts:remove", (_e, id) => prompts.remove(id));

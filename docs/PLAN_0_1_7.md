@@ -278,6 +278,22 @@ The round dab is the only brush. Painters have libraries of Photoshop `.abr` pac
 GIMP `.gbr` / `.gih`, Krita `.kpp` bundles) and expect to load them; a textured tip is what
 makes retouch on a result layer look painted rather than stamped.
 
+**Done 2026-09-12.** Verified on the three Photoshop 2026 packs on this machine (Default
+Brushes 6.2, Legacy Brushes 10.2, Converted Legacy Tool Presets 10.2) and a 377 MB third-party
+6.2 pack; the reader now parses the `desc` block (Photoshop's Action Descriptor), which is
+where the names and spacings live and which neither GIMP nor abrupng reads, and maps them to
+the bitmaps by UUID. Persistence through `electron/main/brushes.js` (`<userData>/brushes/<id>.png`
+plus `brushes.json`, IPC `brushes:list|save|open`), `host.brushLibrary` shared by every tab,
+`host.attachBrushTips(editor)` in `newDocument`. Spacing slider, *Follow stroke*, the trash
+button, the thumbnail and the box cursor in the editor (node repo, synced); the eraser needed
+nothing, it already went through `layerDab`. Commands `list_brush_tips` / `set_brush`.
+`docs/BRUSHES.md`; gate `python tools/brush_test.py` (runs `node tools/brush_test.js` for
+the reader on synthetic files of every version plus the real packs when present, then the
+editor path: import, a ring tip against the round dab through the real pointer handlers, an
+erase with a tip, the box cursor, the commands, a reload, removal). Not done: the tip
+transform of a preset (`Angl`, `Rndn`, `flipX/Y`) is read but not applied; `.gbr` / `.gih` /
+`.kpp`; size and angle jitter.
+
 ### Where it stands
 
 **The core is built and committed, and marked unverified** (2026-09-11, `js/inpaint_brushes.js`

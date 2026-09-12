@@ -647,6 +647,29 @@ Make this tab's base image from the prompt alone, no image needed. A local recip
 | `background` | string | transparent asks an API model that supports it (the OpenAI image models) for a cut-out on a transparent ground; the base image then keeps its alpha channel (one of `auto`, `opaque`, `transparent`) |
 | `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
 
+### `list_brush_tips`
+
+The brush tips available under Tip: the built-in round dab and the imported ones (from Photoshop .abr files or images), with the active one and the brush settings of this document.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `set_brush`
+
+Brush settings of this document: the tip (round, or an imported tip by id or name), size in pixels, hardness and opacity in percent, the tip's spacing in percent of its size, and whether the tip follows the stroke direction. Every parameter is optional.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `tip` | string | round, or the id or name of an imported tip (list_brush_tips) |
+| `size` | integer | brush size in image pixels (2..400) |
+| `hardness` | number | 0..100 for the paint brush (the eraser keeps its own, see erase_hardness) |
+| `erase_hardness` | number | 0..100 for the eraser |
+| `opacity` | number | brush opacity 0..100 |
+| `spacing` | number | stamp spacing of the active imported tip, in percent of its size (1..200) |
+| `follow` | boolean | rotate an imported tip with the stroke direction |
+
 ## Plugin commands
 
 Plugins add commands with `scumble.commands.register(name, def)`; the name is prefixed with
