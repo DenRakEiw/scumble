@@ -651,6 +651,16 @@ Make this tab's base image from the prompt alone, no image needed. A local recip
 | `background` | string | transparent asks an API model that supports it (the OpenAI image models) for a cut-out on a transparent ground; the base image then keeps its alpha channel (one of `auto`, `opaque`, `transparent`) |
 | `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
 
+### `read_log` *(app)*
+
+The app's log (what the app, its providers and helpers reported; errors carry the request shape and the stack): the last entries, newest last. Also in Help > Console and in <userData>/logs/scumble.log.
+
+| param | type | description |
+|---|---|---|
+| `level` | string | all, warn (warnings and errors) or error (default `"all"`; one of `all`, `warn`, `error`) |
+| `after` | integer | only entries with an id above this (from an earlier call) (default `0`) |
+| `limit` | integer | at most this many entries (default 200) (default `200`) |
+
 ### `list_brush_tips`
 
 The brush tips available under Tip: the built-in round dab and the imported ones (from Photoshop .abr files or images), with the active one and the brush settings of this document.

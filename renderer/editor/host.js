@@ -202,7 +202,31 @@ export const host = {
     /** Patched into the end of the editor constructor (tools/sync_editor.py). */
     editorBuilt(editor) {
         try { this.buildExportSize(editor); } catch (err) { console.warn("export size row", err); }
+        try { this.hookStatus(editor); } catch (err) { console.warn("status hook", err); }
         this.emit("built", { editor });
+    },
+
+    /**
+     * The status line is one clipped line without a tooltip in the synced editor: the app gives
+     * it the full text as a title, logs what looks like an error, and opens the console on a
+     * click. Hooked from outside, so no sync patch.
+     */
+    hookStatus(editor) {
+        if (editor._statusHooked || typeof editor.setStatus !== "function") return;
+        editor._statusHooked = true;
+        const orig = editor.setStatus.bind(editor);
+        editor.setStatus = (t) => {
+            orig(t);
+            const text = String(t == null ? "" : t);
+            if (editor.statusEl) editor.statusEl.title = text + (text ? "\n(click: the console)" : "");
+            if (/^(error|failed|could not|cannot|no api key)|error invoking|failed[:.]| failed /i.test(text)) {
+                try { window.scumble.log.add({ level: "error", source: "status", message: text }); } catch (_) { /* preload missing */ }
+            }
+        };
+        if (editor.statusEl) {
+            editor.statusEl.style.cursor = "pointer";
+            editor.statusEl.addEventListener("click", () => { if (this.openConsole) this.openConsole(); });
+        }
     },
 
     // ---- export size ---------------------------------------------------------------------

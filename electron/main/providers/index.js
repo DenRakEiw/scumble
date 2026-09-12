@@ -11,6 +11,8 @@
 // adapters only speak HTTP. Keys come from keys.js by the provider's name.
 "use strict";
 
+const log = require("../log");
+
 const keys = require("../keys");
 
 const PROVIDERS = {
@@ -65,8 +67,17 @@ async function edit(request) {
     };
     const t0 = Date.now();
     const ctx = { key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a) };
-    const out = text ? await p.generate(req, ctx) : await p.edit(req, ctx);
-    if (!out || !out.bytes) throw new Error(p.label + " returned no image.");
+    // the request's shape for the log: never the key, never the pixels
+    const shape = () => ({ model: req.model, kind: text ? "text" : "edit", image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, 200) });
+    let out;
+    try {
+        out = text ? await p.generate(req, ctx) : await p.edit(req, ctx);
+    } catch (err) {
+        log.record({ level: "error", source: id, message: `${p.label} ${text ? "generate" : "edit"} failed after ${((Date.now() - t0) / 1000).toFixed(1)} s: ${err && err.message || err}`, detail: { request: shape(), stack: err && err.stack } });
+        throw err;
+    }
+    if (!out || !out.bytes) { log.record({ level: "error", source: id, message: p.label + " returned no image.", detail: shape() }); throw new Error(p.label + " returned no image."); }
+    log.record({ source: id, message: `${p.label} ${text ? "generate" : "edit"} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info } });
     const bytes = toBuffer(out.bytes);
     return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000 };
 }

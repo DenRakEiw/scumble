@@ -58,6 +58,13 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **API results default to 2K** where the provider offers it (Nano Banana 2 and Pro on
   Google, fal, Replicate, WaveSpeed and Comfy Cloud; GPT Image on WaveSpeed; Seedream 5 Pro
   on WaveSpeed). It was 1K, which threw away most of what the crop carries.
+- **A console and a log file.** *Help › Console* (Ctrl+Shift+L), or a click on the status
+  line, opens the log: everything the app, its providers and helpers reported, errors first,
+  with a level and a text filter, *Copy all* and *Open folder*. The same lines go to
+  `logs/scumble.log` in the app's data folder (rotated at 1 MB, two files kept). A failed
+  provider run is logged with the model, the request's shape and the full error, never the
+  key or the pixels; the status line shows the full text as a tooltip. Agents read it with
+  `read_log`.
 - **Comfy Cloud failures now say why.** The job status said only "error"; the node's own
   message (safety filter, missing credits, a bad input) is read from the job's history and
   shown in the status line.

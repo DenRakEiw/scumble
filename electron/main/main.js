@@ -7,6 +7,8 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const { app, BrowserWindow, protocol, net, ipcMain, dialog, Menu, shell, clipboard } = require("electron");
 const settings = require("./settings");
+const log = require("./log");
+log.install(require("node:path").join(app.getPath("userData"), "logs"));   // first: the console patch has to be in place before anything logs
 const { ComfyClient, authHeaders } = require("./comfy");
 const { FileMirror } = require("./files");
 const keys = require("./keys");
@@ -253,6 +255,7 @@ function buildMenu() {
             label: "&Help",
             submenu: [
                 { label: "Editor guide", click: () => send("menu", "guide") },
+                { label: "Console (log)", accelerator: "CmdOrCtrl+Shift+L", click: () => send("menu", "console") },
                 { label: "Scumble on GitHub", click: () => shell.openExternal("https://github.com/DenRakEiw/scumble") },
                 { label: "Inpaint Canvas node on GitHub", click: () => shell.openExternal("https://github.com/DenRakEiw/ComfyUI-InpaintCanvas") },
                 { type: "separator" },
@@ -410,6 +413,12 @@ function installIpc() {
     ipcMain.handle("llm:ask", (_e, req) => llm.ask(req));
     ipcMain.handle("llm:models", (_e, url) => llm.compatModels(url));
     // prompt instruction templates (electron/main/prompts.js)
+    ipcMain.handle("log:add", (_e, entry) => { const e = entry && typeof entry === "object" ? entry : { message: String(entry) }; return log.record({ level: e.level, source: e.source || "renderer", message: e.message, detail: e.detail }).id; });
+    ipcMain.handle("log:list", (_e, q) => log.list(q || {}));
+    ipcMain.handle("log:clear", () => { log.clear(); return true; });
+    ipcMain.handle("log:open", async () => { const f = log.file(); if (!f) return null; await require("node:fs/promises").mkdir(require("node:path").dirname(f), { recursive: true }); return shell.openPath(require("node:path").dirname(f)); });
+    ipcMain.handle("log:file", () => log.file());
+    log.onEntry((e) => send("log:entry", e));
     ipcMain.handle("brushes:list", () => brushes.list());
     ipcMain.handle("brushes:save", (_e, tips) => brushes.save(tips));
     ipcMain.handle("brushes:open", () => brushes.openFolder());

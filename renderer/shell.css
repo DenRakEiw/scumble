@@ -141,3 +141,24 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 #gen-dialog #gen-note { color: #9a9a9a; }
 #gen-dialog.gen-fixed .gen-free { display: none; }
 #gen-dialog.gen-free-size #gen-res-row { display: none; }
+
+/* ---- console (log) dialog ---- */
+#log-dialog { background: #202020; color: #ddd; border: 1px solid #444; border-radius: 6px; padding: 0; width: 900px; max-width: 94vw; font: 13px/1.4 system-ui, sans-serif; }
+#log-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+#log-dialog form { padding: 14px 18px 12px; display: flex; flex-direction: column; gap: 8px; max-height: 84vh; }
+#log-dialog h2 { margin: 0; font-size: 16px; color: #f0c674; }
+#log-dialog .log-bar { display: flex; gap: 6px; align-items: center; }
+#log-dialog .log-bar input { flex: 1; min-width: 0; }
+#log-dialog button { background: #2d2d2d; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 4px 12px; font: inherit; cursor: pointer; }
+#log-dialog button:hover { background: #3a3a3a; }
+#log-list { overflow: auto; min-height: 240px; max-height: 60vh; font: 12px/1.45 ui-monospace, Consolas, monospace; background: #161616; border: 1px solid #333; border-radius: 3px; padding: 4px 6px; }
+.log-entry { display: grid; grid-template-columns: 78px 44px 92px 1fr; gap: 8px; padding: 1px 2px; cursor: default; white-space: pre-wrap; word-break: break-word; }
+.log-entry:hover { background: #222; }
+.log-entry .log-time { color: #777; }
+.log-entry .log-level { color: #999; text-transform: uppercase; font-size: 10px; padding-top: 2px; }
+.log-entry.log-warn .log-level { color: #f0c674; }
+.log-entry.log-error .log-level { color: #ff7b72; }
+.log-entry.log-error .log-message { color: #ffb3ad; }
+.log-entry .log-source { color: #7cc7ff; overflow: hidden; text-overflow: ellipsis; }
+.log-entry .log-detail { grid-column: 1 / -1; color: #aaa; margin: 2px 0 4px 78px; white-space: pre-wrap; }
+.log-empty { color: #777; padding: 12px; }

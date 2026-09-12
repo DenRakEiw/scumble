@@ -755,6 +755,20 @@ const COMMANDS = {
     get_state: { description: "The document's state JSON (the node's canvas_state without the selection bitmaps).", params: {}, async run(ed) { const v = JSON.parse(ed.getValue() || "{}"); delete v.selection; delete v.selections; return v; } },
     set_status: { description: "Write a line into the document's status bar.", params: { text: P.str("", { required: true }) }, async run(ed, a) { ed.setStatus(String(a.text)); return { status: ed.status }; } },
 
+    // -- log --
+    read_log: {
+        scope: "app",
+        description: "The app's log (what the app, its providers and helpers reported; errors carry the request shape and the stack): the last entries, newest last. Also in Help > Console and in <userData>/logs/scumble.log.",
+        params: { level: P.str("all, warn (warnings and errors) or error", { enum: ["all", "warn", "error"], default: "all" }), after: P.int("only entries with an id above this (from an earlier call)", { default: 0 }), limit: P.int("at most this many entries (default 200)", { default: 200 }) },
+        async run(_ed, a) {
+            const all = await window.scumble.log.list({ after: a.after | 0 });
+            const lvl = a.level || "all";
+            const picked = all.filter((e) => lvl === "all" || (lvl === "error" ? e.level === "error" : e.level !== "info"));
+            const limit = Math.max(1, Math.min(2000, a.limit | 0 || 200));
+            return { entries: picked.slice(-limit), total: all.length, file: await window.scumble.log.file() };
+        },
+    },
+
     // -- brush --
     list_brush_tips: {
         description: "The brush tips available under Tip: the built-in round dab and the imported ones (from Photoshop .abr files or images), with the active one and the brush settings of this document.",

@@ -105,6 +105,16 @@ Estimate: 1 to 2 hours.
 
 ## 3. A console in the app, and a log file
 
+**Built 2026-09-12** (the plan had listed it as done, it was not): `electron/main/log.js` as
+designed (ring of 2000, `<userData>/logs/scumble.log`, rotation at 1 MB, the main process's
+console patched, uncaught errors recorded, `[tag]` prefixes of `ctx.log` become the source),
+IPC `log:add|list|clear|open|file` and the event `log:entry`, the renderer's console.warn /
+error and its uncaught errors forwarded, `providers/index.js` logs a failed adapter call with
+the request's shape, `#log-dialog` in `index.html` with the filters, *Copy all*, *Open folder*,
+*Clear*, opened from Help › Console (Ctrl+Shift+L) and a click on the status line;
+`host.hookStatus` gives the status line a title and logs error-looking texts. The command
+`read_log` for agents. Gate `tools/log_test.py` (7 steps including the rotation).
+
 ### Why
 
 Asked for on 2026-09-11 after a Comfy Cloud run with GPT Image failed and there was nowhere to

@@ -139,6 +139,14 @@ in `editor_test.py`, GPU vs CPU max 2 levels). **Export Canvas row** (frame, anc
 `export_canvas_frames_the_picture`). Gates after: editor, commands, size, composite PASS,
 `docs/COMMANDS.md` regenerated. **The 0.1.9 tag is ready and waits for the user's go.**
 
+**Third block of 2026-09-12: the console and the log file** (plan §3, which the plan had
+called done although nothing existed; asked for again after the bare Comfy Cloud "error").
+`electron/main/log.js`, IPC `log:*`, `read_log`, the renderer capture at the top of
+`shell.js`, `#log-dialog`, `host.hookStatus` (status title, click opens the console, error-
+looking status texts logged), provider failures logged with the request's shape in
+`providers/index.js`. Gate `tools/log_test.py`. The file is `<userData>/logs/scumble.log`;
+when the user reports an error, ask for *Help › Console › Copy all* or that file.
+
 **Also on 2026-09-12**: the GitHub description of `DenRakEiw/scumble` no longer says
 "Krita-style" (asked for during the session; changed with `gh repo edit`). The user asked
 whether a filter exists that normalises a layer's colours towards the mean with a slider:

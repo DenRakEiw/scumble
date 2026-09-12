@@ -73,6 +73,14 @@ contextBridge.exposeInMainWorld("scumble", {
         ask: (req) => ipcRenderer.invoke("llm:ask", req),
         models: (url) => ipcRenderer.invoke("llm:models", url),
     },
+    log: {
+        add: (entry) => ipcRenderer.invoke("log:add", entry),
+        list: (q) => ipcRenderer.invoke("log:list", q),
+        clear: () => ipcRenderer.invoke("log:clear"),
+        open: () => ipcRenderer.invoke("log:open"),
+        file: () => ipcRenderer.invoke("log:file"),
+        onEntry: (cb) => on("log:entry", cb),
+    },
     brushes: {
         list: () => ipcRenderer.invoke("brushes:list"),
         save: (tips) => ipcRenderer.invoke("brushes:save", tips),

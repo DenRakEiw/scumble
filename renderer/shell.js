@@ -8,6 +8,20 @@ import { commands } from "./commands.js";
 import * as plugins from "./plugins.js";
 
 const $ = (id) => document.getElementById(id);
+
+// ---- log capture: the renderer's console.warn / error and its uncaught errors go to the
+// main process's log (electron/main/log.js); the originals still print for DevTools ----
+(() => {
+    const send = (level, message, detail) => { try { window.scumble.log.add({ level, source: "renderer", message, detail }); } catch (_) { /* preload missing */ } };
+    const text = (a) => a.map((x) => (x instanceof Error ? (x.stack || x.message) : (typeof x === "string" ? x : (() => { try { return JSON.stringify(x); } catch (_) { return String(x); } })()))).join(" ");
+    for (const [name, level] of [["warn", "warn"], ["error", "error"]]) {
+        const orig = console[name].bind(console);
+        console[name] = (...a) => { send(level, text(a)); orig(...a); };
+    }
+    window.addEventListener("error", (e) => send("error", "uncaught: " + (e.message || e), e.error && e.error.stack));
+    window.addEventListener("unhandledrejection", (e) => send("error", "unhandled: " + ((e.reason && (e.reason.message || e.reason)) || e), e.reason && e.reason.stack));
+})();
+
 const ui = {
     recipe: $("shell-recipe"), recipeNote: $("shell-recipe-note"), url: $("shell-url"), connect: $("shell-connect"),
     dot: $("shell-dot"), statusText: $("shell-status-text"), progress: $("shell-progress"), progressBar: $("shell-progress-bar"), progressText: $("shell-progress-text"),
@@ -31,6 +45,7 @@ const ui = {
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setGpuMem: $("set-gpu-mem"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
+    log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
@@ -1285,6 +1300,7 @@ window.scumble.file.onOpened(({ name, data }) => {
 window.scumble.onMenu((cmd) => {
     if (cmd === "save") host.editor && host.editor.exportImage();
     else if (cmd === "settings") openSettings();
+    else if (cmd === "console") openConsole();
     else if (cmd === "guide") window.scumble.openExternal("https://github.com/DenRakEiw/ComfyUI-InpaintCanvas#readme");
     else if (cmd === "new-tab") activate(newDocument());
     else if (cmd === "close-tab") closeDocument(host.editor);
@@ -1333,4 +1349,84 @@ selectRecipe(settings.recipe);
 showStatus(await window.scumble.comfy.status());
 window.scumble.commands.ready();
 
-export { newDocument, activate, closeDocument, openSettings, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory };
+// ---- the console dialog: the log's ring buffer, filtered, growing live ----------------------
+
+const logState = { entries: [], lastId: 0, open: false };
+const fmtTime = (t) => { const d = new Date(t); const p = (n) => String(n).padStart(2, "0"); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+
+function logMatches(e) {
+    const lvl = ui.logLevel.value;
+    if (lvl === "error" && e.level !== "error") return false;
+    if (lvl === "warn" && e.level === "info") return false;
+    const q = ui.logFilter.value.trim().toLowerCase();
+    if (q && !(`${e.source} ${e.message} ${e.detail || ""}`.toLowerCase().includes(q))) return false;
+    return true;
+}
+
+function logRow(e) {
+    const row = document.createElement("div");
+    row.className = `log-entry log-${e.level}`;
+    row.dataset.id = e.id;
+    const cell = (cls, text) => { const s = document.createElement("span"); s.className = cls; s.textContent = text; row.appendChild(s); return s; };
+    cell("log-time", fmtTime(e.time)); cell("log-level", e.level); cell("log-source", e.source); cell("log-message", e.message);
+    if (e.detail) {
+        row.title = "Click for the detail";
+        row.addEventListener("click", () => {
+            const open = row.querySelector(".log-detail");
+            if (open) { open.remove(); return; }
+            const d = document.createElement("div");
+            d.className = "log-detail";
+            let text = e.detail;
+            try { text = JSON.stringify(JSON.parse(e.detail), null, 2); } catch (_) { /* not JSON */ }
+            d.textContent = text;
+            row.appendChild(d);
+        });
+    }
+    return row;
+}
+
+function renderLog() {
+    const list = ui.logList;
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+    list.innerHTML = "";
+    const shown = logState.entries.filter(logMatches);
+    if (!shown.length) { const em = document.createElement("div"); em.className = "log-empty"; em.textContent = logState.entries.length ? "Nothing matches the filter." : "Nothing logged yet."; list.appendChild(em); }
+    for (const e of shown) list.appendChild(logRow(e));
+    if (atBottom) list.scrollTop = list.scrollHeight;
+}
+
+async function openConsole() {
+    try { logState.entries = await window.scumble.log.list({}); } catch (err) { logState.entries = [{ id: 0, time: Date.now(), level: "error", source: "renderer", message: "log unreachable: " + (err.message || err) }]; }
+    logState.lastId = logState.entries.length ? logState.entries[logState.entries.length - 1].id : 0;
+    try { ui.logPath.textContent = (await window.scumble.log.file()) || ""; } catch (_) { ui.logPath.textContent = ""; }
+    renderLog();
+    if (!ui.log.open) ui.log.showModal();
+    ui.logList.scrollTop = ui.logList.scrollHeight;
+    ui.logFilter.focus();
+}
+window.scumble.log.onEntry((e) => {
+    if (!e || e.id <= logState.lastId) return;
+    logState.entries.push(e);
+    logState.lastId = e.id;
+    if (logState.entries.length > 2000) logState.entries.splice(0, logState.entries.length - 2000);
+    if (ui.log.open && logMatches(e)) {
+        const empty = ui.logList.querySelector(".log-empty");
+        if (empty) empty.remove();
+        const atBottom = ui.logList.scrollHeight - ui.logList.scrollTop - ui.logList.clientHeight < 40;
+        ui.logList.appendChild(logRow(e));
+        if (atBottom) ui.logList.scrollTop = ui.logList.scrollHeight;
+    }
+});
+ui.logLevel.addEventListener("change", renderLog);
+ui.logFilter.addEventListener("input", renderLog);
+ui.logFilter.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopPropagation(); });
+ui.log.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopPropagation(); });
+ui.logCopy.addEventListener("click", () => {
+    const text = logState.entries.filter(logMatches).map((e) => `${new Date(e.time).toISOString()} ${e.level.toUpperCase()} [${e.source}] ${e.message}${e.detail ? "  " + e.detail : ""}`).join("\n");
+    navigator.clipboard.writeText(text).then(() => { if (host.editor) host.editor.setStatus(`${logState.entries.filter(logMatches).length} log lines copied.`); }).catch(() => {});
+});
+ui.logOpen.addEventListener("click", () => window.scumble.log.open());
+ui.logClear.addEventListener("click", async () => { await window.scumble.log.clear(); logState.entries = []; renderLog(); });
+host.openConsole = () => openConsole();
+
+export { newDocument, activate, closeDocument, openSettings, openConsole, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory };

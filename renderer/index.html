@@ -131,6 +131,21 @@
     <div class="shell-row shell-right"><button id="set-close" type="submit">Close</button></div>
   </form>
 </dialog>
+<dialog id="log-dialog">
+  <form method="dialog">
+    <h2>Console</h2>
+    <p class="shell-help">What the app and its providers reported: errors first. The same lines go to a file, <span id="log-path"></span>.</p>
+    <div class="log-bar">
+      <select id="log-level"><option value="all">all levels</option><option value="warn">warnings and errors</option><option value="error">errors</option></select>
+      <input id="log-filter" type="text" placeholder="filter text or source" spellcheck="false">
+      <button type="button" id="log-copy">Copy all</button>
+      <button type="button" id="log-open">Open folder</button>
+      <button type="button" id="log-clear">Clear</button>
+      <button type="submit" id="log-close">Close</button>
+    </div>
+    <div id="log-list"></div>
+  </form>
+</dialog>
 <dialog id="gen-dialog">
   <form method="dialog">
     <h2>Generate a new image</h2>
