@@ -168,16 +168,24 @@ BENCH = """
     }, 60);
     out.stroke_frame = dab;
     const commitAt = performance.now();
+    const strokeBox = ed.strokeRect(p, paintLayer.canvas);   // what the real pointer-up passes on
     ed.commitStroke(p);
     ed.pointer = null;
-    ed.markLayerChanged(paintLayer);
+    ed.markLayerChanged(paintLayer, strokeBox);
     out.stroke_commit = [+(performance.now() - commitAt).toFixed(1), +(performance.now() - strokeStart).toFixed(1)];
     out.undo_bytes = ed.undoBytes;
+    // The 60 frames above were issued in a tight loop, so the GPU still holds their work; a
+    // real stroke is paced by the display. Drain it, so the rows below measure their own cost
+    // and not that backlog (a readback of one pixel waits for a canvas's queue).
+    const settle = () => { for (const c of [ed.selection, paintLayer.canvas, ed.canvas]) { try { c.getContext("2d").getImageData(0, 0, 1, 1); } catch (_) { /* a WebGL canvas */ } } try { const comp = ed.compositor(); if (comp) comp.gl.finish(); } catch (_) { /* no compositor */ } };
+    ed.draw();
+    settle();
     const undoAt = performance.now();
     await ed.undoStep();
     out.undo_step = [+(performance.now() - undoAt).toFixed(1), 0];
 
     // --- selection, autosave, full composite ------------------------------------
+    settle();
     const selAt = performance.now();
     ed.selection.getContext("2d").fillStyle = "#ff0000";
     ed.selection.getContext("2d").fillRect(Math.round(W / 5), Math.round(H / 5), Math.round(W / 3), Math.round(H / 3));

@@ -416,6 +416,74 @@ return out;
 """),
     ("escape_closes_the_shell_dialogs", lambda c: escape_closes_the_shell_dialogs(c)),
     ("svg_import_rasterises_on_the_way_in", lambda c: svg_import_rasterises_on_the_way_in(c)),
+    ("selection_undo_copies_its_extent_and_bounds_come_by_strips", """
+// Phase A item 1 (docs/PLAN_TILES.md): a selection undo step is a copy of the selection's extent
+// (a feathered tail included), not a PNG of the whole canvas; the bounding box is scanned for in
+// strips from the edges of a known superset, and a subtract keeps the old box as that superset.
+await run("new_canvas", { width: 1440, height: 900, doc: window.__t });   // an earlier step left the tab at 600 x 300
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height;
+const out = { size: [W, H] };
+const pixels = () => ed.selection.getContext("2d").getImageData(0, 0, W, H).data;
+const same = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+ed.selection.getContext("2d").clearRect(0, 0, W, H);
+ed.markSelectionChanged(null);
+// an ellipse drawn straight into the canvas: nothing is known about its box
+const s = ed.selection.getContext("2d");
+s.fillStyle = "#ff0000";
+s.beginPath(); s.ellipse(700, 450, 300, 200, 0, 0, Math.PI * 2); s.fill();
+ed.markSelectionChanged();
+out.ellipse = ed.getBounds();
+const full = ed.scanBounds(0, 0, W, H);
+if (!eq(out.ellipse, full)) throw new Error("strip scan " + JSON.stringify(out.ellipse) + " differs from the full scan " + JSON.stringify(full));
+// feather: the extent reaches past the bounds, the bounds stay the alpha >= 128 box
+await ed.featherSelection(20);
+out.feathered = ed.getBounds();
+out.extent = ed.selectionExtent();
+if (!eq(out.feathered, ed.scanBounds(0, 0, W, H))) throw new Error("bounds after feather: " + JSON.stringify(out.feathered));
+if (!(out.extent[0] < out.feathered[0] - 8 && out.extent[2] > out.feathered[2] + 8)) throw new Error("the extent does not cover the feathered tail: " + JSON.stringify([out.extent, out.feathered]));
+const before = pixels();
+// a subtract from the middle: the old box is kept as a superset and made exact by strips
+ed.pushUndo({ kind: "selection" });
+const snap = ed.undo[ed.undo.length - 1];
+out.snap = { kind: snap.kind, canvas: !!snap.canvas, w: snap.w, h: snap.h, bytes: snap.bytes };
+if (snap.kind !== "selection" || !snap.canvas || snap.w >= W || snap.bytes !== snap.w * snap.h * 4) throw new Error("the undo step is not a copy of the extent: " + JSON.stringify(out.snap));
+s.globalCompositeOperation = "destination-out";
+s.fillRect(400, 250, 300, 400);   // the left half of the ellipse
+s.globalCompositeOperation = "source-over";
+// the info rows ask for the bounds at once, so the superset is resolved inside the mark: watch
+// that it is the old box that is scanned by strips, and that the extent is never scanned for
+const calls = [];
+const oStrips = ed.scanBoundsIn.bind(ed), oExtent = ed.selectionExtent.bind(ed);
+ed.scanBoundsIn = (box) => { calls.push(["strips", box]); return oStrips(box); };
+ed.selectionExtent = () => { calls.push(["extent"]); return oExtent(); };
+ed.markSelectionChanged(ed.boundsAfter("subtract", [400, 250, 700, 650]), [400, 250, 700, 650]);
+out.afterSubtract = ed.getBounds();
+ed.scanBoundsIn = oStrips; ed.selectionExtent = oExtent;
+out.calls = calls;
+if (!calls.some((c) => c[0] === "strips" && eq(c[1], out.feathered)) || calls.some((c) => c[0] === "extent")) throw new Error("a subtract should be scanned inside the old box: " + JSON.stringify(calls));
+if (ed.selectionLoose || !eq(out.afterSubtract, ed.scanBounds(0, 0, W, H))) throw new Error("bounds after subtract: " + JSON.stringify(out.afterSubtract));
+await ed.undoStep();
+const restored = pixels();
+out.restoredExact = same(before, restored);
+if (!out.restoredExact) throw new Error("the undo did not restore the selection's pixels exactly");
+if (!eq(ed.getBounds(), out.feathered)) throw new Error("bounds after undo: " + JSON.stringify(ed.getBounds()));
+// an empty selection is a step without pixels, and undoing back to it leaves nothing selected
+ed.clearSelection();
+await ed.undoStep();
+if (!eq(ed.getBounds(), out.feathered)) throw new Error("clear + undo: " + JSON.stringify(ed.getBounds()));
+ed.clearSelection();
+ed.pushUndo({ kind: "selection" });
+out.emptySnap = ed.undo[ed.undo.length - 1].empty === true;
+s.fillRect(10, 10, 50, 50);
+ed.markSelectionChanged([10, 10, 60, 60], [10, 10, 60, 60]);
+await ed.undoStep();
+out.emptyAgain = ed.getBounds() === null;
+if (!out.emptySnap || !out.emptyAgain) throw new Error("empty step: " + JSON.stringify(out));
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";
