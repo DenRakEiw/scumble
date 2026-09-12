@@ -50,6 +50,67 @@ return 1;
     return out
 
 
+SVG_SAMPLE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><rect width="400" height="200" fill="#fff"/><rect width="200" height="200" fill="#f00"/><circle cx="300" cy="100" r="60" fill="#00f"/></svg>'
+
+
+async def svg_import_rasterises_on_the_way_in(c):
+    """An SVG has no pixel size of its own. Loading one asks for the size (prefilled: 2048 on the
+    long side when the file only has a viewBox), the mirror then holds a PNG; as a layer it is
+    rasterised to fit the document without a dialog; the load_image command takes width / height
+    and never asks; and the mirror serves an .svg with its own type (it used to be octet-stream,
+    which an <img> refuses to render)."""
+    path = os.path.join(os.environ.get("TEMP", os.getcwd()), "scumble_editor_test.svg")
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(SVG_SAMPLE)
+    await c.eval("window.__svgPath = %s; window.__svgText = %s; 1" % (json.dumps(path), json.dumps(SVG_SAMPLE)))
+    return await c.eval(PRE % """
+const { api } = await import("./editor/host.js");
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const file = new File([window.__svgText], "shapes.svg", { type: "image/svg+xml" });
+const out = {};
+const p = ed.loadFile(file);                     // interactive: the size dialog
+await wait(300);
+const box = ed.root.querySelector(".ipc-askbox");
+if (!box) throw new Error("no size dialog for the SVG (" + ed.status + ")");
+const inputs = Array.from(box.querySelectorAll(".ipc-askfield input"));
+out.prefill = [inputs[0].value, inputs[1].value];
+inputs[0].value = "800"; inputs[0].dispatchEvent(new Event("input"));
+Array.from(box.querySelectorAll("button")).find((b) => b.textContent === "Import").click();
+await p;
+if (out.prefill[0] !== "2048" || out.prefill[1] !== "1024") throw new Error("prefill " + out.prefill);
+if (ed.width !== 800 || ed.height !== 400) throw new Error("size " + ed.width + "x" + ed.height + " (" + ed.status + ")");
+const bc = document.createElement("canvas"); bc.width = ed.width; bc.height = ed.height;
+const bctx = bc.getContext("2d"); bctx.drawImage(ed.base.img, 0, 0);
+const px = (x, y) => Array.from(bctx.getImageData(x, y, 1, 1).data);
+out.red = px(100, 200); out.blue = px(600, 200); out.white = px(700, 30);
+if (out.red[0] < 250 || out.red[1] > 5) throw new Error("red " + out.red);
+if (out.blue[2] < 250 || out.blue[0] > 5) throw new Error("blue " + out.blue);
+if (out.white[1] < 250) throw new Error("white " + out.white);
+out.baseFile = ed.base.ref.filename;
+if (!/\\.png$/i.test(out.baseFile)) throw new Error("the mirror holds " + out.baseFile);
+// a layer: rasterised to fit the document, no dialog
+await ed.addImageLayers([file], "none", { place: "fit" });
+const layer = ed.layers[ed.layers.length - 1];
+out.layer = [layer.canvas.width, layer.canvas.height, layer.w, layer.h, layer.name];
+if (layer.canvas.width !== 800 || layer.canvas.height !== 400 || layer.w !== 800) throw new Error("layer " + out.layer);
+// the command: a path and a width, the aspect kept, no dialog
+const r = await run("load_image", { path: window.__svgPath, width: 600, doc: window.__t });
+out.command = [r.width, r.height];
+if (r.width !== 600 || r.height !== 300) throw new Error("command size " + out.command);
+if (ed.root.querySelector(".ipc-askbox")) throw new Error("the command opened the size dialog");
+// the mirror's content type for an .svg file
+const fd = new FormData();
+fd.append("image", new Blob([window.__svgText], { type: "image/svg+xml" }), "editor_test_mime.svg");
+fd.append("overwrite", "true");
+const up = await (await fetch(api.apiURL("/upload/image"), { method: "POST", body: fd })).json();
+const view = await fetch(api.apiURL("/view?filename=" + encodeURIComponent(up.name) + "&type=input&subfolder=" + encodeURIComponent(up.subfolder || "")));
+out.mime = view.headers.get("content-type");
+if (out.mime !== "image/svg+xml") throw new Error("the mirror serves an .svg as " + out.mime);
+return out;
+""", timeout=120)
+
+
 STEPS = [
     ("new_dialog_has_two_boxes", """
 const doc = await run("new_document");
@@ -243,6 +304,7 @@ if (!green(after.block)) throw new Error("the block 580 px from the stroke vanis
 return { before, after };
 """),
     ("escape_closes_the_shell_dialogs", lambda c: escape_closes_the_shell_dialogs(c)),
+    ("svg_import_rasterises_on_the_way_in", lambda c: svg_import_rasterises_on_the_way_in(c)),
     ("cleanup", """
 for (const id of [window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

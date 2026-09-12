@@ -417,6 +417,15 @@ A built-in plugin `plugins/ailabel/` (`plugin.json`, `main.js`, `assets/*.svg`,
 
 ### Related: SVG import in general (measured 2026-09-12)
 
+**Done 2026-09-12**, in the editor rather than the mirror: `isSvgFile` / `svgSize` /
+`rasterizeSvg` in the node's `inpaint_canvas.js` turn the file into a PNG *before* the upload
+(`loadFile(file, { size, ask })` asks with the size dialog, ratio tied by default;
+`addImageLayers` fits it to the document without asking; `svgTarget()` holds the rule), so the
+mirror and the server only ever hold pixels and a reload never needs a size again. The
+`mimeOf` entry and the `.svg` in the Open dialog's filter are in too, `load_image` takes
+`width` / `height`. Gate `svg_import_rasterises_on_the_way_in` in `tools/editor_test.py`;
+one of the real label SVGs (Illustrator `<style>` classes) checked through `load_image`.
+
 Loading an `.svg` as an image fails today: the file lands in the mirror, but
 `mimeOf()` in `electron/main/files.js` (line 30) has no `.svg` entry, so `/comfy/view` serves
 it as `application/octet-stream` and Chromium refuses to render an SVG `<img>` without

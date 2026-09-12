@@ -135,7 +135,7 @@ Start a new white canvas of the given size in this tab (discards its image and l
 
 ### `load_image`
 
-Load an image as the base image of this tab (replaces its image, layers and history). From a local path, or by file name from the local store.
+Load an image as the base image of this tab (replaces its image, layers and history). From a local path, or by file name from the local store. An SVG is rasterised on the way in: at width x height when given (one of them keeps the aspect), else at its own declared size, else 2048 px on the long side.
 
 | param | type | description |
 |---|---|---|
@@ -144,10 +144,12 @@ Load an image as the base image of this tab (replaces its image, layers and hist
 | `filename` | string | instead of path: a file name in the local store / ComfyUI input folder (with subfolder and type) |
 | `subfolder` | string | subfolder of `filename` (default none) |
 | `type` | string | folder type of `filename`: input, output or temp (default `"input"`; one of `input`, `output`, `temp`) |
+| `width` | integer | SVG only: the pixel width to rasterise at |
+| `height` | integer | SVG only: the pixel height to rasterise at |
 
 ### `add_image_layer` *(image)*
 
-Add an image file as a new layer. role "none": part of the picture (fitted to the canvas, or placed at x,y with width/height); role "reference": a reference image for multi-reference models, not part of the picture.
+Add an image file as a new layer. role "none": part of the picture (fitted to the canvas, or placed at x,y with width/height); role "reference": a reference image for multi-reference models, not part of the picture. An SVG is rasterised to fit the document first, so it stays sharp.
 
 | param | type | description |
 |---|---|---|

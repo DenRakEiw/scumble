@@ -291,7 +291,7 @@ function copyMcpRegistration(kind) {
 
 // ---- dialogs -------------------------------------------------------------------------
 
-const IMAGE_FILTERS = [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff"] }, { name: "All files", extensions: ["*"] }];
+const IMAGE_FILTERS = [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "svg"] }, { name: "All files", extensions: ["*"] }];
 
 async function openImage() {
     needWindow("Open image");

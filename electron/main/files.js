@@ -30,7 +30,7 @@ function mirrorPath(type, subfolder, filename) {
 function mimeOf(name) {
     const ext = path.extname(name).toLowerCase();
     return { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp",
-        ".tif": "image/tiff", ".tiff": "image/tiff", ".ttf": "font/ttf", ".otf": "font/otf", ".woff": "font/woff", ".woff2": "font/woff2", ".cube": "text/plain" }[ext] || "application/octet-stream";
+        ".tif": "image/tiff", ".tiff": "image/tiff", ".svg": "image/svg+xml", ".ttf": "font/ttf", ".otf": "font/otf", ".woff": "font/woff", ".woff2": "font/woff2", ".cube": "text/plain" }[ext] || "application/octet-stream";
 }
 
 /** ComfyUI's collision rule: "name (1).png", "name (2).png", ... */

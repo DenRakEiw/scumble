@@ -18,6 +18,11 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Escape closes the Settings dialog and the "Generate a new image" dialog.** The editor's
   own key handling swallowed the key before the dialog saw it, so the dialogs could only be
   closed with the mouse. A key pressed inside any open dialog now stays with that dialog.
+- **SVG files can be opened and added as layers.** A vector drawing has no pixel size of its
+  own, so opening one asks for the size (its own when it declares one, else 2048 px on the
+  long side, the ratio kept) and rasterises it on the way in; as a layer it is rasterised to
+  fit the document, so it stays sharp. `load_image` takes `width` / `height` for it. Before,
+  an `.svg` silently failed to load.
 
 ## 0.1.8 — 2026-09-11
 

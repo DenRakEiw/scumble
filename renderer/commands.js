@@ -115,7 +115,7 @@ function rectMask(ed, x, y, w, h) {
 async function fileFrom(a, fallbackName) {
     if (a.path) {
         const r = await window.scumble.file.read(String(a.path));
-        const type = /\.jpe?g$/i.test(r.name) ? "image/jpeg" : /\.webp$/i.test(r.name) ? "image/webp" : "image/png";
+        const type = /\.jpe?g$/i.test(r.name) ? "image/jpeg" : /\.webp$/i.test(r.name) ? "image/webp" : /\.svg$/i.test(r.name) ? "image/svg+xml" : "image/png";
         return new File([r.data], a.name || r.name, { type });
     }
     if (!a.filename) throw new Error("pass path (a local file) or filename (a file in the local store / ComfyUI input folder)");
@@ -258,13 +258,14 @@ const COMMANDS = {
         },
     },
     load_image: {
-        description: "Load an image as the base image of this tab (replaces its image, layers and history). From a local path, or by file name from the local store.",
-        params: FILE_PARAMS,
+        description: "Load an image as the base image of this tab (replaces its image, layers and history). From a local path, or by file name from the local store. An SVG is rasterised on the way in: at width x height when given (one of them keeps the aspect), else at its own declared size, else 2048 px on the long side.",
+        params: { ...FILE_PARAMS, width: P.int("SVG only: the pixel width to rasterise at"), height: P.int("SVG only: the pixel height to rasterise at") },
         async run(ed, a) {
             if (ed.pending) ed.cancelPending();
             if (ed.textEdit) ed.endTextEdit(false);
             if (a.path) {
-                await ed.loadFile(await fileFrom(a));
+                const size = (+a.width > 0 || +a.height > 0) ? [+a.width > 0 ? Math.round(+a.width) : 0, +a.height > 0 ? Math.round(+a.height) : 0] : null;
+                await ed.loadFile(await fileFrom(a), { size, ask: false });
                 if (!ed.base) throw new Error(ed.status || "the image could not be loaded");
             } else {
                 if (!a.filename) throw new Error("pass path or filename");
@@ -278,7 +279,7 @@ const COMMANDS = {
     },
     add_image_layer: {
         needsImage: true,
-        description: "Add an image file as a new layer. role \"none\": part of the picture (fitted to the canvas, or placed at x,y with width/height); role \"reference\": a reference image for multi-reference models, not part of the picture.",
+        description: "Add an image file as a new layer. role \"none\": part of the picture (fitted to the canvas, or placed at x,y with width/height); role \"reference\": a reference image for multi-reference models, not part of the picture. An SVG is rasterised to fit the document first, so it stays sharp.",
         params: { ...FILE_PARAMS, role: P.str("none or reference", { enum: ["none", "reference"], default: "none" }), name: P.str("layer name (default the file name)"), x: P.int("left edge in image pixels"), y: P.int("top edge"), width: P.int("width; without height the aspect is kept"), height: P.int("height") },
         async run(ed, a) {
             const role = a.role === "reference" ? "reference" : "none";
