@@ -157,7 +157,7 @@ BENCH = """
     ed.setTool("paint");
     ed.activeLayerId = paintLayer.id;
     ed.brushSize = 40;
-    const p = { kind: "layerpaint", layer: paintLayer, stroke: mk(W, H), clip: null, erase: false, last: [10, 10], pressure: 1 };
+    const p = { kind: "layerpaint", layer: paintLayer, stroke: ed.newStrokeBuffer(paintLayer.canvas), clip: null, erase: false, last: [10, 10], pressure: 1 };
     ed.pointer = p;
     const strokeStart = performance.now();
     const dab = bench((i) => {

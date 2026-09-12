@@ -559,6 +559,92 @@ ed.clearSelection();
 await run("remove_layer", { layer: layer.id, doc: window.__t });
 return out;
 """),
+    ("stroke_buffers_cover_the_gesture_not_the_layer", """
+// Phase A item 2 (docs/PLAN_TILES.md): a stroke's buffer and its selection clip cover what the
+// gesture touched, not the layer; the live preview is refreshed inside the dab's rectangle; the
+// committed pixels and the preview are the same as with a buffer the size of the layer, with a
+// soft brush at an opacity and clipped to a selection, painting and erasing; and the preview
+// canvases of a large layer are given back after the gesture.
+await run("new_canvas", { width: 5000, height: 4000, doc: window.__t });   // 20 MP: above the keep limit
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height;
+const out = {};
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const layer = ed.addPaintLayer();
+{ const x = layer.canvas.getContext("2d"); x.fillStyle = "#3060c0"; x.fillRect(200, 200, 2000, 1500); x.fillStyle = "#c06030"; x.fillRect(1500, 1000, 2000, 1500); }
+ed.activeLayerId = layer.id;
+const s = ed.selection.getContext("2d");
+s.clearRect(0, 0, W, H); s.fillStyle = "#ff0000"; s.fillRect(600, 500, 2200, 1600);
+ed.markSelectionChanged([600, 500, 2800, 2100]);
+ed.brushSize = 90; ed.hardness = 0.4; ed.eraseHardness = 0.4; ed.brushOpacity = 0.6; ed.color = "#20c040";
+const path = []; for (let i = 0; i <= 24; i++) path.push([500 + i * 90, 700 + Math.round(Math.sin(i / 3) * 300)]);
+// premultiplied, like the compositor gate: at alpha 1 or 2 the stored colour is noise, and a
+// canvas copy (the buffer growing) may change it without changing what is drawn
+const same = (a, b, tol) => { let max = 0; for (let i = 0; i < a.length; i += 4) { const aa = a[i + 3], ba = b[i + 3]; let d = Math.abs(aa - ba); for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(a[i + k] * aa / 255 - b[i + k] * ba / 255)); if (d > max) max = d; } return max <= tol ? null : +max.toFixed(1); };
+// a full-size buffer that answers the same interface: the reference is the old way, a canvas the size of the layer
+const fullBuffer = (target) => { const c = mk(target.width, target.height); return { tw: target.width, th: target.height, canvas: c, x: 0, y: 0, w: target.width, h: target.height, ensure() { const ctx = c.getContext("2d"); ctx.setTransform(1, 0, 0, 1, 0, 0); return ctx; }, all() { return this.ensure(); } }; };
+const paintRef = (erase) => {
+    const ref = mk(W, H); ref.getContext("2d").drawImage(layer.canvas, 0, 0);
+    const q = { kind: "layerpaint", layer, stroke: fullBuffer(layer.canvas), clip: true, erase, last: path[0], pressure: 1 };
+    ed.layerDab(q, path[0][0], path[0][1], path[0][0], path[0][1]);   // the pointer-down dab
+    for (let i = 1; i < path.length; i++) ed.layerDab(q, path[i - 1][0], path[i - 1][1], path[i][0], path[i][1]);
+    const clip = mk(W, H); { const c = clip.getContext("2d"); c.setTransform(layer.canvas.width / layer.w, 0, 0, layer.canvas.height / layer.h, 0, 0); c.drawImage(ed.selection, -layer.x, -layer.y); }
+    const st = mk(W, H); { const c = st.getContext("2d"); c.drawImage(q.stroke.canvas, 0, 0); c.globalCompositeOperation = "destination-in"; c.drawImage(clip, 0, 0); }
+    const r = ref.getContext("2d"); r.globalAlpha = ed.brushOpacity; r.globalCompositeOperation = erase ? "destination-out" : "source-over"; r.drawImage(st, 0, 0);
+    return ref;
+};
+for (const erase of [false, true]) {
+    const before = mk(W, H); before.getContext("2d").drawImage(layer.canvas, 0, 0);
+    const ref = paintRef(erase);
+    // the real gesture: the buffer grows with the dabs, the preview follows inside the dab's box
+    const p = { kind: "layerpaint", layer, stroke: ed.newStrokeBuffer(layer.canvas), clip: ed.strokeClip(layer, layer.canvas), erase, last: path[0], pressure: 1 };
+    ed.pointer = p;
+    ed.layerDab(p, path[0][0], path[0][1], path[0][0], path[0][1]);
+    let previewChecked = 0;
+    for (let i = 1; i < path.length; i++) {
+        ed.layerDab(p, path[i - 1][0], path[i - 1][1], path[i][0], path[i][1]);
+        if (i % 6 === 0) {
+            // the incremental preview against a preview built whole from the same buffer
+            const live = ed.layerPixels(layer);
+            const whole = mk(W, H); { const c = whole.getContext("2d"); c.drawImage(layer.canvas, 0, 0); const cs = ed.clippedStroke(p); c.globalAlpha = ed.brushOpacity; c.globalCompositeOperation = erase ? "destination-out" : "source-over"; c.drawImage(cs, p.stroke.x, p.stroke.y); }
+            const box = [Math.max(0, p.stroke.x - 4), Math.max(0, p.stroke.y - 4), Math.min(W, p.stroke.x + p.stroke.w + 4), Math.min(H, p.stroke.y + p.stroke.h + 4)];
+            const a = live.getContext("2d").getImageData(box[0], box[1], box[2] - box[0], box[3] - box[1]).data;
+            const b = whole.getContext("2d").getImageData(box[0], box[1], box[2] - box[0], box[3] - box[1]).data;
+            const d = same(a, b, 1);
+            if (d) throw new Error((erase ? "erase" : "paint") + ": the live preview differs from a whole one by " + d + " levels after dab " + i);
+            previewChecked++;
+        }
+    }
+    out[(erase ? "erase" : "paint") + "Buffer"] = { w: p.stroke.w, h: p.stroke.h, share: +((p.stroke.w * p.stroke.h) / (W * H)).toFixed(3), clip: p.clipCanvas ? [p.clipCanvas.width, p.clipCanvas.height] : null, previewChecked };
+    if (p.stroke.w * p.stroke.h > 0.25 * W * H) throw new Error("the stroke buffer is not much smaller than the layer: " + JSON.stringify(out));
+    if (!p.clipCanvas || p.clipCanvas.width !== p.stroke.w || p.clipCanvas.height !== p.stroke.h) throw new Error("the clip is not the buffer's size");
+    ed.onPointerUp({ pointerId: 1 });
+    // the 20 MP preview is given back; the clip scratch is the buffer's size and may stay
+    if (ed.strokePreview) throw new Error("the preview canvas of a 20 MP layer was kept after the gesture");
+    if (ed.clipScratch && ed.clipScratch.width * ed.clipScratch.height > 0.25 * W * H) throw new Error("the clip scratch is not the buffer's size: " + ed.clipScratch.width + "x" + ed.clipScratch.height);
+    // the committed pixels against the reference, inside the selection and outside it
+    const got = layer.canvas.getContext("2d").getImageData(0, 0, W, H).data;
+    const want = ref.getContext("2d").getImageData(0, 0, W, H).data;
+    // a small buffer starts as a software canvas and grows onto the GPU; Skia's CPU and GPU
+    // blending of twenty overlapping soft dabs round differently by a few levels (measured 4
+    // premultiplied at most), which no eye sees and which the old 600 MB buffer did not get
+    // to show because it was on the GPU from the first dab
+    const d = same(got, want, 8);
+    if (d) throw new Error((erase ? "erase" : "paint") + ": the committed stroke differs from the reference by " + d + " levels");
+    const step = ed.undo[ed.undo.length - 1];
+    out[(erase ? "erase" : "paint") + "Undo"] = { kind: step.kind, w: step.w, h: step.h };
+    if (step.kind !== "layerrect" || step.w >= W) throw new Error("the undo step is not a rect copy: " + JSON.stringify(step));
+    await ed.undoStep();
+    const back = layer.canvas.getContext("2d").getImageData(0, 0, W, H).data;
+    if (same(back, before.getContext("2d").getImageData(0, 0, W, H).data, 0)) throw new Error("undo did not restore the layer");
+    // paint it for real for the erase round
+    ed.pointer = null;
+}
+ed.clearSelection();
+await run("remove_layer", { layer: layer.id, doc: window.__t });
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";
