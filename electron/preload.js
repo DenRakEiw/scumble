@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld("scumble", {
             resources: webFrame.getResourceUsage(),          // images / fonts / other: { count, size, liveSize }
         },
     }),
+    // the graphics card's memory as a whole ({ usedMB, totalMB, source } or null), docs/PLAN_TILES.md phase A item 5
+    gpuMemory: () => ipcRenderer.invoke("app:gpuMemory"),
     openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
     settings: {
         get: () => ipcRenderer.invoke("settings:get"),

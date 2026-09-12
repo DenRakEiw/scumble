@@ -1469,8 +1469,17 @@ export const host = {
             : " Slow: the GPU memory is probably full; close what else uses it, or set the helper device to CPU in Settings.";
     },
 
-    /** Release the in-app models (VRAM); the editor's "Free VRAM" button and the pre-run free call this. */
+    /**
+     * Release the in-app models (VRAM); the editor's "Free VRAM" button and the pre-run free
+     * call this. The button is the user asking for memory now, so the caches of every other
+     * tab go too (the button's own tab released its own, compositor and GL pool included,
+     * before calling here); docs/PLAN_TILES.md phase A, item 5.
+     */
     async freeHelpers() {
+        for (const ed of this._editors) {
+            if (ed === this.editor || ed.pointer) continue;
+            try { ed.releaseCaches({ deep: true }); } catch (err) { console.warn(err); }
+        }
         return window.scumble.helpers.free();
     },
 };

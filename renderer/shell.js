@@ -44,7 +44,7 @@ const ui = {
     compatKeyState: $("set-compat-key-state"), compatTest: $("set-compat-test"), compatState: $("set-compat-state"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
-    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setGpuMem: $("set-gpu-mem"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
+    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setGpuMem: $("set-gpu-mem"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
@@ -1147,6 +1147,14 @@ host.onProviderRuns = (runs) => {
 // grows past the limit those caches are given back; the next time the tab comes forward it
 // rebuilds them. The active document is never touched, and neither is anything that is
 // working (docs/PERFORMANCE.md phase 6).
+//
+// The card as a whole counts too (docs/PLAN_TILES.md phase A, item 5): the stutter on a large
+// document comes when the card is over-committed by everything on it - ComfyUI's models after
+// a local render above all - and Windows pages textures out. When less than
+// `settings.memory.cardMinFreeMB` of the card is free, the background tabs' caches go as
+// above, and then the front tab's compositor textures and the GL pool as well (never its
+// display levels: they are the next frame). The card's numbers come from the main process
+// (electron/main/gpumem.js): nvidia-smi, or the WDDM counters on Windows, or nothing.
 let memoryBusy = false;
 
 /** The GPU process's private bytes in MB, or 0 when the platform does not report them. */
@@ -1157,23 +1165,53 @@ async function gpuMemoryMB() {
     return Math.round(kb / 1024);
 }
 
+/** The card: { usedMB, totalMB, source } or null. Never throws. */
+async function cardMemory() {
+    try { return (await window.scumble.gpuMemory()) || null; } catch (_) { return null; }
+}
+
+/** How short the card is of `minFree` MB, in MB (0 when it is not, or nothing is known). */
+function cardShortfall(card, minFree) {
+    if (!card || !minFree || !(card.totalMB > 0)) return 0;
+    return Math.max(0, minFree - (card.totalMB - card.usedMB));
+}
+
 async function watchMemory() {
     if (memoryBusy) return;
     // read the limit rather than trusting the copy in `settings`: the value can be
     // changed from the settings dialog of another window, and it makes the watch testable
     const conf = await window.scumble.settings.get();
     const limit = (conf.memory && conf.memory.gpuLimitMB) || 0;
-    if (!limit) return;
-    const others = host.editors().filter((ed) => ed !== host.editor && !busy(ed) && !ed.pointer);
-    if (!others.length) return;
+    const minFree = (conf.memory && conf.memory.cardMinFreeMB) || 0;
+    if (!limit && !minFree) return;
     memoryBusy = true;
     try {
         const before = await gpuMemoryMB();
-        if (before <= limit) return;
+        const card = minFree ? await cardMemory() : null;
+        const short = cardShortfall(card, minFree);
+        const over = limit && before > limit;
+        if (!over && !short) return;
+        const others = host.editors().filter((ed) => ed !== host.editor && !busy(ed) && !ed.pointer);
         let freed = 0;
         for (const ed of others) { try { freed += ed.releaseCaches({ deep: false }) || 0; } catch (err) { console.warn(err); } }
+        let front = 0;
+        if (short) {
+            // the card is the problem: the front tab's textures too, and the GL pool; the
+            // next frame uploads what it shows again (a window of each source, not the whole)
+            const ed = host.editor;
+            if (ed && !busy(ed) && !ed.pointer) {
+                try {
+                    if (ed._compositor && ed._compositor.stats) front += ed._compositor.stats().bytes || 0;
+                    if (ed._compositor) ed._compositor.clear();
+                    if (typeof ed.releaseGpu === "function") front += ed.releaseGpu() || 0;
+                    ed.sceneSig = null;
+                    ed.drawSoon();
+                } catch (err) { console.warn(err); }
+            }
+        }
         const after = await gpuMemoryMB();
-        console.log(`memory watch: GPU ${before} MB over the ${limit} MB limit, released ${Math.round(freed / 1048576)} MB of caches in ${others.length} background tab${others.length === 1 ? "" : "s"}, now ${after} MB`);
+        const why = [over ? `GPU process ${before} MB over the ${limit} MB limit` : "", short ? `card ${card.usedMB} of ${card.totalMB} MB used, ${short} MB short of the ${minFree} MB to keep free (${card.source})` : ""].filter(Boolean).join("; ");
+        console.log(`memory watch: ${why}; released ${Math.round(freed / 1048576)} MB of caches in ${others.length} background tab${others.length === 1 ? "" : "s"}${short ? ` and ${Math.round(front / 1048576)} MB of the front tab's textures` : ""}, GPU process now ${after} MB`);
     } catch (err) {
         console.warn("memory watch", err);
     } finally {
@@ -1210,9 +1248,12 @@ async function openSettings() {
     ui.recipeNoteSet.textContent = "";
     ui.setGpu.textContent = glFiltersAvailable() ? "Filter layers run on the GPU (WebGL2); the CPU code is the fallback." : "WebGL2 is not available here: filter layers run on the CPU.";
     ui.setGpuLimit.value = (settings.memory && settings.memory.gpuLimitMB) != null ? settings.memory.gpuLimitMB : 3072;
+    ui.setCardMin.value = (settings.memory && settings.memory.cardMinFreeMB) != null ? settings.memory.cardMinFreeMB : 2048;
     try {
         const mb = await gpuMemoryMB();
-        ui.setGpuMem.textContent = `The GPU process is using ${mb} MB right now. A background tab keeps its filtered copies, its display pyramids and the compositor's textures until they are released here.`;
+        const card = await cardMemory();
+        const cardText = card ? (card.totalMB ? ` The card holds ${card.usedMB} of ${card.totalMB} MB (everything on it, read through ${card.source}).` : ` The card holds ${card.usedMB} MB in all (read through ${card.source}; its size is not reported).`) : " The card's own memory cannot be read here (no nvidia-smi, no counters).";
+        ui.setGpuMem.textContent = `The GPU process is using ${mb} MB right now.${cardText} A background tab keeps its filtered copies, its display pyramids and the compositor's textures until they are released here.`;
     } catch (_) { ui.setGpuMem.textContent = ""; }
     try {
         const info = await window.scumble.info();
@@ -1285,6 +1326,11 @@ ui.setGpuLimit.addEventListener("change", async () => {
     const v = Math.max(0, Math.round(Number(ui.setGpuLimit.value) || 0));
     ui.setGpuLimit.value = v;
     settings = await window.scumble.settings.set({ memory: { ...(settings.memory || {}), gpuLimitMB: v } });
+});
+ui.setCardMin.addEventListener("change", async () => {
+    const v = Math.max(0, Math.round(Number(ui.setCardMin.value) || 0));
+    ui.setCardMin.value = v;
+    settings = await window.scumble.settings.set({ memory: { ...(settings.memory || {}), cardMinFreeMB: v } });
 });
 ui.aboutRepo.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal("https://github.com/DenRakEiw/scumble"); });
 
@@ -1429,4 +1475,4 @@ ui.logOpen.addEventListener("click", () => window.scumble.log.open());
 ui.logClear.addEventListener("click", async () => { await window.scumble.log.clear(); logState.entries = []; renderLog(); });
 host.openConsole = () => openConsole();
 
-export { newDocument, activate, closeDocument, openSettings, openConsole, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory };
+export { newDocument, activate, closeDocument, openSettings, openConsole, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory, cardMemory, cardShortfall };

@@ -24,7 +24,7 @@ const DEFAULTS = {
     promptTemplates: { upsample: "", generate: "" },
     // above this many MB in the GPU process the shell releases the caches of the tabs that
     // are not in front (renderer/shell.js watchMemory); 0 switches the watch off
-    memory: { gpuLimitMB: 3072 },
+    memory: { gpuLimitMB: 3072, cardMinFreeMB: 2048 },
     window: null,
 };
 

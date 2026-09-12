@@ -141,14 +141,19 @@ export function status(ed) {
     };
 }
 
-/** What the app is using, in MB: the GPU process and this renderer (docs/PERFORMANCE.md phase 6). */
+/**
+ * What the app is using, in MB: the GPU process and this renderer (docs/PERFORMANCE.md phase
+ * 6), and the card as a whole when it can be read (cardUsedMB / cardTotalMB, null otherwise).
+ */
 async function memoryMB() {
     try {
         const m = await window.scumble.metrics();
         let gpuKB = 0;
         for (const p of m.processes || []) if (p.type === "GPU") gpuKB += p.privateKB || p.workingSetKB || 0;
         const r = m.renderer && m.renderer.process;
-        return { gpuMB: Math.round(gpuKB / 1024), rendererMB: r ? Math.round((r.private || r.residentSet || 0) / 1024) : 0 };
+        let card = null;
+        try { card = await window.scumble.gpuMemory(); } catch (_) { card = null; }
+        return { gpuMB: Math.round(gpuKB / 1024), rendererMB: r ? Math.round((r.private || r.residentSet || 0) / 1024) : 0, cardUsedMB: card ? card.usedMB : null, cardTotalMB: card ? card.totalMB : null };
     } catch (_) {
         return null;
     }

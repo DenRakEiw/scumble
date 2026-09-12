@@ -18,6 +18,7 @@ const recipes = require("./recipes");
 const prompts = require("./prompts");
 const brushes = require("./brushes");
 const helpers = require("./onnx");
+const gpumem = require("./gpumem");
 const plugins = require("./plugins");
 const { Bridge } = require("./bridge");
 const { LocalServer, LocalClient } = require("./local");
@@ -466,6 +467,8 @@ function installIpc() {
             privateKB: p.memory ? p.memory.privateBytes : undefined, // Windows only
         })),
     }));
+    // the card as a whole (electron/main/gpumem.js): what ComfyUI and everything else hold too
+    ipcMain.handle("app:gpuMemory", () => gpumem.gpuMemory());
     // updates (electron/main/updater.js): GitHub Releases feed, checked at start unless switched off
     ipcMain.handle("update:status", () => updater.status);
     ipcMain.handle("update:check", () => updater.check({ manual: true }));
