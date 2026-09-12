@@ -531,9 +531,15 @@ function makeApi(entry) {
             },
         },
 
+        // The plugin's persistent object, loaded once before activate() and cached: get() is
+        // synchronous (a copy), set() merges into the cache at once and writes through to
+        // settings.json in the background (the returned promise resolves when it is on disk).
         storage: {
-            get: () => window.scumble.plugins.getData(entry.id),
-            set: (patch) => window.scumble.plugins.setData(entry.id, patch || {}),
+            get: () => ({ ...(entry.data || {}) }),
+            set(patch) {
+                entry.data = { ...(entry.data || {}), ...(patch || {}) };
+                return window.scumble.plugins.setData(entry.id, patch || {}).catch((err) => report(entry, "storage", err));
+            },
         },
 
         ui: {
@@ -577,6 +583,7 @@ async function load(p) {
     try {
         const mod = await import(`/plugins/${encodeURIComponent(p.id)}/${p.entry}?v=${Date.now()}`);
         entry.module = mod;
+        try { entry.data = (await window.scumble.plugins.getData(p.id)) || {}; } catch (_) { entry.data = {}; }
         entry.api = makeApi(entry);
         const fn = typeof mod.activate === "function" ? mod.activate : (typeof mod.default === "function" ? mod.default : null);
         if (!fn) throw new Error("the entry module exports no activate(scumble) function");

@@ -739,6 +739,51 @@ Apply a film stock: changes the active film look layer, or adds one on top (see 
 | `preset` | string | stock id (film.looks), or custom (required) |
 | `strength` | number | 0..100 |
 
+### `glb.place` *(plugin glb)*
+
+Render a 3D object (.glb / .gltf) into a new layer, placed in the picture by position, distance, rotation and scale. The file is copied into the local store and the layer stays editable with glb.edit.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `path` | string | absolute path of a .glb / .gltf file |
+| `filename` | string | instead of path: a file already in the local store (from an earlier glb.place) |
+| `position` | object | { x, y } where the object's centre lands, as fractions of the picture (0..1, default 0.5 / 0.55) |
+| `depth` | number | distance from the camera in object units (the model is 1 unit on its longest side; default 3) |
+| `rotation` | object | { x, y, z } in degrees (default y 30) |
+| `scale` | number | size multiplier (default 1) |
+| `fov` | number | camera field of view in degrees (default 40; small = long lens) |
+| `light` | object | { azimuth, elevation, intensity, ambient }: the key light's direction in degrees and strength, the room light's strength |
+| `shadow` | boolean | a soft contact shadow on an invisible ground under the object (default true) |
+| `depth_layer` | boolean | also write a depth layer (near = white, role control) for a depth ControlNet (default false) |
+| `name` | string | layer name (default the file name) |
+
+### `glb.edit` *(plugin glb)*
+
+Re-render a 3D object layer with changed parameters (only the given ones change); the layer keeps its id, the depth layer follows.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layer` | string | the 3D object layer: id, name, or "active" (default `"active"`) |
+| `position` | object | { x, y } where the object's centre lands, as fractions of the picture (0..1, default 0.5 / 0.55) |
+| `depth` | number | distance from the camera in object units (the model is 1 unit on its longest side; default 3) |
+| `rotation` | object | { x, y, z } in degrees (default y 30) |
+| `scale` | number | size multiplier (default 1) |
+| `fov` | number | camera field of view in degrees (default 40; small = long lens) |
+| `light` | object | { azimuth, elevation, intensity, ambient }: the key light's direction in degrees and strength, the room light's strength |
+| `shadow` | boolean | a soft contact shadow on an invisible ground under the object (default true) |
+| `depth_layer` | boolean | also write a depth layer (near = white, role control) for a depth ControlNet (default false) |
+| `name` | string | layer name (default the file name) |
+
+### `glb.info` *(plugin glb)*
+
+The 3D object layers of this document with their parameters, and the parameter defaults.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
 ### `sample.mean_color` *(plugin sample)*
 
 Mean colour of the selection (or the whole picture) as rgb and hex.

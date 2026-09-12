@@ -72,6 +72,73 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
+## Where things stand (2026-09-12, evening)
+
+**The five steps of `docs/PLAN_0_1_7.md` "Build order after 0.1.8" are built, each with its
+gate, its commit and its push** (a to e, in that order, node repo first where the editor
+changed, then `tools/sync_editor.py`). `package.json` is still **0.1.9** with an unreleased
+`CHANGELOG.md` section that now holds all of it; the tag waits for the user. Per step:
+
+- **a, Escape closes the Settings and Generate-new dialogs.** One line in the node's
+  `_docKey`: a key whose target sits inside `dialog[open]` returns early. Gate
+  `escape_closes_the_shell_dialogs` in `tools/editor_test.py` (a synthetic keydown for
+  `defaultPrevented`, a real key through CDP `Input.dispatchKeyEvent` for the native close;
+  the runner takes Python callables as steps for that). Red on the old code, green after.
+- **b, SVG import.** Done in the editor, not the mirror: `isSvgFile` / `svgSize` /
+  `rasterizeSvg` (node repo) turn the file into a PNG before the upload; `loadFile(file,
+  { size, ask })` asks with the size dialog (prefilled with the declared size, else 2048 on
+  the long side, ratio tied by default: `ask()` takes `linked: "on"`), `addImageLayers` fits
+  it to the document without asking, `load_image` takes `width` / `height` and never asks.
+  `mimeOf` and the Open dialog know `.svg` too. Gate `svg_import_rasterises_on_the_way_in`.
+- **c, the EU AI label plugin** `plugins/ailabel/` (`docs/PLUGINS.md` built-in list). The
+  twelve Commission SVGs ship with a `NOTICE` (source URL, the verbatim terms: "publicly
+  available for everyone to use freely, without the need for attribution"; no named licence;
+  **the user approved shipping them on 2026-09-12**). `black` in a file name is the black pill
+  with white letters, `white` the white pill with dark letters, `transparent` the pill at
+  50 %. Panel, two actions, commands `ailabel.add` / `remove` / `info`; adding again replaces;
+  command arguments never change the panel's stored settings. Gate `tools/ailabel_test.py`.
+- **d, custom brushes** (`docs/BRUSHES.md`). The reader now parses the `desc` block
+  (Photoshop's Action Descriptor, which neither GIMP nor abrupng reads) and maps names and
+  spacings to the bitmaps by UUID; verified on Photoshop 2026's three packs and a 377 MB
+  third-party pack (every bitmap named, every desc block consumed to its last byte). Tips
+  persist through `electron/main/brushes.js` (`<userData>/brushes/`), `host.brushLibrary` is
+  shared by every tab. Spacing slider, *Follow stroke*, thumbnail, box cursor, Remove; the
+  eraser stamps a tip through the same path. Commands `list_brush_tips` / `set_brush`. Gate
+  `tools/brush_test.py` (runs `node tools/brush_test.js` first). The node's `DEVELOPMENT.md`
+  §22 has the format notes.
+- **e, the GLB layer plugin, stage 1** `plugins/glb/` (`docs/GLB.md`). three.js 0.186
+  vendored by `tools/vendor_three.py` (2.3 MB, the npm package has no minified ES build), the
+  dialog with the picture as the backdrop, colour pass with alpha cropped to the object,
+  depth pass with the near / far planes hugging the object, the file in the local store and
+  the parameters in the plugin storage by layer id, *Edit* in place. Commands `glb.place` /
+  `edit` / `info`. Gate `tools/glb_test.py` (a cube written as a glTF binary by the test).
+  **Found on the way: `scumble.storage.get()` returned a promise**, so no plugin had ever read
+  its data back (the film pack's group, the label's settings). `renderer/plugins.js` loads the
+  data before `activate` and serves `get()` from a cache now; `set` writes through.
+
+**Also on 2026-09-12**: the GitHub description of `DenRakEiw/scumble` no longer says
+"Krita-style" (asked for during the session; changed with `gh repo edit`). The user asked
+whether a filter exists that normalises a layer's colours towards the mean with a slider:
+none does (the per-layer *Match* slider goes towards the *surroundings'* statistics); a
+"Normalise" filter is offered, not built.
+
+**Traps met today, worth keeping**: a long Python heredoc in the Bash tool failed to parse
+with "unexpected EOF" (write the script with the Write tool instead); Chromium fires only
+`cancel`, not always `close`, on a `<dialog>` closed by a real Escape; `.ipc-view canvas` is
+`position: absolute; width: 100%`, so a canvas placed in the options bar needs inline size
+and `position: static`; the layers of a document reach the local store through
+`ed.syncLayers()`, which the autosave calls on its own timer, so a test that reloads right
+after a change has to call it first.
+
+**Gates at the end of the session, all on the dev instance with its own `--user-data-dir`**:
+`editor_test.py`, `commands_test.py`, `ailabel_test.py`, `brush_test.py`, `glb_test.py`,
+`transparent_test.py`-independent; `smoke_test.py` was **not** run today (no editor change
+touched the run path). `docs/COMMANDS.md` regenerated (71 commands).
+
+**Next**: `docs/PLAN_0_1_7.md` "What stays open after these five" and `docs/BUGS.md` (the erase
+that "switches to the base", the jerky 15k document: measure first). The "Normalise" filter if
+the user wants it. Then the 0.1.9 tag.
+
 ## Where things stand (2026-09-11, late)
 
 **Read `docs/BUGS.md` first.** The vanishing layer is fixed (first bullet below). What is

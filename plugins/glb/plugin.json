@@ -1,0 +1,9 @@
+{
+  "name": "3D object (GLB)",
+  "version": "1.0.0",
+  "description": "Place a 3D object (.glb / .gltf) in the picture: a dialog with the picture as the backdrop, position, rotation, scale, focal length, light and a ground shadow; the render becomes a layer, with an optional depth layer for a ControlNet, and stays editable.",
+  "author": "Scumble",
+  "entry": "main.js",
+  "registers": ["panel", "action", "command"],
+  "enabledByDefault": true
+}

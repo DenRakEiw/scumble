@@ -38,6 +38,16 @@ the section for its version; `docs/` and the commit history hold the technical d
   with the direction of travel), a thumbnail, the cursor as the tip's box, and a trash button;
   the eraser stamps a tip too. Imported tips are stored under the app's data folder and are
   there again after a restart, in every tab. Agents get `list_brush_tips` and `set_brush`.
+- **3D objects in the picture.** *Plugins › Place 3D object (.glb)...* (or the new *3D object*
+  panel) opens a dialog with your picture as the backdrop: drag to turn the model, Shift+drag
+  to move it, the wheel to scale it, sliders for distance, focal length and light, a ground
+  shadow if you want one. *Place* renders it into an ordinary layer at the picture's
+  resolution; select it and *Generate* with a denoise below 1, and the model paints it into
+  the scene. A tick adds a depth layer (role control) for a depth ControlNet. The object
+  stays editable: *Edit* in the panel reopens the dialog and replaces the layer. Agents get
+  `glb.place` and `glb.edit`. Draco / KTX2 compressed files are not supported yet.
+- **Fixed: plugins could not read their stored settings back** (the film pack's group choice,
+  the AI label panel's last settings); they do now.
 
 ## 0.1.8 — 2026-09-11
 

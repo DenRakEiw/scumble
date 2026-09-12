@@ -488,6 +488,19 @@ paints light, shadow and material into the scene. And a render gives an exact de
 normals for free, which a local ControlNet recipe can use where a depth estimator only
 guesses.
 
+**Done 2026-09-12** as designed, `plugins/glb/` (`docs/GLB.md`): three.js 0.186 vendored by
+`tools/vendor_three.py` (2.3 MB unminified, the npm package ships no minified ES build), the
+dialog with the picture as the backdrop (drag turns, Shift+drag moves, wheel scales, twelve
+sliders, two ticks), the colour pass with alpha cropped to the object, the depth pass with
+the near / far planes hugging the object, the file in the local store, the parameters in
+the plugin's storage by layer id, *Edit* replacing pixels and placement in place, the commands
+`glb.place` / `glb.edit` / `glb.info`. Gate `tools/glb_test.py` (a cube written as a glTF
+binary; placement, alpha, colour, depth near / far, a second object, edit, the dialog with a
+real Escape, the objects after a reload). Found on the way and fixed in `renderer/plugins.js`:
+`scumble.storage.get()` returned a promise, so no plugin ever read its data back. Orbit
+controls were not vendored: the camera is fixed at the origin by design and the object is
+what turns. Not applied: the preset transform of a model's own camera.
+
 ### Stage 1 (build this)
 
 A built-in plugin `plugins/glb/` on the plugin API, app-only (the node has no plugin system):

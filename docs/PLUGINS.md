@@ -75,7 +75,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `actions.register(def)` / `unregister(id)` / `run(id)` | Plugins menu entries |
 | `tools.register(def)` / `unregister(id)` | tools in the tool column |
 | `events.on(type, fn)` | `built`, `activate`, `changed`, `tool`, `removed`; `fn({ doc, ... })`; returns `off()` |
-| `storage.get()` / `storage.set(patch)` | a small persistent object per plugin (`settings.json`) |
+| `storage.get()` / `storage.set(patch)` | a small persistent object per plugin (`settings.json`): `get()` returns a copy synchronously (loaded before `activate`), `set(patch)` merges at once and writes through in the background |
 | `ui.status(text)` | the status bar of the active tab |
 | `ui.el(tag, cls, text)`, `ui.icon(name)`, `ui.button(label, title, onClick)`, `ui.slider(label, {min, max, step, value, unit}, onChange)` | DOM helpers in the editor's style |
 | `ui.confirm(text)` | a yes / no dialog |
@@ -284,3 +284,7 @@ both paths, the commands, the control point tool with undo, the overlay, the pan
   (label, style, ground, size, position, opacity), two Plugins-menu actions, the commands
   `ailabel.add` / `ailabel.remove` / `ailabel.info`. Adding again replaces the label. About
   200 lines on the plain API, no editor patch; `tools/ailabel_test.py` is its gate.
+- `plugins/glb`: a 3D object (.glb / .gltf) placed in the picture through a dialog and
+  rendered into a layer, with an optional depth layer for a ControlNet, re-editable
+  (`docs/GLB.md`). three.js vendored under `vendor/` by `tools/vendor_three.py`; a panel, two
+  actions, the commands `glb.place` / `glb.edit` / `glb.info`; `tools/glb_test.py` is its gate.
