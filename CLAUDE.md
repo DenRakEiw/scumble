@@ -137,7 +137,7 @@ offered. **Normalise filter** (node repo `colourStats` / `applyNormalize`, app G
 in `editor_test.py`, GPU vs CPU max 2 levels). **Export Canvas row** (frame, anchor, fill;
 `export` takes `canvas_width` / `canvas_height` / `anchor` / `fill`; step
 `export_canvas_frames_the_picture`). Gates after: editor, commands, size, composite PASS,
-`docs/COMMANDS.md` regenerated. **The 0.1.9 tag is ready and waits for the user's go.**
+`docs/COMMANDS.md` regenerated. **0.1.9 is released** (tag `v0.1.9`, the workflow built `Scumble-Setup-0.1.9.exe` plus `latest.yml`, the draft published 2026-09-12 on the user's go; `package.json` needs the bump to 0.1.10 and a new `CHANGELOG.md` section before the next change ships).
 
 **Third block of 2026-09-12: the console and the log file** (plan §3, which the plan had
 called done although nothing existed; asked for again after the bare Comfy Cloud "error").
