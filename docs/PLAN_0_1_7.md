@@ -1,4 +1,4 @@
-# Plan after 0.1.6: template upload, console, draw_shape, liquify, Python plugins, custom brushes
+# Plan after 0.1.6: template upload, console, draw_shape, liquify, Python plugins, custom brushes, Escape in Settings
 
 Written 2026-09-11 with DenRakEiw, for the sessions after this one. Read `CLAUDE.md` first.
 The five items are in the order they should be worked; 1 to 3 are one release (**0.1.7**),
@@ -320,6 +320,44 @@ one per version, small, licence-checked), a stamped stroke's coverage against th
 on the same path, persistence across a `location.reload()`, and one erase with a tip.
 Estimate: half a day for verify + persistence, another half for the stroke quality points.
 
+## 7. Escape closes the Settings dialog
+
+Asked for on 2026-09-12: "Wenn man im Settings-Menü ist, soll es möglich sein, das Menü mit
+Esc zu beenden".
+
+### Why it does not work today
+
+`ui.settings` is a native `<dialog>` opened with `showModal()` (`renderer/shell.js`, line
+1185), and the browser closes a modal dialog on Escape by itself; the dialog's own keydown
+handler even lets Escape through (line 1243). What swallows it is the **editor's window key
+handler** `_docKey` in `inpaint_canvas.js` (about line 2198): it sits on `window` in the
+capture phase so ComfyUI's shortcuts never see a key, and on every Escape it calls
+`e.stopImmediatePropagation(); e.preventDefault()` before deciding what to cancel (a pending
+result, a polygon, a shape, a flyout, a text edit, compare, else `host.onEscape`). The
+`preventDefault` on the keydown is exactly what cancels the dialog's native close, and a
+capture listener on `window` runs before anything on the dialog, so the shell cannot fix it
+from its side. The only target it exempts is the prompt box. The same applies to the
+"Generate a new image" dialog (`ui.gen`, line 778).
+
+### Design
+
+- In `_docKey`, before the Escape branch: `if (t && t.closest && t.closest("dialog[open]"))
+  return;` so a key pressed inside any open dialog (Settings, Generate new, a plugin's) stays
+  with the dialog. Node repo first, then `python tools/sync_editor.py`; the node has no shell
+  dialogs, but the editor's own `ask()` modal is a `<div>`, not a `<dialog>`, and keeps its
+  `askOpen` guard, so nothing changes there.
+- Escape inside a text field of the dialog should still close the dialog, as it does in every
+  native form; the field handlers in `shell.js` only stop propagation, they do not
+  `preventDefault` Escape, so nothing to do.
+- A download in progress in Settings > Helpers keeps running when the dialog closes (it is
+  main-process work with progress events); no guard needed.
+
+### Gate
+
+A step in `tools/editor_test.py`: open Settings through `openSettings()`, dispatch a real
+`keydown` Escape on the focused element inside it, assert `ui.settings.open` is false; the
+same for the Generate-new dialog. Ten minutes including the sync; can go into any release.
+
 ## Order and releases
 
 | # | Item | Estimate | Release |
@@ -330,6 +368,7 @@ Estimate: half a day for verify + persistence, another half for the stroke quali
 | 4 | Liquify | 1 day | 0.1.8 |
 | 5 | Python plugins | 2 days | 0.1.8 |
 | 6 | Custom brushes from .abr, verified and persistent | 1 day | 0.1.9 |
+| 7 | Escape closes the Settings dialog | 10 min | next |
 
 Items 4 and 5 both touch the node repo or the plugin core; 3 must land before 5, because the
 Python process's stderr has nowhere to go until it exists.
