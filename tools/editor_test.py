@@ -303,6 +303,80 @@ if (!white(after.strip)) throw new Error("the erase did not reach the screen: " 
 if (!green(after.block)) throw new Error("the block 580 px from the stroke vanished from the screen: " + JSON.stringify(after));
 return { before, after };
 """),
+    ("normalise_filter_moves_colours_to_the_mean_on_both_paths", """
+const F = await import("./editor/inpaint_filters.js");
+const GL = await import("./editor/inpaint_filters_gl.js");
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+await run("new_canvas", { width: 640, height: 400, doc: window.__t });   // the halves must cover the whole picture
+// a two-colour picture: a warm left half, a cold right half
+const L = await run("add_paint_layer", { doc: window.__t });
+const lay = ed.layers.find((l) => l.id === L.id);
+const g = lay.canvas.getContext("2d");
+g.fillStyle = "#c86432"; g.fillRect(0, 0, 320, 400);
+g.fillStyle = "#3264c8"; g.fillRect(320, 0, 320, 400);
+lay.dirty = true; ed.touchSource(lay.canvas); ed.draw();
+const src = ed.flattenToCanvas({ forRun: true });
+const out = {};
+for (const mode of ["colour", "all", "levels"]) {
+    const r = GL.compareFilterPaths((s, p, i) => F.FILTERS.normalize.apply(s, p, i), "normalize", src, { mode, amount: 100 }, {});
+    out[mode] = { gl: r.gl, max: r.max, mean: r.mean };
+    if (!r.gl) throw new Error("no GPU path for normalize (" + mode + ")");
+    if (r.max > 2) throw new Error(mode + ": GPU and CPU differ by " + r.max + " levels");
+}
+// "all" at 100 %: everything becomes the mean of the two halves
+const all = F.FILTERS.normalize.apply(src, { mode: "all", amount: 100 }, {});
+const px = (cv, x, y) => Array.from(cv.getContext("2d").getImageData(x, y, 1, 1).data);
+const left = px(all, 100, 200), right = px(all, 540, 200);
+if (Math.abs(left[0] - right[0]) > 2 || Math.abs(left[2] - right[2]) > 2) throw new Error("not the same after 'all': " + left + " / " + right);
+if (Math.abs(left[0] - 125) > 3 || Math.abs(left[2] - 125) > 3) throw new Error("the mean is off: " + left);
+// "colour": the tint evens out, the luma of each half stays
+const col = F.FILTERS.normalize.apply(src, { mode: "colour", amount: 100 }, {});
+const luma = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+const cl = px(col, 100, 200), cr = px(col, 540, 200), sl = px(src, 100, 200), sr = px(src, 540, 200);
+if (Math.abs(luma(cl) - luma(sl)) > 3 || Math.abs(luma(cr) - luma(sr)) > 3) throw new Error("colour mode changed the luma: " + cl + " vs " + sl);
+if (Math.abs((cl[0] - cl[2]) - (cr[0] - cr[2])) > 4) throw new Error("colour mode left different tints: " + cl + " / " + cr);
+// as a filter layer through the command core
+const fl = await run("add_filter", { type: "normalize", params: { mode: "all", amount: 50 }, doc: window.__t });
+const flat = ed.flattenToCanvas({ forRun: true });
+const hl = px(flat, 100, 200);
+if (Math.abs(hl[0] - (200 + 125) / 2) > 4) throw new Error("the filter layer at 50 % is off: " + hl);
+await run("remove_layer", { layer: fl.id, doc: window.__t });
+await run("remove_layer", { layer: L.id, doc: window.__t });
+return { ...out, all: left, colour: [cl, cr], half: hl };
+"""),
+    ("export_canvas_frames_the_picture", """
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const L = await run("add_paint_layer", { doc: window.__t });
+const lay = ed.layers.find((l) => l.id === L.id);
+const g = lay.canvas.getContext("2d");
+g.fillStyle = "#ff0000"; g.fillRect(0, 0, ed.width, ed.height);
+lay.dirty = true; ed.touchSource(lay.canvas); ed.draw();
+const path = window.__exportPath;
+const r = await run("export", { format: "png", path, width: 320, canvas_width: 400, canvas_height: 300, anchor: "br", fill: "white", doc: window.__t });
+const f = await window.scumble.file.read(path);
+const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(new Blob([f.data], { type: "image/png" })); });
+if (img.naturalWidth !== 400 || img.naturalHeight !== 300) throw new Error("frame " + img.naturalWidth + "x" + img.naturalHeight);
+const c = document.createElement("canvas"); c.width = 400; c.height = 300;
+const x = c.getContext("2d"); x.drawImage(img, 0, 0);
+const px = (a, b) => Array.from(x.getImageData(a, b, 1, 1).data);
+const tl = px(2, 2), br = px(397, 297);
+// 320 wide at the picture's aspect: the red picture sits bottom right, the white fill top left
+if (br[0] < 250 || br[1] > 5) throw new Error("bottom right is not the picture: " + br);
+if (tl[0] < 250 || tl[1] < 250) throw new Error("top left is not the white fill: " + tl);
+// the row's state was restored after the command
+const e = host.exportState(ed);
+if (e.canvasW || e.canvasH) throw new Error("the export command left the frame set: " + JSON.stringify(e));
+// the row itself: type a frame, the state follows, layered formats disable it
+const row = ed._exportRow;
+row.cw.value = "800"; row.cw.dispatchEvent(new Event("change"));
+const after = host.exportState(ed);
+if (after.canvasW !== 800 || !(after.canvasH > 0)) throw new Error("the row did not set the frame: " + JSON.stringify(after));
+host.setExportSize(ed, { canvasWidth: 0, canvasHeight: 0 });
+await run("remove_layer", { layer: L.id, doc: window.__t });
+return { frame: [img.naturalWidth, img.naturalHeight], tl, br, rowFrame: [after.canvasW, after.canvasH] };
+"""),
     ("escape_closes_the_shell_dialogs", lambda c: escape_closes_the_shell_dialogs(c)),
     ("svg_import_rasterises_on_the_way_in", lambda c: svg_import_rasterises_on_the_way_in(c)),
     ("cleanup", """
@@ -324,6 +398,7 @@ async def run_all(c):
     # a modal <dialog> left open makes everything outside it inert, and the focus steps
     # below would fail for a reason that has nothing to do with the editor
     await c.eval("(async () => { for (const d of document.querySelectorAll('dialog[open]')) d.close(); window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; return 1; })()")
+    await c.eval("window.__exportPath = %s; 1" % json.dumps(os.path.join(os.environ.get("TEMP", os.getcwd()), "scumble_editor_test_export.png")))
     ok = True
     for name, body in STEPS:
         try:

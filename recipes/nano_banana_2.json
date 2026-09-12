@@ -43,7 +43,7 @@
               "4K"
             ],
             {
-              "default": "auto"
+              "default": "2K"
             }
           ]
         }
@@ -66,7 +66,7 @@
               "4K"
             ],
             {
-              "default": "1K"
+              "default": "2K"
             }
           ]
         },
@@ -116,7 +116,7 @@
               "4K"
             ],
             {
-              "default": "1K"
+              "default": "2K"
             }
           ]
         }
@@ -157,7 +157,7 @@
               "4k"
             ],
             {
-              "default": "1k"
+              "default": "2k"
             }
           ]
         }
@@ -182,7 +182,7 @@
               "4K"
             ],
             {
-              "default": "1K"
+              "default": "2K"
             }
           ]
         }

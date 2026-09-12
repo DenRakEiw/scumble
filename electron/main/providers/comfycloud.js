@@ -165,6 +165,34 @@ async function download(ctx, file) {
     return { bytes: Buffer.from(await r.arrayBuffer()), mime: r.headers.get("content-type") || "image/png" };
 }
 
+/**
+ * Why a job failed. The status endpoint mostly says just "error"; the node's exception lives in
+ * the job's history entry (status.messages, an execution_error with node_type,
+ * exception_type, exception_message), so that is read when the status carries nothing.
+ */
+async function failureDetail(ctx, id, status, info) {
+    const brief = (v) => (typeof v === "string" ? v : JSON.stringify(v)).slice(0, 400);
+    let detail = info.messages || info.execution_error || info.error || info.error_message || info.message || info.detail;
+    if (!detail) {
+        try {
+            const h = await ctx.fetch(`${BASE}/api/history/${id}`, { headers: { "X-API-Key": ctx.key } });
+            if (h.ok) {
+                const hist = await h.json();
+                const entry = hist[id] || hist;
+                const st = entry.status || {};
+                const msgs = Array.isArray(st.messages) ? st.messages : [];
+                const err = msgs.find((m) => Array.isArray(m) && /error/i.test(String(m[0])));
+                const e = err && err[1];
+                if (e && typeof e === "object") detail = [e.node_type, e.exception_type, e.exception_message].filter(Boolean).join(": ") || brief(e);
+                else if (st.status_str && st.status_str !== status) detail = st.status_str;
+                else if (Object.keys(entry).length) detail = "history " + brief(entry);
+            } else detail = `history ${h.status}`;
+        } catch (err) { detail = "history unreadable: " + (err.message || err); }
+    }
+    const extra = Object.keys(info).filter((k) => k !== "status").length ? ` [status ${brief(info).slice(0, 200)}]` : "";
+    return `${status}${detail ? " - " + brief(detail) : ""}${detail ? "" : extra}`;
+}
+
 module.exports = {
     label: "Comfy Cloud",
     keyUrl: "https://platform.comfy.org/profile/api-keys",
@@ -190,10 +218,7 @@ module.exports = {
             info = await r.json();
             status = String(info.status || "").toLowerCase();
         }
-        if (status !== "success" && status !== "completed") {
-            const m = info.messages || info.execution_error || info.error;
-            throw new Error(`Comfy Cloud ${node}: ${status}${m ? " - " + JSON.stringify(m).slice(0, 400) : ""}`);
-        }
+        if (status !== "success" && status !== "completed") throw new Error(`Comfy Cloud ${node}: ${await failureDetail(ctx, id, status, info)}`);
         const h = await ctx.fetch(`${BASE}/api/history/${id}`, { headers: { "X-API-Key": ctx.key } });
         if (!h.ok) throw new Error(`Comfy Cloud history: ${await readError(h)}`);
         const hist = await h.json();
@@ -204,4 +229,5 @@ module.exports = {
         const got = await download(ctx, file);
         return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id } };
     },
+    failureDetail,   // for tests
 };

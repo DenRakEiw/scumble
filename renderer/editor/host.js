@@ -215,7 +215,7 @@ export const host = {
 
     /** The per-document export settings, made on first use. */
     exportState(editor) {
-        if (!editor._export) editor._export = { percent: 100, width: 0, height: 0, quality: 0.92 };
+        if (!editor._export) editor._export = { percent: 100, width: 0, height: 0, quality: 0.92, canvasW: 0, canvasH: 0, anchor: "mc", fill: "transparent" };
         return editor._export;
     },
 
@@ -256,13 +256,38 @@ export const host = {
         return out;
     },
 
-    /** What exportImage() encodes: the flattened image, scaled when the Size row asks for it. */
+    /** The export's canvas (the frame around the scaled picture), [w, h], or null when it is the picture's own size. */
+    exportFrame(editor) {
+        const e = this.exportState(editor);
+        if (!(e.canvasW > 0) || !(e.canvasH > 0)) return null;
+        const px = this.exportPixels(editor) || [editor.width | 0, editor.height | 0];
+        const w = Math.max(1, Math.min(MAX_EXPORT_SIDE, Math.round(e.canvasW))), h = Math.max(1, Math.min(MAX_EXPORT_SIDE, Math.round(e.canvasH)));
+        return w === px[0] && h === px[1] ? null : [w, h];
+    },
+
+    /** The picture placed in a bigger (or smaller: cropped) frame by the anchor, over the fill. */
+    frameForExport(src, w, h, anchor, fill) {
+        const out = document.createElement("canvas");
+        out.width = w; out.height = h;
+        const ctx = out.getContext("2d");
+        if (fill && fill !== "transparent") { ctx.fillStyle = fill === "black" ? "#000000" : fill === "white" ? "#ffffff" : String(fill); ctx.fillRect(0, 0, w, h); }
+        const a = String(anchor || "mc");
+        const row = a[0], col = a[1];
+        const x = col === "l" ? 0 : col === "r" ? w - src.width : Math.round((w - src.width) / 2);
+        const y = row === "t" ? 0 : row === "b" ? h - src.height : Math.round((h - src.height) / 2);
+        ctx.drawImage(src, x, y);
+        return out;
+    },
+
+    /** What exportImage() encodes: the flattened image, scaled when the Size row asks for it, framed when the Canvas row does. */
     exportCanvas(editor, fmt) {
-        const canvas = editor.flattenToCanvas({ forRun: true });
+        let canvas = editor.flattenToCanvas({ forRun: true });
         if (fmt === "psd" || fmt === "ora") return canvas;
         const size = this.exportPixels(editor);
-        if (!size) return canvas;
-        return this.resizeForExport(canvas, size[0], size[1]);
+        if (size) canvas = this.resizeForExport(canvas, size[0], size[1]);
+        const frame = this.exportFrame(editor);
+        if (frame) { const e = this.exportState(editor); canvas = this.frameForExport(canvas, frame[0], frame[1], e.anchor, e.fill); }
+        return canvas;
     },
 
     /** The JPEG / WebP quality exportImage() encodes with (PNG ignores it). */
@@ -275,9 +300,23 @@ export const host = {
      * Set the export size from the row, a command or a script. A width or a height alone
      * keeps the aspect ratio; `percent` clears a free size again.
      */
-    setExportSize(editor, { percent, width, height, quality } = {}) {
+    setExportSize(editor, { percent, width, height, quality, canvasWidth, canvasHeight, anchor, fill } = {}) {
         const e = this.exportState(editor);
         if (quality != null) e.quality = Math.min(1, Math.max(0.1, +quality || 0.92));
+        if (canvasWidth != null || canvasHeight != null) {
+            // one of them alone keeps the frame's aspect from the picture; 0 / empty clears the frame
+            const px = this.exportPixels(editor) || [editor.width | 0, editor.height | 0];
+            let cw = Math.round(+canvasWidth || 0), ch = Math.round(+canvasHeight || 0);
+            if (cw > 0 && !ch && canvasHeight == null && px[0]) ch = Math.max(1, Math.round(cw * px[1] / px[0]));
+            if (ch > 0 && !cw && canvasWidth == null && px[1]) cw = Math.max(1, Math.round(ch * px[0] / px[1]));
+            if (cw > 0 && !ch) ch = e.canvasH || px[1];
+            if (ch > 0 && !cw) cw = e.canvasW || px[0];
+            e.canvasW = Math.max(0, Math.min(MAX_EXPORT_SIDE, cw));
+            e.canvasH = Math.max(0, Math.min(MAX_EXPORT_SIDE, ch));
+            if (!e.canvasW || !e.canvasH) { e.canvasW = 0; e.canvasH = 0; }
+        }
+        if (anchor != null && /^[tmb][lcr]$/.test(String(anchor))) e.anchor = String(anchor);
+        if (fill != null) e.fill = ["transparent", "white", "black"].includes(String(fill)) ? String(fill) : (/^#[0-9a-f]{6}$/i.test(String(fill)) ? String(fill) : e.fill);
         if (width != null || height != null) {
             const dw = editor.width | 0, dh = editor.height | 0;
             let w = Math.round(+width || 0), h = Math.round(+height || 0);
@@ -362,7 +401,43 @@ export const host = {
 
         anchor.insertAdjacentElement("afterend", row);
         row.insertAdjacentElement("afterend", qRow);
-        editor._exportRow = { row, qRow, sel, wIn, hIn, q, qLab, doc: "" };
+        // the canvas: a frame around the (scaled) picture, for a fixed output format or a margin
+        const cRow = document.createElement("div");
+        cRow.className = "ipc-seg scumble-export-canvas";
+        const cLab = document.createElement("span");
+        cLab.textContent = "Canvas";
+        cLab.title = "The saved file's frame around the picture: empty = the picture's own size. Bigger adds a margin of the fill, smaller crops.";
+        cRow.appendChild(cLab);
+        const cw = num("Frame width in pixels; empty = the picture's size");
+        const ch = num("Frame height in pixels; empty = the picture's size");
+        cw.min = 0; ch.min = 0; cw.placeholder = "auto"; ch.placeholder = "auto";
+        cw.addEventListener("change", () => this.setExportSize(editor, { canvasWidth: +cw.value || 0, canvasHeight: +ch.value || 0 }));
+        ch.addEventListener("change", () => this.setExportSize(editor, { canvasWidth: +cw.value || 0, canvasHeight: +ch.value || 0 }));
+        cRow.appendChild(cw);
+        const ctimes = document.createElement("span");
+        ctimes.textContent = "×";
+        cRow.appendChild(ctimes);
+        cRow.appendChild(ch);
+        const anchorSel = document.createElement("select");
+        anchorSel.className = "ipc-sel";
+        anchorSel.style.maxWidth = "64px";
+        anchorSel.title = "Where the picture sits in the frame";
+        for (const [id, label] of [["tl", "top left"], ["tc", "top"], ["tr", "top right"], ["ml", "left"], ["mc", "centre"], ["mr", "right"], ["bl", "bottom left"], ["bc", "bottom"], ["br", "bottom right"]]) {
+            const o = document.createElement("option"); o.value = id; o.textContent = label; anchorSel.appendChild(o);
+        }
+        anchorSel.addEventListener("keydown", (ev) => ev.stopPropagation());
+        anchorSel.addEventListener("change", () => this.setExportSize(editor, { anchor: anchorSel.value }));
+        cRow.appendChild(anchorSel);
+        const fillSel = document.createElement("select");
+        fillSel.className = "ipc-sel";
+        fillSel.style.maxWidth = "80px";
+        fillSel.title = "What fills the frame around the picture";
+        for (const f of ["transparent", "white", "black"]) { const o = document.createElement("option"); o.value = f; o.textContent = f; fillSel.appendChild(o); }
+        fillSel.addEventListener("keydown", (ev) => ev.stopPropagation());
+        fillSel.addEventListener("change", () => this.setExportSize(editor, { fill: fillSel.value }));
+        cRow.appendChild(fillSel);
+        qRow.parentElement ? qRow.parentElement.insertBefore(cRow, qRow.nextSibling) : anchor.parentElement.insertBefore(cRow, anchor.nextSibling);
+        editor._exportRow = { row, qRow, cRow, sel, wIn, hIn, q, qLab, cw, ch, anchorSel, fillSel, doc: "" };
         editor.saveFormatSel.addEventListener("change", () => this.syncExportRow(editor));
         // the numbers follow the document: a new image, a crop or an extended canvas changes
         // them. Only a changed document size refreshes the row, so a number being typed in is
@@ -384,11 +459,15 @@ export const host = {
         r.wIn.value = px[0] || "";
         r.hIn.value = px[1] || "";
         r.q.value = e.quality;
+        if (r.cw) {
+            r.cw.value = e.canvasW || ""; r.ch.value = e.canvasH || "";
+            r.anchorSel.value = e.anchor || "mc"; r.fillSel.value = ["transparent", "white", "black"].includes(e.fill) ? e.fill : "transparent";
+        }
         const exact = EXPORT_PERCENTS.find((p) => Math.abs(p - e.percent) < 0.05);
         r.sel.value = exact != null ? String(exact) : "custom";
         const fmt = (editor.saveFormatSel && editor.saveFormatSel.value) || "png";
         const layered = fmt === "psd" || fmt === "ora";
-        for (const el of [r.sel, r.wIn, r.hIn]) el.disabled = layered;
+        for (const el of [r.sel, r.wIn, r.hIn, ...(r.cw ? [r.cw, r.ch, r.anchorSel, r.fillSel] : [])]) el.disabled = layered;
         r.row.title = layered ? "PSD and ORA always keep the full size" : "";
         r.qRow.hidden = !(fmt === "jpg" || fmt === "webp");
     },

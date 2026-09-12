@@ -592,10 +592,15 @@ Not part of this plan, still on the list in `CLAUDE.md` and in the memory file
   providers. The largest untested surface in the app.
 - **The size ceilings** of Nano Banana, Qwen, Z-Image, Ideogram, Grok and Reve sit at the
   conservative default of 2048; only FLUX, GPT Image and Seedream are sourced.
-- **The output resolution defaults to 1K** on most providers although 2K and 4K are offered.
-  The user was asked on 2026-09-11 and has not decided; the recommendation is 2K, to match the
-  crop the app now sends.
-- Export: canvas size, 8-bit PNG, a resampling choice.
+- ~~The output resolution defaults to 1K~~ **Done 2026-09-12: 2K wherever offered** (the
+  user let the recommendation stand).
+- Export: ~~canvas size~~ (done 2026-09-12: the Canvas row, `export` takes `canvas_width` /
+  `canvas_height` / `anchor` / `fill`), 8-bit PNG, a resampling choice.
+- **Provider status, corrected by the user on 2026-09-12**: BFL FLUX, Google Nano Banana and
+  fal Seedream run live and work; OpenAI gpt-image had problems (the `background` row sits
+  only on the OpenAI variant of the gpt-image recipes, which may be the "missing" transparency);
+  Comfy Cloud failed with a bare "error", now surfaced with the node's message (0.1.9).
+  WaveSpeed and Replicate untried.
 - Linux build, code signing through the SignPath Foundation, the first real RunPod pod, a
   website.
 - Layer tiles above 16384 px a side, and the full-resolution GPU path.

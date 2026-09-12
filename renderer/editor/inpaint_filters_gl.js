@@ -14,7 +14,7 @@
 // together with the applyFilter hook once it has proven itself here.
 
 import { curvesToTables } from "./inpaint_curves.js";
-import { levelsTable, brightnessContrastTable, hueSatMatrix, lightnessTable, colorBalanceTables, hueToRgb, LOOK_DEFAULT, grainNoiseCanvas } from "./inpaint_filters.js";
+import { levelsTable, brightnessContrastTable, hueSatMatrix, lightnessTable, colorBalanceTables, hueToRgb, LOOK_DEFAULT, grainNoiseCanvas, colourStats } from "./inpaint_filters.js";
 
 const VS = `#version 300 es
 in vec2 a_pos;
@@ -54,6 +54,11 @@ uniform vec3 u_meanS;          // colour match: mean of what is below, 0..255
 uniform vec3 u_meanT;          // mean of the layer itself
 uniform vec3 u_mScale;         // spread ratio per channel, clamped 0.5..2 by the caller
 uniform float u_mStrength;
+uniform vec3 u_nMean;          // normalise: the layer's mean colour, 0..1
+uniform vec3 u_nLo;            // its 1 % and 99 % levels, 0..1
+uniform vec3 u_nHi;
+uniform float u_nAmount;
+uniform int u_nMode;           // 0 colours towards the mean, 1 everything, 2 stretch levels
 uniform bool u_dstTop;         // the target's first row is the image's top (a surface) instead of its bottom (the drawing buffer)
 out vec4 o;
 
@@ -106,6 +111,12 @@ void main() {
             vec3 v = (p - u_meanT) * u_mScale + u_meanS;
             c = clamp(p + (v - p) * u_mStrength, 0.0, 255.0) / 255.0;
         }
+    } else if (u_mode == 7) {
+        vec3 t;
+        if (u_nMode == 0) { float y = dot(c, LUMA); float ym = dot(u_nMean, LUMA); t = vec3(y) + (u_nMean - vec3(ym)); }
+        else if (u_nMode == 1) { t = u_nMean; }
+        else { t = clamp((c - u_nLo) / max(u_nHi - u_nLo, vec3(1.0 / 255.0)), 0.0, 1.0); }
+        c = clamp(c + (t - c) * u_nAmount, 0.0, 1.0);
     } else if (u_mode == 5) {
         if (u_lookOn) c = q8(look(c));
         if (u_k > 0.0) {
@@ -118,7 +129,7 @@ void main() {
     o = vec4(clamp(c, 0.0, 1.0), s.a);
 }`;
 
-const SUPPORTED = new Set(["levels", "curves", "brightness_contrast", "hue_sat", "color_balance", "bw", "invert", "lut", "grain"]);
+const SUPPORTED = new Set(["levels", "curves", "brightness_contrast", "hue_sat", "color_balance", "bw", "invert", "lut", "grain", "normalize"]);
 
 /**
  * Draw the full-screen triangle for a W x H result and return it as a 2D canvas.
@@ -598,7 +609,7 @@ function context() {
         const u = {};
         for (const name of ["u_src", "u_table", "u_offsets", "u_noise", "u_lut", "u_size", "u_mode", "u_matrix", "u_useTable", "u_weights", "u_tint", "u_strength", "u_lutN", "u_k", "u_center",
             "u_lookOn", "u_useMix", "u_mix", "u_useMono", "u_mono", "u_wb", "u_satK", "u_conK", "u_fade", "u_lookStrength", "u_tile", "u_dstTop",
-            "u_meanS", "u_meanT", "u_mScale", "u_mStrength"]) u[name] = gl.getUniformLocation(prog, name);
+            "u_meanS", "u_meanT", "u_mScale", "u_mStrength", "u_nMean", "u_nLo", "u_nHi", "u_nAmount", "u_nMode"]) u[name] = gl.getUniformLocation(prog, name);
         // fixed texture units: 0 source, 1 table, 2 offsets, 3 noise, 4 lut
         const texSrc = texture2d(gl, 0, gl.NEAREST);
         const texTable = texture2d(gl, 1, gl.NEAREST);
@@ -696,6 +707,21 @@ const SETUP = {
         const { gl, u } = g;
         setTables(g, INVERT_TABLE);
         gl.uniform1i(u.u_mode, 0);
+        return true;
+    },
+    normalize(g, p, info, src) {
+        const { gl, u } = g;
+        const k = Math.max(0, Math.min(1, (p.amount ?? 50) / 100));
+        if (!k) return false;
+        // the statistics need pixels: a chained input is a texture, so the CPU path takes over there
+        if (isGLSurface(src)) return null;
+        const st = colourStats(src);
+        gl.uniform1i(u.u_mode, 7);
+        gl.uniform3f(u.u_nMean, st.mean[0] / 255, st.mean[1] / 255, st.mean[2] / 255);
+        gl.uniform3f(u.u_nLo, st.lo[0] / 255, st.lo[1] / 255, st.lo[2] / 255);
+        gl.uniform3f(u.u_nHi, st.hi[0] / 255, st.hi[1] / 255, st.hi[2] / 255);
+        gl.uniform1f(u.u_nAmount, k);
+        gl.uniform1i(u.u_nMode, p.mode === "levels" ? 2 : p.mode === "all" ? 1 : 0);
         return true;
     },
     hue_sat(g, p) {

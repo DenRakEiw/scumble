@@ -6,7 +6,7 @@ No ComfyUI needed. Loads the test image from the local store, runs a selection, 
 filter (WebGL2 in the hidden window), a screenshot (image content), an export to a fixed
 path and an error case.
 
-    python tools/mcp_test.py [--exe <Scumble.exe | electron.exe>] [--direct] [out_dir]
+    python tools/mcp_test.py [--exe <Scumble.exe | electron.exe>] [--direct] [--user-data-dir <dir>] [out_dir]
 
 The server is started through `electron/main/mcp/launch.js` in Node mode, which is how
 clients register it (docs/MCP.md): Electron prints a CR LF to stdout before any JavaScript
@@ -39,6 +39,13 @@ if "--exe" in args:
 DIRECT = "--direct" in args
 if DIRECT:
     args.remove("--direct")
+# an own profile for the server's instance (the launcher forwards it), so a test never touches the
+# user's running app, which holds the default profile's single-instance lock
+USER_DATA = None
+if "--user-data-dir" in args:
+    i = args.index("--user-data-dir")
+    USER_DATA = os.path.abspath(args[i + 1])
+    del args[i:i + 2]
 OUT = os.path.abspath(args[0] if args else os.path.join(ROOT, "dist", "smoke"))
 os.makedirs(OUT, exist_ok=True)
 
@@ -51,9 +58,11 @@ LAUNCHER = os.path.join(ROOT, "electron", "main", "mcp", "launch.js") if IS_ELEC
 
 def server_args(mode):
     """mode is ["--mcp"] or ["--cmd", "ping"]; the launcher takes both."""
+    extra = [f"--user-data-dir={USER_DATA}"] if USER_DATA else []
+    # the profile switch goes first: "--cmd <name> [json]" would take it for its JSON argument
     if DIRECT:
-        return ([ROOT] if IS_ELECTRON else []) + mode, dict(os.environ)
-    return [LAUNCHER] + mode, {**os.environ, "ELECTRON_RUN_AS_NODE": "1"}
+        return ([ROOT] if IS_ELECTRON else []) + extra + mode, dict(os.environ)
+    return [LAUNCHER] + extra + mode, {**os.environ, "ELECTRON_RUN_AS_NODE": "1"}
 
 
 _mcp_args, _mcp_env = server_args(["--mcp"])
@@ -63,7 +72,7 @@ SERVER = StdioServerParameters(command=EXE, args=_mcp_args, cwd=ROOT, env=_mcp_e
 def raw_check():
     """Nothing but the protocol on stdout: the first byte of a --cmd answer must be `{`."""
     a, env = server_args(["--cmd", "ping"])
-    p = subprocess.run([EXE] + a, cwd=ROOT, env=env, capture_output=True, timeout=180)
+    p = subprocess.run([EXE] + a, cwd=ROOT, env=env, capture_output=True, timeout=180, stdin=subprocess.DEVNULL)   # an open stdin keeps the relay alive
     if p.returncode != 0:
         raise RuntimeError(f"--cmd ping exited {p.returncode}: {p.stderr[-300:]!r}")
     if p.stdout[:1] != b"{":

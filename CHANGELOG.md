@@ -48,6 +48,19 @@ the section for its version; `docs/` and the commit history hold the technical d
   `glb.place` and `glb.edit`. Draco / KTX2 compressed files are not supported yet.
 - **Fixed: plugins could not read their stored settings back** (the film pack's group choice,
   the AI label panel's last settings); they do now.
+- **A Normalise filter layer.** *Colours towards the mean* evens out the tint of a layer while
+  its light stays, *Everything towards the mean* flattens all values, *Stretch levels* pulls
+  each channel to the full range; the Amount slider mixes it in. GPU and CPU paths.
+- **The export can put the picture in a frame.** A *Canvas* row under Size: a width and
+  height, where the picture sits (nine positions) and what fills the rest (transparent,
+  white, black). Bigger adds a margin, smaller crops. The `export` command takes
+  `canvas_width`, `canvas_height`, `anchor` and `fill`.
+- **API results default to 2K** where the provider offers it (Nano Banana 2 and Pro on
+  Google, fal, Replicate, WaveSpeed and Comfy Cloud; GPT Image on WaveSpeed; Seedream 5 Pro
+  on WaveSpeed). It was 1K, which threw away most of what the crop carries.
+- **Comfy Cloud failures now say why.** The job status said only "error"; the node's own
+  message (safety filter, missing credits, a bad input) is read from the job's history and
+  shown in the status line.
 
 ## 0.1.8 — 2026-09-11
 

@@ -699,8 +699,9 @@ const COMMANDS = {
 
     // -- export --
     export: {
-        needsImage: true, description: "Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; PSD and ORA always keep the full size.",
-        params: { format: P.str("png, jpg, webp, psd or ora", { enum: ["png", "jpg", "webp", "psd", "ora"], default: "png" }), name: P.str("file name stem for the dialog"), path: P.str("absolute target path (no dialog)"), scale: P.num("percent of the document size, 1..400"), width: P.int("width in pixels (the height follows the aspect ratio)"), height: P.int("height in pixels (the width follows the aspect ratio)"), quality: P.num("JPEG / WebP quality 0.1..1", { default: 0.92 }) },
+        needsImage: true, description: "Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; `canvas_width` / `canvas_height` put it in a frame of that size (bigger: a margin of `fill`, smaller: cropped) at `anchor`; PSD and ORA always keep the full size.",
+        params: { format: P.str("png, jpg, webp, psd or ora", { enum: ["png", "jpg", "webp", "psd", "ora"], default: "png" }), name: P.str("file name stem for the dialog"), path: P.str("absolute target path (no dialog)"), scale: P.num("percent of the document size, 1..400"), width: P.int("width in pixels (the height follows the aspect ratio)"), height: P.int("height in pixels (the width follows the aspect ratio)"), quality: P.num("JPEG / WebP quality 0.1..1", { default: 0.92 }),
+            canvas_width: P.int("frame width in pixels (default the picture's)"), canvas_height: P.int("frame height in pixels"), anchor: P.str("where the picture sits in the frame: tl, tc, tr, ml, mc, mr, bl, bc, br", { default: "mc" }), fill: P.str("transparent, white, black or #rrggbb around the picture", { default: "transparent" }) },
         async run(ed, a) {
             const fmt = ["png", "jpg", "webp", "psd", "ora"].includes(a.format) ? a.format : "png";
             if (ed.saveFormatSel) ed.saveFormatSel.value = fmt;
@@ -709,6 +710,7 @@ const COMMANDS = {
             if (a.width != null || a.height != null) host.setExportSize(ed, { width: a.width, height: a.height, quality: a.quality });
             else if (a.scale != null) host.setExportSize(ed, { percent: a.scale, quality: a.quality });
             else if (a.quality != null) host.setExportSize(ed, { quality: a.quality });
+            if (a.canvas_width != null || a.canvas_height != null) host.setExportSize(ed, { canvasWidth: a.canvas_width, canvasHeight: a.canvas_height, anchor: a.anchor, fill: a.fill });
             const saved = await withExportPath(a.path, () => ed.exportImage({ download: false }))
                 .finally(() => { ed._export = before; host.syncExportRow(ed); });
             if (!saved) throw new Error(ed.status);

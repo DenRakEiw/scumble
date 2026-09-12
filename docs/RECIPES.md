@@ -1,5 +1,10 @@
 # Recipes
 
+> Output resolution rows (`resolution`, `image_size`) default to **2K** since 0.1.9 wherever
+> the provider offers it (decided 2026-09-12); the crop the app sends is already 2K-class on
+> most providers (see "How big the crop goes out"), so 1K threw resolution away.
+
+
 A recipe is what the Generate button runs. Two kinds, one JSON file each, shipped in
 `recipes/` or imported into `%APPDATA%/Scumble/recipes/` (Settings › Recipes).
 

@@ -116,6 +116,29 @@ changed, then `tools/sync_editor.py`). `package.json` is still **0.1.9** with an
   its data back (the film pack's group, the label's settings). `renderer/plugins.js` loads the
   data before `activate` and serves `get()` from a cache now; `set` writes through.
 
+**Provider adapters, corrected by the user on 2026-09-12**: FLUX over BFL, Nano Banana over
+Google and Seedream over fal **have run live and work**. OpenAI gpt-image still had problems
+on the user's side, and the user reports the OpenAI extras (transparent background) as missing
+in their installed version; Comfy Cloud "seems not to work". Details of both failures were
+still being collected. Everything in this file that says "no adapter has ever run live" is
+older than this note.
+
+**Second block of 2026-09-12 (after the five steps)**, one commit: the installer was built
+(`npm run dist`) and **every gate ran against the packaged exe** on its own profile (commands,
+ailabel, glb, brush, editor, `mcp_test.py --exe ... --user-data-dir <dir>` in proxy mode 0.8 s,
+`smoke_test.py --no-helpers` with a real Flux run): plugins, vendored three.js and brushes work
+from the asar. `mcp_test.py` got `--user-data-dir` (the launcher forwards it; it must come
+*before* `--cmd`, which otherwise takes it for its JSON) and its raw step closes stdin (an open
+stdin kept the relay alive, 180 s timeout). **Comfy Cloud** failures read the node's exception
+from the job history (`failureDetail` in `comfycloud.js`, exported for tests; the status endpoint
+says only "error", which is what the user saw). **API resolution rows default to 2K** wherever
+offered. **Normalise filter** (node repo `colourStats` / `applyNormalize`, app GL mode 7 in
+`inpaint_filters_gl.js`, gate step `normalise_filter_moves_colours_to_the_mean_on_both_paths`
+in `editor_test.py`, GPU vs CPU max 2 levels). **Export Canvas row** (frame, anchor, fill;
+`export` takes `canvas_width` / `canvas_height` / `anchor` / `fill`; step
+`export_canvas_frames_the_picture`). Gates after: editor, commands, size, composite PASS,
+`docs/COMMANDS.md` regenerated. **The 0.1.9 tag is ready and waits for the user's go.**
+
 **Also on 2026-09-12**: the GitHub description of `DenRakEiw/scumble` no longer says
 "Krita-style" (asked for during the session; changed with `gh repo edit`). The user asked
 whether a filter exists that normalises a layer's colours towards the mean with a slider:

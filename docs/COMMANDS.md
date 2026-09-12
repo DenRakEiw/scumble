@@ -582,7 +582,7 @@ Extend (positive) or crop (negative) the canvas on each side, in pixels.
 
 ### `export` *(image)*
 
-Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; PSD and ORA always keep the full size.
+Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; `canvas_width` / `canvas_height` put it in a frame of that size (bigger: a margin of `fill`, smaller: cropped) at `anchor`; PSD and ORA always keep the full size.
 
 | param | type | description |
 |---|---|---|
@@ -594,6 +594,10 @@ Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` n
 | `width` | integer | width in pixels (the height follows the aspect ratio) |
 | `height` | integer | height in pixels (the width follows the aspect ratio) |
 | `quality` | number | JPEG / WebP quality 0.1..1 (default `0.92`) |
+| `canvas_width` | integer | frame width in pixels (default the picture's) |
+| `canvas_height` | integer | frame height in pixels |
+| `anchor` | string | where the picture sits in the frame: tl, tc, tr, ml, mc, mr, bl, bc, br (default `"mc"`) |
+| `fill` | string | transparent, white, black or #rrggbb around the picture (default `"transparent"`) |
 
 ### `export_layer`
 
