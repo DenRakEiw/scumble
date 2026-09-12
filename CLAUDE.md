@@ -81,6 +81,18 @@ Both repos are clean and pushed. What the user owes: the *Help › Console › C
 failed gpt-image run and of a Comfy Cloud run on 0.1.9, and whether *"Base selected."* appears
 in the erase bug (`docs/BUGS.md`). What comes next (0.1.10): those two provider fixes, then the
 15k document measured (`perf_test.py 15000x10000`, `app:metrics`) before anyone builds tiles.
+**Measured on 2026-09-12** (the 15k entry in `docs/BUGS.md`): the frame path is at the screen's rate,
+the stutter is memory (4.3 GB VRAM per 15k document, shared with ComfyUI) and whole-document
+steps; `docs/PLAN_TILES.md` is the plan (phase A quick wins, phase B Rust spike, phase C tiles),
+waiting for the user's decisions listed at its end.
+**The user's decision on 2026-09-12 (late): "ja, die Performance muss maximal besser
+werden", and then "noch nicht umsetzen, nur planen".** So the plan is approved in principle
+and **nothing of it is to be built until the user says go**; phase A (the quick wins) is the
+first thing to build when they do, with the notes at the end of `docs/PLAN_TILES.md`. The
+only change made: `package.json` is 0.1.10 with an empty `## 0.1.10 — unreleased` section in
+`CHANGELOG.md` (the standing rule before any change ships). The four decisions the plan asks
+for (VRAM check on the user's machine, phase A, the Rust spike, phase C with `NEXT_PLAN.md`
+item 4b) are still open one by one.
 
 **The five steps of `docs/PLAN_0_1_7.md` "Build order after 0.1.8" are built, each with its
 gate, its commit and its push** (a to e, in that order, node repo first where the editor

@@ -3,6 +3,8 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.10 — unreleased
+
 ## 0.1.9 — 2026-09-12
 
 - **The model folder is scanned, and what it holds is linked.** Point Settings › Helpers at
