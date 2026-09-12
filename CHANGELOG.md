@@ -58,6 +58,10 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **API results default to 2K** where the provider offers it (Nano Banana 2 and Pro on
   Google, fal, Replicate, WaveSpeed and Comfy Cloud; GPT Image on WaveSpeed; Seedream 5 Pro
   on WaveSpeed). It was 1K, which threw away most of what the crop carries.
+- **Scaling a layer snaps to the picture's edges.** Dragging a corner or an edge of a layer
+  with the transform tool now snaps the dragged edge to the canvas edges, its centre and the
+  guides, like a magnet, so a layer pulled out to the full picture lands exactly; Alt keeps
+  it free. Moving already did this.
 - **A console and a log file.** *Help › Console* (Ctrl+Shift+L), or a click on the status
   line, opens the log: everything the app, its providers and helpers reported, errors first,
   with a level and a text filter, *Copy all* and *Open folder*. The same lines go to

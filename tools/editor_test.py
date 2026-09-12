@@ -377,6 +377,43 @@ host.setExportSize(ed, { canvasWidth: 0, canvasHeight: 0 });
 await run("remove_layer", { layer: L.id, doc: window.__t });
 return { frame: [img.naturalWidth, img.naturalHeight], tl, br, rowFrame: [after.canvasW, after.canvasH] };
 """),
+    ("scale_snaps_to_the_canvas_edges", """
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+await run("new_canvas", { width: 1000, height: 800, doc: window.__t });
+const L = await run("add_paint_layer", { doc: window.__t });
+const l = ed.layers.find((x) => x.id === L.id);
+l.x = 100; l.y = 100; l.w = 400; l.h = 300;
+ed.view.scale = 1;
+const gesture = (handle, keepAspect) => ({ kind: "scale", layer: l, handle, start: [0, 0], orig: { x: 100, y: 100, w: 400, h: 300 }, keepAspect });
+const out = {};
+// the bottom-right corner dragged to 6 px short of the right edge and 5 px past the bottom: both snap
+let p = gesture("se", false);
+ed.applyScale(p, 994, 805); ed.snapGuides = null; ed.snapScale(p, 994, 805);
+out.corner = [l.x + l.w, l.y + l.h, ed.snapGuides];
+if (l.x + l.w !== 1000 || l.y + l.h !== 800) throw new Error("the corner did not snap: " + JSON.stringify(out.corner));
+// too far away: no snap
+l.x = 100; l.y = 100; l.w = 400; l.h = 300;
+ed.applyScale(p, 970, 760); ed.snapGuides = null; ed.snapScale(p, 970, 760);
+out.far = [l.x + l.w, l.y + l.h];
+if (l.x + l.w !== 970 || l.y + l.h !== 760) throw new Error("snapped from too far: " + out.far);
+// the left edge to the canvas centre (500) with the west handle; the anchor is the right edge at 900
+l.x = 600; l.y = 100; l.w = 300; l.h = 300;
+p = gesture("w", false); p.orig = { x: 600, y: 100, w: 300, h: 300 };
+ed.applyScale(p, 504, 200); ed.snapGuides = null; ed.snapScale(p, 504, 200);
+out.centre = [l.x, l.w, ed.snapGuides && ed.snapGuides.x];
+if (l.x !== 500 || l.w !== 400) throw new Error("the west edge did not snap to the centre: " + l.x + " w " + l.w);
+// a kept aspect: the dragged right edge snaps to the canvas edge, the height follows the ratio
+l.x = 0; l.y = 0; l.w = 400; l.h = 300;
+p = gesture("se", true); p.orig = { x: 0, y: 0, w: 400, h: 300 };
+ed.applyScale(p, 994, 600); ed.snapGuides = null; ed.snapScale(p, 994, 600);
+out.aspect = [l.w, l.h, ed.snapGuides];
+if (l.x + l.w !== 1000 || Math.abs(l.h - 750) > 1) throw new Error("kept aspect: " + out.aspect);
+if (!ed.snapGuides || !ed.snapGuides.x.includes(1000) || ed.snapGuides.y.length) throw new Error("guide lines: " + JSON.stringify(ed.snapGuides));
+ed.snapGuides = null;
+await run("remove_layer", { layer: L.id, doc: window.__t });
+return out;
+"""),
     ("escape_closes_the_shell_dialogs", lambda c: escape_closes_the_shell_dialogs(c)),
     ("svg_import_rasterises_on_the_way_in", lambda c: svg_import_rasterises_on_the_way_in(c)),
     ("cleanup", """
