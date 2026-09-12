@@ -15,6 +15,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   per model too, with the plain statement that they cannot be loaded here, because the
   in-app helpers run on ONNX Runtime and those are PyTorch files; the ONNX download stays
   the way to get such a model. A line above the list sums the scan up.
+- **Escape closes the Settings dialog and the "Generate a new image" dialog.** The editor's
+  own key handling swallowed the key before the dialog saw it, so the dialogs could only be
+  closed with the mouse. A key pressed inside any open dialog now stays with that dialog.
 
 ## 0.1.8 — 2026-09-11
 

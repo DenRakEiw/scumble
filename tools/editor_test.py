@@ -19,6 +19,37 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
 
+async def escape_closes_the_shell_dialogs(c):
+    """Settings and Generate-new are native <dialog>s; the browser closes them on Escape unless a
+    keydown listener calls preventDefault. The editor's window capture handler did exactly that for
+    every Escape, so the dialogs could only be closed with the mouse. A synthetic keydown checks the
+    listener (defaultPrevented), a real key through CDP checks the native close."""
+    out = {}
+    for name, opener in (("settings", "shell.openSettings()"), ("generate_new", "host.shell.openGenerateNew(ednow(window.__t))")):
+        await c.eval(PRE % ("""
+const shell = await import("./shell.js");
+host.shell.activate(ednow(window.__t));
+await %s;
+await wait(200);
+const dlg = document.querySelector("dialog[open]");
+if (!dlg) throw new Error("the %s dialog did not open");
+const el = dlg.contains(document.activeElement) ? document.activeElement : dlg;
+const evt = new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true });
+el.dispatchEvent(evt);
+window.__esc = { prevented: evt.defaultPrevented, focusInside: dlg.contains(document.activeElement), target: el.tagName };
+return 1;
+""" % (opener, name)), timeout=60)
+        for kind in ("keyDown", "keyUp"):
+            await c.call("Input.dispatchKeyEvent", type=kind, key="Escape", code="Escape", windowsVirtualKeyCode=27, nativeVirtualKeyCode=27)
+        r = await c.eval("(async () => { await new Promise((r) => setTimeout(r, 200)); const d = document.querySelector('dialog[open]'); return { ...window.__esc, stillOpen: !!d }; })()")
+        out[name] = r
+        if r["prevented"]:
+            raise Exception("%s: the editor's key handler still prevents Escape (%s)" % (name, json.dumps(r)))
+        if r["stillOpen"]:
+            raise Exception("%s: still open after a real Escape (%s)" % (name, json.dumps(r)))
+    return out
+
+
 STEPS = [
     ("new_dialog_has_two_boxes", """
 const doc = await run("new_document");
@@ -211,6 +242,7 @@ if (!white(after.strip)) throw new Error("the erase did not reach the screen: " 
 if (!green(after.block)) throw new Error("the block 580 px from the stroke vanished from the screen: " + JSON.stringify(after));
 return { before, after };
 """),
+    ("escape_closes_the_shell_dialogs", lambda c: escape_closes_the_shell_dialogs(c)),
     ("cleanup", """
 for (const id of [window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";
@@ -233,7 +265,7 @@ async def run_all(c):
     ok = True
     for name, body in STEPS:
         try:
-            res = await c.eval(PRE % body, timeout=180)
+            res = await (body(c) if callable(body) else c.eval(PRE % body, timeout=180))
             print("[ok] %s: %s" % (name, json.dumps(res)[:280]))
         except Exception as err:  # noqa: BLE001
             ok = False

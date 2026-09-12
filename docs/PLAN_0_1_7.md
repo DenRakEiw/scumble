@@ -325,6 +325,11 @@ Estimate: half a day for verify + persistence, another half for the stroke quali
 Asked for on 2026-09-12: "Wenn man im Settings-Menü ist, soll es möglich sein, das Menü mit
 Esc zu beenden".
 
+**Done 2026-09-12** (built as designed: the one `closest("dialog[open]")` line in `_docKey` in
+the node repo, synced; gate `escape_closes_the_shell_dialogs` in `tools/editor_test.py`, which
+dispatches a synthetic keydown for `defaultPrevented` and a real key through CDP for the
+native close; red on the old code, green after).
+
 ### Why it does not work today
 
 `ui.settings` is a native `<dialog>` opened with `showModal()` (`renderer/shell.js`, line
