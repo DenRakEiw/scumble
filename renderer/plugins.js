@@ -58,8 +58,21 @@ export class Document {
     /** The raw layer object (canvas, mask, params ...); unstable, prefer the summaries. */
     rawLayer(key) { return findLayer(this.editor, key); }
 
-    /** The flattened picture (every visible layer, without helpers) as a canvas at image size. */
-    flatten() { this._need(); return this.editor.flattenToCanvas({ forRun: true }); }
+    /**
+     * The flattened picture (every visible layer, without helpers) as a canvas at image size.
+     * `maxSize` asks for a smaller copy (the long side at most that many pixels) and `box`
+     * ([x0, y0, x1, y1], image coordinates) for a part of it: both are composited at that
+     * size and for that box only, which is what a thumbnail or a colour sample should ask
+     * for. A full-resolution flatten of a 15k document is 150 million pixels and a second.
+     */
+    flatten({ maxSize = 0, box = null } = {}) {
+        this._need();
+        const ed = this.editor;
+        if (!maxSize && !box) return ed.flattenToCanvas({ forRun: true });
+        const b = box ? [Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(ed.width, Math.ceil(box[2])), Math.min(ed.height, Math.ceil(box[3]))] : [0, 0, ed.width, ed.height];
+        const scale = maxSize > 0 ? Math.min(1, maxSize / Math.max(1, b[2] - b[0], b[3] - b[1])) : 1;
+        return ed.sampleRegion("image", b, scale, { forRun: true });
+    }
 
     /**
      * Pixels as ImageData. Without a layer: the flattened picture (x, y = 0, canvas size =

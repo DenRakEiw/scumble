@@ -91,7 +91,8 @@ export function activate(scumble) {
                 if (busy) { dirty = true; return; }
                 busy = true;
                 try {
-                    const flat = doc.flatten();
+                    // composited at thumbnail size: a full flatten of a large document is a second per change
+                    const flat = doc.flatten({ maxSize: 192 });
                     const k = Math.min(96 / flat.width, 64 / flat.height);
                     const base = makeCanvas(Math.max(1, Math.round(flat.width * k)), Math.max(1, Math.round(flat.height * k)));
                     const bctx = base.getContext("2d");

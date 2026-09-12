@@ -70,7 +70,7 @@ export function openDialog({ scumble, doc, model, renderer, params, title }) {
         stage.appendChild(view);
         body.appendChild(stage);
         const backdrop = scumble.makeCanvas(sw, sh);
-        try { backdrop.getContext("2d").drawImage(doc.flatten(), 0, 0, sw, sh); } catch (_) { /* an empty document: the chequerboard shows */ }
+        try { backdrop.getContext("2d").drawImage(doc.flatten({ maxSize: Math.max(sw, sh) }), 0, 0, sw, sh); } catch (_) { /* an empty document: the chequerboard shows */ }
 
         const side = document.createElement("div");
         side.className = "glb-side";

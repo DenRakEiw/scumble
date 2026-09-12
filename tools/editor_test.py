@@ -484,6 +484,81 @@ out.emptyAgain = ed.getBounds() === null;
 if (!out.emptySnap || !out.emptyAgain) throw new Error("empty step: " + JSON.stringify(out));
 return out;
 """),
+    ("wand_and_bucket_flood_a_region_not_the_image", """
+// Phase A item 3 (docs/PLAN_TILES.md): on an image over 2048 px the wand floods a coarse composite
+// first, then only the region's box at full resolution, and widens the box where the region reaches
+// its edge. The result has to be the pixel-exact region a flood over the whole image gives, also
+// across a one pixel bridge the coarse pass cannot see; the bucket fills the same region with a
+// rect undo step; the eyedropper composites one pixel.
+await run("new_canvas", { width: 5000, height: 3000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height;
+const { floodMask } = await import("./editor/inpaint_raster.js");
+const out = {};
+// the base: white, a blue blob left, a blue blob right, joined by a one pixel blue line
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+const bx = base.getContext("2d");
+bx.fillStyle = "#ffffff"; bx.fillRect(0, 0, W, H);
+bx.fillStyle = "#2040c0";
+bx.beginPath(); bx.arc(1000, 1500, 400, 0, Math.PI * 2); bx.fill();
+bx.beginPath(); bx.arc(4000, 1500, 400, 0, Math.PI * 2); bx.fill();
+bx.fillRect(1000, 1500, 3000, 1);   // the bridge: 1 px high, invisible at the coarse scale
+bx.fillStyle = "#c02020"; bx.fillRect(2200, 400, 600, 300);   // a red block the region must not include
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "flood.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+ed.fillOpts = { tolerance: 32, contiguous: true, sample: "image" };
+// the reference: a flood over the whole composite on the main thread
+const flat = ed.flattenToCanvas({ forRun: true });
+const ref = floodMask(flat.getContext("2d").getImageData(0, 0, W, H).data, W, H, 1000, 1400, 32, true);
+let refCount = 0; for (let i = 0; i < ref.length; i++) refCount += ref[i];
+out.refCount = refCount;
+if (refCount < 2 * Math.PI * 400 * 400 * 0.95) throw new Error("the reference region is not both blobs: " + refCount);
+// the wand, clicked in the left blob: both blobs and the bridge, nothing else
+const spy = { rounds: null };
+const oFlood = ed.floodRegion.bind(ed);
+ed.floodRegion = async (x, y, o) => { const r = await oFlood(x, y, o); spy.rounds = r.rounds; spy.box = [r.x, r.y, r.w, r.h]; return r; };
+await ed.wandSelect(1000, 1400, "replace");
+ed.floodRegion = oFlood;
+out.rounds = spy.rounds; out.box = spy.box;
+if (!(spy.rounds >= 2)) throw new Error("the box should have been widened across the bridge, rounds " + spy.rounds);
+const sel = ed.selection.getContext("2d").getImageData(0, 0, W, H).data;
+let wrong = 0, selCount = 0;
+for (let p = 0, i = 3; p < ref.length; p++, i += 4) { const on = sel[i] > 127 ? 1 : 0; selCount += on; if (on !== ref[p]) wrong++; }
+out.selCount = selCount; out.wrong = wrong;
+if (wrong) throw new Error(wrong + " pixels differ from the whole-image flood");
+out.bounds = ed.getBounds();
+if (JSON.stringify(out.bounds) !== JSON.stringify([600, 1100, 4400, 1900])) throw new Error("bounds " + JSON.stringify(out.bounds));
+// the bucket on a new layer, clipped to nothing (no selection), with a rect undo step
+ed.clearSelection();
+const layer = ed.addPaintLayer();
+ed.activeLayerId = layer.id;
+ed.color = "#00ff00"; ed.brushOpacity = 1;
+const undoBefore = ed.undo.length;
+await ed.bucketFill(4000, 1600);
+const step = ed.undo[ed.undo.length - 1];
+out.bucketUndo = { kind: step.kind, w: step.w, h: step.h };
+if (ed.undo.length !== undoBefore + 1 || step.kind !== "layerrect" || step.w >= W) throw new Error("the bucket's undo step is not a rect copy: " + JSON.stringify(out.bucketUndo));
+const lp = layer.canvas.getContext("2d");
+const at = (x, y) => Array.from(lp.getImageData(x, y, 1, 1).data);
+out.filled = { left: at(1000, 1400), right: at(4000, 1600), red: at(2500, 500), white: at(100, 100) };
+if (out.filled.left[1] !== 255 || out.filled.right[1] !== 255 || out.filled.red[3] !== 0 || out.filled.white[3] !== 0) throw new Error("bucket pixels: " + JSON.stringify(out.filled));
+await ed.undoStep();
+if (at(4000, 1600)[3] !== 0) throw new Error("the bucket's undo did not clear the fill");
+// the eyedropper composites one pixel: the red block through the (empty) layer
+ed.pickColor(2500, 500);
+out.picked = ed.color;
+if (ed.color !== "#c02020") throw new Error("eyedropper picked " + ed.color);
+// the active layer alone as the sample source: the layer is empty, so the region is everything transparent
+ed.fillOpts = { tolerance: 32, contiguous: true, sample: "layer" };
+await ed.wandSelect(100, 100, "replace");
+out.layerSample = ed.getBounds();
+if (JSON.stringify(out.layerSample) !== JSON.stringify([0, 0, W, H])) throw new Error("layer sample: " + JSON.stringify(out.layerSample));
+ed.clearSelection();
+await run("remove_layer", { layer: layer.id, doc: window.__t });
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

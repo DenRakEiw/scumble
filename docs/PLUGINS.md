@@ -93,7 +93,7 @@ One tab. Pixel access is ImageData in and out; every write is one undo step.
 | `run(name, args)` | a command on this document |
 | `layers()`, `layer(key)`, `activeLayer()` | summaries: `{ id, name, kind, visible, opacity, blend, x, y, w, h, locked, mask, filter, params, text, ... }` |
 | `rawLayer(key)` | the editor's layer object (canvas, mask ...); unstable |
-| `flatten()` | the visible picture as a canvas at image size |
+| `flatten({ maxSize, box })` | the visible picture as a canvas at image size; `maxSize` (long side) or `box` (`[x0, y0, x1, y1]`) composite only that size or part, which a thumbnail or a colour sample should ask for |
 | `getPixels()` | `{ data: ImageData, x: 0, y: 0, w, h }` of the flattened picture |
 | `getPixels(layer)` | the layer's own canvas (unmasked) plus its placement `x, y, w, h` in image pixels; `w, h` differ from the ImageData size when the layer is scaled |
 | `setPixels(layer, imageData, { undo = true })` | write a layer's canvas back (same size, or the canvas is replaced and the placement kept); filter and locked layers refuse |

@@ -230,7 +230,9 @@ BENCH = """
     rect();
     out.feather = await op(() => ed.featherSelection(8));
     rect();
-    out.wand = await op(() => ed.wandSelect(Math.round(W * 0.1), Math.round(H * 0.1), "replace"));
+    out.wand = await op(() => ed.wandSelect(Math.round(W * 0.1), Math.round(H * 0.1), "replace"));   // on the gradient: a band across the whole picture
+    rect();
+    out.wand_object = await op(() => ed.wandSelect(977, 613, "replace"));   // inside one of the base's discs: a bounded region
     rect();
     ed.activeLayerId = paintLayer.id;
     out.bucket = await op(() => ed.bucketFill(Math.round(W * 0.25), Math.round(H * 0.25)));
@@ -273,7 +275,8 @@ OP_ROWS = [
     ("shrink -16", "shrink"),
     ("invert", "invert"),
     ("feather 8", "feather"),
-    ("magic wand", "wand"),
+    ("magic wand (whole-image band)", "wand"),
+    ("magic wand (an object)", "wand_object"),
     ("bucket fill", "bucket"),
     ("PNG of the composite", "png"),
     ("the same without the worker", "png_main"),
