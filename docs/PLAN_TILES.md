@@ -6,7 +6,9 @@ allows, and the six phases that are done) and the 15k entry in `docs/BUGS.md` fi
 plan is the seventh phase of the performance work: the one the earlier phases left out on
 purpose, because it changes the data structure every tool is written against.
 
-Nothing in it is built. Every phase has a gate; none is to be started without the user's go.
+Phase A is built (2026-09-13, on the user's "starte den geplanten Umbau, Phase 1"; §7 below
+says what and what it measured). Phases B to F are not; each has a gate and none is to be
+started without the user's go.
 
 ---
 
@@ -218,9 +220,10 @@ build step and a worker pool are exactly the things a sync script should not car
 Estimates are honest ranges for one person working on nothing else. Each phase ships behind
 its own gate; A alone is a release.
 
-### Phase A — quick wins inside the current model (about a week)
+### Phase A — quick wins inside the current model — **built 2026-09-13**
 
-Everything here was measured on 2026-09-12 and needs no tiles:
+Everything here was measured on 2026-09-12 and needs no tiles. What was built is in §7;
+the numbers are in `docs/PERFORMANCE.md` §9. The items as planned:
 
 1. **The selection as a `Uint8Array` mask** with rect undo (the phase 1 pattern) and
    incrementally tracked bounds. Removes the 600 MB canvas, the 62 ms selection step, the
@@ -330,11 +333,70 @@ deprecation), the CHANGELOG.
 4. **Phase C**: the commitment, and with it `docs/NEXT_PLAN.md` item 4b (the editor source
    moves into this repo). Nothing in C starts before that decision.
 
-## 7. Implementation notes for phase A (written 2026-09-12, not applied)
+## 7. Phase A as built (2026-09-13)
 
-The user asked for the plan only; nothing below is in either repo. The first two items
-were drafted far enough to know the shape, so the next session does not start from zero.
-All editor changes go into the node repo first, then `tools/sync_editor.py`.
+Built item by item in the node repo (commits 0c3ce45, 009320e, 9bf54c0, 5dd1dbb, DEVELOPMENT.md
+§23 has the rules) and synced, item 5 in the app; each item has its gate step and its commit
+in both repos. Measured on the 15,000 × 10,000 benchmark document of §0, a fresh instance
+each time (`tools/perf_test.py 15000x10000`; the discrete rows now drain the GPU queue first,
+so they measure their own cost and not the backlog of the frames before them):
+
+| Step, 150 MP, main thread held | before (2026-09-12) | after phase A (2026-09-13) |
+|---|---|---|
+| selection change | 50 to 62 ms | 5 to 6 ms |
+| selection bounds scan (warm / first after a big change) | 84 ms, worst 754 | 6 ms, first 460 to 490 (the readback waits for the GPU) |
+| undo of a stroke (with a film look on top) | 90 to 99 ms | 42 ms, of which about 30 is the film look's re-render of the view; without a filter layer about 10 |
+| grow +16 / shrink / invert | 202 / 352 / 325 ms | 112 / 131 / 54 ms |
+| feather 8 | 221 ms | 398 ms (unchanged path, noise) |
+| magic wand, a bounded object | not measured (the old path floods the whole image) | 360 ms blocked, 0.8 s wall |
+| magic wand, a band across the whole picture | 1049 ms, 3.3 s wall | 1062 ms, 4.2 s wall (the old one-pass path; a box above 40 % of the picture goes there) |
+| bucket fill (the perf test's spot, under a matched layer and a film look) | 721 to 1646 ms | 12 to 16 ms alone, 490 to 620 in the benchmark's sequence (GPU waits of the composite of the box) |
+| stroke buffer for a 400 px eraser stroke, 40 dabs | 600 MB, plus 600 MB clip, plus 600 MB clip scratch | 19 MB buffer, 19 MB clip scratch |
+| live preview per stroke frame | three full-size blits (1.8 GB) | the dab's rectangle |
+| the 600 MB preview canvas after the stroke | kept | given back (above 16 MP) |
+| compositor textures at 1:1, a 24 MP document, two sources | 183 MB (whole sources) | 69 MB (windows), a pan inside the margin uploads nothing |
+| film panel thumbnails per change | a full flatten, 1.9 s | a 192 px composite |
+
+Per item, what is different from the plan above:
+
+- **A1 stayed a canvas.** The selection is still a GPU canvas: a `willReadFrequently` canvas
+  was measured and lands in Chromium 152's GPU process just the same (it fills slower), and a
+  `Uint8Array` behind 82 sites is phase C's job. What was built is the shape the old §7 drafted:
+  the undo step copies the extent (from the 1/16 level, a canvas up to 16 MP, a PNG above), the
+  bounds are scanned by 64 px strips from the edges of a known box, a subtract carries the old
+  box as a superset, a rect undo keeps the display levels and only its row thumbnail, and a
+  change keeps the colour-match statistics of the layers it cannot have touched. The measured
+  finding behind all of it: on a GPU canvas a readback costs what is queued before it, not the
+  copy; the 0.5 to 1.2 s readbacks of the 12th were that wait.
+- **A2 as planned**, plus the live preview refreshed inside the dab's rectangle (it was three
+  full-size blits per frame), the big preview canvases given back after the gesture, and the
+  smudge clip drawn per dab. The pixels are within a few levels of the old way, because a small
+  buffer starts as a software canvas (the gate compares premultiplied, tolerance 8).
+- **A3 as planned** (coarse composite at 2048, the box at full resolution, widened where the
+  region touches its edge), with two things the plan did not know: a sample pass must keep its
+  own filter and match caches or it evicts the screen's (`viewPass.sample`), and the film
+  panel's thumbnails were a full-resolution flatten of the whole document on every change
+  (1.9 s at 15k, found inside the wand's blocked time; `Document.flatten({ maxSize, box })`
+  now). The eyedropper composites one pixel. The whole-image wand stays the old cost, by the
+  40 % rule.
+- **A4 as planned** (`_source` in the compositor, 16 MP threshold, half a view of margin).
+  Pixel-identical with and without the windows. Note that a document with a visible filter
+  layer never reaches the compositor (the filter chain draws through Canvas 2D), so the win
+  shows on documents without one; the benchmark document has a film look.
+- **A5 as planned**, through `nvidia-smi` (tens of ms) or the WDDM counters (a second, used
+  only). `settings.memory.cardMinFreeMB` (default 2048); when the card is that short the
+  front tab's compositor textures and the GL pool go too, never its display levels.
+
+What phase A could not do, by construction: the per-document memory. One 15k document still
+holds 2.3 GB of layers, 0.95 GB of pyramids, 0.57 GB of base canvas and 0.57 GB of selection
+canvas in the GPU process; only the stroke-time 1.8 GB and the compositor's whole-source
+textures are gone. That is phase C. And the ops that read the whole selection (grow, shrink,
+feather, invert) keep their phase 4 cost.
+
+The decisions of §6 after phase A: 1 (the user's VRAM reading) is still open; 2 is done; 3
+and 4 are open.
+
+The old §7 drafts, for the record:
 
 - **A1, the selection's undo copy.** `snapshot({ kind: "selection" })` returns the pixels
   inside the selection's *extent* (a canvas of that rectangle, `bytes` counted like a

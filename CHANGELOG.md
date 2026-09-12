@@ -5,6 +5,33 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.10 — unreleased
 
+- **Large pictures: the hitches between strokes are gone, and a stroke no longer costs a
+  layer's worth of memory.** On a 15,000 px picture a selection change, its undo and the
+  scan for its bounding box used to hold the window for 50 to 750 ms, because each one
+  copied or read the whole selection; they take a few milliseconds now (the undo copies only
+  the selection's extent, the box is read in strips from a known edge, and a subtract keeps
+  the old box as its starting point). Undoing a stroke refreshes only what it changed instead
+  of rebuilding the layer's display levels and every thumbnail, and a change that cannot have
+  touched a colour-matched layer no longer makes that layer rescan its statistics. A brush,
+  eraser, clone, gradient or shape stroke draws into a buffer the size of what it touches
+  instead of a canvas the size of the layer (three of them, 1.8 GB on that picture), the live
+  preview updates only around the dab, and the preview canvas is given back after the stroke.
+- **The magic wand and the bucket look at the region, not the whole picture.** A coarse pass
+  finds where the region is, the fine pass floods only that box at full resolution and widens
+  it where the region reaches its edge, so a one pixel bridge still joins what it joins. The
+  bucket's undo step is a copy of the box. The eyedropper composites one pixel.
+- **Zooming into a large picture no longer uploads whole layers to the graphics card.** The
+  compositor keeps a window of each layer around what the view shows, with a margin so a pan
+  inside it uploads nothing; at 1:1 on a 24 MP picture two layers hold 69 MB instead of 183.
+- **The memory watch sees the whole graphics card.** Settings › Rendering shows how much of
+  the card is in use by everything (ComfyUI's models above all) and has a row for how much to
+  keep free (2 GB by default); when the card is that short, the caches of background tabs
+  and the front tab's textures are released. *Free VRAM* releases the caches of every tab.
+  The `status` command reports the card's numbers.
+- **The Film looks panel no longer flattens the whole picture at full size for its
+  thumbnails** on every change (two seconds on a 15,000 px picture); plugins can ask
+  `flatten({ maxSize, box })` for a smaller or partial composite.
+
 ## 0.1.9 — 2026-09-12
 
 - **The model folder is scanned, and what it holds is linked.** Point Settings › Helpers at

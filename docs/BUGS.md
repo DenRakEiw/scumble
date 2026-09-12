@@ -120,6 +120,18 @@ be measured: it was not open (their autosave held a 2 MP document, their GPU pro
 5. Whether the stutter is periodic. `watchMemory` runs every 30 s but only touches background
    tabs; the autosave runs 15 s after the last change and was measured at 19 ms blocked.
 
+**Phase A of `docs/PLAN_TILES.md` is built (2026-09-13)** and takes the discrete hitches out
+of the table above: selection change 6 ms, bounds 6 ms warm, stroke undo 42 ms (the film
+look's re-render; about 10 without a filter layer), grow / shrink / invert 112 / 131 / 54 ms,
+the bucket and the wand on a bounded region a fraction of before, a stroke's buffers 19 MB
+instead of 1.8 GB and the live preview refreshed inside the dab, the compositor's textures a
+window of each source. `docs/PERFORMANCE.md` §9 has the table. What it does **not** change
+is the memory per document (2.3 GB of layers, 0.95 GB of pyramids, 0.57 GB base, 0.57 GB
+selection canvas in the GPU process for this document), and the ops that read the whole
+selection keep their phase 4 cost. Whether the stutter the user sees is that memory is still
+the open question 3 above; the memory watch now reads the card as a whole (Settings ›
+Rendering shows it), which is the number to look at while it stutters.
+
 **Likely fix, if the measurement confirms the memory reading**: layer tiles above a
 threshold, which is the one piece of the performance plan that was left out on purpose, and
 with them the pixels of layers that are not on screen kept out of the GPU process (in the

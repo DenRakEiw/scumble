@@ -860,6 +860,55 @@ outside export. Every phase also runs `tools/smoke_test.py --no-helpers`,
 `tools/commands_test.py` and `tools/film_test.py` (the CPU / GPU filter twins must stay
 within 3 levels).
 
+## 9. Phase A of the tile plan (2026-09-13)
+
+`docs/PLAN_TILES.md` phase A, the quick wins inside the current model, built and measured on
+the 15,000 × 10,000 document of the 2026-09-12 entry in `docs/BUGS.md`. The node's
+`DEVELOPMENT.md` §23 has the rules. Fresh instance per run; the benchmark's discrete rows
+drain the GPU queue before they start (`settle()` in `perf_test.py`), because the 60 stroke
+frames issued in a tight loop before them left the GPU with 1.8 GB of blits per frame and the
+"undo" and "selection change" rows were measuring that backlog.
+
+| Step, 150 MP, main thread held | before (2026-09-12) | after phase A (2026-09-13) |
+|---|---|---|
+| selection change | 50 to 62 ms | 5 to 6 ms |
+| selection bounds scan (warm / first after a big change) | 84 ms, worst 754 | 6 ms, first 460 to 490 (the readback waits for the GPU) |
+| undo of a stroke (with a film look on top) | 90 to 99 ms | 42 ms, of which about 30 is the film look's re-render of the view; without a filter layer about 10 |
+| grow +16 / shrink / invert | 202 / 352 / 325 ms | 112 / 131 / 54 ms |
+| feather 8 | 221 ms | 398 ms (unchanged path, noise) |
+| magic wand, a bounded object | not measured (the old path floods the whole image) | 360 ms blocked, 0.8 s wall |
+| magic wand, a band across the whole picture | 1049 ms, 3.3 s wall | 1062 ms, 4.2 s wall (the old one-pass path; a box above 40 % of the picture goes there) |
+| bucket fill (the perf test's spot, under a matched layer and a film look) | 721 to 1646 ms | 12 to 16 ms alone, 490 to 620 in the benchmark's sequence (GPU waits of the composite of the box) |
+| stroke buffer for a 400 px eraser stroke, 40 dabs | 600 MB, plus 600 MB clip, plus 600 MB clip scratch | 19 MB buffer, 19 MB clip scratch |
+| live preview per stroke frame | three full-size blits (1.8 GB) | the dab's rectangle |
+| the 600 MB preview canvas after the stroke | kept | given back (above 16 MP) |
+| compositor textures at 1:1, a 24 MP document, two sources | 183 MB (whole sources) | 69 MB (windows), a pan inside the margin uploads nothing |
+| film panel thumbnails per change | a full flatten, 1.9 s | a 192 px composite |
+
+Findings worth more than the numbers:
+
+- **A readback on a GPU canvas costs what is queued before it.** `getImageData` of 2048² on
+  the selection canvas took 75 ms once and 658 ms the next time; the difference was the fill
+  in between. So the wins came from fewer and smaller readbacks (strips instead of the box,
+  the extent instead of the canvas, statistics kept instead of re-read), not from faster
+  loops. It also means the op rows of the benchmark move by hundreds of ms between runs on a
+  shared card; take the first run after a restart and read the wall times with them.
+- **The film panel flattened the whole document at full resolution on every change**
+  (`plugins/film/main.js`, 1.9 s at 15k), which is why any operation looked slower than it
+  was. `Document.flatten({ maxSize, box })` composites at a size, through the same region
+  pass the screen uses; the GLB dialog's backdrop uses it too.
+- **A `willReadFrequently` selection canvas is not a saving**: it sits in the GPU process
+  just the same in Chromium 152, fills 9× slower and reads back only a little faster.
+- **`imageSmoothingQuality: "low"` on the 2:1 pyramid levels gives the same pixels** and
+  measured 4 ms against 145 for the first level once, but the same measurement swung to 245 ms
+  in the next round; drowned in queue waits. Not changed; worth a quiet measurement.
+- **The compositor and Canvas 2D resample a level differently at a fractional zoom-out**
+  (up to 50 levels on a hard edge at fit, 2 at exactly half, 1 at 1:1), with and without the
+  source windows alike. `composite_test.py` reports the fit value and gates the rest.
+- **A small stroke buffer starts as a software canvas** and grows onto the GPU; twenty
+  overlapping soft dabs blend a few levels differently on the CPU than on the GPU. Invisible,
+  but a pixel-exact gate against the old path fails without a tolerance.
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first

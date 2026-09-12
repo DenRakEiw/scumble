@@ -207,6 +207,8 @@ BENCH = """
     };
     const op = async (fn) => {
         await new Promise((r) => setTimeout(r, 60));
+        settle();   // the row before may have left GPU work queued; this row measures its own
+        await new Promise((r) => setTimeout(r, 30));
         const done = probe();
         const t0 = performance.now();
         await fn();

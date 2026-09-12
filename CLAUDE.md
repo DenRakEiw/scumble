@@ -72,6 +72,40 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
+## Where things stand (2026-09-13)
+
+**Phase A of `docs/PLAN_TILES.md` is built**, on the user's "starte den geplanten Umbau, Phase 1"
+(2026-09-12 late; the plan's phases are lettered, A is the first): five items, each in the node
+repo first (commits 0c3ce45 A1, 009320e A4, 9bf54c0 A3, 5dd1dbb A2, 83887b6 `DEVELOPMENT.md`
+§23) and synced, A5 app-only (`electron/main/gpumem.js`, the memory watch, Free VRAM), each with
+its gate step (`editor_test.py`: selection undo / bounds, wand and bucket region, stroke
+buffers; `composite_test.py`: source windows) and its commit. `docs/PLAN_TILES.md` §7 says what
+was built and how it differs from the plan, `docs/PERFORMANCE.md` §9 has the before / after
+table, `docs/BUGS.md` the 15k entry updated, `CHANGELOG.md` the 0.1.10 bullets. Gates at the
+end: editor, shape, brush, composite, commands, film, glb, ailabel, log all PASS on the dev
+instance; `docs/COMMANDS.md` regenerated (the `status` command's memory carries the card).
+**Not run**: `smoke_test.py` (a real Flux run) and the packaged exe; do both before the release.
+**Not verified by the user**: nothing of phase A has been tried on their own 15k file; the
+first thing to ask for is the card's numbers from Settings › Rendering while it stutters.
+
+**What phase A found, and what the next session should know**: a readback on a GPU canvas
+costs whatever is queued before it (0.5 to 1.2 s for 2048² right after a fill), so the wins
+came from fewer and smaller readbacks; the film plugin's panel flattened the whole document at
+full resolution on every change (fixed, `Document.flatten({ maxSize, box })`); a
+`willReadFrequently` canvas is no saving in Chromium 152; `destination-in` and `copy` apply
+to the whole canvas, a regional one needs `clip()` first; the benchmark's op rows swing by
+hundreds of ms between runs on the shared card, so restart before a run and read the first
+one. Per-document memory (2.3 GB layers, 0.95 GB pyramids, 0.57 GB base and selection each
+at 15k) is untouched: that is phase C, and the decisions in `docs/PLAN_TILES.md` §6 (1, 3, 4)
+are still the user's.
+
+**Traps met on 2026-09-13**: a Bash-tool heredoc turns `\\n` in a Python source into a real
+newline (write the script with the Write tool, or use the Edit tool); the test document
+`window.__t` of `editor_test.py` is 600 × 300 by the time later steps run (call `new_canvas`
+first); Chromium keeps a small canvas in software, so pixels from a buffer that grew onto the
+GPU differ from an all-GPU canvas by a few levels; a preview's regional `destination-in`
+needs a clip region.
+
 ## Where things stand (2026-09-12, evening)
 
 **0.1.9 is released** (tag `v0.1.9`, published 2026-09-12 16:13 UTC, `Scumble-Setup-0.1.9.exe`
