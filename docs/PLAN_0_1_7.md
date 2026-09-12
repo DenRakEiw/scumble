@@ -1,4 +1,4 @@
-# Plan after 0.1.6: template upload, console, draw_shape, liquify, Python plugins, custom brushes, Escape in Settings
+# Plan after 0.1.6: template upload, console, draw_shape, liquify, Python plugins, custom brushes, Escape in Settings, EU AI label plugin
 
 Written 2026-09-11 with DenRakEiw, for the sessions after this one. Read `CLAUDE.md` first.
 The five items are in the order they should be worked; 1 to 3 are one release (**0.1.7**),
@@ -358,6 +358,76 @@ A step in `tools/editor_test.py`: open Settings through `openSettings()`, dispat
 `keydown` Escape on the focused element inside it, assert `ui.settings.open` is false; the
 same for the Generate-new dialog. Ten minutes including the sync; can go into any release.
 
+## 8. An EU AI label plugin
+
+Asked for on 2026-09-12: "EU-AI-Label-Plugin bauen. Man kann das Label-Image aussuchen, dies
+wird ein Layer, den man bearbeiten, Größe und Position einstellen kann. Als Plugin bauen."
+
+### Why
+
+The EU AI Act asks for AI-generated and AI-edited images to be marked. The user downloaded
+the official label set and wants to stamp it onto a picture from inside Scumble: pick the
+variant, place it, done, and still be able to move and resize it like any layer.
+
+### The assets (on the user's machine, 2026-09-12)
+
+- `C:\Users\schoeneberg\Downloads\LABEL_AI_GENERATED_SVG_LcQbQdw4Cnr30m5E8yzTgQZe8o_129546\LABEL_AI_GENERATED_SVG_wSFsWtcAUPdOjcF6R1jRxUfMP8c_129546\`:
+  twelve SVGs, 1.3 to 6.5 KB each. Three labels (**AI GENERATED**, **AI MODIFIED**, and the
+  bare **AI** mark), each in black and white, each on a transparent or an opaque ground
+  (the ground is a rounded pill at 50 % opacity, `viewBox 0 0 1789.84 566.93` for the two
+  wordmarks). Illustrator export, `<style>` block with `.cls-*` classes, no metadata and no
+  licence text inside the files.
+- `C:\Users\schoeneberg\Downloads\LABEL_AI_GENERATED_PNG_544xjpnR3CO6yyOLgQZM1Qp4Qg_129547 (1)\`:
+  the same twelve as RGBA PNGs, 7459 x 2363 (GENERATED), 7087 x 2363 (MODIFIED),
+  2363 x 2363 (mark), 57 to 147 KB each.
+
+**Ship the SVGs, not the PNGs.** They are 300 times smaller and rasterise cleanly at any size;
+a PNG scaled down from 7459 px to a 400 px label is no better. **Check the terms of use of the
+label set before the files go into the repo** (the download page they came from; the app is
+GPL-3.0 and public). The plugin folder gets a `NOTICE` with the source and the terms.
+
+### Design
+
+A built-in plugin `plugins/ailabel/` (`plugin.json`, `main.js`, `assets/*.svg`,
+`NOTICE`), on the existing plugin API only, no editor patch:
+
+- **Panel "AI label"** (`scumble.panels.register`): a row of thumbnails or three selects
+  (label: generated / modified / mark; colour: black / white; ground: transparent / opaque),
+  **size** as a percentage of the image width (default 20 %, the mark 8 %), **position** as
+  nine anchors plus a margin in percent (default bottom right, 3 %), **opacity**, and the
+  button **Add label**. The last settings are kept in `scumble.storage`.
+- **The layer**: the chosen SVG rasterised at the target size (`new Blob([svg], { type:
+  "image/svg+xml" })`, an object URL, an `<img>`, one `drawImage`), then
+  `doc.addLayer(canvas, { name: "AI label", x, y, w, h })`. From then on it is an ordinary
+  paint layer: the transform tool moves and scales it, the opacity slider and the blend mode
+  apply, Delete removes it, exports flatten it. The plugin remembers the layer id in
+  `pluginData` per document so **Add label** a second time replaces the label instead of
+  stacking a second one; a *Remove label* button uses the same id.
+- **Plugins menu** (`scumble.actions.register`): *Add AI label* with the last settings, so it
+  is one keystroke after a generation. **Command** `ailabel.add({ label, color, ground, size,
+  anchor, margin, opacity })` and `ailabel.remove()` for MCP, which is how an agent marks a
+  picture it generated.
+- **The rasteriser is the plugin's own**, so the mirror does not need to understand SVG for
+  this. General SVG import is a separate small item, see below.
+
+### Related: SVG import in general (measured 2026-09-12)
+
+Loading an `.svg` as an image fails today: the file lands in the mirror, but
+`mimeOf()` in `electron/main/files.js` (line 30) has no `.svg` entry, so `/comfy/view` serves
+it as `application/octet-stream` and Chromium refuses to render an SVG `<img>` without
+`image/svg+xml` ("could not load /comfy/view?filename=test.svg"). The fix is one map entry
+plus a size question, because an SVG has no pixel size of its own: rasterise at the
+document's size when a document is open, else ask like the New dialog does. There is no SVG
+*export* and there cannot be one: text and shapes are pixels once drawn, the editor has no
+vector layer. Half an hour; do it with the plugin or on its own.
+
+### Gate
+
+`tools/ailabel_test.py`: add a label through the command, check the layer's size and anchor
+position against the percentages, read one pixel of the wordmark and one of the pill out of
+the flattened export, add again and assert one label layer, remove it. No ComfyUI, no key.
+Estimate: half a day for the plugin, half an hour for the SVG import entry.
+
 ## Order and releases
 
 | # | Item | Estimate | Release |
@@ -369,6 +439,7 @@ same for the Generate-new dialog. Ten minutes including the sync; can go into an
 | 5 | Python plugins | 2 days | 0.1.8 |
 | 6 | Custom brushes from .abr, verified and persistent | 1 day | 0.1.9 |
 | 7 | Escape closes the Settings dialog | 10 min | next |
+| 8 | EU AI label plugin (plus general SVG import) | half a day | 0.1.9 |
 
 Items 4 and 5 both touch the node repo or the plugin core; 3 must land before 5, because the
 Python process's stderr has nowhere to go until it exists.
