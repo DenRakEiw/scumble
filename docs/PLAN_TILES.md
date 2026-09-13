@@ -8,7 +8,9 @@ purpose, because it changes the data structure every tool is written against.
 
 Phase A is built (2026-09-13, on the user's "starte den geplanten Umbau, Phase 1"; §7 below
 says what and what it measured). Phases B to F are not; each has a gate and none is to be
-started without the user's go.
+started without the user's go. **The step-by-step implementation plan for B, C and E, with
+every technical decision taken, is `docs/PLAN_BCE.md` (2026-09-13); where it differs from
+this file, it wins.**
 
 ---
 

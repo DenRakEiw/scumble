@@ -74,6 +74,18 @@ That repo stays the backend node and keeps living; this folder is the app. Read 
 
 ## Where things stand (2026-09-13)
 
+**The implementation plan for phases B, C and E is `docs/PLAN_BCE.md`** (written 2026-09-13
+after reading the code line by line; it wins over `docs/PLAN_TILES.md` where they differ). It
+is the file the session that builds the tile engine follows: B0 to B3 (the Rust spike, no
+Rust toolchain is installed on this machine yet), C0 (`docs/NEXT_PLAN.md` 4b, the editor
+source moves into this repo), C1 (the `LayerPixels` facade with a canvas backend, the one
+migration of the 277 sites, its own release), C2 to C7 (tiles, atlas compositor, undo as tile
+refs, stroke store, mips in the worker), E1 to E6 (COOP/COEP, the worker pool over a
+`SharedArrayBuffer` arena, bands, streamed PNG / PSD / ORA, filters with halos, the 30k gate).
+Every decision is in its §4 table; every step names its gate. Phase D is deliberately not in
+it. The user's go for B was given on 2026-09-13 ("wir machen dann einen clear und opus wird
+den plan umsetzen"); ask once, in one sentence, after B's table before starting C0.
+
 **Phase A of `docs/PLAN_TILES.md` is built**, on the user's "starte den geplanten Umbau, Phase 1"
 (2026-09-12 late; the plan's phases are lettered, A is the first): five items, each in the node
 repo first (commits 0c3ce45 A1, 009320e A4, 9bf54c0 A3, 5dd1dbb A2, 83887b6 `DEVELOPMENT.md`
