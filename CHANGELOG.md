@@ -5,6 +5,14 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.12 — unreleased
 
+- **Smudge, fill and clear work the same on every layer.** On a layer you had flipped or
+  turned by 90°, the smudge brush put its paint at the mirrored or turned spot instead of
+  under the brush. On a layer made by *Merge down*, *Fill selection* blended the colour with
+  the merged layer's blend mode and opacity, and clearing the selected pixels removed only
+  part of them. After a rotate, distort or warp was applied, a later fill, clear or smudge on
+  that layer came out slightly different at its soft edges. Each of these came from drawing
+  settings that the flip, the merge or the transform left behind on the layer.
+
 ## 0.1.11 — 2026-09-13
 
 - **The editor is built from the Scumble repository now** (this part changes nothing you

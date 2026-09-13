@@ -312,7 +312,8 @@ stroke buffers (`brush_test.py`, `editor_test.py`); (d) selection (`editor_test.
 --no-helpers`, `size_test.py`, `generate_test.py`, `transparent_test.py`); (j) the deprecation
 getters and `docs/PLUGINS.md`. `perf_test.py 15000x10000` within noise of §9 at the end.
 
-Release 0.1.12: "no visible change; the editor's pixel access goes through one interface".
+Release 0.1.12: "no visible change; the editor's pixel access goes through one interface"
+(apart from the bugs rule 11 of "C1 as built" removes, which the CHANGELOG names).
 
 #### C1 as built: the decisions taken while building it (2026-09-13)
 
@@ -417,6 +418,29 @@ the tests). Where it differs from the text above, this wins; each difference say
     references), `commands.js`, `plugins.js`, the node's hand-written `js/inpaint_bridge.js`
     and `js/inpaint_node.js` (a commit in the node repo), and every `tools/*_test.py` that
     reaches into these properties (they must run in strict mode after step j).
+11. **A write never inherits context state, and that is a deliberate output change** (decided
+    in step (c)'s review). The 0.1.11 code wrote into a layer's own context and set only part
+    of the state; the rest was whatever the code that made the canvas had left there. Four
+    producers leave state on a canvas that becomes a layer's pixels: `flipLayer` (a mirror
+    transform), `rotateLayer90` (a 90° transform), `applyPending` (`imageSmoothingQuality`
+    "high") and `mergeDown` (the upper layer's `globalAlpha` and blend operation, and "high"
+    smoothing). `drawInto`, `blit`, `clear` and `fill` start from a fresh context's state, as
+    the tile backend's scratch will, so the facade cannot reproduce the inherited state, and
+    the inherited behaviour was a bug each time: on a flipped or turned layer a smudge dab was
+    written at the mirrored or turned spot, *Fill selection* on a merged layer blended with the
+    merged layer's mode and opacity, *Clear* removed only part, and scaled or fractional draws
+    on a transformed or merged layer resampled with a different filter. Every step that moves
+    such a write lists it; the CHANGELOG carries what a user can see. Measured in step (c)
+    (the review's A/B check, twins made by the real producers): with the reference context
+    reset to a fresh state the old code and the migrated code agree to 0 bytes in all 48
+    cases; with the inherited state, `commitStroke` agrees (it set everything it relies on)
+    and smudge on a flipped / turned layer (86k to 290k bytes, up to 255 levels), fill and
+    clear on a merged layer (up to 240k bytes) and bucket, fill, clear or smudge on a
+    transformed layer (1k to 4.5k bytes) differ. **Known for step (f)**: `applySnapshot`'s
+    `layer` restore draws into the layer's own context without resetting the transform or
+    alpha, so in 0.1.11 undoing a fill after a flip puts the layer back mirrored (measured:
+    237k differing bytes against the pixels before the fill, 0 on a plain layer); its
+    migration fixes that and has to say so.
 
 **Per step**: the step's sites, the gates below, a review of the diff, then the app commit,
 `python tools/build_node.py`, `python tools/node_test.py`, the node commit, a push of both.
