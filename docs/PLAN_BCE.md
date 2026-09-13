@@ -392,7 +392,10 @@ the tests). Where it differs from the text above, this wins; each difference say
    `ref` is the run input). `this.basePx` replaces `baseSource()` / `_baseCanvas`: built
    lazily from `base.img`, keyed on that object, which is exactly what `_baseCanvas` was.
    Pixel reads of `base.img` go through `basePx`. (The text above lists `this.base.img →
-   this.basePx` as a rename; the `<img>` is released in C6.)
+   this.basePx` as a rename; the `<img>` is released in C6.) One exception in C1:
+   `resizeImage` keeps its scaled `drawImage(this.base.img, 0, 0, nw, nh)`, because a scaled
+   draw of an `<img>` and of a canvas are not proven to resample to the same bytes; C6
+   measures that before it releases the `<img>`.
 7. **Undo**: `snapUrl` **stays** for the whole-layer steps (`layer`, `layerfull`, `text`,
    `mask`, the `canvas` step's selection), fed by `toCanvas()`. (The text above deletes it
    in C1: a canvas copy per step would put a 15k layer's 900 MB against the 384 MB budget

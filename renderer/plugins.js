@@ -11,6 +11,7 @@ import { commands, findLayer, layerSummary, touch, bounds } from "./commands.js"
 import { FILTERS, FILTER_IDS, filterDefaults, applyFilter } from "./editor/inpaint_filters.js";
 import { registerGLFilter, unregisterGLFilter, runShader, glFiltersAvailable, glToCanvas, isGLSurface } from "./editor/inpaint_filters_gl.js";
 import { el, icon, makeCanvas } from "./editor/inpaint_canvas.js";
+import { LayerPixels } from "./editor/inpaint_pixels.js";
 
 export const API_VERSION = 1;
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
@@ -123,7 +124,7 @@ export class Document {
         else throw new Error("addLayer needs an ImageData, a canvas or nothing");
         this.editor.paintCounter += 1;
         const layer = this.editor.addLayer({
-            name: name || "Paint " + this.editor.paintCounter, kind: "paint", ref: null, canvas: c,
+            name: name || "Paint " + this.editor.paintCounter, kind: "paint", ref: null, px: LayerPixels.fromCanvas(c),
             x: Math.round(x), y: Math.round(y), w: Math.max(1, Math.round(w || c.width)), h: Math.max(1, Math.round(h || c.height)), dirty: true,
         }, { activate });
         return layerSummary(this.editor, layer);
