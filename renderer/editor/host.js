@@ -468,9 +468,16 @@ export const host = {
         // the numbers follow the document: a new image, a crop or an extended canvas changes
         // them. Only a changed document size refreshes the row, so a number being typed in is
         // never overwritten underneath the cursor.
-        this.on("changed", ({ editor: ed }) => {
+        const offChanged = this.on("changed", ({ editor: ed }) => {
             if (ed !== editor || !editor._exportRow) return;
             if (editor._exportRow.doc !== `${editor.width}x${editor.height}`) this.syncExportRow(editor);
+        });
+        // both listeners hold the editor: left registered, they kept every closed tab alive with its
+        // layers, pyramids and undo steps until the app quit
+        const offRemoved = this.on("removed", ({ editor: ed }) => {
+            if (ed !== editor) return;
+            offChanged();
+            offRemoved();
         });
         this.syncExportRow(editor);
     },

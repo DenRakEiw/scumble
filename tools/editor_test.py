@@ -5,7 +5,10 @@ button click used to steal), that a click without a drag deselects with the marq
 lasso, that an outline in progress is drawn black under white so it stays visible on a white
 image, copy and paste of a whole layer from one tab into another, and that an erase stroke
 through one strip of a zoomed-out result layer leaves the rest of the layer on screen (the
-cached display level used to be wiped outside the stroke's rectangle).
+cached display level used to be wiped outside the stroke's rectangle). The steps after the C1
+review cover the undo history (order, the objects its steps hold, the budget, a load that takes
+it along), a mask stroke whose mask is undone mid-gesture, the selection's bounds after a
+restore, the selection brush's display levels, a lost undo step, and that closed tabs are freed.
 
     python tools/editor_test.py
 
@@ -107,6 +110,35 @@ out.mime = view.headers.get("content-type");
 if (out.mime !== "image/svg+xml") throw new Error("the mirror serves an .svg as " + out.mime);
 return out;
 """, timeout=120)
+
+
+async def closed_tabs_are_collected(c):
+    """A closed tab gives its memory back. The export row's listener on the host held the editor
+    for good, so every document ever opened stayed in memory with its layers and undo steps. Four
+    tabs are made, painted on, closed, and after a forced collection none of them may be alive."""
+    r = await c.eval(PRE % """
+window.__closedTabs = [];
+for (let i = 0; i < 4; i++) {
+    const doc = await run("new_document");
+    const ed = ednow(doc.id);
+    await run("new_canvas", { width: 1200, height: 800, doc: doc.id });
+    await run("add_paint_layer", { doc: doc.id });
+    await run("select_rect", { x: 10, y: 10, w: 300, h: 200, doc: doc.id });
+    ed.fillSelection();
+    await wait(200);
+    window.__closedTabs.push(new WeakRef(ed));
+    await run("close_document", { doc: doc.id, force: true });
+}
+host.shell.activate(ednow(window.__t));
+return host.editors().length;
+""", timeout=120)
+    for _ in range(4):
+        await c.call("HeapProfiler.collectGarbage")
+        await asyncio.sleep(0.3)
+    alive = await c.eval("(async () => { await new Promise((r) => setTimeout(r, 300)); const a = window.__closedTabs.map((w) => !!w.deref()); window.__closedTabs = null; return a; })()")
+    if any(alive):
+        raise Exception("closed tabs still alive after a collection: %s" % json.dumps(alive))
+    return {"open": r, "alive": alive}
 
 
 STEPS = [
@@ -684,6 +716,212 @@ for (const make of ["flip", "turn", "merge"]) {
 ed.brushOpacity = 1;
 return out;
 """),
+    ("history_steps_run_in_order_and_keep_their_own_state", """
+// C1 review (docs/PLAN_BCE.md, C1 as built): undo and redo run one after the other, an edit that
+// writes after an await is waited for, a mask fill replaces the mask like its restore does, an
+// older layers step keeps its own filter parameters and text, the redo steps leave the budget
+// before it trims, and a new image of the same size takes the history with it.
+await run("new_canvas", { width: 400, height: 300, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const out = {};
+const band = (x0, x1) => { const m = new Uint8Array(400 * 300); for (let y = 0; y < 300; y++) for (let x = x0; x < x1; x++) m[y * 400 + x] = 1; return m; };
+const find = (id) => ed.layers.find((l) => l.id === id);
+ed.brushOpacity = 1;
+// two undos in a row while the first restore still decodes its PNG (key repeat, a double click)
+const L = ed.addPaintLayer();
+const at = (x) => { const d = find(L.id).px.readRect(x, 150, 1, 1).data; return d[3] ? d[0] + "," + d[1] : "clear"; };
+ed.applyMaskToSelection(band(0, 200), "replace");
+ed.color = "#ff0000"; ed.fillSelection();
+ed.color = "#00ff00"; ed.fillSelection();
+const u1 = ed.undoStep(), u2 = ed.undoStep();
+await Promise.all([u1, u2]);
+out.race = [at(100)];
+await ed.redoStep(); out.race.push(at(100));
+await ed.redoStep(); out.race.push(at(100));
+if (out.race.join("|") !== "clear|255,0|0,255") throw new Error("undo / redo out of order (clear, red, green expected): " + JSON.stringify(out.race));
+// an undo right after a grow that runs in the worker takes the grow back, not the step below it
+ed.applyMaskToSelection(band(100, 200), "replace");
+const grow = ed.growSelection(20);
+await ed.undoStep();
+await grow;
+out.grow = ed.getBounds();
+if (!out.grow || out.grow[0] !== 100 || out.grow[2] !== 200) throw new Error("undo during a grow left " + JSON.stringify(out.grow));
+// a fill on a layer mask, with an older layers step holding that mask: undoing both gives the mask from before
+const M = ed.addPaintLayer();
+M.px.fill(null, "#ff0000"); ed.markLayerChanged(M);
+ed.activeLayerId = M.id;
+ed.applyMaskToSelection(band(0, 200), "replace");
+ed.maskFromSelection(M);
+const ma = (x) => { const l = find(M.id); return l.maskPx ? l.maskPx.readRect(x, 150, 1, 1).data[3] : -1; };
+const created = [ma(100), ma(300)];
+ed.duplicateLayer(M);
+ed.activeLayerId = M.id;
+find(M.id).maskEdit = true;
+ed.applyMaskToSelection(band(200, 400), "replace");
+ed.fillSelection();
+const filled = [ma(100), ma(300)];
+await ed.undoStep(); await ed.undoStep(); await ed.undoStep();   // the fill, the selection, the duplicate
+out.maskFill = { created, filled, back: [ma(100), ma(300)] };
+if (filled[1] !== 255 || out.maskFill.back.join() !== created.join()) throw new Error("the undone mask fill came back: " + JSON.stringify(out.maskFill));
+// filter parameters and text changed in place by their controls, under an older layers step
+const F = ed.addFilterLayer("grain");
+const key = Object.keys(F.params).find((k) => typeof F.params[k] === "number");
+const v0 = F.params[key];
+const T = await ed.addTextLayer(20, 20);
+T.text.size = 40; await ed.renderTextLayer(T);
+if (document.activeElement && document.activeElement.tagName === "TEXTAREA") document.activeElement.blur();
+const P = ed.addPaintLayer();
+ed.removeLayer(P.id);                                                   // the layers step
+ed.pushUndo({ kind: "filter", id: F.id }); find(F.id).params[key] = v0 + 1;   // what the slider does
+ed.pushUndo({ kind: "text", id: T.id }); find(T.id).text.size = 80; await ed.renderTextLayer(find(T.id));   // what the Size field does
+await ed.undoStep(); await ed.undoStep(); await ed.undoStep();         // text, filter, the removal
+out.nested = { param: [v0, find(F.id).params[key]], size: find(T.id).text.size, layers: ed.layers.length };
+if (out.nested.param[1] !== v0 || out.nested.size !== 40) throw new Error("an older layers step brought undone values back: " + JSON.stringify(out.nested));
+// the budget: 24 steps of 16 MB fill it; 10 undone, then a new step must keep 15 (the redo steps go first)
+ed.clearUndo();
+const MB16 = 16 * 1048576;
+for (let i = 0; i < 24; i++) ed.pushUndoSnapshot({ kind: "transform", id: -1, bytes: MB16 });
+for (let i = 0; i < 10; i++) ed.redo.push(ed.undo.pop());            // what undoStep leaves on the budget
+ed.pushUndoSnapshot({ kind: "transform", id: -1, bytes: MB16 });
+out.budget = { undo: ed.undo.length, redo: ed.redo.length, mb: ed.undoBytes / 1048576 };
+if (out.budget.undo !== 15 || out.budget.redo !== 0 || out.budget.mb !== 240) throw new Error("the redo steps trimmed the undo steps: " + JSON.stringify(out.budget));
+ed.clearUndo();
+// a new image of the same size: no step of the old document survives, and its bytes leave the budget
+const S = ed.addPaintLayer();
+ed.pushUndoSnapshot(ed.snapshotRect(S, { x: 0, y: 0, w: 400, h: 300 }));
+const heldBefore = ed.undoBytes;
+await ed.setBase(ed.base.ref, ed.base.img, { keepLayers: false });
+out.load = { heldBefore, undo: ed.undo.length, redo: ed.redo.length, bytes: ed.undoBytes, layers: ed.layers.length };
+if (!heldBefore || out.load.undo || out.load.redo || out.load.bytes) throw new Error("the history survived a same-size load: " + JSON.stringify(out.load));
+return out;
+"""),
+    ("mask_stroke_ends_quietly_when_its_mask_is_undone", """
+// C1 review: Ctrl+Z (or an agent's undo) while a mask stroke is held removed the mask the stroke
+// paints on, and the pointerup threw a TypeError from the commit (with a selection: the clip).
+await run("new_canvas", { width: 800, height: 600, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+await wait(200);
+const r = () => ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const b = r(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: b.left + sx * b.width / ed.canvas.width, clientY: b.top + sy * b.height / ed.canvas.height }; };
+const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 14, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+await run("add_paint_layer", { doc: window.__t });
+const l = ed.activeLayer();
+await run("select_rect", { x: 100, y: 100, w: 300, h: 200, doc: window.__t });
+ed.maskFromSelection(l);          // a mask step with no mask before it
+ed.clearSelection();
+await ed.undoStep();              // the selection is back, the mask step is on top
+ed.toggleMaskEdit(l);
+ed.setTool("paint");
+const errors = [];
+const onErr = (e) => errors.push(String(e.message || e.error));
+window.addEventListener("error", onErr);
+try {
+    ed.canvas.dispatchEvent(ev("pointerdown", 150, 150));
+    ed.canvas.dispatchEvent(ev("pointermove", 200, 180));
+    await wait(20);
+    ed.onKey(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+    await wait(80);
+    const maskGone = !l.maskPx;
+    ed.canvas.dispatchEvent(ev("pointermove", 260, 220));
+    await wait(30);
+    ed.canvas.dispatchEvent(ev("pointerup", 300, 240));
+    await wait(100);
+    const out = { maskGone, errors, pointer: ed.pointer ? ed.pointer.kind : null };
+    if (!maskGone) throw new Error("the undo did not remove the mask: " + JSON.stringify(out));
+    if (errors.length || out.pointer) throw new Error("the stroke did not end quietly: " + JSON.stringify(out));
+    return out;
+} finally {
+    window.removeEventListener("error", onErr);
+    ed.setTool("select");
+}
+"""),
+    ("selection_keeps_its_bounds_through_a_restore_above_1mp", """
+// C1 review: above 1 MP the bounds come from the selection's display levels. A saved document
+// restored with setValue, and a canvas undo with a frame drawn while it decoded, wrote the
+// selection after levels of the empty one had been cached under the same version: no bounds.
+await run("new_canvas", { width: 2400, height: 1600, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+await run("select_rect", { x: 300, y: 200, w: 600, h: 400, doc: window.__t });
+const want = JSON.stringify([300, 200, 900, 600]);
+const out = { before: ed.getBounds() };
+const state = ed.getValue();
+const d2 = await run("new_document");
+const ed2 = ednow(d2.id);
+await ed2.setValue(state);
+for (let i = 0; i < 200 && (ed2._loading || !ed2.base); i++) await wait(50);
+out.restored = ed2.getBounds();
+await run("close_document", { doc: d2.id, force: true });
+host.shell.activate(ed);
+if (JSON.stringify(out.restored) !== want) throw new Error("the restored selection lost its bounds: " + JSON.stringify(out));
+await run("extend_canvas", { right: 400, bottom: 400, doc: window.__t });
+ed.view.scale = 0.25;
+const u = ed.undoStep();
+ed.draw();                                  // a frame while the canvas step decodes its selection
+await u;
+out.undone = { size: [ed.width, ed.height], bounds: ed.getBounds() };
+if (JSON.stringify(out.undone.bounds) !== want) throw new Error("the canvas undo lost the selection's bounds: " + JSON.stringify(out));
+ed.fitView();
+return out;
+"""),
+    ("selection_brush_levels_follow_each_dab", """
+// C1 review: the selection brush refreshed the display levels before it drew the dab, so a fast
+// stroke zoomed out showed only parts of itself until the button came up.
+await run("new_canvas", { width: 3000, height: 2000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+await run("select_none", { doc: window.__t });
+ed.view.scale = 0.25;
+ed._pyramidBudget = Infinity;
+ed.displaySource(ed.sel, 0.25);                 // the levels exist, as after a zoomed-out frame
+const size = ed.brushSize;
+ed.brushSize = 20;
+ed.pointer = { kind: "selpaint", last: [200, 1000], path: [[200, 1000]], subtract: false };
+let last = [200, 1000];
+ed.selectionDab(200, 1000, 200, 1000);
+for (let x = 280; x <= 2600; x += 80) { ed.selectionDab(last[0], last[1], x, 1000); ed.pointer.last = [x, 1000]; last = [x, 1000]; }
+ed.pointer = null;
+const litOn = (lvl) => {
+    const f = lvl.width / 3000, row = Math.round(1000 * f);
+    const d = lvl.getContext("2d").getImageData(0, row, lvl.width, 1).data;
+    let n = 0; for (let x = Math.round(220 * f); x < Math.round(2560 * f); x++) if (d[x * 4 + 3] > 128) n++;
+    return n;
+};
+const shown = litOn(ed.displaySource(ed.sel, 0.25));
+ed.touchSource(ed.sel);
+const fresh = litOn(ed.displaySource(ed.sel, 0.25));
+ed.brushSize = size;
+ed.markSelectionChanged();
+await run("select_none", { doc: window.__t });
+ed.fitView();
+const out = { shown, fresh };
+if (fresh < 500 || shown < fresh - 2) throw new Error("the levels lag behind the dabs: " + JSON.stringify(out));
+return out;
+"""),
+    ("undo_step_whose_encode_failed_says_so", """
+// C1 review: a whole-layer undo step is a PNG of the layer as it was. When the worker could not
+// encode it, the fallback encoded the canvas after the edit, and the undo silently put the edit
+// back. Such a step fails now and the status line says so.
+await run("new_canvas", { width: 400, height: 300, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const L = ed.addPaintLayer();
+ed.activeLayerId = L.id;
+await run("select_rect", { x: 50, y: 50, w: 200, h: 100, doc: window.__t });
+ed.color = "#ff0000"; ed.brushOpacity = 1;
+const cib = window.createImageBitmap;
+window.createImageBitmap = () => Promise.reject(new Error("editor_test: no bitmap"));
+try { ed.fillSelection(); } finally { window.createImageBitmap = cib; }
+await wait(300);
+await ed.undoStep();
+const d = L.px.readRect(100, 100, 1, 1).data;
+const out = { status: ed.status, pixel: Array.from(d) };
+if (!/could not be restored/.test(ed.status)) throw new Error("the lost undo step went unnoticed: " + JSON.stringify(out));
+return out;
+"""),
+    ("closed_tabs_are_collected", lambda c: closed_tabs_are_collected(c)),
     ("cleanup", """
 for (const id of [window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

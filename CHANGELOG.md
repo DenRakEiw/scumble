@@ -9,7 +9,7 @@ the section for its version; `docs/` and the commit history hold the technical d
   release the editor reached into the pixels of layers, layer masks, the selection and the
   picture from several hundred places, each in its own way. Every one of those reads and
   writes now goes through one interface, and your pictures come out exactly as before (apart
-  from the two fixes below, which fell out of it). This is the groundwork for the tile engine
+  from the fixes below, which fell out of it and of its review). This is the groundwork for the tile engine
   that will make very large pictures light on memory. For plugin authors: a layer's pixels are
   `layer.px` and its mask `layer.maskPx`; `rawLayer(key).canvas`, `.mask` and
   `doc.editor.selection` still work in this release and log a warning (`docs/PLUGINS.md`).
@@ -25,6 +25,35 @@ the section for its version; `docs/` and the commit history hold the technical d
   brought the layer back mirrored or turned, and on a layer made by *Merge down* with an
   opacity below 100 % it came back see-through at that opacity. The same leftover drawing
   settings were the cause.
+- **Undo and redo pressed quickly in a row land in order.** Holding Ctrl+Z or double-clicking
+  the undo button could leave a layer half undone (two fills undone showed the first fill) and
+  the redo steps wrong. An undo right after *Grow*, *Shrink*, *Feather* or *Invert* waits for
+  that operation now and takes it back, instead of undoing the step before it and then being
+  overwritten by the late result.
+- **Undoing further back no longer brings undone changes back.** After a fill or clear on a
+  layer mask was undone, undoing an older layer step (a duplicated, moved or removed layer)
+  showed the fill again.
+  The same happened with a text layer's size, font or content and a filter layer's sliders:
+  undoing past an older layer step put back the value that had just been undone.
+- **Opening another picture starts a fresh history.** When the new picture had the same size
+  as the old one (the Load button, a Ctrl+drop, the `load_image` command), Ctrl+Z put the old
+  picture's layers, or after a crop its whole picture, back on top of the new one.
+- **The undo history keeps its full length.** After *New canvas*, *Generate new* or opening a
+  picture of another size, the old document's undo memory stayed counted, so a tab that had
+  seen large strokes kept only one undo step from then on. After an undo, the next edit also
+  threw away older undo steps that would still have fitted.
+- **Closing a tab frees its memory.** Every closed document stayed in memory with its layers
+  and undo steps until Scumble was quit, which on large pictures was gigabytes per tab.
+- **A restored document keeps its selection.** A document above 1 MP that was saved with a
+  selection (the next start, a reopened workflow in ComfyUI) came back with the selection's
+  pixels but treated as nothing selected: no marching ants, *Generate* cropped the whole
+  picture, and the next selection undo emptied it. Undoing a crop or an extended canvas could
+  do the same while zoomed out.
+- **The selection brush shows its whole stroke while you paint zoomed out.** Parts of a fast
+  stroke only appeared when the button came up.
+- **Smaller undo fixes.** Pressing Ctrl+Z while painting on a layer mask whose mask that undo
+  removes no longer raises an error when the button comes up. An undo step whose picture could
+  not be saved says so in the status line instead of silently doing nothing.
 
 ## 0.1.11 — 2026-09-13
 

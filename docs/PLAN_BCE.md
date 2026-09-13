@@ -484,6 +484,24 @@ undo steps (C4); and `perf_test.py`'s `settle()`, which drains the GPU queue wit
 `readRect` (hazard 214): a tile backend's `readRect` reads JS memory and drains nothing, so C2 has
 to give the benchmark another way to wait for the GPU.
 
+**The final C1 review (2026-09-13)** found twelve defects (thirteen findings, two of them the same), none introduced by C1 (0.1.11 had
+each of them), all fixed with a counter-proof (every new `editor_test.py` step is red on the code
+before the fix). What C2 to C4 have to keep, because each is a pairing a new backend can break:
+**a forward write and its restore agree** (rule 2 now also covers a fill or clear on a layer mask:
+the `mask` step restores by replacing, so the fill writes into a `clone()`); **a `layers` /
+`canvas` step owns its nested objects** (`snapshotLayer`: text, params, match, LUT, plate, copied
+as their own steps copy them); **undo and redo are queued** (`queueHistory`) and wait for an
+edit that pushed its step and writes after an await (`trackEdit`: grow, feather, invert); a text
+restore cancels a pending render; **the history is released, never dropped** (`clearUndo`, also
+when a same-size image replaces the layers), and the redo steps leave the budget before it trims;
+**a write is touched after it lands**, including the restored selection in `setValue` and the
+`canvas` restore (which decodes before it puts anything back) and the selection brush's dab; **a
+`toCanvas()` result is valid until the next write** (the header of `inpaint_pixels.js`), so
+`snapUrl`'s encode fails instead of falling back to the canvas after the edit. Also fixed: the
+export row's host listener kept every closed tab alive, and so did the allocation site of
+`makeUploaded`'s literal with accessor closures (a class with a prototype accessor now); a
+listener or closure that holds an editor must not outlive it.
+
 ### C2. The tile store (1 week)
 
 `renderer/editor/inpaint_tiles.js`, the second backend of `LayerPixels` and `MaskPixels`,
