@@ -75,6 +75,43 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
+## Where things stand (2026-09-13, late: phase B and C0 built)
+
+**Phase B is done** on the branch `px-spike` (pushed, fe9bf0e..cc3be22): `docs/PERFORMANCE.md`
+§10 has the table and the decision **JS kernels** (Rust SIMD128 only 2.0 to 2.4× on the rule
+rows, EDT band and opaque mip chain, in the Electron renderer in front, Node and Firefox).
+`renderer/editor/px/kernels_js.js` holds the kernels C uses (tested by `node tools/px_test.js`),
+the Rust crate is deleted (history at c75c4f1). Binding findings for C/E: tile buffers copied
+into each other start on a 4 KB boundary (4K aliasing), V8's efficiency mode slows JS 1.5-2×
+when the window is not in front, tile size 256, today's `floodMask` beats the flood twin.
+`docs/PLAN_BCE.md` §B3 and its §4 table carry the outcome.
+
+**C0 is done** on the branch `c0-editor-source` in **both** repos (app 83f12dd, based on
+px-spike; node 6494fc2 + 689df64, based on master 83887b6), pushed, **not merged**:
+`renderer/editor/` is the source of the editor, `tools/sync_editor.py` and `docs/SYNC.md` are
+gone, `docs/BUILD_NODE.md` explains `tools/build_node.py` (writes the node's js/, `--check`
+verifies parsing, imports and that every `host.*` exists in both hosts) and
+`tools/node_test.py` (the node's flavour against ComfyUI stand-ins, no ComfyUI needed).
+Gates PASS on a fresh dev instance: editor, composite, shape, brush, commands, film, glb,
+ailabel, size, transparent, generate, log, mcp, node_test (commands and film need
+`files/input/inpaint_canvas/test_base.png` in the test profile's mirror; copy it from
+ComfyUI's `input/inpaint_canvas/`). `package.json` 0.1.11 with its CHANGELOG section.
+
+**Open after C0, in this order:**
+1. **Tell the user: the published node is broken since 2026-09-10** (node commit 33c6c4b):
+   `new InpaintEditor` threw `ReferenceError: host is not defined`, so no Inpaint Canvas node
+   could be created in ComfyUI. The fix is the node branch `c0-editor-source`; merging it into
+   the node's master (what node users pull) is the user's call.
+2. ComfyUI was not running, so **not run**: `smoke_test.py --no-helpers` (real Flux run) and
+   the node's browser gate in a real ComfyUI tab (plan: `editor_test.py --node` against the
+   headless tab on 9333, not written; the stub test covers construction, overlay, upload,
+   composite). Ask before starting ComfyUI.
+3. An adversarial review of C0 (workflow `c0-review`) was still running at the hand-over; if
+   its result is lost, re-run a review of `git diff px-spike..c0-editor-source` in the app and
+   `git diff master..c0-editor-source` in the node.
+4. Merge px-spike and c0-editor-source into main (user's go), tag 0.1.11 only on the user's
+   go, then C1 (`LayerPixels` facade) per `docs/PLAN_BCE.md`.
+
 ## Where things stand (2026-09-13)
 
 **The implementation plan for phases B, C and E is `docs/PLAN_BCE.md`** (written 2026-09-13
