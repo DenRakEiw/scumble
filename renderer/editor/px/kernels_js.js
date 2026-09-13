@@ -1,11 +1,15 @@
 /**
- * The JS twins of the px kernels (crates/px, docs/PLAN_BCE.md §B2): the same signatures
- * over typed arrays and the same bytes out. They are what phase C ships if the Rust kernels
- * do not clear the 3× rule, so they are written to be fast JavaScript, not to be short.
- * `tools/px_test.js` holds each to its Rust counterpart and to the editor's current code.
+ * The pixel kernels of the tile engine (docs/PLAN_BCE.md §B2). Phase B built them twice, in
+ * Rust (wasm, SIMD128) and here, and measured both: Rust was 2.0 to 2.4× faster on the two
+ * rows the 3× rule reads, so these are the kernels phase C ships (docs/PERFORMANCE.md §10;
+ * the Rust crate is in the history of the branch px-spike). They are written to be fast
+ * JavaScript, not short: word access, per-layer loops, one element kind per call site.
+ * `tools/px_test.js` holds each to a plain reference and to the editor's current code.
  *
  * Every function takes its output buffer as the last argument (allocated when absent) and
- * returns it. The formulas are integer maths and are spelled out in the Rust sources.
+ * returns it. All maths is integer, so any port gives the same bytes. Tile buffers that are
+ * copied into each other should start on a 4 KB boundary: a destination 8 bytes past the
+ * source modulo 4,096 makes a 256 KB copy 16× slower (4K aliasing, §10).
  */
 
 export const OPS = Object.freeze({
@@ -147,10 +151,17 @@ export function distScratch(w, h) {
 
 /**
  * Squared distance of every pixel to the nearest non-zero byte of `feature` (w × h), 1e20
- * where there is none. Columns by two sweeps, rows by Felzenszwalb's lower envelope with
- * the number types of `distanceTransform` in inpaint_raster.js (f32 storage, f64
- * intersections; `g[q] = f[q] + q²` is computed once per row instead of per comparison,
- * which gives the same doubles).
+ * where there is none; grow, shrink and feather are thresholds and ramps over it, on a band
+ * (the padded box), never the whole selection. Two separable passes:
+ *
+ * 1. Columns: for a binary feature the 1-D squared transform of a column is the square of
+ *    the distance to the nearest feature in that column, which two sweeps (down, up) give
+ *    row by row. That is what Felzenszwalb's column pass computes, bit for bit, while walking
+ *    memory in row order.
+ * 2. Rows: Felzenszwalb / Huttenlocher's lower envelope of parabolas, with the number types
+ *    of `distanceTransform` in inpaint_raster.js (f32 storage, f64 intersections;
+ *    `g[q] = f[q] + q²` once per row gives the same doubles), so both give the same f32
+ *    values. About 70 % of the time is this pass, a data-dependent loop no SIMD touches.
  */
 export function distTransform(feature, W, H, out = new Float32Array(W * H), scratch = null) {
     feature = bytesOf(feature);
@@ -279,9 +290,25 @@ function similarAt(d, i, r0, g0, b0, a0, tol) {
 /**
  * `srcs.length` straight-alpha RGBA8 sources over the tile `dst` (in place). `ops` are OPS
  * numbers, `alphas` opacities 0..255, `masks` one byte of coverage per pixel or null.
- * Premultiplied 8-bit maths between the premultiply at the start and the unpremultiply at
- * the end; the formulas are in crates/px/src/composite.rs. The operator is chosen once per
- * layer, not per pixel, and the common case (no mask, full opacity) has loops of its own.
+ * Straight in and out, premultiplied 8-bit integer maths in between (Canvas 2D keeps
+ * premultiplied 8-bit pixels too, so the precision is the same):
+ *
+ *   mul255(x, y) = round(x·y / 255), exact as t = x·y + 128, (t + (t >> 8)) >> 8
+ *   dst is premultiplied once:  dp = mul255(d, da)
+ *   per source: sa = mul255(s.a, opacity), sp = mul255(s.c, sa), inv = 255 − sa
+ *     source-over      r = sp + mul255(dp, inv)                ra = sa + mul255(da, inv)
+ *     destination-out  r = mul255(dp, inv)                     ra = mul255(da, inv)
+ *     source-atop      r = mul255(sp, da) + mul255(dp, inv)    ra = mul255(sa, da) + mul255(da, inv)
+ *                      (which is da exactly: two rounded terms whose exact sum is an integer)
+ *     destination-in   r = mul255(dp, sa)                      ra = mul255(da, sa)
+ *     copy             r = sp                                  ra = sa
+ *   a mask m is coverage: r = mul255(r, m) + mul255(dp, 255 − m), the same for ra
+ *   unpremultiplied once at the end: c = a == 0 ? 0 : min(255, floor((c·255 + a/2) / a))
+ *
+ * Every channel, alpha included, follows the same formula when the source's alpha byte is
+ * taken as 255 for "sp", so a SIMD port can treat all sixteen bytes of four pixels alike.
+ * The operator is chosen once per layer, not per pixel, and the common case (no mask, full
+ * opacity) has loops of its own. The nine blend modes come in C6 (docs/PLAN_BCE.md §5).
  */
 export function compositeTile(dst, srcs, ops, alphas, masks = null) {
     const d = bytesOf(dst);

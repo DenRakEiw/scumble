@@ -1018,7 +1018,8 @@ opaque mip chain 2.0 to 2.4× in the interactive V8 (Electron renderer in front,
 EDT 2.2× in Firefox, so neither clears 3×: phase C is built with the JS kernels, the twins in
 `kernels_js.js` are its kernels (flood excepted, above), tile size 256, tile buffers on page
 boundaries, and the crate is deleted from the branch.** The Rust code stays reachable in the
-history of `px-spike` (commit 8ab3706 is the last one that has it).
+history of `px-spike` (commit c75c4f1 is the last one that has it, with the benchmark
+`renderer/editor/px/bench.js`, `tools/px_bench.js` and `tools/px_bench.html`).
 
 ## 8. What goes where
 

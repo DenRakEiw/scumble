@@ -246,7 +246,11 @@ Gate: `perf_test.py 15000x10000` rows selection change ≤ 5 ms, undo ≤ 5 ms, 
 0 ms, wand / bucket ≤ 300 ms blocked; `memoryReport().scratch` without a selection canvas;
 `composite_test.py`, `editor_test.py`, `shape_test.py`, `commands_test.py` unchanged.
 
-### Phase B — the Rust spike (3 days)
+### Phase B — the Rust spike (3 days) — **built 2026-09-13, decided: JS kernels**
+
+Outcome in `docs/PERFORMANCE.md` §10 (the table landed there, not in §9): Rust SIMD128 was 2.0 to
+2.4× the JS twins on the two rule rows, so phase C uses the JS kernels (`renderer/editor/px/kernels_js.js`),
+tile size 256. The crate below is in the history of the branch `px-spike`.
 
 A crate `crates/px/` (GPL-3.0 like everything else), `wasm32` + SIMD128 through
 `wasm-bindgen`, loaded by `inpaint_worker.js`. Five kernels, each with the JS twin it
