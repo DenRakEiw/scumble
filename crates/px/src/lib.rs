@@ -7,10 +7,21 @@
 //! - `px_alloc(bytes) -> ptr` and `px_free(ptr, bytes)` over std's allocator (dlmalloc);
 //!   every block is 8-aligned, so a pointer serves `u8`, `u32` and `f32` buffers alike.
 //! - Every kernel is pure over its arguments: no globals, no allocation inside (the caller
-//!   allocates in and out buffers), so one instance per worker can run any of them.
+//!   allocates in and out buffers), so one instance per worker can run any of them. The
+//!   one exception is `deflate_zlib`, whose compressor state miniz_oxide allocates.
 //! - Memory can grow during `px_alloc`; the JS side re-creates its views afterwards.
+//!
+//! Each kernel has a JS twin of the same shape in `renderer/editor/px/kernels_js.js` that
+//! gives the same bytes; `tools/px_test.js` holds them to it.
 
+use core::slice;
 use std::alloc::{alloc, dealloc, Layout};
+
+mod composite;
+mod edt;
+mod flood;
+mod mip;
+mod png;
 
 const ALIGN: usize = 8;
 
@@ -46,4 +57,113 @@ pub unsafe extern "C" fn px_free(ptr: *mut u8, bytes: usize) {
         return;
     }
     dealloc(ptr, Layout::from_size_align_unchecked(bytes, ALIGN));
+}
+
+// ---- mips -------------------------------------------------------------------------------
+
+/// `src` RGBA8 (sw × sh, straight alpha) halved into `dst` ((sw / 2) × (sh / 2)).
+#[no_mangle]
+pub unsafe extern "C" fn mip_half(src: *const u8, sw: usize, sh: usize, dst: *mut u8) {
+    let (ow, oh) = (sw / 2, sh / 2);
+    mip::mip_half(slice::from_raw_parts(src, sw * sh * 4), sw, sh, slice::from_raw_parts_mut(dst, ow * oh * 4));
+}
+
+/// Bytes `mip_chain` writes for a square tile of `size` and `levels` levels.
+#[no_mangle]
+pub extern "C" fn mip_chain_bytes(size: usize, levels: usize) -> usize {
+    mip::chain_bytes(size, levels)
+}
+
+/// The `levels` mips of a square RGBA8 tile of `size`, largest first, one after the other.
+#[no_mangle]
+pub unsafe extern "C" fn mip_chain(src: *const u8, size: usize, levels: usize, out: *mut u8) {
+    mip::mip_chain(slice::from_raw_parts(src, size * size * 4), size, levels, slice::from_raw_parts_mut(out, mip::chain_bytes(size, levels)));
+}
+
+// ---- distance transform -----------------------------------------------------------------
+
+#[no_mangle]
+pub extern "C" fn dist_scratch_bytes(w: usize, h: usize) -> usize {
+    edt::scratch_bytes(w, h)
+}
+
+/// Squared distance to the nearest non-zero byte of `feature` (w × h) into `out` (f32).
+#[no_mangle]
+pub unsafe extern "C" fn dist_transform(feature: *const u8, w: usize, h: usize, out: *mut f32, scratch: *mut u8) {
+    edt::dist_transform(
+        slice::from_raw_parts(feature, w * h),
+        w,
+        h,
+        slice::from_raw_parts_mut(out, w * h),
+        slice::from_raw_parts_mut(scratch, edt::scratch_bytes(w, h)),
+    );
+}
+
+// ---- flood ------------------------------------------------------------------------------
+
+/// Pixels similar to the seed into `out` (1 / 0); returns the count, or -1 when the span
+/// stack (`stack_pairs` pairs of u32) was too small.
+#[no_mangle]
+pub unsafe extern "C" fn flood(
+    rgba: *const u8,
+    w: usize,
+    h: usize,
+    sx: i32,
+    sy: i32,
+    tol: i32,
+    contiguous: u32,
+    out: *mut u8,
+    stack: *mut u32,
+    stack_pairs: usize,
+) -> i32 {
+    flood::flood(
+        slice::from_raw_parts(rgba, w * h * 4),
+        w,
+        h,
+        sx,
+        sy,
+        tol,
+        contiguous != 0,
+        slice::from_raw_parts_mut(out, w * h),
+        if stack.is_null() { &mut [] } else { slice::from_raw_parts_mut(stack, stack_pairs * 2) },
+    )
+}
+
+// ---- composite --------------------------------------------------------------------------
+
+/// `n` sources over the tile `dst` (`px` pixels of RGBA8, straight alpha, in place).
+/// `srcs` and `masks` are arrays of n u32 pointers (a mask pointer may be 0), `ops` and
+/// `alphas` arrays of n bytes (0 source-over, 1 destination-out, 2 source-atop,
+/// 3 destination-in, 4 copy; opacity 0..255).
+#[no_mangle]
+pub unsafe extern "C" fn composite_tile(dst: *mut u8, px: usize, n: usize, srcs: *const u32, ops: *const u8, alphas: *const u8, masks: *const u32) {
+    let srcs = slice::from_raw_parts(srcs, n);
+    let ops = slice::from_raw_parts(ops, n);
+    let alphas = slice::from_raw_parts(alphas, n);
+    let masks = if masks.is_null() { None } else { Some(slice::from_raw_parts(masks, n)) };
+    let dst = slice::from_raw_parts_mut(dst, px * 4);
+    composite::begin(dst);
+    for i in 0..n {
+        let mask = masks.and_then(|m| if m[i] == 0 { None } else { Some(slice::from_raw_parts(m[i] as *const u8, px)) });
+        let layer = composite::Layer { src: slice::from_raw_parts(srcs[i] as *const u8, px * 4), op: ops[i], alpha: alphas[i], mask };
+        composite::apply(dst, &layer);
+    }
+    composite::end(dst);
+}
+
+// ---- PNG --------------------------------------------------------------------------------
+
+/// Filter `rows` rows of RGBA8 (`w` wide) into `out` (rows × (1 + 4w) bytes); `prev` is the
+/// row above the first one, or 0. Returns the bytes written.
+#[no_mangle]
+pub unsafe extern "C" fn png_filter_rows(rgba: *const u8, w: usize, rows: usize, prev: *const u8, out: *mut u8) -> usize {
+    let prev = if prev.is_null() { None } else { Some(slice::from_raw_parts(prev, w * 4)) };
+    png::filter_rows(slice::from_raw_parts(rgba, w * 4 * rows), w, rows, prev, slice::from_raw_parts_mut(out, rows * (1 + 4 * w)))
+}
+
+/// A zlib stream of `len` bytes at `input` into `out` (`cap` bytes) at `level` (0..10);
+/// returns the bytes written or -1 when `cap` is too small.
+#[no_mangle]
+pub unsafe extern "C" fn deflate_zlib(input: *const u8, len: usize, out: *mut u8, cap: usize, level: u32) -> i32 {
+    png::deflate_zlib(slice::from_raw_parts(input, len), slice::from_raw_parts_mut(out, cap), level.min(10) as u8)
 }

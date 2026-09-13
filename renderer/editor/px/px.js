@@ -96,6 +96,117 @@ export class Px {
     arena(chunkBytes = 1 << 20) {
         return new PxArena(this, chunkBytes);
     }
+
+    // ---- kernels: the signatures of kernels_js.js, one copy in and one copy out ----------------
+    // Each call takes its blocks from one job arena and resets it afterwards. For data that
+    // already lives in wasm memory, call `px.exports.<kernel>` with pointers instead.
+
+    get job() {
+        return this._job || (this._job = this.arena(1 << 20));
+    }
+
+    _in(arena, data, bytes = data.byteLength) {
+        const ptr = arena.take(bytes);
+        this.u8().set(new Uint8Array(data.buffer, data.byteOffset, bytes), ptr);
+        return ptr;
+    }
+
+    _out(Type, ptr, length, out) {
+        const into = out || new Type(length);
+        into.set(this.view(Type, ptr, length));
+        return into;
+    }
+
+    mipHalf(src, sw, sh, dst = null) {
+        const a = this.job, n = (sw >> 1) * (sh >> 1) * 4;
+        try {
+            const ps = this._in(a, src, sw * sh * 4), pd = a.take(n);
+            this.exports.mip_half(ps, sw, sh, pd);
+            return this._out(Uint8Array, pd, n, dst);
+        } finally { a.reset(); }
+    }
+
+    mipChain(src, size, levels, out = null) {
+        const a = this.job, n = this.exports.mip_chain_bytes(size, levels);
+        try {
+            const ps = this._in(a, src, size * size * 4), po = a.take(n);
+            this.exports.mip_chain(ps, size, levels, po);
+            return this._out(Uint8Array, po, n, out);
+        } finally { a.reset(); }
+    }
+
+    distTransform(feature, w, h, out = null) {
+        const a = this.job, n = w * h;
+        try {
+            const pf = this._in(a, feature, n), po = a.take(n * 4), pt = a.take(this.exports.dist_scratch_bytes(w, h));
+            this.exports.dist_transform(pf, w, h, po, pt);
+            return this._out(Float32Array, po, n, out);
+        } finally { a.reset(); }
+    }
+
+    flood(rgba, w, h, sx, sy, tolerance = 32, contiguous = true, out = null) {
+        const a = this.job, n = w * h;
+        let pairs = Math.max(4096, n >> 4);
+        try {
+            const pr = this._in(a, rgba, n * 4), po = a.take(n);
+            for (;;) {
+                const pstack = a.take(pairs * 8);
+                const count = this.exports.flood(pr, w, h, sx, sy, tolerance, contiguous ? 1 : 0, po, pstack, pairs);
+                if (count >= 0) {
+                    const mask = this._out(Uint8Array, po, n, out);
+                    mask.count = count;
+                    return mask;
+                }
+                pairs *= 2;
+            }
+        } finally { a.reset(); }
+    }
+
+    compositeTile(dst, srcs, ops, alphas, masks = null) {
+        const a = this.job, px = dst.byteLength >> 2, n = srcs.length;
+        try {
+            const pd = this._in(a, dst);
+            const psrcs = a.take(4 * n), pmasks = a.take(4 * n), pops = a.take(n), palphas = a.take(n);
+            const sp = [], mp = [];
+            for (let i = 0; i < n; i++) {
+                sp.push(this._in(a, srcs[i], px * 4));
+                mp.push(masks && masks[i] ? this._in(a, masks[i], px) : 0);
+            }
+            const u32 = this.u32(), u8 = this.u8();
+            for (let i = 0; i < n; i++) {
+                u32[(psrcs >>> 2) + i] = sp[i];
+                u32[(pmasks >>> 2) + i] = mp[i];
+                u8[pops + i] = ops[i];
+                u8[palphas + i] = alphas[i];
+            }
+            this.exports.composite_tile(pd, px, n, psrcs, pops, palphas, pmasks);
+            return this._out(Uint8Array, pd, px * 4, dst);
+        } finally { a.reset(); }
+    }
+
+    pngFilterRows(rgba, w, rows, prev = null, out = null) {
+        const a = this.job, n = rows * (1 + 4 * w);
+        try {
+            const pr = this._in(a, rgba, rows * 4 * w), pp = prev ? this._in(a, prev, 4 * w) : 0, po = a.take(n);
+            this.exports.png_filter_rows(pr, w, rows, pp, po);
+            return this._out(Uint8Array, po, n, out);
+        } finally { a.reset(); }
+    }
+
+    /** A zlib stream (miniz_oxide) of `bytes` at `level`; resolves like kernels_js `deflate`. */
+    deflate(bytes, level = 6) {
+        const a = this.job;
+        let cap = bytes.byteLength + (bytes.byteLength >> 8) + 1024;
+        try {
+            const pi = this._in(a, bytes);
+            for (;;) {
+                const po = a.take(cap);
+                const written = this.exports.deflate_zlib(pi, bytes.byteLength, po, cap, level);
+                if (written >= 0) return this._out(Uint8Array, po, written, null);
+                cap *= 2;
+            }
+        } finally { a.reset(); }
+    }
 }
 
 /**
