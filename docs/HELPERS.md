@@ -20,7 +20,7 @@ result. "Select by text" with an empty field and a prompt asks the same model fo
 object name. Model ids checked on 2026-09-09; none of the three adapters has run
 against a live key yet (the wiring was verified up to the providers' "invalid key"
 answers). IPC `llm:list` / `llm:ask`, `host.upsampleBackends()`, `host.askLLM()`,
-`host.upsampleInApp()`; the sync patches are listed in docs/SYNC.md.
+`host.upsampleInApp()`; the host members the editor calls are in docs/BUILD_NODE.md.
 
 ### A local or self-hosted OpenAI-compatible endpoint
 
@@ -63,7 +63,7 @@ error names the URL. It puts `settings.llm` back at the end.
 
 The renderer side is in `renderer/editor/host.js` (`findObjects`, `cutoutInApp`,
 `selectPoint`, `segmentPoint`, `refreshHelpers`, `cutoutBackends`) and the editor
-patches listed in `docs/SYNC.md`. The renderer scales the source to 1024 × 1024 with
+`host.*` calls in the editor (`docs/BUILD_NODE.md`). The renderer scales the source to 1024 × 1024 with
 Canvas 2D (squashed, like SAM2's own transform and the ComfyUI RMBG node), sends the
 RGBA bytes over IPC, and scales the answer back: the label map comes at ≤ 2048 px long
 side and is nearest-scaled to the image; the alpha comes at 1024² and is drawn onto the

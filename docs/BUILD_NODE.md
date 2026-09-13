@@ -1,23 +1,81 @@
-# Editor sync with the ComfyUI node
+# The node's editor is built from this repo
 
-The editor source still lives in the node repo (`ComfyUI-InpaintCanvas/js`). The app
-carries a patched copy in `renderer/editor/`, produced by `tools/sync_editor.py`.
-Never edit `renderer/editor/*.js` by hand: change the node, or add a patch.
+Since C0 (`docs/PLAN_BCE.md` §2, `docs/NEXT_PLAN.md` 4b, 2026-09-13) **`renderer/editor/` is the
+source of the editor** for both hosts: Scumble and the ComfyUI node ComfyUI-InpaintCanvas.
+Before that the node's `js/` was the source and `tools/sync_editor.py` copied it here with 49
+patches (`docs/SYNC.md`); both are gone, their table is kept at the end of this file.
 
 ```
-python tools/sync_editor.py            # node at F:\Comfyui\...\ComfyUI-InpaintCanvas
-python tools/sync_editor.py --node X   # another checkout
+python tools/build_node.py            # writes the node's js/ and records the build in its DEVELOPMENT.md
+python tools/build_node.py --check    # writes nothing; fails on a hand edit in the node or a missing host member
+python tools/node_test.py             # the node's flavour in a hidden Electron window, no ComfyUI needed
 ```
 
-The script copies `inpaint_canvas.js`, `inpaint_filters.js`, `inpaint_curves.js`,
-`inpaint_text.js`, `inpaint_raster.js`, `inpaint_export.js`, `inpaint_worker.js`,
-`inpaint_compositor.js` and `fonts/`, applies the
-patch list, cuts the litegraph extension block at the end of `inpaint_canvas.js` and
-appends the exports. Every patch must match exactly once (or the stated count);
-otherwise it stops and names the patch, which is the signal that the node changed at
-that spot.
+## What goes where
 
-## What the patches do
+| File | Owner | In the node |
+|---|---|---|
+| `renderer/editor/inpaint_canvas.js`, `inpaint_filters.js`, `inpaint_filters_gl.js`, `inpaint_curves.js`, `inpaint_text.js`, `inpaint_raster.js`, `inpaint_export.js`, `inpaint_worker.js`, `inpaint_compositor.js`, `inpaint_brushes.js`, `fonts/` | this repo | generated into `js/` with a first line naming the source |
+| `renderer/editor/host.js` | this repo | not copied: the node has its own `js/host.js` |
+| `renderer/editor/stitch.js`, `renderer/editor/px/` | this repo | not copied (app-only; `px/` goes with C2) |
+| `js/host.js` | node repo | what the editor asks ComfyUI: `app`, `api`, the litegraph node |
+| `js/inpaint_node.js` | node repo | the litegraph extension (thumbnail widget, queuePrompt wrapper, setting outputs, event routing); it was the block `sync_editor.py` cut off the end of `inpaint_canvas.js` |
+| `js/inpaint_bridge.js` | node repo | the MCP command bridge of the node |
+
+The GL filter module and the compositor reach the node with C0 (they guard themselves:
+without WebGL2 the Canvas 2D paths run).
+
+## The host contract
+
+The editor never imports `app` or reads the graph; it calls `host.*` (from `./host.js`) and
+`api` (same module). `tools/build_node.py` checks that every `host.<member>` the editor modules
+use exists in **both** `renderer/editor/host.js` and the node's `js/host.js`, and that every
+module that uses `host` imports it. Members where the hosts differ in kind, not only in
+implementation:
+
+- `overlay` (node `true`, app `false`): the editor is an overlay over the graph, so it shows the
+  "Inpaint Canvas" title, a close button and the "Esc: close" hint; in the app it is the window.
+- `text` (node: a table, app: `null`): the few texts the node words differently (the download
+  button, the export tooltips naming the output folder, "workflow embedded", the "no language
+  model / SAM2 / RMBG" messages that name ComfyUI nodes instead of Settings, the film preset
+  tooltip without Scumble's trademark sentence). The editor's `hostText(key, fallback)` falls
+  back to Scumble's wording.
+- `graph()` (node `app.graph`, app `null`) and `referencedTexts()` (node: the open workflow tabs,
+  app: nothing): the node's `settingTargetsFromGraph()` and the file cleanup's keep list.
+- `saveExport(blob, name, { editor, download })`: the app opens a save dialog, the node uploads
+  into ComfyUI's output folder (and downloads a copy with `download`); both return an object
+  with `path`, the node's also carries the upload ref.
+- Everything app-only answers "not here" in the node: `objectsInApp()` false,
+  `upsampleBackends()` / `cutoutBackends()` empty, `generateNewAvailable()` false,
+  `upsampleInstruction` null, the plugin hooks no-ops, `exportCanvas` the full-size flatten and
+  `exportQuality` 0.92.
+
+A new `host.*` call in the editor needs a member in both files; `--check` names the missing one.
+
+## The freeze (2026-09-13)
+
+- `tools/sync_editor.py` ran once more and changed nothing in `renderer/editor/`.
+- Node repo `ComfyUI-InpaintCanvas` at `83887b6`, its `js/` tree `a10d3af151b6507d69b4ef38ca792b7d9d49b467`.
+- App repo at `cc3be22` (branch `px-spike`, phase B), C0 on the branch `c0-editor-source` in both repos.
+- The "Synced from ComfyUI-InpaintCanvas" first line left every file in `renderer/editor/`.
+
+**Found by the freeze: the node's editor could not be created since 2026-09-10.** Node commits
+`33c6c4b` (the "Generate new" hook) and `3fc2b7f` (the upsample instruction hook) call `host.*`
+in `inpaint_canvas.js`, which in the node never had a `host`; the app's copy imported one
+through a sync patch, so every app gate stayed green. In ComfyUI `new InpaintEditor(node)` threw
+`ReferenceError: host is not defined` in `buildModal()`, i.e. `onNodeCreated` failed for every
+Inpaint Canvas node. `tools/node_test.py` reproduces it against the node as it was, and passes
+on the build.
+
+## Gates of a change to the editor
+
+Every app gate as before (`CLAUDE.md` "Working rules"), then `python tools/build_node.py` and
+`python tools/node_test.py`, and before a node release one real run in the ComfyUI browser tab
+(check `/queue` first). Commit both repos.
+
+## History: how the sync worked until C0
+
+### The patch table (what each patch did, and where it lives now)
 
 | Node | App |
 |---|---|
@@ -82,7 +140,7 @@ mirror (`electron/main/files.js`) rather than the server: uploads are stored und
 the mirror first (server fetches are kept, except `temp`), and `host.queueGenerate`
 calls `ensureOnServer` with the refs from the state JSON before every run.
 
-## WebGL2 filters (app-only, to go back into the node)
+### WebGL2 filters (app-only, to go back into the node)
 
 `renderer/editor/inpaint_filters_gl.js` runs levels, curves, brightness / contrast,
 hue / saturation, colour balance, black & white, invert, LUT and grain as one fragment
@@ -109,7 +167,7 @@ surface), so nothing downstream needs to know where its input came from; `beginS
 `glChainStats()` counts the round trips. The cap is `CHAIN_MAX_PIXELS` (10 MP: a screen
 pass, not a full-resolution render, see docs/PERFORMANCE.md phase 5 step 2).
 
-## Crop and stitch in the app (app-only)
+### Crop and stitch in the app (app-only)
 
 `renderer/editor/stitch.js` ports the node's `InpaintCanvas.run` (crop) and
 `InpaintCanvasStitch.stitch` to Canvas 2D and typed arrays, for recipes that render
@@ -119,7 +177,7 @@ composite masks, colour match); differences and what is not ported are listed at
 top of the file and in docs/RECIPES.md. The node keeps its Python version; nothing
 here changes the synced editor files.
 
-## Things the node has that the app does not use yet
+### Things the node has that the app does not use yet
 
 - The `/inpaint_canvas/fonts` user font route: proxied through, so user fonts uploaded
   from the node show up, but the app has no own upload path yet.

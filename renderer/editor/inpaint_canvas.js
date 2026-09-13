@@ -1,4 +1,3 @@
-// Synced from ComfyUI-InpaintCanvas by tools/sync_editor.py. Do not edit here: change the node or the patch list.
 // Inpaint Canvas - layered canvas editor for ComfyUI.
 //
 // The node itself only shows a thumbnail and a button. The editor opens as a
@@ -21,6 +20,15 @@ import { readAbr, tipCanvas } from "./inpaint_brushes.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
+
+/**
+ * Two hosts run this editor: Scumble (renderer/editor/host.js, the editor is the window) and
+ * the ComfyUI node (its js/host.js, the editor is an overlay over the graph). Where they word
+ * a text differently the host's `text` table answers; the fallback is Scumble's wording.
+ */
+function hostText(key, fallback) {
+    return (host.text && host.text[key]) || fallback;
+}
 
 const NODE_CLASS = "InpaintCanvas";
 const STITCH_CLASS = "InpaintCanvasStitch";
@@ -1277,6 +1285,7 @@ class InpaintEditor {
 
         // top bar
         const top = el("div", "ipc-top");
+        if (host.overlay) top.appendChild(el("span", "ipc-title", "Inpaint Canvas"));
         this.fileInput = document.createElement("input");
         this.fileInput.type = "file";
         this.fileInput.accept = "image/*";
@@ -1386,6 +1395,12 @@ class InpaintEditor {
         this.generateBtn = iconButton("play", "Queue the workflow (Ctrl+Enter). The result comes back as a new layer.", () => this.generate(), "Generate");
         this.generateBtn.classList.add("ipc-primary");
         top.appendChild(this.generateBtn);
+        if (host.overlay) {
+            // over the graph the editor needs its own way out; in the app it is the window
+            const closeBtn = iconButton("close", "Close editor (Esc)", () => this.close());
+            closeBtn.classList.add("ipc-danger");
+            top.appendChild(closeBtn);
+        }
         root.appendChild(top);
 
         // body
@@ -1746,13 +1761,13 @@ class InpaintEditor {
             exp.appendChild(this.saveNameInput);
             this.saveFormatSel = selectInput(["png", "jpg", "webp", "psd", "ora"], "png", "PNG keeps the workflow inside the file (drop it onto ComfyUI to load it again), JPEG and WebP are smaller. PSD and ORA (OpenRaster, for GIMP and others) keep the layers: name, position, opacity, visibility, blend mode; filter layers are baked into the merged image only.");
             exp.appendChild(this.saveFormatSel);
-            const dl = iconButton("download", "Save the image to a file (Ctrl+S)", () => this.exportImage({ download: true }), "Save as");
+            const dl = iconButton("download", hostText("downloadTip", "Save the image to a file (Ctrl+S)"), () => this.exportImage({ download: true }), hostText("downloadLabel", "Save as"));
             dl.classList.add("ipc-small");
             exp.appendChild(dl);
-            const lay = iconButton("image", "Save the active layer alone as a PNG file with transparency", () => this.exportLayerPng(), "Layer");
+            const lay = iconButton("image", hostText("exportLayerTip", "Save the active layer alone as a PNG file with transparency"), () => this.exportLayerPng(), "Layer");
             lay.classList.add("ipc-small");
             exp.appendChild(lay);
-            const msk = iconButton("mask", "Save the selection as a black and white mask PNG file", () => this.exportMaskPng(), "Mask");
+            const msk = iconButton("mask", hostText("exportMaskTip", "Save the selection as a black and white mask PNG file"), () => this.exportMaskPng(), "Mask");
             msk.classList.add("ipc-small");
             exp.appendChild(msk);
             d.appendChild(exp);
@@ -1937,7 +1952,7 @@ class InpaintEditor {
         const bottom = el("div", "ipc-bottom");
         this.statusEl = el("span", null, this.status);
         bottom.appendChild(this.statusEl);
-        bottom.appendChild(el("span", "ipc-kbd", "Wheel: zoom · Space/middle: pan · [ ]: size · Ctrl+Enter: generate"));
+        bottom.appendChild(el("span", "ipc-kbd", host.overlay ? "Wheel: zoom · Space/middle: pan · [ ]: size · Esc: close" : "Wheel: zoom · Space/middle: pan · [ ]: size · Ctrl+Enter: generate"));
         root.appendChild(bottom);
 
         this.bindEvents();
@@ -5251,7 +5266,7 @@ class InpaintEditor {
             const curUp = this.upsampleSettings.backend;
             this.upBackendSel.innerHTML = "";
             for (const b of ups) { const o = document.createElement("option"); o.value = b.id; o.textContent = b.label; this.upBackendSel.appendChild(o); }
-            if (!ups.length) { const o = document.createElement("option"); o.value = ""; o.textContent = "no language model (Settings › API providers, or ComfyUI-QwenVL)"; this.upBackendSel.appendChild(o); }
+            if (!ups.length) { const o = document.createElement("option"); o.value = ""; o.textContent = hostText("noUpsampleOption", "no language model (Settings › API providers, or ComfyUI-QwenVL)"); this.upBackendSel.appendChild(o); }
             if (ups.some((b) => b.id === curUp)) this.upBackendSel.value = curUp;
             this.upBtn.disabled = !ups.length;
         }
@@ -5405,7 +5420,7 @@ class InpaintEditor {
         if (!this.base) { this.setStatus("Load an image first."); return; }
         if (this.upsamplePending) { this.setStatus("Upsampling is already running."); return; }
         const backend = availableUpsampleBackends().find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0];
-        if (!backend) { this.setStatus("No language model: add an OpenAI, Google or Anthropic key in Settings › API providers, or install ComfyUI-QwenVL on the server."); return; }
+        if (!backend) { this.setStatus(hostText("noUpsampleBackend", "No language model: add an OpenAI, Google or Anthropic key in Settings › API providers, or install ComfyUI-QwenVL on the server.")); return; }
         const text = (this.promptInput.value || "").trim();
         const useCase = this.resolveUseCase();
         const region = this.getBounds() ? (this.cropSettings.fill === "green" ? "the solid green area" : "the area inside the magenta outline") : "the whole image";
@@ -5465,7 +5480,7 @@ class InpaintEditor {
     /** Make sure the object map matches the current source; run SAM2 if not. */
     async ensureObjects() {
         if (!this.base || this.objectsPending) return;
-        if (!objectBackendAvailable()) { this.setStatus("Object selection needs a SAM2 model: download one in Settings › Helpers, or install ComfyUI-segment-anything-2 (Kijai) on the server."); return; }
+        if (!objectBackendAvailable()) { this.setStatus(hostText("noObjectBackend", "Object selection needs a SAM2 model: download one in Settings › Helpers, or install ComfyUI-segment-anything-2 (Kijai) on the server.")); return; }
         this.objectsPending = { stage: "upload" };
         try {
             const { ref, hash, layer } = await this.segmentSource();
@@ -6356,7 +6371,7 @@ class InpaintEditor {
         const cur = this.cutoutSettings.backend;
         this.cutoutSel.innerHTML = "";
         for (const b of avail) { const o = document.createElement("option"); o.value = b.id; o.textContent = b.label; this.cutoutSel.appendChild(o); }
-        if (!avail.length) { const o = document.createElement("option"); o.value = ""; o.textContent = "no model (Settings › Helpers)"; this.cutoutSel.appendChild(o); }
+        if (!avail.length) { const o = document.createElement("option"); o.value = ""; o.textContent = hostText("noCutoutOption", "no model (Settings › Helpers)"); this.cutoutSel.appendChild(o); }
         this.cutoutSel.value = avail.some((b) => b.id === cur) ? cur : (avail[0] ? avail[0].id : "");
     }
 
@@ -6365,7 +6380,7 @@ class InpaintEditor {
         if (!layer || !layer.canvas) return;
         const availCut = availableCutoutBackends();
         const backend = availCut.find((b) => b.id === this.cutoutSettings.backend) || availCut[0];
-        if (!backend) { this.setStatus("No background removal model: download one in Settings › Helpers, or install comfyui-rmbg on the server."); return; }
+        if (!backend) { this.setStatus(hostText("noCutoutBackend", "No background removal model: download one in Settings › Helpers, or install comfyui-rmbg on the server.")); return; }
         if (this.cutoutPending) { this.setStatus(`Still removing the background of ${this.cutoutPending.layer.name} ...`); return; }
         try {
             this.cutoutPending = { layer, backend };
@@ -6933,6 +6948,7 @@ class InpaintEditor {
     static referencedFiles() {
         const keep = new Set();
         const scan = (text) => { for (const m of String(text || "").matchAll(/"filename"\s*:\s*"([^"]+)"/g)) keep.add(m[1]); };
+        for (const text of host.referencedTexts ? host.referencedTexts() : []) scan(text);   // the node's open workflow tabs
         for (const ed of host.editors()) {
             scan(ed.lastValueString);
             try { scan(ed.getValue()); } catch (_) { /* ignore */ }
@@ -6977,7 +6993,7 @@ class InpaintEditor {
             c.getContext("2d").drawImage(this.layerPixels(l), l.x, l.y, l.w, l.h);
             const blob = await new Promise((r) => c.toBlob(r, "image/png"));
             const stem = (l.name || "layer").replace(/[^a-z0-9._ -]/gi, "_");
-            const saved = await host.saveExport(blob, `${stem}.png`);
+            const saved = await host.saveExport(blob, `${stem}.png`, { editor: this });
             if (!saved) { this.setStatus("Save cancelled."); return null; }
             this.setStatus(`Saved ${saved.path} (${l.name}, ${this.width} × ${this.height} with transparency).`);
             return saved;
@@ -6990,7 +7006,7 @@ class InpaintEditor {
         try {
             const blob = await new Promise((r) => this.maskToCanvas().toBlob(r, "image/png"));
             const stem = ((this.saveNameInput && this.saveNameInput.value) || "inpaint_canvas").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._ -]/gi, "_") || "inpaint_canvas";
-            const saved = await host.saveExport(blob, `${stem}_mask.png`);
+            const saved = await host.saveExport(blob, `${stem}_mask.png`, { editor: this });
             if (!saved) { this.setStatus("Save cancelled."); return null; }
             this.setStatus(`Saved ${saved.path} (mask, white = selected).`);
             return saved;
@@ -7020,10 +7036,10 @@ class InpaintEditor {
                     blob = pngWithText(await blob.arrayBuffer(), { workflow: asciiJson(workflow), inpaint_canvas: asciiJson({ prompt: this.promptText, negative: this.negativeText, width: this.width, height: this.height, seed: this.genSettings.seed, mode: this.genSettings.mode }) });
                 } catch (err) { console.warn("Inpaint Canvas: could not embed the workflow", err); }
             }
-            const saved = await host.saveExport(blob, `${stem}.${fmt}`);
+            const saved = await host.saveExport(blob, `${stem}.${fmt}`, { editor: this, download });
             if (!saved) { this.setStatus("Save cancelled."); return null; }
             const kb = Math.round(blob.size / 1024);
-            this.setStatus(`Saved ${saved.path} (${canvas.width} × ${canvas.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " kB"}${fmt === "png" ? ", recipe embedded" : ""}${note}).`);
+            this.setStatus(`Saved ${saved.path} (${canvas.width} × ${canvas.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " kB"}${fmt === "png" ? ", " + hostText("pngEmbedded", "recipe embedded") : ""}${note}).`);
             return saved;
         } catch (err) {
             console.error(err);
@@ -7788,7 +7804,7 @@ class InpaintEditor {
                 const sel = document.createElement("select");
                 sel.className = "ipc-sel";
                 sel.style.gridColumn = "2 / -1";
-                sel.title = p.title || (p.key !== "preset" ? p.label : "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT's job). Values assume a picture of about 2000 px. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products.");
+                sel.title = p.title || (p.key !== "preset" ? p.label : hostText("filmPresetTip", "Film stock: sets amount, grain size and colour share (grain character only, the colour look is a LUT's job). Values assume a picture of about 2000 px. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products."));
                 let group = null;
                 for (const o of p.options) {
                     const opt = document.createElement("option"); opt.value = o.id; opt.textContent = o.label;
@@ -9035,7 +9051,7 @@ class InpaintEditor {
     settingTargetsFromGraph() {
         const res = [];
         const outs = this.node.outputs || [];
-        const graph = this.node.graph || null;
+        const graph = this.node.graph || (host.graph ? host.graph() : null);
         for (let i = FIXED_OUTPUTS; i < outs.length; i++) {
             const o = outs[i];
             if (!isSettingOutput(o) || !o.links || !o.links.length) continue;
@@ -9609,4 +9625,5 @@ class InpaintEditor {
     }
 }
 
-export { InpaintEditor, viewUrl, loadImageEl, makeCanvas, uploadBlob, uploadCanvas, CROP_DEFAULTS, GEN_DEFAULTS, FIXED_OUTPUTS, SETTING_SLOTS, el, icon, iconButton, miniButton, selectInput, numberInput };
+// everything the hosts use: Scumble's shell, commands and plugins, the node's extension (js/inpaint_node.js)
+export { InpaintEditor, viewUrl, loadImageEl, makeCanvas, uploadBlob, uploadCanvas, CROP_DEFAULTS, GEN_DEFAULTS, FIXED_OUTPUTS, SETTING_SLOTS, TAIL_OUTPUTS, NODE_CLASS, STITCH_CLASS, isSettingOutput, settingIndex, linkOf, el, icon, iconButton, miniButton, selectInput, numberInput };

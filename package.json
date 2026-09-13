@@ -1,7 +1,7 @@
 {
   "name": "scumble",
   "productName": "Scumble",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Desktop editor for AI inpainting: layers, selection by text, retouch, filters, rendered through your own ComfyUI or API providers.",
   "author": "DenRakEiw",
   "license": "GPL-3.0",
@@ -18,7 +18,7 @@
     "dist:linux": "electron-builder --linux",
     "release": "electron-builder --win nsis --publish always",
     "dist:dir": "electron-builder --dir",
-    "sync-editor": "python tools/sync_editor.py",
+    "build-node": "python tools/build_node.py",
     "smoke": "python tools/smoke_test.py",
     "helpers-test": "node tools/helpers_test.js",
     "commands-test": "python tools/commands_test.py",

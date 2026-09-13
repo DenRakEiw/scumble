@@ -1,4 +1,3 @@
-// Synced from ComfyUI-InpaintCanvas by tools/sync_editor.py. Do not edit here: change the node or the patch list.
 /**
  * The editor's worker: everything that used to stall the main thread with a whole image
  * in hand. It runs in the ComfyUI page and in the app alike (a module worker created from

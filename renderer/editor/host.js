@@ -1,6 +1,8 @@
-// What the editor needs from its surroundings. In the ComfyUI node this was `app`, `api`
-// and the litegraph node; here it is one object backed by the main process (see
-// tools/sync_editor.py for the exact places in inpaint_canvas.js that call into it).
+// What the editor needs from its surroundings. The editor (renderer/editor/inpaint_*.js) is
+// shared with the ComfyUI node, whose own js/host.js answers the same members with `app`,
+// `api` and the litegraph node; here it is one object backed by the main process.
+// tools/build_node.py --check fails when the editor calls a member one of the two lacks
+// (docs/BUILD_NODE.md).
 //
 //   api   - ComfyUI's client API surface the editor uses: fetchApi, apiURL, queuePrompt,
 //           addEventListener, clientId. Requests go to scumble://app/comfy/*, which the main
@@ -199,7 +201,7 @@ export const host = {
         for (const fn of Array.from(s)) { try { fn(data); } catch (err) { console.error("host listener", type, err); } }
     },
 
-    /** Patched into the end of the editor constructor (tools/sync_editor.py). */
+    /** Called at the end of the editor constructor. */
     editorBuilt(editor) {
         try { this.buildExportSize(editor); } catch (err) { console.warn("export size row", err); }
         try { this.hookStatus(editor); } catch (err) { console.warn("status hook", err); }
@@ -207,7 +209,7 @@ export const host = {
     },
 
     /**
-     * The status line is one clipped line without a tooltip in the synced editor: the app gives
+     * The status line is one clipped line without a tooltip in the editor: the app gives
      * it the full text as a title, logs what looks like an error, and opens the console on a
      * click. Hooked from outside, so no sync patch.
      */
@@ -234,7 +236,7 @@ export const host = {
     // The editor's Export section saves the flattened image at its own resolution. The app
     // adds a size to it: a percentage or a free width and height, plus the encoder quality
     // for JPEG / WebP. `exportCanvas` and `exportQuality` are what the patched exportImage()
-    // asks (tools/sync_editor.py). PSD and ORA always go out at full size, because every
+    // asks. PSD and ORA always go out at full size, because every
     // layer would have to be scaled on its own.
 
     /** The per-document export settings, made on first use. */
@@ -520,6 +522,19 @@ export const host = {
 
     isActive(editor) {
         return editor === this.editor;
+    },
+
+    /** The node's editor is an overlay with a title and a close button; here it is the window. */
+    overlay: false,
+    /** The node words a few texts differently (js/host.js); the editor's fallbacks are ours. */
+    text: null,
+    /** No litegraph here: settingTargetsFromGraph is the node's path. */
+    graph() {
+        return null;
+    },
+    /** File names outside the editors that the cleanup must keep (the node scans workflow tabs). */
+    referencedTexts() {
+        return [];
     },
 
     editors() {
@@ -1098,7 +1113,7 @@ export const host = {
     /**
      * The InpaintCanvas node's own widgets, which the litegraph node showed under the
      * editor button: crop padding, target size, feather, multiple_of. Built into the
-     * editor's Generate section (patched in by tools/sync_editor.py), stored in
+     * editor's Generate section, stored in
      * settings.nodeParams and filled into the recipe's canvas node on every run.
      */
     buildGenerateExtras(editor, sec) {
@@ -1216,7 +1231,7 @@ export const host = {
     // The main process (electron/main/onnx) holds the models; the renderer scales the
     // source to the model's 1024 × 1024 input with Canvas 2D and scales the answer back.
     // The editor asks through objectBackendAvailable() / ensureObjects() and
-    // availableCutoutBackends() / cutoutLayer() (patched in tools/sync_editor.py); when
+    // availableCutoutBackends() / cutoutLayer(); when
     // no in-app model is present, the ComfyUI helper prompts run as in the node.
 
     helpers: { models: [], sam2: null, matting: null, runtime: null },

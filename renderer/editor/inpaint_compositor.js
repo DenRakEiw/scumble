@@ -1,4 +1,3 @@
-// Synced from ComfyUI-InpaintCanvas by tools/sync_editor.py. Do not edit here: change the node or the patch list.
 /**
  * The WebGL2 compositor (large-image plan, phase 5).
  *

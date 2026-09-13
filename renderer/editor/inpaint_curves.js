@@ -1,4 +1,3 @@
-// Synced from ComfyUI-InpaintCanvas by tools/sync_editor.py. Do not edit here: change the node or the patch list.
 // Inpaint Canvas - curves: monotone cubic interpolation (Fritsch-Carlson) into
 // 256-entry tables and the curve editor control that the "Curves" filter layer
 // shows in its layer row. The filter itself lives in inpaint_filters.js; this

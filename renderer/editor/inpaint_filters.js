@@ -1,4 +1,3 @@
-// Synced from ComfyUI-InpaintCanvas by tools/sync_editor.py. Do not edit here: change the node or the patch list.
 // Inpaint Canvas - filter layers (grain, sharpen, blur, levels, curves,
 // brightness / contrast, hue / saturation, colour balance, black & white,
 // invert, LUT, vignette).

@@ -1,4 +1,3 @@
-// Synced from ComfyUI-InpaintCanvas by tools/sync_editor.py. Do not edit here: change the node or the patch list.
 /**
  * Raster helpers shared by the editor's tools: flood fill / magic wand region
  * growing, colour parsing, mask-to-canvas. Pure functions on typed arrays, no

@@ -1,4 +1,3 @@
-// Synced from ComfyUI-InpaintCanvas by tools/sync_editor.py. Do not edit here: change the node or the patch list.
 /**
  * Text layers for the Inpaint Canvas editor: the bundled fonts (js/fonts, OFL / Apache
  * licensed, see fonts.json and licenses/), fonts the user uploads to

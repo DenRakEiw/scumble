@@ -1,0 +1,58 @@
+<!doctype html><meta charset="utf-8"><title>node stub</title>
+<body style="margin:0;background:#222">
+<script>
+window.LiteGraph = { registered_node_types: {}, OUTPUT: 2, INPUT: 1 };
+window.__errors = [];
+addEventListener("error", (e) => __errors.push(String(e.message)));
+addEventListener("unhandledrejection", (e) => __errors.push("rejection: " + (e.reason && e.reason.message || e.reason)));
+</script>
+<script type="module">
+import "/extensions/ComfyUI-InpaintCanvas/inpaint_node.js";
+import { app } from "/scripts/app.js";
+const out = window.__result = { steps: [] };
+const step = (name, ok, detail = "") => out.steps.push({ name, ok: !!ok, detail: String(detail) });
+try {
+    const ext = (window.__exts || [])[0];
+    step("extension registered", ext && ext.name === "inpaint.InpaintCanvas", ext && ext.name);
+    function NodeType() {}
+    await ext.beforeRegisterNodeDef(NodeType, { name: "InpaintCanvas" });
+    ext.setup();
+    const node = Object.create(NodeType.prototype);
+    Object.assign(node, {
+        id: 7, graph: app.graph, size: [340, 500], inputs: [],
+        widgets: [{ name: "padding", value: 64 }, { name: "target_size", value: 1024 }, { name: "feather", value: 16 }, { name: "multiple_of", value: 64 }],
+        outputs: Array.from({ length: 13 }, (_, i) => ({ name: "out" + i, links: [] })),
+        addDOMWidget(name, type, el, opts) { const w = { name, el, opts }; this.widgets.push(w); document.body.appendChild(el); return w; },
+        setSize(s) { this.size = s; }, computeSize() { return [340, 500]; },
+        addOutput(n, t) { this.outputs.push({ name: n, type: t, links: [] }); }, removeOutput(i) { this.outputs.splice(i, 1); },
+    });
+    app.graph._nodes.push(node);
+    node.onNodeCreated();
+    const ed = node.inpaintEditor;
+    step("node created with an editor", !!ed);
+    ed.open();
+    await new Promise((r) => setTimeout(r, 300));
+    step("editor opened as an overlay", ed.isOpen && ed.root.isConnected && getComputedStyle(ed.root).position === "fixed", ed.root.className);
+    step("overlay title shown", !!ed.root.querySelector(".ipc-title"));
+    step("close button shown", [...ed.root.querySelectorAll("button")].some((b) => (b.title || "").startsWith("Close editor")));
+    step("node wording for the download button", [...ed.root.querySelectorAll("button")].some((b) => b.title === "Save and also download the file in the browser"));
+    step("Esc hint", ed.root.textContent.includes("Esc: close"));
+    const c = document.createElement("canvas"); c.width = 640; c.height = 400;
+    const g = c.getContext("2d"); g.fillStyle = "#3a7"; g.fillRect(0, 0, 640, 400); g.fillStyle = "#c33"; g.fillRect(100, 100, 200, 120);
+    await ed.setBaseFromCanvas(c);
+    await new Promise((r) => setTimeout(r, 300));
+    step("base image set", ed.base && ed.width === 640 && ed.height === 400, `${ed.width}x${ed.height}`);
+    const flat = ed.flattenToCanvas({ forRun: true });
+    const px = flat.getContext("2d").getImageData(150, 150, 1, 1).data;
+    step("composite has the pixels", px[0] > 180 && px[1] < 80, Array.from(px).join(","));
+    step("settingTargets from the graph", Array.isArray(ed.settingTargets()));
+    step("resultInputState from the graph", ed.resultInputState().name === "result");
+    step("widget value from the node", ed.widgetValue("padding", 0) === 64);
+    ed.close();
+    step("closed", !ed.isOpen);
+} catch (err) {
+    step("exception", false, err && err.stack || err);
+}
+out.errors = window.__errors;
+out.done = true;
+</script>

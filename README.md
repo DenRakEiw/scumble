@@ -114,13 +114,13 @@ electron/main/     main process: window, scumble:// scheme with the ComfyUI prox
 electron/preload.js
 renderer/          shell.js (connection bar, recipe picker, tabs, settings), commands.js (the command core),
                    plugins.js (plugin loader and the `scumble` API)
-renderer/editor/   synced copy of the node's editor, see docs/SYNC.md; host.js is the app side of it,
+renderer/editor/   the editor, shared with the ComfyUI node (docs/BUILD_NODE.md); host.js is the app side of it,
                    inpaint_filters_gl.js the WebGL2 filter path, stitch.js the in-app crop / stitch for provider runs
 recipes/           ComfyUI recipes (API-format prompts with a fixed canvas node id) and model recipes (one per model, a variant per provider), docs/RECIPES.md
 plugins/           built-in plugins: sample (one of every extension point) and film (the film pack), docs/PLUGINS.md, docs/FILM.md
 docker/runpod/     Dockerfile + provision.sh for a ComfyUI box on RunPod (draft, docs/RUNPOD.md)
-tools/             sync_editor.py, cdp.py (DevTools driver), the tests, commands_doc.py
-docs/              BRIEF.md (vision, decisions, phases), COMMANDS.md, PLUGINS.md, FILM.md, MCP.md, RECIPES.md, HELPERS.md, PROMPTS.md, SYNC.md, CODE_SIGNING_POLICY.md
+tools/             build_node.py (the node's editor), cdp.py (DevTools driver), the tests, commands_doc.py
+docs/              BRIEF.md (vision, decisions, phases), COMMANDS.md, PLUGINS.md, FILM.md, MCP.md, RECIPES.md, HELPERS.md, PROMPTS.md, BUILD_NODE.md, CODE_SIGNING_POLICY.md
 .github/workflows/ build.yml (Windows installer, draft release on a version tag)
 ```
 

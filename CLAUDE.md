@@ -21,11 +21,14 @@ retouch, filter layers, colour match per layer, text, PSD/ORA export. Local rend
 through the user's own ComfyUI, API rendering through fal.ai and direct providers,
 SAM/RMBG in-app via ONNX. MCP-capable from the start. Windows first, Linux second.
 
-The editor code comes from the ComfyUI custom node **Inpaint Canvas**
+The editor code came from the ComfyUI custom node **Inpaint Canvas**
 (`F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\custom_nodes\ComfyUI-InpaintCanvas`,
-GitHub `DenRakEiw/ComfyUI-InpaintCanvas`, GPL-3.0, ~9,500 lines of vanilla JS in `js/`).
-That repo stays the backend node and keeps living; this folder is the app. Read its
-`CLAUDE.md`, `DEVELOPMENT.md` (§1–19) and `GUIDE.md` before touching editor code.
+GitHub `DenRakEiw/ComfyUI-InpaintCanvas`, GPL-3.0). **Since C0 (2026-09-13) `renderer/editor/`
+in this repo is the source of the editor** and the node's `js/` is a build of it
+(`python tools/build_node.py`, `docs/BUILD_NODE.md`); the node keeps its own `js/host.js`,
+`js/inpaint_node.js` and `js/inpaint_bridge.js`. That repo stays the backend node and keeps
+living. Read its `CLAUDE.md`, `DEVELOPMENT.md` (§1–23) and `GUIDE.md` before touching editor
+code.
 
 ## Decisions already made (do not reopen without the user)
 
@@ -1078,10 +1081,12 @@ images get coarser masks; the object map is computed at ≤ 2048 px long side.
   `scumble://app/comfy/*` proxied to the ComfyUI server by `electron/main/comfy.js`
   (auth headers live there; the websocket too, events are forwarded over IPC).
   Same-origin, so `<img>` from `/comfy/view` never taints a canvas.
-- `renderer/editor/`: the node's editor, copied and patched by `tools/sync_editor.py`
-  (`docs/SYNC.md` lists every patch). `renderer/editor/host.js` is the app side:
-  `api` (fetchApi, apiURL, queuePrompt, events) and `host` (recipe, settings targets,
-  generate, autosave, export). Do not edit the synced files by hand.
+- `renderer/editor/`: the editor, edited here since C0 and built into the node by
+  `python tools/build_node.py` (then `python tools/node_test.py`, commit both repos;
+  `docs/BUILD_NODE.md`). `renderer/editor/host.js` is the app side: `api` (fetchApi, apiURL,
+  queuePrompt, events) and `host` (recipe, settings targets, generate, autosave, export); the
+  node's `js/host.js` answers the same members, and `build_node.py --check` fails when the
+  editor calls one that either host lacks. Never edit the node's generated `js/` files.
 - Recipes are API-format prompts; `host.queueGenerate` injects `canvas_state`,
   `result_source[_local]` and the node params into the canvas node and writes the
   Settings-panel values into the recipe nodes directly (`settings: [{index, node,

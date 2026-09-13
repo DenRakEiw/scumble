@@ -10,8 +10,8 @@
 // Blur, sharpen and vignette stay in inpaint_filters.js: they already run through
 // ctx.filter and gradients, which the browser accelerates.
 //
-// App-side module for now (renderer/editor, not synced); it goes back into the node
-// together with the applyFilter hook once it has proven itself here.
+// Shared with the ComfyUI node since C0 (docs/BUILD_NODE.md), together with the applyFilter
+// hook in inpaint_filters.js; without WebGL2 the CPU paths run.
 
 import { curvesToTables } from "./inpaint_curves.js";
 import { levelsTable, brightnessContrastTable, hueSatMatrix, lightnessTable, colorBalanceTables, hueToRgb, LOOK_DEFAULT, grainNoiseCanvas, colourStats } from "./inpaint_filters.js";
