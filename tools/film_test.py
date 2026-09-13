@@ -113,8 +113,7 @@ const r2 = await c("film.add_point", { x: 400, y: 260, exposure: -1 });
 if (r2.layer !== r.layer || r2.points !== 2) throw new Error("second point went elsewhere: " + JSON.stringify(r2));
 // the picture changed near point 1 and not far away from both
 const flat = editor.flattenToCanvas({ forRun: true }).getContext("2d");
-const base = editor.base;
-const bc = document.createElement("canvas"); bc.width = editor.width; bc.height = editor.height; bc.getContext("2d").drawImage(base.img, 0, 0);
+const bc = document.createElement("canvas"); bc.width = editor.width; bc.height = editor.height; editor.basePx.drawTo(bc.getContext("2d"), 0, 0);
 const at = (ctx, x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data.slice(0, 3));
 const near = at(flat, 130, 120), nearBase = at(bc.getContext("2d"), 130, 120);
 if (near.join() === nearBase.join()) throw new Error("point 1 changed nothing at its centre: " + near + " vs " + nearBase);

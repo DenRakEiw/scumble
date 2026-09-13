@@ -68,8 +68,8 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `documents.active()` | the active tab as a `Document`, or `null` |
 | `documents.all()`, `documents.byId(id)` | every tab / one tab |
 | `filters.register(def)` / `unregister(id)` | filter types |
-| `filters.apply(id, canvas, params, info)` / `filters.ids()` | run any filter type (built-in or plugin) on a canvas, GPU path when available: the film pack chains the built-in grain this way |
-| `gl.shade(shader, canvas, values, info)` / `gl.available()` | one shader pass over a canvas (`shader = { code, uniforms, label }`, compiled once per object) for multi-pass filters; null without a GPU path |
+| `filters.apply(id, canvas, params, info)` / `filters.ids()` | run any filter type (built-in or plugin) on a canvas (or a layer's `px`, read as its canvas), GPU path when available: the film pack chains the built-in grain this way |
+| `gl.shade(shader, canvas, values, info)` / `gl.available()` | one shader pass over a canvas (`shader = { code, uniforms, label }`, compiled once per object) for multi-pass filters; null without a GPU path; the source and `sampler2D` values may be a layer's `px` |
 | `gl.toCanvas(v)` / `gl.isSurface(v)` | a GPU surface (what `gl.shade` hands back inside a filter chain) as a canvas, or a canvas unchanged; see "Staying on the GPU" |
 | `panels.register(def)` / `unregister(id)` | side panels |
 | `actions.register(def)` / `unregister(id)` / `run(id)` | Plugins menu entries |
@@ -92,24 +92,48 @@ One tab. Pixel access is ImageData in and out; every write is one undo step.
 | `status(text)` | status bar |
 | `run(name, args)` | a command on this document |
 | `layers()`, `layer(key)`, `activeLayer()` | summaries: `{ id, name, kind, visible, opacity, blend, x, y, w, h, locked, mask, filter, params, text, ... }` |
-| `rawLayer(key)` | the editor's layer object (canvas, mask ...); unstable |
+| `rawLayer(key)` | the editor's layer object (`px`, `maskPx`, params ...); unstable, see "Layer pixels" below |
 | `flatten({ maxSize, box })` | the visible picture as a canvas at image size; `maxSize` (long side) or `box` (`[x0, y0, x1, y1]`) composite only that size or part, which a thumbnail or a colour sample should ask for |
 | `getPixels()` | `{ data: ImageData, x: 0, y: 0, w, h }` of the flattened picture |
-| `getPixels(layer)` | the layer's own canvas (unmasked) plus its placement `x, y, w, h` in image pixels; `w, h` differ from the ImageData size when the layer is scaled |
-| `setPixels(layer, imageData, { undo = true })` | write a layer's canvas back (same size, or the canvas is replaced and the placement kept); filter and locked layers refuse |
-| `addLayer(imageData \| canvas \| null, { name, x, y, w, h, activate })` | a new paint layer, placed at `x, y`; `null` = empty at image size |
+| `getPixels(layer)` | the layer's own pixels (unmasked) plus its placement `x, y, w, h` in image pixels; `w, h` differ from the ImageData size when the layer is scaled |
+| `setPixels(layer, imageData, { undo = true })` | write a layer's pixels back (same size, or the pixels are replaced and the placement kept); filter and locked layers refuse |
+| `addLayer(imageData \| canvas \| null, { name, x, y, w, h, activate })` | a new paint layer, placed at `x, y`; `null` = empty at image size; a canvas is adopted (do not draw into it afterwards) |
 | `selection()` | `{ mask: Uint8Array(width × height), bounds: {x, y, w, h}, width, height }` or `null` |
 | `setSelection(mask, mode)` | from a `Uint8Array` (>0 = selected); `replace`, `add`, `subtract` |
 | `undo()`, `redo()` | |
 | `draw()` | repaint the canvas and overlays (no cache invalidation) |
 | `setFilterParams(layer, patch, { preview })` | change a filter layer's params: `preview: true` during a drag (low-res, no undo step yet), the final call without it pushes one undo step |
-| `refresh()` | after changes on raw layer objects: caches off, lists and canvas redrawn |
+| `refresh(layer?)` | after changes on raw layer objects: caches off, lists and canvas redrawn; with a layer, its pixels and mask are marked changed first (after writing through `rawLayer(layer).px` / `maskPx`) |
 | `editor` | the raw editor (unstable) |
 
 Layers are addressed like in the commands: id, exact name, a unique part of the name, or
 `"active"`. The base image has no layer object of its own; to change it, duplicate it into a
 layer (`run("duplicate_layer")` on the base is not possible, use `getPixels()` + `addLayer`)
 or flatten.
+
+### Layer pixels (0.1.12)
+
+A layer's pixels are no longer a canvas on the layer object: they are `layer.px`, a
+`LayerPixels` (`renderer/editor/inpaint_pixels.js`), and a layer mask is `layer.maskPx`, a
+`MaskPixels` (`null` when the layer has no mask). The tile engine (docs/PLAN_BCE.md, phase C)
+puts tiles behind the same interface, so a plugin that goes through it keeps working then.
+
+- **Unchanged**: `getPixels`, `setPixels`, `addLayer`, `selection()`, `setSelection`,
+  `flatten`. A plugin that only uses the `Document` API needs no change.
+- **`addLayer(canvas)` adopts the canvas**, as it always did: the canvas becomes the layer's
+  pixels. Do not keep drawing into a canvas you handed over; with the tile engine it is copied
+  in and later draws never reach the layer. Write through `setPixels` instead.
+- **Deprecated, for one release**: `rawLayer(key).canvas`, `rawLayer(key).mask` and
+  `doc.editor.selection` still answer with a canvas and log a warning once (a development build
+  in strict mode throws instead). Their canvas is a read-only view: in the tile engine it is a
+  copy, and a write into it is lost.
+- **Instead**, if the `Document` API is not enough: `rawLayer(key).px` / `.maskPx` with
+  `width`, `height`, `readRect(x, y, w, h)` (ImageData), `writeRect(imageData, x, y, op, alpha)`,
+  `drawInto(rect, ctx => ...)` (Canvas 2D drawing clipped to `rect` = `[x0, y0, x1, y1]`, from a
+  fresh context state; do not read `ctx.canvas`), `drawTo(ctx, ...drawImage arguments)`,
+  `bounds()` and `toCanvas()` (read-only). After writing, call `doc.refresh(key)` so the screen,
+  the upload and the caches see it; unlike `setPixels` such a write has no undo step unless the
+  plugin pushes one. The selection stays behind `selection()` / `setSelection()`.
 
 ## Filter types
 

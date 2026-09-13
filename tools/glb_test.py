@@ -77,7 +77,7 @@ PRE = """(async () => {
     const host = (await import('./editor/host.js')).host;
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const ednow = () => host.editors().find((e) => e.node.id === window.__gDoc) || window.editor;
-    const px = (cv, x, y) => Array.from(cv.getContext("2d").getImageData(Math.round(x), Math.round(y), 1, 1).data);
+    const px = (p, x, y) => Array.from(p.readRect(Math.round(x), Math.round(y), 1, 1).data);   // a layer's pixels (LayerPixels)
     %s
 })()"""
 
@@ -105,8 +105,8 @@ if (Math.abs(cx - 600) > 24 || Math.abs(cy - 400) > 24) throw new Error("the obj
 // the frame is 2 * 3 * tan(20 deg) = 2.18 units high at distance 3, a tilted unit cube about 1.5 units: two thirds of 800 px
 if (L.h < 380 || L.h > 700 || L.w < 380 || L.w > 700) throw new Error("size " + L.w + "x" + L.h);
 const lay = ed.layers.find((l) => l.id === L.id);
-const cw = lay.canvas.width, ch = lay.canvas.height;
-const centre = px(lay.canvas, cw / 2, ch / 2), corner = px(lay.canvas, 1, 1);
+const cw = lay.px.width, ch = lay.px.height;
+const centre = px(lay.px, cw / 2, ch / 2), corner = px(lay.px, 1, 1);
 if (centre[3] < 250) throw new Error("the silhouette's centre is transparent: " + centre);
 if (centre[0] < 60 || centre[0] <= centre[1] + 20) throw new Error("the cube is not red: " + centre);
 if (corner[3] !== 0) throw new Error("the corner of the layer is not transparent: " + corner);
@@ -114,8 +114,8 @@ if (!r.depthLayer) throw new Error("no depth layer");
 const D = r.depthLayer;
 if (D.role !== "control" || D.w !== 1200 || D.h !== 800 || D.x !== 0 || D.y !== 0) throw new Error("depth layer " + JSON.stringify(D));
 const dep = ed.layers.find((l) => l.id === D.id);
-const ks = dep.canvas.width / 1200;
-const dc = px(dep.canvas, cx * ks, cy * ks), de = px(dep.canvas, (L.x + L.w * 0.08) * ks, cy * ks), far = px(dep.canvas, 20 * ks, 20 * ks);
+const ks = dep.px.width / 1200;
+const dc = px(dep.px, cx * ks, cy * ks), de = px(dep.px, (L.x + L.w * 0.08) * ks, cy * ks), far = px(dep.px, 20 * ks, 20 * ks);
 if (dc[0] < 128) throw new Error("the nearest part of the cube is not bright in the depth layer: " + dc);
 if (de[0] >= dc[0] - 10) throw new Error("the cube's side is not farther than its front edge: centre " + dc + " edge " + de);
 if (far[0] !== 0 || far[3] !== 255) throw new Error("outside the object the depth frame is not black: " + far);

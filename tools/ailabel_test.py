@@ -51,7 +51,8 @@ if (L.name !== "AI label") throw new Error("name " + L.name);
 const lay = editor.layers.find((l) => l.id === L.id);
 const k = w / %(vw)s;
 const px = (cv, x, y) => Array.from(cv.getContext("2d").getImageData(Math.round(x), Math.round(y), 1, 1).data);
-const letter = px(lay.canvas, %(ix)s * k, %(iy)s * k), pill = px(lay.canvas, %(gx)s * k, %(gy)s * k), corner = px(lay.canvas, 2, 2);
+const pxl = (p, x, y) => Array.from(p.readRect(Math.round(x), Math.round(y), 1, 1).data);   // a layer's pixels (LayerPixels)
+const letter = pxl(lay.px, %(ix)s * k, %(iy)s * k), pill = pxl(lay.px, %(gx)s * k, %(gy)s * k), corner = pxl(lay.px, 2, 2);
 if (letter[3] !== 255 || letter[0] < 250) throw new Error("the letter is not white: " + letter);
 if (pill[3] !== 255 || pill[0] > 5) throw new Error("the pill is not black: " + pill);
 if (corner[3] !== 0) throw new Error("the corner outside the pill is not transparent: " + corner);
@@ -70,8 +71,8 @@ if (labels.length !== 1) throw new Error(labels.length + " label layers");
 if (labels[0].id === window.__aiLayer) throw new Error("the old layer is still there");
 const L = r.layer;
 const k = L.w / %(vw)s;
-const px = (cv, x, y) => Array.from(cv.getContext("2d").getImageData(Math.round(x), Math.round(y), 1, 1).data);
-const letter = px(labels[0].canvas, %(ix)s * k, %(iy)s * k), pill = px(labels[0].canvas, %(gx)s * k, %(gy)s * k);
+const pxl = (p, x, y) => Array.from(p.readRect(Math.round(x), Math.round(y), 1, 1).data);   // a layer's pixels (LayerPixels)
+const letter = pxl(labels[0].px, %(ix)s * k, %(iy)s * k), pill = pxl(labels[0].px, %(gx)s * k, %(gy)s * k);
 if (letter[3] !== 255 || letter[0] > 40) throw new Error("the letter is not dark: " + letter);
 if (pill[0] < 250 || Math.abs(pill[3] - 128) > 3) throw new Error("the pill is not white at half opacity: " + pill);
 if (L.w !== 800 || L.x !== 760 || L.opacity !== 1) throw new Error("size / anchor / default opacity: " + L.w + " at " + L.x + ", " + L.opacity);

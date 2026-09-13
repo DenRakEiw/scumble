@@ -38,8 +38,9 @@ export function setOnChanged(fn) { onChanged = fn; }
 
 /**
  * A thin wrapper around one editor (tab). Pixel access goes through ImageData: getPixels
- * reads a layer's own canvas (or the flattened picture), setPixels writes it back with an
- * undo step. `editor` is the raw editor for what the wrapper does not cover (unstable API).
+ * reads a layer's own pixels (or the flattened picture), setPixels writes them back with an
+ * undo step; both go through the layer's LayerPixels (docs/PLAN_BCE.md C1). `editor` is the
+ * raw editor for what the wrapper does not cover (unstable API).
  */
 export class Document {
     constructor(editor) { this.editor = editor; }
@@ -56,7 +57,11 @@ export class Document {
     layers() { return this.editor.layers.map((l) => layerSummary(this.editor, l)); }
     layer(key) { return layerSummary(this.editor, findLayer(this.editor, key)); }
     activeLayer() { const l = this.editor.activeLayer(); return l ? layerSummary(this.editor, l) : null; }
-    /** The raw layer object (canvas, mask, params ...); unstable, prefer the summaries. */
+    /**
+     * The raw layer object (px, maskPx, params ...); unstable, prefer the summaries. Its pixels
+     * are `px` (LayerPixels) and `maskPx` (MaskPixels, null without a mask); `canvas` / `mask`
+     * are deprecated aliases that warn. After writing through px / maskPx call refresh(key).
+     */
     rawLayer(key) { return findLayer(this.editor, key); }
 
     /**
@@ -77,24 +82,24 @@ export class Document {
 
     /**
      * Pixels as ImageData. Without a layer: the flattened picture (x, y = 0, canvas size =
-     * image size). With a layer: its own canvas (unmasked, at the layer's pixel size) plus
+     * image size). With a layer: its own pixels (unmasked, at the layer's pixel size) plus
      * where it sits on the canvas (x, y, w, h in image pixels; w, h may differ from the
-     * canvas size when the layer is scaled).
+     * pixel size when the layer is scaled).
      */
     getPixels(layerKey) {
         this._need();
         if (layerKey == null || layerKey === "") {
-            const c = this.flatten();
+            const c = this.flatten();   // a composite canvas of its own, not a layer's pixels
             return { data: c.getContext("2d").getImageData(0, 0, c.width, c.height), x: 0, y: 0, w: c.width, h: c.height, layer: null };
         }
         const l = findLayer(this.editor, layerKey);
         if (l.kind === "filter") throw new Error(`${l.name} is a filter layer: it has no pixels of its own`);
-        const c = l.canvas;
-        return { data: c.getContext("2d").getImageData(0, 0, c.width, c.height), x: l.x, y: l.y, w: l.w, h: l.h, layer: l.id };
+        const px = l.px;
+        return { data: px.readRect(0, 0, px.width, px.height), x: l.x, y: l.y, w: l.w, h: l.h, layer: l.id };
     }
 
     /**
-     * Write ImageData into a layer (its own canvas; the size must match, or the canvas is
+     * Write ImageData into a layer (its own pixels; the size must match, or the pixels are
      * replaced and the layer keeps its placement). One undo step. Filter and locked layers
      * refuse.
      */
@@ -104,9 +109,11 @@ export class Document {
         if (l.kind === "filter") throw new Error(`${l.name} is a filter layer`);
         if (l.locked) throw new Error(`${l.name} is locked`);
         if (!imageData || !imageData.width || !imageData.data) throw new Error("setPixels needs an ImageData");
-        if (undo) this.editor.pushUndo({ kind: l.canvas.width === imageData.width && l.canvas.height === imageData.height ? "layer" : "layerfull", id: l.id });
-        if (l.canvas.width !== imageData.width || l.canvas.height !== imageData.height) l.canvas = makeCanvas(imageData.width, imageData.height);
-        l.canvas.getContext("2d").putImageData(imageData, 0, 0);
+        const same = l.px.width === imageData.width && l.px.height === imageData.height;
+        if (undo) this.editor.pushUndo({ kind: same ? "layer" : "layerfull", id: l.id });
+        // another size replaces the pixels with a new object (the layerfull step holds the old one)
+        if (same) l.px.writeRect(imageData, 0, 0);
+        else l.px = LayerPixels.fromImageData(imageData);
         l.ref = null; l._fcache = null;
         this.editor.markLayerChanged(l);
         this.editor.renderLayers();
@@ -114,18 +121,22 @@ export class Document {
         return layerSummary(this.editor, l);
     }
 
-    /** A new paint layer from ImageData or a canvas, placed at x, y (default 0, 0) with its own size. */
+    /**
+     * A new paint layer from ImageData or a canvas, placed at x, y (default 0, 0) with its own
+     * size. A canvas is adopted: it becomes the layer's pixels, so the plugin must not draw
+     * into it afterwards (write through setPixels, or rawLayer(key).px and refresh(key)).
+     */
     addLayer(source, { name, x = 0, y = 0, w, h, activate = true } = {}) {
         this._need();
-        let c;
-        if (source instanceof ImageData) { c = makeCanvas(source.width, source.height); c.getContext("2d").putImageData(source, 0, 0); }
-        else if (source && source.getContext) c = source;
-        else if (source == null) c = makeCanvas(this.width, this.height);
+        let px;
+        if (source instanceof ImageData) px = LayerPixels.fromImageData(source);
+        else if (source && source.getContext) px = LayerPixels.fromCanvas(source);
+        else if (source == null) px = LayerPixels.empty(this.width, this.height);
         else throw new Error("addLayer needs an ImageData, a canvas or nothing");
         this.editor.paintCounter += 1;
         const layer = this.editor.addLayer({
-            name: name || "Paint " + this.editor.paintCounter, kind: "paint", ref: null, px: LayerPixels.fromCanvas(c),
-            x: Math.round(x), y: Math.round(y), w: Math.max(1, Math.round(w || c.width)), h: Math.max(1, Math.round(h || c.height)), dirty: true,
+            name: name || "Paint " + this.editor.paintCounter, kind: "paint", ref: null, px,
+            x: Math.round(x), y: Math.round(y), w: Math.max(1, Math.round(w || px.width)), h: Math.max(1, Math.round(h || px.height)), dirty: true,
         }, { activate });
         return layerSummary(this.editor, layer);
     }
@@ -173,8 +184,27 @@ export class Document {
         ed.markFilterChanged(l);
         return layerSummary(ed, l);
     }
-    /** After changes made on raw layer objects: caches off, lists and canvas fresh. */
-    refresh() { touch(this.editor); }
+    /**
+     * After changes made on raw layer objects: caches off, lists and canvas fresh. With a layer:
+     * its pixels (and its mask) were written through rawLayer(key).px / maskPx, so the display
+     * levels, the upload and the caches of that layer are marked changed first, as setPixels does.
+     */
+    refresh(layerKey) {
+        if (layerKey != null && layerKey !== "") {
+            const ed = this.editor;
+            const l = findLayer(ed, layerKey);
+            if (l.kind === "filter") ed.markFilterChanged(l);
+            else {
+                l.ref = null; l._fcache = null;
+                ed.markLayerChanged(l);
+                // also with no mask: a mask removed through rawLayer (maskPx = null) drops its
+                // upload ref here, as the editor's removeMask does
+                if (!l.maskPx) l.maskEdit = false;
+                ed.markMaskChanged(l);
+            }
+        }
+        touch(this.editor);
+    }
 
     _need() { if (!this.editor.base || !this.editor.width) throw new Error("no image loaded"); }
 }
@@ -469,6 +499,25 @@ function toolChanged({ editor, tool, prev }) {
 
 // ---- the API object one plugin gets ----------------------------------------------------------
 
+/**
+ * Layer pixels handed to a canvas API (a filter, a shader pass, a sampler2D value) as the
+ * canvas that API reads: `toCanvas()`, once per call and read-only (docs/PLAN_BCE.md C1 rule 3).
+ * Anything else passes through untouched.
+ */
+function readableSource(v) {
+    return v instanceof LayerPixels ? v.toCanvas() : v;
+}
+
+function readableValues(values) {
+    let out = values;
+    for (const [k, v] of Object.entries(values)) {
+        if (!(v instanceof LayerPixels)) continue;
+        if (out === values) out = { ...values };
+        out[k] = v.toCanvas();
+    }
+    return out;
+}
+
 function makeApi(entry) {
     const m = entry.manifest;
     const docOf = (ed) => (ed ? new Document(ed) : null);
@@ -504,8 +553,8 @@ function makeApi(entry) {
         filters: {
             register: (def) => registerFilter(entry, def),
             unregister: (id) => unregisterFilter(entry, id.includes(".") ? id : `${entry.id}.${id}`),
-            /** Run any filter type (built-in or plugin) on a canvas: the GPU path when available, else the CPU code. */
-            apply: (id, src, params, info) => applyFilter(id, src, params || {}, info || {}),
+            /** Run any filter type (built-in or plugin) on a canvas (or a layer's px): the GPU path when available, else the CPU code. */
+            apply: (id, src, params, info) => applyFilter(id, readableSource(src), params || {}, info || {}),
             ids: () => FILTER_IDS.slice(),
         },
         gl: {
@@ -522,11 +571,11 @@ function makeApi(entry) {
              * scumble.filters.apply(); anything that reads pixels calls scumble.gl.toCanvas() first.
              */
             shade(def, src, values, info) {
-                try { return runShader(def, src, values || {}, info || {}); }
+                try { return runShader(def, readableSource(src), readableValues(values || {}), info || {}); }
                 catch (err) { report(entry, `gl.shade ${def && def.label || ""}`, err); return null; }
             },
-            /** A surface (or a canvas, unchanged) as a canvas the CPU code can read. */
-            toCanvas: (v) => glToCanvas(v),
+            /** A surface (or a layer's px, or a canvas unchanged) as a canvas the CPU code can read. */
+            toCanvas: (v) => glToCanvas(readableSource(v)),
             /** Is this a GPU surface rather than a canvas? */
             isSurface: (v) => isGLSurface(v),
         },
