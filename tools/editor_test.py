@@ -7,8 +7,11 @@ image, copy and paste of a whole layer from one tab into another, and that an er
 through one strip of a zoomed-out result layer leaves the rest of the layer on screen (the
 cached display level used to be wiped outside the stroke's rectangle). The steps after the C1
 review cover the undo history (order, the objects its steps hold, the budget, a load that takes
-it along), a mask stroke whose mask is undone mid-gesture, the selection's bounds after a
-restore, the selection brush's display levels, a lost undo step, and that closed tabs are freed.
+it along), the selection's bounds after a restore, the selection brush's display levels, a lost
+undo step, and that closed tabs are freed. The close-out's steps: an undo refused while a stroke or
+a drag is held, an undo that does not run over an edit made while it loads (a decode, a grow, a
+canvas redo, an upload of extend / merge, flatten), text edit steps that give their blob URLs
+back, and a restored selection that getValue saves even when it was read during the restore.
 
     python tools/editor_test.py
 
@@ -796,9 +799,11 @@ out.load = { heldBefore, undo: ed.undo.length, redo: ed.redo.length, bytes: ed.u
 if (!heldBefore || out.load.undo || out.load.redo || out.load.bytes) throw new Error("the history survived a same-size load: " + JSON.stringify(out.load));
 return out;
 """),
-    ("mask_stroke_ends_quietly_when_its_mask_is_undone", """
-// C1 review: Ctrl+Z (or an agent's undo) while a mask stroke is held removed the mask the stroke
-// paints on, and the pointerup threw a TypeError from the commit (with a selection: the clip).
+    ("undo_is_refused_while_a_stroke_or_a_drag_is_held", """
+// C1 close-out: Ctrl+Z (or an agent's undo) while the button was down took back the gesture's own
+// step, pushed at pointer down (a marquee, a lasso, a move, a smudge), or the step that made the mask
+// a stroke paints on, and the finished gesture had no step of its own. It is refused until the
+// button comes up.
 await run("new_canvas", { width: 800, height: 600, doc: window.__t });
 const ed = ednow(window.__t);
 host.shell.activate(ed);
@@ -806,36 +811,209 @@ await wait(200);
 const r = () => ed.canvas.getBoundingClientRect();
 const client = (ix, iy) => { const b = r(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: b.left + sx * b.width / ed.canvas.width, clientY: b.top + sy * b.height / ed.canvas.height }; };
 const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 14, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
-await run("add_paint_layer", { doc: window.__t });
-const l = ed.activeLayer();
-await run("select_rect", { x: 100, y: 100, w: 300, h: 200, doc: window.__t });
-ed.maskFromSelection(l);          // a mask step with no mask before it
-ed.clearSelection();
-await ed.undoStep();              // the selection is back, the mask step is on top
-ed.toggleMaskEdit(l);
-ed.setTool("paint");
+const ctrlZ = () => ed.onKey(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+const fails = [], out = {};
 const errors = [];
 const onErr = (e) => errors.push(String(e.message || e.error));
 window.addEventListener("error", onErr);
 try {
+    // a stroke on a layer mask whose mask step is on top: the undo removed the mask under the stroke
+    await run("add_paint_layer", { doc: window.__t });
+    const l = ed.activeLayer();
+    await run("select_rect", { x: 100, y: 100, w: 300, h: 200, doc: window.__t });
+    ed.maskFromSelection(l);          // a mask step with no mask before it
+    ed.clearSelection();
+    await ed.undoStep();              // the selection is back, the mask step is on top
+    ed.toggleMaskEdit(l);
+    ed.setTool("paint");
+    const n0 = ed.undo.length;
     ed.canvas.dispatchEvent(ev("pointerdown", 150, 150));
     ed.canvas.dispatchEvent(ev("pointermove", 200, 180));
     await wait(20);
-    ed.onKey(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+    ctrlZ();
     await wait(80);
-    const maskGone = !l.maskPx;
+    const kept = !!l.maskPx, said = ed.status;
     ed.canvas.dispatchEvent(ev("pointermove", 260, 220));
     await wait(30);
     ed.canvas.dispatchEvent(ev("pointerup", 300, 240));
     await wait(100);
-    const out = { maskGone, errors, pointer: ed.pointer ? ed.pointer.kind : null };
-    if (!maskGone) throw new Error("the undo did not remove the mask: " + JSON.stringify(out));
-    if (errors.length || out.pointer) throw new Error("the stroke did not end quietly: " + JSON.stringify(out));
-    return out;
+    out.mask = { kept, steps: ed.undo.length - n0, said, pointer: ed.pointer ? ed.pointer.kind : null };
+    if (!kept || out.mask.steps !== 1 || out.mask.pointer) fails.push("mask stroke: " + JSON.stringify(out.mask));
+    if (l.maskPx) ed.toggleMaskEdit(l);
+    // a marquee drag: its step is pushed at pointer down
+    ed.setTool("rect");
+    await run("select_none", { doc: window.__t });
+    const n1 = ed.undo.length;
+    ed.canvas.dispatchEvent(ev("pointerdown", 500, 100));
+    ed.canvas.dispatchEvent(ev("pointermove", 600, 200));
+    await wait(20);
+    ctrlZ();
+    await wait(50);
+    ed.canvas.dispatchEvent(ev("pointermove", 700, 300));
+    await wait(20);
+    ed.canvas.dispatchEvent(ev("pointerup", 700, 300));
+    await wait(50);
+    const drawn = ed.getBounds(), steps = ed.undo.length - n1;
+    await ed.undoStep();
+    out.marquee = { drawn, steps, afterUndo: ed.getBounds() };
+    if (steps !== 1 || !drawn || out.marquee.afterUndo) fails.push("marquee: " + JSON.stringify(out.marquee));
+    out.errors = errors;
+    if (errors.length) fails.push("errors: " + JSON.stringify(errors));
 } finally {
     window.removeEventListener("error", onErr);
     ed.setTool("select");
 }
+if (fails.length) throw new Error(fails.join(" | "));
+return out;
+"""),
+    ("undo_does_not_run_over_edits_made_while_it_loads", """
+// C1 close-out: a restore took its step off the stack and then awaited the step's PNG, so an edit
+// made in that window was overwritten when the restore landed (and the history then held a step for
+// pixels that never existed); an undo that waited for a grow took back the edit made during the wait
+// instead; extend, crop, resize and merge into the base pushed their step after the upload without
+// being waited for; flatten kept the history and had no step of its own.
+await run("new_canvas", { width: 800, height: 600, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+await wait(200);
+const fails = [], out = {};
+const find = (id) => ed.layers.find((l) => l.id === id);
+const pix = (L, x, y) => { const l = find(L.id); return l ? Array.from(l.px.readRect(x, y, 1, 1).data).join(",") : "gone"; };
+const stroke = (L, rect, color) => {   // what commitStroke does: the rectangle's step first, then the write
+    const l = find(L.id);
+    ed.pushUndoSnapshot(ed.snapshotRect(l, { x: rect[0], y: rect[1], w: rect[2] - rect[0], h: rect[3] - rect[1] }));
+    l.px.fill(rect, color);
+    ed.markLayerChanged(l, rect);
+};
+const reset = async () => {
+    await run("select_none", { doc: window.__t });
+    ed.layers = []; ed.activeLayerId = null;
+    ed.clearUndo();
+    ed.renderLayers(); ed.draw();
+};
+ed.brushOpacity = 1;
+// 1. a stroke while an undo decodes the PNG of a fill
+try {
+    await reset();
+    const L = ed.addPaintLayer();
+    ed.activeLayerId = L.id;
+    await run("select_rect", { x: 100, y: 100, w: 400, h: 300, doc: window.__t });
+    ed.color = "#ff0000"; ed.fillSelection();
+    const u = ed.undoStep();
+    stroke(L, [200, 200, 260, 260], "#0000ff");
+    await u;
+    const a = { afterUndo: pix(L, 230, 230), said: ed.status };
+    await ed.undoStep(); a.strokeUndone = [pix(L, 230, 230), pix(L, 300, 300)];
+    await ed.undoStep(); a.fillUndone = [pix(L, 230, 230), pix(L, 300, 300)];
+    out.fillDecode = a;
+    if (a.afterUndo !== "0,0,255,255" || a.strokeUndone.join("|") !== "255,0,0,255|255,0,0,255" || a.fillUndone.join("|") !== "0,0,0,0|0,0,0,0") fails.push("a stroke during an undo's decode: " + JSON.stringify(a));
+} catch (err) { fails.push("1 threw: " + (err && err.message)); }
+// 2. a stroke while an undo waits for a grow in the worker
+try {
+    await reset();
+    const L = ed.addPaintLayer();
+    ed.activeLayerId = L.id;
+    await run("select_rect", { x: 300, y: 200, w: 100, h: 100, doc: window.__t });
+    const g = ed.growSelection(20);
+    const u = ed.undoStep();
+    stroke(L, [50, 50, 90, 90], "#00ff00");
+    await Promise.all([g, u]);
+    const b = { afterUndo: pix(L, 70, 70), bounds: ed.getBounds(), said: ed.status };
+    out.growWait = b;
+    if (b.afterUndo !== "0,255,0,255" || !b.bounds || b.bounds[0] !== 280 || b.bounds[2] !== 420) fails.push("a stroke during an undo's wait for a grow: " + JSON.stringify(b));
+} catch (err) { fails.push("2 threw: " + (err && err.message)); }
+// 3. a layer added while a canvas redo decodes its selection
+try {
+    await reset();
+    await run("extend_canvas", { right: 200, doc: window.__t });
+    await ed.undoStep();
+    const p = ed.redoStep();
+    const P = ed.addPaintLayer();
+    await p;
+    const c = { size: [ed.width, ed.height], layer: !!find(P.id), said: ed.status };
+    out.canvasRedo = c;
+    if (!c.layer || c.size[0] !== 800) fails.push("a layer added during a canvas redo: " + JSON.stringify(c));
+} catch (err) { fails.push("3 threw: " + (err && err.message)); }
+// 4. an undo pressed while an extended canvas uploads
+try {
+    await reset();
+    const L = ed.addPaintLayer();
+    ed.activeLayerId = L.id;
+    stroke(L, [10, 10, 40, 40], "#ff00ff");
+    const W0 = ed.width;
+    const e = ed.extendCanvas({ right: 100 });
+    const u = ed.undoStep();
+    await Promise.all([e, u]);
+    const top = ed.undo[ed.undo.length - 1];
+    const d = { size: [ed.width, ed.height], pixel: pix(L, 20, 20), top: top ? top.kind : null, said: ed.status };
+    out.extendUpload = d;
+    if (d.size[0] !== W0 || d.pixel !== "255,0,255,255" || d.top !== "layerrect") fails.push("an undo during the extension's upload: " + JSON.stringify(d));
+} catch (err) { fails.push("4 threw: " + (err && err.message)); }
+// 5. an undo pressed while a merge into the base uploads, a layers step below it
+try {
+    await reset();
+    const M = ed.addPaintLayer();
+    find(M.id).px.fill(null, "#00ffff"); ed.markLayerChanged(find(M.id));
+    const copy = ed.duplicateLayer(find(M.id));      // a layers step; the copy above M
+    const baseRef = JSON.stringify(ed.base.ref);
+    const m = ed.mergeDown(find(M.id));              // the bottom layer: into the base
+    const u = ed.undoStep();
+    await Promise.all([m, u]);
+    const e = { layers: ed.layers.map((l) => l.id), want: [M.id, copy.id], base: JSON.stringify(ed.base.ref) === baseRef, said: ed.status };
+    out.mergeUpload = e;
+    if (e.layers.join() !== e.want.join() || !e.base) fails.push("an undo during a merge into the base: " + JSON.stringify(e));
+} catch (err) { fails.push("5 threw: " + (err && err.message)); }
+// 6. flatten, then undo, with a layers step below
+try {
+    await reset();
+    const baseRef = JSON.stringify(ed.base.ref);
+    const F = ed.addPaintLayer();
+    find(F.id).px.fill([0, 0, 400, 300], "#ff0000"); find(F.id).opacity = 0.5; find(F.id).blend = "multiply"; ed.markLayerChanged(find(F.id));
+    const D = ed.duplicateLayer(find(F.id));         // a layers step holding F
+    await ed.flatten();
+    const flat = { layers: ed.layers.length, base: JSON.stringify(ed.base.ref) !== baseRef };
+    await ed.undoStep();
+    const f = { flat, layers: ed.layers.map((l) => l.id), want: [F.id, D.id], base: JSON.stringify(ed.base.ref) === baseRef, said: ed.status };
+    out.flatten = f;
+    if (flat.layers !== 0 || !flat.base || f.layers.join() !== f.want.join() || !f.base) fails.push("undo after flatten: " + JSON.stringify(f));
+} catch (err) { fails.push("6 threw: " + (err && err.message)); }
+await reset();
+if (fails.length) throw new Error(fails.join(" | "));
+return out;
+"""),
+    ("text_edit_steps_give_their_blob_urls_back", """
+// C1 close-out: a text edit takes a step with a PNG of the layer when it starts. A cancelled or
+// unchanged edit dropped that step without revoking its blob URL, and closing a tab with a changed
+// edit open pushed it after the history had been cleared: a PNG of the layer left behind each time.
+const live = new Set();
+const oc = URL.createObjectURL, orv = URL.revokeObjectURL;
+URL.createObjectURL = (b) => { const u = oc.call(URL, b); live.add(u); return u; };
+URL.revokeObjectURL = (u) => { live.delete(u); return orv.call(URL, u); };
+const out = {};
+try {
+    const d = await run("new_document");
+    const ed = ednow(d.id);
+    await run("new_canvas", { width: 800, height: 600, doc: d.id });
+    const T = await ed.addTextLayer(20, 20);
+    if (ed.textEdit) ed.endTextEdit(true);
+    await wait(400);
+    live.clear();
+    for (let i = 0; i < 3; i++) { ed.beginTextEdit(T); await wait(120); ed.endTextEdit(false); await wait(120); }
+    ed.beginTextEdit(T); await wait(120); ed.endTextEdit(true);     // Enter without a change
+    await wait(600);
+    out.cancelled = { live: live.size, undo: ed.undo.length };
+    live.clear();
+    ed.beginTextEdit(T); await wait(200);
+    ed.textEdit.ta.value = "changed"; T.text.content = "changed";
+    await run("close_document", { doc: d.id, force: true });
+    await wait(600);
+    out.closed = { live: live.size, undo: ed.undo.length };
+} finally {
+    URL.createObjectURL = oc; URL.revokeObjectURL = orv;
+}
+host.shell.activate(ednow(window.__t));
+if (out.cancelled.live || out.closed.live || out.closed.undo) throw new Error("text edit steps left blob URLs behind: " + JSON.stringify(out));
+return out;
 """),
     ("selection_keeps_its_bounds_through_a_restore_above_1mp", """
 // C1 review: above 1 MP the bounds come from the selection's display levels. A saved document
@@ -850,12 +1028,27 @@ const out = { before: ed.getBounds() };
 const state = ed.getValue();
 const d2 = await run("new_document");
 const ed2 = ednow(d2.id);
-await ed2.setValue(state);
+// a getValue while the layers load (the autosave, ComfyUI serializing the graph) sees the empty
+// selection setBase left; the restored one has to be encoded again after it is written (close-out)
+const setBase = ed2.setBase;
+ed2.setBase = async function (...a) { const r = await setBase.apply(this, a); this.getValue(); return r; };
+try { await ed2.setValue(state); } finally { delete ed2.setBase; }
 for (let i = 0; i < 200 && (ed2._loading || !ed2.base); i++) await wait(50);
 out.restored = ed2.getBounds();
+const selected = async (url) => {
+    if (!url) return null;
+    const img = new Image(); img.src = url; await img.decode();
+    const k = document.createElement("canvas"); k.width = img.naturalWidth; k.height = img.naturalHeight;
+    const g = k.getContext("2d"); g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, k.width, k.height).data; let n = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 127) n++;
+    return n;
+};
+out.saved = await selected(JSON.parse(ed2.getValue()).selection);
 await run("close_document", { doc: d2.id, force: true });
 host.shell.activate(ed);
 if (JSON.stringify(out.restored) !== want) throw new Error("the restored selection lost its bounds: " + JSON.stringify(out));
+if (out.saved !== 240000) throw new Error("getValue after the restore saves another selection: " + JSON.stringify(out));
 await run("extend_canvas", { right: 400, bottom: 400, doc: window.__t });
 ed.view.scale = 0.25;
 const u = ed.undoStep();

@@ -9,6 +9,7 @@ addEventListener("unhandledrejection", (e) => __errors.push("rejection: " + (e.r
 <script type="module">
 import "/extensions/ComfyUI-InpaintCanvas/inpaint_node.js";
 import { app } from "/scripts/app.js";
+import { api } from "/scripts/api.js";
 const out = window.__result = { steps: [] };
 const step = (name, ok, detail = "") => out.steps.push({ name, ok: !!ok, detail: String(detail) });
 try {
@@ -63,6 +64,150 @@ try {
     await new Promise((r) => setTimeout(r, 500));
     window.removeEventListener("message", count);
     step("the worker module in the page ignores window messages", seen <= 2, `${seen} message events in 500 ms`);
+
+    // ---- a canvas_state in the 0.1.11 format (state_0_1_11.json) through the node's widget -----
+    // The images the state refers to are painted here and uploaded through the api stand-in; the
+    // selection and the saved selection are PNG data URLs, as getValue writes them.
+    const { filterDefaults } = await import("/extensions/ComfyUI-InpaintCanvas/inpaint_filters.js");
+    const { TEXT_DEFAULTS } = await import("/extensions/ComfyUI-InpaintCanvas/inpaint_text.js");
+    const fixture = await (await fetch("/state_0_1_11.json")).json();
+    const canvasOf = (w, h, paint) => { const k = document.createElement("canvas"); k.width = w; k.height = h; paint(k.getContext("2d")); return k; };
+    const upload = async (name, k) => {
+        const blob = await new Promise((r) => k.toBlob(r, "image/png"));
+        const fd = new FormData();
+        fd.append("image", new File([blob], name, { type: "image/png" }));
+        fd.append("subfolder", "inpaint_canvas"); fd.append("type", "input"); fd.append("overwrite", "true");
+        await api.fetchApi("/upload/image", { method: "POST", body: fd });
+    };
+    await upload("nt_base.png", canvasOf(1400, 900, (x) => { x.fillStyle = "#3aaa77"; x.fillRect(0, 0, 1400, 900); x.fillStyle = "#202040"; x.fillRect(1300, 800, 100, 100); }));
+    await upload("nt_img.png", canvasOf(300, 150, (x) => { x.fillStyle = "#dd2222"; x.fillRect(0, 0, 150, 150); x.fillStyle = "#2244dd"; x.fillRect(150, 0, 150, 150); }));
+    await upload("nt_img_mask.png", canvasOf(150, 75, (x) => { x.fillStyle = "#ffffff"; x.fillRect(0, 0, 100, 75); }));   // half the layer's pixels: scaled up on restore
+    await upload("nt_flt_mask.png", canvasOf(1400, 900, (x) => { x.fillStyle = "#ffffff"; x.fillRect(800, 500, 400, 300); }));
+    await upload("nt_paint.png", canvasOf(700, 450, (x) => { x.fillStyle = "#ffffff"; x.fillRect(20, 400, 100, 40); }));
+    await upload("nt_text.png", canvasOf(200, 80, (x) => { x.fillStyle = "#ffee00"; x.fillRect(10, 10, 180, 60); }));
+    const selUrl = canvasOf(1400, 900, (x) => { x.fillStyle = "#ff0000"; x.fillRect(200, 300, 500, 350); }).toDataURL("image/png");
+    const savedUrl = canvasOf(1400, 900, (x) => { x.fillStyle = "#ff0000"; x.fillRect(10, 10, 50, 40); }).toDataURL("image/png");
+    const state = { ...fixture, selection: selUrl, selections: [{ name: fixture.selections[0].name, url: savedUrl }] };
+    const widget = node.widgets.find((w) => w.name === "canvas_state");
+    step("canvas_state widget on the node", !!(widget && widget.opts && widget.opts.setValue));
+    // ComfyUI serializing the graph (or the app's autosave) while the state still loads: a getValue
+    // right after setBase sees the empty selection, and the restored one must be encoded again later
+    let midValue = null;
+    const setBaseOf = ed.setBase;
+    ed.setBase = async function (...a) { const r = await setBaseOf.apply(this, a); midValue = this.getValue(); return r; };
+    widget.opts.setValue(JSON.stringify(state));
+    for (let t0 = Date.now(); Date.now() - t0 < 15000 && (ed._loading || ed.layers.length !== fixture.layers.length); ) await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 300));
+    delete ed.setBase;
+    step("a getValue ran while the state loaded", typeof midValue === "string" && midValue.length > 2);
+    step("0.1.11 state restored", ed.width === 1400 && ed.height === 900 && ed.layers.map((l) => l.id).join() === "img1,flt1,pnt1,txt1",
+        `${ed.width}x${ed.height} ${ed.layers.map((l) => l.id).join()} :: ${ed.status}`);
+    const L = Object.fromEntries(ed.layers.map((l) => [l.id, l]));
+    const size = (p) => (p ? `${p.width}x${p.height}` : "null");
+    const sizes = ["img1", "flt1", "pnt1", "txt1"].map((id) => `${id} ${size(L[id] && L[id].px)}/${size(L[id] && L[id].maskPx)}`).join(", ");
+    step("px / maskPx sizes: the pixels' own, the mask scaled to them", sizes === "img1 300x150/300x150, flt1 1400x900/1400x900, pnt1 700x450/null, txt1 200x80/null", sizes);
+    const at = (p, x, y) => Array.from(p.readRect(x, y, 1, 1).data).join(",");
+    const pixelChecks = [
+        [at(L.img1.px, 20, 20), "221,34,34,255"], [at(L.img1.px, 250, 100), "34,68,221,255"],
+        [at(L.img1.maskPx, 20, 75).split(",")[3], "255"], [at(L.img1.maskPx, 290, 75).split(",")[3], "0"],
+        [at(L.flt1.px, 700, 450).split(",")[3], "0"], [at(L.flt1.maskPx, 1000, 600), "255,255,255,255"], [at(L.flt1.maskPx, 100, 100).split(",")[3], "0"],
+        [at(L.pnt1.px, 70, 420), "255,255,255,255"], [at(L.pnt1.px, 300, 200).split(",")[3], "0"],
+        [at(L.txt1.px, 100, 40), "255,238,0,255"], [at(L.txt1.px, 2, 2).split(",")[3], "0"],
+    ];
+    const badPixels = pixelChecks.map(([got, want], i) => (got === want ? null : `#${i} ${got} != ${want}`)).filter(Boolean);
+    step("layer and mask pixels", !badPixels.length, badPixels.join("; "));
+    const b = ed.getBounds();
+    step("getBounds of the restored selection (a document above 1 MP)", b && b.join() === "200,300,700,650", b && b.join());
+    step("saved selection restored", ed.savedSelections.length === 1 && ed.savedSelections[0].name === "Saved rect" && ed.savedSelections[0].url === savedUrl, ed.savedSelections.map((s) => s.name).join());
+    step("prompt, negative, seed and guides restored", ed.promptText === "a node test" && ed.negativeText === "blurry" && ed.genSettings.seed === 1234 && ed.guides.x.join() === "700",
+        `${ed.promptText} / ${ed.negativeText} / ${ed.genSettings.seed} / ${ed.guides.x}`);
+    const flatState = ed.flattenToCanvas({ forRun: true }).getContext("2d");
+    const fpx = (x, y) => Array.from(flatState.getImageData(x, y, 1, 1).data);
+    const baseAt = fpx(300, 700), hidden = fpx(600, 270), shown = fpx(140, 270), filtered = fpx(1000, 600);
+    step("composite: the layer mask hides, the filter mask limits the filter",
+        baseAt.join() === "58,170,119,255" && hidden.join() === baseAt.join() && shown.join() !== baseAt.join() && filtered[1] > baseAt[1] + 20,
+        `base ${baseAt} / masked out ${hidden} / shown ${shown} / filtered ${filtered}`);
+    const canon = (v) => JSON.stringify(v, (k, val) => (val && typeof val === "object" && !Array.isArray(val) ? Object.fromEntries(Object.keys(val).sort().map((key) => [key, val[key]])) : val));
+    // what setValue documents: filter params over the filter's defaults, a text over TEXT_DEFAULTS
+    const expected = fixture.layers.map((l) => ({ ...l, ...(l.params ? { params: { ...filterDefaults(l.filter), ...l.params } } : {}), ...(l.text ? { text: { ...TEXT_DEFAULTS, ...l.text } } : {}) }));
+    const value = JSON.parse(ed.getValue());
+    step("getValue gives back the same layers JSON", canon(value.layers) === canon(expected), canon(value.layers).slice(0, 600));
+    // the selection PNG decoded: its pixels, not just a data URL
+    const selectionOf = async (url) => {
+        if (typeof url !== "string" || !url.startsWith("data:image/png")) return String(url).slice(0, 40);
+        const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+        const k = canvasOf(im.naturalWidth, im.naturalHeight, (x) => x.drawImage(im, 0, 0));
+        const d = k.getContext("2d").getImageData(0, 0, k.width, k.height).data;
+        let n = 0, x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+        for (let y = 0; y < k.height; y++) for (let x = 0; x < k.width; x++) {
+            if (d[(y * k.width + x) * 4 + 3] <= 127) continue;
+            n++; if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y;
+        }
+        return n ? `${n} px ${x0},${y0},${x1 + 1},${y1 + 1}` : "0 px";
+    };
+    const savedSelection = await selectionOf(value.selection);
+    step("getValue gives back the selection and the saved selection", savedSelection === "175000 px 200,300,700,650" && canon(value.selections) === canon([{ name: "Saved rect", url: savedUrl }]),
+        `selection ${savedSelection}`);
+
+    // ---- the MCP bridge: commands as the websocket delivers them, answers to /inpaint_canvas/reply ----
+    let seq = 0;
+    const send = async (cmd, args = {}) => {
+        const id = `nt-${++seq}`;
+        api.__emit("inpaint_canvas.command", { id, cmd, args });
+        for (let t0 = Date.now(); Date.now() - t0 < 15000; ) {
+            const r = (window.__replies || []).find((x) => x.id === id);
+            if (r) return r;
+            await new Promise((res) => setTimeout(res, 50));
+        }
+        return null;
+    };
+    const ll = await send("list_layers");
+    const lr = ll && ll.result;
+    const byId = lr ? Object.fromEntries(lr.layers.map((l) => [l.id, l])) : {};
+    const plainKeys = "active,alpha_lock,blend,h,id,kind,locked,mask,name,opacity,role,visible,w,x,y";
+    step("bridge list_layers reply",
+        ll && ll.ok && ll.node === 7 && ll.client === "stub" && lr.layers.length === 4 && lr.active === ed.activeLayerId
+        && Object.keys(byId.pnt1).sort().join() === plainKeys && byId.pnt1.alpha_lock === true && byId.pnt1.opacity === 0.75 && byId.pnt1.mask === false
+        && byId.img1.mask === true && canon(byId.img1.match) === canon({ strength: 0.5, source: "underneath" }) && byId.img1.w === 600
+        && byId.flt1.filter === "brightness_contrast" && byId.flt1.params.brightness === 60 && byId.flt1.mask === true
+        && byId.txt1.locked === true && byId.txt1.text && byId.txt1.text.content === "Hello",
+        JSON.stringify(ll).slice(0, 600));
+    const sh = await send("screenshot", { what: "layer", layer: "img1" });
+    const sr = sh && sh.result;
+    let shotPx = null;
+    if (sr && sr.data) {
+        const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = "data:" + sr.mime + ";base64," + sr.data; });
+        const k = canvasOf(im.naturalWidth, im.naturalHeight, (x) => x.drawImage(im, 0, 0));
+        shotPx = Array.from(k.getContext("2d").getImageData(20, 20, 1, 1).data);
+    }
+    step("bridge screenshot what=layer reply: the layer's own pixels",
+        sh && sh.ok && sr.width === 300 && sr.height === 150 && sr.image_width === 300 && sr.image_height === 150 && sr.scale === 1 && sr.mime === "image/jpeg"
+        && shotPx && shotPx[0] > 190 && shotPx[1] < 70 && shotPx[2] < 70,
+        `${sh && JSON.stringify({ ...sh, result: sr ? { ...sr, data: (sr.data || "").length + " chars" } : sr })} pixel ${shotPx}`);
+    // the picture with the selection overlay: flattenToCanvas, getBounds and ed.sel.drawTo in the bridge
+    const full = await send("screenshot", { max_size: 700 });
+    const fr = full && full.result;
+    let inSel = null, outSel = null, edge = null;
+    if (fr && fr.data) {
+        const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = "data:" + fr.mime + ";base64," + fr.data; });
+        const g = canvasOf(im.naturalWidth, im.naturalHeight, (x) => x.drawImage(im, 0, 0)).getContext("2d");
+        const p = (x, y) => Array.from(g.getImageData(x, y, 1, 1).data);
+        inSel = p(250, 275);    // image 500,550: the base under the selection's tint
+        outSel = p(150, 350);   // image 300,700: the base alone
+        // the outline: magenta on the selection's left edge (image x 200, x 100 at scale 0.5)
+        edge = [98, 99, 100, 101, 102].map((x) => p(x, 250)).find((q) => q[0] > q[1] + 50 && q[2] > q[1] + 50) || null;
+    }
+    step("bridge screenshot of the picture: the selection overlay and its outline",
+        full && full.ok && fr.width === 700 && fr.height === 450 && fr.scale === 0.5 && fr.image_width === 1400
+        && inSel && outSel && inSel[0] > outSel[0] + 40 && Math.abs(outSel[0] - 58) < 14 && !!edge,
+        `${full && JSON.stringify({ ...full, result: fr ? { ...fr, data: (fr.data || "").length + " chars" } : fr })} in ${inSel} out ${outSel} edge ${edge}`);
+    const gs = await send("get_state");
+    const gr = gs && gs.result;
+    step("bridge get_state reply: the state without the selection PNGs",
+        gs && gs.ok && gr.width === 1400 && gr.height === 900 && !("selection" in gr) && !("selections" in gr) && canon(gr.layers) === canon(value.layers) && gr.prompt === "a node test",
+        JSON.stringify(gs).slice(0, 400));
+    const bad = await send("screenshot", { what: "layer", layer: "nope" });
+    step("bridge error reply", bad && bad.ok === false && bad.node === 7 && /no layer "nope"/.test(bad.error || ""), JSON.stringify(bad));
 } catch (err) {
     step("exception", false, err && err.stack || err);
 }

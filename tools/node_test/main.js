@@ -6,7 +6,7 @@ app.whenReady().then(async () => {
     await w.loadURL(url);
     const t0 = Date.now();
     let result = null;
-    while (Date.now() - t0 < 60000) {
+    while (Date.now() - t0 < 120000) {
         result = await w.webContents.executeJavaScript("window.__result && window.__result.done ? window.__result : null");
         if (result) break;
         await new Promise((r) => setTimeout(r, 250));

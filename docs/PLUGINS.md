@@ -131,7 +131,12 @@ puts tiles behind the same interface, so a plugin that goes through it keeps wor
 - **Instead**, if the `Document` API is not enough: `rawLayer(key).px` / `.maskPx` with
   `width`, `height`, `readRect(x, y, w, h)` (ImageData), `writeRect(imageData, x, y, op, alpha)`,
   `drawInto(rect, ctx => ...)` (Canvas 2D drawing clipped to `rect` = `[x0, y0, x1, y1]`, from a
-  fresh context state; do not read `ctx.canvas`), `drawTo(ctx, ...drawImage arguments)`,
+  fresh context state; do not read `ctx.canvas`. The transform `ctx` comes with maps the pixels'
+  own coordinates and is not necessarily the identity: with the tile engine it is a translation
+  onto a scratch canvas of `rect`. Compose on it with `scale`, `translate`, `rotate`,
+  `transform` and `save` / `restore`; never call `setTransform` / `resetTransform`, and do not
+  read `getTransform()` as absolute, or the drawing lands shifted),
+  `drawTo(ctx, ...drawImage arguments)`,
   `bounds()` and `toCanvas()` (read-only). After writing, call `doc.refresh(key)` so the screen,
   the upload and the caches see it; unlike `setPixels` such a write has no undo step unless the
   plugin pushes one. The selection stays behind `selection()` / `setSelection()`.

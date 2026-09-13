@@ -80,6 +80,28 @@ on the build.
   `const { … } = await import("./x.js")` too, and `node_test.py` exports an image and checks
   the upload went to `output`.
 
+**Added after the final C1 review** (finding node-test-misses-state-and-bridge): `node_test.py`
+restores a `canvas_state` in the 0.1.11 format through the node's widget
+(`tools/node_test/state_0_1_11.json`: a masked image layer whose mask is half its size, a masked
+filter layer, a paint layer at half resolution, a text layer, a selection PNG on a 1400 × 900
+document, a saved selection; the images are painted by the page and uploaded to the api
+stand-in) and checks the layer count, `px` / `maskPx` sizes, pixels, `getBounds`, the composite
+and that `getValue` gives back the same layers JSON. Then it plays the bridge's websocket event
+`inpaint_canvas.command` (`api.__emit`) for `list_layers`, `screenshot` with `what: "layer"`,
+`get_state` and an unknown layer, and checks the answers the bridge posts to
+`/inpaint_canvas/reply`. Counter-proof: with the touch after the restored selection taken out of
+`setValue` and the mask no longer scaled to the layer's pixels, the sizes, pixels and `getBounds`
+steps are red.
+
+**Added in the C1 close-out**: a `getValue` runs while the state loads (right after `setBase`, as
+ComfyUI's graph serialize can), and the selection `getValue` gives back afterwards is decoded and
+counted (175,000 px, 200,300 to 700,650), not just checked for a data URL prefix; red on the editor
+before the fix, which saved the empty selection from then on. And a `screenshot` of the picture
+(`max_size` 700) checks the bridge's selection overlay (`flattenToCanvas`, `getBounds`,
+`ed.sel.drawTo`): red on a copy of the node's `js/` whose bridge calls a selection method that is
+not there, which is what a rename of `MaskPixels.drawTo` that missed the hand-written bridge
+would leave, and which `build_node.py --check` does not see (it checks `host.*` only).
+
 ## Gates of a change to the editor
 
 Every app gate as before (`CLAUDE.md` "Working rules"), then `python tools/build_node.py` and

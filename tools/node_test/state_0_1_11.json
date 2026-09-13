@@ -1,0 +1,44 @@
+{
+  "width": 1400,
+  "height": 900,
+  "base": { "filename": "nt_base.png", "subfolder": "inpaint_canvas", "type": "input" },
+  "prompt": "a node test",
+  "layers": [
+    {
+      "id": "img1", "name": "Masked image", "kind": "image", "role": "none", "blend": "normal",
+      "ref": { "filename": "nt_img.png", "subfolder": "inpaint_canvas", "type": "input" },
+      "x": 100, "y": 120, "w": 600, "h": 300, "opacity": 1, "visible": true,
+      "mask": { "filename": "nt_img_mask.png", "subfolder": "inpaint_canvas", "type": "input" },
+      "match": { "strength": 0.5, "source": "underneath" }
+    },
+    {
+      "id": "flt1", "name": "Masked filter", "kind": "filter", "role": "none", "blend": "normal", "ref": null,
+      "x": 0, "y": 0, "w": 1400, "h": 900, "opacity": 1, "visible": true,
+      "mask": { "filename": "nt_flt_mask.png", "subfolder": "inpaint_canvas", "type": "input" },
+      "filter": "brightness_contrast", "params": { "brightness": 60, "contrast": 0 }, "lut": null, "plate": null
+    },
+    {
+      "id": "pnt1", "name": "Paint", "kind": "paint", "role": "none", "blend": "normal",
+      "ref": { "filename": "nt_paint.png", "subfolder": "inpaint_canvas", "type": "input" },
+      "x": 0, "y": 0, "w": 1400, "h": 900, "opacity": 0.75, "visible": true, "mask": null,
+      "alphaLock": true
+    },
+    {
+      "id": "txt1", "name": "Hello", "kind": "text", "role": "none", "blend": "normal",
+      "ref": { "filename": "nt_text.png", "subfolder": "inpaint_canvas", "type": "input" },
+      "x": 900, "y": 100, "w": 100, "h": 40, "opacity": 1, "visible": true, "mask": null,
+      "locked": true,
+      "text": {
+        "content": "Hello", "font": "Roboto", "fontRef": null, "size": 32, "color": "#ffee00", "bold": true, "italic": false,
+        "align": "left", "lineHeight": 1.2, "letterSpacing": 0, "outline": 0, "outlineColor": "#000000", "res": 2
+      }
+    }
+  ],
+  "history": [],
+  "selection": "generated:selection",
+  "selections": [{ "name": "Saved rect", "url": "generated:saved" }],
+  "guides": { "x": [700], "y": [] },
+  "seen": [],
+  "gen": { "mode": "local", "seed": 1234, "seedRandom": false, "denoise": 0.8 },
+  "negative": "blurry"
+}

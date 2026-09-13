@@ -51,9 +51,32 @@ the section for its version; `docs/` and the commit history hold the technical d
   do the same while zoomed out.
 - **The selection brush shows its whole stroke while you paint zoomed out.** Parts of a fast
   stroke only appeared when the button came up.
-- **Smaller undo fixes.** Pressing Ctrl+Z while painting on a layer mask whose mask that undo
-  removes no longer raises an error when the button comes up. An undo step whose picture could
-  not be saved says so in the status line instead of silently doing nothing.
+- **An edit made right after Ctrl+Z is no longer lost.** On a large picture an undo of a fill,
+  a smudge, a text or a mask change takes a moment to load, and a stroke, a selection or a new
+  layer made in that moment was wiped out when the undo landed; the next Ctrl+Z then produced
+  a picture that had never existed. Such an undo now stops and says so in the status line
+  (press Ctrl+Z again), and the same goes for an undo pressed while *Grow*, *Feather* or
+  *Invert* is still working when you draw meanwhile: it no longer takes back your new stroke.
+- **Ctrl+Z during *Extend*, *Crop*, *Resize*, *Merge down* into the base or *Flatten* takes that
+  operation back.** Pressed while the new picture was still being prepared, it undid the step
+  before instead, and could lose a stroke for good or leave a merged layer both in the picture
+  and in the layer list.
+- **Flatten can be undone.** It had no undo step, and undoing an older layer step afterwards put
+  the flattened layers back on top of a picture that already contained them (a multiply layer
+  applied twice).
+- **A restored document keeps its selection after the next save.** When the document was saved
+  while it was still loading (Scumble's autosave shortly after the start, ComfyUI saving the
+  workflow), the selection was on screen but every later save stored an empty one, so it was gone
+  after the next restart.
+- **Smaller undo fixes.** Ctrl+Z while the mouse button or pen is still down (a stroke, a
+  marquee, a move) is ignored with a note in the status line; it used to take back that very
+  gesture's step, so the finished stroke or selection had no undo step, and on a layer mask it
+  could remove the mask under the stroke. An undo step whose picture could not be saved says so
+  in the status line instead of silently doing nothing. Cancelling a text edit (Esc) or closing a
+  tab with a text edit open no longer leaves a copy of the text layer in memory.
+- **For plugin authors:** inside `px.drawInto(rect, ctx => ...)` compose on the transform the
+  context comes with (`scale`, `translate`, `save` / `restore`) and never set one; with the tile
+  engine it is not the identity (`docs/PLUGINS.md`).
 
 ## 0.1.11 — 2026-09-13
 

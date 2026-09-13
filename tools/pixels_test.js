@@ -123,8 +123,9 @@ function pixelsCases(P) {
             const rect = [30.4, 20.6, 110.2, 90.9];
             const back = pixels.drawInto(rect, (ctx) => {
                 if (ctx.globalAlpha !== 1 || ctx.globalCompositeOperation !== "source-over") throw new Error("context not reset");
-                const t = ctx.getTransform();
-                if (t.a !== 1 || t.e !== 0) throw new Error("transform not reset");
+                // the transform is not read: it maps the pixels' own coordinates, which is the identity
+                // here and a translation on a tile scratch (rule 12); where the pixels land is checked
+                // below and in draw_into_transform_composes
                 ctx.globalCompositeOperation = "destination-out";
                 ctx.fillStyle = "rgba(0,0,0,0.6)";
                 ctx.beginPath(); ctx.arc(70, 55, 60, 0, Math.PI * 2); ctx.fill();   // reaches outside the rect
@@ -162,6 +163,53 @@ function pixelsCases(P) {
             c3.beginPath(); c3.fillStyle = "#000000"; c3.strokeStyle = "#000000"; c3.lineWidth = 1;
             c3.moveTo(10, 10); c3.lineTo(80, 50); c3.lineTo(10, 50); c3.fill(); c3.stroke(); c3.restore();
             same(p3, r3, "drawInto starts from a fresh context");
+            return { ok: true };
+        }],
+
+        // docs/PLAN_BCE.md §C1 rule 12: fn gets a transform that maps the pixels' own coordinates and
+        // composes on it. Checked by where pixels land, never by reading the matrix, so the case holds
+        // for a tile scratch translated by the rect's origin as well as for the canvas backend.
+        ["draw_into_transform_composes", async () => {
+            const alphaAt = (p, x, y) => px(p, x, y)[3];
+            const leftover = (p) => { const raw = P.canvasOf(p).getContext("2d"); raw.setTransform(2, 0, 0, 2, 7, 7); };
+            const rect = [40, 30, 70, 60];
+            // a point drawn at the rect's own coordinates lands there, whatever an earlier draw left
+            const a = LayerPixels.empty(120, 90);
+            leftover(a);
+            a.drawInto(rect, (ctx) => { ctx.fillStyle = "#ffffff"; ctx.fillRect(47, 33, 1, 1); });
+            P.canvasOf(a).getContext("2d").setTransform(1, 0, 0, 1, 0, 0);
+            if (alphaAt(a, 47, 33) !== 255) throw new Error("the point is not at 47,33: " + px(a, 47, 33));
+            for (const [x, y] of [[46, 33], [48, 33], [47, 32], [47, 34]]) if (alphaAt(a, x, y)) throw new Error(`the point spilled to ${x},${y}`);
+            const ba = a.bounds();
+            if (!ba || ba.join() !== "47,33,48,34") throw new Error("point bounds " + ba);
+            // a scale and a translation composed inside fn, and restore taking them off again
+            const b = LayerPixels.empty(120, 90);
+            leftover(b);
+            b.drawInto(rect, (ctx) => {
+                ctx.fillStyle = "#ffffff";
+                ctx.save();
+                ctx.scale(2, 2);
+                ctx.fillRect(24, 16, 1, 1);          // 48..50 x 32..34
+                ctx.translate(5, 10);
+                ctx.fillRect(25, 17, 1, 1);          // (25 + 5) * 2 = 60..62 x (17 + 10) * 2 = 54..56
+                ctx.restore();
+                ctx.fillRect(42, 58, 1, 1);          // back to the pixels' own coordinates
+            });
+            P.canvasOf(b).getContext("2d").setTransform(1, 0, 0, 1, 0, 0);
+            const rb = mk(120, 90), rc = rb.getContext("2d");
+            rc.fillStyle = "#ffffff";
+            rc.fillRect(48, 32, 2, 2); rc.fillRect(60, 54, 2, 2); rc.fillRect(42, 58, 1, 1);
+            same(b, rb, "drawInto with a composed scale and translation");
+            // the call sites' pattern (bucketFill, fillSelection): a soft source drawn scaled at an alpha
+            const { ref, pixels } = pair(160, 120);
+            leftover(pixels);
+            const src = mk(50, 40); paint(src.getContext("2d"), 50, 40);
+            pixels.drawInto([10, 10, 140, 110], (ctx) => { ctx.globalAlpha = 0.6; ctx.scale(1.5, 1.25); ctx.drawImage(src, 12, 9); });
+            P.canvasOf(pixels).getContext("2d").setTransform(1, 0, 0, 1, 0, 0);
+            const g = ref.getContext("2d");
+            g.save(); const q = new Path2D(); q.rect(10, 10, 130, 100); g.clip(q);
+            g.globalAlpha = 0.6; g.setTransform(1.5, 0, 0, 1.25, 0, 0); g.drawImage(src, 12, 9); g.restore();
+            same(pixels, ref, "drawInto with a scaled draw at an alpha");
             return { ok: true };
         }],
 

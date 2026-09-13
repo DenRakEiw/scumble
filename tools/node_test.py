@@ -9,6 +9,14 @@ extension registers, a node is created with its editor (the constructor threw "h
 defined" in the node from 2026-09-10 to C0), the editor opens as an overlay with the node's
 title, close button and wording, a base image goes through the upload path and composites,
 setting targets / result input / widget values come from the graph, and it closes again.
+Then a canvas_state in the 0.1.11 format (tools/node_test/state_0_1_11.json: a masked image
+layer, a masked filter layer, a paint layer, a text layer, a selection PNG on a document above
+1 MP, a saved selection) goes in through the node's canvas_state widget, with a getValue while it
+loads (what ComfyUI's graph serialize does): layer count, px / maskPx sizes, pixels, getBounds, the
+composite, getValue's layers JSON and its selection PNG decoded are checked; and the MCP bridge
+answers list_layers, screenshot what=layer, a screenshot of the picture with the selection overlay,
+get_state and an error, delivered as the websocket's inpaint_canvas.command event and answered to
+/inpaint_canvas/reply (both stand-ins).
 
 This is not the browser gate against a real ComfyUI page; it catches what the build can break
 in the node before anyone opens ComfyUI.
@@ -40,6 +48,7 @@ def main():
         shutil.copyfile(os.path.join(fixtures, "app.js"), os.path.join(site, "scripts", "app.js"))
         shutil.copyfile(os.path.join(fixtures, "api.js"), os.path.join(site, "scripts", "api.js"))
         shutil.copyfile(os.path.join(fixtures, "index.html"), os.path.join(site, "index.html"))
+        shutil.copyfile(os.path.join(fixtures, "state_0_1_11.json"), os.path.join(site, "state_0_1_11.json"))
         shutil.copytree(os.path.join(args.node, "js"), os.path.join(site, "extensions", "ComfyUI-InpaintCanvas"))
 
         class Quiet(http.server.SimpleHTTPRequestHandler):
@@ -57,7 +66,7 @@ def main():
         env = dict(os.environ)
         env.pop("ELECTRON_RUN_AS_NODE", None)
         proc = subprocess.run([ELECTRON, "--user-data-dir=" + os.path.join(tmp, "profile"), os.path.join(fixtures, "main.js"), url],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, env=env)
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, env=env)
         server.shutdown()
     line = next((l for l in proc.stdout.splitlines() if l.startswith("NODE_TEST_RESULT ")), None)
     result = json.loads(line[len("NODE_TEST_RESULT "):]) if line else None

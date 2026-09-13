@@ -330,7 +330,9 @@ the tests). Where it differs from the text above, this wins; each difference say
   the state reset to a fresh context's (transform, alpha, operation, styles, line, shadow,
   filter, smoothing, font, **and an empty path**) and clipped to the rectangle with a
   `Path2D`; it restores afterwards. So `fn` sets every piece of state it needs, never reads
-  `ctx.canvas` or pixels back from `ctx`, and draws nothing outside `rect` that matters.
+  `ctx.canvas` or pixels back from `ctx`, and draws nothing outside `rect` that matters. The
+  one piece of state `fn` does **not** set is the transform: it composes on the one it gets
+  (rule 12).
   Returns what `fn` returns. (The text above says "a scratch, written back with copy":
   that is the tile backend; a scratch plus a write-back in the canvas backend would round
   soft alpha through ImageData and break the 0-level gates.)
@@ -444,6 +446,31 @@ the tests). Where it differs from the text above, this wins; each difference say
     `drawInto`): measured there, a merged-down layer with opacity below 1 also came back at
     that opacity (the leftover `globalAlpha`); after the fix, fill + undo gives the pixels
     before the fill to 0 bytes on a plain, flipped, turned and merged layer alike.
+12. **A `drawInto` callback composes on the transform it gets, it never sets one** (added after
+    the final C1 review, finding drawinto-fn-absolute-settransform). `fn` receives a context
+    whose current transform maps the pixels' own coordinates: the identity in the canvas
+    backend, a translation by the rect's origin on C2's scratch of the rect. So `fn`, and every
+    helper it hands the context to, may only compose (`scale`, `translate`, `rotate`,
+    `transform`, `save` / `restore`), never `setTransform` / `resetTransform`, and never reads
+    `getTransform()` as absolute; a callback that set an absolute transform would draw shifted
+    by the rect's origin on the scratch (down and to the right, mostly off it). Changed for it,
+    pixel-identical today (a scale composed on the identity is the same matrix to the bit):
+    `bucketFill`, `fillSelection`, `clearSelectedPixels` (`ctx.scale(sx, sy)` instead of
+    `setTransform(sx, 0, 0, sy, 0, 0)`) and `maskFromSelection` (`save` / `scale` / `restore`
+    instead of a scale set and an identity set back); measured on 49 scale pairs up to 15k, the
+    scale set and the scale composed on the identity are the same `getTransform()` every time,
+    and the old and new bodies write the same bytes. The helpers: `stampDab` and `drawMesh` /
+    `drawTriangle` already composed. `paintShape` keeps its absolute transform (with the stroke
+    buffer's origin passed in) because its context is always a `StrokeBuffer`'s from `ensure()`,
+    never one a `drawInto` hands out; composing on `ensure()`'s translation is **not** the same
+    matrix (the context holds it in float32: the translation differed in 774 of 1,392 measured
+    layer / buffer combinations up to 15k, by up to 0.004 px), so it is not pixel-identical and
+    waits for C5, which moves stroke buffers into `drawInto` and has to measure that difference.
+    `clipCanvasFor`, `refreshStrokePreview`, `clippedStroke` and the display code keep their
+    absolute transforms because they draw into canvases of their own.
+    `tools/pixels_test.js` checks the rule by where the pixels land (a point drawn at the rect's
+    own coordinates, a scale and a translation composed inside `fn`, a scaled draw at an alpha),
+    not by reading the matrix, so the same cases hold for the tile backend.
 
 **Per step**: the step's sites, the gates below, a review of the diff, then the app commit,
 `python tools/build_node.py`, `python tools/node_test.py`, the node commit, a push of both.
@@ -501,6 +528,34 @@ when a same-size image replaces the layers), and the redo steps leave the budget
 export row's host listener kept every closed tab alive, and so did the allocation site of
 `makeUploaded`'s literal with accessor closures (a class with a prototype accessor now); a
 listener or closure that holds an editor must not outlive it.
+
+**The C1 close-out (2026-09-13)** fixed what a second review confirmed, each with a counter-proof
+(`editor_test.py` steps `undo_is_refused_while_a_stroke_or_a_drag_is_held`,
+`undo_does_not_run_over_edits_made_while_it_loads`, `text_edit_steps_give_their_blob_urls_back`
+and a sub-check of `selection_keeps_its_bounds_through_a_restore_above_1mp`, plus two
+`node_test.py` steps; every sub-check red on the code before). Rule 12 above is one of them. For
+C2 to C4 the history now works like this: **a history step decodes its images while the step is
+still on its stack, then pops it, takes the redo copy and applies it in one synchronous run**
+(`loadSnapImages`, a synchronous `applySnapshot(snap, images)`), so an edit made during a decode
+can no longer land first and be overwritten; **`historyGen`** moves with every change a waiting
+undo must not run over (`pushUndoSnapshot`, `clearUndo`, `addLayer`, `setBase`) and is read when
+Ctrl+Z is pressed, so an undo stops with a status line when the picture changed after the key
+(an edit during its decode, during its wait for a grow, a layer added during a canvas redo)
+instead of taking back the wrong step. **Extend, crop, resize, merge into the base and flatten
+are tracked edits** (`trackEdit`, bodies `*Now`) that push after their upload with
+`{ tracked: true }`, which does not move `historyGen`: an undo pressed during the upload waits and
+takes the operation back (untracked, it undid the step below and the late push released its redo
+copy; a merge filtered the old layer object out of a restored list, now by id). **Flatten is a
+`canvas` step** like a merge into the base (without one, an older `layers` step put the baked
+layers back over a base that held them). **Undo and redo are refused while an editing gesture is
+held** (`gestureHeld()`: anything but pan, split and guide), because the step on top is the
+gesture's own, pushed at pointer down. **A text edit's `before` step is released** when it is not
+pushed (cancel, unchanged Enter), and `destroy()` clears the history after `close()`, which
+commits an open text edit. **`setValue` encodes the restored selection again** (`selectionSeq`,
+`selectionEncoded`, `selectionDataUrl` reset after the write): a `getValue` during the restore had
+stored the empty selection's PNG as current. `docs/PLUGINS.md` carries rule 12 for plugin authors.
+A C2 backend has to keep the synchronous apply: a restore that awaits between taking its step and
+writing it reopens the race.
 
 ### C2. The tile store (1 week)
 
@@ -632,7 +687,11 @@ the touched tiles (`memoryReport().undo`).
   selection through the mask sampler when `p.clip`. `strokePreview`, `maskPreview`,
   `maskedPreview`, `clipScratch`, `clipCanvasFor`, `clippedStroke`,
   `refreshStrokePreview`, `releaseStrokeScratch` are deleted; `layerWithStroke` returns
-  the layer's own store plus a `stroke` reference the compositor reads.
+  the layer's own store plus a `stroke` reference the compositor reads. The dab code inside
+  `drawInto` obeys C1 rule 12: `paintShape` stops setting its absolute transform (with the
+  buffer's origin) and composes on the context it gets, which moves its translation by up to
+  0.004 px in float32 (measured in C1); `shape_test.py` and a byte count against the C1 build
+  say whether that is visible.
 - **Commit** (`commitStroke`): per touched tile, `composite_tile(layerTile, strokeTile, op,
   brushOpacity, selectionTile?)` in the kernel (JS twin or Rust, whichever B chose), after
   the `tiles` snapshot of those tiles. Alpha lock is `source-atop`; erase is
