@@ -314,6 +314,113 @@ getters and `docs/PLUGINS.md`. `perf_test.py 15000x10000` within noise of §9 at
 
 Release 0.1.12: "no visible change; the editor's pixel access goes through one interface".
 
+#### C1 as built: the decisions taken while building it (2026-09-13)
+
+Written after an inventory of every pixel site (1,454 sites, 233 hazards: the editor, its
+modules, both hosts, the plugins, the node's own `inpaint_bridge.js` / `inpaint_node.js` and
+the tests). Where it differs from the text above, this wins; each difference says why.
+
+**The module** (`renderer/editor/inpaint_pixels.js`, step a, contract test
+`tools/pixels_test.py` + `tools/pixels_test.js`, byte for byte against a plain canvas):
+
+- `readRect(x, y, w, h)` → ImageData; `writeRect(img, x, y, op = "copy", alpha = 1)`.
+- `drawInto(rect, fn)`: `rect` is `[x0, y0, x1, y1]` in the pixels' own coordinates (null =
+  all), rounded outward. The canvas backend runs `fn(ctx)` on the canvas's own context with
+  the state reset to a fresh context's (transform, alpha, operation, styles, line, shadow,
+  filter, smoothing, font, **and an empty path**) and clipped to the rectangle with a
+  `Path2D`; it restores afterwards. So `fn` sets every piece of state it needs, never reads
+  `ctx.canvas` or pixels back from `ctx`, and draws nothing outside `rect` that matters.
+  Returns what `fn` returns. (The text above says "a scratch, written back with copy":
+  that is the tile backend; a scratch plus a write-back in the canvas backend would round
+  soft alpha through ImageData and break the 0-level gates.)
+- `drawTo(ctx, ...drawImageArgs)`: the pixels as the source of one `drawImage` into
+  another context, under that context's transform and clip. (The text above has
+  `drawTo(ctx, dx, dy, dw, dh, level)`; every draw site used one of drawImage's three
+  argument forms, so the facade takes them all. The level is C3's.)
+- `blit(src, dx, dy, op, alpha, srcRect)` and `copyRect(rect)`: unscaled copies between
+  pixels. "copy" is clearRect + source-over (never Chromium's whole-canvas "copy"); the
+  whole-canvas operations (`destination-in`, `source-in`, ...) are clipped to the
+  rectangle. Undo's `layerrect` / `selection` steps use these. (Added: a readRect +
+  writeRect pair loses premultiplied precision at low alpha.)
+- `clear(rect)`, `fill(rect, css)`, `bounds()`, `clone()`, `resized(w, h, {x, y})` (a new
+  object, never in place), `toCanvas(rect?)`, `bytes()`, `static empty / fromCanvas (adopts)
+  / fromImageData / fromImage(img, w, h)` (scaled like `imageToCanvas`).
+- `version` is the canvas's `_dispVer`; `touch()` bumps it. **Writes do not bump it**: the
+  editor's `touchSource` / `touchSourceRect` do, once, after the write, as today (a write
+  that bumped it too would make `touchSourceRect` drop the pyramid on every dab). The
+  scene cache (`pixelVersion`) is bumped by the same two calls.
+- `canvasOf(src)`: the backing canvas of a LayerPixels (or a canvas as it is), **read-only**,
+  for the display machinery only (`displaySource`, `touchSource*`, `sourceVersion`, the
+  pyramid WeakMap, `releaseCaches`, `memoryReport`). C3 deletes those and this with them.
+- `setPixelsOptions({ copy: true })` (the app's `--pixels-copy` switch): `toCanvas()` hands
+  out copies, as the tile backend will. Running the gates this way proves that no call site
+  writes into a handed-out canvas. A copy can sit on a different Chromium backing than its
+  source (GPU vs software) and read back 1 level apart at low alpha; gates that compare
+  handed-out canvases against the live ones need that tolerance in copy mode only.
+- `installLayerAliases(layer)`: `canvas` / `mask` as **non-enumerable own accessors**
+  (a spread copy carries `px` / `maskPx` and never calls them), converting a leftover own
+  `canvas` / `mask` value. `deprecatedPixels(old, new)` warns once, or throws with
+  `setPixelsOptions({ strict: true })`, which dev builds switch on in step (j) only: until
+  then an unmigrated site keeps working through the alias, so every step's commit is green.
+
+**The migration rules** (steps b to j):
+
+1. **Layers**: `layer.px` (LayerPixels) and `layer.maskPx` (MaskPixels, **null** for no mask,
+   never an empty mask). `installLayerAliases` runs wherever a layer object is made or
+   re-made: `addLayer`, both spread restores in `applySnapshot`, `duplicateLayer`,
+   `setValue`, the plugin `Document.addLayer`. The size of the pixels is their own
+   resolution, never `layer.w` / `layer.h`.
+2. **Replace, don't mutate** where the code replaces today: flip, rotate, crop, resize,
+   extend, the transform commit, a text render, `applyMask`, `mergeDown`, a plugin's
+   `setPixels` with another size, undo's `text` / `layerfull` / `mask` restores. Each assigns
+   a new object (`layer.px = LayerPixels.fromCanvas(out)`), because the `layers` / `canvas`
+   undo steps hold the old object by reference.
+3. **Reads**: `drawImage(layer.canvas, ...)` into another context → `layer.px.drawTo(ctx, ...)`;
+   `getImageData` → `readRect`; a canvas an API needs (a filter, `createImageBitmap`,
+   `encodeCanvas`, `drawMesh`, a pattern, the worker) → `toCanvas()`, once per operation and
+   never per inner loop.
+4. **Writes**: `putImageData` → `writeRect`; a context taken from a layer and drawn into →
+   `drawInto(rect, fn)` with the box the draw can touch (null when unknown); an unscaled
+   copy from other pixels → `blit`. The `touchSource` / `markLayerChanged` /
+   `markMaskChanged` / `markSelectionChanged` calls stay where they are and take the pixels.
+5. **Selection**: `this.sel` (MaskPixels), null exactly when `this.selection` was null (the
+   `!this.selection` guards, `pushUndo` above all, keep their meaning). Still red with the
+   coverage in alpha in C1; layer masks still white with it in alpha. The editor keeps a
+   deprecated `selection` accessor. The worker jobs get `this.sel.toCanvas()`; their answer
+   comes back through `drawInto(null, ...)`.
+6. **Base**: `this.base = { ref, img }` stays (its truthiness is "an image is loaded", its
+   `ref` is the run input). `this.basePx` replaces `baseSource()` / `_baseCanvas`: built
+   lazily from `base.img`, keyed on that object, which is exactly what `_baseCanvas` was.
+   Pixel reads of `base.img` go through `basePx`. (The text above lists `this.base.img →
+   this.basePx` as a rename; the `<img>` is released in C6.)
+7. **Undo**: `snapUrl` **stays** for the whole-layer steps (`layer`, `layerfull`, `text`,
+   `mask`, the `canvas` step's selection), fed by `toCanvas()`. (The text above deletes it
+   in C1: a canvas copy per step would put a 15k layer's 900 MB against the 384 MB budget
+   and leave one undo step for smudge, filters and flips until C4 makes them tile refs.)
+   `layerrect` and the canvas `selection` step hold `copyRect` pixels in `snap.px` and go
+   back with `blit(..., "copy")`.
+8. **What stays a canvas in C1**, because C3 / C5 delete it rather than migrate it:
+   `StrokeBuffer` and the live previews (`strokePreview`, `maskPreview`, `maskedPreview`,
+   `clipScratch`, `_livePreview`), `_masked`, the colour-match caches, the pyramid levels,
+   `hoverObjectCanvas`, `flatCache`, `sceneCanvas`. `layerPixels()` / `layerWithStroke()` /
+   `maskWithStroke()` keep returning a canvas (the display pixels, read-only); the commit
+   of a stroke goes through the target's pixels. The filter layers' full-size placeholder
+   stays `LayerPixels.empty(w, h)` (C2 makes it sparse).
+9. **Not layers, same field name**: export descriptors (`exportLayerStack`, `buildLayered`,
+   `inpaint_export.js`), `CLIPBOARD`, brush tips, `flatCache`, the GLB renderer, the film
+   points cache, screenshot sources. Their `.canvas` stays.
+10. **Outside the editor** in the step whose gate covers them: `host.js` (cutout input,
+    point prompt into the selection, source canvases), `stitch.js` (selection, base ref,
+    references), `commands.js`, `plugins.js`, the node's hand-written `js/inpaint_bridge.js`
+    and `js/inpaint_node.js` (a commit in the node repo), and every `tools/*_test.py` that
+    reaches into these properties (they must run in strict mode after step j).
+
+**Per step**: the step's sites, the gates below, a review of the diff, then the app commit,
+`python tools/build_node.py`, `python tools/node_test.py`, the node commit, a push of both.
+Every step runs `pixels`, `editor`, `composite`, `commands`, `shape`, `brush` on top of its
+own gates. Step (j) runs every gate of §0 in strict mode, once more with `--pixels-copy`,
+and `perf_test.py 15000x10000` against §9.
+
 ### C2. The tile store (1 week)
 
 `renderer/editor/inpaint_tiles.js`, the second backend of `LayerPixels` and `MaskPixels`,
