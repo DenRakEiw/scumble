@@ -1501,7 +1501,7 @@ export const host = {
     async freeHelpers() {
         for (const ed of this._editors) {
             if (ed === this.editor || ed.pointer) continue;
-            try { ed.releaseCaches({ deep: true }); } catch (err) { console.warn(err); }
+            try { ed.releaseCaches({ deep: true, mirrors: true }); } catch (err) { console.warn(err); }
         }
         return window.scumble.helpers.free();
     },

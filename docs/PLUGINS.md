@@ -144,7 +144,10 @@ puts tiles behind the same interface, so a plugin that goes through it keeps wor
   `drawTo(ctx, ...drawImage arguments)`,
   `bounds()` and `toCanvas()` (read-only). After writing, call `doc.refresh(key)` so the screen,
   the upload and the caches see it; unlike `setPixels` such a write has no undo step unless the
-  plugin pushes one. The selection stays behind `selection()` / `setSelection()`.
+  plugin pushes one. The selection stays behind `selection()` / `setSelection()`. The pixels
+  of a document all belong to one backend (tiles or one canvas each, `doc.editor.pixels`), so do
+  not assign a `px` / `maskPx` of your own or one taken from another document: replace pixels
+  with `setPixels` or `addLayer`, which make them in the document's backend.
 
 ## Filter types
 

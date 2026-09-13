@@ -138,6 +138,8 @@ export function status(ed) {
         pending: { segment: !!ed.segmentPending, cutout: !!ed.cutoutPending, upsample: !!ed.upsamplePending, transform: !!ed.pending, objects: !!ed.objectsPending, provider: !!ed.providerPending },
         recipe: r ? { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", provider: r.provider || null } : null,
         connected: !!host.connected, status: ed.status || "",
+        // the pixel backend of this document (docs/PLAN_BCE.md §C2 step b) and what chose it
+        pixels: { tiles: !!ed.tileMode, from: ed.tileModeFrom || null },
     };
 }
 

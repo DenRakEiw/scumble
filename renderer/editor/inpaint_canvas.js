@@ -20,7 +20,20 @@ import { readAbr, tipCanvas } from "./inpaint_brushes.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
-import { LayerPixels, MaskPixels, canvasOf, installLayerAliases, deprecatedPixels } from "./inpaint_pixels.js";
+import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions } from "./inpaint_pixels.js";
+import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE } from "./inpaint_tiles.js";
+
+/**
+ * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
+ * one (Scumble passes --tiles / SCUMBLE_TILES / settings.tiles / the build through setPixelsOptions),
+ * else the browser's switch localStorage "inpaint_canvas.tiles" = "1" (the ComfyUI node; off by default).
+ */
+function editorTileMode() {
+    const o = pixelsOptions();
+    if (typeof o.tiles === "boolean") return { on: o.tiles, from: o.tilesFrom || "host" };
+    try { if (localStorage.getItem("inpaint_canvas.tiles") === "1") return { on: true, from: "localStorage" }; } catch (_) { /* no storage */ }
+    return { on: false, from: "default" };
+}
 
 /**
  * Two hosts run this editor: Scumble (renderer/editor/host.js, the editor is the window) and
@@ -1154,11 +1167,18 @@ class InpaintEditor {
 
     set selection(canvas) {
         deprecatedPixels("editor.selection", "editor.sel");
-        this.sel = canvas ? MaskPixels.fromCanvas(canvas) : null;
+        this.sel = canvas ? this.pixels.Mask.fromCanvas(canvas) : null;
     }
 
     constructor(node) {
         this.node = node;
+        // decided once, for the editor's life: every pixels object this editor makes (layers, masks,
+        // the selection, the base, undo copies) is of this backend, so they can be blitted, cloned
+        // and restored into each other (docs/PLAN_BCE.md §C2 step b)
+        const mode = editorTileMode();
+        this.tileMode = mode.on;
+        this.tileModeFrom = mode.from;
+        this.pixels = pixelsBackend(this.tileMode);   // { Layer, Mask, tiles }
         this.width = 0;
         this.height = 0;
         this.base = null;            // { ref, img }; its pixels are this.basePx
@@ -2376,7 +2396,7 @@ class InpaintEditor {
         // no state is left behind on the new pixels' context (PLAN_BCE §C1 rule 11)
         ctx.imageSmoothingQuality = "low";
         // replaced, not written (another size; the "layerfull" undo PNG may still be encoding from the old pixels)
-        layer.px = LayerPixels.fromCanvas(out);
+        layer.px = this.pixels.Layer.fromCanvas(out);
         layer.x = minX; layer.y = minY; layer.w = bw; layer.h = bh;
         this.pending = null;
         this.markLayerChanged(layer);
@@ -2880,13 +2900,19 @@ class InpaintEditor {
      * The layer's pixels as they are composited: the canvas with the in-progress
      * stroke and, when the layer has a transparency mask, multiplied by it. The
      * masked result is cached until pixels or mask change.
+     * `display`: the caller only draws the result right away (the screen, the pyramid, the
+     * compositor, thumbnails, a composite being built): an unmasked layer then hands out its
+     * display canvas (`canvasOf`, the same canvas every frame, synced from the writes) instead of
+     * a `toCanvas()` copy, which on tiles would be a whole-layer copy per frame and a new key for
+     * every identity cache. Anything that keeps the canvas (an upload, an encode, a worker job)
+     * leaves it false (docs/PLAN_BCE.md §C2 step b).
      */
-    layerPixels(layer) {
-        if (!layer.maskPx) return this.layerWithStroke(layer);
+    layerPixels(layer, display = false) {
+        if (!layer.maskPx) return this.layerWithStroke(layer, display);
         const p = this.pointer;
         const live = !!(p && (p.kind === "layerpaint" || p.kind === "maskpaint") && p.layer === layer);
         if (!live && layer._masked && layer._maskedValid) return layer._masked;
-        const base = this.layerWithStroke(layer);
+        const base = this.layerWithStroke(layer, true);   // drawn into the masked cache right here
         // during a mask stroke on this layer the mask's live preview, otherwise the mask's own
         // pixels (drawn through maskPx below); maskWithStroke would hand those back as a canvas
         const mask = p && p.kind === "maskpaint" && p.layer === layer ? this.maskWithStroke(layer) : null;
@@ -2934,10 +2960,10 @@ class InpaintEditor {
         return out;
     }
 
-    /** The layer's mask with the in-progress mask stroke applied (white = visible), as a canvas to draw from. */
-    maskWithStroke(layer) {
+    /** The layer's mask with the in-progress mask stroke applied (white = visible), as a canvas to draw from; `display` as in layerPixels. */
+    maskWithStroke(layer, display = false) {
         const p = this.pointer;
-        if (!p || p.kind !== "maskpaint" || p.layer !== layer) return layer.maskPx ? layer.maskPx.toCanvas() : null;
+        if (!p || p.kind !== "maskpaint" || p.layer !== layer) return layer.maskPx ? (display ? canvasOf(layer.maskPx) : layer.maskPx.toCanvas()) : null;
         const target = layer.maskPx;
         let fresh = false;
         if (!this.maskPreview || this.maskPreview.width !== target.width || this.maskPreview.height !== target.height) {
@@ -3366,8 +3392,8 @@ class InpaintEditor {
             return c;
         };
         // replaced, not written (the "layerfull" undo PNG may still be encoding from the old pixels)
-        l.px = LayerPixels.fromCanvas(flip(l.px.toCanvas()));
-        if (l.maskPx) { l.maskPx = MaskPixels.fromCanvas(flip(l.maskPx.toCanvas())); l.maskDirty = true; }
+        l.px = this.pixels.Layer.fromCanvas(flip(l.px.toCanvas()));
+        if (l.maskPx) { l.maskPx = this.pixels.Mask.fromCanvas(flip(l.maskPx.toCanvas())); l.maskDirty = true; }
         this.markLayerChanged(l);
         this.renderLayers(); this.draw();
         this.setStatus(`${l.name} flipped ${axis === "h" ? "horizontally" : "vertically"}.`);
@@ -3390,8 +3416,8 @@ class InpaintEditor {
             return c;
         };
         // replaced, not written (the "layerfull" undo PNG may still be encoding from the old pixels)
-        l.px = LayerPixels.fromCanvas(rot(l.px.toCanvas()));
-        if (l.maskPx) { l.maskPx = MaskPixels.fromCanvas(rot(l.maskPx.toCanvas())); l.maskDirty = true; }
+        l.px = this.pixels.Layer.fromCanvas(rot(l.px.toCanvas()));
+        if (l.maskPx) { l.maskPx = this.pixels.Mask.fromCanvas(rot(l.maskPx.toCanvas())); l.maskDirty = true; }
         const cx = l.x + l.w / 2, cy = l.y + l.h / 2;
         [l.w, l.h] = [l.h, l.w];
         l.x = Math.round(cx - l.w / 2); l.y = Math.round(cy - l.h / 2);
@@ -3511,7 +3537,7 @@ class InpaintEditor {
             for (const l of this.layers) {
                 if (l.kind === "filter") {
                     l.w = nw; l.h = nh; l._fcache = null;
-                    if (l.maskPx) { const m = makeCanvas(nw, nh); const mc = m.getContext("2d"); mc.imageSmoothingEnabled = true; l.maskPx.drawTo(mc, 0, 0, nw, nh); l.maskPx = MaskPixels.fromCanvas(m); l.maskDirty = true; }
+                    if (l.maskPx) { const m = makeCanvas(nw, nh); const mc = m.getContext("2d"); mc.imageSmoothingEnabled = true; l.maskPx.drawTo(mc, 0, 0, nw, nh); l.maskPx = this.pixels.Mask.fromCanvas(m); l.maskDirty = true; }
                 } else {
                     l.x = Math.round(l.x * sx); l.y = Math.round(l.y * sy);
                     l.w = Math.max(1, Math.round(l.w * sx)); l.h = Math.max(1, Math.round(l.h * sy));
@@ -3522,7 +3548,7 @@ class InpaintEditor {
             const sc = sel.getContext("2d");
             sc.imageSmoothingEnabled = true;
             this.sel.drawTo(sc, 0, 0, nw, nh);
-            this.sel = MaskPixels.fromCanvas(sel);
+            this.sel = this.pixels.Mask.fromCanvas(sel);
             this.base = { ref, img };
             this.width = nw; this.height = nh;
             pushed = true;
@@ -3631,7 +3657,12 @@ class InpaintEditor {
             if (selMode === "replace" && !e.ctrlKey && this.selectedAt(ix, iy)) {
                 // dragging inside the selection moves its outline (Photoshop's marquee tools)
                 const orig = this.sel.clone();   // the outline as it was, drawn back offset while dragging
-                this.pointer = { kind: "selmove", start: [ix, iy], orig, origBounds: this.getBounds() };
+                // every pixel with any alpha lies in `ext` (exact: an approximate extent left faint pixels
+                // behind or erased them): a move rewrites the old and the new place of it only, never the
+                // whole selection on tiles (a full-size scratch per pointer move); the canvas backend takes
+                // the whole image as the extent
+                const ext = this.selectionExtent({ exact: true });
+                this.pointer = { kind: "selmove", start: [ix, iy], orig, origBounds: this.getBounds(), ext, lastExt: ext };
             } else {
                 this.pointer = { kind: "rect", ellipse: this.tool === "ellipse", square: e.ctrlKey, start: [ix, iy], cur: [ix, iy], startPx: this.toCanvasPx(e), mode: selMode };
             }
@@ -3826,12 +3857,20 @@ class InpaintEditor {
         } else if (p.kind === "selmove") {
             const mx = Math.round(ix - p.start[0]), my = Math.round(iy - p.start[1]);
             if (mx || my) p.moved = true;
-            const W = this.width, H = this.height, orig = p.orig;
-            this.sel.drawInto(null, (ctx) => {
-                ctx.clearRect(0, 0, W, H);
-                orig.drawTo(ctx, mx, my);
-            });
-            this.touchSource(this.sel);
+            const orig = p.orig, e = p.ext;
+            // what the selection holds now (the outline at the last offset) and where it goes: outside
+            // both, it is transparent before and after, so the rewrite stays inside their union
+            const next = e ? [e[0] + mx, e[1] + my, e[2] + mx, e[3] + my] : null, last = p.lastExt;
+            const box = !last ? next : !next ? last : [Math.min(last[0], next[0]), Math.min(last[1], next[1]), Math.max(last[2], next[2]), Math.max(last[3], next[3])];
+            if (box) {
+                this.sel.clear(box);
+                // unscaled at whole pixels (mx, my are rounded): a copy of the extent to its new place
+                if (e) this.sel.blit(orig, e[0] + mx, e[1] + my, "copy", 1, e);
+            }
+            p.lastExt = next;
+            // the display levels are refreshed inside the rewritten box, not rebuilt from the whole selection
+            if (box) this.touchSourceRect(this.sel, box[0], box[1], box[2], box[3]);
+            else this.touchSource(this.sel);
             if (p.origBounds) {
                 // the outline only moves: shift the known box instead of scanning the selection
                 const nb = [Math.max(0, p.origBounds[0] + mx), Math.max(0, p.origBounds[1] + my),
@@ -4335,7 +4374,7 @@ class InpaintEditor {
         if (source === "layer") {
             const l = this.activeLayer();
             if (l && l.kind !== "filter" && l.px) {
-                const px = this.layerPixels(l);
+                const px = this.layerPixels(l, true);
                 ctx.imageSmoothingEnabled = true;
                 ctx.drawImage(this.displaySource(px, (l.w * scale) / px.width), l.x, l.y, l.w, l.h);
                 return c;
@@ -4666,7 +4705,7 @@ class InpaintEditor {
     baseCopyLayer() {
         const c = makeCanvas(this.width, this.height);
         this.basePx.drawTo(c.getContext("2d"), 0, 0);   // unscaled (PLAN_BCE §C1 rule 6)
-        const layer = this.addLayer({ name: "Base copy", kind: "image", ref: null, px: LayerPixels.fromCanvas(c), x: 0, y: 0, w: this.width, h: this.height, dirty: true }, { activate: true });
+        const layer = this.addLayer({ name: "Base copy", kind: "image", ref: null, px: this.pixels.Layer.fromCanvas(c), x: 0, y: 0, w: this.width, h: this.height, dirty: true }, { activate: true });
         this.setStatus("The base cannot be edited directly: a copy layer was added.");
         return layer;
     }
@@ -5006,7 +5045,7 @@ class InpaintEditor {
             const c = this.flatCache;
             if (c && c.version === this.compositeVersion && c.key === key) return c.canvas;
             const canvas = makeCanvas(this.width, this.height);
-            canvas.getContext("2d").drawImage(this.layerPixels(l), l.x, l.y, l.w, l.h);
+            canvas.getContext("2d").drawImage(this.layerPixels(l, true), l.x, l.y, l.w, l.h);   // drawn right away, nothing kept
             this.flatCache = { version: this.compositeVersion, key, canvas };
             return canvas;
         }
@@ -5201,10 +5240,10 @@ class InpaintEditor {
         }
     }
 
-    /** Layer pixels with the in-progress stroke applied, for live preview: a canvas to draw from, never into. */
-    layerWithStroke(layer) {
+    /** Layer pixels with the in-progress stroke applied, for live preview: a canvas to draw from, never into; `display` as in layerPixels. */
+    layerWithStroke(layer, display = false) {
         const p = this.pointer;
-        if (!p || p.kind !== "layerpaint" || p.layer !== layer) return layer.px ? layer.px.toCanvas() : null;
+        if (!p || p.kind !== "layerpaint" || p.layer !== layer) return layer.px ? (display ? canvasOf(layer.px) : layer.px.toCanvas()) : null;
         const target = layer.px;
         let fresh = false;
         if (!this.strokePreview || this.strokePreview.width !== target.width || this.strokePreview.height !== target.height) {
@@ -5314,7 +5353,7 @@ class InpaintEditor {
         copy.getContext("2d").drawImage(canvas, 0, 0);
         const src = this.clipboard.source || "";
         const name = src && !/^the visible image/.test(src) ? `${src} copy` : `Paste ${this.pasteCounter}`;
-        const layer = this.addLayer({ name, kind: "image", ref: null, px: LayerPixels.fromCanvas(copy), x, y, w: canvas.width, h: canvas.height, dirty: true });
+        const layer = this.addLayer({ name, kind: "image", ref: null, px: this.pixels.Layer.fromCanvas(copy), x, y, w: canvas.width, h: canvas.height, dirty: true });
         this.setStatus(`${layer.name} added (${canvas.width} × ${canvas.height} at ${x}, ${y}). Move it with T.`);
         return layer;
     }
@@ -5851,7 +5890,7 @@ class InpaintEditor {
             this.base = { ref, img };
             this.width = nw; this.height = nh;
             // a new object (the canvas undo step holds the old one): the new border selected
-            this.sel = MaskPixels.empty(nw, nh);
+            this.sel = this.pixels.Mask.empty(nw, nh);
             this.sel.fill(null, "#ff0000");
             this.sel.clear([left, top, left + W, top + H]);
             pushed = true;
@@ -6044,7 +6083,7 @@ class InpaintEditor {
         if (snap.kind === "layers") {
             if (this.pending) this.cancelPending();
             // a spread carries px / maskPx and not the non-enumerable aliases: installed again
-            this.layers = snap.layers.map((l) => installLayerAliases({ ...l, _maskedValid: false, _mcache: null, _fcache: null }));
+            this.layers = snap.layers.map((l) => installLayerAliases({ ...l, _maskedValid: false, _mcache: null, _fcache: null }, this.pixels));
             this.activeLayerId = this.layers.some((l) => l.id === snap.activeLayerId) ? snap.activeLayerId : null;
             this.uploaded.baseHash = null;
             this.uploaded.controlHash = null;
@@ -6060,9 +6099,9 @@ class InpaintEditor {
             this.base = snap.base;
             this.width = snap.width;
             this.height = snap.height;
-            this.layers = snap.layers.map((l) => installLayerAliases({ ...l, dirty: true, exportRef: null, _maskedValid: false, _mcache: null, _fxCache: null, maskDirty: !!l.maskPx }));
+            this.layers = snap.layers.map((l) => installLayerAliases({ ...l, dirty: true, exportRef: null, _maskedValid: false, _mcache: null, _fxCache: null, maskDirty: !!l.maskPx }, this.pixels));
             this.activeLayerId = snap.activeLayerId;
-            const sel = MaskPixels.empty(this.width, this.height);
+            const sel = this.pixels.Mask.empty(this.width, this.height);
             if (selImg) sel.drawInto(null, (ctx) => ctx.drawImage(selImg, 0, 0));
             this.sel = sel;
             this.touchSource(sel);
@@ -6132,7 +6171,7 @@ class InpaintEditor {
                 this.markFilterChanged(layer);
                 this.renderLayers();
             } else if (snap.kind === "mask") {
-                layer.maskPx = snap.url ? MaskPixels.fromImage(needImage(images.url), snap.mw, snap.mh) : null;
+                layer.maskPx = snap.url ? this.pixels.Mask.fromImage(needImage(images.url), snap.mw, snap.mh) : null;
                 if (!layer.maskPx) layer.maskEdit = false;
                 this.markMaskChanged(layer);
                 this.renderLayers();
@@ -6142,7 +6181,7 @@ class InpaintEditor {
                 layer._textToken = (layer._textToken || 0) + 1;
                 layer._textRendering = 0;
                 const img = needImage(images.url);
-                layer.px = LayerPixels.fromImage(img, snap.cw, snap.ch);   // replaced: rule 2
+                layer.px = this.pixels.Layer.fromImage(img, snap.cw, snap.ch);   // replaced: rule 2
                 Object.assign(layer, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
                 layer.text = JSON.parse(JSON.stringify(snap.text));
                 layer._maskedValid = false;
@@ -6161,9 +6200,9 @@ class InpaintEditor {
                 this.refreshLayerThumb(layer);   // nothing else in the list changed
             } else if (snap.kind === "layerfull") {
                 const img = needImage(images.url);
-                layer.px = LayerPixels.fromImage(img, snap.cw, snap.ch);   // replaced: rule 2
+                layer.px = this.pixels.Layer.fromImage(img, snap.cw, snap.ch);   // replaced: rule 2
                 Object.assign(layer, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
-                layer.maskPx = snap.mask ? MaskPixels.fromImage(needImage(images.mask), snap.mw, snap.mh) : null;
+                layer.maskPx = snap.mask ? this.pixels.Mask.fromImage(needImage(images.mask), snap.mw, snap.mh) : null;
                 if (!layer.maskPx) layer.maskEdit = false;
                 layer.maskDirty = !!layer.maskPx;
                 layer._maskedValid = false;
@@ -6408,7 +6447,7 @@ class InpaintEditor {
         this.filterCounter += 1;
         const layer = this.addLayer({
             name: `${FILTERS[id].label} ${this.filterCounter}`, kind: "filter", filter: id, params: filterDefaults(id), lut: null,
-            ref: null, px: LayerPixels.empty(this.width, this.height), x: 0, y: 0, w: this.width, h: this.height, dirty: false,
+            ref: null, px: this.pixels.Layer.empty(this.width, this.height), x: 0, y: 0, w: this.width, h: this.height, dirty: false,
         });
         this.setStatus(`${layer.name} added. It filters everything below it; pick the type and drag the sliders in the layer list.`);
         return layer;
@@ -6714,7 +6753,7 @@ class InpaintEditor {
             const d = out.data;
             let sum = 0;
             for (let i = 0; i < src.length; i += 4) { d[i] = 255; d[i + 1] = 255; d[i + 2] = 255; d[i + 3] = src[i]; sum += src[i]; }
-            const m = MaskPixels.fromImageData(out);
+            const m = this.pixels.Mask.fromImageData(out);
             this.pushUndo({ kind: "mask", id: layer.id });
             layer.maskPx = m;
             layer.maskEdit = false;
@@ -6740,7 +6779,7 @@ class InpaintEditor {
         this.pushUndo({ kind: "mask", id: layer.id });
         // a new mask at the layer's own resolution (the mask undo step holds the old one): the
         // selection under the layer, turned white with its coverage kept in alpha
-        const m = MaskPixels.empty(layer.px.width, layer.px.height);
+        const m = this.pixels.Mask.empty(layer.px.width, layer.px.height);
         const W = m.width, H = m.height;
         m.drawInto(null, (ctx) => {
             // the scale composed on drawInto's transform and taken off again with restore (rule 12)
@@ -6769,7 +6808,7 @@ class InpaintEditor {
         // encode of it may still read the old object
         const out = makeCanvas(layer.px.width, layer.px.height);
         out.getContext("2d").drawImage(masked, 0, 0);
-        layer.px = LayerPixels.fromCanvas(out);
+        layer.px = this.pixels.Layer.fromCanvas(out);
         layer.maskPx = null;
         layer.maskRef = null;
         layer.maskDirty = false;
@@ -6844,7 +6883,7 @@ class InpaintEditor {
                     ly = Math.round(Math.min(Math.max(0, at[1] - lh / 2), Math.max(0, this.height - lh)));
                     at = [at[0] + 24, at[1] + 24];
                 }
-                last = this.addLayer({ name: (file.name || "image").replace(/\.[a-z0-9]+$/i, ""), kind: "image", role, ref, px: LayerPixels.fromImage(img), x: lx, y: ly, w: lw, h: lh, dirty: false });
+                last = this.addLayer({ name: (file.name || "image").replace(/\.[a-z0-9]+$/i, ""), kind: "image", role, ref, px: this.pixels.Layer.fromImage(img), x: lx, y: ly, w: lw, h: lh, dirty: false });
                 n++;
             } catch (err) {
                 console.error(err);
@@ -6872,13 +6911,38 @@ class InpaintEditor {
             return;
         }
         if (!layer.px) return;
-        // the layer's own pixels, fitted; tiny layers are shown at least at 25 % so a small cutout is still visible
-        const px = this.layerPixels(layer);
-        const s = Math.min(canvas.width / px.width, canvas.height / px.height);
-        const w = px.width * s, h = px.height * s;
+        // the layer's own pixels, fitted
+        const s = Math.min(canvas.width / layer.px.width, canvas.height / layer.px.height);
+        const w = layer.px.width * s, h = layer.px.height * s;
+        this.drawLayerFitted(ctx, layer, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+    }
+
+    /**
+     * A layer's pixels (its mask applied) drawn into the rectangle x, y, w, h of a thumbnail's context.
+     * On tiles, outside a stroke on the layer, from the tile store's small thumbnail canvases: a thumbnail
+     * never makes the display mirror, which a hidden layer or a tab in the background would otherwise
+     * hold at the layer's full size for a picture of 40 px (C2 step b's review). On canvases (or during a
+     * stroke) from the display canvas's pyramid level, as before.
+     */
+    drawLayerFitted(ctx, layer, x, y, w, h) {
+        const px = layer.px;
+        const p = this.pointer;
+        const live = !!(p && (p.kind === "layerpaint" || p.kind === "maskpaint") && p.layer === layer);
+        ctx.save();
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "medium";
-        ctx.drawImage(this.displaySource(px, s), (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+        if (isTilePixels(px) && !live) {
+            ctx.drawImage(px.thumbnailCanvas(), x, y, w, h);
+            if (layer.maskPx) {
+                // destination-in applies to the whole canvas: the thumbnail holds nothing else
+                ctx.globalCompositeOperation = "destination-in";
+                ctx.drawImage(layer.maskPx.thumbnailCanvas(), x, y, w, h);
+            }
+        } else {
+            const src = this.layerPixels(layer, true);
+            ctx.drawImage(this.displaySource(src, w / src.width), x, y, w, h);
+        }
+        ctx.restore();
     }
 
     /** Redraw one row's thumbnail in place; the whole list when the row is not there. */
@@ -6964,7 +7028,7 @@ class InpaintEditor {
         // the spread shares the pixels; the copy gets its own (the aliases are not enumerable, so they are installed again)
         if (layer.px) copy.px = layer.px.clone();
         if (layer.maskPx) copy.maskPx = layer.maskPx.clone();
-        installLayerAliases(copy);
+        installLayerAliases(copy, this.pixels);
         if (layer.text) copy.text = JSON.parse(JSON.stringify(layer.text));
         if (layer.params) copy.params = JSON.parse(JSON.stringify(layer.params));
         if (layer.match) copy.match = { ...layer.match };
@@ -7043,7 +7107,7 @@ class InpaintEditor {
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
         ctx.imageSmoothingQuality = "low";
-        below.px = LayerPixels.fromCanvas(c);   // replaced, not written: the "layers" undo step holds the old pixels
+        below.px = this.pixels.Layer.fromCanvas(c);   // replaced, not written: the "layers" undo step holds the old pixels
         below.x = x0; below.y = y0; below.w = w; below.h = h;
         below.maskPx = null; below.maskRef = null; below.maskDirty = false; below.maskEdit = false;
         if (below.kind === "text") { below.kind = "paint"; delete below.text; }
@@ -7061,10 +7125,17 @@ class InpaintEditor {
             const l = this.layers[i];
             if (!l.visible || l.kind === "filter" || !l.px) continue;
             if (ix < l.x || iy < l.y || ix >= l.x + l.w || iy >= l.y + l.h) continue;
-            const px = this.layerPixels(l);
+            // one pixel read from the pixels (and the mask), never through a display canvas: a click must not
+            // make a mirror as large as the layer on tiles (C2 step b's review)
+            const px = l.px;
             const sx = Math.min(px.width - 1, Math.max(0, Math.floor((ix - l.x) * px.width / l.w)));
             const sy = Math.min(px.height - 1, Math.max(0, Math.floor((iy - l.y) * px.height / l.h)));
-            if (px.getContext("2d").getImageData(sx, sy, 1, 1).data[3] > 8) return l;
+            let a = px.readRect(sx, sy, 1, 1).data[3];
+            if (a && l.maskPx) {
+                const m = l.maskPx;
+                a = a * m.readRect(Math.min(m.width - 1, Math.floor(sx * m.width / px.width)), Math.min(m.height - 1, Math.floor(sy * m.height / px.height)), 1, 1).data[3] / 255;
+            }
+            if (a > 8) return l;
         }
         return null;
     }
@@ -7078,7 +7149,7 @@ class InpaintEditor {
         const t = { ...TEXT_DEFAULTS, ...(this.textDefaults || {}) };
         if (!this.textDefaults) t.size = Math.max(12, Math.round(Math.min(this.width, this.height) / 12));
         t.color = this.color;
-        const layer = this.addLayer({ name: "Text " + this.textCounter, kind: "text", ref: null, text: t, px: LayerPixels.empty(1, 1), x: Math.round(ix), y: Math.round(iy), w: 1, h: 1, dirty: true });
+        const layer = this.addLayer({ name: "Text " + this.textCounter, kind: "text", ref: null, text: t, px: this.pixels.Layer.empty(1, 1), x: Math.round(ix), y: Math.round(iy), w: 1, h: 1, dirty: true });
         await loadFontList();
         await this.renderTextLayer(layer, { keepScale: false });
         this.renderLayers();
@@ -7099,7 +7170,7 @@ class InpaintEditor {
         const oldRes = (layer.text && layer.text.res) || 2;
         const k = keepScale && layer.px && layer.px.width > 1 ? layer.w / (layer.px.width / oldRes) : 1;
         // adopts the rendered canvas: replaced, not written (its size changes with every edit)
-        layer.px = LayerPixels.fromCanvas(canvas);
+        layer.px = this.pixels.Layer.fromCanvas(canvas);
         layer.text.res = res;
         layer.w = Math.max(1, Math.round(canvas.width / res * k));
         layer.h = Math.max(1, Math.round(canvas.height / res * k));
@@ -7448,11 +7519,19 @@ class InpaintEditor {
      * count only alpha >= 128; a feathered tail lies outside them), from the 1/16 display
      * level padded by one cell, so nothing full-size is read back. What an undo step has
      * to copy and what a restore has to refresh. Null when the selection is empty.
+     *
+     * On tiles it is exact and reads nothing: the extent of the tile set (`bounds()`, every
+     * allocated tile holds a pixel), with no display mirror made. The canvas backend's level
+     * loses what its four smoothed halvings round away (an isolated pixel below about alpha
+     * 128, and at sizes that do not halve evenly even alpha 255); `exact` takes the whole
+     * image there instead, for a caller that must not lose one (the selection drag, C2 step
+     * b's review; a whole-canvas write is GPU work on that backend).
      */
-    selectionExtent() {
+    selectionExtent({ exact = false } = {}) {
         if (!this.sel) return null;
         const W = this.width, H = this.height;
-        if (W * H <= PYRAMID_MIN_PX) return [0, 0, W, H];
+        if (isTilePixels(this.sel)) return this.sel.bounds();
+        if (W * H <= PYRAMID_MIN_PX || exact) return [0, 0, W, H];
         const budget = this._pyramidBudget;
         this._pyramidBudget = Infinity;
         const lvl = this.displaySource(this.sel, 1 / 16);
@@ -7605,7 +7684,7 @@ class InpaintEditor {
         // its layers (or its base, for a crop) back on top of it
         if (!keepLayers || sizeChanged) { this.layers = []; this.activeLayerId = null; this.clearUndo(); }
         if (!this.sel || sizeChanged) {
-            this.sel = MaskPixels.empty(this.width, this.height);
+            this.sel = this.pixels.Mask.empty(this.width, this.height);
             this.clearUndo();
         }
         this.uploaded.baseHash = null;
@@ -7677,9 +7756,26 @@ class InpaintEditor {
         return { width: w, height: h };
     }
 
+    /**
+     * `p` as pixels of this editor's backend. The editor makes all of its pixels itself, so only a
+     * caller outside it can hand in pixels of the other backend (a test, a plugin that built its own):
+     * strict mode (dev builds) throws, so a gate finds the mix; otherwise they are converted once
+     * with a warning.
+     */
+    ownPixels(p) {
+        if (!(p instanceof LayerPixels) || p.constructor.backend === this.pixels) return p;
+        const msg = `Inpaint Canvas: pixels of the ${this.tileMode ? "canvas" : "tile"} backend handed to an editor on ${this.tileMode ? "tiles" : "canvases"}; make them with editor.pixels`;
+        if (pixelsOptions().strict) throw new Error(msg);
+        if (!InpaintEditor._mixWarned) { InpaintEditor._mixWarned = true; console.warn(msg + " (converted)"); }
+        const B = p instanceof MaskPixels ? this.pixels.Mask : this.pixels.Layer;
+        return this.tileMode ? B.fromCanvas(p.toCanvas()) : B.fromImage(p.toCanvas());
+    }
+
     addLayer(layer, { activate = true } = {}) {
         // `px` / `maskPx` hold the pixels; a caller that still passes `canvas` / `mask` gets them converted
-        installLayerAliases(layer);
+        installLayerAliases(layer, this.pixels);
+        if (layer.px) layer.px = this.ownPixels(layer.px);
+        if (layer.maskPx) layer.maskPx = this.ownPixels(layer.maskPx);
         this.layerCounter += 1;
         layer.id = layer.id || ("L" + Date.now().toString(36) + this.layerCounter);
         if (layer.visible == null) layer.visible = true;
@@ -7707,7 +7803,7 @@ class InpaintEditor {
         this.paintCounter += 1;
         const layer = this.addLayer({
             name: "Paint " + this.paintCounter, kind: "paint", ref: null,
-            px: LayerPixels.empty(this.width, this.height), x: 0, y: 0, w: this.width, h: this.height, dirty: true,
+            px: this.pixels.Layer.empty(this.width, this.height), x: 0, y: 0, w: this.width, h: this.height, dirty: true,
         });
         this.setStatus(`${layer.name} added. Paint with P, erase with E, fill the selection with Shift+F.`);
         return layer;
@@ -7759,7 +7855,7 @@ class InpaintEditor {
                     continue;
                 }
                 const n = this.history.length + 1;
-                const layer = this.addLayer({ name: "Result " + n, kind: "result", ref, px: LayerPixels.fromImage(img), x: r.x || 0, y: r.y || 0, w: r.width || img.naturalWidth, h: r.height || img.naturalHeight });
+                const layer = this.addLayer({ name: "Result " + n, kind: "result", ref, px: this.pixels.Layer.fromImage(img), x: r.x || 0, y: r.y || 0, w: r.width || img.naturalWidth, h: r.height || img.naturalHeight });
                 this.history.push({ key, name: layer.name, ref, x: layer.x, y: layer.y, w: layer.w, h: layer.h, prompt: this.promptText, layerId: layer.id, time: Date.now(),
                     seed: this.genSettings.seed, mode: this.genSettings.mode, denoise: this.genSettings.denoise });
                 this.renderHistory();
@@ -8230,7 +8326,14 @@ class InpaintEditor {
             ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - hh) / 2, w, hh);
         };
         const layer = this.layers.find((l) => l.id === h.layerId);
-        if (layer && layer.px) { paint(this.layerPixels(layer)); return; }
+        if (layer && layer.px) {
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const s = Math.min(canvas.width / layer.px.width, canvas.height / layer.px.height);
+            const w = layer.px.width * s, hh = layer.px.height * s;
+            this.drawLayerFitted(ctx, layer, (canvas.width - w) / 2, (canvas.height - hh) / 2, w, hh);
+            return;
+        }
         if (h.thumbImg) { paint(h.thumbImg); return; }
         loadImageEl(viewUrl(h.ref)).then((img) => { h.thumbImg = img; paint(img); }).catch(() => { /* ignore */ });
     }
@@ -8343,7 +8446,7 @@ class InpaintEditor {
     async restoreResult(h) {
         try {
             const img = h.thumbImg || await loadImageEl(viewUrl(h.ref));
-            const layer = this.addLayer({ name: h.name, kind: "result", ref: h.ref, px: LayerPixels.fromImage(img), x: h.x, y: h.y, w: h.w, h: h.h });
+            const layer = this.addLayer({ name: h.name, kind: "result", ref: h.ref, px: this.pixels.Layer.fromImage(img), x: h.x, y: h.y, w: h.w, h: h.h });
             h.layerId = layer.id;
             this.renderHistory();
             this.setStatus(`${h.name} restored.`);
@@ -8365,8 +8468,21 @@ class InpaintEditor {
      */
     touchSource(src) {
         this.pixelVersion++;
-        if (src instanceof LayerPixels) src.touch();
+        if (src instanceof LayerPixels) { this.checkBackend(src); src.touch(); }
         else if (src) src._dispVer = (src._dispVer || 0) + 1;
+    }
+
+    /**
+     * Pixels the editor was told changed must be of its own backend. Every write reaches the display
+     * through touchSource / touchSourceRect, so a site that made pixels with the other backend's classes
+     * (a flip, an undo restore) is found here, not only pixels handed to addLayer (C2 step b's review):
+     * strict mode (dev builds, the gates) throws, otherwise a warning once.
+     */
+    checkBackend(p) {
+        if (p.constructor.backend === this.pixels) return;
+        const msg = `Inpaint Canvas: an editor on ${this.tileMode ? "tiles" : "canvases"} holds pixels of the ${this.tileMode ? "canvas" : "tile"} backend; make them with editor.pixels`;
+        if (pixelsOptions().strict) throw new Error(msg);
+        if (!InpaintEditor._mixWarned) { InpaintEditor._mixWarned = true; console.warn(msg); }
     }
 
     /**
@@ -8377,8 +8493,13 @@ class InpaintEditor {
     touchSourceRect(pixels, x0, y0, x1, y1) {
         this.pixelVersion++;
         if (!pixels) return;
-        // the display levels are keyed on the backing canvas (C3 replaces both)
-        const src = canvasOf(pixels);
+        if (pixels instanceof LayerPixels) this.checkBackend(pixels);
+        // The display levels are keyed on the display canvas (C3 replaces both). Pixels without one
+        // (tiles nothing has drawn yet, or whose mirror was released) have no levels to keep either:
+        // touched only, so a write into a hidden layer or a tab in the background does not make a
+        // mirror as large as the pixels just to find nothing to refresh (C2 step b's review).
+        const src = displayCanvasIfMade(pixels);
+        if (!src) { pixels.touch([x0, y0, x1, y1]); return; }
         // The GPU compositor keeps one texture per source and version, so pixels that changed
         // have to raise the version even when the cached levels are kept: without this a brush
         // stroke or an erase sits in the canvas and never reaches the screen.
@@ -8388,11 +8509,29 @@ class InpaintEditor {
         else src._dispVer = (src._dispVer || 0) + 1;
         if (!keep) return;
         entry.version = src._dispVer;   // the levels are refreshed below, so they stay valid
-        if (!entry.levels.length) return;
+        if (!entry.levels.length && !entry.gpu) return;
         const rx0 = Math.max(0, Math.floor(x0) - 1), ry0 = Math.max(0, Math.floor(y0) - 1);
         const rx1 = Math.min(src.width, Math.ceil(x1) + 1), ry1 = Math.min(src.height, Math.ceil(y1) + 1);
         if (rx1 <= rx0 || ry1 <= ry0) return;
-        let prev = src, px0 = rx0, py0 = ry0, px1 = rx1, py1 = ry1;
+        if (entry.gpu) {
+            // the screen's GPU copy of a tile mirror: the rectangle copied in unscaled, from the rectangle
+            // alone (a draw from the whole CPU mirror would move all of it); the levels then read the copy
+            const g = entry.gpu, cx = g.getContext("2d");
+            const part = pixels.displayRectSource([rx0, ry0, rx1, ry1]);
+            try {
+                cx.save();
+                cx.setTransform(1, 0, 0, 1, 0, 0);
+                cx.globalAlpha = 1;
+                cx.globalCompositeOperation = "source-over";
+                cx.clearRect(rx0, ry0, rx1 - rx0, ry1 - ry0);
+                cx.drawImage(part.canvas, rx0 - part.x, ry0 - part.y, rx1 - rx0, ry1 - ry0, rx0, ry0, rx1 - rx0, ry1 - ry0);
+                cx.restore();
+            } finally {
+                if (part.temp) { part.canvas.width = 1; part.canvas.height = 1; }
+            }
+            g._dispVer = (g._dispVer || 0) + 1;
+        }
+        let prev = entry.gpu || src, px0 = rx0, py0 = ry0, px1 = rx1, py1 = ry1;
         for (let i = 0; i < entry.levels.length; i++) {
             const lvl = entry.levels[i];
             if (!lvl) break;
@@ -8415,7 +8554,17 @@ class InpaintEditor {
             cx.clearRect(lx0, ly0, lx1 - lx0, ly1 - ly0);
             cx.imageSmoothingEnabled = true;
             cx.imageSmoothingQuality = "medium";
-            cx.drawImage(prev, lx0 / f, ly0 / g, (lx1 - lx0) / f, (ly1 - ly0) / g, lx0, ly0, lx1 - lx0, ly1 - ly0);
+            // level 0 reads the pixels: through displayRectSource, which is the canvas itself on the canvas
+            // backend (the same draw as always) and the rectangle alone on tiles (a draw from the whole
+            // CPU mirror transfers all of it after every write, docs/PLAN_BCE.md §C2 step b)
+            const part = i === 0 && !entry.gpu && pixels instanceof LayerPixels
+                ? pixels.displayRectSource([Math.floor(lx0 / f) - 4, Math.floor(ly0 / g) - 4, Math.ceil(lx1 / f) + 4, Math.ceil(ly1 / g) + 4])
+                : { canvas: prev, x: 0, y: 0, temp: false };
+            try {
+                cx.drawImage(part.canvas, lx0 / f - part.x, ly0 / g - part.y, (lx1 - lx0) / f, (ly1 - ly0) / g, lx0, ly0, lx1 - lx0, ly1 - ly0);
+            } finally {
+                if (part.temp) { part.canvas.width = 1; part.canvas.height = 1; }
+            }
             cx.restore();
             lvl._dispVer = (lvl._dispVer || 0) + 1;   // this level's pixels changed too
             prev = lvl;
@@ -8429,21 +8578,27 @@ class InpaintEditor {
      * from a 1.5k copy at fit zoom instead of being resampled in full every frame.
      * Live stroke previews change every frame and are never cached. `src` is pixels or a
      * canvas; what comes back is always a canvas to draw from (C3 turns it into a level).
+     *
+     * `screen`: the result is drawn onto the screen on every frame (the view, its overlays, the
+     * GPU compositor). A tile store's display mirror is a CPU canvas, and a draw from a CPU canvas
+     * into a GPU canvas moves all of it each time (measured at 6000 × 4000, zoom 1, a filter layer
+     * in the stack: 44 ms a pan frame against 3.6 on canvases), so where the mirror itself would be
+     * drawn the screen gets a GPU copy of it instead, kept in the pyramid entry and refreshed by
+     * rectangles with the levels (C2 step b's review). Exports and runs draw the mirror once and
+     * keep nothing.
      */
-    displaySource(src, scale) {
+    displaySource(src, scale, screen = false) {
         src = canvasOf(src);
         if (!src || src._livePreview) return src;
         const w = src.width || src.naturalWidth || 0;
         const h = src.height || src.naturalHeight || 0;
-        if (!w || !h || !(scale > 0) || scale >= 0.5 || w * h < PYRAMID_MIN_PX) return src;
+        if (!w || !h || !(scale > 0) || scale >= 0.5 || w * h < PYRAMID_MIN_PX) return screen && src._cpuMirror ? this.gpuCopy(src, w, h) : src;
         let want = 0;
         while (want + 1 < PYRAMID_LEVELS && (1 / (1 << (want + 2))) >= scale) want++;
-        const ver = src._dispVer || 0;
-        let entry = this.pyramids.get(src);
-        if (!entry || entry.version !== ver || entry.w !== w || entry.h !== h) {
-            entry = { version: ver, w, h, levels: [] };
-            this.pyramids.set(src, entry);
-        }
+        const entry = this.pyramidEntry(src, w, h);
+        // the screen shows this source from a level now: its full-size GPU copy is not kept in VRAM (the
+        // next frame at 0.5 or more makes it again, one transfer of the mirror)
+        if (screen && entry.gpu) entry.gpu = null;
         for (let i = 0; i <= want; i++) {
             if (entry.levels[i]) continue;
             // one new level per frame: after a zoom step every source would otherwise build
@@ -8457,10 +8612,37 @@ class InpaintEditor {
             const cx = c.getContext("2d");
             cx.imageSmoothingEnabled = true;
             cx.imageSmoothingQuality = "medium";
-            cx.drawImage(i === 0 ? src : entry.levels[i - 1], 0, 0, lw, lh);
+            cx.drawImage(i === 0 ? (entry.gpu || src) : entry.levels[i - 1], 0, 0, lw, lh);
             entry.levels[i] = c;
         }
         return entry.levels[want] || src;
+    }
+
+    /** The pyramid entry of a display canvas at its current version (a new, empty one after a change). */
+    pyramidEntry(src, w, h) {
+        const ver = src._dispVer || 0;
+        let entry = this.pyramids.get(src);
+        if (!entry || entry.version !== ver || entry.w !== w || entry.h !== h) {
+            entry = { version: ver, w, h, levels: [], gpu: null };
+            this.pyramids.set(src, entry);
+        }
+        return entry;
+    }
+
+    /**
+     * A GPU canvas holding what the CPU display mirror `src` holds (displaySource's `screen`), made
+     * with one draw per version of the mirror and refreshed by rectangles in touchSourceRect. The
+     * premultiplied pixels are the ones the mirror's own upload would give, so a draw from it is the
+     * draw from the mirror.
+     */
+    gpuCopy(src, w, h) {
+        const entry = this.pyramidEntry(src, w, h);
+        if (!entry.gpu) {
+            const c = makeCanvas(w, h);
+            c.getContext("2d").drawImage(src, 0, 0);
+            entry.gpu = c;
+        }
+        return entry.gpu;
     }
 
     /**
@@ -8471,7 +8653,7 @@ class InpaintEditor {
     get basePx() {
         if (!this.base || !this.base.img) return null;
         if (!this._basePx || this._basePxImg !== this.base.img) {
-            this._basePx = LayerPixels.fromImage(this.base.img);
+            this._basePx = this.pixels.Layer.fromImage(this.base.img);
             this._basePxImg = this.base.img;
         }
         return this._basePx;
@@ -8546,7 +8728,7 @@ class InpaintEditor {
         const layers = [];
         const base = this.basePx;
         if (base) {
-            const lvl = this.displaySource(base, sx);
+            const lvl = this.displaySource(base, sx, true);
             layers.push({ source: lvl, version: this.sourceVersion(lvl), x: 0, y: 0, w: this.width, h: this.height, opacity: 1, blend: "normal" });
         }
         const vp = { x: region.x, y: region.y, w: region.w, h: region.h, sx, sy: vh / region.h };
@@ -8560,9 +8742,9 @@ class InpaintEditor {
                 const matched = this.matchActive(layer)
                     ? this.layerMatchedPixels(layer, () => this.glMatchBackdrop(comp, vw, vh, region, layers), vp)
                     : null;
-                const px = matched || this.layerPixels(layer);
+                const px = matched || this.layerPixels(layer, true);
                 if (!px || px._livePreview) return null;
-                const lvl = this.displaySource(px, (layer.w * sx) / px.width);
+                const lvl = this.displaySource(px, (layer.w * sx) / px.width, true);
                 layers.push({
                     source: lvl, version: this.sourceVersion(lvl),
                     x: layer.x, y: layer.y, w: layer.w, h: layer.h,
@@ -8630,7 +8812,7 @@ class InpaintEditor {
         let gl = null;
         if (this.glCompositeUsable({})) {
             const prevVp = this.viewPass;
-            this.viewPass = { x: region.x, y: region.y, w: region.w, h: region.h, sx, sy };
+            this.viewPass = { x: region.x, y: region.y, w: region.w, h: region.h, sx, sy, screen: true };
             try {
                 gl = this.glViewComposite(region, vw, vh, {});
             } finally {
@@ -8644,7 +8826,7 @@ class InpaintEditor {
         if (!gl) {
             v.setTransform(sx, 0, 0, sy, -region.x * sx, -region.y * sy);
             const prev = this.viewPass;
-            this.viewPass = { x: region.x, y: region.y, w: region.w, h: region.h, sx, sy };
+            this.viewPass = { x: region.x, y: region.y, w: region.w, h: region.h, sx, sy, screen: true };
             try {
                 this.drawComposite(v, {});
             } finally {
@@ -8693,7 +8875,7 @@ class InpaintEditor {
         } else {
             const bs = this.basePx;
             const vp = this.viewPass;
-            if (bs) ctx.drawImage(this.displaySource(bs, vp ? vp.sx : 1), 0, 0, this.width, this.height);
+            if (bs) ctx.drawImage(this.displaySource(bs, vp ? vp.sx : 1, !!(vp && vp.screen)), 0, 0, this.width, this.height);
         }
         let chain = null;   // filter layers that follow each other keep the composite on the GPU
         for (let i = 0; i < this.layers.length; i++) {
@@ -8719,7 +8901,8 @@ class InpaintEditor {
         if (p && p.layer === layer) {
             const fine = !this.pointer;
             const n = this.pendingSubdivisions(p, fine);
-            const px = this.layerPixels(layer);
+            // while the view is drawn, a tile layer's GPU copy (displaySource's `screen`), not its CPU mirror
+            const px = this.viewPass && this.viewPass.screen ? this.displaySource(this.layerPixels(layer, true), 1, true) : this.layerPixels(layer, true);
             if (p.mode === "rotate") {
                 const cx = layer.x + layer.w / 2, cy = layer.y + layer.h / 2;
                 ctx.save();
@@ -8736,8 +8919,8 @@ class InpaintEditor {
         const gesture = this.pointer && this.pointer.layer === layer;
         const full = ctx.canvas.width === this.width && ctx.canvas.height === this.height;
         const src = this.matchActive(layer) && !gesture && (vp || full)
-            ? this.layerMatchedPixels(layer, ctx.canvas, vp) : this.layerPixels(layer);
-        ctx.drawImage(this.displaySource(src, vp ? (layer.w * vp.sx) / src.width : 1), layer.x, layer.y, layer.w, layer.h);
+            ? this.layerMatchedPixels(layer, ctx.canvas, vp) : this.layerPixels(layer, true);
+        ctx.drawImage(this.displaySource(src, vp ? (layer.w * vp.sx) / src.width : 1, !!(vp && vp.screen)), layer.x, layer.y, layer.w, layer.h);
     }
 
     matchActive(layer) {
@@ -8763,9 +8946,9 @@ class InpaintEditor {
     layerMatchedPixels(layer, below, vp = null) {
         const m = layer.match || {};
         const strength = Math.min(1, Math.max(0, (m.strength || 0) / 100));
-        const px = this.layerPixels(layer);
+        const px = this.layerPixels(layer, true);
         // in a region pass the match is applied to the pyramid level that is actually drawn
-        const out0 = vp ? this.displaySource(px, (layer.w * vp.sx) / px.width) : px;
+        const out0 = vp ? this.displaySource(px, (layer.w * vp.sx) / px.width, !!vp.screen) : px;
         const key = JSON.stringify([m.strength, m.source, layer.x, layer.y, layer.w, layer.h, out0.width, out0.height]);
         const slot = vp ? (vp.sample ? "_mcacheSample" : "_mcacheView") : "_mcache";
         const c = layer[slot];
@@ -8996,7 +9179,7 @@ class InpaintEditor {
         a.clearRect(0, 0, W, H);
         a.imageSmoothingEnabled = s < 1;
         const r = 1.25;
-        const sel = this.displaySource(this.sel, s);   // nine draws of the selection: never at full size
+        const sel = this.displaySource(this.sel, s, true);   // nine draws of the selection: never at full size
         for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, -r], [r, -r], [-r, r]]) {
             this.applyViewTransform(a, dx, dy);
             a.drawImage(sel, 0, 0, this.width, this.height);
@@ -9101,7 +9284,7 @@ class InpaintEditor {
     drawSceneImage(ctx, W, H) {
         if (this.peekBase) {
             const bs = this.basePx;
-            if (bs) ctx.drawImage(this.displaySource(bs, this.view.scale), 0, 0, this.width, this.height);
+            if (bs) ctx.drawImage(this.displaySource(bs, this.view.scale, true), 0, 0, this.width, this.height);
             return;
         }
         if (this.compare && this.compare.a && this.compare.b) {
@@ -9132,7 +9315,7 @@ class InpaintEditor {
         const s = this.view.scale;
         if (this.selectionDisplay === "tint" || this.quickMask || !this.getBounds()) {
             ctx.globalAlpha = this.quickMask ? 0.5 : 0.4;
-            ctx.drawImage(this.displaySource(this.sel, s), 0, 0, this.width, this.height);
+            ctx.drawImage(this.displaySource(this.sel, s, true), 0, 0, this.width, this.height);
             ctx.globalAlpha = 1;
         } else {
             this.drawMarchingAnts(ctx);
@@ -9516,9 +9699,12 @@ class InpaintEditor {
      * scratch canvases, the display pyramids and the compositor's textures. Everything
      * here is rebuilt on demand, so the only cost is the next frame; the pyramid comes
      * back one level per frame by design. `deep` also drops the GPU-side pool through
-     * the hook the app sets (`releaseGpu`). Returns the bytes it let go of.
+     * the hook the app sets (`releaseGpu`). `mirrors` also gives back the display canvases of
+     * pixels on tiles (a cache of the tiles, made again and synced by the next frame that shows
+     * them, which costs a putImageData per tile: for tabs that are not in front). Returns the bytes
+     * it let go of.
      */
-    releaseCaches({ deep = false } = {}) {
+    releaseCaches({ deep = false, mirrors = false } = {}) {
         const px = (c) => (c && c.width ? c.width * c.height * 4 : 0);
         let freed = 0;
         const sources = [];
@@ -9532,7 +9718,7 @@ class InpaintEditor {
             l._mstats = null;
             l._mstatsView = null;
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
-            for (const p of [l.px, l.maskPx]) if (p) sources.push(canvasOf(p));
+            for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }
         for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "clipScratch"]) {
             if (this[name]) { freed += px(this[name]); this[name] = null; }
@@ -9541,11 +9727,12 @@ class InpaintEditor {
         this.sceneSig = null;
         // the pyramids: their levels are exclusively theirs, the sources stay
         // the base's pixels only when they were built: asking basePx here would build them
-        for (const src of [...sources, canvasOf(this._basePx), canvasOf(this.sel)]) {
+        for (const src of [...sources, displayCanvasIfMade(this._basePx), displayCanvasIfMade(this.sel)]) {
             if (!src) continue;
             const entry = this.pyramids.get(src);
             if (!entry) continue;
             for (const lvl of entry.levels) freed += px(lvl);
+            freed += px(entry.gpu);
             this.pyramids.delete(src);
         }
         if (this._compositor) {
@@ -9553,11 +9740,38 @@ class InpaintEditor {
             if (st) freed += st.bytes;
             this._compositor.clear();
         }
+        if (mirrors) {
+            // after the pyramids and the textures, which were keyed on these canvases; the caches
+            // above that could hold one (_mcache*, flatCache) are gone too. The canvas backend's
+            // display canvas is the pixels themselves and answers 0.
+            for (const p of this.heldPixels()) freed += p.releaseDisplay();
+        }
         if (deep && typeof this.releaseGpu === "function") { try { freed += this.releaseGpu() || 0; } catch (_) { /* no GPU path */ } }
         // deliberately no draw: a background tab that redrew here would build every cache
         // straight back. The next draw (a gesture, or the tab coming forward) rebuilds
         // exactly what it needs; the caller redraws when the tab is the one in front.
         return freed;
+    }
+
+    /**
+     * Every pixels object this editor holds: the layers' and masks', the base's (when built), the
+     * selection, and what the undo and redo steps keep (rect copies, the layers of a layers / canvas
+     * step). Each once.
+     */
+    heldPixels() {
+        const out = new Set();
+        const add = (p) => { if (p instanceof LayerPixels) out.add(p); };
+        for (const l of this.layers) { add(l.px); add(l.maskPx); }
+        add(this._basePx);
+        add(this.sel);
+        for (const list of [this.undo, this.redo]) {
+            for (const st of list) {
+                if (!st) continue;
+                add(st.px);
+                for (const l of st.layers || []) { add(l.px); add(l.maskPx); }
+            }
+        }
+        return out;
     }
 
     async freeHelperModels() {
@@ -9706,10 +9920,10 @@ class InpaintEditor {
             for (const l of state.layers || []) {
                 if (l.kind === "filter") {
                     try {
-                        const pixels = LayerPixels.empty(this.width, this.height);
+                        const pixels = this.pixels.Layer.empty(this.width, this.height);
                         let maskPx = null;
                         if (l.mask && l.mask.filename) {
-                            try { maskPx = MaskPixels.fromImage(await loadImageEl(viewUrl(l.mask)), pixels.width, pixels.height); } catch (err) { console.warn("Inpaint Canvas: layer mask missing", l.mask, err); }
+                            try { maskPx = this.pixels.Mask.fromImage(await loadImageEl(viewUrl(l.mask)), pixels.width, pixels.height); } catch (err) { console.warn("Inpaint Canvas: layer mask missing", l.mask, err); }
                             if (stale()) return;
                         }
                         let lutData = null;
@@ -9729,7 +9943,7 @@ class InpaintEditor {
                             maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false,
                             filter: fid, params: { ...filterDefaults(fid), ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,
                             plate: plateImg ? l.plate : null, _plateImg: plateImg,
-                        }));
+                        }, this.pixels));
                         this.filterCounter += 1;
                     } catch (err) {
                         console.warn("Inpaint Canvas: filter layer skipped", l, err);
@@ -9738,8 +9952,8 @@ class InpaintEditor {
                 }
                 if (l.kind === "text" && l.text && !l.ref) {
                     // never uploaded (editor closed without sync): render it again from its description
-                    const layer = { id: l.id, name: l.name, kind: "text", role: l.role || "none", blend: l.blend || "normal", ref: null, px: LayerPixels.empty(1, 1), x: l.x, y: l.y, w: 1, h: 1, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: true, locked: !!l.locked, alphaLock: !!l.alphaLock, maskPx: null, maskRef: null, maskDirty: false, maskEdit: false, match: { strength: 0, source: "surroundings" }, text: { ...TEXT_DEFAULTS, ...l.text } };
-                    this.layers.push(installLayerAliases(layer));
+                    const layer = { id: l.id, name: l.name, kind: "text", role: l.role || "none", blend: l.blend || "normal", ref: null, px: this.pixels.Layer.empty(1, 1), x: l.x, y: l.y, w: 1, h: 1, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: true, locked: !!l.locked, alphaLock: !!l.alphaLock, maskPx: null, maskRef: null, maskDirty: false, maskEdit: false, match: { strength: 0, source: "surroundings" }, text: { ...TEXT_DEFAULTS, ...l.text } };
+                    this.layers.push(installLayerAliases(layer, this.pixels));
                     this.textCounter = (this.textCounter || 0) + 1;
                     textToRender.push(layer);
                     continue;
@@ -9748,10 +9962,10 @@ class InpaintEditor {
                 try {
                     const limg = await loadImageEl(viewUrl(l.ref));
                     if (stale()) return;
-                    const pixels = LayerPixels.fromImage(limg);
+                    const pixels = this.pixels.Layer.fromImage(limg);
                     let maskPx = null;
                     if (l.mask && l.mask.filename) {
-                        try { maskPx = MaskPixels.fromImage(await loadImageEl(viewUrl(l.mask)), pixels.width, pixels.height); } catch (err) { console.warn("Inpaint Canvas: layer mask missing", l.mask, err); }
+                        try { maskPx = this.pixels.Mask.fromImage(await loadImageEl(viewUrl(l.mask)), pixels.width, pixels.height); } catch (err) { console.warn("Inpaint Canvas: layer mask missing", l.mask, err); }
                         if (stale()) return;
                     }
                     this.layers.push(installLayerAliases({
@@ -9761,7 +9975,7 @@ class InpaintEditor {
                         maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false,
                         match: l.match && typeof l.match === "object" ? { strength: +l.match.strength || 0, source: l.match.source === "underneath" ? "underneath" : "surroundings" } : { strength: 0, source: "surroundings" },
                         ...(l.kind === "text" && l.text ? { text: { ...TEXT_DEFAULTS, ...l.text } } : {}),
-                    }));
+                    }, this.pixels));
                     if (l.kind === "paint") this.paintCounter += 1;
                     if (l.kind === "text") this.textCounter = (this.textCounter || 0) + 1;
                 } catch (err) {
@@ -9878,15 +10092,47 @@ class InpaintEditor {
      * store of a canvas). Nothing here allocates or frees; it is the input of
      * tools/mem_test.py and of the memory work in the app's docs/PERFORMANCE.md.
      * The GPU filter chain is app-only and is asked separately (glPoolStats()).
+     *
+     * Pixels on tiles (docs/PLAN_BCE.md §C2 step b) are reported under the same slot names with
+     * `tiles` and the bytes of their allocated tiles, a tile shared copy-on-write by several
+     * pixels objects counted once (the first holder in the order layers, base, selection, undo);
+     * their display mirror, where one was made, is a slot of its own ("mirror", a canvas of the
+     * pixels' size in renderer memory). `tiles` at the top sums both.
      */
     memoryReport() {
         const px = (c) => (c && c.width ? c.width * c.height * 4 : 0);
-        const seen = new Set();          // one canvas counted once, however many slots hold it
+        const seen = new Set();          // one canvas (or tile) counted once, however many slots hold it
         const add = (into, name, c) => {
             if (!c || !c.width) return;
             const bytes = px(c);
             into.push({ name, w: c.width, h: c.height, bytes, shared: seen.has(c) });
             seen.add(c);
+        };
+        const tileSum = { pixels: 0, tiles: 0, bytes: 0, sharedTiles: 0, mirrors: 0, mirrorBytes: 0, thumbnails: 0, thumbnailBytes: 0 };
+        // the tiles of `p` no slot counted yet: [tiles, bytes, tiles counted before]
+        const newTiles = (p, skip = null) => {
+            let n = 0, bytes = 0, old = 0;
+            for (const t of p.tileList()) {
+                if (seen.has(t) || (skip && skip.has(t))) { old++; continue; }
+                seen.add(t);
+                n++;
+                bytes += t.data.byteLength;
+            }
+            return [n, bytes, old];
+        };
+        // a pixels object into `into` under `name`: its backing canvas, or its new tiles plus its mirror
+        const addPixels = (into, name, p) => {
+            if (!p) return;
+            if (!isTilePixels(p)) { add(into, name, canvasOf(p)); return; }
+            const [n, bytes, old] = newTiles(p);
+            tileSum.pixels++; tileSum.tiles += n; tileSum.bytes += bytes; tileSum.sharedTiles += old;
+            into.push({ name, w: p.width, h: p.height, tiles: n, sharedTiles: old, bytes, shared: false });
+            const m = p.displayCanvasIfMade();
+            if (m && m.width && !seen.has(m)) { tileSum.mirrors++; tileSum.mirrorBytes += px(m); }
+            add(into, name === "canvas" ? "mirror" : name + "Mirror", m);
+            const th = p.thumbnailCanvasIfMade();
+            if (th && th.width && !seen.has(th)) { tileSum.thumbnails++; tileSum.thumbnailBytes += px(th); }
+            add(into, name === "canvas" ? "thumbnail" : name + "Thumbnail", th);
         };
         const sum = (list) => list.reduce((a, e) => a + (e.shared ? 0 : e.bytes), 0);
 
@@ -9896,9 +10142,9 @@ class InpaintEditor {
         for (const l of this.layers) {
             const own = [];
             // the backing canvases, so a colour-match cache that holds the layer's own canvas is counted once
-            const lc = canvasOf(l.px), mc = canvasOf(l.maskPx);
-            add(own, "canvas", lc);
-            add(own, "mask", mc);
+            const lc = displayCanvasIfMade(l.px), mc = displayCanvasIfMade(l.maskPx);
+            addPixels(own, "canvas", l.px);
+            addPixels(own, "mask", l.maskPx);
             add(own, "_masked", l._masked);
             for (const slot of ["_fcache", "_fcacheView", "_fcacheSample", "_mcache", "_mcacheView", "_mcacheSample"]) {
                 const c = l[slot] && l[slot].canvas;
@@ -9908,54 +10154,84 @@ class InpaintEditor {
             layers.push({ id: l.id, name: l.name, kind: l.kind, w: l.w, h: l.h, bytes: sum(own), slots: own });
         }
         // the base's pixels only when they were built (basePx would build them)
-        for (const c of [canvasOf(this._basePx), canvasOf(this.sel)]) if (c) sources.push(c);
+        for (const c of [displayCanvasIfMade(this._basePx), displayCanvasIfMade(this.sel)]) if (c) sources.push(c);
 
         // pyramids: a WeakMap cannot be walked, so ask it for every source we know of
         const pyramid = [];
         for (const src of sources) {
             const entry = this.pyramids.get(src);
-            if (!entry || !entry.levels.length) continue;
+            if (!entry || (!entry.levels.length && !entry.gpu)) continue;
             let bytes = 0, levels = 0;
             for (const lvl of entry.levels) if (lvl && lvl.width) { bytes += px(lvl); levels++; }
-            pyramid.push({ w: src.width, h: src.height, levels, bytes });
+            // the screen's GPU copy of a tile mirror (displaySource's `screen`)
+            const gpuBytes = px(entry.gpu);
+            pyramid.push({ w: src.width, h: src.height, levels, bytes: bytes + gpuBytes, gpuCopyBytes: gpuBytes });
         }
 
-        // undo / redo: the rect copies plus the canvases the "layers" / "canvas" snapshots hold
+        // the scratch canvases the editor keeps between frames, the base and the selection first:
+        // their tiles are counted before the undo steps that share them
+        const scratch = [];
+        addPixels(scratch, "_baseCanvas", this._basePx);   // the name mem_test and the docs know
+        addPixels(scratch, "selection", this.sel);
+        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "clipScratch", "filterMaskCanvas"]) add(scratch, name, this[name]);
+        add(scratch, "flatCache", this.flatCache && this.flatCache.canvas);
+
+        // undo / redo: the rect copies plus the canvases (or tiles) the "layers" / "canvas" snapshots
+        // hold that the live document does not
         const live = new Set();
-        for (const l of this.layers) { if (l.px) live.add(canvasOf(l.px)); if (l.maskPx) live.add(canvasOf(l.maskPx)); }
+        for (const l of this.layers) {
+            for (const p of [l.px, l.maskPx]) {
+                if (!p) continue;
+                if (isTilePixels(p)) { for (const t of p.tileList()) live.add(t); const m = p.displayCanvasIfMade(); if (m) live.add(m); } else live.add(canvasOf(p));
+            }
+        }
         const undoSeen = new Set();
+        // bytes of pixels a step holds that neither the live layers nor an earlier step hold
+        const heldBytes = (p) => {
+            if (!p) return 0;
+            if (!isTilePixels(p)) {
+                const c = canvasOf(p);
+                if (!c || !c.width || live.has(c) || undoSeen.has(c) || seen.has(c)) return 0;
+                undoSeen.add(c);
+                return px(c);
+            }
+            let bytes = 0;
+            for (const t of p.tileList()) {
+                if (live.has(t) || undoSeen.has(t) || seen.has(t)) continue;
+                undoSeen.add(t);
+                bytes += t.data.byteLength;
+                tileSum.tiles++; tileSum.bytes += t.data.byteLength;
+            }
+            const m = p.displayCanvasIfMade();
+            if (m && m.width && !live.has(m) && !undoSeen.has(m) && !seen.has(m)) { undoSeen.add(m); bytes += px(m); tileSum.mirrors++; tileSum.mirrorBytes += px(m); }
+            tileSum.pixels++;
+            return bytes;
+        };
         const walkSteps = (list) => {
             const kinds = {};
             let bytes = 0, held = 0;
             for (const s of list) {
                 if (!s) continue;
                 kinds[s.kind] = (kinds[s.kind] || 0) + 1;
-                const sc = canvasOf(s.px);   // a layerrect / selection step's pixels copy
-                if (sc && sc.width && !undoSeen.has(sc)) { undoSeen.add(sc); bytes += px(sc); }
+                bytes += heldBytes(s.px);   // a layerrect / selection step's pixels copy
                 for (const l of s.layers || []) {
                     // snapshot copies are spreads: they carry px / maskPx, not the aliases
-                    for (const c of [canvasOf(l.px), canvasOf(l.maskPx), l._masked]) {
-                        if (!c || !c.width || live.has(c) || undoSeen.has(c)) continue;
-                        undoSeen.add(c);
-                        held += px(c);
-                    }
+                    held += heldBytes(l.px) + heldBytes(l.maskPx);
+                    if (l._masked && l._masked.width && !live.has(l._masked) && !undoSeen.has(l._masked)) { undoSeen.add(l._masked); held += px(l._masked); }
                 }
             }
             return { steps: list.length, kinds, rectBytes: bytes, heldLayerBytes: held };
         };
         const undo = { budget: this.undoBytes, undo: walkSteps(this.undo), redo: walkSteps(this.redo) };
 
-        // scratch canvases the editor keeps between frames
-        const scratch = [];
-        add(scratch, "_baseCanvas", canvasOf(this._basePx));   // the name mem_test and the docs know
-        add(scratch, "selection", canvasOf(this.sel));
-        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "clipScratch", "filterMaskCanvas"]) add(scratch, name, this[name]);
-        add(scratch, "flatCache", this.flatCache && this.flatCache.canvas);
-
         const comp = this._compositor && this._compositor.stats ? this._compositor.stats() : null;
+        const pool = this.tileMode ? scratchStats() : null;
         return {
             id: this.node && this.node.id,
             size: [this.width, this.height],
+            tileMode: this.tileMode,
+            // tile bytes and mirrors of every pixels object above; the scratch pool is the module's, shared by all editors
+            tiles: this.tileMode ? { ...tileSum, tileSize: TILE_SIZE, scratchPoolBytes: pool.poolPixels * 4 } : null,
             layers: { count: layers.length, bytes: layers.reduce((a, l) => a + l.bytes, 0), list: layers },
             pyramid: { sources: pyramid.length, levels: pyramid.reduce((a, p) => a + p.levels, 0), bytes: pyramid.reduce((a, p) => a + p.bytes, 0), list: pyramid },
             undo,

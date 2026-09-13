@@ -12,6 +12,10 @@ undo step, and that closed tabs are freed. The close-out's steps: an undo refuse
 a drag is held, an undo that does not run over an edit made while it loads (a decode, a grow, a
 canvas redo, an upload of extend / merge, flatten), text edit steps that give their blob URLs
 back, and a restored selection that getValue saves even when it was read during the restore.
+C2 step (b) and its review: the pixel backend the flag chose, editing on it in pixels and on screen
+(a selection drag with faint isolated pixels, read on screen in the middle of the drag), no display
+mirror for pixels nothing draws, no CPU mirror drawn by the screen, stale compositor textures leaving,
+and after every step a sweep that every open editor holds only pixels of its own backend.
 
     python tools/editor_test.py
 
@@ -142,6 +146,442 @@ return host.editors().length;
     if any(alive):
         raise Exception("closed tabs still alive after a collection: %s" % json.dumps(alive))
     return {"open": r, "alive": alive}
+
+
+
+# C2 step (b) (docs/PLAN_BCE.md §C2): the pixel backend. The gates start the app with
+# SCUMBLE_TILES=1 or 0 (run_gates.sh --tiles on|off); without it the dev build's default applies.
+def expected_tiles():
+    v = os.environ.get("SCUMBLE_TILES")
+    return True if v == "1" else False if v == "0" else None
+
+
+BACKEND_STEP = """
+// Every pixels object of a new document is of the backend the flag chose: the selection, the base,
+// a layer, and what clone / copyRect / resized make of them; the status command and the memory report
+// say so; pixels of the other backend are refused in strict mode (a gate would find a mix); and the
+// display draws the pixels' own display canvas: the same canvas every frame, no toCanvas() copy per
+// frame, a pyramid that is finished after a few frames and then kept.
+const expect = __EXPECT__;   // null when the gate did not set SCUMBLE_TILES
+const P = await import("./editor/inpaint_pixels.js");
+const T = await import("./editor/inpaint_tiles.js");
+const flag = window.scumble.pixels.tiles;
+const d = await run("new_document");
+window.__tb = d.id;
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 2400, height: 1600, doc: d.id });   // above 1 MP: the layers get display levels
+const st = await run("status", { doc: d.id });
+const L = ed.addPaintLayer();
+const out = { flag, from: window.scumble.pixels.tilesFrom, expect, tileMode: ed.tileMode, status: st.pixels };
+if (typeof flag !== "boolean") throw new Error("main.js passed no backend: " + JSON.stringify(out));
+if (expect !== null && flag !== expect) throw new Error("the app runs another backend than the gate asked for: " + JSON.stringify(out));
+if (ed.tileMode !== flag || P.pixelsOptions().tiles !== flag || st.pixels.tiles !== flag || ed.pixels !== T.pixelsBackend(flag)) throw new Error("the editor's backend is not the flag's: " + JSON.stringify(out));
+const objs = { sel: ed.sel, base: ed.basePx, layer: L.px, clone: L.px.clone(), rect: L.px.copyRect([0, 0, 10, 10]), resized: ed.sel.resized(20, 20) };
+for (const [k, p] of Object.entries(objs)) if (T.isTilePixels(p) !== flag) throw new Error(k + " is on the other backend");
+if (!(ed.sel instanceof ed.pixels.Mask) || !(L.px instanceof ed.pixels.Layer) || !(ed.basePx instanceof ed.pixels.Layer)) throw new Error("the pixels are not the editor's classes");
+const rep = ed.memoryReport();
+if (rep.tileMode !== flag || !!rep.tiles !== flag) throw new Error("the memory report does not say the backend: " + JSON.stringify({ tileMode: rep.tileMode, tiles: rep.tiles }));
+out.report = rep.tiles;
+let refused = null;
+const n = ed.layers.length;
+try { ed.addLayer({ name: "mix", kind: "paint", px: T.pixelsBackend(!flag).Layer.empty(8, 8), x: 0, y: 0, w: 8, h: 8 }); } catch (e) { refused = e.message; }
+if (P.pixelsOptions().strict && (!refused || !/backend/.test(refused) || ed.layers.length !== n)) throw new Error("pixels of the other backend were taken: " + refused);
+out.mixRefused = !!refused;
+// the display: a masked layer with content, zoomed out so it is drawn from its levels
+L.px.fill([100, 100, 1900, 1300], "#3070d0");
+ed.markLayerChanged(L);
+L.maskPx = ed.pixels.Mask.empty(L.px.width, L.px.height);
+L.maskPx.fill([0, 0, 1200, 1600], "#ffffff");
+ed.markMaskChanged(L);
+const M = ed.addPaintLayer();
+M.px.fill([600, 400, 2200, 1500], "#d07030");
+ed.markLayerChanged(M);
+ed.view.scale = 0.2; ed.view.angle = 0;
+ed.view.x = Math.round(ed.canvas.width / 2 - 1200 * 0.2); ed.view.y = Math.round(ed.canvas.height / 2 - 800 * 0.2);
+const shown = [L.px, L.maskPx, M.px, ed.basePx, ed.sel];
+const canvases = shown.map((p) => P.canvasOf(p));
+const proto = [ed.pixels.Layer.prototype, ed.pixels.Mask.prototype];
+const orig = proto.map((pr) => Object.prototype.hasOwnProperty.call(pr, "toCanvas") ? pr.toCanvas : null);
+let copies = 0;
+for (const pr of proto) { const f = pr.toCanvas; pr.toCanvas = function (...a) { copies++; return f.apply(this, a); }; }
+let frames = 0;
+try {
+    for (let i = 0; i < 12; i++) { ed.sceneSig = null; ed.draw(); frames++; await wait(30); if (!ed._pyramidPending && i >= 3) break; }
+} finally {
+    proto.forEach((pr, i) => { if (orig[i]) pr.toCanvas = orig[i]; else delete pr.toCanvas; });
+}
+const entry = ed.pyramids.get(P.canvasOf(M.px));
+ed.sceneSig = null; ed.draw(); ed.sceneSig = null; ed.draw();
+out.display = { frames, copies, pending: ed._pyramidPending, levels: entry ? entry.levels.length : 0, kept: ed.pyramids.get(P.canvasOf(M.px)) === entry };
+if (copies) throw new Error("the display took toCanvas() copies: " + JSON.stringify(out.display));
+if (shown.some((p, i) => P.canvasOf(p) !== canvases[i])) throw new Error("a display canvas changed between frames");
+if (ed._pyramidPending || !entry || !entry.levels.length || !out.display.kept) throw new Error("the pyramid is rebuilt every frame: " + JSON.stringify(out.display));
+return out;
+"""
+
+
+EDIT_STEP = """
+// Editing on the flag's backend, checked in the pixels and on the screen: a real brush stroke (a
+// layerrect undo step), a fill (a whole-layer step), undo and redo of both, and the clone-then-write
+// path: a duplicated layer shares the pixels (the tiles, on tiles) until it is written, the write and
+// its undo leave the original alone to the byte.
+const T = await import("./editor/inpaint_tiles.js");
+const ed = ednow(window.__tb);
+host.shell.activate(ed);
+await run("new_canvas", { width: 2400, height: 1600, doc: window.__tb });
+const out = { tiles: ed.tileMode };
+const L = ed.addPaintLayer();
+ed.activeLayerId = L.id;
+ed.fitView(); ed.sceneSig = null; ed.draw(); await wait(60);
+const settle = async () => { for (let i = 0; i < 6; i++) { ed.sceneSig = null; ed.draw(); await wait(30); if (!ed._pyramidPending) break; } ed.hover = null; ed.sceneSig = null; ed.draw(); };
+const screenAt = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return Array.from(ed.canvas.getContext("2d").getImageData(Math.round(sx), Math.round(sy), 1, 1).data); };
+const pixel = (l, x, y) => Array.from(l.px.readRect(x, y, 1, 1).data);
+const is = (p, rgb) => Math.abs(p[0] - rgb[0]) < 40 && Math.abs(p[1] - rgb[1]) < 40 && Math.abs(p[2] - rgb[2]) < 40;
+const RED = [255, 0, 0], GREEN = [0, 255, 0], BLUE = [0, 0, 255], WHITE = [255, 255, 255];
+const check = (label, l, x, y, px, screen) => {
+    const got = { px: pixel(l, x, y), screen: screenAt(x, y) };
+    out[label] = got;
+    if (px === null ? got.px[3] !== 0 : (got.px[3] !== 255 || !is(got.px, px))) throw new Error(label + ": the layer's pixel is wrong: " + JSON.stringify(got));
+    if (!is(got.screen, screen)) throw new Error(label + ": the screen shows something else: " + JSON.stringify(got));
+};
+const rect = ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 11, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+const stroke = async (x0, y, x1) => {
+    ed.canvas.dispatchEvent(ev("pointerdown", x0, y));
+    for (let i = 1; i <= 10; i++) { ed.canvas.dispatchEvent(ev("pointermove", x0 + (x1 - x0) * i / 10, y)); await wait(16); }
+    ed.canvas.dispatchEvent(ev("pointerup", x1, y));
+    await wait(60);
+};
+// 1. a brush stroke
+ed.setTool("paint");
+ed.color = "#ff0000"; ed.brushSize = 80; ed.hardness = 1; ed.brushOpacity = 1;
+await stroke(300, 300, 1100);
+await settle();
+const strokeStep = ed.undo[ed.undo.length - 1];
+out.strokeStep = strokeStep && strokeStep.kind;
+if (!strokeStep || strokeStep.kind !== "layerrect" || T.isTilePixels(strokeStep.px) !== ed.tileMode) throw new Error("the stroke's undo step is not a rect copy on the editor's backend: " + out.strokeStep);
+check("stroke", L, 700, 300, RED, RED);
+// 2. a fill of the selection
+await run("select_rect", { x: 1000, y: 800, w: 400, h: 300, doc: window.__tb });
+ed.color = "#00ff00";
+ed.fillSelection();
+ed.clearSelection();
+await wait(200); await settle();
+check("fill", L, 1200, 950, GREEN, GREEN);
+// 3. undo both, redo both (the selection's own steps lie between them: select, deselect)
+const kinds = ed.undo.slice(-4).map((u) => u.kind);
+if (kinds.join() !== "layerrect,selection,layer,selection") throw new Error("unexpected undo steps: " + kinds);
+await ed.undoStep(); await ed.undoStep(); await settle();
+check("undoFill", L, 1200, 950, null, WHITE);
+check("strokeStays", L, 700, 300, RED, RED);
+await ed.undoStep(); await ed.undoStep(); await settle();
+check("undoStroke", L, 700, 300, null, WHITE);
+await ed.redoStep(); await settle();
+check("redoStroke", L, 700, 300, RED, RED);
+await ed.redoStep(); await ed.redoStep(); await ed.redoStep(); await settle();
+check("redoFill", L, 1200, 950, GREEN, GREEN);
+if (ed.sel.bounds()) throw new Error("the redo left a selection behind");
+// 4. clone, then write into the copy
+const C = ed.duplicateLayer(L);
+if (!C || T.isTilePixels(C.px) !== ed.tileMode) throw new Error("the duplicate is not on the editor's backend");
+const tile = (l) => (T.isTilePixels(l.px) ? l.px.tileAt(700 >> 8, 300 >> 8) : null);
+if (ed.tileMode && (!tile(L) || tile(C) !== tile(L))) throw new Error("the duplicate does not share the original's tiles");
+const origBytes = L.px.readRect(0, 0, 2400, 1600).data;
+const sameAsOrig = () => { const now = L.px.readRect(0, 0, 2400, 1600).data; for (let i = 0; i < now.length; i++) if (now[i] !== origBytes[i]) return false; return true; };
+ed.activeLayerId = C.id;
+const n0 = ed.undo.length;
+await run("select_rect", { x: 500, y: 200, w: 500, h: 200, doc: window.__tb });
+ed.color = "#0000ff";
+ed.fillSelection();
+ed.clearSelection();
+await wait(200); await settle();
+check("cloneFill", C, 700, 300, BLUE, BLUE);
+out.shared = { afterWrite: ed.tileMode ? tile(C) === tile(L) : null, frozen: ed.tileMode ? tile(L).frozen : null };
+if (ed.tileMode && (tile(C) === tile(L) || tile(L).frozen !== 0)) throw new Error("the write went into the shared tile: " + JSON.stringify(out.shared));
+if (pixel(L, 700, 300)[0] !== 255 || !sameAsOrig()) throw new Error("the write into the copy changed the original");
+// a brush stroke on the copy (a rect copy of shared pixels), then undo it and the fill
+ed.setTool("paint");
+ed.color = "#ffff00";
+await stroke(200, 700, 900);
+await settle();
+if (!sameAsOrig()) throw new Error("the stroke on the copy changed the original");
+out.cloneSteps = ed.undo.slice(n0).map((u) => u.kind);
+while (ed.undo.length > n0) await ed.undoStep();
+await settle();
+check("cloneUndo", C, 700, 300, RED, RED);
+check("cloneUndoStroke", C, 500, 700, null, WHITE);
+if (!sameAsOrig()) throw new Error("undo on the copy changed the original");
+const cb = C.px.readRect(0, 0, 2400, 1600).data;
+let diff = 0;
+for (let i = 0; i < cb.length; i++) if (cb[i] !== origBytes[i]) diff++;
+out.copyBackToOriginal = diff;
+if (diff) throw new Error("after undo the copy is not the original's pixels: " + diff + " bytes");
+// 5. a selection outline dragged with the marquee tool: the outline's pixels move exactly, the old place
+// is cleared, and on tiles no move rewrites the whole selection (a full-size scratch per move). The
+// selection also holds isolated faint pixels far from the rectangle (a wand's or a matte's speckle): the
+// drag's extent used to come from the 1/16 display level, which rounds them away, so they stayed behind
+// or were erased (C2 step b's review). Zoomed out with the selection shown as a tint, the screen is read
+// in the middle of the drag: the outline is at its new place and gone from its old one (the levels are
+// refreshed inside the rewritten box; pointer up rebuilds them all, so only a mid-drag read sees that).
+await run("select_rect", { x: 400, y: 300, w: 300, h: 200, doc: window.__tb });
+const dots = [[1800, 1200, 77], [2000, 400, 255], [1500, 1400, 115], [300, 1100, 153]];
+for (const [x, y, a] of dots) { const d = new ImageData(1, 1); d.data.set([255, 0, 0, a]); ed.sel.writeRect(d, x, y); }
+{ const d = new ImageData(3, 3); for (let i = 0; i < 9; i++) d.data.set([255, 0, 0, 77], i * 4); ed.sel.writeRect(d, 1200, 1300); }
+ed.markSelectionChanged(undefined);
+ed.setTool("rect");
+const prevDisplay = ed.selectionDisplay;
+ed.selectionDisplay = "tint";
+ed.view.scale = 0.2; ed.view.angle = 0; ed._fitted = false;
+ed.view.x = Math.round(ed.canvas.width / 2 - 650 * 0.2); ed.view.y = Math.round(ed.canvas.height / 2 - 450 * 0.2);
+await settle();
+const TINT = [255, 153, 153];
+out.tintBefore = screenAt(560, 370);
+if (!is(out.tintBefore, TINT)) throw new Error("the selection is not shown as a tint before the drag: " + out.tintBefore);
+const selBefore = ed.sel.readRect(0, 0, 2400, 1600).data;
+const b0 = ed.sel.bounds();
+const sel = ed.sel;
+let whole = 0;
+const big = (rect) => !rect || (Math.min(2400, rect[2]) - Math.max(0, rect[0])) * (Math.min(1600, rect[3]) - Math.max(0, rect[1])) >= 2400 * 1600;
+const wrapped = {};
+for (const name of ["drawInto", "clear", "blit"]) {
+    const f = sel[name];
+    wrapped[name] = [Object.prototype.hasOwnProperty.call(sel, name), f];
+    sel[name] = function (...a) { if (big(name === "blit" ? (a[5] ? [a[1], a[2], a[1] + a[5][2] - a[5][0], a[2] + a[5][3] - a[5][1]] : null) : a[0])) whole++; return f.apply(this, a); };
+}
+try {
+    ed.canvas.dispatchEvent(ev("pointerdown", 550, 420));
+    out.dragKind = ed.pointer && ed.pointer.kind;
+    for (let i = 1; i <= 8; i++) { ed.canvas.dispatchEvent(ev("pointermove", 550 + 25 * i, 420 + 12.5 * i)); await wait(16); }
+    // before pointer up: the frame the user sees while dragging
+    ed.sceneSig = null; ed.draw();
+    // the old place is outside the outline's new extent (above it), so only a refresh of the union of both clears it
+    out.midDrag = { oldPlace: screenAt(560, 370), newPlace: screenAt(760, 520) };
+    ed.canvas.dispatchEvent(ev("pointerup", 750, 520));
+} finally {
+    for (const [name, [own, f]] of Object.entries(wrapped)) { if (own) sel[name] = f; else delete sel[name]; }
+    ed.selectionDisplay = prevDisplay;
+}
+await settle();
+const b1 = ed.sel.bounds();
+out.selDrag = { b0, b1, whole };
+if (out.dragKind !== "selmove") throw new Error("the drag did not move the outline: " + out.dragKind);
+if (ed.tileMode && whole) throw new Error("a move rewrote the whole selection: " + whole);
+if (!is(out.midDrag.newPlace, TINT) || !is(out.midDrag.oldPlace, WHITE)) throw new Error("during the drag the screen does not show the outline at its new place only: " + JSON.stringify(out.midDrag));
+const dx = b1[0] - b0[0], dy = b1[1] - b0[1];
+if (Math.abs(dx - 200) > 3 || Math.abs(dy - 100) > 3 || b1[2] - b1[0] !== b0[2] - b0[0] || b1[3] - b1[1] !== b0[3] - b0[1]) throw new Error("the outline did not move by the drag: " + JSON.stringify(out.selDrag));
+const selAfter = ed.sel.readRect(0, 0, 2400, 1600).data;
+let bad = 0;
+for (let y = 0; y < 1600; y++) {
+    for (let x = 0; x < 2400; x++) {
+        const sx = x - dx, sy = y - dy;
+        const i = (y * 2400 + x) * 4;
+        const want = sx >= 0 && sy >= 0 && sx < 2400 && sy < 1600 ? selBefore[(sy * 2400 + sx) * 4 + 3] : 0;
+        if (selAfter[i + 3] !== want) bad++;
+    }
+}
+out.selDrag.badPixels = bad;
+out.selDrag.dots = dots.map(([x, y]) => [selAfter[(y * 2400 + x) * 4 + 3], selAfter[((y + dy) * 2400 + x + dx) * 4 + 3]]);
+if (bad) throw new Error("the moved selection is not the old one shifted: " + bad + " pixels, the faint dots [old place, new place]: " + JSON.stringify(out.selDrag.dots));
+ed.setTool("select");
+await run("close_document", { doc: window.__tb });
+return out;
+"""
+
+
+UNDRAWN_STEP = """
+// C2 step (b)'s review, the display caches on the flag's backend. (1) Pixels nothing draws get no display
+// mirror: in a tab that is not in front, after the mirrors were released (what the memory watch does), a
+// thumbnail of every layer (one of them hidden, one masked), a rect write into the hidden layer, a selection
+// change with its undo step and bounds, and a click that picks a layer make none (each used to make one as
+// large as the pixels). The thumbnails still show the layers (the mask applied) and the pick reads the mask.
+const P = await import("./editor/inpaint_pixels.js");
+const d = await run("new_document");
+window.__dc = d.id;
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 3000, height: 2000, doc: d.id });
+const out = { tiles: ed.tileMode };
+const H = ed.addPaintLayer();
+H.px.fill([200, 200, 2800, 1800], "#2050c0"); ed.markLayerChanged(H);
+H.visible = false;
+const V = ed.addPaintLayer();
+V.px.fill([500, 500, 1500, 1500], "#c05020"); ed.markLayerChanged(V);
+V.maskPx = ed.pixels.Mask.empty(3000, 2000);
+V.maskPx.fill([0, 0, 1000, 2000], "#ffffff"); ed.markMaskChanged(V);
+ed.renderLayers();
+ed.fitView();
+for (let i = 0; i < 8; i++) { ed.sceneSig = null; ed.draw(); await wait(20); if (!ed._pyramidPending) break; }
+host.shell.activate(ednow(window.__t));   // the document goes to the background
+await wait(100);
+// synchronous from here on: no frame of any tab can run in between
+const held = () => [["hidden", H.px], ["visible", V.px], ["mask", V.maskPx], ["selection", ed.sel], ["base", ed._basePx]];
+const made = () => ed.tileMode ? held().filter(([, p]) => p && p.displayCanvasIfMade()).map(([n]) => n) : [];
+out.released = ed.releaseCaches({ mirrors: true });
+out.afterRelease = made();
+ed.renderLayers();
+out.thumbnails = made();
+H.px.fill([10, 10, 20, 20], "#ffff00"); ed.markLayerChanged(H, [10, 10, 20, 20]);
+out.rectWriteHidden = made();
+ed.pushUndo({ kind: "selection" });
+ed.sel.fill([100, 100, 400, 300], "#ff0000"); ed.markSelectionChanged(undefined, [100, 100, 400, 300]);
+out.bounds = ed.getBounds();
+out.selection = made();
+out.pick = [ed.pickLayerAt(800, 800), ed.pickLayerAt(1200, 800), ed.pickLayerAt(2000, 1000)].map((l) => l && l.name);
+out.picked = made();
+const thumb = (l, ix, iy) => {
+    const c = ed.layerList.querySelector('.ipc-layer[data-layer="' + l.id + '"] canvas.ipc-lthumb');
+    if (!c) return null;
+    const s = Math.min(c.width / 3000, c.height / 2000), x0 = (c.width - 3000 * s) / 2, y0 = (c.height - 2000 * s) / 2;
+    return Array.from(c.getContext("2d").getImageData(Math.floor(x0 + ix * s), Math.floor(y0 + iy * s), 1, 1).data);
+};
+out.thumbPixels = { hidden: thumb(H, 1500, 1000), visibleInMask: thumb(V, 750, 1000), visibleOutsideMask: thumb(V, 1350, 1000) };
+host.shell.activate(ed);
+if (out.afterRelease.length) throw new Error("releaseCaches({ mirrors: true }) kept mirrors: " + out.afterRelease);
+for (const k of ["thumbnails", "rectWriteHidden", "selection", "picked"]) if (out[k].length) throw new Error(k + " made display mirrors of pixels nothing draws: " + JSON.stringify(out));
+if (!out.bounds || out.bounds.join() !== "100,100,400,300") throw new Error("the selection's bounds: " + out.bounds);
+if (out.pick[0] !== V.name || out.pick[1] !== null || out.pick[2] !== null) throw new Error("pickLayerAt (masked, outside the mask, hidden): " + JSON.stringify(out.pick));
+const tp = out.thumbPixels;
+if (!tp.hidden || tp.hidden[3] < 200 || tp.hidden[2] < 150 || tp.visibleInMask[3] < 200 || tp.visibleInMask[0] < 150 || tp.visibleOutsideMask[3] > 20) throw new Error("the thumbnails do not show the layers: " + JSON.stringify(tp));
+// (2) a display canvas someone holds does not keep its pixels (the mirror's version was an accessor closing
+// over them): checked after a forced collection by the caller
+const p = ed.pixels.Layer.empty(1024, 1024);
+p.fill([0, 0, 600, 600], "#00ff00");
+window.__heldDisplay = P.canvasOf(p);
+window.__droppedPixels = new WeakRef(p);
+return out;
+"""
+
+SCREEN_STEP = """
+// (3) The screen never draws a CPU mirror (on tiles the display canvas is one): zoomed in (0.6 and 1, no
+// display levels), a pan with a filter layer in the stack (Canvas 2D), a pan without one (the GPU
+// compositor), the selection as a tint and as ants, a selection drag and a stroke commit: no drawImage /
+// texImage2D takes a mirror once the frames are warm (each used to move the whole mirror every frame:
+// 44 ms a pan frame at 6000 x 4000). (4) The compositor drops a texture no composite asked for in a while
+// (its map keys on the canvases and kept a flipped layer's old pixels).
+const ed = ednow(window.__dc);
+host.shell.activate(ed);
+if (window.__droppedPixels.deref()) throw new Error("a held display canvas keeps its pixels alive");
+window.__heldDisplay = null; window.__droppedPixels = null;
+const out = { tiles: ed.tileMode };
+// an unmasked layer: a masked one is drawn from its masked cache, which is rebuilt (from the mirror) per change
+const W = ed.addPaintLayer();
+W.px.fill([300, 300, 1700, 1700], "#40a060"); ed.markLayerChanged(W);
+const rect = () => ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const r = rect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: r.left + sx * r.width / ed.canvas.width, clientY: r.top + sy * r.height / ed.canvas.height }; };
+const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 12, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+let mirrorDraws = 0;
+const isMirror = (s) => !!(s && s._cpuMirror);
+const d2 = CanvasRenderingContext2D.prototype.drawImage, t2 = WebGL2RenderingContext.prototype.texImage2D, t1 = WebGLRenderingContext.prototype.texImage2D;
+CanvasRenderingContext2D.prototype.drawImage = function (s, ...a) { if (isMirror(s)) mirrorDraws++; return d2.call(this, s, ...a); };
+WebGL2RenderingContext.prototype.texImage2D = function (...a) { if (isMirror(a[a.length - 1])) mirrorDraws++; return t2.apply(this, a); };
+WebGLRenderingContext.prototype.texImage2D = function (...a) { if (isMirror(a[a.length - 1])) mirrorDraws++; return t1.apply(this, a); };
+const centre = (scale) => { ed.view.scale = scale; ed.view.angle = 0; ed._fitted = false; ed.view.x = Math.round(ed.canvas.width / 2 - 900 * scale); ed.view.y = Math.round(ed.canvas.height / 2 - 900 * scale); };
+const frame = () => { ed.sceneSig = null; ed.draw(); };
+const rows = {};
+const count = async (label, n, body) => {
+    for (let i = 0; i < 3; i++) { frame(); await wait(15); }   // warm: the GPU copies are made once
+    mirrorDraws = 0;
+    const t0 = performance.now();
+    for (let i = 0; i < n; i++) { await body(i); await wait(10); }
+    rows[label] = { mirrorDraws, ms: +((performance.now() - t0) / n).toFixed(1) };
+};
+let fx = null;
+try {
+    await run("select_rect", { x: 700, y: 700, w: 400, h: 300, doc: window.__dc });
+    for (const filter of [true, false]) {
+        if (filter) fx = ed.addFilterLayer("levels"); else if (fx) { ed.removeLayer(fx.id); fx = null; }
+        for (const scale of [0.6, 1]) {
+            for (const disp of ["tint", "ants"]) {
+                ed.selectionDisplay = disp;
+                centre(scale);
+                await count(`${filter ? "filter" : "gpu"}@${scale} ${disp} pan`, 6, async () => { ed.view.x += 7; frame(); });
+            }
+            ed.selectionDisplay = "tint";
+            ed.setTool("rect");
+            centre(scale);
+            await count(`${filter ? "filter" : "gpu"}@${scale} selection drag`, 1, async () => {
+                ed.canvas.dispatchEvent(ev("pointerdown", 900, 850));
+                for (let i = 1; i <= 5; i++) { ed.canvas.dispatchEvent(ev("pointermove", 900 + 10 * i, 850 + 6 * i)); frame(); await wait(10); }
+                // pointer up touches the whole selection, and its GPU copy is made again once: not a frame's cost
+                const moves = mirrorDraws;
+                ed.canvas.dispatchEvent(ev("pointerup", 950, 880)); frame();
+                mirrorDraws = moves;
+            });
+            await count(`${filter ? "filter" : "gpu"}@${scale} after the drag`, 3, async () => { ed.view.y += 5; frame(); });
+        }
+    }
+    ed.clearSelection();
+    ed.activeLayerId = W.id; ed.setTool("paint"); ed.color = "#00ff00"; ed.brushSize = 30; ed.hardness = 1; ed.brushOpacity = 1;
+    centre(1);
+    for (let i = 0; i < 3; i++) { frame(); await wait(15); }
+    ed.canvas.dispatchEvent(ev("pointerdown", 700, 900));
+    for (let i = 1; i <= 5; i++) { ed.canvas.dispatchEvent(ev("pointermove", 700 + 20 * i, 900)); frame(); await wait(10); }
+    mirrorDraws = 0;   // a stroke's own preview copies the layer: counted from its commit on
+    ed.canvas.dispatchEvent(ev("pointerup", 800, 900)); frame();
+    for (let i = 0; i < 3; i++) { await wait(10); frame(); }
+    rows["gpu@1 stroke commit"] = { mirrorDraws };
+    // the navigator's composite (drawThumb's view pass at its own small scale, run on every change) is not the
+    // screen: it must not drop the GPU copies the 1:1 view draws, or every edit would move the mirrors again
+    for (let i = 0; i < 2; i++) { frame(); await wait(15); }
+    mirrorDraws = 0;
+    {
+        const c = document.createElement("canvas"); c.width = 300; c.height = 200;
+        const x = c.getContext("2d"); x.setTransform(300 / ed.width, 0, 0, 200 / ed.height, 0, 0);
+        const prev = ed.viewPass;
+        ed.viewPass = { x: 0, y: 0, w: ed.width, h: ed.height, sx: 300 / ed.width, sy: 200 / ed.height };
+        try { ed.drawComposite(x); } finally { ed.viewPass = prev; }
+    }
+    mirrorDraws = 0;   // the navigator itself may read a mirror (its levels, once); the frames after it count
+    for (let i = 0; i < 3; i++) { await wait(10); frame(); }
+    rows["gpu@1 after a navigator composite"] = { mirrorDraws };
+} finally {
+    CanvasRenderingContext2D.prototype.drawImage = d2; WebGL2RenderingContext.prototype.texImage2D = t2; WebGLRenderingContext.prototype.texImage2D = t1;
+    ed.selectionDisplay = "ants"; ed.setTool("select");
+}
+out.rows = rows;
+if (ed.tileMode) for (const [k, r] of Object.entries(rows)) if (r.mirrorDraws) throw new Error(k + ": the screen drew a CPU mirror " + r.mirrorDraws + " times: " + JSON.stringify(rows));
+// (4) an unmasked layer flipped three times at zoom 1: the textures of its replaced display canvases leave the
+// compositor within its age limit (the budget alone kept them)
+const comp = ed.compositor();
+if (!comp) throw new Error("no GPU compositor");
+ed.activeLayerId = W.id;
+centre(1);
+const old = new Set();
+for (let i = 0; i < 3; i++) {
+    frame(); await wait(15);
+    for (const k of comp.textures.keys()) old.add(k);
+    ed.flipLayer("h");
+}
+let frames = 0;
+while (frames < 320) { frame(); frames++; if (frames % 40 === 0) await wait(1); }
+const left = [...comp.textures].filter(([k, e]) => old.has(k) && e.used !== comp.frame).length;
+out.compositor = { seen: old.size, frames, left, stats: comp.stats() };
+if (left) throw new Error("the compositor still holds " + left + " textures no composite asked for in " + frames + " frames: " + JSON.stringify(out.compositor));
+await run("close_document", { doc: window.__dc, force: true });
+return out;
+"""
+
+
+async def undrawn_step(c):
+    return await c.eval(PRE % UNDRAWN_STEP, timeout=180)
+
+
+async def screen_step(c):
+    for _ in range(3):
+        await c.call("HeapProfiler.collectGarbage")
+        await asyncio.sleep(0.3)
+    return await c.eval(PRE % SCREEN_STEP, timeout=240)
+
+
+async def backend_step(c):
+    exp = expected_tiles()
+    return await c.eval(PRE % BACKEND_STEP.replace("__EXPECT__", "null" if exp is None else ("true" if exp else "false")), timeout=180)
+
+
+async def edit_step(c):
+    return await c.eval(PRE % EDIT_STEP, timeout=180)
 
 
 STEPS = [
@@ -297,7 +737,7 @@ const g = lc.getContext("2d");
 g.fillStyle = "#20c040";
 g.fillRect(730, 100, 800, 200);   // the strip the stroke runs through
 g.fillRect(930, 780, 370, 300);   // the block 580 px below it, which has to stay
-const { LayerPixels } = await import("./editor/inpaint_pixels.js");
+const { Layer: LayerPixels } = ed.pixels;   // the editor's backend (tiles or canvases)
 const layer = ed.addLayer({ name: "Result", kind: "result", ref: null, px: LayerPixels.fromCanvas(lc), x: LX, y: LY, w: LW, h: LH, dirty: true });
 ed.markLayerChanged(layer);
 await run("select_rect", { x: LX, y: LY, w: LW, h: LH, doc: d3.id });   // the eraser is clipped to it
@@ -1114,6 +1554,10 @@ const out = { status: ed.status, pixel: Array.from(d) };
 if (!/could not be restored/.test(ed.status)) throw new Error("the lost undo step went unnoticed: " + JSON.stringify(out));
 return out;
 """),
+    ("pixel_backend_is_the_one_the_flag_chose", lambda c: backend_step(c)),
+    ("editing_on_the_flags_backend_in_pixels_and_on_screen", lambda c: edit_step(c)),
+    ("pixels_nothing_draws_get_no_display_mirror", lambda c: undrawn_step(c)),
+    ("the_screen_draws_no_cpu_mirror_and_stale_textures_leave", lambda c: screen_step(c)),
     ("closed_tabs_are_collected", lambda c: closed_tabs_are_collected(c)),
     ("cleanup", """
 for (const id of [window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
@@ -1130,6 +1574,17 @@ PRE = """(async () => {
 })()"""
 
 
+BACKEND_SWEEP = """(async () => {
+    const T = await import("./editor/inpaint_tiles.js");
+    const bad = [];
+    for (const ed of window.__host.editors()) {
+        if (typeof ed.heldPixels !== "function") continue;
+        for (const p of ed.heldPixels()) if (T.isTilePixels(p) !== !!ed.tileMode) bad.push([ed.node && ed.node.id, p.constructor.name, p.width, p.height]);
+    }
+    return bad;
+})()"""
+
+
 async def run_all(c):
     # a modal <dialog> left open makes everything outside it inert, and the focus steps
     # below would fail for a reason that has nothing to do with the editor
@@ -1139,6 +1594,11 @@ async def run_all(c):
     for name, body in STEPS:
         try:
             res = await (body(c) if callable(body) else c.eval(PRE % body, timeout=180))
+            # after every step: every pixels object an open editor holds is of that editor's backend (a site
+            # that makes pixels with the other backend's classes, a flip or an undo restore, is found here)
+            mixed = await c.eval(BACKEND_SWEEP)
+            if mixed:
+                raise Exception("pixels of the other backend held after the step: %s" % json.dumps(mixed)[:400])
             print("[ok] %s: %s" % (name, json.dumps(res)[:280]))
         except Exception as err:  # noqa: BLE001
             ok = False

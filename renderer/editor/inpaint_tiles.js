@@ -28,8 +28,9 @@
  * - Bytes that enter without a canvas (writeRect "copy", fromImageData) go through the round
  *   trip a canvas applies to straight alpha (premultiply, un-premultiply), measured once from a
  *   canvas, so a read gives back what the canvas backend gives back.
- * - `canvasOf()` is a display mirror, one canvas per pixels object synced from the tiles written
- *   since the last call, until C3 draws tiles.
+ * - `canvasOf()` is a display mirror, one CPU canvas per pixels object synced from the tiles written
+ *   since the last call, until C3 draws tiles (the editor's screen draws a GPU copy of it);
+ *   `thumbnailCanvas()` is a small one for thumbnails that never makes the mirror.
  * - No module-level side effects: nothing touches the page until pixels are made.
  */
 
@@ -52,6 +53,7 @@ const STRIP_W = 4096;              // fromImage / fromCanvas: strips 4096 wide .
 // came out a few bytes apart (docs/PLAN_BCE.md §C2 "C2 as built")
 const DECODE_ROWS = 4096;
 const BLOCK = 4096;                // a big scratch is read back in blocks of this side
+const DISPLAY_RECT_MAX_PX = 4 * 1024 * 1024;   // displayRectSource: above this the mirror is the source
 const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 const ALPHA = 0x1000000;           // a word >= this has a non-zero alpha byte (little-endian)
 
@@ -72,6 +74,8 @@ const u32Of = (t) => t._u32 || (t._u32 = new Uint32Array(t.data.buffer));
 const imageDataOf = (t) => t._img || (t._img = new ImageData(t.data, TILE_SIZE, TILE_SIZE));
 let ZERO_IMAGE = null;
 const zeroImage = () => ZERO_IMAGE || (ZERO_IMAGE = new ImageData(TILE_SIZE, TILE_SIZE));
+let THUMB_MIPS = null;             // thumbnailCanvas: the mips of a tile whose own are not cached
+const thumbScratch = () => THUMB_MIPS || (THUMB_MIPS = new Uint8Array(mipChainBytes(TILE_SIZE, MIP_LEVELS)));
 
 const LONG_MIN = -2147483648, LONG_MAX = 2147483647;
 
@@ -345,6 +349,7 @@ const tiled = (Base) => class extends Base {
         this._version = 0;
         this._mirror = null;
         this._mirrorDirty = null;
+        this._thumb = null;
         if (canvas) this._readCanvas(canvas);
     }
 
@@ -386,6 +391,7 @@ const tiled = (Base) => class extends Base {
 
     touch(rect = null) {
         this._version++;
+        if (this._mirror) this._mirror._dispVer = this._version;
         const r = pixelRect(rect, this._w, this._h);
         if (!r) return;
         for (const key of this._keysIn(r)) this._tiles.get(key).version = ++tileSeq;
@@ -435,6 +441,7 @@ const tiled = (Base) => class extends Base {
 
     _changed(key) {
         if (this._mirrorDirty) this._mirrorDirty.add(key);
+        if (this._thumb) this._thumb.dirty.add(key);
     }
 
     _dropTile(key) {
@@ -809,19 +816,19 @@ const tiled = (Base) => class extends Base {
 
     /**
      * The display mirror: one canvas for the life of these pixels, synced from the tiles written
-     * since the last call; its `_dispVer` is `version`. Read-only for callers (the next sync
-     * overwrites what they draw). C3 draws tiles and deletes it.
+     * since the last call; its `_dispVer` is `version` (set by `touch()`). Read-only for callers (the
+     * next sync overwrites what they draw). It is a CPU canvas, marked `_cpuMirror`: the editor's
+     * screen draws a GPU copy of it (`displaySource`). C3 draws tiles and deletes it.
      */
     canvasForDisplay() {
         this._guard();
         if (!this._mirror) {
             const c = cpuCanvas(this._w, this._h, "a display canvas", " (C3 draws tiles)");
-            const self = this;
-            Object.defineProperty(c, "_dispVer", {
-                configurable: true, enumerable: false,
-                get() { return self._version; },
-                set(v) { self._version = v; },
-            });
+            // A plain value that touch() sets again, never an accessor on these pixels: a closure would keep
+            // the pixels and every tile alive for as long as anything holds the canvas (the compositor's
+            // texture map keys on it), long after a flip or a transform replaced them (C2 step b's review).
+            c._dispVer = this._version;
+            c._cpuMirror = true;
             this._mirror = c;
             this._mirrorDirty = new Set(this._tiles.keys());
         }
@@ -838,6 +845,96 @@ const tiled = (Base) => class extends Base {
         }
         return this._mirror;
     }
+
+    /**
+     * The rectangle of the pixels as a CPU canvas of its own, for the display pyramid's rectangle
+     * refresh (inpaint_pixels.js). Not the mirror: a draw from a CPU canvas into a GPU canvas takes the
+     * whole source along once its content changed (measured at 8000 × 6000: the frame after each move of
+     * a small selection drag spent 104 ms refreshing the level from the mirror, 0.3 ms from the rectangle).
+     */
+    displayRectSource(rect) {
+        this._guard();
+        const r = pixelRect(rect, this._w, this._h);
+        if (!r) return { canvas: cpuCanvas(1, 1), x: 0, y: 0, temp: true };
+        // a big rectangle costs more to materialise than the mirror's transfer (measured: a 40 MP box per
+        // move of a selection drag 260 to 320 ms against about 200 ms from the mirror)
+        if ((r[2] - r[0]) * (r[3] - r[1]) > DISPLAY_RECT_MAX_PX) return { canvas: this.canvasForDisplay(), x: 0, y: 0, temp: false };
+        return { canvas: this._materialise(r), x: r[0], y: r[1], temp: true };
+    }
+
+    /** The display mirror if it was made, unsynced (memoryReport, releaseCaches); null otherwise. */
+    displayCanvasIfMade() {
+        return this._mirror;
+    }
+
+    /**
+     * A small CPU canvas of these pixels for a thumbnail, never the display mirror: a layer that nothing
+     * draws (a hidden one, one in a tab that is not in front) must not get a canvas as large as itself for
+     * a picture of 40 px (C2 step b's review). Each tile is averaged down by the mip kernel (alpha-weighted
+     * 2 × 2 steps) to (256 >> level)², the level the largest at which the long side stays at least 256 px
+     * (at most MIP_LEVELS), synced from the tiles written since the last call like the mirror. A tile whose
+     * mips are cached gives them; otherwise nothing is kept on the tile. Read-only for callers.
+     */
+    thumbnailCanvas() {
+        this._guard();
+        let level = 0;
+        while (level < MIP_LEVELS && (Math.max(this._w, this._h) >> (level + 1)) >= TILE_SIZE) level++;
+        const cell = TILE_SIZE >> level;
+        let th = this._thumb;
+        if (!th || th.level !== level) {
+            const f = 1 << level;
+            th = this._thumb = {
+                level, cell, dirty: new Set(this._tiles.keys()),
+                canvas: cpuCanvas(Math.ceil(this._w / f), Math.ceil(this._h / f), "a thumbnail canvas"),
+                img: new ImageData(cell, cell), zero: new ImageData(cell, cell),
+            };
+        }
+        if (th.dirty.size) {
+            const ctx = th.canvas.getContext("2d");
+            const at = mipChainBytes(TILE_SIZE, level - 1), n = cell * cell * 4;
+            for (const key of th.dirty) {
+                const t = this._tiles.get(key);
+                const ox = (key & 0xFFFF) * cell, oy = (key >>> 16) * cell;
+                if (!t) { ctx.putImageData(th.zero, ox, oy); continue; }
+                if (!level) { ctx.putImageData(imageDataOf(t), ox, oy); continue; }
+                const mips = t.mipsVersion === t.version && t.mips ? t.mips : mipChain(t.data, TILE_SIZE, level, thumbScratch());
+                th.img.data.set(mips.subarray(at, at + n));
+                ctx.putImageData(th.img, ox, oy);
+            }
+            th.dirty.clear();
+        }
+        return th.canvas;
+    }
+
+    /** The thumbnail canvas if it was made (memoryReport); null otherwise. */
+    thumbnailCanvasIfMade() {
+        return this._thumb ? this._thumb.canvas : null;
+    }
+
+    /**
+     * Drop the display mirror (and the thumbnail canvas): caches of the tiles, made again (synced from
+     * every tile) by the next `canvasOf` / `thumbnailCanvas`. Returns their bytes. The caller forgets what
+     * it keyed on the old canvas (the pyramid, the compositor's textures); nothing else may hold it.
+     */
+    releaseDisplay() {
+        let bytes = 0;
+        const th = this._thumb;
+        if (th) {
+            bytes += th.canvas.width * th.canvas.height * 4;
+            this._thumb = null;
+            th.canvas.width = 1; th.canvas.height = 1;
+        }
+        const m = this._mirror;
+        if (!m) return bytes;
+        bytes += m.width * m.height * 4;
+        this._mirror = null;
+        this._mirrorDirty = null;
+        m.width = 1; m.height = 1;
+        return bytes;
+    }
+
+    /** The tiles, for counting (memoryReport): never write into one (use `writable`). */
+    tileList() { this._guard(); return Array.from(this._tiles.values()); }
 
     // -- in place --
 

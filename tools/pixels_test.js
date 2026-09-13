@@ -596,10 +596,18 @@ function pixelsCases(P, T) {
             const fc = P.canvasOf(Layer.fromCanvas(c));
             if (B.tiles ? (fc === c || !(fc instanceof HTMLCanvasElement)) : fc !== c) throw new Error("canvasOf of pixels");
             // the display pyramid keys on the canvas's _dispVer: the facade's version is the same number
-            P.canvasOf(e)._dispVer = 77;
-            if (e.version !== 77) throw new Error("version is not the canvas's _dispVer");
+            if (!B.tiles) {
+                P.canvasOf(e)._dispVer = 77;
+                if (e.version !== 77) throw new Error("version is not the canvas's _dispVer");
+            } else {
+                // on tiles a plain value that touch() sets, never an accessor: a closure over the pixels would
+                // keep them and every tile alive for as long as anything holds the mirror (C2 step b's review)
+                const d = Object.getOwnPropertyDescriptor(P.canvasOf(e), "_dispVer");
+                if (!d || !("value" in d) || d.get || d.set || d.value !== e.version) throw new Error("the mirror's _dispVer is not a plain value: " + JSON.stringify(d && { value: d.value, get: !!d.get }));
+                e.touch(); e.touch();
+            }
             e.touch();
-            if (P.canvasOf(e)._dispVer !== 78) throw new Error("_dispVer does not follow touch()");
+            if (P.canvasOf(e)._dispVer !== e.version) throw new Error("_dispVer does not follow touch()");
             return { ok: true };
         })],
 
@@ -882,6 +890,88 @@ function pixelsCases(P, T) {
             same(P.canvasOf(p), p, "state left on the mirror's context does not bend the sync");
             raw.setTransform(1, 0, 0, 1, 0, 0); raw.globalCompositeOperation = "source-over"; raw.globalAlpha = 1;
             return { ok: true };
+        })],
+
+        // C2 step (b): what the editor's display machinery asks besides canvasOf. displayRectSource hands out a
+        // canvas with the rectangle's pixels where it says they are (the canvas itself on the canvas backend,
+        // the rectangle alone on tiles, the mirror above 4 MP); displayCanvasIfMade never makes a mirror;
+        // releaseDisplay gives the mirror back and the next canvasOf makes a new one that holds the pixels.
+        ["display_rect_source_and_release", both(async ({ B, pair, same, rec }) => {
+            const { pixels: p } = pair(3000, 2000);
+            const lazy = p.displayCanvasIfMade();
+            if (B.tiles ? lazy !== null : lazy !== P.canvasOf(p)) throw new Error("displayCanvasIfMade made or missed the display canvas");
+            p.fill([100, 100, 900, 700], "#0f0");
+            const m = P.canvasOf(p);
+            const x0 = 250, y0 = 300, w = 1000, h = 800;
+            const part = p.displayRectSource([x0, y0, x0 + w, y0 + h]);
+            const got = part.canvas.getContext("2d").getImageData(x0 - part.x, y0 - part.y, w, h).data;
+            const want = p.readRect(x0, y0, w, h).data;
+            rec("the rectangle from displayRectSource", got);
+            // the GPU run's canvas: two read-backs of it un-premultiply 1 level apart at low alpha (as for the mirror above)
+            const tol = B.name === "canvas" ? 1 : 0;
+            let n = 0;
+            for (let i = 0; i < got.length; i++) if (Math.abs(got[i] - want[i]) > tol) n++;
+            if (n) throw new Error(`displayRectSource: ${n} bytes differ from readRect`);
+            if (!B.tiles && (part.canvas !== m || part.x || part.y || part.temp)) throw new Error("the canvas backend hands out its own canvas at (0, 0)");
+            if (B.tiles && (part.canvas === m || !part.temp || part.x !== x0 || part.y !== y0 || part.canvas.width !== w || part.canvas.height !== h)) throw new Error("the tile store hands out the rectangle alone");
+            if (part.temp) { part.canvas.width = 1; part.canvas.height = 1; }
+            const big = p.displayRectSource([0, 0, 3000, 2000]);
+            if (big.canvas !== m || big.temp || big.x || big.y) throw new Error("above 4 MP the display canvas is the source");
+            const freed = p.releaseDisplay();
+            if (!B.tiles && (freed !== 0 || p.displayCanvasIfMade() !== m)) throw new Error("the canvas backend has nothing to release");
+            if (B.tiles && (freed !== 3000 * 2000 * 4 || p.displayCanvasIfMade() !== null || m.width !== 1)) throw new Error("the tile store did not give its mirror back: " + freed);
+            p.fill([0, 0, 50, 50], "#f00");                   // a write while there is no mirror
+            const m2 = P.canvasOf(p);
+            if (B.tiles && (m2 === m || m2._dispVer !== p.version)) throw new Error("the new mirror is not a new canvas that follows version");
+            same(m2, p, "the display canvas after a release holds the pixels", B.name === "canvas" ? 1 : 0);
+            return { ok: true, freed };
+        })],
+
+        // C2 step (b)'s review: the tile store's thumbnail canvas, which the editor's thumbnails draw instead of
+        // the mirror. Each tile's mips at the level whose long side stays at least 256 px, synced from the writes
+        // since the last call (a fill, a clear that drops tiles), never making the mirror, given back by releaseDisplay.
+        ["tiles_thumbnail_canvas", both(async ({ B, Layer, pair }) => {
+            if (!B.tiles) return { ok: true, tilesOnly: true };
+            const { pixels: p } = pair(3000, 2000);
+            const th = p.thumbnailCanvas();
+            if (p.displayCanvasIfMade() !== null) throw new Error("the thumbnail made the display mirror");
+            if (th.width !== 375 || th.height !== 250 || p.thumbnailCanvasIfMade() !== th) throw new Error("level 3 expected: " + th.width + " x " + th.height);
+            const at = 128 * 128 * 4 + 64 * 64 * 4;   // the offset of the 32 px mip in a tile's mip chain
+            const compare = (what) => {
+                let n = 0, tilesSeen = 0;
+                const got = th.getContext("2d").getImageData(0, 0, th.width, th.height).data;
+                for (let ty = 0; ty * 256 < p.height; ty++) {
+                    for (let tx = 0; tx * 256 < p.width; tx++) {
+                        const m = p.mips(tx, ty);
+                        tilesSeen += m ? 1 : 0;
+                        for (let y = 0; y < 32 && ty * 32 + y < th.height; y++) {
+                            for (let x = 0; x < 32 && tx * 32 + x < th.width; x++) {
+                                const o = ((ty * 32 + y) * th.width + tx * 32 + x) * 4, i = at + (y * 32 + x) * 4;
+                                const a = m ? m[i + 3] : 0;
+                                // the canvas's straight-alpha round trip moves colours where alpha is low: colours checked from alpha 128 on
+                                if (got[o + 3] !== a || (a >= 128 && (Math.abs(got[o] - m[i]) > 1 || Math.abs(got[o + 1] - m[i + 1]) > 1 || Math.abs(got[o + 2] - m[i + 2]) > 1))) n++;
+                            }
+                        }
+                    }
+                }
+                if (n) throw new Error(`${what}: ${n} thumbnail pixels are not the tiles' mips`);
+                return tilesSeen;
+            };
+            const tilesBefore = compare("made");
+            p.fill([0, 0, 600, 600], "#00ff00");
+            if (p.thumbnailCanvas() !== th) throw new Error("the thumbnail canvas's identity changed");
+            compare("after a fill");
+            p.clear([0, 0, 3000, 1000]);
+            if (p.thumbnailCanvas() !== th) throw new Error("the thumbnail canvas's identity changed after a clear");
+            compare("after a clear that dropped tiles");
+            if (p.displayCanvasIfMade() !== null) throw new Error("a sync made the display mirror");
+            const small = Layer.empty(300, 200);
+            small.fill([10, 10, 50, 50], "#f00");
+            const st = small.thumbnailCanvas();
+            if (st.width !== 300 || st.height !== 200 || st.getContext("2d").getImageData(20, 20, 1, 1).data[3] !== 255) throw new Error("a small layer's thumbnail is its own size");
+            const freed = p.releaseDisplay();
+            if (freed !== 375 * 250 * 4 || p.thumbnailCanvasIfMade() !== null || th.width !== 1) throw new Error("releaseDisplay kept the thumbnail: " + freed);
+            return { ok: true, tilesBefore };
         })],
 
         // Whole tiles shared by a tile-aligned "copy" onto pixels that already hold content and a mirror

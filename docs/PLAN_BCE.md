@@ -735,7 +735,7 @@ version *is* `_dispVer`). Refused above 268 MP (C3 draws tiles instead). `drawTo
 **Aliases and options.** `installLayerAliases`: the `canvas` / `mask` setters adopt into the layer's
 current backend (its `px`, else its `maskPx`, else the canvas backend); a leftover own `canvas` /
 `mask` value on a new layer object still becomes canvas pixels, because the function does not know
-the editor's backend (step (b) has to pass it, or convert after). `setPixelsOptions({ software: true })`
+the editor's backend (step (b) passes it: `installLayerAliases(layer, editor.pixels)`). `setPixelsOptions({ software: true })`
 is new: every canvas `inpaint_pixels.js` makes (`makeCanvas`, now exported with `resetContext` and
 `WHOLE_CANVAS_OPS`) gets a `willReadFrequently` context. It is a diagnostic switch for the contract
 test, off in the app.
@@ -775,8 +775,8 @@ test, off in the app.
 - A `drawInto` callback with an unbalanced `save()` leaves the clip of that `drawInto` on the canvas
   backend's context (its `restore()` pops one level), so later draws into that layer are clipped;
   the tile backend's scratch is reset. Callers balance `save` / `restore`.
-- `perf_test.py`'s `settle()` drains the GPU with a one-pixel `readRect`, which reads JS memory on
-  tiles: still open for step (b).
+- `perf_test.py`'s `settle()` drained the GPU with a one-pixel `readRect`, which reads JS memory on
+  tiles: step (b) reads the canvases the frames drew into instead.
 
 **The test** (`tools/pixels_test.js`, `tools/pixels_test.py`). Every case runs three times: the
 canvas backend as the app runs it (GPU; every check against a plain canvas holds as in C1), the
@@ -857,6 +857,191 @@ review's fault put in):
 
 **Step (a)'s gates** (fresh dev instances, own profiles, strict), after the review's fixes: `pixels
 editor composite commands shape brush nodecopy` ALL PASS; `--copy pixels editor composite` ALL PASS.
+
+**Step (b): the tile backend wired into the editor behind the flag.** Built after an inventory of
+every construction site, every `canvasOf` use, every path where pixels could cross editors and every
+full-size `toCanvas()`.
+
+- **The flag.** `electron/main/main.js` `tileMode()` decides once per window, in this order: the
+  command line (`--tiles` / `--no-tiles`), the environment (`SCUMBLE_TILES=1` / `0`), `tiles` in
+  `settings.json` when it holds a boolean the user put there, and otherwise the build (on in a dev
+  run, off in the packaged app until C7). The default is resolved there and never written:
+  `settings.set()` stores the whole merged object, so a computed default in `settings.DEFAULTS`
+  would stick to whichever build saved first. It reaches the renderer as `--scumble-tiles=1|0` and
+  `--scumble-tiles-from=<what decided>`, `electron/preload.js` exposes `window.scumble.pixels.tiles`
+  / `tilesFrom`, and `renderer/shell.js` passes both to `setPixelsOptions({ tiles, tilesFrom })`
+  (null when a host set none). No Settings row (C7 decides). Checked on dev instances with their own
+  profiles: nothing set gives tiles ("dev build"); `{"tiles": false}` in settings.json gives canvases;
+  `SCUMBLE_TILES=1` wins over that file; `--no-tiles` wins over `SCUMBLE_TILES=1` and `{"tiles": true}`;
+  `--tiles` over `SCUMBLE_TILES=0`; and a `settings.set` of something else leaves no `tiles` key in a file
+  that had none.
+- **One backend per editor, for its life.** The constructor sets `ed.tileMode`, `ed.tileModeFrom`
+  and `ed.pixels = pixelsBackend(tileMode)` (`{ Layer, Mask, tiles }`): the host's option when it
+  set one, else `localStorage["inpaint_canvas.tiles"] === "1"` (the ComfyUI node's switch, read in
+  the editor source, off by default; no new host member). Every construction goes through it: the
+  34 sites of `inpaint_canvas.js` (`this.pixels.Layer.fromImage(...)`, ...) and the 4 of `plugins.js`
+  (`this.editor.pixels`). `installLayerAliases(layer, backend)` converts a leftover own `canvas` /
+  `mask` value into the backend it is given (all seven calls pass `this.pixels`); the alias setters
+  adopt into the layer's own backend, as in step (a); `clone`, `copyRect` and `resized` keep their
+  class. Pixels of the other backend can only come from outside the editor (a test, a plugin that
+  made its own): `addLayer` passes `px` / `maskPx` through `ownPixels()`, which **throws in strict
+  mode**, so a gate finds such a mix, and otherwise converts once with a warning. The mixing paths of
+  the inventory needed nothing more: the clipboard holds a canvas that the pasting editor turns into
+  its own pixels, undo steps hold pixels of their own editor, and stitch results, cutouts, the point
+  prompt, the commands, the GLB, film and AI label plugins, `setValue` and merge / flatten all
+  construct through `this.pixels`. `docs/PLUGINS.md` tells plugins not to assign pixels of their own
+  or another document's. The `status` command answers `pixels: { tiles, from }`.
+- **The display draws `canvasOf(px)`, never a `toCanvas()` copy.** `layerPixels(layer, display)`,
+  `layerWithStroke(layer, display)` and `maskWithStroke(layer, display)` take a flag: with it an
+  unmasked layer hands out its display canvas (the canvas itself on the canvas backend, the mirror on
+  tiles; the same object every frame, synced from the writes). The masked cache `_masked` is always
+  built from the display canvas, since it is drawn into right there. `display` is passed where the
+  result is drawn at once and nothing keeps it: `drawLayer` (the view pass, the full-resolution
+  composite, a pending transform's mesh), `glViewComposite`, `layerMatchedPixels`,
+  `sampleRegion("layer")` and `sampleCanvas("layer")` (the layer and history thumbnails and
+  `pickLayerAt`'s one-pixel read did too; the review took them off the display canvas, below). Exports, uploads, copy, merge, the helpers' source canvas,
+  `serializeForPrompt` and stitch's references keep `toCanvas()`. The base, the selection and masks
+  already went through `displaySource` → `canvasOf`. So the pyramid WeakMap and the compositor's
+  texture map key on one canvas per pixels object in both backends, and C1's cost of copy mode goes
+  with it: `composite_test.py`'s "no upload after a small pan", skipped in copy mode in C1, holds in
+  copy mode and on tiles and is enforced in every mode now. `touchSourceRect` reads the display
+  canvas right after the write (`canvasOf` syncs the mirror there), and `selectionExtent`'s
+  `lvl === canvasOf(sel)` test holds on the mirror (a level is always a new canvas).
+- **The level refresh reads a rectangle.** Level 0 of `touchSourceRect` draws from
+  `pixels.displayRectSource(rect)`: the canvas itself at (0, 0) on the canvas backend (the same draw
+  call as before), the rectangle alone as a CPU canvas on tiles, and the mirror there when the
+  rectangle is above 4 MP. Measured on tiles at 8000 × 6000: with the mirror as the source, the frame
+  after each move of a small selection drag spent 104 ms in `drawScene` (a draw from a changed CPU
+  canvas into a GPU level; the canvas backend queues the same work on the GPU and returns in about a
+  millisecond), from the rectangle 0.3 ms; a 40 MP rectangle materialised per move cost 260 to 320 ms
+  against about 200 ms from the mirror, hence the 4 MP limit.
+- **The selection drag** rewrote the whole selection on every pointer move (`drawInto(null)`, a
+  full-size scratch per move on tiles). It now takes `selectionExtent({ exact: true })` at pointer down
+  and per move clears the union of the outline's last and next extent, blits the extent to its new place
+  ("copy", whole pixels) and refreshes the levels inside that box. Outside the union the selection is
+  transparent before and after, so the selection pixels are those of the old code, **provided the
+  extent holds every pixel with any alpha**: as first built it came from the 1/16 display level, which
+  does not (the review, below). On tiles the extent is the tile set's exact `bounds()`; on the canvas
+  backend it is the whole image (the old whole rewrite, GPU work there).
+- **Memory.** `memoryReport()` reports pixels on tiles under the same slot names (`canvas`, `mask`,
+  `_baseCanvas`, `selection`, the undo steps' `rectBytes` / `heldLayerBytes`) with `tiles` and the
+  bytes of their allocated tiles, a tile shared copy-on-write counted once (layers first, then base,
+  selection, undo; an undo step counts only tiles the live layers do not hold), a slot per display
+  mirror, and at the top `tileMode` and `tiles` (`tiles`, `bytes`, `sharedTiles`, `mirrors`,
+  `mirrorBytes`, the module's scratch pool); a canvas-backend report is unchanged. `mem_test.py`
+  prints the tile and mirror bytes, which its canvas census cannot see. `releaseCaches({ mirrors:
+  true })` also gives back the display mirrors of everything the editor holds (`heldPixels()`: layers,
+  masks, base, selection, undo and redo steps), after the pyramid entries, textures and match caches
+  keyed on them; the next frame makes and syncs them again (`releaseDisplay()`, 0 bytes on the canvas
+  backend). The memory watch passes it for the tabs that are not in front and `host.freeHelpers` for
+  the other tabs; the front tab's Free VRAM does not (a mirror is renderer memory, and making it again
+  costs a putImageData per tile).
+- **Tests.** Every test that builds pixels takes the editor's classes (`ed.pixels.Layer` / `.Mask` in
+  `composite_test.py`, `perf_test.py`, `mem_test.py`, `editor_test.py`); strict mode would throw on a
+  mix. `perf_test.py`'s `settle()` reads one pixel of the canvases the frames drew into and of the
+  display canvases of the selection and the painted layer (and `gl.finish()`), not a `readRect`, which
+  reads renderer memory on tiles; its selection writes are `clear` / `fill` of the rectangle instead of
+  a whole-selection `drawInto`, which on tiles timed the harness. `pixels_test.js` has the case
+  `display_rect_source_and_release`. `editor_test.py` has two new steps:
+  `pixel_backend_is_the_one_the_flag_chose` (the backend is the one `SCUMBLE_TILES` asked for; the
+  selection, the base, a layer and its `clone` / `copyRect` / `resized` are on it; `status` and
+  `memoryReport` say so; the other backend's pixels are refused in strict mode; over the frames of a
+  zoomed-out masked stack `toCanvas()` is never called, every display canvas stays the same object and
+  the pyramid is finished and kept) and `editing_on_the_flags_backend_in_pixels_and_on_screen` (a
+  real brush stroke with its `layerrect` step on the editor's backend, a fill, undo and redo of both;
+  a duplicate that shares the original's tiles, a fill into the copy that copies the shared tile and
+  leaves the original equal to the byte, a stroke into the copy, both undone back to the original's
+  bytes; the selection dragged with the marquee: moved to the pixel, no move rewriting the whole
+  selection), each checked in the layer's pixels and on the screen, in both modes.
+- **No gate needed a tolerance, a per-mode reference or any other change for tile mode.**
+  `composite_test.py` stayed identical to its stored references on tiles (full and view), and its
+  GPU-against-2D and source-window numbers are the canvas backend's: its pictures enter the store as
+  canvases read with `getImageData`, a canvas's un-premultiply followed by the mirror's premultiply
+  gives the stored value back, and its writes into pixels are unscaled rectangles. The brush and
+  editor strokes compare against references drawn in the same run and stay inside the tolerances they
+  had. Where CPU and GPU rasterise differently (step (a)) no gate compares across the backends.
+- **Counter-proofs** (`c2/b_mutate.py` in the session scratchpad: each fault put into the working
+  tree, the gate run on tiles, the file put back and compared): the display taking `toCanvas()` copies
+  (red: 81 copies in 12 frames and a pyramid never finished, the endless redraw of the inventory),
+  the base on the canvas backend, a mix not refused, the selection drag writing the whole selection,
+  the level refresh ignoring the rectangle's origin (red in `selection_brush_levels_follow_each_dab`),
+  `displayRectSource` at the wrong origin and `releaseDisplay` keeping the mirror
+  (`display_rect_source_and_release`): all seven red.
+- **Measured, tile backend against the canvas backend** (dev instances on the RTX 5090 machine,
+  window in the background, 8000 × 6000 with a selection, fit view; medians [max] in ms):
+
+  | What | Canvas backend | Tile backend |
+  |---|---|---|
+  | smudge step (drawTo, clip, drawInto) | 0.3 [74] | 2.2 [263] |
+  | frame after a smudge step | 18.2 | 13.4 |
+  | `clipCanvasFor` (per smudge step) | 0.0 | 0.0 |
+  | paint dab + frame | 11.1 | 12.1 |
+  | stroke commit (undo copy, write, level refresh) | 29 | 22 (132 with the level refresh from the mirror) |
+  | selection drag per move, 600 × 400 selection | 23 | 14 (140 from the mirror) |
+  | selection drag per move, 7400 × 5400 selection | 28 | 237 |
+
+  The smudge clip draws the selection's mirror into a small canvas and costs nothing measurable, so
+  `clipCanvasFor` keeps its draw. `perf_test.py 6000x4000` runs in both modes with the new `settle()` (one run each, after `pixels` in the same instance, so for orientation, not against §9): pan 2.8 against 3.0 ms, wheel zoom 4.8 / 4.7, brush dab + frame 0.1 / 0.1, redraw with ants 0.1 / 0.2, undo step 9.3 / 10.6, the opacity tick 7.9 / 15.1, the stroke commit 1.0 / 38.9 (the canvas backend queues its work on the GPU), the full composite 0.3 / 9.2, and the selection operations, which on tiles materialise the whole selection for the worker and write the answer back through a whole-selection `drawInto`, grow 69 / 253, shrink 23 / 244, invert 22 / 224, feather 20 / 196, wand 82 / 246, bucket 92 / 138 ms blocked (C5 makes the selection mask tiles).
+- **What stays for C3.** A write into large tile pixels shown zoomed out still costs a transfer of the
+  mirror when their levels are rebuilt whole (a `touchSource` without a rectangle, the drag of a big
+  selection above), and every pixels object that is displayed holds a mirror as large as itself in
+  renderer memory next to its tiles (the 8000 × 6000 probe: 480 MB of tiles, 549 MB in three mirrors),
+  plus, while it is shown at 0.5 or more, the screen's GPU copy of that mirror (VRAM, what the canvas
+  backend holds anyway). `drawTo` still draws from the mirror, so a smudge, a fill of the selection or a
+  clip made from the selection make one for what they read; a masked layer's cache is rebuilt from its
+  mirror (one whole transfer per change of the layer, not per frame).
+  The node's flavour follows `localStorage` and is gated with the switch off only (`node_test.py`).
+
+**The review of step (b)** (three lenses, two verifiers per finding) confirmed six findings, five distinct,
+and split one; each fix below has a counter-proof, a gate step that goes red with the fix taken back in a
+copy of the app (`c2/mut-fix/run_mut.py` in the session scratchpad):
+
+- **Mirrors for pixels nothing draws**: thumbnails now draw the tile store's `thumbnailCanvas()` (each
+  tile's mips at the level whose long side stays at least 256 px, synced from the writes, released with
+  the mirror, counted in `memoryReport().tiles`), `pickLayerAt` reads one pixel with `readRect`,
+  `touchSourceRect` only touches pixels without a display canvas, and `selectionExtent()` on tiles is the
+  tile set's exact `bounds()`, so a hidden layer, a rect write or a selection change in a background tab
+  no longer undoes `releaseCaches({ mirrors: true })` (the review measured 5 mirrors, 240 MB; step
+  `pixels_nothing_draws_get_no_display_mirror`, case `tiles_thumbnail_canvas`).
+- **The selection drag lost faint isolated pixels** its 1/16-level extent rounded away (both backends):
+  it takes `selectionExtent({ exact: true })`, the tile bounds on tiles and the whole image on canvases
+  (the old whole rewrite, 0.2 ms a move on a GPU selection canvas at 6000 × 4000), and the drag step
+  carries faint dots and a 3 × 3 block far from the rectangle (red with the level extent on either backend).
+- **The screen drew CPU mirrors at zoom 0.5 or more** (44 ms a pan frame with a filter layer at
+  6000 × 4000): `displaySource(src, scale, screen)` hands the screen (the view pass `drawViewComposite`
+  marks `screen: true`, its overlays, the GPU compositor, a pending transform, never the navigator) a GPU
+  copy of a tile mirror, made once per version, refreshed by rectangles in `touchSourceRect` and dropped
+  when the screen asks that source for a level again; measured after the fix (`c2/rvd/zoomin.js`, median
+  main thread / with a drain) a filter-layer pan at 1:1 3.6 / 12.8 ms (was 44 / 74.3), a selection drag move
+  2.5 / 9.0 (was 17.5 / 86.5), a stroke commit 4.4 / 14.6 (was 41.4 / 85), and `perf_test.py` has a pan-at-1:1
+  row (step `the_screen_draws_no_cpu_mirror_and_stale_textures_leave` counts every drawImage / texImage2D
+  of a mirror; red with the mirror handed out and with the navigator counted as the screen).
+- **A display canvas kept its pixels alive** through the mirror's `_dispVer` accessor (750 MB after 4
+  flips at 1:1): it is a plain value `touch()` sets (after 4 flips and a collection nothing of the old
+  pixels is alive, renderer 635 MB against 1,408), and the compositor drops a texture no composite asked
+  for in 300 composites (`TEXTURE_STALE`, `stats().sourceBytes`), which the canvas backend needed too
+  (case `version_and_canvas_of`; the screen step's held canvas and its three flips, red without either).
+- **The drag's on-screen check never ran** (guarded by a tint display no gate profile has): the drag step
+  zooms to 0.2, shows a tint and reads the screen before pointer up, the new place tinted and the old
+  place white (red when only the new place's levels are refreshed).
+- **Pixels of the other backend made inside the editor** (the split finding; nothing in the tree does it)
+  are found by `checkBackend` in `touchSource` / `touchSourceRect` (strict mode throws) and by a sweep of
+  every open editor's `heldPixels()` after each `editor_test.py` step (a flip onto the other backend is red
+  at the check, and with the check taken out at the sweep).
+
+Also measured: in this session's zoom-in probe the canvas backend fell into main-thread raster (a pan with
+a filter layer 17 ms, a stroke move 60 ms) once a drag ran with a filter layer in the stack, on the build
+before the review as well; in that state the whole-image drag rewrite costs about 100 ms a move against 18
+with the level's extent. Keeping the GPU copies after a zoom out cost the stroke commit about 10 ms, hence
+the drop; and the bounds scan on tiles no longer builds the selection's levels, so that build moved to the
+first frame that shows them (`perf_test.py` ants redraw worst 76 ms, the scan's worst from 84 to under 12).
+
+**Step (b)'s gates** (fresh dev instances, own profiles, strict): `--tiles on pixels editor composite
+commands shape brush film glb ailabel size transparent generate log mcp nodecopy` ALL PASS;
+`--tiles off` the same list ALL PASS; `--copy --tiles off pixels editor composite commands` ALL PASS
+(`gates/c2b-tiles`, `c2b-canvas`, `c2b-copy` in the session scratchpad; `pixels` again in all three
+after its new case). After the review's fixes the same three runs again (`gates/c2b-final-tiles`,
+`c2b-final-canvas`, `c2b-final-copy`): ALL PASS, ALL PASS, ALL PASS (no stored reference, tolerance or per-mode expectation changed; `composite_test.py` identical to its references in all three).
 
 ### C3. The compositor draws tiles (1 week)
 
@@ -1189,6 +1374,8 @@ atlas budget row of C3 is the only new setting.
 | selection | `MaskPixels`, bounds from the tile set + border-tile scan | no readback of a GPU canvas ever again |
 | mask tiles | RGBA in C2, one channel in C5 (with the selection as mask tiles) | callers draw red / white into masks until then (§C2 "C2 as built") |
 | bounds from mips | no: exact per-tile extents of the border tiles, every allocated tile holds a pixel | the kernel's rounded alpha loses an alpha-1 pixel at the first mip |
+| the flag's precedence | `--tiles` / `--no-tiles`, then `SCUMBLE_TILES`, then a boolean `tiles` in settings.json, else on in dev and off packaged; per editor, fixed for its life; the node: `localStorage["inpaint_canvas.tiles"]` | a computed default must never be written (`settings.set` stores the merged object); pixels of one editor must blit and restore into each other (§C2 "C2 as built", step b) |
+| display in C2 | `canvasOf(px)` (the mirror on tiles) for everything drawn at once, `toCanvas()` for what is kept; level 0 refreshed from `displayRectSource` | a copy per frame rebuilt the pyramid and the texture map every frame; a draw from a changed CPU mirror into a GPU level cost about 100 ms at 48 MP |
 | feather | Gaussian ramp on the EDT | one kernel for grow / shrink / feather; look changes slightly, said in the CHANGELOG |
 | compositor | atlas pages per (source, level), 1 px gutter, instanced draw per layer, mask sampler | no canvas round trip; `MAX_TEXTURE_SIZE` stops being a document limit |
 | fallback display | `putImageData` of visible tiles at the level | works without WebGL2; 10 to 15 ms at 4K |

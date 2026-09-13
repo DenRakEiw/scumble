@@ -37,7 +37,7 @@
  * - `drawInto`'s `fn` is synchronous: the tile backend writes its scratch back when `fn` returns.
  */
 
-let OPTIONS = { strict: false, copy: false, software: false };
+let OPTIONS = { strict: false, copy: false, software: false, tiles: null, tilesFrom: null };
 const warned = new Set();
 
 /**
@@ -46,6 +46,8 @@ const warned = new Set();
  * rasterises it on the CPU like the tile backend's scratch (docs/PLAN_BCE.md §C2 "C2 as built":
  * a plain canvas is rasterised on the GPU, and anti-aliased edges, gradients and resampling then
  * differ from the CPU by tens of levels). A diagnostic switch for the contract test, off in the app.
+ * `tiles`: the backend a new editor takes (docs/PLAN_BCE.md §C2 step b), null when the host set none
+ * (the editor then reads localStorage "inpaint_canvas.tiles"); `tilesFrom` says what decided it.
  */
 export function setPixelsOptions(opts = {}) {
     OPTIONS = { ...OPTIONS, ...opts };
@@ -265,6 +267,28 @@ export class LayerPixels {
         return this._c;
     }
 
+    /** The display canvas as it is, without making or syncing one (memoryReport, releaseCaches). */
+    displayCanvasIfMade() {
+        return this._c;
+    }
+
+    /**
+     * A canvas to draw the rectangle `rect` ([x0, y0, x1, y1], whole pixels) of the display pixels from,
+     * and where its (0, 0) sits in these pixels: the display pyramid's rectangle refresh reads it. Here
+     * the pixels' own canvas at (0, 0); the tile store hands out the rectangle alone, because a draw from
+     * its whole display mirror (a CPU canvas) into a GPU level transfers the whole mirror after every
+     * write (docs/PLAN_BCE.md §C2 step b). `temp`: the caller gives the canvas back after the draw.
+     */
+    displayRectSource(rect) {
+        this._guard();
+        return { canvas: this._c, x: 0, y: 0, temp: false };
+    }
+
+    /** Give the display canvas back when it is only a cache (the tile backend's mirror); the bytes. */
+    releaseDisplay() {
+        return 0;
+    }
+
     _drawOp(source, sx, sy, sw, sh, dx, dy, op, alpha) {
         const ctx = this._context();
         ctx.save();
@@ -402,6 +426,15 @@ export function canvasOf(src) {
     return src instanceof LayerPixels ? src.canvasForDisplay() : src;
 }
 
+/**
+ * The display canvas of some pixels if one exists, without making or syncing it (a canvas as it is):
+ * what `memoryReport` / `releaseCaches` look up in the pyramid map, where `canvasOf` would build a
+ * tile store's mirror just to be counted.
+ */
+export function displayCanvasIfMade(src) {
+    return src instanceof LayerPixels ? src.displayCanvasIfMade() : src;
+}
+
 /** The backend of a layer's pixels (its `px`, else its `maskPx`), the canvas backend for none. */
 function backendOf(layer) {
     const p = layer.px || layer.maskPx;
@@ -421,9 +454,10 @@ export function deprecatedPixels(oldName, newName) {
 /**
  * `layer.canvas` and `layer.mask` as accessors that are not enumerable, so a spread copy of
  * a layer carries `px` / `maskPx` and never calls them. Installed on every layer the editor
- * keeps (addLayer, undo, setValue); a leftover own `canvas` / `mask` value is converted.
+ * keeps (addLayer, undo, setValue); a leftover own `canvas` / `mask` value is converted into
+ * `backend` (the editor's `{ Layer, Mask }`; the backend of the layer's own pixels when not given).
  */
-export function installLayerAliases(layer) {
+export function installLayerAliases(layer, backend = null) {
     if (!layer || typeof layer !== "object") return layer;
     const own = (k) => Object.prototype.hasOwnProperty.call(layer, k);
     const canvasDesc = own("canvas") ? Object.getOwnPropertyDescriptor(layer, "canvas") : null;
@@ -431,14 +465,14 @@ export function installLayerAliases(layer) {
         const c = canvasDesc.value;
         delete layer.canvas;
         if (c) deprecatedPixels("a layer's canvas", "px");
-        if (layer.px === undefined) layer.px = c ? LayerPixels.fromCanvas(c) : null;
+        if (layer.px === undefined) layer.px = c ? (backend || backendOf(layer)).Layer.fromCanvas(c) : null;
     }
     const maskDesc = own("mask") ? Object.getOwnPropertyDescriptor(layer, "mask") : null;
     if (maskDesc && "value" in maskDesc) {
         const m = maskDesc.value;
         delete layer.mask;
         if (m) deprecatedPixels("a layer's mask canvas", "maskPx");
-        if (layer.maskPx === undefined) layer.maskPx = m ? MaskPixels.fromCanvas(m) : null;
+        if (layer.maskPx === undefined) layer.maskPx = m ? (backend || backendOf(layer)).Mask.fromCanvas(m) : null;
     }
     if (!own("canvas")) {
         Object.defineProperty(layer, "canvas", {

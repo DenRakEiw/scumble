@@ -13,8 +13,12 @@ const $ = (id) => document.getElementById(id);
 // the editor's pixel access (docs/PLAN_BCE.md C1, electron/main/main.js): a dev build is strict, so the
 // old layer.canvas / layer.mask / editor.selection names throw instead of warning (SCUMBLE_STRICT=0 turns
 // it off; a packaged build and the ComfyUI node warn once); --pixels-copy makes toCanvas() hand out
-// copies, the gates' check that nothing writes into one
-if (window.scumble && window.scumble.pixels) setPixelsOptions({ strict: !!window.scumble.pixels.strict, copy: !!window.scumble.pixels.copy });
+// copies, the gates' check that nothing writes into one; `tiles` is the backend every editor of this window
+// takes (docs/PLAN_BCE.md §C2 step b: --tiles / --no-tiles, SCUMBLE_TILES, settings.tiles, else on in dev)
+if (window.scumble && window.scumble.pixels) {
+    const p = window.scumble.pixels;
+    setPixelsOptions({ strict: !!p.strict, copy: !!p.copy, ...(typeof p.tiles === "boolean" ? { tiles: p.tiles, tilesFrom: p.tilesFrom || null } : {}) });
+}
 
 // ---- log capture: the renderer's console.warn / error and its uncaught errors go to the
 // main process's log (electron/main/log.js); the originals still print for DevTools ----
@@ -1200,7 +1204,7 @@ async function watchMemory() {
         if (!over && !short) return;
         const others = host.editors().filter((ed) => ed !== host.editor && !busy(ed) && !ed.pointer);
         let freed = 0;
-        for (const ed of others) { try { freed += ed.releaseCaches({ deep: false }) || 0; } catch (err) { console.warn(err); } }
+        for (const ed of others) { try { freed += ed.releaseCaches({ deep: false, mirrors: true }) || 0; } catch (err) { console.warn(err); } }   // mirrors: a tab on tiles gives its display canvases back too
         let front = 0;
         if (short) {
             // the card is the problem: the front tab's textures too, and the GL pool; the
