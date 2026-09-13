@@ -10,8 +10,11 @@ import * as plugins from "./plugins.js";
 
 const $ = (id) => document.getElementById(id);
 
-// --pixels-copy: toCanvas() hands out copies, the gates' check that nothing writes into one (electron/main/main.js)
-if (window.scumble && window.scumble.pixels) setPixelsOptions({ copy: !!window.scumble.pixels.copy });
+// the editor's pixel access (docs/PLAN_BCE.md C1, electron/main/main.js): a dev build is strict, so the
+// old layer.canvas / layer.mask / editor.selection names throw instead of warning (SCUMBLE_STRICT=0 turns
+// it off; a packaged build and the ComfyUI node warn once); --pixels-copy makes toCanvas() hand out
+// copies, the gates' check that nothing writes into one
+if (window.scumble && window.scumble.pixels) setPixelsOptions({ strict: !!window.scumble.pixels.strict, copy: !!window.scumble.pixels.copy });
 
 // ---- log capture: the renderer's console.warn / error and its uncaught errors go to the
 // main process's log (electron/main/log.js); the originals still print for DevTools ----

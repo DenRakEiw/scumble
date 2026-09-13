@@ -124,9 +124,10 @@ puts tiles behind the same interface, so a plugin that goes through it keeps wor
   pixels. Do not keep drawing into a canvas you handed over; with the tile engine it is copied
   in and later draws never reach the layer. Write through `setPixels` instead.
 - **Deprecated, for one release**: `rawLayer(key).canvas`, `rawLayer(key).mask` and
-  `doc.editor.selection` still answer with a canvas and log a warning once (a development build
-  in strict mode throws instead). Their canvas is a read-only view: in the tile engine it is a
-  copy, and a write into it is lost.
+  `doc.editor.selection` still answer with a canvas and log a warning once. A development build
+  (the app run from its source) is strict and throws instead, so a leftover use shows up at
+  once; start it with `SCUMBLE_STRICT=0` to get the warning instead. Their canvas is a read-only
+  view: in the tile engine it is a copy, and a write into it is lost.
 - **Instead**, if the `Document` API is not enough: `rawLayer(key).px` / `.maskPx` with
   `width`, `height`, `readRect(x, y, w, h)` (ImageData), `writeRect(imageData, x, y, op, alpha)`,
   `drawInto(rect, ctx => ...)` (Canvas 2D drawing clipped to `rect` = `[x0, y0, x1, y1]`, from a

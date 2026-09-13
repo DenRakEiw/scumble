@@ -451,6 +451,39 @@ Every step runs `pixels`, `editor`, `composite`, `commands`, `shape`, `brush` on
 own gates. Step (j) runs every gate of §0 in strict mode, once more with `--pixels-copy`,
 and `perf_test.py 15000x10000` against §9.
 
+**C1 finished (step j, 2026-09-13).** The last sweep found no pixel reach through the old names
+left in `renderer/`, `plugins/` or the node's hand-written `js/host.js`, `inpaint_node.js`,
+`inpaint_bridge.js` (what is left named `.canvas` is rule 9's: stroke buffers, brush tips,
+export descriptors, the clipboard, caches, the view canvas). Dev builds are strict now
+(`renderer/shell.js` passes `window.scumble.pixels.strict`; `SCUMBLE_STRICT=0` turns it off; a
+packaged build and the node warn once). Every test reaches pixels through `px` / `maskPx` /
+`sel` / `basePx`, and `editor_test.py` has a permanent step for rule 11's undo fix (fill + undo on
+a flipped, a turned and a merged layer gives the pixels before the fill). What the gates showed:
+all fourteen app gates green in strict mode, green again with `--pixels-copy`, smoke (a real
+Flux run) and node green. Copy mode found **no** write into a handed-out canvas; its two red
+gates were harness effects, fixed in the tests: `pixels_test.js` read its own results through
+`toCanvas()` (copies, 1 level apart at low alpha, and identity checks that only hold in share
+mode; it reads through `readRect` and checks adoption with `canvasOf` now), and the source-window
+step of `composite_test.py` counts uploads, which copy mode makes on every frame because a
+layer's display pixels are a new copy each time (the counter is skipped in copy mode, the
+pixels are compared in both). No comparison needed a copy-mode tolerance. The benchmark is
+within noise of the build before C1 (`docs/PERFORMANCE.md` §9, "C1"; one row, the stroke commit,
+reads 0.4 ms higher, below a twentieth of a frame).
+
+What C2 inherits: **the aliases** (`layer.canvas` / `layer.mask` as non-enumerable accessors,
+`editor.selection` as a class accessor; they go in the release after 0.1.12, with
+`docs/PLUGINS.md`); **copy mode** as the model of the tile backend's `toCanvas()`, with its known
+cost: `layerPixels()` / `layerWithStroke()` hand the display a copy per frame, so the identity-keyed
+caches (the pyramid WeakMap, the compositor's source windows) rebuild every frame in that mode
+until C3 takes the display off canvases; **the tolerance notes**: a copy can sit on another
+Chromium backing and read back 1 level apart at low alpha, a canvas read back a few times moves
+to software (step e), two canvases painted by the same code are not twins (step d), and a clip
+tighter than Skia's bounds of a stroke changes the stroke (step d, pad by the line width);
+**`canvasOf`** in the display machinery only; rule 6's `resizeImage` exception (C6); rule 7's PNG
+undo steps (C4); and `perf_test.py`'s `settle()`, which drains the GPU queue with a one-pixel
+`readRect` (hazard 214): a tile backend's `readRect` reads JS memory and drains nothing, so C2 has
+to give the benchmark another way to wait for the GPU.
+
 ### C2. The tile store (1 week)
 
 `renderer/editor/inpaint_tiles.js`, the second backend of `LayerPixels` and `MaskPixels`,

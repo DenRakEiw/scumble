@@ -909,6 +909,47 @@ Findings worth more than the numbers:
   overlapping soft dabs blend a few levels differently on the CPU than on the GPU. Invisible,
   but a pixel-exact gate against the old path fails without a tolerance.
 
+### C1: the pixels behind one interface, measured at 15k (2026-09-13)
+
+`docs/PLAN_BCE.md` §C1: every read and write of a layer's, a mask's, the selection's and the
+base's pixels goes through `LayerPixels` / `MaskPixels` (a canvas underneath). The end-of-C1
+check is `perf_test.py 15000x10000` within noise of the numbers above. §9 has only the rows
+phase A changed, so the build before C1 (97bb94c, the 0.1.11 tag) was measured next to it on
+the same card the same afternoon: each run a fresh instance with its own profile, three runs
+of each build, alternating (C1 run in strict mode, which only changes what an old property
+name does). Medians in ms; the op rows are main thread blocked.
+
+| row | §9 (phase A) | before C1, 3 runs | C1, 3 runs |
+|---|---|---|---|
+| opacity / match / filter slider tick | | 7.5–8.1 / 7.9–9.2 / 7.3–8.1 | 6.8–9.5 / 7.9–9.6 / 7.1–8.1 |
+| pan / wheel zoom | | 2.6–3.0 / 2.7–3.1 | 2.9–3.0 / 2.8–2.9 |
+| redraw with ants / brush dab + frame | | 0.2 / 0.1 | 0.1–0.2 / 0.1 |
+| stroke commit | | 0.7 / 0.8 / 0.8 | 1.6 / 1.2 / 1.2 |
+| undo of the stroke | 42 | 48 / 44 / 40 | 479 / 48 / 42 |
+| selection change | 5 to 6 | 1.4 / 1.3 / 1.2 | 1.1 / 1.4 / 0.6 |
+| selection bounds scan (warm, first) | 6, 460–490 | 6.4–7.5, 505–520 | 6.7–9.0, 488–1184 |
+| full composite (warm, cold) | | 6.2–7.6, 661–739 | 0.8–7.1, 686–5208 |
+| grow +16 / shrink / invert | 112 / 131 / 54 | 233–296 / 210–403 / 34–44 | 105–248 / 85–332 / 33–50 |
+| feather 8 | 398 | 326 / 365 / 367 | 918 / 300 / 389 |
+| magic wand, the whole-picture band | 1062 | 553 / 548 / 506 | 3421 / 822 / 723 |
+| magic wand, an object / bucket fill | 360 / 490–620 | 341–368 / 481–525 | 266–326 / 523–535 |
+| PNG of the composite (worker) | | 16–19 | 14–56 |
+
+**Verdict: within noise.** The first C1 run (the first in the table's C1 column) came right
+after a gate run that had rendered on ComfyUI, and its undo, feather, wand and cold composite
+were several times the rest; neither the build before C1, measured right after it, nor the
+two C1 runs after that showed it. The two rows that stayed apart were measured again, six
+times each on one document per build (`wand + feather + stroke + undo` in a loop): the band
+wand 707 against 703 ms blocked, feather 312 against 309, a 60-dab stroke's commit 39.8
+against 36.3 ms (ranges 29–43 and 32–43), its undo 645 against 587 (512–702 and 556–600).
+The stroke commit row of the benchmark is one sample of about a millisecond and reads 0.4 ms
+higher in every C1 run; the commit writes through `drawInto` with the stroke's box as a clip
+since C1 step (c). The call itself costs 0.004 ms on the main thread (measured, the context
+reset included); where the rest of the 0.4 ms goes was not found (the clip is the likeliest
+candidate). It is below a twentieth of a frame, once per stroke, and C5 replaces that commit.
+Memory: `mem_test.py 2048x1152 --rounds 1` leaves the same 50 live canvases (128 MB) and
+the same GPU process margin before and after C1.
+
 ## 10. Phase B: the Rust spike (2026-09-13)
 
 `docs/PLAN_BCE.md` §1, built on the branch `px-spike` (commits fe9bf0e B0 to 8ab3706). Five

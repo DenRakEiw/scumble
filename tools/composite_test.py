@@ -40,6 +40,7 @@ BUILD = """
     await new Promise((r) => setTimeout(r, 300));
     ed.resizeCanvas();
     window.__cmp = ed;
+    const { LayerPixels, MaskPixels } = await import("./editor/inpaint_pixels.js");
 
     const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
     // base: a gradient with hard shapes, so blend modes have something to bite on
@@ -71,7 +72,7 @@ BUILD = """
         x.fillStyle = g; x.fillRect(0, 0, w, h);
         x.fillStyle = "rgba(255,255,255,0.85)"; x.fillRect(10, 20, 30, 60);
         x.fillStyle = "rgba(0,0,0,0.85)"; x.fillRect(50, 120, 30, 60);
-        const l = ed.addLayer({ name: "blend " + mode, kind: "paint", canvas: c, x: 10 + i * 98, y: 30, w, h, dirty: true });
+        const l = ed.addLayer({ name: "blend " + mode, kind: "paint", px: LayerPixels.fromCanvas(c), x: 10 + i * 98, y: 30, w, h, dirty: true });
         l.blend = mode;
         l.opacity = 0.75;
     });
@@ -82,7 +83,7 @@ BUILD = """
         const x = c.getContext("2d");
         x.fillStyle = "#ffcc33"; x.fillRect(0, 0, 300, 200);
         x.fillStyle = "#33224a"; x.fillRect(20, 20, 120, 160);
-        const l = ed.addLayer({ name: "masked", kind: "paint", canvas: c, x: 60, y: 300, w: 300, h: 200, dirty: true });
+        const l = ed.addLayer({ name: "masked", kind: "paint", px: LayerPixels.fromCanvas(c), x: 60, y: 300, w: 300, h: 200, dirty: true });
         // the mask works through its alpha (drawn with destination-in), not its luminance
         const m = mk(300, 200);
         const mx = m.getContext("2d");
@@ -90,7 +91,7 @@ BUILD = """
         mg.addColorStop(0, "rgba(255,255,255,0)"); mg.addColorStop(1, "rgba(255,255,255,1)");
         mx.fillStyle = mg; mx.fillRect(0, 0, 300, 200);
         mx.fillStyle = "rgba(255,255,255,1)"; mx.fillRect(200, 140, 80, 50);
-        l.mask = m;
+        l.maskPx = MaskPixels.fromCanvas(m);
         l.maskDirty = true;
         ed.markMaskChanged(l);
     }
@@ -102,7 +103,7 @@ BUILD = """
         const g = x.createRadialGradient(130, 90, 10, 130, 90, 130);
         g.addColorStop(0, "#f0e0b0"); g.addColorStop(1, "#204020");
         x.fillStyle = g; x.fillRect(0, 0, 260, 180);
-        const l = ed.addLayer({ name: "matched", kind: "result", canvas: c, x: 430, y: 320, w: 260, h: 180, dirty: true });
+        const l = ed.addLayer({ name: "matched", kind: "result", px: LayerPixels.fromCanvas(c), x: 430, y: 320, w: 260, h: 180, dirty: true });
         l.match = { strength: 70, source: "surroundings" };
         ed.markMatchChanged(l);
     }
@@ -115,7 +116,7 @@ BUILD = """
         x.font = "600 56px system-ui, sans-serif";
         x.textBaseline = "top";
         x.fillText("Scumble", 6, 6);
-        ed.addLayer({ name: "text", kind: "paint", canvas: c, x: 540, y: 60, w: 320, h: 90, dirty: true });
+        ed.addLayer({ name: "text", kind: "paint", px: LayerPixels.fromCanvas(c), x: 540, y: 60, w: 320, h: 90, dirty: true });
     }
 
     // A filter layer on top. Grain seeds its noise field from the layer id, which differs
@@ -132,9 +133,10 @@ BUILD = """
 
     // a selection, so its overlay and the crop frame are part of the view reference.
     // Tint, not marching ants: the ants walk with the clock and would never compare equal.
-    const sctx = ed.selection.getContext("2d");
-    sctx.fillStyle = "#ff0000";
-    sctx.fillRect(120, 120, 400, 260);
+    ed.sel.drawInto(null, (sctx) => {
+        sctx.fillStyle = "#ff0000";
+        sctx.fillRect(120, 120, 400, 260);
+    });
     ed.markSelectionChanged([120, 120, 520, 380]);
     ed.selectionDisplay = "tint";
 
@@ -201,16 +203,15 @@ GL_VS_2D = """
     ed.compositorOff = false;
     ed.sceneSig = null;
     ed.draw();
-    const victim = ed.layers.find((l) => l.kind === "paint" && !l.mask && l.visible && !l.maskEdit);
+    const victim = ed.layers.find((l) => l.kind === "paint" && !l.maskPx && l.visible && !l.maskEdit);
     if (victim) {
-        const w = Math.max(4, Math.round(victim.canvas.width * 0.5));
-        const h = Math.max(4, Math.round(victim.canvas.height * 0.5));
-        const cx = victim.canvas.getContext("2d");
-        cx.save();
-        cx.globalCompositeOperation = "destination-out";
-        cx.fillStyle = "#000";
-        cx.fillRect(2, 2, w, h);
-        cx.restore();
+        const w = Math.max(4, Math.round(victim.px.width * 0.5));
+        const h = Math.max(4, Math.round(victim.px.height * 0.5));
+        victim.px.drawInto([2, 2, 2 + w, 2 + h], (cx) => {
+            cx.globalCompositeOperation = "destination-out";
+            cx.fillStyle = "#000";
+            cx.fillRect(2, 2, w, h);
+        });
         ed.markLayerChanged(victim, [2, 2, 2 + w, 2 + h]);
     }
     ed.compositorOff = true;
@@ -245,6 +246,7 @@ FILTER_CHAIN = """
 (async () => {
     const ed = window.__cmp;
     const { FILTERS } = await import("./editor/inpaint_filters.js");
+    const { MaskPixels } = await import("./editor/inpaint_pixels.js");
     // A realistic stack on top of the reference document. Ids are pinned: grain seeds its
     // field from the layer id, so without that no two runs match.
     const want = [["film.look", "chain-look", { preset: "portra400" }], ["film.halation", "chain-hal", null], ["grain", "chain-grain", { amount: 30, size: 2 }]];
@@ -308,7 +310,7 @@ FILTER_CHAIN = """
         const mg = mx.createLinearGradient(0, 0, ed.width, 0);
         mg.addColorStop(0, "rgba(255,255,255,0)"); mg.addColorStop(1, "rgba(255,255,255,1)");
         mx.fillStyle = mg; mx.fillRect(0, 0, ed.width, ed.height);
-        added[1].mask = m;
+        added[1].maskPx = MaskPixels.fromCanvas(m);
         added[1].maskDirty = true;
         ed.markMaskChanged(added[1]);
     }
@@ -350,6 +352,7 @@ WINDOW = """
     shell.activate(ed);
     await new Promise((r) => setTimeout(r, 300));
     ed.resizeCanvas();
+    const { LayerPixels, pixelsOptions } = await import("./editor/inpaint_pixels.js");
     const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
     const base = mk(W, H);
     { const x = base.getContext("2d"); const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#1c4f8a"); g.addColorStop(1, "#8a1c4f"); x.fillStyle = g; x.fillRect(0, 0, W, H); for (let i = 0; i < 300; i++) { x.fillStyle = `hsl(${(i * 37) % 360},70%,55%)`; x.fillRect((i * 977) % W, (i * 613) % H, 120, 90); } }
@@ -358,14 +361,14 @@ WINDOW = """
     await ed.setBase({ filename: "window.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
     const lc = mk(W, H);
     { const x = lc.getContext("2d"); x.globalAlpha = 0.6; for (let k = 0; k < 200; k++) { x.fillStyle = `hsl(${(k * 53) % 360},80%,60%)`; x.beginPath(); x.arc((k * 811) % W, (k * 457) % H, 80, 0, Math.PI * 2); x.fill(); } }
-    const layer = ed.addLayer({ name: "Dots", kind: "paint", canvas: lc, x: 0, y: 0, w: W, h: H, dirty: true, blend: "screen", opacity: 0.9 });
+    const layer = ed.addLayer({ name: "Dots", kind: "paint", px: LayerPixels.fromCanvas(lc), x: 0, y: 0, w: W, h: H, dirty: true, blend: "screen", opacity: 0.9 });
     ed.renderLayers();
     if (!ed.compositor()) { shell.closeDocument(ed, { force: true }); if (before) shell.activate(before); return { skipped: "no compositor" }; }
     ed.view.scale = 1; ed.view.angle = 0;
     ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
     const shot = () => { ed.sceneSig = null; ed.flatCache = null; ed.draw(); const c = mk(ed.canvas.width, ed.canvas.height); c.getContext("2d").drawImage(ed.canvas, 0, 0); return c.getContext("2d").getImageData(0, 0, c.width, c.height).data; };
     const diff = (a, b) => { let max = 0, sum = 0, over = 0; for (let i = 0; i < a.length; i += 4) { const aa = a[i + 3], ba = b[i + 3]; let d = Math.abs(aa - ba); for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(a[i + k] * aa / 255 - b[i + k] * ba / 255)); if (d > max) max = d; if (d > 2) over++; sum += d; } return { max: +max.toFixed(2), mean: +(sum / (a.length / 4)).toFixed(4), over }; };
-    const out = { view: [ed.canvas.width, ed.canvas.height] };
+    const out = { view: [ed.canvas.width, ed.canvas.height], pixelsCopy: !!pixelsOptions().copy };
     const compare = (label) => {
         ed.compositorOff = true; const cpu = shot();
         ed.compositorOff = false; const used = ed.glCompositeUsable({}); const gpu = shot();
@@ -382,7 +385,7 @@ WINDOW = """
     compare("afterPan");
     out.uploadsAfterBigPan = stats().windowUploads - st1.windowUploads;
     const st2 = stats();
-    { const ix = Math.round(-ed.view.x + ed.canvas.width / 2), iy = Math.round(-ed.view.y + ed.canvas.height / 2); const x = lc.getContext("2d"); x.fillStyle = "#ffffff"; x.fillRect(ix - 60, iy - 60, 120, 120); ed.markLayerChanged(layer, [ix - 60, iy - 60, ix + 60, iy + 60]); }
+    { const ix = Math.round(-ed.view.x + ed.canvas.width / 2), iy = Math.round(-ed.view.y + ed.canvas.height / 2); layer.px.drawInto([ix - 60, iy - 60, ix + 60, iy + 60], (x) => { x.globalAlpha = 0.6; /* what the dots left on lc's context, which this dab used to draw with */ x.fillStyle = "#ffffff"; x.fillRect(ix - 60, iy - 60, 120, 120); }); ed.markLayerChanged(layer, [ix - 60, iy - 60, ix + 60, iy + 60]); }
     compare("afterDab");
     out.uploadsAfterDab = stats().windowUploads - st2.windowUploads;
     ed.view.x = Math.round(ed.canvas.width * 0.6); ed.view.y = Math.round(ed.canvas.height * 0.6);
@@ -500,7 +503,11 @@ async def run(c, args):
                 problems.append("compositor not used for %s" % ",".join(unused))
             if st["windows"] < 2 or st["windowMB"] * 2 > st["wholeMB"]:
                 problems.append("windows %s holding %s MB against %s MB whole" % (st["windows"], st["windowMB"], st["wholeMB"]))
-            if win["uploadsAfterSmallPan"] != 0:
+            # With --pixels-copy (the C1 write check) a layer's display pixels are a new copy on every
+            # frame, and the compositor keys a source window on the canvas it is handed, so a copy is
+            # uploaded again whatever the pan. That counter only means something in share mode, which
+            # is what ships; the pixels are compared in both modes.
+            if win["uploadsAfterSmallPan"] != 0 and not win.get("pixelsCopy"):
                 problems.append("a pan inside the margin uploaded %s windows" % win["uploadsAfterSmallPan"])
             if win["uploadsAfterBigPan"] < 2:
                 problems.append("a pan beyond the margin uploaded %s windows" % win["uploadsAfterBigPan"])

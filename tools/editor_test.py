@@ -80,9 +80,7 @@ Array.from(box.querySelectorAll("button")).find((b) => b.textContent === "Import
 await p;
 if (out.prefill[0] !== "2048" || out.prefill[1] !== "1024") throw new Error("prefill " + out.prefill);
 if (ed.width !== 800 || ed.height !== 400) throw new Error("size " + ed.width + "x" + ed.height + " (" + ed.status + ")");
-const bc = document.createElement("canvas"); bc.width = ed.width; bc.height = ed.height;
-const bctx = bc.getContext("2d"); bctx.drawImage(ed.base.img, 0, 0);
-const px = (x, y) => Array.from(bctx.getImageData(x, y, 1, 1).data);
+const px = (x, y) => Array.from(ed.basePx.readRect(x, y, 1, 1).data);   // the base's pixels (C1: basePx)
 out.red = px(100, 200); out.blue = px(600, 200); out.white = px(700, 30);
 if (out.red[0] < 250 || out.red[1] > 5) throw new Error("red " + out.red);
 if (out.blue[2] < 250 || out.blue[0] > 5) throw new Error("blue " + out.blue);
@@ -92,8 +90,8 @@ if (!/\\.png$/i.test(out.baseFile)) throw new Error("the mirror holds " + out.ba
 // a layer: rasterised to fit the document, no dialog
 await ed.addImageLayers([file], "none", { place: "fit" });
 const layer = ed.layers[ed.layers.length - 1];
-out.layer = [layer.canvas.width, layer.canvas.height, layer.w, layer.h, layer.name];
-if (layer.canvas.width !== 800 || layer.canvas.height !== 400 || layer.w !== 800) throw new Error("layer " + out.layer);
+out.layer = [layer.px.width, layer.px.height, layer.w, layer.h, layer.name];
+if (layer.px.width !== 800 || layer.px.height !== 400 || layer.w !== 800) throw new Error("layer " + out.layer);
 // the command: a path and a width, the aspect kept, no dialog
 const r = await run("load_image", { path: window.__svgPath, width: 600, doc: window.__t });
 out.command = [r.width, r.height];
@@ -220,8 +218,7 @@ const a = ednow(window.__t);
 host.shell.activate(a);
 await run("add_paint_layer", { name: "Source layer", doc: window.__t });
 const l = a.activeLayer();
-const lc = a.layerPixels(l).getContext("2d");
-lc.fillStyle = "#ff3300"; lc.fillRect(10, 10, 120, 60);
+l.px.drawInto(null, (lc) => { lc.fillStyle = "#ff3300"; lc.fillRect(10, 10, 120, 60); });   // writes go through the layer's pixels
 a.markLayerChanged(l);
 a.clearSelection();
 const copied = a.copySelection({});               // nothing selected: the whole layer
@@ -265,7 +262,8 @@ const g = lc.getContext("2d");
 g.fillStyle = "#20c040";
 g.fillRect(730, 100, 800, 200);   // the strip the stroke runs through
 g.fillRect(930, 780, 370, 300);   // the block 580 px below it, which has to stay
-const layer = ed.addLayer({ name: "Result", kind: "result", ref: null, canvas: lc, x: LX, y: LY, w: LW, h: LH, dirty: true });
+const { LayerPixels } = await import("./editor/inpaint_pixels.js");
+const layer = ed.addLayer({ name: "Result", kind: "result", ref: null, px: LayerPixels.fromCanvas(lc), x: LX, y: LY, w: LW, h: LH, dirty: true });
 ed.markLayerChanged(layer);
 await run("select_rect", { x: LX, y: LY, w: LW, h: LH, doc: d3.id });   // the eraser is clipped to it
 ed._fitted = false;
@@ -291,7 +289,7 @@ for (let i = 1; i <= 10; i++) { ed.canvas.dispatchEvent(ev("pointermove", x0 + (
 ed.canvas.dispatchEvent(ev("pointerup", x1, y));
 ed.hover = null;
 await wait(100); ed.draw(); await wait(100);
-const d = layer.canvas.getContext("2d").getImageData(0, 0, LW, LH).data;
+const d = layer.px.readRect(0, 0, LW, LH).data;
 let alpha = 0;
 for (let i = 3; i < d.length; i += 4) if (d[i] > 0) alpha++;
 const after = { block: screenAt(...block), strip: screenAt(...strip), alpha, kind, clipped };
@@ -310,10 +308,11 @@ await run("new_canvas", { width: 640, height: 400, doc: window.__t });   // the 
 // a two-colour picture: a warm left half, a cold right half
 const L = await run("add_paint_layer", { doc: window.__t });
 const lay = ed.layers.find((l) => l.id === L.id);
-const g = lay.canvas.getContext("2d");
-g.fillStyle = "#c86432"; g.fillRect(0, 0, 320, 400);
-g.fillStyle = "#3264c8"; g.fillRect(320, 0, 320, 400);
-lay.dirty = true; ed.touchSource(lay.canvas); ed.draw();
+lay.px.drawInto(null, (g) => {
+    g.fillStyle = "#c86432"; g.fillRect(0, 0, 320, 400);
+    g.fillStyle = "#3264c8"; g.fillRect(320, 0, 320, 400);
+});
+lay.dirty = true; ed.touchSource(lay.px); ed.draw();
 const src = ed.flattenToCanvas({ forRun: true });
 const out = {};
 for (const mode of ["colour", "all", "levels"]) {
@@ -348,9 +347,8 @@ const ed = ednow(window.__t);
 host.shell.activate(ed);
 const L = await run("add_paint_layer", { doc: window.__t });
 const lay = ed.layers.find((l) => l.id === L.id);
-const g = lay.canvas.getContext("2d");
-g.fillStyle = "#ff0000"; g.fillRect(0, 0, ed.width, ed.height);
-lay.dirty = true; ed.touchSource(lay.canvas); ed.draw();
+lay.px.drawInto(null, (g) => { g.fillStyle = "#ff0000"; g.fillRect(0, 0, ed.width, ed.height); });
+lay.dirty = true; ed.touchSource(lay.px); ed.draw();
 const path = window.__exportPath;
 const r = await run("export", { format: "png", path, width: 320, canvas_width: 400, canvas_height: 300, anchor: "br", fill: "white", doc: window.__t });
 const f = await window.scumble.file.read(path);
@@ -423,15 +421,13 @@ const ed = ednow(window.__t);
 host.shell.activate(ed);
 const W = ed.width, H = ed.height;
 const out = { size: [W, H] };
-const pixels = () => ed.selection.getContext("2d").getImageData(0, 0, W, H).data;
+const pixels = () => ed.sel.readRect(0, 0, W, H).data;
 const same = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-ed.selection.getContext("2d").clearRect(0, 0, W, H);
+ed.sel.clear();
 ed.markSelectionChanged(null);
-// an ellipse drawn straight into the canvas: nothing is known about its box
-const s = ed.selection.getContext("2d");
-s.fillStyle = "#ff0000";
-s.beginPath(); s.ellipse(700, 450, 300, 200, 0, 0, Math.PI * 2); s.fill();
+// an ellipse drawn straight into the selection's pixels: nothing is known about its box
+ed.sel.drawInto(null, (s) => { s.fillStyle = "#ff0000"; s.beginPath(); s.ellipse(700, 450, 300, 200, 0, 0, Math.PI * 2); s.fill(); });
 ed.markSelectionChanged();
 out.ellipse = ed.getBounds();
 const full = ed.scanBounds(0, 0, W, H);
@@ -448,9 +444,7 @@ ed.pushUndo({ kind: "selection" });
 const snap = ed.undo[ed.undo.length - 1];
 out.snap = { kind: snap.kind, px: !!snap.px, pw: snap.px && snap.px.width, ph: snap.px && snap.px.height, w: snap.w, h: snap.h, bytes: snap.bytes };
 if (snap.kind !== "selection" || !snap.px || snap.px.width !== snap.w || snap.px.height !== snap.h || snap.w >= W || snap.bytes !== snap.w * snap.h * 4) throw new Error("the undo step is not a copy of the extent: " + JSON.stringify(out.snap));
-s.globalCompositeOperation = "destination-out";
-s.fillRect(400, 250, 300, 400);   // the left half of the ellipse
-s.globalCompositeOperation = "source-over";
+ed.sel.drawInto(null, (s) => { s.globalCompositeOperation = "destination-out"; s.fillRect(400, 250, 300, 400); });   // the left half of the ellipse
 // the info rows ask for the bounds at once, so the superset is resolved inside the mark: watch
 // that it is the old box that is scanned by strips, and that the extent is never scanned for
 const calls = [];
@@ -475,7 +469,7 @@ if (!eq(ed.getBounds(), out.feathered)) throw new Error("clear + undo: " + JSON.
 ed.clearSelection();
 ed.pushUndo({ kind: "selection" });
 out.emptySnap = ed.undo[ed.undo.length - 1].empty === true;
-s.fillRect(10, 10, 50, 50);
+ed.sel.drawInto(null, (s) => { s.fillStyle = "#ff0000"; s.fillRect(10, 10, 50, 50); });
 ed.markSelectionChanged([10, 10, 60, 60], [10, 10, 60, 60]);
 await ed.undoStep();
 out.emptyAgain = ed.getBounds() === null;
@@ -521,7 +515,7 @@ await ed.wandSelect(1000, 1400, "replace");
 ed.floodRegion = oFlood;
 out.rounds = spy.rounds; out.box = spy.box;
 if (!(spy.rounds >= 2)) throw new Error("the box should have been widened across the bridge, rounds " + spy.rounds);
-const sel = ed.selection.getContext("2d").getImageData(0, 0, W, H).data;
+const sel = ed.sel.readRect(0, 0, W, H).data;
 let wrong = 0, selCount = 0;
 for (let p = 0, i = 3; p < ref.length; p++, i += 4) { const on = sel[i] > 127 ? 1 : 0; selCount += on; if (on !== ref[p]) wrong++; }
 out.selCount = selCount; out.wrong = wrong;
@@ -538,8 +532,7 @@ await ed.bucketFill(4000, 1600);
 const step = ed.undo[ed.undo.length - 1];
 out.bucketUndo = { kind: step.kind, w: step.w, h: step.h, px: !!step.px };
 if (ed.undo.length !== undoBefore + 1 || step.kind !== "layerrect" || !step.px || step.w >= W) throw new Error("the bucket's undo step is not a rect copy: " + JSON.stringify(out.bucketUndo));
-const lp = layer.canvas.getContext("2d");
-const at = (x, y) => Array.from(lp.getImageData(x, y, 1, 1).data);
+const at = (x, y) => Array.from(layer.px.readRect(x, y, 1, 1).data);
 out.filled = { left: at(1000, 1400), right: at(4000, 1600), red: at(2500, 500), white: at(100, 100) };
 if (out.filled.left[1] !== 255 || out.filled.right[1] !== 255 || out.filled.red[3] !== 0 || out.filled.white[3] !== 0) throw new Error("bucket pixels: " + JSON.stringify(out.filled));
 await ed.undoStep();
@@ -570,10 +563,9 @@ const W = ed.width, H = ed.height;
 const out = {};
 const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 const layer = ed.addPaintLayer();
-{ const x = layer.canvas.getContext("2d"); x.fillStyle = "#3060c0"; x.fillRect(200, 200, 2000, 1500); x.fillStyle = "#c06030"; x.fillRect(1500, 1000, 2000, 1500); }
+layer.px.drawInto(null, (x) => { x.fillStyle = "#3060c0"; x.fillRect(200, 200, 2000, 1500); x.fillStyle = "#c06030"; x.fillRect(1500, 1000, 2000, 1500); });
 ed.activeLayerId = layer.id;
-const s = ed.selection.getContext("2d");
-s.clearRect(0, 0, W, H); s.fillStyle = "#ff0000"; s.fillRect(600, 500, 2200, 1600);
+ed.sel.drawInto(null, (s) => { s.clearRect(0, 0, W, H); s.fillStyle = "#ff0000"; s.fillRect(600, 500, 2200, 1600); });
 ed.markSelectionChanged([600, 500, 2800, 2100]);
 ed.brushSize = 90; ed.hardness = 0.4; ed.eraseHardness = 0.4; ed.brushOpacity = 0.6; ed.color = "#20c040";
 const path = []; for (let i = 0; i <= 24; i++) path.push([500 + i * 90, 700 + Math.round(Math.sin(i / 3) * 300)]);
@@ -583,20 +575,20 @@ const same = (a, b, tol) => { let max = 0; for (let i = 0; i < a.length; i += 4)
 // a full-size buffer that answers the same interface: the reference is the old way, a canvas the size of the layer
 const fullBuffer = (target) => { const c = mk(target.width, target.height); return { tw: target.width, th: target.height, canvas: c, x: 0, y: 0, w: target.width, h: target.height, ensure() { const ctx = c.getContext("2d"); ctx.setTransform(1, 0, 0, 1, 0, 0); return ctx; }, all() { return this.ensure(); } }; };
 const paintRef = (erase) => {
-    const ref = mk(W, H); ref.getContext("2d").drawImage(layer.canvas, 0, 0);
-    const q = { kind: "layerpaint", layer, stroke: fullBuffer(layer.canvas), clip: true, erase, last: path[0], pressure: 1 };
+    const ref = mk(W, H); layer.px.drawTo(ref.getContext("2d"), 0, 0);
+    const q = { kind: "layerpaint", layer, stroke: fullBuffer(layer.px), clip: true, erase, last: path[0], pressure: 1 };
     ed.layerDab(q, path[0][0], path[0][1], path[0][0], path[0][1]);   // the pointer-down dab
     for (let i = 1; i < path.length; i++) ed.layerDab(q, path[i - 1][0], path[i - 1][1], path[i][0], path[i][1]);
-    const clip = mk(W, H); { const c = clip.getContext("2d"); c.setTransform(layer.canvas.width / layer.w, 0, 0, layer.canvas.height / layer.h, 0, 0); c.drawImage(ed.selection, -layer.x, -layer.y); }
+    const clip = mk(W, H); { const c = clip.getContext("2d"); c.setTransform(layer.px.width / layer.w, 0, 0, layer.px.height / layer.h, 0, 0); ed.sel.drawTo(c, -layer.x, -layer.y); }
     const st = mk(W, H); { const c = st.getContext("2d"); c.drawImage(q.stroke.canvas, 0, 0); c.globalCompositeOperation = "destination-in"; c.drawImage(clip, 0, 0); }
     const r = ref.getContext("2d"); r.globalAlpha = ed.brushOpacity; r.globalCompositeOperation = erase ? "destination-out" : "source-over"; r.drawImage(st, 0, 0);
     return ref;
 };
 for (const erase of [false, true]) {
-    const before = mk(W, H); before.getContext("2d").drawImage(layer.canvas, 0, 0);
+    const before = mk(W, H); layer.px.drawTo(before.getContext("2d"), 0, 0);
     const ref = paintRef(erase);
     // the real gesture: the buffer grows with the dabs, the preview follows inside the dab's box
-    const p = { kind: "layerpaint", layer, stroke: ed.newStrokeBuffer(layer.canvas), clip: ed.strokeClip(layer, layer.canvas), erase, last: path[0], pressure: 1 };
+    const p = { kind: "layerpaint", layer, stroke: ed.newStrokeBuffer(layer.px), clip: ed.strokeClip(layer, layer.px), erase, last: path[0], pressure: 1 };
     ed.pointer = p;
     ed.layerDab(p, path[0][0], path[0][1], path[0][0], path[0][1]);
     let previewChecked = 0;
@@ -605,7 +597,7 @@ for (const erase of [false, true]) {
         if (i % 6 === 0) {
             // the incremental preview against a preview built whole from the same buffer
             const live = ed.layerPixels(layer);
-            const whole = mk(W, H); { const c = whole.getContext("2d"); c.drawImage(layer.canvas, 0, 0); const cs = ed.clippedStroke(p); c.globalAlpha = ed.brushOpacity; c.globalCompositeOperation = erase ? "destination-out" : "source-over"; c.drawImage(cs, p.stroke.x, p.stroke.y); }
+            const whole = mk(W, H); { const c = whole.getContext("2d"); layer.px.drawTo(c, 0, 0); const cs = ed.clippedStroke(p); c.globalAlpha = ed.brushOpacity; c.globalCompositeOperation = erase ? "destination-out" : "source-over"; c.drawImage(cs, p.stroke.x, p.stroke.y); }
             const box = [Math.max(0, p.stroke.x - 4), Math.max(0, p.stroke.y - 4), Math.min(W, p.stroke.x + p.stroke.w + 4), Math.min(H, p.stroke.y + p.stroke.h + 4)];
             const a = live.getContext("2d").getImageData(box[0], box[1], box[2] - box[0], box[3] - box[1]).data;
             const b = whole.getContext("2d").getImageData(box[0], box[1], box[2] - box[0], box[3] - box[1]).data;
@@ -622,7 +614,7 @@ for (const erase of [false, true]) {
     if (ed.strokePreview) throw new Error("the preview canvas of a 20 MP layer was kept after the gesture");
     if (ed.clipScratch && ed.clipScratch.width * ed.clipScratch.height > 0.25 * W * H) throw new Error("the clip scratch is not the buffer's size: " + ed.clipScratch.width + "x" + ed.clipScratch.height);
     // the committed pixels against the reference, inside the selection and outside it
-    const got = layer.canvas.getContext("2d").getImageData(0, 0, W, H).data;
+    const got = layer.px.readRect(0, 0, W, H).data;
     const want = ref.getContext("2d").getImageData(0, 0, W, H).data;
     // a small buffer starts as a software canvas and grows onto the GPU; Skia's CPU and GPU
     // blending of twenty overlapping soft dabs round differently by a few levels (measured 4
@@ -634,13 +626,62 @@ for (const erase of [false, true]) {
     out[(erase ? "erase" : "paint") + "Undo"] = { kind: step.kind, w: step.w, h: step.h, px: !!step.px };
     if (step.kind !== "layerrect" || !step.px || step.px.width !== step.w || step.w >= W) throw new Error("the undo step is not a rect copy: " + JSON.stringify(out[(erase ? "erase" : "paint") + "Undo"]));
     await ed.undoStep();
-    const back = layer.canvas.getContext("2d").getImageData(0, 0, W, H).data;
+    const back = layer.px.readRect(0, 0, W, H).data;
     if (same(back, before.getContext("2d").getImageData(0, 0, W, H).data, 0)) throw new Error("undo did not restore the layer");
     // paint it for real for the erase round
     ed.pointer = null;
 }
 ed.clearSelection();
 await run("remove_layer", { layer: layer.id, doc: window.__t });
+return out;
+"""),
+    ("undo_puts_a_flipped_turned_or_merged_layer_back", """
+// docs/PLAN_BCE.md C1 rule 11: 0.1.11 drew an undo step's saved pixels with whatever a flip, a turn
+// or a merge had left on the layer's own context, so undoing a fill brought the layer back mirrored,
+// turned or see-through. Every write goes through the layer's pixels from a fresh state now: fill +
+// undo has to give the pixels from before the fill on each such layer.
+await run("new_canvas", { width: 600, height: 400, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const paint = (l, a, b) => l.px.drawInto(null, (x) => {
+    x.fillStyle = a; x.fillRect(20, 30, 260, 120);
+    x.fillStyle = b; x.beginPath(); x.arc(420, 250, 90, 0, Math.PI * 2); x.fill();
+});
+const all = (l) => l.px.readRect(0, 0, l.px.width, l.px.height).data;
+// premultiplied: the undo step is a PNG, which rounds the colour of nearly transparent pixels
+const worst = (a, b) => { if (a.length !== b.length) return 255; let m = 0; for (let i = 0; i < a.length; i += 4) { const aa = a[i + 3], ba = b[i + 3]; let d = Math.abs(aa - ba); for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(a[i + k] * aa / 255 - b[i + k] * ba / 255)); if (d > m) m = d; } return +m.toFixed(1); };
+const out = {};
+for (const make of ["flip", "turn", "merge"]) {
+    const l = ed.addPaintLayer();
+    ed.activeLayerId = l.id;
+    paint(l, "#e03020", "rgba(20, 60, 220, 0.6)");
+    ed.markLayerChanged(l);
+    if (make === "flip") ed.flipLayer("h");
+    else if (make === "turn") ed.rotateLayer90(1);
+    else {
+        const top = ed.addPaintLayer();
+        paint(top, "rgba(40, 200, 90, 0.8)", "#f0d020");
+        top.blend = "multiply"; top.opacity = 0.5;
+        ed.markLayerChanged(top);
+        await ed.mergeDown(top);
+        ed.activeLayerId = l.id;
+    }
+    const target = ed.layers.find((x) => x.id === l.id);
+    if (!target || ed.activeLayer() !== target) throw new Error(make + ": the layer is gone (" + ed.status + ")");
+    const before = all(target);
+    await run("select_rect", { x: 100, y: 80, w: 300, h: 200, doc: window.__t });
+    ed.brushOpacity = 0.66; ed.color = "#ff8000";
+    ed.fillSelection();
+    const fill = worst(all(target), before);
+    if (fill < 50) throw new Error(make + ": the fill did not land (" + fill + ", " + ed.status + ")");
+    await ed.undoStep();
+    const back = worst(all(target), before);
+    out[make] = { fill, back, size: [target.px.width, target.px.height] };
+    if (back > 1) throw new Error(make + ": the undo did not put the layer back, " + back + " levels off: " + JSON.stringify(out));
+    ed.clearSelection();
+    await run("remove_layer", { layer: target.id, doc: window.__t });
+}
+ed.brushOpacity = 1;
 return out;
 """),
     ("cleanup", """

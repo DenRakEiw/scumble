@@ -24,7 +24,7 @@ const drag = (ed, x0, y0, x1, y1, e = {}) => {
     if (!ed.pointer) throw new Error("the tool refused the gesture: " + ed.status);
     ed.shapeDab(ed.pointer, x1, y1, e);
     const p = ed.pointer;
-    const box = ed.strokeRect(p, p.layer.canvas);
+    const box = ed.strokeRect(p, p.layer.px);
     ed.commitStroke(p);
     ed.markLayerChanged(p.layer, box);
     ed.pointer = null;
@@ -34,7 +34,7 @@ const clickPoints = (ed, pts, close) => {
     for (const [x, y] of pts) { ed.shapePointerDown(x, y, { detail: 1 }, false); ed.pointer = null; }
     ed.finishShape(close);
 };
-const px = (ed, l, x, y) => Array.from(l.canvas.getContext("2d").getImageData(Math.round(x - l.x), Math.round(y - l.y), 1, 1).data);
+const px = (ed, l, x, y) => Array.from(l.px.readRect(Math.round(x - l.x), Math.round(y - l.y), 1, 1).data);
 """
 
 STEPS = [
@@ -155,7 +155,7 @@ ed.shapeOpts = { kind: "freehand", fill: false, stroke: true, width: 12, radius:
 ed.shapePointerDown(120, 400, {}, false);
 const p = ed.pointer;
 for (let x = 120; x <= 320; x += 4) ed.shapeDab(p, x, 400 + Math.round(Math.sin((x - 120) / 30) * 30), {});
-const box = ed.strokeRect(p, p.layer.canvas);
+const box = ed.strokeRect(p, p.layer.px);
 ed.commitStroke(p); ed.markLayerChanged(p.layer, box); ed.pointer = null;
 const l = p.layer;
 const onPath = px(ed, l, 120, 400), off = px(ed, l, 220, 500);

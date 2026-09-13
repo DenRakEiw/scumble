@@ -5,6 +5,14 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.12 — unreleased
 
+- **No visible change: the editor's pixel access goes through one interface.** Until this
+  release the editor reached into the pixels of layers, layer masks, the selection and the
+  picture from several hundred places, each in its own way. Every one of those reads and
+  writes now goes through one interface, and your pictures come out exactly as before (apart
+  from the two fixes below, which fell out of it). This is the groundwork for the tile engine
+  that will make very large pictures light on memory. For plugin authors: a layer's pixels are
+  `layer.px` and its mask `layer.maskPx`; `rawLayer(key).canvas`, `.mask` and
+  `doc.editor.selection` still work in this release and log a warning (`docs/PLUGINS.md`).
 - **Smudge, fill and clear work the same on every layer.** On a layer you had flipped or
   turned by 90°, the smudge brush put its paint at the mirrored or turned spot instead of
   under the brush. On a layer made by *Merge down*, *Fill selection* blended the colour with

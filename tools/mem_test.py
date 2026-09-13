@@ -106,6 +106,7 @@ BUILD = """
 (async () => {
     const W = %(w)d, H = %(h)d;
     const M = window.__mem;
+    const { LayerPixels } = await import("./editor/inpaint_pixels.js");
     const ed = M.shell.newDocument();
     M.shell.activate(ed);
     await new Promise((r) => setTimeout(r, 300));   // never requestAnimationFrame: a hidden window has none
@@ -146,11 +147,11 @@ BUILD = """
             x.fillStyle = `hsl(${(k * 53 + i * 90) %% 360},70%%,60%%)`;
             x.fillRect((k * 811) %% W, (k * 457) %% H, W / 25, H / 25);
         }
-        ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", canvas: c, x: 0, y: 0, w: W, h: H, dirty: true });
+        ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: LayerPixels.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
     }
     const rw = Math.min(2048, Math.round(W / 3)), rh = Math.min(2048, Math.round(H / 3));
     const res = paint(mk(rw, rh), 20, 20);
-    const resLayer = ed.addLayer({ name: "Result", kind: "result", canvas: res, x: Math.round(W / 4), y: Math.round(H / 4), w: rw, h: rh, dirty: true });
+    const resLayer = ed.addLayer({ name: "Result", kind: "result", px: LayerPixels.fromCanvas(res), x: Math.round(W / 4), y: Math.round(H / 4), w: rw, h: rh, dirty: true });
     resLayer.match = { strength: 60, source: "surroundings" };
     const { FILTERS } = await import("./editor/inpaint_filters.js");
     ed.addFilterLayer(FILTERS["film.look"] ? "film.look" : "grain");

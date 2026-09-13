@@ -60,7 +60,8 @@ export class Document {
     /**
      * The raw layer object (px, maskPx, params ...); unstable, prefer the summaries. Its pixels
      * are `px` (LayerPixels) and `maskPx` (MaskPixels, null without a mask); `canvas` / `mask`
-     * are deprecated aliases that warn. After writing through px / maskPx call refresh(key).
+     * are deprecated aliases that warn once (a development build is strict and throws). After
+     * writing through px / maskPx call refresh(key).
      */
     rawLayer(key) { return findLayer(this.editor, key); }
 

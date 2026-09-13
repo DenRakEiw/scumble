@@ -27,7 +27,7 @@ SIZES = [a for a in sys.argv[1:] if not a.startswith("-")] or ["2048x1152", "600
 
 SETUP = """
 (async () => {
-    window.__perf = { shell: await import("./shell.js"), host: (await import("./editor/host.js")).host };
+    window.__perf = { shell: await import("./shell.js"), host: (await import("./editor/host.js")).host, pixels: await import("./editor/inpaint_pixels.js") };
     return 1;
 })()
 """
@@ -37,6 +37,7 @@ BENCH = """
 (async () => {
     const W = %(w)d, H = %(h)d;
     const shell = window.__perf.shell;
+    const { LayerPixels } = window.__perf.pixels;
     const before = window.editor;
     const ed = shell.newDocument();
     shell.activate(ed);
@@ -82,12 +83,12 @@ BENCH = """
             x.fillStyle = `hsl(${(k * 53 + i * 90) %% 360},70%%,60%%)`;
             x.fillRect((k * 811) %% W, (k * 457) %% H, W / 25, H / 25);
         }
-        ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", canvas: c, x: 0, y: 0, w: W, h: H, dirty: true });
+        ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: LayerPixels.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
     }
     // a result layer with colour match, like an inpaint result over the selection
     const rw = Math.min(2048, Math.round(W / 3)), rh = Math.min(2048, Math.round(H / 3));
     const res = paint(mk(rw, rh), 20, 20);
-    const resLayer = ed.addLayer({ name: "Result", kind: "result", canvas: res, x: Math.round(W / 4), y: Math.round(H / 4), w: rw, h: rh, dirty: true });
+    const resLayer = ed.addLayer({ name: "Result", kind: "result", px: LayerPixels.fromCanvas(res), x: Math.round(W / 4), y: Math.round(H / 4), w: rw, h: rh, dirty: true });
     resLayer.match = { strength: 60, source: "surroundings" };
     // a film look on top (the plugin's filter when it is loaded, else grain)
     const { FILTERS } = await import("./editor/inpaint_filters.js");
@@ -157,7 +158,7 @@ BENCH = """
     ed.setTool("paint");
     ed.activeLayerId = paintLayer.id;
     ed.brushSize = 40;
-    const p = { kind: "layerpaint", layer: paintLayer, stroke: ed.newStrokeBuffer(paintLayer.canvas), clip: null, erase: false, last: [10, 10], pressure: 1 };
+    const p = { kind: "layerpaint", layer: paintLayer, stroke: ed.newStrokeBuffer(paintLayer.px), clip: null, erase: false, last: [10, 10], pressure: 1 };
     ed.pointer = p;
     const strokeStart = performance.now();
     const dab = bench((i) => {
@@ -168,7 +169,7 @@ BENCH = """
     }, 60);
     out.stroke_frame = dab;
     const commitAt = performance.now();
-    const strokeBox = ed.strokeRect(p, paintLayer.canvas);   // what the real pointer-up passes on
+    const strokeBox = ed.strokeRect(p, paintLayer.px);   // what the real pointer-up passes on
     ed.commitStroke(p);
     ed.pointer = null;
     ed.markLayerChanged(paintLayer, strokeBox);
@@ -177,7 +178,7 @@ BENCH = """
     // The 60 frames above were issued in a tight loop, so the GPU still holds their work; a
     // real stroke is paced by the display. Drain it, so the rows below measure their own cost
     // and not that backlog (a readback of one pixel waits for a canvas's queue).
-    const settle = () => { for (const c of [ed.selection, paintLayer.canvas, ed.canvas]) { try { c.getContext("2d").getImageData(0, 0, 1, 1); } catch (_) { /* a WebGL canvas */ } } try { const comp = ed.compositor(); if (comp) comp.gl.finish(); } catch (_) { /* no compositor */ } };
+    const settle = () => { for (const px of [ed.sel, paintLayer.px]) px.readRect(0, 0, 1, 1); try { ed.canvas.getContext("2d").getImageData(0, 0, 1, 1); } catch (_) { /* a WebGL canvas */ } try { const comp = ed.compositor(); if (comp) comp.gl.finish(); } catch (_) { /* no compositor */ } };
     ed.draw();
     settle();
     const undoAt = performance.now();
@@ -187,8 +188,7 @@ BENCH = """
     // --- selection, autosave, full composite ------------------------------------
     settle();
     const selAt = performance.now();
-    ed.selection.getContext("2d").fillStyle = "#ff0000";
-    ed.selection.getContext("2d").fillRect(Math.round(W / 5), Math.round(H / 5), Math.round(W / 3), Math.round(H / 3));
+    ed.sel.drawInto(null, (s) => { s.fillStyle = "#ff0000"; s.fillRect(Math.round(W / 5), Math.round(H / 5), Math.round(W / 3), Math.round(H / 3)); });
     ed.markSelectionChanged([Math.round(W / 5), Math.round(H / 5), Math.round(W / 5 + W / 3), Math.round(H / 5 + H / 3)]);
     out.selection_change = [+(performance.now() - selAt).toFixed(1), 0];
     out.get_value = bench(() => ed.getValue(), 3);
@@ -217,11 +217,11 @@ BENCH = """
         return [done(), wall];   // [blocked, wall]
     };
     const rect = () => {
-        const s = ed.selection.getContext("2d");
-        s.globalCompositeOperation = "source-over";
-        s.clearRect(0, 0, W, H);
-        s.fillStyle = "#ff0000";
-        s.fillRect(Math.round(W * 0.2), Math.round(H * 0.2), Math.round(W * 0.4), Math.round(H * 0.4));
+        ed.sel.drawInto(null, (s) => {
+            s.clearRect(0, 0, W, H);
+            s.fillStyle = "#ff0000";
+            s.fillRect(Math.round(W * 0.2), Math.round(H * 0.2), Math.round(W * 0.4), Math.round(H * 0.4));
+        });
         ed.markSelectionChanged();
         ed.getBounds();
     };

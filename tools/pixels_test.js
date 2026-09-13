@@ -10,10 +10,9 @@
 function pixelsCases(P) {
     const { LayerPixels, MaskPixels } = P;
     const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
-    const bytesOf = (src) => {
-        const c = src instanceof LayerPixels ? src.toCanvas() : src;
-        return c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
-    };
+    // pixels are read through readRect, never through toCanvas(): with --pixels-copy toCanvas() is a
+    // copy, and a copy can sit on another Chromium backing and read back 1 level apart at low alpha
+    const bytesOf = (src) => (src instanceof LayerPixels ? src.readRect(0, 0, src.width, src.height) : src.getContext("2d").getImageData(0, 0, src.width, src.height)).data;
     // tolerance: a canvas that was read back a few times is moved to software by Chromium, a fresh
     // copy of it sits on the GPU, and the two un-premultiply differently: 1 level at low alpha
     const same = (a, b, what, tolerance = 0) => {
@@ -31,10 +30,7 @@ function pixelsCases(P) {
         }
         return true;
     };
-    const px = (src, x, y) => {
-        const c = src instanceof LayerPixels ? src.toCanvas() : src;
-        return Array.from(c.getContext("2d").getImageData(x, y, 1, 1).data);
-    };
+    const px = (src, x, y) => Array.from((src instanceof LayerPixels ? src.readRect(x, y, 1, 1) : src.getContext("2d").getImageData(x, y, 1, 1)).data);
     // a test picture with every alpha level, soft edges and colour: what a premultiply round trip would damage
     const paint = (ctx, w, h) => {
         const g = ctx.createLinearGradient(0, 0, w, h);
@@ -61,7 +57,7 @@ function pixelsCases(P) {
             const z = LayerPixels.empty(0, -3);
             if (z.width !== 1 || z.height !== 1) throw new Error("degenerate size " + z.width + "x" + z.height);
             const c = mk(40, 30);
-            if (LayerPixels.fromCanvas(c).toCanvas() !== c) throw new Error("fromCanvas does not adopt");
+            if (P.canvasOf(LayerPixels.fromCanvas(c)) !== c) throw new Error("fromCanvas does not adopt");
             const img = new ImageData(new Uint8ClampedArray([1, 2, 3, 4, 5, 6, 7, 255]), 2, 1);
             const d = LayerPixels.fromImageData(img);
             if (d.width !== 2 || px(d, 1, 0).join() !== "5,6,7,255") throw new Error("fromImageData " + px(d, 1, 0));
@@ -122,7 +118,7 @@ function pixelsCases(P) {
         ["draw_into", async () => {
             const { ref, pixels } = pair(180, 140);
             // state left behind by an earlier draw must not reach fn
-            const raw = pixels.toCanvas().getContext("2d");
+            const raw = P.canvasOf(pixels).getContext("2d");   // the backing canvas itself, in copy mode too
             raw.setTransform(2, 0, 0, 2, 7, 7); raw.globalAlpha = 0.1; raw.globalCompositeOperation = "xor";
             const rect = [30.4, 20.6, 110.2, 90.9];
             const back = pixels.drawInto(rect, (ctx) => {
@@ -173,11 +169,11 @@ function pixelsCases(P) {
             const { pixels } = pair(120, 80);
             const a = mk(60, 40), b = mk(60, 40);
             pixels.drawTo(a.getContext("2d"), 10, 5, 100, 70, 0, 0, 60, 40);
-            b.getContext("2d").drawImage(pixels.toCanvas(), 10, 5, 100, 70, 0, 0, 60, 40);
+            b.getContext("2d").drawImage(P.canvasOf(pixels), 10, 5, 100, 70, 0, 0, 60, 40);
             same(a, b, "drawTo 9 args");
             const e = mk(120, 80), f = mk(120, 80);
             pixels.drawTo(e.getContext("2d"), 3, 4);
-            f.getContext("2d").drawImage(pixels.toCanvas(), 3, 4);
+            f.getContext("2d").drawImage(P.canvasOf(pixels), 3, 4);
             same(e, f, "drawTo 3 args");
             return { ok: true };
         }],
@@ -199,7 +195,7 @@ function pixelsCases(P) {
             const { ref: r2, pixels: p2 } = pair(120, 90);
             const src = pair(60, 60).pixels;
             p2.blit(src, 30, 20, "source-over", 0.35, [10, 10, 50, 40]);
-            const c2 = r2.getContext("2d"); c2.globalAlpha = 0.35; c2.drawImage(src.toCanvas(), 10, 10, 40, 30, 30, 20, 40, 30);
+            const c2 = r2.getContext("2d"); c2.globalAlpha = 0.35; c2.drawImage(P.canvasOf(src), 10, 10, 40, 30, 30, 20, 40, 30);
             same(p2, r2, "blit source-over with srcRect");
             return { ok: true };
         }],
@@ -228,10 +224,10 @@ function pixelsCases(P) {
             c.clear();
             if (px(pixels, 45, 35)[3] === 0) throw new Error("clearing the clone cleared the original");
             const big = pixels.resized(130, 100, { x: 20, y: 10 });
-            const rb = mk(130, 100); rb.getContext("2d").drawImage(pixels.toCanvas(), 20, 10);
+            const rb = mk(130, 100); rb.getContext("2d").drawImage(P.canvasOf(pixels), 20, 10);
             same(big, rb, "resized (extend)");
             const small = pixels.resized(50, 40, { x: -15, y: -5 });
-            const rs = mk(50, 40); rs.getContext("2d").drawImage(pixels.toCanvas(), -15, -5);
+            const rs = mk(50, 40); rs.getContext("2d").drawImage(P.canvasOf(pixels), -15, -5);
             same(small, rs, "resized (crop)");
             // share mode hands out the canvas, copy mode a copy with the same pixels
             const was = P.pixelsOptions().copy;
@@ -278,7 +274,9 @@ function pixelsCases(P) {
                 if (Object.keys(L).includes("canvas") || Object.keys(L).includes("mask")) throw new Error("the aliases are enumerable");
                 const copy = { ...L };
                 if (!("px" in copy) || "canvas" in copy) throw new Error("a spread copy carries the alias or lost px");
-                if (L.canvas !== c) throw new Error("the getter does not hand out the canvas");
+                // the getter is toCanvas(): the canvas itself in share mode, a copy with --pixels-copy
+                const handed = L.canvas;
+                if (P.pixelsOptions().copy ? (handed === c || handed.width !== 8) : handed !== c) throw new Error("the getter does not hand out the canvas");
                 L.mask = null;
                 if (L.maskPx !== null) throw new Error("the setter did not clear maskPx");
                 const N = P.installLayerAliases({ id: "y", px: null, maskPx: null });

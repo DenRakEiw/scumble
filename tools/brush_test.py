@@ -83,7 +83,7 @@ await stroke(100);                               // the ring tip along y = 100
 ed.setBrushTip("");
 await stroke(300);                               // the round dab along y = 300
 const layer = ed.layers.find((l) => l.id === L.id);
-const d = layer.canvas.getContext("2d").getImageData(0, 0, 600, 400).data;
+const d = layer.px.readRect(0, 0, 600, 400).data;
 const alpha = (x, y) => d[(y * 600 + x) * 4 + 3];
 const cover = (y0, y1) => { let n = 0; for (let y = y0; y < y1; y++) for (let x = 0; x < 600; x++) if (alpha(x, y) > 0) n++; return n; };
 const out = { ringCentre: alpha(300, 100), ringBand: alpha(300, 100 - 30), roundCentre: alpha(300, 300), ringCover: cover(60, 140), roundCover: cover(260, 340) };
@@ -97,9 +97,8 @@ return out;
     ("erase_with_a_tip", """
 const ed = ednow();
 const layer = ed.layers.find((l) => l.id === window.__bLayer);
-const g = layer.canvas.getContext("2d");
-g.globalCompositeOperation = "source-over"; g.fillStyle = "#00ff00"; g.fillRect(0, 0, 600, 400);
-layer.dirty = true; ed.touchSource(layer.canvas); ed.draw();
+layer.px.drawInto(null, (g) => { g.fillStyle = "#00ff00"; g.fillRect(0, 0, 600, 400); });
+layer.dirty = true; ed.touchSource(layer.px); ed.draw();
 ed.setTool("erase");
 ed.brushSize = 80; ed.eraseHardness = 1;
 ed.setBrushTip(window.__bIds[0]);
@@ -110,7 +109,7 @@ ed.canvas.dispatchEvent(ev("pointerdown", 100, 200));
 for (let i = 1; i <= 10; i++) { ed.canvas.dispatchEvent(ev("pointermove", 100 + 40 * i, 200)); await wait(16); }
 ed.canvas.dispatchEvent(ev("pointerup", 500, 200));
 await wait(100);
-const d = layer.canvas.getContext("2d").getImageData(0, 0, 600, 400).data;
+const d = layer.px.readRect(0, 0, 600, 400).data;
 const alpha = (x, y) => d[(y * 600 + x) * 4 + 3];
 const out = { centre: alpha(300, 200), band: alpha(300, 170), far: alpha(300, 60) };
 if (out.band > 5) throw new Error("the ring band was not erased: " + JSON.stringify(out));
