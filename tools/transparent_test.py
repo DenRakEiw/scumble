@@ -102,9 +102,8 @@ let out;
 try { out = await host.runProvider(ed, { background: "transparent" }); } finally { host.setRecipe(prev); }
 if (ed.layers.length !== before + 1) throw new Error("no result layer");
 const l = ed.layers[ed.layers.length - 1];
-const g = l.canvas.getContext("2d", { willReadFrequently: true });
-const at = (x, y) => Array.from(g.getImageData(x, y, 1, 1).data);
-const centre = at(l.canvas.width >> 1, l.canvas.height >> 1);
+const at = (x, y) => Array.from(l.px.readRect(x, y, 1, 1).data);
+const centre = at(l.px.width >> 1, l.px.height >> 1);
 const corner = at(2, 2);
 if (centre[3] < 250) throw new Error("the disc should be opaque in the middle, alpha " + centre[3]);
 if (corner[3] !== 0) throw new Error("the ground should be fully transparent, alpha " + corner[3]);
@@ -123,9 +122,8 @@ let out;
 try { out = await host.runProvider(ed); } finally { host.setRecipe(prev); }
 if (ed.layers.length !== before + 1) throw new Error("no result layer");
 const l = ed.layers[ed.layers.length - 1];
-const g = l.canvas.getContext("2d", { willReadFrequently: true });
-const at = (x, y) => Array.from(g.getImageData(x, y, 1, 1).data);
-const centre = at(l.canvas.width >> 1, l.canvas.height >> 1);
+const at = (x, y) => Array.from(l.px.readRect(x, y, 1, 1).data);
+const centre = at(l.px.width >> 1, l.px.height >> 1);
 const corner = at(2, 2);
 if (centre[3] < 250 || corner[3] < 250) throw new Error("an ordinary run must fill the whole region: " + centre[3] + " / " + corner[3]);
 if (out.transparent) throw new Error("an ordinary run must not report itself transparent");

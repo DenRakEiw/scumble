@@ -34,8 +34,7 @@ if (ed.width !== out.width || ed.height !== out.height) throw new Error("size mi
 if (ed.width !== 1024 || ed.height !== 576) throw new Error("16:9 at 1024 should be 1024x576, got " + ed.width + "x" + ed.height);
 if (ed.layers.length) throw new Error("layers left over: " + ed.layers.length);
 // the loopback ramp has a dark border, so the corner must not be white
-const px = ed.baseCanvas ? ed.baseCanvas.getContext("2d").getImageData(1, 1, 1, 1).data
-    : ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(1, 1, 1, 1).data;
+const px = ed.basePx.readRect(1, 1, 1, 1).data;
 if (px[0] > 60) throw new Error("the answer did not become the base image (corner " + px[0] + ")");
 return { mode: out.mode, size: [ed.width, ed.height], corner: [px[0], px[1], px[2]], prompt: ed.promptText };
 """),

@@ -136,10 +136,10 @@ let out;
 try { out = await host.runProvider(ed); } finally { host.setRecipe(prev); }
 if (ed.layers.length !== before + 1) throw new Error("no result layer");
 const l = ed.layers[ed.layers.length - 1];
-if (!l || !l.canvas) throw new Error("the result layer has no pixels");
+if (!l || !l.px) throw new Error("the result layer has no pixels");
 if (l.w !== out.w || l.h !== out.h) throw new Error("the result is not the region's size: " + l.w + "x" + l.h + " vs " + out.w + "x" + out.h);
-if (l.canvas.width !== out.w || l.canvas.height !== out.h) throw new Error("the patch was not scaled back: " + l.canvas.width + "x" + l.canvas.height);
-return { region: [out.w, out.h], layer: [l.w, l.h, l.canvas.width, l.canvas.height], status: ed.status.slice(0, 120) };
+if (l.px.width !== out.w || l.px.height !== out.h) throw new Error("the patch was not scaled back: " + l.px.width + "x" + l.px.height);
+return { region: [out.w, out.h], layer: [l.w, l.h, l.px.width, l.px.height], status: ed.status.slice(0, 120) };
 """),
     ("cleanup", """
 try { await run("close_document", { doc: window.__s, force: true }); } catch (_) { /* gone */ }

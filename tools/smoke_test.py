@@ -133,7 +133,7 @@ HELPER_STEPS = [
   return { status: editor.status, layer: layer && layer.name, pending: !!editor.cutoutPending };
 })()
 """),
-    ("cutout-wait", wait_js("!editor.cutoutPending", "(() => { const l = editor.layers.find((l) => l.kind === 'result') || editor.layers[editor.layers.length - 1]; return l && !!l.mask; })()")),
+    ("cutout-wait", wait_js("!editor.cutoutPending", "(() => { const l = editor.layers.find((l) => l.kind === 'result') || editor.layers[editor.layers.length - 1]; return l && !!l.maskPx; })()")),
     # in-app matting (ONNX Runtime in the main process); skipped as done when no model is downloaded
     ("cutout-app", """
 (async () => {
@@ -141,12 +141,12 @@ HELPER_STEPS = [
   const b = host.cutoutBackends()[0];
   if (!b) return { done: true, skipped: "no in-app matting model downloaded" };
   const layer = editor.layers.find((l) => l.kind === "result") || editor.layers[editor.layers.length - 1];
-  layer.mask = null;
+  layer.maskPx = null;
   editor.cutoutSettings.backend = b.id;
   const t0 = Date.now();
   await editor.cutoutLayer(layer);
   while (editor.cutoutPending && Date.now() - t0 < 120000) await new Promise((r) => setTimeout(r, 100));
-  return { done: !!layer.mask && /in-app/.test(editor.status), status: editor.status, backend: b.id, seconds: (Date.now() - t0) / 1000 };
+  return { done: !!layer.maskPx && /in-app/.test(editor.status), status: editor.status, backend: b.id, seconds: (Date.now() - t0) / 1000 };
 })()
 """),
     # Qwen-VL: rewrite the prompt for the selection
@@ -187,7 +187,7 @@ HELPER_STEPS = [
   const before = editor.status;
   editor.selectNone && editor.selectNone();
   await host.selectPoint(editor, editor.width * 0.5, editor.height * 0.5, { shift: true });
-  const sel = editor.selection.getContext("2d").getImageData(0, 0, editor.width, editor.height).data;
+  const sel = editor.sel.readRect(0, 0, editor.width, editor.height).data;
   let n = 0; for (let i = 3; i < sel.length; i += 4) if (sel[i]) n++;
   return { done: !!(o && o.count) && n > 0, objects: o && o.count, status: before, point: editor.status, selectedPct: Math.round(100 * n / (editor.width * editor.height)), seconds: (Date.now() - t0) / 1000 };
 })()
@@ -236,7 +236,7 @@ PROVIDER_STEPS = [
   let diff = 0, n = 0, alphaIn = 0, nIn = 0;
   if (layer) {
     const base = ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(layer.x, layer.y, layer.w, layer.h).data;
-    const lp = layer.canvas.getContext("2d").getImageData(0, 0, layer.w, layer.h).data;
+    const lp = layer.px.readRect(0, 0, layer.w, layer.h).data;
     for (let yy = 0; yy < layer.h; yy++) for (let xx = 0; xx < layer.w; xx++) {
       const gx = xx + layer.x, gy = yy + layer.y;
       if (gx < x0 + 8 || gx >= x1 - 8 || gy < y0 + 8 || gy >= y1 - 8) continue;
