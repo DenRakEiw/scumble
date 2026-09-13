@@ -909,6 +909,117 @@ Findings worth more than the numbers:
   overlapping soft dabs blend a few levels differently on the CPU than on the GPU. Invisible,
   but a pixel-exact gate against the old path fails without a tolerance.
 
+## 10. Phase B: the Rust spike (2026-09-13)
+
+`docs/PLAN_BCE.md` §1, built on the branch `px-spike` (commits fe9bf0e B0 to 8ab3706). Five
+kernels in Rust (`crates/px`, `wasm32-unknown-unknown`, rustc 1.98.1, a SIMD128 and a scalar
+build, plain `extern "C"` exports) and their JS twins (`renderer/editor/px/kernels_js.js`, the
+same signatures, the same bytes out: `tools/px_test.js` compares every kernel of both builds
+with its twin byte for byte, and the twins with today's `distanceTransform` / `floodMask` and
+with first principles). Benchmark `renderer/editor/px/bench.js`, run by `tools/px_bench.js`
+(Node) and `tools/px_bench.html` (browsers, served cross-origin isolated). Ryzen 9 7900X3D,
+nothing else running, five runs each after two warm-ups, median; a short kernel is repeated
+until a run lasts 25 ms.
+
+**Before any number was believed**, an adversarial review of the kernels (three lenses,
+every finding verified by a second agent) found the comparison unfair in both directions,
+and both were fixed first (commit 3fd468a): the JS mip twin read RGBA byte by byte (a word
+version gives the same bytes 1.8× faster, and the rule row had cleared 3× only because of
+it); the JS composite twin chose its operator per pixel (1.4 to 1.6×); the Rust SIMD mip path
+decided "opaque" per row, so a paint layer lost to its own scalar build; ImageData's
+`Uint8ClampedArray` mixed with `Uint8Array` levels made the twins' element access polymorphic
+(1.7 to 2× in Electron's V8; every twin now views its input as `Uint8Array`).
+
+**Columns.** "JS twin", "Rust scalar" and "Rust SIMD128" time the kernel alone, with its data
+already where it runs; "copy" is what a caller with JS-side tiles pays on top (inputs into wasm
+memory, result out); **speed-up = JS ÷ (SIMD + copy)**, the figure the rule reads. The main
+columns are the **Electron 44 renderer** (Chromium 152, V8 15.2, a focused window: see the
+efficiency mode below), the Firefox columns are Firefox 155. The two rule rows are bold; they
+were fixed before the first run: the mip chain of one **opaque** 256 tile (a photo base, 2,352
+of them at 15k) and the EDT of a 4,096² band.
+
+| kernel | input | JS twin ms | Rust scalar ms | Rust SIMD128 ms | copy in + out ms | speed-up | without copy | Firefox JS ms | Firefox SIMD ms | Firefox speed-up |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **mip chain** | one 256² tile, opaque (photo base) | 0.075 | 0.059 | 0.033 | 0.005 | **1.97×** | 2.23× | 0.093 | 0.019 | 4.04× |
+| mip chain | one 256² tile, paint layer (soft alpha) | 0.080 | 0.050 | 0.033 | 0.005 | 2.10× | 2.39× | 0.102 | 0.024 | 3.52× |
+| mip chain | a tile column at 96 MP (32 tiles) | 2.51 | 2.07 | 1.18 | 0.289 | 1.71× | 2.13× | 3.96 | 0.606 | 4.51× |
+| mip chain | a tile column at 150 MP (40 tiles) | 3.69 | 2.75 | 1.58 | 0.468 | 1.80× | 2.33× | 4.11 | 0.797 | 3.22× |
+| mip halving | whole layer at 96 MP (12,000 × 8,000 → level 1) | 92.8 | 69.3 | 40.1 | 19.8 | 1.55× | 2.31× | 109 | 21.2 | 2.66× |
+| mip halving | whole layer at 150 MP (15,000 × 10,000 → level 1) | 143 | 109 | 58.5 | 30.2 | 1.62× | 2.45× | 180 | 39.8 | 2.56× |
+| **distance transform** | 4,096² band (grow / shrink / feather) | 213 | 106 | 93.5 | 3.31 | **2.21×** | 2.28× | 210 | 93.1 | 2.18× |
+| distance transform | whole selection at 96 MP | 1,101 | 604 | 544 | 19.2 | 1.96× | 2.03× | 1,243 | 556 | 2.15× |
+| distance transform | whole selection at 150 MP | 1,792 | 956 | 872 | 30.7 | 1.99× | 2.06× | 1,929 | 836 | 2.22× |
+| flood fill | 4,096² region, contiguous, tolerance 32 (8.5 MP filled) | 129 | 44.4 | 44.0 | 3.40 | 2.72× | 2.93× | 206 | 51.7 | 3.72× |
+| composite | 4-layer stack over one 256² tile (over, over + mask, erase, atop) | 1.35 | 1.06 | 0.269 | 0.021 | 4.68× | 5.04× | 1.53 | 0.257 | 5.51× |
+| PNG rows (filter) | 4,096 × 256 band | 37.1 | 27.5 | 19.1 | 0.315 | 1.90× | 1.94× | 49.5 | 20.5 | 2.38× |
+| PNG rows (deflate) | the filtered band (4 MB), zlib level 6; JS is `CompressionStream("deflate")` | 161 | 224 | 226 | 0.141 | 0.71× | 0.71× | 104 | 225 | 0.46× |
+| tile size | mip chain of one 512² tile (5 levels, to 16²) | 0.341 | 0.255 | 0.137 | 0.022 | 2.14× | 2.48× | 0.385 | 0.072 | 4.08× |
+| tile size | one stroke tile over a layer tile, 256² (a 400 px dab touches 4 to 9, on average 6.56) | 0.239 | 0.216 | 0.069 | 0.008 | 3.10× | 3.47× | 0.244 | 0.069 | 3.16× |
+| tile size | one stroke tile over a layer tile, 512² (a 400 px dab touches 1 to 4, on average 3.16) | 1.01 | 0.856 | 0.276 | 0.032 | 3.27× | 3.65× | 1.10 | 0.249 | 3.91× |
+
+Node 24.18 (V8 13.6), the plan's own measuring environment, agrees with the renderer: mip
+chain of the opaque tile JS 0.090 / SIMD 0.033 / copy 0.005 ms, **2.38×**; EDT band JS 202 /
+SIMD 95.9 / copy 3.95 ms, **2.02×**; composite 4.84×; flood 2.61×; PNG deflate 0.71×. Five
+repeated fresh-process runs of the two rule rows in Node: mip 2.24 to 2.74×, EDT 1.84 to 2.04×.
+
+The two rows that are not kernels:
+
+- **256 against 512 tiles.** A 400 px dab costs 6.56 × 0.239 = 1.57 ms of JS composite at 256
+  and 3.16 × 1.01 = 3.18 ms at 512 (with Rust 0.51 against 0.97 ms); the mip chain costs 1.14 ms
+  per MP at 256 and 1.30 at 512. 256 wins both, and keeps the finer undo. **Tile size 256.**
+- **The boundary copy**: one 256² tile into wasm memory and its result out, 0.007 to 0.008 ms
+  in every engine, against 0 for a tile that already lives there. That is 4 to 15 % of the
+  kernels above, and it is only that small because of the next finding.
+
+Findings worth more than the numbers:
+
+- **The EDT cannot be decided by SIMD.** About 70 % of it is Felzenszwalb's lower envelope, a
+  data-dependent loop over a stack of parabolas that neither build vectorises (the column
+  sweeps do vectorise, which is the small scalar-to-SIMD step). What the column measures is
+  wasm scalar code against V8: 2.0 to 2.3×, the same in Chromium, Firefox and Node. A variant
+  with the envelope in f32 (allowed by the plan's 1e-3) measured 2.4× in a scratch build. The
+  plan's expectation that the EDT "should clear 3× as arithmetic over contiguous bytes" was
+  wrong for this algorithm. The twin itself is 2.3× faster than today's `distanceTransform`
+  (213 against 494 ms on the band): C gains that either way.
+- **V8's efficiency mode moves the JS column by 1.5 to 2×, and only the JS column.** Chromium
+  switches it on for a renderer that is not in front (V8 then holds back optimised
+  compilation); wasm code is not affected. The same page in an Electron window that opened
+  behind others measured the rule rows at mip 2.95 to 3.15× and EDT 3.36 to 3.88× (five of six
+  fresh launches; the sixth opened in front and measured 2.13× and 2.48×);
+  forced with `--js-flags=--efficiency-mode` 2.87 to 3.25× and 3.54 to 3.65×; with
+  `--no-efficiency-mode` 1.83 to 1.97× and 2.29 to 2.42×; in a focused, always-on-top window
+  without flags 1.92 to 1.99× and 2.05 to 2.22×. The interactive case is a window in front, so
+  the table above uses it. The consequence for C and E: **JS work that runs while Scumble is
+  not in front (an export the user waits out in another window, a headless MCP session) runs
+  at about 60 % speed**; wasm would not. That is the one place a Rust kernel could be worth a
+  second measurement later (E's band export in workers), not a reason to overturn the rule.
+- **4K aliasing made the boundary copy 16× dearer.** A 256 KB `TypedArray.set` from a JS tile
+  into a `px_alloc` block measured 53 to 66 µs in Chromium, Firefox and Electron's Node mode
+  and 3.5 µs in Node, and not for every block. Cause: dlmalloc hands out a page start plus its
+  8-byte header, a tile-sized ArrayBuffer starts on a page, so the destination lies 8 bytes past
+  the source modulo 4,096 and every store of the copy waits for a false dependency (on one
+  buffer: 56 µs at a distance of exactly 8 mod 4,096, 3.2 to 3.8 µs at every other distance).
+  Blocks of 16 KB and more now start on a page (commit 5226689). **Rule for C and E: tile
+  buffers that are copied into each other (the SAB arena, worker transfers, a wasm heap) start
+  on a 4 KB boundary.**
+- **Native deflate wins.** `CompressionStream("deflate")` is 1.4× (Chromium) to 2.2× (Firefox)
+  faster than miniz_oxide at the same level: E2's PNG writer streams through it, as planned.
+  The PNG filter row is JS 37 against SIMD 19 ms for a 4,096-wide band, 1.9×.
+- **Today's `floodMask` beats the flood twin** (67 against 129 ms in the renderer, 112 against
+  130 in Node): the twin's typed span stack, its `fill` per span and its non-inlined
+  comparison cost more than the original's array stack. C keeps `floodMask`'s structure for
+  the wand (with `sampleRegion`'s bounded box) and the twin is not the reference there.
+- **Firefox runs the SIMD mips 1.7× faster than V8** (0.019 against 0.033 ms a tile) and its JS
+  twins slightly slower; the node's Firefox users would see the largest Rust gain, but not on
+  the EDT (2.2×).
+
+**Decision (the plan's 3× rule, both rows, copy included): the EDT band is 2.0 to 2.2× and the
+opaque mip chain 2.0 to 2.4× in the interactive V8 (Electron renderer in front, Node), and the
+EDT 2.2× in Firefox, so neither clears 3×: phase C is built with the JS kernels, the twins in
+`kernels_js.js` are its kernels (flood excepted, above), tile size 256, tile buffers on page
+boundaries, and the crate is deleted from the branch.** The Rust code stays reachable in the
+history of `px-spike` (commit 8ab3706 is the last one that has it).
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first

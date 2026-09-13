@@ -182,6 +182,15 @@ the answer is still Rust *with tiles living in wasm memory* (B1's second bullet 
 Gate for B: `node tools/px_test.js` PASS, the §10 table filled in for Node and Firefox, the
 decision sentence written, branch `px-spike` pushed. Three days.
 
+**Outcome (2026-09-13, `docs/PERFORMANCE.md` §10): JS kernels.** The EDT band is 2.0 to 2.2×
+and the opaque mip chain 2.0 to 2.4× in the interactive V8 (Electron renderer in front, Node),
+the EDT 2.2× in Firefox. The expectation above was wrong for the EDT: its envelope pass is
+branchy scalar code that SIMD128 does not touch. Found on the way, and binding for C and E:
+tile buffers that are copied into each other start on a 4 KB boundary (4K aliasing made a
+tile copy 16× dearer), and JS runs at about 60 % speed while Chromium's V8 efficiency mode is
+on (Scumble not in front); wasm does not. Tile size stays 256. Today's `floodMask` is faster
+than the flood twin, so C keeps its structure for the wand.
+
 ---
 
 ## 2. Phase C: the tile engine (4 to 6 weeks)
@@ -668,8 +677,8 @@ atlas budget row of C3 is the only new setting.
 |---|---|---|
 | wasm glue | none: `extern "C"` + `WebAssembly.instantiate` | no CLI version to pin, loads everywhere, tiles in linear memory anyway |
 | wasm threads | no; one instance per worker, tiles copied in and out | shared-memory wasm needs nightly and the node's browser has no SAB |
-| kernel language | by B's table, 3× rule on EDT and mip chain, copy cost included | `PLAN_TILES.md` §2 |
-| tile size | 256, unless B's 256-vs-512 rows say otherwise | five mips to 8 px, 4 to 9 tiles per 400 px dab |
+| kernel language | **JS** (B measured 2.0 to 2.4×, `PERFORMANCE.md` §10); the twins in `kernels_js.js` are the kernels, `floodMask` stays for the wand | `PLAN_TILES.md` §2, the 3× rule |
+| tile size | **256** (B: a 400 px dab 1.6 ms of JS at 256 against 3.2 ms at 512; mips 1.14 against 1.30 ms per MP); tile buffers start on a 4 KB boundary | five mips to 8 px, 4 to 9 tiles per 400 px dab; 4K aliasing |
 | alpha | straight in tiles, premultiplied inside kernels and shaders | PNG, ImageData, plugins are straight; the compositor already premultiplies |
 | mip filter | alpha-weighted 2×2 box | no edge darkening; the one-time re-bake of `composite_test.py` refs |
 | the flag | the backend of `LayerPixels`, never a branch at a call site | one migration to the facade (C1), the engine slots in behind it (C2) |
