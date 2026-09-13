@@ -97,20 +97,19 @@ ailabel, size, transparent, generate, log, mcp, node_test (commands and film nee
 `files/input/inpaint_canvas/test_base.png` in the test profile's mirror; copy it from
 ComfyUI's `input/inpaint_canvas/`). `package.json` 0.1.11 with its CHANGELOG section.
 
-**Open after C0, in this order:**
-1. **Tell the user: the published node is broken since 2026-09-10** (node commit 33c6c4b):
-   `new InpaintEditor` threw `ReferenceError: host is not defined`, so no Inpaint Canvas node
-   could be created in ComfyUI. The fix is the node branch `c0-editor-source`; merging it into
-   the node's master (what node users pull) is the user's call.
-2. ComfyUI was not running, so **not run**: `smoke_test.py --no-helpers` (real Flux run) and
-   the node's browser gate in a real ComfyUI tab (plan: `editor_test.py --node` against the
-   headless tab on 9333, not written; the stub test covers construction, overlay, upload,
-   composite). Ask before starting ComfyUI.
-3. The adversarial review of C0 ran; its three confirmed findings are fixed and listed in
-   `docs/BUILD_NODE.md` (the worker module answering window messages forever in ComfyUI, a
-   parse check that checked nothing, an unchecked dynamic import).
-4. Merge px-spike and c0-editor-source into main (user's go), tag 0.1.11 only on the user's
-   go, then C1 (`LayerPixels` facade) per `docs/PLAN_BCE.md`.
+**Closed on 2026-09-13 (after the hand-over above was written):** ComfyUI was started by
+the user; `smoke_test.py --no-helpers` PASS (real Flux run 72.5 s, queue empty before and
+after) and the node checked in a real ComfyUI tab (extension registered, node created, editor
+opened as an overlay with title and close button, no Inpaint Canvas console errors). On the
+user's go: px-spike and c0-editor-source merged into the app's main and the node's master
+(which fixes the broken node for its users), 0.1.10's CHANGELOG bullets folded into 0.1.11
+(0.1.10 was never tagged), tag v0.1.11 pushed. **The workflow builds a draft release; run the
+exe gates on its installer (the recipe in the 2026-09-12 second block) and publish the draft
+only on the user's go.** The node's `pyproject.toml` version was not bumped, so the Comfy
+Registry does not ship the fix yet (that is the user's call too).
+
+**Next**: C1, the `LayerPixels` facade with a canvas backend (`docs/PLAN_BCE.md` §2 C1, its
+own release 0.1.12; bump `package.json` and open the CHANGELOG section first).
 
 ## Where things stand (2026-09-13)
 

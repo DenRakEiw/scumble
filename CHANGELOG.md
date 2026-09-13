@@ -3,14 +3,13 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.11 — unreleased
+## 0.1.11 — 2026-09-13
 
-- **The editor is built from the Scumble repository now; nothing visible changes.** Until
+- **The editor is built from the Scumble repository now** (this part changes nothing you
+  can see). Until
   this release the editor's code lived in the ComfyUI node and was copied into the app with
   a list of patches. Scumble is its home now, and the node gets a build of it, so a fix made
   here reaches both without a patch in between.
-
-## 0.1.10 — unreleased
 
 - **Large pictures: the hitches between strokes are gone, and a stroke no longer costs a
   layer's worth of memory.** On a 15,000 px picture a selection change, its undo and the
