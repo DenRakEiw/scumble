@@ -470,7 +470,10 @@ the tests). Where it differs from the text above, this wins; each difference say
     absolute transforms because they draw into canvases of their own.
     `tools/pixels_test.js` checks the rule by where the pixels land (a point drawn at the rect's
     own coordinates, a scale and a translation composed inside `fn`, a scaled draw at an alpha),
-    not by reading the matrix, so the same cases hold for the tile backend.
+    not by reading the matrix, so the same cases hold for the tile backend. For the same reason
+    (added by C2 (a)'s review) `fn` does not call `putImageData` or `isPointInPath` /
+    `isPointInStroke`, clips to rectangles on whole pixels only, and does not read or write the
+    pixels it draws into through their own methods (both backends throw on that).
 
 **Per step**: the step's sites, the gates below, a review of the diff, then the app commit,
 `python tools/build_node.py`, `python tools/node_test.py`, the node commit, a push of both.
@@ -603,6 +606,257 @@ Gate: `tools/pixels_test.js` runs every case against both backends and compares 
 byte for byte (`drawInto` write-back, sparse growth and shrink, clone-then-write, bounds,
 `resized`); `composite_test.py` still identical because the display still goes through
 `toCanvas` of the visible rect in C2 (C3 changes that). `memoryReport()` counts tiles.
+
+#### C2 as built: the decisions taken while building it (2026-09-13)
+
+C2 comes in two steps: **(a) the tile backend on its own**, with its contract test, not wired into
+the editor (no change to `inpaint_canvas.js`, `host.js`, `stitch.js`, `commands.js`, `plugins.js`,
+`shell.js`, `electron/`); **(b)** wires it in behind `ed.tileMode`. Where this differs from the text
+above, this wins; each difference says why. Step (a):
+
+**The module.** `renderer/editor/inpaint_tiles.js` exports `TileLayerPixels` and `TileMaskPixels`, one
+class mixin applied to `LayerPixels` and to `MaskPixels`, so every existing `instanceof LayerPixels` /
+`instanceof MaskPixels` check (the editor, `plugins.js`, the tests) holds for both backends, and
+`clone()` / `copyRect()` / `resized()` keep the class. `pixelsBackend(tiles)` returns `{ Layer, Mask,
+tiles }` of either backend (both classes also carry it as `static backend`), for step (b). The public
+API is the canvas backend's, method for method, with its argument forms and results (`readRect`
+converts, truncates and flips negative sizes like `getImageData`, with its errors: a `TypeError` for
+a NaN, an infinity or a value outside 32 bits, `IndexSizeError` for a zero size, a `RangeError` where
+the int arithmetic overflows; `writeRect` "copy" converts like `putImageData`). Tile-only extras: `tileCount`, `writable(tx, ty)`,
+`tileAt`, `tileKeys`, `mips(tx, ty)`; module exports `isTilePixels`, `scratchStats`, `TILE_SIZE`,
+`TILE_MAX_SIDE`, `CANVAS_MAX_PIXELS`, `MIP_LEVELS`. The module has no side effects at import (the node
+rule of C0). It imports `px/kernels_js.js`, so `tools/build_node.py` now copies `inpaint_tiles.js` and
+`px/kernels_js.js` into the node (`docs/BUILD_NODE.md` said "px/ goes with C2") and its import check
+walks subfolders and resolves imports against the importing module's folder.
+
+**Tiles.** 256 × 256, key `(ty << 16) | tx` in a `Map`, a side above 16,777,216 px refused with an
+Error naming the limit. A tile is `{ data: Uint8ClampedArray(256·256·4), version, mips, frozen }`
+(plus private caches); `data` has its own `ArrayBuffer`, which starts on a page (§B3's 4K aliasing
+rule; a tile copied into another measured 3.2 µs). Straight alpha.
+
+- **`MaskPixels` tiles stay RGBA in C2** (decided 2026-09-13). The text above has `Uint8Array(256·256)`;
+  but the selection is red and layer masks white with the coverage in alpha, and callers draw colours
+  into both (`fill(null, "#ff0000")`, strokes, `destination-in` / `-out` draws). Single-channel mask
+  tiles move to C5, with the selection as mask tiles.
+- **`version`** is the object's, as in C1: it changes on `touch()` only. **A tile's `version` also
+  changes on every write into it** (added: the mip and extent caches key on it, and a write is not
+  followed by a touch everywhere, the tests least of all), and on `touch(rect)` for the tiles in
+  `rect`. Tile versions come from one counter, so a dropped tile allocated again never repeats one.
+- **Sparse.** A missing tile reads as transparent; writes allocate what they touch; a tile whose alpha
+  is all zero after a write is dropped. The check runs on the touched tiles only, and only when the
+  block written into a tile had zero alpha (the only way a tile can end up empty), which covers
+  `clear`, "copy", `destination-out` and the other clearing operations, `drawInto` and blits. So
+  **every allocated tile holds a pixel**, which `bounds()` relies on. A write of bytes a tile already
+  holds leaves it alone (no copy, no version, no mirror sync), and a transparent write onto missing
+  tiles allocates nothing.
+- **Copy on write.** `clone()` shares every tile and raises its `frozen` counter (the number of other
+  holders); `writable(tx, ty)` copies a tile while `frozen > 0` and lowers the counter, so a tile
+  shared by the original and three clones is copied once per writer and the last holder writes in
+  place (the case `tiles_clone_copy_on_write` counts it). Dropping or replacing a shared tile lowers
+  the counter too. A holder that is garbage-collected without letting go leaves the count one too
+  high: that costs the last holder one needless copy and never a write into a shared tile. There is
+  no `release()` in C2; C4's undo steps need one.
+- **Mips** are built lazily per tile with the kernel's `mipChain` (five levels, 128 to 8 px) and cached
+  by the tile's version. **`bounds()` does not use them** (the text above tightens the box with them):
+  the kernel's alpha is `(a0 + a1 + a2 + a3 + 2) >> 2`, so a pixel of alpha 1 is gone from the first
+  mip on (asserted in `tiles_bounds`), and a mip cannot say that a region is empty. `bounds()` takes
+  the tile set instead: since every tile holds a pixel, only the tiles of the outermost tile rows and
+  columns can hold an edge, and their exact extents (one scan per tile, cached per tile version) give
+  exactly the canvas backend's box.
+
+**Bytes in.** Bytes that enter without a canvas (`writeRect` "copy", `fromImageData`) go through the
+round trip a canvas gives straight alpha: a table of all 65,536 (channel, alpha) pairs, measured once
+by `putImageData` / `getImageData` on a CPU canvas. 32,640 pairs change in that round trip and none
+changes twice, so a read of the tile store gives back what the canvas backend gives back. (The first
+read of a GPU canvas un-premultiplies 450 of the pairs one level differently; its later reads agree
+with the table.) Everything read from a canvas (`getImageData`) is already in that form.
+
+**The scratch path.** `drawInto(rect, fn)`, `writeRect` with an operation or an alpha below 1, `blit`
+with an operation, and `fill` with a gradient or pattern run on a scratch canvas of the rectangle:
+pooled by size class (powers of two from 64 per side up to 4096², at most 32,768 px a side, two per
+class, 64 MP in the pool, other scratches made for the one use), an **`OffscreenCanvas`** with
+`getContext("2d", { willReadFrequently: true })`, and
+**`ctx.reset()` on every acquire**, which clears the pixels, the state, the save stack and the path, so
+a callback that leaves a transform, alpha, operation, filter, shadow, path, clip or unbalanced
+`save()` behind cannot reach the next use (`tiles_scratch_pool_no_state`). Then the tiles over the
+rect are put in, the context is clipped to the rect when the scratch is bigger and translated by the
+rect's origin (rule 12), `fn` runs, and the scratch is read back (in 4096² blocks) and written with
+"copy" inside the rect. `writeRect` / `blit` with an operation make exactly the canvas backend's calls
+on it. Also decided: a callback that throws still has what it drew written back (the canvas backend
+keeps it too); a callback that returns a promise is an Error, and its scratch is not reused; a
+scratch above 268 MP or 65,535 px a side is refused. Every other canvas the store makes (the
+`writeRect` source, a blit source, `toCanvas`, the display mirror) is a `<canvas>` with a
+`willReadFrequently` context filled by `putImageData` only, so it is on the CPU whatever
+`setPixelsOptions` says.
+
+- A tile-to-tile "copy" at alpha 1 copies bytes and **shares whole tiles** where both grids align
+  (also up to both pixels' edges); a canvas-backend source is read with `readRect`; an overlapping
+  copy of pixels onto themselves takes a copy-on-write snapshot first.
+- A tile source is materialised **with a margin of two pixels** (`BLIT_MARGIN`) where the source goes
+  on (measured: without a margin, a `source-over` blit at 0.35 came out 2,531 bytes apart, up to 4
+  levels: Skia draws a sub-rectangle of an image by another path than a whole one; at a fractional
+  position the draw samples the neighbours).
+- **Canvas backend fix** found by the mixed-backend case: `blit(this, ..., "copy")` onto overlapping
+  pixels cleared its own source before drawing it (the clearRect ran first). It copies the source
+  rectangle first now, with the same two-pixel margin; no call site blits onto itself.
+- A whole-canvas operation (`destination-in`, ...) of `writeRect` / `blit` is clipped to the
+  destination rectangle **on whole pixels (outward) in both backends**: the scratch clips without
+  anti-aliasing, a canvas with it, and the two agree on whole pixels only (no call site places one
+  at a fraction).
+
+**Strips.** `fromImage(img, w, h)` draws the whole (scaled) image translated by each strip's origin
+into one scratch and reads it back, never a full-size canvas. **The strips are 4096 × 4096, not
+4096 × 256** (the example above): a draw on a scratch translated by the strip's origin is not
+byte-identical for a scaled image (measured: a 700 × 450 PNG scaled to 333 × 777 in 256-row strips,
+6 bytes up to 2 levels; scaled to 5000 × 300, 10 bytes of 1 level where the second 4096-wide strip
+starts), so an image of at most 4096 px a side is one untranslated draw and agrees to the byte, and a
+bigger one is translated by multiples of 4096 only. A scratch of 64 MB instead of 4 MB; a 15k JPEG
+took 635 ms against 547 ms with 256 rows (warm, measured). Chromium decodes a big `<img>` once and
+keeps it for the strips (first draw 364 ms, the next ones 1.2 ms). `fromCanvas(canvas)` reads the
+canvas with its own `getImageData` in 4096 × 256 strips and **does not keep it** (the canvas backend
+adopts it), which is why the `layer.canvas` setter of a tile layer cannot see later writes into the
+canvas it was handed.
+
+**Canvases out.** `toCanvas(rect)` materialises the rect; `toCanvas()` always materialises everything
+(a copy, like copy mode) and refuses above 268 MP with an Error that names E2's streaming, without
+allocating anything. `resized(w, h, { x, y })` re-cuts the tiles at whole-pixel offsets (sharing
+whole tiles when the offset is a multiple of 256). Every call site passes whole pixels (extend and
+crop round theirs; `extend_canvas` rounds too), so a fractional offset, which the canvas backend
+resamples, is repeated on a materialised canvas.
+
+**The display mirror.** `canvasOf(src)` calls a method on both backends, `canvasForDisplay()` (no
+import cycle: `inpaint_pixels.js` does not import the tile module). The canvas backend answers with its
+canvas. The tile backend keeps one canvas per pixels object, made on first use, identity stable,
+synced on every call from the tiles written since the last one (tracked by writes, not by version:
+writes do not bump `version`), with `putImageData`, which ignores whatever state a caller left on its
+context. Its `_dispVer` is an accessor on `version` (a set sets the version, as the canvas backend's
+version *is* `_dispVer`). Refused above 268 MP (C3 draws tiles instead). `drawTo` draws the mirror.
+
+**Aliases and options.** `installLayerAliases`: the `canvas` / `mask` setters adopt into the layer's
+current backend (its `px`, else its `maskPx`, else the canvas backend); a leftover own `canvas` /
+`mask` value on a new layer object still becomes canvas pixels, because the function does not know
+the editor's backend (step (b) has to pass it, or convert after). `setPixelsOptions({ software: true })`
+is new: every canvas `inpaint_pixels.js` makes (`makeCanvas`, now exported with `resetContext` and
+`WHOLE_CANVAS_OPS`) gets a `willReadFrequently` context. It is a diagnostic switch for the contract
+test, off in the app.
+
+**What Chromium did, measured in step (a) (for step (b) and C3 to C5).**
+
+- **A plain canvas is rasterised on the GPU, a `willReadFrequently` canvas on the CPU**, and the two
+  differ: tens of levels at anti-aliased edges and in gradients (up to 51 in the test's pictures,
+  85 for the test picture with an arc, a stroke and a scaled draw at 2000 × 1500), and any amount of un-premultiplied colour where alpha is near
+  zero. A getImageData does not move a canvas to the CPU. So the canvas backend in the app (GPU) and
+  the tile backend (CPU scratch) do not agree to the byte on draws; on the CPU they do. Step (b)'s
+  gates that compare pixels against stored references or expectations made on GPU canvases will
+  see that; `composite_test.py` compares two display paths over the same pixels and should not.
+- **Skia's CPU rasteriser is not exactly translation-invariant** for gradients, resampled images and
+  the anti-aliased edges of curves and strokes. Gradients and resampled images round a few pixels a
+  level or a few levels apart (an arc of radius 160 moved by (-100, -90): 15 bytes at 5 pixels, 2
+  levels). **The editor's selection shapes differ by far more**: 150 ellipse marquees and 150
+  selection-brush dabs drawn far from the origin on 3300 × 2300 came out 649 and 565 pixels apart,
+  alpha up to 68 and 48 levels, and 28 and 7 pixels transparent on one side only (the review's
+  measurement, repeated on the OffscreenCanvas scratch with the same numbers). So selection edges
+  compared between the backends need an alpha tolerance, and a test must not assert that their
+  `bounds()` agree. Lines, rectangles, polygons, unscaled images and most scaled draws agree to the
+  byte. This is rule 12's float32 note again, and C5's stroke store inherits it.
+- **A `willReadFrequently` `<canvas>` moves to the GPU for good once a GPU canvas is drawn into it**
+  (a plain canvas, a plain OffscreenCanvas, a WebGL canvas, an ImageBitmap of a GPU canvas; `reset()`
+  does not undo it and `getContextAttributes()` still says `willReadFrequently`): from then on it
+  rasterises on the GPU and its read-back of untouched low-alpha pixels changes 1,350 bytes of the
+  65,536 (value, alpha) pairs. An `OffscreenCanvas` with the same context stays on the CPU after each
+  of those sources; against a CPU `<canvas>` it drew fonts (serif, sans, Arial, rtl, letter spacing),
+  filters, shadows, patterns, gradients, fractional rectangles and images to the byte, and **clips
+  without anti-aliasing** (an arc clip 588 bytes, up to 95 levels apart; a clip on whole pixels
+  agrees). That is why the scratch is an OffscreenCanvas and the `drawInto` rules say "clip to whole
+  pixels only".
+- **A canvas side above 65,535 px** (both kinds) is made without an error and draws and reads nothing;
+  a pooled scratch class of 65,536 px therefore erased the band it was drawn for.
+- `img.decode()` never resolves in a hidden window (it waits for rendering); `onload` does.
+- A `drawInto` callback with an unbalanced `save()` leaves the clip of that `drawInto` on the canvas
+  backend's context (its `restore()` pops one level), so later draws into that layer are clipped;
+  the tile backend's scratch is reset. Callers balance `save` / `restore`.
+- `perf_test.py`'s `settle()` drains the GPU with a one-pixel `readRect`, which reads JS memory on
+  tiles: still open for step (b).
+
+**The test** (`tools/pixels_test.js`, `tools/pixels_test.py`). Every case runs three times: the
+canvas backend as the app runs it (GPU; every check against a plain canvas holds as in C1), the
+canvas backend with the software option (its canvases and the case's reference canvases on the CPU)
+and the tile backend with the app's options (software off; only the case's reference canvases on the
+CPU). Every output a case checks is recorded, and the records
+of the CPU canvas run and the tile run are compared byte for byte; the GPU run against the tile run is
+printed as information (`gpuVsTiles`). Tolerances, each with its cause and its exact measured count and
+size in `TOLERANCES` (a change in either fails): `fill` with a linear gradient on a scratch at 60,0,
+75 bytes, 2 levels; a 60 × 50 soft image scaled to 90 × 70 on a scratch at 120,110, 315 bytes, 5 levels
+(low alpha); `fromImage` of a canvas and of an `<img>` scaled to 5000 × 300 across the 4096 strip
+border, 10 bytes, 1 level each; the review's worst ellipse marquee (146 bytes) and brush dab (21
+bytes), 30 of each (119 and 106 bytes), each 255 levels in red where a pixel is transparent on one
+side only; all are the translation effect above, and a tolerance must be met exactly (a smaller
+difference fails too). Twelve C2 cases were added:
+sparse growth and shrink, copy on write with three clones, reads and writes across tile borders (255,
+256, 257, negative, past the end), `bounds()` on tile borders and against the canvas backend (and why
+not from the mips), `resized` with offsets across borders, `fromImage` unscaled and scaled (canvas,
+bitmap, `<img>`), `fromCanvas`, `fromImageData`, `toCanvas(rect)` and the 268 MP refusal, the side
+limit (a write into the last tile column), the display mirror, rule 12 on a scratch translated by
+hundreds of pixels, the scratch pool carrying no state, `MaskPixels` on tiles, and blits between the
+backends. Counter-proofs: the test goes red with each of six faults put into the tile store (writes
+into shared tiles, empty tiles kept, the mirror not synced, no round trip, the scratch not reset,
+`bounds()` looking at too few tiles).
+
+**Timings** (printed by the test, not gated; the gate run of 2026-09-13, Electron's renderer on the
+RTX 5090 machine, window in the background; `performance.now()` is clamped to 0.1 ms here):
+
+| What | Canvas backend | Tile backend |
+|---|---|---|
+| a 400 px radial-gradient dab through `drawInto` on a 4096² layer with content, median of 60 (max) | 0.0 ms (0.1) queued on the GPU; 0.2 ms (110) with a one-pixel read-back after each | 0.5 ms (0.9), CPU, everything included; the layer is 256 tiles |
+| `fromImage` of a 15,000 × 10,000 JPEG (decoded before) | 499 ms with a one-pixel read-back | 796 ms; 2,360 tiles, 590 MB |
+| `clone()` of a full 6,000 × 4,000 layer | 9 ms with a one-pixel read-back | below 0.1 ms (384 tiles, 96 MB shared); the first write after it 0.1 ms |
+| a tile copied into another (256 KB) | | 4.7 µs (no 4K aliasing) |
+
+Four rows of the 15k image compared between the two `fromImage` results: 11,828 of 240,000 bytes a level
+apart (the GPU draw). The scratch pool after the whole test: 15 canvases made, 94 reuses, 26.8 MP held.
+
+**The review of step (a)** (four lenses, each finding checked by two verifiers) confirmed fourteen
+findings, twelve distinct (two of the tests lens repeat the store lens's); each fix has a counter-proof,
+a case of `pixels_test.js` that is red on a copy of the modules with that fix taken back (or the
+review's fault put in):
+
+- **The scratch moved to the GPU** once a GPU canvas was drawn into it, so the tile backend's output
+  depended on which scratch had seen which source, and a `drawInto` that drew nothing rewrote 1,350
+  low-alpha bytes and copied shared tiles: the scratch is an OffscreenCanvas, and a released scratch
+  that reads the probe pixel (212, 24) back as a GPU canvas does is not pooled (`scratchStats().flipped`,
+  never seen) (case `draw_into_scratch_stays_on_the_cpu`).
+- **The store's own canvases were GPU canvases in the app** (`makeCanvas` without the software
+  option), so the gate proved a configuration that does not ship: they are CPU canvases now and the
+  tile run uses the app's options (`write_rect_ops`, `draw_to`, `blit_and_copy_rect`,
+  `tiles_to_canvas_and_limits`, `tiles_display_mirror` go red without it). A fractional blit drew from
+  the display mirror, a whole-layer canvas: it draws from the rectangle with the margin now, so a blit
+  from pixels above 268 MP works (`tiles_to_canvas_and_limits`).
+- **A scratch class above 32,768 px a side erased the band** it was drawn for (65,536 px canvases
+  draw nothing): classes stop at 32,768 px, and a scratch, `toCanvas` or the mirror above 65,535 px
+  a side is refused (`tiles_wide_draws`, a 40,000 px wide layer against the canvas backend).
+- **`resetContext` missed the text state** the font shorthand does not reset (`letterSpacing`,
+  `wordSpacing`, `direction`, `fontKerning`, `textRendering`, `fontStretch`, `fontVariantCaps`,
+  `lang`), which `renderText` leaves on a text layer's canvas (`draw_into_text_state`).
+- **`readRect` / `writeRect` converted a bad coordinate** (NaN, infinite, outside 32 bits) to 0 or a
+  wrapped one where `getImageData` / `putImageData` throw: the tile backend converts as Chromium does,
+  with the same error names (`read_write_rect`).
+- **The canvas backend's self "copy" at a fraction** drew from a snapshot of exactly the rectangle,
+  without the neighbours every other blit samples: the snapshot has the two-pixel margin
+  (`tiles_blit_mixed_backends`).
+- **A read or write of the pixels a `drawInto` callback draws into** was lost or stale on tiles: both
+  backends throw on it now (`draw_into_does_not_reach_its_own_pixels`), and the `drawInto` rules in
+  `inpaint_pixels.js` and `docs/PLUGINS.md` also forbid `putImageData`, `isPointInPath` /
+  `isPointInStroke` and clips off whole pixels inside the callback.
+- **The translation effect was documented tens of times too small** for the selection shapes (2
+  levels against 68): the numbers above, and `selection_shapes_far_from_the_origin` pins them.
+- **Test gaps**: the whole-tile share branch onto content with a mirror
+  (`tiles_aligned_blit_copy_onto_content`), the tile caches after in-place writes
+  (`tiles_caches_follow_in_place_writes`, mips against the kernel), dropped holders and transparent
+  fills (`tiles_drops_and_transparent_fills`) and the column loops past 4096 px of `fromCanvas` and the
+  write-back (`tiles_wide_draws`) each kill a fault that passed the suite before.
+
+**Step (a)'s gates** (fresh dev instances, own profiles, strict), after the review's fixes: `pixels
+editor composite commands shape brush nodecopy` ALL PASS; `--copy pixels editor composite` ALL PASS.
 
 ### C3. The compositor draws tiles (1 week)
 
@@ -933,6 +1187,8 @@ atlas budget row of C3 is the only new setting.
 | dab rasterisation | Canvas 2D through `drawInto`, in C and E | the brush look and `brush_test.py`'s tolerance stay; a Rust dab is a later measurement |
 | undo | copy-on-write tile refs, `frozen` counter | a step holds only what it changed; no PNGs |
 | selection | `MaskPixels`, bounds from the tile set + border-tile scan | no readback of a GPU canvas ever again |
+| mask tiles | RGBA in C2, one channel in C5 (with the selection as mask tiles) | callers draw red / white into masks until then (§C2 "C2 as built") |
+| bounds from mips | no: exact per-tile extents of the border tiles, every allocated tile holds a pixel | the kernel's rounded alpha loses an alpha-1 pixel at the first mip |
 | feather | Gaussian ramp on the EDT | one kernel for grow / shrink / feather; look changes slightly, said in the CHANGELOG |
 | compositor | atlas pages per (source, level), 1 px gutter, instanced draw per layer, mask sampler | no canvas round trip; `MAX_TEXTURE_SIZE` stops being a document limit |
 | fallback display | `putImageData` of visible tiles at the level | works without WebGL2; 10 to 15 ms at 4K |

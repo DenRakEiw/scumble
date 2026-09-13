@@ -135,7 +135,12 @@ puts tiles behind the same interface, so a plugin that goes through it keeps wor
   own coordinates and is not necessarily the identity: with the tile engine it is a translation
   onto a scratch canvas of `rect`. Compose on it with `scale`, `translate`, `rotate`,
   `transform` and `save` / `restore`; never call `setTransform` / `resetTransform`, and do not
-  read `getTransform()` as absolute, or the drawing lands shifted),
+  read `getTransform()` as absolute, or the drawing lands shifted. Inside the callback also do not
+  call `putImageData` (it ignores the transform and the clip), `isPointInPath` /
+  `isPointInStroke` (device coordinates), do not clip to anything but rectangles on whole pixels
+  (the tile engine's scratch clips without anti-aliasing), and do not read or write the same
+  pixels through `px` (it throws: a nested write would be overwritten, a read would not see what
+  the callback drew); other pixels are fine),
   `drawTo(ctx, ...drawImage arguments)`,
   `bounds()` and `toCanvas()` (read-only). After writing, call `doc.refresh(key)` so the screen,
   the upload and the caches see it; unlike `setPixels` such a write has no undo step unless the

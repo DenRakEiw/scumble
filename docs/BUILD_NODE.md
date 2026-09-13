@@ -15,9 +15,9 @@ python tools/node_test.py             # the node's flavour in a hidden Electron 
 
 | File | Owner | In the node |
 |---|---|---|
-| `renderer/editor/inpaint_canvas.js`, `inpaint_filters.js`, `inpaint_filters_gl.js`, `inpaint_curves.js`, `inpaint_text.js`, `inpaint_raster.js`, `inpaint_export.js`, `inpaint_worker.js`, `inpaint_compositor.js`, `inpaint_brushes.js`, `fonts/` | this repo | generated into `js/` with a first line naming the source |
+| `renderer/editor/inpaint_canvas.js`, `inpaint_filters.js`, `inpaint_filters_gl.js`, `inpaint_curves.js`, `inpaint_text.js`, `inpaint_raster.js`, `inpaint_export.js`, `inpaint_worker.js`, `inpaint_compositor.js`, `inpaint_brushes.js`, `inpaint_pixels.js`, `inpaint_tiles.js`, `px/kernels_js.js`, `fonts/` | this repo | generated into `js/` with a first line naming the source (`px/` as a subfolder: the tile store imports the kernels, C2) |
 | `renderer/editor/host.js` | this repo | not copied: the node has its own `js/host.js` |
-| `renderer/editor/stitch.js`, `renderer/editor/px/` | this repo | not copied (app-only; `px/` goes with C2) |
+| `renderer/editor/stitch.js` | this repo | not copied (app-only) |
 | `js/host.js` | node repo | what the editor asks ComfyUI: `app`, `api`, the litegraph node |
 | `js/inpaint_node.js` | node repo | the litegraph extension (thumbnail widget, queuePrompt wrapper, setting outputs, event routing); it was the block `sync_editor.py` cut off the end of `inpaint_canvas.js` |
 | `js/inpaint_bridge.js` | node repo | the MCP command bridge of the node |
@@ -51,6 +51,8 @@ implementation:
   `exportQuality` 0.92.
 
 A new `host.*` call in the editor needs a member in both files; `--check` names the missing one.
+The import check walks every module under `js/`, subfolders included (ComfyUI loads them too), and
+resolves each relative import against the importing module's folder.
 
 ## The freeze (2026-09-13)
 

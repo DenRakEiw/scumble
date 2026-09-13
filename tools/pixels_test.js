@@ -1,92 +1,363 @@
-// The LayerPixels / MaskPixels contract (renderer/editor/inpaint_pixels.js, docs/PLAN_BCE.md C1),
-// case by case. Runs inside the app's renderer: tools/pixels_test.py reads this file and
-// evaluates it with the module imported as `P`. C2 runs the same cases against the tile backend.
+// The LayerPixels / MaskPixels contract (renderer/editor/inpaint_pixels.js, docs/PLAN_BCE.md C1 and
+// C2), case by case, for both backends. Runs inside the app's renderer: tools/pixels_test.py reads
+// this file and evaluates it with inpaint_pixels.js imported as `P` and inpaint_tiles.js as `T`.
 //
-// Every case compares against a plain canvas that does what the call sites did before C1, byte
-// for byte: the canvas backend must not change a single level.
+// Every case runs three times:
+//   canvas      the canvas backend as the app runs it (Chromium rasterises its canvases on the GPU);
+//               every check against a plain canvas holds byte for byte, as in C1
+//   canvas-cpu  the canvas backend with setPixelsOptions({ software: true }): its canvases, and the
+//               reference canvases of the case, get a willReadFrequently context and are rasterised
+//               on the CPU, like the tile backend's scratch
+//   tiles       the tile backend (inpaint_tiles.js) with the app's options (software off: the canvas
+//               backend's canvases made inside a case are GPU canvases, as in the app); only the
+//               reference canvases of the case (`mk`) are CPU canvases
+// and every output a case checks is recorded and compared between canvas-cpu and tiles byte for
+// byte. A tolerance there is only allowed where a measured cause says why (TOLERANCES below). The
+// GPU run is compared with the tile run as information only (gpuVsTiles): the GPU and the CPU
+// rasterise anti-aliased edges, gradients and resampling differently, by tens of levels.
 //
-// Defines one function, `pixelsCases(P)`, returning [name, async () => result] pairs.
+// Defines one function, `pixelsCases(P, T)`, returning [name, async () => result] pairs.
 
-function pixelsCases(P) {
-    const { LayerPixels, MaskPixels } = P;
-    const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
-    // pixels are read through readRect, never through toCanvas(): with --pixels-copy toCanvas() is a
-    // copy, and a copy can sit on another Chromium backing and read back 1 level apart at low alpha
-    const bytesOf = (src) => (src instanceof LayerPixels ? src.readRect(0, 0, src.width, src.height) : src.getContext("2d").getImageData(0, 0, src.width, src.height)).data;
-    // tolerance: a canvas that was read back a few times is moved to software by Chromium, a fresh
-    // copy of it sits on the GPU, and the two un-premultiply differently: 1 level at low alpha
-    const same = (a, b, what, tolerance = 0) => {
-        const da = bytesOf(a), db = bytesOf(b);
-        if (da.length !== db.length) throw new Error(`${what}: ${da.length} bytes against ${db.length}`);
-        let n = 0, worst = 0, first = -1;
-        for (let i = 0; i < da.length; i++) {
-            const d = Math.abs(da[i] - db[i]);
-            if (d > tolerance) { n++; if (d > worst) worst = d; if (first < 0) first = i; }
+function pixelsCases(P, T) {
+    const BACKENDS = [
+        { name: "canvas", Layer: P.LayerPixels, Mask: P.MaskPixels, tiles: false, software: false, cpuRefs: false },
+        { name: "canvas-cpu", Layer: P.LayerPixels, Mask: P.MaskPixels, tiles: false, software: true, cpuRefs: true },
+        { name: "tiles", Layer: T.TileLayerPixels, Mask: T.TileMaskPixels, tiles: true, software: false, cpuRefs: true },
+    ];
+
+    // a CPU canvas whatever the options say (a willReadFrequently context, and nothing drawn into it
+    // from a GPU canvas, which would move it to the GPU)
+    const cpuCanvas = (w, h) => {
+        const c = document.createElement("canvas");
+        c.width = Math.max(1, w | 0); c.height = Math.max(1, h | 0);
+        c.getContext("2d", { willReadFrequently: true });
+        return c;
+    };
+
+    // The helpers of one run of a case against backend B; `rec(what, value)` records an output.
+    const kit = (B, rec) => {
+        const Layer = B.Layer, Mask = B.Mask;
+        const mk = (w, h) => (B.cpuRefs ? cpuCanvas(w, h) : P.makeCanvas(w, h));   // the case's reference canvases
+        // pixels are read through readRect, never through toCanvas(): with --pixels-copy toCanvas() is a
+        // copy, and a copy can sit on another Chromium backing and read back 1 level apart at low alpha
+        const bytesOf = (src) => (src instanceof P.LayerPixels ? src.readRect(0, 0, src.width, src.height) : src.getContext("2d").getImageData(0, 0, src.width, src.height)).data;
+        // tolerance: a canvas that was read back a few times is moved to software by Chromium, a fresh
+        // copy of it sits on the GPU, and the two un-premultiply differently: 1 level at low alpha
+        const same = (a, b, what, tolerance = 0) => {
+            const da = bytesOf(a), db = bytesOf(b);
+            rec(what, da);
+            if (da.length !== db.length) throw new Error(`${what}: ${da.length} bytes against ${db.length}`);
+            let n = 0, worst = 0, first = -1;
+            for (let i = 0; i < da.length; i++) {
+                const d = Math.abs(da[i] - db[i]);
+                if (d > tolerance) { n++; if (d > worst) worst = d; if (first < 0) first = i; }
+            }
+            if (n) {
+                const w = a.width;
+                const p = first >> 2;
+                throw new Error(`${what}: ${n} bytes differ, worst ${worst}, first at ${p % w},${Math.floor(p / w)} (${Array.from(da.slice(p * 4, p * 4 + 4))} vs ${Array.from(db.slice(p * 4, p * 4 + 4))})`);
+            }
+            return true;
+        };
+        const snap = (src, what) => { rec(what, bytesOf(src)); return src; };
+        const px = (src, x, y) => Array.from((src instanceof P.LayerPixels ? src.readRect(x, y, 1, 1) : src.getContext("2d").getImageData(x, y, 1, 1)).data);
+        // a test picture with every alpha level, soft edges and colour: what a premultiply round trip would damage
+        const paint = (ctx, w, h) => {
+            const g = ctx.createLinearGradient(0, 0, w, h);
+            g.addColorStop(0, "rgba(255,40,20,0.02)");
+            g.addColorStop(0.5, "rgba(20,200,90,0.5)");
+            g.addColorStop(1, "rgba(30,60,250,1)");
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, w, h);
+            ctx.fillStyle = "rgba(250,250,0,0.3)";
+            ctx.beginPath(); ctx.arc(w * 0.4, h * 0.6, Math.min(w, h) * 0.3, 0, Math.PI * 2); ctx.fill();
+            ctx.clearRect(w * 0.7, 0, w * 0.1, h * 0.2);
+        };
+        const pair = (w, h, Cls = Layer) => {
+            const ref = mk(w, h); paint(ref.getContext("2d"), w, h);
+            const c = mk(w, h); paint(c.getContext("2d"), w, h);
+            return { ref, pixels: Cls.fromCanvas(c) };
+        };
+        const tiles = (p, n, what) => {   // the tile count, checked in the tile run only
+            if (B.tiles && p.tileCount !== n) throw new Error(`${what}: ${p.tileCount} tiles, expected ${n}`);
+            if (B.tiles && p.bytes() !== n * 256 * 256 * 4) throw new Error(`${what}: bytes() ${p.bytes()} for ${p.tileCount} tiles`);
+        };
+        return { B, P, T, Layer, Mask, mk, bytesOf, same, snap, px, paint, pair, tiles, rec };
+    };
+
+    const view = (v) => (ArrayBuffer.isView(v) ? v : null);
+
+    // Runs `body(kit)` on every backend and compares the records of canvas-cpu and tiles.
+    // `tolerances`: record name -> { bytes, levels, why }, each measured (docs/PLAN_BCE.md §C2 "C2 as built").
+    const both = (body, tolerances = {}) => async () => {
+        const was = P.pixelsOptions();
+        const results = {}, recs = {};
+        for (const B of BACKENDS) {
+            const list = [];
+            P.setPixelsOptions({ software: B.software });
+            try {
+                results[B.name] = await body(kit(B, (what, value) => list.push([what, value])));
+            } catch (err) {
+                throw new Error(`[${B.name}] ${err && err.message}`);
+            } finally {
+                P.setPixelsOptions({ software: was.software });
+            }
+            recs[B.name] = list;
         }
-        if (n) {
-            const w = (a instanceof LayerPixels ? a.width : a.width);
-            const p = first >> 2;
-            throw new Error(`${what}: ${n} bytes differ, worst ${worst}, first at ${p % w},${Math.floor(p / w)} (${Array.from(da.slice(p * 4, p * 4 + 4))} vs ${Array.from(db.slice(p * 4, p * 4 + 4))})`);
-        }
-        return true;
+        const compare = (a, b, strict) => {
+            if (a.length !== b.length) throw new Error(`${a.length} records against ${b.length}`);
+            const out = { records: a.length, bytes: 0, differing: 0, differingBytes: 0, worst: 0, tolerated: {} };
+            for (let i = 0; i < a.length; i++) {
+                const [name, va] = a[i], [nameB, vb] = b[i];
+                if (name !== nameB) throw new Error(`record ${i} is "${name}" against "${nameB}"`);
+                const ta = view(va), tb = view(vb);
+                if (!ta || !tb) {
+                    if (JSON.stringify(va) !== JSON.stringify(vb)) {
+                        if (strict) throw new Error(`${name}: ${JSON.stringify(va)} against ${JSON.stringify(vb)}`);
+                        out.differing++;
+                    }
+                    continue;
+                }
+                if (ta.length !== tb.length) throw new Error(`${name}: ${ta.length} bytes against ${tb.length}`);
+                out.bytes += ta.length;
+                let n = 0, worst = 0;
+                for (let j = 0; j < ta.length; j++) { const d = Math.abs(ta[j] - tb[j]); if (d) { n++; if (d > worst) worst = d; } }
+                if (!n) continue;
+                out.differing++; out.differingBytes += n; out.worst = Math.max(out.worst, worst);
+                if (!strict) continue;
+                const tol = tolerances[name];
+                if (!tol || n !== tol.bytes || worst !== tol.levels) {
+                    throw new Error(`canvas-cpu vs tiles, ${name}: ${n} bytes differ, worst ${worst}` + (tol ? ` (tolerated exactly: ${tol.bytes} bytes, ${tol.levels} levels: ${tol.why})` : ""));
+                }
+                out.tolerated[name] = { bytes: n, worst };
+            }
+            if (strict) {
+                // a tolerance is the exact difference measured: one that is no longer seen is a change too
+                for (const name of Object.keys(tolerances)) {
+                    if (!out.tolerated[name]) throw new Error(`canvas-cpu vs tiles, ${name}: no difference any more, the tolerance (${tolerances[name].bytes} bytes) is stale`);
+                }
+            }
+            return out;
+        };
+        const cpu = compare(recs["canvas-cpu"], recs.tiles, true);
+        const gpu = compare(recs.canvas, recs.tiles, false);
+        return {
+            ...results.tiles, compared: cpu.records, comparedBytes: cpu.bytes, tolerated: cpu.tolerated,
+            gpuVsTiles: { records: gpu.differing, bytes: gpu.differingBytes, worst: gpu.worst },
+        };
     };
-    const px = (src, x, y) => Array.from((src instanceof LayerPixels ? src.readRect(x, y, 1, 1) : src.getContext("2d").getImageData(x, y, 1, 1)).data);
-    // a test picture with every alpha level, soft edges and colour: what a premultiply round trip would damage
-    const paint = (ctx, w, h) => {
-        const g = ctx.createLinearGradient(0, 0, w, h);
-        g.addColorStop(0, "rgba(255,40,20,0.02)");
-        g.addColorStop(0.5, "rgba(20,200,90,0.5)");
-        g.addColorStop(1, "rgba(30,60,250,1)");
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = "rgba(250,250,0,0.3)";
-        ctx.beginPath(); ctx.arc(w * 0.4, h * 0.6, Math.min(w, h) * 0.3, 0, Math.PI * 2); ctx.fill();
-        ctx.clearRect(w * 0.7, 0, w * 0.1, h * 0.2);
+
+    // The tile backend draws on a scratch whose origin is the rect's origin (rule 12), and Skia's CPU
+    // rasteriser is not exactly translation-invariant: a gradient's position, a resampled image's
+    // sample positions and the anti-aliased edges of curves and strokes are computed in float from
+    // device coordinates. Gradients and resampled images round a few pixels a level or a few levels
+    // apart; the edges of curves and wide strokes by far more: the selection brush and the ellipse
+    // marquee drawn far from the origin (selection_shapes_far_from_the_origin) differ by tens of alpha
+    // levels, and a pixel can be transparent on one side and not on the other, so the selection's
+    // bounds() can differ too. Lines, rectangles, unscaled images and most scaled draws agree to the
+    // byte. Measured 2026-09-13 (Chromium 152); each entry is the exact count and size seen, and the
+    // comparison fails on any other count or size, also on none.
+    const MOVED = "Skia's CPU rasteriser is not exactly translation-invariant, and the tile backend draws on a scratch translated by the rect's origin";
+    const TOLERANCES = {
+        clear_fill_bounds: { "fill with a gradient": { bytes: 75, levels: 2, why: "a linear gradient on a scratch at 60,0: " + MOVED } },
+        scratch_pool: { "the next callback starts fresh": { bytes: 315, levels: 5, why: "a 60 x 50 soft image scaled to 90 x 70 on a scratch at 120,110 (low alpha): " + MOVED } },
+        from_image: {
+            "fromImage canvas across a strip border (4096)": { bytes: 10, levels: 1, why: "a canvas scaled to 5000 x 300, its second strip drawn translated by 4096: " + MOVED },
+            "fromImage img across a strip border (4096)": { bytes: 10, levels: 1, why: "an <img> scaled to 5000 x 300, its second strip drawn translated by 4096: " + MOVED },
+        },
+        selection_shapes: {
+            "the review's worst ellipse": { bytes: 146, levels: 255, why: "an ellipse marquee 213 x 242 px at 1172,1389: alpha up to 68 levels apart at its edge, pixels transparent on one side only (their red 0 against 255): " + MOVED },
+            "the review's worst brush dab": { bytes: 21, levels: 255, why: "a 91 px selection-brush dab at 2759,364: alpha up to 48 levels apart at its edge, a pixel transparent on one side only: " + MOVED },
+            "30 ellipses": { bytes: 119, levels: 255, why: "30 ellipse marquees of up to 300 px anywhere on 3300 x 2300: " + MOVED },
+            "30 brush dabs": { bytes: 106, levels: 255, why: "30 selection-brush dabs of up to 121 px anywhere on 3300 x 2300: " + MOVED },
+        },
     };
-    const pair = (w, h, Cls = LayerPixels) => {
-        const ref = mk(w, h); paint(ref.getContext("2d"), w, h);
-        const c = mk(w, h); paint(c.getContext("2d"), w, h);
-        return { ref, pixels: Cls.fromCanvas(c) };
-    };
+    // Measured outside the cases too: an arc of radius 160 moved by (-100, -90), 15 bytes at 5 pixels, 2 levels;
+    // 150 random ellipse marquees and 150 selection-brush dabs on 3300 x 2300 (the C2 (a) review's generator):
+    // 649 and 565 pixels apart, alpha up to 68 and 48 levels, 28 and 7 pixels transparent on one side only,
+    // bounds() the same in all 300 (by chance: a pixel transparent on one side only can move it).
 
     return [
-        ["construct_and_size", async () => {
-            const e = LayerPixels.empty(300, 200);
-            if (e.width !== 300 || e.height !== 200 || e.bytes() !== 300 * 200 * 4) throw new Error("size " + e.width + "x" + e.height);
+        ["construct_and_size", both(async ({ B, Layer, Mask, mk, same, snap, px, paint }) => {
+            const e = Layer.empty(300, 200);
+            if (e.width !== 300 || e.height !== 200 || e.bytes() !== (B.tiles ? 0 : 300 * 200 * 4)) throw new Error("size " + e.width + "x" + e.height + " bytes " + e.bytes());
             if (px(e, 10, 10)[3] !== 0) throw new Error("empty is not transparent");
-            const z = LayerPixels.empty(0, -3);
+            const z = Layer.empty(0, -3);
             if (z.width !== 1 || z.height !== 1) throw new Error("degenerate size " + z.width + "x" + z.height);
-            const c = mk(40, 30);
-            if (P.canvasOf(LayerPixels.fromCanvas(c)) !== c) throw new Error("fromCanvas does not adopt");
+            const c = mk(40, 30); paint(c.getContext("2d"), 40, 30);
+            const adopted = Layer.fromCanvas(c);
+            // the canvas backend adopts the canvas; the tile backend reads it and hands out a mirror
+            if (B.tiles ? P.canvasOf(adopted) === c : P.canvasOf(adopted) !== c) throw new Error("fromCanvas adoption");
+            snap(adopted, "fromCanvas");
             const img = new ImageData(new Uint8ClampedArray([1, 2, 3, 4, 5, 6, 7, 255]), 2, 1);
-            const d = LayerPixels.fromImageData(img);
+            const d = Layer.fromImageData(img);
             if (d.width !== 2 || px(d, 1, 0).join() !== "5,6,7,255") throw new Error("fromImageData " + px(d, 1, 0));
+            snap(d, "fromImageData");
             const src = mk(64, 32); paint(src.getContext("2d"), 64, 32);
-            same(LayerPixels.fromImage(src), src, "fromImage");
-            const m = MaskPixels.empty(8, 8);
-            if (!(m instanceof LayerPixels) || !(m.clone() instanceof MaskPixels) || !(m.copyRect([0, 0, 4, 4]) instanceof MaskPixels) || !(m.resized(9, 9) instanceof MaskPixels)) throw new Error("MaskPixels class not kept");
+            same(Layer.fromImage(src), src, "fromImage");
+            const m = Mask.empty(8, 8);
+            if (!(m instanceof P.LayerPixels) || !(m instanceof P.MaskPixels) || !(m.clone() instanceof Mask) || !(m.copyRect([0, 0, 4, 4]) instanceof Mask) || !(m.resized(9, 9) instanceof Mask)) throw new Error("MaskPixels class not kept");
+            if (!(e instanceof P.LayerPixels) || e instanceof P.MaskPixels) throw new Error("LayerPixels class");
+            if (Layer.backend !== T.pixelsBackend(B.tiles) || Mask.backend !== Layer.backend) throw new Error("backend");
             return { ok: true };
-        }],
+        })],
 
-        ["read_write_rect", async () => {
+        ["read_write_rect", both(async ({ Layer, mk, same, pair, rec }) => {
             const { ref, pixels } = pair(200, 120);
             const a = pixels.readRect(20, 10, 50, 40);
             const b = ref.getContext("2d").getImageData(20, 10, 50, 40);
             if (a.width !== 50 || a.height !== 40) throw new Error("readRect size");
             for (let i = 0; i < a.data.length; i++) if (a.data[i] !== b.data[i]) throw new Error("readRect differs at " + i);
+            rec("readRect", a.data);
             // clamped: outside reads as transparent
             const o = pixels.readRect(190, 110, 20, 20);
             if (o.data[(15 * 20 + 15) * 4 + 3] !== 0) throw new Error("outside is not transparent");
+            rec("readRect outside", o.data);
+            // negative sizes and fractions, as getImageData takes them
+            rec("readRect negative size", pixels.readRect(70.7, 50.2, -30, -20.9).data);
+            let threw = false;
+            try { pixels.readRect(0, 0, 0, 10); } catch (err) { threw = err.name === "IndexSizeError"; }
+            if (!threw) throw new Error("a zero width did not throw IndexSizeError");
             // copy = putImageData
             const img = new ImageData(30, 20);
             for (let i = 0; i < img.data.length; i += 4) { img.data[i] = 200; img.data[i + 1] = 10; img.data[i + 2] = 60; img.data[i + 3] = (i / 4) % 256; }
             pixels.writeRect(img, 100, 50);
             ref.getContext("2d").putImageData(img, 100, 50);
             same(pixels, ref, "writeRect copy");
+            pixels.writeRect(img, 180.9, -5.5);
+            ref.getContext("2d").putImageData(img, 180.9, -5.5);
+            same(pixels, ref, "writeRect copy at fractions and outside");
+            // the arguments convert as getImageData / putImageData convert them ([EnforceRange] long):
+            // a NaN, an infinity or a value outside 32 bits throws a TypeError, int overflow a RangeError
+            const outcome = (f) => { try { const r = f(); return r ? `ok ${r.width}x${r.height} ${Array.from(r.data.slice(0, 8))}` : "ok"; } catch (err) { return err.name; } };
+            const reads = [[NaN, Infinity, 5, 5], [undefined, 0, 5, 5], ["x", 0, 5, 5], [4294967396, 100, 12, 12], [1e10, 0, 3, 3],
+                [-2147483649, 0, 3, 3], [2147483647, 0, 10, 10], [2147483640, 0, 7, 1], [2147483640, 0, 8, 1], [-2147483640, 0, -8, 1],
+                [-2147483640, 0, -9, 1], [0, 0, -2147483648, 1], [0, 0, 2147483647, 5], [0, 0, 100000, 100000], [null, "3", 5.9, -4.2],
+                [0, 0, 0.5, 5], [0, 0, 5, -0.9], [-2147483648.9, 0, 5, 1], [30, 20, 2147483647.5, 1]];
+            const readOutcomes = reads.map((a) => outcome(() => pixels.readRect(...a)));
+            rec("readRect argument conversion", readOutcomes);
+            const two = new ImageData(new Uint8ClampedArray([9, 8, 7, 255, 1, 2, 3, 128, 50, 60, 70, 255, 0, 0, 255, 20]), 2, 2);
+            const writes = [[NaN, 7], [Infinity, 0], [4294967301, 7], [-4294967291, 7], [1e21, 5], [undefined, 0], [2147483647, 0], [-2147483648, 0], ["3", 4.7], [null, null]];
+            const writeOutcomes = writes.map((a) => outcome(() => pixels.writeRect(two, ...a)));
+            rec("writeRect argument conversion", writeOutcomes);
+            same(pixels, pixels, "after the writes with converted arguments");
+            if (readOutcomes[0] !== "TypeError" || readOutcomes[6] !== "RangeError" || writeOutcomes[2] !== "TypeError" || writeOutcomes[8] !== "ok") {
+                throw new Error("argument conversion: " + JSON.stringify([readOutcomes, writeOutcomes]));
+            }
             return { ok: true };
-        }],
+        })],
 
-        ["write_rect_ops", async () => {
+        // A draw that is not the last one on a pixels object must not depend on what the objects before it
+        // drew: the tile backend's scratches stay on the CPU when a GPU canvas is drawn into them.
+        ["draw_into_scratch_stays_on_the_cpu", both(async ({ B, Layer, rec }) => {
+            const pairs = new ImageData(256, 256);   // every (value, alpha) pair: a GPU round trip changes 1,350 bytes of them
+            for (let a = 0; a < 256; a++) for (let v = 0; v < 256; v++) { const i = (a * 256 + v) * 4; pairs.data[i] = v; pairs.data[i + 1] = 255 - v; pairs.data[i + 2] = v ^ 90; pairs.data[i + 3] = a; }
+            const A = Layer.fromImageData(pairs);
+            const holder = A.clone();
+            const want = A.readRect(0, 0, 256, 256).data.slice();
+            const nothing = (what) => {
+                A.drawInto([0, 0, 256, 256], () => {});   // the size class every write below uses
+                const got = A.readRect(0, 0, 256, 256).data;
+                let n = 0;
+                for (let i = 0; i < got.length; i++) if (got[i] !== want[i]) n++;
+                // the GPU run's canvas reads back a level apart once it moved to software: nothing to prove there
+                if (n && B.name !== "canvas") throw new Error(`${what}: a drawInto that draws nothing changed ${n} bytes`);
+                if (B.tiles && A.tileAt(0, 0) !== holder.tileAt(0, 0)) throw new Error(`${what}: a drawInto that draws nothing copied a shared tile`);
+                rec(what, B.name === "canvas" ? 0 : n);
+            };
+            const gpuCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"); g.fillStyle = "rgba(0,0,255,0.5)"; g.fillRect(0, 0, w, h); return c; };
+            nothing("fresh");
+            const S = Layer.empty(256, 256);
+            S.drawInto([0, 0, 256, 256], (ctx) => ctx.drawImage(gpuCanvas(200, 90), 0, 0));   // a stroke buffer in the app
+            nothing("after a GPU canvas was drawn in a drawInto");
+            S.drawInto(null, (ctx) => ctx.drawImage(gpuCanvas(32, 32), 3, 4));
+            nothing("after a small GPU canvas");
+            const off = new OffscreenCanvas(64, 64); { const g = off.getContext("2d"); g.fillStyle = "#0f0"; g.fillRect(0, 0, 64, 64); }
+            S.drawInto(null, (ctx) => ctx.drawImage(off, 10, 10));
+            nothing("after a GPU OffscreenCanvas");
+            const gl = document.createElement("canvas"); gl.width = 64; gl.height = 64;
+            { const c = gl.getContext("webgl2"); if (c) { c.clearColor(1, 0, 1, 0.5); c.clear(c.COLOR_BUFFER_BIT); } }
+            S.drawInto(null, (ctx) => ctx.drawImage(gl, 0, 0));
+            nothing("after a WebGL canvas");
+            const bitmap = await createImageBitmap(gpuCanvas(40, 40));
+            S.drawInto(null, (ctx) => ctx.drawImage(bitmap, 0, 0));
+            bitmap.close();
+            nothing("after an ImageBitmap of a GPU canvas");
+            S.writeRect(pairs, 0, 0, "source-over", 0.5);   // the store's own source canvas
+            nothing("after a writeRect with an operation");
+            S.blit(Layer.fromImageData(pairs), 10.5, 3.25, "source-over", 0.5);   // the store's own blit source
+            nothing("after a fractional blit");
+            Layer.empty(256, 256).drawInto(null, (ctx) => S.drawTo(ctx, 0, 0));   // the display mirror as a source
+            nothing("after drawTo of the pixels in a drawInto");
+            Layer.fromImage(gpuCanvas(256, 256));   // a decode strip
+            nothing("after fromImage of a GPU canvas");
+            if (B.tiles && T.scratchStats().flipped !== 0) throw new Error("a scratch moved to the GPU: " + JSON.stringify(T.scratchStats()));
+            return { flipped: B.tiles ? T.scratchStats().flipped : null };
+        })],
+
+        // A layer made from a canvas that carries text state (renderText leaves letterSpacing on the
+        // canvas a text layer adopts): drawInto hands fn a fresh context's text state on both backends.
+        ["draw_into_text_state", both(async ({ Layer, mk, snap, rec }) => {
+            const c = mk(420, 130);
+            const cc = c.getContext("2d");
+            cc.letterSpacing = "12px"; cc.wordSpacing = "20px"; cc.direction = "rtl"; cc.fontKerning = "none";
+            cc.textRendering = "optimizeLegibility"; cc.fontStretch = "condensed"; cc.fontVariantCaps = "small-caps";
+            const p = Layer.fromCanvas(c);
+            let seen = null;
+            p.drawInto(null, (ctx) => {
+                seen = [ctx.letterSpacing, ctx.wordSpacing, ctx.direction, ctx.fontKerning, ctx.textRendering, ctx.fontStretch, ctx.fontVariantCaps];
+                ctx.fillStyle = "#123";
+                ctx.font = "32px serif";
+                ctx.fillText("AVA To Wa ffi", 200, 50);
+                ctx.font = "24px sans-serif";
+                ctx.fillText("kerning AV Yo tracking", 30, 105);
+            });
+            rec("text state in fn", seen);
+            snap(p, "text through drawInto on a canvas that carries text state");
+            return { seen };
+        })],
+
+        // Reads and writes of the pixels a drawInto draws into, from inside its callback: the tile backend
+        // would overwrite a nested write with its scratch and read stale pixels, so both backends throw.
+        ["draw_into_does_not_reach_its_own_pixels", both(async ({ Layer, mk, pair, snap, rec }) => {
+            const { pixels: p } = pair(300, 200);
+            const reach = {
+                readRect: (q) => q.readRect(0, 0, 1, 1),
+                writeRect: (q) => q.writeRect(new ImageData(1, 1), 0, 0),
+                "writeRect with an operation": (q) => q.writeRect(new ImageData(1, 1), 0, 0, "source-over", 0.5),
+                drawInto: (q) => q.drawInto(null, () => {}),
+                drawTo: (q) => q.drawTo(mk(4, 4).getContext("2d"), 0, 0),
+                "blit into": (q) => q.blit(Layer.empty(4, 4), 0, 0, "copy"),
+                "blit from": (q) => Layer.empty(4, 4).blit(q, 0, 0, "source-over"),
+                clear: (q) => q.clear([0, 0, 1, 1]),
+                fill: (q) => q.fill([0, 0, 1, 1], "#fff"),
+                bounds: (q) => q.bounds(),
+                copyRect: (q) => q.copyRect([0, 0, 2, 2]),
+                clone: (q) => q.clone(),
+                resized: (q) => q.resized(10, 10),
+                toCanvas: (q) => q.toCanvas([0, 0, 2, 2]),
+                canvasOf: (q) => P.canvasOf(q),
+            };
+            const out = {};
+            let i = 0;
+            for (const [name, f] of Object.entries(reach)) {
+                let msg = "did not throw";
+                try {
+                    p.drawInto([10, 10, 290, 190], (ctx) => { ctx.fillStyle = `hsl(${i * 40},80%,50%)`; ctx.fillRect(12 + i * 18, 20, 14, 60); f(p); });
+                } catch (err) { msg = err.message; }
+                i++;
+                if (!/must not read or write the pixels it draws into/.test(msg)) throw new Error(`${name} inside the callback: ${msg}`);
+                out[name] = "throws";
+            }
+            // other pixels are fine inside the callback, and the pixels are usable again afterwards
+            const q = Layer.empty(8, 8);
+            p.drawInto(null, (ctx) => { q.fill(null, "#f00"); ctx.drawImage(q.toCanvas(), 100, 150); q.readRect(0, 0, 1, 1); });
+            rec("reads and writes from the callback", out);
+            snap(p, "what the callbacks drew before they threw is kept");
+            return out;
+        })],
+
+        ["write_rect_ops", both(async ({ mk, same, px, paint, pair }) => {
             const out = {};
             for (const op of ["source-over", "destination-out", "source-atop", "destination-in", "copy"]) {
                 const { ref, pixels } = pair(160, 100);
@@ -113,12 +384,12 @@ function pixelsCases(P) {
                 out[op] = "same";
             }
             return out;
-        }],
+        })],
 
-        ["draw_into", async () => {
+        ["draw_into", both(async ({ Layer, same, snap, pair }) => {
             const { ref, pixels } = pair(180, 140);
             // state left behind by an earlier draw must not reach fn
-            const raw = P.canvasOf(pixels).getContext("2d");   // the backing canvas itself, in copy mode too
+            const raw = P.canvasOf(pixels).getContext("2d");   // the backing canvas itself (the tile backend's mirror), in copy mode too
             raw.setTransform(2, 0, 0, 2, 7, 7); raw.globalAlpha = 0.1; raw.globalCompositeOperation = "xor";
             const rect = [30.4, 20.6, 110.2, 90.9];
             const back = pixels.drawInto(rect, (ctx) => {
@@ -146,7 +417,7 @@ function pixelsCases(P) {
             ctx.fillStyle = "#0af";
             ctx.fillRect(0, 0, 50, 50);
             ctx.restore();
-            same(pixels, ref, "drawInto clipped");
+            same(pixels, ref, "drawInto clipped", 0);
             // null = everything, no clip; an empty rect draws nothing
             const { ref: r2, pixels: p2 } = pair(90, 60);
             p2.drawInto(null, (c) => { c.fillStyle = "rgba(10,20,30,0.5)"; c.fillRect(-10, -10, 200, 200); });
@@ -163,18 +434,22 @@ function pixelsCases(P) {
             c3.beginPath(); c3.fillStyle = "#000000"; c3.strokeStyle = "#000000"; c3.lineWidth = 1;
             c3.moveTo(10, 10); c3.lineTo(80, 50); c3.lineTo(10, 50); c3.fill(); c3.stroke(); c3.restore();
             same(p3, r3, "drawInto starts from a fresh context");
+            // a callback that throws keeps what it drew before the throw, in both backends
+            const { pixels: p4 } = pair(120, 90);
+            try { p4.drawInto([0, 0, 60, 60], (c) => { c.fillStyle = "#f0f"; c.fillRect(5, 5, 20, 20); throw new Error("boom"); }); } catch (err) { if (err.message !== "boom") throw err; }
+            snap(p4, "drawInto keeps what a throwing fn drew");
             return { ok: true };
-        }],
+        })],
 
         // docs/PLAN_BCE.md §C1 rule 12: fn gets a transform that maps the pixels' own coordinates and
         // composes on it. Checked by where pixels land, never by reading the matrix, so the case holds
         // for a tile scratch translated by the rect's origin as well as for the canvas backend.
-        ["draw_into_transform_composes", async () => {
+        ["draw_into_transform_composes", both(async ({ Layer, mk, same, px, paint, pair }) => {
             const alphaAt = (p, x, y) => px(p, x, y)[3];
             const leftover = (p) => { const raw = P.canvasOf(p).getContext("2d"); raw.setTransform(2, 0, 0, 2, 7, 7); };
             const rect = [40, 30, 70, 60];
             // a point drawn at the rect's own coordinates lands there, whatever an earlier draw left
-            const a = LayerPixels.empty(120, 90);
+            const a = Layer.empty(120, 90);
             leftover(a);
             a.drawInto(rect, (ctx) => { ctx.fillStyle = "#ffffff"; ctx.fillRect(47, 33, 1, 1); });
             P.canvasOf(a).getContext("2d").setTransform(1, 0, 0, 1, 0, 0);
@@ -183,7 +458,7 @@ function pixelsCases(P) {
             const ba = a.bounds();
             if (!ba || ba.join() !== "47,33,48,34") throw new Error("point bounds " + ba);
             // a scale and a translation composed inside fn, and restore taking them off again
-            const b = LayerPixels.empty(120, 90);
+            const b = Layer.empty(120, 90);
             leftover(b);
             b.drawInto(rect, (ctx) => {
                 ctx.fillStyle = "#ffffff";
@@ -211,9 +486,9 @@ function pixelsCases(P) {
             g.globalAlpha = 0.6; g.setTransform(1.5, 0, 0, 1.25, 0, 0); g.drawImage(src, 12, 9); g.restore();
             same(pixels, ref, "drawInto with a scaled draw at an alpha");
             return { ok: true };
-        }],
+        })],
 
-        ["draw_to", async () => {
+        ["draw_to", both(async ({ mk, same, pair }) => {
             const { pixels } = pair(120, 80);
             const a = mk(60, 40), b = mk(60, 40);
             pixels.drawTo(a.getContext("2d"), 10, 5, 100, 70, 0, 0, 60, 40);
@@ -223,10 +498,14 @@ function pixelsCases(P) {
             pixels.drawTo(e.getContext("2d"), 3, 4);
             f.getContext("2d").drawImage(P.canvasOf(pixels), 3, 4);
             same(e, f, "drawTo 3 args");
+            const g = mk(200, 150), h = mk(200, 150);
+            pixels.drawTo(g.getContext("2d"), 7.5, 3.25, 170, 111);
+            h.getContext("2d").drawImage(P.canvasOf(pixels), 7.5, 3.25, 170, 111);
+            same(g, h, "drawTo 5 args");
             return { ok: true };
-        }],
+        })],
 
-        ["blit_and_copy_rect", async () => {
+        ["blit_and_copy_rect", both(async ({ mk, same, pair }) => {
             const { ref, pixels } = pair(200, 150);
             const part = pixels.copyRect([40.5, 30, 140, 100.2]);
             if (part.width !== 100 || part.height !== 71) throw new Error("copyRect size " + part.width + "x" + part.height);
@@ -246,9 +525,9 @@ function pixelsCases(P) {
             const c2 = r2.getContext("2d"); c2.globalAlpha = 0.35; c2.drawImage(P.canvasOf(src), 10, 10, 40, 30, 30, 20, 40, 30);
             same(p2, r2, "blit source-over with srcRect");
             return { ok: true };
-        }],
+        })],
 
-        ["clear_fill_bounds", async () => {
+        ["clear_fill_bounds", both(async ({ B, Layer, same, pair, rec }) => {
             const { ref, pixels } = pair(100, 80);
             pixels.clear([10, 10, 30.5, 20]);
             ref.getContext("2d").clearRect(10, 10, 21, 10);
@@ -256,16 +535,25 @@ function pixelsCases(P) {
             pixels.fill([50, 40, 70, 60], "rgba(255,0,0,0.5)");
             const rc = ref.getContext("2d"); rc.clearRect(50, 40, 20, 20); rc.fillStyle = "rgba(255,0,0,0.5)"; rc.fillRect(50, 40, 20, 20);
             same(pixels, ref, "fill");
-            const e = LayerPixels.empty(700, 1100);
+            pixels.fill([0, 0, 30, 30], "not a colour");   // ignored by the canvas: the reset fill style, black
+            rc.clearRect(0, 0, 30, 30); rc.fillStyle = "#000000"; rc.fillRect(0, 0, 30, 30);
+            same(pixels, ref, "fill with an invalid colour");
+            const grad = ref.getContext("2d").createLinearGradient(0, 0, 100, 0);
+            grad.addColorStop(0, "rgba(0,0,255,0.2)"); grad.addColorStop(1, "#ff0");
+            pixels.fill([60, 0, 100, 30], grad);
+            rc.clearRect(60, 0, 40, 30); rc.fillStyle = grad; rc.fillRect(60, 0, 40, 30);
+            same(pixels, ref, "fill with a gradient", B.tiles ? TOLERANCES.clear_fill_bounds["fill with a gradient"].levels : 0);   // see TOLERANCES
+            const e = Layer.empty(700, 1100);
             if (e.bounds() !== null) throw new Error("empty bounds");
             e.fill([613, 530, 614, 531], "#fff");
             e.fill([20, 1090, 22, 1093], "rgba(0,0,0,0.01)");
             const b = e.bounds();
             if (!b || b.join() !== "20,530,614,1093") throw new Error("bounds " + b);
+            rec("bounds", b);
             return { bounds: b };
-        }],
+        }, TOLERANCES.clear_fill_bounds)],
 
-        ["clone_resized_to_canvas", async () => {
+        ["clone_resized_to_canvas", both(async ({ B, mk, same, px, pair }) => {
             const { pixels } = pair(90, 70);
             const c = pixels.clone();
             same(c, pixels, "clone");
@@ -277,11 +565,12 @@ function pixelsCases(P) {
             const small = pixels.resized(50, 40, { x: -15, y: -5 });
             const rs = mk(50, 40); rs.getContext("2d").drawImage(P.canvasOf(pixels), -15, -5);
             same(small, rs, "resized (crop)");
-            // share mode hands out the canvas, copy mode a copy with the same pixels
+            // share mode hands out the canvas, copy mode a copy with the same pixels; the tile backend
+            // always hands out a new canvas
             const was = P.pixelsOptions().copy;
             try {
                 P.setPixelsOptions({ copy: false });
-                if (pixels.toCanvas() !== pixels.toCanvas()) throw new Error("share mode made a copy");
+                if (B.tiles ? pixels.toCanvas() === pixels.toCanvas() : pixels.toCanvas() !== pixels.toCanvas()) throw new Error("share mode");
                 P.setPixelsOptions({ copy: true });
                 const k = pixels.toCanvas();
                 if (k === pixels.toCanvas()) throw new Error("copy mode shared the canvas");
@@ -293,23 +582,28 @@ function pixelsCases(P) {
             }
             const part = pixels.toCanvas([10, 10, 30, 25]);
             if (part.width !== 20 || part.height !== 15 || part === P.canvasOf(pixels)) throw new Error("toCanvas(rect)");
+            same(part, pixels.copyRect([10, 10, 30, 25]), "toCanvas(rect)");
             return { ok: true };
-        }],
+        })],
 
-        ["version_and_canvas_of", async () => {
-            const e = LayerPixels.empty(10, 10);
+        ["version_and_canvas_of", both(async ({ B, Layer, mk }) => {
+            const e = Layer.empty(10, 10);
             const v0 = e.version;
             e.touch(); e.touch([0, 0, 2, 2]);
             if (e.version !== v0 + 2) throw new Error("version " + e.version);
             const c = mk(4, 4);
-            if (P.canvasOf(c) !== c || P.canvasOf(LayerPixels.fromCanvas(c)) !== c) throw new Error("canvasOf");
+            if (P.canvasOf(c) !== c) throw new Error("canvasOf of a canvas");
+            const fc = P.canvasOf(Layer.fromCanvas(c));
+            if (B.tiles ? (fc === c || !(fc instanceof HTMLCanvasElement)) : fc !== c) throw new Error("canvasOf of pixels");
             // the display pyramid keys on the canvas's _dispVer: the facade's version is the same number
             P.canvasOf(e)._dispVer = 77;
             if (e.version !== 77) throw new Error("version is not the canvas's _dispVer");
+            e.touch();
+            if (P.canvasOf(e)._dispVer !== 78) throw new Error("_dispVer does not follow touch()");
             return { ok: true };
-        }],
+        })],
 
-        ["layer_aliases", async () => {
+        ["layer_aliases", both(async ({ B, Layer, Mask, mk }) => {
             const was = P.pixelsOptions().strict;
             const warnings = [];
             const orig = console.warn;
@@ -318,7 +612,7 @@ function pixelsCases(P) {
                 P.setPixelsOptions({ strict: false });
                 const c = mk(8, 8), m = mk(8, 8);
                 const L = P.installLayerAliases({ id: "x", canvas: c, mask: m, x: 1 });
-                if (!(L.px instanceof LayerPixels) || !(L.maskPx instanceof MaskPixels)) throw new Error("own canvas / mask not converted");
+                if (!(L.px instanceof P.LayerPixels) || !(L.maskPx instanceof P.MaskPixels)) throw new Error("own canvas / mask not converted");
                 if (Object.keys(L).includes("canvas") || Object.keys(L).includes("mask")) throw new Error("the aliases are enumerable");
                 const copy = { ...L };
                 if (!("px" in copy) || "canvas" in copy) throw new Error("a spread copy carries the alias or lost px");
@@ -329,19 +623,659 @@ function pixelsCases(P) {
                 if (L.maskPx !== null) throw new Error("the setter did not clear maskPx");
                 const N = P.installLayerAliases({ id: "y", px: null, maskPx: null });
                 if (N.canvas !== null || N.mask !== null) throw new Error("null pixels");
-                if (!warnings.length) throw new Error("no deprecation warning");
+                // a layer on this backend: the getter hands out a canvas of its pixels, the setters adopt
+                // into the layer's backend (a mask set on a layer without one follows its px)
+                const K = P.installLayerAliases({ id: "z", px: Layer.fromCanvas(mk(6, 5)), maskPx: null });
+                const kc = K.canvas;
+                if (!(kc instanceof HTMLCanvasElement) || kc.width !== 6 || (B.tiles && kc === K.canvas)) throw new Error("the getter on " + B.name);
+                K.canvas = mk(7, 3);
+                K.mask = mk(7, 3);
+                if (!(K.px instanceof Layer) || K.px.width !== 7 || !(K.maskPx instanceof Mask)) throw new Error("the setters did not adopt into " + B.name);
+                // a warning is given once per name for the page's life, so only the first run of the case sees it
+                if (warnings.length) window.__pixelsAliasesWarned = true;
+                if (!window.__pixelsAliasesWarned) throw new Error("no deprecation warning");
                 P.setPixelsOptions({ strict: true });
                 let threw = 0;
                 try { void L.canvas; } catch (_) { threw++; }
                 try { L.canvas = mk(2, 2); } catch (_) { threw++; }
                 try { P.installLayerAliases({ canvas: mk(2, 2) }); } catch (_) { threw++; }
+                try { void K.mask; } catch (_) { threw++; }
                 P.installLayerAliases({ canvas: null });   // a null value is not a use of the old name
-                if (threw !== 3) throw new Error("strict mode threw " + threw + " of 3 times");
+                if (threw !== 4) throw new Error("strict mode threw " + threw + " of 4 times");
             } finally {
                 console.warn = orig;
                 P.setPixelsOptions({ strict: was });
             }
             return { warnings: warnings.length };
+        })],
+
+        // ---- C2: the tile store's own cases, run on every backend like the ones above ----------------
+
+        ["tiles_sparse_growth_and_shrink", both(async ({ Layer, snap, tiles, rec }) => {
+            const p = Layer.empty(1000, 700);
+            tiles(p, 0, "empty");
+            p.fill([250, 250, 262, 258], "rgba(10,20,30,0.5)");                // across four tiles
+            tiles(p, 4, "a fill across a tile corner");
+            snap(p, "fill across a corner");
+            p.writeRect(new ImageData(300, 300), 600, 300);                     // transparent "copy" onto missing tiles
+            tiles(p, 4, "a transparent copy allocates nothing");
+            p.drawInto([600, 300, 900, 600], (ctx) => { ctx.globalAlpha = 0; ctx.fillRect(600, 300, 300, 300); });
+            tiles(p, 4, "an invisible draw allocates nothing");
+            p.drawInto([700, 400, 800, 500], (ctx) => { ctx.fillStyle = "#fff"; ctx.fillRect(700, 400, 100, 100); });
+            tiles(p, 6, "a draw over two tiles");
+            snap(p, "draw over two tiles");
+            p.drawInto([690, 390, 810, 510], (ctx) => { ctx.globalCompositeOperation = "destination-out"; ctx.fillStyle = "#000"; ctx.fillRect(690, 390, 120, 120); });
+            tiles(p, 4, "destination-out that empties two tiles drops them");
+            snap(p, "erased");
+            const img = new ImageData(8, 8);
+            for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+            p.writeRect(img, 252, 252, "destination-out", 1);                  // erases part of all four
+            tiles(p, 4, "a partial erase keeps the tiles");
+            snap(p, "partial erase");
+            rec("bounds after the partial erase", p.bounds());
+            p.clear([240, 240, 256, 256]);
+            tiles(p, 3, "clear of the rest of one tile drops it");
+            p.blit(Layer.empty(30, 30), 250, 250, "copy");                      // a transparent copy over the rest
+            tiles(p, 0, "a transparent blit copy drops what it empties");
+            if (p.bounds() !== null) throw new Error("bounds after everything was erased: " + p.bounds());
+            p.fill(null, "#123456");
+            tiles(p, 12, "a fill of everything");
+            snap(p, "filled");
+            p.writeRect(new ImageData(1000, 700), 0, 0);
+            tiles(p, 0, "a transparent copy of everything");
+            p.fill(null, "rgba(1,2,3,0.5)");
+            p.clear(null);
+            tiles(p, 0, "clear of everything");
+            snap(p, "cleared");
+            return { tiles: p.tileCount };
+        })],
+
+        ["tiles_clone_copy_on_write", both(async ({ B, pair, snap, same, rec }) => {
+            const { pixels: base } = pair(800, 600);
+            const orig = base.clone();
+            const c1 = base.clone(), c2 = base.clone(), c3 = base.clone();
+            const t = B.tiles ? base.tileAt(1, 1) : null;
+            const expect = (cond, what) => { if (B.tiles && !cond()) throw new Error(typeof what === "function" ? what() : what); };
+            expect(() => t && t.frozen === 4 && c1.tileAt(1, 1) === t && orig.tileAt(1, 1) === t, () => "four clones share the tile: frozen " + (t && t.frozen));
+            c1.fill([300, 300, 310, 310], "#f00");
+            const own1 = B.tiles ? c1.tileAt(1, 1) : null;
+            expect(() => own1 !== t && t.frozen === 3 && base.tileAt(1, 1) === t, () => "the first writer copies: frozen " + (t && t.frozen));
+            c1.fill([320, 300, 330, 310], "#0f0");
+            expect(() => c1.tileAt(1, 1) === own1 && t.frozen === 3, () => "a second write by the same writer does not copy again");
+            c2.drawInto([290, 290, 400, 400], (ctx) => { ctx.fillStyle = "rgba(0,0,255,0.5)"; ctx.fillRect(290, 290, 110, 110); });
+            expect(() => c2.tileAt(1, 1) !== t && t.frozen === 2, () => "the second writer copies: frozen " + (t && t.frozen));
+            c3.clear([256, 256, 300, 300]);
+            expect(() => c3.tileAt(1, 1) !== t && t.frozen === 1, () => "the third writer copies: frozen " + (t && t.frozen));
+            // untouched tiles stay shared by all five
+            expect(() => c1.tileAt(0, 0) === base.tileAt(0, 0) && base.tileAt(0, 0).frozen === 4, () => "untouched tiles stay shared");
+            same(base, orig, "the original is untouched by the clones' writes");
+            orig.fill([0, 0, 1, 1], "#fff");   // the snapshot lets go of the tile (0, 0) by copying it
+            expect(() => t.frozen === 1, () => "orig still holds (1, 1)");
+            const img = new ImageData(20, 20);
+            for (let i = 0; i < img.data.length; i += 4) { img.data[i] = 9; img.data[i + 3] = 200; }
+            const before = B.tiles ? base.tileAt(1, 1) : null;
+            base.writeRect(img, 260, 260);
+            expect(() => base.tileAt(1, 1) !== before && before.frozen === 0, () => "base copies while orig holds the tile");
+            orig.writeRect(img, 270, 270);
+            expect(() => orig.tileAt(1, 1) === t && t.frozen === 0, () => "the last holder writes in place");
+            for (const [p, name] of [[base, "base"], [c1, "c1"], [c2, "c2"], [c3, "c3"], [orig, "orig"]]) snap(p, name);
+            return { tileCounts: B.tiles ? [base, c1, c2, c3, orig].map((p) => p.tileCount) : null };
+        })],
+
+        ["tiles_borders", both(async ({ Layer, pair, snap, rec }) => {
+            const { pixels: p } = pair(700, 600);
+            const img = new ImageData(10, 9);
+            for (let i = 0; i < img.data.length; i += 4) { img.data[i] = 250; img.data[i + 1] = i & 255; img.data[i + 2] = 7; img.data[i + 3] = (i * 3) & 255; }
+            for (const [x, y] of [[255, 255], [256, 256], [257, 257], [-3, -2], [695, 597], [250, -5], [251, 511]]) {
+                p.writeRect(img, x, y);
+                snap(p, `writeRect at ${x},${y}`);
+            }
+            for (const [x, y, w, h] of [[250, 250, 12, 12], [-5, -5, 10, 10], [690, 590, 20, 20], [255, 0, 2, 600], [0, 255, 700, 3], [256, 256, 256, 256], [-300, -300, 1400, 1300]]) {
+                rec(`readRect ${x},${y},${w},${h}`, p.readRect(x, y, w, h).data);
+            }
+            const fills = (color) => (ctx) => { ctx.fillStyle = color; ctx.fillRect(0, 0, 2000, 2000); };
+            for (const [r, color] of [[[250, 250, 262, 262], "rgba(0,255,0,0.4)"], [[-10, 250, 5, 262], "#00f"], [[690, 590, 710, 610], "#f0f"], [[255.5, 100, 256.5, 400], "#ff0"]]) {
+                p.drawInto(r, fills(color));
+                snap(p, `drawInto ${r}`);
+            }
+            const part = p.copyRect([200, 200, 300, 300]);
+            p.blit(part, 254, 510, "copy");
+            snap(p, "blit copy across a border");
+            p.blit(part, -40, 250, "copy", 1, [30, 30, 90, 90]);
+            snap(p, "blit copy from a negative position");
+            p.writeRect(img, -4, 253, "source-atop", 0.5);
+            snap(p, "writeRect with an operation at a negative position");
+            const e = Layer.empty(600, 600);
+            e.fill([255, 255, 257, 257], "#fff");
+            rec("bounds of a 2 px square on a tile corner", e.bounds());
+            return { ok: true };
+        })],
+
+        ["tiles_bounds", both(async ({ B, Layer, rec }) => {
+            const out = [];
+            for (const points of [[[255, 255]], [[256, 256]], [[0, 0], [999, 799]], [[255, 0], [256, 799]], [[511, 300], [512, 301], [767, 302]], [[300, 300]], [[1, 798], [998, 1]]]) {
+                const e = Layer.empty(1000, 800);
+                for (const [x, y] of points) e.fill([x, y, x + 1, y + 1], "rgba(0,0,0,0.004)");   // alpha 1
+                const b = e.bounds();
+                rec(`bounds ${JSON.stringify(points)}`, b);
+                out.push(b);
+                // erase the first point: the bounds follow (a tile left empty is dropped)
+                e.clear([points[0][0], points[0][1], points[0][0] + 1, points[0][1] + 1]);
+                rec(`bounds without ${points[0]}`, e.bounds());
+            }
+            // why bounds() does not read the mips: the kernel's alpha is a rounded average, so a
+            // pixel of alpha 1 is gone from the first mip on (and alpha < 4 from the second)
+            if (B.tiles) {
+                const e = Layer.empty(300, 300);
+                e.fill([300 - 45, 20, 256, 21], "rgba(0,0,0,0.004)");   // alpha 1 at 255,20: tile (0, 0)
+                e.fill([10, 10, 11, 11], "rgba(0,0,0,0.004)");
+                const m = e.mips(0, 0);
+                let alpha = 0;
+                for (let i = 3; i < 128 * 128 * 4; i += 4) alpha += m[i];
+                if (alpha !== 0) throw new Error("the first mip kept an alpha-1 pixel: " + alpha);
+                if (e.bounds().join() !== "10,10,256,21") throw new Error("bounds " + e.bounds());
+            }
+            return { bounds: out };
+        })],
+
+        ["tiles_resized_offsets", both(async ({ B, Layer, pair, snap }) => {
+            const { pixels: p } = pair(700, 600);
+            for (const [w, h, x, y] of [[900, 650, -300, 130], [1000, 1000, 256, -512], [700, 600, 37, 0], [512, 512, -256, -256], [300, 200, -400, -390], [1200, 900, 500, 300], [700, 600, 0, 0], [800, 600, 256, 0]]) {
+                const r = p.resized(w, h, { x, y });
+                if (!(r instanceof Layer) || r.width !== w || r.height !== h) throw new Error("resized class or size");
+                snap(r, `resized ${w}x${h} at ${x},${y}`);
+            }
+            if (B.tiles) {
+                const r = p.resized(800, 600, { x: 256, y: 0 });
+                if (r.tileAt(1, 0) !== p.tileAt(0, 0) || r.tileAt(1, 0).frozen < 1) throw new Error("an aligned offset does not share whole tiles");
+                if (r.tileAt(3, 2) === p.tileAt(2, 2)) throw new Error("an edge tile of another width was shared");
+            }
+            // no call site passes a fractional offset (extend and crop round theirs); the result is the canvas backend's
+            snap(p.resized(710, 610, { x: 0.5, y: 3.25 }), "resized at a fractional offset");
+            return { ok: true };
+        })],
+
+        ["tiles_from_image", both(async ({ Layer, mk, paint, snap }) => {
+            const src = mk(700, 450); paint(src.getContext("2d"), 700, 450);
+            const bitmap = await createImageBitmap(src);
+            const blob = await new Promise((res) => src.toBlob(res, "image/png"));
+            const img = new Image();
+            // onload, not decode(): decode() waits for rendering, which a hidden window never does
+            await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = URL.createObjectURL(blob); });
+            try {
+                snap(Layer.fromImage(src), "fromImage canvas unscaled");
+                snap(Layer.fromImage(src, 1537, 1011), "fromImage canvas scaled up");
+                snap(Layer.fromImage(bitmap, 900, 300), "fromImage bitmap scaled");
+                snap(Layer.fromImage(img), "fromImage img unscaled");
+                snap(Layer.fromImage(img, 333, 777), "fromImage img scaled down");
+                snap(Layer.fromImage(src, 5000, 300), "fromImage canvas across a strip border (4096)");
+                snap(Layer.fromImage(img, 5000, 300), "fromImage img across a strip border (4096)");
+                snap(Layer.fromImage(img, 900, 5000), "fromImage img across a strip border (rows)");
+                snap(Layer.fromCanvas(src), "fromCanvas");
+                const d = new ImageData(300, 256);
+                for (let i = 0; i < d.data.length; i += 4) { d.data[i] = (i * 7) & 255; d.data[i + 1] = (i >> 3) & 255; d.data[i + 2] = 255 - ((i >> 5) & 255); d.data[i + 3] = (i >> 2) & 255; }
+                snap(Layer.fromImageData(d), "fromImageData with every alpha");
+            } finally {
+                URL.revokeObjectURL(img.src);
+                bitmap.close();
+            }
+            return { ok: true };
+        }, TOLERANCES.from_image)],
+
+        ["tiles_to_canvas_and_limits", both(async ({ B, Layer, pair, same, snap }) => {
+            const { pixels: p } = pair(700, 600);
+            for (const r of [[0, 0, 700, 600], [255, 255, 257, 257], [-20, 100, 300.5, 700], [650, 10, 900, 20]]) {
+                const c = p.toCanvas(r);
+                same(c, p.copyRect(r), `toCanvas ${r}`);
+            }
+            snap(p.toCanvas(), "toCanvas()");
+            const none = p.toCanvas([800, 0, 900, 10]);
+            if (none.width !== 1 || none.height !== 1) throw new Error("toCanvas of a rect outside");
+            if (!B.tiles) return { ok: true };
+            // above Chromium's canvas limit: refused without allocating a tile
+            const huge = Layer.empty(20000, 15000);
+            let msg = "";
+            try { huge.toCanvas(); } catch (err) { msg = err.message; }
+            if (!/268 MP/.test(msg) || huge.tileCount !== 0) throw new Error("toCanvas above 268 MP: " + (msg || "not refused"));
+            msg = "";
+            try { huge.drawInto(null, () => {}); } catch (err) { msg = err.message; }
+            if (!/268 MP/.test(msg) || huge.tileCount !== 0) throw new Error("drawInto above 268 MP: " + (msg || "not refused"));
+            huge.fill([19990, 14990, 20000, 15000], "#fff");
+            if (huge.tileCount !== 1 || huge.bounds().join() !== "19990,14990,20000,15000") throw new Error("sparse huge pixels");
+            // the side limit: 16,777,216 px (65,536 tiles, the key's 16 bits)
+            msg = "";
+            try { Layer.empty(16777217, 10); } catch (err) { msg = err.message; }
+            if (!/16,777,216/.test(msg)) throw new Error("side limit: " + (msg || "not refused"));
+            // a blit from pixels above 268 MP works: its source is the rectangle with a margin, never a whole-layer canvas
+            const into = Layer.empty(40, 40);
+            into.blit(huge, 10.5, 10.25, "source-over", 0.5, [19990, 14990, 20000, 15000]);
+            into.blit(huge, 20, 20, "source-over", 1, [19990, 14990, 20000, 15000]);
+            if (into.readRect(25, 25, 1, 1).data[3] !== 255 || into.readRect(15, 15, 1, 1).data[3] === 0) throw new Error("a blit from pixels above 268 MP");
+            const wide = Layer.empty(16777216, 300);
+            wide.fill([16777206, 10, 16777226, 30], "#abc");
+            const back = wide.readRect(16777200, 5, 30, 30).data;
+            if (wide.tileCount !== 1 || wide.bounds().join() !== "16777206,10,16777216,30" || back[(5 * 30 + 6) * 4 + 3] !== 255 || back[(5 * 30 + 5) * 4 + 3] !== 0) throw new Error("the last tile column: " + wide.bounds());
+            return { ok: true, refused: msg };
+        })],
+
+        ["tiles_display_mirror", both(async ({ B, pair, same }) => {
+            const { pixels: p } = pair(700, 600);
+            const m = P.canvasOf(p);
+            // the canvas backend's mirror is its canvas: in the GPU run its first read-back un-premultiplies 1 level apart
+            same(m, p, "the mirror holds the pixels", B.name === "canvas" ? 1 : 0);
+            p.fill([100, 100, 300, 300], "#0f0");             // written, not touched
+            if (P.canvasOf(p) !== m) throw new Error("the mirror's identity changed");
+            same(P.canvasOf(p), p, "a write without touch reaches the mirror on the next canvasOf");
+            const v = p.version;
+            const t00 = B.tiles ? p.tileAt(0, 0).version : 0, t22 = B.tiles ? p.tileAt(2, 2).version : 0;
+            p.touch([0, 0, 10, 10]);
+            if (p.version !== v + 1 || m._dispVer !== p.version) throw new Error("_dispVer does not follow version");
+            if (B.tiles && (p.tileAt(0, 0).version === t00 || p.tileAt(2, 2).version !== t22)) throw new Error("touch(rect) bumps the tiles in rect only");
+            p.clear([0, 0, 700, 300]);
+            same(P.canvasOf(p), p, "a clear that drops tiles reaches the mirror");
+            p.drawInto([200, 250, 600, 500], (ctx) => { ctx.globalCompositeOperation = "destination-out"; ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, 700, 600); });
+            p.blit(p.copyRect([0, 300, 300, 600]), 400, 0, "copy");
+            same(P.canvasOf(p), p, "drawInto and blit reach the mirror");
+            const raw = m.getContext("2d");
+            raw.setTransform(3, 0, 0, 3, 50, 50); raw.globalCompositeOperation = "xor"; raw.globalAlpha = 0.2;
+            p.fill([0, 0, 700, 20], "#f00");
+            same(P.canvasOf(p), p, "state left on the mirror's context does not bend the sync");
+            raw.setTransform(1, 0, 0, 1, 0, 0); raw.globalCompositeOperation = "source-over"; raw.globalAlpha = 1;
+            return { ok: true };
+        })],
+
+        // Whole tiles shared by a tile-aligned "copy" onto pixels that already hold content and a mirror
+        // (an undo step put back at the layer origin): the missing source tiles clear, the mirror follows.
+        ["tiles_aligned_blit_copy_onto_content", both(async ({ Layer, pair, snap, same }) => {
+            const { pixels: p } = pair(1000, 800);
+            P.canvasOf(p);                                    // the mirror exists before the blit
+            const src = Layer.empty(600, 600);
+            src.fill([0, 0, 40, 40], "#0f0");                 // src tile (0,0) holds a pixel, (1,0) is missing, column 2 is 88 px wide
+            p.blit(src, 256, 256, "copy");
+            snap(p, "aligned blit copy onto content");
+            same(P.canvasOf(p), p, "aligned blit copy reaches the mirror");
+            const { pixels: h } = pair(700, 600);
+            const hole = h.clone();
+            hole.clear([300, 300, 340, 340]);                 // a transparent patch inside a tile with content
+            h.blit(hole, 0, 0, "copy", 1, [300, 300, 340, 340]);
+            snap(h, "a transparent block copied into a tile with content");
+            return { ok: true };
+        })],
+
+        // The per-tile caches (the extent bounds() uses, the mips) follow writes into a tile that exists.
+        ["tiles_caches_follow_in_place_writes", both(async ({ B, Layer, rec }) => {
+            const e = Layer.empty(1000, 800);
+            e.fill([300, 300, 301, 301], "#fff");
+            rec("bounds 1", e.bounds());
+            e.fill([260, 290, 261, 291], "#fff");              // the same tile, written in place
+            rec("bounds 2", e.bounds());
+            e.drawInto([400, 400, 420, 420], (ctx) => { ctx.fillStyle = "#fff"; ctx.fillRect(401, 402, 3, 3); });
+            rec("bounds 3", e.bounds());
+            const px = new ImageData(1, 1); px.data[3] = 9;
+            e.writeRect(px, 257, 500);                         // tile (1, 1), in place after the draw
+            rec("bounds 4", e.bounds());
+            e.writeRect(px, 258, 299, "source-over", 1);
+            rec("bounds 5", e.bounds());
+            if (e.bounds().join() !== "257,290,404,501") throw new Error("bounds after in-place writes: " + e.bounds());
+            if (B.tiles) {
+                const K = await import("./editor/px/kernels_js.js");
+                const t = Layer.empty(300, 300);
+                t.fill([0, 0, 256, 256], "#808080");
+                t.mips(0, 0);
+                for (const write of [() => t.fill([0, 0, 128, 128], "#ffffff"), () => t.drawInto([0, 0, 64, 64], (ctx) => ctx.clearRect(0, 0, 64, 64)), () => t.writeRect(px, 200, 200)]) {
+                    write();
+                    const got = t.mips(0, 0);
+                    const want = K.mipChain(t.tileAt(0, 0).data, 256, T.MIP_LEVELS, new Uint8Array(K.mipChainBytes(256, T.MIP_LEVELS)));
+                    for (let i = 0; i < want.length; i++) if (got[i] !== want[i]) throw new Error("stale mips at byte " + i);
+                }
+            }
+            return { bounds: e.bounds() };
+        })],
+
+        // A clone that drops its hold on a tile lets go of it; a transparent fill allocates nothing.
+        ["tiles_drops_and_transparent_fills", both(async ({ B, Layer, pair, tiles, snap }) => {
+            const { pixels: base } = pair(700, 600);
+            const c = base.clone();
+            const t = B.tiles ? base.tileAt(1, 1) : null;
+            c.clear([256, 256, 512, 512]);                   // c drops its hold on (1, 1)
+            base.fill([300, 300, 301, 301], "#fff");
+            if (B.tiles && base.tileAt(1, 1) !== t) throw new Error("the last holder copied after the other one dropped the tile: frozen " + t.frozen);
+            snap(base, "the last holder written in place");
+            const e = Layer.empty(700, 600);
+            e.fill([0, 0, 600, 500], "rgba(0,0,0,0)");
+            tiles(e, 0, "a transparent fill allocates nothing");
+            e.fill([100, 100, 110, 110], "#f00");
+            e.fill([0, 0, 700, 600], "transparent");
+            tiles(e, 0, "a transparent fill drops what it empties");
+            snap(e, "after transparent fills");
+            return { ok: true };
+        })],
+
+        // Reads, draws and write-backs wider or taller than one 4096 px block, and bands wider than
+        // 32,768 px, whose power-of-two scratch class (65,536 px) Chromium can neither draw nor read.
+        ["tiles_wide_draws", both(async ({ B, Layer, mk, paint, snap, rec }) => {
+            const c = mk(5000, 300); paint(c.getContext("2d"), 5000, 300);
+            snap(Layer.fromCanvas(c), "fromCanvas 5000 wide");
+            const c2 = mk(300, 5000); paint(c2.getContext("2d"), 300, 5000);
+            snap(Layer.fromCanvas(c2), "fromCanvas 5000 high");
+            const bands = (ctx, w, h) => { ctx.fillStyle = "#08f"; ctx.fillRect(0, 0, w, h / 2); ctx.fillStyle = "rgba(255,0,0,0.5)"; ctx.fillRect(w * 0.8, h * 0.3, w * 0.18, h * 0.5); };
+            const e = Layer.empty(5000, 300);
+            e.drawInto(null, (ctx) => bands(ctx, 5000, 300));
+            snap(e, "drawInto 5000 wide");
+            const f = Layer.empty(300, 5000);
+            f.drawInto(null, (ctx) => bands(ctx, 300, 5000));
+            snap(f, "drawInto 5000 high");
+            const img = new ImageData(4900, 20);
+            for (let i = 0; i < img.data.length; i += 4) img.data[i + 3] = (i >> 5) & 255;
+            e.writeRect(img, 50, 100, "destination-out", 0.5);
+            snap(e, "writeRect with an operation 4900 wide");
+            const w = Layer.empty(40000, 300);
+            w.fill([0, 200, 40000, 210], "#00ff00");
+            for (const bw of [32768, 32769, 40000]) {
+                w.drawInto([0, 200, bw, 210], (ctx) => { ctx.fillStyle = "#f00"; ctx.fillRect(bw - 20, 204, 10, 2); ctx.fillRect(0, 203, 10, 2); });
+                rec(`a band ${bw} px wide`, w.readRect(0, 195, 40000, 20).data);
+            }
+            const d = new ImageData(33000, 4);
+            for (let i = 3; i < d.data.length; i += 4) d.data[i] = 128;
+            w.writeRect(d, 0, 202, "destination-out", 1);
+            rec("destination-out 33000 px wide", w.readRect(0, 195, 40000, 20).data);
+            if (w.readRect(20000, 205, 1, 1).data[3] !== 127 || w.readRect(35000, 208, 1, 1).data[1] !== 255) throw new Error("the wide band: " + w.readRect(20000, 205, 1, 1).data + " / " + w.readRect(35000, 208, 1, 1).data);
+            if (B.tiles) {
+                const big = Object.keys(T.scratchStats().free).filter((k) => k.split("x").some((n) => +n > 32768));
+                if (big.length) throw new Error("a scratch class above 32,768 px a side was pooled: " + big);
+                for (const [what, f2] of [["drawInto", () => Layer.empty(70000, 100).drawInto(null, () => {})], ["toCanvas", () => Layer.empty(70000, 10).toCanvas()], ["the mirror", () => P.canvasOf(Layer.empty(10, 70000))]]) {
+                    let msg = "";
+                    try { f2(); } catch (err) { msg = err.message; }
+                    if (!/65,535 px a side/.test(msg)) throw new Error(`${what} 70,000 px long: ` + (msg || "not refused"));
+                }
+            }
+            return { ok: true };
+        })],
+
+        // The selection brush (selectionDab: a round stroke, its box padded by the width + 4) and the
+        // ellipse marquee (its box the shape +- 1) far from the origin: the translation effect at its size
+        // on the editor's own shapes (TOLERANCES). Selection edges compared between the backends need an
+        // alpha tolerance, and their bounds() can differ.
+        ["selection_shapes_far_from_the_origin", both(async ({ Mask, rec }) => {
+            const W = 3300, H = 2300;
+            const ellipse = (m, x0, y0, x1, y1) => {   // the marquee's pointer up in add mode
+                const box = [Math.min(x0, x1) - 1, Math.min(y0, y1) - 1, Math.max(x0, x1) + 1, Math.max(y0, y1) + 1];
+                m.drawInto(box, (s) => {
+                    s.globalCompositeOperation = "source-over";
+                    s.fillStyle = "#ff0000";
+                    s.beginPath();
+                    s.ellipse((x0 + x1) / 2, (y0 + y1) / 2, Math.abs(x1 - x0) / 2, Math.abs(y1 - y0) / 2, 0, 0, Math.PI * 2);
+                    s.fill();
+                });
+                return box;
+            };
+            const dab = (m, x0, y0, x1, y1, size) => {   // selectionDab
+                const pad = size + 4;
+                const box = [Math.min(x0, x1) - pad, Math.min(y0, y1) - pad, Math.max(x0, x1) + pad, Math.max(y0, y1) + pad];
+                m.drawInto(box, (s) => {
+                    s.globalCompositeOperation = "source-over";
+                    s.strokeStyle = "#ff0000";
+                    s.lineCap = "round"; s.lineJoin = "round"; s.lineWidth = size;
+                    s.beginPath(); s.moveTo(x0, y0); s.lineTo(x1 + 0.01, y1 + 0.01); s.stroke();
+                });
+                return box;
+            };
+            const read = (m, boxes) => {
+                const parts = boxes.map((b) => {
+                    const r = [Math.max(0, Math.floor(b[0])), Math.max(0, Math.floor(b[1])), Math.min(W, Math.ceil(b[2])), Math.min(H, Math.ceil(b[3]))];
+                    return m.readRect(r[0], r[1], r[2] - r[0], r[3] - r[1]).data;
+                });
+                const out = new Uint8Array(parts.reduce((n, a) => n + a.length, 0));
+                let o = 0;
+                for (const a of parts) { out.set(a, o); o += a.length; }
+                return out;
+            };
+            // the review's worst shapes of 150 each (an ellipse 68 levels apart at its edge, a brush dab 48)
+            const e1 = Mask.empty(W, H);
+            rec("the review's worst ellipse", read(e1, [ellipse(e1, 1172.4333172302847, 1388.9287001168955, 1385.2683221345153, 1630.5719173148143)]));
+            const d1 = Mask.empty(W, H);
+            rec("the review's worst brush dab", read(d1, [dab(d1, 2758.937741517526, 364.2683506776897, 2746.925194266683, 377.57610091826695, 91.0419998588236)]));
+            // and 30 of each drawn as the review drew them (its generator and seed), each on a fresh selection
+            let seed = 777;
+            const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+            const ellipses = [], dabs = [];
+            for (let i = 0; i < 30; i++) {
+                const x0 = 50 + rnd() * 2800, y0 = 50 + rnd() * 1800, x1 = x0 + 3 + rnd() * 300, y1 = y0 + 3 + rnd() * 300;
+                const m = Mask.empty(W, H);
+                ellipses.push(read(m, [ellipse(m, x0, y0, x1, y1)]));
+            }
+            for (let i = 0; i < 30; i++) {
+                const x0 = 200 + rnd() * 2800, y0 = 200 + rnd() * 1800, x1 = x0 + rnd() * 40 - 20, y1 = y0 + rnd() * 40 - 20, size = 1 + rnd() * 120;
+                const m = Mask.empty(W, H);
+                dabs.push(read(m, [dab(m, x0, y0, x1, y1, size)]));
+            }
+            const join = (list) => { const out = new Uint8Array(list.reduce((n, a) => n + a.length, 0)); let o = 0; for (const a of list) { out.set(a, o); o += a.length; } return out; };
+            rec("30 ellipses", join(ellipses));
+            rec("30 brush dabs", join(dabs));
+            return { ok: true };
+        }, TOLERANCES.selection_shapes)],
+
+        ["tiles_rule12_translated_scratch", both(async ({ B, Layer, mk, same, px, paint, pair }) => {
+            // the close-out's three transform cases again, on rects far from the origin, so the tile
+            // backend's scratch is translated by hundreds of pixels
+            const translation = [];
+            const probe = (ctx) => { const m = ctx.getTransform(); translation.push([m.e, m.f]); };   // only to prove the case is translated
+            const a = Layer.empty(1000, 800);
+            a.drawInto([640, 530, 700, 600], (ctx) => { probe(ctx); ctx.fillStyle = "#ffffff"; ctx.fillRect(647, 533, 1, 1); });
+            if (px(a, 647, 533)[3] !== 255 || a.bounds().join() !== "647,533,648,534") throw new Error("the point: " + a.bounds());
+            const b = Layer.empty(1000, 800);
+            b.drawInto([600, 500, 760, 700], (ctx) => {
+                probe(ctx);
+                ctx.fillStyle = "#ffffff";
+                ctx.save();
+                ctx.scale(2, 2);
+                ctx.fillRect(324, 266, 1, 1);        // 648..650 x 532..534
+                ctx.translate(5, 10);
+                ctx.fillRect(325, 267, 1, 1);        // 660..662 x 554..556
+                ctx.restore();
+                ctx.fillRect(610, 690, 1, 1);
+            });
+            const rb = mk(1000, 800), rc = rb.getContext("2d");
+            rc.fillStyle = "#ffffff";
+            rc.fillRect(648, 532, 2, 2); rc.fillRect(660, 554, 2, 2); rc.fillRect(610, 690, 1, 1);
+            same(b, rb, "far: a composed scale and translation");
+            const { ref, pixels } = pair(1000, 800);
+            const src = mk(50, 40); paint(src.getContext("2d"), 50, 40);
+            pixels.drawInto([300, 260, 700, 600], (ctx) => { probe(ctx); ctx.globalAlpha = 0.6; ctx.scale(1.5, 1.25); ctx.drawImage(src, 212, 219); });
+            const g = ref.getContext("2d");
+            g.save(); const q = new Path2D(); q.rect(300, 260, 400, 340); g.clip(q);
+            g.globalAlpha = 0.6; g.setTransform(1.5, 0, 0, 1.25, 0, 0); g.drawImage(src, 212, 219); g.restore();
+            same(pixels, ref, "far: a scaled draw at an alpha");
+            const expected = B.tiles ? "-640,-530;-600,-500;-300,-260" : "0,0;0,0;0,0";
+            if (translation.map((t) => t.join()).join(";") !== expected) throw new Error("scratch translation " + JSON.stringify(translation));
+            return { translation };
+        })],
+
+        ["tiles_scratch_pool_no_state", both(async ({ B, mk, paint, pair, snap }) => {
+            const { pixels: p } = pair(600, 500);
+            const src = mk(60, 50); paint(src.getContext("2d"), 60, 50);
+            p.drawInto([100, 100, 400, 350], (ctx) => {
+                // everything a callback can leave behind, save() twice without restore included
+                ctx.save(); ctx.save();
+                ctx.translate(33, 44); ctx.rotate(0.3);
+                ctx.globalAlpha = 0.2; ctx.globalCompositeOperation = "xor";
+                ctx.filter = "blur(3px)";
+                ctx.shadowBlur = 9; ctx.shadowColor = "red"; ctx.shadowOffsetX = 4;
+                ctx.lineWidth = 17; ctx.lineCap = "round"; ctx.setLineDash([5, 3]);
+                ctx.font = "40px serif"; ctx.textAlign = "center";
+                ctx.imageSmoothingEnabled = false;
+                ctx.fillStyle = "#123"; ctx.strokeStyle = "#456";
+                ctx.beginPath(); ctx.moveTo(150, 150); ctx.lineTo(300, 300);
+                ctx.fillRect(120, 120, 40, 40);
+                const clip = new Path2D(); clip.rect(100, 100, 50, 50); ctx.clip(clip);
+            });
+            snap(p, "a callback that leaves state behind");
+            const before = B.tiles ? T.scratchStats().reused : 0;
+            p.drawInto([120, 110, 410, 360], (ctx) => {
+                const fresh = ctx.globalAlpha === 1 && ctx.globalCompositeOperation === "source-over" && ctx.filter === "none"
+                    && ctx.shadowBlur === 0 && ctx.shadowOffsetX === 0 && ctx.shadowColor === "rgba(0, 0, 0, 0)" && ctx.lineWidth === 1 && ctx.lineCap === "butt"
+                    && ctx.getLineDash().length === 0 && ctx.font === "10px sans-serif" && ctx.textAlign === "start"
+                    && ctx.imageSmoothingEnabled === true && ctx.fillStyle === "#000000" && ctx.strokeStyle === "#000000";
+                if (!fresh) throw new Error("the second callback got state from the first");
+                ctx.lineTo(300, 200); ctx.lineTo(200, 300); ctx.fill();   // a leftover path would join in
+                ctx.fillStyle = "#e0e0e0";
+                ctx.fillRect(130, 120, 10, 10);                            // a leftover transform or clip would move or cut it
+                ctx.drawImage(src, 140, 130, 90, 70);                      // leftover smoothing, filter or shadow would change it
+            });
+            snap(p, "the next callback starts fresh");
+            if (B.tiles && T.scratchStats().reused <= before) throw new Error("the second drawInto did not reuse the pooled scratch");
+            return { ok: true };
+        }, TOLERANCES.scratch_pool)],
+
+        ["tiles_mask_pixels", both(async ({ B, Mask, snap, rec }) => {
+            const m = Mask.empty(900, 700);
+            m.fill(null, "#ff0000");
+            m.clear([100, 100, 400, 300]);
+            snap(m, "selection filled and a hole cleared");
+            rec("mask bounds", m.bounds());
+            m.drawInto([50, 50, 600, 500], (ctx) => {
+                ctx.globalCompositeOperation = "destination-in";   // a whole-canvas operation, held to the rect
+                ctx.fillStyle = "#ff0000";
+                ctx.fillRect(80, 60, 400, 300);
+            });
+            snap(m, "destination-in held to the rect");
+            const white = Mask.empty(500, 400);
+            white.fill([0, 0, 250, 400], "#ffffff");
+            white.writeRect(m.readRect(0, 0, 300, 300), 200, 100, "destination-out", 0.5);
+            snap(white, "a layer mask erased through the selection");
+            const kinds = [m.clone(), m.copyRect([0, 0, 300, 300]), m.resized(1000, 800, { x: 30, y: 40 })];
+            for (const k of kinds) {
+                if (!(k instanceof Mask) || !(k instanceof P.MaskPixels) || !(k instanceof P.LayerPixels) || T.isTilePixels(k) !== B.tiles) throw new Error("mask class not kept");
+                snap(k, "mask " + k.width + "x" + k.height);
+            }
+            return { tiles: B.tiles ? m.tileCount : null };
+        })],
+
+        ["tiles_blit_mixed_backends", both(async ({ B, Layer, mk, paint, pair, snap }) => {
+            const Other = B.tiles ? P.LayerPixels : T.TileLayerPixels;   // the other backend
+            const c = mk(400, 300); paint(c.getContext("2d"), 400, 300);
+            const foreign = Other.fromCanvas(c);
+            const { pixels: p } = pair(700, 600);
+            p.blit(foreign, 30, 40, "copy");
+            snap(p, "copy from the other backend");
+            p.blit(foreign, 300.5, 20.25, "source-over", 0.6, [10, 10, 200, 150]);
+            snap(p, "source-over at a fraction from the other backend");
+            p.blit(foreign, 250, 250, "destination-in", 0.8, [0, 0, 100, 100]);
+            snap(p, "destination-in from the other backend");
+            const into = Other.fromCanvas(mk(500, 400));
+            into.blit(p, -20, 10, "copy", 1, [0, 0, 400, 300]);
+            into.blit(p, 100.75, 50, "source-atop", 0.5, [100, 100, 400, 400]);
+            snap(into, "the other backend from this one");
+            p.blit(p, 50, 60, "copy", 1, [0, 0, 400, 300]);                    // overlapping, onto itself
+            snap(p, "copy onto itself, overlapping");
+            p.blit(p, 30, 20, "source-over", 0.5, [100, 100, 500, 500]);
+            snap(p, "source-over onto itself, overlapping");
+            p.blit(p, 20.5, 10.25, "copy", 1, [50, 40, 150, 120]);             // at a fraction: the neighbours are sampled
+            snap(p, "copy onto itself at a fraction");
+            p.blit(p, 120.5, 60.75, "copy", 0.5, [250, 240, 350, 320]);
+            snap(p, "copy onto itself at a fraction and an alpha");
+            p.blit(p, 400, 300, "copy", 0.5, [0, 0, 200, 150]);
+            snap(p, "copy onto itself at an alpha");
+            p.blit(foreign, 250.5, 250.25, "destination-in", 0.8, [0, 0, 100, 100]);   // a whole-canvas operation at a fraction: clipped on whole pixels
+            snap(p, "destination-in at a fraction");
+            return { ok: true };
+        })],
+
+        // ---- timings: printed, not gated ------------------------------------------------------------
+
+        ["timings", async () => {
+            const was = P.pixelsOptions();
+            const ms = (t0) => +(performance.now() - t0).toFixed(2);
+            const median = (a) => { const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
+            const out = {};
+            try {
+                P.setPixelsOptions({ software: false });
+                // a 400 px dab on a 4096² layer with content
+                const content = P.makeCanvas(4096, 4096);
+                const cc = content.getContext("2d");
+                const g = cc.createLinearGradient(0, 0, 4096, 4096); g.addColorStop(0, "#f40"); g.addColorStop(1, "#04f");
+                cc.fillStyle = g; cc.fillRect(0, 0, 4096, 4096);
+                const dab = (i) => (ctx) => {
+                    const x = 300 + i * 50, y = 400 + i * 40;
+                    const rg = ctx.createRadialGradient(x, y, 0, x, y, 200);
+                    rg.addColorStop(0, "rgba(255,255,255,0.8)"); rg.addColorStop(1, "rgba(255,255,255,0)");
+                    ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x, y, 200, 0, Math.PI * 2); ctx.fill();
+                };
+                const runDabs = (p, flush) => {
+                    const times = [];
+                    for (let i = 0; i < 60; i++) {
+                        const x = 300 + i * 50, y = 400 + i * 40, t0 = performance.now();
+                        p.drawInto([x - 200, y - 200, x + 200, y + 200], dab(i));
+                        if (flush) flush();
+                        times.push(performance.now() - t0);
+                    }
+                    return { median: +median(times).toFixed(3), max: +Math.max(...times).toFixed(3) };
+                };
+                const lc = P.LayerPixels.fromCanvas(P.makeCanvas(4096, 4096));
+                lc.drawInto(null, (ctx) => ctx.drawImage(content, 0, 0));
+                out.dab_canvas_gpu_no_flush = runDabs(lc);
+                out.dab_canvas_gpu_with_1px_read = runDabs(lc, () => lc.readRect(0, 0, 1, 1));
+                const lt = T.TileLayerPixels.fromCanvas(content);
+                out.dab_tiles = runDabs(lt);
+                out.dab_tiles_count = lt.tileCount;
+                P.canvasOf(lc).width = 1;
+                content.width = 1;
+
+                // fromImage of a 15000 x 10000 JPEG
+                const small = new OffscreenCanvas(1500, 1000), sx = small.getContext("2d");
+                const g2 = sx.createLinearGradient(0, 0, 1500, 1000); g2.addColorStop(0, "#f20"); g2.addColorStop(0.5, "#2c6"); g2.addColorStop(1, "#23f");
+                sx.fillStyle = g2; sx.fillRect(0, 0, 1500, 1000);
+                const big = new OffscreenCanvas(15000, 10000), bx = big.getContext("2d");
+                bx.drawImage(small, 0, 0, 15000, 10000);
+                for (let i = 0; i < 200; i++) { bx.fillStyle = `hsl(${i * 37},70%,50%)`; bx.fillRect((i * 733) % 15000, (i * 491) % 10000, 300, 200); }
+                const blob = await big.convertToBlob({ type: "image/jpeg", quality: 0.9 });
+                big.width = 1; big.height = 1;
+                const img = new Image();
+                await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = URL.createObjectURL(blob); });
+                let t0 = performance.now();
+                const ti = T.TileLayerPixels.fromImage(img);
+                out.fromImage_15000x10000_tiles_ms = ms(t0);
+                out.fromImage_tiles = { tiles: ti.tileCount, MB: +(ti.bytes() / 1048576).toFixed(1) };
+                t0 = performance.now();
+                const ci = P.LayerPixels.fromImage(img);
+                ci.readRect(0, 0, 1, 1);
+                out.fromImage_15000x10000_canvas_ms_with_1px_read = ms(t0);
+                // a few rows compared (the canvas backend's full draw is on the GPU: information only)
+                let n = 0, worst = 0;
+                for (const y of [0, 4095, 5000, 9999]) {
+                    const a = ci.readRect(0, y, 15000, 1).data, b = ti.readRect(0, y, 15000, 1).data;
+                    for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d) { n++; worst = Math.max(worst, d); } }
+                }
+                out.fromImage_rows_gpu_vs_tiles = { bytes: n, worst };
+                P.canvasOf(ci).width = 1;
+                URL.revokeObjectURL(img.src);
+
+                // clone of a full 6000 x 4000 layer
+                const full = T.TileLayerPixels.fromImage(small, 6000, 4000);
+                t0 = performance.now();
+                const cl = full.clone();
+                out.clone_6000x4000_tiles_ms = ms(t0);
+                out.clone_tiles = { tiles: cl.tileCount, MB: +(cl.bytes() / 1048576).toFixed(1) };
+                t0 = performance.now();
+                cl.fill([100, 100, 101, 101], "#fff");
+                out.clone_first_write_ms = ms(t0);
+                const fc = P.LayerPixels.fromImage(small, 6000, 4000);
+                t0 = performance.now();
+                const fcl = fc.clone();
+                fcl.readRect(0, 0, 1, 1);
+                out.clone_6000x4000_canvas_ms_with_1px_read = ms(t0);
+                P.canvasOf(fcl).width = 1; P.canvasOf(fc).width = 1;
+
+                // a tile copied into another (4K aliasing: both buffers start on a page)
+                const a1 = full.tileAt(3, 3).data, a2 = new Uint8ClampedArray(256 * 256 * 4);
+                t0 = performance.now();
+                for (let i = 0; i < 1000; i++) a2.set(a1);
+                out.tile_copy_us = +((performance.now() - t0) * 1000 / 1000).toFixed(1);
+                out.scratch = T.scratchStats();
+            } finally {
+                P.setPixelsOptions({ software: was.software });
+            }
+            return out;
         }],
     ];
 }
