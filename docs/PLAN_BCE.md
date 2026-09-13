@@ -440,7 +440,10 @@ the tests). Where it differs from the text above, this wins; each difference say
     `layer` restore draws into the layer's own context without resetting the transform or
     alpha, so in 0.1.11 undoing a fill after a flip puts the layer back mirrored (measured:
     237k differing bytes against the pixels before the fill, 0 on a plain layer); its
-    migration fixes that and has to say so.
+    migration fixes that and has to say so. **Fixed in step (f)** (the restore writes through
+    `drawInto`): measured there, a merged-down layer with opacity below 1 also came back at
+    that opacity (the leftover `globalAlpha`); after the fix, fill + undo gives the pixels
+    before the fill to 0 bytes on a plain, flipped, turned and merged layer alike.
 
 **Per step**: the step's sites, the gates below, a review of the diff, then the app commit,
 `python tools/build_node.py`, `python tools/node_test.py`, the node commit, a push of both.

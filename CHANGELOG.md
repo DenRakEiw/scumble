@@ -12,6 +12,11 @@ the section for its version; `docs/` and the commit history hold the technical d
   part of them. After a rotate, distort or warp was applied, a later fill, clear or smudge on
   that layer came out slightly different at its soft edges. Each of these came from drawing
   settings that the flip, the merge or the transform left behind on the layer.
+- **Undo puts a flipped, turned or merged layer back the way it was.** Undoing a fill, a
+  clear, a smudge stroke or a plugin's change on a layer you had flipped or turned by 90°
+  brought the layer back mirrored or turned, and on a layer made by *Merge down* with an
+  opacity below 100 % it came back see-through at that opacity. The same leftover drawing
+  settings were the cause.
 
 ## 0.1.11 — 2026-09-13
 

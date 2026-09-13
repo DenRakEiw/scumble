@@ -446,8 +446,8 @@ const before = pixels();
 // a subtract from the middle: the old box is kept as a superset and made exact by strips
 ed.pushUndo({ kind: "selection" });
 const snap = ed.undo[ed.undo.length - 1];
-out.snap = { kind: snap.kind, canvas: !!snap.canvas, w: snap.w, h: snap.h, bytes: snap.bytes };
-if (snap.kind !== "selection" || !snap.canvas || snap.w >= W || snap.bytes !== snap.w * snap.h * 4) throw new Error("the undo step is not a copy of the extent: " + JSON.stringify(out.snap));
+out.snap = { kind: snap.kind, px: !!snap.px, pw: snap.px && snap.px.width, ph: snap.px && snap.px.height, w: snap.w, h: snap.h, bytes: snap.bytes };
+if (snap.kind !== "selection" || !snap.px || snap.px.width !== snap.w || snap.px.height !== snap.h || snap.w >= W || snap.bytes !== snap.w * snap.h * 4) throw new Error("the undo step is not a copy of the extent: " + JSON.stringify(out.snap));
 s.globalCompositeOperation = "destination-out";
 s.fillRect(400, 250, 300, 400);   // the left half of the ellipse
 s.globalCompositeOperation = "source-over";
@@ -536,8 +536,8 @@ ed.color = "#00ff00"; ed.brushOpacity = 1;
 const undoBefore = ed.undo.length;
 await ed.bucketFill(4000, 1600);
 const step = ed.undo[ed.undo.length - 1];
-out.bucketUndo = { kind: step.kind, w: step.w, h: step.h };
-if (ed.undo.length !== undoBefore + 1 || step.kind !== "layerrect" || step.w >= W) throw new Error("the bucket's undo step is not a rect copy: " + JSON.stringify(out.bucketUndo));
+out.bucketUndo = { kind: step.kind, w: step.w, h: step.h, px: !!step.px };
+if (ed.undo.length !== undoBefore + 1 || step.kind !== "layerrect" || !step.px || step.w >= W) throw new Error("the bucket's undo step is not a rect copy: " + JSON.stringify(out.bucketUndo));
 const lp = layer.canvas.getContext("2d");
 const at = (x, y) => Array.from(lp.getImageData(x, y, 1, 1).data);
 out.filled = { left: at(1000, 1400), right: at(4000, 1600), red: at(2500, 500), white: at(100, 100) };
@@ -631,8 +631,8 @@ for (const erase of [false, true]) {
     const d = same(got, want, 8);
     if (d) throw new Error((erase ? "erase" : "paint") + ": the committed stroke differs from the reference by " + d + " levels");
     const step = ed.undo[ed.undo.length - 1];
-    out[(erase ? "erase" : "paint") + "Undo"] = { kind: step.kind, w: step.w, h: step.h };
-    if (step.kind !== "layerrect" || step.w >= W) throw new Error("the undo step is not a rect copy: " + JSON.stringify(step));
+    out[(erase ? "erase" : "paint") + "Undo"] = { kind: step.kind, w: step.w, h: step.h, px: !!step.px };
+    if (step.kind !== "layerrect" || !step.px || step.px.width !== step.w || step.w >= W) throw new Error("the undo step is not a rect copy: " + JSON.stringify(out[(erase ? "erase" : "paint") + "Undo"]));
     await ed.undoStep();
     const back = layer.canvas.getContext("2d").getImageData(0, 0, W, H).data;
     if (same(back, before.getContext("2d").getImageData(0, 0, W, H).data, 0)) throw new Error("undo did not restore the layer");
