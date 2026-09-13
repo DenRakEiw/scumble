@@ -5,7 +5,8 @@
 //! `docs/PLAN_BCE.md` §1 has the contract:
 //!
 //! - `px_alloc(bytes) -> ptr` and `px_free(ptr, bytes)` over std's allocator (dlmalloc);
-//!   every block is 8-aligned, so a pointer serves `u8`, `u32` and `f32` buffers alike.
+//!   every block is 8-aligned, so a pointer serves `u8`, `u32` and `f32` buffers alike, and
+//!   blocks of 16 KB and more start on a 4 KB page boundary (see `align_for`).
 //! - Every kernel is pure over its arguments: no globals, no allocation inside (the caller
 //!   allocates in and out buffers), so one instance per worker can run any of them. The
 //!   one exception is `deflate_zlib`, whose compressor state miniz_oxide allocates.
@@ -23,7 +24,13 @@ mod flood;
 mod mip;
 mod png;
 
-const ALIGN: usize = 8;
+/// dlmalloc hands out a page start plus its 8-byte header, while a JS ArrayBuffer of tile
+/// size starts on a page. A copy between the two then has its destination 8 bytes past the
+/// source modulo 4096, which is 4K aliasing: measured 56 to 66 µs for 256 KB against 3.5 µs
+/// (Node 24 and Electron 44 alike). Page-aligned blocks avoid it.
+fn align_for(bytes: usize) -> usize {
+    if bytes >= 16 * 1024 { 4096 } else { 8 }
+}
 
 /// Bumped whenever an export changes its signature; `px.js` refuses a module it does not know.
 #[no_mangle]
@@ -44,7 +51,7 @@ pub extern "C" fn px_alloc(bytes: usize) -> *mut u8 {
     if bytes == 0 {
         return core::ptr::null_mut();
     }
-    match Layout::from_size_align(bytes, ALIGN) {
+    match Layout::from_size_align(bytes, align_for(bytes)) {
         Ok(layout) => unsafe { alloc(layout) },
         Err(_) => core::ptr::null_mut(),
     }
@@ -56,7 +63,7 @@ pub unsafe extern "C" fn px_free(ptr: *mut u8, bytes: usize) {
     if ptr.is_null() || bytes == 0 {
         return;
     }
-    dealloc(ptr, Layout::from_size_align_unchecked(bytes, ALIGN));
+    dealloc(ptr, Layout::from_size_align_unchecked(bytes, align_for(bytes)));
 }
 
 // ---- mips -------------------------------------------------------------------------------
