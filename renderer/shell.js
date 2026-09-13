@@ -4,10 +4,14 @@
 import { host, api } from "./editor/host.js";
 import { InpaintEditor } from "./editor/inpaint_canvas.js";
 import { glFiltersAvailable } from "./editor/inpaint_filters_gl.js";
+import { setPixelsOptions } from "./editor/inpaint_pixels.js";
 import { commands } from "./commands.js";
 import * as plugins from "./plugins.js";
 
 const $ = (id) => document.getElementById(id);
+
+// --pixels-copy: toCanvas() hands out copies, the gates' check that nothing writes into one (electron/main/main.js)
+if (window.scumble && window.scumble.pixels) setPixelsOptions({ copy: !!window.scumble.pixels.copy });
 
 // ---- log capture: the renderer's console.warn / error and its uncaught errors go to the
 // main process's log (electron/main/log.js); the originals still print for DevTools ----

@@ -37,7 +37,7 @@ DEFAULT_NODE = r"F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\custom_nodes
 FILES = [
     "inpaint_canvas.js", "inpaint_filters.js", "inpaint_filters_gl.js", "inpaint_curves.js",
     "inpaint_text.js", "inpaint_raster.js", "inpaint_export.js", "inpaint_worker.js",
-    "inpaint_compositor.js", "inpaint_brushes.js",
+    "inpaint_compositor.js", "inpaint_brushes.js", "inpaint_pixels.js",
 ]
 NODE_OWN = ["host.js", "inpaint_node.js", "inpaint_bridge.js"]
 HEADER = "// Generated from DenRakEiw/scumble renderer/editor/{name} by tools/build_node.py. Do not edit here: edit it in the app repo and build.\n"

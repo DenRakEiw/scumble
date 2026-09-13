@@ -157,6 +157,13 @@ function createWindow() {
             // runs and helpers keep going while another window is in front; without this,
             // canvas.toBlob and timers in a hidden window are throttled to one per second
             backgroundThrottling: false,
+            // dev builds run the editor's pixel access strict (docs/PLAN_BCE.md C1): the old
+            // layer.canvas / editor.selection names throw instead of warning. SCUMBLE_STRICT=0
+            // turns it off, --pixels-copy makes toCanvas() hand out copies (the gates' write check)
+            additionalArguments: [
+                ...(!app.isPackaged && process.env.SCUMBLE_STRICT !== "0" ? ["--scumble-strict"] : []),
+                ...(process.argv.includes("--pixels-copy") ? ["--scumble-pixels-copy"] : []),
+            ],
         },
     });
     if (saved.maximized && !headless) win.maximize();

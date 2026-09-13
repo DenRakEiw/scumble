@@ -3,6 +3,8 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.12 — unreleased
+
 ## 0.1.11 — 2026-09-13
 
 - **The editor is built from the Scumble repository now** (this part changes nothing you
