@@ -227,7 +227,7 @@ export class PxArena {
     // buffer and a block 8 bytes past a page start hits 4K aliasing (16x slower copies)
     take(bytes, align = bytes >= 16 * 1024 ? 4096 : 8) {
         if (!(bytes > 0)) return 0;
-        this.jobBytes += roundUp(bytes, 8);
+        this.jobBytes += roundUp(bytes, align) + align;   // room for the padding in front, too
         for (const c of this.chunks) {
             const at = roundUp(c.used, align);
             if (at + bytes <= c.size) {
