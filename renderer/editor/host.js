@@ -1447,7 +1447,7 @@ export const host = {
             for (let i = 0; i < mask.length; i++) { if (clip && !clip[i]) mask[i] = 0; count += mask[i]; }
             if (!count) { editor.setStatus("SAM2 found nothing at this spot. Use the brush or lasso here."); return; }
             const x = Math.floor(ix), y = Math.floor(iy);
-            const already = editor.selection.getContext("2d").getImageData(x, y, 1, 1).data[3] > 0;
+            const already = editor.sel.readRect(x, y, 1, 1).data[3] > 0;
             const subtract = p.alt ? true : (p.shift ? false : already);
             editor.pushUndo({ kind: "selection" });
             const shape = document.createElement("canvas");
@@ -1457,10 +1457,11 @@ export const host = {
             const d = im.data;
             for (let i = 0, j = 0; i < mask.length; i++, j += 4) if (mask[i]) { d[j] = 255; d[j + 3] = 255; }
             sctx.putImageData(im, 0, 0);
-            const ctx = editor.selection.getContext("2d");
-            ctx.globalCompositeOperation = subtract ? "destination-out" : "source-over";
-            ctx.drawImage(shape, 0, 0);
-            ctx.globalCompositeOperation = "source-over";
+            // the shape is image-sized: the whole selection (null)
+            editor.sel.drawInto(null, (ctx) => {
+                ctx.globalCompositeOperation = subtract ? "destination-out" : "source-over";
+                ctx.drawImage(shape, 0, 0);
+            });
             editor.markSelectionChanged();
             editor.draw();
             editor.setStatus(`${subtract ? "Removed" : "Added"} what SAM2 sees at this point (${Math.round(100 * count / (W * H))}% of the image, score ${score.toFixed(2)}).`);

@@ -154,9 +154,7 @@ const out = {};
 await run("select_rect", { x: 100, y: 100, w: 300, h: 200, doc: window.__t });
 out.before = !!ed.getBounds();
 // a click inside an existing selection with the rectangle tool: selmove, released without moving
-const orig = document.createElement("canvas");
-orig.width = ed.width; orig.height = ed.height;
-orig.getContext("2d").drawImage(ed.selection, 0, 0);
+const orig = ed.sel.clone();   // the gesture keeps the outline as pixels (C1 step d)
 ed.pointer = { kind: "selmove", start: [200, 150], orig, origBounds: ed.getBounds() };
 ed.onPointerUp({ pointerId: 1 });
 out.afterClickInside = !!ed.getBounds();

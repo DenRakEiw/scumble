@@ -59,7 +59,12 @@ function fitSpanToMultiple(a0, a1, limit, m) {
 function maskOf(w, h, fill = 0) { const data = new Float32Array(w * h); if (fill) data.fill(fill); return { data, w, h }; }
 
 function maskFromCanvasAlpha(canvas, x0, y0, w, h) {
-    const d = canvas.getContext("2d").getImageData(x0, y0, w, h).data;
+    return maskFromAlpha(canvas.getContext("2d").getImageData(x0, y0, w, h));
+}
+
+/** The alpha channel of ImageData (a readRect of the selection, say) as a 0..1 mask. */
+function maskFromAlpha(img) {
+    const w = img.width, h = img.height, d = img.data;
     const m = maskOf(w, h);
     for (let i = 0, j = 3; i < w * h; i++, j += 4) m.data[i] = d[j] / 255;
     return m;
@@ -322,7 +327,7 @@ export function prepareCrop(editor, params, limits) {
     const fixedSize = Math.max(0, Math.round(+params.target_size || 0));
 
     const base = editor.flattenToCanvas({ forRun: true });
-    const sel = maskFromCanvasAlpha(editor.selection, 0, 0, width, height);
+    const sel = maskFromAlpha(editor.sel.readRect(0, 0, width, height));
     const bb0 = selectionBbox(sel, 0);
     const hasSelection = bb0.has;
     let { pad, grow, feather, blend } = autoSelectionParams(bb0.x1 - bb0.x0, bb0.y1 - bb0.y0, strength);

@@ -136,7 +136,7 @@ export class Document {
         const b = bounds(this.editor);
         if (!b) return null;
         const W = this.width, H = this.height;
-        const d = this.editor.selection.getContext("2d").getImageData(0, 0, W, H).data;
+        const d = this.editor.sel.readRect(0, 0, W, H).data;
         const mask = new Uint8Array(W * H);
         for (let i = 0, j = 3; i < mask.length; i++, j += 4) mask[i] = d[j] > 127 ? 1 : 0;
         return { mask, bounds: b, width: W, height: H };
