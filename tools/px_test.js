@@ -102,6 +102,18 @@ function randomRGBA(w, h, seed, { opaque = false } = {}) {
     return d;
 }
 
+/** One row of pixels with real partial alpha (20 % clear, 20 % opaque, the rest anything) and flat 16 px runs of 0, 255 and 128 alpha. */
+function pixelRow(n, seed, { opaque = false } = {}) {
+    const r = rng(seed), d = new Uint8Array(n * 4);
+    for (let i = 0; i < d.length; i += 4) {
+        d[i] = r() * 256; d[i + 1] = r() * 256; d[i + 2] = r() * 256;
+        const k = r();
+        d[i + 3] = opaque ? 255 : k < 0.2 ? 0 : k < 0.4 ? 255 : r() * 256;
+    }
+    if (!opaque) for (let p = 0, k = 0; p + 16 <= n; p += 64, k++) for (let q = p; q < p + 16; q++) d[q * 4 + 3] = [0, 255, 128][k % 3];
+    return d;
+}
+
 function randomMask(n, seed) {
     const r = rng(seed), m = new Uint8Array(n);
     for (let i = 0; i < n; i++) { const k = r(); m[i] = k < 0.3 ? 0 : k < 0.6 ? 255 : r() * 256; }
@@ -158,6 +170,14 @@ async function mipCases(px, label, js) {
         }
     }
     check(`${label} mip_half equals the JS twin`, ok, detail);
+    {
+        // the byte path (a buffer that does not start on a word boundary) and ImageData-style input
+        const src = randomRGBA(256, 256, 91), words = js.mipHalf(src, 256, 256);
+        const shifted = new Uint8Array(src.length + 1); shifted.set(src, 1);
+        const bytes = js.mipHalf(shifted.subarray(1), 256, 256);
+        const clamped = js.mipChain(new Uint8ClampedArray(src.buffer), 256, 5), plain = js.mipChain(src, 256, 5);
+        check(`js mip byte path equals the word path; Uint8ClampedArray input gives the same chain`, eqBytes(words, bytes) && eqBytes(new Uint8Array(clamped.buffer), plain));
+    }
     ok = true; detail = "";
     for (const [size, levels] of [[256, 5], [512, 5], [512, 6], [64, 3]]) {
         const src = randomRGBA(size, size, size + levels);
@@ -234,14 +254,13 @@ async function floodCases(px, label, js, raster) {
 
 async function compositeCases(px, label, js) {
     let ok = true, detail = "";
-    const r = rng(123);
-    for (const pixels of [65536, 7, 16, 1000]) {
-        for (let trial = 0; trial < 12; trial++) {
+    for (const pixels of [65536, 7, 16, 1000, 1003]) {
+        for (let trial = 0; trial < 15; trial++) {
             const n = 1 + (trial % 4);
-            const dst = randomRGBA(pixels, 1, 1000 + trial + pixels, { opaque: trial % 3 === 0 });
+            const dst = pixelRow(pixels, 1000 + trial + pixels, { opaque: trial % 3 === 0 });
             const srcs = [], ops = [], alphas = [], masks = [];
             for (let l = 0; l < n; l++) {
-                srcs.push(randomRGBA(pixels, 1, 2000 + trial * 10 + l + pixels));
+                srcs.push(pixelRow(pixels, 2000 + trial * 10 + l + pixels));
                 ops.push((trial + l) % 5);
                 alphas.push([255, 0, 128, 200, 1][(trial + 2 * l) % 5]);
                 masks.push((trial + l) % 3 === 0 ? null : randomMask(pixels, 3000 + trial * 10 + l));
@@ -251,30 +270,39 @@ async function compositeCases(px, label, js) {
             if (!eqBytes(a, b)) { ok = false; detail = `${pixels}px trial ${trial} ops ${ops} alphas ${alphas} ${firstDiff(a, b)}`; }
         }
     }
-    check(`${label} composite_tile equals the JS twin (5 ops, opacity, masks)`, ok, detail);
-    // against float compositing: source-over of an opaque-ish stack within 2 levels
-    const pixels = 4096, dst = randomRGBA(pixels, 1, 5, { opaque: true }), src = randomRGBA(pixels, 1, 6);
-    const out = js.compositeTile(dst.slice(), [src], [0], [200], null);
-    let worst = 0;
-    for (let p = 0; p < pixels; p++) {
-        const i = p * 4, sa = src[i + 3] / 255 * 200 / 255;
-        for (let c = 0; c < 3; c++) {
-            const f = src[i + c] * sa + dst[i + c] * (1 - sa);
-            worst = Math.max(worst, Math.abs(f - out[i + c]));
+    check(`${label} composite_tile equals the JS twin (5 ops, partial alpha, opacity, masks, tails)`, ok, detail);
+
+    // the same bytes from Uint8ClampedArray inputs (ImageData.data)
+    const clamp = (u) => new Uint8ClampedArray(u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength));
+    const d0 = pixelRow(4096, 77), s0 = pixelRow(4096, 78), m0 = randomMask(4096, 79);
+    const viaBytes = js.compositeTile(d0.slice(), [s0, s0], [0, 2], [200, 255], [m0, null]);
+    const viaClamped = js.compositeTile(clamp(d0), [clamp(s0), s0], [0, 2], [200, 255], [m0, null]);
+    check(`js composite gives the same bytes for Uint8ClampedArray inputs`, eqBytes(viaBytes, new Uint8Array(viaClamped.buffer)));
+
+    // against float compositing (W3C straight-alpha source-over). Over an opaque destination the
+    // 8-bit premultiplied maths stays within 1.5 levels; over a translucent one the storage error
+    // is divided by the result's alpha, so the bound is per pixel: 2.5 · 255 / alpha + 0.6.
+    let worst = 0, worstRatio = 0, alphaOff = 0, seen = 0;
+    for (const o of [255, 200]) {
+        const dst = pixelRow(8192, 5 + o, { opaque: true }), src = pixelRow(8192, 6 + o);
+        const out = js.compositeTile(dst.slice(), [src], [0], [o], null);
+        for (let p = 0; p < 8192; p++) {
+            const i = p * 4, sa = src[i + 3] / 255 * o / 255;
+            for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(src[i + c] * sa + dst[i + c] * (1 - sa) - out[i + c]));
+        }
+        const dst2 = pixelRow(8192, 7 + o), out2 = js.compositeTile(dst2.slice(), [src], [0], [o], null);
+        for (let p = 0; p < 8192; p++) {
+            const i = p * 4, sa = src[i + 3] / 255 * o / 255, da = dst2[i + 3] / 255, oa = sa + da * (1 - sa);
+            alphaOff = Math.max(alphaOff, Math.abs(oa * 255 - out2[i + 3]));
+            if (oa < 0.5 || da === 1 || da === 0) continue;
+            seen++;
+            const bound = 2.5 * 255 / out2[i + 3] + 0.6;
+            for (let c = 0; c < 3; c++) worstRatio = Math.max(worstRatio, Math.abs((src[i + c] * sa + dst2[i + c] * da * (1 - sa)) / oa - out2[i + c]) / bound);
         }
     }
     check(`js source-over over an opaque tile within 1.5 levels of float maths`, worst <= 1.5, `worst ${worst.toFixed(2)}`);
-    // and over a translucent tile (W3C straight-alpha source-over), where the result is at
-    // least half opaque: 8-bit premultiplied storage costs precision at low alpha, as in Canvas 2D
-    const dst2 = randomRGBA(pixels, 1, 7), out2 = js.compositeTile(dst2.slice(), [src], [0], [200], null);
-    worst = 0;
-    for (let p = 0; p < pixels; p++) {
-        const i = p * 4, sa = src[i + 3] / 255 * 200 / 255, da = dst2[i + 3] / 255, oa = sa + da * (1 - sa);
-        if (Math.abs(oa * 255 - out2[i + 3]) > 1) worst = Math.max(worst, 99);
-        if (oa < 0.5) continue;
-        for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs((src[i + c] * sa + dst2[i + c] * da * (1 - sa)) / oa - out2[i + c]));
-    }
-    check(`js source-over over a translucent tile within 1.5 levels of float maths (alpha within 1)`, worst <= 1.5, `worst ${worst.toFixed(2)}`);
+    check(`js source-over over translucent pixels within 2.5·255/alpha + 0.6 levels, alpha within 1`, worstRatio <= 1 && alphaOff <= 1 && seen > 1000,
+        `worst at ${(worstRatio * 100).toFixed(0)} % of the bound over ${seen} translucent pixels, alpha off by ${alphaOff.toFixed(2)}`);
 }
 
 async function pngCases(px, label, js) {

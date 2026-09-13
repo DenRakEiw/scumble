@@ -231,9 +231,10 @@ mod simd {
                 let a = u32x4_shr(d, 24);
                 if !u32x4_all_true(u32x4_eq(a, byte)) {
                     let h = u32x4_shr(a, 1);
-                    let af = f32x4_convert_u32x4(a);
+                    let af = f32x4_convert_i32x4(a);
                     let div = |c: v128| {
-                        let q = u32x4_trunc_sat_f32x4(f32x4_div(f32x4_convert_u32x4(u32x4_add(u32x4_mul(c, c255), h)), af));
+                        // values stay below 2^16: the signed conversions are exact
+                        let q = i32x4_trunc_sat_f32x4(f32x4_div(f32x4_convert_i32x4(i32x4_add(i32x4_mul(c, c255), h)), af));
                         u32x4_min(q, byte)
                     };
                     let r = div(v128_and(d, byte));

@@ -16,13 +16,65 @@ export const OPS = Object.freeze({
     copy: 4,
 });
 
+// ---- element kinds and byte order --------------------------------------------------------------
+
+// A kernel that sees both Uint8ClampedArray (ImageData.data) and Uint8Array reads through
+// polymorphic element access and runs at half speed; every entry point views its byte
+// inputs as Uint8Array first, which copies nothing.
+const bytesOf = (a) => (a instanceof Uint8Array ? a : new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
+
+const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
 // ---- mips ------------------------------------------------------------------------------------
 
 /**
  * RGBA8 `src` (sw × sh, straight alpha) halved into `dst` ((sw >> 1) × (sh >> 1)): a 2×2
  * box weighted by alpha, colour 0 where all four samples are transparent.
  */
-export function mipHalf(src, sw, sh, dst = new Uint8Array((sw >> 1) * (sh >> 1) * 4)) {
+export function mipHalf(src, sw, sh, dst = null) {
+    src = bytesOf(src);
+    dst = dst ? bytesOf(dst) : new Uint8Array((sw >> 1) * (sh >> 1) * 4);
+    if (LITTLE && src.byteOffset % 4 === 0 && dst.byteOffset % 4 === 0) {
+        mipHalfWords(new Uint32Array(src.buffer, src.byteOffset, src.byteLength >> 2), 0, sw, sh,
+            new Uint32Array(dst.buffer, dst.byteOffset, dst.byteLength >> 2), 0);
+    } else {
+        mipHalfBytes(src, sw, sh, dst);
+    }
+    return dst;
+}
+
+/**
+ * The same over RGBA words (little-endian: R in the low byte). `si` / `di` are word offsets.
+ * Opaque blocks average R and B in one word addition: each field sum stays below 2^10, so
+ * nothing carries into the next field.
+ */
+function mipHalfWords(s, si, sw, sh, d, di) {
+    const ow = sw >> 1, oh = sh >> 1;
+    let o = di;
+    for (let y = 0; y < oh; y++) {
+        let i = si + 2 * y * sw, j = i + sw;
+        for (let x = 0; x < ow; x++, i += 2, j += 2, o++) {
+            const w0 = s[i], w1 = s[i + 1], w2 = s[j], w3 = s[j + 1];
+            if ((w0 & w1 & w2 & w3) >>> 24 === 255) {
+                const rb = ((w0 & 0xFF00FF) + (w1 & 0xFF00FF) + (w2 & 0xFF00FF) + (w3 & 0xFF00FF) + 0x20002) >>> 2;
+                const g = (((w0 >>> 8) & 255) + ((w1 >>> 8) & 255) + ((w2 >>> 8) & 255) + ((w3 >>> 8) & 255) + 2) >>> 2;
+                d[o] = (rb & 0xFF00FF) | (g << 8) | 0xFF000000;
+            } else if ((w0 | w1 | w2 | w3) >>> 24 === 0) {
+                d[o] = 0;
+            } else {
+                const a0 = w0 >>> 24, a1 = w1 >>> 24, a2 = w2 >>> 24, a3 = w3 >>> 24;
+                const a = a0 + a1 + a2 + a3, h = a >> 1;
+                const r = ((((w0 & 255) * a0 + (w1 & 255) * a1 + (w2 & 255) * a2 + (w3 & 255) * a3) + h) / a) | 0;
+                const g = (((((w0 >>> 8) & 255) * a0 + ((w1 >>> 8) & 255) * a1 + ((w2 >>> 8) & 255) * a2 + ((w3 >>> 8) & 255) * a3) + h) / a) | 0;
+                const b = (((((w0 >>> 16) & 255) * a0 + ((w1 >>> 16) & 255) * a1 + ((w2 >>> 16) & 255) * a2 + ((w3 >>> 16) & 255) * a3) + h) / a) | 0;
+                d[o] = r | (g << 8) | (b << 16) | (((a + 2) >> 2) << 24);
+            }
+        }
+    }
+}
+
+/** The byte version, for big-endian hosts and buffers that do not start on a word boundary. */
+function mipHalfBytes(src, sw, sh, dst) {
     const ow = sw >> 1, oh = sh >> 1, stride = sw * 4;
     let o = 0;
     for (let y = 0; y < oh; y++) {
@@ -46,7 +98,6 @@ export function mipHalf(src, sw, sh, dst = new Uint8Array((sw >> 1) * (sh >> 1) 
             }
         }
     }
-    return dst;
 }
 
 export function mipChainBytes(size, levels) {
@@ -56,13 +107,26 @@ export function mipChainBytes(size, levels) {
 }
 
 /** The `levels` mips of a square tile, largest first, one after the other in `out`. */
-export function mipChain(src, size, levels, out = new Uint8Array(mipChainBytes(size, levels))) {
+export function mipChain(src, size, levels, out = null) {
+    src = bytesOf(src);
+    out = out ? bytesOf(out) : new Uint8Array(mipChainBytes(size, levels));
+    if (LITTLE && src.byteOffset % 4 === 0 && out.byteOffset % 4 === 0) {
+        const s32 = new Uint32Array(src.buffer, src.byteOffset, src.byteLength >> 2);
+        const o32 = new Uint32Array(out.buffer, out.byteOffset, out.byteLength >> 2);
+        let s = size, from = s32, fromAt = 0, at = 0;
+        for (let l = 0; l < levels && s >= 2; l++) {
+            mipHalfWords(from, fromAt, s, s, o32, at);
+            from = o32; fromAt = at;
+            at += (s >> 1) * (s >> 1);
+            s >>= 1;
+        }
+        return out;
+    }
     let s = size, offset = 0, prev = src;
-    for (let l = 0; l < levels; l++) {
+    for (let l = 0; l < levels && s >= 2; l++) {
         const n = (s >> 1) * (s >> 1) * 4;
-        if (!n) break;
         const dst = out.subarray(offset, offset + n);
-        mipHalf(prev, s, s, dst);
+        mipHalfBytes(prev, s, s, dst);
         prev = dst;
         offset += n;
         s >>= 1;
@@ -78,17 +142,20 @@ const FAR = 1e9;
 /** Scratch arrays for `distTransform`, reusable across calls of the same or smaller size. */
 export function distScratch(w, h) {
     const n = Math.max(w, h);
-    return { n, w, f: new Float32Array(n), d: new Float32Array(n), v: new Int32Array(n), z: new Float32Array(n + 1), col: new Float32Array(w) };
+    return { n, w, f: new Float32Array(n), g: new Float64Array(n), v: new Int32Array(n), z: new Float32Array(n + 1), col: new Float32Array(w) };
 }
 
 /**
  * Squared distance of every pixel to the nearest non-zero byte of `feature` (w × h), 1e20
  * where there is none. Columns by two sweeps, rows by Felzenszwalb's lower envelope with
- * the number types of `distanceTransform` in inpaint_raster.js.
+ * the number types of `distanceTransform` in inpaint_raster.js (f32 storage, f64
+ * intersections; `g[q] = f[q] + q²` is computed once per row instead of per comparison,
+ * which gives the same doubles).
  */
 export function distTransform(feature, W, H, out = new Float32Array(W * H), scratch = null) {
+    feature = bytesOf(feature);
     if (!scratch || scratch.n < Math.max(W, H) || scratch.w < W) scratch = distScratch(W, H);
-    const { f, d, v, z, col } = scratch;
+    const { f, g, v, z, col } = scratch;
     col.fill(FAR, 0, W);
     for (let y = 0, row = 0; y < H; y++, row += W) {
         for (let x = 0; x < W; x++) {
@@ -108,17 +175,17 @@ export function distTransform(feature, W, H, out = new Float32Array(W * H), scra
         }
     }
     for (let y = 0, row = 0; y < H; y++, row += W) {
-        for (let x = 0; x < W; x++) f[x] = out[row + x];
+        for (let x = 0; x < W; x++) { const fx = out[row + x]; f[x] = fx; g[x] = fx + x * x; }
         let k = 0;
         v[0] = 0; z[0] = -INF; z[1] = INF;
         for (let q = 1; q < W; q++) {
-            const fq = f[q] + q * q;
+            const gq = g[q];
             let vk = v[k];
-            let s = (fq - (f[vk] + vk * vk)) / (2 * q - 2 * vk);
+            let s = (gq - g[vk]) / (2 * q - 2 * vk);
             while (s <= z[k]) {
                 k--;
                 vk = v[k];
-                s = (fq - (f[vk] + vk * vk)) / (2 * q - 2 * vk);
+                s = (gq - g[vk]) / (2 * q - 2 * vk);
             }
             k++;
             v[k] = q; z[k] = s; z[k + 1] = INF;
@@ -127,14 +194,15 @@ export function distTransform(feature, W, H, out = new Float32Array(W * H), scra
         for (let q = 0; q < W; q++) {
             while (z[k + 1] < q) k++;
             const vk = v[k];
-            d[q] = (q - vk) * (q - vk) + f[vk];
+            out[row + q] = (q - vk) * (q - vk) + f[vk];
         }
-        for (let x = 0; x < W; x++) out[row + x] = d[x];
     }
     return out;
 }
 
 // ---- flood -------------------------------------------------------------------------------------
+
+let floodStack = new Int32Array(4096);   // grown on demand and kept, like the caller's stack of the Rust kernel
 
 /**
  * Pixels similar to the seed (largest channel difference, alpha included, ≤ tolerance) as
@@ -142,6 +210,7 @@ export function distTransform(feature, W, H, out = new Float32Array(W * H), scra
  * The same set as `floodMask` in inpaint_raster.js. `out.count` is the pixels set.
  */
 export function flood(data, W, H, sx, sy, tolerance = 32, contiguous = true, out = new Uint8Array(W * H)) {
+    data = bytesOf(data);
     out.fill(0, 0, W * H);
     sx = Math.max(0, Math.min(W - 1, sx | 0));
     sy = Math.max(0, Math.min(H - 1, sy | 0));
@@ -151,7 +220,7 @@ export function flood(data, W, H, sx, sy, tolerance = 32, contiguous = true, out
     let count = 0;
     if (!contiguous) {
         for (let p = 0, i = 0, n = W * H; p < n; p++, i += 4) {
-            if (Math.abs(data[i] - r0) <= tol && Math.abs(data[i + 1] - g0) <= tol && Math.abs(data[i + 2] - b0) <= tol && Math.abs(data[i + 3] - a0) <= tol) {
+            if (similarAt(data, i, r0, g0, b0, a0, tol)) {
                 out[p] = 1;
                 count++;
             }
@@ -159,7 +228,7 @@ export function flood(data, W, H, sx, sy, tolerance = 32, contiguous = true, out
         out.count = count;
         return out;
     }
-    let stack = new Int32Array(Math.max(4096, (W * H) >> 3));
+    let stack = floodStack;
     let sp = 0;
     stack[sp++] = sx; stack[sp++] = sy;
     while (sp > 0) {
@@ -185,7 +254,7 @@ export function flood(data, W, H, sx, sy, tolerance = 32, contiguous = true, out
                     if (sp + 2 > stack.length) {
                         const grown = new Int32Array(stack.length * 2);
                         grown.set(stack);
-                        stack = grown;
+                        stack = floodStack = grown;
                     }
                     stack[sp++] = i; stack[sp++] = ny;
                     inSpan = true;
@@ -211,103 +280,169 @@ function similarAt(d, i, r0, g0, b0, a0, tol) {
  * `srcs.length` straight-alpha RGBA8 sources over the tile `dst` (in place). `ops` are OPS
  * numbers, `alphas` opacities 0..255, `masks` one byte of coverage per pixel or null.
  * Premultiplied 8-bit maths between the premultiply at the start and the unpremultiply at
- * the end; the formulas are in crates/px/src/composite.rs.
+ * the end; the formulas are in crates/px/src/composite.rs. The operator is chosen once per
+ * layer, not per pixel, and the common case (no mask, full opacity) has loops of its own.
  */
 export function compositeTile(dst, srcs, ops, alphas, masks = null) {
-    const px = dst.length >> 2;
+    const d = bytesOf(dst);
+    const px = d.length >> 2;
     for (let i = 0, n = px * 4; i < n; i += 4) {
-        const a = dst[i + 3];
+        const a = d[i + 3];
         if (a !== 255) {
-            let t = dst[i] * a + 128; dst[i] = (t + (t >> 8)) >> 8;
-            t = dst[i + 1] * a + 128; dst[i + 1] = (t + (t >> 8)) >> 8;
-            t = dst[i + 2] * a + 128; dst[i + 2] = (t + (t >> 8)) >> 8;
+            let t = d[i] * a + 128; d[i] = (t + (t >> 8)) >> 8;
+            t = d[i + 1] * a + 128; d[i + 1] = (t + (t >> 8)) >> 8;
+            t = d[i + 2] * a + 128; d[i + 2] = (t + (t >> 8)) >> 8;
         }
     }
     for (let l = 0; l < srcs.length; l++) {
-        compositeLayer(dst, srcs[l], ops[l] | 0, alphas[l] | 0, masks ? masks[l] : null, px);
+        const src = bytesOf(srcs[l]), op = ops[l] | 0, o = alphas[l] | 0;
+        const mask = masks && masks[l] ? bytesOf(masks[l]) : null;
+        if (!mask && o === 255 && op === 0) overFull(d, src, px);
+        else if (!mask && o === 255 && op === 1) eraseFull(d, src, px);
+        else if (op === 0) over(d, src, o, mask, px);
+        else if (op === 1) erase(d, src, o, mask, px);
+        else if (op === 2) atop(d, src, o, mask, px);
+        else if (op === 3) keepIn(d, src, o, mask, px);
+        else copyOp(d, src, o, mask, px);
     }
     for (let i = 0, n = px * 4; i < n; i += 4) {
-        const a = dst[i + 3];
+        const a = d[i + 3];
         if (a === 0) {
-            dst[i] = 0; dst[i + 1] = 0; dst[i + 2] = 0;
+            d[i] = 0; d[i + 1] = 0; d[i + 2] = 0;
         } else if (a !== 255) {
             const h = a >> 1;
-            let c = ((dst[i] * 255 + h) / a) | 0; dst[i] = c > 255 ? 255 : c;
-            c = ((dst[i + 1] * 255 + h) / a) | 0; dst[i + 1] = c > 255 ? 255 : c;
-            c = ((dst[i + 2] * 255 + h) / a) | 0; dst[i + 2] = c > 255 ? 255 : c;
+            let c = ((d[i] * 255 + h) / a) | 0; d[i] = c > 255 ? 255 : c;
+            c = ((d[i + 1] * 255 + h) / a) | 0; d[i + 1] = c > 255 ? 255 : c;
+            c = ((d[i + 2] * 255 + h) / a) | 0; d[i + 2] = c > 255 ? 255 : c;
         }
     }
     return dst;
 }
 
-function compositeLayer(dst, src, op, o, mask, px) {
+// mul255(x, y) = (t + (t >> 8)) >> 8 with t = x·y + 128, written out in every loop below
+
+function overFull(d, s, px) {
+    for (let i = 0, n = px * 4; i < n; i += 4) {
+        const sa = s[i + 3];
+        if (sa === 0) continue;
+        if (sa === 255) { d[i] = s[i]; d[i + 1] = s[i + 1]; d[i + 2] = s[i + 2]; d[i + 3] = 255; continue; }
+        const inv = 255 - sa;
+        let t = s[i] * sa + 128, u = d[i] * inv + 128;
+        d[i] = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        t = s[i + 1] * sa + 128; u = d[i + 1] * inv + 128;
+        d[i + 1] = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        t = s[i + 2] * sa + 128; u = d[i + 2] * inv + 128;
+        d[i + 2] = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        u = d[i + 3] * inv + 128;
+        d[i + 3] = sa + ((u + (u >> 8)) >> 8);
+    }
+}
+
+function eraseFull(d, s, px) {
+    for (let i = 0, n = px * 4; i < n; i += 4) {
+        const sa = s[i + 3];
+        if (sa === 0) continue;
+        const inv = 255 - sa;
+        let u = d[i] * inv + 128; d[i] = (u + (u >> 8)) >> 8;
+        u = d[i + 1] * inv + 128; d[i + 1] = (u + (u >> 8)) >> 8;
+        u = d[i + 2] * inv + 128; d[i + 2] = (u + (u >> 8)) >> 8;
+        u = d[i + 3] * inv + 128; d[i + 3] = (u + (u >> 8)) >> 8;
+    }
+}
+
+/** Blend the result r (premultiplied, 4 channels) with the old pixel by coverage m and store it. */
+function lerpStore(d, i, r, g, b, a, m) {
+    if (m !== 255) {
+        const im = 255 - m;
+        let t = r * m + 128, u = d[i] * im + 128; r = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        t = g * m + 128; u = d[i + 1] * im + 128; g = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        t = b * m + 128; u = d[i + 2] * im + 128; b = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        t = a * m + 128; u = d[i + 3] * im + 128; a = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+    }
+    d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = a;
+}
+
+function effectiveAlpha(sa, o) {
+    if (o === 255) return sa;
+    const t = sa * o + 128;
+    return (t + (t >> 8)) >> 8;
+}
+
+function over(d, s, o, mask, px) {
     for (let p = 0, i = 0; p < px; p++, i += 4) {
         const m = mask ? mask[p] : 255;
         if (m === 0) continue;
-        let sa = src[i + 3];
-        if (o !== 255) { const t = sa * o + 128; sa = (t + (t >> 8)) >> 8; }
+        const sa = effectiveAlpha(s[i + 3], o);
+        if (sa === 0) continue;
+        if (sa === 255 && m === 255) { d[i] = s[i]; d[i + 1] = s[i + 1]; d[i + 2] = s[i + 2]; d[i + 3] = 255; continue; }
         const inv = 255 - sa;
-        const dr = dst[i], dg = dst[i + 1], db = dst[i + 2], da = dst[i + 3];
-        let r, g, b, a, t;
-        switch (op) {
-            case 0: { // source-over
-                if (sa === 0) continue;
-                if (sa === 255 && m === 255) {
-                    dst[i] = src[i]; dst[i + 1] = src[i + 1]; dst[i + 2] = src[i + 2]; dst[i + 3] = 255;
-                    continue;
-                }
-                t = src[i] * sa + 128; r = (t + (t >> 8)) >> 8;
-                t = dr * inv + 128; r += (t + (t >> 8)) >> 8;
-                t = src[i + 1] * sa + 128; g = (t + (t >> 8)) >> 8;
-                t = dg * inv + 128; g += (t + (t >> 8)) >> 8;
-                t = src[i + 2] * sa + 128; b = (t + (t >> 8)) >> 8;
-                t = db * inv + 128; b += (t + (t >> 8)) >> 8;
-                t = da * inv + 128; a = sa + ((t + (t >> 8)) >> 8);
-                break;
-            }
-            case 1: { // destination-out
-                if (sa === 0) continue;
-                t = dr * inv + 128; r = (t + (t >> 8)) >> 8;
-                t = dg * inv + 128; g = (t + (t >> 8)) >> 8;
-                t = db * inv + 128; b = (t + (t >> 8)) >> 8;
-                t = da * inv + 128; a = (t + (t >> 8)) >> 8;
-                break;
-            }
-            case 2: { // source-atop
-                if (sa === 0) continue;
-                t = src[i] * sa + 128; t = ((t + (t >> 8)) >> 8) * da + 128; r = (t + (t >> 8)) >> 8;
-                t = dr * inv + 128; r += (t + (t >> 8)) >> 8;
-                t = src[i + 1] * sa + 128; t = ((t + (t >> 8)) >> 8) * da + 128; g = (t + (t >> 8)) >> 8;
-                t = dg * inv + 128; g += (t + (t >> 8)) >> 8;
-                t = src[i + 2] * sa + 128; t = ((t + (t >> 8)) >> 8) * da + 128; b = (t + (t >> 8)) >> 8;
-                t = db * inv + 128; b += (t + (t >> 8)) >> 8;
-                t = sa * da + 128; a = (t + (t >> 8)) >> 8;
-                t = da * inv + 128; a += (t + (t >> 8)) >> 8;
-                break;
-            }
-            case 3: { // destination-in
-                if (sa === 255) continue;
-                t = dr * sa + 128; r = (t + (t >> 8)) >> 8;
-                t = dg * sa + 128; g = (t + (t >> 8)) >> 8;
-                t = db * sa + 128; b = (t + (t >> 8)) >> 8;
-                t = da * sa + 128; a = (t + (t >> 8)) >> 8;
-                break;
-            }
-            default: { // copy
-                t = src[i] * sa + 128; r = (t + (t >> 8)) >> 8;
-                t = src[i + 1] * sa + 128; g = (t + (t >> 8)) >> 8;
-                t = src[i + 2] * sa + 128; b = (t + (t >> 8)) >> 8;
-                a = sa;
-            }
-        }
-        if (m !== 255) {
-            const im = 255 - m;
-            t = r * m + 128; r = (t + (t >> 8)) >> 8; t = dr * im + 128; r += (t + (t >> 8)) >> 8;
-            t = g * m + 128; g = (t + (t >> 8)) >> 8; t = dg * im + 128; g += (t + (t >> 8)) >> 8;
-            t = b * m + 128; b = (t + (t >> 8)) >> 8; t = db * im + 128; b += (t + (t >> 8)) >> 8;
-            t = a * m + 128; a = (t + (t >> 8)) >> 8; t = da * im + 128; a += (t + (t >> 8)) >> 8;
-        }
-        dst[i] = r; dst[i + 1] = g; dst[i + 2] = b; dst[i + 3] = a;
+        let t = s[i] * sa + 128, u = d[i] * inv + 128;
+        const r = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        t = s[i + 1] * sa + 128; u = d[i + 1] * inv + 128;
+        const g = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        t = s[i + 2] * sa + 128; u = d[i + 2] * inv + 128;
+        const b = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        u = d[i + 3] * inv + 128;
+        lerpStore(d, i, r, g, b, sa + ((u + (u >> 8)) >> 8), m);
+    }
+}
+
+function erase(d, s, o, mask, px) {
+    for (let p = 0, i = 0; p < px; p++, i += 4) {
+        const m = mask ? mask[p] : 255;
+        if (m === 0) continue;
+        const sa = effectiveAlpha(s[i + 3], o);
+        if (sa === 0) continue;
+        const inv = 255 - sa;
+        let u = d[i] * inv + 128; const r = (u + (u >> 8)) >> 8;
+        u = d[i + 1] * inv + 128; const g = (u + (u >> 8)) >> 8;
+        u = d[i + 2] * inv + 128; const b = (u + (u >> 8)) >> 8;
+        u = d[i + 3] * inv + 128;
+        lerpStore(d, i, r, g, b, (u + (u >> 8)) >> 8, m);
+    }
+}
+
+function atop(d, s, o, mask, px) {
+    for (let p = 0, i = 0; p < px; p++, i += 4) {
+        const m = mask ? mask[p] : 255;
+        if (m === 0) continue;
+        const sa = effectiveAlpha(s[i + 3], o);
+        if (sa === 0) continue;
+        const inv = 255 - sa, da = d[i + 3];
+        let t = s[i] * sa + 128; t = ((t + (t >> 8)) >> 8) * da + 128; let u = d[i] * inv + 128;
+        const r = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        t = s[i + 1] * sa + 128; t = ((t + (t >> 8)) >> 8) * da + 128; u = d[i + 1] * inv + 128;
+        const g = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        t = s[i + 2] * sa + 128; t = ((t + (t >> 8)) >> 8) * da + 128; u = d[i + 2] * inv + 128;
+        const b = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+        t = sa * da + 128; u = da * inv + 128;
+        lerpStore(d, i, r, g, b, ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8), m);
+    }
+}
+
+function keepIn(d, s, o, mask, px) {
+    for (let p = 0, i = 0; p < px; p++, i += 4) {
+        const m = mask ? mask[p] : 255;
+        if (m === 0) continue;
+        const sa = effectiveAlpha(s[i + 3], o);
+        if (sa === 255) continue;
+        let t = d[i] * sa + 128; const r = (t + (t >> 8)) >> 8;
+        t = d[i + 1] * sa + 128; const g = (t + (t >> 8)) >> 8;
+        t = d[i + 2] * sa + 128; const b = (t + (t >> 8)) >> 8;
+        t = d[i + 3] * sa + 128;
+        lerpStore(d, i, r, g, b, (t + (t >> 8)) >> 8, m);
+    }
+}
+
+function copyOp(d, s, o, mask, px) {
+    for (let p = 0, i = 0; p < px; p++, i += 4) {
+        const m = mask ? mask[p] : 255;
+        if (m === 0) continue;
+        const sa = effectiveAlpha(s[i + 3], o);
+        let t = s[i] * sa + 128; const r = (t + (t >> 8)) >> 8;
+        t = s[i + 1] * sa + 128; const g = (t + (t >> 8)) >> 8;
+        t = s[i + 2] * sa + 128; const b = (t + (t >> 8)) >> 8;
+        lerpStore(d, i, r, g, b, sa, m);
     }
 }
 
@@ -320,6 +455,8 @@ function compositeLayer(dst, src, op, o, mask, px) {
  * row above the first one, or null for zeros.
  */
 export function pngFilterRows(rgba, w, rows, prev = null, out = new Uint8Array(rows * (1 + 4 * w))) {
+    rgba = bytesOf(rgba);
+    if (prev) prev = bytesOf(prev);
     const n = w * 4;
     const zero = prev ? null : new Uint8Array(n);
     for (let y = 0; y < rows; y++) {

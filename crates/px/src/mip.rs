@@ -92,35 +92,15 @@ mod simd {
 mod simd {
     use core::arch::wasm32::*;
 
-    /// Every alpha byte of the first `px` pixels of both rows is 255.
-    #[inline(always)]
-    unsafe fn opaque(r0: &[u8], r1: &[u8], px: usize) -> bool {
-        let mask = u32x4_splat(0xFF00_0000);
-        let mut i = 0;
-        while i + 4 <= px {
-            let a = v128_and(v128_load(r0.as_ptr().add(i * 4) as *const v128), mask);
-            let b = v128_and(v128_load(r1.as_ptr().add(i * 4) as *const v128), mask);
-            if !u32x4_all_true(u32x4_eq(v128_and(a, b), mask)) {
-                return false;
-            }
-            i += 4;
-        }
-        while i < px {
-            if r0[i * 4 + 3] != 255 || r1[i * 4 + 3] != 255 {
-                return false;
-            }
-            i += 1;
-        }
-        true
-    }
-
     #[inline(always)]
     unsafe fn store8(out: *mut u8, v: v128) {
         (out as *mut u64).write_unaligned(i64x2_extract_lane::<0>(v) as u64);
     }
 
-    /// Two output pixels per step from 16 bytes of each source row. Returns how many output
-    /// pixels were written (an even number; the scalar loop does the rest).
+    /// Two output pixels per step from 16 bytes of each source row, each step classified on
+    /// its own: all eight samples transparent (zeros), all opaque (the plain average), or
+    /// mixed (the weighted division). Returns how many output pixels were written (an even
+    /// number; the scalar loop does the rest).
     #[inline(always)]
     pub fn row(r0: &[u8], r1: &[u8], orow: &mut [u8], ow: usize) -> usize {
         let n = ow & !1;
@@ -129,52 +109,52 @@ mod simd {
         }
         unsafe {
             let (p0, p1, po) = (r0.as_ptr(), r1.as_ptr(), orow.as_mut_ptr());
+            let amask = u32x4_splat(0xFF00_0000);
+            let two16 = u16x8_splat(2);
+            let lo_keep = u16x8(0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0);
+            let hi_ones = u16x8(0, 0, 0, 0, 1, 1, 1, 1);
+            let two = i32x4_splat(2);
             let mut x = 0;
-            if opaque(r0, r1, n * 2) {
-                let two = u16x8_splat(2);
-                while x < n {
-                    let a = v128_load(p0.add(x * 8) as *const v128);
-                    let b = v128_load(p1.add(x * 8) as *const v128);
-                    // RGBA×4 -> R0..R3 G0..G3 B0..B3 A0..A3
-                    let pa = u8x16_shuffle::<0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15>(a, a);
-                    let pb = u8x16_shuffle::<0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15>(b, b);
-                    // [R0+R1, R2+R3, G0+G1, G2+G3, B.., B.., A.., A..]
-                    let s = u16x8_add(u16x8_add(u16x8_extadd_pairwise_u8x16(pa), u16x8_extadd_pairwise_u8x16(pb)), two);
+            while x < n {
+                let a = v128_load(p0.add(x * 8) as *const v128);
+                let b = v128_load(p1.add(x * 8) as *const v128);
+                if !v128_any_true(v128_and(v128_or(a, b), amask)) {
+                    (po.add(x * 4) as *mut u64).write_unaligned(0);
+                    x += 2;
+                    continue;
+                }
+                // RGBA×4 -> R0..R3 G0..G3 B0..B3 A0..A3
+                let pa = u8x16_shuffle::<0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15>(a, a);
+                let pb = u8x16_shuffle::<0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15>(b, b);
+                if u32x4_all_true(u32x4_eq(v128_and(v128_and(a, b), amask), amask)) {
+                    // [R0+R1, R2+R3, G0+G1, G2+G3, B.., B.., A.., A..] over both rows
+                    let s = u16x8_add(u16x8_add(u16x8_extadd_pairwise_u8x16(pa), u16x8_extadd_pairwise_u8x16(pb)), two16);
                     let q = u16x8_shr(s, 2);
                     let bytes = u8x16_narrow_i16x8(q, q);
                     store8(po.add(x * 4), u8x16_shuffle::<0, 2, 4, 6, 1, 3, 5, 7, 8, 10, 12, 14, 9, 11, 13, 15>(bytes, bytes));
                     x += 2;
+                    continue;
                 }
-                return n;
-            }
-            let lo_keep = u16x8(0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0);
-            let hi_ones = u16x8(0, 0, 0, 0, 1, 1, 1, 1);
-            let two = u32x4_splat(2);
-            while x < n {
-                let a = v128_load(p0.add(x * 8) as *const v128);
-                let b = v128_load(p1.add(x * 8) as *const v128);
-                let pa = u8x16_shuffle::<0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15>(a, a);
-                let pb = u8x16_shuffle::<0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15>(b, b);
-                let (sum_lo, sum_hi) = {
-                    let weigh = |p: v128| {
-                        let lo = u16x8_extend_low_u8x16(p); // R0..3 G0..3
-                        let hi = u16x8_extend_high_u8x16(p); // B0..3 A0..3
-                        let aa = u16x8_extend_low_u8x16(u8x16_shuffle::<12, 13, 14, 15, 12, 13, 14, 15, 12, 13, 14, 15, 12, 13, 14, 15>(p, p));
-                        let m_lo = u16x8_mul(lo, aa); // c·a fits 16 bits
-                        let m_hi = u16x8_mul(hi, v128_or(v128_and(aa, lo_keep), hi_ones)); // [B·A, A]
-                        (u32x4_extadd_pairwise_u16x8(m_lo), u32x4_extadd_pairwise_u16x8(m_hi))
-                    };
-                    let (la, ha) = weigh(pa);
-                    let (lb, hb) = weigh(pb);
-                    (u32x4_add(la, lb), u32x4_add(ha, hb)) // [SR, SR', SG, SG'], [SB, SB', A, A']
+                let weigh = |p: v128| {
+                    let lo = u16x8_extend_low_u8x16(p); // R0..3 G0..3
+                    let hi = u16x8_extend_high_u8x16(p); // B0..3 A0..3
+                    let aa = u16x8_extend_low_u8x16(u8x16_shuffle::<12, 13, 14, 15, 12, 13, 14, 15, 12, 13, 14, 15, 12, 13, 14, 15>(p, p));
+                    let m_lo = u16x8_mul(lo, aa); // c·a fits 16 bits
+                    let m_hi = u16x8_mul(hi, v128_or(v128_and(aa, lo_keep), hi_ones)); // [B·A, A]
+                    (u32x4_extadd_pairwise_u16x8(m_lo), u32x4_extadd_pairwise_u16x8(m_hi))
                 };
+                let (la, ha) = weigh(pa);
+                let (lb, hb) = weigh(pb);
+                let sum_lo = i32x4_add(la, lb); // [SR, SR', SG, SG']
+                let sum_hi = i32x4_add(ha, hb); // [SB, SB', A, A']
                 let den = i32x4_shuffle::<2, 3, 2, 3>(sum_hi, sum_hi);
-                let half = u32x4_shr(den, 1);
-                let den_f = f32x4_convert_u32x4(den);
+                let half = i32x4_shr(den, 1);
+                // every value is far below 2^31, so the signed conversions are exact and cheaper
+                let den_f = f32x4_convert_i32x4(den);
                 // 0 / 0 is NaN and saturates to 0, which is the colour of a transparent pixel
-                let q_lo = u32x4_trunc_sat_f32x4(f32x4_div(f32x4_convert_u32x4(u32x4_add(sum_lo, half)), den_f));
-                let q_hi = u32x4_trunc_sat_f32x4(f32x4_div(f32x4_convert_u32x4(u32x4_add(sum_hi, half)), den_f));
-                let alpha = u32x4_shr(u32x4_add(sum_hi, two), 2);
+                let q_lo = i32x4_trunc_sat_f32x4(f32x4_div(f32x4_convert_i32x4(i32x4_add(sum_lo, half)), den_f));
+                let q_hi = i32x4_trunc_sat_f32x4(f32x4_div(f32x4_convert_i32x4(i32x4_add(sum_hi, half)), den_f));
+                let alpha = i32x4_shr(i32x4_add(sum_hi, two), 2);
                 let hi = i32x4_shuffle::<0, 1, 6, 7>(q_hi, alpha);
                 let w = u16x8_narrow_i32x4(q_lo, hi); // [R R' G G' B B' A A']
                 let bytes = u8x16_narrow_i16x8(w, w);
