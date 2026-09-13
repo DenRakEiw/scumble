@@ -1381,7 +1381,7 @@ export const host = {
         const model = (this.helpers.models || []).find((m) => m.id === backend.model);
         if (!model || !model.present) throw new Error(`${backend.label} is not downloaded any more (Settings › Helpers).`);
         // like the ComfyUI path: the layer's own pixels, transparent parts on black
-        const image = this.modelInput(layer.canvas, 1024, "#000000");
+        const image = this.modelInput(layer.px.toCanvas(), 1024, "#000000");
         editor.helperUsed = true;
         const res = await window.scumble.helpers.cutout({ model: model.id, image });
         const c = document.createElement("canvas");
