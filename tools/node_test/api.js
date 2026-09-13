@@ -17,6 +17,7 @@ export const api = {
             let name = f.name;
             if (files.has(name) && init.body.get("overwrite") !== "true") name = name.replace(/(\.\w+)$/, ` (${files.size})$1`);
             files.set(name, f); urls.delete(name);
+            (window.__uploads = window.__uploads || []).push({ name, type: init.body.get("type") || "input" });
             return new Response(JSON.stringify({ name, subfolder: init.body.get("subfolder") || "", type: init.body.get("type") || "input" }), { status: 200 });
         }
         if (p.startsWith("/view?")) {

@@ -48,8 +48,21 @@ try {
     step("settingTargets from the graph", Array.isArray(ed.settingTargets()));
     step("resultInputState from the graph", ed.resultInputState().name === "result");
     step("widget value from the node", ed.widgetValue("padding", 0) === 64);
+    const saved = await ed.exportImage();
+    const up = (window.__uploads || []).slice(-1)[0] || {};
+    step("export uploads into the output folder", saved && up.type === "output" && /^Saved output\//.test(ed.status), `${up.type} ${up.name} :: ${ed.status}`);
     ed.close();
     step("closed", !ed.isOpen);
+    // ComfyUI imports every .js of js/ into the page, the worker module too: in the window it
+    // must not answer messages (it used to answer its own error replies forever)
+    await import("/extensions/ComfyUI-InpaintCanvas/inpaint_worker.js");
+    let seen = 0;
+    const count = () => { seen++; };
+    window.addEventListener("message", count);
+    window.postMessage({ from: "somewhere else" }, "*");
+    await new Promise((r) => setTimeout(r, 500));
+    window.removeEventListener("message", count);
+    step("the worker module in the page ignores window messages", seen <= 2, `${seen} message events in 500 ms`);
 } catch (err) {
     step("exception", false, err && err.stack || err);
 }

@@ -12,7 +12,8 @@ generated file starts with a line saying where it comes from, and the node's DEV
 carries the hash of the last build, so a hand edit in js/ shows up in --check.
 
 The static checks, run by --check and after every build:
-- every file parses (node --check),
+- every file parses as a module (node --input-type=module --check; a plain `node --check` on a
+  .js file with import syntax exits 0 without parsing it, which a self-test guards against),
 - every named import between the node's modules resolves to an export of the target,
 - every host.<member> the editor modules use exists in the node's js/host.js and in
   renderer/editor/host.js (the node shipped a ReferenceError on `host` for three days
@@ -93,6 +94,8 @@ def app_revision():
 EXPORT_DECL = re.compile(r"^export\s+(?:async\s+)?(?:function\*?|class|const|let|var)\s+([A-Za-z_$][\w$]*)", re.M)
 EXPORT_LIST = re.compile(r"^export\s*\{([^}]*)\}", re.M)
 IMPORT_NAMED = re.compile(r"^import\s*\{([^}]*)\}\s*from\s*[\"'](\./[^\"']+)[\"']", re.M)
+# const { a, b } = await import("./x.js")  (the node's host.js loads uploadBlob lazily)
+IMPORT_DYNAMIC = re.compile(r"\{([^{}]*)\}\s*=\s*await\s+import\(\s*[\"'](\./[^\"']+)[\"']\s*\)")
 HOST_USE = re.compile(r"\bhost\.([A-Za-z_$][\w$]*)")
 HOST_KEY = re.compile(r"^    (?:async\s+)?([A-Za-z_$][\w$]*)\s*(?:\(|:)", re.M)
 
@@ -114,17 +117,24 @@ def host_members(host_text):
     return set(HOST_KEY.findall(host_text[start:]))
 
 
+def parses_as_module(text):
+    r = subprocess.run(["node", "--input-type=module", "--check"], input=text.encode("utf-8"), capture_output=True)
+    return r.returncode == 0, r.stderr.decode("utf-8", "replace").strip()
+
+
 def check_dir(js_dir, label, problems):
     texts = {os.path.basename(p): read(p) for p in glob.glob(os.path.join(js_dir, "*.js"))}
+    if parses_as_module("export const a = 1;\nconst = ;\n")[0]:
+        problems.append("the parse check accepts a broken module: it checks nothing")
     for name, text in texts.items():
-        r = subprocess.run(["node", "--check", os.path.join(js_dir, name)], capture_output=True, text=True)
-        if r.returncode != 0:
-            problems.append(f"{label}/{name}: does not parse: {r.stderr.strip().splitlines()[-1] if r.stderr.strip() else r.returncode}")
+        ok, err = parses_as_module(text)
+        if not ok:
+            problems.append(f"{label}/{name}: does not parse: {[l for l in err.splitlines() if 'Error' in l][-1:] or err[-200:]}")
         if name != "host.js" and set(HOST_USE.findall(text)) - {"js"}:
             imported = any("host" in [x.strip().split(" as ")[-1].strip() for x in g.split(",")] for g, t in IMPORT_NAMED.findall(text) if t.endswith("host.js"))
             if not imported:
                 problems.append(f"{label}/{name}: uses host.* but does not import host from ./host.js")
-        for group, target in IMPORT_NAMED.findall(text):
+        for group, target in IMPORT_NAMED.findall(text) + IMPORT_DYNAMIC.findall(text):
             tname = os.path.normpath(target).replace("\\", "/").lstrip("./")
             if tname not in texts:
                 problems.append(f"{label}/{name}: imports from {target}, which is not there")

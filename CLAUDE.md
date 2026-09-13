@@ -106,9 +106,9 @@ ComfyUI's `input/inpaint_canvas/`). `package.json` 0.1.11 with its CHANGELOG sec
    the node's browser gate in a real ComfyUI tab (plan: `editor_test.py --node` against the
    headless tab on 9333, not written; the stub test covers construction, overlay, upload,
    composite). Ask before starting ComfyUI.
-3. An adversarial review of C0 (workflow `c0-review`) was still running at the hand-over; if
-   its result is lost, re-run a review of `git diff px-spike..c0-editor-source` in the app and
-   `git diff master..c0-editor-source` in the node.
+3. The adversarial review of C0 ran; its three confirmed findings are fixed and listed in
+   `docs/BUILD_NODE.md` (the worker module answering window messages forever in ComfyUI, a
+   parse check that checked nothing, an unchecked dynamic import).
 4. Merge px-spike and c0-editor-source into main (user's go), tag 0.1.11 only on the user's
    go, then C1 (`LayerPixels` facade) per `docs/PLAN_BCE.md`.
 

@@ -67,6 +67,19 @@ through a sync patch, so every app gate stayed green. In ComfyUI `new InpaintEdi
 Inpaint Canvas node. `tools/node_test.py` reproduces it against the node as it was, and passes
 on the build.
 
+**Found by the review of C0** (three lenses, every finding verified):
+- ComfyUI imports *every* `.js` of `js/` into its page, `inpaint_worker.js` too. Its
+  `self.onmessage` then sat on the window and answered any message posted to the page with an
+  error posted to the page, forever (56,476 message events in 500 ms after one foreign
+  message). The handler is installed only inside a worker now; `node_test.py` asserts it.
+  Rule: no module in `renderer/editor/` may have page-level side effects at import.
+- `node --check file.js` exits 0 on a broken ES module (Node 24 retries a file with import
+  syntax as ESM without parsing it), so the first parse check checked nothing.
+  `build_node.py` parses with `--input-type=module` and self-tests on a broken module.
+- The node's `host.js` loads `uploadBlob` with a dynamic `import()`; `build_node.py` resolves
+  `const { … } = await import("./x.js")` too, and `node_test.py` exports an image and checks
+  the upload went to `output`.
+
 ## Gates of a change to the editor
 
 Every app gate as before (`CLAUDE.md` "Working rules"), then `python tools/build_node.py` and
