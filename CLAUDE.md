@@ -75,88 +75,60 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
-## Where things stand (2026-09-14, morning: C1 closed out on main, C2 built on the branch `c2-tiles`)
+## Where things stand (2026-09-14: 0.1.12 released with C1 and C2, next is C3)
 
-**Read this block first; it supersedes the "Next" lines of the blocks below.** Built overnight by one
-session through workflows (build, a three-lens review, two refuting verifiers per finding, a fixer with a
-counter-proof per fix). Reports and gate logs are in that session's scratchpad (`c2/`, `gates/`); what matters
-is in `docs/PLAN_BCE.md` (§C1 "C1 as built" with "The C1 close-out", §C2 "C2 as built" with "The final C2
-review", "C2 finished" and "What C3 inherits") and `docs/PERFORMANCE.md` §9 "C1" and "C2".
+**Read this block first; it supersedes the "Next" lines of the blocks below.** `docs/PLAN_BCE.md` is the plan
+(§C1 "C1 as built" with "The C1 close-out"; §C2 "C2 as built" with "The final C2 review", "C2 finished" and
+**"What C3 inherits"**, which is where C3 starts); `docs/PERFORMANCE.md` §9 "C1" and "C2" hold the numbers.
 
-**Decisions waiting for the user, in this order:**
+**0.1.12 is released** (tag `v0.1.12` on main 7f01699, published 2026-09-14 06:59 UTC as Latest, CI build
+run 34815555598; `latest.yml` on the public feed says 0.1.12, so installed apps update). On the user's
+decision ("ein Release 0.1.12 mit C1 + C2", tag and publish after green exe gates) it carries:
 
-1. **Do not tag 0.1.12 from main c6bc6a6 as it is.** C2's final review found a regression the C1 close-out
-   (c6bc6a6) introduced: undoing a mask brush stroke fails with "could not load true" (the history code loads
-   the `layerrect` step's boolean `mask` flag as an image URL; f182da2 and 0.1.11 load it only for real mask
-   images). The fix is on the branch **`fix-mask-undo`** (4644070, from c6bc6a6, pushed, not merged):
-   the load condition skips a `layerrect` step's flag, `loadSnapImages` decodes `mask` only for a `layerfull` step, `releaseSnapshot` skips `true`; new `editor_test.py` step `mask_brush_stroke_undo_and_redo` (red on c6bc6a6, green with the fix); gates strict ALL PASS (the full list plus nodecopy, and `--copy` pixels editor composite commands). **The node's master (94c0e3c) has the same regression** (its `js/` is built from c6bc6a6),
-   so users installing the node from git have it now. On the user's go: merge `fix-mask-undo` into main, run
-   `python tools/build_node.py` + `node_test.py` and commit / push the node, `npm run dist` and the exe gates
-   (the recipe in the 2026-09-12 second block), then tag v0.1.12. The installer `dist/Scumble Setup 0.1.12.exe`
-   on disk is c6bc6a6's (its exe gates and smoke passed, but it carries the regression).
-2. **The Comfy Registry publish of the node 0.3.2** (`pyproject.toml` bumped in c83de20; the push had triggered
-   the publish action, which was cancelled; the registry is still at 0.3.1). It publishes master as it is, so
-   only after the node commit of item 1: `gh workflow run publish_action.yml --repo DenRakEiw/ComfyUI-InpaintCanvas`.
-3. **The 0.1.11 draft release** (`gh release list`: Draft, v0.1.11). Its installer passed the exe gates
-   (editor, commands, ailabel, brush, glb, mcp, smoke with a real Flux run) on 2026-09-13. Publishing it is
-   `gh release edit v0.1.11 --draft=false`; whether it is still worth publishing with 0.1.12 close behind is
-   the user's call.
-4. **When to merge `c2-tiles` into main.** Recommended: after v0.1.12 is tagged, as the start of 0.1.13
-   (bump `package.json`, open the CHANGELOG section, and move the one bullet fdd7890 put under 0.1.12 "comes
-   with the tile store's merge" into it). The packaged build keeps the canvas backend (tiles off), and canvas
-   mode measured within noise of main in every `perf_test.py` row. The branch also carries the mask-undo fix
-   in its own form (fdd7890); a merge after `fix-mask-undo` has one conflict to resolve there.
+- **C1**, the `LayerPixels` / `MaskPixels` interface (`renderer/editor/inpaint_pixels.js`), with its close-out.
+- **C2**, the tile store (`renderer/editor/inpaint_tiles.js`) as the second backend behind **`ed.tileMode`**:
+  `--tiles` / `--no-tiles` > env `SCUMBLE_TILES` (1 / 0) > a boolean `tiles` in settings.json (never written as a
+  default) > on in dev, **off in the packaged app**; the node reads `localStorage["inpaint_canvas.tiles"]` (off).
+  `status` reports `pixels: { tiles, from }`. Tile mode is not fit for users yet (15000 × 10000: stroke commit
+  284 ms against 1, grow / shrink / invert / feather 1.2-1.5 s, renderer 3.55 GB for 12000 × 8000 against 0.49);
+  canvas mode measured within noise of the build before C2 in every `perf_test.py` row.
+- **The mask-undo fix**: c6bc6a6 (C1 close-out) had broken the undo of a mask brush stroke ("could not load
+  true"); fixed before it shipped (branch `fix-mask-undo` 4644070, merged), step `mask_brush_stroke_undo_and_redo`.
+- **The merge review's fix** (7f01699): the canvas backend's `drawInto` now also refuses an async callback, as the
+  tile backend did; `docs/PLUGINS.md` has the two missing callback rules (no pixel reads from `ctx`, synchronous).
 
-**C1 close-out, on main** (app c6bc6a6, node 94c0e3c, both pushed): rule 12 (a `drawInto` callback composes on
-the transform it gets, never sets one), node_test with a 0.1.11 state fixture and a bridge round, and a second
-review's fixes to the history (decode before pop, `historyGen`, tracked extend / crop / resize / merge /
-flatten, undo refused while a gesture is held, flatten as a canvas step, text-edit steps released, the
-restored selection re-encoded). Gates strict and `--pixels-copy` ALL PASS, smoke PASS; `npm run dist` built
-0.1.12 from c6bc6a6 and its exe gates (pixels, editor, commands, ailabel, brush, glb, composite, mcp, smoke)
-passed. Not tagged.
+How it got there: `fix-mask-undo` fast-forwarded into main, `c2-tiles` merged (04cb406; one conflict in the undo
+image loading, resolved to C2's form), release notes (1bcc2b0), a two-lens review with refuting verifiers (one
+finding, fixed), then gates on 7f01699: dev strict `--tiles on` and `--tiles off` with pixels editor composite
+commands shape brush film glb ailabel size transparent generate log mcp nodecopy ALL PASS, `--copy` ALL PASS;
+`npm run dist` and on `dist/win-unpacked/Scumble.exe`: pixels editor commands ailabel brush glb composite mcp
+PASS (tiles off, strict off, `tilesFrom` "packaged build"), `--tiles` pixels editor composite commands PASS,
+smoke PASS (real Flux run, queue empty before and after). The CI installer is built separately from the local
+one (same commit, not byte-identical).
 
-**C2, on the branch `c2-tiles`** (app only, pushed; the node repo was not touched, node_test ran against a
-scratch copy of it):
+**The node** (master 647db5d, pushed): `js/` built from scumble 7f01699 (now with `js/inpaint_tiles.js` and
+`js/px/kernels_js.js`), `node_test.py` PASS, which also puts the mask-undo fix in front of git users. The Comfy
+Registry publish of 0.3.2 ran (publish_action run 34814844844, success) and the version is
+**NodeVersionStatusPending**. **For the user**: `https://api.comfy.org/nodes/comfyui-inpaintcanvas/versions`
+lists every earlier version (0.3.1 down to 0.2.0) as **NodeVersionStatusBanned** with no reason given, so the
+registry may never have offered an installable version; the reason should be on the publisher page at
+registry.comfy.org. Nothing was changed about it.
 
-- **12eeb14 C2 (a)**: `renderer/editor/inpaint_tiles.js`, `TileLayerPixels` / `TileMaskPixels` (a mixin over
-  `LayerPixels` / `MaskPixels`, so `instanceof` holds), `pixelsBackend(tiles)`. 256 px tiles, straight alpha,
-  sparse (empty tiles dropped), copy on write with a `frozen` counter, lazy mips, exact `bounds()`, `drawInto`
-  on a pooled CPU scratch (OffscreenCanvas) translated by the rect, `fromImage` in 4096-row strips, `toCanvas`
-  refusing above 268 MP, sides above 65,535 refused. Mask tiles stay RGBA until C5. `tools/pixels_test.js`
-  runs every case on the canvas backend (GPU and CPU) and on tiles and compares CPU canvas against tiles byte
-  for byte; the three remaining differences (Skia's CPU raster is not exactly translation-invariant) are
-  pinned to their exact counts. `build_node.py` ships `inpaint_tiles.js` and `px/kernels_js.js`.
-- **b510dc1 C2 (b)**: the editor on it behind **`ed.tileMode`**, fixed per editor. Precedence: `--tiles` /
-  `--no-tiles` > env `SCUMBLE_TILES` (1 / 0) > a boolean `tiles` in settings.json (never written as a
-  default) > on in dev, off in the packaged build; the node's editor reads `localStorage["inpaint_canvas.tiles"]`
-  (off). `status` reports `pixels: { tiles, from }`. Every creation site goes through `ed.pixels`; display reads
-  go through `canvasOf(px)` (a CPU mirror synced from the writes, a GPU screen copy at zoom ≥ 0.5), so nothing
-  copies a layer per frame (which also removes C1's copy-mode cost); `memoryReport()` counts tiles. **Note:** its
-  first push went out with step (a)'s commit message; the fixer amended it and replaced the branch head with
-  `--force-with-lease` (the tree did not change). Nothing else was ever force-pushed.
-- **fdd7890 C2 review**: canvas mode runs main's selection drag again (the branch had refreshed four display
-  levels per move: 5-7x main's GPU time at 15k, and it tripped Chromium's per-document canvas acceleration
-  latch in a test script), whole-layer undo steps on tiles are copy-on-write clones instead of PNGs (a
-  20000 × 12000 flip undo failed to encode before), fill / clear / mask-from-selection on tiles write only the
-  selection's box (705-1111 ms → 2 ms at 12000 × 8000), mirrors of removed layers released, a failed
-  `load_image` in a tab with a picture reported, `docs/BUGS.md` entry for isolated selection pixels lost by the
-  canvas backend's level extent above 1 MP (since 0.1.10, not fixed on purpose).
-- **Gates at fdd7890** (fresh dev instances, own profiles, strict): `--tiles on` pixels editor composite commands
-  shape brush film glb ailabel size transparent generate log mcp nodecopy ALL PASS; `--tiles off` the same ALL
-  PASS; `--copy --tiles off` pixels editor composite commands ALL PASS; composite identical to `tools/refs/`
-  in all three; `smoke_test.py --no-helpers` PASS on tiles (69 s Flux run) and on canvases (62 s), the ComfyUI
-  queue empty before and after each.
-- **Tile mode is not ready to ship, and was not meant to be** (15000 × 10000, against canvases): stroke commit
-  284 ms (1), grow / shrink / invert / feather 1.2-1.5 s (0.04-0.3), wands 2.4 / 4.4 s, cold composite 1.6 s,
-  pan at 1:1 36 ms (3), renderer 3.55 GB for a 12000 × 8000 document (0.49). That is the mirrors and the
-  whole-selection operations C3 and C5 remove; the list is "What C3 inherits" in `docs/PLAN_BCE.md`.
-- **The working tree F:/canvas is on `c2-tiles`**, so a dev start (`npm start`, the preview on port 9557)
-  runs with tiles on; `SCUMBLE_TILES=0` or `--no-tiles` turns them off.
+**Still open, the user's calls**: the **v0.1.11 draft** release is still a draft (superseded by 0.1.12; publish
+or delete it); the merged branches `c2-tiles`, `fix-mask-undo`, `px-spike`, `c0-editor-source` still exist on
+the remote. `package.json` is **0.1.13** with an empty `## 0.1.13 — unreleased` section in `CHANGELOG.md`.
 
-**Next** (after the decisions above): C3, the compositor draws tiles (`docs/PLAN_BCE.md` §C3), on top of
-`c2-tiles` or of main after the merge.
+**Next: C3, the compositor draws tiles** (`docs/PLAN_BCE.md` §C3), on main. Start from "What C3 inherits": the
+display mirrors and GPU screen copies to delete, the tile-mode costs with numbers, the per-document level-5 canvas
+that was not built. Work the way C1 and C2 were built: a workflow per step (build, a three-lens review, two
+refuting verifiers per finding, a fixer with a counter-proof per fix), the gate runner with `--tiles on` and
+`--tiles off`, and node gates against a scratch copy (`build_node.py --node <copy>`, `node_test.py --node <copy>`)
+until a step is meant for the node. The session scratchpad's `run_gates.sh` is gone after a new session; its
+logic (fresh instance on 9555, own `--user-data-dir` with `test_base.png` copied into
+`files/input/inpaint_canvas/`, `SCUMBLE_STRICT`, `SCUMBLE_TILES`, per-gate timeout, summary per label) has to be
+written again or put into `tools/`.
 
-**Traps met overnight, worth keeping:**
+**Traps met on 2026-09-13 / 14, worth keeping:**
 - **Chromium switches canvas acceleration off for the whole document** once at least 100 `getImageData` calls
   have disabled acceleration and they reach 95 % of all canvases the document ever created
   (`html_canvas_element.cc`): every new canvas without `willReadFrequently` is software from then on, and
@@ -168,7 +140,10 @@ scratch copy of it):
 - Skia's CPU raster is not exactly translation-invariant (a selection shape drawn far from the origin differs
   in about 600 pixels, alpha up to 68 levels, from the same shape on a scratch at the origin).
 - `img.decode()` never resolves in a hidden window; wait for `onload`.
-- Commit message files: reuse one and the next commit gets the old message (happened once, see b510dc1).
+- Commit message files: reuse one and the next commit gets the old message (happened once on c2-tiles, fixed
+  with a `--force-with-lease` of that branch).
+- The node's publish action runs on a push only when `pyproject.toml` changes; otherwise
+  `gh workflow run publish_action.yml --repo DenRakEiw/ComfyUI-InpaintCanvas --ref master`.
 
 ## Where things stand (2026-09-13, late: phase B and C0 built)
 
