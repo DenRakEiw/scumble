@@ -75,9 +75,106 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
-## Where things stand (2026-09-14, night: C5 steps a to e are built and pushed)
+## Where things stand (2026-09-15, 01:30: C6 steps a and b are built and pushed)
 
-**Read this block first; it supersedes the two blocks below.** `docs/PLAN_BCE.md` §C5 "C5 as built"
+**Read this block first; it supersedes the "Where the next session starts" part of the block below.** `docs/PLAN_BCE.md`
+§C6 "C6 as built" is the record (measurements, decisions, every mutation with its red, the review fixes). The user stopped the
+session here on purpose ("commit und push, dann Stop bis morgen").
+
+**Done this session, on `main`, pushed:**
+- **C5's owed gate**: `smoke_test.py --no-helpers` with a real Flux run PASS with tiles on (196 s) and off (94 s), the ComfyUI
+  queue empty before and after.
+- **C6 (a)** `00a3ade`, "the atlas is keyed right". Three real defects in C3/C5 code, each reproduced red first:
+  - A second "mask from selection" kept showing the first mask (both masks had `_version` 1). Tile versions now come from one
+    module-wide counter (`pixelSeq`).
+  - Replaced pixels (flip, turn, a new mask, undo restores, a new base) were never forgotten by the atlas. Three flips of a 15k
+    layer kept 2.4 GB alive until their pages aged out. The compositor now holds pixels weakly, and `retainPixels(live)` drops
+    what the document does not hold.
+  - A slot's gutter went stale when only a neighbour changed (76 / 104 levels at a tile border). Each slot records its
+    neighbours' versions, and only the ring is re-uploaded.
+- **C6 (b)** `e32d4ae`, "mips off the main thread". Measured first:
+  - At fit on 15k every chain was built twice: the layer thumbnail built 2,360 into a thrown-away scratch, then the atlas built
+    them again.
+  - A whole `touch()` rebuilt chains for unchanged tiles.
+  - The frame after a whole change blocked 530–790 ms.
+
+  Built:
+  - `touch()` no longer bumps tile versions; every write already goes through `writable` / `_share` / `_dropTile`.
+  - The thumbnail reuses chains.
+  - A `mips` job runs in a **worker of its own** (`ChainScheduler` in `inpaint_tiles.js`).
+  - The screen shows the previous chain, or a nearest-sampled coarse slot, until the fresh one lands.
+  - `watchChains()` / `redrawThumbsOf` refresh thumbnails and view caches on landing; `ed.mipsSettled()` lets tests wait.
+
+  After: that frame is **12–26 ms**, the picture is sharp about 0.4–0.9 s later, and a whole touch costs 3–6 ms. The review
+  confirmed 16 findings plus 1 split; all were fixed with counter-proofs (23 mutations red).
+- Gates on `e32d4ae`: `--tiles on` and `--tiles off` with all 15 gates ALL PASS, `--copy` ALL PASS, `perf:15000x10000` PASS.
+  `smoke` was **not** re-run after (a) and (b).
+
+**Where the next session starts:**
+1. **Three benchmark rows moved the wrong way in (b) and were not broken down**:
+   - `PNG of the composite` blocked 30 → 88–284 ms;
+   - `getValue` 0 → 5–8 ms;
+   - `its commit, band by band` 562 → 604–698 ms.
+
+   Measure these first (A/B against `00a3ade`), before C6 (c). Also, the film panel's `Document.flatten({ maxSize })` reads
+   exact mips through `sampleRegion` and builds every chain on the main thread while the worker's chains land: 141 ms, the
+   longest block after a whole change. That is C6 (c)'s.
+2. **C6 (c), the small readers from levels.** The code maps this session made (at d7234e4; line numbers have moved) and the
+   build / fix reports of (a) and (b) are kept in `dist/c6map/` (ignored by git): `readers.md`, `base.md`, `undo.md`,
+   `mips.md`, `worker.md`, and `critic.md`, which corrects the others. The full-resolution readers left in tile mode are:
+   - `promptContextCanvas` (a whole flatten for a 1024 px picture);
+   - `host.findObjects` / `sourceCanvas` (one or two whole flattens for a 1024² model input, plus a 286 MB id array);
+   - the `screenshot` command;
+   - the film control points' `sampleColor` fallback (`doc.flatten()`);
+   - `peekBase` (the base mirror plus a GPU copy).
+
+   The holes that still build the 572 MB display mirror inside "small" passes:
+   - a colour-matched layer in any region pass (`layerMatchedPixels`);
+   - `sampleRegion(source: "layer")`;
+   - a filter layer with a mask (`maskPx.drawTo`);
+   - a live stroke's layer thumbnail.
+
+   One probable bug to verify: `matchStats`' `_mstatsView` is shared by the screen pass and every sample pass (a 1 × 1
+   eyedropper pass can store `null` stats). Decide with a measurement whether `composite_tile` with blend modes is needed at
+   all; the Canvas 2D `sampleRegion` already composites tiles at a level.
+3. **C6 (d), the base**:
+   - `basePx` built eagerly and `base.img` released;
+   - the `canvas` undo step keeps base pixels (a free `clone()` on tiles) instead of the `<img>`;
+   - `cropCanvasNow` through `resized`;
+   - `resizeImageNow` is the one draw of the `<img>` itself: measure the resampler difference before dropping it;
+   - `setBaseFromCanvas` / `flattenNow` / `mergeDownNow` decode their own upload again (transparency round trip: measure).
+4. **C4** (after C6). Found by this session's map:
+   - `snapshotRect` puts its box at `floor(x) - 2`, so `copyRect` shares **no** tile unless the box is tile-aligned: a stroke's
+     undo step copies every tile its box overlaps. Align the copy to the tile grid on tiles.
+   - `frozen` is left too high by every released step, every replace-restore, `selmove`'s `orig` clone, `layer._textUndo`, and
+     the mask clones in fill / clear on a mask. Too high only costs a copy; **too low would write into a shared tile**, so a
+     release must never let go of pixels the document still holds.
+   - The redo copy of a `layerrect` grows 6 px per round trip.
+   - `memoryReport` now counts chains, but not edge copies or undo-held old bases.
+5. **The smudge tool on tiles** (measured in (b), not changed): 400–750 ms per pointer move at 15k, because it reads the 572 MB
+   display mirror and builds a pyramid every move. It is a C5 stroke-store leftover; it needs its own step.
+6. **`smoke`** once more before any release (check `/queue` first). The node repo is still at 647db5d, behind by C3, C5 and C6;
+   `nodecopy` passes.
+
+**Gate flakes seen this session** (re-run before believing):
+- `commands_test.py` hung in `Page.captureScreenshot` after every step printed `[ok]` (2 of 4 full runs in (a)).
+- `composite_test.py` once got a 1200 × 794 canvas against its 1200 × 800 reference and then crashed on `KeyError 'bytes'` in
+  its own failure message (a one-line test bug, not fixed).
+- `live_stroke_preview_shows_what_the_commit_writes` and the composite window step failed once right after a diagnostic instance
+  was closed.
+- The marching ants (120 ms) broke a screen comparison 2 in ~10 runs; steps that compare the screen draw the selection as a tint.
+
+**Traps met on 2026-09-14 / 15:**
+- A background `grep` loop on a workflow's `journal.jsonl`, meant to stop the workflow after its build agent, did not fire in
+  time; the review round ran anyway. Stop a workflow by reading its journal by hand, or give it a phase switch in `args`.
+- A copy-on-write copy that takes the original's chain buffer must take ownership: the last holder of the original writes into
+  it in place otherwise.
+- A whole thumbnail rebuild that asks for chains it then drops asks again forever (1.8 million requests); cells are kept per
+  tile version.
+
+## Where things stood (2026-09-14, night: C5 steps a to e are built and pushed)
+
+**The block above supersedes this one's "Where the next session starts".** `docs/PLAN_BCE.md` §C5 "C5 as built"
 is the record (five steps, each with its decisions, its measurements and its counter-proofs), plus
 "Where C5 leaves the magic wand and the bucket, measured". `CHANGELOG.md` 0.1.13 has the five
 user-facing bullets.
