@@ -1500,6 +1500,42 @@ pixel) — a short clean-up after C5, not before it.
   rectangle not redrawn (157), the mask drawn over instead of multiplied in (223), and the base's
   tile branch disabled (the mirror and the pyramid come back).
 
+**(b) The stroke is clipped and applied band by band** (`inpaint_canvas.js`, commit "C5 (b)"):
+
+- **What it costs before.** Measured on a 15000 x 10000 document, a stroke of 40 dabs right across
+  the picture, clipped to a full-image selection: the dabs and their frames **870.6 ms**, the commit
+  **1312.6 ms**, and alive at once the buffer (561 MB), `p.clipCanvas` (561 MB) and `clipScratch`
+  (561 MB) — `clippedStroke` rebuilt a clipped copy of the **whole buffer** on every frame, and the
+  commit was one `drawInto` of the whole box (on tiles a 561 MB scratch, read back in blocks).
+- **`strokePatch(p, target, x, y, w, h)`** is the buffer's pixels for one rectangle of the target
+  with the selection multiplied in, drawn into a scratch of that rectangle; **`strokeBands`** yields
+  the rectangles, at most `STROKE_BAND` (1024) a side. `commitStroke` and `refreshStrokePreview` walk
+  them. `clippedStroke`, `p.clipCanvas`, `p.clipOf` and `clipScratch` are gone; `clipCanvasFor` stays
+  for the band's clip and for the smudge's per-step clip.
+- **`StrokeBuffer.cells`**: the cells of a `STROKE_BAND` grid over the target that a dab has actually
+  drawn into. The buffer's *rectangle* is the union of every dab, so a diagonal stroke's box is the
+  whole picture while the dabs touched a few per cent of it: walking the box committed 150 bands of
+  which 135 were empty (1071 ms), walking the cells commits the 15 that hold pixels.
+- **The live preview's clip is taken at the display's resolution**: `drawStrokeInto` draws the buffer
+  and then `drawSelectionInto` with `destination-in` into a scratch of the **destination** rectangle
+  it is refreshing (at most the window), never a copy of the stroke at the layer's resolution.
+- **Measured after**: the same stroke's dabs and frames **870.6 → 29.4 ms**, the commit **1312.6 →
+  281.6 ms**, the two clip canvases **1122 MB → 0**. In `perf_test.py`'s own document (base, three
+  full paint layers, a colour-matched result, a `film.look` layer), two new rows: `stroke across the
+  picture (40 dabs)` **2635 → 720 ms** blocked and `its commit, band by band` **1097 → 447 ms**. What
+  is left of the 720 ms is the buffer growing: `ensure()` reallocates and copies a canvas that ends
+  at 561 MB, which is the sparse stroke store's to remove.
+- **Gate**: `editor_test.py`'s `stroke_buffers_cover_the_gesture_not_the_layer` now builds its live
+  preview reference **independently** (the layer, plus the whole buffer clipped to the whole
+  selection, in canvases the size of the layer — the very thing C5 stopped making) instead of
+  comparing the incremental preview against `clippedStroke`, and checks that every band is at most
+  1024 a side and that no scratch the gesture leaves is bigger. Its tolerance went from 1 to 4
+  premultiplied levels, for the reason the committed comparison already carried: the live path
+  composes in band-sized canvases, which Chromium keeps in software, and the reference in
+  layer-sized ones, which are on the GPU (measured 1.7). Three mutations, each red: a cell a dab drew
+  into dropped (the erase step's stroke does not reach the screen), the band's clip not applied (79
+  levels), the band drawn 6 px off (77).
+
 ### C6. Mips in the worker, thumbnails, hover, object map, colour match from mips (3 days)
 
 - A whole-layer change (filter apply, `setPixels`, transform, paste, load) marks all its

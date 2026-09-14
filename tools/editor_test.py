@@ -1515,22 +1515,38 @@ for (const erase of [false, true]) {
         if (i % 6 === 0) {
             // the incremental preview against a preview built whole from the same buffer
             const live = ed.layerPixels(layer);
-            const whole = mk(W, H); { const c = whole.getContext("2d"); layer.px.drawTo(c, 0, 0); const cs = ed.clippedStroke(p); c.globalAlpha = ed.brushOpacity; c.globalCompositeOperation = erase ? "destination-out" : "source-over"; c.drawImage(cs, p.stroke.x, p.stroke.y); }
+            // the reference: the layer, plus the whole buffer clipped to the whole selection, in
+            // canvases the size of the layer - which is what C5 stopped making
+            const whole = mk(W, H);
+            {
+                const c = whole.getContext("2d"); layer.px.drawTo(c, 0, 0);
+                const clip = mk(W, H); { const q = clip.getContext("2d"); q.setTransform(layer.px.width / layer.w, 0, 0, layer.px.height / layer.h, 0, 0); ed.sel.drawTo(q, -layer.x, -layer.y); }
+                const st = mk(W, H); { const q = st.getContext("2d"); q.drawImage(p.stroke.canvas, p.stroke.x, p.stroke.y); q.globalCompositeOperation = "destination-in"; q.drawImage(clip, 0, 0); }
+                c.globalAlpha = ed.brushOpacity; c.globalCompositeOperation = erase ? "destination-out" : "source-over"; c.drawImage(st, 0, 0);
+            }
             const box = [Math.max(0, p.stroke.x - 4), Math.max(0, p.stroke.y - 4), Math.min(W, p.stroke.x + p.stroke.w + 4), Math.min(H, p.stroke.y + p.stroke.h + 4)];
             const a = live.getContext("2d").getImageData(box[0], box[1], box[2] - box[0], box[3] - box[1]).data;
             const b = whole.getContext("2d").getImageData(box[0], box[1], box[2] - box[0], box[3] - box[1]).data;
-            const d = same(a, b, 1);
+            // the same tolerance and the same reason as the committed comparison below: the live path
+            // composes in band-sized canvases, which Chromium keeps in software, and the reference in
+            // canvases the size of the layer, which are on the GPU (measured 1.7 premultiplied)
+            const d = same(a, b, 4);
             if (d) throw new Error((erase ? "erase" : "paint") + ": the live preview differs from a whole one by " + d + " levels after dab " + i);
             previewChecked++;
         }
     }
-    out[(erase ? "erase" : "paint") + "Buffer"] = { w: p.stroke.w, h: p.stroke.h, share: +((p.stroke.w * p.stroke.h) / (W * H)).toFixed(3), clip: p.clipCanvas ? [p.clipCanvas.width, p.clipCanvas.height] : null, previewChecked };
+    const bands = Array.from(ed.strokeBands(p, layer.px));
+    out[(erase ? "erase" : "paint") + "Buffer"] = { w: p.stroke.w, h: p.stroke.h, share: +((p.stroke.w * p.stroke.h) / (W * H)).toFixed(3), bands: bands.length, previewChecked };
     if (p.stroke.w * p.stroke.h > 0.25 * W * H) throw new Error("the stroke buffer is not much smaller than the layer: " + JSON.stringify(out));
-    if (!p.clipCanvas || p.clipCanvas.width !== p.stroke.w || p.clipCanvas.height !== p.stroke.h) throw new Error("the clip is not the buffer's size");
+    // C5: the clip and the patch are taken band by band, so no canvas of the stroke's own size is made
+    if (!bands.length || bands.some(([, , bw, bh]) => bw > 1024 || bh > 1024)) throw new Error("a band is larger than STROKE_BAND: " + JSON.stringify(bands.slice(0, 4)));
     ed.onPointerUp({ pointerId: 1 });
-    // the 20 MP preview is given back; the clip scratch is the buffer's size and may stay
+    // the 20 MP preview is given back; the band scratches are a band's size and may stay
     if (ed.strokePreview) throw new Error("the preview canvas of a 20 MP layer was kept after the gesture");
-    if (ed.clipScratch && ed.clipScratch.width * ed.clipScratch.height > 0.25 * W * H) throw new Error("the clip scratch is not the buffer's size: " + ed.clipScratch.width + "x" + ed.clipScratch.height);
+    for (const k of ["_strokePatch", "_strokeClip", "_strokeDev"]) {
+        const c = ed[k];
+        if (c && (c.width > 1024 || c.height > 1024)) throw new Error(k + " is not a band: " + c.width + "x" + c.height);
+    }
     // the committed pixels against the reference, inside the selection and outside it
     const got = layer.px.readRect(0, 0, W, H).data;
     const want = ref.getContext("2d").getImageData(0, 0, W, H).data;

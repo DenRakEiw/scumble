@@ -30,6 +30,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   tile backend off — so this one helps the installed app too. While you paint zoomed out, the
   soft edge of the stroke is now drawn at the zoom you see instead of being shrunk from the
   full-resolution stroke; the pixels the stroke finally writes are unchanged.
+- **Painting right across a large picture.** A stroke that crosses the whole picture used to make
+  two more copies of itself, each as large as the area it spans, and to apply itself to the layer
+  in one piece. On a 15000 × 10000 picture a stroke of forty dabs across the diagonal took 870 ms
+  of drawing and 1.3 s to apply, and held 1.1 GB while you drew it. It is now clipped and applied
+  in bands of 1024 px, and only in the bands a dab really touched: 29 ms of drawing, 280 ms to
+  apply, and those 1.1 GB are gone. The result is the same picture.
 
 ## 0.1.12 — 2026-09-14
 

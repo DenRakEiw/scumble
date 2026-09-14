@@ -1104,6 +1104,11 @@ let CLIPBOARD = null;
 // A live preview canvas above this many pixels is given back after the gesture (a 15k
 // layer's is 600 MB); smaller ones are kept for the next stroke.
 const STROKE_SCRATCH_KEEP_PX = 16 * 1024 * 1024;
+// A stroke is applied to its target, and its clip to the selection is taken, in bands of this
+// side (docs/PLAN_BCE.md §C5): a stroke across a 15000 x 10000 picture used to make a clipped
+// copy of itself at the layer's resolution, two canvases of 561 MB, and one drawInto of the
+// whole box (a 561 MB scratch read back in blocks, 1.3 s on tiles).
+const STROKE_BAND = 1024;
 
 /**
  * What an editor has uploaded, by hash. Setting `baseHash` to null (the base or a layer that is
@@ -1147,12 +1152,20 @@ class StrokeBuffer {
         this.th = target.height;
         this.canvas = null;
         this.x = 0; this.y = 0; this.w = 0; this.h = 0;
+        // the cells of a STROKE_BAND grid over the target that a dab has drawn into. The buffer's
+        // rectangle is the union of every dab, so on a diagonal stroke across a 15000 x 10000 picture
+        // it is the whole picture while the dabs touched a few per cent of it: the commit and the
+        // preview walk these cells, not that rectangle (docs/PLAN_BCE.md §C5).
+        this.cells = new Set();
     }
 
     ensure(x0, y0, x1, y1) {
         const PAD = 32;
         x0 = Math.max(0, Math.floor(x0) - PAD); y0 = Math.max(0, Math.floor(y0) - PAD);
         x1 = Math.min(this.tw, Math.ceil(x1) + PAD); y1 = Math.min(this.th, Math.ceil(y1) + PAD);
+        for (let cy = Math.floor(y0 / STROKE_BAND); cy <= Math.floor(Math.max(y0, y1 - 1) / STROKE_BAND); cy++) {
+            for (let cx = Math.floor(x0 / STROKE_BAND); cx <= Math.floor(Math.max(x0, x1 - 1) / STROKE_BAND); cx++) this.cells.add(cy * 65536 + cx);
+        }
         if (x1 <= x0) x1 = Math.min(this.tw, x0 + 1);
         if (y1 <= y0) y1 = Math.min(this.th, y0 + 1);
         if (!this.canvas) {
@@ -5284,50 +5297,81 @@ class InpaintEditor {
         return c;
     }
 
-    /**
-     * The stroke buffer's pixels, limited to the selection when the gesture has a clip: a
-     * canvas of the buffer's size (placed at p.stroke.x, p.stroke.y in the target), or null
-     * before the first dab.
-     */
-    clippedStroke(p) {
-        const sb = p.stroke;
-        if (!sb || !sb.canvas) return null;
-        if (!p.clip) return sb.canvas;
-        // the clip for this buffer, drawn again only when the buffer grew (a new canvas)
-        if (!p.clipCanvas || p.clipOf !== sb.canvas) {
-            p.clipCanvas = this.clipCanvasFor(p.layer, p.kind === "maskpaint" ? p.layer.maskPx : p.layer.px, sb.x, sb.y, sb.w, sb.h, p.clipCanvas);
-            p.clipOf = sb.canvas;
-        }
-        if (!this.clipScratch || this.clipScratch.width !== sb.w || this.clipScratch.height !== sb.h) { this.clipScratch = makeCanvas(sb.w, sb.h); this.clipScratch._livePreview = true; }
-        const ctx = this.clipScratch.getContext("2d");
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.globalCompositeOperation = "source-over";
-        ctx.globalAlpha = 1;
-        ctx.clearRect(0, 0, sb.w, sb.h);
-        ctx.drawImage(sb.canvas, 0, 0);
-        ctx.globalCompositeOperation = "destination-in";
-        ctx.drawImage(p.clipCanvas, 0, 0);
-        ctx.globalCompositeOperation = "source-over";
-        return this.clipScratch;
+    /** A scratch of w x h kept between bands (the stroke's patch and its clip); at most STROKE_BAND a side. */
+    bandScratch(key, w, h) {
+        const c = this[key];
+        if (c && c.width === w && c.height === h) return c;
+        const n = makeCanvas(w, h);
+        n._livePreview = true;   // never given a display pyramid
+        this[key] = n;
+        return n;
     }
 
-    /** Apply the stroke buffer to the layer (or its mask) with the brush opacity. */
+    /**
+     * The stroke buffer's pixels for a rectangle of the target (x, y, w, h in the target's own
+     * pixels), limited to the selection when the gesture has a clip, as a canvas of that size;
+     * null when the rectangle holds nothing of the buffer. The caller asks band by band
+     * (STROKE_BAND): the clipped copy of a whole stroke used to be two canvases the size of the
+     * stroke's box, 1.1 GB together on a 15000 x 10000 picture (docs/PLAN_BCE.md §C5).
+     */
+    strokePatch(p, target, x, y, w, h) {
+        const sb = p.stroke;
+        if (!sb || !sb.canvas) return null;
+        const ix0 = Math.max(x, sb.x), iy0 = Math.max(y, sb.y);
+        const ix1 = Math.min(x + w, sb.x + sb.w), iy1 = Math.min(y + h, sb.y + sb.h);
+        if (ix1 <= ix0 || iy1 <= iy0) return null;
+        const c = this.bandScratch("_strokePatch", w, h);
+        const ctx = c.getContext("2d");
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = "source-over";
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(sb.canvas, ix0 - sb.x, iy0 - sb.y, ix1 - ix0, iy1 - iy0, ix0 - x, iy0 - y, ix1 - ix0, iy1 - iy0);
+        if (p.clip) {
+            ctx.globalCompositeOperation = "destination-in";
+            ctx.drawImage(this.clipCanvasFor(p.layer, target, x, y, w, h, this.bandScratch("_strokeClip", w, h)), 0, 0);
+            ctx.globalCompositeOperation = "source-over";
+        }
+        return c;
+    }
+
+    /**
+     * The bands of the target a stroke's buffer covers, at most STROKE_BAND a side and never
+     * wider than the box the gesture painted over: [x, y, w, h] in the target's own pixels.
+     */
+    *strokeBands(p, target) {
+        const sb = p.stroke;
+        if (!sb || !sb.canvas) return;
+        const r = this.strokeRect(p, target);
+        const x0 = Math.max(sb.x, r ? Math.floor(r[0]) : sb.x), y0 = Math.max(sb.y, r ? Math.floor(r[1]) : sb.y);
+        const x1 = Math.min(sb.x + sb.w, r ? Math.ceil(r[2]) : sb.x + sb.w), y1 = Math.min(sb.y + sb.h, r ? Math.ceil(r[3]) : sb.y + sb.h);
+        // only the grid cells a dab drew into: a diagonal stroke's rectangle is the whole picture
+        for (const cell of sb.cells) {
+            const bx = Math.max(x0, (cell % 65536) * STROKE_BAND), by = Math.max(y0, Math.floor(cell / 65536) * STROKE_BAND);
+            const bx1 = Math.min(x1, (cell % 65536 + 1) * STROKE_BAND), by1 = Math.min(y1, (Math.floor(cell / 65536) + 1) * STROKE_BAND);
+            if (bx1 > bx && by1 > by) yield [bx, by, bx1 - bx, by1 - by];
+        }
+    }
+
+    /** Apply the stroke buffer to the layer (or its mask) with the brush opacity, band by band. */
     commitStroke(p) {
         const target = p.kind === "maskpaint" ? p.layer.maskPx : p.layer.px;
         if (!target) return;   // a mask removed under the gesture: nothing to write into
         // the undo step is a copy of what the stroke touched, taken before it is applied
         if (!p.noUndo) this.pushUndoSnapshot(this.strokeUndo(p, target));
-        const cs = this.clippedStroke(p);
-        if (!cs) return;
-        const sb = p.stroke;
+        if (!p.stroke || !p.stroke.canvas) return;
         const opacity = this.brushOpacity;
         const op = p.erase ? "destination-out" : (p.kind === "layerpaint" && p.layer.alphaLock ? "source-atop" : "source-over");
-        // the clipped stroke is the buffer's size at the buffer's origin: unscaled, on whole pixels
-        target.drawInto([sb.x, sb.y, sb.x + cs.width, sb.y + cs.height], (ctx) => {
-            ctx.globalAlpha = opacity;
-            ctx.globalCompositeOperation = op;
-            ctx.drawImage(cs, sb.x, sb.y);
-        });
+        for (const [bx, by, bw, bh] of this.strokeBands(p, target)) {
+            const patch = this.strokePatch(p, target, bx, by, bw, bh);
+            if (!patch) continue;
+            // the patch is the band's size at the band's origin: unscaled, on whole pixels
+            target.drawInto([bx, by, bx + bw, by + bh], (ctx) => {
+                ctx.globalAlpha = opacity;
+                ctx.globalCompositeOperation = op;
+                ctx.drawImage(patch, bx, by);
+            });
+        }
     }
 
     /**
@@ -5370,22 +5414,20 @@ class InpaintEditor {
         ctx.globalAlpha = 1;
         ctx.clearRect(x, y, w, h);
         target.drawTo(ctx, x, y, w, h, x, y, w, h);
-        const cs = this.clippedStroke(p);
-        if (cs) {
-            const sb = p.stroke;
-            const ix0 = Math.max(x, sb.x), iy0 = Math.max(y, sb.y), ix1 = Math.min(x + w, sb.x + sb.w), iy1 = Math.min(y + h, sb.y + sb.h);
-            if (ix1 > ix0 && iy1 > iy0) {
-                ctx.globalAlpha = this.brushOpacity;
-                ctx.globalCompositeOperation = op;
-                ctx.drawImage(cs, ix0 - sb.x, iy0 - sb.y, ix1 - ix0, iy1 - iy0, ix0, iy0, ix1 - ix0, iy1 - iy0);
-            }
+        ctx.globalAlpha = this.brushOpacity;
+        ctx.globalCompositeOperation = op;
+        for (const [bx, by, bw, bh] of this.strokeBands(p, target)) {
+            const ix0 = Math.max(x, bx), iy0 = Math.max(y, by), ix1 = Math.min(x + w, bx + bw), iy1 = Math.min(y + h, by + bh);
+            if (ix1 <= ix0 || iy1 <= iy0) continue;
+            const patch = this.strokePatch(p, target, bx, by, bw, bh);
+            if (patch) ctx.drawImage(patch, ix0 - bx, iy0 - by, ix1 - ix0, iy1 - iy0, ix0, iy0, ix1 - ix0, iy1 - iy0);
         }
         ctx.restore();
     }
 
     /** After a gesture: the live preview canvases of a large layer are given back, small ones are kept for the next stroke. */
     releaseStrokeScratch() {
-        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "clipScratch", "strokeView", "strokeMaskView"]) {
+        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev"]) {
             const c = this[k];
             if (c && c.width * c.height > STROKE_SCRATCH_KEEP_PX) this[k] = null;
         }
@@ -5466,7 +5508,7 @@ class InpaintEditor {
             ctx.setTransform(vp.sx, 0, 0, vp.sy, -vp.x * vp.sx, -vp.y * vp.sy);
             this.drawPixelsInto(ctx, layer, layer.px, vp);
             if (p.kind === "layerpaint") {
-                this.drawStrokeInto(ctx, layer, layer.px, p.erase ? "destination-out" : (layer.alphaLock ? "source-atop" : "source-over"));
+                this.drawStrokeInto(ctx, layer, layer.px, p.erase ? "destination-out" : (layer.alphaLock ? "source-atop" : "source-over"), vp, [dx0, dy0, dx1, dy1]);
             }
             if (layer.maskPx) {
                 ctx.globalAlpha = 1;
@@ -5503,7 +5545,7 @@ class InpaintEditor {
             ctx.clearRect(dx0, dy0, dx1 - dx0, dy1 - dy0);
             ctx.setTransform(vp.sx, 0, 0, vp.sy, -vp.x * vp.sx, -vp.y * vp.sy);
             this.drawPixelsInto(ctx, layer, layer.maskPx, vp);
-            this.drawStrokeInto(ctx, layer, layer.maskPx, this.pointer.erase ? "destination-out" : "source-over");
+            this.drawStrokeInto(ctx, layer, layer.maskPx, this.pointer.erase ? "destination-out" : "source-over", vp, [dx0, dy0, dx1, dy1]);
         } finally {
             ctx.restore();
         }
@@ -5516,17 +5558,48 @@ class InpaintEditor {
         ctx.drawImage(this.displaySource(px, (layer.w * vp.sx) / px.width, false), layer.x, layer.y, layer.w, layer.h);
     }
 
-    /** The in-progress stroke over the layer's rectangle, at the brush opacity and the gesture's operation. */
-    drawStrokeInto(ctx, layer, target, op) {
-        const cs = this.clippedStroke(this.pointer);
-        if (!cs) return;
-        const sb = this.pointer.stroke;
+    /**
+     * The in-progress stroke over the layer's rectangle, at the brush opacity and the gesture's
+     * operation, into a context that carries the image -> destination transform. A gesture clipped
+     * to the selection gets its clip in a scratch of the destination rectangle `dev` ([x0, y0, x1,
+     * y1] in that context's own pixels), never in a copy of the stroke at the layer's resolution.
+     */
+    drawStrokeInto(ctx, layer, target, op, vp, dev) {
+        const p = this.pointer, sb = p.stroke;
+        if (!sb || !sb.canvas) return;
         const fx = layer.w / target.width, fy = layer.h / target.height;
-        ctx.globalAlpha = this.brushOpacity;
-        ctx.globalCompositeOperation = op;
-        ctx.drawImage(cs, layer.x + sb.x * fx, layer.y + sb.y * fy, sb.w * fx, sb.h * fy);
-        ctx.globalAlpha = 1;
-        ctx.globalCompositeOperation = "source-over";
+        const ix = layer.x + sb.x * fx, iy = layer.y + sb.y * fy, iw = sb.w * fx, ih = sb.h * fy;
+        if (!p.clip) {
+            ctx.globalAlpha = this.brushOpacity;
+            ctx.globalCompositeOperation = op;
+            ctx.drawImage(sb.canvas, ix, iy, iw, ih);
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = "source-over";
+            return;
+        }
+        const w = dev[2] - dev[0], h = dev[3] - dev[1];
+        if (w <= 0 || h <= 0) return;
+        const s = this.bandScratch("_strokeDev", w, h);
+        const x = s.getContext("2d");
+        x.setTransform(1, 0, 0, 1, 0, 0);
+        x.globalAlpha = 1;
+        x.globalCompositeOperation = "source-over";
+        x.clearRect(0, 0, w, h);
+        x.setTransform(vp.sx, 0, 0, vp.sy, -vp.x * vp.sx - dev[0], -vp.y * vp.sy - dev[1]);
+        x.drawImage(sb.canvas, ix, iy, iw, ih);
+        // the selection over the same image rectangle: destination-in, and the scratch is exactly
+        // the rectangle, so the operation's reach beyond what is drawn is what it has to be
+        x.globalCompositeOperation = "destination-in";
+        this.drawSelectionInto(x, vp.sx, { x: vp.x, y: vp.y, w: vp.w, h: vp.h });
+        ctx.save();
+        try {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = this.brushOpacity;
+            ctx.globalCompositeOperation = op;
+            ctx.drawImage(s, 0, 0, w, h, dev[0], dev[1], w, h);
+        } finally {
+            ctx.restore();
+        }
     }
 
     /** Layer pixels with the in-progress stroke applied, for live preview: a canvas to draw from, never into; `display` as in layerPixels. */
@@ -10192,7 +10265,7 @@ class InpaintEditor {
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }
-        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "clipScratch", "strokeView", "strokeMaskView"]) {
+        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev"]) {
             if (this[name]) { freed += px(this[name]); this[name] = null; }
         }
         if (this.flatCache) { freed += px(this.flatCache.canvas); this.flatCache = null; }
@@ -10664,7 +10737,7 @@ class InpaintEditor {
         const scratch = [];
         addPixels(scratch, "_baseCanvas", this._basePx);   // the name mem_test and the docs know
         addPixels(scratch, "selection", this.sel);
-        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "clipScratch", "strokeView", "strokeMaskView", "filterMaskCanvas"]) add(scratch, name, this[name]);
+        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "filterMaskCanvas"]) add(scratch, name, this[name]);
         add(scratch, "flatCache", this.flatCache && this.flatCache.canvas);
 
         // undo / redo: the rect copies plus the canvases (or tiles) the "layers" / "canvas" snapshots

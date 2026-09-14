@@ -288,6 +288,31 @@ BENCH = """
     out.fill_small = await op(() => ed.fillSelection());
     out.undo_fill = await op(() => ed.undoStep());
     out.clear_small = await op(() => ed.clearSelectedPixels());
+    // A stroke right across the picture, clipped to a selection: the stroke buffer's box is then the
+    // whole picture while the dabs touch a few per cent of it. Until C5 every frame of it made a
+    // clipped copy of the whole box (two canvases of 561 MB at 15k) and the commit was one drawInto
+    // of that box; both go band by band over the cells a dab drew into now. The undo copy is left
+    // out of the commit row (it is the whole box, and C4's to fix), so the row is C5's part alone.
+    ed.sel.clear();
+    ed.sel.fill([0, 0, W, H], "#ff0000");
+    ed.markSelectionChanged();
+    ed.getBounds();
+    ed.activeLayerId = paintLayer.id;
+    ed.brushSize = 60; ed.brushOpacity = 1;
+    const lp = { kind: "layerpaint", layer: paintLayer, stroke: ed.newStrokeBuffer(paintLayer.px),
+                 clip: ed.strokeClip(paintLayer, paintLayer.px), erase: false, last: [200, 200], pressure: 1, noUndo: true };
+    ed.pointer = lp;
+    out.long_stroke = await op(() => {
+        for (let i = 1; i <= 40; i++) {
+            const x = 200 + i * (W - 400) / 40, y = 200 + i * (H - 400) / 40;
+            ed.layerDab(lp, lp.last[0], lp.last[1], x, y);
+            lp.last = [x, y];
+            ed.draw();
+        }
+    });
+    out.long_buffer = [lp.stroke.w, lp.stroke.h, lp.stroke.cells ? lp.stroke.cells.size : 0];
+    const lbox = ed.strokeRect(lp, paintLayer.px);
+    out.long_commit = await op(() => { ed.commitStroke(lp); ed.pointer = null; ed.markLayerChanged(paintLayer, lbox); ed.releaseStrokeScratch(); });
     const flat = ed.flattenToCanvas({ forRun: true });
     // the editor's own path (the worker when there is one), and the plain main-thread encode
     out.png = await op(async () => { const u = await ed.snapUrl(flat); URL.revokeObjectURL(u); });
@@ -345,6 +370,8 @@ OP_ROWS = [
     ("fill selection (100 px)", "fill_small"),
     ("undo of that fill", "undo_fill"),
     ("clear selected pixels (100 px)", "clear_small"),
+    ("stroke across the picture (40 dabs)", "long_stroke"),
+    ("its commit, band by band", "long_commit"),
     ("PNG of the composite", "png"),
     ("the same without the worker", "png_main"),
 ]
