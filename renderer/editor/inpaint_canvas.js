@@ -20,7 +20,7 @@ import { readAbr, tipCanvas } from "./inpaint_brushes.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
-import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN } from "./inpaint_pixels.js";
+import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS } from "./inpaint_tiles.js";
 
 /**
@@ -1147,10 +1147,18 @@ class UploadCache {
  * The buffer itself stays a canvas in C1 (docs/PLAN_BCE.md §C1 rule 8).
  */
 class StrokeBuffer {
-    constructor(target) {
+    constructor(target, backend = null) {
         this.tw = target.width;
         this.th = target.height;
+        // On tiles the buffer is a sparse store of the target's own size: a dab allocates the tiles it
+        // touches and nothing else, so a stroke across the picture never reallocates and never holds a
+        // canvas of its own bounding box (561 MB at 15000 x 10000). On canvases it stays the canvas it
+        // has always been, grown around the dabs (cx, cy, cw, ch), because a store of the target's size
+        // would be the whole target there.
+        this.px = backend && backend.tiles ? backend.Layer.empty(this.tw, this.th) : null;
         this.canvas = null;
+        this.cx = 0; this.cy = 0; this.cw = 0; this.ch = 0;
+        // the box every dab together has covered, in the target's own pixels
         this.x = 0; this.y = 0; this.w = 0; this.h = 0;
         // the cells of a STROKE_BAND grid over the target that a dab has drawn into. The buffer's
         // rectangle is the union of every dab, so on a diagonal stroke across a 15000 x 10000 picture
@@ -1159,36 +1167,98 @@ class StrokeBuffer {
         this.cells = new Set();
     }
 
-    ensure(x0, y0, x1, y1) {
-        const PAD = 32;
+    /** The padded rectangle a dab covers, clamped to the target; it marks its cells and widens the extent. */
+    _rect(x0, y0, x1, y1) {
+        // the canvas buffer grows in steps and wants headroom; the sparse store allocates exactly the
+        // tiles a dab touches, and 32 px on every side of every dab is a third more work per drawInto.
+        // Either way the callers pad their own box by what the brush reaches.
+        const PAD = this.px ? 2 : 32;
         x0 = Math.max(0, Math.floor(x0) - PAD); y0 = Math.max(0, Math.floor(y0) - PAD);
         x1 = Math.min(this.tw, Math.ceil(x1) + PAD); y1 = Math.min(this.th, Math.ceil(y1) + PAD);
-        for (let cy = Math.floor(y0 / STROKE_BAND); cy <= Math.floor(Math.max(y0, y1 - 1) / STROKE_BAND); cy++) {
-            for (let cx = Math.floor(x0 / STROKE_BAND); cx <= Math.floor(Math.max(x0, x1 - 1) / STROKE_BAND); cx++) this.cells.add(cy * 65536 + cx);
-        }
         if (x1 <= x0) x1 = Math.min(this.tw, x0 + 1);
         if (y1 <= y0) y1 = Math.min(this.th, y0 + 1);
-        if (!this.canvas) {
-            this.x = x0; this.y = y0; this.w = Math.max(1, x1 - x0); this.h = Math.max(1, y1 - y0);
-            this.canvas = makeCanvas(this.w, this.h);
-        } else if (x0 < this.x || y0 < this.y || x1 > this.x + this.w || y1 > this.y + this.h) {
-            // grow to the union, with headroom of a quarter on the sides that grew, so a
-            // stroke that keeps going does not reallocate on every dab
-            const ux0 = Math.min(this.x, x0), uy0 = Math.min(this.y, y0), ux1 = Math.max(this.x + this.w, x1), uy1 = Math.max(this.y + this.h, y1);
-            const gx = Math.ceil((ux1 - ux0) / 4), gy = Math.ceil((uy1 - uy0) / 4);
-            const nx0 = x0 < this.x ? Math.max(0, ux0 - gx) : ux0, ny0 = y0 < this.y ? Math.max(0, uy0 - gy) : uy0;
-            const nx1 = x1 > this.x + this.w ? Math.min(this.tw, ux1 + gx) : ux1, ny1 = y1 > this.y + this.h ? Math.min(this.th, uy1 + gy) : uy1;
-            const c = makeCanvas(nx1 - nx0, ny1 - ny0);
-            c.getContext("2d").drawImage(this.canvas, this.x - nx0, this.y - ny0);
-            this.canvas = c;
-            this.x = nx0; this.y = ny0; this.w = nx1 - nx0; this.h = ny1 - ny0;
+        if (x1 <= x0 || y1 <= y0) return null;
+        for (let cy = Math.floor(y0 / STROKE_BAND); cy <= Math.floor((y1 - 1) / STROKE_BAND); cy++) {
+            for (let cx = Math.floor(x0 / STROKE_BAND); cx <= Math.floor((x1 - 1) / STROKE_BAND); cx++) this.cells.add(cy * 65536 + cx);
         }
-        const ctx = this.canvas.getContext("2d");
-        ctx.setTransform(1, 0, 0, 1, -this.x, -this.y);
-        return ctx;
+        if (!this.w) { this.x = x0; this.y = y0; this.w = x1 - x0; this.h = y1 - y0; }
+        else {
+            const ux0 = Math.min(this.x, x0), uy0 = Math.min(this.y, y0);
+            const ux1 = Math.max(this.x + this.w, x1), uy1 = Math.max(this.y + this.h, y1);
+            this.x = ux0; this.y = uy0; this.w = ux1 - ux0; this.h = uy1 - uy0;
+        }
+        return [x0, y0, x1, y1];
     }
 
-    all() { return this.ensure(0, 0, this.tw, this.th); }
+    /** Grow the canvas backend's buffer so it holds `r`, with headroom on the sides that grew. */
+    _grow(r) {
+        if (!this.canvas) {
+            this.cx = r[0]; this.cy = r[1]; this.cw = r[2] - r[0]; this.ch = r[3] - r[1];
+            this.canvas = makeCanvas(this.cw, this.ch);
+            return;
+        }
+        if (r[0] >= this.cx && r[1] >= this.cy && r[2] <= this.cx + this.cw && r[3] <= this.cy + this.ch) return;
+        // grow to the union, with headroom of a quarter on the sides that grew, so a stroke
+        // that keeps going does not reallocate on every dab
+        const ux0 = Math.min(this.cx, r[0]), uy0 = Math.min(this.cy, r[1]);
+        const ux1 = Math.max(this.cx + this.cw, r[2]), uy1 = Math.max(this.cy + this.ch, r[3]);
+        const gx = Math.ceil((ux1 - ux0) / 4), gy = Math.ceil((uy1 - uy0) / 4);
+        const nx0 = r[0] < this.cx ? Math.max(0, ux0 - gx) : ux0, ny0 = r[1] < this.cy ? Math.max(0, uy0 - gy) : uy0;
+        const nx1 = r[2] > this.cx + this.cw ? Math.min(this.tw, ux1 + gx) : ux1, ny1 = r[3] > this.cy + this.ch ? Math.min(this.th, uy1 + gy) : uy1;
+        const c = makeCanvas(nx1 - nx0, ny1 - ny0);
+        c.getContext("2d").drawImage(this.canvas, this.cx - nx0, this.cy - ny0);
+        this.canvas = c;
+        this.cx = nx0; this.cy = ny0; this.cw = nx1 - nx0; this.ch = ny1 - ny0;
+    }
+
+    /**
+     * `fn(ctx)` draws in the target's own coordinates, inside the padded box of (x0, y0, x1, y1)
+     * and clipped to it. On the tile backend that box is a `drawInto` of the sparse store, so the
+     * buffer only ever holds the tiles a dab reached; on canvases it is the growing canvas the
+     * buffer has always been. `fn` obeys the `drawInto` rules: it composes on the transform it is
+     * given and never sets one, and it reads no pixels back from the context.
+     */
+    draw(x0, y0, x1, y1, fn) {
+        const r = this._rect(x0, y0, x1, y1);
+        if (!r) return undefined;
+        if (this.px) return this.px.drawInto(r, fn);
+        this._grow(r);
+        const ctx = this.canvas.getContext("2d");
+        ctx.save();
+        try {
+            resetContext(ctx);
+            const clip = new Path2D();
+            clip.rect(r[0] - this.cx, r[1] - this.cy, r[2] - r[0], r[3] - r[1]);
+            ctx.clip(clip);
+            ctx.translate(-this.cx, -this.cy);
+            return fn(ctx);
+        } finally {
+            ctx.restore();
+        }
+    }
+
+    /** The whole target, for a gesture that rebuilds itself on every move (the gradient tool). */
+    all(fn) { return this.draw(0, 0, this.tw, this.th, fn); }
+
+    /** Nothing has been drawn into the buffer yet. */
+    get empty() { return !this.cells.size; }
+
+    /** A canvas holding the buffer's pixels of [x0, y0, x1, y1] (target pixels) and where its (0, 0) sits. */
+    part(x0, y0, x1, y1) {
+        if (this.px) return { canvas: this.px.toCanvas([x0, y0, x1, y1]), x: x0, y: y0 };
+        return this.canvas ? { canvas: this.canvas, x: this.cx, y: this.cy } : null;
+    }
+
+    /** The whole buffer over the image rectangle it covers, into a context carrying the image transform. */
+    drawOver(ed, ctx, layer, target, vp) {
+        if (this.px) { ed.drawTilesInto(ctx, this.px, layer.x, layer.y, layer.w, layer.h, vp); return; }
+        if (!this.canvas) return;
+        const fx = layer.w / target.width, fy = layer.h / target.height;
+        ctx.drawImage(this.canvas, layer.x + this.cx * fx, layer.y + this.cy * fy, this.cw * fx, this.ch * fy);
+    }
+
+    /** Give the tile store's display caches back when the gesture ends. */
+    release() { if (this.px) this.px.releaseDisplay(); }
 }
 
 class InpaintEditor {
@@ -3854,7 +3924,7 @@ class InpaintEditor {
             if (!o.aligned || !this.cloneOffset) this.cloneOffset = { x: this.cloneSource.x - ix, y: this.cloneSource.y - iy };
             const sample = this.sampleCanvas(o.sample);
             const heal = this.tool === "heal";
-            const stroke = new StrokeBuffer(layer.px);
+            const stroke = new StrokeBuffer(layer.px, this.pixels);
             this.pointer = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: false, last: [ix, iy], pressure: e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 1,
                 clone: { sample, dest: heal ? (o.sample === "image" ? sample : this.compositeCanvas()) : null, off: this.cloneOffset, heal } };
             this.cloneDab(this.pointer, ix, iy, ix, iy);
@@ -3863,6 +3933,9 @@ class InpaintEditor {
             if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
             if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels. Select a paint or image layer."); return; }
             if (!layer) layer = this.addPaintLayer();
+            // a gradient rebuilds its whole buffer on every move, so it keeps the canvas buffer on
+            // both backends: a sparse store would allocate every tile of the target and read a
+            // scratch of the whole layer back per move (docs/PLAN_BCE.md §C5)
             const stroke = new StrokeBuffer(layer.px);
             this.pointer = { kind: "layerpaint", grad: true, layer, stroke, clip: this.strokeClip(layer, layer.px), erase: false, start: [ix, iy], last: [ix, iy] };
         } else if (this.tool === "shape") {
@@ -3882,7 +3955,7 @@ class InpaintEditor {
             if (layer && layer.alphaLock && this.tool === "erase" && !(layer.maskPx && layer.maskEdit)) { this.setStatus(`${layer.name} has its alpha locked: nothing to erase. Unlock alpha first.`); return; }
             if (layer && layer.maskPx && layer.maskEdit) {
                 // Painting on the transparency mask: paint reveals, erase hides.
-                const stroke = new StrokeBuffer(layer.maskPx);
+                const stroke = new StrokeBuffer(layer.maskPx, this.pixels);
                 this.pointer = { kind: "maskpaint", layer, stroke, clip: this.strokeClip(layer, layer.maskPx), erase: this.tool === "erase", white: true, last: [ix, iy], pressure };
                 if (lineFrom && prev.mask) this.layerDab(this.pointer, lineFrom[0], lineFrom[1], ix, iy); else this.layerDab(this.pointer, ix, iy, ix, iy);
                 this.draw();
@@ -3893,7 +3966,7 @@ class InpaintEditor {
                 if (this.tool === "erase") { this.setStatus("The base layer cannot be erased. Select a layer or add a paint layer."); return; }
                 layer = this.addPaintLayer();
             }
-            const stroke = new StrokeBuffer(layer.px);
+            const stroke = new StrokeBuffer(layer.px, this.pixels);
             this.pointer = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: this.tool === "erase", last: [ix, iy], pressure };
             if (lineFrom && !prev.mask) this.layerDab(this.pointer, lineFrom[0], lineFrom[1], ix, iy); else this.layerDab(this.pointer, ix, iy, ix, iy);
         } else if (this.tool === "transform") {
@@ -4318,47 +4391,50 @@ class InpaintEditor {
         const radius = this.brushSize * (sx + sy) / 4 * (p.pressure == null ? 1 : Math.max(0.05, Math.min(1, p.pressure)));
         // the buffer holds the segment plus the dab (a tip may be wider than round, and turned)
         const R = radius * 1.5 + 2;
-        const ctx = c.ensure(Math.min(lx0, lx1) - R, Math.min(ly0, ly1) - R, Math.max(lx0, lx1) + R, Math.max(ly0, ly1) + R);
-        this.touchSource(c.canvas);
         const color = p.white ? "#ffffff" : (p.erase ? "#000000" : this.color);
-        ctx.globalCompositeOperation = "source-over";
         const hardness = p.erase ? this.eraseHardness : this.hardness;
         const tip = this.brushTip();
-        if (tip) { this.stampDab(ctx, tip, lx0, ly0, lx1, ly1, radius, color); return; }
-        if (hardness >= 0.98) {
-            ctx.strokeStyle = color;
-            ctx.lineCap = "round";
-            ctx.lineJoin = "round";
-            ctx.lineWidth = radius * 2;
-            ctx.beginPath();
-            ctx.moveTo(lx0, ly0);
-            ctx.lineTo(lx1 + 0.01, ly1 + 0.01);
-            ctx.stroke();
-            return;
-        }
-        if (!p.gradient || p.gradientRadius !== radius) {
-            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
-            const rgb = color.length === 7 ? `${parseInt(color.slice(1, 3), 16)},${parseInt(color.slice(3, 5), 16)},${parseInt(color.slice(5, 7), 16)}` : "0,0,0";
-            g.addColorStop(0, `rgba(${rgb},1)`);
-            g.addColorStop(Math.max(0, Math.min(0.97, hardness)), `rgba(${rgb},1)`);
-            g.addColorStop(1, `rgba(${rgb},0)`);
-            p.gradient = g;
-            p.gradientRadius = radius;
-        }
-        const dist = Math.hypot(lx1 - lx0, ly1 - ly0);
-        const spacing = Math.max(1, radius * 0.18);
-        const steps = Math.max(1, Math.ceil(dist / spacing));
-        ctx.fillStyle = p.gradient;
-        for (let i = 0; i <= steps; i++) {
-            const t = steps === 0 ? 0 : i / steps;
-            const x = lx0 + (lx1 - lx0) * t, y = ly0 + (ly1 - ly0) * t;
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.beginPath();
-            ctx.arc(0, 0, radius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-        }
+        c.draw(Math.min(lx0, lx1) - R, Math.min(ly0, ly1) - R, Math.max(lx0, lx1) + R, Math.max(ly0, ly1) + R, (ctx) => {
+            ctx.globalCompositeOperation = "source-over";
+            if (tip) { this.stampDab(ctx, tip, lx0, ly0, lx1, ly1, radius, color); return; }
+            if (hardness >= 0.98) {
+                ctx.strokeStyle = color;
+                ctx.lineCap = "round";
+                ctx.lineJoin = "round";
+                ctx.lineWidth = radius * 2;
+                ctx.beginPath();
+                ctx.moveTo(lx0, ly0);
+                ctx.lineTo(lx1 + 0.01, ly1 + 0.01);
+                ctx.stroke();
+                return;
+            }
+            // the gradient belongs to the context that made it, and on the tile backend every dab
+            // draws on a scratch of its own, so it is cached per context as well as per radius
+            if (!p.gradient || p.gradientRadius !== radius || p.gradientCtx !== ctx) {
+                const g = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+                const rgb = color.length === 7 ? `${parseInt(color.slice(1, 3), 16)},${parseInt(color.slice(3, 5), 16)},${parseInt(color.slice(5, 7), 16)}` : "0,0,0";
+                g.addColorStop(0, `rgba(${rgb},1)`);
+                g.addColorStop(Math.max(0, Math.min(0.97, hardness)), `rgba(${rgb},1)`);
+                g.addColorStop(1, `rgba(${rgb},0)`);
+                p.gradient = g;
+                p.gradientRadius = radius;
+                p.gradientCtx = ctx;
+            }
+            const dist = Math.hypot(lx1 - lx0, ly1 - ly0);
+            const spacing = Math.max(1, radius * 0.18);
+            const steps = Math.max(1, Math.ceil(dist / spacing));
+            ctx.fillStyle = p.gradient;
+            for (let i = 0; i <= steps; i++) {
+                const t = steps === 0 ? 0 : i / steps;
+                const x = lx0 + (lx1 - lx0) * t, y = ly0 + (ly1 - ly0) * t;
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.beginPath();
+                ctx.arc(0, 0, radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        });
     }
 
     // ---- selection tools: wand, feather, saved selections, quick mask ------------------------
@@ -4930,34 +5006,34 @@ class InpaintEditor {
         if (!this._cloneDab || this._cloneDab.width !== size) this._cloneDab = makeCanvas(size, size);
         const d = this._cloneDab, dctx = d.getContext("2d");
         const mask = this.dabMask(r, this.hardness);
-        const sctx = s.ensure((Math.min(x0, x1) - layer.x) * sx - r - 1, (Math.min(y0, y1) - layer.y) * sy - r - 1, (Math.max(x0, x1) - layer.x) * sx + r + 1, (Math.max(y0, y1) - layer.y) * sy + r + 1);
-        this.touchSource(s.canvas);
         const dist = Math.hypot(x1 - x0, y1 - y0);
         const steps = Math.max(1, Math.ceil(dist / Math.max(1, R * 0.25)));
-        for (let i = 0; i <= steps; i++) {
-            if (i === 0 && dist > 0) continue;
-            const x = x0 + (x1 - x0) * i / steps, y = y0 + (y1 - y0) * i / steps;
-            const qx = x + cl.off.x, qy = y + cl.off.y;
-            dctx.globalCompositeOperation = "source-over";
-            dctx.clearRect(0, 0, size, size);
-            dctx.drawImage(cl.sample, qx - R, qy - R, R * 2, R * 2, 0, 0, size, size);
-            if (cl.heal) {
-                const ms = this.regionMean(cl.sample, qx - R, qy - R, R * 2, R * 2);
-                const md = this.regionMean(cl.dest, x - R, y - R, R * 2, R * 2);
-                if (ms && md) {
-                    const dr = md[0] - ms[0], dg = md[1] - ms[1], db = md[2] - ms[2];
-                    if (Math.abs(dr) + Math.abs(dg) + Math.abs(db) > 1) {
-                        const img = dctx.getImageData(0, 0, size, size), a = img.data;
-                        for (let k = 0; k < a.length; k += 4) { a[k] += dr; a[k + 1] += dg; a[k + 2] += db; }
-                        dctx.putImageData(img, 0, 0);
+        s.draw((Math.min(x0, x1) - layer.x) * sx - r - 1, (Math.min(y0, y1) - layer.y) * sy - r - 1, (Math.max(x0, x1) - layer.x) * sx + r + 1, (Math.max(y0, y1) - layer.y) * sy + r + 1, (sctx) => {
+            for (let i = 0; i <= steps; i++) {
+                if (i === 0 && dist > 0) continue;
+                const x = x0 + (x1 - x0) * i / steps, y = y0 + (y1 - y0) * i / steps;
+                const qx = x + cl.off.x, qy = y + cl.off.y;
+                dctx.globalCompositeOperation = "source-over";
+                dctx.clearRect(0, 0, size, size);
+                dctx.drawImage(cl.sample, qx - R, qy - R, R * 2, R * 2, 0, 0, size, size);
+                if (cl.heal) {
+                    const ms = this.regionMean(cl.sample, qx - R, qy - R, R * 2, R * 2);
+                    const md = this.regionMean(cl.dest, x - R, y - R, R * 2, R * 2);
+                    if (ms && md) {
+                        const dr = md[0] - ms[0], dg = md[1] - ms[1], db = md[2] - ms[2];
+                        if (Math.abs(dr) + Math.abs(dg) + Math.abs(db) > 1) {
+                            const img = dctx.getImageData(0, 0, size, size), a = img.data;
+                            for (let k = 0; k < a.length; k += 4) { a[k] += dr; a[k + 1] += dg; a[k + 2] += db; }
+                            dctx.putImageData(img, 0, 0);
+                        }
                     }
                 }
+                dctx.globalCompositeOperation = "destination-in";
+                dctx.drawImage(mask, 0, 0);
+                const lx = (x - layer.x) * sx, ly = (y - layer.y) * sy;
+                sctx.drawImage(d, lx - r, ly - r);
             }
-            dctx.globalCompositeOperation = "destination-in";
-            dctx.drawImage(mask, 0, 0);
-            const lx = (x - layer.x) * sx, ly = (y - layer.y) * sy;
-            sctx.drawImage(d, lx - r, ly - r);
-        }
+        });
     }
 
     /** Gradient tool: rebuild the stroke buffer as a gradient from the drag start to (ix, iy). */
@@ -4966,20 +5042,23 @@ class InpaintEditor {
         const sx = c.tw / layer.w, sy = c.th / layer.h;
         const x0 = (p.start[0] - layer.x) * sx, y0 = (p.start[1] - layer.y) * sy;
         const x1 = (ix - layer.x) * sx, y1 = (iy - layer.y) * sy;
-        const ctx = c.all();   // no bounds: a gradient covers the whole layer
-        this.touchSource(c.canvas);
         this.strokeDirty(p, layer.x, layer.y, layer.x + layer.w, layer.y + layer.h, 0);
-        ctx.globalCompositeOperation = "source-over";
-        ctx.clearRect(0, 0, c.tw, c.th);
         const dist = Math.hypot(x1 - x0, y1 - y0);
-        if (dist < 0.5) return;
         const o = this.gradientOpts || { type: "linear", to: "transparent" };
-        const g = o.type === "radial" ? ctx.createRadialGradient(x0, y0, 0, x0, y0, dist) : ctx.createLinearGradient(x0, y0, x1, y1);
-        const rgb = this.color.length === 7 ? `${parseInt(this.color.slice(1, 3), 16)},${parseInt(this.color.slice(3, 5), 16)},${parseInt(this.color.slice(5, 7), 16)}` : "0,0,0";
-        g.addColorStop(0, `rgba(${rgb},1)`);
-        g.addColorStop(1, o.to === "white" ? "rgba(255,255,255,1)" : o.to === "black" ? "rgba(0,0,0,1)" : `rgba(${rgb},0)`);
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, c.tw, c.th);
+        // no bounds: a gradient covers the whole layer, and it is redrawn from nothing on every move
+        c.all((ctx) => {
+            ctx.globalCompositeOperation = "copy";
+            ctx.fillStyle = "rgba(0,0,0,0)";
+            ctx.fillRect(0, 0, c.tw, c.th);
+            ctx.globalCompositeOperation = "source-over";
+            if (dist < 0.5) return;
+            const g = o.type === "radial" ? ctx.createRadialGradient(x0, y0, 0, x0, y0, dist) : ctx.createLinearGradient(x0, y0, x1, y1);
+            const rgb = this.color.length === 7 ? `${parseInt(this.color.slice(1, 3), 16)},${parseInt(this.color.slice(3, 5), 16)},${parseInt(this.color.slice(5, 7), 16)}` : "0,0,0";
+            g.addColorStop(0, `rgba(${rgb},1)`);
+            g.addColorStop(1, o.to === "white" ? "rgba(255,255,255,1)" : o.to === "black" ? "rgba(0,0,0,1)" : `rgba(${rgb},0)`);
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, c.tw, c.th);
+        });
     }
 
     // ---- shape tool ---------------------------------------------------------------------
@@ -5005,7 +5084,7 @@ class InpaintEditor {
         if (kind === "rectangle" || kind === "ellipse" || kind === "freehand") {
             const layer = this.shapeTarget();
             if (!layer) return;
-            const stroke = new StrokeBuffer(layer.px);
+            const stroke = new StrokeBuffer(layer.px, this.pixels);
             this.pointer = { kind: "layerpaint", shape: kind, layer, stroke, clip: this.strokeClip(layer, layer.px),
                 erase: false, start: [ix, iy], cur: [ix, iy], path: [[ix, iy]], last: [ix, iy] };
             return;
@@ -5051,11 +5130,15 @@ class InpaintEditor {
         this.strokeDirty(p, dirty[0], dirty[1], dirty[2], dirty[3], 0);
         const sb = p.stroke, layer = p.layer;
         const sx = sb.tw / layer.w, sy = sb.th / layer.h;
-        const ctx = sb.ensure((box[0] - layer.x) * sx, (box[1] - layer.y) * sy, (box[2] - layer.x) * sx, (box[3] - layer.y) * sy);
-        this.touchSource(sb.canvas);
-        ctx.globalCompositeOperation = "source-over";
-        ctx.clearRect(sb.x, sb.y, sb.w, sb.h);
-        this.paintShape(ctx, layer, (c) => this.shapePath(c, p), p.shape !== "freehand" || o.fill, [sb.x, sb.y]);
+        // the shape is redrawn from nothing on every move, so the rectangle it is drawn in has to
+        // hold the box it had before as well: what it leaves there has to be cleared
+        sb.draw((dirty[0] - layer.x) * sx, (dirty[1] - layer.y) * sy, (dirty[2] - layer.x) * sx, (dirty[3] - layer.y) * sy, (ctx) => {
+            ctx.globalCompositeOperation = "copy";
+            ctx.fillStyle = "rgba(0,0,0,0)";
+            ctx.fillRect(sb.x, sb.y, sb.w, sb.h);
+            ctx.globalCompositeOperation = "source-over";
+            this.paintShape(ctx, layer, (c) => this.shapePath(c, p), p.shape !== "freehand" || o.fill);
+        });
     }
 
     /** The box a dragged shape covers, outline included (image coordinates). */
@@ -5129,12 +5212,13 @@ class InpaintEditor {
      * 1,392 measured layer / buffer combinations up to 15k (by up to 0.004 px). When C5 moves
      * stroke buffers into drawInto, this composes, and that difference is C5's to measure.
      */
-    paintShape(ctx, layer, build, closed, origin = [0, 0]) {
+    paintShape(ctx, layer, build, closed) {
         const o = this.shapeOpts;
         const sx = layer.px.width / layer.w, sy = layer.px.height / layer.h;
         ctx.save();
-        // image coordinates to the layer's pixels, less the stroke buffer's origin
-        ctx.setTransform(sx, 0, 0, sy, -layer.x * sx - origin[0], -layer.y * sy - origin[1]);
+        // image coordinates to the layer's own pixels, composed on the transform the context
+        // carries (the stroke buffer's, docs/PLAN_BCE.md §C1 rule 12), never set over it
+        ctx.transform(sx, 0, 0, sy, -layer.x * sx, -layer.y * sy);
         ctx.beginPath();
         build(ctx);
         if (closed) {
@@ -5160,7 +5244,7 @@ class InpaintEditor {
         const layer = this.shapeTarget();
         if (!layer) { this.draw(); return; }
         if (closed && !this.shapeOpts.fill && !this.shapeOpts.stroke) { this.setStatus("Neither fill nor outline is on: nothing to draw."); this.draw(); return; }
-        const stroke = new StrokeBuffer(layer.px);
+        const stroke = new StrokeBuffer(layer.px, this.pixels);
         // the box of the points and their handles, outline included: the buffer and the undo
         // step cover that, not the layer
         const pad = (this.shapeOpts.width || 0) / 2 + 2;
@@ -5172,8 +5256,8 @@ class InpaintEditor {
         }
         const box = [bx0 - pad, by0 - pad, bx1 + pad, by1 + pad];
         const sx = layer.px.width / layer.w, sy = layer.px.height / layer.h;
-        const ctx = stroke.ensure((box[0] - layer.x) * sx, (box[1] - layer.y) * sy, (box[2] - layer.x) * sx, (box[3] - layer.y) * sy);
-        this.paintShape(ctx, layer, (c) => this.shapePointPath(c, pts, closed, null), closed, [stroke.x, stroke.y]);
+        stroke.draw((box[0] - layer.x) * sx, (box[1] - layer.y) * sy, (box[2] - layer.x) * sx, (box[3] - layer.y) * sy,
+            (ctx) => this.paintShape(ctx, layer, (c) => this.shapePointPath(c, pts, closed, null), closed));
         const p = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: false };
         this.strokeBounds(p, box[0], box[1], box[2], box[3], 0);
         const rect = this.strokeRect(p, layer.px);
@@ -5263,7 +5347,7 @@ class InpaintEditor {
     }
 
     /** A stroke buffer for `target` (a layer's `px` or a mask's `maskPx`; only the size is read); tests build gestures with it. */
-    newStrokeBuffer(target) { return new StrokeBuffer(target); }
+    newStrokeBuffer(target) { return new StrokeBuffer(target, this.pixels); }
 
     /**
      * The selection mapped into `target`'s pixels (alpha = selected) inside the box
@@ -5316,17 +5400,19 @@ class InpaintEditor {
      */
     strokePatch(p, target, x, y, w, h) {
         const sb = p.stroke;
-        if (!sb || !sb.canvas) return null;
+        if (!sb || sb.empty) return null;
         const ix0 = Math.max(x, sb.x), iy0 = Math.max(y, sb.y);
         const ix1 = Math.min(x + w, sb.x + sb.w), iy1 = Math.min(y + h, sb.y + sb.h);
         if (ix1 <= ix0 || iy1 <= iy0) return null;
+        const src = sb.part(ix0, iy0, ix1, iy1);
+        if (!src) return null;
         const c = this.bandScratch("_strokePatch", w, h);
         const ctx = c.getContext("2d");
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
         ctx.clearRect(0, 0, w, h);
-        ctx.drawImage(sb.canvas, ix0 - sb.x, iy0 - sb.y, ix1 - ix0, iy1 - iy0, ix0 - x, iy0 - y, ix1 - ix0, iy1 - iy0);
+        ctx.drawImage(src.canvas, ix0 - src.x, iy0 - src.y, ix1 - ix0, iy1 - iy0, ix0 - x, iy0 - y, ix1 - ix0, iy1 - iy0);
         if (p.clip) {
             ctx.globalCompositeOperation = "destination-in";
             ctx.drawImage(this.clipCanvasFor(p.layer, target, x, y, w, h, this.bandScratch("_strokeClip", w, h)), 0, 0);
@@ -5341,7 +5427,7 @@ class InpaintEditor {
      */
     *strokeBands(p, target) {
         const sb = p.stroke;
-        if (!sb || !sb.canvas) return;
+        if (!sb || sb.empty) return;
         const r = this.strokeRect(p, target);
         const x0 = Math.max(sb.x, r ? Math.floor(r[0]) : sb.x), y0 = Math.max(sb.y, r ? Math.floor(r[1]) : sb.y);
         const x1 = Math.min(sb.x + sb.w, r ? Math.ceil(r[2]) : sb.x + sb.w), y1 = Math.min(sb.y + sb.h, r ? Math.ceil(r[3]) : sb.y + sb.h);
@@ -5359,7 +5445,7 @@ class InpaintEditor {
         if (!target) return;   // a mask removed under the gesture: nothing to write into
         // the undo step is a copy of what the stroke touched, taken before it is applied
         if (!p.noUndo) this.pushUndoSnapshot(this.strokeUndo(p, target));
-        if (!p.stroke || !p.stroke.canvas) return;
+        if (!p.stroke || p.stroke.empty) return;
         const opacity = this.brushOpacity;
         const op = p.erase ? "destination-out" : (p.kind === "layerpaint" && p.layer.alphaLock ? "source-atop" : "source-over");
         for (const [bx, by, bw, bh] of this.strokeBands(p, target)) {
@@ -5566,13 +5652,11 @@ class InpaintEditor {
      */
     drawStrokeInto(ctx, layer, target, op, vp, dev) {
         const p = this.pointer, sb = p.stroke;
-        if (!sb || !sb.canvas) return;
-        const fx = layer.w / target.width, fy = layer.h / target.height;
-        const ix = layer.x + sb.x * fx, iy = layer.y + sb.y * fy, iw = sb.w * fx, ih = sb.h * fy;
+        if (!sb || sb.empty) return;
         if (!p.clip) {
             ctx.globalAlpha = this.brushOpacity;
             ctx.globalCompositeOperation = op;
-            ctx.drawImage(sb.canvas, ix, iy, iw, ih);
+            sb.drawOver(this, ctx, layer, target, vp);
             ctx.globalAlpha = 1;
             ctx.globalCompositeOperation = "source-over";
             return;
@@ -5586,7 +5670,7 @@ class InpaintEditor {
         x.globalCompositeOperation = "source-over";
         x.clearRect(0, 0, w, h);
         x.setTransform(vp.sx, 0, 0, vp.sy, -vp.x * vp.sx - dev[0], -vp.y * vp.sy - dev[1]);
-        x.drawImage(sb.canvas, ix, iy, iw, ih);
+        sb.drawOver(this, x, layer, target, { ...vp, x: vp.x, y: vp.y, w: vp.w, h: vp.h });
         // the selection over the same image rectangle: destination-in, and the scratch is exactly
         // the rectangle, so the operation's reach beyond what is drawn is what it has to be
         x.globalCompositeOperation = "destination-in";

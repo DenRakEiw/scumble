@@ -36,6 +36,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   of drawing and 1.3 s to apply, and held 1.1 GB while you drew it. It is now clipped and applied
   in bands of 1024 px, and only in the bands a dab really touched: 29 ms of drawing, 280 ms to
   apply, and those 1.1 GB are gone. The result is the same picture.
+- **A stroke only remembers where you painted (tile mode).** The buffer a stroke is drawn into
+  used to be a rectangle around everything the stroke had touched, so a line from one corner of a
+  15000 × 10000 picture to the other held 560 MB for a line a few hundred pixels wide. In tile
+  mode it now keeps only the tiles the brush actually reached: 26 MB for that same stroke, and no
+  copying while it grows. Nothing changes for the gradient tool, which covers the whole layer by
+  its nature and keeps the buffer it had.
 
 ## 0.1.12 — 2026-09-14
 

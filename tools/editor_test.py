@@ -1491,7 +1491,16 @@ const path = []; for (let i = 0; i <= 24; i++) path.push([500 + i * 90, 700 + Ma
 // canvas copy (the buffer growing) may change it without changing what is drawn
 const same = (a, b, tol) => { let max = 0; for (let i = 0; i < a.length; i += 4) { const aa = a[i + 3], ba = b[i + 3]; let d = Math.abs(aa - ba); for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(a[i + k] * aa / 255 - b[i + k] * ba / 255)); if (d > max) max = d; } return max <= tol ? null : +max.toFixed(1); };
 // a full-size buffer that answers the same interface: the reference is the old way, a canvas the size of the layer
-const fullBuffer = (target) => { const c = mk(target.width, target.height); return { tw: target.width, th: target.height, canvas: c, x: 0, y: 0, w: target.width, h: target.height, ensure() { const ctx = c.getContext("2d"); ctx.setTransform(1, 0, 0, 1, 0, 0); return ctx; }, all() { return this.ensure(); } }; };
+const fullBuffer = (target) => {
+    const c = mk(target.width, target.height);
+    return {
+        tw: target.width, th: target.height, canvas: c, x: 0, y: 0, w: target.width, h: target.height,
+        cells: new Set([0]), empty: false,
+        draw(x0, y0, x1, y1, fn) { const ctx = c.getContext("2d"); ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); try { return fn(ctx); } finally { ctx.restore(); } },
+        all(fn) { return this.draw(0, 0, this.tw, this.th, fn); },
+        part() { return { canvas: c, x: 0, y: 0 }; },
+    };
+};
 const paintRef = (erase) => {
     const ref = mk(W, H); layer.px.drawTo(ref.getContext("2d"), 0, 0);
     const q = { kind: "layerpaint", layer, stroke: fullBuffer(layer.px), clip: true, erase, last: path[0], pressure: 1 };
@@ -1521,7 +1530,8 @@ for (const erase of [false, true]) {
             {
                 const c = whole.getContext("2d"); layer.px.drawTo(c, 0, 0);
                 const clip = mk(W, H); { const q = clip.getContext("2d"); q.setTransform(layer.px.width / layer.w, 0, 0, layer.px.height / layer.h, 0, 0); ed.sel.drawTo(q, -layer.x, -layer.y); }
-                const st = mk(W, H); { const q = st.getContext("2d"); q.drawImage(p.stroke.canvas, p.stroke.x, p.stroke.y); q.globalCompositeOperation = "destination-in"; q.drawImage(clip, 0, 0); }
+                const sp = p.stroke.part(p.stroke.x, p.stroke.y, p.stroke.x + p.stroke.w, p.stroke.y + p.stroke.h);
+                const st = mk(W, H); { const q = st.getContext("2d"); q.drawImage(sp.canvas, p.stroke.x - sp.x, p.stroke.y - sp.y, p.stroke.w, p.stroke.h, p.stroke.x, p.stroke.y, p.stroke.w, p.stroke.h); q.globalCompositeOperation = "destination-in"; q.drawImage(clip, 0, 0); }
                 c.globalAlpha = ed.brushOpacity; c.globalCompositeOperation = erase ? "destination-out" : "source-over"; c.drawImage(st, 0, 0);
             }
             const box = [Math.max(0, p.stroke.x - 4), Math.max(0, p.stroke.y - 4), Math.min(W, p.stroke.x + p.stroke.w + 4), Math.min(H, p.stroke.y + p.stroke.h + 4)];
@@ -1567,6 +1577,122 @@ for (const erase of [false, true]) {
 }
 ed.clearSelection();
 await run("remove_layer", { layer: layer.id, doc: window.__t });
+return out;
+"""),
+    ("gradient_tool_keeps_the_canvas_buffer_and_fills_the_layer", """
+// The gradient rebuilds its whole buffer on every move, so C5 leaves it on the canvas buffer on
+// both backends: a sparse store of the target's size would allocate every tile and read a scratch
+// of the whole layer back per move. Driven through the real pointer handlers, so the gesture makes
+// its own buffer; the fill itself had no gate at all before.
+const d = await run("new_document");
+window.__tg = d.id;
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 800, height: 600, doc: d.id });
+const L = ed.addPaintLayer();
+ed.activeLayerId = L.id;
+ed._fitted = false;
+ed.view.scale = 1;
+ed.view.x = Math.round(ed.canvas.width / 2 - 400);
+ed.view.y = Math.round(ed.canvas.height / 2 - 300);
+ed.setTool("gradient");
+ed.gradientOpts = { type: "linear", to: "transparent" };
+ed.color = "#ff0000";
+ed.brushOpacity = 1;
+ed.draw(); await wait(60);
+const r = ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: r.left + sx * r.width / ed.canvas.width, clientY: r.top + sy * r.height / ed.canvas.height }; };
+const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 11, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+ed.canvas.dispatchEvent(ev("pointerdown", 60, 300));
+const p = ed.pointer;
+const out = { tiles: ed.tileMode, kind: p && p.kind, grad: !!(p && p.grad), sparse: !!(p && p.stroke && p.stroke.px) };
+if (!p || !p.grad) throw new Error("the gradient tool did not start a gesture: " + JSON.stringify(out) + " " + ed.status);
+if (out.sparse) throw new Error("the gradient took a sparse stroke store: " + JSON.stringify(out));
+ed.canvas.dispatchEvent(ev("pointermove", 740, 300));
+await wait(30);
+ed.canvas.dispatchEvent(ev("pointerup", 740, 300));
+await wait(60);
+const at = (x, y) => Array.from(L.px.readRect(x, y, 1, 1).data);
+out.start = at(62, 300); out.middle = at(400, 300); out.end = at(735, 300);
+if (out.start[0] < 240 || out.start[3] < 240) throw new Error("the gradient did not start opaque: " + JSON.stringify(out));
+if (out.end[3] > 20) throw new Error("the gradient did not run out to transparent: " + JSON.stringify(out));
+if (out.middle[3] < 80 || out.middle[3] > 190) throw new Error("the middle is not halfway: " + JSON.stringify(out));
+const step = ed.undo[ed.undo.length - 1];
+out.undo = { kind: step.kind, w: step.w, h: step.h };
+await run("close_document", { doc: d.id, force: true });
+ed.setTool("paint");
+return out;
+"""),
+    ("a_stroke_across_the_picture_keeps_only_the_tiles_it_touched", """
+// C5: on the tile backend the stroke buffer is a sparse store of the target's own size, so a
+// stroke from corner to corner holds the tiles its dabs reached and nothing else. Before that it
+// was a canvas of the stroke's bounding box, which for a diagonal is the whole picture (561 MB on
+// a 15000 x 10000 one). The picture it writes has to be the picture a buffer of the whole box
+// writes, so the committed pixels are compared against exactly that.
+const T = await import("./editor/inpaint_tiles.js");
+const d = await run("new_document");
+window.__tc = d.id;
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 4000, height: 3000, doc: d.id });
+const W = ed.width, H = ed.height;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const layer = ed.addPaintLayer();
+layer.px.drawInto(null, (x) => { x.fillStyle = "#20406080"; x.fillRect(0, 0, W, H); });
+ed.activeLayerId = layer.id;
+await run("select_none", { doc: d.id });
+ed.brushSize = 50; ed.hardness = 0.5; ed.brushOpacity = 0.8; ed.color = "#40e080";
+const path = []; for (let i = 0; i <= 20; i++) path.push([100 + i * (W - 200) / 20, 100 + i * (H - 200) / 20]);
+const dabs = (q) => { ed.layerDab(q, path[0][0], path[0][1], path[0][0], path[0][1]); for (let i = 1; i < path.length; i++) ed.layerDab(q, path[i - 1][0], path[i - 1][1], path[i][0], path[i][1]); };
+// the reference: the same dabs into a buffer of the whole target, applied the old way
+const before = layer.px.readRect(0, 0, W, H).data.slice();
+const full = mk(layer.px.width, layer.px.height);
+const ref = {
+    tw: layer.px.width, th: layer.px.height, canvas: full, x: 0, y: 0, w: full.width, h: full.height,
+    cells: new Set([0]), empty: false,
+    draw(x0, y0, x1, y1, fn) { const c = full.getContext("2d"); c.save(); c.setTransform(1, 0, 0, 1, 0, 0); try { return fn(c); } finally { c.restore(); } },
+    all(fn) { return this.draw(0, 0, this.tw, this.th, fn); },
+    part() { return { canvas: full, x: 0, y: 0 }; },
+};
+dabs({ kind: "layerpaint", layer, stroke: ref, clip: null, erase: false, last: path[0], pressure: 1 });
+const want = mk(W, H);
+{ const c = want.getContext("2d"); layer.px.drawTo(c, 0, 0); c.globalAlpha = ed.brushOpacity; c.drawImage(full, 0, 0); }
+// the real gesture
+const p = { kind: "layerpaint", layer, stroke: ed.newStrokeBuffer(layer.px), clip: null, erase: false, last: path[0], pressure: 1 };
+ed.pointer = p;
+dabs(p);
+const sb = p.stroke;
+const boxBytes = sb.w * sb.h * 4;
+const out = { tiles: ed.tileMode, box: [sb.w, sb.h], boxMB: +(boxBytes / 1048576).toFixed(1),
+              heldMB: +((sb.px ? sb.px.bytes() : sb.cw * sb.ch * 4) / 1048576).toFixed(1),
+              tilesHeld: sb.px ? sb.px.tileCount : null, cells: sb.cells.size };
+if (ed.tileMode) {
+    if (!sb.px || !T.isTilePixels(sb.px)) throw new Error("the stroke buffer is not a tile store: " + JSON.stringify(out));
+    if (sb.px.width !== layer.px.width || sb.px.height !== layer.px.height) throw new Error("the stroke store is not the target's size");
+    if (out.heldMB > out.boxMB * 0.25) throw new Error("the sparse buffer holds most of its own box: " + JSON.stringify(out));
+} else if (sb.px) throw new Error("the canvas backend made a tile store for the stroke");
+if (sb.w < W * 0.8 || sb.h < H * 0.8) throw new Error("this stroke is supposed to span the picture: " + JSON.stringify(out));
+const bx = ed.strokeRect(p, layer.px);
+ed.commitStroke(p);
+ed.pointer = null;
+ed.markLayerChanged(layer, bx);
+ed.releaseStrokeScratch();
+const got = layer.px.readRect(0, 0, W, H).data;
+const wd = want.getContext("2d").getImageData(0, 0, W, H).data;
+let worst = 0, n = 0, changed = 0;
+for (let i = 0; i < got.length; i += 4) {
+    const ga = got[i + 3], wa = wd[i + 3];
+    let dd = Math.abs(ga - wa);
+    for (let k = 0; k < 3; k++) dd = Math.max(dd, Math.abs(got[i + k] * ga / 255 - wd[i + k] * wa / 255));
+    if (dd > 0) n++;
+    if (dd > worst) worst = dd;
+    if (Math.abs(got[i + 3] - before[i + 3]) > 2 || Math.abs(got[i] - before[i]) > 2) changed++;
+}
+out.worst = +worst.toFixed(1); out.differing = n; out.changed = changed;
+// the stroke really painted, so the comparison cannot pass on a buffer that drew nothing
+if (changed < 200000) throw new Error("the stroke barely changed the layer: " + JSON.stringify(out));
+if (worst > 8) throw new Error("the sparse buffer wrote a different picture than a whole one: " + JSON.stringify(out));
+await run("close_document", { doc: d.id, force: true });
 return out;
 """),
     ("undo_puts_a_flipped_turned_or_merged_layer_back", """
@@ -2195,6 +2321,40 @@ await one("erase", { kind: "layerpaint", erase: true });
 await one("alpha_lock", { kind: "layerpaint", alphaLock: true });
 await one("masked", { kind: "layerpaint", mask: true });
 await one("mask_stroke", { kind: "maskpaint", mask: true });
+// a shape gesture dragged out and then back in: the shape is redrawn from nothing on every move,
+// so the preview has to show the small rectangle, not the big one the drag passed through
+{
+    const L = ed.addLayer({ name: "shape", kind: "paint", px: LayerPixels.fromCanvas(pattern()), x: 0, y: 0, w: 2400, h: 1600, dirty: true });
+    ed.activeLayerId = L.id;
+    ed.markLayerChanged(L);
+    await run("select_none", { doc: d.id });
+    ed.setTool("shape");
+    ed.color = "#00c0ff";
+    ed.shapeOpts = { kind: "rectangle", fill: true, stroke: false, width: 4, radius: 0, color: "#000000" };
+    ed.sceneSig = null; ed.draw(); await wait(60);
+    ed.shapePointerDown(700, 750, {}, false);
+    const p = ed.pointer;
+    if (!p || !p.stroke) throw new Error("the shape tool refused the gesture: " + ed.status);
+    ed.shapeDab(p, 1500, 1300, {});
+    ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40);
+    ed.shapeDab(p, 900, 900, {});
+    ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40);
+    const used = !!(ed.strokeView && ed._strokeViewOf === p);
+    const before = shot();
+    const box = ed.strokeRect(p, L.px);
+    ed.commitStroke(p);
+    ed.pointer = null;
+    ed.markLayerChanged(L, box);
+    ed.releaseStrokeScratch();
+    ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(60); ed.sceneSig = null; ed.draw(); await wait(60);
+    const [worst, n] = diff(before, shot());
+    out.cases.shape = { used, worst, differing: n };
+    if (!used) throw new Error("shape: the region preview was not the path taken");
+    if (worst > 2) throw new Error("shape: the preview is not what the commit wrote (" + worst + " levels on " + n + " of " + before.length + " bytes)");
+    ed.removeLayer(L.id);
+    ed.renderLayers();
+    ed.setTool("paint");
+}
 ed.compositorOff = compOff;
 await run("select_none", { doc: d.id });
 return out;

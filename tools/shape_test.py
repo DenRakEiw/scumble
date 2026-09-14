@@ -164,6 +164,30 @@ if (off[3] !== 0) throw new Error("it painted where the path never went: " + off
 await run("undo", { doc: window.__sh });
 return { onPath, off, points: p.path.length };
 """),
+    ("a_shape_dragged_smaller_leaves_nothing_behind", """
+const ed = ednow(window.__sh);
+%(drag)s
+await run("undo", { doc: window.__sh });
+ed.color = "#00c0ff";
+ed.shapeOpts = { kind: "rectangle", fill: true, stroke: false, width: 4, radius: 0, color: "#000000" };
+// two moves in one gesture: the shape is redrawn from nothing every time, so the buffer has to be
+// cleared where the bigger one stood. C5 draws into the box of the two together for exactly this.
+ed.shapePointerDown(100, 100, {}, false);
+if (!ed.pointer) throw new Error("the tool refused the gesture: " + ed.status);
+ed.shapeDab(ed.pointer, 600, 500, {});
+ed.shapeDab(ed.pointer, 250, 220, {});
+const p = ed.pointer;
+const box = ed.strokeRect(p, p.layer.px);
+ed.commitStroke(p);
+ed.markLayerChanged(p.layer, box);
+ed.pointer = null;
+const l = p.layer;
+const inside = px(ed, l, 180, 160), big = px(ed, l, 500, 420), edge = px(ed, l, 300, 260);
+if (inside[3] < 250) throw new Error("the small rectangle did not land: " + inside);
+if (big[3] !== 0) throw new Error("the rectangle the drag passed through is still there: " + big);
+if (edge[3] !== 0) throw new Error("pixels just outside the small rectangle stayed: " + edge);
+return { inside, big, edge };
+"""),
     ("the_selection_clips_the_shape", """
 const ed = ednow(window.__sh);
 %(drag)s

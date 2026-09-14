@@ -1536,6 +1536,46 @@ pixel) — a short clean-up after C5, not before it.
   into dropped (the erase step's stroke does not reach the screen), the band's clip not applied (79
   levels), the band drawn 6 px off (77).
 
+**(c) The stroke buffer is a sparse store on tiles** (`inpaint_canvas.js`, commit "C5 (c)"):
+
+- `StrokeBuffer` takes the editor's backend. On **tiles** it is a `LayerPixels` of the target's own
+  size (`px`), sparse: a dab allocates the tiles it touches and nothing else, so a stroke from
+  corner to corner never reallocates and never holds a canvas of its bounding box. On **canvases**
+  it stays the growing canvas it has always been (`cx, cy, cw, ch`), because a store of the target's
+  size there *is* the whole target. `x, y, w, h` is the box every dab together covered on both.
+- **`draw(x0, y0, x1, y1, fn)`** replaces `ensure()`: `fn(ctx)` draws in the target's own
+  coordinates, clipped to the padded box, and is a `drawInto` of the sparse store on tiles. Both
+  paths now clip to that box, which they did not before. `layerDab`, `cloneDab`, `gradientDab`,
+  `shapeDab` and `finishShape` take it; `paintShape` **composes** its transform instead of setting
+  one (C1 rule 12), so the buffer's origin is no longer part of it; `p.gradient` is cached per
+  context as well as per radius, because on tiles every dab draws on a scratch of its own.
+- **Two sites the change forced into the open.** `shapeDab` redraws its shape from nothing on every
+  move and cleared the whole buffer for it; with a box it has to draw in the box it had *before* as
+  well, or the shape it passed through stays on the screen (the commit never wrote it — only the
+  preview showed it). And the **gradient** rebuilds its whole buffer on every move, so it keeps the
+  canvas buffer on both backends: a sparse store would allocate every tile of the target and read a
+  scratch of the whole layer back per move.
+- **`PAD`** is 32 on the canvas buffer (headroom, so a growing stroke does not reallocate every dab)
+  and **2** on the sparse store, where 32 px on every side of every dab is a third more scratch to
+  fill and read back for nothing: the callers pad their own box by what the brush reaches.
+- **Measured** (15000 x 10000, tiles, the 40-dab stroke across the picture clipped to a selection):
+  the buffer holds **560.7 MB → 26.5 MB** (106 tiles, 26 band cells), the commit 281.6 → 277.4 ms,
+  and the dabs with their frames 29.4 → **47.7 ms** — 0.4 ms a dab more, which is the scratch a
+  `drawInto` fills and reads back. On `perf_test.py`'s own document (a heavier stack, so the frame
+  dominates) the two rows read 720 → 620 ms and 447 → 486 ms, inside that document's noise. The
+  headline of this step is the memory, not the time.
+- **Gates**: `editor_test.py` gains `a_stroke_across_the_picture_keeps_only_the_tiles_it_touched`
+  (a diagonal stroke on 4000 x 3000: the store is the target's size, holds under a quarter of its
+  box's bytes, and writes the same picture as a buffer of the whole box, ≤ 8 premultiplied levels,
+  with a "the stroke really painted" floor first) and
+  `gradient_tool_keeps_the_canvas_buffer_and_fills_the_layer` (driven through the real pointer
+  handlers; the gradient tool had no gate at all before). `shape_test.py` gains
+  `a_shape_dragged_smaller_leaves_nothing_behind`, and the preview step gains a shape case, which is
+  where the stale shape actually shows. Six mutations, each red: `paintShape` setting an absolute
+  transform, the extent 40 px short, a shrinking shape drawn only in its new box (93 levels on the
+  preview), the gradient taking a sparse store, the store made half the target's width (153 levels
+  on the committed stroke), and the earlier three of step (b).
+
 ### C6. Mips in the worker, thumbnails, hover, object map, colour match from mips (3 days)
 
 - A whole-layer change (filter apply, `setPixels`, transform, paste, load) marks all its
