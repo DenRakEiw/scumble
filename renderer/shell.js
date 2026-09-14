@@ -55,7 +55,7 @@ const ui = {
     compatKeyState: $("set-compat-key-state"), compatTest: $("set-compat-test"), compatState: $("set-compat-state"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
-    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setGpuMem: $("set-gpu-mem"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
+    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
@@ -71,8 +71,22 @@ ui.url.value = (settings.comfy && settings.comfy.url) || "http://127.0.0.1:8188"
 
 host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize });
 
+/**
+ * The compositor's tile atlas budget (settings.memory.atlasMB, docs/PLAN_BCE.md §C3). Kept on every
+ * editor, so a compositor made later takes it too; the change reaches the open ones at once.
+ */
+function applyAtlasBudget(mb) {
+    atlasMB = Math.max(16, Math.round(mb) || 512);
+    for (const ed of host.editors()) {
+        ed.atlasMB = atlasMB;
+        try { if (ed._compositor && ed._compositor.setAtlasBudget) ed._compositor.setAtlasBudget(atlasMB * 1048576); } catch (_) { /* no compositor */ }
+    }
+}
+let atlasMB = (settings.memory && settings.memory.atlasMB) != null ? Math.max(16, settings.memory.atlasMB) : 512;
+
 function newDocument(id) {
     const editor = new InpaintEditor({ id: id || host.nextId++, title: "Scumble" });
+    editor.atlasMB = atlasMB;
     host.addEditor(editor);
     editor.open();
     host.attachBrushTips(editor);      // the shared tip library and its save hook
@@ -1212,7 +1226,10 @@ async function watchMemory() {
             const ed = host.editor;
             if (ed && !busy(ed) && !ed.pointer) {
                 try {
-                    if (ed._compositor && ed._compositor.stats) front += ed._compositor.stats().bytes || 0;
+                    if (ed._compositor && ed._compositor.stats) {
+                        const cst = ed._compositor.stats();
+                        front += (cst.bytes || 0) + ((cst.atlas && cst.atlas.bytes) || 0);   // the tile atlas too (C3)
+                    }
                     if (ed._compositor) ed._compositor.clear();
                     if (typeof ed.releaseGpu === "function") front += ed.releaseGpu() || 0;
                     ed.sceneSig = null;
@@ -1260,6 +1277,7 @@ async function openSettings() {
     ui.setGpu.textContent = glFiltersAvailable() ? "Filter layers run on the GPU (WebGL2); the CPU code is the fallback." : "WebGL2 is not available here: filter layers run on the CPU.";
     ui.setGpuLimit.value = (settings.memory && settings.memory.gpuLimitMB) != null ? settings.memory.gpuLimitMB : 3072;
     ui.setCardMin.value = (settings.memory && settings.memory.cardMinFreeMB) != null ? settings.memory.cardMinFreeMB : 2048;
+    ui.setAtlas.value = (settings.memory && settings.memory.atlasMB) != null ? settings.memory.atlasMB : 512;
     try {
         const mb = await gpuMemoryMB();
         const card = await cardMemory();
@@ -1342,6 +1360,12 @@ ui.setCardMin.addEventListener("change", async () => {
     const v = Math.max(0, Math.round(Number(ui.setCardMin.value) || 0));
     ui.setCardMin.value = v;
     settings = await window.scumble.settings.set({ memory: { ...(settings.memory || {}), cardMinFreeMB: v } });
+});
+ui.setAtlas.addEventListener("change", async () => {
+    const v = Math.max(16, Math.round(Number(ui.setAtlas.value) || 0));
+    ui.setAtlas.value = v;
+    settings = await window.scumble.settings.set({ memory: { ...(settings.memory || {}), atlasMB: v } });
+    applyAtlasBudget(v);
 });
 ui.aboutRepo.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal("https://github.com/DenRakEiw/scumble"); });
 

@@ -1197,6 +1197,122 @@ tiles: expected ≤ 1 level). `perf_test.py 15000x10000`: pan, zoom, fit, first 
 zoom to 1:1 all ≤ 1 frame; `memoryReport()` no pyramid entries; GPU process ≤ atlas budget
 + 100 MB above start with one 15k document open.
 
+#### C3 as built: the decisions taken while building it (2026-09-14)
+
+Steps (a) and (b) are in (`main`, one commit each). What is **not** built yet is at the end of
+this section; C3 is not finished.
+
+**(a) The tile store hands out atlas slots** (`inpaint_tiles.js`, commit "C3 (a)"):
+
+- **`tileWithGutter(tx, ty, level, out)`** is one slot: the tile at `level` (0 to `MIP_LEVELS`),
+  **premultiplied** RGBA8, `(256 >> level) + 2` px a side, written into a buffer the caller keeps.
+  Null when the tile is not allocated, which is the atlas's "nothing to draw here". `GUTTER`,
+  `levelSide(level)` and `slotSide(level)` are exported with it.
+- **Premultiplied**, because the atlas is sampled with `LINEAR` and straight alpha bleeds the colour
+  of transparent pixels across an edge. The shader divides the alpha out again, exactly as it always
+  did for the canvas uploads (which Chromium premultiplied on the way in). The forward table is
+  Skia's `SkMulDiv255Round`, the inverse of the store's own round trip.
+- **The gutter** is what stops a `LINEAR` sample at a slot's edge from reaching the next slot in the
+  page: a neighbour that exists gives its edge row or column, a missing one reads as transparent (a
+  missing tile is transparent), and past the image's own edge the tile's edge line is repeated, which
+  is what a texture clamped to its edge gave when a layer was one texture.
+- **`extendTile()`**: the last tile of a row or a column gets a clamp-extended copy before its mips
+  are built. Halving the valid part alone mixes the last valid line with a transparent one wherever
+  the valid width or height is odd, so the image's own edge would fade by a level of mip. The copy is
+  kept on the tile, by its version, and only edge tiles ever have one (about `w/256 + h/256` of them).
+  `thumbnailCanvas()` was deliberately **not** moved onto it: it has the same fringe, and that is C6's
+  to decide with the rest of the thumbnails.
+- Gate: `tools/pixels_test.js` case `tiles_atlas_slots` checks every tile of a 601 × 501 document at
+  every level against an independent reconstruction from `readRect` (clamp-extended, halved
+  alpha-weighted, premultiplied with Skia's rounding, the gutter taken from the neighbour the rule
+  names). Red without the clamp extension, without the gutter and without the premultiply.
+
+**(b) The compositor draws the tiles** (`inpaint_compositor.js`, `inpaint_canvas.js`, commit "C3 (b)"):
+
+- **Pages per (pixels object, level)**, as the plan wanted, but the page is **sized to what is asked
+  for**: at most `ATLAS_MAX_PER` = 16 slots a side and at most 4096 px, and the first page of a
+  (pixels, level) is no larger than the tiles that frame wants. The plan's fixed 4096² page is 64 MB
+  whatever the level, which at level 5 (a slot of 10 px) would be a page for 167,000 slots; this way
+  level 0 is 15 × 15 slots (59 MB, which is what 225 level-0 tiles *are*) and level 5 is 160 px.
+- **A slot** is keyed by the tile key inside its entry and carries the tile's `version`, so a tile
+  that changed is re-uploaded with `texSubImage2D` **from the typed array** and nothing else is. A
+  full page takes the slot of the tile drawn longest ago (never one of this frame).
+- **One instanced draw per (layer, page)**: `drawArraysInstanced` over `{ rect(4), uv(4) }` per tile.
+  **The rects are in image coordinates and the region is a uniform** (`u_region`), which the plan did
+  not say: with clip-space rects the buffer has to be rebuilt on every pan, and at fit on a 15k
+  document that is 2,400 tiles a frame, 1.9 ms against 0.3. The buffers are cached per entry and
+  rebuilt only when the visible tile set, the pixels' version, the layer's rectangle or the atlas's
+  generation changes (a page deleted or a slot that changed hands bumps the generation).
+- **The blend shader is the one it was**: `BLEND_GLSL` is shared by the quad program and the atlas
+  program, which differ only in how they sample. The three op modes for the stroke store and the
+  `u_mask` sampler of the plan are **not** built (see below), so a masked layer still goes through
+  its `_masked` canvas and the display pyramid.
+- **The editor**: `glLayerSpec(px, ...)` hands a tile store over as itself with the level to draw,
+  `floor(-log2(scale))` clamped to the mips a tile carries; everything else (a colour-matched layer,
+  a masked layer's `_masked`, the canvas backend) keeps `displaySource`. So **a tile-backed layer the
+  compositor draws has no display mirror, no GPU copy of one and no pyramid entry at all.** The
+  plan's "below level 5 the document-level small canvas is drawn as one texture" was **not** needed:
+  at level 5 a 30k × 20000 document is 9,126 tiles of 8 px, 3.7 MB of pages and one instanced draw.
+- **The budget** is `settings.memory.atlasMB`, default 512, a row in Settings › Rendering; pages are
+  an LRU by bytes with an age of 300 composites. `stats().atlas` and therefore
+  `memoryReport().compositor.atlas` report pages, slots, bytes and uploads; `releaseCaches` counts
+  the atlas in what it frees and the memory watch counts it for the front tab. The watch does **not**
+  lower the budget under pressure (the plan's wording); it releases the pages with the caches.
+- **`forgetPixels()`**: the atlas pages of pixels that leave the document go with them
+  (`releaseDetachedDisplays`), like the mirrors of C2's final review.
+
+**The trap this step cost an afternoon**: Chromium applies `UNPACK_PREMULTIPLY_ALPHA_WEBGL` to an
+**ArrayBufferView** upload too (the WebGL spec says the unpack switches apply to DOM sources and
+`ImageData` only). A canvas source uploaded earlier in the same frame — a masked or colour-matched
+layer — leaves the switch on, and every partly transparent tile pixel was then premultiplied twice:
+a text layer lost its anti-aliased edge (65 levels on 1,389 pixels) while every layer on its own was
+exact. Both switches are set explicitly before each slot upload now.
+
+**Measured** (15000 × 10000 on tiles, `perf_test.py`, three new rows with the filter layer hidden so
+the compositor takes the stack — the benchmark's document always has one, which is why C3 changes
+none of its old rows):
+
+| row | before C3 | after |
+|---|---|---|
+| pan at 1:1, GPU stack | 0.1 ms | 0.1 ms |
+| pan at fit, GPU stack | 0.1 ms | 0.3 ms |
+| **first frame fit → 1:1, GPU** | **1027 ms** | **35 ms** |
+
+and the compositor holds **91 MB in 43 atlas pages** where the old path made a 600 MB CPU mirror per
+source plus a GPU copy of it. The steady pan was already cheap on both: C2's GPU copy of the mirror
+is cached too. What C3 removes is the *making* of it.
+
+**Gates.** `composite_test.py`'s gpu-vs-2d step now shoots **at 1:1 as well**, where neither path
+resamples, and that is the row it gates on tiles: the tile compositor has to agree with Canvas 2D to
+the level there (max 1). At a fractional zoom the two legitimately differ — the compositor draws the
+tiles' alpha-weighted box mips, Canvas 2D the Skia level — so that row is reported, exactly as the
+window step's `fit` row already was. The window step checks the **atlas** on tiles instead of the
+source windows (pages for both sources, bytes far below the whole sources, and a pan **back**
+uploading nothing), and `editor_test.py` checks that a layer the atlas draws has neither a display
+mirror nor a pyramid entry and gives its pages back when it is removed. Runs: `--tiles on` and
+`--tiles off` with `pixels editor composite commands shape brush film glb ailabel size transparent
+generate log mcp nodecopy` ALL PASS, `--copy --tiles off pixels editor composite commands` ALL PASS.
+Every fix has a counter-proof (the unpack switch, `forgetPixels`, the tile path itself, the clamp
+extension, the gutter, the premultiply: each mutation red).
+
+**What C3 still owes** (the plan's §C3, not built):
+
+- **The Canvas 2D fallback drawing tiles.** Canvas 2D still draws a tile store's **display mirror**
+  and the Skia pyramid on it. It is the path for a filter layer in the stack, a live stroke, a
+  transform, compare / peek, exports and runs — so the mirror and `displaySource`'s `screen` GPU copy
+  of it, `displayRectSource`, `releaseCaches({ mirrors })` and the level refresh in `touchSourceRect`
+  are all still there and still needed. `perf_test.py`'s old `pan at 1:1` row (41 ms on tiles) is
+  that path. **This is the next step**, and it decides whether the fallback draws a region scratch
+  per frame (the plan's answer, ~130 `putImageData`s on a 4K screen) or whether the filter chain is
+  fed by the compositor instead, which is what would take the everyday filter-layer case off it.
+- **The mask sampler** (`u_mask`) and the three op modes for C5's stroke store, so `_masked` and the
+  live stroke preview stop being canvases.
+- **Marching ants and the selection tint** still take `displaySource(this.sel, s, true)`, so a
+  selection still makes a mirror and a GPU copy; the plan's `sel.toCanvas(region, level)` is not
+  built.
+- Therefore `WINDOW_PX` / `_source` / `_texture`, `_pyramidBudget` and the display pyramid are **not**
+  deleted, and `memoryReport()` still has pyramid entries whenever one of those paths ran.
+
 ### C4. Undo as tile references (3 days)
 
 - One snapshot kind for pixels: `{ kind: "tiles", target: { layerId, which: "px" | "mask" }

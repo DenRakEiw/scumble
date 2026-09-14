@@ -116,6 +116,7 @@
       <p id="set-gpu" class="shell-help"></p>
       <div class="shell-row"><label for="set-gpu-limit">Release the caches of background tabs above</label><input id="set-gpu-limit" type="number" min="0" step="256" style="width:6em"><span class="shell-note">MB in the GPU process (0 = never)</span></div>
       <div class="shell-row"><label for="set-card-min">Keep at least</label><input id="set-card-min" type="number" min="0" step="256" style="width:6em"><span class="shell-note">MB of the graphics card free (0 = ignore the card); above that the caches go, the front tab's textures too</span></div>
+      <div class="shell-row"><label for="set-atlas">Tile atlas</label><input id="set-atlas" type="number" min="16" step="64" style="width:6em"><span class="shell-note">MB of graphics memory for the tiles the screen shows; above it the pages drawn longest ago are dropped and uploaded again when they are needed</span></div>
       <p id="set-gpu-mem" class="shell-help"></p>
     </section>
     <section>

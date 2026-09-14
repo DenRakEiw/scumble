@@ -8915,7 +8915,11 @@ class InpaintEditor {
         if (this._compositor !== undefined) return this._compositor;
         this._compositor = null;
         try {
-            if (GLCompositor.available()) this._compositor = new GLCompositor();
+            if (GLCompositor.available()) {
+                this._compositor = new GLCompositor();
+                // the tile atlas's budget: settings.memory.atlasMB, put on the editor by the shell
+                if (this.atlasMB) this._compositor.setAtlasBudget(this.atlasMB * 1048576);
+            }
         } catch (err) {
             console.warn("Inpaint Canvas: no GPU compositor, staying on Canvas 2D:", (err && err.message) || err);
         }
@@ -9979,7 +9983,7 @@ class InpaintEditor {
         }
         if (this._compositor) {
             const st = this._compositor.stats ? this._compositor.stats() : null;
-            if (st) freed += st.bytes;
+            if (st) freed += st.bytes + ((st.atlas && st.atlas.bytes) || 0);   // the source textures and the tile atlas
             this._compositor.clear();
         }
         if (mirrors) {

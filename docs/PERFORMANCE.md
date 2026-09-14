@@ -1035,6 +1035,40 @@ process after free 449 MB in two canvas runs against 451 on main (a third canvas
 mode holds the layers in the renderer (3.55 GB built against 0.49 GB) and five times the compositor's texture
 bytes (1033 against 202 MB); after close and a collection both return to 3 live canvases.
 
+### C3 steps (a) and (b): the compositor draws tiles (2026-09-14)
+
+`docs/PLAN_BCE.md` §C3 "C3 as built" has the decisions. Measured on the dev instance in tile mode,
+15000 × 10000, `perf_test.py`, first run after a restart. The benchmark's document always carries a
+filter layer, so its old frame rows stay on the Canvas 2D path and are unchanged by C3; three rows
+were added that hide the filter layer, so the GPU compositor takes the stack:
+
+| row (15000 × 10000, tiles) | before C3 (main 2462b30~1) | after |
+|---|---|---|
+| pan at 1:1, GPU stack (30 frames, median) | 0.1 ms [0.2] | 0.1 ms [0.2] |
+| pan at fit, GPU stack | 0.1 ms [0.2] | 0.3 ms [3.7] |
+| **first frame fit → 1:1, GPU** | **1026.9 ms** | **34.9 ms** |
+| pan at 1:1, Canvas 2D (a filter layer in the stack) | 40.2 ms | 41.1 ms |
+| compositor memory for the document | a 600 MB CPU mirror per source plus a GPU copy of it | 91.3 MB in 43 atlas pages (9,541 slots) + 32.3 MB of source textures |
+
+Read it this way: the **steady** pan was already cheap before C3, because C2's review gave the screen
+a cached GPU copy of each tile mirror. What C3 removes is the *making* of those two full-size
+canvases — which is a whole second the first time the view reaches 1:1 — and the gigabyte they hold
+afterwards. The pan at fit costs 0.2 ms more than the single cached level canvas did: 2,400 instanced
+tiles a frame against one textured quad. Rebuilding the instance buffer per frame cost 1.9 ms, which
+is why the tile rectangles are in image coordinates and the region is a uniform (§C3 "as built").
+
+Unchanged by C3 and still the tile backend's cost: everything that goes through Canvas 2D (a filter
+layer in the stack, a live stroke, a transform, compare / peek, exports and runs) still draws the
+display mirror, so `pan at 1:1` stays at 41 ms and the mirror is still made for those paths. That is
+the next step of C3.
+
+**Pixel agreement.** `composite_test.py` compares the two paths at 1:1 now as well: on tiles the
+compositor agrees with Canvas 2D to **1 level** there, over the whole test document (nine blend
+modes, a masked layer, a colour-matched one, a text layer, after an erase). At a fractional zoom the
+two differ by design — alpha-weighted box mips per tile against Skia's bilinear halvings of the whole
+canvas — up to **42 levels** on a hard edge at fit, 2 at an exact halving; that row is reported, not
+gated, as §9's `fit` row already was.
+
 ## 10. Phase B: the Rust spike (2026-09-13)
 
 `docs/PLAN_BCE.md` §1, built on the branch `px-spike` (commits fe9bf0e B0 to 8ab3706). Five

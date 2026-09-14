@@ -5,6 +5,15 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.13 — unreleased
 
+- **The screen draws the tiles themselves (tile mode).** With the tile backend on, the GPU
+  compositor now keeps the tiles the view shows in an atlas of its own and draws them
+  directly, instead of building a full-size copy of every layer in memory and a second one on
+  the graphics card first. Zooming a 15000 × 10000 picture back to 1:1 took a second before
+  and takes 35 ms now, and the graphics memory the screen needs for such a document drops
+  from over a gigabyte to about 90 MB. *Settings › Rendering › Tile atlas* says how much
+  graphics memory it may use (512 MB by default). Tile mode is still off in the installed
+  app (`--tiles` turns it on) and still not fit for everyday work.
+
 ## 0.1.12 — 2026-09-14
 
 - **No visible change: the editor's pixel access goes through one interface.** Until this
