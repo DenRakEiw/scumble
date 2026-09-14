@@ -1367,7 +1367,7 @@ class InpaintEditor {
         }
         if (this.sel && !this.selectionHasNoTiles()) {
             ctx.globalAlpha = 0.45;
-            ctx.drawImage(this.displaySource(this.sel, w / this.width), 0, 0, this.width, this.height);
+            this.drawSelectionInto(ctx, w / this.width);
             ctx.globalAlpha = 1;
         }
     }
@@ -1375,6 +1375,34 @@ class InpaintEditor {
     /** The selection is on tiles and holds none: nothing to draw, and no display mirror to make for it. */
     selectionHasNoTiles() {
         return isTilePixels(this.sel) && this.sel.tileCount === 0;
+    }
+
+    /**
+     * Draw the selection mask over the image rectangle it covers, into a context that already carries
+     * the transform from image to screen coordinates. On tiles it is the part of the mask the view
+     * shows, at the view's level, straight from the tiles (docs/PLAN_BCE.md §C3): no display mirror of
+     * the whole selection, no GPU copy of one and no pyramid. On canvases it is the pyramid's level,
+     * as it always was. `scale` is the destination pixels per image pixel.
+     *
+     * `region` is the image rectangle to cover ({ x, y, w, h }); the whole image when it is null,
+     * which is what the navigator's thumbnail wants.
+     */
+    drawSelectionInto(ctx, scale, region = null) {
+        if (this.selectionHasNoTiles()) return;
+        if (!isTilePixels(this.sel)) {
+            ctx.drawImage(this.displaySource(this.sel, scale, true), 0, 0, this.width, this.height);
+            return;
+        }
+        const level = scale > 0 && Number.isFinite(scale) ? Math.max(0, Math.min(MIP_LEVELS, Math.floor(-Math.log2(scale)))) : 0;
+        const r = region || { x: 0, y: 0, w: this.width, h: this.height };
+        const rc = this.sel.regionCanvas([r.x, r.y, r.x + r.w, r.y + r.h], level);
+        if (!rc) return;
+        // the canvas holds whole tiles, its last row and column the clamp past the image's edge: the
+        // draw is cropped to the image, which is what the whole-image draw of the other path covers
+        const sw = Math.min(rc.canvas.width, (this.width - rc.x) / rc.f);
+        const sh = Math.min(rc.canvas.height, (this.height - rc.y) / rc.f);
+        if (!(sw > 0) || !(sh > 0)) return;
+        ctx.drawImage(rc.canvas, 0, 0, sw, sh, rc.x, rc.y, sw * rc.f, sh * rc.f);
     }
 
     // ---- modal -------------------------------------------------------------
@@ -9421,14 +9449,16 @@ class InpaintEditor {
         a.clearRect(0, 0, W, H);
         a.imageSmoothingEnabled = s < 1;
         const r = 1.25;
-        const sel = this.displaySource(this.sel, s, true);   // nine draws of the selection: never at full size
+        // nine draws of the selection: never at full size (the view's level, and on tiles only the
+        // part the view shows, straight from the tiles)
+        const region = this.viewportRegion();
         for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, -r], [r, -r], [-r, r]]) {
             this.applyViewTransform(a, dx, dy);
-            a.drawImage(sel, 0, 0, this.width, this.height);
+            this.drawSelectionInto(a, s, region);
         }
         this.applyViewTransform(a);
         a.globalCompositeOperation = "destination-out";
-        a.drawImage(sel, 0, 0, this.width, this.height);
+        this.drawSelectionInto(a, s, region);
         a.setTransform(1, 0, 0, 1, 0, 0);
         a.globalCompositeOperation = "source-in";
         if (!this.antsPattern) {
@@ -9560,7 +9590,7 @@ class InpaintEditor {
             // image, and a GPU copy of it at 0.5 or more, for transparent pixels (C2's final review)
             if (!this.selectionHasNoTiles()) {
                 ctx.globalAlpha = this.quickMask ? 0.5 : 0.4;
-                ctx.drawImage(this.displaySource(this.sel, s, true), 0, 0, this.width, this.height);
+                this.drawSelectionInto(ctx, s, this.viewportRegion());
                 ctx.globalAlpha = 1;
             }
         } else {
@@ -10366,7 +10396,7 @@ class InpaintEditor {
             into.push({ name, w: c.width, h: c.height, bytes, shared: seen.has(c) });
             seen.add(c);
         };
-        const tileSum = { pixels: 0, tiles: 0, bytes: 0, sharedTiles: 0, mirrors: 0, mirrorBytes: 0, thumbnails: 0, thumbnailBytes: 0 };
+        const tileSum = { pixels: 0, tiles: 0, bytes: 0, sharedTiles: 0, mirrors: 0, mirrorBytes: 0, thumbnails: 0, thumbnailBytes: 0, regions: 0, regionBytes: 0 };
         // the tiles of `p` no slot counted yet: [tiles, bytes, tiles counted before]
         const newTiles = (p, skip = null) => {
             let n = 0, bytes = 0, old = 0;
@@ -10391,6 +10421,11 @@ class InpaintEditor {
             const th = p.thumbnailCanvasIfMade();
             if (th && th.width && !seen.has(th)) { tileSum.thumbnails++; tileSum.thumbnailBytes += px(th); }
             add(into, name === "canvas" ? "thumbnail" : name + "Thumbnail", th);
+            // the part of the pixels a view shows, at a level, from the tiles' mips (C3: what the
+            // selection's overlay draws instead of a mirror of the whole mask)
+            const rg = p.regionCanvasIfMade ? p.regionCanvasIfMade() : null;
+            if (rg && rg.width && !seen.has(rg)) { tileSum.regions++; tileSum.regionBytes += px(rg); }
+            add(into, name === "canvas" ? "region" : name + "Region", rg);
         };
         const sum = (list) => list.reduce((a, e) => a + (e.shared ? 0 : e.bytes), 0);
 

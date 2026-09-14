@@ -417,6 +417,7 @@ const tiled = (Base) => class extends Base {
         this._mirror = null;
         this._mirrorDirty = null;
         this._thumb = null;
+        this._region = null;   // the part of the pixels a view shows, at a level, from the tiles' mips (C3)
         if (canvas) this._readCanvas(canvas);
     }
 
@@ -584,6 +585,7 @@ const tiled = (Base) => class extends Base {
     _changed(key) {
         if (this._mirrorDirty) this._mirrorDirty.add(key);
         if (this._thumb) this._thumb.dirty.add(key);
+        if (this._region) this._region.dirty.add(key);
     }
 
     _dropTile(key) {
@@ -1048,6 +1050,67 @@ const tiled = (Base) => class extends Base {
         return th.canvas;
     }
 
+    /**
+     * The part of these pixels a view shows, at `level`, as a CPU canvas built from the tiles' mips
+     * (docs/PLAN_BCE.md §C3): what the screen draws the selection from, instead of a display level of
+     * the whole image. Returns `{ canvas, x, y, f }` - the canvas holds whole tiles from image
+     * coordinate (x, y) at a scale of 1 / f - or null when no tile of the range is allocated.
+     *
+     * The canvas covers a margin of one tile around the rectangle asked for and is kept while the
+     * range asked for stays inside it, so a pan only rebuilds when it leaves; the tiles written since
+     * the last call are put again, like the display mirror. Its last row and column hold the
+     * clamp-extended edge of `tileWithGutter`, so the caller crops the draw to the image itself.
+     */
+    regionCanvas(rect, level = 0) {
+        this._guard();
+        level = Math.max(0, Math.min(MIP_LEVELS, level | 0));
+        const cell = TILE_SIZE >> level, f = 1 << level;
+        const r = pixelRect(rect, this._w, this._h);
+        if (!r) return null;
+        const tx0 = r[0] >> 8, ty0 = r[1] >> 8, tx1 = (r[2] - 1) >> 8, ty1 = (r[3] - 1) >> 8;
+        const lastX = (this._w - 1) >> 8, lastY = (this._h - 1) >> 8;
+        let rc = this._region;
+        if (!rc || rc.level !== level || tx0 < rc.tx0 || ty0 < rc.ty0 || tx1 > rc.tx1 || ty1 > rc.ty1) {
+            // one tile of margin on each side, inside the image
+            const ax0 = Math.max(0, tx0 - 1), ay0 = Math.max(0, ty0 - 1);
+            const ax1 = Math.min(lastX, tx1 + 1), ay1 = Math.min(lastY, ty1 + 1);
+            if (rc) { rc.canvas.width = 1; rc.canvas.height = 1; }
+            rc = this._region = {
+                level, f, cell, tx0: ax0, ty0: ay0, tx1: ax1, ty1: ay1,
+                x: ax0 * TILE_SIZE, y: ay0 * TILE_SIZE,
+                canvas: cpuCanvas((ax1 - ax0 + 1) * cell, (ay1 - ay0 + 1) * cell, "a region canvas"),
+                img: new ImageData(cell, cell), zero: new ImageData(cell, cell),
+                dirty: null, all: true,
+            };
+            rc.dirty = new Set();
+        }
+        if (rc.all || rc.dirty.size) {
+            const ctx = rc.canvas.getContext("2d");
+            const n = cell * cell * 4;
+            const put = (tx, ty) => {
+                if (tx < rc.tx0 || tx > rc.tx1 || ty < rc.ty0 || ty > rc.ty1) return;
+                const ox = (tx - rc.tx0) * cell, oy = (ty - rc.ty0) * cell;
+                const lv = this._levelBytes(tx, ty, level);
+                if (!lv) { ctx.putImageData(rc.zero, ox, oy); return; }
+                rc.img.data.set(lv.data.subarray(lv.off, lv.off + n));
+                ctx.putImageData(rc.img, ox, oy);
+            };
+            if (rc.all) {
+                for (let ty = rc.ty0; ty <= rc.ty1; ty++) for (let tx = rc.tx0; tx <= rc.tx1; tx++) put(tx, ty);
+            } else {
+                for (const key of rc.dirty) put(key & 0xFFFF, key >>> 16);
+            }
+            rc.all = false;
+            rc.dirty.clear();
+        }
+        return { canvas: rc.canvas, x: rc.x, y: rc.y, f };
+    }
+
+    /** The region canvas if one was made (memoryReport); null otherwise. */
+    regionCanvasIfMade() {
+        return this._region ? this._region.canvas : null;
+    }
+
     /** The thumbnail canvas if it was made (memoryReport); null otherwise. */
     thumbnailCanvasIfMade() {
         return this._thumb ? this._thumb.canvas : null;
@@ -1060,6 +1123,12 @@ const tiled = (Base) => class extends Base {
      */
     releaseDisplay() {
         let bytes = 0;
+        const rc = this._region;
+        if (rc) {
+            bytes += rc.canvas.width * rc.canvas.height * 4;
+            this._region = null;
+            rc.canvas.width = 1; rc.canvas.height = 1;
+        }
         const th = this._thumb;
         if (th) {
             bytes += th.canvas.width * th.canvas.height * 4;

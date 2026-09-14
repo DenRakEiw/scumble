@@ -297,9 +297,17 @@ BENCH = """
     try { mem = Math.round((await performance.measureUserAgentSpecificMemory()).bytes / 1048576); } catch (_) { /* needs isolation */ }
 
     const view = `${ed.canvas.width}x${ed.canvas.height}`;
+    // what the display costs on tiles: the mirrors C3 has not taken away yet, the region canvases it
+    // introduced (the selection's overlay) and the Skia pyramids still built for the Canvas 2D path
+    const rep = ed.memoryReport();
+    const display = rep.tiles ? {
+        mirrors: rep.tiles.mirrors, mirrorMB: +(rep.tiles.mirrorBytes / 1048576).toFixed(1),
+        regions: rep.tiles.regions || 0, regionMB: +((rep.tiles.regionBytes || 0) / 1048576).toFixed(1),
+        pyramidMB: +(rep.pyramid.bytes / 1048576).toFixed(1),
+    } : null;
     shell.closeDocument(ed, { force: true });
     if (before) shell.activate(before);
-    return JSON.stringify({ size: `${W}x${H}`, mp: +(W * H / 1e6).toFixed(1), filter: fxId, setBase: Math.round(setBaseMs), memMB: mem, view, ...out });
+    return JSON.stringify({ size: `${W}x${H}`, mp: +(W * H / 1e6).toFixed(1), filter: fxId, setBase: Math.round(setBaseMs), memMB: mem, view, display, ...out });
 })()
 """
 
@@ -472,7 +480,10 @@ async def main():
               + (f", renderer {r['memMB']} MB" if r.get("memMB") else "")
               + (f", compositor {gl['atlas']} MB in {gl['pages']} atlas pages ({gl['slots']} slots)"
                  f" + {gl['textures']} MB of source textures" if gl else "")
-              + ("" if r.get("gl_stack") else ", the GPU stack row: the compositor would not take it")))
+              + ("" if r.get("gl_stack") else ", the GPU stack row: the compositor would not take it")
+              + (f"; tile display: {r['display']['mirrors']} mirrors {r['display']['mirrorMB']} MB,"
+                 f" {r['display']['regions']} region canvases {r['display']['regionMB']} MB,"
+                 f" pyramids {r['display']['pyramidMB']} MB" if r.get("display") else "")))
 
 
 if __name__ == "__main__":

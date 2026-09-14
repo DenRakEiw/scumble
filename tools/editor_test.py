@@ -413,6 +413,101 @@ return out;
 """
 
 
+SELECTION_STEP = """
+// C3: the selection's tint and its marching ants are drawn from the mask itself - on tiles from the
+// part of it the view shows, at the view's level, with no display mirror of the whole selection, no
+// GPU copy of one and no pyramid entry. Checked on the screen (the overlay covers the selection and
+// nothing else) at a zoom that draws from a level and at 1:1, after a pan and after the selection
+// changed, and on both backends, so the two are held to the same picture.
+const P = await import("./editor/inpaint_pixels.js");
+const d = await run("new_document");
+await run("new_canvas", { width: 4000, height: 3000, doc: d.id });
+const ed = ednow(d.id);
+const L = ed.addPaintLayer();
+L.px.fill([0, 0, 4000, 3000], "#ffffff");
+ed.markLayerChanged(L);
+await run("select_rect", { x: 2000, y: 1500, w: 800, h: 600, doc: d.id });
+const out = { tiles: !!ed.tileMode };
+const shot = () => {
+    ed.sceneSig = null;
+    ed.draw();
+    const c = document.createElement("canvas");
+    c.width = ed.canvas.width; c.height = ed.canvas.height;
+    c.getContext("2d").drawImage(ed.canvas, 0, 0);
+    return c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+};
+// the tint is red at 0.4 over white: inside the selection the screen is not white, outside it is
+const check = (label, box) => {
+    const px = shot();
+    const W = ed.canvas.width;
+    const at = (ix, iy) => {
+        const [sx, sy] = ed.imageToScreen(ix, iy);
+        const x = Math.round(sx), y = Math.round(sy);
+        if (x < 1 || y < 1 || x >= W - 1 || y >= ed.canvas.height - 1) return null;
+        const i = (y * W + x) * 4;
+        return [px[i], px[i + 1], px[i + 2], px[i + 3]];
+    };
+    const tinted = (p) => p && p[3] > 0 && (p[0] - p[1] > 20 || p[0] - p[2] > 20);
+    const inside = [[box[0] + 40, box[1] + 40], [box[2] - 40, box[3] - 40], [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]];
+    const outside = [[box[0] - 40, box[1] + 40], [box[2] + 40, box[3] - 40], [(box[0] + box[2]) / 2, box[1] - 40]];
+    const got = { inside: inside.map(([x, y]) => at(x, y)), outside: outside.map(([x, y]) => at(x, y)) };
+    out[label] = got;
+    for (const p of got.inside) if (p && !tinted(p)) throw new Error(label + ": the selection is not tinted: " + JSON.stringify(got));
+    for (const p of got.outside) if (p && tinted(p)) throw new Error(label + ": the tint reaches outside the selection: " + JSON.stringify(got));
+};
+ed.selectionDisplay = "tint";
+ed.fitView();
+ed.draw();
+check("fit", [2000, 1500, 2800, 2100]);
+// 1:1 on the middle of the picture: the region starts well inside it, so its origin counts
+ed.view.scale = 1; ed.view.angle = 0; ed._fitted = false;
+ed.view.x = Math.round(ed.canvas.width / 2 - 2400); ed.view.y = Math.round(ed.canvas.height / 2 - 1800);
+ed.draw();
+check("oneToOne", [2000, 1500, 2800, 2100]);
+ed.view.x -= 200; ed.view.y -= 120;   // a pan: the region moves, the mask does not
+ed.draw();
+check("afterPan", [2000, 1500, 2800, 2100]);
+await run("select_rect", { x: 2300, y: 1800, w: 500, h: 400, doc: d.id });
+check("afterChange", [2300, 1800, 2800, 2200]);
+// the ants: the same mask, drawn as an outline, so the middle of the selection is untouched white
+ed.selectionDisplay = "ants";
+ed.draw();
+{
+    const px = shot();
+    const W = ed.canvas.width;
+    const [mx, my] = ed.imageToScreen(2550, 2000);
+    const i = (Math.round(my) * W + Math.round(mx)) * 4;
+    out.antsMiddle = [px[i], px[i + 1], px[i + 2], px[i + 3]];
+    if (px[i] !== 255 || px[i + 1] !== 255 || px[i + 2] !== 255) throw new Error("the ants filled the selection: " + JSON.stringify(out.antsMiddle));
+    // and the outline is there: some pixel on the edge is not white
+    let edge = 0;
+    for (let ix = 2300; ix <= 2800; ix += 5) {
+        const [sx, sy] = ed.imageToScreen(ix, 1800);
+        // the outline is about 1.25 screen px wide and dashed: a band of five rows, any pixel of it
+        for (let dy = -2; dy <= 2; dy++) {
+            const j = ((Math.round(sy) + dy) * W + Math.round(sx)) * 4;
+            if (px[j] !== 255 || px[j + 1] !== 255 || px[j + 2] !== 255) { edge++; break; }
+        }
+    }
+    out.antsEdge = edge;
+    if (edge < 10) throw new Error("no marching ants on the selection's edge: " + edge);
+}
+if (ed.tileMode) {
+    out.selMirror = !!ed.sel.displayCanvasIfMade();
+    out.selRegion = !!ed.sel.regionCanvasIfMade();
+    out.selPyramid = !!ed.pyramids.get(P.displayCanvasIfMade(ed.sel));
+    if (out.selMirror || out.selPyramid) throw new Error("the selection still has a display mirror or a pyramid: " + JSON.stringify(out));
+    if (!out.selRegion) throw new Error("the selection was not drawn from its tiles: " + JSON.stringify(out));
+    const freed = ed.sel.releaseDisplay();
+    out.freed = freed;
+    if (!freed || ed.sel.regionCanvasIfMade()) throw new Error("releaseDisplay kept the region canvas: " + freed);
+}
+ed.selectionDisplay = "ants";
+await run("close_document", { doc: d.id });
+return out;
+"""
+
+
 UNDRAWN_STEP = """
 // C2 step (b)'s review, the display caches on the flag's backend. (1) Pixels nothing draws get no display
 // mirror: in a tab that is not in front, after the mirrors were released (what the memory watch does), a
@@ -894,6 +989,10 @@ async def final_step(c):
 
 async def undrawn_step(c):
     return await c.eval(PRE % UNDRAWN_STEP, timeout=180)
+
+
+async def selection_step(c):
+    return await c.eval(PRE % SELECTION_STEP, timeout=180)
 
 
 async def screen_step(c):
@@ -1960,6 +2059,7 @@ return out;
     ("pixel_backend_is_the_one_the_flag_chose", lambda c: backend_step(c)),
     ("editing_on_the_flags_backend_in_pixels_and_on_screen", lambda c: edit_step(c)),
     ("pixels_nothing_draws_get_no_display_mirror", lambda c: undrawn_step(c)),
+    ("selection_overlay_is_drawn_from_the_mask_itself", lambda c: selection_step(c)),
     ("the_screen_draws_no_cpu_mirror_and_stale_textures_leave", lambda c: screen_step(c)),
     ("c2_final_review_drag_undo_steps_writes_mirrors_report_limits", lambda c: final_step(c)),
     ("closed_tabs_are_collected", lambda c: closed_tabs_are_collected(c)),
