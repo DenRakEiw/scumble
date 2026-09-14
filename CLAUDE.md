@@ -131,6 +131,16 @@ all before), `grow_feather_and_invert_are_the_answers_a_whole_image_run_gives`;
 `shape_test.py` `a_shape_dragged_smaller_leaves_nothing_behind`; `pixels_test.js` `mask_invert`;
 and two rows in `perf_test.py` (`stroke across the picture (40 dabs)`, `its commit, band by band`).
 **Twenty mutations, every one red** — they are listed per step in `docs/PLAN_BCE.md` §C5.
+The benchmark rows were taken twice, the second time with the card free (ComfyUI's models unloaded
+through `/free` on an empty queue); the numbers agree, so the A/B conclusions do not rest on a busy
+card. **`smoke_test.py` did not run**: the user queued a video upscale in their ComfyUI while the
+gates were going, our prompt sat behind it and hit the runner's timeout. Our own prompt was deleted
+from the queue (`afa4d09d`); their jobs were not touched. A real Flux run is the one gate C5 owes.
+
+**The node repo is untouched** and still at master 647db5d (built from scumble 7f01699), so its
+`js/` is behind by C3 *and* C5. The `nodecopy` gate builds and tests the editor into a scratch copy
+on every run and passes, so the build is sound; `python tools/build_node.py` + `node_test.py`
+against the real repo is a deliberate step for whoever ships the next node version.
 
 **Traps met on 2026-09-14 (night), worth keeping:**
 - **A sub-rectangle draw from a very large canvas is not cheap.** Banding the wand's whole-picture
