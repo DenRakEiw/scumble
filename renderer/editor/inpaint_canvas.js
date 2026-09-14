@@ -4460,37 +4460,59 @@ class InpaintEditor {
     applyShapeToSelection(shape, mode = "replace", box = null, at = [0, 0]) {
         const hint = box ? this.boundsAfter(mode, box) : undefined;
         this.pushUndo({ kind: "selection" });
-        const W = this.width, H = this.height;
         if (mode === "replace") this.selectionLabel = "";
-        // a replace clears the whole canvas, so its levels are refreshed whole; add and subtract touch the shape's box
-        const rect = mode === "replace" ? undefined : [at[0], at[1], at[0] + shape.width, at[1] + shape.height];
-        this.sel.drawInto(rect || null, (sctx) => {
-            if (mode === "replace") sctx.clearRect(0, 0, W, H);
+        const rect = [at[0], at[1], at[0] + shape.width, at[1] + shape.height];
+        // C5: a replace clears the mask first -- on tiles that drops the tiles, where a clearRect
+        // inside drawInto was a scratch of the whole image -- and then draws the shape in its own
+        // box; the levels are refreshed in the box the pixels can have changed in, which for a
+        // replace is the old selection's box together with the shape's.
+        const old = mode === "replace" ? this.getBounds() : null;
+        if (mode === "replace") this.sel.clear();
+        this.sel.drawInto(rect, (sctx) => {
             sctx.globalCompositeOperation = mode === "subtract" ? "destination-out" : "source-over";
             sctx.drawImage(shape, at[0], at[1]);
         });
-        this.markSelectionChanged(hint, rect);
+        const touched = old ? [Math.min(old[0], rect[0]), Math.min(old[1], rect[1]), Math.max(old[2], rect[2]), Math.max(old[3], rect[3])] : rect;
+        this.markSelectionChanged(hint, touched);
         this.draw();
     }
 
     /**
-     * Run a selection algorithm (grow, feather, invert) in the worker and put the result
-     * back; the answer carries the new bounding box. Null means there was no worker or it
-     * failed and the caller has to do the work itself.
+     * Run a selection algorithm (grow, feather, invert) in the worker and put the result back; the
+     * answer carries the new bounding box and the rectangle it was written in.
+     *
+     * Only the selection's own bounding box plus `halo` -- how far the operation reaches past the
+     * mask's edge -- goes through the worker and comes back (docs/PLAN_BCE.md §C5): the whole
+     * selection was 600 MB of canvas at 15000 x 10000, materialised, copied into an ImageBitmap,
+     * sent, and written back over a scratch of the same size. Outside that box nothing can change,
+     * because the mask is empty there and grow, shrink and feather only move an edge. `whole`
+     * forces the whole image, which invert needs: its result covers everything the selection does
+     * not. Null means there was no worker or it failed and the caller does the work itself.
      */
-    async selectionInWorker(kind, args) {
+    async selectionInWorker(kind, args, { halo = 0, whole = false } = {}) {
         if (!this.sel || !editorWorker()) return null;
+        const W = this.width, H = this.height;
+        const b = whole ? null : this.getBounds();
+        const box = whole || !b ? [0, 0, W, H] : clampRect([b[0] - halo, b[1] - halo, b[2] + halo, b[3] + halo], W, H);
+        if (box[2] <= box[0] || box[3] <= box[1]) return null;
+        const full = box[0] === 0 && box[1] === 0 && box[2] === W && box[3] === H;
         try {
-            const bitmap = await createImageBitmap(this.sel.toCanvas());
+            const bitmap = await createImageBitmap(this.sel.toCanvas(full ? null : box));
             const r = await workerCall("selection", { kind, bitmap, ...args }, [bitmap]);
             if (!r.bitmap) return null;
-            // the answer is the whole selection: "copy" replaces all of it, which is the whole rect (null)
-            this.sel.drawInto(null, (sctx) => {
-                sctx.globalCompositeOperation = "copy";
-                sctx.drawImage(r.bitmap, 0, 0);
+            this.sel.drawInto(full ? null : box, (sctx) => {
+                // "copy" only where the rectangle is the whole mask: drawInto clips on the canvas
+                // backend, and Chromium applies "copy" to the whole canvas whatever the clip says
+                // (docs/PLAN_BCE.md §C1, WHOLE_CANVAS_OPS)
+                if (full) { sctx.globalCompositeOperation = "copy"; }
+                else sctx.clearRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
+                sctx.drawImage(r.bitmap, box[0], box[1]);
             });
             r.bitmap.close();
-            return { bounds: r.bounds === undefined ? undefined : r.bounds };
+            // the worker's bounds are in the box's own pixels
+            let bounds = r.bounds;
+            if (bounds) bounds = [bounds[0] + box[0], bounds[1] + box[1], bounds[2] + box[0], bounds[3] + box[1]];
+            return { bounds, box };
         } catch (err) {
             console.warn(`Inpaint Canvas: ${kind} in the worker failed, using the main thread:`, (err && err.message) || err);
             return null;
@@ -4640,7 +4662,8 @@ class InpaintEditor {
         if (!this.getBounds()) { this.setStatus("Nothing selected to feather."); return; }
         r = Math.max(0.5, Math.min(512, +r || 0));
         this.pushUndo({ kind: "selection" });
-        const done = await this.selectionInWorker("feather", { radius: r });
+        // a Gaussian blur of radius r is over at about three sigma; two pixels of slack on top
+        const done = await this.selectionInWorker("feather", { radius: r }, { halo: Math.ceil(r * 3) + 2 });
         if (!done) {
             const tmp = makeCanvas(this.width, this.height);
             const tctx = tmp.getContext("2d");
@@ -4653,7 +4676,7 @@ class InpaintEditor {
                 sctx.drawImage(tmp, 0, 0);
             });
         }
-        this.markSelectionChanged(done ? done.bounds : undefined);
+        this.markSelectionChanged(done ? done.bounds : undefined, done && done.box);
         this.draw();
         this.setStatus(`Selection feathered by ${r} px (soft edge for painting, filling and the mask).`);
     }
@@ -5890,13 +5913,13 @@ class InpaintEditor {
         const W = this.width, H = this.height;
         const grow = n > 0, r = Math.abs(n);
         this.pushUndo({ kind: "selection" });
-        const done = await this.selectionInWorker("grow", { n });
+        const done = await this.selectionInWorker("grow", { n }, { halo: r + 2 });
         if (!done) {
             const img = this.sel.readRect(0, 0, W, H);
             growMask(img.data, W, H, n);
             this.sel.writeRect(img, 0, 0);
         }
-        this.markSelectionChanged(done ? done.bounds : undefined);
+        this.markSelectionChanged(done ? done.bounds : undefined, done && done.box);
         this.draw();
         this.setStatus(`Selection ${grow ? "grown" : "shrunk"} by ${r}px.`);
     }
@@ -6915,7 +6938,16 @@ class InpaintEditor {
     async invertSelectionNow() {
         if (!this.sel) return;
         this.pushUndo({ kind: "selection" });
-        const done = await this.selectionInWorker("invert", {});
+        // The inverse of a selection covers everything it does not, so no bounding box can help.
+        // On tiles the mask inverts its own tiles (C5): the worker's route makes a canvas, an
+        // ImageBitmap and a write-back scratch of the whole mask, three times 600 MB at 15k.
+        if (isTilePixels(this.sel)) {
+            this.sel.invert();
+            this.markSelectionChanged();
+            this.draw();
+            return;
+        }
+        const done = await this.selectionInWorker("invert", {}, { whole: true });
         if (!done) {
             const data = this.sel.readRect(0, 0, this.width, this.height);
             invertMask(data.data);

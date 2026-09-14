@@ -1624,6 +1624,45 @@ pixel) — a short clean-up after C5, not before it.
   document, and the selection's seconds are. The note stays here so the next session does not have
   to measure it again.
 
+**(e) Grow, shrink, feather and invert work on the box, not on the picture** (commit "C5 (e)"):
+
+- **`selectionInWorker(kind, args, { halo, whole })`** sends the selection's own bounding box plus
+  the operation's halo -- `|n| + 2` for grow and shrink, `3r + 2` for feather -- and writes the
+  answer back inside it. Outside that box nothing can change: the mask is empty there and these
+  operations only move an edge. It used to send the **whole** mask, which at 15000 x 10000 is a
+  600 MB canvas materialised from the tiles, copied into an ImageBitmap, transferred, and written
+  back over a scratch of the same size. The worker's bounds come back in the box's own pixels and
+  are moved into the image; `markSelectionChanged` gets the box, so the display levels are
+  refreshed there instead of everywhere.
+- **Invert** has no box to work in -- its result covers everything the selection does not -- so on
+  tiles the mask inverts **its own tiles** (`TileMaskPixels.invert()`), word by word, a tile that
+  had nothing filled in one `fill` call. A pixel the invert leaves fully transparent is written as
+  all zero, because a canvas stores premultiplied and un-premultiplies such a pixel to 0, 0, 0, and
+  the two backends have to agree byte for byte. `MaskPixels.invert()` is the canvas backend's twin.
+- **`applyShapeToSelection`** with `mode: "replace"` clears the mask (on tiles that **drops** the
+  tiles) and then draws the shape in its own box, instead of a `clearRect` of the whole image inside
+  a `drawInto(null)`, which on tiles is a scratch of the whole image.
+- **Measured** (15000 x 10000, tiles on, blocked [wall] ms, `perf_test.py`): grow **1288 [4237] →
+  273 [2305]**, shrink **1207 [3298] → 271 [1514]**, feather **1386 [2366] → 229 [592]**, invert
+  **1535 [2742] → 1047 [1047]** (it no longer waits for a worker round trip either). On the
+  **canvas backend**: grow 140 [2322] → 75 [1252], shrink 208 [1751] → 90 [1337], feather
+  272 [1492] → 260 [465], invert unchanged within noise. The benchmark's selection is 16 % of the
+  picture; a smaller one gains more, which is the point of the box.
+- **What is left, and what it is**: the magic wand (2,381 ms blocked on a band across the whole
+  picture, 760 on a bounded object) and the bucket (696) are untouched. They flood pixels, not mask
+  tiles, and their cost is in `floodShape` / `sampleRegion`, which already crop to a box; that is
+  the next measurement, not a re-run of this one.
+- **Gates**: `pixels_test.js` case `mask_invert` (the rule itself -- 255 - alpha in the selection's
+  red -- on a 601 x 501 mask whose last tile column and row are partly outside the image, inverted
+  twice to get the alpha back, and the canvas run compared with the tile run byte for byte);
+  `editor_test.py` step `grow_feather_and_invert_are_the_answers_a_whole_image_run_gives`, which
+  runs `growMask` over the whole mask itself as the reference for grow and shrink, checks that a
+  feather leaves nothing beyond `3r + 2` and keeps a soft edge, and that an invert is 255 - the
+  alpha everywhere with the bounds of the whole picture. Four mutations, each red: grow without its
+  halo (255 levels on 32,732 pixels), feather with a halo of 1 (the undo step's extent no longer
+  covers the feathered tail), the worker's bounds not moved into the image, and three rows of a
+  newly allocated tile left out of the invert.
+
 ### C6. Mips in the worker, thumbnails, hover, object map, colour match from mips (3 days)
 
 - A whole-layer change (filter apply, `setPixels`, transform, paste, load) marks all its

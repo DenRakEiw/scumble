@@ -50,6 +50,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   about a millisecond and the 1.86 GB are gone. Changing a *whole* mask at once (mask from
   selection, inverting it) is slower than it was — about a sixth of a second on such a picture —
   because every tile of the mask has to be prepared again; that is the next thing on the list.
+- **Growing, shrinking, feathering and inverting a selection.** These four used to move the whole
+  selection through a background worker whatever you had selected — on a 15000 × 10000 picture,
+  600 MB of it, three times over. They now work on the area the selection covers plus what the
+  operation reaches past its edge. Grow went from 4.2 s to 2.3, shrink from 3.3 to 1.5, feather
+  from 2.4 s to 0.6 and inverting from 2.7 s to 1.0, and the window stops responding for a fifth
+  to a sixth of that. The smaller your selection, the bigger the difference. (The magic wand and
+  the bucket are unchanged; they are next.)
 
 ## 0.1.12 — 2026-09-14
 

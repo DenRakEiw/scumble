@@ -1399,6 +1399,49 @@ function pixelsCases(P, T) {
             return { tiles: B.tiles ? m.tileCount : null };
         })],
 
+        // MaskPixels.invert (docs/PLAN_BCE.md §C5): the selection inverted. The tile backend walks its
+        // own tiles instead of the whole mask, so the two runs are compared byte for byte like every
+        // other case, and the result is checked against the rule itself (255 - alpha, colour red) on
+        // a size whose last tile column and row are partly outside the image: a selected padding
+        // would bleed into that tile's mips and out through the atlas.
+        ["mask_invert", both(async ({ B, Mask, snap, rec }) => {
+            const W = 601, H = 501;
+            const m = Mask.empty(W, H);
+            m.fill([100, 80, 400, 300], "#ff0000");
+            // partial alpha at several levels, on whole pixels: a gradient is rasterised differently
+            // by the CPU and the GPU (51 levels, measured), which would be the case's difference, not
+            // invert's
+            m.drawInto([380, 280, 560, 460], (ctx) => {
+                for (let k = 0; k < 6; k++) {
+                    ctx.fillStyle = `rgba(255,0,0,${(k + 1) / 7})`;
+                    ctx.fillRect(380 + k * 30, 280, 30, 180);
+                }
+            });
+            const beforeBytes = m.readRect(0, 0, W, H).data.slice();
+            snap(m, "the selection before the invert");
+            m.invert();
+            const after = m.readRect(0, 0, W, H);
+            snap(m, "the selection inverted");
+            rec("bounds after the invert", m.bounds());
+            let worst = 0, n = 0;
+            const d = after.data;
+            for (let i = 0; i < d.length; i += 4) {
+                worst = Math.max(worst, Math.abs(d[i + 3] - (255 - beforeBytes[i + 3])));
+                // a fully transparent pixel carries no colour: a canvas un-premultiplies it to 0, 0, 0
+                if (d[i + 3] > 0) worst = Math.max(worst, Math.abs(d[i] - 255), d[i + 1], d[i + 2]);
+                if (d[i + 3] !== 255 - beforeBytes[i + 3]) n++;
+            }
+            if (worst > 1) throw new Error("invert did not follow 255 - alpha in red: worst " + worst + " on " + n + " pixels");
+            m.invert();
+            const back = m.readRect(0, 0, W, H).data;
+            let diff = 0;
+            for (let i = 3; i < back.length; i += 4) diff = Math.max(diff, Math.abs(back[i] - beforeBytes[i]));
+            if (diff > 1) throw new Error("inverting twice did not give the alpha back: " + diff);
+            snap(m, "inverted twice");
+            // the padding of a partial tile stays out of it: the tiles at the last column and row
+            return { tiles: B.tiles ? m.tileCount : null, worst, alphaBack: diff };
+        })],
+
         ["tiles_blit_mixed_backends", both(async ({ B, Layer, mk, paint, pair, snap }) => {
             const Other = B.tiles ? P.LayerPixels : T.TileLayerPixels;   // the other backend
             const c = mk(400, 300); paint(c.getContext("2d"), 400, 300);

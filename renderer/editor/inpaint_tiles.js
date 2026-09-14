@@ -1313,7 +1313,60 @@ const tiled = (Base) => class extends Base {
 export class TileLayerPixels extends tiled(LayerPixels) {}
 
 /** A layer mask or the selection on tiles: RGBA tiles in C2 (C5 moves masks to one channel). */
-export class TileMaskPixels extends tiled(MaskPixels) {}
+export class TileMaskPixels extends tiled(MaskPixels) {
+    /**
+     * The selection inverted, tile by tile. The inverse covers everything the selection does not,
+     * so no bounding box can help here, but the whole mask does not have to become a canvas, an
+     * ImageBitmap and a scratch of 600 MB each on the way through the worker either
+     * (docs/PLAN_BCE.md §C5). Only the part of a tile that is inside the image is touched: the rest
+     * is what `extendTile` clamps from, and a selected padding would bleed into the tile's mips.
+     */
+    invert() {
+        this._guard();
+        const cols = Math.ceil(this._w / TILE_SIZE), rows = Math.ceil(this._h / TILE_SIZE);
+        // the selection's own red at full alpha, as one word (little-endian: R is the low byte)
+        const SEL = 0xFF0000FF;
+        for (let ty = 0; ty < rows; ty++) {
+            const bh = Math.min(TILE_SIZE, this._h - (ty << 8));
+            for (let tx = 0; tx < cols; tx++) {
+                const key = (ty << 16) | tx;
+                const bw = Math.min(TILE_SIZE, this._w - (tx << 8));
+                const had = this._tiles.get(key);
+                const t = this.writable(tx, ty);
+                if (!had && LITTLE) {
+                    // nothing was selected here, so all of it is now: one fill, no reading
+                    const w = u32Of(t);
+                    if (bw === TILE_SIZE) w.fill(SEL, 0, bh * TILE_SIZE);
+                    else for (let y = 0; y < bh; y++) w.fill(SEL, y * TILE_SIZE, y * TILE_SIZE + bw);
+                } else if (LITTLE) {
+                    const w = u32Of(t);
+                    for (let y = 0; y < bh; y++) {
+                        let o = y * TILE_SIZE;
+                        for (let x = 0; x < bw; x++, o++) {
+                            const a = 255 - (w[o] >>> 24);
+                            // a pixel the invert leaves fully transparent carries no colour: a canvas
+                            // stores premultiplied and un-premultiplies such a pixel to 0, 0, 0, and the
+                            // two backends have to agree byte for byte (tools/pixels_test.js)
+                            w[o] = a ? ((a << 24) | 0x0000FF) >>> 0 : 0;
+                        }
+                    }
+                } else {
+                    const d = t.data;
+                    for (let y = 0; y < bh; y++) {
+                        let o = y * TILE_SIZE * 4;
+                        for (let x = 0; x < bw; x++, o += 4) {
+                            const a = 255 - d[o + 3];
+                            d[o] = a ? 255 : 0; d[o + 1] = 0; d[o + 2] = 0; d[o + 3] = a;
+                        }
+                    }
+                }
+                if (tileEmpty(t)) this._dropTile(key);
+            }
+        }
+        this._version++;
+        if (this._mirror) this._mirror._dispVer = this._version;
+    }
+}
 
 const TILE_BACKEND = Object.freeze({ Layer: TileLayerPixels, Mask: TileMaskPixels, tiles: true });
 

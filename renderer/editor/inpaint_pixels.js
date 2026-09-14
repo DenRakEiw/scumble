@@ -421,7 +421,19 @@ export class LayerPixels {
  * A layer mask or the selection. One channel is what counts (the alpha); the canvas backend
  * keeps the canvas it always was (the selection is red, a mask white where it lets through).
  */
-export class MaskPixels extends LayerPixels {}
+export class MaskPixels extends LayerPixels {
+    /**
+     * The selection inverted: every pixel's alpha becomes 255 - alpha and its colour the
+     * selection's red. A per-pixel rule, so no pixel needs its neighbours (docs/PLAN_BCE.md §C5);
+     * the tile backend overrides it to walk its own tiles instead of the whole canvas.
+     */
+    invert() {
+        const img = this.readRect(0, 0, this.width, this.height);
+        const d = img.data;
+        for (let i = 0; i < d.length; i += 4) { d[i] = 255; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 255 - d[i + 3]; }
+        this.writeRect(img, 0, 0);
+    }
+}
 
 const CANVAS_BACKEND = Object.freeze({ Layer: LayerPixels, Mask: MaskPixels, tiles: false });
 

@@ -1603,6 +1603,77 @@ ed.clearSelection();
 await run("remove_layer", { layer: layer.id, doc: window.__t });
 return out;
 """),
+    ("grow_feather_and_invert_are_the_answers_a_whole_image_run_gives", """
+// C5: grow, shrink and feather send only the selection's bounding box plus the operation's halo
+// through the worker, and invert walks the mask's own tiles instead of the worker. The answers have
+// to be the answers the whole-image route gives, so each is compared against the rule itself, run
+// here over the whole mask.
+const R = await import("./editor/inpaint_raster.js");
+const d = await run("new_document");
+window.__te = d.id;
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 4000, height: 3000, doc: d.id });
+const W = ed.width, H = ed.height;
+const out = { tiles: ed.tileMode };
+const alphaAt = (x, y) => ed.sel.readRect(x, y, 1, 1).data[3];
+const rect = async () => { await run("select_rect", { x: 600, y: 500, w: 600, h: 400, doc: d.id }); };
+
+// grow: the same pixels growMask gives over the whole mask
+await rect();
+{
+    const want = ed.sel.readRect(0, 0, W, H);
+    R.growMask(want.data, W, H, 16);
+    const wb = R.maskBounds(want.data, W, H);
+    await ed.growSelection(16);
+    const got = ed.sel.readRect(0, 0, W, H).data;
+    let worst = 0, n = 0;
+    for (let i = 3; i < got.length; i += 4) { const q = Math.abs(got[i] - want.data[i]); if (q) { n++; if (q > worst) worst = q; } }
+    out.grow = { worst, differing: n, bounds: ed.getBounds(), want: wb, far: alphaAt(3500, 2500) };
+    if (worst > 1) throw new Error("grow: the box run differs from a whole-image run by " + worst + " levels on " + n + " pixels");
+    if (out.grow.far !== 0) throw new Error("grow reached far outside the selection: " + JSON.stringify(out.grow));
+    if (!ed.getBounds() || Math.abs(ed.getBounds()[0] - wb[0]) > 1 || Math.abs(ed.getBounds()[2] - wb[2]) > 1) throw new Error("grow reported the wrong bounds: " + JSON.stringify(out.grow));
+}
+// shrink, from the grown selection back
+{
+    const want = ed.sel.readRect(0, 0, W, H);
+    R.growMask(want.data, W, H, -16);
+    await ed.growSelection(-16);
+    const got = ed.sel.readRect(0, 0, W, H).data;
+    let worst = 0, n = 0;
+    for (let i = 3; i < got.length; i += 4) { const q = Math.abs(got[i] - want.data[i]); if (q) { n++; if (q > worst) worst = q; } }
+    out.shrink = { worst, differing: n, bounds: ed.getBounds() };
+    if (worst > 1) throw new Error("shrink: the box run differs from a whole-image run by " + worst + " levels on " + n + " pixels");
+}
+// feather: a soft edge inside the halo, nothing at all beyond it
+await rect();
+{
+    const r = 8;
+    await ed.featherSelection(r);
+    const halo = Math.ceil(r * 3) + 2;
+    const inside = alphaAt(900, 700), edge = alphaAt(600, 700), beyond = alphaAt(600 - halo - 4, 700), far = alphaAt(3500, 2500);
+    out.feather = { inside, edge, beyond, far, bounds: ed.getBounds() };
+    if (inside < 250) throw new Error("feather emptied the middle: " + JSON.stringify(out.feather));
+    if (edge < 20 || edge > 235) throw new Error("the feathered edge is not soft: " + JSON.stringify(out.feather));
+    if (beyond !== 0 || far !== 0) throw new Error("feather reached past its halo: " + JSON.stringify(out.feather));
+}
+// invert: 255 - the alpha it had, everywhere
+await rect();
+{
+    const before = ed.sel.readRect(0, 0, W, H).data.slice();
+    await ed.invertSelection();
+    const got = ed.sel.readRect(0, 0, W, H).data;
+    let worst = 0, n = 0;
+    for (let i = 3; i < got.length; i += 4) { const q = Math.abs(got[i] - (255 - before[i])); if (q) { n++; if (q > worst) worst = q; } }
+    out.invert = { worst, differing: n, inside: alphaAt(900, 700), outside: alphaAt(3500, 2500), bounds: ed.getBounds() };
+    if (worst > 1) throw new Error("invert is not 255 - the alpha it had: " + JSON.stringify(out.invert));
+    if (out.invert.inside !== 0 || out.invert.outside !== 255) throw new Error("invert did not swap inside and outside: " + JSON.stringify(out.invert));
+    const b = ed.getBounds();
+    if (!b || b[0] !== 0 || b[1] !== 0 || b[2] !== W || b[3] !== H) throw new Error("the inverted selection's bounds are not the picture: " + JSON.stringify(out.invert));
+}
+await run("close_document", { doc: d.id, force: true });
+return out;
+"""),
     ("gradient_tool_keeps_the_canvas_buffer_and_fills_the_layer", """
 // The gradient rebuilds its whole buffer on every move, so C5 leaves it on the canvas buffer on
 // both backends: a sparse store of the target's size would allocate every tile and read a scratch
