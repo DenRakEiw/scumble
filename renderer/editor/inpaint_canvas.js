@@ -21,7 +21,7 @@ import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, 
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions } from "./inpaint_pixels.js";
-import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE } from "./inpaint_tiles.js";
+import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, CANVAS_MAX_PIXELS } from "./inpaint_tiles.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -348,6 +348,31 @@ function pngWithText(buffer, texts) {
     for (const c of chunks) { out.set(c, pos); pos += c.length; }
     out.set(src.subarray(ihdrEnd), pos);
     return new Blob([out], { type: "image/png" });
+}
+
+/**
+ * The box ([x0, y0, x1, y1]) over the tiles two tile pixels of the same size do not share, or null when they share
+ * every one: what a "copy" of `b` onto `a` changes.
+ */
+function tileDiffBox(a, b) {
+    let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+    const keys = new Set([...a.tileKeys(), ...b.tileKeys()]);
+    for (const key of keys) {
+        const tx = key & 0xFFFF, ty = key >>> 16;
+        if (a.tileAt(tx, ty) === b.tileAt(tx, ty)) continue;
+        const ox = tx * TILE_SIZE, oy = ty * TILE_SIZE;
+        if (ox < x0) x0 = ox;
+        if (oy < y0) y0 = oy;
+        if (ox + TILE_SIZE > x1) x1 = ox + TILE_SIZE;
+        if (oy + TILE_SIZE > y1) y1 = oy + TILE_SIZE;
+    }
+    return x1 < 0 ? null : [x0, y0, Math.min(a.width, x1), Math.min(a.height, y1)];
+}
+
+/** [x0, y0, x1, y1] clamped to w x h on whole pixels (outward); a box outside gives an empty one at the edge. */
+function clampRect(r, w, h) {
+    const x0 = Math.min(w, Math.max(0, Math.floor(r[0]))), y0 = Math.min(h, Math.max(0, Math.floor(r[1])));
+    return [x0, y0, Math.max(x0, Math.min(w, Math.ceil(r[2]))), Math.max(y0, Math.min(h, Math.ceil(r[3])))];
 }
 
 function makeCanvas(w, h) {
@@ -1340,11 +1365,16 @@ class InpaintEditor {
         } finally {
             this.viewPass = prev;
         }
-        if (this.sel) {
+        if (this.sel && !this.selectionHasNoTiles()) {
             ctx.globalAlpha = 0.45;
             ctx.drawImage(this.displaySource(this.sel, w / this.width), 0, 0, this.width, this.height);
             ctx.globalAlpha = 1;
         }
+    }
+
+    /** The selection is on tiles and holds none: nothing to draw, and no display mirror to make for it. */
+    selectionHasNoTiles() {
+        return isTilePixels(this.sel) && this.sel.tileCount === 0;
     }
 
     // ---- modal -------------------------------------------------------------
@@ -3392,11 +3422,51 @@ class InpaintEditor {
             return c;
         };
         // replaced, not written (the "layerfull" undo PNG may still be encoding from the old pixels)
-        l.px = this.pixels.Layer.fromCanvas(flip(l.px.toCanvas()));
-        if (l.maskPx) { l.maskPx = this.pixels.Mask.fromCanvas(flip(l.maskPx.toCanvas())); l.maskDirty = true; }
+        const op = axis === "h" ? "h" : "v";
+        l.px = isTilePixels(l.px) ? this.turnedTilePixels(l.px, op) : this.pixels.Layer.fromCanvas(flip(l.px.toCanvas()));
+        if (l.maskPx) { l.maskPx = isTilePixels(l.maskPx) ? this.turnedTilePixels(l.maskPx, op) : this.pixels.Mask.fromCanvas(flip(l.maskPx.toCanvas())); l.maskDirty = true; }
         this.markLayerChanged(l);
         this.renderLayers(); this.draw();
         this.setStatus(`${l.name} flipped ${axis === "h" ? "horizontally" : "vertically"}.`);
+    }
+
+    /**
+     * Tile pixels mirrored (`op` "h" / "v") or turned by 90° (1 clockwise, -1 counter-clockwise) without a canvas:
+     * bands of 256 rows read with readRect, moved in JS and written into new pixels of the same class. The canvas
+     * path made a full-size copy, a GPU canvas of it and read that back, three buffers as large as the layer next
+     * to its tiles, which a 20000 × 12000 layer did not survive (C2's final review). The bytes move exactly (the
+     * canvas path's premultiplied draw rounded low alpha), and the turn is the one the canvas path draws:
+     * clockwise (X, Y) <- (Y, H - 1 - X), counter-clockwise (X, Y) <- (W - 1 - Y, X).
+     */
+    turnedTilePixels(src, op) {
+        const W = src.width, H = src.height, turn = op === 1 || op === -1, B = 256;
+        const out = new src.constructor(turn ? H : W, turn ? W : H);
+        for (let y = 0; y < H; y += B) {
+            const bh = Math.min(B, H - y);
+            const img = src.readRect(0, y, W, bh), s = img.data, row = W * 4;
+            const s32 = new Uint32Array(s.buffer, s.byteOffset, s.length >> 2);   // a pixel is one word, whatever the byte order
+            if (op === "h") {
+                for (let r = 0; r < bh; r++) s32.subarray(r * W, r * W + W).reverse();
+                out.writeRect(img, 0, y);
+            } else if (op === "v") {
+                for (let r = 0; r < bh >> 1; r++) {
+                    const a = r * row, b = (bh - 1 - r) * row, t = s.slice(a, a + row);
+                    s.copyWithin(a, b, b + row);
+                    s.set(t, b);
+                }
+                out.writeRect(img, 0, H - y - bh);
+            } else {
+                // source rows [y, y + bh) are the new pixels' columns [H - y - bh, H - y) clockwise, [y, y + bh) counter-clockwise
+                const d = new ImageData(bh, W), d32 = new Uint32Array(d.data.buffer);
+                for (let r = 0; r < bh; r++) {
+                    const col = op === 1 ? bh - 1 - r : r, base = r * W;
+                    if (op === 1) for (let x = 0; x < W; x++) d32[x * bh + col] = s32[base + x];
+                    else for (let x = 0; x < W; x++) d32[(W - 1 - x) * bh + col] = s32[base + x];
+                }
+                out.writeRect(d, op === 1 ? H - y - bh : y, 0);
+            }
+        }
+        return out;
     }
 
     /** Rotate the active layer by 90° (dir 1 = clockwise), keeping its centre. */
@@ -3416,8 +3486,8 @@ class InpaintEditor {
             return c;
         };
         // replaced, not written (the "layerfull" undo PNG may still be encoding from the old pixels)
-        l.px = this.pixels.Layer.fromCanvas(rot(l.px.toCanvas()));
-        if (l.maskPx) { l.maskPx = this.pixels.Mask.fromCanvas(rot(l.maskPx.toCanvas())); l.maskDirty = true; }
+        l.px = isTilePixels(l.px) ? this.turnedTilePixels(l.px, dir) : this.pixels.Layer.fromCanvas(rot(l.px.toCanvas()));
+        if (l.maskPx) { l.maskPx = isTilePixels(l.maskPx) ? this.turnedTilePixels(l.maskPx, dir) : this.pixels.Mask.fromCanvas(rot(l.maskPx.toCanvas())); l.maskDirty = true; }
         const cx = l.x + l.w / 2, cy = l.y + l.h / 2;
         [l.w, l.h] = [l.h, l.w];
         l.x = Math.round(cx - l.w / 2); l.y = Math.round(cy - l.h / 2);
@@ -3659,8 +3729,8 @@ class InpaintEditor {
                 const orig = this.sel.clone();   // the outline as it was, drawn back offset while dragging
                 // every pixel with any alpha lies in `ext` (exact: an approximate extent left faint pixels
                 // behind or erased them): a move rewrites the old and the new place of it only, never the
-                // whole selection on tiles (a full-size scratch per pointer move); the canvas backend takes
-                // the whole image as the extent
+                // whole selection on tiles (a full-size scratch per pointer move); the canvas backend rewrites
+                // the whole image (its extent is all of it)
                 const ext = this.selectionExtent({ exact: true });
                 this.pointer = { kind: "selmove", start: [ix, iy], orig, origBounds: this.getBounds(), ext, lastExt: ext };
             } else {
@@ -3858,19 +3928,33 @@ class InpaintEditor {
             const mx = Math.round(ix - p.start[0]), my = Math.round(iy - p.start[1]);
             if (mx || my) p.moved = true;
             const orig = p.orig, e = p.ext;
-            // what the selection holds now (the outline at the last offset) and where it goes: outside
-            // both, it is transparent before and after, so the rewrite stays inside their union
-            const next = e ? [e[0] + mx, e[1] + my, e[2] + mx, e[3] + my] : null, last = p.lastExt;
-            const box = !last ? next : !next ? last : [Math.min(last[0], next[0]), Math.min(last[1], next[1]), Math.max(last[2], next[2]), Math.max(last[3], next[3])];
-            if (box) {
-                this.sel.clear(box);
-                // unscaled at whole pixels (mx, my are rounded): a copy of the extent to its new place
-                if (e) this.sel.blit(orig, e[0] + mx, e[1] + my, "copy", 1, e);
+            if (isTilePixels(this.sel)) {
+                // what the selection holds now (the outline at the last offset) and where it goes: outside
+                // both, it is transparent before and after, so the rewrite stays inside their union
+                const next = e ? [e[0] + mx, e[1] + my, e[2] + mx, e[3] + my] : null, last = p.lastExt;
+                const box = !last ? next : !next ? last : [Math.min(last[0], next[0]), Math.min(last[1], next[1]), Math.max(last[2], next[2]), Math.max(last[3], next[3])];
+                if (box) {
+                    this.sel.clear(box);
+                    // unscaled at whole pixels (mx, my are rounded): a copy of the extent to its new place
+                    if (e) this.sel.blit(orig, e[0] + mx, e[1] + my, "copy", 1, e);
+                }
+                p.lastExt = next;
+                // the display levels are refreshed inside the rewritten box, not rebuilt from the whole selection
+                if (box) this.touchSourceRect(this.sel, box[0], box[1], box[2], box[3]);
+                else this.touchSource(this.sel);
+            } else {
+                // On canvases 0.1.12's whole rewrite, GPU work there, and its touchSource, which drops the display
+                // levels the pointer-down's undo step built. The tile path above, run on canvases (the box is the whole
+                // image), redrew all those levels on every move (7500 × 5000 down to 938 × 625 at 15k: 35 to 46 ms of
+                // GPU work a move against 6 to 7), and with the selection canvas on the CPU its clear plus "copy"
+                // blit cleared the image twice (a handler of 156 to 171 ms against 118 to 131; C2's final review)
+                const W = this.width, H = this.height;
+                this.sel.drawInto(null, (ctx) => {
+                    ctx.clearRect(0, 0, W, H);
+                    orig.drawTo(ctx, mx, my);
+                });
+                this.touchSource(this.sel);
             }
-            p.lastExt = next;
-            // the display levels are refreshed inside the rewritten box, not rebuilt from the whole selection
-            if (box) this.touchSourceRect(this.sel, box[0], box[1], box[2], box[3]);
-            else this.touchSource(this.sel);
             if (p.origBounds) {
                 // the outline only moves: shift the known box instead of scanning the selection
                 const nb = [Math.max(0, p.origBounds[0] + mx), Math.max(0, p.origBounds[1] + my),
@@ -5266,22 +5350,27 @@ class InpaintEditor {
         const onMask = !!(layer.maskPx && layer.maskEdit);
         if (layer.kind === "filter" && !onMask) { this.setStatus("Filter layers have no pixels to fill. Use \"mask from selection\" to limit the filter instead."); return; }
         this.pushUndo(onMask ? { kind: "mask", id: layer.id } : { kind: "layer", id: layer.id });
-        const shape = makeCanvas(this.width, this.height);
-        const sctx = shape.getContext("2d");
-        this.sel.drawTo(sctx, 0, 0);
-        sctx.globalCompositeOperation = "source-in";
-        sctx.fillStyle = onMask ? "#ffffff" : this.color;
-        sctx.fillRect(0, 0, this.width, this.height);
         // a mask is replaced, not written (rule 2): the `mask` step restores by replacing it, and an
         // older `layers` / `canvas` step still holds the old object, which has to stay as it was
         if (onMask) layer.maskPx = layer.maskPx.clone();
-        // the image-sized shape scaled into the target's pixels, at the brush opacity; the whole area (null)
         const target = onMask ? layer.maskPx : layer.px;
+        // the selection's region: the whole image on canvases, its extent on tiles (selectionWriteRegion)
+        const reg = this.selectionWriteRegion(layer, target);
+        if (reg && !reg.ext) { this.markLayerChanged(layer); this.draw(); return; }
+        const [ex0, ey0, ex1, ey1] = reg ? reg.ext : [0, 0, this.width, this.height];
+        const shape = makeCanvas(ex1 - ex0, ey1 - ey0);
+        // on tiles a CPU canvas: it goes into the store's CPU scratch, and a GPU one would be read back there
+        const sctx = reg ? shape.getContext("2d", { willReadFrequently: true }) : shape.getContext("2d");
+        this.drawSelectionPart(sctx, reg && reg.ext);
+        sctx.globalCompositeOperation = "source-in";
+        sctx.fillStyle = onMask ? "#ffffff" : this.color;
+        sctx.fillRect(0, 0, ex1 - ex0, ey1 - ey0);
+        // the shape scaled into the target's pixels, at the brush opacity; the whole area (null) on canvases
         const opacity = this.brushOpacity;
-        target.drawInto(null, (ctx) => {
+        target.drawInto(reg ? reg.box : null, (ctx) => {
             ctx.globalAlpha = opacity;
             ctx.scale(target.width / layer.w, target.height / layer.h);   // composed (rule 12)
-            ctx.drawImage(shape, -layer.x, -layer.y);
+            ctx.drawImage(shape, ex0 - layer.x, ey0 - layer.y);
         });
         if (onMask) {
             this.markMaskChanged(layer);
@@ -5289,7 +5378,9 @@ class InpaintEditor {
             this.setStatus(`${layer.name}: selection revealed on the mask.`);
             return;
         }
-        this.markLayerChanged(layer);
+        // on tiles the display levels are refreshed inside the written box: a rebuild drew the whole CPU mirror
+        // into the first level, about 200 ms at 96 MP (C2's final review); on canvases rebuilt, as before
+        this.markLayerChanged(layer, reg ? clampRect(reg.box, target.width, target.height) : undefined);
         this.draw();
     }
 
@@ -5358,6 +5449,33 @@ class InpaintEditor {
         return layer;
     }
 
+    /**
+     * Where a write of the selection into `target` (a layer's pixels or mask, or a new mask of that size) has to
+     * reach. On canvases null: the whole image, as always. On tiles `{ ext, box }`: `ext` the selection's exact
+     * extent (every pixel with any alpha, from the tile set) with two transparent pixels around it, in image
+     * pixels, and `box` that extent in the target's own pixels, widened by the scaled draw's reach; `ext` is null
+     * for an empty selection. A whole-layer write on tiles is a scratch as large as the layer, filled from every
+     * tile and read back: a fill, a clear or a mask from a 100 px selection held the main thread 0.7 to 1.1 s at
+     * 96 MP, and the selection's own draw made its display mirror (C2's final review).
+     */
+    selectionWriteRegion(layer, target) {
+        if (!isTilePixels(target) || !isTilePixels(this.sel)) return null;
+        const b = this.sel.bounds();
+        if (!b) return { ext: null, box: null };
+        const ext = [Math.max(0, b[0] - 2), Math.max(0, b[1] - 2), Math.min(this.width, b[2] + 2), Math.min(this.height, b[3] + 2)];
+        const sx = target.width / layer.w, sy = target.height / layer.h, pad = Math.ceil(Math.max(1, sx, sy)) + 2;
+        const box = [Math.floor((ext[0] - layer.x) * sx) - pad, Math.floor((ext[1] - layer.y) * sy) - pad,
+            Math.ceil((ext[2] - layer.x) * sx) + pad, Math.ceil((ext[3] - layer.y) * sy) + pad];
+        return { ext, box };
+    }
+
+    /** The selection into `ctx` at (0, 0): all of it, or only `ext` (tiles, materialised alone) with ext's origin at (0, 0). */
+    drawSelectionPart(ctx, ext) {
+        if (!ext) { this.sel.drawTo(ctx, 0, 0); return; }
+        const part = this.sel.toCanvas(ext);
+        try { ctx.drawImage(part, 0, 0); } finally { part.width = 1; part.height = 1; }
+    }
+
     /** Delete the selected pixels of the active layer (Krita "Clear"); on a mask in edit mode it hides them. */
     clearSelectedPixels() {
         if (!this.sel || !this.getBounds()) { this.setStatus("Nothing selected. Make a selection first, invert it to keep only the selected part."); return; }
@@ -5370,12 +5488,21 @@ class InpaintEditor {
         if (onMask) layer.maskPx = layer.maskPx.clone();   // replaced, as in fillSelection (rule 2)
         const target = onMask ? layer.maskPx : layer.px;
         const sel = this.sel;
-        target.drawInto(null, (ctx) => {
-            ctx.globalCompositeOperation = "destination-out";
-            ctx.scale(target.width / layer.w, target.height / layer.h);   // composed (rule 12)
-            sel.drawTo(ctx, -layer.x, -layer.y);
-        });
-        if (onMask) this.markMaskChanged(layer); else this.markLayerChanged(layer);
+        const reg = this.selectionWriteRegion(layer, target);   // null on canvases: the whole layer, as before
+        if (!reg || reg.ext) {
+            const part = reg ? sel.toCanvas(reg.ext) : null;
+            try {
+                target.drawInto(reg ? reg.box : null, (ctx) => {
+                    ctx.globalCompositeOperation = "destination-out";
+                    ctx.scale(target.width / layer.w, target.height / layer.h);   // composed (rule 12)
+                    if (part) ctx.drawImage(part, reg.ext[0] - layer.x, reg.ext[1] - layer.y);
+                    else sel.drawTo(ctx, -layer.x, -layer.y);
+                });
+            } finally {
+                if (part) { part.width = 1; part.height = 1; }
+            }
+        }
+        if (onMask) this.markMaskChanged(layer); else this.markLayerChanged(layer, reg && reg.ext ? clampRect(reg.box, target.width, target.height) : undefined);   // as in fillSelection
         this.draw();
         this.setStatus(`${layer.name}: selected ${onMask ? "part of the mask hidden" : "pixels cleared"}.`);
     }
@@ -5956,7 +6083,9 @@ class InpaintEditor {
         const [x, y, x1, y1] = ext;
         const w = x1 - x, h = y1 - y;
         const copy = this.sel.copyRect(ext);   // the extent is on whole pixels inside the selection
-        if (w * h > SNAP_CANVAS_PX) return { kind: "selection", x, y, w, h, url: this.snapUrl(copy.toCanvas()), bytes: 0, bounds };
+        // on tiles the copy shares the selection's tiles and stays pixels at any size, counted like the PNG it
+        // replaces (docs/PLAN_BCE.md §C2, the final review; C4 counts the tiles a step holds alone)
+        if (w * h > SNAP_CANVAS_PX) return isTilePixels(copy) ? { kind: "selection", x, y, w, h, px: copy, bytes: 0, bounds } : { kind: "selection", x, y, w, h, url: this.snapUrl(copy.toCanvas()), bytes: 0, bounds };
         return { kind: "selection", x, y, w, h, px: copy, bytes: w * h * 4, bounds };
     }
 
@@ -5992,11 +6121,13 @@ class InpaintEditor {
         this.undoBytes -= snap.bytes || 0;
         for (const k of ["url", "mask", "selection"]) {
             const v = snap[k];
-            if (!v) continue;
+            if (!v || v === true) continue;   // a layerrect step's `mask` is a flag
             if (typeof v.then === "function") v.then((u) => { if (typeof u === "string" && u.startsWith("blob:")) URL.revokeObjectURL(u); }).catch(() => {});
             else if (typeof v === "string" && v.startsWith("blob:")) URL.revokeObjectURL(v);
         }
         snap.px = null;
+        snap.maskPx = null;
+        snap.selPx = null;
     }
 
     /**
@@ -6020,22 +6151,35 @@ class InpaintEditor {
         }
         if (step.kind === "selection") return this.snapshotSelection();
         if (step.kind === "layers") return { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), activeLayerId: this.activeLayerId };
+        // On tiles a whole-layer step (and the canvas step's selection) holds a copy-on-write clone of the pixels
+        // instead of a PNG: a clone shares every tile, costs nothing to take or to restore, and never materialises
+        // the pixels. The PNG took a full-size CPU canvas plus a bitmap for the worker per step, and on a
+        // 20000 × 12000 document its encode failed under that load, so the flip it belonged to could not be
+        // undone (C2's final review). No PNG is made on tiles; the clone counts no bytes, like the PNG it
+        // replaces (C4 counts the tiles a step holds alone and adds release()).
+        const tiles = this.tileMode;
         if (step.kind === "canvas") {
             // base, size, selection and the layer list (shallow copies: the canvases themselves are never mutated by extend / crop, only replaced)
-            return { kind: "canvas", base: this.base, width: this.width, height: this.height, selection: this.snapUrl(this.sel.toCanvas()), layers: this.layers.map((l) => this.snapshotLayer(l)), activeLayerId: this.activeLayerId };
+            const sel = tiles ? { selPx: this.sel.clone() } : { selection: this.snapUrl(this.sel.toCanvas()) };
+            return { kind: "canvas", base: this.base, width: this.width, height: this.height, ...sel, layers: this.layers.map((l) => this.snapshotLayer(l)), activeLayerId: this.activeLayerId };
         }
         const layer = this.layers.find((l) => l.id === step.id);
         if (!layer) return null;
-        // the whole-layer steps stay a PNG per step (docs/PLAN_BCE.md C1 rule 7); C4 makes them tile refs
-        if (step.kind === "layer") return { kind: "layer", id: layer.id, url: this.snapUrl(layer.px.toCanvas()) };
+        // on canvases the whole-layer steps stay a PNG per step (docs/PLAN_BCE.md C1 rule 7); C4 makes them tile refs
+        const pixelsOf = (p) => (tiles ? { px: p.clone() } : { url: this.snapUrl(p.toCanvas()) });
+        const maskOf = (m) => (!m ? { mask: null } : tiles ? { maskPx: m.clone() } : { mask: this.snapUrl(m.toCanvas()) });
+        if (step.kind === "layer") return { kind: "layer", id: layer.id, ...pixelsOf(layer.px) };
         if (step.kind === "transform") return { kind: "transform", id: layer.id, x: layer.x, y: layer.y, w: layer.w, h: layer.h };
-        if (step.kind === "mask") return { kind: "mask", id: layer.id, url: layer.maskPx ? this.snapUrl(layer.maskPx.toCanvas()) : null, mw: layer.maskPx ? layer.maskPx.width : 0, mh: layer.maskPx ? layer.maskPx.height : 0 };
+        if (step.kind === "mask") {
+            const m = layer.maskPx;
+            return { kind: "mask", id: layer.id, ...(!m ? { url: null } : tiles ? { maskPx: m.clone() } : { url: this.snapUrl(m.toCanvas()) }), mw: m ? m.width : 0, mh: m ? m.height : 0 };
+        }
         if (step.kind === "match") return { kind: "match", id: layer.id, match: { ...(layer.match || { strength: 0, source: "surroundings" }) } };
         if (step.kind === "filter") return { kind: "filter", id: layer.id, filter: layer.filter, params: { ...(layer.params || {}) }, lut: layer.lut ? { ...layer.lut } : null, lutData: layer._lutData || null, plate: layer.plate ? { ...layer.plate } : null, plateImg: layer._plateImg || null, name: layer.name };
-        if (step.kind === "text") return { kind: "text", id: layer.id, text: JSON.parse(JSON.stringify(layer.text || TEXT_DEFAULTS)), url: this.snapUrl(layer.px.toCanvas()), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
+        if (step.kind === "text") return { kind: "text", id: layer.id, text: JSON.parse(JSON.stringify(layer.text || TEXT_DEFAULTS)), ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
             behind: !!layer._textRendering };
-        if (step.kind === "layerfull") return { kind: "layerfull", id: layer.id, url: this.snapUrl(layer.px.toCanvas()), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
-            mask: layer.maskPx ? this.snapUrl(layer.maskPx.toCanvas()) : null, mw: layer.maskPx ? layer.maskPx.width : 0, mh: layer.maskPx ? layer.maskPx.height : 0 };
+        if (step.kind === "layerfull") return { kind: "layerfull", id: layer.id, ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
+            ...maskOf(layer.maskPx), mw: layer.maskPx ? layer.maskPx.width : 0, mh: layer.maskPx ? layer.maskPx.height : 0 };
         return null;
     }
 
@@ -6058,6 +6202,48 @@ class InpaintEditor {
         this.undo.push(snap);
         this.undoBytes += snap.bytes || 0;
         while (this.undo.length > MAX_UNDO || (this.undoBytes > MAX_UNDO_BYTES && this.undo.length > 1)) this.releaseSnapshot(this.undo.shift());
+        this.scheduleDetachedRelease();
+    }
+
+    /**
+     * After the current task: the display caches of pixels that left the document into a step (a removed,
+     * merged or flattened layer, the old pixels of an extend or crop). See releaseDetachedDisplays. A microtask,
+     * because the operations push their step first and take the pixels out of the document after it.
+     */
+    scheduleDetachedRelease() {
+        if (!this.tileMode || this._detachQueued) return;
+        this._detachQueued = true;
+        queueMicrotask(() => { this._detachQueued = false; this.releaseDetachedDisplays(); });
+    }
+
+    /**
+     * On tiles: pixels an undo or redo step holds that the document does not (not a layer's, a mask's, the base's
+     * or the selection's) give back their display mirror and thumbnail, with the pyramid levels, the screen's GPU
+     * copy and the textures keyed on them. Nothing draws such pixels; their mirror stayed for as long as the step
+     * lived, so a step held tiles plus a canvas as large as the layer, twice what the canvas backend holds, and
+     * only a tab in the background ever let it go (C2's final review). An undo that brings them back makes the
+     * mirror again on its first frame. Returns the bytes; 0 on canvases.
+     */
+    releaseDetachedDisplays() {
+        if (!this.tileMode) return 0;
+        const live = new Set([this._basePx, this.sel]);
+        for (const l of this.layers) { live.add(l.px); live.add(l.maskPx); }
+        const comp = this._compositor || null;
+        let freed = 0;
+        for (const p of this.heldPixels()) {
+            if (live.has(p) || !isTilePixels(p)) continue;
+            const m = p.displayCanvasIfMade();
+            if (m) {
+                const entry = this.pyramids.get(m);
+                if (entry) {
+                    if (comp) for (const c of [...entry.levels, entry.gpu]) if (c) comp.forget(c);
+                    this.pyramids.delete(m);
+                }
+                if (comp) comp.forget(m);
+            }
+            if (m || p.thumbnailCanvasIfMade()) freed += p.releaseDisplay();
+        }
+        return freed;
     }
 
     /**
@@ -6101,8 +6287,11 @@ class InpaintEditor {
             this.height = snap.height;
             this.layers = snap.layers.map((l) => installLayerAliases({ ...l, dirty: true, exportRef: null, _maskedValid: false, _mcache: null, _fxCache: null, maskDirty: !!l.maskPx }, this.pixels));
             this.activeLayerId = snap.activeLayerId;
-            const sel = this.pixels.Mask.empty(this.width, this.height);
-            if (selImg) sel.drawInto(null, (ctx) => ctx.drawImage(selImg, 0, 0));
+            let sel = snap.selPx || null;   // on tiles the step's clone, replaced (the step is released after this)
+            if (!sel) {
+                sel = this.pixels.Mask.empty(this.width, this.height);
+                if (selImg) sel.drawInto(null, (ctx) => ctx.drawImage(selImg, 0, 0));
+            }
             this.sel = sel;
             this.touchSource(sel);
             this.uploaded = this.makeUploaded();
@@ -6140,15 +6329,28 @@ class InpaintEditor {
             const layer = this.layers.find((l) => l.id === snap.id);
             if (!layer) return;
             if (snap.kind === "layer") {
-                const img = needImage(images.url);
-                // in place, from a fresh context: 0.1.11 drew with whatever a flip, a turn or a merge
-                // had left on the layer's context, and put a flipped layer back mirrored (rule 11)
                 const pixels = layer.px, W = pixels.width, H = pixels.height;
-                pixels.drawInto(null, (ctx) => {
-                    ctx.clearRect(0, 0, W, H);
-                    ctx.drawImage(img, 0, 0);
-                });
-                this.markLayerChanged(layer);
+                if (snap.px) {
+                    // tiles: in place, as a "copy" of the step's clone, which shares its tiles back; a tile the
+                    // step shares with the layer is left alone (its display mirror syncs only what changed), and
+                    // the display levels are refreshed over the tiles that differ, not rebuilt from the whole mirror
+                    const same = snap.px.width === W && snap.px.height === H;
+                    const box = same ? tileDiffBox(pixels, snap.px) : null;
+                    if (!same) pixels.clear();
+                    pixels.blit(snap.px, 0, 0, "copy");
+                    if (same) {
+                        if (box) this.markLayerChanged(layer, box);
+                    } else this.markLayerChanged(layer);
+                } else {
+                    const img = needImage(images.url);
+                    // in place, from a fresh context: 0.1.11 drew with whatever a flip, a turn or a merge
+                    // had left on the layer's context, and put a flipped layer back mirrored (rule 11)
+                    pixels.drawInto(null, (ctx) => {
+                        ctx.clearRect(0, 0, W, H);
+                        ctx.drawImage(img, 0, 0);
+                    });
+                    this.markLayerChanged(layer);
+                }
             } else if (snap.kind === "transform") {
                 Object.assign(layer, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
                 this.uploaded.baseHash = null;
@@ -6171,7 +6373,7 @@ class InpaintEditor {
                 this.markFilterChanged(layer);
                 this.renderLayers();
             } else if (snap.kind === "mask") {
-                layer.maskPx = snap.url ? this.pixels.Mask.fromImage(needImage(images.url), snap.mw, snap.mh) : null;
+                layer.maskPx = snap.maskPx || (snap.url ? this.pixels.Mask.fromImage(needImage(images.url), snap.mw, snap.mh) : null);
                 if (!layer.maskPx) layer.maskEdit = false;
                 this.markMaskChanged(layer);
                 this.renderLayers();
@@ -6180,8 +6382,7 @@ class InpaintEditor {
                 // description that is being undone on top of the restored one
                 layer._textToken = (layer._textToken || 0) + 1;
                 layer._textRendering = 0;
-                const img = needImage(images.url);
-                layer.px = this.pixels.Layer.fromImage(img, snap.cw, snap.ch);   // replaced: rule 2
+                layer.px = snap.px || this.pixels.Layer.fromImage(needImage(images.url), snap.cw, snap.ch);   // replaced: rule 2
                 Object.assign(layer, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
                 layer.text = JSON.parse(JSON.stringify(snap.text));
                 layer._maskedValid = false;
@@ -6199,10 +6400,9 @@ class InpaintEditor {
                 if (snap.mask) this.markMaskChanged(layer, rect); else this.markLayerChanged(layer, rect);
                 this.refreshLayerThumb(layer);   // nothing else in the list changed
             } else if (snap.kind === "layerfull") {
-                const img = needImage(images.url);
-                layer.px = this.pixels.Layer.fromImage(img, snap.cw, snap.ch);   // replaced: rule 2
+                layer.px = snap.px || this.pixels.Layer.fromImage(needImage(images.url), snap.cw, snap.ch);   // replaced: rule 2
                 Object.assign(layer, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
-                layer.maskPx = snap.mask ? this.pixels.Mask.fromImage(needImage(images.mask), snap.mw, snap.mh) : null;
+                layer.maskPx = snap.maskPx || (snap.mask ? this.pixels.Mask.fromImage(needImage(images.mask), snap.mw, snap.mh) : null);
                 if (!layer.maskPx) layer.maskEdit = false;
                 layer.maskDirty = !!layer.maskPx;
                 layer._maskedValid = false;
@@ -6286,7 +6486,9 @@ class InpaintEditor {
         const snap = stack()[stack().length - 1];
         if (!snap) return;
         let images = {}, failed = null;
-        if (snap.kind === "canvas" || snap.url || snap.mask) {
+        // a layerrect step's `mask` is a flag (a mask stroke), not an image: loading it as one failed every
+        // undo of a mask brush stroke with "could not load true" (C2's final review)
+        if (snap.kind === "canvas" ? !snap.selPx : snap.kind !== "layerrect" && (snap.url || snap.mask)) {
             try { images = await this.loadSnapImages(snap); } catch (err) { failed = err; }
         }
         const now = stack();
@@ -6314,6 +6516,7 @@ class InpaintEditor {
             this.setStatus(`That ${word} step could not be restored: ${(err && err.message) || err}`);
         } finally {
             this.releaseSnapshot(snap);
+            this.scheduleDetachedRelease();   // what the restore took out of the document is in the other stack now
         }
     }
 
@@ -6781,16 +6984,25 @@ class InpaintEditor {
         // selection under the layer, turned white with its coverage kept in alpha
         const m = this.pixels.Mask.empty(layer.px.width, layer.px.height);
         const W = m.width, H = m.height;
-        m.drawInto(null, (ctx) => {
-            // the scale composed on drawInto's transform and taken off again with restore (rule 12)
-            ctx.save();
-            ctx.scale(W / layer.w, H / layer.h);
-            this.sel.drawTo(ctx, -layer.x, -layer.y);
-            ctx.restore();
-            ctx.globalCompositeOperation = "source-in";   // over the whole mask, as before
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(0, 0, W, H);
-        });
+        const reg = this.selectionWriteRegion(layer, m);   // null on canvases: the whole mask, as before
+        const part = reg && reg.ext ? this.sel.toCanvas(reg.ext) : null;
+        try {
+            if (!reg || reg.ext) {
+                m.drawInto(reg ? reg.box : null, (ctx) => {
+                    // the scale composed on drawInto's transform and taken off again with restore (rule 12)
+                    ctx.save();
+                    ctx.scale(W / layer.w, H / layer.h);
+                    if (part) ctx.drawImage(part, reg.ext[0] - layer.x, reg.ext[1] - layer.y);
+                    else this.sel.drawTo(ctx, -layer.x, -layer.y);
+                    ctx.restore();
+                    ctx.globalCompositeOperation = "source-in";   // over the whole mask (its region on tiles, empty around it)
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fillRect(0, 0, W, H);
+                });
+            }
+        } finally {
+            if (part) { part.width = 1; part.height = 1; }
+        }
         layer.maskPx = m;
         layer.maskEdit = false;
         this.markMaskChanged(layer);
@@ -7675,6 +7887,13 @@ class InpaintEditor {
     // ---- layers: management ------------------------------------------------
 
     async setBase(ref, img, { keepLayers = true } = {}) {
+        // On tiles an image above Chromium's canvas limit decodes into tiles, but nothing in C2 can show, export
+        // or save it (the display mirror, toCanvas and the selection's PNG need one canvas of it), and the first
+        // autosave stored the tab as "{}" (C2's final review). Refused before anything changes; C3 draws tiles and
+        // E streams exports, which lift it. The canvas backend is left as it was.
+        if (this.tileMode && img.naturalWidth * img.naturalHeight > CANVAS_MAX_PIXELS) {
+            throw new Error(`${img.naturalWidth} × ${img.naturalHeight} px is above the canvas limit of 268 MP; the tile store cannot show an image that large yet (docs/PLAN_BCE.md §C3)`);
+        }
         const sizeChanged = img.naturalWidth !== this.width || img.naturalHeight !== this.height;
         this.historyGen++;   // a restore still loading must not put the old document over the new image
         this.base = { ref, img };
@@ -9314,9 +9533,13 @@ class InpaintEditor {
     drawSceneOverlays(ctx) {
         const s = this.view.scale;
         if (this.selectionDisplay === "tint" || this.quickMask || !this.getBounds()) {
-            ctx.globalAlpha = this.quickMask ? 0.5 : 0.4;
-            ctx.drawImage(this.displaySource(this.sel, s, true), 0, 0, this.width, this.height);
-            ctx.globalAlpha = 1;
+            // an empty selection on tiles (no tile) draws nothing: its draw made a display mirror as large as the
+            // image, and a GPU copy of it at 0.5 or more, for transparent pixels (C2's final review)
+            if (!this.selectionHasNoTiles()) {
+                ctx.globalAlpha = this.quickMask ? 0.5 : 0.4;
+                ctx.drawImage(this.displaySource(this.sel, s, true), 0, 0, this.width, this.height);
+                ctx.globalAlpha = 1;
+            }
         } else {
             this.drawMarchingAnts(ctx);
         }
@@ -9768,6 +9991,8 @@ class InpaintEditor {
             for (const st of list) {
                 if (!st) continue;
                 add(st.px);
+                add(st.maskPx);   // on tiles: a mask / layerfull step's clone
+                add(st.selPx);    // on tiles: a canvas step's selection
                 for (const l of st.layers || []) { add(l.px); add(l.maskPx); }
             }
         }
@@ -9825,7 +10050,17 @@ class InpaintEditor {
         this._selEncoding = true;
         const seq = this.selectionSeq;
         const sel = this.sel;   // a replaced selection is a new object: its PNG is not stored
-        canvasToBlob(sel.toCanvas())
+        // on tiles toCanvas throws above the canvas limit: a throw here left `_selEncoding` set for good (no
+        // selection saved in that tab again) and threw out of getValue (C2's final review)
+        let canvas;
+        try {
+            canvas = sel.toCanvas();
+        } catch (err) {
+            this._selEncoding = false;
+            console.warn("Inpaint Canvas: selection encode failed", err);
+            return;
+        }
+        canvasToBlob(canvas)
             .then((blob) => new Promise((res, rej) => {
                 const r = new FileReader();
                 r.onload = () => res(r.result);
@@ -10213,7 +10448,9 @@ class InpaintEditor {
             for (const s of list) {
                 if (!s) continue;
                 kinds[s.kind] = (kinds[s.kind] || 0) + 1;
-                bytes += heldBytes(s.px);   // a layerrect / selection step's pixels copy
+                if (s.kind === "layerrect" || s.kind === "selection") bytes += heldBytes(s.px);   // a rect / selection step's pixels copy
+                else held += heldBytes(s.px);   // on tiles: a whole-layer step's clone (its tiles the live layers do not hold)
+                held += heldBytes(s.maskPx) + heldBytes(s.selPx);
                 for (const l of s.layers || []) {
                     // snapshot copies are spreads: they carry px / maskPx, not the aliases
                     held += heldBytes(l.px) + heldBytes(l.maskPx);

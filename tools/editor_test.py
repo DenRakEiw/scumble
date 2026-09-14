@@ -15,7 +15,11 @@ back, and a restored selection that getValue saves even when it was read during 
 C2 step (b) and its review: the pixel backend the flag chose, editing on it in pixels and on screen
 (a selection drag with faint isolated pixels, read on screen in the middle of the drag), no display
 mirror for pixels nothing draws, no CPU mirror drawn by the screen, stale compositor textures leaving,
-and after every step a sweep that every open editor holds only pixels of its own backend.
+and after every step a sweep that every open editor holds only pixels of its own backend. C2's final
+review: a selection drag that leaves the display levels alone on canvases, the undo of a mask stroke,
+whole-layer undo steps as tile clones and small-selection writes without whole-layer work on tiles, exact
+flips and turns, no mirror for an empty selection or for removed layers, the memory report's shared-tile
+counting, the 268 MP refusal on tiles and a selection encode that cannot throw out of getValue.
 
     python tools/editor_test.py
 
@@ -298,8 +302,11 @@ ed.fillSelection();
 ed.clearSelection();
 await wait(200); await settle();
 check("cloneFill", C, 700, 300, BLUE, BLUE);
-out.shared = { afterWrite: ed.tileMode ? tile(C) === tile(L) : null, frozen: ed.tileMode ? tile(L).frozen : null };
-if (ed.tileMode && (tile(C) === tile(L) || tile(L).frozen !== 0)) throw new Error("the write went into the shared tile: " + JSON.stringify(out.shared));
+// the original's tile may still be shared by undo steps (on tiles a whole-layer step is a clone, C2's final review): its
+// counter must cover every other holder, or the next write would go into it in place
+const holders = ed.tileMode ? [...ed.heldPixels()].filter((p) => p.tileAt(700 >> 8, 300 >> 8) === tile(L)).length : null;
+out.shared = { afterWrite: ed.tileMode ? tile(C) === tile(L) : null, frozen: ed.tileMode ? tile(L).frozen : null, holders };
+if (ed.tileMode && (tile(C) === tile(L) || tile(L).frozen < holders - 1)) throw new Error("the write went into the shared tile: " + JSON.stringify(out.shared));
 if (pixel(L, 700, 300)[0] !== 255 || !sameAsOrig()) throw new Error("the write into the copy changed the original");
 // a brush stroke on the copy (a rect copy of shared pixels), then undo it and the fill
 ed.setTool("paint");
@@ -562,6 +569,302 @@ if (left) throw new Error("the compositor still holds " + left + " textures no c
 await run("close_document", { doc: window.__dc, force: true });
 return out;
 """
+
+
+FINAL_STEP = """
+// C2's final review, on the flag's backend. (1) A selection drag on canvases does not redraw the selection's
+// display levels on every move (35 to 46 ms of GPU work a move at 15k; the levels are dropped as in 0.1.12).
+// (2) The undo of a mask brush stroke works (its `mask` flag was loaded as an image). (3) Fill, clear and mask
+// from a small selection, a fill on a mask, flip and both turns, each undone and redone: the pixels are right,
+// and on tiles no step holds a PNG, no write or restore covers the whole layer and nothing is materialised whole
+// (a whole-layer scratch per fill was 0.7 to 1.1 s at 96 MP; the PNG of a 20k flip failed to encode); flips and
+// turns move the bytes exactly. An extend and its undo keep the selection. (4) An empty selection makes no display
+// mirror. (5) Removed layers give their mirrors back. (6) The memory report counts shared tiles once. (7) An image
+// above 268 MP is refused on tiles, and a selection encode that cannot make its canvas neither throws out of
+// getValue nor stops later encodes.
+const P = await import("./editor/inpaint_pixels.js");
+const T = await import("./editor/inpaint_tiles.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 2400, height: 1600, doc: d.id });
+const out = { tiles: ed.tileMode };
+const fails = [];
+const r = () => ed.canvas.getBoundingClientRect();
+const client = (ix, iy) => { const b = r(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: b.left + sx * b.width / ed.canvas.width, clientY: b.top + sy * b.height / ed.canvas.height }; };
+const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 15, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+const frame = () => { ed.sceneSig = null; ed.draw(); };
+const centre = (scale, cx, cy) => { ed.view.scale = scale; ed.view.angle = 0; ed._fitted = false; ed.view.x = Math.round(ed.canvas.width / 2 - cx * scale); ed.view.y = Math.round(ed.canvas.height / 2 - cy * scale); };
+const all = (p) => p.readRect(0, 0, p.width, p.height).data.slice();
+// the pixels a step put back: to the byte on tiles (a clone), within a level premultiplied on canvases (a PNG)
+const worst = (a, b) => { if (a.length !== b.length) return 255; let m = 0; for (let i = 0; i < a.length; i += 4) { const aa = a[i + 3], ba = b[i + 3]; let v = Math.abs(aa - ba); for (let k = 0; k < 3; k++) v = Math.max(v, Math.abs(a[i + k] * aa / 255 - b[i + k] * ba / 255)); if (v > m) m = v; } return +m.toFixed(1); };
+const exact = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+const back = (label, a, b) => { const ok = ed.tileMode ? exact(a, b) : worst(a, b) <= 1; if (!ok) fails.push(label + ": not the pixels of before (" + worst(a, b) + " levels)"); };
+
+// (1) the selection drag at zoom 0.6
+await run("select_rect", { x: 500, y: 400, w: 600, h: 400, doc: d.id });
+ed.setTool("rect");
+centre(0.6, 800, 600);
+for (let i = 0; i < 3; i++) { frame(); await wait(15); }
+{
+    const levels = new Set();
+    let levelDraws = 0;
+    const d2 = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function (...a) { if (levels.has(this.canvas)) levelDraws++; return d2.apply(this, a); };
+    try {
+        ed.canvas.dispatchEvent(ev("pointerdown", 800, 600));
+        const entry = ed.pyramids.get(P.canvasOf(ed.sel));   // on canvases the pointer-down's undo step built them
+        out.drag = { kind: ed.pointer && ed.pointer.kind, levelsAtDown: entry ? entry.levels.filter(Boolean).length : 0 };
+        if (entry) for (const l of entry.levels) if (l) levels.add(l);
+        for (let i = 1; i <= 6; i++) { ed.canvas.dispatchEvent(ev("pointermove", 800 + 15 * i, 600 + 9 * i)); frame(); await wait(10); }
+        out.drag.levelDraws = levelDraws;
+        ed.canvas.dispatchEvent(ev("pointerup", 890, 654));
+    } finally {
+        CanvasRenderingContext2D.prototype.drawImage = d2;
+        ed.setTool("select");
+    }
+    out.drag.bounds = ed.getBounds();
+    if (out.drag.kind !== "selmove") fails.push("the drag did not move the outline: " + JSON.stringify(out.drag));
+    if (!ed.tileMode && !out.drag.levelsAtDown) fails.push("no display levels at pointer down, the check sees nothing: " + JSON.stringify(out.drag));
+    if (levelDraws) fails.push("the drag redrew the selection's display levels " + levelDraws + " times at zoom 0.6: " + JSON.stringify(out.drag));
+    const bb = out.drag.bounds, want = [590, 454, 1190, 854];
+    if (!bb || bb.some((v, i) => Math.abs(v - want[i]) > 3) || bb[2] - bb[0] !== 600 || bb[3] - bb[1] !== 400) fails.push("the outline did not move by the drag: " + JSON.stringify(out.drag));
+}
+await run("select_none", { doc: d.id });
+ed.fitView();
+
+// (2) a mask brush stroke and its undo
+{
+    const M = ed.addPaintLayer();
+    M.px.fill(null, "#ff0000"); ed.markLayerChanged(M);
+    await run("select_rect", { x: 200, y: 200, w: 800, h: 600, doc: d.id });
+    ed.maskFromSelection(M);
+    ed.clearSelection();
+    const mask0 = all(M.maskPx);
+    ed.toggleMaskEdit(M);
+    ed.setTool("paint"); ed.color = "#000000"; ed.brushSize = 60; ed.hardness = 1; ed.brushOpacity = 1;
+    frame(); await wait(30);
+    // below the mask's rectangle, where it hides: the brush reveals there
+    ed.canvas.dispatchEvent(ev("pointerdown", 300, 900));
+    for (let i = 1; i <= 8; i++) { ed.canvas.dispatchEvent(ev("pointermove", 300 + 60 * i, 900)); await wait(16); }
+    ed.canvas.dispatchEvent(ev("pointerup", 780, 900));
+    await wait(80);
+    const top = ed.undo[ed.undo.length - 1];
+    const painted = !exact(all(M.maskPx), mask0);
+    await ed.undoStep();
+    out.maskStroke = { step: top && top.kind, flag: top && top.mask, painted, status: ed.status };
+    if (!top || top.kind !== "layerrect" || top.mask !== true || !painted) fails.push("no mask stroke to undo: " + JSON.stringify(out.maskStroke));
+    else if (/could not be restored/.test(ed.status) || !exact(all(M.maskPx), mask0)) fails.push("the mask stroke's undo failed: " + JSON.stringify(out.maskStroke));
+    ed.toggleMaskEdit(M);
+    ed.setTool("select");
+    ed.removeLayer(M.id);
+}
+
+// (3) whole-layer steps and small-selection writes
+const L = ed.addPaintLayer();
+L.px.fill(null, "#ff0000"); ed.markLayerChanged(L);
+const O = ed.addLayer({ name: "odd", kind: "paint", px: ed.pixels.Layer.empty(700, 300), x: 100, y: 100, w: 700, h: 300 });
+O.px.drawInto(null, (x) => { const g = x.createLinearGradient(0, 0, 700, 300); g.addColorStop(0, "rgba(255, 0, 0, 1)"); g.addColorStop(1, "rgba(0, 0, 255, 0.2)"); x.fillStyle = g; x.fillRect(0, 0, 700, 300); });
+{ const n = new ImageData(700, 20); for (let i = 0; i < n.data.length; i++) n.data[i] = (i * 7919) & 255; O.px.writeRect(n, 0, 140); }
+ed.markLayerChanged(O);
+ed.fitView(); frame(); await wait(30);
+const counts = { wholeToCanvas: 0, wholeDrawInto: 0, snapUrl: 0, where: [] };
+const where = () => { if (counts.where.length < 4) counts.where.push(String(new Error().stack).split(String.fromCharCode(10)).slice(2, 5).map((x) => x.trim().replace(/^at /, "")).join(" < ")); };
+const protos = [ed.pixels.Layer.prototype, ed.pixels.Mask.prototype];
+const saved = protos.map((pr) => [Object.prototype.hasOwnProperty.call(pr, "toCanvas") ? pr.toCanvas : null, Object.prototype.hasOwnProperty.call(pr, "drawInto") ? pr.drawInto : null]);
+let counting = false;   // around the operations and their undo / redo only (a select_rect rewrites the whole selection until C5)
+const whole = (p, rect) => !rect || (rect[0] <= 0 && rect[1] <= 0 && rect[2] >= p.width && rect[3] >= p.height);
+for (const pr of protos) {
+    const tc = pr.toCanvas, di = pr.drawInto;
+    pr.toCanvas = function (rect) { if (counting && T.isTilePixels(this) && !rect && this.width * this.height >= 100000) { counts.wholeToCanvas++; where(); } return tc.call(this, rect); };
+    pr.drawInto = function (rect, fn) { if (counting && T.isTilePixels(this) && whole(this, rect) && this.width * this.height >= 100000) { counts.wholeDrawInto++; where(); } return di.call(this, rect, fn); };
+}
+const su = ed.snapUrl;
+ed.snapUrl = function (...a) { counts.snapUrl++; return su.apply(this, a); };   // at any time
+const find = (id) => ed.layers.find((l) => l.id === id);
+const steps = {};
+const roundTrip = async (label, pixelsOf, act, check) => {
+    const before = all(pixelsOf()), bw = pixelsOf().width, bh = pixelsOf().height;
+    const top0 = ed.undo[ed.undo.length - 1];
+    counting = true;
+    try { await act(); } finally { counting = false; }
+    const after = all(pixelsOf());
+    if (check) { const why = check(before, after, bw, bh); if (why) fails.push(label + ": " + why); }
+    const step = ed.undo[ed.undo.length - 1];
+    steps[label] = step && step !== top0 ? { kind: step.kind, png: !!(step.url || step.mask || step.selection), clone: !!(step.px || step.maskPx || step.selPx) } : null;
+    counting = true;
+    try { await ed.undoStep(); } finally { counting = false; }
+    back(label + " undone", all(pixelsOf()), before);
+    counting = true;
+    try { await ed.redoStep(); } finally { counting = false; }
+    back(label + " redone", all(pixelsOf()), after);
+};
+const at = (buf, w, x, y) => Array.from(buf.subarray((y * w + x) * 4, (y * w + x) * 4 + 4));
+const onlyInside = (w, box, want) => (before, after) => {
+    for (let y = box[1] - 3; y < box[3] + 3; y += 1) {
+        for (let x = box[0] - 3; x < box[2] + 3; x += 1) {
+            const inside = x >= box[0] && x < box[2] && y >= box[1] && y < box[3];
+            const got = at(after, w, x, y), was = at(before, w, x, y);
+            if (inside ? got.join() !== want.join() : got.join() !== was.join()) return "pixel " + x + "," + y + " is " + got + (inside ? ", not " + want : ", was " + was);
+        }
+    }
+    let changed = 0;
+    for (let i = 0; i < after.length; i++) if (after[i] !== before[i]) changed++;
+    const expect = (box[2] - box[0]) * (box[3] - box[1]) * 4;
+    return changed > expect ? changed + " bytes changed, more than the selection's " + expect : null;
+};
+try {
+    ed.activeLayerId = L.id;
+    ed.brushOpacity = 1;
+    await run("select_rect", { x: 1200, y: 700, w: 100, h: 100, doc: d.id });
+    // zoomed out, the layer is drawn from display levels: on tiles the fill, the clear and their undo / redo refresh
+    // them inside the box and keep them (a rebuild drew the whole CPU mirror into the first level, 200 ms at 96 MP)
+    centre(0.3, 1200, 800);
+    for (let i = 0; i < 6; i++) { frame(); await wait(20); if (!ed._pyramidPending) break; }
+    const levelsOf = () => { const m = P.canvasOf(find(L.id).px), e = ed.pyramids.get(m); return e && e.version === (m._dispVer || 0) && e.levels.length ? e : null; };
+    const entry0 = ed.tileMode ? levelsOf() : null;
+    await roundTrip("fill", () => find(L.id).px, () => { ed.color = "#00ff00"; ed.fillSelection(); }, onlyInside(2400, [1200, 700, 1300, 800], [0, 255, 0, 255]));
+    await roundTrip("clear", () => find(L.id).px, () => ed.clearSelectedPixels(), onlyInside(2400, [1200, 700, 1300, 800], [0, 0, 0, 0]));
+    if (ed.tileMode) {
+        frame();
+        out.levelsKept = { before: !!entry0, after: levelsOf() === entry0 };
+        if (!entry0 || levelsOf() !== entry0) fails.push("the fill, the clear or their undo / redo rebuilt the layer's display levels on tiles: " + JSON.stringify(out.levelsKept));
+    }
+    ed.fitView();
+    const maskOf = () => find(L.id).maskPx || ed.pixels.Mask.empty(2400, 1600);
+    await roundTrip("mask from selection", maskOf, () => ed.maskFromSelection(find(L.id)), onlyInside(2400, [1200, 700, 1300, 800], [255, 255, 255, 255]));
+    find(L.id).maskEdit = true;
+    await run("select_rect", { x: 1400, y: 900, w: 50, h: 50, doc: d.id });
+    await roundTrip("fill on the mask", maskOf, () => ed.fillSelection(), onlyInside(2400, [1400, 900, 1450, 950], [255, 255, 255, 255]));
+    find(L.id).maskEdit = false;
+    await run("select_none", { doc: d.id });
+    ed.activeLayerId = O.id;
+    // (x, y) of the new pixels from (x, y) of the old, W x H the old size
+    const mapped = (fn) => (before, after, W, H) => {
+        if (!ed.tileMode) return null;   // the canvas path draws on the GPU, premultiplied: not to the byte
+        const w = find(O.id).px.width, h = find(O.id).px.height;
+        if (w * h !== W * H) return "the size is " + w + " x " + h;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+            const [sx, sy] = fn(x, y, W, H);
+            if (at(after, w, x, y).join() !== at(before, W, sx, sy).join()) return "pixel " + x + "," + y + " is not " + sx + "," + sy + " of before";
+        }
+        return null;
+    };
+    await roundTrip("flip", () => find(O.id).px, () => ed.flipLayer("h"), mapped((x, y, W) => [W - 1 - x, y]));
+    await roundTrip("flip vertically", () => find(O.id).px, () => ed.flipLayer("v"), mapped((x, y, W, H) => [x, H - 1 - y]));
+    await roundTrip("turn clockwise", () => find(O.id).px, () => ed.rotateLayer90(1), mapped((x, y, W, H) => [y, H - 1 - x]));
+    await roundTrip("turn counter-clockwise", () => find(O.id).px, () => ed.rotateLayer90(-1), mapped((x, y, W) => [W - 1 - y, x]));
+    out.counts = { ...counts };
+    await run("select_rect", { x: 300, y: 300, w: 200, h: 100, doc: d.id });
+    const sel0 = all(ed.sel);
+    await ed.extendCanvas({ right: 64 });
+    const top = ed.undo[ed.undo.length - 1];
+    steps.extend = top ? { kind: top.kind, png: !!top.selection, clone: !!top.selPx } : null;
+    await ed.undoStep();
+    if (ed.width !== 2400 || !exact(all(ed.sel), sel0)) fails.push("the extend's undo did not bring the size and the selection back: " + ed.width);
+    out.countsWithExtend = { ...counts };
+} finally {
+    protos.forEach((pr, i) => { for (const [k, f] of [["toCanvas", saved[i][0]], ["drawInto", saved[i][1]]]) { if (f) pr[k] = f; else delete pr[k]; } });
+    delete ed.snapUrl;
+}
+out.steps = steps;
+const wantKinds = { fill: "layer", clear: "layer", "mask from selection": "mask", "fill on the mask": "mask", flip: "layerfull", "flip vertically": "layerfull", "turn clockwise": "layerfull", "turn counter-clockwise": "layerfull", extend: "canvas" };
+for (const [k, kind] of Object.entries(wantKinds)) {
+    const s = steps[k];
+    if (!s || s.kind !== kind) { fails.push(k + ": the step is " + JSON.stringify(s) + ", not " + kind); continue; }
+    if (k === "mask from selection") { if (s.png || s.clone) fails.push(k + ": the layer had no mask, the step holds " + JSON.stringify(s)); continue; }
+    if (ed.tileMode ? s.png || !s.clone : !s.png) fails.push(k + ": " + (ed.tileMode ? "a PNG step on tiles" : "no PNG on canvases") + ": " + JSON.stringify(s));
+}
+if (ed.tileMode && (out.counts.wholeToCanvas || out.counts.wholeDrawInto || out.countsWithExtend.snapUrl)) fails.push("whole-layer work on tiles: " + JSON.stringify(out.countsWithExtend));
+
+// (4) an empty selection draws nothing and makes no mirror
+await run("select_none", { doc: d.id });
+ed.selectionDisplay = "tint";
+ed.releaseCaches({ mirrors: true });
+ed.fitView();
+for (let i = 0; i < 3; i++) { frame(); await wait(15); }
+centre(1, 1200, 800);
+for (let i = 0; i < 3; i++) { frame(); await wait(15); }
+ed.drawThumb();
+ed.selectionDisplay = "ants";
+out.emptySelectionMirror = ed.tileMode ? !!ed.sel.displayCanvasIfMade() : null;
+if (out.emptySelectionMirror) fails.push("an empty selection made a display mirror");
+
+// (5) removed layers give their display mirrors back
+ed.fitView();
+const gone = [];
+for (let i = 0; i < 3; i++) { const l = ed.addPaintLayer(); l.px.fill([100 * i, 100, 900 + 100 * i, 900], "rgba(0, 0, 255, 0.5)"); ed.markLayerChanged(l); gone.push(l); }
+for (let i = 0; i < 4; i++) { frame(); await wait(20); if (!ed._pyramidPending) break; }
+const madeBefore = ed.tileMode ? gone.filter((l) => l.px.displayCanvasIfMade()).length : null;
+for (const l of gone) await run("remove_layer", { layer: l.id, doc: d.id });
+await wait(0);
+out.removed = { madeBefore, kept: ed.tileMode ? gone.filter((l) => l.px.displayCanvasIfMade()).length : null, report: ed.tileMode ? ed.memoryReport().undo.undo.heldLayerBytes : null };
+if (ed.tileMode && (madeBefore !== 3 || out.removed.kept)) fails.push("removed layers kept their display mirrors: " + JSON.stringify(out.removed));
+await ed.undoStep();
+for (let i = 0; i < 4; i++) { frame(); await wait(20); if (!ed._pyramidPending) break; }
+const [sx, sy] = ed.imageToScreen(850, 500);
+out.removed.undoneOnScreen = Array.from(ed.canvas.getContext("2d").getImageData(Math.round(sx), Math.round(sy), 1, 1).data);
+if (out.removed.undoneOnScreen[2] < 100 || out.removed.undoneOnScreen[0] > 200) fails.push("the layer whose removal was undone is not on screen: " + out.removed.undoneOnScreen);
+
+// (6) the memory report counts a tile once however many pixels hold it
+if (ed.tileMode) {
+    ed.clearUndo();
+    const S = ed.addPaintLayer();
+    S.px.fill([0, 0, 1024, 1024], "#ff0000"); ed.markLayerChanged(S);
+    // a rect copy over whole tiles shares them with the layer (x 256 to 770: tiles 1 and 2 whole)
+    const rs = ed.snapshotRect(S, { x: 258, y: 258, w: 508, h: 508 });
+    ed.pushUndoSnapshot(rs);
+    const D = ed.duplicateLayer(S);
+    D.px.fill([0, 0, 10, 10], "#00ff00"); ed.markLayerChanged(D, [0, 0, 10, 10]);
+    const rep = ed.memoryReport();
+    const distinct = new Set();
+    for (const p of ed.heldPixels()) for (const t of p.tileList()) distinct.add(t);
+    const order = ed.layers.filter((l) => l.id === S.id || l.id === D.id);
+    const firstTiles = new Set(order[0].px.tileList());
+    const second = order[1].px.tileList();
+    const wantNew = second.filter((t) => !firstTiles.has(t)).length;
+    const slot = rep.layers.list.find((x) => x.id === order[1].id).slots.find((s) => s.name === "canvas");
+    const liveTiles = new Set();
+    for (const l of ed.layers) for (const p of [l.px, l.maskPx]) if (p) for (const t of p.tileList()) liveTiles.add(t);
+    const counted = new Set([...liveTiles, ...(ed._basePx ? ed._basePx.tileList() : []), ...ed.sel.tileList()]);
+    const wantRect = rs.px.tileList().filter((t) => !counted.has(t)).reduce((a, t) => a + t.data.byteLength, 0);
+    out.report = { tiles: rep.tiles.tiles, distinct: distinct.size, slot: { tiles: slot.tiles, shared: slot.sharedTiles }, wantNew, secondTiles: second.length, rectBytes: rep.undo.undo.rectBytes, wantRect, rectTiles: rs.px.tileList().length };
+    if (rep.tiles.tiles !== distinct.size || rep.tiles.bytes !== [...distinct].reduce((a, t) => a + t.data.byteLength, 0)) fails.push("the report's tiles are not the distinct tiles held: " + JSON.stringify(out.report));
+    if (!wantNew || slot.tiles !== wantNew || slot.sharedTiles !== second.length - wantNew || !slot.sharedTiles) fails.push("the duplicate's slot does not count shared tiles once: " + JSON.stringify(out.report));
+    if (rep.undo.undo.rectBytes !== wantRect || wantRect === rs.px.tileList().length * 262144) fails.push("the rect step's bytes count tiles the layer holds: " + JSON.stringify(out.report));
+}
+
+// (7) above 268 MP on tiles, and a selection encode without its canvas
+if (ed.tileMode) {
+    let refused = null;
+    try { await ed.setBase({ filename: "editor_test_huge.png", subfolder: "", type: "input" }, { naturalWidth: 20000, naturalHeight: 14000 }); } catch (e) { refused = e.message; }
+    out.huge = { refused, size: [ed.width, ed.height] };
+    if (!refused || !/268 MP/.test(refused) || ed.width !== 2400) fails.push("an image above 268 MP was taken on tiles: " + JSON.stringify(out.huge));
+}
+await run("new_canvas", { width: 5000, height: 4000, doc: d.id });   // above SYNC_ENCODE_PX: the background encode
+await run("select_rect", { x: 100, y: 100, w: 300, h: 200, doc: d.id });
+{
+    for (let i = 0; i < 100 && ed._selEncoding; i++) await wait(50);   // an autosave's encode still on its way
+    const sel = ed.sel;
+    sel.toCanvas = () => { throw new Error("editor_test: no canvas"); };
+    ed.selectionEncoded = false; ed.selectionDataUrl = null;
+    let threw = null;
+    try { ed.getValue(); } catch (e) { threw = e.message; } finally { delete sel.toCanvas; }
+    out.encode = { threw, stuck: !!ed._selEncoding };
+    ed.getValue();
+    for (let i = 0; i < 100 && !ed.selectionDataUrl; i++) await wait(50);
+    out.encode.laterSaved = !!ed.selectionDataUrl;
+    if (threw || out.encode.stuck || !out.encode.laterSaved) fails.push("a selection encode without its canvas: " + JSON.stringify(out.encode));
+}
+await run("close_document", { doc: d.id, force: true });
+host.shell.activate(ednow(window.__t));
+if (fails.length) throw new Error(fails.join(" | "));
+return out;
+"""
+
+
+async def final_step(c):
+    return await c.eval(PRE % FINAL_STEP, timeout=300)
 
 
 async def undrawn_step(c):
@@ -1339,14 +1642,17 @@ try {
     ed.activeLayerId = L.id;
     await run("select_rect", { x: 100, y: 100, w: 400, h: 300, doc: window.__t });
     ed.color = "#ff0000"; ed.fillSelection();
+    // on tiles the fill's step is a clone, not a PNG (C2's final review): nothing to decode, the undo lands before the stroke
+    const png = !!ed.undo[ed.undo.length - 1].url;
     const u = ed.undoStep();
     stroke(L, [200, 200, 260, 260], "#0000ff");
     await u;
-    const a = { afterUndo: pix(L, 230, 230), said: ed.status };
+    const a = { png, afterUndo: pix(L, 230, 230), said: ed.status };
     await ed.undoStep(); a.strokeUndone = [pix(L, 230, 230), pix(L, 300, 300)];
     await ed.undoStep(); a.fillUndone = [pix(L, 230, 230), pix(L, 300, 300)];
     out.fillDecode = a;
-    if (a.afterUndo !== "0,0,255,255" || a.strokeUndone.join("|") !== "255,0,0,255|255,0,0,255" || a.fillUndone.join("|") !== "0,0,0,0|0,0,0,0") fails.push("a stroke during an undo's decode: " + JSON.stringify(a));
+    const wantStroke = png ? "255,0,0,255|255,0,0,255" : "0,0,0,0|0,0,0,0";
+    if (png === ed.tileMode || a.afterUndo !== "0,0,255,255" || a.strokeUndone.join("|") !== wantStroke || a.fillUndone.join("|") !== "0,0,0,0|0,0,0,0") fails.push("a stroke during an undo's decode: " + JSON.stringify(a));
 } catch (err) { fails.push("1 threw: " + (err && err.message)); }
 // 2. a stroke while an undo waits for a grow in the worker
 try {
@@ -1548,16 +1854,21 @@ const cib = window.createImageBitmap;
 window.createImageBitmap = () => Promise.reject(new Error("editor_test: no bitmap"));
 try { ed.fillSelection(); } finally { window.createImageBitmap = cib; }
 await wait(300);
+const step = ed.undo[ed.undo.length - 1];
+const png = !!step.url, clone = !!step.px;   // read before the undo releases the step
 await ed.undoStep();
 const d = L.px.readRect(100, 100, 1, 1).data;
-const out = { status: ed.status, pixel: Array.from(d) };
-if (!/could not be restored/.test(ed.status)) throw new Error("the lost undo step went unnoticed: " + JSON.stringify(out));
+const out = { tiles: ed.tileMode, png, clone, status: ed.status, pixel: Array.from(d) };
+// on tiles the step holds a clone of the tiles and no PNG (C2's final review): nothing to lose, the undo puts the layer back
+if (ed.tileMode) { if (png || !clone || d[3] !== 0 || /could not be restored/.test(ed.status)) throw new Error("the fill's step on tiles: " + JSON.stringify(out)); }
+else if (!/could not be restored/.test(ed.status)) throw new Error("the lost undo step went unnoticed: " + JSON.stringify(out));
 return out;
 """),
     ("pixel_backend_is_the_one_the_flag_chose", lambda c: backend_step(c)),
     ("editing_on_the_flags_backend_in_pixels_and_on_screen", lambda c: edit_step(c)),
     ("pixels_nothing_draws_get_no_display_mirror", lambda c: undrawn_step(c)),
     ("the_screen_draws_no_cpu_mirror_and_stale_textures_leave", lambda c: screen_step(c)),
+    ("c2_final_review_drag_undo_steps_writes_mirrors_report_limits", lambda c: final_step(c)),
     ("closed_tabs_are_collected", lambda c: closed_tabs_are_collected(c)),
     ("cleanup", """
 for (const id of [window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }

@@ -950,6 +950,91 @@ candidate). It is below a twentieth of a frame, once per stroke, and C5 replaces
 Memory: `mem_test.py 2048x1152 --rounds 1` leaves the same 50 live canvases (128 MB) and
 the same GPU process margin before and after C1.
 
+### C2: the tile store behind a flag, canvas mode against main (2026-09-14)
+
+`docs/PLAN_BCE.md` §C2: the tile store is the second backend of the pixels interface, chosen per editor by
+`ed.tileMode` (on in dev runs, off in the packaged app). The question for the merge is whether **canvas mode**
+(what ships) is as fast as main c6bc6a6; tile mode is measured for the record and for C3. Every run is a fresh
+dev instance with its own profile. **The harness is the branch's `perf_test.py` on both builds** (run on main
+from a scratch copy): main's own has no "pan at 1:1" row and drains differently, which alone moved some worst
+values 2 to 3x on the same build. Ranges over the runs; frame rows are medians [worst], operations main thread
+blocked. Noise seen between runs of one build: frame medians 0.3 to 0.5 ms, worst values 2 to 3x, operations at
+15k 2 to 4x; a row counts as slower only when every run of one build is above every run of the other.
+
+**15000 × 10000** (main: 5 runs; canvas mode: 3 runs of the final code; tiles: 1 run)
+
+| row | main | canvas mode | tiles |
+|---|---|---|---|
+| opacity / match / filter slider tick | 6.8–7.5 / 7.0–9.1 / 6.9–8.5 | 6.6–8.2 / 7.1–7.9 / 5.8–7.3 | 7.9 [66] / 6.3 / 7.0 |
+| pan / wheel zoom / pan at 1:1 | 2.6–2.7 / 2.6–3.6 / 2.5–2.7 [310–316] | 2.6–2.7 / 2.4–3.1 / 2.7–3.0 [318–321] | 2.8 / 2.7 / 36.1 [171] |
+| redraw with ants / brush dab + frame | 0.1–0.2 / 0.1 | 0.1–0.2 / 0.1 | 0.2 [458] / 0.1 [28] |
+| stroke commit / undo of it | 1.1–1.6 / 40–47 | 1.0–1.1 / 41–53 | 284 / 18.7 |
+| selection change / bounds scan | 0.8–2.1 / 6.0–10.3 [430–450] | 1.0–1.5 / 6.2–7.8 [435–457] | 18.9 / 10.6 [12.6] |
+| full composite (warm [cold]) | 6.1–7.3 [592–643] | 6.1–7.5 [607–664] | 89 [1599] |
+| grow +16 / shrink / invert / feather | 222–308 / 91–310 / 33–43 / 114–392 | 246–302 / 229–383 / 33–38 / 111–283 | 1175 / 1286 / 1519 / 1513 |
+| magic wand, band / object; bucket | 511–714 / 305–472; 480–654 | 501–695 / 437–474; 482–521 | 2354 / 4424; 1134 |
+| fill / clear of a 100 px selection, undo of the fill (new rows) | 665–914 / 557–605 / 1562–1564 (2 runs) | 756–900 / 554–625 / 1458–1623 | 182 / 74 / 73 |
+| PNG of the composite (worker) | 6–107 | 6–12 | 13 |
+
+**6000 × 4000** (main: 5 runs, the new rows 2; canvas mode: 2 runs; tiles: 1 run)
+
+| row | main | canvas mode | tiles |
+|---|---|---|---|
+| slider ticks | 7.3–9.4 / 6.6–8.5 / 6.9–8.0 | 7.8–7.9 / 6.8–6.9 / 6.8–6.9 | 8.6 / 8.2 / 8.3 |
+| pan / wheel zoom / pan at 1:1 | 2.7–2.9 / 4.1–5.1 / 2.7–2.8 [40–69] | 2.7–2.8 / 4.4–4.6 / 2.6–2.7 [41–42] | 2.6 / 3.3 / 3.1 [12.7] |
+| stroke commit / undo / selection change | 0.8–1.4 / 7.7–10.6 / 0.5–1.2 | 1.0–1.2 / 8.6–9.1 / 0.6–1.3 | 35.5 / 16.3 / 4.2 |
+| bounds scan / full composite | 2.3–3.7 [74–171] / 0.4–1.0 [58–67] | 2.4–3.1 [74–84] / 0.2–0.4 [62–71] | 1.1 [12] / 10.6 [174] |
+| grow / shrink / invert / feather | 21–85 / 19–23 / 15–21 / 18–21 | 24–25 / 17 / 14–18 / 18–19 | 256 / 176 / 196 / 203 |
+| wand band / object; bucket | 91–125 / 46–54; 85–101 | 96–100 / 50; 85–120 | 247 / 137; 113 |
+| fill / clear 100 px, undo of the fill | 103–116 / 108–120 / 159–164 | 127–167 / 98–114 / 158–160 | 24 / 26 / 20 |
+
+**Verdict: canvas mode is within noise of main in every `perf_test` row.** The rows nearest an edge (15k undo
+52.7 in one run, 6000 bucket 120 in one run) are single runs whose other samples sit inside main's range. The
+6000 × 4000 fill row read 127 and 167 against main's 103 and 116, so the same three operations were timed three
+times each per run with the review's probe (`rvfinal_fillcost.js`, two runs of main, three of canvas mode):
+8000 × 6000 fill 10.4 to 26.7 ms main thread against 10.4 to 12.6 on main (with the GPU drain 59 to 141 against
+77 to 143), 12000 × 8000 fill 20 to 57 [543 to 880] against 21 to 56 [591 to 887], the undo 540 to 861 against
+548 to 983: the same. The canvas-mode fill, clear and undo of the fill run exactly main's code (a PNG undo step and a whole-image write
+on that backend), which is why they cost what main's do: C4 turns those steps into tile references. The first
+15k canvas run in the step (b) measurement (undo 520, band wand 3348, bucket 1156, cold composite 3691) did not
+come back in six canvas runs since.
+
+**What `perf_test` does not measure, and was slower on the branch before the final review** (`c2/cm`,
+`c2/cf` in the session scratchpad):
+
+| selection drag per pointer move, zoom 0.6 | main | branch before (b510dc1) | final |
+|---|---|---|---|
+| 15k, GPU wait per move (`seldrag2.js`, no filter / filter) | 6.3–6.5 / 7.0–7.2 | 43.9–46.3 / 34.2–34.9 | 6.5–8.8 / 7.4–7.8 |
+| 6000 × 4000, the same | 6.3–6.5 / 6.7–6.8 | 8.7–10.6 / 10.6–12.0 | 6.3–8.8 / 6.5–9.0 |
+| 15k, selection canvas on the CPU (`seldrag.js`): handler / GPU wait | 118–131 / 717–788 | 156–171 / 733–765 | 123–126 / 750–781 |
+| 6000 × 4000, the same | 17.2–19.2 / 100–109 | 20.6–23.7 / 108–113 | 18.6–19.3 / 98–104 |
+| the fixer's zoom-in script reaches Blink's canvas acceleration latch | 0 of 3 | 6 of 7 | 0 of 3 |
+
+The branch refreshed the selection's four display levels (built by the pointer-down's undo step) on every move
+and, on a CPU selection canvas, cleared the image twice per move; canvas mode runs main's rewrite again.
+
+**Tile mode, the fixes of the final review** (a 100 px selection on a paint layer, `rvfinal_fillcost.js`,
+main thread ms, three samples; the canvas backend's numbers with a GPU drain in brackets):
+
+| | before | region only | final (region, level refresh in the box) | canvas backend |
+|---|---|---|---|---|
+| fill, 12000 × 8000 | 705–1111 | 206–288 | 2.0–2.1 (first 97) | 21–57 [182–275] |
+| clear, 12000 × 8000 | 457–607 | 207–235 | 2.1–4.7 | 1.7–20 [46–154] |
+| undo of the fill, 12000 × 8000 | 829–1135 | 243–279 | 18.5–22 | 310–478 |
+| fill / clear / undo, 8000 × 6000 | 419–443 / 302–377 / 455–456 | 105–139 / 105–110 / 138–143 | 2.7–3.2 / 2.5–5.0 / 12–13 | 10–12 / 2–12 / 143–154 |
+
+The review's 20000 × 12000 script on tiles (a base, a full paint layer and its duplicate at 1:1, fills, a flip,
+exports, extend, flatten, each undone): before, the flip's PNG undo step failed to encode ("Readback of the
+source image has failed") at 19.6 GB of renderer memory and the sync, the exports and flatten failed after it;
+after, every step passes, the renderer at the flip 15.9 GB and at its peak 18.7 GB (the four mirrors, 3.66 GB,
+and the screen's 4.9 GB of GPU copies at 1:1 stay for C3). A flip of a 16000 × 12000 layer in bands 1.2 to
+1.6 s, a turn 1.8 to 2.0 s, against 1.7 to 2.2 s for the canvas path it replaced.
+
+**Memory** (`mem_test.py 12000x8000 --rounds 2`, step (b)'s code, unchanged by the review in canvas mode): GPU
+process after free 449 MB in two canvas runs against 451 on main (a third canvas run 813, not repeated); tile
+mode holds the layers in the renderer (3.55 GB built against 0.49 GB) and five times the compositor's texture
+bytes (1033 against 202 MB); after close and a collection both return to 3 live canvases.
+
 ## 10. Phase B: the Rust spike (2026-09-13)
 
 `docs/PLAN_BCE.md` §1, built on the branch `px-spike` (commits fe9bf0e B0 to 8ab3706). Five

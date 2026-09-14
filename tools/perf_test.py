@@ -252,6 +252,20 @@ BENCH = """
     rect();
     ed.activeLayerId = paintLayer.id;
     out.bucket = await op(() => ed.bucketFill(Math.round(W * 0.25), Math.round(H * 0.25)));
+    // a fill and a clear of a 100 px selection on the paint layer, and the undo of the fill: on tiles each was a
+    // whole-layer write and a whole-layer undo copy until C2's final review
+    const small = () => {
+        ed.sel.clear();
+        ed.sel.fill([Math.round(W * 0.5), Math.round(H * 0.5), Math.round(W * 0.5) + 100, Math.round(H * 0.5) + 100], "#ff0000");
+        ed.markSelectionChanged();
+        ed.getBounds();
+    };
+    small();
+    ed.activeLayerId = paintLayer.id;
+    ed.color = "#00ff00"; ed.brushOpacity = 1;
+    out.fill_small = await op(() => ed.fillSelection());
+    out.undo_fill = await op(() => ed.undoStep());
+    out.clear_small = await op(() => ed.clearSelectedPixels());
     const flat = ed.flattenToCanvas({ forRun: true });
     // the editor's own path (the worker when there is one), and the plain main-thread encode
     out.png = await op(async () => { const u = await ed.snapUrl(flat); URL.revokeObjectURL(u); });
@@ -295,6 +309,9 @@ OP_ROWS = [
     ("magic wand (whole-image band)", "wand"),
     ("magic wand (an object)", "wand_object"),
     ("bucket fill", "bucket"),
+    ("fill selection (100 px)", "fill_small"),
+    ("undo of that fill", "undo_fill"),
+    ("clear selected pixels (100 px)", "clear_small"),
     ("PNG of the composite", "png"),
     ("the same without the worker", "png_main"),
 ]

@@ -729,8 +729,11 @@ import cycle: `inpaint_pixels.js` does not import the tile module). The canvas b
 canvas. The tile backend keeps one canvas per pixels object, made on first use, identity stable,
 synced on every call from the tiles written since the last one (tracked by writes, not by version:
 writes do not bump `version`), with `putImageData`, which ignores whatever state a caller left on its
-context. Its `_dispVer` is an accessor on `version` (a set sets the version, as the canvas backend's
-version *is* `_dispVer`). Refused above 268 MP (C3 draws tiles instead). `drawTo` draws the mirror.
+context. Its `_dispVer` was first built as an accessor on `version`; **since step (b)'s review it is a
+plain value that `touch()` sets, and assigning it does not change `version`** (the accessor kept the
+pixels alive, below). Only the canvas backend keeps `version === _dispVer`, so code that bumps a display
+canvas's `_dispVer` to invalidate does nothing to tile pixels: call `touch()`. Refused above 268 MP (C3
+draws tiles instead). `drawTo` draws the mirror.
 
 **Aliases and options.** `installLayerAliases`: the `canvas` / `mask` setters adopt into the layer's
 current backend (its `px`, else its `maskPx`, else the canvas backend); a leftover own `canvas` /
@@ -1005,7 +1008,9 @@ copy of the app (`c2/mut-fix/run_mut.py` in the session scratchpad):
   `pixels_nothing_draws_get_no_display_mirror`, case `tiles_thumbnail_canvas`).
 - **The selection drag lost faint isolated pixels** its 1/16-level extent rounded away (both backends):
   it takes `selectionExtent({ exact: true })`, the tile bounds on tiles and the whole image on canvases
-  (the old whole rewrite, 0.2 ms a move on a GPU selection canvas at 6000 × 4000), and the drag step
+  (the old whole rewrite, 0.2 ms a move on the main thread on a GPU selection canvas at 6000 × 4000; the
+  display levels it then refreshed per move were GPU work this count missed, fixed by the final review
+  below), and the drag step
   carries faint dots and a 3 × 3 block far from the rectangle (red with the level extent on either backend).
 - **The screen drew CPU mirrors at zoom 0.5 or more** (44 ms a pan frame with a filter layer at
   6000 × 4000): `displaySource(src, scale, screen)` hands the screen (the view pass `drawViewComposite`
@@ -1042,6 +1047,103 @@ commands shape brush film glb ailabel size transparent generate log mcp nodecopy
 (`gates/c2b-tiles`, `c2b-canvas`, `c2b-copy` in the session scratchpad; `pixels` again in all three
 after its new case). After the review's fixes the same three runs again (`gates/c2b-final-tiles`,
 `c2b-final-canvas`, `c2b-final-copy`): ALL PASS, ALL PASS, ALL PASS (no stored reference, tolerance or per-mode expectation changed; `composite_test.py` identical to its references in all three).
+
+**The final C2 review** (2026-09-14: canvas mode measured against main c6bc6a6 with the same harness,
+`docs/PERFORMANCE.md` §9 "C2"; three lenses, two verifiers per finding) confirmed eight findings and split
+one. Each fix has a counter-proof: a copy of the app with the fix taken back (`c2/mut-final/run_mut.py` in
+the session scratchpad, 14 runs) is red in `editor_test.py`, all but one in the new step
+`c2_final_review_drag_undo_steps_writes_mirrors_report_limits`, which runs in both modes:
+
+- **The selection drag on canvases redrew the selection's display levels on every move** (the four levels
+  the pointer-down's undo step built, 35 to 46 ms of GPU work a move at 15k against 6 to 7 on main, 1.5x at
+  6000 × 4000), and with the selection canvas on the CPU its box clear plus "copy" blit cleared the image
+  twice (a handler of 156 to 171 ms against 118 to 131): only tiles take the box path now, canvases run
+  0.1.12's whole rewrite and `touchSource` again (after: 6.5 to 8.8 ms at 15k, handler 123 to 126; red: 24
+  level draws in six moves at zoom 0.6). The step (b) fixer's zoom-in script no longer reaches Blink's
+  canvas acceleration latch (0 of 3 runs, 6 of 7 before).
+- **Undo of a mask brush stroke failed on both backends** since the C1 close-out ("could not load true": the
+  history loaded a `layerrect` step's `mask` flag as an image); found while fixing the above, and present on
+  main c6bc6a6: the flag is not an image any more (red on either backend).
+- **On tiles no undo step holds a PNG** (C1 rule 7 stays for canvases): a whole-layer step (`layer`,
+  `layerfull`, `mask`, `text`), the canvas step's selection and a selection step above 16 MP hold a
+  copy-on-write `clone()` / `copyRect()`, restored by handing the clone back (`layer` in place, a "copy" blit
+  that shares its tiles and refreshes the levels over the tiles that differ), counted as no bytes like the
+  PNG it replaces. The PNG took a full-size CPU canvas and a bitmap per step, and on a 20000 × 12000 flip it
+  failed to encode, so the flip could not be undone and exports failed after it; the review's script now
+  passes every step on tiles (red: a PNG step, `snapUrl` called, whole `toCanvas()`).
+- **Flips and turns on tiles move bytes in bands of 256 rows** (`turnedTilePixels`) instead of a full-size
+  copy, a GPU canvas and a read back, and move them exactly (red: whole `toCanvas()`, and the canvas path's
+  premultiplied draw changes low-alpha bytes).
+- **Fill selection, clear selected pixels and mask from selection on tiles** write the selection's exact
+  extent mapped into the layer (`selectionWriteRegion`) and refresh the levels in that box: a 100 px
+  selection at 12000 × 8000 from 705 to 1111 / 457 to 607 / 829 to 1135 ms (fill / clear / undo) to 2 / 2 to
+  5 / 19 to 22 (red: whole-layer `drawInto`; levels rebuilt, for the fill and for the undo).
+- **An empty selection on tiles is not drawn** (tint overlay, navigator): it made a mirror as large as the
+  image and a GPU copy of it at 0.5 or more for transparent pixels (red: a mirror).
+- **Pixels that leave the document into a step give their display caches back** (`releaseDetachedDisplays`
+  after every push and every undo / redo: mirror, thumbnail, levels, GPU copy, textures); a removed layer
+  kept a mirror for the life of the step (red: three mirrors kept).
+- **An image above 268 MP is refused on tiles** (`setBase`, before anything changes) and a selection encode
+  whose `toCanvas()` throws neither throws out of `getValue` nor sets `_selEncoding` for good (the first
+  autosave had stored the tab as "{}" and no selection was saved in that tab again); `load_image` answers a
+  load that failed in a tab with a picture with the status line's error (red: a fake 20000 × 14000 image
+  taken; `getValue` throwing).
+- **The memory report's shared-tile counting is gated**: the reported tiles are the distinct tiles held, a
+  duplicate's slot counts the shared tiles once, an undo step's rect bytes leave out tiles the layers hold
+  (red with either dedupe taken out).
+- **The canvas backend's selection extent loses isolated pixels in the undo step and the bounds scan**
+  (since phase A): recorded in `docs/BUGS.md`, not fixed (an exact extent there is a full readback).
+- **Docs**: step (a)'s `_dispVer` sentence is corrected in place, and step (b)'s drag bullet says what its
+  0.2 ms did not count. The split finding (what C3 and C6 inherit) is answered below.
+
+Tests changed with the fixes, on tiles only: `undo_does_not_run_over_edits_made_while_it_loads` (a fill's
+step has nothing to decode, so its undo lands before the stroke), `undo_step_whose_encode_failed_says_so`
+(nothing to lose: the undo puts the layer back) and the edit step's copy-on-write check (the original's
+tile may still be shared by undo steps: its counter must cover every other holder). `perf_test.py` has three
+new rows: a fill and a clear of a 100 px selection and the undo of that fill. No stored reference,
+tolerance or per-mode expectation of any other gate changed.
+
+**C2 finished.** The tile store is the second backend of `LayerPixels` / `MaskPixels`, the editor runs on it
+behind `ed.tileMode` (on in dev, off in the packaged app), and canvas mode matches main in every measured row
+(`docs/PERFORMANCE.md` §9 "C2"; the rows nearest an edge were timed again and are the same). **The final
+review's gates** (fresh dev instances, own profiles, strict): `--tiles on pixels editor composite commands shape
+brush film glb ailabel size transparent generate log mcp nodecopy` ALL PASS, `--tiles off` the same list ALL
+PASS, `--copy --tiles off pixels editor composite commands` ALL PASS (`composite_test.py` identical to its
+references in all three, `tools/refs/` untouched), and `smoke_test.py --no-helpers` with a real Flux run on
+ComfyUI in both modes PASS (69 s on tiles, 62 s on canvases; the queue empty before and after each).
+
+**What C3 inherits** (and C4 to C6):
+
+- **The display scaffolding to delete with the mirrors** (C3): the tile store's `canvasForDisplay()` mirror
+  (`_cpuMirror`, `_mirrorDirty`), `displayRectSource()` and the level-0 refresh through it,
+  `displaySource(src, scale, screen)`'s `screen` with `gpuCopy()` / `pyramidEntry().gpu` and
+  `viewPass.screen`, `releaseDisplay()`, `releaseCaches({ mirrors })`, `releaseDetachedDisplays()` /
+  `scheduleDetachedRelease()`, `selectionHasNoTiles()`, the compositor's `TEXTURE_STALE` age limit (the
+  atlas LRU replaces it), and `thumbnailCanvas()`. **The per-document level-5 canvas of the decisions above
+  was not built**: `thumbnailCanvas()` stands in for the thumbnails (per pixels object, at the level whose
+  long side stays at least 256 px) and the object map still reads the base; C3 decides whether that canvas
+  is built for its "below level 5" draw, and C6 whether thumbnails keep this or go through `sampleRegion`.
+- **What tile mode still costs** (15000 × 10000, `perf_test.py`, one run, against canvases): stroke commit
+  284 ms (1 ms), grow / shrink / invert / feather 1.2 to 1.5 s blocked (0.04 to 0.3 s), band wand 2.4 s and
+  object wand 4.4 s (0.5), bucket 1.1 s (0.5), cold composite 1.6 s (0.6), pan at 1:1 median 36 ms (3), the
+  ants redraw's worst 458 ms; renderer memory 3.55 GB for a 12000 × 8000 document built (0.49 GB) and five
+  times the compositor's texture bytes. At 20000 × 12000 with two full layers at 1:1: four mirrors of
+  3.66 GB plus 4.9 GB of GPU copies, renderer peaks of 16 to 19 GB; a flip of a 16000 × 12000 layer takes
+  1.2 to 1.6 s and a turn 1.8 to 2.0 s in bands (the canvas path took 1.7 to 2.2 s for the flip), and the
+  first frame after it makes the new pixels' mirror.
+- **Whole-selection operations for C5**: a marquee / lasso / polygon (`applyShapeToSelection`) still
+  rewrites the whole selection through `drawInto(null)`; grow, shrink, invert, feather, the wands and the
+  bucket materialise the whole selection for the worker and write the answer back whole; `drawTo` reads the
+  mirror (smudge, the stroke clip); a masked layer's `_masked` is rebuilt from its mirror per change; a
+  fill on a mask replaces the mask with a clone (rule 2), which makes its mirror again. **Single-channel mask
+  tiles** also move to C5 (RGBA in C2).
+- **For C4**: `release()` of shared tiles (a step that is dropped leaves its tiles' `frozen` counters one
+  too high: a needless copy on the next write, never a write into a shared tile) and the bytes of the clone
+  steps (counted as none now, like the PNGs they replace; C4 counts the tiles a step holds alone); PNG steps
+  stay on canvases.
+- **For C6**: rule 6's `resizeImage` exception (a scaled draw of `base.img`) is untouched by C2.
+- **The node** follows `localStorage["inpaint_canvas.tiles"]` and is gated with the switch off only; nothing
+  has run the node's flavour with tiles on.
 
 ### C3. The compositor draws tiles (1 week)
 
