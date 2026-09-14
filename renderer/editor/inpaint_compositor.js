@@ -132,6 +132,15 @@ const ATLAS_BUDGET_DEFAULT = 512 * 1024 * 1024;
 // and an age, like the source textures: a page no composite asked for in this many composites is
 // dropped whatever the budget says (the pixels of a layer that a flip or a transform replaced).
 const ATLAS_STALE = 300;
+// the atlas holds its pixels weakly; a host without WeakRef holds them as before, until the pages age out
+const weakRef = (o) => (typeof WeakRef === "function" ? new WeakRef(o) : { deref: () => o });
+/** Are the neighbour versions a slot was made from (`a`, null before its first upload) the ones now (`b`)? */
+function sameNear(a, b) {
+    if (!b) return true;
+    if (!a) return false;
+    for (let i = 0; i < 8; i++) if (a[i] !== b[i]) return false;
+    return true;
+}
 
 const ATLAS_VS = `#version 300 es
 in vec2 a_pos;
@@ -281,13 +290,20 @@ export class GLCompositor {
             mask: gl.getUniformLocation(this.atlasProg, "u_mask"),
             hasMask: gl.getUniformLocation(this.atlasProg, "u_hasMask"),
         };
-        // pixels object -> level -> { pages }; the pages hold the tiles the screen showed
+        // record id -> { id, ref, levels: level -> { pages } }; the pages hold the tiles the screen showed.
+        // The pixels are held weakly (C6 a): pixels a flip, a new mask or an undo replaced are in neither
+        // the document nor a step, and a Map keyed on them kept every tile of them alive (2.4 GB after three
+        // flips of a 15k layer) until the pages aged out. `atlasOf` finds the record of live pixels.
         this.atlas = new Map();
+        this.atlasOf = new WeakMap();
+        this.atlasIds = 0;
+        this.nearBuf = new Float64Array(8);   // _upload: the versions a slot's gutter is read from
         this.atlasBytes = 0;
         this.atlasBudget = ATLAS_BUDGET_DEFAULT;
         this.atlasGen = 0;   // bumped whenever a page or a slot changes hands: cached instances are stale
         this.tileBufs = [];
         this.tileUploads = 0;
+        this.gutterUploads = 0;    // slots whose gutter alone was uploaded: a neighbour changed, the tile did not
         this.tileDraws = 0;
         this.pagesMade = 0;
         this.pageIds = 0;          // a page's identity, so instances can be grouped by (source page, mask page)
@@ -444,13 +460,13 @@ export class GLCompositor {
         for (const t of this.targets) if (t) targetBytes += (t.w || 0) * (t.h || 0) * 4;
         const scratchBytes = this.scratch ? this.scratch.width * this.scratch.height * 4 : 0;
         let pages = 0, slots = 0, sources = 0;
-        for (const byLevel of this.atlas.values()) {
+        for (const rec of this.atlas.values()) {
             sources++;
-            for (const entry of byLevel.values()) for (const page of entry.pages) { pages++; slots += page.slots.size; }
+            for (const entry of rec.levels.values()) for (const page of entry.pages) { pages++; slots += page.slots.size; }
         }
         const atlas = {
             pages, slots, sources, bytes: this.atlasBytes, budget: this.atlasBudget,
-            uploads: this.tileUploads, draws: this.tileDraws, pagesMade: this.pagesMade,
+            uploads: this.tileUploads, gutterUploads: this.gutterUploads, draws: this.tileDraws, pagesMade: this.pagesMade,
         };
         return { entries: this.textures.size, bytes, sourceBytes, targetBytes, windows, windowBytes, scratchBytes, windowUploads: this.windowUploads || 0, budget: TEXTURE_BUDGET, limit: TEXTURE_CACHE, stale: TEXTURE_STALE, atlas, lost: this.lost };
     }
@@ -475,11 +491,26 @@ export class GLCompositor {
      * tile that changed is re-uploaded and nothing else is.
      */
     _atlasAt(pixels, level) {
-        let byLevel = this.atlas.get(pixels);
-        if (!byLevel) { byLevel = new Map(); this.atlas.set(pixels, byLevel); }
-        let entry = byLevel.get(level);
-        if (!entry) { entry = { level, pages: [] }; byLevel.set(level, entry); }
+        let rec = this.atlasOf.get(pixels);
+        if (!rec) {
+            rec = { id: ++this.atlasIds, ref: weakRef(pixels), levels: new Map() };
+            this.atlasOf.set(pixels, rec);
+            this.atlas.set(rec.id, rec);
+        }
+        let entry = rec.levels.get(level);
+        if (!entry) { entry = { level, pages: [] }; rec.levels.set(level, entry); }
         return entry;
+    }
+
+    /** Drop a record of the atlas with its pages; the bytes they held. */
+    _dropRecord(rec) {
+        let bytes = 0;
+        for (const entry of rec.levels.values()) for (const page of entry.pages) { bytes += page.bytes; this._deletePage(page); }
+        rec.levels.clear();
+        this.atlas.delete(rec.id);
+        const p = rec.ref.deref();
+        if (p && this.atlasOf.get(p) === rec) this.atlasOf.delete(p);
+        return bytes;
     }
 
     /** A new page for `entry`, holding at least `want` slots (at most ATLAS_MAX_PER a side). */
@@ -640,26 +671,58 @@ export class GLCompositor {
         return out;
     }
 
-    /** Put a tile's bytes in its slot when the slot does not already hold that version; false when it has none. */
+    /**
+     * Put a tile's bytes in its slot when the slot does not already hold that version; false when it has none.
+     *
+     * A slot holds more than its tile: its gutter is the edge lines of the eight neighbours
+     * (`tileWithGutter`), so it is current only while their versions are the ones it was made from
+     * too. A write that ends on a tile border, or an undo that puts whole tiles back, bumps only the
+     * tiles it wrote, and the neighbour's slot kept the old edge line, which LINEAR sampling reads at
+     * the border wherever a sample falls within half a texel of the slot's edge (C6 a: 76 levels after
+     * the undo of a fill at 0.75).
+     */
     _upload(px, tx, ty, level, S, page, slot, tile) {
-        if (slot.version === tile.version) return true;
+        const near = px.gutterVersions ? px.gutterVersions(tx, ty, this.nearBuf) : null;
+        const same = slot.version === tile.version;
+        if (same && sameNear(slot.near, near)) return true;
         let buf = this.tileBufs[level] || null;
-        const bytes = px.tileWithGutter(tx, ty, level, buf);
+        // the tile itself is what the slot holds: only its gutter is made and uploaded (a stroke commit at 1:1
+        // re-uploaded the ring of whole slots around it, 5 -> 10 ms a frame at 15k, measured)
+        const bytes = px.tileWithGutter(tx, ty, level, buf, same);
         if (!bytes) return false;
         if (!buf || buf.length < bytes.length) this.tileBufs[level] = bytes;
+        const gl = this.gl;
         const sx = (slot.i % page.per) * S, sy = Math.floor(slot.i / page.per) * S;
-        this.gl.bindTexture(this.gl.TEXTURE_2D, page.tex);
-        this.gl.pixelStorei(this.gl.UNPACK_ALIGNMENT, 4);
+        gl.bindTexture(gl.TEXTURE_2D, page.tex);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
         // The slot's bytes are premultiplied already. Chromium applies the two unpack switches to an
         // ArrayBufferView upload as well, and a canvas source uploaded earlier in the same frame
         // leaves PREMULTIPLY on: without this the tiles are premultiplied twice and every partly
         // transparent pixel loses its colour (the anti-aliased edge of a text layer disappeared,
         // 65 levels).
-        this.gl.pixelStorei(this.gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-        this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
-        this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, sx, sy, S, S, this.gl.RGBA, this.gl.UNSIGNED_BYTE, bytes);
-        slot.version = tile.version;
-        this.tileUploads++;
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        if (same) {
+            // rows 0 and S - 1 as they are in the slot, columns 0 and S - 1 between them copied out
+            const n = S - 2;
+            if (!this.gutterCol || this.gutterCol.length < n * 4) this.gutterCol = new Uint8Array(n * 4);
+            const col = this.gutterCol;
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, sx, sy, S, 1, gl.RGBA, gl.UNSIGNED_BYTE, bytes.subarray(0, S * 4));
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, sx, sy + S - 1, S, 1, gl.RGBA, gl.UNSIGNED_BYTE, bytes.subarray((S - 1) * S * 4, S * S * 4));
+            for (const x of [0, S - 1]) {
+                for (let y = 1; y <= n; y++) {
+                    const i = (y * S + x) * 4, o = (y - 1) * 4;
+                    col[o] = bytes[i]; col[o + 1] = bytes[i + 1]; col[o + 2] = bytes[i + 2]; col[o + 3] = bytes[i + 3];
+                }
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, sx + x, sy + 1, 1, n, gl.RGBA, gl.UNSIGNED_BYTE, col.subarray(0, n * 4));
+            }
+            this.gutterUploads++;
+        } else {
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, sx, sy, S, S, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+            slot.version = tile.version;
+            this.tileUploads++;
+        }
+        if (near) { if (!slot.near) slot.near = new Float64Array(8); slot.near.set(near); }
         return true;
     }
 
@@ -699,20 +762,30 @@ export class GLCompositor {
      * away); the bytes they held.
      */
     forgetPixels(pixels) {
-        const byLevel = this.atlas.get(pixels);
-        if (!byLevel) return 0;
+        const rec = pixels ? this.atlasOf.get(pixels) : null;
+        return rec ? this._dropRecord(rec) : 0;
+    }
+
+    /**
+     * Keep the atlas pages of the pixels in `keep` (a Set: what the document draws) and drop every
+     * other record: pixels an undo step holds, pixels a flip, a new mask or a restore replaced, and
+     * pixels already collected. The bytes the dropped pages held. (C6 a)
+     */
+    retainPixels(keep) {
         let bytes = 0;
-        for (const entry of byLevel.values()) for (const page of entry.pages) { bytes += page.bytes; this._deletePage(page); }
-        this.atlas.delete(pixels);
+        for (const rec of Array.from(this.atlas.values())) {
+            const p = rec.ref.deref();
+            if (!p || !keep.has(p)) bytes += this._dropRecord(rec);
+        }
         return bytes;
     }
 
     /** The bytes the atlas holds for a pixels object (memoryReport). */
     pixelBytes(pixels) {
-        const byLevel = this.atlas.get(pixels);
-        if (!byLevel) return 0;
+        const rec = pixels ? this.atlasOf.get(pixels) : null;
+        if (!rec) return 0;
         let bytes = 0;
-        for (const entry of byLevel.values()) for (const page of entry.pages) bytes += page.bytes;
+        for (const entry of rec.levels.values()) for (const page of entry.pages) bytes += page.bytes;
         return bytes;
     }
 
@@ -725,17 +798,19 @@ export class GLCompositor {
     /** Pages no recent composite asked for, then the least recently used, until the budget holds. */
     _evictAtlas() {
         const all = [];
-        for (const [pixels, byLevel] of this.atlas) {
-            for (const [level, entry] of byLevel) {
+        for (const rec of Array.from(this.atlas.values())) {
+            // pixels that were collected: nothing can draw them again
+            if (!rec.ref.deref()) { this._dropRecord(rec); continue; }
+            for (const [level, entry] of rec.levels) {
                 entry.pages = entry.pages.filter((page) => {
                     if (this.frame - page.used <= ATLAS_STALE) return true;
                     this._deletePage(page);
                     return false;
                 });
-                if (!entry.pages.length) byLevel.delete(level);
-                else for (const page of entry.pages) all.push({ pixels, byLevel, level, entry, page });
+                if (!entry.pages.length) rec.levels.delete(level);
+                else for (const page of entry.pages) all.push({ rec, level, entry, page });
             }
-            if (!byLevel.size) this.atlas.delete(pixels);
+            if (!rec.levels.size) this._dropRecord(rec);
         }
         if (this.atlasBytes <= this.atlasBudget) return;
         all.sort((a, b) => a.page.used - b.page.used);
@@ -744,8 +819,8 @@ export class GLCompositor {
             if (it.page.used === this.frame) continue;
             it.entry.pages = it.entry.pages.filter((p) => p !== it.page);
             this._deletePage(it.page);
-            if (!it.entry.pages.length) it.byLevel.delete(it.level);
-            if (!it.byLevel.size) this.atlas.delete(it.pixels);
+            if (!it.entry.pages.length) it.rec.levels.delete(it.level);
+            if (!it.rec.levels.size) this._dropRecord(it.rec);
         }
     }
 
@@ -901,8 +976,7 @@ export class GLCompositor {
             for (const e of this.textures.values()) this.gl.deleteTexture(e.tex);
         } catch (_) { /* context gone */ }
         this.textures.clear();
-        for (const byLevel of this.atlas.values()) for (const entry of byLevel.values()) for (const page of entry.pages) this._deletePage(page);
-        this.atlas.clear();
+        for (const rec of Array.from(this.atlas.values())) this._dropRecord(rec);
         this.atlasBytes = 0;
         this.tileBufs = [];
         if (this.scratch) { this.scratch.width = this.scratch.height = 1; }
@@ -913,8 +987,7 @@ export class GLCompositor {
         try {
             for (const e of this.textures.values()) gl.deleteTexture(e.tex);
             this.textures.clear();
-            for (const byLevel of this.atlas.values()) for (const entry of byLevel.values()) for (const page of entry.pages) this._deletePage(page);
-            this.atlas.clear();
+            for (const rec of Array.from(this.atlas.values())) this._dropRecord(rec);
             this.atlasBytes = 0;
             this.tileBufs = [];
             gl.deleteBuffer(this.inst);

@@ -1132,6 +1132,63 @@ function pixelsCases(P, T) {
             return { ok: true, slots, gutterPixels, side: [T.levelSide(0), T.slotSide(0), T.slotSide(5)] };
         })],
 
+        // C6 (a): what a slot's gutter depends on. `gutterVersions` names the version of every tile the gutter is
+        // read from (0 for none), so a write into a neighbour, a neighbour dropped or a neighbour allocated makes
+        // the slot stale, and a tile further away does not; `tileWithGutter(..., ring)` writes only the gutter,
+        // byte for byte the full slot's, and leaves the interior as it was.
+        ["tiles_gutter_versions_and_ring", both(async ({ B, pair }) => {
+            if (!B.tiles) return { ok: true, tilesOnly: true };
+            const TS = 256, W = 601, H = 501;   // 3 x 2 tiles, the last column and row partly outside
+            const { pixels: p } = pair(W, H);
+            p.clear([256, 0, 512, 256]);         // tile (1, 0) missing
+            const expectNear = (tx, ty) => {
+                const out = [];
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    if (!dx && !dy) continue;
+                    const nx = tx + dx, ny = ty + dy;
+                    const t = nx >= 0 && ny >= 0 && nx * TS < W && ny * TS < H ? p.tileAt(nx, ny) : null;
+                    out.push(t ? t.version : 0);
+                }
+                return out.join();
+            };
+            const near = (tx, ty) => Array.from(p.gutterVersions(tx, ty)).join();
+            for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 3; tx++) {
+                if (near(tx, ty) !== expectNear(tx, ty)) throw new Error(`gutterVersions(${tx}, ${ty}) is ${near(tx, ty)}, the neighbours are ${expectNear(tx, ty)}`);
+            }
+            // a pixel written into tile (0, 0): the slots around it are stale, (2, 1) is not a neighbour
+            const n11 = near(1, 1), n21 = near(2, 1), n10 = near(1, 0);
+            p.fill([10, 10, 11, 11], "#ff00ff");
+            if (near(1, 1) === n11 || near(1, 0) === n10) throw new Error("a write into a diagonal or a side neighbour left the slot's gutter versions alone");
+            if (near(2, 1) !== n21) throw new Error("a write two tiles away changed the gutter versions");
+            // a neighbour allocated (tile (1, 0) was missing) and one dropped
+            const n00 = near(0, 0);
+            p.fill([300, 10, 301, 11], "#00ffff");
+            if (near(0, 0) === n00 || p.gutterVersions(0, 0)[4] !== p.tileAt(1, 0).version) throw new Error("an allocated neighbour did not reach the gutter versions");
+            p.clear([256, 0, 512, 256]);
+            if (p.gutterVersions(0, 0)[4] !== 0) throw new Error("a dropped neighbour is not 0 in the gutter versions");
+            // the ring: rows 0 and S - 1 and columns 0 and S - 1 as the full slot has them, the interior untouched
+            let rings = 0;
+            for (let level = 0; level <= 5; level++) {
+                const S = (TS >> level) + 2;
+                for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 3; tx++) {
+                    const full = p.tileWithGutter(tx, ty, level);
+                    if (!full) continue;
+                    const buf = new Uint8Array(S * S * 4).fill(77);
+                    const got = p.tileWithGutter(tx, ty, level, buf, true);
+                    if (got !== buf) throw new Error("the ring was not written into the buffer handed in");
+                    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+                        const onRing = x === 0 || y === 0 || x === S - 1 || y === S - 1;
+                        for (let c = 0; c < 4; c++) {
+                            const i = (y * S + x) * 4 + c;
+                            if (onRing ? got[i] !== full[i] : got[i] !== 77) throw new Error(`tile ${tx},${ty} level ${level} at ${x},${y}: ${onRing ? "the ring differs from the full slot" : "the interior was written"}`);
+                        }
+                    }
+                    rings++;
+                }
+            }
+            return { ok: true, rings };
+        })],
+
         // Whole tiles shared by a tile-aligned "copy" onto pixels that already hold content and a mirror
         // (an undo step put back at the layer origin): the missing source tiles clear, the mirror follows.
         ["tiles_aligned_blit_copy_onto_content", both(async ({ Layer, pair, snap, same }) => {

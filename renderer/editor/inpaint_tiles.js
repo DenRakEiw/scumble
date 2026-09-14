@@ -65,6 +65,11 @@ const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 const ALPHA = 0x1000000;           // a word >= this has a non-zero alpha byte (little-endian)
 
 let tileSeq = 0;                   // tile versions are unique across all tiles
+// Pixels versions are unique across all pixels objects (docs/PLAN_BCE.md §C6 a). A cache that keys on
+// `version` then cannot mistake one object for another: a new mask started at 0 and was 1 after its first
+// touch, exactly what the mask it replaced had, and the atlas's instances and the region view kept
+// drawing the old mask.
+let pixelSeq = 0;
 
 function newTile() {
     return {
@@ -415,7 +420,7 @@ const tiled = (Base) => class extends Base {
         this._w = size[0];
         this._h = size[1];
         this._tiles = new Map();
-        this._version = 0;
+        this._version = ++pixelSeq;
         this._mirror = null;
         this._mirrorDirty = null;
         this._thumb = null;
@@ -460,7 +465,7 @@ const tiled = (Base) => class extends Base {
     bytes() { return this._tiles.size * TILE_BYTES; }
 
     touch(rect = null) {
-        this._version++;
+        this._version = ++pixelSeq;
         if (this._mirror) this._mirror._dispVer = this._version;
         const r = pixelRect(rect, this._w, this._h);
         if (!r) return;
@@ -542,7 +547,9 @@ const tiled = (Base) => class extends Base {
      * transparent pixels across an edge. The shader divides the alpha out again, as it always did for
      * the canvas uploads (which Chromium premultiplied on the way in).
      */
-    tileWithGutter(tx, ty, level = 0, out = null) {
+    tileWithGutter(tx, ty, level = 0, out = null, ring = false) {
+        // `ring`: only the gutter is written (rows 0 and S - 1, columns 0 and S - 1), for a slot whose
+        // tile is unchanged and whose neighbours are not (C6 a); the interior of `out` is left as it was
         this._guard();
         const own = this._levelBytes(tx, ty, level);
         if (!own) return null;
@@ -578,8 +585,33 @@ const tiled = (Base) => class extends Base {
             const sy = y === 0 ? topS : y === S - 1 ? botS : y - 1;
             const o = y * S * 4;
             put(infoAt(leftX, dy), leftS, sy, 1, o);
-            put(infoAt(0, dy), 0, sy, side, o + 4);
+            if (!ring || y === 0 || y === S - 1) put(infoAt(0, dy), 0, sy, side, o + 4);
             put(infoAt(rightX, dy), rightS, sy, 1, o + (S - 1) * 4);
+        }
+        return out;
+    }
+
+    /**
+     * The versions of the eight tiles `tileWithGutter(tx, ty)` reads its gutter from, written into
+     * `out` (row by row around the tile, the tile itself left out): 0 for a neighbour that is not
+     * allocated or lies outside the image, where the gutter is transparent or the tile's own edge.
+     * A slot is current while its tile's version *and* these are the ones it was made from (C6 a).
+     */
+    gutterVersions(tx, ty, out = new Float64Array(8)) {
+        this._guard();
+        let i = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+            const ny = ty + dy;
+            for (let dx = -1; dx <= 1; dx++) {
+                if (!dx && !dy) continue;
+                const nx = tx + dx;
+                let v = 0;
+                if (nx >= 0 && ny >= 0 && (nx << 8) < this._w && (ny << 8) < this._h) {
+                    const t = this._tiles.get((ny << 16) | nx);
+                    if (t) v = t.version;
+                }
+                out[i++] = v;
+            }
         }
         return out;
     }
@@ -1363,7 +1395,7 @@ export class TileMaskPixels extends tiled(MaskPixels) {
                 if (tileEmpty(t)) this._dropTile(key);
             }
         }
-        this._version++;
+        this._version = ++pixelSeq;
         if (this._mirror) this._mirror._dispVer = this._version;
     }
 }

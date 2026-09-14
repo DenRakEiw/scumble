@@ -32,7 +32,10 @@
  *   `setTransform` / `resetTransform`, and must not take `getTransform()` as absolute
  *   (docs/PLAN_BCE.md §C1 "C1 as built", rule 12).
  * - `version` changes on `touch()`. The editor's `touchSource` / `touchSourceRect` call it
- *   after every write, which is also what refreshes the display levels.
+ *   after every write, which is also what refreshes the display levels. On the tile backend it is
+ *   unique across every pixels object, so a cache keyed on it cannot take new pixels (a new mask,
+ *   a flipped layer) for the ones they replaced (docs/PLAN_BCE.md §C6 a); on this backend it is the
+ *   canvas's `_dispVer`, and the caches that read it key on the canvas as well.
  * - Straight alpha in and out (`ImageData`), like the canvas itself.
  * - `drawInto`'s `fn` is synchronous: the tile backend writes its scratch back when `fn` returns.
  *   A `fn` that returns a promise throws on both backends, after what it drew before its first

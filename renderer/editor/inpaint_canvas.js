@@ -6604,8 +6604,12 @@ class InpaintEditor {
 
     /**
      * After the current task: the display caches of pixels that left the document into a step (a removed,
-     * merged or flattened layer, the old pixels of an extend or crop). See releaseDetachedDisplays. A microtask,
-     * because the operations push their step first and take the pixels out of the document after it.
+     * merged or flattened layer, the old pixels of an extend or crop), and the atlas pages of pixels that left it
+     * altogether (replaced by a flip, a turn, a new mask, a restore, a new base: C6 a). See releaseDetachedDisplays.
+     * A microtask, because the operations push their step first and take the pixels out of the document after it.
+     * Queued by every undo step, every undo / redo, every whole change of a layer or a mask (which is what a
+     * replacement ends with), by setBase (a restore goes through it: its release runs at the restore's next
+     * await, when the old layers are gone) and by the basePx getter when a new base image replaces the pixels.
      */
     scheduleDetachedRelease() {
         if (!this.tileMode || this._detachQueued) return;
@@ -6627,10 +6631,12 @@ class InpaintEditor {
         for (const l of this.layers) { live.add(l.px); live.add(l.maskPx); }
         const comp = this._compositor || null;
         let freed = 0;
+        // C3: the compositor's atlas pages of pixels nothing draws any more. C6 (a): every record whose pixels the
+        // document does not hold, not only the ones a step holds: pixels a flip, a new mask or an undo replaced are
+        // in no step (the steps hold clones), and their pages stayed until they aged out
+        if (comp) freed += comp.retainPixels(live);
         for (const p of this.heldPixels()) {
             if (live.has(p) || !isTilePixels(p)) continue;
-            // C3: the compositor's atlas pages of pixels nothing draws any more
-            if (comp) freed += comp.forgetPixels(p);
             const m = p.displayCanvasIfMade();
             if (m) {
                 const entry = this.pyramids.get(m);
@@ -6994,7 +7000,7 @@ class InpaintEditor {
         layer.exportRef = null;
         // `rect` (in the layer pixels' own coordinates) keeps the cached levels and refreshes them there
         if (rect) this.touchSourceRect(layer.px, rect[0], rect[1], rect[2], rect[3]);
-        else this.touchSource(layer.px);
+        else { this.touchSource(layer.px); this.scheduleDetachedRelease(); }   // a whole change may be new pixels (C6 a)
         this.touchSource(layer._masked);
         this.bumpComposite(layer, rect ? this.layerRectToImage(layer, layer.px, rect) : null);
         this.uploaded.controlHash = null;
@@ -7281,7 +7287,7 @@ class InpaintEditor {
         layer._mcacheView = null; layer._mcacheSample = null;
         // `rect` (in the mask's own pixels) keeps the cached levels and refreshes them there
         if (rect && layer.maskPx) this.touchSourceRect(layer.maskPx, rect[0], rect[1], rect[2], rect[3]);
-        else this.touchSource(layer.maskPx);
+        else { this.touchSource(layer.maskPx); this.scheduleDetachedRelease(); }   // a new mask, or none (C6 a)
         this.touchSource(layer._masked);
         layer.exportRef = null;
         this.bumpComposite(layer, rect && layer.maskPx ? this.layerRectToImage(layer, layer.maskPx, rect) : null);
@@ -8326,6 +8332,7 @@ class InpaintEditor {
         this.selectionEncoded = false;
         this._basePx = null;
         this._basePxImg = null;
+        this.scheduleDetachedRelease();   // the old base's and the old layers' atlas pages go (C6 a)
         this.flatCache = null;
         this.sceneSig = null;
         this.touchSource(this.sel);
@@ -9283,6 +9290,7 @@ class InpaintEditor {
     get basePx() {
         if (!this.base || !this.base.img) return null;
         if (!this._basePx || this._basePxImg !== this.base.img) {
+            if (this._basePx) this.scheduleDetachedRelease();   // the old base's atlas pages go (C6 a)
             this._basePx = this.pixels.Layer.fromImage(this.base.img);
             this._basePxImg = this.base.img;
         }

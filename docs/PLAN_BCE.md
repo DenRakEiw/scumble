@@ -1708,6 +1708,162 @@ Gate: `composite_test.py`, `film_test.py` (the panel thumbnails), `commands_test
 still find their input); `perf_test.py` first frame after a filter apply ≤ 1 frame, full
 composite row ≤ 300 ms at 15k (it is still a full-resolution flatten until E).
 
+#### C6 as built: the decisions taken while building it (2026-09-14)
+
+**(a) The atlas is keyed right** (`inpaint_tiles.js`, `inpaint_compositor.js`, `inpaint_canvas.js`):
+
+C6 changes how tile versions and mips reach the screen, so the three ways the atlas could draw pixels the
+document no longer holds were fixed first. Each was reproduced on the screen of a tile-mode instance (GPU
+path) before it was touched. All three are tile mode only: the canvas backend never reaches the atlas, and
+its region view runs only for a live stroke, which is keyed by the gesture. So no CHANGELOG bullet.
+
+- **A new pixels object had the version of the one it replaced.** A tile store's `version` started at 0 and
+  was 1 after its first `touch()`. The atlas's instance cache is keyed on `px.version` and `mask.version`
+  but not on which mask, and `layerRegionView`'s signature (the Canvas 2D path of a masked tile layer) on the
+  same two numbers. Reproduced on a 2400 x 1600 layer: "mask from selection" on the left half and then on the
+  right half gave two masks at version 1, and the screen kept the left half, on the GPU path (the key hit and
+  bound the first mask's pages, which were still alive: see the next item) and on the Canvas 2D path with a
+  filter layer in the stack. The undo that puts the first mask back (a clone, 0 then 1, against a live mask at
+  1) did the same. **Fix**: a tile store's version comes from one module-wide sequence (`pixelSeq`), at
+  construction and on every `touch()` and `invert()`, as a tile's version always did. Two pixels objects can
+  never share a version, so every cache keyed on it (the instance key, the region view's signature, the
+  mirror's `_dispVer`) tells them apart without keying on the object as well. One number rather than an
+  (id, version) pair, because the hole was in two places and a third signature would have to remember the
+  pair. The canvas backend keeps its per-canvas `_dispVer`: the caches that read it key on the canvas too.
+  The `LayerPixels` contract in `inpaint_pixels.js` says so.
+- **Replaced pixels were never forgotten.** A flip, a turn, a new mask, a restore or a text render replaces
+  the pixels object, and its undo step holds a *clone*. The replaced object was in neither the document nor a
+  step, so `releaseDetachedDisplays` never passed it to `forgetPixels`, and the atlas, a `Map` keyed on the
+  pixels, kept it and every tile it had. Measured on 15000 x 10000, one full paint layer at fit, flipped three
+  times: atlas records 2 → 5, pages 20 → 50, 20.9 → 52.2 MB (10.4 MB of pages per flipped-away object). After
+  a forced collection all three objects were alive, with 1,770 MB of tiles shared with the steps' clones.
+  After `clearUndo()` and another collection they were still alive, holding **2,432.9 MB** of tiles, mips and
+  edge copies nothing else held. 297 composites later their pages aged out and they went. **Fix, in two
+  places**:
+  1. The compositor holds its pixels **weakly**: one record per pixels object, holding a `WeakRef` to it and
+     found through a `WeakMap`. A record whose pixels were collected is dropped at the next composite. Nothing
+     in the atlas can keep tiles alive any more, whichever site forgets to say it replaced something.
+  2. **`retainPixels(live)`**: `releaseDetachedDisplays` drops every record whose pixels the document does
+     not hold (base, selection, layers, masks). Before, it dropped only pixels a step holds. The release is
+     now also queued by every whole change of a layer or a mask (`markLayerChanged` / `markMaskChanged`
+     without a rectangle, which is what every replacement ends with), and by `setBase` and the `basePx` getter
+     when they replace the base. A restore goes through `setBase`, whose release runs at the restore's next
+     await, when the old layers are already gone. Undo steps and undo / redo already queued it.
+
+  After the fix the same three flips leave 2 records, 20 pages and 20.9 MB, and nothing of the flipped-away
+  objects survives a collection, even while the undo steps are still there. Pixels the document still draws
+  keep their pages: the frame after the release uploads nothing.
+- **The gutter was not part of a slot's validity.** A slot holds its tile plus a one-pixel gutter of its eight
+  neighbours' edge lines (C3 a), but it counted as current by its own tile's version only. `touch(rect)`
+  bumps only the tiles the rectangle overlaps. Reproduced on a 1024 x 1024 red layer, the view off the pixel
+  grid, comparing the screen after a write with the same view drawn from released caches:
+  - A blue fill of [256, 0, 512, 1024] announced with exactly that box: **76 levels on 2,307 bytes** at 0.75
+    (level 0) and **104 on 1,230** at 0.2 (level 2).
+  - The undo of a fill selection over the same column, a `layer` step restored over whole tiles
+    (`tileDiffBox`): the same 76 and 104, measured with the old rule put back into the fixed tree (the
+    mutation below).
+
+  At 0.35 and 0.1 the same writes read 0: whether a fragment centre falls within half a texel of the slot's
+  edge depends on the view's phase.
+
+  A **brush dab** did not reproduce at levels 0 to 3. Its commit rectangle is the dab padded by
+  `brushSize / 2 + 2`, so a dab whose pixels reach a tile's last column also bumps the tile past it. At level
+  L the gutter reads the neighbour's last 2^L columns, so a dab whose pixels stop 2 to 2^L − 1 px short of a
+  border has the defect at level 2 and up. That follows from the code and was not measured.
+
+  **Fix**:
+  - The slot records the versions of the eight tiles its gutter was made from: `gutterVersions(tx, ty)` on
+    the tile store, 0 for a neighbour that is missing or outside the image. `_upload` compares them as well as
+    the tile's own version.
+  - When only a neighbour changed, only the gutter is made (`tileWithGutter(..., ring = true)`) and uploaded:
+    four `texSubImage2D` calls of one line each, counted in `stats().atlas.gutterUploads`, not in `uploads`.
+
+  Widening `touch(rect)` by 2^level px was the other way, and it costs more: it rebuilds the neighbours' mip
+  chains and re-uploads whole slots. Measured on 15000 x 10000, the first frame after a 700 px square write
+  (median of 12, two alternating runs):
+
+  | | at 1:1 | at fit |
+  |---|---|---|
+  | old rule | 4.0 to 5.5 ms, 12 uploads | 2.4 to 2.8 ms |
+  | neighbour versions, whole slots re-uploaded | 9.4 to 9.8 ms, 24 uploads | 3.2 to 3.3 ms, 30 uploads |
+  | neighbour versions, the gutter alone | 4.4 to 6.4 ms, 12 uploads plus the ring | 3.0 to 3.4 ms |
+
+  A whole touch at fit is 250 to 285 ms in every variant; the 2,360 lookups cost 0.25 ms of it.
+- **A trap on the way**: the first reading of the undo case undid the selection step that `select_none` had
+  pushed, not the fill. Marching ants move between two reads, so the "stale" and the "fresh" screen differed
+  by 218 levels whatever the atlas did, before and after the fix alike. A screen comparison clears the
+  selection *after* the undo, and the gate checks that the undo stack is empty and the selection still there.
+- **Gates**:
+  - `editor_test.py` gains `a_new_mask_and_a_neighbours_write_reach_the_screen`, run on both backends:
+    - A second mask from selection, read from the frame the operation drew itself (nothing draws again until
+      the pointer moves) and after frames of its own, then from released caches, then the undo and the
+      removal, on the GPU path and again with a filter layer in the stack.
+    - The border writes at 0.75 and 0.2 against released caches, ≤ 2 levels, with a "the write reached the
+      screen" floor. Each write is read with the view moved by 0 to 3 image pixels at 0.75 and 0 to 4 at 0.2,
+      which starts the composite's region on every pixel of one sampling period. The rows must have run on
+      the GPU compositor, and on tiles each write must have uploaded a neighbour's gutter.
+  - The screen step gains (5), on tiles:
+    - After three flips, every atlas record is of pixels the document draws, the flipped-away objects have no
+      pages, and the live layer keeps its pages and uploads nothing on the next frames.
+    - A layer replaced and announced by a whole change, and then a mask the same way, give their old pages
+      back, one at a time, because either change's release takes both.
+    - The base replaced by `setBase` with a new image (layers kept), and then by a new `base.img` that the
+      `basePx` getter finds on the next frame, gives its old pages back each time.
+    - A layer replaced without telling anybody, and the flipped-away objects no step holds, are collected
+      after a forced collection before the pages could age out. The step's 320 aging frames moved to
+      `SCREEN_STEP_TAIL`, after that check.
+  - `pixels_test.js` gains `tiles_gutter_versions_and_ring`: `gutterVersions` against an independent reading
+    of the neighbours, changed by a write into a side or a diagonal neighbour, by a neighbour allocated and
+    by one dropped, not by a tile two away; and the ring written byte for byte as the full slot has it, the
+    interior untouched, at every level.
+- **Mutations, each red**:
+
+  | mutation | red |
+  |---|---|
+  | versions counted per object again | the second mask's own frame on the GPU path, and on the Canvas 2D path its frame, the frames after it and the undo |
+  | the release forgets only what a step holds | the atlas keeps 2 records of pixels it does not draw, 13 MB each |
+  | the atlas holds its pixels strongly | the unannounced replacement is still alive after a collection |
+  | `markLayerChanged` without a rectangle queues no release | the replaced layer keeps its 13 MB of pages |
+  | `markMaskChanged` without a rectangle queues no release | the replaced mask keeps its 26.6 MB of pages |
+  | `setBase` queues no release | the replaced base keeps its 26.6 MB of pages |
+  | the `basePx` getter queues no release | the old base pixels keep their 26.6 MB of pages |
+  | the ring upload throws (the editor falls back to Canvas 2D) | the border rows: "ran on Canvas 2D", "uploaded no gutter", "the GPU compositor failed during the step" |
+  | a slot current by its own version | 76 levels on 2,307 bytes and 104 on 1,230, both writes |
+  | the gutter-only upload without its side columns | the same 76 and 104 |
+  | the ring path writing the interior | the unit case: "the interior was written" |
+  | `gutterVersions` without the diagonals | the unit case: the versions against the neighbours |
+
+  Before the second version of the mask and screen checks, two of these stayed green:
+  - Versions per object on the GPU path: the release queued by the whole mask change drops the old mask's
+    record, which moves `atlasGen`, so every frame *after* the operation was right. The operation's own
+    frame was the wrong one, and that is the frame the user keeps seeing.
+  - The two release queues, while both replacements were checked together.
+- **The review's fixes** (three findings on the gates, each confirmed by two verifiers):
+  - The border rows recorded the path and the gutter uploads but never checked them, so with the ring upload
+    made to throw the editor fell back to Canvas 2D for good and the step passed comparing Canvas 2D with
+    itself (0 levels, 0 gutter uploads); they now fail on Canvas 2D, on a write that uploaded no gutter (8
+    and 12 in clean runs) and on `compositorOff` at the end, and that mutation is red.
+  - Whether one view position sees a stale gutter depends on where the region starts, which follows the
+    window's width, not on the view's +0.37 px: with the old slot rule the 0.75 rows missed it at 3 of 6
+    consecutive widths (canvas 961, 962 and 1436 px), and only the 0.2 rows kept the step red; with the view
+    moved over one sampling period the 0.75 rows are red at all six (2 to 3 of the 4 shifts, 11 to 98 levels).
+  - The `setBase` and `basePx` getter queues had no counter-proof (the whole editor gate stayed green with
+    them suppressed); the screen step's base rows are red without either one (26.6 MB kept). The call at the
+    end of `setValue` was removed rather than proven: in a restore on tiles either it or `setBase`'s release
+    alone gave the old base's and layer's 13 MB each back, and only with both suppressed did they stay, so
+    nothing could show it.
+- **Runs** (fresh instances, strict): `--tiles on` and `--tiles off` with `pixels editor composite commands
+  shape brush film glb ailabel size transparent generate log mcp nodecopy` ALL PASS, and `--copy --tiles off
+  pixels editor composite commands` ALL PASS, on the first try each after the review's fixes as well. Before
+  them two runs failed for reasons outside this change:
+  - `commands_test.py` hung twice, once per backend, in `Page.captureScreenshot` after its last step (every
+    step `[ok]`, the posterize shot written, the window shot not), and ran into the runner's 420 s timeout.
+    It passed alone, in a bisect run of `pixels editor composite commands` against the same code, and in
+    both full re-runs. This is the flake `CLAUDE.md` already names.
+  - `composite_test.py` failed once on tiles with a `KeyError`: its view shot was 1200 x 794 against the
+    reference's 1200 x 800, because the editor canvas was 6 px shorter in that window. The size check
+    returns no `bytes` key, which the failure message then asks for. It passed on the re-run.
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in

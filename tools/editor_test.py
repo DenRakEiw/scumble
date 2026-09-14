@@ -22,6 +22,9 @@ review: a selection drag that leaves the display levels alone on canvases, the u
 whole-layer undo steps as tile clones and small-selection writes without whole-layer work on tiles, exact
 flips and turns, no mirror for an empty selection or for removed layers, the memory report's shared-tile
 counting, the 268 MP refusal on tiles and a selection encode that cannot throw out of getValue.
+C6 (a): a second mask from selection and its undo reach the screen on both paths, a write that ends on a tile
+border or an undo of whole tiles leaves no neighbour's old edge line in the atlas, and the atlas gives back the
+pages of pixels the document replaced and holds nothing alive after a collection.
 
     python tools/editor_test.py
 
@@ -707,11 +710,105 @@ if (!comp) throw new Error("no GPU compositor");
 ed.activeLayerId = W.id;
 centre(1);
 const old = new Set();
+const flipped = [];
 for (let i = 0; i < 3; i++) {
     frame(); await wait(15);
     for (const k of comp.textures.keys()) old.add(k);
+    flipped.push(new WeakRef(W.px));
     ed.flipLayer("h");
 }
+// (5) C6 (a): the atlas keeps only what the document draws. A flip replaces the layer's pixels and its undo step
+// holds a clone, so the pixels it replaced are in neither, and the atlas (a Map keyed on them) kept them and
+// every tile they had until their pages aged out: three flips of a 15k layer held 2.4 GB. The release after the
+// flip gives their pages back, the pixels still drawn keep theirs (a forgotten live layer would upload again on
+// every frame), and a replacement nobody announces (a plugin writing layer.px) does not keep the old pixels alive
+// either: the caller checks both WeakRefs after a forced collection.
+if (ed.tileMode) {
+    frame(); await wait(15);
+    const live = new Set([ed._basePx, ed.sel]);
+    for (const l of ed.layers) { live.add(l.px); live.add(l.maskPx); }
+    const records = [...comp.atlas.values()].map((r) => r.ref.deref());
+    const a = { records: records.length, notDrawn: records.filter((p) => !p || !live.has(p)).length,
+                flippedBytes: flipped.map((w) => (w.deref() ? comp.pixelBytes(w.deref()) : 0)), liveBytes: comp.pixelBytes(W.px) };
+    const u0 = comp.stats().atlas.uploads;
+    frame(); await wait(15); frame();
+    a.uploadsAfterRelease = comp.stats().atlas.uploads - u0;
+    out.atlasAfterFlips = a;
+    if (a.notDrawn || a.flippedBytes.some(Boolean)) throw new Error("the atlas keeps pages of pixels the document no longer draws: " + JSON.stringify(a));
+    if (!a.liveBytes || a.uploadsAfterRelease) throw new Error("the release took the pages of pixels the document still draws: " + JSON.stringify(a));
+    // new pixels and a new mask with no undo step, announced as a whole change (what a plugin's refresh(key) does
+    // after writing rawLayer(key).px / maskPx): the whole change queues the release
+    // one at a time: the release is for the whole document, so either change's release would take both
+    {
+        const p0 = W.px;
+        const had = comp.pixelBytes(p0);
+        W.px = ed.pixels.Layer.fromImageData(p0.readRect(0, 0, p0.width, p0.height));
+        ed.markLayerChanged(W);
+        frame(); await wait(15); frame();
+        a.newLayer = { had, old: comp.pixelBytes(p0), now: comp.pixelBytes(W.px) };
+        if (!had) throw new Error("the replaced layer had no atlas pages to give back (the check would pass on nothing): " + JSON.stringify(a.newLayer));
+        if (a.newLayer.old) throw new Error("a whole layer change with new pixels kept the old pixels' atlas pages: " + JSON.stringify(a.newLayer));
+        if (!a.newLayer.now) throw new Error("the new pixels were not drawn from the atlas: " + JSON.stringify(a.newLayer));
+    }
+    {
+        const V = ed.layers.find((l) => l.maskPx);   // the masked layer of the step before
+        const m0 = V.maskPx;
+        const had = comp.pixelBytes(m0);
+        V.maskPx = m0.clone();
+        ed.markMaskChanged(V);
+        frame(); await wait(15); frame();
+        a.newMask = { had, old: comp.pixelBytes(m0), now: comp.pixelBytes(V.maskPx) };
+        if (!had) throw new Error("the replaced mask had no atlas pages to give back (the check would pass on nothing): " + JSON.stringify(a.newMask));
+        if (a.newMask.old) throw new Error("a whole mask change with a new mask kept the old mask's atlas pages: " + JSON.stringify(a.newMask));
+        if (!a.newMask.now) throw new Error("the new mask was not drawn from the atlas: " + JSON.stringify(a.newMask));
+    }
+    // the base replaced two ways, each queuing its own release (nothing else does in between, so a missing one
+    // keeps the old base's pages): `setBase` with a new image into the open document (what load_image and a
+    // restore do; it keeps the layers here so the checks below still have them), and a new `base.img` the
+    // `basePx` getter finds on the next frame (what a crop, a resize, a merge into the base and a flatten do)
+    {
+        const c = document.createElement("canvas"); c.width = ed.width; c.height = ed.height;
+        const cx = c.getContext("2d"); cx.fillStyle = "#808080"; cx.fillRect(0, 0, c.width, c.height);
+        const url = c.toDataURL("image/png");
+        const image = () => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+        const b0 = ed.basePx;
+        const had = comp.pixelBytes(b0);
+        await ed.setBase(ed.base.ref, await image(), { keepLayers: true });
+        centre(1);
+        frame(); await wait(15); frame();
+        a.newBase = { had, old: comp.pixelBytes(b0), now: comp.pixelBytes(ed._basePx), layers: ed.layers.length };
+        if (!had) throw new Error("the replaced base had no atlas pages to give back (the check would pass on nothing): " + JSON.stringify(a.newBase));
+        if (a.newBase.old) throw new Error("setBase with a new image kept the old base's atlas pages: " + JSON.stringify(a.newBase));
+        if (!a.newBase.now || ed._basePx === b0) throw new Error("the new base was not drawn from the atlas: " + JSON.stringify(a.newBase));
+        const b1 = ed._basePx;
+        const had1 = comp.pixelBytes(b1);
+        ed.base = { ref: ed.base.ref, img: await image() };
+        frame(); await wait(15); frame();
+        a.baseImage = { had: had1, old: comp.pixelBytes(b1), now: comp.pixelBytes(ed._basePx), replaced: ed._basePx !== b1 };
+        if (!a.baseImage.replaced) throw new Error("the basePx getter did not replace the base's pixels for a new image: " + JSON.stringify(a.baseImage));
+        if (a.baseImage.old) throw new Error("a new base image kept the old base pixels' atlas pages: " + JSON.stringify(a.baseImage));
+        if (!a.baseImage.now) throw new Error("the new base pixels were not drawn from the atlas: " + JSON.stringify(a.baseImage));
+    }
+    const before = W.px;
+    W.px = ed.pixels.Layer.fromImageData(before.readRect(0, 0, before.width, before.height));
+    ed.touchSource(W.px);
+    frame(); await wait(15); frame();
+    // a flipped-away object an older `layers` step holds by reference (the filter layer added and removed above)
+    // stays alive for that step; the others are held by nothing but, before C6 (a), the atlas
+    const held = ed.heldPixels();
+    window.__atlasHeld = { flipped: flipped.filter((w) => !held.has(w.deref())), stepHeld: flipped.length - flipped.filter((w) => !held.has(w.deref())).length, replaced: new WeakRef(before) };
+}
+// the caller collects garbage here (for (5)) and then runs SCREEN_STEP_TAIL: its 320 frames would age the pages out
+window.__screen = { old, out };
+return out;
+"""
+
+SCREEN_STEP_TAIL = """
+const ed = ednow(window.__dc);
+const comp = ed.compositor();
+const { old, out } = window.__screen;
+window.__screen = null;
+const frame = () => { ed.sceneSig = null; ed.draw(); };
 let frames = 0;
 while (frames < 320) { frame(); frames++; if (frames % 40 === 0) await wait(1); }
 const left = [...comp.textures].filter(([k, e]) => old.has(k) && e.used !== comp.frame).length;
@@ -1039,7 +1136,20 @@ async def screen_step(c):
     for _ in range(3):
         await c.call("HeapProfiler.collectGarbage")
         await asyncio.sleep(0.3)
-    return await c.eval(PRE % SCREEN_STEP, timeout=240)
+    out = await c.eval(PRE % SCREEN_STEP, timeout=240)
+    if out.get("tiles"):
+        # (5): the pixels three flips and a direct replacement left behind are collected while the document is
+        # still open and before its pages could age out, so the only thing that could hold them is the atlas
+        for _ in range(4):
+            await c.call("HeapProfiler.collectGarbage")
+            await asyncio.sleep(0.3)
+        held = await c.eval("(() => { const h = window.__atlasHeld; window.__atlasHeld = null; return h ? { flipped: h.flipped.map((w) => !!w.deref()), stepHeld: h.stepHeld, replaced: !!h.replaced.deref() } : null; })()")
+        if held is None or not held["flipped"] or any(held["flipped"]) or held["replaced"]:
+            raise Exception("pixels the document replaced are still alive after a collection: %s" % json.dumps(held))
+    res = await c.eval(PRE % SCREEN_STEP_TAIL, timeout=240)
+    if out.get("tiles"):
+        res["atlasHeld"] = held
+    return res
 
 
 async def backend_step(c):
@@ -2452,6 +2562,146 @@ await one("mask_stroke", { kind: "maskpaint", mask: true });
 ed.compositorOff = compOff;
 await run("select_none", { doc: d.id });
 return out;
+"""),
+    ("a_new_mask_and_a_neighbours_write_reach_the_screen", """
+// C6 (a), on the screen and on both backends (on canvases there is no atlas and no region view, and the rows
+// have to be right all the same).
+// (1) A new mask's version was the one the mask it replaced had: a new pixels object started at 0 and was 1
+// after its first touch. The atlas's instance cache (GPU path) and the region view's signature (Canvas 2D path,
+// a filter layer in the stack) key on the version, so a second "mask from selection" and the undo that puts the
+// first mask back kept drawing the mask before. Pixels versions are unique across pixels objects now.
+// (2) A slot's gutter is its eight neighbours' edge lines, and a slot counted as current by its own tile's
+// version: a write that ends on a tile border, or the undo of a fill (which puts whole tiles back), left the
+// neighbours' slots with the old edge line, which LINEAR sampling reads at the border. The screen after the
+// write is compared with the same view drawn from nothing (every cache released).
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = { tiles: ed.tileMode, masks: [], borders: [] };
+const fails = [];
+const g = ed.canvas.getContext("2d");
+const frame = async (n = 3) => { for (let i = 0; i < n; i++) { ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(25); } };
+const at = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return Array.from(g.getImageData(Math.round(sx), Math.round(sy), 1, 1).data); };
+const blue = (q) => q[2] > 150 && q[0] < 120;
+const red = (q) => q[0] > 150 && q[2] < 120;
+await run("new_canvas", { width: 2400, height: 1600, doc: d.id });
+const L = ed.addPaintLayer();
+L.px.fill([0, 0, 2400, 1600], "#2040ff"); ed.markLayerChanged(L);
+ed.renderLayers();
+ed.fitView();
+const hasGl = !!ed.compositor();
+const mask = async (label, left, right, path, now = false) => {
+    // `now`: the frame the operation drew itself, read before any task runs (nothing draws again until the
+    // pointer moves, so this is what the user sees); otherwise after a few frames of our own
+    if (!now) await frame();
+    const s = { label, path, now, gl: ed.glCompositeUsable({}), left: blue(at(600, 800)), right: blue(at(1800, 800)) };
+    out.masks.push(s);
+    if (s.left !== left || s.right !== right) fails.push(path + ", " + label + (now ? " (its own frame)" : "") + ": the screen shows " + JSON.stringify({ left: s.left, right: s.right }) + " where the mask lets through " + JSON.stringify({ left, right }));
+    if (hasGl && s.gl !== (path === "gpu")) fails.push(path + ", " + label + ": the view took the other path (glCompositeUsable " + s.gl + ")");
+};
+for (const path of ["gpu", "2d"]) {
+    const fx = path === "2d" ? ed.addFilterLayer("levels") : null;
+    ed.renderLayers();
+    await run("select_rect", { x: 0, y: 0, w: 1200, h: 1600, doc: d.id });
+    ed.maskFromSelection(L);
+    await mask("mask from the left half", true, false, path);
+    await run("select_rect", { x: 1200, y: 0, w: 1200, h: 1600, doc: d.id });
+    ed.hover = null;
+    ed.maskFromSelection(L);
+    await mask("a second mask, from the right half", false, true, path, true);
+    await mask("a second mask, from the right half", false, true, path);
+    ed.releaseCaches();   // the undo row is judged from a screen drawn from nothing, not from the row above
+    await mask("the second mask from released caches", false, true, path);
+    await ed.undoStep();
+    await mask("undo: the first mask back", true, false, path);
+    ed.removeMask(L);
+    await mask("mask removed", true, true, path);
+    if (fx) { ed.removeLayer(fx.id); ed.renderLayers(); }
+}
+await run("select_none", { doc: d.id });
+// (2) the borders, on a document of 4 x 4 tiles
+const N = 1024;
+await run("new_canvas", { width: N, height: N, doc: d.id });
+const B = ed.addPaintLayer();
+ed.activeLayerId = B.id;
+ed.renderLayers();
+const box = () => {
+    const [ax, ay] = ed.imageToScreen(0, 0), [bx, by] = ed.imageToScreen(N, N);
+    const x0 = Math.max(0, Math.floor(ax)), y0 = Math.max(0, Math.floor(ay));
+    return [x0, y0, Math.min(ed.canvas.width, Math.ceil(bx)) - x0, Math.min(ed.canvas.height, Math.ceil(by)) - y0];
+};
+const read = () => { const b = box(); return g.getImageData(b[0], b[1], b[2], b[3]).data; };
+const diff = (a, b) => { let worst = 0, n = 0; for (let i = 0; i < a.length; i++) { const v = Math.abs(a[i] - b[i]); if (v) { n++; if (v > worst) worst = v; } } return [worst, n]; };
+const cases = {
+    // the bucket's and a plugin's kind of write: a box that ends exactly on the tile border at x = 512
+    "a fill whose box ends on a tile border": async () => { B.px.fill([256, 0, 512, N], "#2040ff"); ed.markLayerChanged(B, [256, 0, 512, N]); await frame(); return blue(at(384, 512)); },
+    "the undo of a fill (whole tiles put back)": async () => {
+        await run("select_rect", { x: 256, y: 0, w: 256, h: N, doc: d.id });
+        ed.clearUndo();
+        ed.color = "#2040ff"; ed.brushOpacity = 1; ed.fillSelection();
+        await frame();
+        const filled = blue(at(384, 512));
+        await ed.undoStep();
+        if (ed.undo.length || !ed.getBounds()) throw new Error("the undo did not take back the fill");
+        await run("select_none", { doc: d.id });
+        await frame();
+        return filled && red(at(384, 512));
+    },
+};
+// Whether a fragment centre falls within half a texel of a slot's edge (where LINEAR sampling reads the gutter)
+// is set by where the composite's region starts: viewportRegion floors it to a whole image pixel, the region's
+// size follows the window, and the view's own fraction only enters in the last drawImage. So one view position
+// sees the stale gutter or not depending on the window's width (at 0.75 half the widths missed it: C6 a's
+// review). Each write is read with the view moved by 0, 1, 2 ... image pixels, which starts the region on each
+// pixel of one sampling period (4 image pixels at 0.75, which are 3 screen pixels; 5 at 0.2, one screen pixel),
+// so every phase the samples can have against a border is read, whatever the window's width. The step checks
+// that the region really started on each of them.
+const periods = { 0.75: 4, 0.2: 5 };
+const place = (scale, k) => {
+    ed.view.angle = 0; ed.view.scale = scale; ed._fitted = false;
+    ed.view.x = Math.round(ed.canvas.width / 2 - (N / 2) * scale) + 0.37 + k * scale; ed.view.y = Math.round(ed.canvas.height / 2 - (N / 2) * scale) + 0.41;
+};
+for (const scale of [0.75, 0.2]) {
+    const shifts = Array.from({ length: periods[scale] }, (_, k) => k);
+    for (const [name, write] of Object.entries(cases)) {
+        await run("select_none", { doc: d.id });
+        B.px.fill([0, 0, N, N], "#ff2020"); ed.markLayerChanged(B);
+        place(scale, 0);
+        ed.clearUndo();
+        await frame();
+        const comp = ed.compositor();
+        const gu0 = comp ? comp.stats().atlas.gutterUploads : 0;
+        const wrote = await write();
+        const gutterUploads = comp ? comp.stats().atlas.gutterUploads - gu0 : null;
+        const gl = ed.glCompositeUsable({});
+        // the screen as the write left the atlas, at each shift (a pan uploads nothing: the slots stay as they are)
+        const shown = [], regions = [];
+        for (const k of shifts) { place(scale, k); await frame(); shown.push(read()); regions.push(ed.viewportRegion().x); }
+        ed.releaseCaches();
+        for (const [i, k] of shifts.entries()) {
+            place(scale, k);
+            await frame();
+            const [worst, n] = diff(shown[i], read());
+            const row = { scale, name, shift: k, regionX: regions[i], gl, wrote, worst, differing: n, gutterUploads };
+            out.borders.push(row);
+            if (worst > 2) fails.push(scale + ", " + name + ", shift " + k + " px: the screen after the write is not the same view drawn from nothing (" + worst + " levels on " + n + " bytes; a slot kept a neighbour's old edge line)");
+        }
+        if (!wrote) fails.push(scale + ", " + name + ": the write did not reach the screen (the comparison would pass on nothing)");
+        const P = periods[scale];
+        const phases = new Set(regions.map((x) => ((x % P) + P) % P));
+        if (phases.size !== P) fails.push(scale + ", " + name + ": the shifts' regions start on " + JSON.stringify(regions) + ", not on " + P + " different pixels modulo " + P + " (the rows would not cover the sampling phases)");
+        // the rows compare the atlas with itself only if the GPU compositor drew them: a failure in the atlas path
+        // puts the editor on Canvas 2D for good (glViewComposite catches it and warns), and Canvas 2D against
+        // Canvas 2D passes whatever the gutter does
+        if (hasGl && !gl) fails.push(scale + ", " + name + ": the border rows ran on Canvas 2D, not on the GPU compositor (compositorOff " + ed.compositorOff + ")");
+        if (hasGl && ed.tileMode && !(gutterUploads > 0)) fails.push(scale + ", " + name + ": the write uploaded no gutter of a neighbour's slot (" + gutterUploads + "), so the rows did not exercise the gutter");
+    }
+}
+if (hasGl && ed.compositorOff) fails.push("the GPU compositor failed during the step and the editor stayed on Canvas 2D (see the console's warning)");
+await run("close_document", { doc: d.id, force: true });
+if (fails.length) throw new Error(fails.join(" | ") + " " + JSON.stringify(out));
+// the printed result is cut at 280 characters: the border rows first, one short line per write
+return { tiles: out.tiles, borders: out.borders.map((r) => r.scale + "/" + (r.name.startsWith("the undo") ? "undo" : "fill") + "/" + r.shift + ":" + r.worst + (r.gl ? "" : " 2d") + (r.gutterUploads ? " g" + r.gutterUploads : "")), masks: out.masks.length };
 """),
     ("pixel_backend_is_the_one_the_flag_chose", lambda c: backend_step(c)),
     ("editing_on_the_flags_backend_in_pixels_and_on_screen", lambda c: edit_step(c)),
