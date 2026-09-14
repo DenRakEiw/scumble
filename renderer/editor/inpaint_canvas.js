@@ -1378,6 +1378,34 @@ class InpaintEditor {
     }
 
     /**
+     * The level a view at `scale` (destination pixels per source pixel) draws a tile store from: the
+     * one whose cells are at least as dense as the destination, clamped to the mips a tile carries.
+     */
+    tileLevel(scale) {
+        return scale > 0 && Number.isFinite(scale) ? Math.max(0, Math.min(MIP_LEVELS, Math.floor(-Math.log2(scale)))) : 0;
+    }
+
+    /**
+     * Draw the part of a tile store the view shows into `ctx`, which carries the transform from image
+     * coordinates to the destination (docs/PLAN_BCE.md §C3): the region canvas at the view's level,
+     * built from the tiles' mips, instead of a display mirror of the whole thing and a Skia pyramid on
+     * it. `x, y, w, h` is where the pixels sit in the image. False when there is nothing to draw from
+     * (no tile of the region), which is a draw of nothing.
+     */
+    drawTilesInto(ctx, px, x, y, w, h, vp) {
+        const fx = w / px.width, fy = h / px.height;
+        const level = this.tileLevel(fx * vp.sx);
+        const rc = px.regionCanvas([(vp.x - x) / fx, (vp.y - y) / fy, (vp.x + vp.w - x) / fx, (vp.y + vp.h - y) / fy], level);
+        if (!rc) return false;
+        // the canvas holds whole tiles, its last row and column the clamp past the pixels' own edge
+        const sw = Math.min(rc.canvas.width, (px.width - rc.x) / rc.f);
+        const sh = Math.min(rc.canvas.height, (px.height - rc.y) / rc.f);
+        if (!(sw > 0) || !(sh > 0)) return false;
+        ctx.drawImage(rc.canvas, 0, 0, sw, sh, x + rc.x * fx, y + rc.y * fy, sw * rc.f * fx, sh * rc.f * fy);
+        return true;
+    }
+
+    /**
      * Draw the selection mask over the image rectangle it covers, into a context that already carries
      * the transform from image to screen coordinates. On tiles it is the part of the mask the view
      * shows, at the view's level, straight from the tiles (docs/PLAN_BCE.md §C3): no display mirror of
@@ -1393,7 +1421,7 @@ class InpaintEditor {
             ctx.drawImage(this.displaySource(this.sel, scale, true), 0, 0, this.width, this.height);
             return;
         }
-        const level = scale > 0 && Number.isFinite(scale) ? Math.max(0, Math.min(MIP_LEVELS, Math.floor(-Math.log2(scale)))) : 0;
+        const level = this.tileLevel(scale);
         const r = region || { x: 0, y: 0, w: this.width, h: this.height };
         const rc = this.sel.regionCanvas([r.x, r.y, r.x + r.w, r.y + r.h], level);
         if (!rc) return;
@@ -9188,8 +9216,15 @@ class InpaintEditor {
         const vp = this.viewPass;
         const gesture = this.pointer && this.pointer.layer === layer;
         const full = ctx.canvas.width === this.width && ctx.canvas.height === this.height;
-        const src = this.matchActive(layer) && !gesture && (vp || full)
-            ? this.layerMatchedPixels(layer, ctx.canvas, vp) : this.layerPixels(layer, true);
+        const matched = this.matchActive(layer) && !gesture && (vp || full);
+        // C3: a plain tile-backed layer in a region pass draws the part of itself the view shows, at
+        // the view's level, straight from its tiles. A mask, a colour match or a live stroke has
+        // prepared a canvas, and the canvas backend keeps the display pyramid.
+        if (vp && !matched && !gesture && !layer.maskPx && isTilePixels(layer.px)) {
+            this.drawTilesInto(ctx, layer.px, layer.x, layer.y, layer.w, layer.h, vp);
+            return;
+        }
+        const src = matched ? this.layerMatchedPixels(layer, ctx.canvas, vp) : this.layerPixels(layer, true);
         ctx.drawImage(this.displaySource(src, vp ? (layer.w * vp.sx) / src.width : 1, !!(vp && vp.screen)), layer.x, layer.y, layer.w, layer.h);
     }
 
@@ -10423,9 +10458,11 @@ class InpaintEditor {
             add(into, name === "canvas" ? "thumbnail" : name + "Thumbnail", th);
             // the part of the pixels a view shows, at a level, from the tiles' mips (C3: what the
             // selection's overlay draws instead of a mirror of the whole mask)
-            const rg = p.regionCanvasIfMade ? p.regionCanvasIfMade() : null;
-            if (rg && rg.width && !seen.has(rg)) { tileSum.regions++; tileSum.regionBytes += px(rg); }
-            add(into, name === "canvas" ? "region" : name + "Region", rg);
+            for (const rg of (p.regionCanvasesIfMade ? p.regionCanvasesIfMade() : [])) {
+                if (!rg || !rg.width || seen.has(rg)) continue;
+                tileSum.regions++; tileSum.regionBytes += px(rg);
+                add(into, name === "canvas" ? "region" : name + "Region", rg);
+            }
         };
         const sum = (list) => list.reduce((a, e) => a + (e.shared ? 0 : e.bytes), 0);
 

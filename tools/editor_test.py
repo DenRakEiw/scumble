@@ -237,6 +237,22 @@ if (flag) {
 } else if (ed._pyramidPending || !entry || !entry.levels.length || !out.display.kept) {
     throw new Error("the pyramid is rebuilt every frame: " + JSON.stringify(out.display));
 }
+// C3 step (d): with a filter layer in the stack the GPU compositor stands down and Canvas 2D draws
+// the view. On tiles a plain layer is drawn from its own tiles there too, so it still has no display
+// mirror and no pyramid entry - only its region canvas.
+{
+    const fx = ed.addFilterLayer("invert");
+    ed.renderLayers();
+    for (let i = 0; i < 4; i++) { ed.sceneSig = null; ed.draw(); await wait(20); if (!ed._pyramidPending) break; }
+    const usable = ed.glCompositeUsable({});
+    out.canvas2d = { usable, mirror: !!P.displayCanvasIfMade(M.px), pyramid: !!ed.pyramids.get(canvasOf(M.px)),
+                     regions: flag ? M.px.regionCanvasesIfMade().length : null };
+    if (usable) throw new Error("a filter layer did not push the view onto Canvas 2D: " + JSON.stringify(out.canvas2d));
+    if (flag && (out.canvas2d.mirror || out.canvas2d.pyramid)) throw new Error("Canvas 2D made a display mirror or a pyramid of a tile layer: " + JSON.stringify(out.canvas2d));
+    if (flag && !out.canvas2d.regions) throw new Error("Canvas 2D did not draw the layer from its tiles: " + JSON.stringify(out.canvas2d));
+    ed.removeLayer(fx.id);
+    ed.renderLayers();
+}
 return out;
 """
 
@@ -494,13 +510,13 @@ ed.draw();
 }
 if (ed.tileMode) {
     out.selMirror = !!ed.sel.displayCanvasIfMade();
-    out.selRegion = !!ed.sel.regionCanvasIfMade();
+    out.selRegion = !!ed.sel.regionCanvasesIfMade().length;
     out.selPyramid = !!ed.pyramids.get(P.displayCanvasIfMade(ed.sel));
     if (out.selMirror || out.selPyramid) throw new Error("the selection still has a display mirror or a pyramid: " + JSON.stringify(out));
     if (!out.selRegion) throw new Error("the selection was not drawn from its tiles: " + JSON.stringify(out));
     const freed = ed.sel.releaseDisplay();
     out.freed = freed;
-    if (!freed || ed.sel.regionCanvasIfMade()) throw new Error("releaseDisplay kept the region canvas: " + freed);
+    if (!freed || ed.sel.regionCanvasesIfMade().length) throw new Error("releaseDisplay kept the region canvas: " + freed);
 }
 ed.selectionDisplay = "ants";
 await run("close_document", { doc: d.id });

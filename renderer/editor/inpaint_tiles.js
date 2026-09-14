@@ -45,6 +45,8 @@ export const TILE_MAX_SIDE = 16777216;
 export const CANVAS_MAX_PIXELS = 268435456;
 /** Chromium's canvas side limit: a canvas of 65,536 px a side exists but draws and reads nothing (measured). */
 export const CANVAS_MAX_SIDE = 65535;
+/** Region canvases kept per pixels object: the screen's level and the navigator's. */
+const REGION_LEVELS = 2;
 /** Mips per tile: 128, 64, 32, 16, 8 px. */
 export const MIP_LEVELS = 5;
 /** The gutter a tile carries in an atlas slot, on every side (docs/PLAN_BCE.md §C3). */
@@ -417,7 +419,7 @@ const tiled = (Base) => class extends Base {
         this._mirror = null;
         this._mirrorDirty = null;
         this._thumb = null;
-        this._region = null;   // the part of the pixels a view shows, at a level, from the tiles' mips (C3)
+        this._regions = null;   // level -> the part of the pixels a view shows there, from the tiles' mips (C3)
         if (canvas) this._readCanvas(canvas);
     }
 
@@ -585,7 +587,7 @@ const tiled = (Base) => class extends Base {
     _changed(key) {
         if (this._mirrorDirty) this._mirrorDirty.add(key);
         if (this._thumb) this._thumb.dirty.add(key);
-        if (this._region) this._region.dirty.add(key);
+        if (this._regions) for (const rc of this._regions.values()) rc.dirty.add(key);
     }
 
     _dropTile(key) {
@@ -1069,20 +1071,32 @@ const tiled = (Base) => class extends Base {
         if (!r) return null;
         const tx0 = r[0] >> 8, ty0 = r[1] >> 8, tx1 = (r[2] - 1) >> 8, ty1 = (r[3] - 1) >> 8;
         const lastX = (this._w - 1) >> 8, lastY = (this._h - 1) >> 8;
-        let rc = this._region;
-        if (!rc || rc.level !== level || tx0 < rc.tx0 || ty0 < rc.ty0 || tx1 > rc.tx1 || ty1 > rc.ty1) {
+        if (!this._regions) this._regions = new Map();
+        let rc = this._regions.get(level);
+        if (!rc || tx0 < rc.tx0 || ty0 < rc.ty0 || tx1 > rc.tx1 || ty1 > rc.ty1) {
             // one tile of margin on each side, inside the image
             const ax0 = Math.max(0, tx0 - 1), ay0 = Math.max(0, ty0 - 1);
             const ax1 = Math.min(lastX, tx1 + 1), ay1 = Math.min(lastY, ty1 + 1);
             if (rc) { rc.canvas.width = 1; rc.canvas.height = 1; }
-            rc = this._region = {
+            rc = {
                 level, f, cell, tx0: ax0, ty0: ay0, tx1: ax1, ty1: ay1,
                 x: ax0 * TILE_SIZE, y: ay0 * TILE_SIZE,
                 canvas: cpuCanvas((ax1 - ax0 + 1) * cell, (ay1 - ay0 + 1) * cell, "a region canvas"),
                 img: new ImageData(cell, cell), zero: new ImageData(cell, cell),
-                dirty: null, all: true,
+                dirty: new Set(), all: true,
             };
-            rc.dirty = new Set();
+            this._regions.set(level, rc);
+            // the screen's level and the navigator's differ, so two are kept; a third is one
+            // level nothing is drawing at any more
+            while (this._regions.size > REGION_LEVELS) {
+                const [k, old] = this._regions.entries().next().value;
+                if (k === level) break;
+                old.canvas.width = 1; old.canvas.height = 1;
+                this._regions.delete(k);
+            }
+        } else {
+            this._regions.delete(level);   // re-inserted last: the Map's order is the LRU
+            this._regions.set(level, rc);
         }
         if (rc.all || rc.dirty.size) {
             const ctx = rc.canvas.getContext("2d");
@@ -1096,7 +1110,24 @@ const tiled = (Base) => class extends Base {
                 ctx.putImageData(rc.img, ox, oy);
             };
             if (rc.all) {
-                for (let ty = rc.ty0; ty <= rc.ty1; ty++) for (let tx = rc.tx0; tx <= rc.tx1; tx++) put(tx, ty);
+                // the whole region at once: one putImageData of a buffer the tiles are copied into row
+                // by row. Per tile it is one call each, and at level 3 on a 15k document that is 2,400
+                // calls of 32 x 32 px - 180 ms in the frame that first shows the view (measured).
+                const cw = rc.canvas.width, ch = rc.canvas.height;
+                const all = new ImageData(cw, ch);
+                const dst = all.data;
+                for (let ty = rc.ty0; ty <= rc.ty1; ty++) {
+                    for (let tx = rc.tx0; tx <= rc.tx1; tx++) {
+                        const lv = this._levelBytes(tx, ty, level);
+                        if (!lv) continue;
+                        const ox = (tx - rc.tx0) * cell, oy = (ty - rc.ty0) * cell;
+                        for (let y = 0; y < cell; y++) {
+                            const from = lv.off + y * cell * 4;
+                            dst.set(lv.data.subarray(from, from + cell * 4), ((oy + y) * cw + ox) * 4);
+                        }
+                    }
+                }
+                ctx.putImageData(all, 0, 0);
             } else {
                 for (const key of rc.dirty) put(key & 0xFFFF, key >>> 16);
             }
@@ -1106,9 +1137,9 @@ const tiled = (Base) => class extends Base {
         return { canvas: rc.canvas, x: rc.x, y: rc.y, f };
     }
 
-    /** The region canvas if one was made (memoryReport); null otherwise. */
-    regionCanvasIfMade() {
-        return this._region ? this._region.canvas : null;
+    /** The region canvases that were made (memoryReport); an empty array when none. */
+    regionCanvasesIfMade() {
+        return this._regions ? Array.from(this._regions.values(), (rc) => rc.canvas) : [];
     }
 
     /** The thumbnail canvas if it was made (memoryReport); null otherwise. */
@@ -1123,11 +1154,12 @@ const tiled = (Base) => class extends Base {
      */
     releaseDisplay() {
         let bytes = 0;
-        const rc = this._region;
-        if (rc) {
-            bytes += rc.canvas.width * rc.canvas.height * 4;
-            this._region = null;
-            rc.canvas.width = 1; rc.canvas.height = 1;
+        if (this._regions) {
+            for (const rc of this._regions.values()) {
+                bytes += rc.canvas.width * rc.canvas.height * 4;
+                rc.canvas.width = 1; rc.canvas.height = 1;
+            }
+            this._regions = null;
         }
         const th = this._thumb;
         if (th) {
