@@ -1410,6 +1410,48 @@ frame, release ≤ 1 frame, grow / shrink / invert ≤ 50 ms blocked at 15k, wan
 object ≤ 100 ms blocked; `memoryReport().scratch` without a selection canvas and without
 preview canvases after a stroke.
 
+#### Where C5 starts, as the tree stands after C3 (2026-09-14)
+
+The plan above is unchanged; this is only the list of sites and the numbers to beat, so the session
+that builds C5 does not have to find them again. Everything named here is in
+`renderer/editor/inpaint_canvas.js` unless it says otherwise.
+
+**(1) The stroke store — this is what finishes C3.** After C3 (d) the live preview is the **only**
+thing left that makes a tile store's display mirror: `layerWithStroke` (5384) asks
+`canvasOf(layer.px)` and `refreshStrokePreview` (5352) copies the whole layer into `strokePreview`, a
+canvas as large as the layer. Measured A/B on a 15000 × 10000 document (a base, one full paint layer,
+a `film.look` layer): **the first frame of a brush stroke is 355 ms and leaves 2 mirrors, 1.1 GB**,
+while every other frame of that document is now 0.1 ms. The sites: `StrokeBuffer` and
+`newStrokeBuffer` (5253), `clipCanvasFor` (5262), `clippedStroke` (5281), `commitStroke` (5304),
+`refreshStrokePreview` (5352), `layerWithStroke` (5384), `maskWithStroke` (3050), and the scratch
+canvases `strokePreview` / `maskPreview` / `maskedPreview` / `clipScratch` that
+`releaseStrokeScratch` keeps. The compositor's side is `_drawTiles` in `inpaint_compositor.js`: the
+op modes and the `u_mask` sampler of §C3 that C3 did not build are exactly what the stroke store and
+`_masked` need, so they belong to this step now.
+`perf_test.py`'s `brush dab + frame` row (worst 182 ms at 15k, median 0.1) and `stroke commit (undo
+copy)` are the rows that must move; read them **without ComfyUI on the card** (it changes the op rows
+by 3 to 5×).
+
+**(2) The selection on mask tiles.** What still materialises the whole mask, with the numbers from
+C2's hand-over (15000 × 10000, blocked on the main thread, against 0.04 to 0.5 s on canvases):
+`applyShapeToSelection` (4371) rewrites all of it through `drawInto(null)`; grow, shrink, invert and
+feather **1.1 to 1.6 s**; the band wand **2.4 s** and the object wand **1.0 to 4.4 s**; the bucket
+**1.1 s**; `selectionDab` (4230); `floodRegion` and `sampleRegion` (4508); `drawTo` (the smudge and
+the stroke clip) reads the mirror. Those seconds are the largest numbers left in tile mode by a wide
+margin — larger than anything C3 moved.
+
+**What C3 leaves in place for them**: `regionCanvas(rect, level)` and `_levelBytes(tx, ty, level)` in
+`inpaint_tiles.js` (the view's part of a store from the tiles' mips, two levels kept),
+`tileWithGutter` for the atlas, and `drawTilesInto` / `drawSelectionInto` / `tileLevel` in the
+editor. A band of tiles for the worker is `_keysIn` plus `readRect` per band; the answer comes back
+through `writeRect`, which already shares whole tiles when a block covers one.
+
+**Do not start with C4.** C2's final review already replaced the undo steps' PNGs with copy-on-write
+clones, so a step shares its tiles and the measured cost is small (`undo step` 18 ms, the whole undo
+budget 4.3 MB on the benchmark document). What C4 still owes is exact byte accounting and the
+`frozen` counter a dropped step leaves one too high (a needless copy on the next write, never a wrong
+pixel) — a short clean-up after C5, not before it.
+
 ### C6. Mips in the worker, thumbnails, hover, object map, colour match from mips (3 days)
 
 - A whole-layer change (filter apply, `setPixels`, transform, paste, load) marks all its

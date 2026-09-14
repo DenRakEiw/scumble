@@ -107,11 +107,16 @@ step 66 → 18, the worst `redraw with ants` frame 391-479 → 47-70, the docume
 **956 → 196 MB**, and the compositor holds 91 MB of atlas pages where the old path made a 600 MB CPU
 mirror per source plus a GPU copy of it.
 
-**What C3 still owes, and where to start**: the **live stroke's preview** is the last thing that makes
+**What C3 still owes, and where to start**: `docs/PLAN_BCE.md` §C5 ends with **"Where C5 starts, as
+the tree stands after C3"**, which names every site and the numbers to beat. In short: the **live
+stroke's preview** is the last thing that makes
 a display mirror (`layerWithStroke` copies the whole layer into a full-size canvas at the first dab:
-355 ms and 1.1 GB at 15k, measured A/B) — that is C5's stroke store. Then the mask sampler (`u_mask`)
-and the three op modes of the plan, after which `WINDOW_PX` / `_source` / `_texture` and the display
-pyramid can go. The full-resolution Canvas 2D path of exports, runs and the flattened composite still
+355 ms and 1.1 GB at 15k, measured A/B) — that is C5's stroke store. The mask sampler (`u_mask`) and the three op modes C3 did not build
+belong to that step, after which `WINDOW_PX` / `_source` / `_texture` and the display pyramid can go.
+The seconds left in tile mode are C5's other half: grow / shrink / invert / feather 1.1 to 1.6 s, the
+wands 1.0 to 4.4 s, the bucket 1.1 s, all of which still materialise the whole selection. **C4 is
+not the next step**: C2 already replaced the undo steps' PNGs with copy-on-write clones, so what is
+left there is byte accounting and a `frozen` counter, a short clean-up after C5. The full-resolution Canvas 2D path of exports, runs and the flattened composite still
 reads the mirror; that is phase E.
 
 **Gates** (fresh dev instances, own profiles, strict): `--tiles on` and `--tiles off` with `pixels
