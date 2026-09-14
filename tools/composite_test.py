@@ -40,7 +40,7 @@ BUILD = """
     await new Promise((r) => setTimeout(r, 300));
     ed.resizeCanvas();
     window.__cmp = ed;
-    const { LayerPixels, MaskPixels } = await import("./editor/inpaint_pixels.js");
+    const { Layer: LayerPixels, Mask: MaskPixels } = ed.pixels;   // the editor's backend (tiles or canvases)
 
     const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
     // base: a gradient with hard shapes, so blend modes have something to bite on
@@ -246,7 +246,7 @@ FILTER_CHAIN = """
 (async () => {
     const ed = window.__cmp;
     const { FILTERS } = await import("./editor/inpaint_filters.js");
-    const { MaskPixels } = await import("./editor/inpaint_pixels.js");
+    const { Mask: MaskPixels } = ed.pixels;
     // A realistic stack on top of the reference document. Ids are pinned: grain seeds its
     // field from the layer id, so without that no two runs match.
     const want = [["film.look", "chain-look", { preset: "portra400" }], ["film.halation", "chain-hal", null], ["grain", "chain-grain", { amount: 30, size: 2 }]];
@@ -352,7 +352,8 @@ WINDOW = """
     shell.activate(ed);
     await new Promise((r) => setTimeout(r, 300));
     ed.resizeCanvas();
-    const { LayerPixels, pixelsOptions } = await import("./editor/inpaint_pixels.js");
+    const { pixelsOptions } = await import("./editor/inpaint_pixels.js");
+    const { Layer: LayerPixels } = ed.pixels;
     const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
     const base = mk(W, H);
     { const x = base.getContext("2d"); const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#1c4f8a"); g.addColorStop(1, "#8a1c4f"); x.fillStyle = g; x.fillRect(0, 0, W, H); for (let i = 0; i < 300; i++) { x.fillStyle = `hsl(${(i * 37) % 360},70%,55%)`; x.fillRect((i * 977) % W, (i * 613) % H, 120, 90); } }
@@ -503,11 +504,11 @@ async def run(c, args):
                 problems.append("compositor not used for %s" % ",".join(unused))
             if st["windows"] < 2 or st["windowMB"] * 2 > st["wholeMB"]:
                 problems.append("windows %s holding %s MB against %s MB whole" % (st["windows"], st["windowMB"], st["wholeMB"]))
-            # With --pixels-copy (the C1 write check) a layer's display pixels are a new copy on every
-            # frame, and the compositor keys a source window on the canvas it is handed, so a copy is
-            # uploaded again whatever the pan. That counter only means something in share mode, which
-            # is what ships; the pixels are compared in both modes.
-            if win["uploadsAfterSmallPan"] != 0 and not win.get("pixelsCopy"):
+            # The compositor keys a source window on the canvas it is handed. Since C2 step (b) the display
+            # draws the pixels' display canvas (canvasOf: the canvas itself, or the tile store's mirror),
+            # never a toCanvas() copy, so this holds with --pixels-copy and on tiles too (C1 skipped it in
+            # copy mode, where every frame handed the compositor a new copy).
+            if win["uploadsAfterSmallPan"] != 0:
                 problems.append("a pan inside the margin uploaded %s windows" % win["uploadsAfterSmallPan"])
             if win["uploadsAfterBigPan"] < 2:
                 problems.append("a pan beyond the margin uploaded %s windows" % win["uploadsAfterBigPan"])

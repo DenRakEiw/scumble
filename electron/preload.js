@@ -12,8 +12,14 @@ function on(channel, cb) {
 
 contextBridge.exposeInMainWorld("scumble", {
     info: () => ipcRenderer.invoke("app:info"),
-    // set by main.js for the editor's pixel access (renderer/editor/inpaint_pixels.js)
-    pixels: { strict: process.argv.includes("--scumble-strict"), copy: process.argv.includes("--scumble-pixels-copy") },
+    // set by main.js for the editor's pixel access (renderer/editor/inpaint_pixels.js); `tiles` is the
+    // backend main.js resolved (null when it passed none), `tilesFrom` what decided it
+    pixels: {
+        strict: process.argv.includes("--scumble-strict"),
+        copy: process.argv.includes("--scumble-pixels-copy"),
+        tiles: process.argv.includes("--scumble-tiles=1") ? true : process.argv.includes("--scumble-tiles=0") ? false : null,
+        tilesFrom: (() => { const a = process.argv.find((x) => x.startsWith("--scumble-tiles-from=")); try { return a ? decodeURIComponent(a.slice(21)) : null; } catch (_) { return null; } })(),
+    },
     // memory (docs/PHASE6_PLAN.md step 1a): the process table from main plus what this
     // renderer can say about itself. All sizes are KB.
     metrics: async () => ({

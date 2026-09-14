@@ -138,6 +138,8 @@ export function status(ed) {
         pending: { segment: !!ed.segmentPending, cutout: !!ed.cutoutPending, upsample: !!ed.upsamplePending, transform: !!ed.pending, objects: !!ed.objectsPending, provider: !!ed.providerPending },
         recipe: r ? { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", provider: r.provider || null } : null,
         connected: !!host.connected, status: ed.status || "",
+        // the pixel backend of this document (docs/PLAN_BCE.md §C2 step b) and what chose it
+        pixels: { tiles: !!ed.tileMode, from: ed.tileModeFrom || null },
     };
 }
 
@@ -270,8 +272,9 @@ const COMMANDS = {
             if (ed.textEdit) ed.endTextEdit(false);
             if (a.path) {
                 const size = (+a.width > 0 || +a.height > 0) ? [+a.width > 0 ? Math.round(+a.width) : 0, +a.height > 0 ? Math.round(+a.height) : 0] : null;
+                const prev = ed.base;   // loadFile says a failure in the status line; a tab with an image kept its old one
                 await ed.loadFile(await fileFrom(a), { size, ask: false });
-                if (!ed.base) throw new Error(ed.status || "the image could not be loaded");
+                if (!ed.base || ed.base === prev) throw new Error(ed.status || "the image could not be loaded");
             } else {
                 if (!a.filename) throw new Error("pass path or filename");
                 const ref = { filename: a.filename, subfolder: a.subfolder || "", type: a.type || "input" };

@@ -33,11 +33,13 @@ ROOT = os.path.dirname(HERE)
 SRC = os.path.join(ROOT, "renderer", "editor")
 DEFAULT_NODE = r"F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\custom_nodes\ComfyUI-InpaintCanvas"
 
-# the editor modules both hosts load; app-only files (host.js, stitch.js, px/) stay here
+# the editor modules both hosts load (paths under renderer/editor/, "/" separated); app-only files
+# (host.js, stitch.js) stay here. px/kernels_js.js goes with the tile store (C2), which imports it.
 FILES = [
     "inpaint_canvas.js", "inpaint_filters.js", "inpaint_filters_gl.js", "inpaint_curves.js",
     "inpaint_text.js", "inpaint_raster.js", "inpaint_export.js", "inpaint_worker.js",
-    "inpaint_compositor.js", "inpaint_brushes.js", "inpaint_pixels.js",
+    "inpaint_compositor.js", "inpaint_brushes.js", "inpaint_pixels.js", "inpaint_tiles.js",
+    "px/kernels_js.js",
 ]
 NODE_OWN = ["host.js", "inpaint_node.js", "inpaint_bridge.js"]
 HEADER = "// Generated from DenRakEiw/scumble renderer/editor/{name} by tools/build_node.py. Do not edit here: edit it in the app repo and build.\n"
@@ -123,7 +125,12 @@ def parses_as_module(text):
 
 
 def check_dir(js_dir, label, problems):
-    texts = {os.path.basename(p): read(p) for p in glob.glob(os.path.join(js_dir, "*.js"))}
+    # every module under js/ (ComfyUI loads subfolders too), keyed by its "/" separated path
+    texts = {}
+    for p in glob.glob(os.path.join(js_dir, "**", "*.js"), recursive=True):
+        rel = os.path.relpath(p, js_dir).replace("\\", "/")
+        if not rel.startswith("fonts/"):
+            texts[rel] = read(p)
     if parses_as_module("export const a = 1;\nconst = ;\n")[0]:
         problems.append("the parse check accepts a broken module: it checks nothing")
     for name, text in texts.items():
@@ -135,7 +142,8 @@ def check_dir(js_dir, label, problems):
             if not imported:
                 problems.append(f"{label}/{name}: uses host.* but does not import host from ./host.js")
         for group, target in IMPORT_NAMED.findall(text) + IMPORT_DYNAMIC.findall(text):
-            tname = os.path.normpath(target).replace("\\", "/").lstrip("./")
+            # resolved against the importing module's folder
+            tname = os.path.normpath(os.path.join(os.path.dirname(name), target)).replace("\\", "/")
             if tname not in texts:
                 problems.append(f"{label}/{name}: imports from {target}, which is not there")
                 continue

@@ -114,7 +114,7 @@ export class Document {
         if (undo) this.editor.pushUndo({ kind: same ? "layer" : "layerfull", id: l.id });
         // another size replaces the pixels with a new object (the layerfull step holds the old one)
         if (same) l.px.writeRect(imageData, 0, 0);
-        else l.px = LayerPixels.fromImageData(imageData);
+        else l.px = this.editor.pixels.Layer.fromImageData(imageData);
         l.ref = null; l._fcache = null;
         this.editor.markLayerChanged(l);
         this.editor.renderLayers();
@@ -130,9 +130,9 @@ export class Document {
     addLayer(source, { name, x = 0, y = 0, w, h, activate = true } = {}) {
         this._need();
         let px;
-        if (source instanceof ImageData) px = LayerPixels.fromImageData(source);
-        else if (source && source.getContext) px = LayerPixels.fromCanvas(source);
-        else if (source == null) px = LayerPixels.empty(this.width, this.height);
+        if (source instanceof ImageData) px = this.editor.pixels.Layer.fromImageData(source);
+        else if (source && source.getContext) px = this.editor.pixels.Layer.fromCanvas(source);
+        else if (source == null) px = this.editor.pixels.Layer.empty(this.width, this.height);
         else throw new Error("addLayer needs an ImageData, a canvas or nothing");
         this.editor.paintCounter += 1;
         const layer = this.editor.addLayer({

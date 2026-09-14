@@ -106,8 +106,8 @@ BUILD = """
 (async () => {
     const W = %(w)d, H = %(h)d;
     const M = window.__mem;
-    const { LayerPixels } = await import("./editor/inpaint_pixels.js");
     const ed = M.shell.newDocument();
+    const { Layer: LayerPixels } = ed.pixels;   // the editor's backend (tiles or canvases)
     M.shell.activate(ed);
     await new Promise((r) => setTimeout(r, 300));   // never requestAnimationFrame: a hidden window has none
     ed.resizeCanvas();
@@ -296,6 +296,9 @@ REPORT = """
         editors: editors.length,
         docs: M.docs.length,
         layerBytes: sumOf((r) => r.layers.bytes),
+        // pixels on tiles (C2): typed arrays the canvas census cannot see, and the display mirrors
+        tileBytes: sumOf((r) => r.tiles ? r.tiles.bytes : 0),
+        mirrorBytes: sumOf((r) => r.tiles ? r.tiles.mirrorBytes : 0),
         pyramidBytes: sumOf((r) => r.pyramid.bytes),
         scratchBytes: sumOf((r) => r.scratch.bytes),
         undoBytes: sumOf((r) => r.undo.undo.rectBytes + r.undo.redo.rectBytes),
@@ -337,7 +340,7 @@ FREE = """
     const M = window.__mem;
     let freed = 0;
     for (const ed of M.host.editors()) {
-        if (ed.releaseCaches) freed += (await ed.releaseCaches({ deep: true })) || 0;
+        if (ed.releaseCaches) freed += (await ed.releaseCaches({ deep: true, mirrors: true })) || 0;
     }
     try { await M.host.editors()[0].freeHelperModels(); } catch (_) { /* no helpers */ }
     return JSON.stringify({ freed });
@@ -486,6 +489,8 @@ async def main():
         print(f"    {n:>4}  {mb(b):>7} MB  {where}")
     print(f"  layers {mb(last['layerBytes'])} MB, pyramid {mb(last['pyramidBytes'])} MB, scratch {mb(last['scratchBytes'])} MB, "
           f"undo {mb(last['undoBytes'])} MB (+{mb(last['undoHeldBytes'])} MB held), objects {mb(last['objectBytes'])} MB")
+    if last.get("tileBytes") or last.get("mirrorBytes"):
+        print(f"  of which tiles {mb(last['tileBytes'])} MB and display mirrors {mb(last['mirrorBytes'])} MB (pixels on tiles)")
     print(f"  compositor {last['compositorEntries']} textures {mb(last['compositorBytes'])} MB, "
           f"pool {mb(last['poolBytes'])} MB (+{mb(last['poolHeldBytes'])} MB in scopes, {last['poolForeign']} foreign)")
     if last.get("resources"):

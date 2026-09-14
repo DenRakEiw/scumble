@@ -36,6 +36,26 @@ on that same Ctrl+click path.
 separates the auto-select path from everything else. The question was put on 2026-09-11 and is
 still unanswered.
 
+### Selection undo and bounds lose isolated pixels above 1 MP (canvas backend)
+
+**Found** 2026-09-14 by C2's final review (`docs/PLAN_BCE.md` §C2), present since phase A (0.1.10):
+on the canvas backend, which is what the packaged app runs, a selection above 1 MP takes its extent
+from the selection's 1/16 display level (`selectionExtent()` in `inpaint_canvas.js`). Four smoothed
+halvings round an isolated pixel away (below about alpha 128 always, and at sizes that do not halve
+evenly even alpha 255), so the selection's undo step does not copy it and its bounds scan does not
+look for it. Measured: 2401 × 1601, a 400 × 300 rectangle plus 24 isolated pixels of alpha 120 or
+255: the extent [270, 270, 2307, 1523] misses the opaque one at (1447, 1525), `getBounds()` comes back
+as [300, 300, 2280, 1491] against the exact [300, 300, 2280, 1526] (a run's crop and the ants box leave
+selected pixels out), and a `select_rect` elsewhere followed by an undo restores the selection without
+that pixel. 3000 × 2000 loses two alpha-120
+pixels the same way; 2048 × 1536 nothing. A wand's or a matte's speckle is where it shows.
+
+**Not fixed, on purpose**: an extent that cannot drop a pixel needs a full-resolution readback of the
+selection on this backend (seconds at 15k, the cost phase A took out), or a max-pooling level the 2D
+canvas cannot build. The selection drag, which lost the same pixels, takes the whole image instead
+since C2 (b)'s review. On tiles the extent is the tile set's exact bounds and nothing is lost; C5 makes
+the selection mask tiles and C7 retires the canvas backend, which closes this.
+
 ### A very large PNG stays jerky to work on
 
 **Reported** 2026-09-11 by DenRakEiw, on a PNG about 15,000 px on its long side. Panning

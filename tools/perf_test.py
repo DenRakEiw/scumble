@@ -37,9 +37,9 @@ BENCH = """
 (async () => {
     const W = %(w)d, H = %(h)d;
     const shell = window.__perf.shell;
-    const { LayerPixels } = window.__perf.pixels;
     const before = window.editor;
     const ed = shell.newDocument();
+    const { Layer: LayerPixels } = ed.pixels;   // the editor's backend (tiles or canvases)
     shell.activate(ed);
     await new Promise((r) => setTimeout(r, 300));   // not requestAnimationFrame: it never fires while the window is hidden
     ed.resizeCanvas();
@@ -153,6 +153,14 @@ BENCH = """
     ed.fitView();
     out.fit = bench(() => ed.fitView(), 3);
     out.redraw_cached = bench(() => ed.draw(), 10);   // hover / marching ants: nothing changed
+    // 1:1, no display levels: the stack (with its filter layer, so on Canvas 2D) draws the layers' own display
+    // canvases; on tiles a CPU mirror drawn there moved all of it every frame (C2 step b's review)
+    ed.view.scale = 1; ed.view.angle = 0; ed._fitted = false;
+    ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
+    ed.draw(); ed.draw();
+    out.pan_1to1 = bench((i) => { ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw(); }, 30);
+    ed.fitView();
+    ed.draw();
 
     // --- a brush stroke on a paint layer ---------------------------------------
     ed.setTool("paint");
@@ -177,8 +185,16 @@ BENCH = """
     out.undo_bytes = ed.undoBytes;
     // The 60 frames above were issued in a tight loop, so the GPU still holds their work; a
     // real stroke is paced by the display. Drain it, so the rows below measure their own cost
-    // and not that backlog (a readback of one pixel waits for a canvas's queue).
-    const settle = () => { for (const px of [ed.sel, paintLayer.px]) px.readRect(0, 0, 1, 1); try { ed.canvas.getContext("2d").getImageData(0, 0, 1, 1); } catch (_) { /* a WebGL canvas */ } try { const comp = ed.compositor(); if (comp) comp.gl.finish(); } catch (_) { /* no compositor */ } };
+    // and not that backlog (a readback of one pixel waits for a canvas's queue). The canvases read
+    // are the ones the frames drew into and the pixels' display canvases: on tiles a readRect reads
+    // renderer memory and waits for nothing, so the drain cannot go through the pixels (C2 step b).
+    const { canvasOf } = window.__perf.pixels;
+    const settle = () => {
+        for (const c of [canvasOf(ed.sel), canvasOf(paintLayer.px), ed.viewCanvas, ed.sceneCanvas, ed.canvas]) {
+            try { if (c) c.getContext("2d").getImageData(0, 0, 1, 1); } catch (_) { /* no 2D context */ }
+        }
+        try { const comp = ed.compositor(); if (comp) comp.gl.finish(); } catch (_) { /* no compositor */ }
+    };
     ed.draw();
     settle();
     const undoAt = performance.now();
@@ -188,7 +204,8 @@ BENCH = """
     // --- selection, autosave, full composite ------------------------------------
     settle();
     const selAt = performance.now();
-    ed.sel.drawInto(null, (s) => { s.fillStyle = "#ff0000"; s.fillRect(Math.round(W / 5), Math.round(H / 5), Math.round(W / 3), Math.round(H / 3)); });
+    // a fill of the rectangle, not a drawInto of the whole selection: on tiles that is a full-size scratch, and the row would time the harness
+    ed.sel.fill([Math.round(W / 5), Math.round(H / 5), Math.round(W / 5) + Math.round(W / 3), Math.round(H / 5) + Math.round(H / 3)], "#ff0000");
     ed.markSelectionChanged([Math.round(W / 5), Math.round(H / 5), Math.round(W / 5 + W / 3), Math.round(H / 5 + H / 3)]);
     out.selection_change = [+(performance.now() - selAt).toFixed(1), 0];
     out.get_value = bench(() => ed.getValue(), 3);
@@ -217,11 +234,8 @@ BENCH = """
         return [done(), wall];   // [blocked, wall]
     };
     const rect = () => {
-        ed.sel.drawInto(null, (s) => {
-            s.clearRect(0, 0, W, H);
-            s.fillStyle = "#ff0000";
-            s.fillRect(Math.round(W * 0.2), Math.round(H * 0.2), Math.round(W * 0.4), Math.round(H * 0.4));
-        });
+        ed.sel.clear();
+        ed.sel.fill([Math.round(W * 0.2), Math.round(H * 0.2), Math.round(W * 0.2) + Math.round(W * 0.4), Math.round(H * 0.2) + Math.round(H * 0.4)], "#ff0000");
         ed.markSelectionChanged();
         ed.getBounds();
     };
@@ -238,6 +252,20 @@ BENCH = """
     rect();
     ed.activeLayerId = paintLayer.id;
     out.bucket = await op(() => ed.bucketFill(Math.round(W * 0.25), Math.round(H * 0.25)));
+    // a fill and a clear of a 100 px selection on the paint layer, and the undo of the fill: on tiles each was a
+    // whole-layer write and a whole-layer undo copy until C2's final review
+    const small = () => {
+        ed.sel.clear();
+        ed.sel.fill([Math.round(W * 0.5), Math.round(H * 0.5), Math.round(W * 0.5) + 100, Math.round(H * 0.5) + 100], "#ff0000");
+        ed.markSelectionChanged();
+        ed.getBounds();
+    };
+    small();
+    ed.activeLayerId = paintLayer.id;
+    ed.color = "#00ff00"; ed.brushOpacity = 1;
+    out.fill_small = await op(() => ed.fillSelection());
+    out.undo_fill = await op(() => ed.undoStep());
+    out.clear_small = await op(() => ed.clearSelectedPixels());
     const flat = ed.flattenToCanvas({ forRun: true });
     // the editor's own path (the worker when there is one), and the plain main-thread encode
     out.png = await op(async () => { const u = await ed.snapUrl(flat); URL.revokeObjectURL(u); });
@@ -261,6 +289,7 @@ ROWS = [
     ("wheel zoom (10)", "zoom"),
     ("fit view", "fit"),
     ("redraw, nothing changed", "redraw_cached"),
+    ("pan at 1:1 (30 frames)", "pan_1to1"),
     ("redraw with ants", "draw_with_ants"),
     ("brush dab + frame", "stroke_frame"),
     ("stroke commit (undo copy)", "stroke_commit"),
@@ -280,6 +309,9 @@ OP_ROWS = [
     ("magic wand (whole-image band)", "wand"),
     ("magic wand (an object)", "wand_object"),
     ("bucket fill", "bucket"),
+    ("fill selection (100 px)", "fill_small"),
+    ("undo of that fill", "undo_fill"),
+    ("clear selected pixels (100 px)", "clear_small"),
     ("PNG of the composite", "png"),
     ("the same without the worker", "png_main"),
 ]

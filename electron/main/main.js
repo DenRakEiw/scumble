@@ -137,7 +137,27 @@ function installProtocol() {
 
 // ---- window ---------------------------------------------------------------------------
 
+/**
+ * The editor's pixel backend (docs/PLAN_BCE.md §C2, "C2 as built", step b): the tile store or one
+ * canvas per layer. The command line wins (--tiles / --no-tiles), then the environment
+ * (SCUMBLE_TILES=1 / 0), then `tiles` in settings.json when the user put a boolean there, and
+ * otherwise the build: on in a dev run, off in the packaged app until C7. The default is resolved
+ * here and never written: settings.set() stores the whole merged object, so a computed default in
+ * settings.DEFAULTS would stick to whichever build saved first. `from` says which of them decided.
+ */
+function tileMode() {
+    const argv = process.argv;
+    if (argv.includes("--tiles")) return { on: true, from: "command line" };
+    if (argv.includes("--no-tiles")) return { on: false, from: "command line" };
+    const env = process.env.SCUMBLE_TILES;
+    if (env === "1" || env === "0") return { on: env === "1", from: "SCUMBLE_TILES" };
+    const s = settings.get().tiles;
+    if (typeof s === "boolean") return { on: s, from: "settings" };
+    return { on: !app.isPackaged, from: app.isPackaged ? "packaged build" : "dev build" };
+}
+
 function createWindow() {
+    const tiles = tileMode();
     const saved = settings.get().window || {};
     win = new BrowserWindow({
         width: saved.width || 1600,
@@ -159,10 +179,13 @@ function createWindow() {
             backgroundThrottling: false,
             // dev builds run the editor's pixel access strict (docs/PLAN_BCE.md C1): the old
             // layer.canvas / editor.selection names throw instead of warning. SCUMBLE_STRICT=0
-            // turns it off, --pixels-copy makes toCanvas() hand out copies (the gates' write check)
+            // turns it off, --pixels-copy makes toCanvas() hand out copies (the gates' write check),
+            // --scumble-tiles carries tileMode() (always passed: the renderer has no default of its own)
             additionalArguments: [
                 ...(!app.isPackaged && process.env.SCUMBLE_STRICT !== "0" ? ["--scumble-strict"] : []),
                 ...(process.argv.includes("--pixels-copy") ? ["--scumble-pixels-copy"] : []),
+                `--scumble-tiles=${tiles.on ? "1" : "0"}`,
+                `--scumble-tiles-from=${encodeURIComponent(tiles.from)}`,
             ],
         },
     });
