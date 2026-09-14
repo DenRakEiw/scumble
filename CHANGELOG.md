@@ -21,6 +21,15 @@ the section for its version; `docs/` and the commit history hold the technical d
   to 8, a selection change from 78 to 21 and undo from 66 to 18, and the copies the display
   holds fell from 956 MB to 196. The first brush stroke on such a picture still pauses for
   about a third of a second while the live preview is made; that comes next.
+- **A brush stroke no longer pauses on a large picture.** The live preview of a stroke used to
+  be built as a copy of the whole layer, filled from a full-size copy of its pixels: on a
+  15000 × 10000 picture the first dab of every stroke stopped the window for about a fifth of
+  a second and cost a gigabyte. It is now composed only in the part of the picture the window
+  shows, at the resolution it is shown at. The first dab takes about a millisecond, and the
+  copies the display holds while you paint drop by 1.1 GB in tile mode and by 570 MB with the
+  tile backend off — so this one helps the installed app too. While you paint zoomed out, the
+  soft edge of the stroke is now drawn at the zoom you see instead of being shrunk from the
+  full-resolution stroke; the pixels the stroke finally writes are unchanged.
 
 ## 0.1.12 — 2026-09-14
 

@@ -2072,6 +2072,117 @@ try {
 }
 return out;
 """),
+    ("live_stroke_preview_shows_what_the_commit_writes", """
+// C5 (a): the live preview of a stroke is composed inside the region the pass draws, at the pass's
+// resolution (liveStrokeView), instead of in a canvas as large as the layer filled from the layer's
+// display canvas. What the preview shows has to be what the commit then writes: at 1:1 neither path
+// resamples, so the screen just before the commit and just after it are the same pixels. Five
+// gestures: paint, erase, alpha lock, a masked layer and a stroke on the mask itself, the first of
+// them clipped to a selection. On tiles the stroke must make no display mirror and no pyramid entry.
+const P = await import("./editor/inpaint_pixels.js");
+const d = await run("new_document");
+window.__tv = d.id;
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 2400, height: 1600, doc: d.id });
+const { Layer: LayerPixels, Mask: MaskPixels } = ed.pixels;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const pattern = () => {
+    const c = mk(2400, 1600), x = c.getContext("2d");
+    x.fillStyle = "#204080"; x.fillRect(0, 0, 2400, 1600);
+    for (let i = 0; i < 60; i++) { x.fillStyle = `hsl(${(i * 37) % 360},70%,55%)`; x.fillRect((i * 211) % 2300, (i * 97) % 1500, 90, 70); }
+    return c;
+};
+// the GPU compositor would draw the frame after the commit and the Canvas 2D path the frames before
+// it; this step compares the two moments, so both take the same path
+const compOff = ed.compositorOff;
+ed.compositorOff = true;
+ed.setTool("paint");
+ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false;
+ed.view.x = -700; ed.view.y = -500;
+ed.hover = null;
+ed.brushSize = 90; ed.hardness = 0.6; ed.eraseHardness = 0.6; ed.brushOpacity = 0.7; ed.color = "#ff2050";
+// one readback per shot: 400 single-pixel getImageData calls would switch canvas acceleration off
+// for the whole document (docs/PLAN_BCE.md §C2, html_canvas_element.cc)
+const c0 = ed.imageToScreen(760, 820).map(Math.round), c1 = ed.imageToScreen(1300, 1060).map(Math.round);
+const SX = c0[0], SY = c0[1], SW = c1[0] - c0[0], SH = c1[1] - c0[1];
+if (SW < 100 || SH < 100 || SX < 0 || SY < 0) throw new Error("the sample rectangle is not on screen: " + JSON.stringify([SX, SY, SW, SH]));
+const shot = () => ed.canvas.getContext("2d").getImageData(SX, SY, SW, SH).data;
+const diff = (a, b) => { let worst = 0, n = 0; for (let i = 0; i < a.length; i++) { const q = Math.abs(a[i] - b[i]); if (q) n++; if (q > worst) worst = q; } return [worst, n]; };
+const out = { tiles: ed.tileMode, cases: {} };
+const one = async (name, opts) => {
+    const L = ed.addLayer({ name, kind: "paint", px: LayerPixels.fromCanvas(pattern()), x: 0, y: 0, w: 2400, h: 1600, dirty: true });
+    if (opts.mask) {
+        L.maskPx = ed.pixels.Mask.empty(2400, 1600);
+        L.maskPx.fill([0, 0, 1100, 1600], "#ffffff");
+        ed.markMaskChanged(L);
+    }
+    L.alphaLock = !!opts.alphaLock;
+    ed.activeLayerId = L.id;
+    ed.markLayerChanged(L);
+    if (opts.sel) await run("select_rect", { x: 600, y: 700, w: 800, h: 500, doc: d.id });
+    else await run("select_none", { doc: d.id });
+    ed.sceneSig = null; ed.draw(); await wait(60); ed.sceneSig = null; ed.draw(); await wait(60);
+    const target = opts.kind === "maskpaint" ? L.maskPx : L.px;
+    const p = { kind: opts.kind, layer: L, stroke: ed.newStrokeBuffer(target), clip: ed.strokeClip(L, target),
+                erase: !!opts.erase, white: opts.kind === "maskpaint", last: [800, 900], pressure: 1 };
+    ed.pointer = p;
+    for (let i = 1; i <= 8; i++) {
+        const x = 800 + i * 56, y = 900 + (i % 3) * 26;
+        ed.layerDab(p, p.last[0], p.last[1], x, y);
+        p.last = [x, y];
+        ed.hover = null; ed.sceneSig = null; ed.draw();
+    }
+    await wait(40); ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40);
+    const used = !!(ed.strokeView && ed._strokeViewOf === p);
+    const mirror = ed.tileMode ? !!P.displayCanvasIfMade(L.px) : null;
+    const pyramid = ed.tileMode ? !!ed.pyramids.get(P.displayCanvasIfMade(L.px)) : null;
+    const before = shot();
+    const box = ed.strokeRect(p, target);
+    ed.commitStroke(p);
+    ed.pointer = null;
+    if (opts.kind === "maskpaint") ed.markMaskChanged(L, box); else ed.markLayerChanged(L, box);
+    ed.releaseStrokeScratch();
+    ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(60); ed.sceneSig = null; ed.draw(); await wait(60);
+    const after = shot();
+    const [worst, n] = diff(before, after);
+    out.cases[name] = { used, mirror, pyramid, worst, differing: n, bytes: before.length };
+    if (!used) throw new Error(name + ": the region preview was not the path taken");
+    // a masked layer is still drawn through its `_masked` canvas, which is filled from the layer's
+    // display canvas: that is C3's remaining `u_mask` work, not the stroke's (docs/PLAN_BCE.md §C3)
+    if (ed.tileMode && !opts.mask && (mirror || pyramid)) throw new Error(name + ": the stroke made a display mirror or a pyramid entry: " + JSON.stringify(out.cases[name]));
+    if (worst > 2) throw new Error(name + ": the preview is not what the commit wrote (" + worst + " levels on " + n + " of " + before.length + " bytes)");
+    ed.removeLayer(L.id);
+    ed.renderLayers();
+};
+// how much a stroke changes at all, so the comparison above cannot pass on an empty preview
+const emptyL = ed.addLayer({ name: "reach", kind: "paint", px: LayerPixels.fromCanvas(pattern()), x: 0, y: 0, w: 2400, h: 1600, dirty: true });
+ed.activeLayerId = emptyL.id;
+await run("select_none", { doc: d.id });
+ed.markLayerChanged(emptyL);
+ed.sceneSig = null; ed.draw(); await wait(60);
+const clean = shot();
+{
+    const p = { kind: "layerpaint", layer: emptyL, stroke: ed.newStrokeBuffer(emptyL.px), clip: null, erase: false, last: [800, 900], pressure: 1 };
+    ed.pointer = p;
+    for (let i = 1; i <= 8; i++) { const x = 800 + i * 56, y = 900 + (i % 3) * 26; ed.layerDab(p, p.last[0], p.last[1], x, y); p.last = [x, y]; ed.hover = null; ed.sceneSig = null; ed.draw(); }
+    await wait(40); ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40);
+    out.reach = diff(clean, shot());
+    ed.pointer = null;
+    ed.releaseStrokeScratch();
+}
+ed.removeLayer(emptyL.id);
+if (out.reach[0] < 40 || out.reach[1] < 5000) throw new Error("the stroke barely changes the screen, so the comparison proves nothing: " + JSON.stringify(out.reach));
+await one("paint_clipped", { kind: "layerpaint", sel: true });
+await one("paint", { kind: "layerpaint" });
+await one("erase", { kind: "layerpaint", erase: true });
+await one("alpha_lock", { kind: "layerpaint", alphaLock: true });
+await one("masked", { kind: "layerpaint", mask: true });
+await one("mask_stroke", { kind: "maskpaint", mask: true });
+ed.compositorOff = compOff;
+await run("select_none", { doc: d.id });
+return out;
+"""),
     ("pixel_backend_is_the_one_the_flag_chose", lambda c: backend_step(c)),
     ("editing_on_the_flags_backend_in_pixels_and_on_screen", lambda c: edit_step(c)),
     ("pixels_nothing_draws_get_no_display_mirror", lambda c: undrawn_step(c)),
@@ -2080,7 +2191,7 @@ return out;
     ("c2_final_review_drag_undo_steps_writes_mirrors_report_limits", lambda c: final_step(c)),
     ("closed_tabs_are_collected", lambda c: closed_tabs_are_collected(c)),
     ("cleanup", """
-for (const id of [window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
+for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";
 """),
 ]

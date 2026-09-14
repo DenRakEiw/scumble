@@ -1452,6 +1452,54 @@ budget 4.3 MB on the benchmark document). What C4 still owes is exact byte accou
 `frozen` counter a dropped step leaves one too high (a needless copy on the next write, never a wrong
 pixel) — a short clean-up after C5, not before it.
 
+#### C5 as built: the decisions taken while building it (2026-09-14)
+
+**(a) The live stroke is composed in the region the pass draws** (`inpaint_canvas.js`, commit "C5 (a)"):
+
+- **`liveStrokeView(layer, vp)`** is the layer as a region pass shows it while a stroke runs on it:
+  a scratch of the **pass's own size** (1865 × 1198 on this screen, not 15000 × 10000), holding the
+  layer's visible part at the pass's level with the stroke buffer over it at the brush opacity and
+  the gesture's operation, and the mask multiplied in afterwards. `refreshStrokeView` redraws only
+  the dab's rectangle, clipped to whole destination pixels so what a dab does not touch stays the
+  bytes the frame before drew; `maskStrokeView` is the same scratch for a stroke on the mask itself.
+  `drawLayer` takes it whenever a region pass draws the gesture's layer, and `layerWithStroke` /
+  `maskWithStroke` stay for the full-resolution consumers (a run, an export, a flattened composite),
+  which is phase E's path anyway.
+- **What it replaces**: `layerWithStroke` makes a canvas as large as the layer and fills it from the
+  layer's display canvas at the first dab — on a tile store that canvas is its display **mirror**,
+  which had to be built first. Measured on a 15000 × 10000 document (base, one full paint layer, a
+  `film.look` layer, so every frame is the Canvas 2D path): the first dab plus its frame **180.6 →
+  0.9 ms**, the mirrors alive during the stroke **2 (1144 MB) → 0**, the display pyramids **187.8 →
+  0 MB**. `perf_test.py`'s `brush dab + frame` worst frame **199.2 → 0.9 ms** and `stroke commit`
+  **242.9 → 36.5 ms**. On the **canvas backend** (the packaged default) the same change takes the
+  scratch during a stroke from 1733.8 to 1170.2 MB, 572 MB less, with every frame row inside noise.
+- **The base is a plain layer too.** `drawLayersInto` still drew `basePx` through `displaySource`,
+  so a tile document with a filter layer in it made a whole-image mirror (572 MB) and a Skia pyramid
+  (188 MB) for the base alone, before any stroke. It takes `drawTilesInto` now, like every other
+  plain layer since C3 (d). Counter-proof: with that one branch disabled the probe reports the
+  mirror and the pyramid back, exactly those two numbers.
+- **`clipCanvasFor`** (the stroke's clip to the selection, and the smudge's per-step clip) took the
+  **whole** selection as a canvas, which on tiles is the selection's display mirror: 572 MB for a
+  clip of a few hundred pixels. On tiles it materialises the box it needs from the selection's tiles
+  instead, with a margin of `BLIT_MARGIN` so a fractional draw samples the neighbours as a draw from
+  the whole thing does. On canvases the selection *is* its canvas, so the draw stays what it was (a
+  crop would allocate once per smudge step).
+- **What changed in what you see**: the preview composes the stroke at the **display's** resolution,
+  where it used to compose at the layer's and let the display shrink the result. At a zoom below 1:1
+  the soft edge of a live stroke is therefore drawn slightly differently from the pixels the commit
+  finally writes; at 1:1 the two are the same to 2 levels, which is what the gate asserts. The
+  CHANGELOG says so.
+- **Gate**: `editor_test.py` step `live_stroke_preview_shows_what_the_commit_writes`, on both
+  backends: six gestures (paint, paint clipped to a selection, erase, alpha lock, a masked layer, a
+  stroke on the mask) at 1:1, each comparing the screen just before the commit with the screen just
+  after it over a 540 × 240 px readback, plus a "reach" measurement first so the comparison cannot
+  pass on a preview that drew nothing, plus "no display mirror and no pyramid entry" on tiles for
+  the gestures whose layer has no mask (a masked layer still goes through its `_masked` canvas,
+  which is C3's remaining `u_mask` work). Six mutations, each red: the brush opacity dropped from
+  the preview (66 levels), the stroke 8 px off (124), an erase drawn as a paint (179), the dab's
+  rectangle not redrawn (157), the mask drawn over instead of multiplied in (223), and the base's
+  tile branch disabled (the mirror and the pyramid come back).
+
 ### C6. Mips in the worker, thumbnails, hover, object map, colour match from mips (3 days)
 
 - A whole-layer change (filter apply, `setPixels`, transform, paste, load) marks all its

@@ -20,7 +20,7 @@ import { readAbr, tipCanvas } from "./inpaint_brushes.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
-import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions } from "./inpaint_pixels.js";
+import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN } from "./inpaint_pixels.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS } from "./inpaint_tiles.js";
 
 /**
@@ -5262,13 +5262,24 @@ class InpaintEditor {
     clipCanvasFor(layer, target, x, y, w, h, into = null) {
         const c = into && into.width === w && into.height === h ? into : makeCanvas(w, h);
         const ctx = c.getContext("2d");
+        const fx = layer.w / target.width, fy = layer.h / target.height;
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.globalCompositeOperation = "source-over";
         ctx.globalAlpha = 1;
         ctx.clearRect(0, 0, w, h);
         ctx.setTransform(target.width / layer.w, 0, 0, target.height / layer.h, -x, -y);
-        this.sel.drawTo(ctx, -layer.x, -layer.y);
+        // C5: on tiles only the part of the selection the box covers, materialised from its tiles,
+        // with a margin of BLIT_MARGIN so a fractional draw samples the neighbours as a draw from the
+        // whole thing does. `drawTo` reads the selection's display mirror, which at 15000 x 10000 is
+        // 572 MB built for a clip of a few hundred pixels. A canvas selection is its own canvas: the
+        // draw is free there and a crop would allocate per dab (the smudge asks once a step).
+        const r = isTilePixels(this.sel)
+            ? clampRect([layer.x + x * fx - BLIT_MARGIN, layer.y + y * fy - BLIT_MARGIN,
+                layer.x + (x + w) * fx + BLIT_MARGIN, layer.y + (y + h) * fy + BLIT_MARGIN], this.width, this.height)
+            : null;
+        if (!r) this.sel.drawTo(ctx, -layer.x, -layer.y);
+        else if (r[2] > r[0] && r[3] > r[1]) ctx.drawImage(this.sel.toCanvas(r), r[0] - layer.x, r[1] - layer.y, r[2] - r[0], r[3] - r[1]);
         ctx.restore();
         return c;
     }
@@ -5325,7 +5336,7 @@ class InpaintEditor {
      */
     strokeDirty(p, x0, y0, x1, y1, pad) {
         const b = [Math.min(x0, x1) - pad, Math.min(y0, y1) - pad, Math.max(x0, x1) + pad, Math.max(y0, y1) + pad];
-        for (const k of ["dirtyLayer", "dirtyMask", "dirtyMasked"]) {
+        for (const k of ["dirtyLayer", "dirtyMask", "dirtyMasked", "dirtyView"]) {
             const d = p[k];
             p[k] = d ? [Math.min(d[0], b[0]), Math.min(d[1], b[1]), Math.max(d[2], b[2]), Math.max(d[3], b[3])] : b;
         }
@@ -5374,10 +5385,148 @@ class InpaintEditor {
 
     /** After a gesture: the live preview canvases of a large layer are given back, small ones are kept for the next stroke. */
     releaseStrokeScratch() {
-        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "clipScratch"]) {
+        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "clipScratch", "strokeView", "strokeMaskView"]) {
             const c = this[k];
             if (c && c.width * c.height > STROKE_SCRATCH_KEEP_PX) this[k] = null;
         }
+        this._strokeViewOf = null;
+        this._strokeViewSig = null;
+    }
+
+    /** A gesture whose stroke buffer is drawn over `layer`'s pixels for the live preview. */
+    liveStrokeOn(layer) {
+        const p = this.pointer;
+        return !!(p && p.stroke && (p.kind === "layerpaint" || p.kind === "maskpaint") && p.layer === layer);
+    }
+
+    /**
+     * The layer as a region pass shows it while a live stroke runs on it (docs/PLAN_BCE.md §C5):
+     * the part the pass covers, at the pass's resolution, in a scratch of the pass's size, redrawn
+     * inside the dab's rectangle only. `layerWithStroke` makes a canvas as large as the layer and
+     * fills it from the layer's display canvas at the first dab, which on a tile store is its
+     * display mirror: 355 ms and two mirrors of 572 MB on a 15000 x 10000 document, measured, and
+     * the last thing in the tree that made a mirror for the screen.
+     *
+     * Null when the caller has to take that path after all: a pass whose region is not a whole
+     * number of destination pixels would resample the scratch on the way back.
+     */
+    liveStrokeView(layer, vp) {
+        const p = this.pointer;
+        const target = p.kind === "maskpaint" ? layer.maskPx : layer.px;
+        if (!target || !layer.px) return null;
+        const vw = vp.w * vp.sx, vh = vp.h * vp.sy;
+        if (!(vw >= 1 && vh >= 1)) return null;
+        if (Math.abs(vw - Math.round(vw)) > 1e-6 || Math.abs(vh - Math.round(vh)) > 1e-6) return null;
+        const W = Math.round(vw), H = Math.round(vh);
+        if (!this.strokeView || this.strokeView.width !== W || this.strokeView.height !== H) {
+            this.strokeView = makeCanvas(W, H);
+            this.strokeView._livePreview = true;   // never cached in the display pyramid
+            this._strokeViewSig = null;
+        }
+        // the scratch holds one (gesture, layer, region): a pan, a zoom or a new gesture rebuilds it
+        const sig = [vp.x, vp.y, vp.w, vp.h, layer.id, p.kind, layer.x, layer.y, layer.w, layer.h,
+            layer.px.version, layer.maskPx ? layer.maskPx.version : -1].join(",");
+        const full = this._strokeViewOf !== p || this._strokeViewSig !== sig;
+        if (full) { this._strokeViewOf = p; this._strokeViewSig = sig; p.dirtyView = null; }
+        const box = full ? null : this.takeStrokeBox(p, "dirtyView");
+        if (full || box) this.refreshStrokeView(layer, vp, box);
+        return this.strokeView;
+    }
+
+    /** A live preview's dirty rectangle in image coordinates, taken; null when nothing changed. */
+    takeStrokeBox(p, key) {
+        const d = p[key];
+        p[key] = null;
+        return d || null;
+    }
+
+    /** Redraw `box` (image coordinates; all of the scratch when null) of the live stroke's view scratch. */
+    refreshStrokeView(layer, vp, box) {
+        const p = this.pointer;
+        const c = this.strokeView, ctx = c.getContext("2d");
+        ctx.save();
+        try {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = "source-over";
+            let dx0 = 0, dy0 = 0, dx1 = c.width, dy1 = c.height;
+            if (box) {
+                dx0 = Math.max(0, Math.floor((box[0] - vp.x) * vp.sx) - 1);
+                dy0 = Math.max(0, Math.floor((box[1] - vp.y) * vp.sy) - 1);
+                dx1 = Math.min(c.width, Math.ceil((box[2] - vp.x) * vp.sx) + 1);
+                dy1 = Math.min(c.height, Math.ceil((box[3] - vp.y) * vp.sy) + 1);
+                if (dx1 <= dx0 || dy1 <= dy0) return;
+            }
+            // whole destination pixels, so the clip has no anti-aliased edge and what a dab does not
+            // touch stays exactly the pixels the frame before drew (destination-in below needs it too)
+            ctx.beginPath();
+            ctx.rect(dx0, dy0, dx1 - dx0, dy1 - dy0);
+            ctx.clip();
+            ctx.clearRect(dx0, dy0, dx1 - dx0, dy1 - dy0);
+            ctx.setTransform(vp.sx, 0, 0, vp.sy, -vp.x * vp.sx, -vp.y * vp.sy);
+            this.drawPixelsInto(ctx, layer, layer.px, vp);
+            if (p.kind === "layerpaint") {
+                this.drawStrokeInto(ctx, layer, layer.px, p.erase ? "destination-out" : (layer.alphaLock ? "source-atop" : "source-over"));
+            }
+            if (layer.maskPx) {
+                ctx.globalAlpha = 1;
+                ctx.globalCompositeOperation = "destination-in";
+                if (p.kind === "maskpaint") {
+                    const m = this.maskStrokeView(layer, vp, dx0, dy0, dx1, dy1);
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    ctx.drawImage(m, dx0, dy0, dx1 - dx0, dy1 - dy0, dx0, dy0, dx1 - dx0, dy1 - dy0);
+                } else {
+                    this.drawPixelsInto(ctx, layer, layer.maskPx, vp);
+                }
+            }
+        } finally {
+            ctx.restore();
+        }
+    }
+
+    /** The mask of `layer` with the in-progress mask stroke on it, in a scratch of the pass's size. */
+    maskStrokeView(layer, vp, dx0, dy0, dx1, dy1) {
+        const s = this.strokeView;
+        if (!this.strokeMaskView || this.strokeMaskView.width !== s.width || this.strokeMaskView.height !== s.height) {
+            this.strokeMaskView = makeCanvas(s.width, s.height);
+            this.strokeMaskView._livePreview = true;
+        }
+        const m = this.strokeMaskView, ctx = m.getContext("2d");
+        ctx.save();
+        try {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = "source-over";
+            ctx.beginPath();
+            ctx.rect(dx0, dy0, dx1 - dx0, dy1 - dy0);
+            ctx.clip();
+            ctx.clearRect(dx0, dy0, dx1 - dx0, dy1 - dy0);
+            ctx.setTransform(vp.sx, 0, 0, vp.sy, -vp.x * vp.sx, -vp.y * vp.sy);
+            this.drawPixelsInto(ctx, layer, layer.maskPx, vp);
+            this.drawStrokeInto(ctx, layer, layer.maskPx, this.pointer.erase ? "destination-out" : "source-over");
+        } finally {
+            ctx.restore();
+        }
+        return m;
+    }
+
+    /** Some pixels of `layer` (its own or its mask) over the layer's rectangle, at the pass's level. */
+    drawPixelsInto(ctx, layer, px, vp) {
+        if (isTilePixels(px)) { this.drawTilesInto(ctx, px, layer.x, layer.y, layer.w, layer.h, vp); return; }
+        ctx.drawImage(this.displaySource(px, (layer.w * vp.sx) / px.width, false), layer.x, layer.y, layer.w, layer.h);
+    }
+
+    /** The in-progress stroke over the layer's rectangle, at the brush opacity and the gesture's operation. */
+    drawStrokeInto(ctx, layer, target, op) {
+        const cs = this.clippedStroke(this.pointer);
+        if (!cs) return;
+        const sb = this.pointer.stroke;
+        const fx = layer.w / target.width, fy = layer.h / target.height;
+        ctx.globalAlpha = this.brushOpacity;
+        ctx.globalCompositeOperation = op;
+        ctx.drawImage(cs, layer.x + sb.x * fx, layer.y + sb.y * fy, sb.w * fx, sb.h * fy);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = "source-over";
     }
 
     /** Layer pixels with the in-progress stroke applied, for live preview: a canvas to draw from, never into; `display` as in layerPixels. */
@@ -9173,7 +9322,12 @@ class InpaintEditor {
         } else {
             const bs = this.basePx;
             const vp = this.viewPass;
-            if (bs) ctx.drawImage(this.displaySource(bs, vp ? vp.sx : 1, !!(vp && vp.screen)), 0, 0, this.width, this.height);
+            // C5: the base of a tile document draws the part the view shows from its own tiles, like
+            // every other plain layer since C3 (d). It was the one source left on displaySource in a
+            // region pass, and so the one that still made a whole-image mirror and a Skia pyramid
+            // (572 MB and 188 MB at 15000 x 10000) as soon as a filter layer put the pass on Canvas 2D.
+            if (bs && vp && isTilePixels(bs)) this.drawTilesInto(ctx, bs, 0, 0, this.width, this.height, vp);
+            else if (bs) ctx.drawImage(this.displaySource(bs, vp ? vp.sx : 1, !!(vp && vp.screen)), 0, 0, this.width, this.height);
         }
         let chain = null;   // filter layers that follow each other keep the composite on the GPU
         for (let i = 0; i < this.layers.length; i++) {
@@ -9223,6 +9377,13 @@ class InpaintEditor {
         if (vp && !matched && !gesture && !layer.maskPx && isTilePixels(layer.px)) {
             this.drawTilesInto(ctx, layer.px, layer.x, layer.y, layer.w, layer.h, vp);
             return;
+        }
+        // C5: the layer a live stroke runs on, in a region pass: the layer and the stroke composed
+        // inside the region only, at the pass's resolution (liveStrokeView). layerWithStroke below
+        // makes a canvas as large as the layer and fills it from the layer's display mirror.
+        if (vp && !matched && this.liveStrokeOn(layer)) {
+            const live = this.liveStrokeView(layer, vp);
+            if (live) { ctx.drawImage(live, vp.x, vp.y, vp.w, vp.h); return; }
         }
         const src = matched ? this.layerMatchedPixels(layer, ctx.canvas, vp) : this.layerPixels(layer, true);
         ctx.drawImage(this.displaySource(src, vp ? (layer.w * vp.sx) / src.width : 1, !!(vp && vp.screen)), layer.x, layer.y, layer.w, layer.h);
@@ -10031,7 +10192,7 @@ class InpaintEditor {
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }
-        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "clipScratch"]) {
+        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "clipScratch", "strokeView", "strokeMaskView"]) {
             if (this[name]) { freed += px(this[name]); this[name] = null; }
         }
         if (this.flatCache) { freed += px(this.flatCache.canvas); this.flatCache = null; }
@@ -10503,7 +10664,7 @@ class InpaintEditor {
         const scratch = [];
         addPixels(scratch, "_baseCanvas", this._basePx);   // the name mem_test and the docs know
         addPixels(scratch, "selection", this.sel);
-        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "clipScratch", "filterMaskCanvas"]) add(scratch, name, this[name]);
+        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "clipScratch", "strokeView", "strokeMaskView", "filterMaskCanvas"]) add(scratch, name, this[name]);
         add(scratch, "flatCache", this.flatCache && this.flatCache.canvas);
 
         // undo / redo: the rect copies plus the canvases (or tiles) the "layers" / "canvas" snapshots
