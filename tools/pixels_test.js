@@ -357,6 +357,35 @@ function pixelsCases(P, T) {
             return out;
         })],
 
+        ["draw_into_callback_is_synchronous", both(async ({ Layer, snap, rec }) => {
+            // docs/PLUGINS.md: a callback that returns a promise throws on both backends (the tile backend
+            // copies its scratch back when the callback returns; here what it drew after an await would land
+            // unclipped), and what it drew before its first await is kept
+            const p = Layer.empty(300, 200);
+            let msg = "did not throw", after = null;
+            try {
+                p.drawInto([20, 20, 200, 150], async (ctx) => {
+                    ctx.fillStyle = "#3a7"; ctx.fillRect(30, 30, 60, 40);
+                    after = await Promise.resolve("resumed");   // nothing drawn after the await
+                });
+            } catch (err) { msg = err.message; }
+            if (!/a drawInto callback must be synchronous/.test(msg)) throw new Error(`an async callback: ${msg}`);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            if (after !== "resumed") throw new Error("the async callback did not resume");
+            rec("an async callback", "throws");
+            // a thenable counts as a promise; a callback's ordinary return value still comes back
+            let thenable = "did not throw";
+            try { p.drawInto(null, () => ({ then() {} })); } catch (err) { thenable = err.message; }
+            if (!/must be synchronous/.test(thenable)) throw new Error(`a thenable: ${thenable}`);
+            const back = p.drawInto([0, 0, 300, 200], (ctx) => { ctx.fillStyle = "#c33"; ctx.fillRect(150, 100, 50, 50); return 42; });
+            if (back !== 42) throw new Error(`a synchronous callback returned ${back}`);
+            rec("a synchronous callback's return value", back);
+            // the pixels are usable again after the throw, and the next callback starts clipped as asked
+            p.drawInto([100, 0, 120, 200], (ctx) => { ctx.fillStyle = "#00f"; ctx.fillRect(0, 0, 300, 20); });
+            snap(p, "before the await kept, the next draws land");
+            return { async: "throws", thenable: "throws", back };
+        })],
+
         ["write_rect_ops", both(async ({ mk, same, px, paint, pair }) => {
             const out = {};
             for (const op of ["source-over", "destination-out", "source-atop", "destination-in", "copy"]) {

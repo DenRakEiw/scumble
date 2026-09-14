@@ -35,6 +35,8 @@
  *   after every write, which is also what refreshes the display levels.
  * - Straight alpha in and out (`ImageData`), like the canvas itself.
  * - `drawInto`'s `fn` is synchronous: the tile backend writes its scratch back when `fn` returns.
+ *   A `fn` that returns a promise throws on both backends, after what it drew before its first
+ *   await is kept.
  */
 
 let OPTIONS = { strict: false, copy: false, software: false, tiles: null, tilesFrom: null };
@@ -218,7 +220,13 @@ export class LayerPixels {
                 clip.rect(r[0], r[1], r[2] - r[0], r[3] - r[1]);
                 ctx.clip(clip);
             }
-            return fn(ctx);
+            const back = fn(ctx);
+            if (back && typeof back.then === "function") {
+                // the tile backend throws here too: what fn draws after an await is lost there, and
+                // lands unclipped here once the context is restored
+                throw new Error("Inpaint Canvas: a drawInto callback must be synchronous");
+            }
+            return back;
         } finally {
             this._drawing--;
             ctx.restore();

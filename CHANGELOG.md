@@ -84,8 +84,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   when Scumble is run from its source, where it is tested alongside the canvases.
 - **For plugin authors:** inside `px.drawInto(rect, ctx => ...)` compose on the transform the
   context comes with (`scale`, `translate`, `save` / `restore`) and never set one; with the tile
-  store it is not the identity. Clip only to rectangles on whole pixels, and do not give a layer
-  pixels of your own or from another document: replace them through `setPixels` or `addLayer`.
+  store it is not the identity. Keep the callback synchronous (one that returns a promise
+  throws) and do not read pixels back from `ctx`. Clip only to rectangles on whole pixels, and
+  do not give a layer pixels of your own or from another document: replace them through
+  `setPixels` or `addLayer`.
   The full list of rules is in `docs/PLUGINS.md`.
 
 ## 0.1.11 — 2026-09-13

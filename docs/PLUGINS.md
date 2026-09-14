@@ -131,7 +131,12 @@ puts tiles behind the same interface, so a plugin that goes through it keeps wor
 - **Instead**, if the `Document` API is not enough: `rawLayer(key).px` / `.maskPx` with
   `width`, `height`, `readRect(x, y, w, h)` (ImageData), `writeRect(imageData, x, y, op, alpha)`,
   `drawInto(rect, ctx => ...)` (Canvas 2D drawing clipped to `rect` = `[x0, y0, x1, y1]`, from a
-  fresh context state; do not read `ctx.canvas`. The transform `ctx` comes with maps the pixels'
+  fresh context state; do not read `ctx.canvas`, and do not read pixels back from `ctx`
+  (`getImageData`: with the tile engine `ctx` belongs to a scratch canvas of `rect`, so the read
+  is shifted by the rect's origin; read through `readRect` before or after the callback instead).
+  Keep the callback synchronous: with the tile engine the drawing is copied into the layer when
+  the callback returns, so nothing drawn after an `await` arrives, and a callback that returns a
+  promise throws on either backend. The transform `ctx` comes with maps the pixels'
   own coordinates and is not necessarily the identity: with the tile engine it is a translation
   onto a scratch canvas of `rect`. Compose on it with `scale`, `translate`, `rotate`,
   `transform` and `save` / `restore`; never call `setTransform` / `resetTransform`, and do not
