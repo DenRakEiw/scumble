@@ -47,6 +47,11 @@ export const CANVAS_MAX_PIXELS = 268435456;
 export const CANVAS_MAX_SIDE = 65535;
 /** Mips per tile: 128, 64, 32, 16, 8 px. */
 export const MIP_LEVELS = 5;
+/** The gutter a tile carries in an atlas slot, on every side (docs/PLAN_BCE.md §C3). */
+export const GUTTER = 1;
+/** The side of a tile at `level`, and of its slot in an atlas page. */
+export const levelSide = (level) => TILE_SIZE >> level;
+export const slotSide = (level) => (TILE_SIZE >> level) + 2 * GUTTER;
 const STRIP_W = 4096;              // fromImage / fromCanvas: strips 4096 wide ...
 // ... and 4096 rows high for fromImage (fromCanvas reads 256 rows at a time): an image of at most 4096 px
 // a side is one untranslated draw, byte for byte the canvas backend's; in 256-row strips a scaled image
@@ -65,6 +70,7 @@ function newTile() {
         version: ++tileSeq,
         mips: null, mipsVersion: -1,
         ext: null, extVersion: -1,
+        edge: null, edgeVersion: -1, edgeW: 0, edgeH: 0,   // the clamp-extended copy of an edge tile (extendTile)
         frozen: 0,                                 // how many other pixels objects hold this tile
         _img: null, _u32: null,
     };
@@ -247,6 +253,67 @@ function tileExtent(t) {
     t.ext = y0 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
     t.extVersion = t.version;
     return t.ext;
+}
+
+// ---- the atlas's tiles (docs/PLAN_BCE.md §C3) -----------------------------------------------------
+
+let PREMUL = null;
+
+/** P[(a << 8) | c]: the premultiplied byte Skia stores for a straight (c, a) (SkMulDiv255Round). */
+function premulTable() {
+    if (PREMUL) return PREMUL;
+    const t = new Uint8Array(65536);
+    for (let a = 0; a < 256; a++) {
+        for (let c = 0; c < 256; c++) {
+            const x = c * a + 128;
+            t[(a << 8) | c] = (x + (x >> 8)) >> 8;
+        }
+    }
+    PREMUL = t;
+    return t;
+}
+
+/**
+ * A tile's bytes clamp-extended to the whole 256 x 256 from its valid part (vw x vh): the columns
+ * right of vw hold column vw - 1 and the rows below vh hold row vh - 1.
+ *
+ * Only the last tile of a row or a column has a valid part smaller than itself, and the pixels
+ * outside it are transparent. Halving that 2 x 2 mixes the last valid column with a transparent one
+ * wherever the valid width is odd, so the image's own edge would fade by a level of mip; and the
+ * texel a LINEAR sample reaches past the edge of a tile's slot would be that transparent column.
+ * Repeating the edge pixel is what a texture clamped to its edge gives, which is what the canvas
+ * backend's one texture per layer did.
+ */
+function extendTile(t, vw, vh) {
+    if (t.edgeVersion === t.version && t.edgeW === vw && t.edgeH === vh) return t.edge;
+    let e = t.edge;
+    if (!e) e = t.edge = { data: new Uint8ClampedArray(TILE_BYTES), mips: null, u32: null };
+    const d = e.data;
+    d.set(t.data);
+    const s32 = LITTLE ? (e.u32 || (e.u32 = new Uint32Array(d.buffer))) : null;
+    const src32 = LITTLE ? u32Of(t) : null;
+    if (vw < TILE_SIZE) {
+        for (let y = 0; y < vh; y++) {
+            const row = y * TILE_SIZE;
+            if (s32) { const v = src32[row + vw - 1]; s32.fill(v, row + vw, row + TILE_SIZE); continue; }
+            const i = (row + vw - 1) * 4;
+            for (let x = vw; x < TILE_SIZE; x++) {
+                const j = (row + x) * 4;
+                d[j] = d[i]; d[j + 1] = d[i + 1]; d[j + 2] = d[i + 2]; d[j + 3] = d[i + 3];
+            }
+        }
+    }
+    if (vh < TILE_SIZE) {
+        const last = (vh - 1) * TILE_SIZE;
+        for (let y = vh; y < TILE_SIZE; y++) {
+            if (s32) { s32.copyWithin(y * TILE_SIZE, last, last + TILE_SIZE); continue; }
+            d.copyWithin(y * TILE_SIZE * 4, last * 4, (last + TILE_SIZE) * 4);
+        }
+    }
+    e.mips = mipChain(d, TILE_SIZE, MIP_LEVELS, e.mips || new Uint8Array(mipChainBytes(TILE_SIZE, MIP_LEVELS)));
+    t.edgeVersion = t.version;
+    t.edgeW = vw; t.edgeH = vh;
+    return e;
 }
 
 // ---- the scratch pool ----------------------------------------------------------------------------
@@ -437,6 +504,81 @@ const tiled = (Base) => class extends Base {
             t.mipsVersion = t.version;
         }
         return t.mips;
+    }
+
+    /**
+     * The bytes of the tile at (tx, ty) at `level` (one buffer, `off` bytes in, `side` x `side`
+     * straight-alpha RGBA8), clamp-extended when the tile is the last of a row or a column
+     * (`extendTile`). Null when the tile is not allocated or lies outside the image.
+     */
+    _levelBytes(tx, ty, level) {
+        const t = this._tiles.get((ty << 16) | tx);
+        if (!t) return null;
+        const ox = tx << 8, oy = ty << 8;
+        const vw = Math.min(TILE_SIZE, this._w - ox), vh = Math.min(TILE_SIZE, this._h - oy);
+        if (vw <= 0 || vh <= 0) return null;
+        const edge = vw < TILE_SIZE || vh < TILE_SIZE ? extendTile(t, vw, vh) : null;
+        if (!level) return { data: edge ? edge.data : t.data, off: 0 };
+        if (edge) return { data: edge.mips, off: mipChainBytes(TILE_SIZE, level - 1) };
+        return { data: this.mips(tx, ty), off: mipChainBytes(TILE_SIZE, level - 1) };
+    }
+
+    /**
+     * The tile at (tx, ty) at `level` (0 to MIP_LEVELS) with a one-pixel gutter of its neighbours'
+     * edge pixels, **premultiplied** RGBA8, `(TILE_SIZE >> level) + 2` px a side: one slot of the
+     * compositor's atlas page (docs/PLAN_BCE.md §C3). Written into `out` (a fresh buffer when none is
+     * given, which the caller then keeps and hands back) and returned; null when the tile is not
+     * allocated, which is the atlas's "nothing to draw here".
+     *
+     * The gutter is what stops a LINEAR sample at a slot's edge from reaching the next slot in the
+     * page: a neighbour that exists gives its edge row or column, a missing one reads as transparent
+     * (a missing tile is transparent), and past the image's own edge the tile's edge pixel is
+     * repeated, which is what a texture clamped to its edge gave when a layer was one texture.
+     *
+     * Premultiplied because the atlas is sampled with LINEAR: straight alpha bleeds the colour of
+     * transparent pixels across an edge. The shader divides the alpha out again, as it always did for
+     * the canvas uploads (which Chromium premultiplied on the way in).
+     */
+    tileWithGutter(tx, ty, level = 0, out = null) {
+        this._guard();
+        const own = this._levelBytes(tx, ty, level);
+        if (!own) return null;
+        const side = TILE_SIZE >> level, S = side + 2;
+        if (!out || out.length < S * S * 4) out = new Uint8Array(S * S * 4);
+        const near = [];
+        const infoAt = (dx, dy) => {
+            const k = (dy + 1) * 3 + (dx + 1);
+            if (near[k] === undefined) near[k] = !dx && !dy ? own : this._levelBytes(tx + dx, ty + dy, level);
+            return near[k];
+        };
+        // which neighbour each gutter pixel comes from, and its row / column there; at the image's
+        // own edge the tile itself, its edge line repeated
+        const leftX = tx > 0 ? -1 : 0, leftS = tx > 0 ? side - 1 : 0;
+        const rightX = ((tx + 1) << 8) < this._w ? 1 : 0, rightS = rightX ? 0 : side - 1;
+        const topY = ty > 0 ? -1 : 0, topS = ty > 0 ? side - 1 : 0;
+        const botY = ((ty + 1) << 8) < this._h ? 1 : 0, botS = botY ? 0 : side - 1;
+        const P = premulTable();
+        const put = (info, sx, sy, n, o) => {
+            if (!info) { out.fill(0, o, o + n * 4); return; }
+            const d = info.data;
+            let i = info.off + (sy * side + sx) * 4;
+            for (let k = 0; k < n; k++, i += 4, o += 4) {
+                const a = d[i + 3];
+                if (a === 255) { out[o] = d[i]; out[o + 1] = d[i + 1]; out[o + 2] = d[i + 2]; out[o + 3] = 255; continue; }
+                if (!a) { out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0; continue; }
+                const b = a << 8;
+                out[o] = P[b | d[i]]; out[o + 1] = P[b | d[i + 1]]; out[o + 2] = P[b | d[i + 2]]; out[o + 3] = a;
+            }
+        };
+        for (let y = 0; y < S; y++) {
+            const dy = y === 0 ? topY : y === S - 1 ? botY : 0;
+            const sy = y === 0 ? topS : y === S - 1 ? botS : y - 1;
+            const o = y * S * 4;
+            put(infoAt(leftX, dy), leftS, sy, 1, o);
+            put(infoAt(0, dy), 0, sy, side, o + 4);
+            put(infoAt(rightX, dy), rightS, sy, 1, o + (S - 1) * 4);
+        }
+        return out;
     }
 
     _changed(key) {

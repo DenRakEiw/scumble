@@ -1003,6 +1003,135 @@ function pixelsCases(P, T) {
             return { ok: true, tilesBefore };
         })],
 
+        // The slots the compositor's atlas uploads (C3 step a): a tile at a level with its one-pixel
+        // gutter, premultiplied. Checked against an independent reconstruction from readRect: the
+        // tile's straight bytes, clamp-extended past the image's own edge, halved alpha-weighted per
+        // level, premultiplied with Skia's rounding, and the gutter taken from the neighbour the rule
+        // names (a missing tile transparent, the image's edge the tile's own edge line repeated).
+        ["tiles_atlas_slots", both(async ({ B, Layer, pair }) => {
+            if (!B.tiles) return { ok: true, tilesOnly: true };
+            const TS = 256, LEVELS = 5;
+            const W = 601, H = 501;   // 3 x 2 tiles; the last column is 89 px wide and the last row 245: odd,
+            const { pixels: p } = pair(W, H);   // so a mip of the valid part alone would fade the image's edge
+            p.clear([256, 0, 512, 256]);        // tile (1, 0) is dropped: a missing neighbour
+            const pm = (c, a) => { const x = c * a + 128; return (x + (x >> 8)) >> 8; };
+            const half = (src, size) => {
+                const n = size >> 1, out = new Uint8ClampedArray(n * n * 4);
+                for (let y = 0; y < n; y++) {
+                    for (let x = 0; x < n; x++) {
+                        const i0 = (2 * y * size + 2 * x) * 4, i1 = i0 + 4, i2 = i0 + size * 4, i3 = i2 + 4;
+                        const a0 = src[i0 + 3], a1 = src[i1 + 3], a2 = src[i2 + 3], a3 = src[i3 + 3];
+                        const a = a0 + a1 + a2 + a3, o = (y * n + x) * 4;
+                        if (a === 1020) {
+                            for (let c = 0; c < 3; c++) out[o + c] = (src[i0 + c] + src[i1 + c] + src[i2 + c] + src[i3 + c] + 2) >> 2;
+                            out[o + 3] = 255;
+                        } else if (a) {
+                            const h = a >> 1;
+                            for (let c = 0; c < 3; c++) out[o + c] = ((src[i0 + c] * a0 + src[i1 + c] * a1 + src[i2 + c] * a2 + src[i3 + c] * a3 + h) / a) | 0;
+                            out[o + 3] = (a + 2) >> 2;
+                        }
+                    }
+                }
+                return out;
+            };
+            const CACHE = new Map();
+            const levelsOf = (tx, ty) => {
+                const key = tx + "," + ty;
+                if (CACHE.has(key)) return CACHE.get(key);
+                let out = null;
+                if (tx >= 0 && ty >= 0 && tx * TS < W && ty * TS < H && p.tileAt(tx, ty)) {
+                    const ox = tx * TS, oy = ty * TS;
+                    const vw = Math.min(TS, W - ox), vh = Math.min(TS, H - oy);
+                    const d = new Uint8ClampedArray(TS * TS * 4);
+                    const got = p.readRect(ox, oy, vw, vh).data;
+                    for (let y = 0; y < vh; y++) {
+                        for (let x = 0; x < vw; x++) {
+                            const i = (y * vw + x) * 4, o = (y * TS + x) * 4;
+                            d[o] = got[i]; d[o + 1] = got[i + 1]; d[o + 2] = got[i + 2]; d[o + 3] = got[i + 3];
+                        }
+                    }
+                    for (let y = 0; y < vh; y++) {
+                        const e = (y * TS + vw - 1) * 4;
+                        for (let x = vw; x < TS; x++) {
+                            const o = (y * TS + x) * 4;
+                            d[o] = d[e]; d[o + 1] = d[e + 1]; d[o + 2] = d[e + 2]; d[o + 3] = d[e + 3];
+                        }
+                    }
+                    for (let y = vh; y < TS; y++) d.copyWithin(y * TS * 4, (vh - 1) * TS * 4, vh * TS * 4);
+                    out = [d];
+                    for (let l = 1; l <= LEVELS; l++) out.push(half(out[l - 1], TS >> (l - 1)));
+                }
+                CACHE.set(key, out);
+                return out;
+            };
+            const expect = (tx, ty, level) => {
+                if (!levelsOf(tx, ty)) return null;
+                const side = TS >> level, S = side + 2;
+                const out = new Uint8Array(S * S * 4);
+                const leftX = tx > 0 ? -1 : 0, leftS = tx > 0 ? side - 1 : 0;
+                const rightX = (tx + 1) * TS < W ? 1 : 0, rightS = rightX ? 0 : side - 1;
+                const topY = ty > 0 ? -1 : 0, topS = ty > 0 ? side - 1 : 0;
+                const botY = (ty + 1) * TS < H ? 1 : 0, botS = botY ? 0 : side - 1;
+                for (let y = 0; y < S; y++) {
+                    const dy = y === 0 ? topY : y === S - 1 ? botY : 0;
+                    const sy = y === 0 ? topS : y === S - 1 ? botS : y - 1;
+                    for (let x = 0; x < S; x++) {
+                        const dx = x === 0 ? leftX : x === S - 1 ? rightX : 0;
+                        const sx = x === 0 ? leftS : x === S - 1 ? rightS : x - 1;
+                        const src = levelsOf(tx + dx, ty + dy);
+                        if (!src) continue;   // no tile there: transparent
+                        const lvl = src[level], i = (sy * side + sx) * 4, a = lvl[i + 3];
+                        if (!a) continue;
+                        const o = (y * S + x) * 4;
+                        out[o] = pm(lvl[i], a); out[o + 1] = pm(lvl[i + 1], a); out[o + 2] = pm(lvl[i + 2], a); out[o + 3] = a;
+                    }
+                }
+                return out;
+            };
+            let slots = 0, gutterPixels = 0;
+            let buf = null;
+            for (let level = 0; level <= LEVELS; level++) {
+                const S = (TS >> level) + 2;
+                for (let ty = 0; ty * TS < H; ty++) {
+                    for (let tx = 0; tx * TS < W; tx++) {
+                        const want = expect(tx, ty, level);
+                        const got = p.tileWithGutter(tx, ty, level, buf);
+                        if (!want) {
+                            if (got !== null) throw new Error(`tile ${tx},${ty} is not allocated but a slot came back`);
+                            continue;
+                        }
+                        if (!got) throw new Error(`no slot for tile ${tx},${ty} at level ${level}`);
+                        if (buf && got !== buf) throw new Error("the buffer handed in was not reused");
+                        buf = got;
+                        slots++;
+                        for (let i = 0; i < want.length; i++) {
+                            if (got[i] === want[i]) continue;
+                            const px = (i >> 2) % S, py = (i >> 2) / S | 0;
+                            throw new Error(`tile ${tx},${ty} level ${level} at ${px},${py}: ${Array.from(got.slice((i >> 2) * 4, (i >> 2) * 4 + 4))} against ${Array.from(want.slice((i >> 2) * 4, (i >> 2) * 4 + 4))}`);
+                        }
+                        for (let k = 0; k < S; k++) gutterPixels += (got[k * 4 + 3] ? 1 : 0) + (got[((S - 1) * S + k) * 4 + 3] ? 1 : 0);
+                    }
+                }
+            }
+            // the image's own edge does not fade at a level: the last valid cell of the last tile keeps
+            // its alpha, and the gutter past it repeats it (a mip of the valid part alone would halve it)
+            const side1 = TS >> 1, S1 = side1 + 2, slot = p.tileWithGutter(2, 0, 1);
+            const vc = Math.ceil(89 / 2);   // 45 valid cells at level 1, the last one from columns 88 and 89
+            const row = 40;
+            const at = (x) => slot[((row + 1) * S1 + x + 1) * 4 + 3];
+            if (at(vc - 1) !== at(vc) || at(vc - 1) !== at(S1 - 3)) throw new Error("the clamp past the image edge is missing: " + [at(vc - 2), at(vc - 1), at(vc), at(S1 - 3)]);
+            const full = p.readRect(512 + 88, row * 2, 1, 2).data;
+            const mixedIn = (full[3] + full[7] + 0 + 0 + 2) >> 2;   // what the valid part alone would give
+            if (at(vc - 1) === mixedIn && at(vc - 1) !== 255) throw new Error("the last cell is the faded one");
+            // the tiles of a document that is a whole number of tiles wide have no clamp
+            const exact = Layer.empty(512, 256);
+            exact.fill([0, 0, 512, 256], "#3366ff");
+            const es = exact.tileWithGutter(0, 0, 0);
+            if (es[(1 * 258 + 258 - 1) * 4 + 3] !== 255 || es[(1 * 258) * 4 + 3] !== 255) throw new Error("a full neighbour's gutter is not opaque");
+            if (exact.tileWithGutter(0, 1, 0) !== null) throw new Error("a tile outside the image gave a slot");
+            return { ok: true, slots, gutterPixels, side: [T.levelSide(0), T.slotSide(0), T.slotSide(5)] };
+        })],
+
         // Whole tiles shared by a tile-aligned "copy" onto pixels that already hold content and a mirror
         // (an undo step put back at the layer origin): the missing source tiles clear, the mirror follows.
         ["tiles_aligned_blit_copy_onto_content", both(async ({ Layer, pair, snap, same }) => {
