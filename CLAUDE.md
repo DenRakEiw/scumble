@@ -123,10 +123,10 @@ display mirrors and GPU screen copies to delete, the tile-mode costs with number
 that was not built. Work the way C1 and C2 were built: a workflow per step (build, a three-lens review, two
 refuting verifiers per finding, a fixer with a counter-proof per fix), the gate runner with `--tiles on` and
 `--tiles off`, and node gates against a scratch copy (`build_node.py --node <copy>`, `node_test.py --node <copy>`)
-until a step is meant for the node. The session scratchpad's `run_gates.sh` is gone after a new session; its
-logic (fresh instance on 9555, own `--user-data-dir` with `test_base.png` copied into
-`files/input/inpaint_canvas/`, `SCUMBLE_STRICT`, `SCUMBLE_TILES`, per-gate timeout, summary per label) has to be
-written again or put into `tools/`.
+until a step is meant for the node. The gate runner is **`bash tools/run_gates.sh <label> [--strict] [--copy] [--tiles on|off] [--exe PATH] <gates...>`**
+(fresh instance on 9555, own profile with `test_base.png`, per-gate timeout, logs and `summary.txt` under
+`dist/gates/gates/<label>/` or `$SCUMBLE_GATES`; gate `nodecopy` builds and tests the node in a scratch copy;
+`tools/close_app.py` closes an instance by its DevTools port, `SCUMBLE_CDP_PORT`).
 
 **Traps met on 2026-09-13 / 14, worth keeping:**
 - **Chromium switches canvas acceleration off for the whole document** once at least 100 `getImageData` calls
