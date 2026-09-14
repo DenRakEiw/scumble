@@ -75,9 +75,77 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
-## Where things stand (2026-09-14: 0.1.12 released with C1 and C2, next is C3)
+## Where things stand (2026-09-14, late: C3 steps a to d are built and pushed)
 
-**Read this block first; it supersedes the "Next" lines of the blocks below.** `docs/PLAN_BCE.md` is the plan
+**Read this block first; it supersedes the "Next" line of the block below.** `docs/PLAN_BCE.md` §C3
+"C3 as built" is the record (decisions, traps, the measurements, and **"What C3 still owes"**, which
+is where the next session starts); `docs/PERFORMANCE.md` §9 has the C3 numbers.
+
+**The screen draws tiles now.** On `main` (a8065ad, 2462b30, 11e4897, 4003194, c4a8281 plus two doc
+commits, pushed), in tile mode:
+
+- **(a)** `tileWithGutter(tx, ty, level, out)` on the tile store is one atlas slot: the tile at a
+  level, **premultiplied**, with a one-pixel gutter of its neighbours' edge pixels; `extendTile()`
+  gives the last tile of a row or column a clamp-extended copy before its mips are built, so the
+  image's own edge does not fade by a level of mip.
+- **(b)** The GPU compositor keeps an **atlas per (pixels object, level)** and draws the visible tiles
+  instanced (`drawArraysInstanced`, the rectangles in image coordinates and the region a uniform, so a
+  pan reuses the buffers). `glLayerSpec` hands a tile store over as itself with
+  `floor(-log2(scale))`. Budget `settings.memory.atlasMB` (512, a row in Settings › Rendering), LRU by
+  bytes; the pages go with the pixels (`forgetPixels`).
+- **(c)** `regionCanvas(rect, level)` is the part of the pixels a view shows, from the tiles' mips
+  (whole tiles, one tile of margin, two levels kept, one `putImageData` on a whole rebuild).
+  `drawSelectionInto` draws the tint, the marching ants and the navigator from it.
+- **(d)** `drawTilesInto` puts the **Canvas 2D** path on it too (`drawLayer`, for a plain layer in a
+  view pass), which is the path a filter layer in the stack, a live stroke, a transform and compare
+  force.
+
+**The numbers** (15000 × 10000, `perf_test.py`, which has four new rows and a footer saying what the
+display costs on tiles): first frame from fit to 1:1 on the GPU stack **1027 → 35 ms**, pan at 1:1 on
+the Canvas 2D path **41 → 2.5 ms**, the opacity slider 56 → 8, a selection change 78 → 21, an undo
+step 66 → 18, the worst `redraw with ants` frame 391-479 → 47-70, the document's display pyramids
+**956 → 196 MB**, and the compositor holds 91 MB of atlas pages where the old path made a 600 MB CPU
+mirror per source plus a GPU copy of it.
+
+**What C3 still owes, and where to start**: the **live stroke's preview** is the last thing that makes
+a display mirror (`layerWithStroke` copies the whole layer into a full-size canvas at the first dab:
+355 ms and 1.1 GB at 15k, measured A/B) — that is C5's stroke store. Then the mask sampler (`u_mask`)
+and the three op modes of the plan, after which `WINDOW_PX` / `_source` / `_texture` and the display
+pyramid can go. The full-resolution Canvas 2D path of exports, runs and the flattened composite still
+reads the mirror; that is phase E.
+
+**Gates** (fresh dev instances, own profiles, strict): `--tiles on` and `--tiles off` with `pixels
+editor composite commands shape brush film glb ailabel size transparent generate log mcp nodecopy`
+ALL PASS, `--copy --tiles off pixels editor composite commands` ALL PASS, and `smoke_test.py
+--no-helpers` with a real Flux run in both modes (the queue empty before and after each). Every fix
+has a counter-proof (a mutation of it is red): the gutter, the clamp extension, the premultiply, the
+unpack switch, `forgetPixels`, the tile path itself, the region's origin, the region's dirty set, and
+the Canvas 2D branch.
+
+**Gate changes worth knowing**: `composite_test.py`'s gpu-vs-2d step now shoots **at 1:1 as well** and
+that is the row it gates on tiles (the tile compositor must agree with Canvas 2D to the level there);
+the fractional-zoom row is reported, like the window step's `fit` row. That window step checks the
+**atlas** on tiles instead of the source windows (a pan **back** must upload nothing).
+`editor_test.py` has `selection_overlay_is_drawn_from_the_mask_itself` (both backends, same expected
+pixels) and its backend step now also checks the Canvas 2D path with a filter layer.
+
+**Traps met on 2026-09-14, worth keeping:**
+- **Chromium applies `UNPACK_PREMULTIPLY_ALPHA_WEBGL` to an `ArrayBufferView` upload too** (the WebGL
+  spec says it applies to DOM sources and `ImageData` only). A canvas source uploaded earlier in the
+  same frame leaves the switch on, and already-premultiplied tile bytes are then premultiplied twice:
+  a text layer lost its anti-aliased edge (65 levels on 1,389 pixels) while every layer **on its own**
+  was exact. Set both unpack switches explicitly before every typed-array upload.
+- A benchmark row only measures what its document exercises: `perf_test.py`'s stack always carries a
+  filter layer, so it never touched the GPU compositor and C3 (b) moved none of its rows until the
+  three "GPU stack" rows were added.
+- ComfyUI holding the card changes the op rows by 3 to 5× (`stroke commit` 336 → 845 ms with the same
+  code). A/B any suspected regression in the same session before believing it.
+- `run_gates.sh` hung once after every step of `commands_test.py` had printed `[ok]` (the runner's
+  420 s timeout, not a failure); the re-run passed in a second.
+
+## Where things stood (2026-09-14, morning: 0.1.12 released with C1 and C2)
+
+**The block above supersedes this one's "Next" line.** `docs/PLAN_BCE.md` is the plan
 (§C1 "C1 as built" with "The C1 close-out"; §C2 "C2 as built" with "The final C2 review", "C2 finished" and
 **"What C3 inherits"**, which is where C3 starts); `docs/PERFORMANCE.md` §9 "C1" and "C2" hold the numbers.
 
@@ -118,7 +186,7 @@ registry.comfy.org. Nothing was changed about it.
 or delete it); the merged branches `c2-tiles`, `fix-mask-undo`, `px-spike`, `c0-editor-source` still exist on
 the remote. `package.json` is **0.1.13** with an empty `## 0.1.13 — unreleased` section in `CHANGELOG.md`.
 
-**Next: C3, the compositor draws tiles** (`docs/PLAN_BCE.md` §C3), on main. Start from "What C3 inherits": the
+**Next (done since, see the block above): C3, the compositor draws tiles** (`docs/PLAN_BCE.md` §C3), on main. Start from "What C3 inherits": the
 display mirrors and GPU screen copies to delete, the tile-mode costs with numbers, the per-document level-5 canvas
 that was not built. Work the way C1 and C2 were built: a workflow per step (build, a three-lens review, two
 refuting verifiers per finding, a fixer with a counter-proof per fix), the gate runner with `--tiles on` and

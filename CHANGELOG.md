@@ -13,6 +13,14 @@ the section for its version; `docs/` and the commit history hold the technical d
   from over a gigabyte to about 90 MB. *Settings › Rendering › Tile atlas* says how much
   graphics memory it may use (512 MB by default). Tile mode is still off in the installed
   app (`--tiles` turns it on) and still not fit for everyday work.
+- **And so does everything else on the screen (tile mode).** The selection's outline and its
+  tint, the navigator, and every drawing path the graphics card cannot take (a filter layer in
+  the picture, a live brush stroke, a transform, the before/after view) now read the tiles the
+  view shows instead of a full-size copy of the layer. On a 15000 × 10000 picture panning at
+  1:1 with a film look in the stack went from 41 ms a frame to 2.5, the opacity slider from 56
+  to 8, a selection change from 78 to 21 and undo from 66 to 18, and the copies the display
+  holds fell from 956 MB to 196. The first brush stroke on such a picture still pauses for
+  about a third of a second while the live preview is made; that comes next.
 
 ## 0.1.12 — 2026-09-14
 
