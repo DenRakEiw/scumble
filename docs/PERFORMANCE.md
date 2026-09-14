@@ -1062,6 +1062,20 @@ layer in the stack, a live stroke, a transform, compare / peek, exports and runs
 display mirror, so `pan at 1:1` stays at 41 ms and the mirror is still made for those paths. That is
 the next step of C3.
 
+**Step (c), the selection's overlay** (same document and machine):
+
+| row (15000 × 10000, tiles) | before | after |
+|---|---|---|
+| `redraw with ants`, worst frame | 391 to 479 ms | 70 to 73 ms |
+| the document's display pyramids | 955.8 MB | 768.1 MB |
+| the selection's own display | a pyramid of the whole mask | one region canvas, 9.2 MB |
+
+The median of that row is 0.1 ms either way: what cost hundreds of milliseconds was the frame that
+*built* the selection's display levels, and the ants rebuild them after every selection change.
+`perf_test.py`'s footer now prints what the display costs on tiles — on this document still
+**6 mirrors, 2877 MB** and 768 MB of pyramids, all of it the Canvas 2D path's, which is what the rest
+of C3 has to move.
+
 **Pixel agreement.** `composite_test.py` compares the two paths at 1:1 now as well: on tiles the
 compositor agrees with Canvas 2D to **1 level** there, over the whole test document (nine blend
 modes, a masked layer, a colour-matched one, a text layer, after an erase). At a fractional zoom the

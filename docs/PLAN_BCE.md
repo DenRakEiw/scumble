@@ -1295,9 +1295,28 @@ generate log mcp nodecopy` ALL PASS, `--copy --tiles off pixels editor composite
 Every fix has a counter-proof (the unpack switch, `forgetPixels`, the tile path itself, the clamp
 extension, the gutter, the premultiply: each mutation red).
 
+**(c) The selection's overlay is drawn from the mask's own tiles** (commit "C3 (c)"):
+
+- **`regionCanvas(rect, level)`** on the tile store: the part of the pixels a view shows, at a level,
+  as a CPU canvas built from the tiles' mips. Whole tiles with one tile of margin around the
+  rectangle, kept while the range asked for stays inside it (so a pan only rebuilds when it leaves
+  it), synced from the tiles written since the last call like the display mirror, released with it
+  and counted in `memoryReport().tiles.regions`. Its last row and column carry `extendTile`'s clamp,
+  so the caller crops the draw to the image itself.
+- **`drawSelectionInto(ctx, scale, region)`** draws the mask over the image rectangle it covers: on
+  tiles that region canvas at `floor(-log2(scale))`, on canvases the display pyramid's level, exactly
+  as before. The tint, the nine draws of the marching ants and the navigator's thumbnail take it.
+- Measured (15000 × 10000, tiles): the worst frame of `redraw with ants` **391 to 479 ms → 70 to
+  73 ms**, the document's display pyramids **956 → 768 MB**, and the selection's whole share of the
+  display is now **one region canvas of 9.2 MB**. `perf_test.py`'s footer says what the display costs
+  on tiles (mirrors, region canvases, pyramids), which is the number the rest of C3 has to move.
+- Gate: `editor_test.py` step `selection_overlay_is_drawn_from_the_mask_itself`, which runs on **both**
+  backends against the same expected pixels.
+
 **What C3 still owes** (the plan's §C3, not built):
 
-- **The Canvas 2D fallback drawing tiles.** Canvas 2D still draws a tile store's **display mirror**
+- **The Canvas 2D fallback drawing tiles** (the layers; the selection is done, step (c)). Canvas 2D
+  still draws a tile store's **display mirror**
   and the Skia pyramid on it. It is the path for a filter layer in the stack, a live stroke, a
   transform, compare / peek, exports and runs — so the mirror and `displaySource`'s `screen` GPU copy
   of it, `displayRectSource`, `releaseCaches({ mirrors })` and the level refresh in `touchSourceRect`
@@ -1307,9 +1326,6 @@ extension, the gutter, the premultiply: each mutation red).
   fed by the compositor instead, which is what would take the everyday filter-layer case off it.
 - **The mask sampler** (`u_mask`) and the three op modes for C5's stroke store, so `_masked` and the
   live stroke preview stop being canvases.
-- **Marching ants and the selection tint** still take `displaySource(this.sel, s, true)`, so a
-  selection still makes a mirror and a GPU copy; the plan's `sel.toCanvas(region, level)` is not
-  built.
 - Therefore `WINDOW_PX` / `_source` / `_texture`, `_pyramidBudget` and the display pyramid are **not**
   deleted, and `memoryReport()` still has pyramid entries whenever one of those paths ran.
 
