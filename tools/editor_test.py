@@ -206,7 +206,10 @@ ed.markLayerChanged(M);
 ed.view.scale = 0.2; ed.view.angle = 0;
 ed.view.x = Math.round(ed.canvas.width / 2 - 1200 * 0.2); ed.view.y = Math.round(ed.canvas.height / 2 - 800 * 0.2);
 const shown = [L.px, L.maskPx, M.px, ed.basePx, ed.sel];
-const canvases = shown.map((p) => P.canvasOf(p));
+// On tiles the screen draws the tiles themselves since C3, so nothing may be given a display canvas
+// here: canvasOf would make the very mirror this step checks is not made.
+const canvasOf = (p) => (flag ? P.displayCanvasIfMade(p) : P.canvasOf(p));
+const canvases = shown.map(canvasOf);
 const proto = [ed.pixels.Layer.prototype, ed.pixels.Mask.prototype];
 const orig = proto.map((pr) => Object.prototype.hasOwnProperty.call(pr, "toCanvas") ? pr.toCanvas : null);
 let copies = 0;
@@ -217,12 +220,23 @@ try {
 } finally {
     proto.forEach((pr, i) => { if (orig[i]) pr.toCanvas = orig[i]; else delete pr.toCanvas; });
 }
-const entry = ed.pyramids.get(P.canvasOf(M.px));
+const entry = ed.pyramids.get(canvasOf(M.px));
 ed.sceneSig = null; ed.draw(); ed.sceneSig = null; ed.draw();
-out.display = { frames, copies, pending: ed._pyramidPending, levels: entry ? entry.levels.length : 0, kept: ed.pyramids.get(P.canvasOf(M.px)) === entry };
+const comp = ed.compositor();
+const atlas = comp ? comp.stats().atlas : null;
+out.display = { frames, copies, pending: ed._pyramidPending, levels: entry ? entry.levels.length : 0,
+                kept: ed.pyramids.get(canvasOf(M.px)) === entry, mirror: !!P.displayCanvasIfMade(M.px), atlas };
 if (copies) throw new Error("the display took toCanvas() copies: " + JSON.stringify(out.display));
-if (shown.some((p, i) => P.canvasOf(p) !== canvases[i])) throw new Error("a display canvas changed between frames");
-if (ed._pyramidPending || !entry || !entry.levels.length || !out.display.kept) throw new Error("the pyramid is rebuilt every frame: " + JSON.stringify(out.display));
+if (shown.some((p, i) => canvasOf(p) !== canvases[i])) throw new Error("a display canvas changed between frames");
+if (flag) {
+    // C3: the plain paint layer is drawn from the compositor's atlas, so it has neither a display
+    // mirror nor a pyramid entry. (The masked layer still goes through its _masked canvas, and a
+    // host without WebGL2 would fall back to the mirror - hence the atlas check first.)
+    if (!atlas || !atlas.slots || !atlas.pages) throw new Error("no tiles in the compositor's atlas: " + JSON.stringify(out.display));
+    if (out.display.mirror || entry) throw new Error("a tile layer the atlas draws still has a display mirror or pyramid: " + JSON.stringify(out.display));
+} else if (ed._pyramidPending || !entry || !entry.levels.length || !out.display.kept) {
+    throw new Error("the pyramid is rebuilt every frame: " + JSON.stringify(out.display));
+}
 return out;
 """
 
@@ -723,14 +737,20 @@ try {
     // them inside the box and keep them (a rebuild drew the whole CPU mirror into the first level, 200 ms at 96 MP)
     centre(0.3, 1200, 800);
     for (let i = 0; i < 6; i++) { frame(); await wait(20); if (!ed._pyramidPending) break; }
-    const levelsOf = () => { const m = P.canvasOf(find(L.id).px), e = ed.pyramids.get(m); return e && e.version === (m._dispVer || 0) && e.levels.length ? e : null; };
-    const entry0 = ed.tileMode ? levelsOf() : null;
+    // C3: the layer is drawn from the compositor's atlas, so it has no display mirror and no levels;
+    // what must stay small is the number of slots the fill, the clear and their undo / redo re-upload
+    const atlasUploads = () => { const c = ed.compositor(); return c ? c.stats().atlas.uploads : 0; };
+    const uploads0 = atlasUploads();
+    const mirror0 = ed.tileMode ? !!find(L.id).px.displayCanvasIfMade() : null;
     await roundTrip("fill", () => find(L.id).px, () => { ed.color = "#00ff00"; ed.fillSelection(); }, onlyInside(2400, [1200, 700, 1300, 800], [0, 255, 0, 255]));
     await roundTrip("clear", () => find(L.id).px, () => ed.clearSelectedPixels(), onlyInside(2400, [1200, 700, 1300, 800], [0, 0, 0, 0]));
     if (ed.tileMode) {
         frame();
-        out.levelsKept = { before: !!entry0, after: levelsOf() === entry0 };
-        if (!entry0 || levelsOf() !== entry0) fails.push("the fill, the clear or their undo / redo rebuilt the layer's display levels on tiles: " + JSON.stringify(out.levelsKept));
+        const px0 = find(L.id).px;
+        const tileCount = px0.tileCount;
+        out.levelsKept = { mirror0, mirror: !!px0.displayCanvasIfMade(), uploads: atlasUploads() - uploads0, tiles: tileCount };
+        if (mirror0 || out.levelsKept.mirror) fails.push("the fill, the clear or their undo / redo made a display mirror of a layer the atlas draws: " + JSON.stringify(out.levelsKept));
+        if (!out.levelsKept.uploads || out.levelsKept.uploads > tileCount) fails.push("the fill, the clear or their undo / redo re-uploaded the whole layer: " + JSON.stringify(out.levelsKept));
     }
     ed.fitView();
     const maskOf = () => find(L.id).maskPx || ed.pixels.Mask.empty(2400, 1600);
@@ -797,11 +817,14 @@ ed.fitView();
 const gone = [];
 for (let i = 0; i < 3; i++) { const l = ed.addPaintLayer(); l.px.fill([100 * i, 100, 900 + 100 * i, 900], "rgba(0, 0, 255, 0.5)"); ed.markLayerChanged(l); gone.push(l); }
 for (let i = 0; i < 4; i++) { frame(); await wait(20); if (!ed._pyramidPending) break; }
-const madeBefore = ed.tileMode ? gone.filter((l) => l.px.displayCanvasIfMade()).length : null;
+// C3: a layer the atlas drew holds atlas pages instead of a display mirror; both have to go with it
+const comp3 = ed.compositor();
+const atlasOf = (l) => (comp3 ? comp3.pixelBytes(l.px) : 0);
+const madeBefore = ed.tileMode ? gone.filter((l) => l.px.displayCanvasIfMade() || atlasOf(l)).length : null;
 for (const l of gone) await run("remove_layer", { layer: l.id, doc: d.id });
 await wait(0);
-out.removed = { madeBefore, kept: ed.tileMode ? gone.filter((l) => l.px.displayCanvasIfMade()).length : null, report: ed.tileMode ? ed.memoryReport().undo.undo.heldLayerBytes : null };
-if (ed.tileMode && (madeBefore !== 3 || out.removed.kept)) fails.push("removed layers kept their display mirrors: " + JSON.stringify(out.removed));
+out.removed = { madeBefore, kept: ed.tileMode ? gone.filter((l) => l.px.displayCanvasIfMade() || atlasOf(l)).length : null, report: ed.tileMode ? ed.memoryReport().undo.undo.heldLayerBytes : null };
+if (ed.tileMode && (madeBefore !== 3 || out.removed.kept)) fails.push("removed layers kept their display mirrors or atlas pages: " + JSON.stringify(out.removed));
 await ed.undoStep();
 for (let i = 0; i < 4; i++) { frame(); await wait(20); if (!ed._pyramidPending) break; }
 const [sx, sy] = ed.imageToScreen(850, 500);

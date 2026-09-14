@@ -159,7 +159,29 @@ BENCH = """
     ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
     ed.draw(); ed.draw();
     out.pan_1to1 = bench((i) => { ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw(); }, 30);
+    // The same two pans with the filter layer hidden, so the GPU compositor takes the stack: since C3
+    // it draws a tile store's own tiles from its atlas, with no display mirror and no GPU copy of one.
+    {
+        const fxLayer = ed.layers.find((l) => l.kind === "filter");
+        if (fxLayer) fxLayer.visible = false;
+        ed.sceneSig = null; ed.draw(); ed.draw();
+        out.gl_stack = ed.glCompositeUsable({}) ? 1 : 0;
+        out.pan_1to1_gl = bench((i) => { ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw(); }, 30);
+        ed.fitView(); ed.draw(); ed.draw();
+        out.pan_fit_gl = bench((i) => { ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw(); }, 30);
+        // and the first frame after a zoom from fit back to 1:1: what the level the screen needs costs
+        ed.fitView(); ed.draw(); ed.draw();
+        const zt = performance.now();
+        ed.view.scale = 1; ed._fitted = false;
+        ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
+        ed.draw();
+        out.first_1to1_gl = [+(performance.now() - zt).toFixed(1), +(performance.now() - zt).toFixed(1)];
+        const cst = ed.compositor() ? ed.compositor().stats() : null;
+        out.glMB = cst && cst.atlas ? { atlas: +(cst.atlas.bytes / 1048576).toFixed(1), pages: cst.atlas.pages, slots: cst.atlas.slots, textures: +(cst.bytes / 1048576).toFixed(1) } : null;
+        if (fxLayer) fxLayer.visible = true;
+    }
     ed.fitView();
+    ed.sceneSig = null;
     ed.draw();
 
     // --- a brush stroke on a paint layer ---------------------------------------
@@ -290,6 +312,9 @@ ROWS = [
     ("fit view", "fit"),
     ("redraw, nothing changed", "redraw_cached"),
     ("pan at 1:1 (30 frames)", "pan_1to1"),
+    ("pan at 1:1, GPU stack", "pan_1to1_gl"),
+    ("pan at fit, GPU stack", "pan_fit_gl"),
+    ("first frame fit -> 1:1, GPU", "first_1to1_gl"),
     ("redraw with ants", "draw_with_ants"),
     ("brush dab + frame", "stroke_frame"),
     ("stroke commit (undo copy)", "stroke_commit"),
@@ -442,8 +467,12 @@ async def main():
         print("%-28s%s" % (label, "".join(cells)))
     print()
     for r in results:
+        gl = r.get("glMB")
         print("%-28s%s" % (r["size"], f"view {r['view']}, filter {r['filter']}, undo {r['undo_bytes'] / 1048576:.1f} MB"
-              + (f", renderer {r['memMB']} MB" if r.get("memMB") else "")))
+              + (f", renderer {r['memMB']} MB" if r.get("memMB") else "")
+              + (f", compositor {gl['atlas']} MB in {gl['pages']} atlas pages ({gl['slots']} slots)"
+                 f" + {gl['textures']} MB of source textures" if gl else "")
+              + ("" if r.get("gl_stack") else ", the GPU stack row: the compositor would not take it")))
 
 
 if __name__ == "__main__":

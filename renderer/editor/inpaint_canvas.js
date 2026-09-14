@@ -21,7 +21,7 @@ import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, 
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions } from "./inpaint_pixels.js";
-import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, CANVAS_MAX_PIXELS } from "./inpaint_tiles.js";
+import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS } from "./inpaint_tiles.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -6232,6 +6232,8 @@ class InpaintEditor {
         let freed = 0;
         for (const p of this.heldPixels()) {
             if (live.has(p) || !isTilePixels(p)) continue;
+            // C3: the compositor's atlas pages of pixels nothing draws any more
+            if (comp) freed += comp.forgetPixels(p);
             const m = p.displayCanvasIfMade();
             if (m) {
                 const entry = this.pyramids.get(m);
@@ -8940,6 +8942,26 @@ class InpaintEditor {
     }
 
     /**
+     * One entry of the GPU compositor's layer stack (docs/PLAN_BCE.md §C3). A tile store is handed
+     * over as itself with the level to draw: the compositor uploads the visible tiles into its atlas
+     * and draws them instanced, so no display mirror and no GPU copy of one is made. Anything else
+     * (a canvas: a colour-matched layer, a masked layer's `_masked`, the canvas backend) keeps the
+     * display pyramid.
+     *
+     * The level is the one whose tiles are at least as dense as the screen:
+     * `floor(-log2(scale))`, clamped to the mips a tile carries.
+     */
+    glLayerSpec(px, x, y, w, h, opacity, blend, sx) {
+        const scale = (w * sx) / px.width;
+        if (isTilePixels(px)) {
+            const level = scale > 0 && Number.isFinite(scale) ? Math.max(0, Math.min(MIP_LEVELS, Math.floor(-Math.log2(scale)))) : 0;
+            return { pixels: px, level, x, y, w, h, opacity, blend };
+        }
+        const lvl = this.displaySource(px, scale, true);
+        return { source: lvl, version: this.sourceVersion(lvl), x, y, w, h, opacity, blend };
+    }
+
+    /**
      * The visible region composited on the GPU. Returns the compositor's canvas, or null
      * when it could not do it (a source over MAX_TEXTURE_SIZE, a lost context).
      */
@@ -8949,10 +8971,7 @@ class InpaintEditor {
         const sx = vw / region.w;
         const layers = [];
         const base = this.basePx;
-        if (base) {
-            const lvl = this.displaySource(base, sx, true);
-            layers.push({ source: lvl, version: this.sourceVersion(lvl), x: 0, y: 0, w: this.width, h: this.height, opacity: 1, blend: "normal" });
-        }
+        if (base) layers.push(this.glLayerSpec(base, 0, 0, this.width, this.height, 1, "normal", sx));
         const vp = { x: region.x, y: region.y, w: region.w, h: region.h, sx, sy: vh / region.h };
         try {
             for (const layer of this.layers) {
@@ -8964,15 +8983,12 @@ class InpaintEditor {
                 const matched = this.matchActive(layer)
                     ? this.layerMatchedPixels(layer, () => this.glMatchBackdrop(comp, vw, vh, region, layers), vp)
                     : null;
-                const px = matched || this.layerPixels(layer, true);
+                // without a mask, a colour match or a live stroke the layer's own tiles are drawn;
+                // otherwise layerPixels has prepared a canvas and the pyramid draws that
+                const px = matched || (layer.maskPx ? this.layerPixels(layer, true) : layer.px);
                 if (!px || px._livePreview) return null;
-                const lvl = this.displaySource(px, (layer.w * sx) / px.width, true);
-                layers.push({
-                    source: lvl, version: this.sourceVersion(lvl),
-                    x: layer.x, y: layer.y, w: layer.w, h: layer.h,
-                    opacity: layer.opacity == null ? 1 : layer.opacity,
-                    blend: layer.blend || "normal",
-                });
+                layers.push(this.glLayerSpec(px, layer.x, layer.y, layer.w, layer.h,
+                    layer.opacity == null ? 1 : layer.opacity, layer.blend || "normal", sx));
             }
             return comp.composite({ width: vw, height: vh, region, layers });
         } catch (err) {

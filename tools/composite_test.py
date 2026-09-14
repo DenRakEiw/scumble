@@ -214,27 +214,41 @@ GL_VS_2D = """
         });
         ed.markLayerChanged(victim, [2, 2, 2 + w, 2 + h]);
     }
-    ed.compositorOff = true;
-    const cpu = shot();
-    ed.compositorOff = false;
-    const used = ed.glCompositeUsable({});
-    const t0 = performance.now();
-    const gpu = shot();
-    const ms = +(performance.now() - t0).toFixed(2);
+    const round = () => {
+        ed.compositorOff = true;
+        const cpu = shot();
+        ed.compositorOff = false;
+        const used = ed.glCompositeUsable({});
+        const t0 = performance.now();
+        const gpu = shot();
+        const ms = +(performance.now() - t0).toFixed(2);
+        if (!used) return null;
+        // premultiplied values: that is what reaches the screen
+        let max = 0, sum = 0, n = 0, over = 0;
+        for (let i = 0; i < cpu.length; i += 4) {
+            const aa = cpu[i + 3], ba = gpu[i + 3];
+            let d = Math.abs(aa - ba);
+            for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(cpu[i + k] * aa / 255 - gpu[i + k] * ba / 255));
+            if (d > max) max = d;
+            if (d > 2) over++;
+            sum += d; n++;
+        }
+        return { max: +max.toFixed(2), mean: +(sum / n).toFixed(4), pixelsOver2: over, pixels: n, ms };
+    };
+    const view = round();
+    // and at 1:1, where neither path resamples: the tile compositor draws level 0 texel for texel,
+    // so it has to agree with Canvas 2D there whatever the mips do at a zoom (C3)
+    const was = { scale: ed.view.scale, x: ed.view.x, y: ed.view.y };
+    ed.view.scale = 1;
+    ed.view.x = Math.round(ed.canvas.width / 2 - ed.width / 2);
+    ed.view.y = Math.round(ed.canvas.height / 2 - ed.height / 2);
+    for (let i = 0; i < 4; i++) shot();
+    const atOne = round();
+    ed.view.scale = was.scale; ed.view.x = was.x; ed.view.y = was.y;
     if (fx) fx.visible = true;
     ed.compositorOff = false;
-    if (!used) return { skipped: "the compositor would not take this stack" };
-    // premultiplied values: that is what reaches the screen
-    let max = 0, sum = 0, n = 0, over = 0;
-    for (let i = 0; i < cpu.length; i += 4) {
-        const aa = cpu[i + 3], ba = gpu[i + 3];
-        let d = Math.abs(aa - ba);
-        for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(cpu[i + k] * aa / 255 - gpu[i + k] * ba / 255));
-        if (d > max) max = d;
-        if (d > 2) over++;
-        sum += d; n++;
-    }
-    return { max: +max.toFixed(2), mean: +(sum / n).toFixed(4), pixelsOver2: over, pixels: n, ms, erased: !!victim };
+    if (!view || !atOne) return { skipped: "the compositor would not take this stack" };
+    return { ...view, atOne, tiles: !!ed.tileMode, erased: !!victim };
 })()
 """
 
@@ -376,19 +390,29 @@ WINDOW = """
         out[label] = { ...diff(cpu, gpu), used };
     };
     const stats = () => ed.compositor().stats();
+    // the uploads of either path: a window of a source canvas, or the tiles of an atlas slot
+    const up = () => { const s = stats(); return s.windowUploads + s.atlas.uploads; };
+    out.tiles = !!ed.tileMode;
     compare("at1to1");
     const st0 = stats();
     out.stats = { entries: st0.entries, windows: st0.windows, MB: +(st0.bytes / 1048576).toFixed(1), windowMB: +(st0.windowBytes / 1048576).toFixed(1), uploads: st0.windowUploads, wholeMB: +(W * H * 4 * 2 / 1048576).toFixed(1) };
-    ed.view.x += Math.round(ed.canvas.width * 0.3); shot();
-    out.uploadsAfterSmallPan = stats().windowUploads - st0.windowUploads;
-    const st1 = stats();
+    out.atlas = { pages: st0.atlas.pages, slots: st0.atlas.slots, sources: st0.atlas.sources, MB: +(st0.atlas.bytes / 1048576).toFixed(1) };
+    const u0 = up();
+    const panned = Math.round(ed.canvas.width * 0.3);
+    ed.view.x += panned; shot();
+    out.uploadsAfterSmallPan = up() - u0;
+    // and back: a window still holds it, and so does every atlas slot the pan did not push out
+    const ub = up();
+    ed.view.x -= panned; shot();
+    out.uploadsAfterPanBack = up() - ub;
+    const u1 = up();
     ed.view.x -= Math.round(ed.canvas.width * 1.5); ed.view.y += Math.round(ed.canvas.height * 0.8);
     compare("afterPan");
-    out.uploadsAfterBigPan = stats().windowUploads - st1.windowUploads;
-    const st2 = stats();
+    out.uploadsAfterBigPan = up() - u1;
+    const u2 = up();
     { const ix = Math.round(-ed.view.x + ed.canvas.width / 2), iy = Math.round(-ed.view.y + ed.canvas.height / 2); layer.px.drawInto([ix - 60, iy - 60, ix + 60, iy + 60], (x) => { x.globalAlpha = 0.6; /* what the dots left on lc's context, which this dab used to draw with */ x.fillStyle = "#ffffff"; x.fillRect(ix - 60, iy - 60, 120, 120); }); ed.markLayerChanged(layer, [ix - 60, iy - 60, ix + 60, iy + 60]); }
     compare("afterDab");
-    out.uploadsAfterDab = stats().windowUploads - st2.windowUploads;
+    out.uploadsAfterDab = up() - u2;
     ed.view.x = Math.round(ed.canvas.width * 0.6); ed.view.y = Math.round(ed.canvas.height * 0.6);
     compare("atCorner");
     ed.fitView();
@@ -480,14 +504,24 @@ async def run(c, args):
         gl = await c.eval(GL_VS_2D, timeout=300)
         if gl.get("skipped"):
             print(f"[skip] gpu vs 2d: {gl['skipped']}")
-        elif gl["max"] <= args.tolerance:
-            print(f"[ok] gpu vs 2d: max {gl['max']} levels, mean {gl['mean']}, "
-                  f"{gl['pixelsOver2']} of {gl['pixels']} pixels over 2, draw {gl['ms']} ms"
-                  f"{'' if gl.get('erased') else ' (no layer to erase into)'}")
         else:
-            ok = False
-            print(f"[FAIL] gpu vs 2d: max {gl['max']} levels, mean {gl['mean']}, "
-                  f"{gl['pixelsOver2']} of {gl['pixels']} pixels over 2 levels")
+            one = gl["atOne"]
+            # At 1:1 both paths must agree. At the fit zoom they resample: on canvases both take the
+            # same Skia pyramid level and agree too, on tiles the compositor draws the tiles' own
+            # alpha-weighted box mips and Canvas 2D the Skia level, which is tens of levels apart on a
+            # hard edge (docs/PERFORMANCE.md 10, C3). That row is reported there, not gated, as the
+            # "fit" row of the window step already is.
+            gated = one["max"] if gl.get("tiles") else max(one["max"], gl["max"])
+            line = (f"gpu vs 2d: 1:1 max {one['max']} levels, mean {one['mean']}, "
+                    f"{one['pixelsOver2']} of {one['pixels']} pixels over 2; "
+                    f"at the view's zoom max {gl['max']} mean {gl['mean']}"
+                    f"{' (tiles: reported, not gated)' if gl.get('tiles') else ''}, draw {gl['ms']} ms"
+                    f"{'' if gl.get('erased') else ' (no layer to erase into)'}")
+            if gated <= args.tolerance:
+                print(f"[ok] {line}")
+            else:
+                ok = False
+                print(f"[FAIL] {line}")
         # the compositor's windows of a large source (phase A item 4), a document of its own
         win = await c.eval(WINDOW, timeout=600)
         if win.get("skipped"):
@@ -502,21 +536,37 @@ async def run(c, args):
                 problems.append("max %s levels" % worst)
             if unused:
                 problems.append("compositor not used for %s" % ",".join(unused))
-            if st["windows"] < 2 or st["windowMB"] * 2 > st["wholeMB"]:
+            at = win.get("atlas") or {}
+            if win.get("tiles"):
+                # on tiles the atlas replaces the windows: the pages hold the visible tiles of the two
+                # sources at level 0 and nothing else, and no source canvas is uploaded at all (C3)
+                if at.get("pages", 0) < 1 or at.get("sources", 0) < 2:
+                    problems.append("atlas %s pages for %s sources" % (at.get("pages"), at.get("sources")))
+                if at.get("MB", 0) * 2 > st["wholeMB"]:
+                    problems.append("atlas pages %s MB against %s MB whole" % (at.get("MB"), st["wholeMB"]))
+                if st["windows"] or st["entries"]:
+                    problems.append("%s source textures (%s windows) beside the atlas" % (st["entries"], st["windows"]))
+            elif st["windows"] < 2 or st["windowMB"] * 2 > st["wholeMB"]:
                 problems.append("windows %s holding %s MB against %s MB whole" % (st["windows"], st["windowMB"], st["wholeMB"]))
             # The compositor keys a source window on the canvas it is handed. Since C2 step (b) the display
             # draws the pixels' display canvas (canvasOf: the canvas itself, or the tile store's mirror),
             # never a toCanvas() copy, so this holds with --pixels-copy and on tiles too (C1 skipped it in
             # copy mode, where every frame handed the compositor a new copy).
-            if win["uploadsAfterSmallPan"] != 0:
+            if win.get("tiles"):
+                # a pan brings new tiles into view, so it uploads; panning back must not, the slots are held
+                if win.get("uploadsAfterPanBack") != 0:
+                    problems.append("a pan back re-uploaded %s tiles" % win.get("uploadsAfterPanBack"))
+            elif win["uploadsAfterSmallPan"] != 0:
                 problems.append("a pan inside the margin uploaded %s windows" % win["uploadsAfterSmallPan"])
             if win["uploadsAfterBigPan"] < 2:
                 problems.append("a pan beyond the margin uploaded %s windows" % win["uploadsAfterBigPan"])
             if win["uploadsAfterDab"] < 1:
                 problems.append("a dab did not re-upload the layer's window")
+            held = (f"{at.get('pages')} atlas pages {at.get('MB')} MB, {at.get('slots')} slots"
+                    if win.get("tiles") else f"{st['windows']} windows {st['windowMB']} MB")
             line = ("source windows: " + ", ".join(f"{k} max {v['max']}" for k, v in shots.items())
-                    + f"; {st['windows']} windows {st['windowMB']} MB for {st['wholeMB']} MB of sources, "
-                    + f"uploads small pan {win['uploadsAfterSmallPan']} / big pan {win['uploadsAfterBigPan']} / dab {win['uploadsAfterDab']}")
+                    + f"; {held} for {st['wholeMB']} MB of sources, "
+                    + f"uploads small pan {win['uploadsAfterSmallPan']} / back {win.get('uploadsAfterPanBack')} / big pan {win['uploadsAfterBigPan']} / dab {win['uploadsAfterDab']}")
             if problems:
                 ok = False
                 print(f"[FAIL] {line}: " + "; ".join(problems))
