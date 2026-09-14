@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.12 — unreleased
+## 0.1.12 — 2026-09-14
 
 - **No visible change: the editor's pixel access goes through one interface.** Until this
   release the editor reached into the pixels of layers, layer masks, the selection and the
@@ -74,13 +74,19 @@ the section for its version; `docs/` and the commit history hold the technical d
   could remove the mask under the stroke. An undo step whose picture could not be saved says so
   in the status line instead of silently doing nothing. Cancelling a text edit (Esc) or closing a
   tab with a text edit open no longer leaves a copy of the text layer in memory.
-- **The `load_image` command reports a picture that could not be loaded** (comes with the tile
-  store's merge, C2). In a tab that already showed a picture, a file that failed to load was
-  answered with the old picture's size, as if it had worked; the error from the status line is
-  returned now.
+- **The `load_image` command reports a picture that could not be loaded.** In a tab that
+  already showed a picture, a file that failed to load was answered with the old picture's
+  size, as if it had worked; the error from the status line is returned now.
+- **No visible change: a second pixel store, switched off in the installed app.** Scumble can
+  keep a picture's layers, masks and selection in small tiles instead of one canvas each; that
+  is the next step towards very large pictures that are light on memory. The installed app keeps
+  using canvases as before, so nothing changes for you in this release; the tile store is on only
+  when Scumble is run from its source, where it is tested alongside the canvases.
 - **For plugin authors:** inside `px.drawInto(rect, ctx => ...)` compose on the transform the
   context comes with (`scale`, `translate`, `save` / `restore`) and never set one; with the tile
-  engine it is not the identity (`docs/PLUGINS.md`).
+  store it is not the identity. Clip only to rectangles on whole pixels, and do not give a layer
+  pixels of your own or from another document: replace them through `setPixels` or `addLayer`.
+  The full list of rules is in `docs/PLUGINS.md`.
 
 ## 0.1.11 — 2026-09-13
 
