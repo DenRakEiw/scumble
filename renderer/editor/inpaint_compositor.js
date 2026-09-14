@@ -134,11 +134,11 @@ const ATLAS_BUDGET_DEFAULT = 512 * 1024 * 1024;
 const ATLAS_STALE = 300;
 // the atlas holds its pixels weakly; a host without WeakRef holds them as before, until the pages age out
 const weakRef = (o) => (typeof WeakRef === "function" ? new WeakRef(o) : { deref: () => o });
-/** Are the neighbour versions a slot was made from (`a`, null before its first upload) the ones now (`b`)? */
+/** Are the stamps of the nine tiles a slot was made from (`a`, null before its first upload) the ones now (`b`)? */
 function sameNear(a, b) {
     if (!b) return true;
     if (!a) return false;
-    for (let i = 0; i < 8; i++) if (a[i] !== b[i]) return false;
+    for (let i = 0; i < 9; i++) if (a[i] !== b[i]) return false;
     return true;
 }
 
@@ -297,13 +297,15 @@ export class GLCompositor {
         this.atlas = new Map();
         this.atlasOf = new WeakMap();
         this.atlasIds = 0;
-        this.nearBuf = new Float64Array(8);   // _upload: the versions a slot's gutter is read from
+        this.nearBuf = new Float64Array(9);   // _upload: the stamps of the tiles a slot is made from (C6 a, b)
         this.atlasBytes = 0;
         this.atlasBudget = ATLAS_BUDGET_DEFAULT;
         this.atlasGen = 0;   // bumped whenever a page or a slot changes hands: cached instances are stale
         this.tileBufs = [];
         this.tileUploads = 0;
         this.gutterUploads = 0;    // slots whose gutter alone was uploaded: a neighbour changed, the tile did not
+        this.staleUploads = 0;     // slots uploaded with a stale or coarse picture while their chain is in the worker (C6 b)
+        this.coarseLevel = MIP_LEVELS;   // _drawLevel: where a tile without any chain yet is drawn from (null: its own level)
         this.tileDraws = 0;
         this.pagesMade = 0;
         this.pageIds = 0;          // a page's identity, so instances can be grouped by (source page, mask page)
@@ -466,7 +468,7 @@ export class GLCompositor {
         }
         const atlas = {
             pages, slots, sources, bytes: this.atlasBytes, budget: this.atlasBudget,
-            uploads: this.tileUploads, gutterUploads: this.gutterUploads, draws: this.tileDraws, pagesMade: this.pagesMade,
+            uploads: this.tileUploads, gutterUploads: this.gutterUploads, staleUploads: this.staleUploads, draws: this.tileDraws, pagesMade: this.pagesMade,
         };
         return { entries: this.textures.size, bytes, sourceBytes, targetBytes, windows, windowBytes, scratchBytes, windowUploads: this.windowUploads || 0, budget: TEXTURE_BUDGET, limit: TEXTURE_CACHE, stale: TEXTURE_STALE, atlas, lost: this.lost };
     }
@@ -591,8 +593,6 @@ export class GLCompositor {
         const px = l.pixels;
         const mask = l.mask || null;   // a MaskPixels of the same tile grid, or nothing
         const level = Math.max(0, Math.min(MIP_LEVELS, l.level | 0));
-        const f = 1 << level;
-        const S = slotSide(level);
         const fx = l.w / px.width, fy = l.h / px.height;
         // the visible part of the layer in its own pixels
         const nx0 = Math.max(0, Math.floor((region.x - l.x) / fx));
@@ -606,7 +606,9 @@ export class GLCompositor {
         // The instances are in image coordinates, so a pan reuses them; only another set of visible
         // tiles, a write into the pixels, a layer that moved or an eviction rebuilds the buffers. At
         // fit on a 15k document that is 2,400 tiles to walk every frame, 1.9 ms against 0.1 from here.
-        const key = tx0 + "," + ty0 + "," + tx1 + "," + ty1 + "," + px.version + "," + l.x + "," + l.y + "," + l.w + "," + l.h + "," + this.atlasGen + "," + (mask ? mask.version : -1);
+        // C6 b: a chain landing from the worker moves the pixels' chainEpoch, so the slots that show a stale picture are made again
+        const key = tx0 + "," + ty0 + "," + tx1 + "," + ty1 + "," + px.version + "," + (px.chainEpoch || 0) + "," + l.x + "," + l.y + "," + l.w + "," + l.h + "," + this.atlasGen
+            + "," + (mask ? mask.version + ":" + (mask.chainEpoch || 0) : -1);
         if (entry.cache && entry.cache.key === key) {
             for (const g of entry.cache.groups) {
                 g.page.used = this.frame;
@@ -617,6 +619,8 @@ export class GLCompositor {
         }
         const want = (tx1 - tx0 + 1) * (ty1 - ty0 + 1);
         const groups = new Map();   // page pair -> { page, maskPage, data, slots }
+        let cEntry = null, mcEntry = null;   // the coarse level's entries (_drawLevel), looked up once
+        this._coarseUnpack = false;         // _uploadCoarse sets the unpack switches once per layer, not per slot
         for (let ty = ty0; ty <= ty1; ty++) {
             for (let tx = tx0; tx <= tx1; tx++) {
                 const tile = px.tileAt(tx, ty);
@@ -625,16 +629,23 @@ export class GLCompositor {
                 // everything under it: that tile of the layer is not drawn at all
                 const mTile = mask ? mask.tileAt(tx, ty) : null;
                 if (mask && !mTile) continue;
-                const got = this._slot(entry, (ty << 16) | tx, S, want);
+                const key = (ty << 16) | tx;
+                // C6 b: a tile with no chain yet and nothing in its slot at this level is drawn from its slot at the
+                // coarse level, sampled nearest (10 px a side, not 34 at fit): a whole new layer's first frame
+                const lv = this._drawLevel(px, entry, key, tx, ty, level);
+                const ent = lv === level ? entry : cEntry || (cEntry = this._atlasAt(px, lv)), Sl = slotSide(lv);
+                const got = this._slot(ent, key, Sl, want);
                 if (!got) return null;
                 const { page, slot } = got;
-                if (!this._upload(px, tx, ty, level, S, page, slot, tile)) continue;
-                let mPage = null, mSlot = null;
+                if (!(lv === level ? this._upload(px, tx, ty, lv, Sl, page, slot, tile) : this._uploadCoarse(px, tx, ty, lv, Sl, page, slot, tile))) continue;
+                let mPage = null, mSlot = null, mlv = level;
                 if (mask) {
-                    const mGot = this._slot(mEntry, (ty << 16) | tx, S, want);
+                    mlv = this._drawLevel(mask, mEntry, key, tx, ty, level);
+                    const mEnt = mlv === level ? mEntry : mcEntry || (mcEntry = this._atlasAt(mask, mlv)), mS = slotSide(mlv);
+                    const mGot = this._slot(mEnt, key, mS, want);
                     if (!mGot) return null;
                     mPage = mGot.page; mSlot = mGot.slot;
-                    if (!this._upload(mask, tx, ty, level, S, mPage, mSlot, mTile)) continue;
+                    if (!(mlv === level ? this._upload(mask, tx, ty, mlv, mS, mPage, mSlot, mTile) : this._uploadCoarse(mask, tx, ty, mlv, mS, mPage, mSlot, mTile))) continue;
                     mSlot.used = this.frame;
                     mPage.used = this.frame;
                 }
@@ -649,14 +660,16 @@ export class GLCompositor {
                 // the tile's rectangle in image coordinates, clipped to the image at the last row / column
                 const ox = tx << 8, oy = ty << 8;
                 const vw = Math.min(TILE_SIZE, px.width - ox), vh = Math.min(TILE_SIZE, px.height - oy);
-                const px0 = (slot.i % page.per) * S + GUTTER, py0 = Math.floor(slot.i / page.per) * S + GUTTER;
+                const lf = 1 << lv, lS = slotSide(lv);
+                const px0 = (slot.i % page.per) * lS + GUTTER, py0 = Math.floor(slot.i / page.per) * lS + GUTTER;
                 g.data.push(
                     l.x + ox * fx, l.y + oy * fy, vw * fx, vh * fy,
-                    px0 / page.side, py0 / page.side, (vw / f) / page.side, (vh / f) / page.side,
+                    px0 / page.side, py0 / page.side, (vw / lf) / page.side, (vh / lf) / page.side,
                 );
                 if (mPage) {
-                    const mx0 = (mSlot.i % mPage.per) * S + GUTTER, my0 = Math.floor(mSlot.i / mPage.per) * S + GUTTER;
-                    g.data.push(mx0 / mPage.side, my0 / mPage.side, (vw / f) / mPage.side, (vh / f) / mPage.side);
+                    const mf = 1 << mlv, mS = slotSide(mlv);
+                    const mx0 = (mSlot.i % mPage.per) * mS + GUTTER, my0 = Math.floor(mSlot.i / mPage.per) * mS + GUTTER;
+                    g.data.push(mx0 / mPage.side, my0 / mPage.side, (vw / mf) / mPage.side, (vh / mf) / mPage.side);
                 } else {
                     g.data.push(0, 0, 0, 0);
                 }
@@ -672,6 +685,51 @@ export class GLCompositor {
     }
 
     /**
+     * The level a tile of `px` is drawn at this frame (C6 b): `level`, unless the tile has no chain at all yet (its
+     * stamp at `level` is coarse: a new pixels object whose chains are in the worker) and its slot at `level` holds
+     * nothing, in which case `coarseLevel`: a slot of 10 px sampled nearest instead of 34 at fit, which is what
+     * makes the first frame after a whole change of a large layer cheap. The slot at `level` is uploaded when the
+     * chain lands (the landing moves the pixels' chainEpoch). `coarseLevel` null: every tile at `level`.
+     */
+    _drawLevel(px, entry, key, tx, ty, level) {
+        const cl = this.coarseLevel;
+        if (cl == null || level >= cl || !level || !px._stampAt) return level;
+        const st = px._stampAt(tx, ty, level, true);
+        if (st >= 0 || Number.isInteger(st)) return level;   // exact, or a stale chain (a picture at this level)
+        for (const page of entry.pages) { const have = page.slots.get(key); if (have && have.version !== -1) return level; }
+        return cl;
+    }
+
+    /**
+     * A coarse slot (`_drawLevel`): the tile sampled nearest at the coarse level, uploaded once per tile version.
+     * Its stamp is the coarse one `_levelBytes` gives and it records no neighbours, so the ordinary `_upload` at
+     * this level replaces it once the tile's chain is exact.
+     */
+    _uploadCoarse(px, tx, ty, level, S, page, slot, tile) {
+        const stamp = -0.5 - tile.version;
+        if (slot.version === stamp && !slot.near) return true;
+        const buf = this.tileBufs[level] || null;
+        const bytes = px.coarseSlot(tx, ty, level, buf);
+        if (!bytes) return false;
+        if (!buf || buf.length < bytes.length) this.tileBufs[level] = bytes;
+        const gl = this.gl;
+        gl.bindTexture(gl.TEXTURE_2D, page.tex);
+        if (!this._coarseUnpack) {
+            // premultiplied already (see _upload); nothing between two slots of this loop uploads a canvas
+            gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            this._coarseUnpack = true;
+        }
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, (slot.i % page.per) * S, Math.floor(slot.i / page.per) * S, S, S, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+        slot.version = stamp;
+        slot.near = null;
+        this.tileUploads++;
+        this.staleUploads++;
+        return true;
+    }
+
+    /**
      * Put a tile's bytes in its slot when the slot does not already hold that version; false when it has none.
      *
      * A slot holds more than its tile: its gutter is the edge lines of the eight neighbours
@@ -682,13 +740,19 @@ export class GLCompositor {
      * the undo of a fill at 0.75).
      */
     _upload(px, tx, ty, level, S, page, slot, tile) {
-        const near = px.gutterVersions ? px.gutterVersions(tx, ty, this.nearBuf) : null;
-        const same = slot.version === tile.version;
+        // C6 b: the stamps of the nine tiles the slot is made from, at this level (a tile's version where its bytes
+        // are exact, negative where its chain is on its way in the worker and the bytes are a stale or coarse picture)
+        const near = px.slotStamps ? px.slotStamps(tx, ty, level, true, this.nearBuf) : null;
+        const self = near ? near[4] : tile.version;
+        const same = slot.version === self;
         if (same && sameNear(slot.near, near)) return true;
+        // the tile's exact chain is on its way and the slot already holds a picture of this place (the tile before a
+        // write): it keeps showing that until the chain lands, which moves the pixels' chainEpoch and brings us back
+        if (self < 0 && slot.version !== -1) return true;
         let buf = this.tileBufs[level] || null;
         // the tile itself is what the slot holds: only its gutter is made and uploaded (a stroke commit at 1:1
         // re-uploaded the ring of whole slots around it, 5 -> 10 ms a frame at 15k, measured)
-        const bytes = px.tileWithGutter(tx, ty, level, buf, same);
+        const bytes = px.tileWithGutter(tx, ty, level, buf, same, true);
         if (!bytes) return false;
         if (!buf || buf.length < bytes.length) this.tileBufs[level] = bytes;
         const gl = this.gl;
@@ -719,10 +783,11 @@ export class GLCompositor {
             this.gutterUploads++;
         } else {
             gl.texSubImage2D(gl.TEXTURE_2D, 0, sx, sy, S, S, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
-            slot.version = tile.version;
+            slot.version = self;
             this.tileUploads++;
+            if (self < 0) this.staleUploads++;
         }
-        if (near) { if (!slot.near) slot.near = new Float64Array(8); slot.near.set(near); }
+        if (near) { if (!slot.near) slot.near = new Float64Array(9); slot.near.set(near); }
         return true;
     }
 

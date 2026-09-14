@@ -1864,6 +1864,315 @@ its region view runs only for a live stroke, which is keyed by the gesture. So n
     reference's 1200 x 800, because the editor canvas was 6 px shorter in that window. The size check
     returns no `bytes` key, which the failure message then asks for. It passed on the re-run.
 
+
+**(b) Mips off the main thread** (`inpaint_tiles.js`, `inpaint_compositor.js`, `inpaint_worker.js`, `px/kernels_js.js`,
+`inpaint_canvas.js`):
+
+- **What it cost before**, measured on 15000 x 10000 (a painted base and one full paint layer, tiles on, the window
+  in front, a 1865 x 1198 view; fit is level 3, all 2,360 tiles visible). Blocked ms of the frame after the change
+  (`markLayerChanged` / `markMaskChanged` / `markSelectionChanged`, the layer list and the draw; the operation's own
+  band copies are not in it), two runs each:
+
+  | change | fit, GPU | fit, Canvas 2D | 1:1, GPU | 1:1, Canvas 2D |
+  |---|---|---|---|---|
+  | a filter in place (every tile written) | 571-608 | 534-577 | 244-286 | 234 |
+  | a flip (new pixels) | 613-645 | 603-609 | 247-250 | 255-302 |
+  | mask from selection (a new mask) | 578-785 | 536-705 | 250-253 | 251-302 |
+  | invert of a selection | 288-414 | 277-408 | 36-47 | 36-38 |
+  | a whole touch after a 100 px write | 274-283 | 4-5 | 14-15 | 5-6 |
+
+  Where it went, for the flip at fit on the GPU path: the layer list's thumbnail **250 ms** (2,360 mip chains built
+  into a scratch it threw away, and 2,360 `putImageData` of 8 x 8 px that together cost 2.5 ms), the frame's atlas
+  **311 ms of chains** (`mips()`, 2,262 interior tiles) plus 28 ms for the 98 edge tiles' clamp copies and chains,
+  26 ms of `tileWithGutter`'s premultiply, 6 ms of 2,360 `texSubImage2D`, 3 to 5 ms of instances and slot lookups;
+  the release step (a) added 0.1 ms. So every chain was built **twice** at fit (4,622 chains: the thumbnail's and the
+  atlas's) and once at 1:1, where the thumbnail alone was the 230 to 280 ms. On the Canvas 2D path the region
+  canvas's rebuild (one `putImageData`) was 4 to 12 ms and its per-tile dirty path 2,360 puts of 32 x 32 in 4 to 6
+  ms: the "180 ms" the code's comment quotes did not reproduce. The whole touch was 2,262 chains and 2,360 uploads for
+  tiles whose pixels had not changed. Invert's 32 to 52 ms in `markSelectionChanged` is its `renderInfo` (the new
+  selection's bounds and the crop), not mips, and so is the rest of its 1:1 row.
+- **Built, in the order the plan asked for:**
+  1. **`touch()` gives no tile a new version.** Every write into a tile goes through `writable` (a new version, or a
+     copy that is a new tile object), `_share` or `_dropTile` (another tile object or none); `grep` finds no other
+     writer of `t.data`, the kernels included. So a touch only moves the pixels' own version, and a whole touch after
+     a write of one tile keeps every other tile's extent, mips, edge copy and atlas slot. It also no longer makes a
+     tile an undo step shares stale for the step. `pixels_test.js` `tiles_touch_keeps_tile_caches` holds it: the
+     other tiles keep their object, version, chain buffer and slot stamps, and the clone's tiles are untouched by a
+     touch through either holder. The canvas backend's `touch` is unchanged.
+  2. **No chain is built twice where the screen needs it.** The thumbnail takes the chain a tile keeps, and rebuilds
+     one a tile owns in that tile's buffer. A tile that has no chain of its own gets none from the thumbnail (the
+     review, below): its levels go into a scratch, and a chain from the worker that only a thumbnail asked for is
+     handed to the thumbnail's cell and dropped. `thumbnailCanvas` and `regionCanvas` rebuild with one `putImageData`
+     when a quarter or more of their cells are dirty (a new region canvas always did; a new thumbnail does now too),
+     and copy small cells word by word.
+  3. **The mips job and the scheduler.** `inpaint_worker.js` has a `mips` job: a batch of tile bytes (copies,
+     transferred) in, each tile's chain back, and for an edge tile also the chain of its clamp-extended bytes
+     (`clampExtend` moved into `kernels_js.js`, so both threads run the same code); the chains and the tile buffers
+     go back transferred (the reply line transfers what a job names in `transfer`). `ChainScheduler` in
+     `inpaint_tiles.js` owns the asks: a **display** reader (`regionCanvas(..., true)`, `thumbnailCanvas(true)`,
+     `tileWithGutter(..., display)`, `slotStamps`) that finds no exact chain may still build `CHAIN_SYNC_BUDGET`
+     (16) of them in the current task; beyond that it asks the scheduler, which copies the bytes in a microtask and
+     posts batches of up to 128 tiles (the first 32, while the pool of buffers the worker gives back fills), one at
+     a time. An answer is installed only on the tile object it was made from and at the version it was made from; a
+     later write discards it (`dropped`). Readers that are not display readers (`mips()`, the wand's and the film
+     panel's `sampleRegion`, `tileWithGutter` without the flag) stay exact and build on the spot, as before, and a
+     cell a display reader left stale is put again exactly when such a reader asks for it.
+  4. **What the screen shows meanwhile.** A tile that kept a chain (a write in place, or a copy on write, which
+     takes the original's buffers read-only and never writes into them) shows that previous chain; a tile that has
+     none (new pixels: a flip, a turn, a new mask, a restore, a load) shows its bytes **sampled nearest**. On the GPU
+     path such a tile is drawn from a slot at the **coarse level** (level 5, 10 px a side, its own edge as its
+     gutter: `coarseSlot`, `_uploadCoarse`). Measured in one build on the flip at fit: nearest sampling into the
+     level's own slots (34 px, the gutter read from the neighbours) made the draw 71 to 82 ms, the coarse slots 36
+     to 37; after the later tightening the coarse slots' draw is 9 to 10 ms. The plan's other option, a synchronous
+     chain for the visible tiles only, is the 311 ms above at fit, where every tile is visible. A slot at the tile's
+     level that already holds a picture keeps it until the chain lands. Stamps replace the slot's version: a tile's version where the bytes are exact, -1 - the chain's
+     sequence for a stale chain, -0.5 - the version for a coarse picture, for the tile and its eight neighbours
+     (`slotStamps`), so a landing re-uploads exactly the slots that showed something else. The region canvases and
+     the thumbnail keep a `stale` set; a landing (`_chainLanded`) moves those cells to `dirty` and, when a reader of
+     the screen asked for the chain, moves the pixels' `chainEpoch`, which the atlas's instance key and
+     `layerRegionView`'s signature read (the selection's too, since the review).
+  5. **The editor.** A module-level transport sends the batches to a **mips worker of its own** (the same module):
+     measured with a whole-picture magic wand running when a flip at fit asks for its chains, the screen was exact
+     2.4 to 2.6 s after the flip with its own worker and 3.1 to 3.5 s on the shared one, which runs the flood first
+     (the rest of that wait is the wand's own main-thread work, blocked for 1.2 s and 0.5 s, during which no landing
+     can be installed). `watchChains()` waits for landings while chains are pending; for the document's pixels that
+     got some it redraws their thumbnails where they are shown (`redrawThumbsOf`: the layer list, the reference list,
+     the result list), and when a reader of the screen had asked for them (`landing().screen`) it drops the view's
+     filter and colour-match caches (they were made from the stale picture) and draws again, the navigator too.
+     `drawThumb` watches the chains it asks for itself. `ed.mipsSettled()` resolves when nothing is on its way.
+     Without a worker (or after it fails) the transport is gone and every chain is built where it is read, as before.
+- **Measured after**, the same document and view (blocked ms of the frame after the change; "settled" is the wall
+  time from the end of the operation's task until no chain is on its way):
+
+  | change | view | GPU before | GPU after | settled [worst landing frame] | Canvas 2D before | Canvas 2D after | settled [worst landing frame] |
+  |---|---|---|---|---|---|---|---|
+  | a filter in place | fit | 571-608 | **12-25** | 554-1233 [14-34] | 534-577 | **18-20** | 428-431 [3-30] |
+  | a filter in place | 1:1 | 244-286 | **24** | 403-422 [1-2] | 234 | **21-22** | 412-419 [2-3] |
+  | a flip | fit | 613-645 | **18** | 385-403 [6-11] | 603-609 | **24-25** | 406-469 [3-4] |
+  | a flip | 1:1 | 247-250 | **25-26** | 415-432 [1] | 255-302 | **25** | 447-473 [3-4] |
+  | mask from selection | fit | 578-785 | **21-24** | 665-775 [15-19] | 536-705 | **24-25** | 736-879 [5-6] |
+  | mask from selection | 1:1 | 250-253 | **25-26** | 402-426 [1] | 251-302 | **24** | 396-408 [2-3] |
+  | invert of a selection | fit | 288-414 | **50-53** | 336-352 [2] | 277-408 | **50-101** | 360-493 [4-5] |
+  | invert of a selection | 1:1 | 36-47 | **39-54** | 45-58 | 36-38 | **39-40** | 44-45 |
+  | a whole touch after a small write | fit | 274-283 | **4** | 44-45 | 4-5 | **4** | 43-45 |
+  | a whole touch after a small write | 1:1 | 14-15 | **3-4** | 47-48 | 5-6 | **5-6** | 43-46 |
+
+  (About 45 ms of "settled" is the probe's own floor: a GL finish, a 40 ms wait and a frame. The in-place filter's
+  1,233 ms and its 34 ms landing frame are one run of two, with the 600 MB the operation's band copies left to
+  collect; its other run settled in 554 ms.)
+
+  A whole change of a layer or a mask at 15k: **12 to 26 ms instead of 530 to 790**, and the screen exact about
+  0.4 s later (0.7 to 0.9 s for a new mask, whose landings walk the layer's tiles with the mask's). At 1:1 the 230
+  to 300 ms of the thumbnail are gone; the 15 to 17 ms left in the draw there are the 40 level-0 slots' premultiply
+  and upload, which C3's "first frame fit -> 1:1" row already had. The whole touch is 3 to 6 ms on both paths.
+- **What the goal of one frame did not get, and why**: at fit on the GPU path a flip is 18 ms and the in-place filter
+  12 to 25; the other whole changes are 21 to 26 ms, one frame and a half. What is left in them: the layer list's
+  thumbnail, 6 to 8 ms for 2,360 cells and their asks of the scheduler; the draw's 2,360 coarse slots and their
+  uploads, 9 to 10 ms at fit; at 1:1 the level-0 uploads above. **Invert** stays at 50 ms and more: 33 to 70 ms of
+  it is `markSelectionChanged`'s `renderInfo`, which reads the new selection's bounds (`getBounds`, over tiles whose
+  extents are all new) and the crop worked out from them: not a mip cost, and 32 to 52 ms before as well. The landing frames of a new mask on
+  the GPU path reach 15 to 19 ms. Each is named for the next session rather than built here.
+- **Not built, and why**: a version per mip level: a stale chain is one picture of the tile, and the stamps
+  say which one a slot holds, which is all the display needs. An upload budget per frame for exact slots (the
+  landing frames of a new mask reach 14 to 19 ms at fit because the layer's own tiles are walked again with the
+  mask's). The **smudge tool** is untouched: it reads the layer's display mirror (572 MB) and makes a pyramid of it
+  per move, 420 to 750 ms a move at 15k before and after; this step's touch change does not reach it (its cost is
+  the mirror and the pyramid, not tile versions).
+- **Gates**:
+  - `pixels_test.js` gains three cases. `tiles_touch_keeps_tile_caches` (above). `tiles_mips_job_matches_the_kernel`:
+    a real worker gets the tiles of a 601 x 501 store (an interior tile, and edge tiles 89 and 245 px short) and its
+    chains and edge chains are the main thread's byte for byte, the buffers transferred both ways.
+    `tiles_display_chains_through_a_scheduler`, with a scheduler whose worker answers when the case says so: a new
+    store's display slot is coarse (its pixel the nearest sample, premultiplied) and builds no chain without budget;
+    the region canvas marks every cell stale; the answer installs every chain, moves `chainEpoch`, makes the stale
+    cells dirty, and the display slots and the region canvas are then those of an exact twin; a write in place shows
+    the tile's previous chain; a second write while the answer is away drops the answer (the chain is not installed,
+    `dropped` counts it) and the next answer is exact; a copy on write shows the original's chain and edge chain and
+    building its own writes into neither; the thumbnail builds no chain the tiles have and keeps the ones it builds;
+    a budget of two builds two chains in a task and has its budget back in the next. The review added to it: (5b) the
+    original's last holder rebuilding in place writes into neither buffer a copy reads; (6) the thumbnail keeps no chain
+    on a tile that had none and rebuilds an owned one in its buffer; (6b) a chain only a thumbnail asked for is handed
+    to its cell, kept nowhere, leaves `chainEpoch` alone, and a whole rebuild of the thumbnail does not ask again;
+    (8) the queue goes newest first and a cell still shown stale keeps its tile ahead; (9) a write outside a region
+    canvas's tiles marks none of its cells; (10) `regionCanvas` at levels 3 to 5 (the word copies) against cells put
+    together by hand, exact, as coarse blocks of nearest samples, and after a landing.
+  - `editor_test.py` gains `a_whole_change_builds_its_mips_in_the_worker_and_the_screen_ends_exact` (both backends,
+    the GPU path and with a filter layer in the stack): a flip of a 4000 x 3000 layer at fit builds at most
+    `CHAIN_SYNC_BUDGET` chains in its task and asks for the rest (16 and 177); after `mipsSettled()` the screen is
+    the view drawn from caches released with the region canvases and thumbnails (`releaseCaches({ mirrors: true })`;
+    without them the Canvas 2D path's reference was drawn from the same region canvases as the screen, and a cell left
+    coarse matched itself: the review) and every chain a tile keeps as exact is the kernel's; a flip with a batch
+    really in flight followed by an in-place fill with thin stripes drops the late answers and the settled screen shows
+    the fill; `releaseCaches` empties the scheduler's pool. Tolerance 3 levels on the GPU path: the settled screen took
+    its level-1 slots in the order the chains landed, the released view in reading order, and the page is sampled up
+    to 3 levels apart at the stripes' edges in another place of the page (the slots read back exact in both; 0 with the
+    coarse slots off and on the code before this step).
+  - The review added three steps. `mips_landings_redraw_every_thumbnail_and_the_screen_only_where_it_asked`: a flip,
+    a reference layer added, the result list drawn and a rename opened while the chains are away; once they land the
+    layer's row, the reference's row and the result item were each last drawn from the thumbnail as it is (the exact
+    one), no list was rebuilt and the rename is open; at 1:1 a hidden layer's flip keeps no chain on its tiles and its
+    landing leaves the view's caches. (Compared by the thumbnail a canvas was drawn from, not as pixels: the same
+    thumbnail drawn into two 40 x 28 canvases came out 29 levels apart on 2,251 bytes or identical, run by run.)
+    `a_clipped_stroke_takes_the_selection_its_mips_land_with`: 40 dabs clipped to a selection inverted while its chains
+    are held back 3 s; once they land the live preview is its scratch built again. The film panel's flatten 500 ms
+    after a change draws the layer through the stroke's scratch for the whole picture and made every rebuild happen
+    anyway, so the step lets it run first and fails if a sampled pass comes during the gesture.
+    `the_navigator_watches_the_chains_it_asks_for`: a 2400 x 1600 base at fit (level 0) with the navigator mounted as
+    the node mounts it; its region canvas holds no landed cell it did not draw. On the canvas backend the released view is a reference only on the GPU path: with a filter layer in the
+    stack that backend's view before and after `releaseCaches()` differs by 31 levels on about 726,000 bytes with no
+    change at all (measured with and without the flip), which has nothing to wait for.
+  - Waits added where a step reads the screen or counts uploads right after a whole change: `editor_test.py`'s edit
+    step `settle` and step (a)'s `frame`, the final review step before it counts the fill's uploads (it failed once
+    with 85 uploads for 70 tiles: the landing of the layer's own chains counted as the fill's), `composite_test.py`'s
+    build, view shot, gpu-vs-2d step and every window comparison; `perf_test.py`'s new rows.
+  - `perf_test.py` gains "frame after a whole change" at fit and at 1:1 on the GPU stack (the paint layer replaced by
+    a flip, the frame `markLayerChanged`, the layer list and the draw make), each with "mips settled [longest block]",
+    and "frame after a whole touch" at fit. Since the review the benchmark waits for the first frame's chains before
+    its first row and before the fit pan on the GPU stack, the block hides the colour-matched result too, "settled"
+    ends when `mipsSettled()` resolves (it held a fixed 50 ms wait), the bracket is the longest gap of a 1 ms timer
+    while the chains land (a landing's own work runs outside `draw()`, which the old "worst frame" timed alone), and
+    two rows count the chains built in the frame, asked for, landed and handed to a thumbnail.
+- **Mutations, each red**:
+
+  | mutation | red |
+  |---|---|
+  | a late chain installed without the version check | pixels: "a chain of the bytes before the second write was installed"; editor: "no late answer was dropped", "the settled screen does not show the second write", "a chain kept as exact is not the chain of its tile's bytes" |
+  | a stale picture never replaced when the fresh chain lands (`_chainLanded` does nothing) | pixels: "the landing did not move the pixels' chainEpoch"; editor, GPU path only (the 2d row read 0, blind to it until the review): the settled screen against released caches 164 levels on 454,873 bytes after the flip, 184 on 195,129 after the fill |
+  | the copy on write builds its chain into the chain it shares | pixels: "building the copy's chain wrote into the chain the original's holders read, at byte 2648" |
+  | `thumbnailCanvas` builds its own chain again, into a buffer it does not keep (replaced by the review's rule: the thumbnail keeps no chain on a tile without one) | pixels: "the thumbnail built 0 chains for 6 tiles and mips() then 6 more" |
+  | `touch()` gives every tile a new version again | pixels: `tiles_display_mirror` "touch() gave a tile a new version", `tiles_touch_keeps_tile_caches` "tile 1,0: a touch gave it a new version" |
+  | the landing keeps the view's filter and colour-match caches | editor, Canvas 2D path: 42 levels on 127,675 bytes after the flip |
+  | a slot keeps a stale picture after its chain is exact | editor, GPU path: 184 levels on 195,127 bytes after the fill |
+
+  Each ran on a fresh tile-mode instance, and the source was restored and compared byte for byte afterwards.
+- **The review's fixes** (a three-lens review, two refuting verifiers per finding; every finding below was confirmed by
+  both, the last by one, and each fix has its counter-proof in the table after the list):
+  - *A clipped stroke kept the clip of the selection before an invert* (races): `layerRegionView`'s signature carries
+    the selection's `chainEpoch`, so the stroke's scratch is built again when the selection's chains land.
+  - *A landing rebuilt both layer lists under an open rename* (races): a reference row is not in the layer list, so
+    `refreshLayerThumb` fell back to `renderLayers()` on every batch; `watchChains` now redraws a landed layer's
+    thumbnails in place wherever they are (`redrawThumbsOf`) and never rebuilds a list.
+  - *The result list's thumbnails stayed coarse* (races): `redrawThumbsOf` redraws the result items made from the
+    layer too (`canvas[data-hist]`).
+  - *A copy's stale picture became the other holder's new pixels* (races): when a copy on write takes the original's
+    chain and edge chain, the original stops owning them, so its last holder's rebuild allocates.
+  - *The navigator's chains were watched by nobody* (races, node only): `drawThumb` calls `watchChains()`.
+  - *The thumbnail kept a full chain on every tile of every layer* (cost, major; 196 MB a hidden 15k layer, and nothing
+    released it): a tile without a chain buffer of its own gets none from the thumbnail. Its levels go into a scratch,
+    a chain only a thumbnail asked for (`request(..., screen = false)`) is handed to the cell and dropped, and the
+    thumbnail keeps that cell (`th.cells`, at most its own size) while the tile keeps its version. Found while fixing:
+    without the kept cell a rebuild of the whole thumbnail (a batch landing on a quarter of its cells) asked for the
+    handed tiles again, for good: 1.8 million requests in a few minutes on the check instance.
+  - *A landing only a thumbnail asked for dropped the view's caches* (cost): the landing reports the stores a reader
+    of the screen asked for (`landing().screen`), and only those move `chainEpoch` and drop the filter and colour-match
+    caches.
+  - *A write outside a region canvas rebuilt it whole* (cost): `_changed` marks only the cells a region holds.
+  - *A replaced store's chains went first* (cost): the queue is flushed newest first, an entry asked for again goes to
+    its end, and a region canvas's cells still shown stale keep their tiles ahead (`touch`), so the pixels on the
+    screen go before the pixels a later whole change replaced. (A liveness test would not catch a flip: the replaced
+    pixels still hold the tile at its key.)
+  - *The released view of the 2d rows was drawn from the same region canvases* (gates, major): the step releases the
+    caches with the region canvases and thumbnails, and its second write adds thin stripes, so a coarse cell is not
+    the exact one; the M2 row above says what the step saw before.
+  - *The perf block moved every row below it, and "inside the noise" was wrong* (gates, major): four runs with the block
+    after the last row are the A/B of the old rows, the benchmark waits for its first frame's chains and before the fit
+    pan, and the table below says what moved; the block itself went back where it measures the change it names.
+  - *"In flight" counted queued tiles* (gates): the step asserts `flight > 0` and reports queued and in flight apart.
+  - *"Settled" held a 50 ms wait and the worst frame missed the landings' own work* (gates): see `perf_test.py` above.
+  - *No gate compared the region canvas's word copies* (gates): `pixels_test.js` (10).
+  - *No gate read a row after a landing* (gates): the thumbnails step.
+  - *The CHANGELOG bullet read as if a whole change no longer froze the window* (gates): it says what went (the tiles'
+    preparation for the screen) and what stays (0.8 s for a flip, 1.2 to 1.4 s for mask from selection at 15k).
+  - *memoryReport said nothing of the chains and the scheduler's pool* (cost, one verifier): the report's `tiles` has
+    `chains` and `chainBytes` (a buffer a copy shares counted once) and `chainPoolBytes`, and `releaseCaches` empties
+    the pool (32 MB at most, kept from the first whole change until the app quit) when nothing is on its way. The
+    refuting verifier was right that the chains were missing from the report before this step; the pool is new here.
+
+  | review mutation | red |
+  |---|---|
+  | the stroke's view key without the selection's `chainEpoch` | editor `a_clipped_stroke_takes_the_selection_its_mips_land_with`: 255 levels on 103,985 bytes (green until the step let the film panel's flatten run first and drew the tint: that flatten rebuilt the scratch anyway, and the moving ants made the step fail twice in ten editor runs on the fixed code) |
+  | a landing refreshes rows through `refreshLayerThumb` | editor thumbnails step: "the landings rebuilt the layer lists 3 times", "the open rename was taken", the result item stale |
+  | a landing leaves the result list's thumbnails | editor thumbnails step: "the result list's item was last drawn from a thumbnail its chains' landing changed afterwards" |
+  | the original keeps owning the chains its copy reads | pixels (5b): "the original's rebuild wrote into the chain its copy shows, at byte 0" |
+  | `drawThumb` does not watch its chains | editor navigator step: "the navigator's region at level 2 keeps 0 stale and 54 landed cells it never drew" |
+  | the thumbnail keeps a chain on every tile | pixels (6): "the thumbnail built 6 chains to keep on tiles that had none"; editor: "a hidden layer at 1:1 kept 192 chains on its tiles" |
+  | the thumbnail keeps no cell for a tile without a chain | pixels (6b): "the thumbnail after the landing differs from an exact one at byte 0" |
+  | a thumbnail-only landing drops the view's caches | editor thumbnails step: "a landing only a thumbnail asked for dropped the view's caches" |
+  | a write marks cells outside a region canvas | pixels (9): "a write outside the region marked 1 of its cells dirty" |
+  | the queue goes oldest first | pixels (8): "the batch after B asked holds 0 of B's tiles and A's older ones went first" |
+  | a stale region cell does not keep its tile ahead | pixels (8): "the cells still shown stale did not bring their tiles ahead of B's newer ones" (green until (8) read a store whose second read touches its stale cells without putting them again) |
+  | a landing moves `chainEpoch` but leaves the region canvases' stale cells | editor whole-change step, 2d path: 42 levels on 136,485 bytes after the flip |
+  | the flush waits for a timer | editor whole-change step: "no batch of chains was in flight when the second write came (192 queued)" |
+  | `releaseCaches` keeps the scheduler's pool | editor whole-change step: "releaseCaches kept 128 buffers of the mips scheduler's pool" |
+  | the region canvas's word copy drops the level's offset | pixels (10): "level 3, exact: differs at byte 1 (51 against 36)" |
+  | a landing redraws no thumbnail | editor thumbnails step: the layer's row, the reference's row and the result item each "last drawn from a thumbnail its chains' landing changed afterwards" |
+
+- **`perf_test.py`** (15000 x 10000, tiles on, a fresh instance each, the card not freed, as the run before the change).
+  The build's two runs (`c6b-perf-on`, `-on2`) put the new block before the stroke rows; the review showed that this
+  compared the old benchmark on the old tree with a new benchmark that replaces a paint layer twice before those rows,
+  so they were no A/B, and "the other rows are inside the noise" was wrong (the PNG encode's blocked time went from 30
+  to 232-244 ms, `getValue` from 0 to 8 ms, the fit pan on the GPU stack from 0.3 to 2 ms). After the fixes:
+
+  - **The rows the benchmark had before**, from four runs with the new block moved after the last row, so they run on
+    the document as before (`c6b-final-perf` to `-perf4`), against the log before C6 (b) (`c6b-perf-before`):
+
+    | row | before | after (four runs) |
+    |---|---|---|
+    | pan at fit, GPU stack | 0.3 ms [6.8] | 0.3 ms [5.9-6.9] |
+    | undo step | 27.7 ms | 10.9-14.6 ms |
+    | selection change | 26.9 ms | 19.0-20.5 ms |
+    | stroke commit (undo copy) | 21.2 ms | 17.3-21.3 ms |
+    | full composite | 112.9 ms | 90.4-102.1 ms |
+    | getValue (autosave) | 0.0 ms | 5.3-7.6 ms |
+    | invert, blocked | 1215 ms | 740-824 ms |
+    | magic wand (an object), blocked | 676 ms | 188-259 ms |
+    | bucket fill, blocked | 562 ms | 335-353 ms |
+    | stroke across the picture (40 dabs), blocked | 620 ms | 146-161 ms |
+    | its commit, band by band, blocked | 562 ms | 604-698 ms |
+    | PNG of the composite, blocked [wall] | 30 ms [3930] | 88-284 ms [3758-4558] |
+
+    The fit pan's 2 ms was the benchmark's: its first frame's chains were still in the worker when the synchronous pan
+    ran, so it panned over coarse slots; the benchmark waits for them now. `getValue` (median of three; its maximum,
+    the whole selection's `toCanvas` for the background encode, is 104-141 ms before and after) and the PNG encode's
+    blocked time moved without the block and were not broken down. Grow, shrink and feather swing between 200 and 800
+    ms from run to run as they did before C6 (b), and the wand's whole-image band stays at 4.6 to 5.6 s (phase E).
+  - **The new rows**, with the block where it was (`c6b-final-perf5`), now with the colour-matched result hidden as
+    well as the filter layer (a whole change under it invalidates its match, which is not a mips cost):
+
+    | row | build (match shown) | after the review |
+    |---|---|---|
+    | frame after a whole change, fit | 29.1 / 32.8 ms | 28.5 ms; 16 chains built here, 2,360 asked |
+    | &nbsp;&nbsp;mips settled [longest block] | 703-718 ms [frame 15-16] | 702 ms [141] |
+    | frame after a whole change, 1:1 | 52.1 / 55.4 ms | 38.7 ms; 16 built, 82 asked |
+    | &nbsp;&nbsp;mips settled [longest block] | 90-113 ms [frame 7] | 35 ms [6] |
+    | frame after a whole touch, fit | 18.8 / 18.9 ms | 12.9 ms |
+
+    The longest block while a whole change's chains land at fit is **141 ms**, which the old "worst frame" could not
+    see: a check instance traced it to the film panel, whose thumbnails flatten the document 500 ms after a change
+    through `sampleRegion`, a reader that is not a display reader and builds the chain of every tile it needs on the
+    main thread, 2,360 of them at 15k (`main` 2,360 after the 1:1 flip there, while the frame had asked the worker for
+    2,344). That is also why the 1:1 row asks for 82: the flatten after the fit row built the rest. Named for the next
+    step; the plan kept `sampleRegion` exact on purpose.
+- **Runs** (fresh instances, strict): the build's final tree `--tiles on` (`c6b-tiles3`) and `--tiles off` (`c6b-canvas6`)
+  with `pixels editor composite commands shape brush film glb ailabel size transparent generate log mcp nodecopy`
+  ALL PASS, and `--copy --tiles off pixels editor composite commands` (`c6b-copy5`) ALL PASS. On the way:
+  - The new step failed on the canvas backend three times for reasons in the step: its layer's canvas was shrunk
+    after `fromCanvas`, which that backend adopts as the pixels (the flip showed nothing), and then the Canvas 2D
+    path's released view differed as described above.
+  - `c6b-tiles2` failed `c2_final_review_drag_undo_steps_writes_mirrors_report_limits` with 85 uploads for 70 tiles:
+    the layer's own chains landed while the step counted the fill's uploads. It waits for `mipsSettled()` first now.
+  - `c6b-canvas4` failed `live_stroke_preview_shows_what_the_commit_writes` (shape, 90 levels) and `composite_test.py`'s
+    window step (0 uploads, 63 levels at half), right after a check instance of mine had been closed; `c6b-copy4`
+    straight after it and `c6b-canvas5` passed both, with no change in between.
+
+  After the review's fixes: `--tiles on` (`c6b-final-tiles2`), `--tiles off` (`c6b-final-canvas2`) with the fifteen gates
+  and `--copy --tiles off pixels editor composite commands` (`c6b-final-copy2`) ALL PASS, and `perf:15000x10000`
+  (`c6b-final-perf5`) PASS. On the way `c6b-final-tiles` failed the new clipped-stroke step once on correct code (the
+  marching ants an earlier step leaves on moved between its two screens; eight editor runs, `c6b-diag1` to `-diag8`,
+  failed it once more, then it drew the tint and passed `-diag9` to `-diag11` and the final gate), and a first perf pass with the block at the end measured
+  its rows on a document the operation rows had given display mirrors (187 and 772 ms frames), which is why the block
+  went back.
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in

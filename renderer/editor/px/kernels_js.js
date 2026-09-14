@@ -110,6 +110,37 @@ export function mipChainBytes(size, levels) {
     return n;
 }
 
+/**
+ * A square tile's RGBA8 bytes clamp-extended in place from their valid part (vw × vh) to the whole
+ * size × size: the columns right of vw repeat column vw - 1 and the rows below vh repeat row vh - 1.
+ * The last tile of a row or a column of the tile store gets this before its mips are built, so the
+ * image's own edge does not fade by a level of mip (docs/PLAN_BCE.md §C3 a); the worker's mips job
+ * runs the same code (§C6 b).
+ */
+export function clampExtend(bytes, size, vw, vh) {
+    bytes = bytesOf(bytes);
+    const w32 = LITTLE && bytes.byteOffset % 4 === 0 ? new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 2) : null;
+    if (vw < size) {
+        for (let y = 0; y < vh; y++) {
+            const row = y * size;
+            if (w32) { w32.fill(w32[row + vw - 1], row + vw, row + size); continue; }
+            const i = (row + vw - 1) * 4;
+            for (let x = vw; x < size; x++) {
+                const j = (row + x) * 4;
+                bytes[j] = bytes[i]; bytes[j + 1] = bytes[i + 1]; bytes[j + 2] = bytes[i + 2]; bytes[j + 3] = bytes[i + 3];
+            }
+        }
+    }
+    if (vh < size) {
+        const last = (vh - 1) * size;
+        for (let y = vh; y < size; y++) {
+            if (w32) { w32.copyWithin(y * size, last, last + size); continue; }
+            bytes.copyWithin(y * size * 4, last * 4, (last + size) * 4);
+        }
+    }
+    return bytes;
+}
+
 /** The `levels` mips of a square tile, largest first, one after the other in `out`. */
 export function mipChain(src, size, levels, out = null) {
     src = bytesOf(src);

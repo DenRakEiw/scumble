@@ -47,9 +47,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   time you changed either. On a 15000 × 10000 picture that copy and what it was built from came to
   1.86 GB, and one dab of the mask brush stopped the window for a quarter of a second. The mask is
   now applied while the picture is drawn, from the same tiles as everything else: that dab takes
-  about a millisecond and the 1.86 GB are gone. Changing a *whole* mask at once (mask from
-  selection, inverting it) is slower than it was — about a sixth of a second on such a picture —
-  because every tile of the mask has to be prepared again; that is the next thing on the list.
+  about a millisecond and the 1.86 GB are gone. When a *whole* mask or layer changes at once (mask
+  from selection, a flip, a filter applied to the layer), preparing every tile for the screen no
+  longer adds a quarter to half a second on such a picture (tile mode): the next frame shows a
+  coarse picture of the new tiles, and the sharp one follows within about a second. The change
+  itself still holds the window for most of a second on a 15000 × 10000 picture (0.8 s for a
+  flip, 1.2 to 1.4 s for mask from selection).
 - **Growing, shrinking, feathering and inverting a selection.** These four used to move the whole
   selection through a background worker whatever you had selected — on a 15000 × 10000 picture,
   600 MB of it, three times over. They now work on the area the selection covers plus what the

@@ -15,6 +15,9 @@
  *                   main thread at 96 MP).
  *   flood           the magic wand's and the bucket's region: the similar pixels around a
  *                   point, clipped to the selection, as a coloured shape.
+ *   mips            the mip chains of a batch of tiles, after a change of a whole layer or
+ *                   mask (2,360 chains, about 300 ms, at 15000 x 10000). The editor runs
+ *                   this job in a worker of its own, so a long flood does not hold it up.
  *
  * Pixels arrive as ImageBitmaps (transferred, never copied through structured cloning) and
  * are closed as soon as they are drawn. Every reply carries the request's id; a failure
@@ -22,6 +25,37 @@
  */
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
+import { mipChain, mipChainBytes, clampExtend } from "./px/kernels_js.js";
+
+const TILE = 256, LEVELS = 5;
+
+/**
+ * The mip chains of a batch of tiles (docs/PLAN_BCE.md §C6 b): each tile's bytes (a copy, transferred) give
+ * its chain, and an edge tile (valid part vw x vh below 256) also the chain of its clamp-extended bytes, which
+ * is what the atlas and the region canvases draw. The same kernels the main thread runs, so the bytes are the
+ * ones it would build. The chains and the tile buffers go back transferred (the buffers for the next batch).
+ */
+function mips(msg) {
+    const n = mipChainBytes(TILE, LEVELS);
+    const chains = [], exts = [], datas = [], transfer = [];
+    for (const t of msg.tiles) {
+        const bytes = new Uint8Array(t.data);
+        const chain = mipChain(bytes, TILE, LEVELS, new Uint8Array(n));
+        chains.push(chain.buffer);
+        transfer.push(chain.buffer);
+        if (t.vw < TILE || t.vh < TILE) {
+            clampExtend(bytes, TILE, t.vw, t.vh);
+            const ext = mipChain(bytes, TILE, LEVELS, new Uint8Array(n));
+            exts.push(ext.buffer);
+            transfer.push(ext.buffer);
+        } else {
+            exts.push(null);
+        }
+        datas.push(t.data);
+        transfer.push(t.data);
+    }
+    return { chains, exts, datas, transfer };
+}
 
 const exports_ = new Map();   // job id -> { writer, format }
 
@@ -98,6 +132,7 @@ async function run(msg) {
     if (msg.op === "png") return png(msg.bitmap, !!msg.hash);
     if (msg.op === "selection") return selection(msg);
     if (msg.op === "flood") return flood(msg);
+    if (msg.op === "mips") return mips(msg);
     if (msg.op === "export_begin") {
         const opts = { width: msg.width, height: msg.height };
         exports_.set(msg.job, { format: msg.format, writer: msg.format === "psd" ? new PsdWriter(opts) : new OraWriter(opts) });
@@ -130,8 +165,10 @@ if (inWorker) self.onmessage = async (e) => {
     const msg = e.data || {};
     try {
         const result = await run(msg);
-        // an ImageBitmap in the reply is transferred, never copied
-        self.postMessage({ id: msg.id, ok: true, ...result }, result && result.bitmap ? [result.bitmap] : []);
+        // an ImageBitmap in the reply is transferred, never copied, and so are the buffers a job names in `transfer`
+        const transfer = result && result.transfer ? result.transfer : result && result.bitmap ? [result.bitmap] : [];
+        if (result) delete result.transfer;
+        self.postMessage({ id: msg.id, ok: true, ...result }, transfer);
     } catch (err) {
         // a bitmap that was transferred but never drawn would leak until the worker dies
         for (const k of ["bitmap", "selBitmap"]) { try { if (msg[k] && msg[k].close) msg[k].close(); } catch (_) { /* ignore */ } }

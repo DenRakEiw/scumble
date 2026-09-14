@@ -147,6 +147,7 @@ BUILD = """
     ed.renderLayers();
     ed.view = { scale: 1, x: 40, y: 30, angle: 0 };
     ed.draw();
+    await ed.mipsSettled();   // C6 b: no mip chain of the whole changes above still on its way to the screen
     return { w: ed.width, h: ed.height, layers: ed.layers.length };
 })()
 """
@@ -165,6 +166,7 @@ FULL = """
 VIEW = """
 (async () => {
     const ed = window.__cmp;
+    await ed.mipsSettled();
     ed.sceneSig = null;
     ed.draw();
     await new Promise((r) => setTimeout(r, 120));
@@ -187,6 +189,7 @@ VIEW = """
 GL_VS_2D = """
 (async () => {
     const ed = window.__cmp;
+    await ed.mipsSettled();
     const fx = ed.layers.find((l) => l.kind === "filter");
     if (fx) fx.visible = false;
     const shot = () => {
@@ -384,7 +387,9 @@ WINDOW = """
     const shot = () => { ed.sceneSig = null; ed.flatCache = null; ed.draw(); const c = mk(ed.canvas.width, ed.canvas.height); c.getContext("2d").drawImage(ed.canvas, 0, 0); return c.getContext("2d").getImageData(0, 0, c.width, c.height).data; };
     const diff = (a, b) => { let max = 0, sum = 0, over = 0; for (let i = 0; i < a.length; i += 4) { const aa = a[i + 3], ba = b[i + 3]; let d = Math.abs(aa - ba); for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(a[i + k] * aa / 255 - b[i + k] * ba / 255)); if (d > max) max = d; if (d > 2) over++; sum += d; } return { max: +max.toFixed(2), mean: +(sum / (a.length / 4)).toFixed(4), over }; };
     const out = { view: [ed.canvas.width, ed.canvas.height], pixelsCopy: !!pixelsOptions().copy };
-    const compare = (label) => {
+    const compare = async (label) => {
+        // C6 b: both paths read the exact mips, not whatever is still on its way from the mips worker
+        await ed.mipsSettled(); shot(); await ed.mipsSettled();
         ed.compositorOff = true; const cpu = shot();
         ed.compositorOff = false; const used = ed.glCompositeUsable({}); const gpu = shot();
         out[label] = { ...diff(cpu, gpu), used };
@@ -393,7 +398,7 @@ WINDOW = """
     // the uploads of either path: a window of a source canvas, or the tiles of an atlas slot
     const up = () => { const s = stats(); return s.windowUploads + s.atlas.uploads; };
     out.tiles = !!ed.tileMode;
-    compare("at1to1");
+    await compare("at1to1");
     const st0 = stats();
     out.stats = { entries: st0.entries, windows: st0.windows, MB: +(st0.bytes / 1048576).toFixed(1), windowMB: +(st0.windowBytes / 1048576).toFixed(1), uploads: st0.windowUploads, wholeMB: +(W * H * 4 * 2 / 1048576).toFixed(1) };
     out.atlas = { pages: st0.atlas.pages, slots: st0.atlas.slots, sources: st0.atlas.sources, MB: +(st0.atlas.bytes / 1048576).toFixed(1) };
@@ -407,22 +412,22 @@ WINDOW = """
     out.uploadsAfterPanBack = up() - ub;
     const u1 = up();
     ed.view.x -= Math.round(ed.canvas.width * 1.5); ed.view.y += Math.round(ed.canvas.height * 0.8);
-    compare("afterPan");
+    await compare("afterPan");
     out.uploadsAfterBigPan = up() - u1;
     const u2 = up();
     { const ix = Math.round(-ed.view.x + ed.canvas.width / 2), iy = Math.round(-ed.view.y + ed.canvas.height / 2); layer.px.drawInto([ix - 60, iy - 60, ix + 60, iy + 60], (x) => { x.globalAlpha = 0.6; /* what the dots left on lc's context, which this dab used to draw with */ x.fillStyle = "#ffffff"; x.fillRect(ix - 60, iy - 60, 120, 120); }); ed.markLayerChanged(layer, [ix - 60, iy - 60, ix + 60, iy + 60]); }
-    compare("afterDab");
+    await compare("afterDab");
     out.uploadsAfterDab = up() - u2;
     ed.view.x = Math.round(ed.canvas.width * 0.6); ed.view.y = Math.round(ed.canvas.height * 0.6);
-    compare("atCorner");
+    await compare("atCorner");
     ed.fitView();
     for (let i = 0; i < 6; i++) shot();   // the display levels come one per frame; both paths have to draw from the same ones
-    compare("fit");
+    await compare("fit");
     // exactly half: the source itself, drawn 2:1 by both paths. (At a fractional zoom-out, fit
     // for one, the two paths resample a level differently, up to 50 levels on a hard edge; that
     // is the same with and without the windows and is reported, not gated.)
     ed.view.scale = 0.5; ed.view.x = 0; ed.view.y = 0; for (let i = 0; i < 4; i++) shot();
-    compare("half");
+    await compare("half");
     shell.closeDocument(ed, { force: true });
     if (before) shell.activate(before);
     return out;

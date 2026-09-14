@@ -21,7 +21,7 @@ import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, 
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
-import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS } from "./inpaint_tiles.js";
+import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, setChainTransport, chainScheduler } from "./inpaint_tiles.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -213,6 +213,60 @@ function workerCall(op, args = {}, transfer = []) {
         }
     });
 }
+
+// The mips worker (docs/PLAN_BCE.md §C6 b): the same module in a worker of its own, which builds the mip chains a
+// whole change of a layer or a mask asks for (2,360 at 15000 x 10000, about 300 ms). Its own, because the shared
+// worker runs a magic wand's flood for seconds, and the screen would show a coarse picture for all of them. Without
+// it (no module worker, or one that failed) the tile store builds every chain where it is read, as before.
+let MIPS_WORKER = null;
+let MIPS_OFF = false;
+const mipsJobs = new Map();
+
+function mipsWorker() {
+    if (MIPS_OFF) return null;
+    if (MIPS_WORKER) return MIPS_WORKER;
+    try {
+        MIPS_WORKER = new Worker(new URL("./inpaint_worker.js", import.meta.url), { type: "module" });
+        MIPS_WORKER.onmessage = (e) => {
+            const msg = e.data || {};
+            const job = mipsJobs.get(msg.id);
+            if (!job) return;
+            mipsJobs.delete(msg.id);
+            if (msg.ok) job.resolve(msg); else job.reject(new Error(msg.error || "mips job failed"));
+        };
+        MIPS_WORKER.onerror = (err) => {
+            MIPS_OFF = true;
+            MIPS_WORKER = null;
+            for (const job of mipsJobs.values()) job.reject(new Error("mips worker gone: " + ((err && err.message) || err)));
+            mipsJobs.clear();
+        };
+    } catch (err) {
+        MIPS_OFF = true;
+        MIPS_WORKER = null;
+    }
+    return MIPS_WORKER;
+}
+
+/** The tile store's chain transport: a batch of tile bytes to the mips worker, their chains back (both transferred). */
+function mipsTransport(tiles) {
+    const w = InpaintEditor.mipsOnSharedWorker ? editorWorker() : mipsWorker();
+    if (!w) return Promise.reject(new Error("no mips worker"));
+    const id = ++workerSeq;
+    const jobs = InpaintEditor.mipsOnSharedWorker ? workerJobs : mipsJobs;
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { if (jobs.delete(id)) reject(new Error("mips job timed out")); }, WORKER_TIMEOUT);
+        jobs.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
+        try {
+            w.postMessage({ id, op: "mips", tiles }, tiles.map((t) => t.data));
+        } catch (err) {
+            clearTimeout(timer);
+            jobs.delete(id);
+            reject(err);
+        }
+    });
+}
+
+if (typeof Worker === "function") setChainTransport(mipsTransport);
 
 /**
  * PNG of a canvas, plus the upload hash when asked for; encoded in the worker if there is one.
@@ -1442,7 +1496,7 @@ class InpaintEditor {
         ctx.clearRect(0, 0, this.width, this.height);
         // one composite of the whole image at thumbnail scale, from the pyramid: no second full-size pass
         const prev = this.viewPass;
-        this.viewPass = { x: 0, y: 0, w: this.width, h: this.height, sx: w / this.width, sy: h / this.height };
+        this.viewPass = { x: 0, y: 0, w: this.width, h: this.height, sx: w / this.width, sy: h / this.height, display: true };
         try {
             this.drawComposite(ctx);
         } finally {
@@ -1453,6 +1507,8 @@ class InpaintEditor {
             this.drawSelectionInto(ctx, w / this.width);
             ctx.globalAlpha = 1;
         }
+        // a display pass of its own (C6 b): the chains it asked for are watched even when the screen's pass asked for none
+        this.watchChains();
     }
 
     /** The selection is on tiles and holds none: nothing to draw, and no display mirror to make for it. */
@@ -1478,7 +1534,10 @@ class InpaintEditor {
     drawTilesInto(ctx, px, x, y, w, h, vp) {
         const fx = w / px.width, fy = h / px.height;
         const level = this.tileLevel(fx * vp.sx);
-        const rc = px.regionCanvas([(vp.x - x) / fx, (vp.y - y) / fy, (vp.x + vp.w - x) / fx, (vp.y + vp.h - y) / fy], level);
+        // a pass for the screen (or the navigator) may show a stale picture of tiles whose mips are in the worker (C6 b);
+        // any other pass (a sample the wand floods, a flattened preview) reads exact mips
+        const display = !!(vp.screen || vp.display);
+        const rc = px.regionCanvas([(vp.x - x) / fx, (vp.y - y) / fy, (vp.x + vp.w - x) / fx, (vp.y + vp.h - y) / fy], level, display);
         if (!rc) return false;
         // the canvas holds whole tiles, its last row and column the clamp past the pixels' own edge
         const sw = Math.min(rc.canvas.width, (px.width - rc.x) / rc.f);
@@ -1506,7 +1565,8 @@ class InpaintEditor {
         }
         const level = this.tileLevel(scale);
         const r = region || { x: 0, y: 0, w: this.width, h: this.height };
-        const rc = this.sel.regionCanvas([r.x, r.y, r.x + r.w, r.y + r.h], level);
+        // every caller draws for the screen (the ants, the tint, the navigator, a live stroke's clip): display (C6 b)
+        const rc = this.sel.regionCanvas([r.x, r.y, r.x + r.w, r.y + r.h], level, true);
         if (!rc) return;
         // the canvas holds whole tiles, its last row and column the clamp past the image's edge: the
         // draw is cropped to the image, which is what the whole-image draw of the other path covers
@@ -5588,7 +5648,11 @@ class InpaintEditor {
         // the scratch holds one (gesture, layer, region): a pan, a zoom, another layer, a write into
         // the pixels or the mask, or a new gesture rebuilds it
         const sig = [vp.x, vp.y, vp.w, vp.h, layer.id, p ? p.kind : "-", layer.x, layer.y, layer.w, layer.h,
-            layer.px.version, layer.maskPx ? layer.maskPx.version : -1].join(",");
+            layer.px.version, layer.maskPx ? layer.maskPx.version : -1,
+            // C6 b: mips landing from the worker put the stale cells of the region canvases again, the selection's too:
+            // a clipped gesture's scratch is clipped by the selection's region canvas, and the dabs drawn before its
+            // chains landed kept the clip of the selection before an invert until the commit (the C6 b review)
+            layer.px.chainEpoch || 0, layer.maskPx ? layer.maskPx.chainEpoch || 0 : 0, this.sel ? this.sel.chainEpoch || 0 : 0].join(",");
         const full = this._strokeViewOf !== (p || layer) || this._strokeViewSig !== sig;
         if (full) { this._strokeViewOf = p || layer; this._strokeViewSig = sig; if (p) p.dirtyView = null; }
         const box = full || !p ? null : this.takeStrokeBox(p, "dirtyView");
@@ -7561,17 +7625,39 @@ class InpaintEditor {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "medium";
         if (isTilePixels(px) && !live) {
-            ctx.drawImage(px.thumbnailCanvas(), x, y, w, h);
+            // display (C6 b): a tile whose mips are in the worker shows what it had, and the row is drawn again when they land
+            ctx.drawImage(px.thumbnailCanvas(true), x, y, w, h);
             if (layer.maskPx) {
                 // destination-in applies to the whole canvas: the thumbnail holds nothing else
                 ctx.globalCompositeOperation = "destination-in";
-                ctx.drawImage(layer.maskPx.thumbnailCanvas(), x, y, w, h);
+                ctx.drawImage(layer.maskPx.thumbnailCanvas(true), x, y, w, h);
             }
+            this.watchChains();
         } else {
             const src = this.layerPixels(layer, true);
             ctx.drawImage(this.displaySource(src, w / src.width), x, y, w, h);
         }
         ctx.restore();
+    }
+
+    /**
+     * Redraw every thumbnail of `layer` in place where it is shown (C6 b, when its mips land): its row in the layer
+     * list or the reference list, and the result list's items made from it. Never rebuilds a list: a landing is not
+     * the user's, and a rebuild took an open rename (a reference row is not in the layer list, which made
+     * refreshLayerThumb rebuild both lists) and left the result list's picture coarse (the C6 b review).
+     */
+    redrawThumbsOf(layer) {
+        const sel = `.ipc-layer[data-layer="${layer.id}"] canvas.ipc-lthumb`;
+        for (const list of [this.layerList, this.refList]) {
+            const th = list && list.querySelector(sel);
+            if (th) this.drawLayerThumb(th, layer);
+        }
+        if (this.historyList) {
+            for (const c of this.historyList.querySelectorAll("canvas[data-hist]")) {
+                const h = this.history[+c.dataset.hist];
+                if (h && h.layerId === layer.id) this.drawHistoryThumb(c, h);
+            }
+        }
     }
 
     /** Redraw one row's thumbnail in place; the whole list when the row is not there. */
@@ -8927,6 +9013,7 @@ class InpaintEditor {
             const item = el("div", "ipc-hitem" + (layer ? "" : " ipc-gone"));
             const thumb = document.createElement("canvas");
             thumb.width = 112; thumb.height = 112;
+            thumb.dataset.hist = i;   // redrawThumbsOf finds it when the layer's mips land (C6 b)
             thumb.title = "Solo: show only this result";
             this.drawHistoryThumb(thumb, h);
             thumb.addEventListener("click", (e) => { e.stopPropagation(); if (e.ctrlKey || e.shiftKey) { this.setCompare(e.ctrlKey ? "a" : "b", h); return; } this.soloResult(h); });
@@ -9900,6 +9987,51 @@ class InpaintEditor {
     draw() {
         this.drawScene();
         this.drawOverlays();
+        this.watchChains();
+    }
+
+    /**
+     * While mip chains are in the mips worker (C6 b), wait for the next batch to land and draw again: the frame
+     * after a whole change of a large layer or mask showed a stale or coarse picture of the tiles still on their
+     * way, and the rows' thumbnails did too. Nothing is kept when nothing is on its way.
+     */
+    watchChains() {
+        const sch = chainScheduler();
+        if (this._chainWatch || !sch.pending) return;
+        this._chainWatch = true;
+        sch.landing().then((stores) => {
+            this._chainWatch = false;
+            // `screen`: the stores whose chains a reader of the screen asked for. A landing only a thumbnail asked for
+            // (a layer at 1:1, a hidden one) changes nothing on the screen, and dropping the view's caches for it ran a
+            // colour match and a filter pass again per batch (the C6 b review)
+            const screen = stores.screen || stores;
+            let hit = screen.has(this._basePx) || screen.has(this.sel);
+            // a live stroke's sparse store: the view scratch of the gesture is built again from its region canvases
+            const sb = this.pointer && this.pointer.stroke;
+            if (sb && sb.px && screen.has(sb.px)) { hit = true; this._strokeViewSig = null; }
+            for (const l of this.layers) {
+                if (!stores.has(l.px) && !(l.maskPx && stores.has(l.maskPx))) continue;
+                if (screen.has(l.px) || (l.maskPx && screen.has(l.maskPx))) hit = true;
+                this.redrawThumbsOf(l);
+            }
+            if (hit) {
+                // the view's own caches were made from the picture the landing replaced: a filter layer's output and
+                // a colour match of the region the screen shows (their full-resolution caches never saw a stale mip)
+                for (const l of this.layers) { l._fcacheView = null; l._mcacheView = null; l._mstatsView = null; }
+                this.sceneSig = null;
+                this.drawSoon();
+                this.drawThumb();   // the navigator (the node's; the app has none mounted)
+            }
+            this.watchChains();
+        });
+    }
+
+    /**
+     * Resolves when no mip chain is on its way in the mips worker (C6 b): a test or a benchmark that reads the
+     * screen right after a whole change waits for this and then draws, and reads the exact picture.
+     */
+    mipsSettled() {
+        return chainScheduler().settled();
     }
 
     /**
@@ -10431,6 +10563,8 @@ class InpaintEditor {
             for (const p of this.heldPixels()) freed += p.releaseDisplay();
         }
         if (deep && typeof this.releaseGpu === "function") { try { freed += this.releaseGpu() || 0; } catch (_) { /* no GPU path */ } }
+        // the mips scheduler's buffers for its next batch (the module's, up to 32 MB): only while no chain is on its way (C6 b)
+        if (this.tileMode) freed += chainScheduler().releasePool();
         // deliberately no draw: a background tab that redrew here would build every cache
         // straight back. The next draw (a gesture, or the tab coming forward) rebuilds
         // exactly what it needs; the caller redraws when the tab is the one in front.
@@ -10804,7 +10938,16 @@ class InpaintEditor {
             into.push({ name, w: c.width, h: c.height, bytes, shared: seen.has(c) });
             seen.add(c);
         };
-        const tileSum = { pixels: 0, tiles: 0, bytes: 0, sharedTiles: 0, mirrors: 0, mirrorBytes: 0, thumbnails: 0, thumbnailBytes: 0, regions: 0, regionBytes: 0 };
+        const tileSum = { pixels: 0, tiles: 0, bytes: 0, sharedTiles: 0, chains: 0, chainBytes: 0, mirrors: 0, mirrorBytes: 0, thumbnails: 0, thumbnailBytes: 0, regions: 0, regionBytes: 0 };
+        // the mip chains a tile keeps and its edge copy (C6 b): a buffer a copy on write shares is counted once
+        const chainSeen = new Set();
+        const addChains = (t) => {
+            for (const b of [t.mips, t.edge && t.edge.mips, t.edge && t.edge.data]) {
+                if (!b || chainSeen.has(b.buffer)) continue;
+                chainSeen.add(b.buffer);
+                tileSum.chains++; tileSum.chainBytes += b.byteLength;
+            }
+        };
         // the tiles of `p` no slot counted yet: [tiles, bytes, tiles counted before]
         const newTiles = (p, skip = null) => {
             let n = 0, bytes = 0, old = 0;
@@ -10813,6 +10956,7 @@ class InpaintEditor {
                 seen.add(t);
                 n++;
                 bytes += t.data.byteLength;
+                addChains(t);
             }
             return [n, bytes, old];
         };
@@ -10904,6 +11048,7 @@ class InpaintEditor {
                 undoSeen.add(t);
                 bytes += t.data.byteLength;
                 tileSum.tiles++; tileSum.bytes += t.data.byteLength;
+                addChains(t);
             }
             const m = p.displayCanvasIfMade();
             if (m && m.width && !live.has(m) && !undoSeen.has(m) && !seen.has(m)) { undoSeen.add(m); bytes += px(m); tileSum.mirrors++; tileSum.mirrorBytes += px(m); }
@@ -10936,7 +11081,7 @@ class InpaintEditor {
             size: [this.width, this.height],
             tileMode: this.tileMode,
             // tile bytes and mirrors of every pixels object above; the scratch pool is the module's, shared by all editors
-            tiles: this.tileMode ? { ...tileSum, tileSize: TILE_SIZE, scratchPoolBytes: pool.poolPixels * 4 } : null,
+            tiles: this.tileMode ? { ...tileSum, tileSize: TILE_SIZE, scratchPoolBytes: pool.poolPixels * 4, chainPoolBytes: chainScheduler().pool.length * TILE_SIZE * TILE_SIZE * 4 } : null,
             layers: { count: layers.length, bytes: layers.reduce((a, l) => a + l.bytes, 0), list: layers },
             pyramid: { sources: pyramid.length, levels: pyramid.reduce((a, p) => a + p.levels, 0), bytes: pyramid.reduce((a, p) => a + p.bytes, 0), list: pyramid },
             undo,

@@ -907,7 +907,8 @@ function pixelsCases(P, T) {
             const t00 = B.tiles ? p.tileAt(0, 0).version : 0, t22 = B.tiles ? p.tileAt(2, 2).version : 0;
             p.touch([0, 0, 10, 10]);
             if (p.version !== v + 1 || m._dispVer !== p.version) throw new Error("_dispVer does not follow version");
-            if (B.tiles && (p.tileAt(0, 0).version === t00 || p.tileAt(2, 2).version !== t22)) throw new Error("touch(rect) bumps the tiles in rect only");
+            // C6 b: a touch leaves the tiles' versions alone (every write already gave a tile a new version or a new object)
+            if (B.tiles && (p.tileAt(0, 0).version !== t00 || p.tileAt(2, 2).version !== t22)) throw new Error("touch() gave a tile a new version");
             p.clear([0, 0, 700, 300]);
             same(P.canvasOf(p), p, "a clear that drops tiles reaches the mirror");
             p.drawInto([200, 250, 600, 500], (ctx) => { ctx.globalCompositeOperation = "destination-out"; ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, 700, 600); });
@@ -1187,6 +1188,386 @@ function pixelsCases(P, T) {
                 }
             }
             return { ok: true, rings };
+        })],
+
+        // C6 (b): a touch gives the pixels a new version and leaves every tile's version and caches alone. Every write
+        // already gave the tile it wrote a new version or a new object, so a whole touch after a write of one tile (what
+        // markLayerChanged(layer) does) keeps the other tiles' mips and slot stamps, and a touch through one holder of
+        // shared tiles (an undo step's clone) does not make the other holder's caches stale either.
+        ["tiles_touch_keeps_tile_caches", both(async ({ B, pair }) => {
+            const { pixels: p } = pair(700, 600);
+            const v0 = p.version;
+            p.touch();
+            if (p.version === v0) throw new Error("touch() did not give the pixels a new version");
+            if (!B.tiles) return { ok: true };
+            const keys = p.tileKeys();
+            const at = (q, k) => q.tileAt(k & 0xFFFF, k >>> 16);
+            for (const k of keys) p.mips(k & 0xFFFF, k >>> 16);
+            const stamps = (q, k) => Array.from(q.slotStamps(k & 0xFFFF, k >>> 16, 2)).join();
+            const held = p.clone();   // an undo step: every tile shared
+            const before = new Map(keys.map((k) => { const t = at(p, k); return [k, { t, v: t.version, m: t.mips, s: t.mipsSeq, st: stamps(p, k) }]; }));
+            p.fill([10, 10, 20, 20], "#ff00ff");   // tile (0, 0): copied, the clone holds the original
+            p.touch();
+            p.touch([0, 0, 700, 600]);
+            let kept = 0;
+            for (const k of keys) {
+                const b = before.get(k), t = at(p, k), tx = k & 0xFFFF, ty = k >>> 16;
+                if (!k) { if (t === b.t || t.version === b.v) throw new Error("the written tile kept its object and version"); continue; }
+                if (t !== b.t || t.version !== b.v) throw new Error(`tile ${tx},${ty}: a touch gave it a new version`);
+                if (p.mips(tx, ty) !== b.m || t.mipsSeq !== b.s) throw new Error(`tile ${tx},${ty}: a touch rebuilt its mips`);
+                // a slot reads its eight neighbours: only the ones next to tile (0, 0) see the write
+                if ((tx > 1 || ty > 1) && stamps(p, k) !== b.st) throw new Error(`tile ${tx},${ty}: its slot stamps changed (${stamps(p, k)} against ${b.st})`);
+                kept++;
+            }
+            held.touch();
+            for (const k of keys) {
+                const b = before.get(k);
+                if (at(held, k) !== b.t || b.t.version !== b.v || b.t.mips !== b.m) throw new Error("the clone's shared tile was changed by a touch");
+                if (k && (at(p, k) !== b.t || stamps(p, k) === "" )) throw new Error("the other holder's tile changed");
+            }
+            return { ok: true, tiles: keys.length, kept };
+        })],
+
+        // C6 (b): the worker's mips job gives the bytes the main thread builds: an interior tile's chain, and for the
+        // last tile of a row or a column (valid part below 256) also the chain of its clamp-extended bytes, which is
+        // what the atlas and the region canvases draw. Through a real worker, with the buffers transferred both ways.
+        ["tiles_mips_job_matches_the_kernel", both(async ({ B, pair }) => {
+            if (!B.tiles) return { ok: true, tilesOnly: true };
+            const K = await import("./editor/px/kernels_js.js");
+            const W = 601, H = 501;   // (2, *) is 89 px wide, (*, 1) 245 px high
+            const { pixels: p } = pair(W, H);
+            const list = [];
+            for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 3; tx++) {
+                const t = p.tileAt(tx, ty);
+                if (!t) continue;
+                const buf = new ArrayBuffer(256 * 256 * 4);
+                new Uint8Array(buf).set(t.data);
+                list.push({ tx, ty, t, job: { data: buf, vw: Math.min(256, W - (tx << 8)), vh: Math.min(256, H - (ty << 8)) } });
+            }
+            const w = new Worker(new URL("./editor/inpaint_worker.js", location.href), { type: "module" });
+            let reply;
+            try {
+                reply = await new Promise((resolve, reject) => {
+                    const timer = setTimeout(() => reject(new Error("the mips job did not answer")), 20000);
+                    w.onmessage = (e) => { clearTimeout(timer); resolve(e.data); };
+                    w.onerror = (e) => { clearTimeout(timer); reject(new Error("worker error " + (e.message || e))); };
+                    const tiles = list.map((x) => x.job);
+                    w.postMessage({ id: 1, op: "mips", tiles }, tiles.map((x) => x.data));
+                });
+            } finally {
+                w.terminate();
+            }
+            if (!reply.ok) throw new Error("the mips job failed: " + reply.error);
+            if (list.some((x) => x.job.data.byteLength !== 0)) throw new Error("the tile buffers were not transferred to the worker");
+            const n = K.mipChainBytes(256, 5);
+            let edges = 0;
+            list.forEach((x, i) => {
+                const want = K.mipChain(x.t.data, 256, 5, new Uint8Array(n));
+                const got = new Uint8Array(reply.chains[i]);
+                if (got.length !== n) throw new Error(`tile ${x.tx},${x.ty}: a chain of ${got.length} bytes`);
+                for (let j = 0; j < n; j++) if (got[j] !== want[j]) throw new Error(`tile ${x.tx},${x.ty}: the worker's chain differs at byte ${j}`);
+                if (reply.datas[i].byteLength !== 256 * 256 * 4) throw new Error("the tile buffer did not come back");
+                const edge = x.job.vw < 256 || x.job.vh < 256;
+                if (!edge) { if (reply.exts[i]) throw new Error(`tile ${x.tx},${x.ty}: an interior tile got an edge chain`); return; }
+                edges++;
+                // the main thread's own edge chain, through the exact reader
+                p._levelBytes(x.tx, x.ty, 1);
+                const main = x.t.edge.mips;
+                const ext = new Uint8Array(reply.exts[i] || new ArrayBuffer(0));
+                if (ext.length !== n) throw new Error(`tile ${x.tx},${x.ty}: no edge chain from the worker`);
+                for (let j = 0; j < n; j++) if (ext[j] !== main[j]) throw new Error(`tile ${x.tx},${x.ty}: the worker's edge chain differs at byte ${j}`);
+            });
+            return { ok: true, tiles: list.length, edges };
+        })],
+
+        // C6 (b): display readers against a scheduler whose worker answers when the test says so.
+        ["tiles_display_chains_through_a_scheduler", both(async ({ B, Layer, pair }) => {
+            if (!B.tiles) return { ok: true, tilesOnly: true };
+            const K = await import("./editor/px/kernels_js.js");
+            const n = K.mipChainBytes(256, 5);
+            const jobs = [];
+            const sch = new T.ChainScheduler((tiles) => new Promise((resolve) => jobs.push({ tiles, resolve })), { budget: 0 });
+            const answer = (job) => {
+                const chains = [], exts = [], datas = [];
+                for (const x of job.tiles) {
+                    const b = new Uint8Array(x.data);
+                    chains.push(K.mipChain(b, 256, 5, new Uint8Array(n)).buffer);
+                    if (x.vw < 256 || x.vh < 256) { K.clampExtend(b, 256, x.vw, x.vh); exts.push(K.mipChain(b, 256, 5, new Uint8Array(n)).buffer); } else exts.push(null);
+                    datas.push(x.data);
+                }
+                job.resolve({ chains, exts, datas });
+            };
+            const tick = () => new Promise((r) => setTimeout(r, 0));
+            const W = 601, H = 501;
+            const { pixels: p } = pair(W, H);
+            p._chains = sch;
+            const twin = () => Layer.fromImageData(p.readRect(0, 0, W, H));   // exact, on the module's scheduler
+            const sameSlots = (q, what) => {
+                for (let level = 1; level <= 5; level++) for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 3; tx++) {
+                    const a = p.tileWithGutter(tx, ty, level, null, false, true), b = q.tileWithGutter(tx, ty, level);
+                    if (!a || !b) { if (a || b) throw new Error(what + ": a slot on one side only"); continue; }
+                    for (let j = 0; j < b.length; j++) if (a[j] !== b[j]) throw new Error(`${what}: tile ${tx},${ty} level ${level} differs from the exact slot at byte ${j}`);
+                }
+            };
+            // (1) new pixels: no chain anywhere, so a display slot is coarse (a non-integer negative stamp), sampled nearest
+            const st = p.slotStamps(0, 0, 2, true);
+            if (!(st[4] < 0) || Number.isInteger(st[4])) throw new Error("a tile with no chain did not get a coarse stamp: " + st[4]);
+            if (!sch.pending) throw new Error("nothing was asked of the scheduler");
+            const coarse = p.tileWithGutter(0, 0, 2, null, false, true);
+            const src = p.readRect(5 * 4 + 2, 7 * 4 + 2, 1, 1).data, o = (8 * 66 + 6) * 4, a = src[3];
+            const pm = (c) => { const v = c * a + 128; return (v + (v >> 8)) >> 8; };
+            const expect = a === 255 ? [src[0], src[1], src[2], 255] : a ? [pm(src[0]), pm(src[1]), pm(src[2]), a] : [0, 0, 0, 0];
+            if (Array.from(coarse.subarray(o, o + 4)).join() !== expect.join()) throw new Error(`the coarse slot's pixel is ${Array.from(coarse.subarray(o, o + 4))}, nearest sampling gives ${expect}`);
+            if (p.tileAt(0, 0).mips) throw new Error("a display read built a chain with no budget");
+            p.regionCanvas([0, 0, W, H], 2, true);
+            const rc = p._regions.get(2);
+            if (rc.stale.size !== p.tileCount) throw new Error(`the region canvas marks ${rc.stale.size} stale cells for ${p.tileCount} coarse tiles`);
+            // (2) the worker answers: every chain installed, the region's stale cells dirty again, the slots exact
+            await tick();
+            if (jobs.length !== 1 || jobs[0].tiles.length !== p.tileCount) throw new Error(`${jobs.length} jobs for ${p.tileCount} tiles`);
+            const epoch = p.chainEpoch;
+            answer(jobs[0]);
+            await tick();
+            if (p.chainEpoch === epoch) throw new Error("the landing did not move the pixels' chainEpoch");
+            if (rc.stale.size || rc.dirty.size !== p.tileCount) throw new Error(`after the landing: ${rc.stale.size} stale and ${rc.dirty.size} dirty cells`);
+            for (const t of p.tileList()) if (t.mipsVersion !== t.version) throw new Error("a landed chain was not installed");
+            sameSlots(twin(), "after the landing");
+            {
+                const exact = twin().regionCanvas([0, 0, W, H], 2).canvas.getContext("2d").getImageData(0, 0, rc.canvas.width, rc.canvas.height).data;
+                const shown = p.regionCanvas([0, 0, W, H], 2, true).canvas.getContext("2d").getImageData(0, 0, rc.canvas.width, rc.canvas.height).data;
+                for (let j = 0; j < exact.length; j++) if (exact[j] !== shown[j]) throw new Error("the region canvas after the landing differs from an exact one at byte " + j);
+            }
+            // (3) a write in place: the tile shows its previous chain (an integer negative stamp) until the new one lands
+            const was = p.tileWithGutter(0, 0, 2, null, false, true).slice();
+            p.fill([10, 10, 30, 30], "#00ff00");
+            const st3 = p.slotStamps(0, 0, 2, true)[4];
+            if (!(st3 < 0) || !Number.isInteger(st3)) throw new Error("a written tile with a chain did not get a stale stamp: " + st3);
+            const stale = p.tileWithGutter(0, 0, 2, null, false, true);
+            for (let j = 0; j < was.length; j++) if (was[j] !== stale[j]) throw new Error("the stale picture is not the tile's previous chain, at byte " + j);
+            // (4) a second write while the first answer is on its way: the late answer is not installed
+            await tick();
+            if (jobs.length !== 2) throw new Error("the written tile was not asked for again: " + jobs.length + " jobs");
+            p.fill([40, 40, 60, 60], "#0000ff");
+            const dropped = T.chainStats().dropped;
+            answer(jobs[1]);
+            await tick();
+            const t00 = p.tileAt(0, 0);
+            if (t00.mipsVersion === t00.version) throw new Error("a chain of the bytes before the second write was installed");
+            if (T.chainStats().dropped !== dropped + 1) throw new Error("the late answer was not counted as dropped");
+            p.slotStamps(0, 0, 2, true);
+            await tick();
+            if (jobs.length !== 3) throw new Error("the tile was not asked for at its new version");
+            answer(jobs[2]);
+            await tick();
+            sameSlots(twin(), "after the second write's chain landed");
+            // (5) copy on write: the copy shows the original's chains, never writes into them
+            const held = p.clone();
+            const shared = p.tileAt(1, 0), sharedEdge = p.tileAt(2, 0);
+            const keep = shared.mips.slice(), keepEdge = sharedEdge.edge.mips.slice();
+            p.fill([300, 10, 310, 20], "#ff0000");
+            p.fill([520, 10, 530, 20], "#ff0000");
+            const c = p.tileAt(1, 0), ce = p.tileAt(2, 0);
+            if (c === shared || c.mips !== shared.mips || c.mipsOwn) throw new Error("the copy did not take the original's chain as its stale picture");
+            if (ce === sharedEdge || !ce.edge || ce.edge.mips !== sharedEdge.edge.mips || ce.edge.mipsOwn) throw new Error("the edge copy did not take the original's edge chain");
+            const stc = p.slotStamps(1, 0, 3, true)[4];
+            if (!(stc < 0) || !Number.isInteger(stc)) throw new Error("the copy's stamp is not stale: " + stc);
+            p.mips(1, 0);
+            p._levelBytes(2, 0, 3);
+            for (let j = 0; j < keep.length; j++) if (shared.mips[j] !== keep[j]) throw new Error("building the copy's chain wrote into the chain the original's holders read, at byte " + j);
+            for (let j = 0; j < keepEdge.length; j++) if (sharedEdge.edge.mips[j] !== keepEdge[j]) throw new Error("building the copy's edge chain wrote into the original's, at byte " + j);
+            if (held.tileAt(1, 0) !== shared) throw new Error("the clone lost its tile");
+            await tick();
+            for (const job of jobs.splice(3)) answer(job);
+            await tick();
+            // (5b) the original's last holder writes in place while a copy still shows the original's chains as its stale
+            // picture: the original's rebuild never writes into the buffers the copy reads (the C6 b review: the copy's
+            // cells showed the other holder's new pixels under an unchanged stamp)
+            {
+                const A = twin();
+                A.tileKeys().forEach((k) => A.mips(k & 0xFFFF, k >>> 16));
+                A._levelBytes(2, 0, 1);   // the edge tile's edge chain
+                const Bc = A.clone();
+                const t = A.tileAt(1, 0), te = A.tileAt(2, 0);
+                Bc.fill([300, 10, 310, 20], "#ff0000");
+                Bc.fill([520, 10, 530, 20], "#ff0000");
+                const cc = Bc.tileAt(1, 0), cce = Bc.tileAt(2, 0);
+                if (cc.mips !== t.mips || cce.edge.mips !== te.edge.mips) throw new Error("(5b) the copies did not take the original's chains");
+                const keepC = cc.mips.slice(), keepE = cce.edge.mips.slice();
+                A.fill([256, 0, 512, 256], "#0000ff");
+                A.fill([512, 0, 601, 256], "#0000ff");
+                if (A.tileAt(1, 0) !== t || A.tileAt(2, 0) !== te) throw new Error("(5b) the last holder did not write in place");
+                A.mips(1, 0);
+                A._levelBytes(2, 0, 1);
+                for (let j = 0; j < keepC.length; j++) if (cc.mips[j] !== keepC[j]) throw new Error("(5b) the original's rebuild wrote into the chain its copy shows, at byte " + j);
+                for (let j = 0; j < keepE.length; j++) if (cce.edge.mips[j] !== keepE[j]) throw new Error("(5b) the original's edge rebuild wrote into the edge chain its copy shows, at byte " + j);
+            }
+            // (6) the thumbnail takes the chains the tiles keep, rebuilds a chain a tile owns in that buffer, and keeps
+            // none on a tile that has none (the C6 b review: a hidden layer kept a chain on every tile for its thumbnail)
+            const thumbBytes = (x) => { const cv = x.thumbnailCanvas(); return cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data; };
+            const q = twin();
+            q.tileKeys().forEach((k) => q.mips(k & 0xFFFF, k >>> 16));
+            const m0 = T.chainStats().main;
+            const qBytes = thumbBytes(q);
+            if (T.chainStats().main !== m0) throw new Error(`the thumbnail built ${T.chainStats().main - m0} chains the tiles already had`);
+            const r = twin();
+            const m1 = T.chainStats().main, th1 = T.chainStats().thumb;
+            const rBytes = thumbBytes(r);
+            if (T.chainStats().main !== m1) throw new Error(`the thumbnail built ${T.chainStats().main - m1} chains to keep on tiles that had none`);
+            if (r.tileList().some((t) => t.mips)) throw new Error("the thumbnail kept a chain on a tile that had none");
+            if (T.chainStats().thumb - th1 !== r.tileCount) throw new Error(`the thumbnail built ${T.chainStats().thumb - th1} scratch levels for ${r.tileCount} tiles`);
+            for (let j = 0; j < qBytes.length; j++) if (qBytes[j] !== rBytes[j]) throw new Error("a thumbnail from scratch levels differs from one from the tiles' chains, at byte " + j);
+            {
+                const bufs = q.tileList().map((t) => t.mips);
+                q.fill([0, 0, W, H], "#123456");   // in place: every tile owns a chain that is not exact any more
+                const m2 = T.chainStats().main;
+                thumbBytes(q);
+                if (T.chainStats().main - m2 !== q.tileCount) throw new Error(`the thumbnail rebuilt ${T.chainStats().main - m2} owned chains of ${q.tileCount}`);
+                if (q.tileList().some((t, i) => t.mips !== bufs[i] || t.mipsVersion !== t.version)) throw new Error("an owned chain was not rebuilt in its own buffer");
+                const m3 = T.chainStats().main;
+                q.tileKeys().forEach((k) => q.mips(k & 0xFFFF, k >>> 16));
+                if (T.chainStats().main !== m3) throw new Error("mips() built chains the thumbnail had rebuilt");
+            }
+            // (6b) a chain from the worker that only a thumbnail asked for is handed to its cell: not kept, the chainEpoch
+            // left alone (nothing on the screen changed), the cell exact; a reader of the screen then gets one kept
+            {
+                const j6 = [];
+                const s6 = new T.ChainScheduler((tiles) => new Promise((resolve) => j6.push({ tiles, resolve })), { budget: 0 });
+                const v = twin();
+                v._chains = s6;
+                const e0 = v.chainEpoch;
+                v.thumbnailCanvas(true);
+                if (!s6.pending) throw new Error("(6b) the display thumbnail asked for nothing");
+                await tick();
+                const ld = s6.landing();
+                for (const job of j6.splice(0)) answer(job);
+                const set = await ld;
+                await s6.settled();
+                if (!set.has(v) || set.screen.has(v)) throw new Error("(6b) the landing did not report the thumbnail's store as a thumbnail's only");
+                if (v.tileList().some((t) => t.mips)) throw new Error("(6b) a chain only the thumbnail asked for was kept on the tile");
+                if (v.chainEpoch !== e0) throw new Error("(6b) a thumbnail's landing moved the chainEpoch");
+                if (T.chainStats().handed < v.tileCount) throw new Error("(6b) the chains were not handed to the thumbnail");
+                const cv = v.thumbnailCanvas(true);
+                const shown = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+                for (let j = 0; j < qBytes.length; j++) if (shown[j] !== rBytes[j]) throw new Error("(6b) the thumbnail after the landing differs from an exact one at byte " + j);
+                // a rebuild of the whole thumbnail (a batch that lands on a quarter of its cells) takes the handed cells
+                // again: it asked for them again on every batch, for good
+                v._thumb.all = true;
+                const again = v.thumbnailCanvas(true);
+                if (s6.pending) throw new Error("(6b) a whole rebuild of the thumbnail asked again for the " + s6.pending + " cells a landing had handed it");
+                const shown2 = again.getContext("2d").getImageData(0, 0, again.width, again.height).data;
+                for (let j = 0; j < qBytes.length; j++) if (shown2[j] !== rBytes[j]) throw new Error("(6b) the thumbnail rebuilt whole after the landing differs from an exact one at byte " + j);
+                v.slotStamps(0, 0, 2, true);
+                await tick();
+                for (const job of j6.splice(0)) answer(job);
+                await s6.settled();
+                if (!v.tileAt(0, 0).mips || v.tileAt(0, 0).mipsVersion !== v.tileAt(0, 0).version) throw new Error("(6b) a chain a reader of the screen asked for was not kept");
+                if (v.chainEpoch === e0) throw new Error("(6b) a screen reader's landing did not move the chainEpoch");
+            }
+            // (7) the budget: two chains built in the task, the rest asked for; a new task has the budget again
+            const s2 = new T.ChainScheduler((tiles) => new Promise((resolve) => jobs.push({ tiles, resolve })), { budget: 2 });
+            const u = twin();
+            u._chains = s2;
+            [0, 1, 2].forEach((tx) => u.slotStamps(tx, 1, 1, true));
+            const builtHere = u.tileList().filter((t) => t.mipsVersion === t.version || (t.edge && t.edge.mipsVersion === t.version)).length;
+            if (builtHere !== 2) throw new Error("the budget of two built " + builtHere + " chains in one task");
+            if (!s2.pending) throw new Error("beyond the budget nothing was asked for");
+            await tick();
+            if (s2.budget !== 2) throw new Error("the budget was not given back in the next task: " + s2.budget);
+            for (const job of jobs.splice(0)) answer(job);
+            await s2.settled();
+            // (8) the queue goes newest first, and a cell still shown stale keeps its tile ahead: pixels a later whole
+            // change replaced, which nothing reads any more, wait behind the ones on the screen (the C6 b review: a flip
+            // after a flip waited for all of the first flip's chains)
+            {
+                const j8 = [];
+                const s8 = new T.ChainScheduler((tiles) => new Promise((resolve) => j8.push({ tiles, resolve })), { budget: 0, batch: 2 });
+                // A: 20 tiles (1200 x 800), each with its own bytes, so two landed cells are under a quarter of its region and
+                // a second read of it puts those two and only touches the stale ones; B: six magenta tiles
+                const A = Layer.empty(1200, 800), Bm = twin();
+                for (let ty = 0; ty < 4; ty++) for (let tx = 0; tx < 5; tx++) A.fill([(tx << 8) + 10 + tx, (ty << 8) + 10 + ty, (tx << 8) + 40, (ty << 8) + 40], "#00ff00");
+                Bm.fill([0, 0, W, H], "#ff00ff");
+                A._chains = s8; Bm._chains = s8;
+                const magenta = (job) => job.tiles.filter((x) => { const b = new Uint8Array(x.data); return b[0] === 255 && b[1] === 0 && b[2] === 255 && b[3] === 255; }).length;
+                A.regionCanvas([0, 0, 1200, 800], 2, true);   // A's twenty tiles asked for; the first batch of two goes at once
+                await tick();
+                if (j8.length !== 1 || magenta(j8[0])) throw new Error("(8) the first batch is not A's");
+                Bm.regionCanvas([0, 0, W, H], 2, true);       // B asks later
+                answer(j8[0]);
+                await tick();
+                if (j8.length !== 2 || magenta(j8[1]) !== 2) throw new Error(`(8) the batch after B asked holds ${j8[1] ? magenta(j8[1]) : "no"} of B's tiles and A's older ones went first`);
+                const rA = A._regions.get(2);
+                A.regionCanvas([0, 0, 1200, 800], 2, true);   // A's cells are still shown stale: A's eighteen waiting tiles go ahead again
+                if (rA.stale.size !== 18) throw new Error("(8) the second read of A left " + rA.stale.size + " stale cells, not 18");
+                answer(j8[1]);
+                await tick();
+                if (j8.length !== 3 || magenta(j8[2]) !== 0) throw new Error("(8) the cells still shown stale did not bring their tiles ahead of B's newer ones");
+                for (let guard = 0; s8.pending && guard < 20; guard++) { for (const job of j8.splice(0)) answer(job); await tick(); }
+                await s8.settled();
+            }
+            // (9) a write outside a region canvas's tiles leaves its cells alone: its rebuild threshold counts dirty cells,
+            // and a write elsewhere in the picture rebuilt the whole region every frame (the C6 b review)
+            {
+                const z = twin();
+                z.regionCanvas([0, 0, 200, 200], 0);
+                const rz = z._regions.get(0);
+                if (rz.tx1 !== 1 || rz.ty1 !== 1) throw new Error("(9) the region's tiles are " + [rz.tx0, rz.ty0, rz.tx1, rz.ty1]);
+                z.fill([530, 300, 600, 500], "#00ff00");   // tile (2, 1): outside
+                if (rz.dirty.size) throw new Error(`(9) a write outside the region marked ${rz.dirty.size} of its cells dirty`);
+                z.fill([10, 10, 20, 20], "#00ff00");
+                if (rz.dirty.size !== 1) throw new Error("(9) a write inside the region did not mark its cell");
+            }
+            // (10) the region canvas's word copies (cells under 64 px, levels 3 to 5) against cells assembled by hand: exact
+            // cells from `_levelBytes`, and the coarse blocks of a tile with no chain from nearest samples of its bytes
+            {
+                const j10 = [];
+                const s10 = new T.ChainScheduler((tiles) => new Promise((resolve) => j10.push({ tiles, resolve })), { budget: 0 });
+                const src = p.readRect(0, 0, W, H).data;
+                const viaCanvas = (bytes, cw, ch) => {
+                    const cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
+                    const x = cv.getContext("2d", { willReadFrequently: true });
+                    x.putImageData(new ImageData(bytes, cw, ch), 0, 0);
+                    return x.getImageData(0, 0, cw, ch).data;
+                };
+                const readRc = (res) => res.canvas.getContext("2d").getImageData(0, 0, res.canvas.width, res.canvas.height).data;
+                const exactRef = (q, level, cw, ch) => {
+                    const cell = 256 >> level, out = new Uint8ClampedArray(cw * ch * 4);
+                    for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 3; tx++) {
+                        const lv = q._levelBytes(tx, ty, level);
+                        for (let y = 0; y < cell; y++) for (let x = 0; x < cell; x++) {
+                            const i = lv.off + (y * cell + x) * 4, o = ((ty * cell + y) * cw + tx * cell + x) * 4;
+                            out[o] = lv.data[i]; out[o + 1] = lv.data[i + 1]; out[o + 2] = lv.data[i + 2]; out[o + 3] = lv.data[i + 3];
+                        }
+                    }
+                    return viaCanvas(out, cw, ch);
+                };
+                const coarseRef = (level, cw, ch) => {
+                    const cell = 256 >> level, f = 1 << level, q = Math.max(1, cell >> 3), qh = (q * f) >> 1, out = new Uint8ClampedArray(cw * ch * 4);
+                    for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 3; tx++) {
+                        const vw = Math.min(256, W - (tx << 8)), vh = Math.min(256, H - (ty << 8));
+                        for (let y = 0; y < cell; y++) for (let x = 0; x < cell; x++) {
+                            const sy = (ty << 8) + Math.min(Math.floor(y / q) * q * f + qh, vh - 1), sx = (tx << 8) + Math.min(Math.floor(x / q) * q * f + qh, vw - 1);
+                            const i = (sy * W + sx) * 4, o = ((ty * cell + y) * cw + tx * cell + x) * 4;
+                            out[o] = src[i]; out[o + 1] = src[i + 1]; out[o + 2] = src[i + 2]; out[o + 3] = src[i + 3];
+                        }
+                    }
+                    return viaCanvas(out, cw, ch);
+                };
+                const same = (a, b, what) => { if (a.length !== b.length) throw new Error(what + ": sizes differ"); for (let j = 0; j < a.length; j++) if (a[j] !== b[j]) throw new Error(`${what}: differs at byte ${j} (${a[j]} against ${b[j]})`); };
+                for (let level = 3; level <= 5; level++) {
+                    const cell = 256 >> level, cw = 3 * cell, ch = 2 * cell;
+                    const ex = twin();
+                    same(readRc(ex.regionCanvas([0, 0, W, H], level)), exactRef(ex, level, cw, ch), `(10) level ${level}, exact`);
+                    const co = twin();
+                    co._chains = s10;
+                    same(readRc(co.regionCanvas([0, 0, W, H], level, true)), coarseRef(level, cw, ch), `(10) level ${level}, coarse blocks`);
+                    await tick();
+                    for (const job of j10.splice(0)) answer(job);
+                    await s10.settled();
+                    same(readRc(co.regionCanvas([0, 0, W, H], level, true)), exactRef(ex, level, cw, ch), `(10) level ${level}, after the landing`);
+                }
+            }
+            await sch.settled();
+            return { ok: true, jobs: 3 };
         })],
 
         // Whole tiles shared by a tile-aligned "copy" onto pixels that already hold content and a mirror

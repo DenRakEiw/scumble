@@ -99,6 +99,11 @@ BENCH = """
     ed.renderLayers();
     ed.fitView();
     ed.draw();
+    // C6 (b): the chains of this first frame are in the mips worker; the rows below start from the exact picture, as
+    // they did when that frame built all of them itself
+    await ed.mipsSettled();
+    ed.sceneSig = null;
+    ed.draw();
 
     const bench = (fn, n) => {
         const ts = [];
@@ -167,7 +172,7 @@ BENCH = """
         ed.sceneSig = null; ed.draw(); ed.draw();
         out.gl_stack = ed.glCompositeUsable({}) ? 1 : 0;
         out.pan_1to1_gl = bench((i) => { ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw(); }, 30);
-        ed.fitView(); ed.draw(); ed.draw();
+        ed.fitView(); ed.draw(); await ed.mipsSettled(); ed.draw(); ed.draw();   // C6 (b): the fit level's chains, if any were asked for
         out.pan_fit_gl = bench((i) => { ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw(); }, 30);
         // and the first frame after a zoom from fit back to 1:1: what the level the screen needs costs
         ed.fitView(); ed.draw(); ed.draw();
@@ -180,6 +185,82 @@ BENCH = """
         out.glMB = cst && cst.atlas ? { atlas: +(cst.atlas.bytes / 1048576).toFixed(1), pages: cst.atlas.pages, slots: cst.atlas.slots, textures: +(cst.bytes / 1048576).toFixed(1) } : null;
         if (fxLayer) fxLayer.visible = true;
     }
+    // --- C6 (b): whole changes on the GPU stack (the filter layer and the colour-matched result hidden). They replace a
+    // paint layer twice and clear the undo steps, so every row after this block runs on that document; a run with the
+    // block moved after the last row (the C6 b review) is the A/B of those rows against the log before C6 b ----------
+    {
+        const fxLayer = ed.layers.find((l) => l.kind === "filter");
+        if (fxLayer) fxLayer.visible = false;
+        // the colour-matched result above the replaced layer hidden too: a whole change under it invalidates its match,
+        // which is not a mips cost (the build's rows were 29 to 33 ms with it against 18 to 25 in the two-layer measurement)
+        const matched = ed.layers.filter((l) => l.visible && l.match && l.match.strength > 0);
+        for (const l of matched) l.visible = false;
+        // C6 (b): the first frame after a whole change of a paint layer (its pixels replaced, as a flip or a turn does),
+        // what a whole touch after a small write costs, and how long the mips worker takes until the screen is exact
+        // again. The operation itself (the band copies of a flip) is not timed: the rows are the frame after it, which
+        // markLayerChanged, the layer list and the draw make, as flipLayer runs them.
+        const target = ed.layers.find((l) => l.kind === "paint");
+        const settleNow = () => {   // the benchmark's settle, without the paint layer's canvasOf (a mirror on tiles)
+            const { canvasOf } = window.__perf.pixels;
+            for (const c of [canvasOf(ed.sel), ed.viewCanvas, ed.sceneCanvas, ed.canvas]) { try { if (c) c.getContext("2d").getImageData(0, 0, 1, 1); } catch (_) { /* no 2D context */ } }
+            try { const comp = ed.compositor(); if (comp) comp.gl.finish(); } catch (_) { /* no compositor */ }
+        };
+        const gaps = () => {
+            let last = performance.now(), most = 0, stop = false;
+            const tick = () => { const now = performance.now(); if (now - last > most) most = now - last; last = now; if (!stop) setTimeout(tick, 1); };
+            setTimeout(tick, 1);
+            return () => { stop = true; return +most.toFixed(1); };
+        };
+        const replaced = async (label) => {
+            await ed.mipsSettled(); ed.sceneSig = null; ed.draw(); settleNow();
+            ed.pushUndo({ kind: "layerfull", id: target.id });
+            if (ed.tileMode) target.px = ed.turnedTilePixels(target.px, "h");
+            else { const c = target.px.toCanvas(), f = document.createElement("canvas"); f.width = c.width; f.height = c.height; const x = f.getContext("2d"); x.translate(c.width, 0); x.scale(-1, 1); x.drawImage(c, 0, 0); target.px = ed.pixels.Layer.fromCanvas(f); f.width = 1; c.width = 1; }
+            await new Promise((r) => setTimeout(r, 30));
+            const T = await import("./editor/inpaint_tiles.js");
+            T.chainStats(true);
+            const t0 = performance.now();
+            ed.markLayerChanged(target);
+            ed.renderLayers();
+            ed.draw();
+            out[label] = [+(performance.now() - t0).toFixed(1), +(performance.now() - t0).toFixed(1)];
+            const cs = T.chainStats();
+            out[label + "_chains"] = [cs.main + cs.thumb, cs.requested];   // built on this thread in the frame (kept + thumbnail scratch), asked of the worker
+            // settled: from the end of the frame until no chain is on its way (the landings' own tasks and frames
+            // included); [1] the longest the main thread was held meanwhile (the gaps of a 1 ms timer: a landing, the
+            // thumbnails it redraws, a frame), which a timer around draw() alone did not see
+            const s0 = performance.now();
+            const held = gaps();
+            await ed.mipsSettled();
+            const settledMs = performance.now() - s0;
+            await new Promise((r) => setTimeout(r, 50));   // drained: the last landing's frame is not the next row's
+            out[label + "_settled"] = [+settledMs.toFixed(1), held()];
+            const cs2 = T.chainStats();
+            out[label + "_landed"] = [cs2.landed, cs2.handed];
+            ed.clearUndo();
+        };
+        ed.fitView(); ed.sceneSig = null; ed.draw();
+        out.whole_level = ed.tileLevel(ed.view.scale);
+        out.whole_level_row = [out.whole_level, ed.glCompositeUsable({}) ? 1 : 0];   // [level, GPU stack]
+        await replaced("whole_fit_gl");
+        {
+            await ed.mipsSettled(); ed.sceneSig = null; ed.draw(); settleNow();
+            target.px.fill([Math.round(W / 2), Math.round(H / 2), Math.round(W / 2) + 100, Math.round(H / 2) + 100], "#123456");
+            await new Promise((r) => setTimeout(r, 30));
+            const t0 = performance.now();
+            ed.markLayerChanged(target);
+            ed.renderLayers();
+            ed.draw();
+            out.touch_fit_gl = [+(performance.now() - t0).toFixed(1), +(performance.now() - t0).toFixed(1)];
+        }
+        ed.view.scale = 1; ed._fitted = false;
+        ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
+        ed.sceneSig = null; ed.draw();
+        await replaced("whole_1to1_gl");
+        if (fxLayer) fxLayer.visible = true;
+        for (const l of matched) l.visible = true;
+    }
+
     ed.fitView();
     ed.sceneSig = null;
     ed.draw();
@@ -348,6 +429,16 @@ ROWS = [
     ("pan at 1:1, GPU stack", "pan_1to1_gl"),
     ("pan at fit, GPU stack", "pan_fit_gl"),
     ("first frame fit -> 1:1, GPU", "first_1to1_gl"),
+    ("frame after a whole change, fit", "whole_fit_gl"),
+    ("  mips settled [longest block]", "whole_fit_gl_settled"),
+    ("  chains built here [asked]", "whole_fit_gl_chains"),
+    ("  chains landed [handed]", "whole_fit_gl_landed"),
+    ("frame after a whole change, 1:1", "whole_1to1_gl"),
+    ("  mips settled [longest block]", "whole_1to1_gl_settled"),
+    ("  chains built here [asked]", "whole_1to1_gl_chains"),
+    ("  chains landed [handed]", "whole_1to1_gl_landed"),
+    ("frame after a whole touch, fit", "touch_fit_gl"),
+    ("  (the level of fit, whole-change rows)", "whole_level_row"),
     ("redraw with ants", "draw_with_ants"),
     ("brush dab + frame", "stroke_frame"),
     ("stroke commit (undo copy)", "stroke_commit"),

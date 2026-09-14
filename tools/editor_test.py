@@ -297,7 +297,7 @@ const out = { tiles: ed.tileMode };
 const L = ed.addPaintLayer();
 ed.activeLayerId = L.id;
 ed.fitView(); ed.sceneSig = null; ed.draw(); await wait(60);
-const settle = async () => { for (let i = 0; i < 6; i++) { ed.sceneSig = null; ed.draw(); await wait(30); if (!ed._pyramidPending) break; } ed.hover = null; ed.sceneSig = null; ed.draw(); };
+const settle = async () => { for (let i = 0; i < 6; i++) { ed.sceneSig = null; ed.draw(); await wait(30); if (!ed._pyramidPending) break; } await ed.mipsSettled(); ed.hover = null; ed.sceneSig = null; ed.draw(); };
 const screenAt = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return Array.from(ed.canvas.getContext("2d").getImageData(Math.round(sx), Math.round(sy), 1, 1).data); };
 const pixel = (l, x, y) => Array.from(l.px.readRect(x, y, 1, 1).data);
 const is = (p, rgb) => Math.abs(p[0] - rgb[0]) < 40 && Math.abs(p[1] - rgb[1]) < 40 && Math.abs(p[2] - rgb[2]) < 40;
@@ -969,6 +969,9 @@ try {
     // them inside the box and keep them (a rebuild drew the whole CPU mirror into the first level, 200 ms at 96 MP)
     centre(0.3, 1200, 800);
     for (let i = 0; i < 6; i++) { frame(); await wait(20); if (!ed._pyramidPending) break; }
+    // C6 b: the layer's chains from the whole changes above may still be in the mips worker, and their landing
+    // uploads the slots that showed a coarse picture: counted from here they would be charged to the fill
+    await ed.mipsSettled(); frame();
     // C3: the layer is drawn from the compositor's atlas, so it has no display mirror and no levels;
     // what must stay small is the number of slots the fill, the clear and their undo / redo re-upload
     const atlasUploads = () => { const c = ed.compositor(); return c ? c.stats().atlas.uploads : 0; };
@@ -2580,7 +2583,7 @@ host.shell.activate(ed);
 const out = { tiles: ed.tileMode, masks: [], borders: [] };
 const fails = [];
 const g = ed.canvas.getContext("2d");
-const frame = async (n = 3) => { for (let i = 0; i < n; i++) { ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(25); } };
+const frame = async (n = 3) => { for (let i = 0; i < n; i++) { ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(25); } await ed.mipsSettled(); ed.hover = null; ed.sceneSig = null; ed.draw(); };
 const at = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return Array.from(g.getImageData(Math.round(sx), Math.round(sy), 1, 1).data); };
 const blue = (q) => q[2] > 150 && q[0] < 120;
 const red = (q) => q[0] > 150 && q[2] < 120;
@@ -2702,6 +2705,404 @@ await run("close_document", { doc: d.id, force: true });
 if (fails.length) throw new Error(fails.join(" | ") + " " + JSON.stringify(out));
 // the printed result is cut at 280 characters: the border rows first, one short line per write
 return { tiles: out.tiles, borders: out.borders.map((r) => r.scale + "/" + (r.name.startsWith("the undo") ? "undo" : "fill") + "/" + r.shift + ":" + r.worst + (r.gl ? "" : " 2d") + (r.gutterUploads ? " g" + r.gutterUploads : "")), masks: out.masks.length };
+"""),
+    ("a_whole_change_builds_its_mips_in_the_worker_and_the_screen_ends_exact", """
+// C6 (b), on both backends, on the GPU path and with a filter layer in the stack (Canvas 2D). A 4000 x 3000 layer at
+// fit (level 1 or 2 on this screen) is 192 tiles, more than the chains the display may build in one task.
+// (i) A whole change (a flip: new pixels) builds at most CHAIN_SYNC_BUDGET chains on the main thread in its own task
+// and asks the mips worker for the rest; the frame shows a coarse picture of those tiles meanwhile.
+// (ii) Once no chain is on its way the screen is the same view drawn from released caches, the region canvases and
+// thumbnails included (releaseCaches with mirrors: the Canvas 2D path draws from region canvases, and a reference drawn
+// from the same ones could not see a cell left coarse), and every chain a tile keeps as exact is the kernel's chain of
+// its bytes (a landed chain installed on the wrong bytes shows here even when the screen agrees with itself).
+// (iii) A second write while the first answers are in flight (a batch really posted: the layer filled in place, so the
+// same tiles get new versions, plus thin stripes, so a coarse picture of it is not the exact one): the late answers are
+// not installed, and the settled screen shows the fill.
+const T = await import("./editor/inpaint_tiles.js");
+const K = await import("./editor/px/kernels_js.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await wait(200);
+const W = 4000, H = 3000;
+await run("new_canvas", { width: W, height: H, doc: d.id });
+const c = document.createElement("canvas"); c.width = W; c.height = H;
+{
+    const x = c.getContext("2d");
+    const gr = x.createLinearGradient(0, 0, W, H);
+    gr.addColorStop(0, "#1c4f8a"); gr.addColorStop(1, "#e0a040");
+    x.fillStyle = gr; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 120; i++) { x.fillStyle = `hsl(${(i * 37) % 360},80%,55%)`; x.beginPath(); x.arc((i * 977) % W, (i * 613) % H, 90, 0, Math.PI * 2); x.fill(); }
+    x.fillStyle = "#000"; x.fillRect(0, 0, 900, 400);   // an asymmetric block: a flip moves it
+}
+const L = ed.addLayer({ name: "Full", kind: "paint", px: ed.pixels.Layer.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
+if (ed.tileMode) { c.width = 1; c.height = 1; }   // the canvas backend adopts the canvas as the layer's pixels
+ed.activeLayerId = L.id;
+ed.renderLayers();
+ed.fitView();
+const hasGl = !!ed.compositor();
+const out = { tiles: ed.tileMode, level: ed.tileLevel(ed.view.scale), rows: [] };
+const fails = [];
+const g = ed.canvas.getContext("2d");
+const frame = () => { ed.hover = null; ed.sceneSig = null; ed.draw(); };
+const read = () => g.getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+const diff = (a, b) => { let worst = 0, n = 0; for (let i = 0; i < a.length; i++) { const v = Math.abs(a[i] - b[i]); if (v) { n++; if (v > worst) worst = v; } } return [worst, n]; };
+// the canvas backend's display pyramid builds one level a frame: draw until it has them all, as the edit step does
+const levels = async () => { for (let i = 0; i < 8; i++) { frame(); await wait(30); if (!ed._pyramidPending) break; } frame(); };
+const settle = async () => { await ed.mipsSettled(); await levels(); };
+const audit = (label) => {
+    if (!ed.tileMode) return 0;
+    let n = 0;
+    for (const p of [L.px, ed.basePx]) {
+        if (!p || !p.tileList) continue;
+        for (const t of p.tileList()) {
+            if (t.mipsVersion !== t.version || !t.mips) continue;
+            const want = K.mipChain(t.data, 256, 5, new Uint8Array(K.mipChainBytes(256, 5)));
+            for (let i = 0; i < want.length; i++) if (want[i] !== t.mips[i]) { fails.push(label + ": a chain kept as exact is not the chain of its tile's bytes (byte " + i + ")"); return n; }
+            n++;
+        }
+    }
+    return n;
+};
+const exactScreen = async (label, path) => {
+    const shown = read();
+    ed.releaseCaches({ mirrors: true });
+    frame(); await wait(30); await ed.mipsSettled(); await levels();
+    const [worst, n] = diff(shown, read());
+    // On the canvas backend, with a filter layer in the stack, the view before and after releaseCaches() differs by
+    // 31 levels on about 726,000 bytes whether or not anything changed (measured with and without the flip): that
+    // backend has no mips to wait for, and its released view is no reference there. It is checked on the GPU path.
+    const gated = ed.tileMode || path === "gpu";
+    // 3 levels on the GPU path: the settled screen took its level-1 slots in the order the chains landed (a new layer's
+    // first frame draws coarse slots at level 5), the released view takes them in reading order, and the atlas page is
+    // sampled up to 3 levels apart at the stripes' edges in another place of the page. Measured: the level-1 slots read
+    // back exact against tileWithGutter in both, the difference is 0 with the coarse slots off (coarseLevel null) and on
+    // the code before C6 (b), and a coarse or stale cell left on the screen is tens of levels off.
+    if (gated && worst > 3) fails.push(path + ", " + label + ": the settled screen is not the view drawn from released caches (" + worst + " levels on " + n + " bytes)");
+    if (hasGl && ed.glCompositeUsable({}) !== (path === "gpu")) fails.push(path + ", " + label + ": the view took the other path");
+    return [worst, n];
+};
+const async_ = () => ed.tileMode && T.chainStats().async;
+for (const path of ["gpu", "2d"]) {
+    const fx = path === "2d" ? ed.addFilterLayer("levels") : null;
+    ed.activeLayerId = L.id;
+    ed.renderLayers();
+    ed.fitView();
+    await settle();
+    const before = read();
+    // (i)
+    T.chainStats(true);
+    ed.flipLayer("h");
+    const st = T.chainStats();
+    const row = { path, main: st.main, requested: st.requested, coarse: st.coarse };
+    if (async_()) {
+        if (st.main > T.CHAIN_SYNC_BUDGET) fails.push(path + ": the whole change built " + st.main + " chains on the main thread in its own task, more than the budget of " + T.CHAIN_SYNC_BUDGET);
+        if (!st.requested) fails.push(path + ": the whole change asked the mips worker for nothing (" + JSON.stringify(st) + ")");
+    }
+    // (ii)
+    await settle();
+    const flipped = read();
+    const [moved] = diff(before, flipped);
+    if (moved < 100) fails.push(path + ": the flip did not reach the screen (" + moved + " levels at most)");
+    row.flip = await exactScreen("after the flip", path);
+    row.audited = audit(path + " after the flip");
+    // (iii)
+    await settle();
+    T.chainStats(true);
+    ed.flipLayer("h");
+    await Promise.resolve(); await Promise.resolve();   // the first batch is posted
+    const sch = T.chainScheduler();
+    const inFlight = sch.flight, queued = sch.queue.size;
+    L.px.fill([0, 0, W, H], "#30c060");   // in place: the flipped tiles get new versions while their chains are away
+    // thin stripes, so nearest samples miss most of them
+    for (let x = 7; x < W; x += 20) L.px.fill([x, 0, x + 3, H], "#6030c0");
+    ed.markLayerChanged(L);
+    ed.draw();
+    await settle();
+    const st3 = T.chainStats();
+    row.dropped = st3.dropped; row.inFlight = inFlight; row.queued = queued;
+    if (async_() && !(inFlight > 0)) fails.push(path + ": no batch of chains was in flight when the second write came (" + queued + " queued)");
+    if (async_() && !(st3.dropped > 0)) fails.push(path + ": no late answer was dropped (" + JSON.stringify(st3) + ")");
+    const [cx, cy] = ed.imageToScreen(W / 2, H / 2);
+    const px = Array.from(g.getImageData(Math.round(cx), Math.round(cy), 1, 1).data);
+    if (!(px[1] > 150 && px[0] < 100)) fails.push(path + ": the settled screen does not show the second write (" + px + ")");
+    // the scheduler's buffers for its next batch (up to 32 MB, the module's) go with the caches once nothing is on its way
+    // (C6 b review): the landings above filled the pool
+    row.pool = T.chainScheduler().pool.length;
+    ed.releaseCaches();
+    const poolKept = T.chainScheduler().pool.length;
+    if (async_() && !row.pool) fails.push(path + ": the landings left no buffers in the mips scheduler's pool to release");
+    if (async_() && poolKept) fails.push(path + ": releaseCaches kept " + poolKept + " buffers of the mips scheduler's pool");
+    row.fill = await exactScreen("after the second write", path);
+    row.audited3 = audit(path + " after the second write");
+    out.rows.push(row);
+    await ed.undoStep();   // the flip back: the layer holds the painted picture again for the next path
+    await ed.undoStep();
+    if (fx) { ed.removeLayer(fx.id); ed.renderLayers(); }
+}
+if (hasGl && ed.compositorOff) fails.push("the GPU compositor failed during the step");
+await run("close_document", { doc: d.id, force: true });
+if (fails.length) throw new Error(fails.join(" | ") + " " + JSON.stringify(out));
+return { tiles: out.tiles, level: out.level, rows: out.rows.map((r) => r.path + ": main " + r.main + " asked " + r.requested + " flip " + r.flip[0] + " fill " + r.fill[0] + " in flight " + r.inFlight + "+" + r.queued + " dropped " + r.dropped + " audited " + r.audited + "/" + r.audited3) };
+"""),
+    ("mips_landings_redraw_every_thumbnail_and_the_screen_only_where_it_asked", """
+// C6 (b) review, with the mips worker on tiles (elsewhere the same checks run with nothing on its way). Two 4000 x 3000
+// layers at fit.
+// (i) A paint layer's whole change (a flip), a reference layer added (new pixels), the result list drawn and a rename
+// opened, all while their chains are on their way: once they land, the paint layer's row, the reference's row and the
+// result list's item were each last drawn from the thumbnail as it is now, which is the exact one; no landing rebuilt a
+// list, and the rename is still open. (Drawn from the thumbnail, not compared as pixels: the same thumbnail canvas drawn
+// into two 40 x 28 canvases comes out 29 levels apart on 2,251 bytes or identical, run by run, measured.)
+// (ii) At 1:1, a whole change of a hidden layer: its thumbnail's chains land without being kept on its tiles, and a
+// landing only a thumbnail asked for leaves the view's caches alone.
+const T = await import("./editor/inpaint_tiles.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await wait(200);
+const W = 4000, H = 3000;
+await run("new_canvas", { width: W, height: H, doc: d.id });
+const picture = (seed) => {
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const x = c.getContext("2d");
+    const gr = x.createLinearGradient(0, 0, W, H);
+    gr.addColorStop(0, seed ? "#e02020" : "#1c4f8a"); gr.addColorStop(1, seed ? "#20e0e0" : "#e0a040");
+    x.fillStyle = gr; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 400; i++) { x.fillStyle = `hsl(${(i * 37 + seed * 90) % 360},80%,55%)`; x.beginPath(); x.arc((i * 977 + seed * 311) % W, (i * 613 + seed * 157) % H, 40, 0, Math.PI * 2); x.fill(); }
+    x.fillStyle = "#000"; x.fillRect(0, 0, 900, 400);
+    return ed.pixels.Layer.fromCanvas(c);
+};
+const L = ed.addLayer({ name: "Paint", kind: "paint", px: picture(0), x: 0, y: 0, w: W, h: H, dirty: true });
+ed.history.push({ layerId: L.id, name: "Result", w: W, h: H, x: 0, y: 0 });
+ed.activeLayerId = L.id;
+ed.renderLayers(); ed.renderHistory();
+ed.fitView();
+const out = { tiles: ed.tileMode };
+const fails = [];
+const async_ = ed.tileMode && T.chainStats().async;
+const frame = () => { ed.hover = null; ed.sceneSig = null; ed.draw(); };
+const settle = async () => { frame(); await wait(30); await ed.mipsSettled(); frame(); await wait(30); };
+await settle();
+// a hash of a thumbnail canvas (a CPU canvas), and for each canvas a layer was drawn into, the hash of the thumbnail it was drawn from
+const hash = (cv) => { const b = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data; let h = 0; for (let i = 0; i < b.length; i++) h = (h * 31 + b[i]) | 0; return h; };
+const drawnFrom = new WeakMap();
+const fitted = ed.drawLayerFitted;
+ed.drawLayerFitted = function (ctx, layer, ...rest) {
+    const r = fitted.call(this, ctx, layer, ...rest);
+    if (layer.px && layer.px._thumb) drawnFrom.set(ctx.canvas, hash(layer.px._thumb.canvas));
+    return r;
+};
+const rowThumb = (list, l) => list && list.querySelector('.ipc-layer[data-layer="' + l.id + '"] canvas.ipc-lthumb');
+let renders = 0;
+const rl = ed.renderLayers;
+ed.renderLayers = function () { renders++; return rl.call(this); };
+let input = null, R = null;
+try {
+    // (i)
+    T.chainStats(true);
+    ed.flipLayer("h");
+    R = ed.addLayer({ name: "Ref", kind: "image", role: "reference", px: picture(1), x: 0, y: 0, w: W, h: H, dirty: true });
+    ed.renderHistory();
+    out.pending = T.chainScheduler().pending;
+    ed.renameLayerInline(L, ed.layerList.querySelector('.ipc-layer[data-layer="' + L.id + '"] .ipc-name'));
+    input = ed.layerList.querySelector("input");
+    const before = renders;
+    await settle();
+    out.renders = renders - before;
+    if (async_ && !(out.pending > 0)) fails.push("nothing was on its way after the whole changes");
+    if (out.renders) fails.push("the landings rebuilt the layer lists " + out.renders + " times");
+    if (!(input && input.isConnected)) fails.push("the open rename was taken while the chains landed");
+    const rowL = rowThumb(ed.layerList, L), rowR = rowThumb(ed.refList, R);
+    const hist = ed.historyList && ed.historyList.querySelector("canvas[data-hist]");
+    if (!rowL || !rowR || !hist) fails.push("a thumbnail is missing: row " + !!rowL + ", reference " + !!rowR + ", result " + !!hist);
+    else if (ed.tileMode) {
+        for (const [name, l, cv] of [["the layer's row", L, rowL], ["the reference's row", R, rowR], ["the result list's item", L, hist]]) {
+            const now = hash(l.px.thumbnailCanvas(true));
+            const exact = hash(ed.pixels.Layer.fromImageData(l.px.readRect(0, 0, W, H)).thumbnailCanvas());
+            if (now !== exact) fails.push(name + ": the thumbnail after the landings is not the exact one");
+            if (drawnFrom.get(cv) !== now) fails.push(name + " was last drawn from a thumbnail its chains' landing changed afterwards");
+        }
+    }
+    if (input && input.isConnected) input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    // (ii)
+    ed.view.scale = 1; ed.view.angle = 0; ed._fitted = false;
+    ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
+    L.visible = false;
+    rl.call(ed);
+    await settle();
+    T.chainStats(true);
+    ed.activeLayerId = L.id;
+    ed.flipLayer("h");   // new pixels: no chain on any tile, and nothing on the screen reads them
+    frame();
+    const sentinel = { sentinel: true };
+    for (const l of ed.layers) l._mstatsView = sentinel;
+    await ed.mipsSettled(); await wait(30);
+    const st = T.chainStats();
+    out.hidden = { requested: st.requested, handed: st.handed, thumb: st.thumb, kept: L.px.tileList ? L.px.tileList().filter((t) => t.mips).length : 0 };
+    if (async_ && !st.requested) fails.push("the hidden layer's thumbnail asked for no chain");
+    if (out.hidden.kept) fails.push("a hidden layer at 1:1 kept " + out.hidden.kept + " chains on its tiles for its thumbnail (" + JSON.stringify(st) + ")");
+    if (ed.layers.some((l) => l._mstatsView !== sentinel)) fails.push("a landing only a thumbnail asked for dropped the view's caches");
+} finally {
+    delete ed.renderLayers;
+    delete ed.drawLayerFitted;
+    if (input && input.isConnected) input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await run("close_document", { doc: d.id, force: true });
+}
+if (fails.length) throw new Error(fails.join(" | ") + " " + JSON.stringify(out));
+return out;
+"""),
+    ("a_clipped_stroke_takes_the_selection_its_mips_land_with", """
+// C6 (b) review, with the mips worker on tiles (skipped elsewhere). A stroke clipped to a selection whose chains are
+// still on their way: a striped selection inverted at fit on a 4000 x 3000 document, the worker's answers held back
+// 3 s (a 15000 x 10000 document's take lasts that long), and 40 dabs drawn meanwhile. Once the chains have landed, the
+// live preview is what its view scratch gives when built again: the dabs drawn before the landing kept the clip of the
+// selection before the invert until the commit. Nothing else may rebuild the scratch meanwhile: the film panel's
+// flatten of the document (500 ms after a change) draws the layer through it for the whole picture and makes the next
+// screen frame rebuild it, so the step lets that run before the first dab and fails if a sampled pass came during it.
+const T = await import("./editor/inpaint_tiles.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await wait(200);
+const W = 4000, H = 3000;
+await run("new_canvas", { width: W, height: H, doc: d.id });
+const sch = T.chainScheduler();
+if (!ed.tileMode || !sch.async) { await run("close_document", { doc: d.id, force: true }); return { tiles: ed.tileMode, skipped: "no mips worker" }; }
+const out = { tiles: ed.tileMode };
+const fails = [];
+// the tint, not the marching ants: the ants move every 120 ms, and the two screens compared below are 30 ms apart
+// (an earlier step leaves the display on ants; the step failed one run in four on that alone, measured)
+const display = ed.selectionDisplay;
+ed.selectionDisplay = "tint";
+const L = ed.addPaintLayer();
+ed.activeLayerId = L.id;
+ed.renderLayers();
+ed.fitView();
+out.level = ed.tileLevel(ed.view.scale);
+await run("select_all", { doc: d.id });
+for (let x = 0; x < W; x += 128) ed.sel.clear([x, 0, x + 64, H]);
+ed.markSelectionChanged();
+const frame = () => { ed.hover = null; ed.sceneSig = null; ed.draw(); };
+frame(); await wait(100); await ed.mipsSettled(); frame(); await wait(50);
+const orig = sch.transport;
+const g = ed.canvas.getContext("2d");
+const CW = ed.canvas.width, CH = ed.canvas.height;
+let p = null;
+sch.transport = (tiles) => new Promise((res, rej) => setTimeout(() => orig(tiles).then(res, rej), 3000));
+try {
+    await run("select_invert", { doc: d.id });
+    frame();
+    out.selPending = sch.pending;
+    // what the failure message needs: the selection's chainEpoch at each rebuild of the stroke's scratch, and each landing
+    out.trace = [];
+    const lrv = ed.layerRegionView;
+    ed.layerRegionView = function (layer, vp) { const was = this._strokeViewSig; const r = lrv.call(this, layer, vp); if (this._strokeViewSig !== was) out.trace.push("r" + (was === null ? "0" : "") + ":" + (this.sel.chainEpoch || 0) + (vp.x ? "" : "w")); return r; };
+    const landOf = sch._land;
+    sch._land = function (batch, reply) { const sel = batch.filter((e) => e.store === ed.sel).length, scr = batch.filter((e) => e.store === ed.sel && e.screen).length; out.trace.push("L" + batch.length + "/" + sel + "/" + scr); return landOf.call(this, batch, reply); };
+    ed.setTool("paint");
+    ed.brushSize = 90; ed.brushOpacity = 1; ed.hardness = 1; ed.color = "#ff0000";
+    await wait(800);   // the film panel's flatten after the invert (its 500 ms debounce)
+    let sampled = 0;
+    const sr = ed.sampleRegion;
+    ed.sampleRegion = function (...a) { sampled++; return sr.apply(this, a); };
+    out.sampledOff = () => { delete ed.sampleRegion; return sampled; };
+    p = { kind: "layerpaint", layer: L, stroke: ed.newStrokeBuffer(L.px), clip: ed.strokeClip(L, L.px), erase: false, last: [200, 1500], pressure: 1 };
+    ed.pointer = p;
+    for (let i = 1; i <= 40; i++) {
+        const x = 200 + i * 90;
+        ed.layerDab(p, p.last[0], p.last[1], x, 1500);
+        p.last = [x, 1500];
+        frame();
+        await wait(1);
+    }
+    out.used = !!(ed.strokeView && ed._strokeViewOf === p);
+    out.sampled = out.sampledOff(); delete out.sampledOff;
+    if (out.sampled) fails.push("a sampled pass of the document (" + out.sampled + ") came during the gesture and rebuilt the stroke's scratch");
+    out.pendingAfterDabs = sch.pending;
+    await ed.mipsSettled();
+    await wait(50); frame(); await wait(30); frame();
+    const a = g.getImageData(0, 0, CW, CH).data;
+    out.at = { gl: ed.glCompositeUsable({}), view: !!(ed.strokeView && ed._strokeViewOf === p), sig: String(ed._strokeViewSig).split(",").slice(0, 6).join("/"), pending: sch.pending, strokeTiles: p.stroke && p.stroke.px && p.stroke.px.tileList ? p.stroke.px.tileList().filter((t) => !(t.mips && t.mipsVersion === t.version)).length : -1 };
+    ed._strokeViewSig = null;   // the same gesture, its scratch built again from the (exact) region canvases
+    frame(); await wait(30);
+    const b = g.getImageData(0, 0, CW, CH).data;
+    let worst = 0, n = 0, red = 0;
+    for (let i = 0; i < a.length; i += 4) {
+        for (let k = 0; k < 4; k++) { const v = Math.abs(a[i + k] - b[i + k]); if (v) { n++; if (v > worst) worst = v; } }
+        if (b[i] > 200 && b[i + 1] < 60 && b[i + 2] < 60) red++;
+    }
+    out.live = [worst, n]; out.red = red;
+    out.bt = { gl: ed.glCompositeUsable({}), sig: String(ed._strokeViewSig).split(",").slice(0, 6).join("/"), pending: sch.pending };
+    if (n) {
+        let x0 = CW, y0 = CH, x1 = -1, y1 = -1, sample = null;
+        for (let k = 0; k < a.length; k += 4) if (a[k] !== b[k] || a[k + 1] !== b[k + 1] || a[k + 2] !== b[k + 2]) { const q = k >> 2, x = q % CW, y = (q / CW) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (!sample) sample = [x, y, a[k], a[k + 1], a[k + 2], b[k], b[k + 1], b[k + 2]]; }
+        const toImg = (x, y) => [(x - ed.view.x) / ed.view.scale, (y - ed.view.y) / ed.view.scale];
+        const [ix0, iy0] = toImg(x0, y0), [ix1, iy1] = toImg(x1, y1);
+        out.box = [x0, y0, x1, y1, Math.round(ix0), Math.round(iy0), Math.round(ix1), Math.round(iy1)]; out.sample = sample;
+    }
+    if (!out.used) fails.push("the stroke did not draw through its view scratch");
+    if (!(out.selPending > 0) || !(out.pendingAfterDabs > 0)) fails.push("the selection's chains were not on their way while the dabs were drawn (" + out.selPending + ", " + out.pendingAfterDabs + ")");
+    if (red < 2000) fails.push("the stroke put " + red + " red pixels on the screen");
+    if (worst > 2) fails.push("the live preview after the selection's chains landed is not what its scratch gives when built again (" + worst + " levels on " + n + " bytes)");
+} finally {
+    ed.selectionDisplay = display;
+    delete ed.layerRegionView; delete sch._land;
+    sch.transport = orig;
+    if (out.sampledOff) out.sampledOff();
+    delete out.sampledOff;
+    if (p) { ed.pointer = null; ed.releaseStrokeScratch(); }
+    await ed.mipsSettled();
+    await run("close_document", { doc: d.id, force: true });
+}
+if (fails.length) throw new Error(fails.join(" | ") + " " + JSON.stringify(out));
+return out;
+"""),
+    ("the_navigator_watches_the_chains_it_asks_for", """
+// C6 (b) review, with the mips worker on tiles (skipped elsewhere): the node's navigator (drawThumb) is a display pass of
+// its own. A new 2400 x 1600 base at fit (level 0 on the screen, which asks the worker for nothing) with the navigator
+// mounted as the node mounts it (320 x 240, level 2): once the chains it asked for have landed, its region canvas holds
+// no cell left coarse, because the navigator was drawn again. Nothing else draws it after a setBase.
+const T = await import("./editor/inpaint_tiles.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await wait(200);
+const sch = T.chainScheduler();
+if (!ed.tileMode || !sch.async) { await run("close_document", { doc: d.id, force: true }); return { tiles: ed.tileMode, skipped: "no mips worker" }; }
+await run("new_canvas", { width: 1000, height: 1000, doc: d.id });
+const wrap = document.createElement("div");
+wrap.style.cssText = "position:fixed;right:10px;bottom:10px;width:320px;height:240px;z-index:99999;background:#222";
+document.body.appendChild(wrap);
+const home = ed.thumb.parentElement;
+wrap.appendChild(ed.thumb);
+const W = 2400, H = 1600;
+const c = document.createElement("canvas"); c.width = W; c.height = H;
+{
+    const x = c.getContext("2d");
+    for (let i = 0; i < 3000; i++) { x.fillStyle = `hsl(${(i * 37) % 360},80%,${30 + (i * 13) % 50}%)`; x.fillRect((i * 977) % W, (i * 613) % H, 23, 17); }
+}
+const out = {};
+const fails = [];
+try {
+    T.chainStats(true);
+    await ed.setBaseFromCanvas(c);
+    out.level = ed.tileLevel(ed.view.scale);
+    out.requested = T.chainStats().requested;
+    await ed.mipsSettled();
+    await wait(100);
+    out.regions = ed.basePx._regions ? Array.from(ed.basePx._regions.values(), (rc) => [rc.level, rc.stale.size, rc.dirty.size]) : [];
+    const navigator = out.regions.filter((r) => r[0] >= 1);
+    if (out.level !== 0) fails.push("the screen at fit is at level " + out.level + ", not 0: the screen's own pass watches the chains");
+    if (!out.requested) fails.push("the navigator asked the mips worker for nothing");
+    if (!navigator.length) fails.push("the navigator drew no region canvas");
+    for (const [level, stale, dirty] of navigator) if (stale || dirty) fails.push(`the navigator's region at level ${level} keeps ${stale} stale and ${dirty} landed cells it never drew`);
+} finally {
+    if (home) home.appendChild(ed.thumb); else ed.root.appendChild(ed.thumb);
+    wrap.remove();
+    await run("close_document", { doc: d.id, force: true });
+}
+if (fails.length) throw new Error(fails.join(" | ") + " " + JSON.stringify(out));
+return out;
 """),
     ("pixel_backend_is_the_one_the_flag_chose", lambda c: backend_step(c)),
     ("editing_on_the_flags_backend_in_pixels_and_on_screen", lambda c: edit_step(c)),

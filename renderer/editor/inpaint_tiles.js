@@ -35,7 +35,7 @@
  */
 
 import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN, reentrantPixels } from "./inpaint_pixels.js";
-import { mipChain, mipChainBytes } from "./px/kernels_js.js";
+import { mipChain, mipChainBytes, clampExtend } from "./px/kernels_js.js";
 
 export const TILE_SIZE = 256;
 const TILE_BYTES = TILE_SIZE * TILE_SIZE * 4;
@@ -75,20 +75,352 @@ function newTile() {
     return {
         data: new Uint8ClampedArray(TILE_BYTES),   // its own ArrayBuffer: starts on a page (§B3, 4K aliasing)
         version: ++tileSeq,
-        mips: null, mipsVersion: -1,
+        // the mip chain (plainChain): exact while mipsVersion is the version; otherwise, when there is one, the
+        // picture the tile had, shown while the exact one is built in the worker (C6 b). `mipsOwn`: the buffer is
+        // this tile's alone and a rebuild may write into it; a copy-on-write copy reads the original's (never writes)
+        mips: null, mipsVersion: -1, mipsOwn: false, mipsSeq: 0,
+        wantV: -1, wantW: 0, wantH: 0, wantEntry: null,   // the mips job asked for this tile at this version and valid part
         ext: null, extVersion: -1,
-        edge: null, edgeVersion: -1, edgeW: 0, edgeH: 0,   // the clamp-extended copy of an edge tile (extendTile)
+        // the clamp-extended copy of an edge tile (edgeCopy), and in `edge.mips` its chain (edgeChain)
+        edge: null, edgeVersion: -1, edgeW: 0, edgeH: 0,
         frozen: 0,                                 // how many other pixels objects hold this tile
         _img: null, _u32: null,
     };
+}
+
+// ---- mip chains, on the main thread or in the worker (docs/PLAN_BCE.md §C6 b) -------------------------
+
+const CHAIN_BYTES = mipChainBytes(TILE_SIZE, MIP_LEVELS);
+let chainSeq = 0;                  // a stamp per chain content: a slot or a cell made from a stale chain knows which
+let chainEpochSeq = 0;             // a pixels object's chainEpoch: moved when a chain from the worker lands in it
+/**
+ * How many chains were built where (tests, perf_test.py): `main` on this thread and kept, `landed` from the worker,
+ * `handed` of those given to a thumbnail and not kept, `thumb` a thumbnail's levels built into a scratch.
+ */
+const CHAIN_STATS = { main: 0, landed: 0, handed: 0, dropped: 0, requested: 0, batches: 0, coarse: 0, thumb: 0 };
+let THUMB_MIPS = null;             // thumbnailCanvas: the levels of a tile that keeps no chain of its own
+const thumbScratch = () => THUMB_MIPS || (THUMB_MIPS = new Uint8Array(mipChainBytes(TILE_SIZE, MIP_LEVELS)));
+
+/** The chain of a tile's own bytes, built here when it is not exact, and kept on the tile. */
+function plainChain(t) {
+    if (t.mipsVersion === t.version && t.mips) return t.mips;
+    // never into a buffer another tile still reads (a copy-on-write copy's inherited picture)
+    const out = t.mipsOwn && t.mips ? t.mips : new Uint8Array(CHAIN_BYTES);
+    t.mips = mipChain(t.data, TILE_SIZE, MIP_LEVELS, out);
+    t.mipsVersion = t.version;
+    t.mipsOwn = true;
+    t.mipsSeq = ++chainSeq;
+    CHAIN_STATS.main++;
+    return t.mips;
+}
+
+const newEdge = () => ({ data: null, mips: null, mipsVersion: -1, mipsW: 0, mipsH: 0, mipsOwn: false, mipsSeq: 0 });
+
+/** Is the edge chain of `t` the exact one for its version and a valid part of vw x vh? */
+const edgeExact = (t, vw, vh) => !!(t.edge && t.edge.mips && t.edge.mipsVersion === t.version && t.edge.mipsW === vw && t.edge.mipsH === vh);
+
+/** The chain of an edge tile's clamp-extended bytes, built here when it is not exact, and kept on the tile. */
+function edgeChain(t, vw, vh) {
+    if (edgeExact(t, vw, vh)) return t.edge.mips;
+    const e = edgeCopy(t, vw, vh);
+    const out = e.mipsOwn && e.mips ? e.mips : new Uint8Array(CHAIN_BYTES);
+    e.mips = mipChain(e.data, TILE_SIZE, MIP_LEVELS, out);
+    e.mipsVersion = t.version; e.mipsW = vw; e.mipsH = vh;
+    e.mipsOwn = true;
+    e.mipsSeq = ++chainSeq;
+    CHAIN_STATS.main++;
+    return e.mips;
+}
+
+/**
+ * A tile at `level` sampled nearest from its own bytes, one pixel at the centre of each cell (clamped to the
+ * valid part vw x vh when `clamp`, as the edge chain is): the picture a tile that has no chain at all shows
+ * while its exact one is built in the worker (C6 b). Never kept on the tile.
+ */
+function coarseLevel(t, level, vw, vh, clamp, out) {
+    const side = TILE_SIZE >> level, f = 1 << level, half = f >> 1;
+    const n = side * side * 4;
+    if (!out || out.length < n) out = new Uint8Array(n);
+    CHAIN_STATS.coarse++;
+    const s = t.data;
+    const s32 = LITTLE ? u32Of(t) : null, o32 = s32 ? (out === COARSE[level] ? COARSE32[level] : words(out)) : null;
+    for (let y = 0; y < side; y++) {
+        let sy = y * f + half;
+        if (clamp && sy >= vh) sy = vh - 1;
+        const row = sy * TILE_SIZE;
+        for (let x = 0; x < side; x++) {
+            let sx = x * f + half;
+            if (clamp && sx >= vw) sx = vw - 1;
+            if (o32) { o32[y * side + x] = s32[row + sx]; continue; }
+            const i = (row + sx) * 4, o = (y * side + x) * 4;
+            out[o] = s[i]; out[o + 1] = s[i + 1]; out[o + 2] = s[i + 2]; out[o + 3] = s[i + 3];
+        }
+    }
+    return out;
+}
+
+/** The bytes of a `_levelBytes` answer: its chain, or for a coarse one the level sampled into a scratch of the level. */
+const coarseBytes = (lv) => (lv.coarse ? { data: coarseLevel(lv.t, lv.level, lv.vw, lv.vh, true, coarseBuf(lv.level)), off: 0 } : lv);
+
+const COARSE = [], COARSE32 = [];  // per level: a scratch for a coarse cell (and its words), copied out at once by its caller
+const coarseBuf = (level) => {
+    if (!COARSE[level]) { COARSE[level] = new Uint8Array((TILE_SIZE >> level) * (TILE_SIZE >> level) * 4); COARSE32[level] = new Uint32Array(COARSE[level].buffer); }
+    return COARSE[level];
+};
+
+/**
+ * Chains asked for per batch (a batch of 128 is about 16 ms of worker time and 5 ms of copies here), and the batches in
+ * flight at once. The first batches are smaller: each tile's bytes are copied into a buffer of its own, and a buffer
+ * that is new costs more than one the worker gave back (256 new ones were 9 ms of the frame after a flip at 15k).
+ */
+const CHAIN_BATCH = 128;
+const CHAIN_BATCH_NEW = 32;
+const CHAIN_FLIGHTS = 1;
+/**
+ * Chains the display may still build on this thread in one task before it asks the worker instead: a brush
+ * commit, a fill or an undo touches a handful of tiles and stays exact in the frame it draws, while a whole
+ * change of a large document (2,360 tiles at 15000 x 10000, about 120 µs each) goes to the worker.
+ */
+export const CHAIN_SYNC_BUDGET = 16;
+
+/**
+ * Where the chains a display reader asks for are built (C6 b). Without a transport everything is built on the
+ * main thread when it is read, exactly as before; with one (the editor's mips worker) a display reader that finds
+ * no exact chain, once the task's budget is spent, asks for it and draws what the tile had meanwhile. Only
+ * display readers (`display` true) ever see such a picture: `mips()`, `tileWithGutter()` and `regionCanvas()`
+ * without it stay exact.
+ *
+ * `transport(tiles)` takes [{ data: ArrayBuffer, vw, vh }] (the buffers transferred) and resolves to
+ * { chains: [ArrayBuffer], exts: [ArrayBuffer | null], datas: [ArrayBuffer] }.
+ */
+export class ChainScheduler {
+    constructor(transport = null, { budget = CHAIN_SYNC_BUDGET, batch = CHAIN_BATCH, flights = CHAIN_FLIGHTS } = {}) {
+        this.transport = transport;
+        this.budgetMax = budget;
+        this.budget = budget;
+        this.batch = batch;
+        this.flights = flights;
+        this.queue = new Map();        // tile -> entry
+        this.flight = 0;
+        this.pool = [];                // tile buffers back from the worker, for the next batch's copies
+        this._refill = false;
+        this._flushQueued = false;
+        this._landing = [];            // resolvers of chainLanding()
+        this._settled = [];            // resolvers of chainsSettled()
+        this.failure = null;
+    }
+
+    get async() { return !!this.transport; }
+
+    get pending() { return this.queue.size + this.flight; }
+
+    /** May the display build this chain here and now? Never for a tile whose chain is already asked for. */
+    mayBuild(t, vw, vh) {
+        if (!this.transport) return true;
+        if (t.wantV === t.version && t.wantW === vw && t.wantH === vh) return false;
+        if (this.budget <= 0) return false;
+        this.budget--;
+        if (!this._refill) { this._refill = true; queueMicrotask(() => { this._refill = false; this.budget = this.budgetMax; }); }
+        return true;
+    }
+
+    /**
+     * Ask for the chains of `t` (at its version, with the edge chain for a valid part of vw x vh) for `store` at `key`.
+     * `screen`: a reader of the screen asks (the atlas, a region canvas), and the chain is kept on the tile. A
+     * thumbnail's ask alone (false) keeps nothing on a tile that has no chain buffer of its own: the chain is handed to
+     * the thumbnail's cell and dropped, because a hidden layer, or one only ever seen at 1:1, kept a chain on every
+     * tile for a picture of 40 px (196 MB a layer at 15000 x 10000: the C6 b review).
+     *
+     * An entry asked for again while it waits goes to the end of the queue, and the queue is flushed newest first: the
+     * tiles the screen still shows go before the ones of pixels a later whole change replaced, which nothing asks
+     * for any more (a flip after a flip waited for the first flip's chains: the C6 b review).
+     */
+    request(store, key, t, vw, vh, screen = true) {
+        if (t.wantV === t.version && t.wantW === vw && t.wantH === vh && t.wantEntry) {
+            // queued or in flight: its landing tells every store that asked (the first one inline, a rare second in `more`)
+            const f = t.wantEntry;
+            if (screen) f.keep = true;
+            if (this.queue.get(t) === f) { this.queue.delete(t); this.queue.set(t, f); }
+            if (f.store === store && f.key === key) { if (screen) f.screen = true; return; }
+            if (!f.more) f.more = [];
+            for (let i = 0; i < f.more.length; i += 3) if (f.more[i] === store && f.more[i + 1] === key) { if (screen) f.more[i + 2] = true; return; }
+            f.more.push(store, key, screen);
+            return;
+        }
+        const e = { t, version: t.version, vw, vh, store, key, screen, keep: screen, more: null };
+        t.wantV = t.version; t.wantW = vw; t.wantH = vh;
+        t.wantEntry = e;
+        this.queue.set(t, e);
+        CHAIN_STATS.requested++;
+        if (!this._flushQueued) { this._flushQueued = true; queueMicrotask(() => { this._flushQueued = false; this._flush(); }); }
+    }
+
+    /** `t`'s chain is still wanted where it is shown (a region canvas's stale cell): its entry goes to the end of the queue. */
+    touch(t) {
+        const e = t.wantEntry;
+        if (e && this.queue.get(t) === e) { this.queue.delete(t); this.queue.set(t, e); }
+    }
+
+    _flush() {
+        while (this.transport && this.flight < this.flights && this.queue.size) {
+            const batch = [];
+            const size = Math.min(this.batch, this.pool.length + CHAIN_BATCH_NEW);
+            // newest first (see `request`): the Map keeps the order entries were last asked for in
+            const entries = Array.from(this.queue.values());
+            for (let j = entries.length - 1; j >= 0; j--) {
+                const e = entries[j], t = e.t;
+                this.queue.delete(t);
+                // written since it was asked for: the write's reader asks again for the new version
+                if (t.version !== e.version) { if (t.wantEntry === e) { t.wantV = -1; t.wantEntry = null; } CHAIN_STATS.dropped++; this._notify(e, false); continue; }
+                batch.push(e);
+                if (batch.length >= size) break;
+            }
+            if (!batch.length) break;
+            const tiles = batch.map((e) => {
+                const buf = this.pool.pop() || new ArrayBuffer(TILE_BYTES);
+                new Uint8Array(buf).set(e.t.data);
+                return { data: buf, vw: e.vw, vh: e.vh };
+            });
+            this.flight++;
+            CHAIN_STATS.batches++;
+            let sent;
+            try { sent = Promise.resolve(this.transport(tiles)); } catch (err) { sent = Promise.reject(err); }
+            sent.then((reply) => this._land(batch, reply), (err) => this._fail(batch, err));
+        }
+        this._maybeSettled();
+    }
+
+    _land(batch, reply) {
+        this.flight--;
+        const landed = landedSet();
+        const chains = (reply && reply.chains) || [], exts = (reply && reply.exts) || [];
+        for (const d of (reply && reply.datas) || []) if (d && d.byteLength === TILE_BYTES && this.pool.length < this.batch) this.pool.push(d);
+        batch.forEach((e, i) => {
+            const t = e.t;
+            if (t.wantEntry === e) { t.wantV = -1; t.wantEntry = null; }
+            // installed only on the tile it was made from, at the version it was made from: a later write gave the
+            // tile a new version (or the store a new tile object), and this answer is of pixels that are gone
+            if (t.version !== e.version || !chains[i]) { CHAIN_STATS.dropped++; this._notify(e, false, landed); return; }
+            // kept when a reader of the screen asked, or in place of a chain buffer the tile owns; a thumbnail's ask
+            // alone hands the chain to its cell (see `request`)
+            let handed = null;
+            if (t.mipsVersion !== t.version) {
+                if (e.keep || (t.mipsOwn && t.mips)) {
+                    t.mips = new Uint8Array(chains[i]);
+                    t.mipsVersion = t.version;
+                    t.mipsOwn = true;
+                    t.mipsSeq = ++chainSeq;
+                } else {
+                    handed = new Uint8Array(chains[i]);
+                    CHAIN_STATS.handed++;
+                }
+            }
+            if (exts[i] && (e.vw < TILE_SIZE || e.vh < TILE_SIZE) && !edgeExact(t, e.vw, e.vh) && (e.keep || (t.edge && t.edge.mipsOwn && t.edge.mips))) {
+                const g = t.edge || (t.edge = newEdge());
+                g.mips = new Uint8Array(exts[i]);
+                g.mipsVersion = t.version; g.mipsW = e.vw; g.mipsH = e.vh;
+                g.mipsOwn = true;
+                g.mipsSeq = ++chainSeq;
+            }
+            CHAIN_STATS.landed++;
+            this._notify(e, true, landed, handed);
+        });
+        const waiters = this._landing.splice(0);
+        for (const w of waiters) w(landed);
+        this._flush();
+    }
+
+    /**
+     * Tell the stores that asked for `e` that its tile's picture may be refreshed; `landed` collects them, and in
+     * `landed.screen` the ones a reader of the screen asked for. `handed`: the chain, not kept on the tile, for a thumbnail.
+     */
+    _notify(e, ok, landed = null, handed = null) {
+        const one = (store, key, screen) => {
+            if (store._tiles.get(key) !== e.t) return;
+            store._chainLanded(key, screen, handed, e.version);
+            if (landed) { landed.add(store); if (screen) landed.screen.add(store); }
+        };
+        one(e.store, e.key, e.screen);
+        if (e.more) for (let i = 0; i < e.more.length; i += 3) one(e.more[i], e.more[i + 1], e.more[i + 2]);
+    }
+
+    /** The tile buffers kept for the next batch's copies (32 MB at most) go, when no chain is on its way (releaseCaches). */
+    releasePool() {
+        if (this.pending) return 0;
+        const bytes = this.pool.length * TILE_BYTES;
+        this.pool.length = 0;
+        return bytes;
+    }
+
+    _fail(batch, err) {
+        this.flight--;
+        // the worker is gone or refused: from now on every chain is built where it is read, as without a worker
+        if (this.transport) console.warn("Inpaint Canvas: the mips worker failed, building mips on the main thread:", (err && err.message) || err);
+        this.transport = null;
+        this.failure = err;
+        const landed = landedSet();
+        const all = batch.concat(Array.from(this.queue.values()));
+        this.queue.clear();
+        for (const e of all) {
+            if (e.t.wantEntry === e) { e.t.wantV = -1; e.t.wantEntry = null; }
+            this._notify(e, false, landed);
+        }
+        const waiters = this._landing.splice(0);
+        for (const w of waiters) w(landed);
+        this._maybeSettled();
+    }
+
+    _maybeSettled() {
+        if (this.pending) return;
+        const waiters = this._settled.splice(0);
+        for (const w of waiters) w();
+    }
+
+    /**
+     * Resolves with the stores that got chains at the next landing (at once, with none, when nothing is pending), and
+     * in its `screen` set the ones a reader of the screen had asked for.
+     */
+    landing() {
+        if (!this.pending) return Promise.resolve(landedSet());
+        return new Promise((resolve) => this._landing.push(resolve));
+    }
+
+    /** Resolves when no chain is asked for or in flight. */
+    settled() {
+        if (!this.pending && !this._flushQueued) return Promise.resolve();
+        return new Promise((resolve) => this._settled.push(resolve));
+    }
+}
+
+/** The stores a landing reached, with `screen`: the ones among them a reader of the screen had asked for. */
+function landedSet() {
+    const s = new Set();
+    s.screen = new Set();
+    return s;
+}
+
+const CHAINS = new ChainScheduler();
+
+/** The transport of the default scheduler (the editor gives it its mips worker); null builds everything here. */
+export function setChainTransport(transport) {
+    CHAINS.transport = transport || null;
+    CHAINS.failure = null;
+}
+
+/** The default scheduler, which every tile store uses unless it was given another (`pixels._chains`). */
+export function chainScheduler() { return CHAINS; }
+
+/** The counters of chains built here and in the worker (tests, perf_test.py); `reset` zeroes them. */
+export function chainStats(reset = false) {
+    const out = { ...CHAIN_STATS, pending: CHAINS.pending, async: CHAINS.async };
+    if (reset) for (const k of Object.keys(CHAIN_STATS)) CHAIN_STATS[k] = 0;
+    return out;
 }
 
 const u32Of = (t) => t._u32 || (t._u32 = new Uint32Array(t.data.buffer));
 const imageDataOf = (t) => t._img || (t._img = new ImageData(t.data, TILE_SIZE, TILE_SIZE));
 let ZERO_IMAGE = null;
 const zeroImage = () => ZERO_IMAGE || (ZERO_IMAGE = new ImageData(TILE_SIZE, TILE_SIZE));
-let THUMB_MIPS = null;             // thumbnailCanvas: the mips of a tile whose own are not cached
-const thumbScratch = () => THUMB_MIPS || (THUMB_MIPS = new Uint8Array(mipChainBytes(TILE_SIZE, MIP_LEVELS)));
 
 const LONG_MIN = -2147483648, LONG_MAX = 2147483647;
 
@@ -291,33 +623,14 @@ function premulTable() {
  * Repeating the edge pixel is what a texture clamped to its edge gives, which is what the canvas
  * backend's one texture per layer did.
  */
-function extendTile(t, vw, vh) {
-    if (t.edgeVersion === t.version && t.edgeW === vw && t.edgeH === vh) return t.edge;
+function edgeCopy(t, vw, vh) {
     let e = t.edge;
-    if (!e) e = t.edge = { data: new Uint8ClampedArray(TILE_BYTES), mips: null, u32: null };
-    const d = e.data;
-    d.set(t.data);
-    const s32 = LITTLE ? (e.u32 || (e.u32 = new Uint32Array(d.buffer))) : null;
-    const src32 = LITTLE ? u32Of(t) : null;
-    if (vw < TILE_SIZE) {
-        for (let y = 0; y < vh; y++) {
-            const row = y * TILE_SIZE;
-            if (s32) { const v = src32[row + vw - 1]; s32.fill(v, row + vw, row + TILE_SIZE); continue; }
-            const i = (row + vw - 1) * 4;
-            for (let x = vw; x < TILE_SIZE; x++) {
-                const j = (row + x) * 4;
-                d[j] = d[i]; d[j + 1] = d[i + 1]; d[j + 2] = d[i + 2]; d[j + 3] = d[i + 3];
-            }
-        }
-    }
-    if (vh < TILE_SIZE) {
-        const last = (vh - 1) * TILE_SIZE;
-        for (let y = vh; y < TILE_SIZE; y++) {
-            if (s32) { s32.copyWithin(y * TILE_SIZE, last, last + TILE_SIZE); continue; }
-            d.copyWithin(y * TILE_SIZE * 4, last * 4, (last + TILE_SIZE) * 4);
-        }
-    }
-    e.mips = mipChain(d, TILE_SIZE, MIP_LEVELS, e.mips || new Uint8Array(mipChainBytes(TILE_SIZE, MIP_LEVELS)));
+    if (e && e.data && t.edgeVersion === t.version && t.edgeW === vw && t.edgeH === vh) return e;
+    if (!e) e = t.edge = newEdge();
+    // the copy's own buffer: an inherited edge (a copy-on-write copy's) carries a chain to read, never bytes
+    if (!e.data) e.data = new Uint8ClampedArray(TILE_BYTES);
+    e.data.set(t.data);
+    clampExtend(e.data, TILE_SIZE, vw, vh);
     t.edgeVersion = t.version;
     t.edgeW = vw; t.edgeH = vh;
     return e;
@@ -464,13 +777,47 @@ const tiled = (Base) => class extends Base {
 
     bytes() { return this._tiles.size * TILE_BYTES; }
 
-    touch(rect = null) {
+    /**
+     * The pixels changed (`rect`, or anywhere): a new `version` for the caches that key on the object. The tiles
+     * keep theirs. Every write into a tile already gave it a new version (`writable`) or put another tile object
+     * in its place (`_share`, `_dropTile`, a copy on write), which is what the per-tile caches (extent, mips, edge
+     * copy, atlas slot) compare, so a touch has nothing to add there. It used to give every tile under `rect` a new
+     * version as well: a whole touch after a write of a few tiles then rebuilt 2,360 mip chains and re-uploaded
+     * every visible slot at 15000 x 10000 (250 to 285 ms), and, through a tile an undo step shares, invalidated the
+     * step's caches too (C6 b).
+     */
+    touch() {
         this._version = ++pixelSeq;
         if (this._mirror) this._mirror._dispVer = this._version;
-        const r = pixelRect(rect, this._w, this._h);
-        if (!r) return;
-        for (const key of this._keysIn(r)) this._tiles.get(key).version = ++tileSeq;
     }
+
+    /**
+     * Moved when a chain a reader of the screen asked for landed in these pixels (C6 b): the atlas's instances and a
+     * live stroke's view key on it. A chain only a thumbnail asked for leaves it (nothing on the screen changes).
+     */
+    get chainEpoch() { return this._chainEpoch || 0; }
+
+    /**
+     * The worker's chain of the tile at `key` landed (or the ask for it ended): the cells of the thumbnail and of
+     * the region canvases that show a stale or coarse picture of that tile are put again on their next call.
+     * `screen`: a reader of the screen asked for it. `handed`: the chain, which the tile does not keep, of the tile at
+     * `version`: the thumbnail takes its level from it for the cell.
+     */
+    _chainLanded(key, screen = true, handed = null, version = -1) {
+        if (screen) this._chainEpoch = ++chainEpochSeq;
+        const th = this._thumb;
+        if (th && th.stale.delete(key)) {
+            th.dirty.add(key);
+            if (handed && th.level) {
+                const at = mipChainBytes(TILE_SIZE, th.level - 1);
+                th.cells.set(key, { version, bytes: handed.slice(at, at + th.cell * th.cell * 4) });
+            }
+        }
+        if (this._regions) for (const rc of this._regions.values()) if (rc.stale.delete(key)) rc.dirty.add(key);
+    }
+
+    /** The scheduler of these pixels' chains: their own when a test gave them one, else the module's. */
+    _scheduler() { return this._chains || CHAINS; }
 
     // -- tiles --
 
@@ -487,6 +834,16 @@ const tiled = (Base) => class extends Base {
             t.frozen--;
             const c = newTile();
             c.data.set(t.data);
+            // the original's chains as the copy's stale picture until its own are built (C6 b): read, never written
+            // (`mipsOwn` false), because the other holders of the original read the same buffers. The original gives
+            // up owning them too: its last holder writes into it in place, and a rebuild into the buffer the copy reads
+            // showed that holder's new pixels in the copy's cells under an unchanged stamp (the C6 b review)
+            if (t.mips) { c.mips = t.mips; c.mipsSeq = t.mipsSeq; t.mipsOwn = false; }
+            if (t.edge && t.edge.mips) {
+                c.edge = newEdge();
+                c.edge.mips = t.edge.mips; c.edge.mipsW = t.edge.mipsW; c.edge.mipsH = t.edge.mipsH; c.edge.mipsSeq = t.edge.mipsSeq;
+                t.edge.mipsOwn = false;
+            }
             this._tiles.set(key, c);
             t = c;
         } else {
@@ -502,33 +859,88 @@ const tiled = (Base) => class extends Base {
     /** The tile keys, (ty << 16) | tx. */
     tileKeys() { this._guard(); return Array.from(this._tiles.keys()); }
 
-    /** The five mips of a tile (128 to 8 px, one after the other), built lazily by the kernel. */
+    /** The five mips of a tile (128 to 8 px, one after the other), built lazily by the kernel; always exact. */
     mips(tx, ty) {
         this._guard();
         const t = this._tiles.get((ty << 16) | tx);
-        if (!t) return null;
-        if (t.mipsVersion !== t.version) {
-            t.mips = mipChain(t.data, TILE_SIZE, MIP_LEVELS, t.mips || new Uint8Array(mipChainBytes(TILE_SIZE, MIP_LEVELS)));
-            t.mipsVersion = t.version;
-        }
-        return t.mips;
+        return t ? plainChain(t) : null;
     }
 
     /**
      * The bytes of the tile at (tx, ty) at `level` (one buffer, `off` bytes in, `side` x `side`
      * straight-alpha RGBA8), clamp-extended when the tile is the last of a row or a column
-     * (`extendTile`). Null when the tile is not allocated or lies outside the image.
+     * (`edgeCopy`, `edgeChain`), with `stamp`: the tile's version when the bytes are exact. Null when the tile
+     * is not allocated or lies outside the image.
+     *
+     * `display` (C6 b): for a picture on the screen. When the chain is not exact and the scheduler has spent
+     * this task's budget, the chain is asked of the worker and the bytes are what the tile had meanwhile, `stale`
+     * with a negative `stamp`: its previous chain when it kept one (the stamp, -1 - its seq, names that chain), else
+     * `coarse` (the stamp -version - 0.5) and no `data`: the level sampled nearest from the tile's bytes, which
+     * `coarseBytes` makes.
      */
-    _levelBytes(tx, ty, level) {
+    _levelBytes(tx, ty, level, display = false) {
         const t = this._tiles.get((ty << 16) | tx);
         if (!t) return null;
         const ox = tx << 8, oy = ty << 8;
         const vw = Math.min(TILE_SIZE, this._w - ox), vh = Math.min(TILE_SIZE, this._h - oy);
         if (vw <= 0 || vh <= 0) return null;
-        const edge = vw < TILE_SIZE || vh < TILE_SIZE ? extendTile(t, vw, vh) : null;
-        if (!level) return { data: edge ? edge.data : t.data, off: 0 };
-        if (edge) return { data: edge.mips, off: mipChainBytes(TILE_SIZE, level - 1) };
-        return { data: this.mips(tx, ty), off: mipChainBytes(TILE_SIZE, level - 1) };
+        const edge = vw < TILE_SIZE || vh < TILE_SIZE;
+        if (!level) return { data: edge ? edgeCopy(t, vw, vh).data : t.data, off: 0, stamp: t.version };
+        const off = mipChainBytes(TILE_SIZE, level - 1);
+        if (edge ? edgeExact(t, vw, vh) : t.mipsVersion === t.version && t.mips) return { data: edge ? t.edge.mips : t.mips, off, stamp: t.version };
+        if (display) {
+            const sch = this._scheduler();
+            if (!sch.mayBuild(t, vw, vh)) {
+                sch.request(this, (ty << 16) | tx, t, vw, vh);
+                const old = edge ? t.edge && t.edge.mips && t.edge : t.mips && t;
+                if (old) return { data: old.mips, off, stamp: -1 - old.mipsSeq, stale: true };
+                // no bytes yet: `coarseBytes` samples the level when a caller wants all of it, `tileWithGutter` only the lines it puts
+                return { data: null, off: 0, stamp: -0.5 - t.version, stale: true, coarse: true, t, vw, vh, level };
+            }
+        }
+        return { data: edge ? edgeChain(t, vw, vh) : plainChain(t), off, stamp: t.version };
+    }
+
+    /**
+     * The stamp `_levelBytes(tx, ty, level, display)` would give, without making the bytes: 0 for a tile that is
+     * not allocated or lies outside the image. A display call takes the same decision (build here, or ask the
+     * worker) that the bytes call right after it then finds taken.
+     */
+    _stampAt(tx, ty, level, display) {
+        if (tx < 0 || ty < 0) return 0;
+        const t = this._tiles.get((ty << 16) | tx);
+        if (!t) return 0;
+        const ox = tx << 8, oy = ty << 8;
+        const vw = Math.min(TILE_SIZE, this._w - ox), vh = Math.min(TILE_SIZE, this._h - oy);
+        if (vw <= 0 || vh <= 0) return 0;
+        if (!level) return t.version;
+        const edge = vw < TILE_SIZE || vh < TILE_SIZE;
+        if (edge ? edgeExact(t, vw, vh) : t.mipsVersion === t.version && t.mips) return t.version;
+        if (display) {
+            const sch = this._scheduler();
+            if (!sch.mayBuild(t, vw, vh)) {
+                sch.request(this, (ty << 16) | tx, t, vw, vh);
+                const old = edge ? t.edge && t.edge.mips && t.edge : t.mips && t;
+                return old ? -1 - old.mipsSeq : -0.5 - t.version;
+            }
+        }
+        if (edge) edgeChain(t, vw, vh); else plainChain(t);
+        return t.version;
+    }
+
+    /**
+     * The stamps of the nine tiles an atlas slot at `level` is made from (C6 b), row by row with the tile itself
+     * at 4, written into `out`: what `_levelBytes(..., display)` gives for each (0 for a neighbour that is not
+     * allocated or lies outside the image). A slot is current while these are the ones it was made from; a
+     * negative stamp at 4 is a tile whose exact chain is on its way.
+     */
+    slotStamps(tx, ty, level, display = false, out = new Float64Array(9)) {
+        this._guard();
+        let i = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) out[i++] = this._stampAt(tx + dx, ty + dy, level, display);
+        }
+        return out;
     }
 
     /**
@@ -547,18 +959,19 @@ const tiled = (Base) => class extends Base {
      * transparent pixels across an edge. The shader divides the alpha out again, as it always did for
      * the canvas uploads (which Chromium premultiplied on the way in).
      */
-    tileWithGutter(tx, ty, level = 0, out = null, ring = false) {
+    tileWithGutter(tx, ty, level = 0, out = null, ring = false, display = false) {
         // `ring`: only the gutter is written (rows 0 and S - 1, columns 0 and S - 1), for a slot whose
-        // tile is unchanged and whose neighbours are not (C6 a); the interior of `out` is left as it was
+        // tile is unchanged and whose neighbours are not (C6 a); the interior of `out` is left as it was.
+        // `display`: the bytes of `_levelBytes(..., display)`, stale or coarse where a chain is on its way (C6 b)
         this._guard();
-        const own = this._levelBytes(tx, ty, level);
+        const own = this._levelBytes(tx, ty, level, display);
         if (!own) return null;
         const side = TILE_SIZE >> level, S = side + 2;
         if (!out || out.length < S * S * 4) out = new Uint8Array(S * S * 4);
         const near = [];
         const infoAt = (dx, dy) => {
             const k = (dy + 1) * 3 + (dx + 1);
-            if (near[k] === undefined) near[k] = !dx && !dy ? own : this._levelBytes(tx + dx, ty + dy, level);
+            if (near[k] === undefined) near[k] = !dx && !dy ? own : this._levelBytes(tx + dx, ty + dy, level, display);
             return near[k];
         };
         // which neighbour each gutter pixel comes from, and its row / column there; at the image's
@@ -570,6 +983,20 @@ const tiled = (Base) => class extends Base {
         const P = premulTable();
         const put = (info, sx, sy, n, o) => {
             if (!info) { out.fill(0, o, o + n * 4); return; }
+            if (info.coarse) {
+                // a tile whose chain is on its way and that has none: its bytes sampled nearest, only the pixels put here (C6 b)
+                const d = info.t.data, f = 1 << level, half = f >> 1, lastX = info.vw - 1;
+                const row = Math.min(sy * f + half, info.vh - 1) * TILE_SIZE;
+                for (let k = 0; k < n; k++, o += 4) {
+                    const i = (row + Math.min((sx + k) * f + half, lastX)) * 4;
+                    const a = d[i + 3];
+                    if (a === 255) { out[o] = d[i]; out[o + 1] = d[i + 1]; out[o + 2] = d[i + 2]; out[o + 3] = 255; continue; }
+                    if (!a) { out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0; continue; }
+                    const b = a << 8;
+                    out[o] = P[b | d[i]]; out[o + 1] = P[b | d[i + 1]]; out[o + 2] = P[b | d[i + 2]]; out[o + 3] = a;
+                }
+                return;
+            }
             const d = info.data;
             let i = info.off + (sy * side + sx) * 4;
             for (let k = 0; k < n; k++, i += 4, o += 4) {
@@ -587,6 +1014,46 @@ const tiled = (Base) => class extends Base {
             put(infoAt(leftX, dy), leftS, sy, 1, o);
             if (!ring || y === 0 || y === S - 1) put(infoAt(0, dy), 0, sy, side, o + 4);
             put(infoAt(rightX, dy), rightS, sy, 1, o + (S - 1) * 4);
+        }
+        return out;
+    }
+
+    /**
+     * The slot of a tile that has no chain yet, at `level`, from its bytes sampled nearest (C6 b): premultiplied
+     * like `tileWithGutter`, with the tile's own edge repeated as its gutter (its neighbours' pictures are just as
+     * coarse, and the compositor replaces the slot when the chain lands). What the first frame after a whole change
+     * of a large layer draws: 100 px a slot at level 5 and no neighbour read. Null when the tile is not allocated or
+     * lies outside the image.
+     */
+    coarseSlot(tx, ty, level, out = null) {
+        this._guard();
+        const t = this._tiles.get((ty << 16) | tx);
+        if (!t) return null;
+        const vw = Math.min(TILE_SIZE, this._w - (tx << 8)), vh = Math.min(TILE_SIZE, this._h - (ty << 8));
+        if (vw <= 0 || vh <= 0) return null;
+        const side = TILE_SIZE >> level, S = side + 2, f = 1 << level, half = f >> 1;
+        if (!out || out.length < S * S * 4) out = new Uint8Array(S * S * 4);
+        const P = premulTable(), d = t.data;
+        const s32 = LITTLE ? u32Of(t) : null, o32 = s32 ? words(out) : null;
+        CHAIN_STATS.coarse++;
+        for (let y = 0; y < S; y++) {
+            const cy = y ? (y > side ? side - 1 : y - 1) : 0;
+            const row = Math.min(cy * f + half, vh - 1) * TILE_SIZE;
+            for (let x = 0, o = y * S * 4; x < S; x++, o += 4) {
+                const cx = x ? (x > side ? side - 1 : x - 1) : 0;
+                const j = row + Math.min(cx * f + half, vw - 1), i = j * 4;
+                if (o32) {
+                    // an opaque or a transparent pixel is one word (little-endian: alpha in the high byte)
+                    const w = s32[j];
+                    if (w >= 0xFF000000) { o32[o >> 2] = w; continue; }
+                    if (w < ALPHA) { o32[o >> 2] = 0; continue; }
+                }
+                const a = d[i + 3];
+                if (a === 255) { out[o] = d[i]; out[o + 1] = d[i + 1]; out[o + 2] = d[i + 2]; out[o + 3] = 255; continue; }
+                if (!a) { out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0; continue; }
+                const b = a << 8;
+                out[o] = P[b | d[i]]; out[o + 1] = P[b | d[i + 1]]; out[o + 2] = P[b | d[i + 2]]; out[o + 3] = a;
+            }
         }
         return out;
     }
@@ -619,7 +1086,12 @@ const tiled = (Base) => class extends Base {
     _changed(key) {
         if (this._mirrorDirty) this._mirrorDirty.add(key);
         if (this._thumb) this._thumb.dirty.add(key);
-        if (this._regions) for (const rc of this._regions.values()) rc.dirty.add(key);
+        if (this._regions) {
+            // only the cells a region holds: its rebuild threshold counts them, and a write of tiles outside the view
+            // rebuilt the whole region canvas every frame (the C6 b review); a region that moves is made again whole
+            const tx = key & 0xFFFF, ty = key >>> 16;
+            for (const rc of this._regions.values()) if (tx >= rc.tx0 && tx <= rc.tx1 && ty >= rc.ty0 && ty <= rc.ty1) rc.dirty.add(key);
+        }
     }
 
     _dropTile(key) {
@@ -1053,7 +1525,11 @@ const tiled = (Base) => class extends Base {
      * (at most MIP_LEVELS), synced from the tiles written since the last call like the mirror. A tile whose
      * mips are cached gives them; otherwise nothing is kept on the tile. Read-only for callers.
      */
-    thumbnailCanvas() {
+    thumbnailCanvas(display = false) {
+        // `display` (C6 b): a tile whose chain is on its way in the worker shows its previous chain or a coarse
+        // picture, kept in `stale` and put again when the chain lands. A tile that owns a chain buffer has it rebuilt
+        // there and kept (the atlas then finds it exact); one that has none keeps none: its levels go into a scratch,
+        // and a chain from the worker that only a thumbnail asked for is handed to the cell (`landed`) and dropped
         this._guard();
         let level = 0;
         while (level < MIP_LEVELS && (Math.max(this._w, this._h) >> (level + 1)) >= TILE_SIZE) level++;
@@ -1062,23 +1538,96 @@ const tiled = (Base) => class extends Base {
         if (!th || th.level !== level) {
             const f = 1 << level;
             th = this._thumb = {
-                level, cell, dirty: new Set(this._tiles.keys()),
+                // `cells`: the cell of a tile that keeps no chain (built into a scratch, or handed by a landing), while
+                // the tile keeps that version: a rebuild of the whole thumbnail takes it again instead of asking again
+                // (it asked on every batch that landed, for good: a loop)
+                level, cell, dirty: new Set(), stale: new Set(), all: true, cells: new Map(),
                 canvas: cpuCanvas(Math.ceil(this._w / f), Math.ceil(this._h / f), "a thumbnail canvas"),
                 img: new ImageData(cell, cell), zero: new ImageData(cell, cell),
             };
         }
-        if (th.dirty.size) {
+        if (!display && th.stale.size) { for (const key of th.stale) th.dirty.add(key); th.stale.clear(); }
+        const cols = Math.ceil(this._w / TILE_SIZE), rows = Math.ceil(this._h / TILE_SIZE);
+        // most of the thumbnail: one putImageData of the whole of it, as a new one is made
+        if (!th.all && th.dirty.size * 4 >= cols * rows) th.all = true;
+        if (th.all || th.dirty.size) {
             const ctx = th.canvas.getContext("2d");
             const at = mipChainBytes(TILE_SIZE, level - 1), n = cell * cell * 4;
-            for (const key of th.dirty) {
-                const t = this._tiles.get(key);
-                const ox = (key & 0xFFFF) * cell, oy = (key >>> 16) * cell;
-                if (!t) { ctx.putImageData(th.zero, ox, oy); continue; }
-                if (!level) { ctx.putImageData(imageDataOf(t), ox, oy); continue; }
-                const mips = t.mipsVersion === t.version && t.mips ? t.mips : mipChain(t.data, TILE_SIZE, level, thumbScratch());
-                th.img.data.set(mips.subarray(at, at + n));
-                ctx.putImageData(th.img, ox, oy);
+            const sch = this._scheduler();
+            // the cell of one tile: { data, off, stale }, or { coarse, stale } for a tile with no chain yet (sampled nearest)
+            const cellBytes = (key, t) => {
+                if (!level) return { data: t.data, off: 0, stale: false };
+                if (t.mipsVersion === t.version && t.mips) { if (th.cells.size) th.cells.delete(key); return { data: t.mips, off: at, stale: false }; }
+                const got = th.cells.get(key);
+                if (got && got.version === t.version) return { data: got.bytes, off: 0, stale: false };
+                const tx = key & 0xFFFF, ty = key >>> 16;
+                const vw = Math.min(TILE_SIZE, this._w - (tx << 8)), vh = Math.min(TILE_SIZE, this._h - (ty << 8));
+                if (display && !sch.mayBuild(t, vw, vh)) {
+                    sch.request(this, key, t, vw, vh, false);
+                    if (t.mips) return { data: t.mips, off: at, stale: true };
+                    return { coarse: true, stale: true };
+                }
+                if (t.mipsOwn && t.mips) { th.cells.delete(key); return { data: plainChain(t), off: at, stale: false }; }
+                CHAIN_STATS.thumb++;
+                const bytes = mipChain(t.data, TILE_SIZE, level, thumbScratch()).slice(at, at + n);
+                th.cells.set(key, { version: t.version, bytes });
+                return { data: bytes, off: 0, stale: false };
+            };
+            if (th.all) {
+                const cw = th.canvas.width, ch = th.canvas.height;
+                const all = new ImageData(cw, ch), dst = all.data;
+                const d32 = LITTLE ? new Uint32Array(dst.buffer) : null;
+                const f = 1 << level, half = f >> 1, stride = level ? cell : TILE_SIZE;
+                th.stale.clear();
+                for (const key of th.cells.keys()) if (!this._tiles.has(key)) th.cells.delete(key);
+                for (const [key, t] of this._tiles) {
+                    const ox = (key & 0xFFFF) * cell, oy = (key >>> 16) * cell;
+                    const w = Math.min(cell, cw - ox), h = Math.min(cell, ch - oy);
+                    if (w <= 0 || h <= 0) continue;
+                    const b = cellBytes(key, t);
+                    if (b.stale) th.stale.add(key);
+                    // byte by byte: a cell is 8 px a side on a large document, and a view per row cost more than the copy
+                    if (b.coarse && d32) {
+                        const s32 = u32Of(t);
+                        for (let y = 0; y < h; y++) {
+                            const row = (y * f + half) * TILE_SIZE;
+                            for (let x = 0, o = (oy + y) * cw + ox; x < w; x++, o++) d32[o] = s32[row + x * f + half];
+                        }
+                        continue;
+                    }
+                    if (b.coarse) {
+                        const d = t.data;
+                        for (let y = 0; y < h; y++) {
+                            const row = (y * f + half) * TILE_SIZE;
+                            for (let x = 0, o = ((oy + y) * cw + ox) * 4; x < w; x++, o += 4) {
+                                const i = (row + x * f + half) * 4;
+                                dst[o] = d[i]; dst[o + 1] = d[i + 1]; dst[o + 2] = d[i + 2]; dst[o + 3] = d[i + 3];
+                            }
+                        }
+                        continue;
+                    }
+                    const d = b.data;
+                    for (let y = 0; y < h; y++) {
+                        let i = b.off + y * stride * 4;
+                        for (let o = ((oy + y) * cw + ox) * 4, e = o + w * 4; o < e; o++, i++) dst[o] = d[i];
+                    }
+                }
+                ctx.putImageData(all, 0, 0);
+            } else {
+                for (const key of th.dirty) {
+                    const t = this._tiles.get(key);
+                    const ox = (key & 0xFFFF) * cell, oy = (key >>> 16) * cell;
+                    th.stale.delete(key);
+                    if (!t) { th.cells.delete(key); ctx.putImageData(th.zero, ox, oy); continue; }
+                    if (!level) { ctx.putImageData(imageDataOf(t), ox, oy); continue; }
+                    const b = cellBytes(key, t);
+                    if (b.stale) th.stale.add(key);
+                    if (b.coarse) th.img.data.set(coarseLevel(t, level, TILE_SIZE, TILE_SIZE, false, coarseBuf(level)).subarray(0, n));
+                    else th.img.data.set(b.data.subarray(b.off, b.off + n));
+                    ctx.putImageData(th.img, ox, oy);
+                }
             }
+            th.all = false;
             th.dirty.clear();
         }
         return th.canvas;
@@ -1095,7 +1644,9 @@ const tiled = (Base) => class extends Base {
      * the last call are put again, like the display mirror. Its last row and column hold the
      * clamp-extended edge of `tileWithGutter`, so the caller crops the draw to the image itself.
      */
-    regionCanvas(rect, level = 0) {
+    regionCanvas(rect, level = 0, display = false) {
+        // `display` (C6 b): the cells of tiles whose chain is on its way in the worker show `_levelBytes`'s stale or
+        // coarse picture, kept in `stale` and put again when the chain lands; a call without it puts them exactly
         this._guard();
         level = Math.max(0, Math.min(MIP_LEVELS, level | 0));
         const cell = TILE_SIZE >> level, f = 1 << level;
@@ -1115,7 +1666,7 @@ const tiled = (Base) => class extends Base {
                 x: ax0 * TILE_SIZE, y: ay0 * TILE_SIZE,
                 canvas: cpuCanvas((ax1 - ax0 + 1) * cell, (ay1 - ay0 + 1) * cell, "a region canvas"),
                 img: new ImageData(cell, cell), zero: new ImageData(cell, cell),
-                dirty: new Set(), all: true,
+                dirty: new Set(), stale: new Set(), all: true,
             };
             this._regions.set(level, rc);
             // the screen's level and the navigator's differ, so two are kept; a third is one
@@ -1130,15 +1681,26 @@ const tiled = (Base) => class extends Base {
             this._regions.delete(level);   // re-inserted last: the Map's order is the LRU
             this._regions.set(level, rc);
         }
+        if (!display && rc.stale.size) { for (const key of rc.stale) rc.dirty.add(key); rc.stale.clear(); }
+        else if (rc.stale.size) {
+            // still shown stale: their chains stay ahead of the ones nothing asks for any more (ChainScheduler.request)
+            const sch = this._scheduler();
+            for (const key of rc.stale) { const t = this._tiles.get(key); if (t) sch.touch(t); }
+        }
+        // most of the canvas written (a whole change, or a batch of chains landing): one rebuild, as for a new one
+        if (!rc.all && rc.dirty.size * 4 >= (rc.tx1 - rc.tx0 + 1) * (rc.ty1 - rc.ty0 + 1)) rc.all = true;
         if (rc.all || rc.dirty.size) {
             const ctx = rc.canvas.getContext("2d");
             const n = cell * cell * 4;
             const put = (tx, ty) => {
                 if (tx < rc.tx0 || tx > rc.tx1 || ty < rc.ty0 || ty > rc.ty1) return;
                 const ox = (tx - rc.tx0) * cell, oy = (ty - rc.ty0) * cell;
-                const lv = this._levelBytes(tx, ty, level);
-                if (!lv) { ctx.putImageData(rc.zero, ox, oy); return; }
-                rc.img.data.set(lv.data.subarray(lv.off, lv.off + n));
+                const key = (ty << 16) | tx;
+                const lv = this._levelBytes(tx, ty, level, display);
+                if (!lv) { rc.stale.delete(key); ctx.putImageData(rc.zero, ox, oy); return; }
+                if (lv.stale) rc.stale.add(key); else rc.stale.delete(key);
+                const b = coarseBytes(lv);
+                rc.img.data.set(b.data.subarray(b.off, b.off + n));
                 ctx.putImageData(rc.img, ox, oy);
             };
             if (rc.all) {
@@ -1148,14 +1710,40 @@ const tiled = (Base) => class extends Base {
                 const cw = rc.canvas.width, ch = rc.canvas.height;
                 const all = new ImageData(cw, ch);
                 const dst = all.data;
+                // small cells word by word (a view per row cost more than its copy at level 3: C6 b), large ones by row
+                const d32 = LITTLE && cell < 64 ? new Uint32Array(dst.buffer) : null;
+                const f = 1 << level;
+                rc.stale.clear();
                 for (let ty = rc.ty0; ty <= rc.ty1; ty++) {
                     for (let tx = rc.tx0; tx <= rc.tx1; tx++) {
-                        const lv = this._levelBytes(tx, ty, level);
+                        const lv = this._levelBytes(tx, ty, level, display);
                         if (!lv) continue;
+                        if (lv.stale) rc.stale.add((ty << 16) | tx);
                         const ox = (tx - rc.tx0) * cell, oy = (ty - rc.ty0) * cell;
+                        if (d32) {
+                            if (lv.coarse) {
+                                // blocks of at most 8 x 8 samples a cell, the coarse level the atlas draws such a tile at
+                                const s32 = u32Of(lv.t), lastX = lv.vw - 1, lastY = lv.vh - 1;
+                                const q = Math.max(1, cell >> 3), qh = (q * f) >> 1;
+                                for (let by = 0; by < cell; by += q) {
+                                    const row = Math.min(by * f + qh, lastY) * TILE_SIZE, o0 = (oy + by) * cw + ox;
+                                    for (let bx = 0; bx < cell; bx += q) {
+                                        const v = s32[row + Math.min(bx * f + qh, lastX)];
+                                        for (let y = 0, o = o0 + bx; y < q; y++, o += cw) for (let k = 0; k < q; k++) d32[o + k] = v;
+                                    }
+                                }
+                            } else {
+                                const s32 = new Uint32Array(lv.data.buffer, lv.data.byteOffset + lv.off, cell * cell);
+                                for (let y = 0, i = 0; y < cell; y++) {
+                                    for (let o = (oy + y) * cw + ox, e = o + cell; o < e; o++, i++) d32[o] = s32[i];
+                                }
+                            }
+                            continue;
+                        }
+                        const b = coarseBytes(lv);
                         for (let y = 0; y < cell; y++) {
-                            const from = lv.off + y * cell * 4;
-                            dst.set(lv.data.subarray(from, from + cell * 4), ((oy + y) * cw + ox) * 4);
+                            const from = b.off + y * cell * 4;
+                            dst.set(b.data.subarray(from, from + cell * 4), ((oy + y) * cw + ox) * 4);
                         }
                     }
                 }
@@ -1351,7 +1939,7 @@ export class TileMaskPixels extends tiled(MaskPixels) {
      * so no bounding box can help here, but the whole mask does not have to become a canvas, an
      * ImageBitmap and a scratch of 600 MB each on the way through the worker either
      * (docs/PLAN_BCE.md §C5). Only the part of a tile that is inside the image is touched: the rest
-     * is what `extendTile` clamps from, and a selected padding would bleed into the tile's mips.
+     * is what `edgeCopy` clamps from, and a selected padding would bleed into the tile's mips.
      */
     invert() {
         this._guard();
