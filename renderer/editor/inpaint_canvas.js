@@ -5521,6 +5521,17 @@ class InpaintEditor {
         this._strokeViewSig = null;
     }
 
+    /**
+     * The mask a tile path can apply straight from its own tiles: a `MaskPixels` on the same backend
+     * and with the same tile grid as the pixels it masks (docs/PLAN_BCE.md §C5). A mask of another
+     * size is scaled onto the layer, which only the `_masked` canvas can do.
+     */
+    tileMaskOf(layer) {
+        const m = layer.maskPx;
+        if (!m || !layer.px || !isTilePixels(m) || !isTilePixels(layer.px)) return null;
+        return m.width === layer.px.width && m.height === layer.px.height ? m : null;
+    }
+
     /** A gesture whose stroke buffer is drawn over `layer`'s pixels for the live preview. */
     liveStrokeOn(layer) {
         const p = this.pointer;
@@ -5538,9 +5549,9 @@ class InpaintEditor {
      * Null when the caller has to take that path after all: a pass whose region is not a whole
      * number of destination pixels would resample the scratch on the way back.
      */
-    liveStrokeView(layer, vp) {
-        const p = this.pointer;
-        const target = p.kind === "maskpaint" ? layer.maskPx : layer.px;
+    layerRegionView(layer, vp) {
+        const p = this.liveStrokeOn(layer) ? this.pointer : null;
+        const target = p && p.kind === "maskpaint" ? layer.maskPx : layer.px;
         if (!target || !layer.px) return null;
         const vw = vp.w * vp.sx, vh = vp.h * vp.sy;
         if (!(vw >= 1 && vh >= 1)) return null;
@@ -5551,12 +5562,13 @@ class InpaintEditor {
             this.strokeView._livePreview = true;   // never cached in the display pyramid
             this._strokeViewSig = null;
         }
-        // the scratch holds one (gesture, layer, region): a pan, a zoom or a new gesture rebuilds it
-        const sig = [vp.x, vp.y, vp.w, vp.h, layer.id, p.kind, layer.x, layer.y, layer.w, layer.h,
+        // the scratch holds one (gesture, layer, region): a pan, a zoom, another layer, a write into
+        // the pixels or the mask, or a new gesture rebuilds it
+        const sig = [vp.x, vp.y, vp.w, vp.h, layer.id, p ? p.kind : "-", layer.x, layer.y, layer.w, layer.h,
             layer.px.version, layer.maskPx ? layer.maskPx.version : -1].join(",");
-        const full = this._strokeViewOf !== p || this._strokeViewSig !== sig;
-        if (full) { this._strokeViewOf = p; this._strokeViewSig = sig; p.dirtyView = null; }
-        const box = full ? null : this.takeStrokeBox(p, "dirtyView");
+        const full = this._strokeViewOf !== (p || layer) || this._strokeViewSig !== sig;
+        if (full) { this._strokeViewOf = p || layer; this._strokeViewSig = sig; if (p) p.dirtyView = null; }
+        const box = full || !p ? null : this.takeStrokeBox(p, "dirtyView");
         if (full || box) this.refreshStrokeView(layer, vp, box);
         return this.strokeView;
     }
@@ -5570,7 +5582,7 @@ class InpaintEditor {
 
     /** Redraw `box` (image coordinates; all of the scratch when null) of the live stroke's view scratch. */
     refreshStrokeView(layer, vp, box) {
-        const p = this.pointer;
+        const p = this.liveStrokeOn(layer) ? this.pointer : null;
         const c = this.strokeView, ctx = c.getContext("2d");
         ctx.save();
         try {
@@ -5593,13 +5605,13 @@ class InpaintEditor {
             ctx.clearRect(dx0, dy0, dx1 - dx0, dy1 - dy0);
             ctx.setTransform(vp.sx, 0, 0, vp.sy, -vp.x * vp.sx, -vp.y * vp.sy);
             this.drawPixelsInto(ctx, layer, layer.px, vp);
-            if (p.kind === "layerpaint") {
+            if (p && p.kind === "layerpaint") {
                 this.drawStrokeInto(ctx, layer, layer.px, p.erase ? "destination-out" : (layer.alphaLock ? "source-atop" : "source-over"), vp, [dx0, dy0, dx1, dy1]);
             }
             if (layer.maskPx) {
                 ctx.globalAlpha = 1;
                 ctx.globalCompositeOperation = "destination-in";
-                if (p.kind === "maskpaint") {
+                if (p && p.kind === "maskpaint") {
                     const m = this.maskStrokeView(layer, vp, dx0, dy0, dx1, dy1);
                     ctx.setTransform(1, 0, 0, 1, 0, 0);
                     ctx.drawImage(m, dx0, dy0, dx1 - dx0, dy1 - dy0, dx0, dy0, dx1 - dx0, dy1 - dy0);
@@ -9317,11 +9329,11 @@ class InpaintEditor {
      * The level is the one whose tiles are at least as dense as the screen:
      * `floor(-log2(scale))`, clamped to the mips a tile carries.
      */
-    glLayerSpec(px, x, y, w, h, opacity, blend, sx) {
+    glLayerSpec(px, x, y, w, h, opacity, blend, sx, mask = null) {
         const scale = (w * sx) / px.width;
         if (isTilePixels(px)) {
             const level = scale > 0 && Number.isFinite(scale) ? Math.max(0, Math.min(MIP_LEVELS, Math.floor(-Math.log2(scale)))) : 0;
-            return { pixels: px, level, x, y, w, h, opacity, blend };
+            return { pixels: px, mask, level, x, y, w, h, opacity, blend };
         }
         const lvl = this.displaySource(px, scale, true);
         return { source: lvl, version: this.sourceVersion(lvl), x, y, w, h, opacity, blend };
@@ -9349,12 +9361,14 @@ class InpaintEditor {
                 const matched = this.matchActive(layer)
                     ? this.layerMatchedPixels(layer, () => this.glMatchBackdrop(comp, vw, vh, region, layers), vp)
                     : null;
-                // without a mask, a colour match or a live stroke the layer's own tiles are drawn;
-                // otherwise layerPixels has prepared a canvas and the pyramid draws that
-                const px = matched || (layer.maskPx ? this.layerPixels(layer, true) : layer.px);
+                // C5: a transparency mask on the same tile grid is applied in the atlas shader, so the
+                // layer's own tiles are drawn for it too. Only a colour match, a live stroke or a mask
+                // of another size still needs layerPixels to prepare a canvas.
+                const tileMask = matched ? null : this.tileMaskOf(layer);
+                const px = matched || (layer.maskPx && !tileMask ? this.layerPixels(layer, true) : layer.px);
                 if (!px || px._livePreview) return null;
                 layers.push(this.glLayerSpec(px, layer.x, layer.y, layer.w, layer.h,
-                    layer.opacity == null ? 1 : layer.opacity, layer.blend || "normal", sx));
+                    layer.opacity == null ? 1 : layer.opacity, layer.blend || "normal", sx, tileMask));
             }
             return comp.composite({ width: vw, height: vh, region, layers });
         } catch (err) {
@@ -9535,11 +9549,12 @@ class InpaintEditor {
             this.drawTilesInto(ctx, layer.px, layer.x, layer.y, layer.w, layer.h, vp);
             return;
         }
-        // C5: the layer a live stroke runs on, in a region pass: the layer and the stroke composed
-        // inside the region only, at the pass's resolution (liveStrokeView). layerWithStroke below
-        // makes a canvas as large as the layer and fills it from the layer's display mirror.
-        if (vp && !matched && this.liveStrokeOn(layer)) {
-            const live = this.liveStrokeView(layer, vp);
+        // C5: the layer a live stroke runs on, and a layer whose transparency mask sits on the same
+        // tile grid, in a region pass: composed inside the region only, at the pass's resolution
+        // (layerRegionView). layerWithStroke and `_masked` below are canvases as large as the layer,
+        // filled from the layer's display mirror.
+        if (vp && !matched && (this.liveStrokeOn(layer) || (layer.maskPx && this.tileMaskOf(layer)))) {
+            const live = this.layerRegionView(layer, vp);
             if (live) { ctx.drawImage(live, vp.x, vp.y, vp.w, vp.h); return; }
         }
         const src = matched ? this.layerMatchedPixels(layer, ctx.canvas, vp) : this.layerPixels(layer, true);

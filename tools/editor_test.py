@@ -228,12 +228,32 @@ out.display = { frames, copies, pending: ed._pyramidPending, levels: entry ? ent
                 kept: ed.pyramids.get(canvasOf(M.px)) === entry, mirror: !!P.displayCanvasIfMade(M.px), atlas };
 if (copies) throw new Error("the display took toCanvas() copies: " + JSON.stringify(out.display));
 if (shown.some((p, i) => canvasOf(p) !== canvases[i])) throw new Error("a display canvas changed between frames");
+// C5 (d): the mask reaches the screen from its own tiles. L is blue over 100,100..1900,1300 and its
+// mask lets the left 1200 px through, so the blue shows at 600,200 and not at 1500,200, where the
+// mask has no tile at all (a tile a mask does not have hides what is under it). M starts at y = 400,
+// so neither point is covered by it.
+{
+    const g = ed.canvas.getContext("2d");
+    const at = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return Array.from(g.getImageData(Math.round(sx), Math.round(sy), 1, 1).data); };
+    ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(60);
+    const shown = at(600, 200), hidden = at(1500, 200);
+    out.display.maskOnScreen = { shown, hidden };
+    const blue = (q) => q[2] > 150 && q[0] < 120;
+    if (!blue(shown)) throw new Error("the masked layer is not on screen where its mask lets it through: " + JSON.stringify(out.display.maskOnScreen));
+    if (blue(hidden)) throw new Error("the masked layer shows where its mask has no tile: " + JSON.stringify(out.display.maskOnScreen));
+}
+out.display.masked = { canvas: !!L._masked, mirror: flag ? !!P.displayCanvasIfMade(L.px) : null,
+                       maskMirror: flag ? !!P.displayCanvasIfMade(L.maskPx) : null,
+                       pyramid: flag ? !!ed.pyramids.get(canvasOf(L.px)) : null };
 if (flag) {
     // C3: the plain paint layer is drawn from the compositor's atlas, so it has neither a display
-    // mirror nor a pyramid entry. (The masked layer still goes through its _masked canvas, and a
-    // host without WebGL2 would fall back to the mirror - hence the atlas check first.)
+    // mirror nor a pyramid entry. (A host without WebGL2 would fall back to the mirror - hence the
+    // atlas check first.) C5 (d): the masked layer's mask is a sampler in the same shader, so it has
+    // no `_masked` canvas either, and neither its pixels nor its mask has a mirror.
     if (!atlas || !atlas.slots || !atlas.pages) throw new Error("no tiles in the compositor's atlas: " + JSON.stringify(out.display));
     if (out.display.mirror || entry) throw new Error("a tile layer the atlas draws still has a display mirror or pyramid: " + JSON.stringify(out.display));
+    const md = out.display.masked;
+    if (md.canvas || md.mirror || md.maskMirror || md.pyramid) throw new Error("a masked tile layer still has a `_masked` canvas, a mirror or a pyramid: " + JSON.stringify(md));
 } else if (ed._pyramidPending || !entry || !entry.levels.length || !out.display.kept) {
     throw new Error("the pyramid is rebuilt every frame: " + JSON.stringify(out.display));
 }
@@ -246,9 +266,13 @@ if (flag) {
     for (let i = 0; i < 4; i++) { ed.sceneSig = null; ed.draw(); await wait(20); if (!ed._pyramidPending) break; }
     const usable = ed.glCompositeUsable({});
     out.canvas2d = { usable, mirror: !!P.displayCanvasIfMade(M.px), pyramid: !!ed.pyramids.get(canvasOf(M.px)),
-                     regions: flag ? M.px.regionCanvasesIfMade().length : null };
+                     regions: flag ? M.px.regionCanvasesIfMade().length : null,
+                     maskedCanvas: !!L._masked, maskedMirror: flag ? !!P.displayCanvasIfMade(L.px) : null };
     if (usable) throw new Error("a filter layer did not push the view onto Canvas 2D: " + JSON.stringify(out.canvas2d));
     if (flag && (out.canvas2d.mirror || out.canvas2d.pyramid)) throw new Error("Canvas 2D made a display mirror or a pyramid of a tile layer: " + JSON.stringify(out.canvas2d));
+    // C5 (d): the Canvas 2D path composes a masked tile layer in the region it draws, so no
+    // `_masked` canvas the size of the layer and no mirror to fill it from
+    if (flag && (out.canvas2d.maskedCanvas || out.canvas2d.maskedMirror)) throw new Error("Canvas 2D made a `_masked` canvas or a mirror of a masked tile layer: " + JSON.stringify(out.canvas2d));
     if (flag && !out.canvas2d.regions) throw new Error("Canvas 2D did not draw the layer from its tiles: " + JSON.stringify(out.canvas2d));
     ed.removeLayer(fx.id);
     ed.renderLayers();
@@ -2216,7 +2240,7 @@ return out;
 """),
     ("live_stroke_preview_shows_what_the_commit_writes", """
 // C5 (a): the live preview of a stroke is composed inside the region the pass draws, at the pass's
-// resolution (liveStrokeView), instead of in a canvas as large as the layer filled from the layer's
+// resolution (layerRegionView), instead of in a canvas as large as the layer filled from the layer's
 // display canvas. What the preview shows has to be what the commit then writes: at 1:1 neither path
 // resamples, so the screen just before the commit and just after it are the same pixels. Five
 // gestures: paint, erase, alpha lock, a masked layer and a stroke on the mask itself, the first of
@@ -2290,9 +2314,8 @@ const one = async (name, opts) => {
     const [worst, n] = diff(before, after);
     out.cases[name] = { used, mirror, pyramid, worst, differing: n, bytes: before.length };
     if (!used) throw new Error(name + ": the region preview was not the path taken");
-    // a masked layer is still drawn through its `_masked` canvas, which is filled from the layer's
-    // display canvas: that is C3's remaining `u_mask` work, not the stroke's (docs/PLAN_BCE.md §C3)
-    if (ed.tileMode && !opts.mask && (mirror || pyramid)) throw new Error(name + ": the stroke made a display mirror or a pyramid entry: " + JSON.stringify(out.cases[name]));
+    if (ed.tileMode && (mirror || pyramid)) throw new Error(name + ": the stroke made a display mirror or a pyramid entry: " + JSON.stringify(out.cases[name]));
+    if (ed.tileMode && opts.mask && L._masked) throw new Error(name + ": a masked tile layer still made its `_masked` canvas: " + JSON.stringify(out.cases[name]));
     if (worst > 2) throw new Error(name + ": the preview is not what the commit wrote (" + worst + " levels on " + n + " of " + before.length + " bytes)");
     ed.removeLayer(L.id);
     ed.renderLayers();

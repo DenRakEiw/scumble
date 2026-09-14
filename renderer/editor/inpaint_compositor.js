@@ -97,14 +97,21 @@ void main() {
 }`;
 
 // The same for one tile of an atlas page: the vertex shader has already put v_uv inside the
-// tile's own slot, gutter excluded, in the page's orientation.
+// tile's own slot, gutter excluded, in the page's orientation. `u_mask` is the same for the layer's
+// transparency mask, whose store has the same tile grid: the mask's alpha multiplies the source's
+// premultiplied value, which is what `destination-in` with the mask does on Canvas 2D.
 const ATLAS_FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;
+in vec2 v_muv;
 out vec4 fragColor;
+uniform sampler2D u_mask;
+uniform int u_hasMask;
 ` + BLEND_GLSL + `
 void main() {
-    fragColor = blendOver(texture(u_source, v_uv));
+    vec4 Sp = texture(u_source, v_uv);
+    if (u_hasMask == 1) Sp *= texture(u_mask, v_muv).a;
+    fragColor = blendOver(Sp);
 }`;
 
 // ---- the tile atlas (docs/PLAN_BCE.md §C3) ------------------------------------------------------
@@ -116,6 +123,9 @@ void main() {
 // does not pay for a page it cannot fill.
 const ATLAS_PAGE_MAX = 4096;
 const ATLAS_MAX_PER = 16;
+// one instance is { rect(4), uv(4), muv(4) } floats
+const INSTANCE_FLOATS = 12;
+const INSTANCE_BYTES = INSTANCE_FLOATS * 4;
 // Pages are an LRU by bytes. The default is the `settings.memory.atlasMB` row in Settings ›
 // Rendering; the memory watch lowers it under pressure.
 const ATLAS_BUDGET_DEFAULT = 512 * 1024 * 1024;
@@ -127,12 +137,15 @@ const ATLAS_VS = `#version 300 es
 in vec2 a_pos;
 in vec4 a_rect;          // the tile's rectangle in image coordinates: x, y, w, h
 in vec4 a_uv;            // its interior in the page: u0, v0 (the tile's first row), du, dv
+in vec4 a_muv;           // the same tile of the layer's mask, in the mask's page
 uniform vec4 u_region;   // the image rectangle the output shows: x, y, w, h
 out vec2 v_uv;
+out vec2 v_muv;
 void main() {
     // the page holds the tile's first row at the lowest v (texSubImage2D from a typed array does
     // not flip), so the quad's top edge samples v0, as a canvas source does in FS
     v_uv = vec2(a_uv.x + a_pos.x * a_uv.z, a_uv.y + (1.0 - a_pos.y) * a_uv.w);
+    v_muv = vec2(a_muv.x + a_pos.x * a_muv.z, a_muv.y + (1.0 - a_pos.y) * a_muv.w);
     // image coordinates -> the region -> clip space (y up). The region is a uniform, so an instance
     // buffer survives a pan: only another set of visible tiles rebuilds it.
     vec2 q = (a_rect.xy - u_region.xy) / u_region.zw;
@@ -250,10 +263,10 @@ export class GLCompositor {
         gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
         gl.vertexAttribDivisor(aPos, 0);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.inst);
-        for (const [name, off] of [["a_rect", 0], ["a_uv", 16]]) {
+        for (const [name, off] of [["a_rect", 0], ["a_uv", 16], ["a_muv", 32]]) {
             const loc = gl.getAttribLocation(this.atlasProg, name);
             gl.enableVertexAttribArray(loc);
-            gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 32, off);
+            gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, INSTANCE_BYTES, off);
             gl.vertexAttribDivisor(loc, 1);
         }
         gl.bindVertexArray(null);
@@ -265,6 +278,8 @@ export class GLCompositor {
             opacity: gl.getUniformLocation(this.atlasProg, "u_opacity"),
             size: gl.getUniformLocation(this.atlasProg, "u_size"),
             region: gl.getUniformLocation(this.atlasProg, "u_region"),
+            mask: gl.getUniformLocation(this.atlasProg, "u_mask"),
+            hasMask: gl.getUniformLocation(this.atlasProg, "u_hasMask"),
         };
         // pixels object -> level -> { pages }; the pages hold the tiles the screen showed
         this.atlas = new Map();
@@ -275,6 +290,7 @@ export class GLCompositor {
         this.tileUploads = 0;
         this.tileDraws = 0;
         this.pagesMade = 0;
+        this.pageIds = 0;          // a page's identity, so instances can be grouped by (source page, mask page)
         this.maxTexture = gl.getParameter(gl.MAX_TEXTURE_SIZE);
         // source canvas -> { tex, version, w, h, used }. Pyramid levels are new canvases
         // after every change, so without a cap this map would grow for the whole session.
@@ -479,7 +495,7 @@ export class GLCompositor {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        const page = { tex, side, per, S, slots: new Map(), free: [], used: this.frame, bytes: side * side * 4, insts: [] };
+        const page = { id: ++this.pageIds, tex, side, per, S, slots: new Map(), free: [], used: this.frame, bytes: side * side * 4, insts: [] };
         for (let i = per * per - 1; i >= 0; i--) page.free.push(i);
         entry.pages.push(page);
         this.atlasBytes += page.bytes;
@@ -542,6 +558,7 @@ export class GLCompositor {
      */
     _tileInstances(l, region) {
         const px = l.pixels;
+        const mask = l.mask || null;   // a MaskPixels of the same tile grid, or nothing
         const level = Math.max(0, Math.min(MIP_LEVELS, l.level | 0));
         const f = 1 << level;
         const S = slotSide(level);
@@ -554,62 +571,96 @@ export class GLCompositor {
         if (nx1 <= nx0 || ny1 <= ny0) return [];
         const tx0 = nx0 >> 8, tx1 = (nx1 - 1) >> 8, ty0 = ny0 >> 8, ty1 = (ny1 - 1) >> 8;
         const entry = this._atlasAt(px, level);
+        const mEntry = mask ? this._atlasAt(mask, level) : null;
         // The instances are in image coordinates, so a pan reuses them; only another set of visible
         // tiles, a write into the pixels, a layer that moved or an eviction rebuilds the buffers. At
         // fit on a 15k document that is 2,400 tiles to walk every frame, 1.9 ms against 0.1 from here.
-        const key = tx0 + "," + ty0 + "," + tx1 + "," + ty1 + "," + px.version + "," + l.x + "," + l.y + "," + l.w + "," + l.h + "," + this.atlasGen;
+        const key = tx0 + "," + ty0 + "," + tx1 + "," + ty1 + "," + px.version + "," + l.x + "," + l.y + "," + l.w + "," + l.h + "," + this.atlasGen + "," + (mask ? mask.version : -1);
         if (entry.cache && entry.cache.key === key) {
-            for (const g of entry.cache.groups) { g.page.used = this.frame; for (const s of g.slots) s.used = this.frame; }
+            for (const g of entry.cache.groups) {
+                g.page.used = this.frame;
+                if (g.maskPage) g.maskPage.used = this.frame;
+                for (const s of g.slots) s.used = this.frame;
+            }
             return entry.cache.groups;
         }
         const want = (tx1 - tx0 + 1) * (ty1 - ty0 + 1);
-        const groups = new Map();
-        const held = new Map();   // the slots each page's instances name, so a cached frame can touch them
-        let buf = this.tileBufs[level] || null;
+        const groups = new Map();   // page pair -> { page, maskPage, data, slots }
         for (let ty = ty0; ty <= ty1; ty++) {
             for (let tx = tx0; tx <= tx1; tx++) {
                 const tile = px.tileAt(tx, ty);
                 if (!tile) continue;                       // a missing tile is transparent
+                // a mask tile that does not exist is transparent, and a transparent mask hides
+                // everything under it: that tile of the layer is not drawn at all
+                const mTile = mask ? mask.tileAt(tx, ty) : null;
+                if (mask && !mTile) continue;
                 const got = this._slot(entry, (ty << 16) | tx, S, want);
                 if (!got) return null;
                 const { page, slot } = got;
-                if (slot.version !== tile.version) {
-                    const bytes = px.tileWithGutter(tx, ty, level, buf);
-                    if (!bytes) continue;
-                    if (!buf || buf.length < bytes.length) { buf = bytes; this.tileBufs[level] = bytes; }
-                    const sx = (slot.i % page.per) * S, sy = Math.floor(slot.i / page.per) * S;
-                    this.gl.bindTexture(this.gl.TEXTURE_2D, page.tex);
-                    this.gl.pixelStorei(this.gl.UNPACK_ALIGNMENT, 4);
-                    // The slot's bytes are premultiplied already. Chromium applies the two unpack
-                    // switches to an ArrayBufferView upload as well, and a canvas source uploaded
-                    // earlier in the same frame leaves PREMULTIPLY on: without this the tiles are
-                    // premultiplied twice and every partly transparent pixel loses its colour
-                    // (the anti-aliased edge of a text layer disappeared, 65 levels).
-                    this.gl.pixelStorei(this.gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-                    this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
-                    this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, sx, sy, S, S, this.gl.RGBA, this.gl.UNSIGNED_BYTE, bytes);
-                    slot.version = tile.version;
-                    this.tileUploads++;
+                if (!this._upload(px, tx, ty, level, S, page, slot, tile)) continue;
+                let mPage = null, mSlot = null;
+                if (mask) {
+                    const mGot = this._slot(mEntry, (ty << 16) | tx, S, want);
+                    if (!mGot) return null;
+                    mPage = mGot.page; mSlot = mGot.slot;
+                    if (!this._upload(mask, tx, ty, level, S, mPage, mSlot, mTile)) continue;
+                    mSlot.used = this.frame;
+                    mPage.used = this.frame;
                 }
                 slot.used = this.frame;
                 page.used = this.frame;
-                let g = groups.get(page);
-                if (!g) { g = []; groups.set(page, g); held.set(page, []); }
-                held.get(page).push(slot);
+                // one group per pair of pages: a draw binds one page as the source and one as the mask
+                const gk = mPage ? page.id + ":" + mPage.id : page.id + ":-";
+                let g = groups.get(gk);
+                if (!g) { g = { page, maskPage: mPage, data: [], slots: [] }; groups.set(gk, g); }
+                g.slots.push(slot);
+                if (mSlot) g.slots.push(mSlot);
                 // the tile's rectangle in image coordinates, clipped to the image at the last row / column
                 const ox = tx << 8, oy = ty << 8;
                 const vw = Math.min(TILE_SIZE, px.width - ox), vh = Math.min(TILE_SIZE, px.height - oy);
                 const px0 = (slot.i % page.per) * S + GUTTER, py0 = Math.floor(slot.i / page.per) * S + GUTTER;
-                g.push(
+                g.data.push(
                     l.x + ox * fx, l.y + oy * fy, vw * fx, vh * fy,
                     px0 / page.side, py0 / page.side, (vw / f) / page.side, (vh / f) / page.side,
                 );
+                if (mPage) {
+                    const mx0 = (mSlot.i % mPage.per) * S + GUTTER, my0 = Math.floor(mSlot.i / mPage.per) * S + GUTTER;
+                    g.data.push(mx0 / mPage.side, my0 / mPage.side, (vw / f) / mPage.side, (vh / f) / mPage.side);
+                } else {
+                    g.data.push(0, 0, 0, 0);
+                }
             }
         }
         const out = [];
-        for (const [page, data] of groups) out.push({ page, tex: page.tex, data: new Float32Array(data), count: data.length >> 3, slots: held.get(page) || [] });
+        for (const g of groups.values()) {
+            out.push({ page: g.page, maskPage: g.maskPage, tex: g.page.tex, maskTex: g.maskPage ? g.maskPage.tex : null,
+                       data: new Float32Array(g.data), count: g.data.length / INSTANCE_FLOATS, slots: g.slots });
+        }
         entry.cache = { key, groups: out };
         return out;
+    }
+
+    /** Put a tile's bytes in its slot when the slot does not already hold that version; false when it has none. */
+    _upload(px, tx, ty, level, S, page, slot, tile) {
+        if (slot.version === tile.version) return true;
+        let buf = this.tileBufs[level] || null;
+        const bytes = px.tileWithGutter(tx, ty, level, buf);
+        if (!bytes) return false;
+        if (!buf || buf.length < bytes.length) this.tileBufs[level] = bytes;
+        const sx = (slot.i % page.per) * S, sy = Math.floor(slot.i / page.per) * S;
+        this.gl.bindTexture(this.gl.TEXTURE_2D, page.tex);
+        this.gl.pixelStorei(this.gl.UNPACK_ALIGNMENT, 4);
+        // The slot's bytes are premultiplied already. Chromium applies the two unpack switches to an
+        // ArrayBufferView upload as well, and a canvas source uploaded earlier in the same frame
+        // leaves PREMULTIPLY on: without this the tiles are premultiplied twice and every partly
+        // transparent pixel loses its colour (the anti-aliased edge of a text layer disappeared,
+        // 65 levels).
+        this.gl.pixelStorei(this.gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
+        this.gl.texSubImage2D(this.gl.TEXTURE_2D, 0, sx, sy, S, S, this.gl.RGBA, this.gl.UNSIGNED_BYTE, bytes);
+        slot.version = tile.version;
+        this.tileUploads++;
+        return true;
     }
 
     /** Draw one layer's tiles, blended with the backdrop `srcTex`, into the bound framebuffer. */
@@ -623,11 +674,17 @@ export class GLCompositor {
         gl.uniform1f(this.atlasU.opacity, prepared.opacity == null ? 1 : prepared.opacity);
         gl.uniform2f(this.atlasU.size, W, H);
         gl.uniform4f(this.atlasU.region, region.x, region.y, region.w, region.h);
+        gl.uniform1i(this.atlasU.mask, 2);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, srcTex);
         for (const g of prepared.tiles) {
             gl.activeTexture(gl.TEXTURE1);
             gl.bindTexture(gl.TEXTURE_2D, g.tex);
+            gl.uniform1i(this.atlasU.hasMask, g.maskTex ? 1 : 0);
+            if (g.maskTex) {
+                gl.activeTexture(gl.TEXTURE2);
+                gl.bindTexture(gl.TEXTURE_2D, g.maskTex);
+            }
             gl.bindBuffer(gl.ARRAY_BUFFER, this.inst);
             gl.bufferData(gl.ARRAY_BUFFER, g.data, gl.DYNAMIC_DRAW);
             gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, g.count);

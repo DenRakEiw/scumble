@@ -1576,6 +1576,54 @@ pixel) — a short clean-up after C5, not before it.
   preview), the gradient taking a sparse store, the store made half the target's width (153 levels
   on the committed stroke), and the earlier three of step (b).
 
+**(d) The mask is a sampler, not a canvas** (`inpaint_compositor.js`, `inpaint_canvas.js`, commit "C5 (d)"):
+
+- **What it costs before.** A layer with a transparency mask went through `layer._masked`: a canvas
+  as large as the layer, cleared and rebuilt from the layer's display canvas with `destination-in`
+  on every change of the pixels or the mask. Measured on a 15000 x 10000 document with one masked
+  layer, tiles on: `_masked` **572.2 MB**, two display mirrors (the layer's and the mask's)
+  **1144.4 MB**, a Skia pyramid on `_masked` **143.1 MB**, and a mask edit inside a box — what a
+  mask brush stroke does — **253.3 ms**, because the whole canvas was rebuilt for it.
+- **`u_mask`**: the atlas shader takes a second sampler and `u_hasMask`, and multiplies the source's
+  premultiplied value by the mask's alpha, which is what `destination-in` with the mask does on
+  Canvas 2D. The instance carries `a_muv`, the same tile's slot in the **mask's** own atlas pages, so
+  an instance is now `{ rect(4), uv(4), muv(4) }` and the groups are keyed by the *pair* of pages a
+  draw binds. A tile the mask does not have is transparent, and a transparent mask hides what is
+  under it, so that tile of the layer is not drawn at all. `_upload` came out of the tile loop,
+  because the mask's tiles are uploaded the same way.
+- **`tileMaskOf(layer)`** is the mask a tile path may take: on the same backend and with the same
+  tile grid. A mask of another size is scaled onto the layer, which only `_masked` can do, and a
+  colour match or a live stroke still prepares a canvas.
+- **The Canvas 2D path** (a filter layer in the stack) takes the region scratch of step (a):
+  `liveStrokeView` became **`layerRegionView`**, which runs for a live stroke *or* a tile-backed
+  mask, keyed by the gesture when there is one and by the layer when there is not.
+- **Measured after**, the same document: `_masked` **572.2 → 0 MB**, the mirrors **1144.4 → 0**, the
+  pyramid **143.1 → 0**, a mask edit inside a box **253.3 → 1.2 ms**, a pan 0.4 → 0.2 ms. **1.86 GB
+  and 200x on the edit a mask brush makes.**
+- **The one row that got worse, and why**: a change that touches the **whole** mask ("mask from
+  selection", invert, a filter on the mask) went **17.6 → 157 ms**. `touch()` without a rectangle
+  bumps every tile's version, so every visible mask tile has its mip chain rebuilt on the main
+  thread — about 2,400 of them at fit on a 15k document, 50 µs each. That is the same cost a
+  whole-layer change has carried since C2, and it is **C6's** ("a whole-layer change marks all its
+  tiles' mips stale; `inpaint_worker.js` gets a `mips` job"). A mask brush stroke passes its box and
+  is the 1.2 ms row.
+- **Gates**: `composite_test.py`'s document already carries a masked layer with a gradient mask, and
+  its gpu-vs-2d step at 1:1 is what holds the shader to Canvas 2D (max 1 level).
+  `editor_test.py`'s backend step now reads the **screen** where the masked layer's mask has no tile
+  at all and where it lets the layer through, and asserts that a masked tile layer has no `_masked`
+  canvas, no mirror of its pixels, no mirror of its mask and no pyramid entry — on the GPU path and
+  again with a filter layer in the stack, on Canvas 2D. The preview step's masked cases lost their
+  exception for `_masked`. Four mutations, each red: the shader ignoring the mask (189 levels), the
+  mask uv half as wide (90), no tile mask offered (`_masked` and the mirror come back), and a tile
+  the mask does not have drawn unmasked (the hidden half of the layer appears on screen).
+- **Not built, and why**: the plan's **three op modes** for drawing the stroke store through the
+  compositor. Measured after steps (a) to (c) on a 15000 x 10000 document whose stack the compositor
+  can take: with the compositor standing down for the gesture, the first frame of a stroke is
+  21.9 ms and every frame after it 0.1 ms median, 0.2 worst. The op modes would save that one frame
+  and the 18.4 MB of region canvases it builds; they are not what is left to pay for on this
+  document, and the selection's seconds are. The note stays here so the next session does not have
+  to measure it again.
+
 ### C6. Mips in the worker, thumbnails, hover, object map, colour match from mips (3 days)
 
 - A whole-layer change (filter apply, `setPixels`, transform, paste, load) marks all its

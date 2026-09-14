@@ -42,6 +42,14 @@ the section for its version; `docs/` and the commit history hold the technical d
   mode it now keeps only the tiles the brush actually reached: 26 MB for that same stroke, and no
   copying while it grows. Nothing changes for the gradient tool, which covers the whole layer by
   its nature and keeps the buffer it had.
+- **Layer masks cost almost nothing now (tile mode).** A layer with a transparency mask used to be
+  kept as a second, complete copy of itself with the mask multiplied in, rebuilt from scratch every
+  time you changed either. On a 15000 × 10000 picture that copy and what it was built from came to
+  1.86 GB, and one dab of the mask brush stopped the window for a quarter of a second. The mask is
+  now applied while the picture is drawn, from the same tiles as everything else: that dab takes
+  about a millisecond and the 1.86 GB are gone. Changing a *whole* mask at once (mask from
+  selection, inverting it) is slower than it was — about a sixth of a second on such a picture —
+  because every tile of the mask has to be prepared again; that is the next thing on the list.
 
 ## 0.1.12 — 2026-09-14
 
