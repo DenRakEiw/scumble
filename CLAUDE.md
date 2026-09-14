@@ -75,6 +75,76 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
+## Where things stand (2026-09-14, night: C5 steps a to e are built and pushed)
+
+**Read this block first; it supersedes the two blocks below.** `docs/PLAN_BCE.md` §C5 "C5 as built"
+is the record (five steps, each with its decisions, its measurements and its counter-proofs), plus
+"Where C5 leaves the magic wand and the bucket, measured". `CHANGELOG.md` 0.1.13 has the five
+user-facing bullets.
+
+**The display mirror is gone.** On `main` (dff8b47, 4bd31a4, 28bfad0, 9152217, 2ddb163, pushed),
+measured on a 15000 x 10000 document in tile mode:
+
+- **(a)** The live stroke is composed in the **region the pass draws**, in a scratch of the window's
+  size (`layerRegionView` / `refreshStrokeView`), not in a canvas as large as the layer filled from
+  the layer's display **mirror**. First dab plus its frame **180.6 → 0.9 ms**, mirrors alive during a
+  stroke **2 (1144 MB) → 0**, display pyramids **187.8 → 0**. The **base** also still drew through
+  `displaySource` in a region pass (572 MB mirror + 188 MB pyramid on its own); it takes
+  `drawTilesInto` now. On the **canvas backend** the same step takes 572 MB off a stroke.
+- **(b)** A stroke is clipped and applied **band by band** (`strokePatch`, `strokeBands`,
+  `StrokeBuffer.cells`), so `clippedStroke` / `p.clipCanvas` / `clipScratch` are gone. A 40-dab
+  stroke across the picture clipped to a selection: dabs and frames **870.6 → 29.4 ms**, its commit
+  **1312.6 → 281.6 ms**, and 1.12 GB of clip canvases gone.
+- **(c)** The **stroke buffer is a sparse store** on tiles (`StrokeBuffer.draw()` replaces
+  `ensure()`): that stroke's buffer **560.7 → 26.5 MB**. The gradient keeps the canvas buffer (it
+  rebuilds the whole thing per move) and `paintShape` composes its transform now (C1 rule 12).
+- **(d)** A transparency **mask is a sampler** in the atlas shader (`u_mask`, `a_muv`,
+  `tileMaskOf`), so `layer._masked` is gone: **1.86 GB** (a 572 MB canvas, two 572 MB mirrors, a
+  143 MB pyramid) and a mask brush's edit **253.3 → 1.2 ms**. One row got worse: a change to the
+  **whole** mask 17.6 → 157 ms (2,400 mip chains rebuilt on the main thread) — that is C6's.
+- **(e)** Grow, shrink and feather send only the **selection's box plus the operation's halo**
+  through the worker, and invert walks the mask's own tiles (`MaskPixels.invert()` /
+  `TileMaskPixels.invert()`). Blocked [wall] ms: grow **1288 [4237] → 273 [2305]**, shrink
+  **1207 [3298] → 271 [1514]**, feather **1386 [2366] → 229 [592]**, invert **1535 [2742] →
+  1047 [1047]**. The canvas backend gains too (grow 140 [2322] → 75 [1252]).
+
+**Where the next session starts.** `docs/PLAN_BCE.md` §C5 ends with **"Where C5 leaves the magic
+wand and the bucket, measured"**: the wand is `sampleCanvas` 153 ms + the flood **3,118 ms in the
+worker** + writing a whole-picture answer into the mask **1,661 ms**, and the write was tried band
+by band and got **30 times worse** (150 sub-rectangle draws from a 15000 x 10000 canvas). What is
+left there is a flood over the whole picture — a kernel and a band question, phase E's, not mask
+tiles'. **C6** is the next step by size: a whole-layer or whole-mask change rebuilds every visible
+tile's mip chain on the main thread (157 ms for a mask at 15k), which is what C6's `mips` worker job
+is for. **C4** is still the short clean-up it was (byte accounting and the `frozen` counter).
+**Not built on purpose, with the measurement in the plan**: the compositor's three op modes for the
+stroke store — with the compositor standing down for a gesture a stroke costs one 21.9 ms frame and
+then 0.1 ms a dab, so they would buy that one frame.
+
+**Gates** (fresh dev instances, own profiles, strict): `--tiles on` and `--tiles off` with `pixels
+editor composite commands shape brush film glb ailabel size transparent generate log mcp nodecopy`
+ALL PASS, and `--copy --tiles off pixels editor composite commands` ALL PASS. New gate steps:
+`editor_test.py` `live_stroke_preview_shows_what_the_commit_writes` (seven gestures, the screen just
+before the commit against the screen just after it, with a "the stroke really painted" floor),
+`a_stroke_across_the_picture_keeps_only_the_tiles_it_touched`,
+`gradient_tool_keeps_the_canvas_buffer_and_fills_the_layer` (the gradient tool had **no** gate at
+all before), `grow_feather_and_invert_are_the_answers_a_whole_image_run_gives`;
+`shape_test.py` `a_shape_dragged_smaller_leaves_nothing_behind`; `pixels_test.js` `mask_invert`;
+and two rows in `perf_test.py` (`stroke across the picture (40 dabs)`, `its commit, band by band`).
+**Twenty mutations, every one red** — they are listed per step in `docs/PLAN_BCE.md` §C5.
+
+**Traps met on 2026-09-14 (night), worth keeping:**
+- **A sub-rectangle draw from a very large canvas is not cheap.** Banding the wand's whole-picture
+  answer into 150 draws of 1024 px cost **30x** one whole draw (1,661 → 49,525 ms). Bands only pay
+  when the *source* of each band is small too.
+- A `CanvasGradient` belongs to the context that made it; on tiles every dab draws on a scratch of
+  its own, so a cached one has to be keyed by the context as well.
+- Two gate flakes to recognise: `node tools/brush_test.js` hung once at exit under load (it had
+  printed every PASS), and `closed_tabs_are_collected` failed once against an instance that had 50+
+  tabs from repeated runs. Both passed on a fresh run; re-run before believing either.
+- `tools/run_gates.sh` and the mutation helpers restore only the files they saved: a counter-proof
+  that patches `inpaint_tiles.js` is not undone by a script that keeps `inpaint_canvas.js`. Check
+  `git diff --stat` after a mutation round.
+
 ## Where things stand (2026-09-14, late: C3 steps a to d are built and pushed)
 
 **Read this block first; it supersedes the "Next" line of the block below.** `docs/PLAN_BCE.md` §C3

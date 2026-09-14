@@ -1663,6 +1663,30 @@ pixel) — a short clean-up after C5, not before it.
   covers the feathered tail), the worker's bounds not moved into the image, and three rows of a
   newly allocated tile left out of the invert.
 
+#### Where C5 leaves the magic wand and the bucket, measured (2026-09-14)
+
+The wand and the bucket were **not** changed, and this is why, so the next session starts from a
+measurement instead of the plan's sentence. A magic wand on a 15000 x 10000 picture whose region is
+a band across the whole of it (62 million pixels selected, `wandSelect` 4,378 ms wall):
+
+| part | ms |
+|---|---|
+| `sampleCanvas`: the full-resolution composite the flood reads | 153 |
+| `floodShape`: the flood itself, in the worker, over 150 M pixels | 3,118 |
+| `applyShapeToSelection`: writing a 15000 x 10000 answer into the mask | 1,661 |
+
+So the flood is three quarters of it and runs **in the worker** (which is why the row blocks the
+main thread for 2.4 s of 6 s wall), and phase A's coarse-then-fine box already keeps a *bounded*
+region off this path: the object wand is 760 ms. What is left for a whole-picture region is a flood
+over the whole picture, which is a kernel and a band question (phase E), not a mask-tile one.
+
+**A trap worth keeping**: the 1,661 ms write was tried band by band, the way C5 (b) bands a stroke,
+and got **30 times worse** (1,661 → 49,525 ms). A stroke's bands each draw from a small buffer; the
+wand's answer is one canvas of 15000 x 10000, and 150 sub-rectangle draws from a canvas that size
+cost far more than one whole draw of it. Reverted. If that write is to be cut, the answer has to
+arrive as pixels the mask can take by `writeRect` (the worker already has the flood's mask as a
+typed array before it makes a canvas of it), not as a canvas to be re-read in pieces.
+
 ### C6. Mips in the worker, thumbnails, hover, object map, colour match from mips (3 days)
 
 - A whole-layer change (filter apply, `setPixels`, transform, paste, load) marks all its
