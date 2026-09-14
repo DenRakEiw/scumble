@@ -5953,7 +5953,7 @@ class InpaintEditor {
         this.undoBytes -= snap.bytes || 0;
         for (const k of ["url", "mask", "selection"]) {
             const v = snap[k];
-            if (!v) continue;
+            if (!v || v === true) continue;   // a layerrect step's `mask` is a flag
             if (typeof v.then === "function") v.then((u) => { if (typeof u === "string" && u.startsWith("blob:")) URL.revokeObjectURL(u); }).catch(() => {});
             else if (typeof v === "string" && v.startsWith("blob:")) URL.revokeObjectURL(v);
         }
@@ -6228,7 +6228,9 @@ class InpaintEditor {
             try { selection = await snapImage(snap.selection); } catch (_) { /* its encode failed: restored as an empty selection, as before */ }
             return { selection };
         }
-        const [url, mask] = await Promise.all([snap.url ? snapImage(snap.url) : null, snap.mask ? snapImage(snap.mask) : null]);
+        // `mask` is an image only on a "layerfull" step; on a "layerrect" step it is the flag of a mask stroke
+        const maskSrc = snap.kind === "layerfull" ? snap.mask : null;
+        const [url, mask] = await Promise.all([snap.url ? snapImage(snap.url) : null, maskSrc ? snapImage(maskSrc) : null]);
         return { url, mask };
     }
 
@@ -6247,7 +6249,9 @@ class InpaintEditor {
         const snap = stack()[stack().length - 1];
         if (!snap) return;
         let images = {}, failed = null;
-        if (snap.kind === "canvas" || snap.url || snap.mask) {
+        // a layerrect step's `mask` is a flag (a mask stroke), not an image: loading it as one failed every
+        // undo of a mask brush stroke with "could not load true" (c6bc6a6)
+        if (snap.kind === "canvas" || (snap.kind !== "layerrect" && (snap.url || snap.mask))) {
             try { images = await this.loadSnapImages(snap); } catch (err) { failed = err; }
         }
         const now = stack();

@@ -11,7 +11,8 @@ it along), the selection's bounds after a restore, the selection brush's display
 undo step, and that closed tabs are freed. The close-out's steps: an undo refused while a stroke or
 a drag is held, an undo that does not run over an edit made while it loads (a decode, a grow, a
 canvas redo, an upload of extend / merge, flatten), text edit steps that give their blob URLs
-back, and a restored selection that getValue saves even when it was read during the restore.
+back, and a restored selection that getValue saves even when it was read during the restore. After
+it: the undo and redo of a mask brush stroke (c6bc6a6 loaded the step's mask flag as an image).
 
     python tools/editor_test.py
 
@@ -1112,6 +1113,74 @@ await ed.undoStep();
 const d = L.px.readRect(100, 100, 1, 1).data;
 const out = { status: ed.status, pixel: Array.from(d) };
 if (!/could not be restored/.test(ed.status)) throw new Error("the lost undo step went unnoticed: " + JSON.stringify(out));
+return out;
+"""),
+    ("mask_brush_stroke_undo_and_redo", """
+// c6bc6a6 (the C1 close-out) decodes a step's images before it takes the step off its stack, and read
+// a "layerrect" step's `mask` (the flag of a mask stroke) as an image: every undo of a mask brush stroke
+// failed with "could not load true" and the stroke stayed. A real stroke with the brush on a layer mask,
+// through the pointer handlers: undo gives the mask from before to the byte, redo gives the stroke back,
+// the layer's own pixels are never touched, and neither the status line nor the console says "could not".
+await run("new_canvas", { width: 1200, height: 900, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+ed.fitView();
+const out = {};
+const errors = [];
+const consoleError = console.error;
+console.error = function (...a) { errors.push(a.map((x) => String((x && x.message) || x)).join(" ")); return consoleError.apply(this, a); };
+const onRejection = (e) => errors.push("unhandled rejection: " + String((e.reason && e.reason.message) || e.reason));
+window.addEventListener("unhandledrejection", onRejection);
+const all = (p) => p.readRect(0, 0, p.width, p.height).data.slice();
+const exact = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+const worst = (a, b) => { if (a.length !== b.length) return 255; let m = 0; for (let i = 0; i < a.length; i += 4) { const aa = a[i + 3], ba = b[i + 3]; let v = Math.abs(aa - ba); for (let k = 0; k < 3; k++) v = Math.max(v, Math.abs(a[i + k] * aa / 255 - b[i + k] * ba / 255)); if (v > m) m = v; } return +m.toFixed(1); };
+const find = (id) => ed.layers.find((l) => l.id === id);
+let id = null;
+try {
+    const M = ed.addPaintLayer();
+    id = M.id;
+    M.px.fill(null, "#ff0000"); ed.markLayerChanged(M);
+    await run("select_rect", { x: 200, y: 200, w: 800, h: 500, doc: window.__t });
+    ed.maskFromSelection(M);
+    ed.clearSelection();
+    const layer0 = all(M.px), mask0 = all(M.maskPx);
+    ed.toggleMaskEdit(M);
+    ed.brushSize = 60; ed.hardness = 1; ed.brushOpacity = 1;
+    ed.draw(); await wait(50);
+    const rect = ed.canvas.getBoundingClientRect();
+    const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 21, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+    // below the mask's rectangle, where it hides the layer: the brush reveals there
+    ed.canvas.dispatchEvent(ev("pointerdown", 300, 800));
+    out.kind = ed.pointer && ed.pointer.kind;
+    for (let i = 1; i <= 8; i++) { ed.canvas.dispatchEvent(ev("pointermove", 300 + 75 * i, 800)); await wait(16); }
+    ed.canvas.dispatchEvent(ev("pointerup", 900, 800));
+    await wait(80);
+    const step = ed.undo[ed.undo.length - 1];
+    const mask1 = all(find(id).maskPx);
+    out.stroke = { tool: ed.tool, maskEdit: M.maskEdit, step: step && step.kind, flag: step && step.mask, revealed: find(id).maskPx.readRect(600, 800, 1, 1).data[3], hiddenBefore: mask0[(800 * 1200 + 600) * 4 + 3], size: [M.maskPx.width, M.maskPx.height] };
+    if (out.kind !== "maskpaint" || !step || step.kind !== "layerrect" || step.mask !== true) throw new Error("the gesture did not become a mask stroke with its rect step: " + JSON.stringify(out));
+    if (out.stroke.revealed < 250 || out.stroke.hiddenBefore !== 0 || exact(mask1, mask0)) throw new Error("the stroke did not reach the mask: " + JSON.stringify(out));
+    const u = await run("undo", { doc: window.__t });
+    const maskU = all(find(id).maskPx);
+    out.undo = { status: ed.status, redo: u.redo, exact: exact(maskU, mask0), worst: worst(maskU, mask0) };
+    if (/could not/i.test(ed.status) || !out.undo.exact || u.redo < 1) throw new Error("the undo of the mask stroke failed: " + JSON.stringify(out) + " " + JSON.stringify(errors));
+    const r = await run("redo", { doc: window.__t });
+    const maskR = all(find(id).maskPx);
+    out.redo = { status: ed.status, undo: r.undo, exact: exact(maskR, mask1), worst: worst(maskR, mask1) };
+    if (/could not/i.test(ed.status) || out.redo.worst > 1) throw new Error("the redo did not give the mask stroke back: " + JSON.stringify(out) + " " + JSON.stringify(errors));
+    out.layerUntouched = exact(all(find(id).px), layer0);
+    if (!out.layerUntouched) throw new Error("the mask stroke, its undo or its redo changed the layer's own pixels: " + JSON.stringify(out));
+    await wait(100);
+    if (errors.length) throw new Error("console errors: " + JSON.stringify(errors));
+} finally {
+    console.error = consoleError;
+    window.removeEventListener("unhandledrejection", onRejection);
+    const L = id != null && find(id);
+    if (L && L.maskEdit) ed.toggleMaskEdit(L);
+    if (L) await run("remove_layer", { layer: id, doc: window.__t });
+    ed.setTool("select");
+}
 return out;
 """),
     ("closed_tabs_are_collected", lambda c: closed_tabs_are_collected(c)),
