@@ -1076,6 +1076,25 @@ The median of that row is 0.1 ms either way: what cost hundreds of milliseconds 
 **6 mirrors, 2877 MB** and 768 MB of pyramids, all of it the Canvas 2D path's, which is what the rest
 of C3 has to move.
 
+**Step (d), the Canvas 2D path** (the same document; every frame of it is Canvas 2D, because the
+benchmark's stack carries a `film.look` filter layer):
+
+| row (15000 × 10000, tiles) | before | after |
+|---|---|---|
+| pan at 1:1 (30 frames, median) | 41.1 ms | 2.5 ms |
+| opacity slider tick | 56.5 ms | 8.0 ms |
+| selection change | 103 ms | 21 ms |
+| undo step | 66 ms | 18 ms |
+| selection bounds scan | 11.4 ms | 2.0 ms |
+| the document's display pyramids | 768.1 MB | 196 MB |
+
+and A/B on one document (a 15k base, one full paint layer, a filter layer), the same build with the
+branch on and off: the first three draws at fit 0.2 / **341** / 0.3 ms → 0.1 ms each, the first frame
+of a brush stroke 218 → **355** ms. So 559 ms of stalls became 355 in one place: the live stroke's
+preview still copies the layer's display mirror into a full-size canvas, which is C5's. That is the
+last mirror the screen makes; the op rows of this run are not comparable with the ones above, because
+ComfyUI was holding the card by then (`stroke commit` measured 845 ms with the branch on **and** off).
+
 **Pixel agreement.** `composite_test.py` compares the two paths at 1:1 now as well: on tiles the
 compositor agrees with Canvas 2D to **1 level** there, over the whole test document (nine blend
 modes, a masked layer, a colour-matched one, a text layer, after an erase). At a fractional zoom the

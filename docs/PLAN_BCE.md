@@ -1313,17 +1313,36 @@ extension, the gutter, the premultiply: each mutation red).
 - Gate: `editor_test.py` step `selection_overlay_is_drawn_from_the_mask_itself`, which runs on **both**
   backends against the same expected pixels.
 
+**(d) Canvas 2D draws a tile layer from its own tiles too** (commit "C3 (d)"):
+
+- **`drawTilesInto(ctx, px, x, y, w, h, vp)`** draws the part of a tile store a region pass shows, at
+  the view's level, from step (c)'s region canvas; `drawLayer` takes it for a plain layer (no mask, no
+  colour match, no live stroke on it) while a view pass runs. So the path the editor uses whenever the
+  GPU compositor stands down — a filter layer in the stack, a live stroke, a transform, compare and
+  peek — needs neither a display mirror of the whole layer nor a Skia pyramid on it.
+- A tile store keeps a region canvas **per level, two at a time** (the screen's and the navigator's,
+  `REGION_LEVELS`), and a whole rebuild is **one `putImageData`** of a buffer the tiles are copied into
+  row by row: one call per tile was 2,400 calls at fit on a 15k document.
+- Measured (15000 × 10000, tiles, with the benchmark's `film.look` layer, so every frame is the Canvas
+  2D path): **pan at 1:1 41 → 2.5 ms**, the opacity slider 56 → 8, a selection change 78 → 21, an undo
+  step 66 → 18, the selection's bounds scan 11 → 2, the document's **display pyramids 768 → 196 MB**.
+- **What it moved rather than removed**: A/B on one document (a 15k base, a full paint layer, a filter
+  layer) the first three draws at fit were 0.2 / 341 / 0.3 ms and are 0.1 each; the **first frame of a
+  brush stroke** went 218 → 355 ms. The live preview still copies the layer's display **mirror** into a
+  full-size canvas (2 mirrors, 1.1 GB at 15k), and that is now the only thing in the tree that makes a
+  mirror for the screen. 559 ms of stalls became 355 in one place, and the stroke store of **C5** is
+  what takes it away.
+- Gate: `editor_test.py`'s backend step adds a filter layer, checks the compositor really stands down,
+  and that the plain layer still has no display mirror and no pyramid entry and was drawn from its
+  tiles.
+
 **What C3 still owes** (the plan's §C3, not built):
 
-- **The Canvas 2D fallback drawing tiles** (the layers; the selection is done, step (c)). Canvas 2D
-  still draws a tile store's **display mirror**
-  and the Skia pyramid on it. It is the path for a filter layer in the stack, a live stroke, a
-  transform, compare / peek, exports and runs — so the mirror and `displaySource`'s `screen` GPU copy
-  of it, `displayRectSource`, `releaseCaches({ mirrors })` and the level refresh in `touchSourceRect`
-  are all still there and still needed. `perf_test.py`'s old `pan at 1:1` row (41 ms on tiles) is
-  that path. **This is the next step**, and it decides whether the fallback draws a region scratch
-  per frame (the plan's answer, ~130 `putImageData`s on a 4K screen) or whether the filter chain is
-  fed by the compositor instead, which is what would take the everyday filter-layer case off it.
+- **The live stroke's preview** is the last user of a tile store's display mirror: `layerWithStroke`
+  copies the whole layer into a full-size canvas at the first dab (355 ms and 1.1 GB at 15k). That is
+  C5's stroke store, so `canvasForDisplay`, `displayRectSource`, the level refresh in
+  `touchSourceRect` and `releaseCaches({ mirrors })` stay until then — as does the full-resolution
+  Canvas 2D path of exports, runs and the flattened composite, which is phase E's.
 - **The mask sampler** (`u_mask`) and the three op modes for C5's stroke store, so `_masked` and the
   live stroke preview stop being canvases.
 - Therefore `WINDOW_PX` / `_source` / `_texture`, `_pyramidBudget` and the display pyramid are **not**
