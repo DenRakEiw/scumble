@@ -22,6 +22,21 @@ against a live key yet (the wiring was verified up to the providers' "invalid ke
 answers). IPC `llm:list` / `llm:ask`, `host.upsampleBackends()`, `host.askLLM()`,
 `host.upsampleInApp()`; the host members the editor calls are in docs/BUILD_NODE.md.
 
+### Through the ToAPIs key
+
+A stored ToAPIs key (the image provider, docs/RECIPES.md "ToAPIs") adds three rows **at the top** of
+the list: Gemini 3.8 Flash, Claude Haiku 4.5 and GPT-5.6 Terra, ids `toapis:<model>`. ToAPIs' `POST
+/v1/chat/completions` is OpenAI-compatible with vision and data-URI images, so the rows go through the
+same client as the local endpoint below (`askCompatible`, with its text-only retry and `<think>`
+stripping), at the host `providers/toapis.js` allows (`settings.toapis.base`, else
+`https://toapis.com`) plus `/v1`, on the ToAPIs key; an unreachable host names ToAPIs. From ToAPIs'
+catalogue on 2026-09-15 the three cost about $0.30 / $1.50 (Gemini, Claude) and $0.40 / $2.40 (GPT) per
+million tokens in / out, roughly a tenth of a cent for one rewrite with the crop. Left out: GPT-5.6
+Luna (no public price) and the `-official` text channels (three to four times the price for a prompt
+rewrite). **Not run against the live API**; `tools/llm_test.py` checks the rows' order, that they come
+and go with the key, and that the request reaches the endpoint with the crop and the ToAPIs key
+(`tools/llm_mock.py` answers the three ids).
+
 ### A local or self-hosted OpenAI-compatible endpoint
 
 Any server that speaks `POST /v1/chat/completions` joins the same list without a provider

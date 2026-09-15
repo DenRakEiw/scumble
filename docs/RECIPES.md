@@ -78,8 +78,10 @@ A provider recipe is **one model** with one variant per provider that hosts it; 
 picks the provider in Settings › Recipes (a select per row, remembered in
 `settings.recipeProviders`) or through `select_recipe(id, provider)`. The home provider
 (`default`) is the model's own API: Google for the Nano Banana family, OpenAI for GPT
-Image, Black Forest Labs for FLUX; fal.ai, Replicate, WaveSpeedAI and Comfy Cloud carry most
-models as well.
+Image, Black Forest Labs for FLUX; ToAPIs, fal.ai, Replicate, WaveSpeedAI and Comfy Cloud carry
+most models as well. The order of a recipe's `providers` is the order of its provider select,
+of Generate new and of `list_recipes`; ToAPIs comes first wherever it serves the model (see
+"ToAPIs" below), and `default` stays the home provider.
 
 ```
 {
@@ -102,7 +104,7 @@ the parameter the adapter sends), `fixed` (parameters sent as they are), `fields
 an image-to-image endpoint that has no mask, such as Ideogram 4), `options` (adapter
 switches: fal `sizing: "none"` for endpoints without a free `image_size`, fal
 `omit: ["output_format", ...]` for an endpoint that refuses the fields the other models
-take), `limits` (the size ceiling, below), `edit: false` (the variant makes images from
+take; ToAPIs' channels, sizes and tiers, below), `limits` (the size ceiling, below), `edit: false` (the variant makes images from
 the prompt alone and the Generate button says so), `note` (shown as the tooltip). `family`
 groups the top-bar list. A recipe with a top-level `provider` instead of `providers` (the
 old shape, the smoke test's loopback) is read as a one-provider recipe.
@@ -172,7 +174,9 @@ Say it in the prompt as well - the model follows the words, not only the paramet
 built-in prompt template **Transparent asset** (`prompts/transparent-asset.md`) writes that
 part for you and is offered for the OpenAI recipes.
 
-Other providers are not wired for it: fal, WaveSpeed and Comfy Cloud may or may not pass
+The ToAPIs variants of the three GPT recipes carry the row too (on GPT Image 2's standard channel and
+on every GPT Image 2.5 channel only `transparent` is sent, as their pages ask); none of that has run
+live. Other providers are not wired for it: fal, WaveSpeed and Comfy Cloud may or may not pass
 `background` through to the same models, and none of that is verified. Add the row to a
 variant when you have a source. `tools/transparent_test.py` is the gate.
 
@@ -183,7 +187,7 @@ a `text` shape, filled in by `normalize()` in `electron/main/recipes.js`: the mo
 the editing one with a trailing `/edit`, `/inpaint` or `/fill` removed (fal and WaveSpeed
 put the editing model under such a path, the others use the same id without the image
 field). A variant overrides it with `"text": { "model": "...", "sizes": [...], "fixed": {} }`
-or switches it off with `"text": false`. Providers that can do it at all: OpenAI, Gemini,
+or switches it off with `"text": false`. Providers that can do it at all: ToAPIs, OpenAI, Gemini,
 BFL, fal, Replicate, WaveSpeed. Comfy Cloud builds a graph around a partner node and has
 none. The other way round exists too: a variant with `"edit": false` has **only** the text
 shape (Krea 2, Recraft V4 and Z-Image base are text-to-image endpoints), and the Generate
@@ -201,7 +205,8 @@ the wanted size through the recipe and flattens the result into the base, which 
 `generate_new` does; a chain that starts its sampler from an empty latent (the Flux.2 Klein
 recipe does) then ignores the flat input entirely.
 
-Adapters (`electron/main/providers/`): **fal** (queue API, settings passed by name),
+Adapters (`electron/main/providers/`): **toapis** (uploads, a task and polling; channels,
+sizes and tiers from `options`; see "ToAPIs" below), **fal** (queue API, settings passed by name),
 **bfl** (`steps`, `guidance`, `safety_tolerance`, `prompt_upsampling`; the variant's
 `model` is the endpoint), **openai** (`quality`, `size`, `background`,
 `output_format`, `output_compression`, `moderation`, and `input_fidelity` on 1.5 and 1
@@ -237,3 +242,121 @@ resampler is used), the Navier-Stokes "border" fill (behaves like "blur").
 
 A hidden `loopback` provider returns the crop unchanged (no key); `tools/smoke_test.py`
 uses it to check the crop / stitch path.
+
+### ToAPIs (`toapis`)
+
+[ToAPIs](https://toapis.com) is a reseller on a New API gateway: one key for GPT Image 2 and 2.5,
+Nano Banana 2 / 2 Lite / Pro, FLUX.2 pro and flex, Seedream 5 lite and pro, and Qwen Image 3.0.
+The adapter `electron/main/providers/toapis.js` is written from the English docs
+(`docs.toapis.com/docs/en/...`, read 2026-09-15) and **has not run against the live API**; every
+ToAPIs variant's note says so, and says that crop, mask and references are uploaded to public
+`files.toapis.com` URLs. The key link (Settings › API providers) carries the author's referral code.
+
+**Where it shows up.** First in every provider list: the key rows (first in `PROVIDERS`), each served
+recipe's provider select, the Generate-new select and `list_recipes` (`toapis` is the first key of
+`providers` in the eleven recipe files), and in `TEXT_PROVIDERS`. **No recipe's `default` changed and
+nothing switches to ToAPIs on its own** (the user's decision of 2026-09-15): a recipe runs on ToAPIs
+when you pick it in the recipe's select, in Generate new or with `select_recipe(id, "toapis")`. With a
+key stored, the row's *check balance* asks `GET /v1/balance` (free, IPC `provider:balance`) and shows
+the USD left (credits / 200).
+
+**The protocol.** Everything is a task and nothing takes base64:
+
+1. `POST /v1/uploads/images` (multipart `file`, at most four at a time) for the crop (first), the
+   references and, where the channel has one, the mask; each answer's `data.url` goes into the request.
+2. `POST /v1/images/generations` with `{ model, prompt, n: 1, size, resolution | metadata.resolution,
+   image_urls, mask_url, ... }`; the task id is `id` (or `task_id`). A 429 or 503 here means the task
+   was not accepted, so it is sent once more after `Retry-After`; a network error is never retried (a
+   lost answer could be a second paid task).
+3. `GET /v1/images/generations/<id>`: first after 4 s, then every 5 s plus up to a second of jitter,
+   15 minutes at most; `pending`, `queued`, `submitted` and `in_progress` keep it polling, a 429 or
+   503 waits `Retry-After`. `failed` arrives as HTTP 200 and is thrown as
+   `ToAPIs <model> (task <id>): <error.message>`, which is what the status line and the log show.
+4. `completed`: `result.data[0].url`, else a top-level `url`, downloaded at once (it lives 24 h) and
+   **without** the key.
+
+Failed HTTP answers get a plain prefix before the server's own message, which may be Chinese: 401
+"key refused", 402 "balance too low, top up at toapis.com", 403 "key not allowed for this model", 422
+"refused by the content policy", 429 "rate limited". The key is taken out of every message. The run's
+`info` (model, channel, task, size, resolution, `billing.cost_usd` and `credits` when present) goes to
+the log. No `callback_url` (ToAPIs refuses loopback webhooks) and no `output_compression` (its page
+describes the scale backwards).
+
+**The host** is `https://toapis.com` unless `settings.toapis.base` names one of
+`https://toapis.com`, `https://api.toapis.com`, `https://toapis.cn`, `https://api.toapis.cn` or
+`http://127.0.0.1:<port>` (the test mock); anything else, a path included, is ignored. It never comes
+from a recipe, because an imported recipe could otherwise send the key anywhere. There is no UI for it.
+
+**Channels.** Normal, VIP and official are different model ids with different rules. The variant's
+`model` is the default channel's id, and `options.channels` maps each value of the *Channel* settings
+row to its overrides (`model`, `mask`, `size`, `ratios`, `tiers`, `tier_key`, `urls`, `drop`,
+`transparent_only`, `max_images`), for edit and text runs alike. The default is the official channel
+wherever one exists: the vendor's own cloud (Azure for GPT, Vertex AI for Gemini), the only mask
+endpoint, plain string URLs. The docs never name the upstream of the normal and VIP channels; their
+prices, far below the vendor's, suggest third-party backends.
+
+| Recipe | Default model | Channel row | Input, size | Resolution |
+|---|---|---|---|---|
+| `gpt_image_2` | `gpt-image-2-official` | official, vip (`gpt-image-2-vip`, no mask), standard (`gpt-image-2`, no mask, presets, no quality) | **fill**: `mask_url` from the alpha mask; the crop's own ratio | `resolution` 1k / 2k / 4k |
+| `gpt_image_2_5_flare`, `_sunburst` | `gpt-image-2.5-<name>-official` | official, vip (`-vip`), standard (plain id: presets, a 1K / 2K / 4K tier, no quality) | edit; `WxH` in 16 px steps, 655,360 to 8,294,400 px, at most 3:1 | none (pixels) |
+| `nano_banana_2` | `gemini-3.1-flash-image-official` | official, vip (`-preview-vip`), standard (`-preview`); both with `{url}` objects | edit; the closest of the channel's presets | `metadata.resolution` 1K / 2K / 4K |
+| `nano_banana_2_lite` | `gemini-3.1-flash-lite-image-official` | none | as 3.1 Flash official | as 3.1 Flash |
+| `nano_banana_pro` | `gemini-3-pro-image-official` (the id of ToAPIs' price list) | official, vip, standard (`gemini-3-pro-image-preview[-vip]`, objects) | edit; presets | `metadata.resolution` 1K / 2K / 4K |
+| `flux2_pro`, `flux2_flex` | `flux-2-pro`, `flux-2-flex` | none | edit, 8 images; 7 presets | `metadata.resolution` 1K / 2K |
+| `seedream_5_lite` | `doubao-seedream-5-0` | none | edit, 10 images; 9 presets | `metadata.resolution` **2K / 3K** |
+| `seedream_5_pro` | `doubao-seedream-5-0-pro` | none | edit; 9 presets | `metadata.resolution` 1K / 2K |
+| `qwen_image_edit` | `qwen-image-3.0` | standard, pro (`qwen-image-3.0-pro`) | edit, 3 images; `WxH` (512² to 2048², at most 8:1), `metadata.seed`, `metadata.negative_prompt`, fixed `metadata.prompt_extend: false` | none (pixels) |
+
+A variant's `options` describe the rest: `mask` (a `fill` run uploads `req.maskAlpha`, alpha 0 =
+repaint, as `mask_url`; only `gpt-image-2-official` has one, every other channel leaves the mask out
+and the stitch keeps the selection), `size` (`ratio`: the crop's reduced `W:H`, clamped to 3:1;
+`preset`: the closest of `ratios`, or a text run's own aspect when it is one of them; `pixels`: `WxH`
+under `pixels` rules), `tiers` with `tier_key` (a *Resolution* row left on auto takes the smallest tier
+whose base covers the emitted long side), `urls: "objects"` (`image_urls` as `[{ url }]`), `images`
+(another image field), `drop` (parameters a channel does not take), `transparent_only`, `max_images`
+(more images are refused before any upload), `seed` and `negative` (where a model takes them).
+Settings pass through by key and **dotted keys nest** (`metadata.resolution` becomes
+`{ metadata: { resolution } }`); `channel`, `random_seed`, empty values and `auto` are not sent.
+Crops of another shape than a model's presets come back re-framed and are centre-cropped by
+`finishResult`, as with WaveSpeed.
+
+**The 10 MB upload limit.** Measured on 2026-09-15 with `canvasBytes` (Chromium's PNG encoder) on
+crops cut at full resolution from four photographs: 2048 × 2048 came to 5.9 to 9.5 MB, 3840 × 2160 to
+11.9 to 18.7 MB, and random noise (the worst case) to 14.4 and 28.5 MB; as JPEG at quality 0.92 the
+same crops were 0.7 to 1.7 MB, 1.3 to 3.1 MB and 3.7 / 7.3 MB. So every size check happens before any
+request: a **crop** over 10 MB is re-encoded as JPEG (quality 92, Electron's `nativeImage`, `ctx.toJpeg`
+from `providers/index.js`; a transparent crop loses its alpha there), and one still over it is refused
+with "set Highres fix lower". A **reference** over 10 MB is refused (it may be a cut-out whose alpha a
+JPEG would flatten), and so is a **mask** (its alpha is the mask). The limits stay at 2048 (FLUX at
+BFL's 1440, GPT Image 2.5 and Qwen with a 4,194,304 px budget).
+
+**Privacy.** Crop, mask and references become public `files.toapis.com` URLs (the generation API
+takes URLs only); the docs do not say how long an upload lives. Results are there for 24 hours. The
+mainland China hosts (`toapis.cn`) are allowed only through the setting.
+
+**Only a real key can verify** (written defensively, and listed here until a live run):
+
+- `image_urls` as strings or `{url}` objects on the Gemini standard and VIP channels (the pages
+  contradict each other; strings go to official, objects to the other two);
+- that a PNG with alpha survives the upload unchanged, and the mask's polarity on `gpt-image-2-official`;
+- the real output size for a custom ratio, and for `auto`;
+- the ids `gemini-3.1-flash-lite-image-official` (no page of its own) and `gemini-3-pro-image-official`
+  (the English page says `gemini-3-pro-image-preview-official`);
+- whether `metadata.prompt_extend: false` is honoured on Qwen, and whether FLUX takes a crop over 1440;
+- `billing.cost_usd` per tier, the real durations, which result shape arrives, and the language of the
+  error messages;
+- whether uploads are accepted as `image/jpeg` for the crop fallback on every model (Seedream takes
+  JPEG and PNG only, which both are).
+
+**Tests.** `node tools/toapis_test.js` runs the adapter in plain Node against a scripted fetch (the
+official fill with its alpha mask, the other channels, objects and nesting, text runs, pixel sizes,
+polling with a 429 and both result shapes, failures, the 10 MB guard, the key on every API call and
+never on the download or in a message, the balance, the host allowlist, and every shipped variant on
+every channel). Gate `toapis` (`tools/toapis_test.py`) runs that first, then drives the app against
+`tools/toapis_mock.py` with a test key (refusing a profile that holds a real one): the list order and
+the kept defaults, *check balance*, the shipped `gpt_image_2` variant on the official channel (crop and
+alpha mask uploaded, the crop's ratio and tier) and on the standard channel (no mask), Generate new
+without an upload, a failed task in the status line and in the log without the key, and a 429 at
+submit sent again. Each counter-proof was red: the luminance mask for `maskAlpha`, no `Retry-After`
+wait, the key sent to the file host, no metadata nesting, no JPEG fallback, a base outside the
+allowlist, the mask on every channel, and ToAPIs last in `PROVIDERS`.

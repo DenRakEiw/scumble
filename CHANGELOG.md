@@ -16,6 +16,26 @@ the section for its version; `docs/` and the commit history hold the technical d
   did not accept its own default of 512 MB. The three memory boxes there now take any whole
   number of MB, including a value an earlier version stored, and *Generate a new image* no
   longer shows a width or height above the 8192 px it asks for on a very wide picture.
+- **ToAPIs as a provider.** One key from [toapis.com](https://toapis.com) runs GPT Image 2 and
+  2.5 (Flare, Sunburst), Nano Banana 2, 2 Lite and Pro, FLUX.2 pro and flex, Seedream 5 lite and
+  pro and Qwen Image 3.0. ToAPIs is listed first under *Settings › API providers* and in each of
+  these models' provider choice, in *Generate a new image* and in `list_recipes`; nothing moves
+  to it by itself, every model keeps running where it ran until you pick ToAPIs for it.
+  - **Not tried against the real service yet.** It is built from ToAPIs' documentation; if a run
+    fails, *Help › Console › Copy all* has the task id and ToAPIs' own message.
+  - **What leaves your machine:** the crop, the mask and the reference layers are uploaded to
+    ToAPIs and get public `files.toapis.com` addresses for the run, as the service requires.
+  - **Channel** in the model's settings: *official* is the model maker's own cloud and the
+    default where ToAPIs has it. *vip* and *standard* cost a fraction of it. On GPT Image 2 only
+    *official* takes your selection as a real mask; the cheaper channels, like every other model
+    on ToAPIs, edit the whole crop, and Scumble keeps only the selected part of the answer.
+  - A crop over ToAPIs' 10 MB upload limit is sent as a JPEG; a mask or reference layer that
+    large is refused before anything is sent, with a note to set *Highres fix* lower.
+  - *check balance* next to the stored key shows what the key has left, free of charge.
+  - The key link carries the author's referral code.
+- **Prompt upsampling on the ToAPIs key:** with a ToAPIs key stored, Gemini 3.8 Flash, Claude
+  Haiku 4.5 and GPT-5.6 Terra appear at the top of the upsample list (about a tenth of a cent a
+  rewrite), also not tried against the real service yet.
 
 ## 0.1.13 — 2026-09-15
 

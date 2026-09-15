@@ -48,7 +48,7 @@ In detail, Scumble talks to these systems, and to nothing else:
 
 - **Your ComfyUI server**, at the address you enter in Settings › ComfyUI, when you run a
   local recipe, a helper node, or test the connection.
-- **An API provider** (Google, OpenAI, Black Forest Labs, fal.ai, Replicate, WaveSpeedAI,
+- **An API provider** (ToAPIs, Google, OpenAI, Black Forest Labs, fal.ai, Replicate, WaveSpeedAI,
   Comfy Cloud, Anthropic), only when you run a recipe or a prompt upsampling that names it,
   with the key you stored. Keys are kept in the operating system's credential store
   (Electron `safeStorage`, DPAPI on Windows) and never leave the machine except in the

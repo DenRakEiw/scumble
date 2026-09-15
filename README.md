@@ -1,7 +1,7 @@
 # Scumble
 
 > **Work in progress.** Scumble is in an early state (0.1.x). Not every feature has been
-> tested end to end yet, and the API provider adapters (Google Gemini, OpenAI, Black Forest
+> tested end to end yet, and the API provider adapters (ToAPIs, Google Gemini, OpenAI, Black Forest
 > Labs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud) have been written from the providers'
 > documentation but have not run against the live APIs so far. Expect rough edges, keep backups of your
 > images, and please report what breaks in the
@@ -17,7 +17,7 @@ Rendering happens on your own [ComfyUI](https://github.com/comfyanonymous/ComfyU
 (local or remote, for example on RunPod) or through API providers: Google (Nano Banana
 2 / 2 Lite / Pro), OpenAI (GPT Image 2.5 Flare / Sunburst, 2), Black Forest Labs
 (FLUX.2 max / pro / flex / klein, FLUX.1 Fill), ByteDance Seedream 5, Qwen Image Edit,
-each through the model's own API or through fal.ai, Replicate, WaveSpeedAI and Comfy Cloud. Object masks and background removal
+each through the model's own API or through ToAPIs, fal.ai, Replicate, WaveSpeedAI and Comfy Cloud. Object masks and background removal
 run inside the app through ONNX Runtime (SAM2, BiRefNet, RMBG). The editor is the same
 code as the ComfyUI node [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas);
 Scumble is the standalone window around it, plus recipes, plugins and an MCP server.
@@ -38,7 +38,7 @@ untested (see the note above).
   film looks, halation, glow, bleach bypass, cross processing, split toning, light leaks,
   frames and control points.
 - Recipes instead of node graphs: pick a model ("FLUX.2 [max]", "Nano Banana 2") and the
-  provider it runs on (its own API, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud); import your own ComfyUI
+  provider it runs on (ToAPIs, its own API, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud); import your own ComfyUI
   workflow as a recipe if it holds an Inpaint Canvas node.
 - Start from nothing: *Generate new* makes the base image from the prompt alone, locally
   or through a provider, and you edit it from there.
@@ -69,7 +69,8 @@ For local rendering you need a ComfyUI with the node pack
 the models of the recipe you pick (the shipped Flux.2 Klein recipe wants the Flux.2 Klein
 9B model, the Qwen3 8B text encoder and the Flux.2 VAE; the recipe's Settings panel lets
 you choose the file names you have). For an API provider put the key into Settings > API
-providers; no ComfyUI is needed then.
+providers; no ComfyUI is needed then. The *get a key* links of ToAPIs and WaveSpeedAI carry the
+author's referral code.
 
 ## First steps
 
@@ -100,7 +101,8 @@ unsigned). Releases are built by GitHub Actions: pushing a tag `v<version>` that
 Tests (`tools/`): `smoke_test.py` (needs a ComfyUI), `commands_test.py` (command core and
 the sample plugin), `film_test.py` (GPU and CPU paths of the film pack), `mcp_test.py`
 (the MCP server over stdio), `llm_test.py` (the OpenAI-compatible upsample endpoint against
-a mock server), `editor_test.py` (editor behaviour that is easy to break again), `generate_test.py`
+a mock server), `toapis_test.py` (the ToAPIs adapter in plain Node, then the app against a mock of
+ToAPIs), `editor_test.py` (editor behaviour that is easy to break again), `generate_test.py`
 (making an image from the prompt alone, against the loopback provider),
 `helpers_test.js` (ONNX modules without Electron). See `CLAUDE.md` for the development
 notes.
@@ -109,7 +111,7 @@ notes.
 
 ```
 electron/main/     main process: window, scumble:// scheme with the ComfyUI proxy, websocket, menu, dialogs, settings,
-                   file mirror, keys.js (safeStorage), recipes.js, providers/ (fal, replicate, bfl, openai, gemini, wavespeed, comfycloud),
+                   file mirror, keys.js (safeStorage), recipes.js, providers/ (toapis, fal, replicate, bfl, openai, gemini, wavespeed, comfycloud),
                    onnx/ (SAM2, matting), plugins.js, updater.js (GitHub releases), bridge.js + local.js + mcp/ (agents)
 electron/preload.js
 renderer/          shell.js (connection bar, recipe picker, tabs, settings), commands.js (the command core),
