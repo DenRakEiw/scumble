@@ -2545,6 +2545,52 @@ its region view runs only for a live stroke, which is keyed by the gesture. So n
   | the probe reads `getPixels()` | "the probe flattened the picture 3 times" |
   | the filter key without the pass's box and scale | "differs from the flatten by 255 levels on 59240 bytes: it took the other pass's filter output" |
   | the selection box readers read the whole picture too | "mean_color with a selection flattened the picture 1 times" |
+- **Review fixes** (a review of (b3), (c1) and (c2) with two refuting verifiers per finding; commit 10def79, each fix with a counter-proof
+  that is red when the fix is taken back, tile mode unless named):
+  - The control points' shader and CPU path measured a point from the pass's own corner, so an exact box over a point (`mean_color`,
+    *Selection to new layer*, the probe) came back without its effect (126 levels), and so did the screen at zoom in any region pass
+    that does not start at the origin (both backends, since phase 1): both paths add `info.origin` (`u_origin`), so `reach` 0 / 16 holds.
+    Gate: `film_test.py` `points_in_a_box_away_from_the_origin` (both backends) reads an exact box over a point at 1100, 800 against the
+    whole flatten (0 levels, the point moves it by 126), `mean_color` of a selection there (exact), a pass at 0.5 over a region that does
+    not start at the origin against the pass over the whole image (1 level), and the CPU path with an origin against the GPU path (1).
+    Red: the shader without the origin ("an exact box over the point differs from the whole flatten by 126 levels"), the CPU path without it
+    ("the CPU path over the point's region changed 0 levels").
+  - A point's colour came from a box padded by a fixed 128 px whatever lies below, so under a filter whose picture depends on the whole image
+    (a vignette 40 levels off near the corner, normalise up to 6, the look's halation up to 14) it was not the points layer's input.
+    `sampleColor` reads `flatten({ box, below, exact: true })` now: padded by the declared reach, or cut out of the whole flatten below the
+    points layer. Under the perf document's film look (its halation) the point add is that whole flatten again: 264 → 5063-5401 ms [5054-5396],
+    as before (c1); without the filter layers 81-130 ms before and 109-143 after (a new row). Gate: the same step puts a vignette under the
+    points and a point at 1500, 1120: its colour is the flatten below within 1e-6, where the 128 px box gives L 0.53 against 0.35. Red: the
+    padded read back ("the point under a vignette took [0.5316, ...], the picture below the points layer is [0.3513, ...]").
+  - `sampleRegion`'s `pad` was whole image pixels and the margin was drawn back at `Math.round((pb[0] - x0) * scale)`, so at a scale below 1
+    `flatten({ box, maxSize, pad })` was the box moved by half a pixel of the canvas (88 levels at 0.5). The margin is whole pixels of the
+    canvas handed back now, clamped to the image in whole pixels, and drawn back at whole pixels; at scale 1 it is the margin it was. Gate:
+    `commands_test.py` `selection` (both backends): three boxes at 0.5, 0.37 and 0.3, one clamped at the corner, equal the unpadded box
+    (0 levels). Red: the old margin ("differs from the unpadded box by 88 levels on 348 bytes").
+  - A level-0 box read (a point add, the probe, a plugin's box, the wand's fine boxes) was a third level in a pixels object's two-level
+    region LRU and pushed out the screen's level after the film panel's read, so the next frame rebuilt the screen's whole region per store.
+    A read that is not for the screen now uses a display region at its level when that holds the range, and otherwise one region of its own
+    (`"sample"`), never a display one. Measured at 4000 x 3000 at fit (screen level 1, a levels filter layer, 6 stores; screen, panel
+    flatten, point add, screen, five times, two instances per tree): the point add 77-124 ms with 6 screen-level rebuilds (56-73 ms of them)
+    → 16-20 ms and none. The wand at 15000 x 10000 no longer rebuilds the screen's level-3 regions either (4 of its 12 rebuilds before).
+    Gate: `pixels_test.js` (8b): a sampled box at level 0 after two display reads leaves both display regions in place, has its own region,
+    a sampled read inside the screen's region uses it, a write marks the sampled region's cell, `releaseDisplay` gives it back. Red: the
+    shared slot back ("a sampled box at level 0 pushed out a display region: [3,0]").
+  - `readBox`'s fallback kept its whole flatten in `flatCache` after the composite changed (572 MB of GPU canvas at 15000 x 10000 until the
+    next whole flatten). The upload cache's version bump lets a `flatCache` of an older version go. Gate: `plugin_action_and_undo` (both
+    backends): the flatten *Selection to new layer* over the text layer made is not held once the copy it added changed the composite. Red
+    on both backends ("the whole flatten of the box read over the text is still kept after the composite changed").
+  - The (b3) gate compared the box pass with a pass over the whole layer, which goes through `layerMatchedPart` as well, so a part matched or
+    placed wrong moved both alike (a one-pixel shift of the part stayed green, and so did the whole editor and composite gates). The step
+    now also compares the box at 1:1 with the screen at 1:1 on Canvas 2D, which draws the whole layer matched with the same statistics:
+    0 levels on both backends. Red: the part one pixel lower ("differs from the screen at 1:1 by 207 levels on 636 bytes", 205 on canvases).
+  - `CHANGELOG.md`: the point and sample plugin bullets say their numbers are tile mode's, and the point bullet says a filter that depends on
+    the whole picture still flattens what is below, and that the point's effect stays in place when zoomed in.
+  - `bucket in a 1000 px selection` read 270-348 [425-554] ms before and 346-593 [490-892] after in the perf runs. Traced (15000 x 10000,
+    both trees in one script): the bucket builds the same 8 regions on both (L2 and L0 of 4 stores); a bucket right after a whole flatten
+    and a change costs 612-671 ms on this tree against 241-281 without, and 793-1182 against 272-407 on the tree before (which also rebuilt
+    the screen's L3 there). The row sits after the point add under the look, which is a whole flatten again; the bucket itself did not get
+    slower. The second pair of perf runs and the traces ran while the user's own ComfyUI job held the card.
 
 **(c2) The holes in region passes** (`inpaint_canvas.js`, `tools/editor_test.py`, `tools/perf_test.py`): region passes that still made
 a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each.
@@ -2616,6 +2662,11 @@ a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each
   - Mutations, each red: the tile branch off ("the screen made the filter mask's display mirror"); the mask's transform without the
     pass's x ("the screen with the masked filter layer differs from the flatten by 203 levels on 226800 bytes"); the stroke through
     `maskWithStroke` again ("made a full-size preview or the mask's mirror: maskPreview true, mirror true").
+  - Review fix (10def79): `_filterMaskView` was never given back (`releaseCaches` did not list it, so Free VRAM and the background-tab
+    memory watch left it for the tab's life), and `memoryReport` counted none of `_passView`, `_passMaskView`, `_filterMaskView`. Both lists
+    have them now; the step checks after the stroke that the kept scratch is counted and that `releaseCaches({ deep, mirrors })` drops all
+    three. Red: the release list without it ("releaseCaches kept the pass scratches [_filterMaskView]"), the count without them
+    ("memoryReport does not count the pass scratches").
 - **(c2d) A move, scale or smudge gesture in a region pass.** `drawLayer` skipped the tile branch for any gesture on the layer, so a
   transform-tool move or scale, a text layer's drag and a smudge drew `layerPixels`: the layer's mirror, and a GPU copy of it at 1:1
   or a Skia pyramid at fit, on the first frame of every drag after a write (the drag keeps the screen on Canvas 2D). **Built**: only
@@ -2671,6 +2722,14 @@ a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each
   `closed_tabs_are_collected` (the last of four closed tabs alive after the collection) and `commands_test.py` on the known hang
   after every step printed `[ok]`, and `c6c1a-canvas2` (editor, commands) the same two; `c6c1a-canvas3` (editor) and `-canvas4`
   (commands) passed with no change in between, and the full editor test on the canvas backend passed on bc3814d and on (c1) alike.
+- **Runs after the review fixes** (10def79, fresh instances, strict, each on the first try): `c6c1-final-tiles` and `c6c1-final-canvas`
+  with the same fifteen gates ALL PASS, `c6c1-final-copy` ALL PASS, `c6c1-final-perf` PASS with the ComfyUI queue empty before and after.
+  Its rows against `c6c1-perf`: the point add under the look 264 → 5401 ms (the whole flatten below, above), without the filter layers
+  114; `mean_color` with the look 4339 → 4303, plain 197 → 62; the bucket in a selection 270 [425] → 480 [852] (above); the (c2) rows
+  unchanged within noise (the wand with the masked layer 338 [538], the eyedropper 34 [6], the wand in its square 138 [327], the masked pan
+  3.9 [11.3], peek 50 at fit and 17 at 1:1, the move's first frame 0.2 ms, no mirror); the footer the same (1 mirror of 16 MB, 5 region
+  canvases of 46.1 MB, 5.3 MB of pyramids). Two more pairs of perf runs on the tree before and this one, alternating: see the review fixes
+  under (c1).
 
 ### C7. Both hosts, the flag, the release (3 days)
 

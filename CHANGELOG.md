@@ -66,13 +66,17 @@ the section for its version; `docs/` and the commit history hold the technical d
   change below the points it could be the colour from before that change — or else from the whole
   flattened picture, with the points' own adjustment and the layers above them in it. It is now the
   colour of the picture under the points layer where you place or move the point, read from a small
-  area around it instead of the whole picture: on a 15000 × 10000 picture with a film look, adding a
-  point took 5 s and takes a quarter of a second. Points you placed before keep their colour.
+  area around it instead of the whole picture: in tile mode, on a 15000 × 10000 picture, adding a
+  point takes about a tenth of a second. Under a filter whose result depends on the whole picture (a
+  film look's halation, a vignette, a frame) the picture below the points is still flattened, as
+  before, so that the colour is right there too. Points you placed before keep their colour. And a
+  point's effect now stays where the point is when you zoom in: a zoomed-in view showed it shifted
+  by the distance of the view's corner from the picture's (exports were right).
 - **The sample plugin reads only what it needs.** Its mean colour of a selection and *Selection to
   new layer* read the selection's area of the picture, and its colour probe a square of 256 px
-  around the cursor, instead of the whole flattened picture: 2.6 s to 0.15–0.3 s for a 1000 px
-  selection on a 15000 × 10000 picture. With a filter that reads the whole picture (a film look's
-  halation, a vignette) they still flatten it, as before.
+  around the cursor, instead of the whole flattened picture: in tile mode 2.6 s to 0.06–0.3 s for a
+  1000 px selection on a 15000 × 10000 picture. With a filter that reads the whole picture (a film
+  look's halation, a vignette) they still flatten it, as before.
 
 ## 0.1.12 — 2026-09-14
 
