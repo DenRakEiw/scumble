@@ -488,6 +488,17 @@ BENCH = """
         rect();
         out.wand_masked = await op(() => ed.wandSelect(977, 613, "replace"));
         out.wand_masked_mb = [mirrorMB(masked.px, masked.maskPx), masked._masked ? 1 : 0];
+        // the eyedropper and the wand with the tool bar's Sample set to the masked layer (the wand inside one of its squares)
+        await clean();
+        const fillWas = ed.fillOpts;
+        ed.activeLayerId = masked.id;
+        ed.fillOpts = { tolerance: 32, contiguous: true, sample: "layer" };
+        out.pick_layer = await op(() => ed.pickColor(1100, 650));
+        out.pick_layer_mb = [mirrorMB(masked.px, masked.maskPx), masked._masked ? 1 : 0];
+        rect();
+        out.wand_layer = await op(() => ed.wandSelect(1100, 650, "replace"));
+        out.wand_layer_mb = [mirrorMB(masked.px, masked.maskPx), masked._masked ? 1 : 0];
+        ed.fillOpts = fillWas;
         // pan at fit on the Canvas 2D path with the film look masked to the left half
         const fxl = ed.layers.find((l) => l.kind === "filter");
         if (fxl) {
@@ -607,6 +618,10 @@ OP_ROWS = [
     ("bucket in a 1000 px selection", "bucket_sel"),
     ("magic wand, a masked layer", "wand_masked"),
     ("  mirrors made MB [_masked]", "wand_masked_mb"),
+    ("eyedropper, Sample: the masked layer", "pick_layer"),
+    ("  mirrors made MB [_masked]", "pick_layer_mb"),
+    ("magic wand, Sample: the masked layer", "wand_layer"),
+    ("  mirrors made MB [_masked]", "wand_layer_mb"),
 ]
 
 # C6 (c2): frames, [median or first, max of the rest]; and the display mirrors each left behind

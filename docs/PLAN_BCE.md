@@ -2559,6 +2559,8 @@ a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each
   | peek at fit, first frame | 558 ms; 572 MB |
   | peek at 1:1, first frame | 202 ms; 572 MB |
   | move drag of a full-size paint layer at fit, first frame [worst of the next 5] | 425 [11] ms; 572 MB |
+  | eyedropper, Sample: the masked layer (first pick) | 1044 [1042] ms; 1144 MB and `_masked` |
+  | magic wand inside a square of that layer, Sample: the layer | 192 [469] ms (the eyedropper's mirrors still there) |
 
 - **(c2a) A masked tile layer, or a layer a live stroke runs on, outside the screen's stroke.** `drawLayer` sent every region pass
   through `layerRegionView`, the screen's scratch for a live stroke (`strokeView`, its signature, the gesture's dirty box). A pass
@@ -2582,6 +2584,20 @@ a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each
     the gesture's dab box ("... dirty false"). A branch that cleared the scratch where `drawTilesInto` of the mask returned false
     stayed green under its mutation: `regionCanvas` is null only outside the mask's pixels, where the layer drew nothing either, so
     the branch was taken out.
+- **(c2b) The active layer as the sample source** (`sampleRegion("layer")`: the eyedropper, the wand and the bucket with the tool
+  bar's Sample set to the layer). It drew `displaySource(layerPixels(l, true))`: the layer's mirror, or `_masked` and the layer's
+  and the mask's mirrors, and a Skia pyramid below half size. **Built**: on tiles, with no live stroke and a mask on the layer's
+  grid (or none), the layer's region canvas at the pass's level (`drawPixelsInto`) and then the mask's, destination-in (the canvas
+  holds this layer only). The canvas backend keeps its path. **Measured** on the same document, the masked Paint 3 active, released
+  caches first: the eyedropper 1044 [1042] ms and 1144 MB plus `_masked` → 19 [12] ms and none; the wand inside one of the layer's
+  squares 192 [469] ms (the eyedropper's mirrors still there) → 159 [332] ms and none.
+  - Gate: `wand_and_bucket_flood_a_region_not_the_image` (both backends) paints two discs joined by a one-pixel line into its
+    layer and masks the left half: the eyedropper picks the disc's colour inside the mask and reports "Transparent" outside it;
+    the wand selects exactly the flood of the layer's masked pixels (784,704 px, 0 wrong: across the line to the mask's edge and
+    no further); a 1900 x 700 box read at 1:1 equals the masked pixels within 2 levels (measured 1, the discs' anti-aliased edge
+    through a premultiplied canvas); on tiles no mirror of the layer or its mask and no `_masked`.
+  - Mutations, each red: the tile branch off ("the layer as the sample source made a display copy: px, mask, masked"); no
+    destination-in ("the eyedropper on the masked layer: ... outsideStatus: Colour #20a040 picked").
 
 ### C7. Both hosts, the flag, the release (3 days)
 

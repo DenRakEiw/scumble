@@ -1632,6 +1632,51 @@ ed.fillOpts = { tolerance: 32, contiguous: true, sample: "layer" };
 await ed.wandSelect(100, 100, "replace");
 out.layerSample = ed.getBounds();
 if (JSON.stringify(out.layerSample) !== JSON.stringify([0, 0, W, H])) throw new Error("layer sample: " + JSON.stringify(out.layerSample));
+// C6 (c2b): the active layer as the sample source, painted and masked: read from its own tiles and its mask's, not from a
+// display mirror (or `_masked` and two mirrors, and a pyramid for the coarse pass). The layer gets the blobs, the mask the
+// left half; the eyedropper, the wand and a direct box read against the layer's own pixels with the mask applied by hand.
+{
+    const P = await import("./editor/inpaint_pixels.js");
+    const lc = document.createElement("canvas"); lc.width = W; lc.height = H;
+    const lx = lc.getContext("2d");
+    lx.fillStyle = "#20a040"; lx.beginPath(); lx.arc(1500, 1500, 500, 0, Math.PI * 2); lx.fill();
+    lx.beginPath(); lx.arc(3500, 1500, 500, 0, Math.PI * 2); lx.fill();
+    lx.fillRect(1500, 1500, 2000, 1);
+    layer.px.writeRect(lx.getImageData(0, 0, W, H), 0, 0);
+    ed.markLayerChanged(layer);
+    layer.maskPx = ed.pixels.Mask.empty(W, H);
+    layer.maskPx.fill([0, 0, 2500, H], "#ffffff");
+    ed.markMaskChanged(layer);
+    ed.releaseCaches({ mirrors: true });
+    ed.fillOpts = { tolerance: 32, contiguous: true, sample: "layer" };
+    ed.pickColor(1500, 1400);
+    const inside = ed.color, insideStatus = ed.status;
+    ed.pickColor(3500, 1400);
+    const outsideStatus = ed.status;
+    if (inside !== "#20a040" || !/Transparent/.test(outsideStatus)) throw new Error("the eyedropper on the masked layer: " + JSON.stringify({ inside, insideStatus, outsideStatus }));
+    await ed.wandSelect(1500, 1400, "replace");
+    // the reference: the layer's pixels, zero where the mask hides them, flooded over the whole image
+    const d = layer.px.readRect(0, 0, W, H).data, md = layer.maskPx.readRect(0, 0, W, H).data;
+    for (let i = 3; i < d.length; i += 4) if (md[i] < 128) { d[i - 3] = 0; d[i - 2] = 0; d[i - 1] = 0; d[i] = 0; }
+    const lref = floodMask(d, W, H, 1500, 1400, 32, true);
+    const lsel = ed.sel.readRect(0, 0, W, H).data;
+    let lwrong = 0, lcount = 0;
+    for (let q = 0, i = 3; q < lref.length; q++, i += 4) { const on = lsel[i] > 127 ? 1 : 0; lcount += on; if (on !== lref[q]) lwrong++; }
+    const box = [1000, 1000, 2900, 1700];
+    const direct = ed.sampleRegion("layer", box, 1).getContext("2d").getImageData(0, 0, box[2] - box[0], box[3] - box[1]).data;
+    let dmax = 0;
+    for (let y = box[1]; y < box[3]; y++) for (let x = box[0]; x < box[2]; x++) {
+        const i = (y * W + x) * 4, j = ((y - box[1]) * (box[2] - box[0]) + (x - box[0])) * 4;
+        for (let k = 0; k < 4; k++) { const df = Math.abs(direct[j + k] - d[i + k]); if (df > dmax) dmax = df; }
+    }
+    const made = ed.tileMode ? { px: !!P.displayCanvasIfMade(layer.px), mask: !!P.displayCanvasIfMade(layer.maskPx), masked: !!layer._masked } : null;
+    out.layerSampleMasked = { inside, lcount, lwrong, dmax, made };
+    if (lwrong) throw new Error("the wand on the masked layer differs from the flood of its masked pixels in " + lwrong + " pixels (" + lcount + " selected)");
+    if (dmax > 2) throw new Error("a box of the masked layer as the sample source differs from its masked pixels by " + dmax + " levels");   // the anti-aliased edge of the discs through a premultiplied canvas
+    if (made && (made.px || made.mask || made.masked)) throw new Error("the layer as the sample source made a display copy: " + JSON.stringify(made));
+    layer.maskPx = null;
+    ed.markLayerChanged(layer);
+}
 ed.clearSelection();
 await run("remove_layer", { layer: layer.id, doc: window.__t });
 return out;

@@ -4698,6 +4698,21 @@ class InpaintEditor {
         ctx.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
         if (source === "layer") {
             const l = this.activeLayer();
+            if (l && l.kind !== "filter" && l.px && isTilePixels(l.px) && !this.liveStrokeOn(l) && (!l.maskPx || this.tileMaskOf(l))) {
+                // C6 (c2b): the active layer on tiles from its own tiles at the pass's level, and its mask from the mask's
+                // (the canvas holds this layer only, so a whole-canvas destination-in is the mask). layerPixels gave the
+                // layer's display mirror, or `_masked` and two mirrors, and a Skia pyramid of it below half size: 0.57 to
+                // 1.86 GB at 15000 x 10000 for an eyedropper click or a wand with the tool bar's Sample set to the layer.
+                const vp = { x: x0, y: y0, w: x1 - x0, h: y1 - y0, sx: scale, sy: scale, sample: true };
+                ctx.imageSmoothingEnabled = true;
+                this.drawPixelsInto(ctx, l, l.px, vp);
+                if (l.maskPx) {
+                    ctx.globalCompositeOperation = "destination-in";
+                    this.drawPixelsInto(ctx, l, l.maskPx, vp);
+                    ctx.globalCompositeOperation = "source-over";
+                }
+                return c;
+            }
             if (l && l.kind !== "filter" && l.px) {
                 const px = this.layerPixels(l, true);
                 ctx.imageSmoothingEnabled = true;
