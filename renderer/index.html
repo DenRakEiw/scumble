@@ -117,9 +117,9 @@
       <p id="set-tiles-note" class="shell-help"></p>
       <p class="shell-help">The tile engine keeps layers, masks and the selection in small tiles and draws only the tiles the view shows, so a very large picture needs far less graphics memory; the pixels are kept in the window's own process instead. Off, every layer is one canvas as large as the picture, as before 0.1.13. A change takes effect after a restart; <code>--tiles</code> / <code>--no-tiles</code> on the command line and the environment variable <code>SCUMBLE_TILES</code> win over this box.</p>
       <p id="set-gpu" class="shell-help"></p>
-      <div class="shell-row"><label for="set-gpu-limit">Release the caches of background tabs above</label><input id="set-gpu-limit" type="number" min="0" step="256" style="width:6em"><span class="shell-note">MB in the GPU process (0 = never)</span></div>
-      <div class="shell-row"><label for="set-card-min">Keep at least</label><input id="set-card-min" type="number" min="0" step="256" style="width:6em"><span class="shell-note">MB of the graphics card free (0 = ignore the card); above that the caches go, the front tab's textures too</span></div>
-      <div class="shell-row"><label for="set-atlas">Tile atlas</label><input id="set-atlas" type="number" min="16" step="64" style="width:6em"><span class="shell-note">MB of graphics memory for the tiles the screen shows; above it the pages drawn longest ago are dropped and uploaded again when they are needed</span></div>
+      <div class="shell-row"><label for="set-gpu-limit">Release the caches of background tabs above</label><input id="set-gpu-limit" type="number" min="0" step="1" style="width:6em"><span class="shell-note">MB in the GPU process (0 = never)</span></div>
+      <div class="shell-row"><label for="set-card-min">Keep at least</label><input id="set-card-min" type="number" min="0" step="1" style="width:6em"><span class="shell-note">MB of the graphics card free (0 = ignore the card); above that the caches go, the front tab's textures too</span></div>
+      <div class="shell-row"><label for="set-atlas">Tile atlas</label><input id="set-atlas" type="number" min="16" step="1" style="width:6em"><span class="shell-note">MB of graphics memory for the tiles the screen shows; above it the pages drawn longest ago are dropped and uploaded again when they are needed</span></div>
       <p id="set-gpu-mem" class="shell-help"></p>
     </section>
     <section>

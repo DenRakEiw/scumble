@@ -795,8 +795,9 @@ export async function openGenerateNew(editor) {
     genFillUpsample();
     genFillTemplates();
     ui.genPrompt.value = genEditor.promptText || "";
-    ui.genWidth.value = genEditor.width || 1024;
-    ui.genHeight.value = genEditor.height || 1024;
+    // the boxes take 64 to 8192 (genSize clamps to that too): a larger document shows what will be asked for
+    ui.genWidth.value = Math.max(64, Math.min(8192, genEditor.width || 1024));
+    ui.genHeight.value = Math.max(64, Math.min(8192, genEditor.height || 1024));
     ui.genSeed.value = genEditor.genSettings.seed;
     ui.genSeedRandom.checked = !!genEditor.genSettings.seedRandom;
     ui.genState.textContent = "";
@@ -1275,9 +1276,13 @@ async function openSettings() {
     ui.setPruneNote.textContent = "";
     ui.recipeNoteSet.textContent = "";
     ui.setGpu.textContent = glFiltersAvailable() ? "Filter layers run on the GPU (WebGL2); the CPU code is the fallback." : "WebGL2 is not available here: filter layers run on the CPU.";
-    ui.setGpuLimit.value = (settings.memory && settings.memory.gpuLimitMB) != null ? settings.memory.gpuLimitMB : 3072;
-    ui.setCardMin.value = (settings.memory && settings.memory.cardMinFreeMB) != null ? settings.memory.cardMinFreeMB : 2048;
-    ui.setAtlas.value = (settings.memory && settings.memory.atlasMB) != null ? settings.memory.atlasMB : 512;
+    // the same whole numbers the change handlers below write, so a stored value (typed by hand, or one the
+    // browser suggested while a field still had coarser steps) always passes the form's own validation:
+    // an invalid number input keeps the dialog's Close from submitting
+    const mem = settings.memory || {};
+    ui.setGpuLimit.value = wholeMB(mem.gpuLimitMB, 0, 3072);
+    ui.setCardMin.value = wholeMB(mem.cardMinFreeMB, 0, 2048);
+    ui.setAtlas.value = wholeMB(mem.atlasMB, 16, 512);
     await renderTileMode();
     try {
         const mb = await gpuMemoryMB();
@@ -1352,6 +1357,11 @@ ui.updateCheck.addEventListener("click", async () => { renderUpdate(await window
 ui.updateInstall.addEventListener("click", () => window.scumble.updates.install());
 ui.updateBar.addEventListener("click", () => window.scumble.updates.install());
 ui.updateAuto.addEventListener("change", async () => { settings = await window.scumble.settings.set({ updates: { ...(settings.updates || {}), check: ui.updateAuto.checked } }); });
+/** A memory row's value as the row shows and stores it: a whole number of MB, at least `min`. */
+function wholeMB(v, min, fallback) {
+    return v == null || v === "" || !Number.isFinite(Number(v)) ? fallback : Math.max(min, Math.round(Number(v)));
+}
+
 ui.setGpuLimit.addEventListener("change", async () => {
     const v = Math.max(0, Math.round(Number(ui.setGpuLimit.value) || 0));
     ui.setGpuLimit.value = v;

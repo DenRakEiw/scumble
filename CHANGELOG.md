@@ -11,6 +11,11 @@ the section for its version; `docs/` and the commit history hold the technical d
   appeared when you let go.
   The stroke itself was always painted correctly; only the screen was not redrawn during it. It
   happened with the tile engine on and off, at every zoom and on every picture size.
+- **The Settings dialog closes again.** In 0.1.13 *Close* could answer "enter a valid value, the
+  nearest are 464 and 528" and stay open: the *Tile atlas* box under *Settings › Rendering*
+  did not accept its own default of 512 MB. The three memory boxes there now take any whole
+  number of MB, including a value an earlier version stored, and *Generate a new image* no
+  longer shows a width or height above the 8192 px it asks for on a very wide picture.
 
 ## 0.1.13 — 2026-09-15
 

@@ -27,7 +27,8 @@ border or an undo of whole tiles leaves no neighbour's old edge line in the atla
 pages of pixels the document replaced and holds nothing alive after a collection.
 C7, the default: the tile engine is on unless the command line, SCUMBLE_TILES or the Settings › Rendering
 row chose otherwise (the precedence in plain Node, tools/tilemode_test.js), and that row writes the setting
-and names the source.
+and names the source. 0.1.14: the Settings form is valid with its defaults and with every value its memory rows
+write, so Close closes it (0.1.13's Tile atlas box refused its own 512).
 C6 (b2): mip chains of the selection that land from the mips worker run no colour match and no filter pass again, and
 the chains of a layer below a matched one and a filter layer do, once, and the screen ends exact either way; a layer
 above them or the base replaced under them follows the same rule, a flatten after the landings keeps nothing a sampled
@@ -75,6 +76,98 @@ return 1;
         if r["stillOpen"]:
             raise Exception("%s: still open after a real Escape (%s)" % (name, json.dumps(r)))
     return out
+
+
+SETTINGS_FORM = r"""
+const shell = await import("./shell.js");
+const dlg = document.getElementById("shell-settings");
+const form = dlg.querySelector("form");
+const fields = { gpuLimitMB: document.getElementById("set-gpu-limit"), cardMinFreeMB: document.getElementById("set-card-min"), atlasMB: document.getElementById("set-atlas") };
+const invalid = (root) => Array.from(root.querySelectorAll("input, select, textarea")).filter((e) => !e.checkValidity()).map((e) => ({ id: e.id || e.name || e.type, value: e.value, min: e.min, step: e.step, max: e.max, message: e.validationMessage }));
+const saved = (await window.scumble.settings.get()).memory || null;
+const shipped = __SHIPPED__;
+const out = { shipped, rows: [] };
+const reopen = async () => { if (dlg.open) dlg.close(); await shell.openSettings(); await wait(250); };
+try {
+    // the shipped defaults, stored as they are and with no memory entry at all (the rows' own fallbacks)
+    for (const [label, memory] of [["defaults stored", shipped], ["no entry", null]]) {
+        await window.scumble.settings.set({ memory });
+        await reopen();
+        const bad = invalid(form);
+        out.rows.push({ label, values: Object.fromEntries(Object.entries(fields).map(([k, e]) => [k, e.value])), bad });
+        if (bad.length || !form.checkValidity()) throw new Error("Settings form invalid with " + label + ": " + JSON.stringify(bad));
+        for (const [k, e] of Object.entries(fields)) if (+e.value !== shipped[k]) throw new Error(k + " shows " + e.value + ", the default is " + shipped[k]);
+    }
+    // what the rows write themselves: whatever is typed, rounded and clamped by the change handlers
+    for (const [k, e] of Object.entries(fields)) {
+        for (const typed of ["1000", "100", "513", "3000.4", "-5", "7", "464", "528"]) {
+            e.value = typed;
+            e.dispatchEvent(new Event("change", { bubbles: true }));
+            await wait(80);
+            const stored = ((await window.scumble.settings.get()).memory || {})[k];
+            const bad = invalid(form);
+            if (bad.length) throw new Error(k + ": typed " + typed + ", the row wrote " + stored + " and the form reports " + JSON.stringify(bad));
+            if (String(stored) !== e.value) throw new Error(k + ": typed " + typed + ", the row shows " + e.value + " but stored " + stored);
+        }
+    }
+    // values an earlier version may have stored: the browser's own suggestion for the old atlas field, a hand-edited fraction
+    await window.scumble.settings.set({ memory: { gpuLimitMB: 1000.5, cardMinFreeMB: 3000, atlasMB: 464 } });
+    await reopen();
+    out.rows.push({ label: "stored by hand", values: Object.fromEntries(Object.entries(fields).map(([k, e]) => [k, e.value])), bad: invalid(form) });
+    if (!form.checkValidity()) throw new Error("Settings form invalid with stored values: " + JSON.stringify(invalid(form)));
+    // and the dialog really closes through its Close button (a submit, which the browser validates)
+    await window.scumble.settings.set({ memory: shipped });
+    await reopen();
+    form.requestSubmit(document.getElementById("set-close"));
+    await wait(200);
+    out.closed = !dlg.open;
+    if (dlg.open) throw new Error("Close did not close the Settings dialog: " + JSON.stringify(invalid(form)));
+    // Generate new: its size boxes take 64..8192, a wider document shows the clamped size
+    const d = await run("new_document");
+    try {
+        await run("new_canvas", { doc: d.id, width: 9000, height: 64 });
+        await host.shell.openGenerateNew(ednow(d.id));
+        await wait(200);
+        const gen = document.getElementById("gen-dialog");
+        const badGen = invalid(gen.querySelector("form"));
+        out.generate = { width: document.getElementById("gen-width").value, bad: badGen };
+        gen.close();
+        if (badGen.length) throw new Error("Generate new form invalid: " + JSON.stringify(badGen));
+    } finally {
+        await run("close_document", { doc: d.id, force: true });
+    }
+} finally {
+    if (dlg.open) dlg.close();
+    // put the rows back the way the handlers do, so the live atlas budget follows too
+    await window.scumble.settings.set({ memory: saved });
+    await shell.openSettings(); await wait(200);
+    for (const [k, e] of Object.entries(fields)) { if (saved && saved[k] != null) { e.value = String(saved[k]); e.dispatchEvent(new Event("change", { bubbles: true })); } }
+    await wait(150);
+    await window.scumble.settings.set({ memory: saved });
+    dlg.close();
+    host.shell.activate(ednow(window.__t) || host.editor);
+}
+return out;
+"""
+
+
+async def settings_form_accepts_its_own_values(c):
+    """0.1.13's Settings dialog would not close: the Tile atlas field had min 16 and step 64, so its own default 512
+    was no valid value ("nearest 464 and 528") and the browser refused the form's submit. Every number row of the
+    dialog is checked with the shipped defaults (read from electron/main/settings.js), with no memory entry, with
+    every value its change handler writes for a typed number, and with values an earlier version may have stored;
+    then Close has to close the dialog. Generate new's size boxes are checked on a document wider than they take."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "..", "electron", "main", "settings.js"), encoding="utf-8") as f:
+        src = f.read()
+    import re
+    m = re.search(r"memory:\s*\{([^}]*)\}", src)
+    if not m:
+        raise Exception("no memory defaults in electron/main/settings.js")
+    shipped = {k: int(v) for k, v in re.findall(r"(\w+):\s*(\d+)", m.group(1))}
+    if set(shipped) != {"gpuLimitMB", "cardMinFreeMB", "atlasMB"}:
+        raise Exception("the memory defaults changed shape, update this step: %s" % shipped)
+    return await c.eval(PRE % SETTINGS_FORM.replace("__SHIPPED__", json.dumps(shipped)), timeout=120)
 
 
 LIVE_SETUP = """
@@ -1982,6 +2075,7 @@ await run("remove_layer", { layer: L.id, doc: window.__t });
 return out;
 """),
     ("escape_closes_the_shell_dialogs", lambda c: escape_closes_the_shell_dialogs(c)),
+    ("settings_form_accepts_its_own_values", lambda c: settings_form_accepts_its_own_values(c)),
     ("svg_import_rasterises_on_the_way_in", lambda c: svg_import_rasterises_on_the_way_in(c)),
     ("selection_undo_copies_its_extent_and_bounds_come_by_strips", """
 // Phase A item 1 (docs/PLAN_TILES.md): a selection undo step is a copy of the selection's extent
