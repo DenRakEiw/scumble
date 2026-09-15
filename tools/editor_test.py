@@ -2883,6 +2883,85 @@ if (ed.tileMode && (during.maskPreview || during.mirror)) throw new Error("the m
 await run("close_document", { doc: d.id, force: true });
 return out;
 """),
+    ("peek_shows_the_base_from_its_tiles", """
+// C6 (c2f): the peek (the button or holding the backslash) draws the base alone as the view's composite, from the base's tiles:
+// no display mirror of the base, no GPU copy of one and no pyramid. Both backends, on the GPU path and on Canvas 2D.
+const P = await import("./editor/inpaint_pixels.js");
+const T = await import("./editor/inpaint_tiles.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 3000, height: 2000, doc: d.id });
+const W = 3000, H = 2000;
+const mkBase = (hue) => {
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, `hsl(${hue},60%,30%)`); g.addColorStop(1, `hsl(${hue + 60},60%,60%)`);
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 50; i++) { x.fillStyle = `hsl(${(i * 53 + hue) % 360},70%,50%)`; x.fillRect((i * 331) % (W - 120), (i * 173) % (H - 90), 120, 90); }
+    Object.defineProperty(c, "naturalWidth", { value: W }); Object.defineProperty(c, "naturalHeight", { value: H });
+    return c;
+};
+await ed.setBase({ filename: "peek.png", subfolder: "inpaint_canvas", type: "input" }, mkBase(200), { keepLayers: false });
+const L = ed.addPaintLayer();
+L.px.fill([1000, 600, 2000, 1400], "#ff00ff");
+ed.markLayerChanged(L);
+ed.renderLayers();
+ed.setTool("rect");
+ed.hover = null;
+ed.fitView();
+const g = ed.canvas.getContext("2d");
+const [cx, cy] = ed.imageToScreen(1500, 1000).map(Math.round);
+const [ax, ay] = ed.imageToScreen(300, 200).map(Math.round), [bx, by] = ed.imageToScreen(2700, 1800).map(Math.round);
+const shot = () => g.getImageData(ax, ay, bx - ax, by - ay).data;
+const px = () => Array.from(g.getImageData(cx, cy, 1, 1).data.slice(0, 3));
+const frame = async () => { ed.hover = null; ed.sceneSig = null; ed.draw(); await ed.mipsSettled(); await wait(40); ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40); };
+const diff = (a, b) => { let worst = 0, n = 0; for (let i = 0; i < a.length; i++) { const q = Math.abs(a[i] - b[i]); if (q) n++; if (q > worst) worst = q; } return [worst, n]; };
+const out = { tiles: ed.tileMode, paths: {} };
+for (const path of ["gpu", "2d"]) {
+    const compOff = ed.compositorOff;
+    ed.compositorOff = path === "2d";
+    ed.releaseCaches({ mirrors: true });
+    await frame();
+    const layerColour = px();
+    ed.peekBase = true;
+    await frame();
+    const peek = shot(), peekColour = px();
+    const mirror = ed.tileMode ? !!P.displayCanvasIfMade(ed._basePx) : null;
+    const pyramid = ed.tileMode ? !!(P.displayCanvasIfMade(ed._basePx) && ed.pyramids.get(P.displayCanvasIfMade(ed._basePx))) : null;
+    ed.peekBase = false;
+    L.visible = false;
+    await frame();
+    const baseOnly = shot();
+    L.visible = true;
+    const [worst, n] = diff(peek, baseOnly);
+    out.paths[path] = { layerColour, peekColour, mirror, pyramid, worst, differing: n, gl: ed.glCompositeUsable({ baseOnly: true }) };
+    ed.compositorOff = compOff;
+    if (layerColour[0] < 200 || layerColour[1] > 60) throw new Error(path + ": the layer is not on the screen without the peek: " + layerColour);
+    if (peekColour[0] > 200 && peekColour[1] < 60) throw new Error(path + ": the peek still shows the layer: " + peekColour);
+    // the canvas backend keeps its peek (the base's canvas through its pyramid, not the view's composite): reported, not compared
+    if (ed.tileMode && worst > 2) throw new Error(path + ": the peek differs from the view with every layer hidden by " + worst + " levels on " + n + " bytes");
+    if (ed.tileMode && (mirror || pyramid)) throw new Error(path + ": the peek made the base's display mirror or a pyramid of it");
+}
+// right after a new base, on Canvas 2D: the peek's frame asks the worker for the base's chains, it does not build them
+if (ed.tileMode) {
+    const compOff = ed.compositorOff;
+    ed.compositorOff = true;
+    await ed.setBaseFromCanvas(mkBase(20), { keepLayers: true });
+    await wait(30);
+    T.chainStats(true);
+    ed.peekBase = true;
+    ed.hover = null; ed.sceneSig = null; ed.draw();
+    const cs = T.chainStats();
+    out.newBase = { main: cs.main, requested: cs.requested };
+    ed.peekBase = false;
+    await ed.mipsSettled();
+    ed.compositorOff = compOff;
+    if (cs.main > T.CHAIN_SYNC_BUDGET) throw new Error("the peek after a new base built " + cs.main + " chains itself");
+}
+await run("close_document", { doc: d.id, force: true });
+return out;
+"""),
     ("a_new_mask_and_a_neighbours_write_reach_the_screen", """
 // C6 (a), on the screen and on both backends (on canvases there is no atlas and no region view, and the rows
 // have to be right all the same).

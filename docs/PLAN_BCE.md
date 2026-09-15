@@ -2645,6 +2645,22 @@ a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each
     the layer or its mask (the canvas backend: 0 thumbnail calls and its previews, as before).
   - Mutation, red: the live branch back ("paint_clipped: the layer's row drawn during the stroke did not come from its thumbnail:
     thumbs 0, previews [true, false, false]").
+- **(c2f) The peek as a base-only region pass.** `drawSceneImage` drew the whole base through `displaySource(basePx, scale, true)`
+  while peeking: the base's display mirror plus a GPU copy of it at 0.5 and up, or plus a Skia pyramid built one level per frame
+  below (`glCompositeUsable` refused the peek, so the whole image went through Canvas 2D). **Built**: on tiles the peek is
+  `drawViewComposite(ctx, { baseOnly: true })`: the GPU compositor with the base's spec alone (`glCompositeUsable` takes a base-only
+  pass whatever the layers are), or the Canvas 2D region pass with `drawLayersInto`'s layer loop skipped. It is a screen pass, so a
+  base whose chains are in the worker shows its stale or coarse picture until they land, and `watchChains` draws again. The canvas
+  backend keeps its peek. **After**: the first frame of a peek at fit 558 ms → 60 ms, at 1:1 202 → 18 ms, and no mirror (572 MB
+  before). The picture on tiles is now the normal view's picture of the base: the old peek at fit came from Skia's pyramid and was up
+  to 61-62 levels from the view's mips on this step's textured base (the canvas backend's peek still is, measured and reported).
+  - Gate: new `peek_shows_the_base_from_its_tiles` (both backends, the GPU path and Canvas 2D): a 3000 x 2000 textured base under an
+    opaque magenta paint layer, at fit, released caches first. Without the peek the screen at the layer's centre is magenta, with it
+    the base's colour; on tiles the peek equals the normal view with the layer hidden (0 levels on both paths) and made no mirror and
+    no pyramid of the base. Right after a new base (`setBaseFromCanvas`, layers kept) on Canvas 2D the peek's frame built no chain
+    itself (0; the new base's frame had asked for them already).
+  - Mutations, each red: the old `displaySource` draw ("gpu: the peek differs from the view with every layer hidden by 61 levels on
+    709781 bytes", before the mirror check); the layers drawn in the peek ("gpu: the peek still shows the layer: 255,0,255").
 
 ### C7. Both hosts, the flag, the release (3 days)
 

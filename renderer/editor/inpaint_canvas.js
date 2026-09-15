@@ -9629,6 +9629,7 @@ class InpaintEditor {
      */
     glCompositeUsable(opts) {
         if (this.compositorOff || opts.forRun || opts.controlOnly) return false;
+        if (opts.baseOnly) return !!this.compositor();   // the peek: no layer is drawn, so nothing of theirs can refuse
         if (this.compareShow || this.peekBase) return false;
         if (this.pending) return false;                       // a transform draws with a mesh
         if (this.pointer && this.pointer.layer) return false;  // a live stroke preview changes every frame
@@ -9673,7 +9674,7 @@ class InpaintEditor {
         if (base) layers.push(this.glLayerSpec(base, 0, 0, this.width, this.height, 1, "normal", sx));
         const vp = { x: region.x, y: region.y, w: region.w, h: region.h, sx, sy: vh / region.h };
         try {
-            for (const layer of this.layers) {
+            for (const layer of opts.baseOnly ? [] : this.layers) {
                 if (!layer.visible || !layer.px) continue;
                 if (this.isControl(layer) && opts.forRun) continue;
                 // Canvas 2D takes the colour match's backdrop off the target it has drawn into
@@ -9735,7 +9736,7 @@ class InpaintEditor {
      * prescaled projection). Layers come from their pyramid level, filters and colour
      * match run on the small input; exports, runs and the thumbnail keep their own paths.
      */
-    drawViewComposite(ctx) {
+    drawViewComposite(ctx, opts = {}) {
         const region = this.viewportRegion();
         if (!region) return;
         const vw = Math.max(1, Math.round(region.w * region.scale));
@@ -9749,11 +9750,11 @@ class InpaintEditor {
         v.clearRect(0, 0, vw, vh);
         v.imageSmoothingEnabled = true;
         let gl = null;
-        if (this.glCompositeUsable({})) {
+        if (this.glCompositeUsable(opts)) {
             const prevVp = this.viewPass;
             this.viewPass = { x: region.x, y: region.y, w: region.w, h: region.h, sx, sy, screen: true };
             try {
-                gl = this.glViewComposite(region, vw, vh, {});
+                gl = this.glViewComposite(region, vw, vh, opts);
             } finally {
                 this.viewPass = prevVp;
             }
@@ -9767,7 +9768,7 @@ class InpaintEditor {
             const prev = this.viewPass;
             this.viewPass = { x: region.x, y: region.y, w: region.w, h: region.h, sx, sy, screen: true };
             try {
-                this.drawComposite(v, {});
+                this.drawComposite(v, opts);
             } finally {
                 this.viewPass = prev;
             }
@@ -9791,7 +9792,7 @@ class InpaintEditor {
 
     drawComposite(ctx, opts = {}) {
         if (!this.base) return;
-        const below = opts.upTo == null ? this.layers : this.layers.slice(0, Math.max(0, opts.upTo));
+        const below = opts.baseOnly ? [] : opts.upTo == null ? this.layers : this.layers.slice(0, Math.max(0, opts.upTo));
         const hasFilters = !opts.controlOnly && below.some((l) => l.visible && (l.kind === "filter" || this.matchActive(l)));
         // In a region pass the target canvas is already the filter input: no full-size copy.
         if (this.viewPass || !hasFilters) { this.drawLayersInto(ctx, opts); return; }
@@ -9808,8 +9809,8 @@ class InpaintEditor {
         ctx.drawImage(this.flatCanvas, 0, 0);
     }
 
-    /** `upTo`: the composite of the layers below that index only (C6 c1: what a filter layer there takes as its input). */
-    drawLayersInto(ctx, { forRun = false, controlOnly = false, upTo = null } = {}) {
+    /** `upTo`: the composite of the layers below that index only (C6 c1: what a filter layer there takes as its input); `baseOnly`: the base alone (C6 c2f: the peek). */
+    drawLayersInto(ctx, { forRun = false, controlOnly = false, upTo = null, baseOnly = false } = {}) {
         if (controlOnly) {
             ctx.fillStyle = "#000";
             ctx.fillRect(0, 0, this.width, this.height);
@@ -9824,7 +9825,7 @@ class InpaintEditor {
             else if (bs) ctx.drawImage(this.displaySource(bs, vp ? vp.sx : 1, !!(vp && vp.screen)), 0, 0, this.width, this.height);
         }
         let chain = null;   // filter layers that follow each other keep the composite on the GPU
-        const end = upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
+        const end = baseOnly ? 0 : upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
         for (let i = 0; i < end; i++) {
             const layer = this.layers[i];
             if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
@@ -10422,7 +10423,12 @@ class InpaintEditor {
     drawSceneImage(ctx, W, H) {
         if (this.peekBase) {
             const bs = this.basePx;
-            if (bs) ctx.drawImage(this.displaySource(bs, this.view.scale, true), 0, 0, this.width, this.height);
+            // C6 (c2f): on tiles the peek is the view's composite of the base alone, from the base's tiles (the atlas on the
+            // GPU path, its region canvas on Canvas 2D), shown stale or coarse until its chains land like any frame. The
+            // whole base drawn through displaySource was its display mirror and a GPU copy of it (at 0.5 and up) or a Skia
+            // pyramid (below): 572 MB and more at 15000 x 10000 on the first peek after a change.
+            if (bs && isTilePixels(bs)) this.drawViewComposite(ctx, { baseOnly: true });
+            else if (bs) ctx.drawImage(this.displaySource(bs, this.view.scale, true), 0, 0, this.width, this.height);
             return;
         }
         if (this.compare && this.compare.a && this.compare.b) {
