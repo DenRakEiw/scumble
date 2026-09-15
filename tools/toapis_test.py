@@ -51,7 +51,7 @@ SETUP = """
 const had = await window.scumble.keys.list();
 if ((had.keys || {}).toapis && had.keys.toapis.set) throw new Error("this profile holds a ToAPIs key; the test never overwrites a key");
 const s = await window.scumble.settings.get();
-window.__tp = { toapis: s.toapis, recipe: host.recipe, stored: false };
+window.__tp = { toapis: s.toapis, recipe: host.recipe, stored: false, recipeProviders: s.recipeProviders || {} };
 await window.scumble.settings.set({ toapis: { base: __MOCK__ } });
 const d = await run("new_document");
 window.__tpDoc = d.id;
@@ -140,6 +140,37 @@ __CHANNEL__
 return { channel: chan.value, settings: Object.values(ed.settings).map((e) => [e.target, e.value]) };
 """
 
+RECIPE_SWITCH = """
+// review F1: every provider recipe's Channel row is index 1 with the key "channel"; the editor keeps a
+// stored value while the setting's target is the same, so the target has to name the recipe and provider
+const R = (id) => {
+    const raw = host.shell.recipes().find((x) => x.id === id);
+    return host.shell.resolveRecipe({ ...raw, id: id + "__toapis_switch", default: "toapis" });
+};
+const ed = ednow(window.__tpDoc);
+host.shell.activate(ed);
+const row = (key) => { const s = host.recipe.settings.find((x) => x.key === key); return s ? ed.settings[String(s.index)] : null; };
+const seen = [];
+host.setRecipe(R("qwen_image_edit"));
+seen.push(["qwen", row("channel").value]);
+if (row("channel").value !== "standard") throw new Error("Qwen via ToAPIs does not start on its standard channel: " + row("channel").value);
+host.setRecipe(R("gpt_image_2"));
+seen.push(["gpt_image_2", row("channel").value, row("quality").value]);
+if (row("channel").value !== "official") throw new Error("after Qwen, GPT Image 2 via ToAPIs kept the channel " + row("channel").value + " instead of its default official");
+const params = host.providerParams(ed);
+if (params.channel !== "official") throw new Error("the run would ask for channel " + params.channel);
+host.setRecipe(R("gpt_image_2_5_flare"));
+row("quality").value = "xhigh";
+host.setRecipe(R("gpt_image_2"));
+seen.push(["gpt_image_2 after flare xhigh", row("quality").value]);
+if (row("quality").value !== "high") throw new Error("after GPT Image 2.5 on xhigh, GPT Image 2's quality is " + row("quality").value + " instead of its default high");
+row("channel").value = "vip";
+host.setRecipe(host.recipe);
+seen.push(["the same recipe again", row("channel").value]);
+if (row("channel").value !== "vip") throw new Error("setting the same recipe again lost the chosen channel: " + row("channel").value);
+return seen;
+"""
+
 GENERATE = """
 const ed = ednow(window.__tpDoc);
 await run("select_rect", { doc: window.__tpDoc, x: 400, y: 250, width: 420, height: 280 });
@@ -155,6 +186,52 @@ const out = await run("generate_new", { doc: window.__tpDoc, prompt: "a lighthou
 const ratio = ed.width / ed.height;
 if (Math.abs(ratio - 16 / 9) > 0.02) throw new Error("the new base is " + ed.width + " x " + ed.height);
 return { size: [ed.width, ed.height], status: ed.status };
+"""
+
+GENERATE_NEW_DIALOG = """
+// review app F2: the dialog itself (not the command) has to send the chosen aspect, or a ratio channel gets
+// the reduced ratio of the rounded size (3:2 at 1024 is 1024 x 688, "64:43")
+const ed = ednow(window.__tpDoc);
+await host.shell.openGenerateNew(ed);
+await wait(200);
+const $ = (id) => document.getElementById(id);
+const set = (id, v) => { $(id).value = v; $(id).dispatchEvent(new Event("change")); };
+set("gen-mode", "api");
+set("gen-recipe", "gpt_image_2");
+set("gen-provider", "toapis");
+if ($("gen-provider").value !== "toapis") throw new Error("Generate new has no ToAPIs provider for GPT Image 2");
+set("gen-aspect", "3:2");
+set("gen-resolution", "1024");
+$("gen-prompt").value = "a lighthouse at dusk";
+const note = $("gen-size-note").textContent;
+$("gen-go").click();
+const closed = await until(() => !$("gen-dialog").open, 120000);
+if (!closed) throw new Error("the dialog did not finish: " + $("gen-state").textContent);
+return { note, size: [ed.width, ed.height], recipe: host.recipe.id, provider: host.recipe.provider };
+"""
+
+CROP_RATIO = """
+// review F4: Seedream takes no image longer than 3:1; a thin selection gets more context on its short side
+const stitch = await import("./editor/stitch.js");
+const ed = ednow(window.__tpDoc);
+const raw = host.shell.recipes().find((x) => x.id === "seedream_5_lite");
+const lim = raw.providers.toapis.limits;
+if (!lim || lim.ratio !== 3) throw new Error("the Seedream ToAPIs variant has no ratio limit: " + JSON.stringify(lim));
+await run("new_canvas", { doc: window.__tpDoc, width: 6000, height: 2000, color: "#708090" });
+await run("select_rect", { doc: window.__tpDoc, x: 1500, y: 980, width: 3000, height: 40 });
+const withRatio = stitch.prepareCrop(ed, host.nodeParams, { ...lim, mode: "max" }).info;
+const without = stitch.prepareCrop(ed, host.nodeParams, { ...lim, ratio: 0, mode: "max" }).info;
+const r = (i) => Math.max(i.emitted[0], i.emitted[1]) / Math.min(i.emitted[0], i.emitted[1]);
+if (r(without) <= 3) throw new Error("the thin selection is not steeper than 3:1 without the limit, so the step proves nothing: " + without.emitted.join("x"));
+if (r(withRatio) > 3) throw new Error("with the limit the crop is still " + withRatio.emitted.join(" x ") + " (bbox " + withRatio.bbox.join(",") + ")");
+if (withRatio.bbox[2] !== without.bbox[2]) throw new Error("the long side changed: " + withRatio.bbox + " / " + without.bbox);
+// the adapter takes it: a run on the mock goes through
+const R = host.shell.resolveRecipe({ ...raw, id: "seedream_5_lite__toapis_ratio", default: "toapis" });
+host.setRecipe(R);
+const before = ed.layers.length;
+await run("generate", { doc: window.__tpDoc, timeout: 120 });
+if (ed.layers.length !== before + 1) throw new Error("no result layer: " + ed.status);
+return { with: withRatio.emitted, bbox: withRatio.bbox, without: without.emitted };
 """
 
 FAIL_RUN = """
@@ -183,7 +260,7 @@ return { seconds: (Date.now() - t0) / 1000, status: ed.status };
 CLEANUP = """
 const out = {};
 if (window.__tp && window.__tp.stored) { await window.scumble.keys.clear("toapis"); out.keyCleared = true; }
-if (window.__tp) { await window.scumble.settings.set({ toapis: window.__tp.toapis }); if (window.__tp.recipe) host.setRecipe(window.__tp.recipe); }
+if (window.__tp) { await window.scumble.settings.set({ toapis: window.__tp.toapis, recipeProviders: window.__tp.recipeProviders }); if (window.__tp.recipe) host.setRecipe(window.__tp.recipe); }
 for (const d of document.querySelectorAll("dialog[open]")) d.close();
 if (window.__tpDoc) { try { await run("close_document", { doc: window.__tpDoc, force: true }); } catch (_) { /* gone */ } }
 const k = await window.scumble.keys.list();
@@ -228,7 +305,17 @@ def check_official(mock, crop_dims_hint):
     a, c = (int(v) for v in b["size"].split(":"))
     if abs(a / c - w / h) > 0.001:
         raise Exception("size %s is not the crop's ratio %dx%d" % (b["size"], w, h))
-    want_tier = "1k" if max(w, h) <= 1024 else ("2k" if max(w, h) <= 2048 else "4k")
+    # the smallest tier whose output (the page's table for a preset ratio) covers the crop, else by the long side
+    with open(os.path.join(ROOT, "recipes", "gpt_image_2.json"), encoding="utf-8") as f:
+        opts = json.load(f)["providers"]["toapis"]["options"]
+    want_tier = None
+    for tier, base in sorted(opts["tiers"].items(), key=lambda kv: kv[1]):
+        out = opts.get("tier_sizes", {}).get(b["size"], {}).get(tier)
+        ow, oh = (int(v) for v in out.split("x")) if out else (0, 0)
+        if (ow >= w and oh >= h) if out else base >= max(w, h):
+            want_tier = tier
+            break
+    want_tier = want_tier or "4k"
     if b.get("resolution") != want_tier:
         raise Exception("resolution %s for a crop of %dx%d, wanted %s" % (b.get("resolution"), w, h, want_tier))
     im = png_alpha(mock.upload_bytes(mask))
@@ -287,6 +374,7 @@ async def run_all(c):
         await js("every_list_puts_toapis_first_and_keeps_the_defaults", LISTS_BEFORE_THE_KEY, __REFERRAL__=json.dumps(REFERRAL), __HOMES__=json.dumps(HOMES))
         await js("the_key_row_checks_the_balance", STORE_KEY_AND_BALANCE, __KEY__=json.dumps(KEY))
 
+        await js("a_recipe_switch_starts_from_that_recipes_own_settings", RECIPE_SWITCH)
         await js("use_the_shipped_gpt_image_2_variant", USE_VARIANT, __CHANNEL__="")
         mock.reset()
         await js("official_channel_generate", GENERATE)
@@ -302,6 +390,13 @@ async def run_all(c):
         mock.reset()
         await js("generate_new_on_toapis", GENERATE_NEW)
         print("[ok] generate_new_uploads_nothing_and_asks_the_aspect: %s" % json.dumps(check_text(mock))[:400])
+
+        mock.reset()
+        res = await js("generate_new_dialog_on_toapis", GENERATE_NEW_DIALOG)
+        subs = mock.snapshot()["submits"]
+        if len(subs) != 1 or subs[0].get("size") != "3:2" or subs[0].get("model") != "gpt-image-2-official" or subs[0].get("resolution") != "1k" or mock.snapshot()["uploads"]:
+            raise Exception("the dialog's 3:2 at 1024 was sent as %s (the note read %s)" % (json.dumps(subs), res.get("note")))
+        print("[ok] the_dialog_sends_the_chosen_aspect: %s" % json.dumps({k: v for k, v in subs[0].items() if k != "prompt"}))
 
         mock.reset()
         res = await js("a_failed_task", FAIL_RUN)
@@ -320,6 +415,17 @@ async def run_all(c):
         if len(subs) != 2 or any(s.get("model") != "mock-429" for s in subs):
             raise Exception("a 429 at submit should be sent once more: %d submits" % len(subs))
         print("[ok] the_429_submit_was_sent_again: 2 submits")
+
+        mock.reset()
+        res = await js("a_thin_selection_on_seedream_gets_context_up_to_3_to_1", CROP_RATIO)
+        snap = mock.snapshot()
+        crop = next((u for u in snap["uploads"] if u["name"].endswith("-crop.png")), None)
+        if not crop or len(snap["submits"]) != 1:
+            raise Exception("the Seedream run on the mock: uploads %s, %d submits" % ([u["name"] for u in snap["uploads"]], len(snap["submits"])))
+        cw, ch = crop["dims"]
+        if max(cw, ch) / min(cw, ch) > 3:
+            raise Exception("the uploaded crop is %dx%d, steeper than 3:1" % (cw, ch))
+        print("[ok] the_uploaded_seedream_crop_is_within_3_to_1: %s" % json.dumps({"crop": [cw, ch], "size": snap["submits"][0].get("size")}))
     except Exception as err:  # noqa: BLE001
         ok = False
         print("[FAIL]", err)

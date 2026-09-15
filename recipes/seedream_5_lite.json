@@ -27,7 +27,18 @@
           "3K": 3072
         },
         "tier_key": "metadata.resolution",
-        "max_images": 10
+        "tier_sizes": {
+          "1:1": {
+            "2K": "2048x2048",
+            "3K": "3072x3072"
+          },
+          "16:9": {
+            "2K": "2848x1600",
+            "3K": "4096x2304"
+          }
+        },
+        "max_images": 10,
+        "max_ratio": 3
       },
       "settings": [
         {
@@ -52,7 +63,10 @@
           3072
         ]
       },
-      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The model takes aspect presets: a crop of another shape comes back re-framed and is centre-cropped. Resolution 2K or 3K only (no 1K or 4K on ToAPIs)."
+      "limits": {
+        "ratio": 3
+      },
+      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The model takes aspect presets: a crop of another shape comes back re-framed and is centre-cropped. Resolution 2K or 3K only (no 1K or 4K on ToAPIs). Seedream takes no image longer than 3:1: a thin selection gets more context on its short side, and a longer reference layer is refused before any upload."
     },
     "fal": {
       "model": "fal-ai/bytedance/seedream/v5/lite/edit",

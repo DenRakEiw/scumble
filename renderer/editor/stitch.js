@@ -347,6 +347,14 @@ export function prepareCrop(editor, params, limits) {
         [x0, x1] = ensureMinSpan(x0, x1, width, MIN_AUTO_CROP);
         [y0, y1] = ensureMinSpan(y0, y1, height, MIN_AUTO_CROP);
     }
+    if (limits && limits.ratio >= 1) {
+        // a model with an input ratio limit (Seedream on ToAPIs: 3:1): a thin selection gets more
+        // context on its short side instead of a refused crop; an image itself steeper than the limit
+        // cannot be widened, and the adapter refuses that one before any upload
+        const need = (long) => Math.ceil(long / limits.ratio);
+        if (x1 - x0 > (y1 - y0) * limits.ratio) [y0, y1] = ensureMinSpan(y0, y1, height, need(x1 - x0));
+        else if (y1 - y0 > (x1 - x0) * limits.ratio) [x0, x1] = ensureMinSpan(x0, x1, width, need(y1 - y0));
+    }
     if (!limits && fixedSize <= 0) {
         [x0, x1] = fitSpanToMultiple(x0, x1, width, m);
         [y0, y1] = fitSpanToMultiple(y0, y1, height, m);
@@ -383,6 +391,11 @@ export function prepareCrop(editor, params, limits) {
             const k = Math.min(Math.sqrt(limits.minPixels / (ew * eh)), limits.max / Math.max(ew, eh));
             ew = Math.min(limits.max, Math.max(m, Math.ceil(ew * k / m) * m));
             eh = Math.min(limits.max, Math.max(m, Math.ceil(eh * k / m) * m));
+        }
+        // rounding both sides to the step can tip a crop at the ratio limit just past it: widen the short side
+        if (limits && limits.ratio >= 1 && cw * limits.ratio >= ch && ch * limits.ratio >= cw) {
+            if (ew > eh * limits.ratio) eh = Math.min(limits.max, Math.ceil(ew / limits.ratio / m) * m);
+            else if (eh > ew * limits.ratio) ew = Math.min(limits.max, Math.ceil(eh / limits.ratio / m) * m);
         }
         crop = drawResized(crop, ew, eh);
         denoise_mask = resizeMask(denoise_mask, ew, eh);

@@ -27,7 +27,7 @@ from email.parser import BytesParser
 from email.policy import default as email_default
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-MAX_UPLOAD = 10 * 1024 * 1024
+MAX_UPLOAD = 10 * 1000 * 1000   # the stricter reading of the page's "10MB", as the adapter uses
 PNG_SIGNATURE = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
 TIER_BASE = {"0.5k": 512, "1k": 1024, "2k": 2048, "3k": 3072, "4k": 3840}
 

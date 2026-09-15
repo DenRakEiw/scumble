@@ -45,6 +45,33 @@
               "4K": 3840
             },
             "tier_key": "resolution",
+            "tier_sizes": {
+              "1:1": {
+                "1K": "1024x1024",
+                "2K": "2048x2048",
+                "4K": "2880x2880"
+              },
+              "3:2": {
+                "1K": "1536x1024",
+                "2K": "2048x1360",
+                "4K": "3520x2336"
+              },
+              "2:3": {
+                "1K": "1024x1536",
+                "2K": "1360x2048",
+                "4K": "2336x3520"
+              },
+              "16:9": {
+                "1K": "1536x864",
+                "2K": "2048x1152",
+                "4K": "3840x2160"
+              },
+              "9:16": {
+                "1K": "864x1536",
+                "2K": "1152x2048",
+                "4K": "2160x3840"
+              }
+            },
             "drop": [
               "quality"
             ]
@@ -112,7 +139,7 @@
           3840
         ]
       },
-      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". Channel official (the vendor's own cloud) and vip take the crop's size in pixels and bill by tokens; standard is a flat price per image at quality high, with aspect presets and a 1K / 2K / 4K tier from the crop's long side."
+      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". Channel official (the vendor's own cloud) and vip take the crop's size in pixels and bill by tokens; standard is a flat price per image at quality high, with aspect presets and the smallest 1K / 2K / 4K tier whose output covers the crop."
     },
     "openai": {
       "model": "gpt-image-2.5-sunburst",

@@ -760,13 +760,17 @@ export const host = {
         if (!r) return [];
         const out = [];
         if (r.kind === "provider") {
-            // provider parameters: the recipe carries the spec itself (no /object_info)
+            // provider parameters: the recipe carries the spec itself (no /object_info). The node id names
+            // the recipe and its provider, because the editor keeps a stored value while the target stays
+            // the same: with one id for every provider recipe, a "standard" Channel chosen on Qwen via
+            // ToAPIs ran GPT Image 2 on its maskless channel, and GPT Image 2.5's "xhigh" fell to "low"
+            const nodeId = `provider/${r.id}/${r.provider}`;
             for (const s of r.settings || []) {
                 const spec = s.spec || ["STRING", {}];
                 const value = s.default !== undefined ? s.default : (spec[1] && spec[1].default !== undefined ? spec[1].default : (Array.isArray(spec[0]) ? spec[0][0] : undefined));
                 out.push({
                     index: s.index, output: { name: `setting_${s.index}` },
-                    node: { id: "provider", title: s.label || s.key, type: r.provider },
+                    node: { id: nodeId, title: s.label || s.key, type: r.provider },
                     inputName: s.key, spec, widget: value !== undefined ? { value } : null,
                 });
             }

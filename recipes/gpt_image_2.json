@@ -18,6 +18,73 @@
           "4k": 3840
         },
         "tier_key": "resolution",
+        "tier_sizes": {
+          "1:1": {
+            "1k": "1024x1024",
+            "2k": "2048x2048",
+            "4k": "2880x2880"
+          },
+          "3:2": {
+            "1k": "1536x1024",
+            "2k": "2048x1360",
+            "4k": "3520x2336"
+          },
+          "2:3": {
+            "1k": "1024x1536",
+            "2k": "1360x2048",
+            "4k": "2336x3520"
+          },
+          "4:3": {
+            "1k": "1024x768",
+            "2k": "2048x1536",
+            "4k": "3312x2480"
+          },
+          "3:4": {
+            "1k": "768x1024",
+            "2k": "1536x2048",
+            "4k": "2480x3312"
+          },
+          "5:4": {
+            "1k": "1280x1024",
+            "2k": "2560x2048",
+            "4k": "3216x2576"
+          },
+          "4:5": {
+            "1k": "1024x1280",
+            "2k": "2048x2560",
+            "4k": "2576x3216"
+          },
+          "16:9": {
+            "1k": "1536x864",
+            "2k": "2048x1152",
+            "4k": "3840x2160"
+          },
+          "9:16": {
+            "1k": "864x1536",
+            "2k": "1152x2048",
+            "4k": "2160x3840"
+          },
+          "2:1": {
+            "1k": "2048x1024",
+            "2k": "2688x1344",
+            "4k": "3840x1920"
+          },
+          "1:2": {
+            "1k": "1024x2048",
+            "2k": "1344x2688",
+            "4k": "1920x3840"
+          },
+          "21:9": {
+            "1k": "2016x864",
+            "2k": "2688x1152",
+            "4k": "3840x1648"
+          },
+          "9:21": {
+            "1k": "864x2016",
+            "2k": "1152x2688",
+            "4k": "1648x3840"
+          }
+        },
         "max_images": 16,
         "channels": {
           "official": {},
@@ -122,7 +189,7 @@
           3840
         ]
       },
-      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Channel official is gpt-image-2-official on the vendor's own cloud: mask inpainting with the selection as mask_url (transparent = repaint) and the crop's own aspect ratio. vip (gpt-image-2-vip) and standard (gpt-image-2) cost a fraction and take no mask, so the stitch keeps the selection there; standard takes aspect presets and no quality. Resolution auto picks 1k, 2k or 4k from the crop's long side."
+      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Channel official is gpt-image-2-official on the vendor's own cloud: mask inpainting with the selection as mask_url (transparent = repaint) and the crop's own aspect ratio. vip (gpt-image-2-vip) and standard (gpt-image-2) cost a fraction and take no mask, so the stitch keeps the selection there; standard takes aspect presets and no quality. Resolution auto picks the smallest of 1k, 2k and 4k whose output covers the crop."
     },
     "openai": {
       "model": "gpt-image-2",

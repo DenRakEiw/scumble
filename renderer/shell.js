@@ -869,7 +869,11 @@ ui.genGo.addEventListener("click", async () => {
     ui.genState.textContent = "running ...";
     try {
         await selectRecipe(id, ui.genProvider.value || undefined);
-        const args = { doc: ed.node.id, prompt, width: w, height: h, timeout: 900 };
+        // a chosen aspect goes along as itself (the same size as genSize), so a ratio channel is asked for
+        // "3:2", not the reduced ratio of the rounded 1024 x 688 ("64:43")
+        const args = genAspectFree()
+            ? { doc: ed.node.id, prompt, width: w, height: h, timeout: 900 }
+            : { doc: ed.node.id, prompt, aspect: ui.genAspect.value, resolution: +ui.genResolution.value || 1024, timeout: 900 };
         if (!ui.genSeedRandom.checked) args.seed = Math.abs(Math.round(+ui.genSeed.value) || 0);
         if (!ui.genAlphaRow.hidden && ui.genAlpha.checked) args.background = "transparent";
         const out = await commands.run("generate_new", args);

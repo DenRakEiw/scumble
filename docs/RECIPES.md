@@ -121,8 +121,10 @@ recipe (for every variant) or on a single variant:
 
 `max` is the long side, `step` the multiple both sides are rounded to, `min` the smallest
 side the endpoint accepts, `pixels` an area cap and `minPixels` an area *floor* (0 = none
-for both). Without either, the conservative
-`{ min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0 }` applies - raise one with a
+for both), and `ratio` the steepest crop the model takes (3 = at most 3:1, 0 = any): a crop
+steeper than that gets more context on its short side, so a thin selection is not refused
+(Seedream on ToAPIs, whose pages say [1/3, 3]). Without either, the conservative
+`{ min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0 }` applies - raise one with a
 source, not with a guess. Today: **FLUX.2 and FLUX.1 Fill 1440** (2048 answers with an
 error), **GPT Image 2.5 Flare and Sunburst 3840 with an 8,294,400 px budget and a 655,360 px
 floor** (the model's own size rules: both edges a multiple of 16, at most 3840 an edge, a
@@ -270,10 +272,14 @@ the USD left (credits / 200).
    lost answer could be a second paid task).
 3. `GET /v1/images/generations/<id>`: first after 4 s, then every 5 s plus up to a second of jitter,
    15 minutes at most; `pending`, `queued`, `submitted` and `in_progress` keep it polling, a 429 or
-   503 waits `Retry-After`. `failed` arrives as HTTP 200 and is thrown as
-   `ToAPIs <model> (task <id>): <error.message>`, which is what the status line and the log show.
+   503 waits `Retry-After`. A status query costs nothing and the task is paid for once submitted, so
+   a query lost to the network or answered 500 / 502 / 504 is polled past, five in a row at most
+   (the wait grows with each), and the error then names the task and the ToAPIs console. `failed`
+   arrives as HTTP 200 and is thrown as `ToAPIs <model> (task <id>): <error.message>`, which is what
+   the status line and the log show.
 4. `completed`: `result.data[0].url`, else a top-level `url`, downloaded at once (it lives 24 h) and
-   **without** the key.
+   **without** the key, three tries 2 and 4 s apart; a download that keeps failing names the model
+   and the task and says the image stays in the ToAPIs console for 24 hours.
 
 Failed HTTP answers get a plain prefix before the server's own message, which may be Chinese: 401
 "key refused", 402 "balance too low, top up at toapis.com", 403 "key not allowed for this model", 422
@@ -303,18 +309,25 @@ prices, far below the vendor's, suggest third-party backends.
 | `nano_banana_2_lite` | `gemini-3.1-flash-lite-image-official` | none | as 3.1 Flash official | as 3.1 Flash |
 | `nano_banana_pro` | `gemini-3-pro-image-official` (the id of ToAPIs' price list) | official, vip, standard (`gemini-3-pro-image-preview[-vip]`, objects) | edit; presets | `metadata.resolution` 1K / 2K / 4K |
 | `flux2_pro`, `flux2_flex` | `flux-2-pro`, `flux-2-flex` | none | edit, 8 images; 7 presets | `metadata.resolution` 1K / 2K |
-| `seedream_5_lite` | `doubao-seedream-5-0` | none | edit, 10 images; 9 presets | `metadata.resolution` **2K / 3K** |
-| `seedream_5_pro` | `doubao-seedream-5-0-pro` | none | edit; 9 presets | `metadata.resolution` 1K / 2K |
+| `seedream_5_lite` | `doubao-seedream-5-0` | none | edit, 10 images; 9 presets; inputs at most 3:1 | `metadata.resolution` **2K / 3K** |
+| `seedream_5_pro` | `doubao-seedream-5-0-pro` | none | edit; 9 presets; inputs at most 3:1 | `metadata.resolution` 1K / 2K |
 | `qwen_image_edit` | `qwen-image-3.0` | standard, pro (`qwen-image-3.0-pro`) | edit, 3 images; `WxH` (512² to 2048², at most 8:1), `metadata.seed`, `metadata.negative_prompt`, fixed `metadata.prompt_extend: false` | none (pixels) |
 
 A variant's `options` describe the rest: `mask` (a `fill` run uploads `req.maskAlpha`, alpha 0 =
 repaint, as `mask_url`; only `gpt-image-2-official` has one, every other channel leaves the mask out
 and the stitch keeps the selection), `size` (`ratio`: the crop's reduced `W:H`, clamped to 3:1;
 `preset`: the closest of `ratios`, or a text run's own aspect when it is one of them; `pixels`: `WxH`
-under `pixels` rules), `tiers` with `tier_key` (a *Resolution* row left on auto takes the smallest tier
-whose base covers the emitted long side), `urls: "objects"` (`image_urls` as `[{ url }]`), `images`
+under `pixels` rules), `tiers` with `tier_key` and `tier_sizes` (a *Resolution* row left on auto takes the
+smallest tier whose output covers both edges of the emitted crop; the output per tier comes from the model
+page's table for the size sent, `{ "16:9": { "1K": "1820x1024", ... } }`, carried for GPT Image 2, the
+standard channel of GPT Image 2.5, FLUX.2 and Seedream 5 lite, and a tier the table lacks is judged by its
+base against the long side, as every tier of the Nano Banana models is. A tier's base is not its long edge:
+FLUX 1K 16:9 is 1820 × 1024 and GPT Image 2 1k 2:1 is 2048 × 1024, so the base alone bought the dearer 2K
+for every non-square FLUX crop), `urls: "objects"` (`image_urls` as `[{ url }]`), `images`
 (another image field), `drop` (parameters a channel does not take), `transparent_only`, `max_images`
-(more images are refused before any upload), `seed` and `negative` (where a model takes them).
+(more images are refused before any upload), `max_ratio` (the steepest input the model takes: Seedream's 3;
+the variant's `limits.ratio` widens the crop to it, and a reference layer steeper than that, or an image
+too narrow to widen, is refused before any upload), `seed` and `negative` (where a model takes them).
 Settings pass through by key and **dotted keys nest** (`metadata.resolution` becomes
 `{ metadata: { resolution } }`); `channel`, `random_seed`, empty values and `auto` are not sent.
 Crops of another shape than a model's presets come back re-framed and are centre-cropped by
@@ -324,11 +337,15 @@ Crops of another shape than a model's presets come back re-framed and are centre
 crops cut at full resolution from four photographs: 2048 × 2048 came to 5.9 to 9.5 MB, 3840 × 2160 to
 11.9 to 18.7 MB, and random noise (the worst case) to 14.4 and 28.5 MB; as JPEG at quality 0.92 the
 same crops were 0.7 to 1.7 MB, 1.3 to 3.1 MB and 3.7 / 7.3 MB. So every size check happens before any
-request: a **crop** over 10 MB is re-encoded as JPEG (quality 92, Electron's `nativeImage`, `ctx.toJpeg`
-from `providers/index.js`; a transparent crop loses its alpha there), and one still over it is refused
-with "set Highres fix lower". A **reference** over 10 MB is refused (it may be a cut-out whose alpha a
-JPEG would flatten), and so is a **mask** (its alpha is the mask). The limits stay at 2048 (FLUX at
-BFL's 1440, GPT Image 2.5 and Qwen with a 4,194,304 px budget).
+request, against **10,000,000 bytes** (the page says "10MB" with no byte count; the smaller reading means a
+file between it and 10 MiB takes the fallback instead of the server's refusal): a **crop** over it is
+re-encoded as JPEG (quality 92, Electron's `nativeImage`, `ctx.toJpeg` from `providers/index.js`; a
+transparent crop loses its alpha there), and one still over it is refused with "set Highres fix lower". A
+**reference** over it is re-encoded the same way when it has no transparent pixel (`ctx.opaque`: the PNG
+header, else the decoded alpha), which the *Original* copy of the crop never has; a reference with
+transparency keeps its PNG (a JPEG would flatten the cut-out) and is refused with "set Highres fix lower,
+turn Original off, or use a smaller reference layer". A **mask** over it is refused (its alpha is the
+mask). The limits stay at 2048 (FLUX at BFL's 1440, GPT Image 2.5 and Qwen with a 4,194,304 px budget).
 
 **Privacy.** Crop, mask and references become public `files.toapis.com` URLs (the generation API
 takes URLs only); the docs do not say how long an upload lives. Results are there for 24 hours. The
@@ -345,8 +362,13 @@ mainland China hosts (`toapis.cn`) are allowed only through the setting.
 - whether `metadata.prompt_extend: false` is honoured on Qwen, and whether FLUX takes a crop over 1440;
 - `billing.cost_usd` per tier, the real durations, which result shape arrives, and the language of the
   error messages;
-- whether uploads are accepted as `image/jpeg` for the crop fallback on every model (Seedream takes
-  JPEG and PNG only, which both are).
+- whether uploads are accepted as `image/jpeg` for the crop and reference fallback on every model
+  (Seedream takes JPEG and PNG only, which both are);
+- which "10MB" the upload endpoint counts (the adapter holds files to 10,000,000 bytes);
+- the output sizes per tier on the Nano Banana channels and Seedream 5 pro (their pages give none, so
+  auto picks by the long side there), and whether the tables on the other pages are what really comes back;
+- how the gateway answers a status query during an outage (5xx polled past), and whether Seedream's 3:1
+  input limit is checked on the crop only or on every reference too.
 
 **Tests.** `node tools/toapis_test.js` runs the adapter in plain Node against a scripted fetch (the
 official fill with its alpha mask, the other channels, objects and nesting, text runs, pixel sizes,
@@ -360,3 +382,18 @@ without an upload, a failed task in the status line and in the log without the k
 submit sent again. Each counter-proof was red: the luminance mask for `maskAlpha`, no `Retry-After`
 wait, the key sent to the file host, no metadata nesting, no JPEG fallback, a base outside the
 allowlist, the mask on every channel, and ToAPIs last in `PROVIDERS`.
+
+**The review of 2026-09-15** found, and the tests now cover (each fix red when undone):
+- the editor kept a provider setting whenever its target was unchanged, and every provider recipe's
+  targets were `provider:<key>`, so a *Channel* of "standard" chosen on Qwen via ToAPIs carried over to GPT
+  Image 2 via ToAPIs and ran it on its maskless channel (and GPT Image 2.5's "xhigh" quality fell to
+  "low" on GPT Image 2). The target now names the recipe and its provider (`host.settingTargets`), so a
+  switch starts from that recipe's own defaults and setting the same recipe again keeps a choice
+  (`toapis_test.py` `a_recipe_switch_starts_from_that_recipes_own_settings`);
+- Generate new sent the rounded pixel size, so a ratio channel got "64:43" for 3:2 at 1024; the dialog
+  sends the aspect and the long side now (`generate_new_dialog_on_toapis` drives the dialog itself);
+- one 5xx on a status query or on the download threw a paid task away; the tier by the base bought 2K for
+  FLUX crops 1K covers; references never got the JPEG fallback; Seedream's 3:1 input limit was not
+  checked; the upsample rows retried any 4xx without the crop and lost the "text only" note; the 10 MB
+  guard counted MiB (`node tools/toapis_test.js` sections 3, 1, 5, 5b and 8,
+  `a_thin_selection_on_seedream_gets_context_up_to_3_to_1`).

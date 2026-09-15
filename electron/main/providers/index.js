@@ -5,8 +5,9 @@
 //   request: { model, kind ("fill" = image + mask, "edit" = instruction on the image),
 //              prompt, negative, seed, image (PNG bytes of the crop), mask (PNG, white =
 //              repaint), width, height (of the crop), references: [PNG bytes], params }
-//   ctx:     { key, fetch, log, base, toJpeg }   base: the adapter's own allowlisted host from settings
-//            (ToAPIs; never from a recipe), toJpeg(png, quality): a crop re-encoded by Electron's nativeImage
+//   ctx:     { key, fetch, log, base, toJpeg, opaque }   base: the adapter's own allowlisted host from
+//            settings (ToAPIs; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
+//            nativeImage, opaque(png): whether it has no transparent pixel
 //
 // The crop and the stitch happen in the renderer (renderer/editor/stitch.js); the
 // adapters only speak HTTP. Keys come from keys.js by the provider's name.
@@ -95,9 +96,27 @@ function toJpeg(png, quality = 92) {
     return img.toJPEG(quality);
 }
 
+/**
+ * Whether a PNG has no transparent pixel, so a JPEG of it loses nothing but compression detail. A
+ * greyscale or RGB PNG without a tRNS chunk is opaque by its header; anything else is decoded and its
+ * alpha read. False when it cannot be decoded.
+ */
+function opaque(png) {
+    const b = Buffer.from(png);
+    if (b.length > 33 && b.toString("latin1", 12, 16) === "IHDR") {
+        const colourType = b[25];
+        if ((colourType === 0 || colourType === 2) && b.indexOf("tRNS", 33, "latin1") < 0) return true;
+    }
+    const img = nativeImage.createFromBuffer(b);
+    if (img.isEmpty()) return false;
+    const px = img.toBitmap();   // BGRA
+    for (let i = 3; i < px.length; i += 4) if (px[i] !== 255) return false;
+    return true;
+}
+
 function contextFor(id, p, key) {
     return {
-        key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a), toJpeg,
+        key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a), toJpeg, opaque,
         base: typeof p.baseUrl === "function" ? p.baseUrl(settings.get()) : undefined,
     };
 }

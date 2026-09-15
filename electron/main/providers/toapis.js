@@ -22,7 +22,11 @@
 //   size       "ratio" (the crop's own W:H, gpt-image-2 official / VIP), "preset" (the closest of
 //              `ratios`), "pixels" (WxH under `pixels` rules, GPT Image 2.5 official / VIP, Qwen)
 //   tiers      { "1K": 1024, ... } with `tier_key` ("resolution" or "metadata.resolution"): a row left on
-//              auto takes the smallest tier whose base covers the emitted long side
+//              auto takes the smallest tier whose output covers both edges of the emitted crop, read from
+//              `tier_sizes` ({ "16:9": { "1K": "1820x1024", ... } }, the model page's table) for the size
+//              sent, and by the tier's base against the long side where the table has no row
+//   max_ratio  the steepest input ratio the model takes (Seedream: 3): a crop or reference beyond it is
+//              refused before any upload
 //   urls       "objects": image_urls as [{ url }] (the Gemini standard and VIP pages), else strings
 //   images     the field the images go in (default image_urls); max_images: how many the model takes
 //   drop       parameters this channel does not take; transparent_only: `background` only when "transparent"
@@ -39,11 +43,15 @@ const { fetchImage, readError, sleep: realSleep, closestAspect, fitPixels } = re
 
 const DEFAULT_BASE = "https://toapis.com";
 const ALLOWED_HOSTS = new Set(["https://toapis.com", "https://api.toapis.com", "https://toapis.cn", "https://api.toapis.cn"]);
-const MAX_UPLOAD = 10 * 1024 * 1024;
+// "10MB" on the upload page, with no byte count: the smaller reading (10,000,000 bytes), so a file between
+// the two readings takes the JPEG fallback instead of the server's refusal
+const MAX_UPLOAD = 10 * 1000 * 1000;
 const PARALLEL_UPLOADS = 4;
 const FIRST_POLL_MS = 4000;
 const POLL_MS = 5000;
 const TIMEOUT_MS = 15 * 60 * 1000;
+const LOST_QUERIES = 5;          // status queries in a row lost to the network or answered 5xx before the run gives up
+const DOWNLOAD_TRIES = 3;
 const PENDING = new Set(["pending", "queued", "submitted", "in_progress", "processing", "running", ""]);
 const FAILED = new Set(["failed", "cancelled", "canceled", "expired", "error"]);
 const GPT_PIXELS = { step: 16, max: 3840, minPixels: 655360, maxPixels: 8294400, maxRatio: 3 };
@@ -148,11 +156,20 @@ function aspectNumbers(aspect) {
     return a > 0 && b > 0 ? [a, b] : null;
 }
 
-/** The smallest tier whose base covers the long side, else the largest. */
-function tierFor(long, tiers) {
+/**
+ * The smallest tier whose output covers a w x h crop, else the largest. `table` is the model page's output
+ * size per tier for the size sent ({ "1K": "1820x1024", ... }); a tier it does not list is judged by its
+ * base against the long side. A tier's base is not its long edge (FLUX 1K 16:9 is 1820 x 1024, GPT Image 2
+ * 1k 2:1 is 2048 x 1024), so the base alone would buy a dearer tier than the crop needs.
+ */
+function tierFor(w, h, tiers, table) {
     const rows = Object.entries(tiers || {}).map(([k, v]) => [k, +v]).filter(([, v]) => v > 0).sort((a, b) => a[1] - b[1]);
     if (!rows.length) return null;
-    for (const [k, v] of rows) if (v >= long) return k;
+    const long = Math.max(w, h);
+    for (const [k, v] of rows) {
+        const m = table && /^(\d+)x(\d+)$/.exec(String(table[k] || ""));
+        if (m ? +m[1] >= w && +m[2] >= h : v >= long) return k;
+    }
     return rows[rows.length - 1][0];
 }
 
@@ -174,9 +191,19 @@ function sizeFor(req, ch) {
         const [pw, ph] = fitPixels(w, h, { ...GPT_PIXELS, ...(ch.pixels || {}) });
         size = `${pw}x${ph}`;
     }
-    const tier = ch.tiers ? tierFor(Math.max(w, h), ch.tiers) : null;
+    const table = ch.tier_sizes && size ? ch.tier_sizes[size] : null;
+    const tier = ch.tiers ? tierFor(w, h, ch.tiers, table) : null;
     return { size, tier };
 }
+
+/** [width, height] from a PNG's IHDR, or null for anything else. */
+function pngSize(b) {
+    if (!b || b.length < 24 || b[0] !== 0x89 || b[12] !== 0x49 || b[13] !== 0x48 || b[14] !== 0x44 || b[15] !== 0x52) return null;
+    const u32 = (o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+    return [u32(16), u32(20)];
+}
+
+const steeper = (w, h, r) => w > 0 && h > 0 && Math.max(w, h) / Math.min(w, h) > r;
 
 async function mapLimit(items, limit, fn) {
     const out = new Array(items.length);
@@ -186,17 +213,28 @@ async function mapLimit(items, limit, fn) {
     return out;
 }
 
-const mb = (n) => (Math.ceil(n / 104857.6) / 10).toFixed(1);   // rounded up: 10 MB and a byte is "10.1"
+const mb = (n) => (Math.ceil(n / 100000) / 10).toFixed(1);   // decimal MB, rounded up: 10 MB and a byte is "10.1"
 
 /**
- * The files a run uploads, checked against the 10 MB limit before any request goes out. A crop over it is
- * re-encoded as JPEG (ctx.toJpeg, Electron's nativeImage in the app); a reference keeps its PNG (it may be a
- * cut-out whose alpha a JPEG would lose) and the mask always does (its alpha is the mask).
+ * The files a run uploads, checked against the model's input ratio and the 10 MB limit before any request
+ * goes out. A crop over the limit is re-encoded as JPEG (ctx.toJpeg, Electron's nativeImage in the app), and
+ * so is a reference with no transparent pixel (ctx.opaque; the Original copy of the crop is one); a reference
+ * with transparency keeps its PNG (a JPEG would flatten the cut-out) and the mask always does (its alpha is
+ * the mask).
  */
 async function prepareFiles(req, ctx, ch, stamp) {
     const files = [];
     if (req.kind === "text") return { images: files, mask: null };
     if (!req.image || !req.image.length) throw new Error("ToAPIs: the run has no crop.");
+    const refs = req.references || [];
+    if (ch.max_ratio) {
+        const r = +ch.max_ratio;
+        if (steeper(+req.width, +req.height, r)) throw new Error(`ToAPIs ${ch.model} takes no image longer than ${r}:1, and the crop is ${req.width} × ${req.height}: select a less elongated area, or a larger one around it.`);
+        refs.forEach((b, i) => {
+            const s = pngSize(b);
+            if (s && steeper(s[0], s[1], r)) throw new Error(`ToAPIs ${ch.model} takes no image longer than ${r}:1, and reference ${i + 1} is ${s[0]} × ${s[1]}: crop that reference layer closer to square.`);
+        });
+    }
     let crop = { bytes: req.image, mime: "image/png", name: `scumble-${stamp}-crop.png` };
     if (crop.bytes.length > MAX_UPLOAD && typeof ctx.toJpeg === "function") {
         const jpeg = await ctx.toJpeg(req.image, 92);
@@ -207,10 +245,22 @@ async function prepareFiles(req, ctx, ch, stamp) {
     }
     if (crop.bytes.length > MAX_UPLOAD) throw new Error(`ToAPIs: the crop is ${mb(crop.bytes.length)} MB, ToAPIs takes 10 MB per image: set Highres fix lower.`);
     files.push(crop);
-    (req.references || []).forEach((r, i) => {
-        if (r.length > MAX_UPLOAD) throw new Error(`ToAPIs: reference ${i + 1} is ${mb(r.length)} MB, ToAPIs takes 10 MB per image.`);
-        files.push({ bytes: r, mime: "image/png", name: `scumble-${stamp}-ref${i + 1}.png` });
-    });
+    for (let i = 0; i < refs.length; i++) {
+        const r = refs[i];
+        let ref = { bytes: r, mime: "image/png", name: `scumble-${stamp}-ref${i + 1}.png` };
+        let transparent = false;
+        if (r.length > MAX_UPLOAD) {
+            const flat = typeof ctx.opaque === "function" && typeof ctx.toJpeg === "function" && await ctx.opaque(r);
+            transparent = !flat;
+            const jpeg = flat ? await ctx.toJpeg(r, 92) : null;
+            if (jpeg && jpeg.length) {
+                ctx.log(`reference ${i + 1} ${mb(r.length)} MB as PNG, ${mb(jpeg.length)} MB as JPEG`);
+                ref = { bytes: Buffer.from(jpeg), mime: "image/jpeg", name: `scumble-${stamp}-ref${i + 1}.jpg` };
+            }
+        }
+        if (ref.bytes.length > MAX_UPLOAD) throw new Error(`ToAPIs: reference ${i + 1} is ${mb(ref.bytes.length)} MB${transparent ? " (with transparency, so it stays a PNG)" : ""}, ToAPIs takes 10 MB per image: set Highres fix lower, turn Original off, or use a smaller reference layer.`);
+        files.push(ref);
+    }
     if (ch.max_images && files.length > ch.max_images) throw new Error(`ToAPIs ${ch.model} takes ${ch.max_images} image${ch.max_images > 1 ? "s" : ""}, this run has ${files.length} (the crop and ${files.length - 1} reference${files.length === 2 ? "" : "s"}).`);
     let mask = null;
     if (req.kind === "fill" && ch.mask) {
@@ -286,7 +336,7 @@ function resultUrl(j) {
 async function poll(ctx, model, id) {
     const t0 = Date.now();
     const url = api(ctx) + "images/generations/" + encodeURIComponent(id);
-    let wait = FIRST_POLL_MS, netErrors = 0;
+    let wait = FIRST_POLL_MS, lost = 0;
     for (;;) {
         if (Date.now() - t0 > TIMEOUT_MS) throw new Error(`ToAPIs ${model} (task ${id}): no answer after 15 minutes; the task may still finish in the ToAPIs console.`);
         await ctx.sleep(wait);
@@ -296,11 +346,20 @@ async function poll(ctx, model, id) {
             r = await ctx.fetch(url, { headers: { Authorization: "Bearer " + ctx.key } });
         } catch (err) {
             // a status query costs nothing and changes nothing: a few lost ones are not a failure
-            if (++netErrors > 3) throw new Error(`ToAPIs ${model} (task ${id}): status query failed: ${scrub(err && err.message || err, ctx.key)}`);
+            if (++lost > LOST_QUERIES) throw new Error(`ToAPIs ${model} (task ${id}): status query failed ${lost} times in a row: ${scrub(err && err.message || err, ctx.key)}; the task may still finish in the ToAPIs console.`);
+            ctx.log(`task ${id}: status query lost (${lost}), polling on`);
             continue;
         }
-        netErrors = 0;
-        if (r.status === 429 || r.status === 503) { wait = retryAfterMs(r); continue; }
+        if (r.status === 429 || r.status === 503) { lost = 0; wait = retryAfterMs(r); continue; }
+        if (r.status >= 500) {
+            // a gateway error on a status query is a lost query too: the paid task runs on upstream
+            const msg = await failure(r, ctx.key);
+            if (++lost > LOST_QUERIES) throw new Error(`ToAPIs ${model} (task ${id}): status query answered ${r.status} ${lost} times in a row (${msg}); the task may still finish in the ToAPIs console.`);
+            ctx.log(`task ${id}: status query answered ${r.status} (${lost}), polling on`);
+            wait = Math.min(30000, wait * lost);
+            continue;
+        }
+        lost = 0;
         if (!r.ok) throw new Error(`ToAPIs ${model} (task ${id}): ${await failure(r, ctx.key)}`);
         const j = (await r.json()) || {};
         const status = String(j.status || "").toLowerCase();
@@ -312,6 +371,26 @@ async function poll(ctx, model, id) {
         }
         if (!PENDING.has(status)) ctx.log(`task ${id}: unknown status "${status}", polling on`);
     }
+}
+
+/**
+ * The finished image from files.toapis.com, without the key. The task is paid for by now, so a failed
+ * download is tried again, and the error names the task, whose image stays in the ToAPIs console for 24 h.
+ */
+async function download(ctx, model, id, url) {
+    let last = null;
+    for (let attempt = 1; attempt <= DOWNLOAD_TRIES; attempt++) {
+        try {
+            return await fetchImage(url, ctx.fetch);
+        } catch (err) {
+            last = err;
+            if (attempt < DOWNLOAD_TRIES) {
+                ctx.log(`task ${id}: result download failed (${scrub(err && err.message || err, ctx.key)}), trying again`);
+                await ctx.sleep(2000 * attempt);
+            }
+        }
+    }
+    throw new Error(`ToAPIs ${model} (task ${id}): the finished image could not be downloaded (${scrub(last && last.message || last, ctx.key)}); it stays in the ToAPIs console for 24 hours.`);
 }
 
 async function run(req, ctx) {
@@ -330,10 +409,11 @@ async function run(req, ctx) {
     }
     const body = bodyFor(req, ch, urls, sz);
     const task = await submit(ctx, body);
+    ctx.log(`task ${task.id} submitted (${ch.model})`);
     const done = await poll(ctx, ch.model, task.id);
     const url = resultUrl(done);
     if (!url) throw new Error(`ToAPIs ${ch.model} (task ${task.id}): completed without an image URL.`);
-    const file = await fetchImage(url, ctx.fetch);   // files.toapis.com, no key
+    const file = await download(ctx, ch.model, task.id, url);   // files.toapis.com, no key
     const billing = done.billing || {};
     return {
         bytes: file.bytes, mime: file.mime, seed: req.seed,
@@ -360,6 +440,7 @@ module.exports = {
     },
 
     baseUrl,
+    explain,   // llm.js: the same words for a failed chat request on the ToAPIs key
     // exported for tools/toapis_test.js
     _allowedBase: allowedBase,
     _body: bodyFor,

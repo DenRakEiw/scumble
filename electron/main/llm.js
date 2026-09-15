@@ -168,8 +168,13 @@ async function askAnthropic({ model, key, instruction, image, maxTokens }) {
  * The key is optional (local servers want none, OpenRouter and some proxies do).
  * A text-only model answers 400 on the image; we retry once without it and say so, so the
  * user learns the model never saw the crop.
+ *
+ * `strict` (ToAPIs, whose rows are all vision models): the retry without the image only for a
+ * 400 / 413 / 415 / 422 that names the image, never for a refused key, an empty balance, a rate
+ * limit or a server error, which a second request cannot fix; `explain(status, message)` puts
+ * plain words in front of the server's message.
  */
-async function askCompatible({ model, key, instruction, image, maxTokens, url, label }) {
+async function askCompatible({ model, key, instruction, image, maxTokens, url, label, strict, explain }) {
     const base = compatBase(url);
     const endpoint = base + "/chat/completions";
     const headers = { "Content-Type": "application/json", ...(key ? { Authorization: "Bearer " + key } : {}) };
@@ -186,8 +191,10 @@ async function askCompatible({ model, key, instruction, image, maxTokens, url, l
             throw new Error(compatUnreachable(err, base, label));
         }
         if (!r.ok) {
-            const e = new Error(`${model} at ${compatHost(url)}: ${await readError(r)}`);
+            const raw = await readError(r);
+            const e = new Error(`${model} at ${compatHost(url)}: ${explain ? explain(r.status, raw) : raw}`);
             e.status = r.status;
+            e.raw = raw;
             throw e;
         }
         return await r.json();
@@ -200,7 +207,8 @@ async function askCompatible({ model, key, instruction, image, maxTokens, url, l
             out = await once(true);
         } catch (err) {
             // a 4xx, or a message about images: the model has no vision, ask again without it
-            if (!(err.status >= 400 && err.status < 500) && !/image|vision|multimodal|content part/i.test(String(err.message))) throw err;
+            const aboutImage = (s) => /image|vision|multimodal|content part/i.test(String(s));
+            if (strict ? !([400, 413, 415, 422].includes(err.status) && aboutImage(err.raw)) : (!(err.status >= 400 && err.status < 500) && !aboutImage(err.message))) throw err;
             textOnly = true;
             out = await once(false);
         }
@@ -221,8 +229,7 @@ async function askCompatible({ model, key, instruction, image, maxTokens, url, l
 
 /** ToAPIs' /v1/chat/completions: the OpenAI-compatible client with the image key and ToAPIs' host. */
 async function askToAPIs(a) {
-    const res = await askCompatible({ ...a, url: toapis.baseUrl(settings.get()) + "/v1", label: "ToAPIs" });
-    return res.text;
+    return await askCompatible({ ...a, url: toapis.baseUrl(settings.get()) + "/v1", label: "ToAPIs", strict: true, explain: toapis.explain });
 }
 
 const ADAPTERS = { toapis: askToAPIs, openai: askOpenAI, gemini: askGemini, anthropic: askAnthropic };
@@ -252,7 +259,10 @@ async function ask(req) {
         const key = keys.get(m.provider);
         if (!key) throw new Error(`No API key for ${PROVIDER_LABEL[m.provider]}. Add it under Settings › API providers.`);
         model = m.model;
-        text = await ADAPTERS[m.provider]({ model: m.model, key, instruction, image, maxTokens });
+        const res = await ADAPTERS[m.provider]({ model: m.model, key, instruction, image, maxTokens });
+        // the OpenAI-compatible client (ToAPIs) says whether the answer came without the image
+        text = typeof res === "string" ? res : res.text;
+        if (res && res.textOnly) note = "text only";
     }
     // Models like to wrap the prompt in quotes or a code fence even when told not to.
     text = text.replace(/^```[a-z]*\s*|\s*```$/g, "").trim();

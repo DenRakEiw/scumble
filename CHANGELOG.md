@@ -29,13 +29,29 @@ the section for its version; `docs/` and the commit history hold the technical d
     default where ToAPIs has it. *vip* and *standard* cost a fraction of it. On GPT Image 2 only
     *official* takes your selection as a real mask; the cheaper channels, like every other model
     on ToAPIs, edit the whole crop, and Scumble keeps only the selected part of the answer.
-  - A crop over ToAPIs' 10 MB upload limit is sent as a JPEG; a mask or reference layer that
-    large is refused before anything is sent, with a note to set *Highres fix* lower.
+  - A crop over ToAPIs' 10 MB upload limit is sent as a JPEG, and so is a reference without
+    transparency (the *Original* copy of the crop is one). A mask, or a cut-out reference, that
+    large is refused before anything is sent, with a note to set *Highres fix* lower, turn
+    *Original* off or use a smaller reference layer.
+  - *Resolution* on *auto* picks the cheapest size tier that still covers your crop.
+  - Seedream on ToAPIs takes no picture longer than 3:1, so a thin selection is sent with more of
+    its surroundings above and below it.
+  - A run that ToAPIs has already accepted is not given up over one failed status check or
+    download; if the download keeps failing, the message names the task, whose picture stays in
+    the ToAPIs console for a day.
   - *check balance* next to the stored key shows what the key has left, free of charge.
   - The key link carries the author's referral code.
 - **Prompt upsampling on the ToAPIs key:** with a ToAPIs key stored, Gemini 3.8 Flash, Claude
   Haiku 4.5 and GPT-5.6 Terra appear at the top of the upsample list (about a tenth of a cent a
-  rewrite), also not tried against the real service yet.
+  rewrite), also not tried against the real service yet. A refused key, an empty balance or a
+  rate limit is reported as such; the prompt is only rewritten without the picture when ToAPIs
+  refuses the picture itself, and the status line then says *text only*.
+- **Switching models starts from that model's own settings.** Picking another API model used to
+  keep a setting of the same name from the model before, so a *Channel* or *Quality* chosen for
+  one model could silently change how the next one ran. Each model and provider now keeps its
+  own values, and a document from an earlier version shows the model's defaults once.
+- **Generate a new image sends the aspect ratio you picked** (3:2, 21:9 ...) instead of the
+  rounded pixel size, which some models read as a slightly different ratio.
 
 ## 0.1.13 — 2026-09-15
 

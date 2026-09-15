@@ -107,11 +107,25 @@ async function main() {
         check("official: the crop, the reference and the alpha mask are uploaded", s.uploads.length === 3 && !!crop && !!ref && !!mask, s.uploads.map((u) => u.name).join(", "));
         check("official: the mask upload is maskAlpha, not the luminance mask", !!mask && mask.bytes.equals(png("MASK-ALPHA")), mask && mask.bytes.toString("latin1", 0, 14));
         check("official: image_urls holds the crop first, then the reference; mask_url the mask", !!crop && eq(b.image_urls, [crop.url, ref.url]) && b.mask_url === mask.url, JSON.stringify({ image_urls: b.image_urls, mask_url: b.mask_url }));
-        check("official: model, size as the reduced ratio, tier from the long side, no channel / auto fields", b.model === "gpt-image-2-official" && b.size === "3:2" && b.resolution === "2k" && b.quality === "high" && b.n === 1 && !("channel" in b) && !("background" in b), JSON.stringify(b));
+        check("official: model, size as the reduced ratio, the tier whose output covers the crop (1k 3:2 is 1536x1024), no channel / auto fields", b.model === "gpt-image-2-official" && b.size === "3:2" && b.resolution === "1k" && b.quality === "high" && b.n === 1 && !("channel" in b) && !("background" in b), JSON.stringify(b));
         check("official: the answer is the downloaded file, info names model, channel and task", out.bytes.equals(png("RESULT")) && out.info.model === "gpt-image-2-official" && out.info.channel === "official" && out.info.task === "tsk_img_test", JSON.stringify(out.info));
         const tiers = [];
         for (const [w, h] of [[1024, 768], [2048, 1152], [2560, 1440], [4000, 1400], [700, 3000]]) tiers.push([w, h, toapis._size({ kind: "fill", width: w, height: h }, toapis._channel(editReq(v, { params: { channel: "official" } })))]);
-        check("official: tiers 1k / 2k / 4k by the long side, ratios in lowest terms, clamped to 3:1", eq(tiers.map((t) => [t[2].size, t[2].tier]), [["4:3", "1k"], ["16:9", "2k"], ["16:9", "4k"], ["20:7", "4k"], ["1:3", "4k"]]), JSON.stringify(tiers));
+        check("official: tiers 1k / 2k / 4k by the page's output table (by the long side for a ratio it lacks), ratios in lowest terms, clamped to 3:1", eq(tiers.map((t) => [t[2].size, t[2].tier]), [["4:3", "1k"], ["16:9", "2k"], ["16:9", "4k"], ["20:7", "4k"], ["1:3", "4k"]]), JSON.stringify(tiers));
+        // review F5: a tier's base is not its long edge, so the base alone bought a dearer tier than the crop needs
+        const flux = variant("flux2_pro"), std = toapis._channel(editReq(v, { params: { channel: "standard" } }));
+        const picks = [
+            ["flux2_pro 1440x816", toapis._size({ kind: "fill", width: 1440, height: 816 }, toapis._channel(editReq(flux))), "16:9", "1K"],
+            ["flux2_pro 1440x1080", toapis._size({ kind: "fill", width: 1440, height: 1080 }, toapis._channel(editReq(flux))), "4:3", "2K"],
+            ["flux2_pro 1440x1440", toapis._size({ kind: "fill", width: 1440, height: 1440 }, toapis._channel(editReq(flux))), "1:1", "2K"],
+            ["gpt standard 2048x1024", toapis._size({ kind: "fill", width: 2048, height: 1024 }, std), "2:1", "1k"],
+            ["gpt standard 1536x864", toapis._size({ kind: "fill", width: 1536, height: 864 }, std), "16:9", "1k"],
+            ["gpt standard 1600x900", toapis._size({ kind: "fill", width: 1600, height: 900 }, std), "16:9", "2k"],
+            ["gpt standard text 16:9 at 2048", toapis._size({ kind: "text", aspect: "16:9", width: 2048, height: 1152 }, std), "16:9", "2k"],
+            ["seedream lite 2048x1152", toapis._size({ kind: "edit", width: 2048, height: 1152 }, toapis._channel(editReq(variant("seedream_5_lite")))), "16:9", "2K"],
+        ];
+        const wrong = picks.filter(([, got, size, tier]) => got.size !== size || got.tier !== tier);
+        check("auto takes the smallest tier whose output covers both crop edges (FLUX 1K 16:9 is 1820x1024, GPT 1k 2:1 is 2048x1024)", !wrong.length, JSON.stringify(wrong.length ? wrong : picks.map((p) => [p[0], p[1].tier])));
 
         const s2 = fakeServer();
         await toapis.edit(editReq(v, { width: 1000, height: 700, params: { channel: "standard", quality: "high", background: "opaque" } }), ctxFor(s2));
@@ -185,6 +199,25 @@ async function main() {
         const s4 = fakeServer({ submits: [() => { net++; throw new TypeError("fetch failed"); }] });
         const e4 = await throws(() => toapis.edit(editReq(v), ctxFor(s4)));
         check("a submit lost to the network is not sent again", !!e4 && net === 1 && s4.submits.length === 1, e4);
+        // review F2: the task is paid for once it is submitted; a gateway error on a free status query or on the
+        // download must not throw the image away
+        const gateway = (status) => () => new Response("<html>Bad gateway</html>", { status, headers: { "content-type": "text/html" } });
+        const s5 = fakeServer({ polls: [{ status: "queued" }, gateway(502), gateway(500), { status: "in_progress" }, gateway(504), { status: "completed", result: { data: [{ url: "https://files.toapis.com/generated/b.png" }] } }] });
+        const out5 = await toapis.edit(editReq(v), ctxFor(s5));
+        check("status queries answered 502, 500 and 504 are polled past, and the image arrives", out5.bytes.equals(png("RESULT")) && s5.submits.length === 1, `${s5.calls.filter((c) => /generations\//.test(c.url)).length} polls, ${s5.submits.length} submit`);
+        const s6 = fakeServer({ polls: Array.from({ length: 7 }, () => gateway(502)) });
+        const e6 = await throws(() => toapis.edit(editReq(v), ctxFor(s6)));
+        check("a status query failing six times in a row ends the run with the task id and the console hint", !!e6 && /tsk_img_test/.test(e6) && /ToAPIs console/.test(e6) && s6.calls.filter((c) => /generations\//.test(c.url)).length === 6, e6);
+        let dl = 0;
+        const s7 = fakeServer();
+        const f7 = s7.fetch;
+        const ctx7 = ctxFor({ ...s7, fetch: async (url, init) => (new URL(String(url)).hostname === "files.toapis.com" && ++dl < 3 ? new Response("busy", { status: 502 }) : f7(url, init)) });
+        const out7 = await toapis.edit(editReq(v), ctx7);
+        check("a result download answered 502 twice is tried again and arrives", out7.bytes.equals(png("RESULT")) && dl === 3, `${dl} download attempts`);
+        const s8 = fakeServer();
+        const f8 = s8.fetch;
+        const e8 = await throws(() => toapis.edit(editReq(v), ctxFor({ ...s8, fetch: async (url, init) => (new URL(String(url)).hostname === "files.toapis.com" ? new Response("gone", { status: 502 }) : f8(url, init)) })));
+        check("a download that keeps failing names the model and the task, and says the image stays in the console", !!e8 && /flux-2-pro/.test(e8) && /tsk_img_test/.test(e8) && /24 hours/.test(e8), e8);
     });
 
     // ---- 4. failures ----
@@ -210,21 +243,52 @@ async function main() {
     // ---- 5. the 10 MB guard ----
     await section("5. the 10 MB guard", async () => {
         const v = variant("gpt_image_2");
-        const big = png("BIGCROP", 11 * 1024 * 1024);
+        const MB = 1000 * 1000;
+        const big = png("BIGCROP", 11 * MB);
         const jpegCalls = [];
         const s = fakeServer();
-        await toapis.edit(editReq(v, { image: big, params: { channel: "official" } }), ctxFor(s, { toJpeg: async (b, q) => { jpegCalls.push([b.length, q]); return png("JPEG", 2 * 1024 * 1024); } }));
+        await toapis.edit(editReq(v, { image: big, params: { channel: "official" } }), ctxFor(s, { toJpeg: async (b, q) => { jpegCalls.push([b.length, q]); return png("JPEG", 2 * MB); } }));
         const crop = s.uploads.find((u) => /-crop\./.test(u.name));
-        check("an 11 MB crop goes up as a JPEG through toJpeg (quality 92)", jpegCalls.length === 1 && jpegCalls[0][1] === 92 && crop && crop.type === "image/jpeg" && /\.jpg$/.test(crop.name) && crop.bytes.length === 2 * 1024 * 1024, JSON.stringify({ jpegCalls, crop: crop && [crop.name, crop.type, crop.bytes.length] }));
+        check("an 11 MB crop goes up as a JPEG through toJpeg (quality 92)", jpegCalls.length === 1 && jpegCalls[0][1] === 92 && crop && crop.type === "image/jpeg" && /\.jpg$/.test(crop.name) && crop.bytes.length === 2 * MB, JSON.stringify({ jpegCalls, crop: crop && [crop.name, crop.type, crop.bytes.length] }));
+        // review F6: the page says "10MB" with no byte count; a file between 10,000,000 and 10,485,760 bytes takes the fallback
+        const between = [];
+        const sb = fakeServer();
+        await toapis.edit(editReq(v, { image: png("BETWEEN", 10200000), params: { channel: "official" } }), ctxFor(sb, { toJpeg: async (b) => { between.push(b.length); return png("JPEG", MB); } }));
+        check("a crop of 10,200,000 bytes (under 10 MiB, over 10 MB) goes up as a JPEG", between.length === 1 && sb.uploads.some((u) => /-crop\.jpg$/.test(u.name)) && toapis.MAX_UPLOAD === 10000000, JSON.stringify({ between, max: toapis.MAX_UPLOAD }));
         const s2 = fakeServer();
-        const e2 = await throws(() => toapis.edit(editReq(v, { maskAlpha: png("MASK", 11 * 1024 * 1024), params: { channel: "official" } }), ctxFor(s2, { toJpeg: async () => png("J") })));
+        const e2 = await throws(() => toapis.edit(editReq(v, { maskAlpha: png("MASK", 11 * MB), params: { channel: "official" } }), ctxFor(s2, { toJpeg: async () => png("J"), opaque: async () => true })));
         check("an 11 MB mask is refused before any request (a mask is never re-encoded)", !!e2 && /mask is 11\.0 MB/.test(e2) && s2.calls.length === 0, e2);
         const s3 = fakeServer();
-        const e3 = await throws(() => toapis.edit(editReq(v, { image: big }), ctxFor(s3, { toJpeg: async () => png("STILLBIG", 10 * 1024 * 1024 + 1) })));
+        const e3 = await throws(() => toapis.edit(editReq(v, { image: big }), ctxFor(s3, { toJpeg: async () => png("STILLBIG", 10 * MB + 1) })));
         check("a crop still over 10 MB as JPEG is refused before any request", !!e3 && /set Highres fix lower/.test(e3) && s3.calls.length === 0, e3);
+        // review F3: the Original copy of the crop is opaque and as large as the crop, so it gets the crop's fallback
         const s4 = fakeServer();
-        const e4 = await throws(() => toapis.edit(editReq(v, { references: [png("BIGREF", 11 * 1024 * 1024)] }), ctxFor(s4, { toJpeg: async () => png("J") })));
-        check("an 11 MB reference is refused before any request (it keeps its PNG)", !!e4 && /reference 1 is 11\.0 MB/.test(e4) && s4.calls.length === 0, e4);
+        const refJpeg = [];
+        await toapis.edit(editReq(v, { references: [png("BIGREF", 11 * MB)], params: { channel: "official" } }), ctxFor(s4, { toJpeg: async (b, q) => { refJpeg.push([b.length, q]); return png("REFJPEG", MB); }, opaque: async () => true }));
+        const ref = s4.uploads.find((u) => /-ref1\./.test(u.name));
+        check("an opaque 11 MB reference goes up as a JPEG", refJpeg.length === 1 && refJpeg[0][1] === 92 && ref && ref.type === "image/jpeg" && /\.jpg$/.test(ref.name) && eq(s4.submits[0].image_urls[1], ref.url), JSON.stringify({ refJpeg, ref: ref && [ref.name, ref.type, ref.bytes.length] }));
+        const s5 = fakeServer();
+        let asked = 0;
+        const e5 = await throws(() => toapis.edit(editReq(v, { references: [png("CUTOUT", 11 * MB)] }), ctxFor(s5, { toJpeg: async () => { asked++; return png("J"); }, opaque: async () => false })));
+        check("an 11 MB reference with transparency keeps its PNG and is refused with the remedy, before any request", !!e5 && /reference 1 is 11\.0 MB/.test(e5) && /transparency/.test(e5) && /Highres fix lower/.test(e5) && /Original off/.test(e5) && asked === 0 && s5.calls.length === 0, e5);
+    });
+
+    // ---- 5b. the input ratio (review F4) ----
+    await section("5b. the input ratio", async () => {
+        const v = variant("seedream_5_lite");
+        const s = fakeServer();
+        const e = await throws(() => toapis.edit(editReq(v, { width: 2048, height: 528 }), ctxFor(s)));
+        check("a Seedream crop of 2048 x 528 (3.9:1) is refused before any upload, with the remedy", !!e && /3:1/.test(e) && /2048 × 528/.test(e) && /less elongated/.test(e) && s.calls.length === 0, e);
+        const s2 = fakeServer();
+        await toapis.edit(editReq(v, { width: 2048, height: 688 }), ctxFor(s2));
+        check("a Seedream crop of 2048 x 688 (2.98:1) goes through", s2.submits.length === 1, String(s2.submits.length));
+        const ihdr = (w, h) => { const b = Buffer.alloc(64, 0); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]).copy(b); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20); return b; };
+        const s3 = fakeServer();
+        const e3 = await throws(() => toapis.edit(editReq(v, { width: 1024, height: 1024, references: [ihdr(400, 1600)] }), ctxFor(s3)));
+        check("a Seedream reference of 400 x 1600 is refused before any upload", !!e3 && /reference 1 is 400 × 1600/.test(e3) && s3.calls.length === 0, e3);
+        const s4 = fakeServer();
+        await toapis.edit(editReq(variant("gpt_image_2"), { width: 2048, height: 528, params: { channel: "official" } }), ctxFor(s4));
+        check("a model without max_ratio is not held to it", s4.submits.length === 1, String(s4.submits.length));
     });
 
     // ---- 6. the key, the host and the balance ----
@@ -299,6 +363,52 @@ async function main() {
             }
         }
         check("every variant: toapis first, the home default kept, a text shape, the notes, each channel builds a request", !bad.length, bad.join("; ") || `${served.length} recipes`);
+    });
+
+    // ---- 8. prompt upsampling on the ToAPIs key (llm.js), review F7 ----
+    await section("8. prompt upsampling on the ToAPIs key", async () => {
+        const orig = Module._load;
+        const llmPath = path.join(ROOT, "electron", "main", "llm.js");
+        Module._load = function (request, parent, ...rest) {
+            if (request === "electron") return { app: { getPath: () => path.join(require("node:os").tmpdir(), "scumble-toapis-test-llm") }, safeStorage: {} };
+            if (parent && parent.filename === llmPath) {
+                if (request === "./keys") return { get: (id) => (id === "toapis" ? KEY : ""), describe: () => ({ set: true }) };
+                if (request === "./settings") return { get: () => ({}) };
+            }
+            return orig.call(this, request, parent, ...rest);
+        };
+        let llm;
+        try { llm = require(llmPath); } finally { Module._load = orig; }
+        const realFetch = globalThis.fetch;
+        async function scenario(answers) {
+            const calls = [];
+            globalThis.fetch = async (url, init) => {
+                const body = JSON.parse(init.body);
+                calls.push({ url: String(url), image: Array.isArray(body.messages[0].content) });
+                const [status, message] = answers[Math.min(calls.length, answers.length) - 1];
+                if (status !== 200) return new Response(JSON.stringify({ error: { message } }), { status });
+                return new Response(JSON.stringify({ choices: [{ message: { content: "a rewritten prompt" }, finish_reason: "stop" }] }), { status: 200 });
+            };
+            try {
+                const res = await llm.ask({ id: "toapis:gemini-3.8-flash", instruction: "rewrite", image: new Uint8Array([137, 80, 78, 71]) });
+                return { calls, res };
+            } catch (err) {
+                return { calls, err: String(err && err.message || err) };
+            } finally {
+                globalThis.fetch = realFetch;
+            }
+        }
+        const a = await scenario([[429, "Rate limit exceeded"], [200]]);
+        check("a 429 on the request with the crop is not asked again without it, and reads rate limited", a.calls.length === 1 && a.calls[0].image && !!a.err && /rate limited/.test(a.err) && /toapis\.com/.test(a.calls[0].url), JSON.stringify(a));
+        const b = await scenario([[402, "insufficient balance"], [402, "insufficient balance"]]);
+        check("a 402 is sent once and reads balance too low", b.calls.length === 1 && !!b.err && /balance too low/.test(b.err), JSON.stringify(b));
+        const c = await scenario([[422, "content policy violation"], [200]]);
+        check("a 422 that does not name the image is not retried without it", c.calls.length === 1 && !!c.err && /content policy/.test(c.err), JSON.stringify(c));
+        const d = await scenario([[400, "image_url content part is not supported"], [200]]);
+        check("a 400 about the image is asked again without it, and the answer says text only", d.calls.length === 2 && d.calls[0].image && !d.calls[1].image && d.res && d.res.text === "a rewritten prompt" && d.res.note === "text only", JSON.stringify(d));
+        const e = await scenario([[200]]);
+        check("a plain answer keeps the image and has no note", e.calls.length === 1 && e.calls[0].image && e.res && e.res.note === "", JSON.stringify(e));
+        check("the key never appears in an upsampling error", ![a, b, c].some((x) => String(x.err).includes(KEY)), "");
     });
 
     const failed = results.filter((x) => !x).length;

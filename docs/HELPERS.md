@@ -27,15 +27,22 @@ answers). IPC `llm:list` / `llm:ask`, `host.upsampleBackends()`, `host.askLLM()`
 A stored ToAPIs key (the image provider, docs/RECIPES.md "ToAPIs") adds three rows **at the top** of
 the list: Gemini 3.8 Flash, Claude Haiku 4.5 and GPT-5.6 Terra, ids `toapis:<model>`. ToAPIs' `POST
 /v1/chat/completions` is OpenAI-compatible with vision and data-URI images, so the rows go through the
-same client as the local endpoint below (`askCompatible`, with its text-only retry and `<think>`
-stripping), at the host `providers/toapis.js` allows (`settings.toapis.base`, else
-`https://toapis.com`) plus `/v1`, on the ToAPIs key; an unreachable host names ToAPIs. From ToAPIs'
+same client as the local endpoint below (`askCompatible` with `<think>` stripping), at the host
+`providers/toapis.js` allows (`settings.toapis.base`, else `https://toapis.com`) plus `/v1`, on the
+ToAPIs key; an unreachable host names ToAPIs. All three rows see images, so the client runs **strict**
+there: the retry without the image happens only for a 400 / 413 / 415 / 422 whose message names the image
+(the status line then ends with "text only", as for a local model), never for a refused key (401), an empty
+balance (402), a forbidden model (403), a rate limit (429) or a server error, which a second request cannot
+fix; those fail at once with the image adapter's plain words in front of ToAPIs' message ("key refused",
+"balance too low, top up at toapis.com", "rate limited"). Before the review of 2026-09-15 any 4xx was
+retried without the crop and the "text only" note was dropped on this path. From ToAPIs'
 catalogue on 2026-09-15 the three cost about $0.30 / $1.50 (Gemini, Claude) and $0.40 / $2.40 (GPT) per
 million tokens in / out, roughly a tenth of a cent for one rewrite with the crop. Left out: GPT-5.6
 Luna (no public price) and the `-official` text channels (three to four times the price for a prompt
 rewrite). **Not run against the live API**; `tools/llm_test.py` checks the rows' order, that they come
 and go with the key, and that the request reaches the endpoint with the crop and the ToAPIs key
-(`tools/llm_mock.py` answers the three ids).
+(`tools/llm_mock.py` answers the three ids), and section 8 of `node tools/toapis_test.js` the strict
+retry rule, the plain words and the "text only" note against a scripted fetch.
 
 ### A local or self-hosted OpenAI-compatible endpoint
 

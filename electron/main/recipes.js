@@ -55,12 +55,13 @@ const TEXT_SIZES_DEFAULT = [768, 1024, 1280, 1536, 2048, 3072, 4096];
 // The biggest crop a provider variant will take for an *edit*, which is what the app pushes
 // the emitted size to (host.apiSize "max"). `max` is the long side, `step` the multiple both
 // sides are rounded to, `pixels` an area cap (0 = none) and `minPixels` an area *floor*
-// (0 = none), which GPT Image 2.5 has: it refuses anything under 655,360 pixels. A recipe
+// (0 = none), which GPT Image 2.5 has: it refuses anything under 655,360 pixels; `ratio` the
+// steepest crop it takes (0 = any; the crop's context is widened to it). A recipe
 // sets `limits` for all its variants, a variant overrides it; without either the generic
 // entry below applies. The numbers are the providers' own, and where a provider stays silent
 // the conservative 2048 stands - raising one is a two-line recipe change, so do it with a
 // source, not a guess.
-const LIMITS_DEFAULT = { min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0 };
+const LIMITS_DEFAULT = { min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0 };
 
 function editLimits(r, v) {
     const l = { ...LIMITS_DEFAULT, ...(r.limits || {}), ...(v.limits || {}) };
@@ -71,6 +72,8 @@ function editLimits(r, v) {
     l.pixels = Math.max(0, Math.round(+l.pixels || 0));
     l.minPixels = Math.max(0, Math.round(+l.minPixels || 0));
     if (l.pixels && l.minPixels > l.pixels) l.minPixels = 0;
+    // `ratio`: the steepest crop the model takes (Seedream on ToAPIs: 3, i.e. 3:1); 0 = any
+    l.ratio = Number.isFinite(+l.ratio) && +l.ratio >= 1 ? +l.ratio : 0;
     return l;
 }
 
