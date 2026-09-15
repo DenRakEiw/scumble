@@ -511,6 +511,26 @@ async function renderProviders() {
             a.href = "#"; a.textContent = "get a key"; a.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal(p.keyUrl); });
             state.appendChild(a);
         }
+        if (p.balance && k.set) {
+            // a free query of what the key has left (ToAPIs: GET /v1/balance); it also shows the key works
+            state.append(" · ");
+            const b = document.createElement("a");
+            b.href = "#"; b.textContent = "check balance"; b.className = "shell-balance";
+            const out = document.createElement("span");
+            out.className = "shell-balance-out";
+            b.addEventListener("click", async (e) => {
+                e.preventDefault();
+                out.textContent = " checking ...";
+                try {
+                    const r = await window.scumble.providers.balance(p.id);
+                    out.textContent = r.unlimited ? " unlimited" : (r.usd != null ? ` $${r.usd.toFixed(2)} left` : " no balance in the answer");
+                } catch (err) {
+                    out.textContent = " " + String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, "");
+                }
+            });
+            state.appendChild(b);
+            state.appendChild(out);
+        }
         row.appendChild(state);
         ui.providers.appendChild(row);
     }

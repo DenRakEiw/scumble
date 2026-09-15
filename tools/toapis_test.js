@@ -84,6 +84,11 @@ function editReq(v, extra = {}) {
     };
 }
 
+/** A section that throws is a failed check, not the end of the run: the checks after it still report. */
+async function section(name, fn) {
+    try { await fn(); } catch (err) { check(name + " ran to its end", false, String(err && err.stack || err).split(/\r?\n/).slice(0, 2).join(" ")); }
+}
+
 async function throws(fn) {
     try { await fn(); } catch (err) { return String(err && err.message || err); }
     return null;
@@ -91,7 +96,7 @@ async function throws(fn) {
 
 async function main() {
     // ---- 1. fill on the official GPT Image 2 channel, then the same recipe on its other channels ----
-    {
+    await section("1. fill on the official GPT Image 2 channel, then the same recipe on its other channels", async () => {
         const v = variant("gpt_image_2");
         const s = fakeServer();
         const ctx = ctxFor(s);
@@ -118,10 +123,10 @@ async function main() {
         check("vip: no mask, the exact ratio, a transparent background passes", s3.uploads.length === 1 && !("mask_url" in b3) && b3.model === "gpt-image-2-vip" && b3.size === "10:7" && b3.background === "transparent", JSON.stringify(b3));
         const e = await throws(() => toapis.edit(editReq(v, { params: { channel: "cheapest" } }), ctxFor(fakeServer())));
         check("an unknown channel is refused", !!e && /no channel "cheapest"/.test(e), e);
-    }
+    });
 
     // ---- 2. shapes: objects, metadata nesting, a text run, pixel sizes with seed and negative ----
-    {
+    await section("2. shapes: objects, metadata nesting, a text run, pixel sizes with seed and negative", async () => {
         const v = variant("nano_banana_2");
         const s = fakeServer();
         await toapis.edit(editReq(v, { width: 2048, height: 1152, params: { channel: "standard", "metadata.resolution": "auto" } }), ctxFor(s));
@@ -153,10 +158,10 @@ async function main() {
         await toapis.edit(editReq(g, { width: 2048, height: 1536, params: { channel: "standard", quality: "max" } }), ctxFor(s6));
         const b6 = s6.submits[0];
         check("gpt 2.5 standard: a preset ratio, the 2K tier, no quality", b6.model === "gpt-image-2.5-flare" && b6.size === "4:3" && b6.resolution === "2K" && !("quality" in b6), JSON.stringify(b6));
-    }
+    });
 
     // ---- 3. polling: queued, a 429 with Retry-After, in progress, completed; both result shapes; a submit 429 ----
-    {
+    await section("3. polling: queued, a 429 with Retry-After, in progress, completed; both result shapes; a submit 429", async () => {
         const v = variant("flux2_pro");
         const s = fakeServer({ polls: [
             { status: "queued" },
@@ -180,10 +185,10 @@ async function main() {
         const s4 = fakeServer({ submits: [() => { net++; throw new TypeError("fetch failed"); }] });
         const e4 = await throws(() => toapis.edit(editReq(v), ctxFor(s4)));
         check("a submit lost to the network is not sent again", !!e4 && net === 1 && s4.submits.length === 1, e4);
-    }
+    });
 
     // ---- 4. failures ----
-    {
+    await section("4. failures", async () => {
         const v = variant("seedream_5_pro");
         const s = fakeServer({
             polls: [{ status: "failed", billing: { status: "refunded", credits: "0", cost_usd: "0" }, error: { code: "generation_failed", message: "call upstream API failed: upstream returned status 422" } }],
@@ -200,10 +205,10 @@ async function main() {
         const s4 = fakeServer({ polls: [() => new Response(JSON.stringify({ error: { code: 404, message: "Task not found", type: "not_found_error" } }), { status: 404 })] });
         const e4 = await throws(() => toapis.edit(editReq(v), ctxFor(s4)));
         check("a lost task is an error with its id", !!e4 && /tsk_img_test/.test(e4) && /Task not found/.test(e4), e4);
-    }
+    });
 
     // ---- 5. the 10 MB guard ----
-    {
+    await section("5. the 10 MB guard", async () => {
         const v = variant("gpt_image_2");
         const big = png("BIGCROP", 11 * 1024 * 1024);
         const jpegCalls = [];
@@ -220,10 +225,10 @@ async function main() {
         const s4 = fakeServer();
         const e4 = await throws(() => toapis.edit(editReq(v, { references: [png("BIGREF", 11 * 1024 * 1024)] }), ctxFor(s4, { toJpeg: async () => png("J") })));
         check("an 11 MB reference is refused before any request (it keeps its PNG)", !!e4 && /reference 1 is 11\.0 MB/.test(e4) && s4.calls.length === 0, e4);
-    }
+    });
 
     // ---- 6. the key, the host and the balance ----
-    {
+    await section("6. the key, the host and the balance", async () => {
         const v = variant("gpt_image_2");
         const s = fakeServer();
         await toapis.edit(editReq(v, { references: [png("R")], params: { channel: "official" } }), ctxFor(s));
@@ -247,10 +252,10 @@ async function main() {
         await toapis.balance(ctxFor(s5, { base: "https://evil.example" }));
         check("a base outside the list falls back to toapis.com", s5.calls[0].url === "https://toapis.com/v1/balance", s5.calls[0].url);
         check("baseUrl reads settings.toapis.base through the list", toapis.baseUrl({ toapis: { base: "http://127.0.0.1:9000" } }) === "http://127.0.0.1:9000" && toapis.baseUrl({ toapis: { base: "https://evil.example" } }) === "https://toapis.com" && toapis.baseUrl({}) === "https://toapis.com");
-    }
+    });
 
     // ---- 7. every shipped variant, normalised as the app does, on every channel ----
-    {
+    await section("7. every shipped variant, normalised as the app does, on every channel", async () => {
         const orig = Module._load;
         Module._load = function (request, ...rest) {
             if (request === "electron") return { app: { getPath: () => path.join(require("node:os").tmpdir(), "scumble-toapis-test-no-user-recipes") } };
@@ -294,7 +299,7 @@ async function main() {
             }
         }
         check("every variant: toapis first, the home default kept, a text shape, the notes, each channel builds a request", !bad.length, bad.join("; ") || `${served.length} recipes`);
-    }
+    });
 
     const failed = results.filter((x) => !x).length;
     console.log(failed ? "FAIL" : "PASS");
