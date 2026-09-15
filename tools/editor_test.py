@@ -2688,6 +2688,15 @@ const one = async (name, opts) => {
             if (!passCheck.kept || !passCheck.sig || !passCheck.of || !passCheck.dirty) throw new Error(name + ": a sampled pass took the screen's stroke scratch: " + JSON.stringify(passCheck));
             if (ed.tileMode && opts.mask && L._masked) throw new Error(name + ": a sampled pass of " + small.width + " x " + small.height + " made the masked layer's `_masked` canvas");
             if (ed.tileMode && (P.displayCanvasIfMade(L.px) || (L.maskPx && P.displayCanvasIfMade(L.maskPx)))) throw new Error(name + ": a sampled pass made a display mirror of the layer or its mask");
+            // C6 (c2e): the layer list drawn during the gesture: on tiles the row comes from the layer's thumbnail (the layer
+            // as it was before the stroke), not from full-size live previews filled from its mirror
+            const tc = L.px.thumbnailCanvas;
+            let thumbs = 0;
+            L.px.thumbnailCanvas = function (...a) { thumbs++; return tc.apply(this, a); };
+            try { ed.renderLayers(); } finally { delete L.px.thumbnailCanvas; }
+            passCheck.row = { thumbs, previews: [!!ed.strokePreview, !!ed.maskedPreview, !!ed.maskPreview] };
+            if (ed.tileMode && (!thumbs || passCheck.row.previews.some(Boolean))) throw new Error(name + ": the layer's row drawn during the stroke did not come from its thumbnail: " + JSON.stringify(passCheck.row));
+            if (ed.tileMode && (P.displayCanvasIfMade(L.px) || (L.maskPx && P.displayCanvasIfMade(L.maskPx)))) throw new Error(name + ": the layer's row drawn during the stroke made a display mirror");
         }
         ed.hover = null; ed.sceneSig = null; ed.draw();
     }

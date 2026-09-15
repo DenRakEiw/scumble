@@ -2630,6 +2630,21 @@ a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each
     canvas drawn, and the drag's last frame is the frame after the pointer is let go (0 levels on both backends).
   - Mutation, red: the tile branch skipped for any gesture again ("a move drag made a display mirror or a pyramid of the tile layer:
     mirror true, pyramid true, regions 0").
+- **(c2e) A layer's row thumbnail during a stroke on it.** `drawLayerFitted` drew a row whose layer a paint or mask stroke runs on from
+  `layerPixels(layer, true)`: the full-size live preview (`strokePreview`, and `maskedPreview` / `maskPreview` for a masked layer),
+  filled from the layer's display mirror and the mask's, up to four canvases of 572 MB at 15000 x 10000, for a picture of 40 px. It
+  runs when a row is drawn during the gesture: the layer's chains landing (`redrawThumbsOf`) within a second of a whole change, or a
+  run's result arriving (`renderLayers`, `renderHistory`). **Built** (map S4, option a): on tiles the row comes from the layer's
+  thumbnail during a stroke too, the mask's thumbnail destination-in. **What the user loses**: a row drawn during the gesture shows the
+  layer as it was before the stroke, not the stroke in progress. Nothing after the commit changes: the commit redraws no row, so the
+  row showed the pre-stroke picture there as well until the list is drawn again. The canvas backend keeps its path (the live
+  previews are its display canvases). Option b, the stroke composed into the row at the thumbnail's level, was not built: it reads the
+  stroke store with `screen` asks whose landings rebuild the screen's scratch, for a 40 px picture of a stroke that is on the screen.
+  - Gate: `live_stroke_preview_shows_what_the_commit_writes`, after the fourth dab of each gesture `renderLayers()`: on tiles the row
+    was drawn from the layer's `thumbnailCanvas` (1 call), with no `strokePreview`, `maskedPreview` or `maskPreview` and no mirror of
+    the layer or its mask (the canvas backend: 0 thumbnail calls and its previews, as before).
+  - Mutation, red: the live branch back ("paint_clipped: the layer's row drawn during the stroke did not come from its thumbnail:
+    thumbs 0, previews [true, false, false]").
 
 ### C7. Both hosts, the flag, the release (3 days)
 

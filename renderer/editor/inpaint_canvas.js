@@ -7803,8 +7803,13 @@ class InpaintEditor {
      * A layer's pixels (its mask applied) drawn into the rectangle x, y, w, h of a thumbnail's context.
      * On tiles, outside a stroke on the layer, from the tile store's small thumbnail canvases: a thumbnail
      * never makes the display mirror, which a hidden layer or a tab in the background would otherwise
-     * hold at the layer's full size for a picture of 40 px (C2 step b's review). On canvases (or during a
-     * stroke) from the display canvas's pyramid level, as before.
+     * hold at the layer's full size for a picture of 40 px (C2 step b's review). On canvases from the display
+     * canvas's pyramid level, as before, a stroke on the layer included.
+     *
+     * C6 (c2e): on tiles during a stroke on the layer too: the row shows the layer as it was before the stroke,
+     * which is also what it shows after the commit until the list is drawn again. The stroke in a row redrawn
+     * mid-gesture (a landing of the layer's chains, a run's result arriving) used to come from the full-size live
+     * previews, filled from the layer's display mirror: up to four canvases of 572 MB at 15000 x 10000.
      */
     drawLayerFitted(ctx, layer, x, y, w, h) {
         const px = layer.px;
@@ -7813,7 +7818,7 @@ class InpaintEditor {
         ctx.save();
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "medium";
-        if (isTilePixels(px) && !live) {
+        if (isTilePixels(px) && (!live || !layer.maskPx || isTilePixels(layer.maskPx))) {
             // display (C6 b): a tile whose mips are in the worker shows what it had, and the row is drawn again when they land
             ctx.drawImage(px.thumbnailCanvas(true), x, y, w, h);
             if (layer.maskPx) {
