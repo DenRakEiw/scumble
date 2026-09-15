@@ -2598,10 +2598,23 @@ const one = async (name, opts) => {
     const p = { kind: opts.kind, layer: L, stroke: ed.newStrokeBuffer(target), clip: ed.strokeClip(L, target),
                 erase: !!opts.erase, white: opts.kind === "maskpaint", last: [800, 900], pressure: 1 };
     ed.pointer = p;
+    let passCheck = null;
     for (let i = 1; i <= 8; i++) {
         const x = 800 + i * 56, y = 900 + (i % 3) * 26;
         ed.layerDab(p, p.last[0], p.last[1], x, y);
         p.last = [x, y];
+        if (i === 4) {
+            // C6 (c2): a sampled pass between two dabs whose size is not a whole number of pixels (76.8 px high), as the
+            // film panel's flatten or the flood's coarse pass: it composes the layer in a scratch of its own, so the
+            // screen's stroke scratch, its signature and the dab box waiting for the next frame stay the screen's,
+            // and it makes no `_masked` canvas and no display mirror
+            const sv = ed.strokeView, sig = ed._strokeViewSig, dirty = p.dirtyView;
+            const small = ed.sampleRegion("image", [0, 0, 2400, 1600], 115.2 / 2400, { forRun: true });
+            passCheck = { size: [small.width, small.height], kept: ed.strokeView === sv, sig: ed._strokeViewSig === sig, of: ed._strokeViewOf === p, dirty: p.dirtyView === dirty && !!dirty };
+            if (!passCheck.kept || !passCheck.sig || !passCheck.of || !passCheck.dirty) throw new Error(name + ": a sampled pass took the screen's stroke scratch: " + JSON.stringify(passCheck));
+            if (ed.tileMode && opts.mask && L._masked) throw new Error(name + ": a sampled pass of " + small.width + " x " + small.height + " made the masked layer's `_masked` canvas");
+            if (ed.tileMode && (P.displayCanvasIfMade(L.px) || (L.maskPx && P.displayCanvasIfMade(L.maskPx)))) throw new Error(name + ": a sampled pass made a display mirror of the layer or its mask");
+        }
         ed.hover = null; ed.sceneSig = null; ed.draw();
     }
     await wait(40); ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40);
@@ -2617,11 +2630,24 @@ const one = async (name, opts) => {
     ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(60); ed.sceneSig = null; ed.draw(); await wait(60);
     const after = shot();
     const [worst, n] = diff(before, after);
-    out.cases[name] = { used, mirror, pyramid, worst, differing: n, bytes: before.length };
+    out.cases[name] = { used, mirror, pyramid, worst, differing: n, bytes: before.length, pass: passCheck };
     if (!used) throw new Error(name + ": the region preview was not the path taken");
     if (ed.tileMode && (mirror || pyramid)) throw new Error(name + ": the stroke made a display mirror or a pyramid entry: " + JSON.stringify(out.cases[name]));
     if (ed.tileMode && opts.mask && L._masked) throw new Error(name + ": a masked tile layer still made its `_masked` canvas: " + JSON.stringify(out.cases[name]));
     if (worst > 2) throw new Error(name + ": the preview is not what the commit wrote (" + worst + " levels on " + n + " of " + before.length + " bytes)");
+    if (opts.mask) {
+        // C6 (c2): a sampled pass at 1:1 composes the masked layer in its own scratch: the pixels of the whole-resolution
+        // flatten, byte for byte, over the mask's edge and where the mask has no tile at all (the layer hidden there)
+        const flat = ed.flattenToCanvas({ forRun: true }).getContext("2d");
+        passCheck.exact = [];
+        for (const box of [[900, 800, 1300, 1100], [1600, 800, 2000, 1100]]) {
+            const a = ed.sampleRegion("image", box, 1, { forRun: true }).getContext("2d").getImageData(0, 0, 400, 300).data;
+            const f = flat.getImageData(box[0], box[1], 400, 300).data;
+            const [pw, pn] = diff(a, f);
+            passCheck.exact.push([pw, pn]);
+            if (pw > 0) throw new Error(name + ": a sampled pass over the masked layer at " + JSON.stringify(box) + " differs from the flatten by " + pw + " levels on " + pn + " bytes");
+        }
+    }
     ed.removeLayer(L.id);
     ed.renderLayers();
 };

@@ -5812,10 +5812,74 @@ class InpaintEditor {
         return m;
     }
 
-    /** Some pixels of `layer` (its own or its mask) over the layer's rectangle, at the pass's level. */
+    /** Some pixels of `layer` (its own or its mask) over the layer's rectangle, at the pass's level; false when a tile store holds none there. */
     drawPixelsInto(ctx, layer, px, vp) {
-        if (isTilePixels(px)) { this.drawTilesInto(ctx, px, layer.x, layer.y, layer.w, layer.h, vp); return; }
+        if (isTilePixels(px)) return this.drawTilesInto(ctx, px, layer.x, layer.y, layer.w, layer.h, vp);
         ctx.drawImage(this.displaySource(px, (layer.w * vp.sx) / px.width, false), layer.x, layer.y, layer.w, layer.h);
+        return true;
+    }
+
+    /**
+     * A scratch for one pass (C6 c2): kept under `key` up to STROKE_SCRATCH_KEEP_PX, a canvas of its own above that (a
+     * fine flood box can be tens of megapixels, and nothing should hold one after the pass).
+     */
+    passScratch(key, w, h) {
+        if (w * h > STROKE_SCRATCH_KEEP_PX) { const c = makeCanvas(w, h); c._livePreview = true; return c; }
+        return this.bandScratch(key, w, h);
+    }
+
+    /**
+     * A masked layer, or one a live stroke runs on, in a region pass other than the screen's stroke (C6 c2): composed
+     * into a scratch of the pass target's size with the pass's transform (the layer's pixels, the stroke over them,
+     * the mask, or the mask with its stroke, destination-in), then drawn at identity with the layer's alpha and blend
+     * mode as `ctx` carries them. The screen's scratch (`strokeView`, its signature and the gesture's dirty box) stays
+     * the screen's: the film panel's flatten during a stroke rebuilt it at 192 px and the next frame rebuilt it again,
+     * two masked layers took it from each other on every frame, and a pass whose size is not a whole number of pixels
+     * (the flood's coarse pass on a 3:2 picture) fell back to `_masked`: a 572 MB canvas and two display mirrors at
+     * 15000 x 10000 for each masked layer.
+     */
+    drawLayerPass(ctx, layer, vp) {
+        const W = ctx.canvas.width, H = ctx.canvas.height;
+        const p = this.liveStrokeOn(layer) ? this.pointer : null;
+        const s = this.passScratch("_passView", W, H);
+        const x = s.getContext("2d");
+        const toPass = (c) => { c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = "source-over"; c.clearRect(0, 0, W, H); c.setTransform(vp.sx, 0, 0, vp.sy, -vp.x * vp.sx, -vp.y * vp.sy); };
+        x.save();
+        try {
+            toPass(x);
+            this.drawPixelsInto(x, layer, layer.px, vp);
+            if (p && p.kind === "layerpaint") this.drawStrokeInto(x, layer, layer.px, p.erase ? "destination-out" : (layer.alphaLock ? "source-atop" : "source-over"), vp, [0, 0, W, H]);
+            if (layer.maskPx) {
+                let m = null;
+                if (p && p.kind === "maskpaint") {
+                    m = this.passScratch("_passMaskView", W, H);
+                    const mx = m.getContext("2d");
+                    mx.save();
+                    try {
+                        toPass(mx);
+                        this.drawPixelsInto(mx, layer, layer.maskPx, vp);
+                        this.drawStrokeInto(mx, layer, layer.maskPx, p.erase ? "destination-out" : "source-over", vp, [0, 0, W, H]);
+                    } finally { mx.restore(); }
+                }
+                x.globalAlpha = 1;
+                x.globalCompositeOperation = "destination-in";
+                if (m) {
+                    x.setTransform(1, 0, 0, 1, 0, 0);
+                    x.drawImage(m, 0, 0);
+                } else {
+                    this.drawPixelsInto(x, layer, layer.maskPx, vp);   // nothing to draw only outside the mask, where the layer drew nothing either
+                }
+            }
+        } finally {
+            x.restore();
+        }
+        ctx.save();
+        try {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.drawImage(s, 0, 0);
+        } finally {
+            ctx.restore();
+        }
     }
 
     /**
@@ -9755,10 +9819,13 @@ class InpaintEditor {
             return;
         }
         // C5: the layer a live stroke runs on, and a layer whose transparency mask sits on the same
-        // tile grid, in a region pass: composed inside the region only, at the pass's resolution
-        // (layerRegionView). layerWithStroke and `_masked` below are canvases as large as the layer,
-        // filled from the layer's display mirror.
+        // tile grid, in a region pass: composed inside the region only, at the pass's resolution.
+        // layerWithStroke and `_masked` below are canvases as large as the layer, filled from the
+        // layer's display mirror. C6 (c2): the screen keeps its scratch for a live stroke (layerRegionView:
+        // a dab redraws only its box); every other pass, and a masked layer without a stroke, composes the
+        // layer into a scratch of the pass target's size (drawLayerPass), whatever the pass's size.
         if (vp && !matched && (this.liveStrokeOn(layer) || (layer.maskPx && this.tileMaskOf(layer)))) {
+            if (!(vp.screen && this.liveStrokeOn(layer))) { this.drawLayerPass(ctx, layer, vp); return; }
             const live = this.layerRegionView(layer, vp);
             if (live) { ctx.drawImage(live, vp.x, vp.y, vp.w, vp.h); return; }
         }
@@ -10738,7 +10805,7 @@ class InpaintEditor {
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }
-        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev"]) {
+        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView"]) {
             if (this[name]) { freed += px(this[name]); this[name] = null; }
         }
         if (this.flatCache) { freed += px(this.flatCache.canvas); this.flatCache = null; }

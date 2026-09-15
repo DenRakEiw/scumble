@@ -2546,6 +2546,43 @@ its region view runs only for a live stroke, which is keyed by the gesture. So n
   | the filter key without the pass's box and scale | "differs from the flatten by 255 levels on 59240 bytes: it took the other pass's filter output" |
   | the selection box readers read the whole picture too | "mean_color with a selection flattened the picture 1 times" |
 
+**(c2) The holes in region passes** (`inpaint_canvas.js`, `tools/editor_test.py`, `tools/perf_test.py`): region passes that still made
+a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each.
+
+- **Measured before** (15000 x 10000, tiles on, `perf_test.py`'s new "C6 (c2)" rows on 81210d1; each row from released display
+  caches, "MB" the display mirrors of the pixels the row is about; the mask on Paint 3 and on the film look is its left half):
+
+  | row | before |
+  |---|---|
+  | magic wand (an object) with a masked full-size layer, blocked [wall] | 1828 [2853], 1319 [2324], 1431 [2585] ms; 1144 MB and `_masked` |
+  | pan at fit, 30 frames, the film look masked (Canvas 2D path), median [worst] | 3.1 [4.7] ms; 572 MB |
+  | peek at fit, first frame | 558 ms; 572 MB |
+  | peek at 1:1, first frame | 202 ms; 572 MB |
+  | move drag of a full-size paint layer at fit, first frame [worst of the next 5] | 425 [11] ms; 572 MB |
+
+- **(c2a) A masked tile layer, or a layer a live stroke runs on, outside the screen's stroke.** `drawLayer` sent every region pass
+  through `layerRegionView`, the screen's scratch for a live stroke (`strokeView`, its signature, the gesture's dirty box). A pass
+  whose size was not a whole number of pixels got null back and fell to `layerPixels`: the flood's coarse pass on a 3:2 picture
+  (2048 x 1365.33 at 15k), a glb backdrop, a 1024 px screenshot: a `_masked` canvas, the layer's and the mask's mirrors and a
+  pyramid of `_masked` per masked layer. A pass of a whole size took the scratch from the screen: a 192 px film panel flatten during
+  a stroke resized it and the next frame rebuilt it whole, and two masked layers took it from each other every frame. **Built**:
+  `drawLayerPass(ctx, layer, vp)` for every pass except the screen's live stroke: the layer's pixels, the stroke over them
+  (`drawStrokeInto` with the pass's whole rectangle as its clip scratch), then the mask, or the mask with its stroke from a second
+  scratch, destination-in, into a scratch of the pass target's size with the pass's transform (`passScratch`: kept up to
+  `STROKE_SCRATCH_KEEP_PX`, a canvas of its own above it), drawn at identity with the layer's alpha and blend mode as `ctx` has them.
+  A masked layer without a stroke on the screen is composed per frame now instead of from `strokeView`: the masked pan row 3.1 [4.7]
+  → 3.8 [14.8] ms median [worst] at fit. **After**: the wand with the masked layer 322 [640] ms, no mirror, no `_masked`.
+  - Gate: `live_stroke_preview_shows_what_the_commit_writes` (both backends): after the fourth dab of each of the six gestures a
+    sampled pass of 115 x 76.8 px (not a whole size) leaves `strokeView`, its signature, `_strokeViewOf` and the dab box waiting
+    for the next frame as they were, and on tiles makes no `_masked` and no mirror of the layer or its mask; the before / after
+    commit comparison stays within 2 levels (measured 0-2 tiles, 0 canvas). For the masked gestures, after the commit, a 1:1 pass
+    over the mask's edge and one where the mask has no tile equal the whole flatten byte for byte (0 on both backends).
+  - Mutations, each red: every pass through `layerRegionView` again ("paint_clipped: a sampled pass made a display mirror of the
+    layer or its mask"); the pass scratch is `strokeView` ("took the screen's stroke scratch: kept false, sig false"); the pass drops
+    the gesture's dab box ("... dirty false"). A branch that cleared the scratch where `drawTilesInto` of the mask returned false
+    stayed green under its mutation: `regionCanvas` is null only outside the mask's pixels, where the layer drew nothing either, so
+    the branch was taken out.
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in

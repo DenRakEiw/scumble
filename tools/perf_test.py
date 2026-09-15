@@ -471,6 +471,69 @@ BENCH = """
         out.bucket_sel = await op(() => ed.bucketFill(977, 613));
     }
 
+    // --- C6 (c2): region passes over a masked layer, a masked filter layer, peek and a move drag ------------------
+    // Each row starts from released display caches and says how many MB of display mirrors (and whether a `_masked`
+    // canvas) it made: on tiles those passes made full-size copies of the layers until C6 (c2).
+    if (ed.tileMode) {
+        // the display mirrors of the pixels a row is about (op()'s own GPU drain reads the selection's and a paint layer's)
+        const { displayCanvasIfMade } = window.__perf.pixels;
+        const mirrorMB = (...pxs) => +(pxs.reduce((a, q) => { const m = q && displayCanvasIfMade(q); return a + (m ? m.width * m.height * 4 : 0); }, 0) / 1048576).toFixed(0);
+        const clean = async () => { ed.releaseCaches({ mirrors: true }); ed.sceneSig = null; ed.fitView(); ed.draw(); await ed.mipsSettled(); ed.sceneSig = null; ed.draw(); };
+        const masked = ed.layers.find((l) => l.name === "Paint 3");   // not the paint layer op() reads to drain the GPU
+        masked.maskPx = ed.pixels.Mask.empty(W, H);
+        masked.maskPx.fill([0, 0, Math.round(W / 2), H], "#ffffff");
+        ed.markMaskChanged(masked);
+        // the wand on the base's disc: its coarse pass is 2048 x 1365.33 px, the fine boxes at 1:1, all over the masked layer
+        await clean();
+        rect();
+        out.wand_masked = await op(() => ed.wandSelect(977, 613, "replace"));
+        out.wand_masked_mb = [mirrorMB(masked.px, masked.maskPx), masked._masked ? 1 : 0];
+        // pan at fit on the Canvas 2D path with the film look masked to the left half
+        const fxl = ed.layers.find((l) => l.kind === "filter");
+        if (fxl) {
+            fxl.maskPx = ed.pixels.Mask.empty(W, H);
+            fxl.maskPx.fill([0, 0, Math.round(W / 2), H], "#ffffff");
+            ed.markMaskChanged(fxl);
+            await clean();
+            out.pan_masked_filter = bench((i) => { ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw(); }, 30);
+            out.pan_masked_filter_mb = [mirrorMB(fxl.maskPx), 0];
+            fxl.maskPx = null; ed.markFilterChanged(fxl);
+        }
+        // peek at the base, first frame at fit and at 1:1
+        await clean();
+        {
+            const t = performance.now();
+            ed.peekBase = true; ed.draw();
+            out.peek_fit = [+(performance.now() - t).toFixed(1), +(performance.now() - t).toFixed(1)];
+            out.peek_fit_mb = [mirrorMB(ed._basePx), 0];
+            ed.peekBase = false; ed.sceneSig = null; ed.draw();
+        }
+        await clean();
+        ed.view.scale = 1; ed._fitted = false;
+        ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
+        ed.sceneSig = null; ed.draw(); await ed.mipsSettled(); ed.sceneSig = null; ed.draw();
+        {
+            const t = performance.now();
+            ed.peekBase = true; ed.draw();
+            out.peek_1to1 = [+(performance.now() - t).toFixed(1), +(performance.now() - t).toFixed(1)];
+            out.peek_1to1_mb = [mirrorMB(ed._basePx), 0];
+            ed.peekBase = false; ed.sceneSig = null; ed.draw();
+        }
+        // a move drag of a full-size paint layer at fit: its first frame, then five more
+        await clean();
+        {
+            const M = ed.layers.find((l) => l.name === "Paint 1");
+            const x0 = M.x;
+            ed.pointer = { kind: "move", layer: M, start: [0, 0], orig: { x: M.x, y: M.y } };
+            const ts = [];
+            for (let i = 1; i <= 6; i++) { const t = performance.now(); M.x = x0 + i * 7; ed.draw(); ts.push(performance.now() - t); }
+            out.move_first = [+ts[0].toFixed(1), +Math.max(...ts.slice(1)).toFixed(1)];
+            out.move_mb = [mirrorMB(M.px), 0];
+            ed.pointer = null; M.x = x0; ed.markLayerChanged(M); ed.sceneSig = null; ed.draw();
+        }
+        masked.maskPx = null; ed.markLayerChanged(masked);
+    }
+
     let mem = null;
     try { mem = Math.round((await performance.measureUserAgentSpecificMemory()).bytes / 1048576); } catch (_) { /* needs isolation */ }
 
@@ -542,6 +605,20 @@ OP_ROWS = [
     ("sample.mean_color, 1000 px sel.", "mean_color"),
     ("  the same, stack without filter/match", "mean_color_plain"),
     ("bucket in a 1000 px selection", "bucket_sel"),
+    ("magic wand, a masked layer", "wand_masked"),
+    ("  mirrors made MB [_masked]", "wand_masked_mb"),
+]
+
+# C6 (c2): frames, [median or first, max of the rest]; and the display mirrors each left behind
+C2_ROWS = [
+    ("pan at fit, masked filter layer", "pan_masked_filter"),
+    ("  mirrors made MB", "pan_masked_filter_mb"),
+    ("peek at fit, first frame", "peek_fit"),
+    ("  mirrors made MB", "peek_fit_mb"),
+    ("peek at 1:1, first frame", "peek_1to1"),
+    ("  mirrors made MB", "peek_1to1_mb"),
+    ("move drag at fit: first [worst of 5]", "move_first"),
+    ("  mirrors made MB", "move_mb"),
 ]
 
 
@@ -669,7 +746,22 @@ async def main():
             if v and key.endswith("_landings"):
                 cells.append("%22s" % f"{v[0]}  [{v[1]:.0f} ms]")
                 continue
+            if v and key.endswith("_mb"):
+                cells.append("%22s" % f"{v[0]:.0f} MB  [{v[1]}]")
+                continue
             cells.append("%22s" % ("-" if not v else f"{v[0]:.0f} ms  [{v[1]:.0f}]"))
+        print("%-28s%s" % (label, "".join(cells)))
+    print()
+    print("%-28s%s" % ("C6 (c2), tiles only", ""))
+    print("-" * len(head))
+    for label, key in C2_ROWS:
+        cells = []
+        for r in results:
+            v = r.get(key)
+            if v and key.endswith("_mb"):
+                cells.append("%22s" % f"{v[0]:.0f} MB")
+                continue
+            cells.append("%22s" % ("-" if not v else f"{v[0]:.1f} ms  [{v[1]:.1f}]"))
         print("%-28s%s" % (label, "".join(cells)))
     print()
     for r in results:
