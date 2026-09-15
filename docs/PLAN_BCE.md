@@ -2661,6 +2661,16 @@ a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each
     itself (0; the new base's frame had asked for them already).
   - Mutations, each red: the old `displaySource` draw ("gpu: the peek differs from the view with every layer hidden by 61 levels on
     709781 bytes", before the mirror check); the layers drawn in the peek ("gpu: the peek still shows the layer: 255,0,255").
+- **Runs** on the last of these commits (fresh instances, strict): `--tiles on` (`c6c1-tiles`) and `--tiles off` (`c6c1-canvas`) with
+  `pixels editor composite commands shape brush film glb ailabel size transparent generate log mcp nodecopy` ALL PASS, `--copy --tiles
+  off pixels editor composite commands` (`c6c1-copy`) ALL PASS, `perf:15000x10000` (`c6c1-perf`) PASS, each on the first try; the
+  ComfyUI queue empty before and after. The (c2) rows there: the wand with the masked layer 347 [694] ms, the eyedropper with Sample
+  set to it 15 [10], the wand inside its square 276 [473], the masked pan 4.0 [11.1], peek 60 at fit and 20 at 1:1, the move drag's
+  first frame 0.3 ms, no mirror in any of them; the benchmark's footer holds 1 display mirror of 16 MB (the colour-matched result's)
+  and 5.3 MB of pyramids, against 2 mirrors of 588 MB and 193 MB before (c2). Between the slices, `c6c1a-canvas` failed editor's
+  `closed_tabs_are_collected` (the last of four closed tabs alive after the collection) and `commands_test.py` on the known hang
+  after every step printed `[ok]`, and `c6c1a-canvas2` (editor, commands) the same two; `c6c1a-canvas3` (editor) and `-canvas4`
+  (commands) passed with no change in between, and the full editor test on the canvas backend passed on bc3814d and on (c1) alike.
 
 ### C7. Both hosts, the flag, the release (3 days)
 
