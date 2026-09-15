@@ -6,8 +6,10 @@ Answers the two routes electron/main/llm.js talks to:
     POST /v1/chat/completions   the instruction's first five words + " UPSAMPLED, image: yes|no"
 
 Model `mock-text` refuses a request that carries an `image_url` part with HTTP 400, the way
-a text-only model does, so the adapter's retry-without-image can be tested. Every request
-body is appended to `requests` so the test can assert what was sent.
+a text-only model does, so the adapter's retry-without-image can be tested. The three ToAPIs
+upsample models (electron/main/llm.js) answer like `mock-vision`, so the same server plays
+ToAPIs' Chat Completions. Every request body is appended to `requests`, its Authorization
+header to `auths`, so the test can assert what was sent and with which key.
 
     python tools/llm_mock.py [port]     runs it standalone for poking at by hand
 """
@@ -17,6 +19,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MODELS = ["mock-vision", "mock-text"]
+TOAPIS_MODELS = ["gemini-3.8-flash", "claude-haiku-4-5", "gpt-5.6-terra"]
 
 
 class Mock(ThreadingHTTPServer):
@@ -25,6 +28,7 @@ class Mock(ThreadingHTTPServer):
     def __init__(self, port=0):
         super().__init__(("127.0.0.1", port), Handler)
         self.requests = []          # every POST body, in order
+        self.auths = []             # the Authorization header of each, or None
         self.lock = threading.Lock()
         self._thread = None
 
@@ -43,13 +47,18 @@ class Mock(ThreadingHTTPServer):
         if self._thread:
             self._thread.join(timeout=5)
 
-    def record(self, body):
+    def record(self, body, auth=None):
         with self.lock:
             self.requests.append(body)
+            self.auths.append(auth)
 
     def posts(self):
         with self.lock:
             return list(self.requests)
+
+    def post_auths(self):
+        with self.lock:
+            return list(self.auths)
 
 
 def has_image(body):
@@ -106,7 +115,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self._send(400, {"error": {"message": "body is not JSON"}})
             return
-        self.server.record(body)
+        self.server.record(body, self.headers.get("Authorization"))
         if self.path.rstrip("/") != "/v1/chat/completions":
             self._send(404, {"error": {"message": "no route " + self.path}})
             return
@@ -115,7 +124,7 @@ class Handler(BaseHTTPRequestHandler):
         if model == "mock-text" and image:
             self._send(400, {"error": {"message": "image input is not supported by this model"}})
             return
-        if model not in MODELS:
+        if model not in MODELS and model not in TOAPIS_MODELS:
             self._send(404, {"error": {"message": f"model '{model}' not found"}})
             return
         words = " ".join((instruction_of(body) or "").split()[:5])

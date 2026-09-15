@@ -4,8 +4,10 @@ No ComfyUI, no API key and no local model needed: tools/llm_mock.py plays the se
 drives the running app over CDP. It points settings.llm.compat at the mock, checks the
 backend shows up in the editor's upsample list, upsamples once with a model that sees the
 crop and once with a text-only model (the adapter must retry without the image and say so),
-and finally with the server stopped, where the error has to name the URL. The settings are
-put back at the end whatever happens.
+then the ToAPIs rows (the same client on the ToAPIs image key, at the host settings.toapis.base
+allows: the mock on 127.0.0.1), and finally with the server stopped, where the error has to name
+the URL. The settings are put back at the end whatever happens, and the test key is cleared; a
+profile that already holds a ToAPIs key is refused rather than overwritten.
 
     python tools/llm_test.py [out_dir]
 
@@ -101,7 +103,50 @@ async def run(c):
         if not has_image(posts[1]) or has_image(posts[2]):
             raise RuntimeError("the retry pattern is wrong: image in request 2 = %s, in request 3 = %s" % (has_image(posts[1]), has_image(posts[2])))
 
-        # 4. the server is gone: the error names the URL
+        # 4. ToAPIs: three rows first in the list once its key is stored, the request on that key
+        res = await c.eval(js("""
+    const had = await window.scumble.keys.list();
+    if ((had.keys || {}).toapis && had.keys.toapis.set) throw new Error("this profile holds a ToAPIs key; the test never overwrites a key");
+    window.__llmToapisBase = (await window.scumble.settings.get()).toapis;
+    await window.scumble.settings.set({ toapis: { base: %s } });
+    let before = (await host.refreshLLMs(), host.upsampleBackends().map((b) => b.id));
+    if (before.some((id) => id.startsWith("app:toapis:"))) throw new Error("ToAPIs rows without a key: " + before.join(", "));
+    await window.scumble.keys.set("toapis", "sk-llmtest-toapis-000000");
+    window.__llmToapisKey = true;
+    await host.refreshLLMs();
+    const ids = host.upsampleBackends().map((b) => b.id);
+    const want = ["app:toapis:gemini-3.8-flash", "app:toapis:claude-haiku-4-5", "app:toapis:gpt-5.6-terra"];
+    if (JSON.stringify(ids.slice(0, 3)) !== JSON.stringify(want)) throw new Error("the ToAPIs rows are not first: " + ids.join(", "));
+    // the whole list, keyless rows included: a profile with only the ToAPIs key cannot show the order otherwise
+    const all = (await window.scumble.llm.list()).map((l) => "app:" + l.id);
+    if (JSON.stringify(all.slice(0, 3)) !== JSON.stringify(want)) throw new Error("the ToAPIs rows are not first in llm.list(): " + all.join(", "));
+    await c("set_prompt", { text: %s });
+    ed.refreshSegmentBackends();
+    ed.upBackendSel.value = want[0];
+    if (ed.upBackendSel.value !== want[0]) throw new Error("the editor's select has no ToAPIs row: " + Array.from(ed.upBackendSel.options).map((o) => o.value).join(", "));
+    const r = await c("upsample_prompt");
+    await window.scumble.keys.clear("toapis");
+    window.__llmToapisKey = false;
+    await host.refreshLLMs();
+    const after = host.upsampleBackends().map((b) => b.id);
+    ed.refreshSegmentBackends();
+    ed.upBackendSel.value = "app:compat:mock-text";   // what the offline step below asks, as before this step
+    return { first: ids.slice(0, 3), prompt: r.prompt || ed.promptText, goneAfterClear: !after.some((id) => id.startsWith("app:toapis:")) };
+""" % (json.dumps(mock.url), json.dumps(PROMPT))))
+        print("[ok] toapis:", json.dumps(res)[:300])
+        if "UPSAMPLED" not in res["prompt"] or "image: yes" not in res["prompt"]:
+            raise RuntimeError("the ToAPIs row did not reach the endpoint with the crop: " + res["prompt"])
+        if not res["goneAfterClear"]:
+            raise RuntimeError("the ToAPIs rows stay after the key was cleared")
+        posts, auths = mock.posts(), mock.post_auths()
+        if len(posts) != 4 or posts[3].get("model") != "gemini-3.8-flash":
+            raise RuntimeError("the ToAPIs request is not the fourth, or not on its model: %s" % [p.get("model") for p in posts])
+        if auths[3] != "Bearer sk-llmtest-toapis-000000":
+            raise RuntimeError("the ToAPIs request did not carry the ToAPIs key: %r" % auths[3])
+        if auths[1] and "toapis" in auths[1]:
+            raise RuntimeError("the compat endpoint got the ToAPIs key")
+
+        # 5. the server is gone: the error names the URL
         mock.stop()
         mock = None
         res = await c.eval(js("""
@@ -126,6 +171,8 @@ async def run(c):
             await c.eval("""(async () => {
     const host = window.__llm.host, raw = window.__llm.commands;
     await window.scumble.settings.set({ llm: window.__llmSaved || { compat: { url: "", model: "" } } });
+    if (window.__llmToapisKey) { await window.scumble.keys.clear("toapis"); window.__llmToapisKey = false; }
+    if ("__llmToapisBase" in window) { await window.scumble.settings.set({ toapis: window.__llmToapisBase }); delete window.__llmToapisBase; }
     await host.refreshLLMs();
     if (window.__llmDoc) { try { await raw.commands.run("close_document", { doc: window.__llmDoc }); } catch (_) { /* already gone */ } }
     window.__llmDoc = null;

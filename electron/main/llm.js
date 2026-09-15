@@ -4,7 +4,9 @@
 // Google key also gives an upsampler; Anthropic is a key of its own (no image model).
 //
 // A local or self-hosted OpenAI-compatible server (Ollama, LM Studio, vLLM, a proxy) joins
-// the list through settings.llm.compat = { url, model } and needs no key.
+// the list through settings.llm.compat = { url, model } and needs no key. ToAPIs' Chat
+// Completions are OpenAI-compatible too, so its rows go through the same client on the ToAPIs
+// image key, at the host providers/toapis.js allows (settings.toapis.base, else toapis.com).
 //
 //   list()            -> [{ id, provider, model, label, key: bool }]
 //   ask({ id, instruction, image, maxTokens }) -> { text, seconds, model, note }
@@ -16,8 +18,15 @@
 const keys = require("./keys");
 const settings = require("./settings");
 const { b64, dataUri, readError } = require("./providers/util");
+const toapis = require("./providers/toapis");
 
+// ToAPIs first, as in every provider list. Prices from its catalogue on 2026-09-15 (per million tokens
+// in / out): Gemini 3.8 Flash and Claude Haiku 4.5 $0.30 / $1.50, GPT-5.6 Terra $0.40 / $2.40, about a
+// tenth of a cent for one rewrite with the crop. GPT-5.6 Luna and the -official text channels are left out.
 const MODELS = [
+    { provider: "toapis", model: "gemini-3.8-flash", label: "Gemini 3.8 Flash (ToAPIs key)" },
+    { provider: "toapis", model: "claude-haiku-4-5", label: "Claude Haiku 4.5 (ToAPIs key)" },
+    { provider: "toapis", model: "gpt-5.6-terra", label: "GPT-5.6 Terra (ToAPIs key)" },
     { provider: "openai", model: "gpt-5.6-luna", label: "GPT-5.6 Luna (OpenAI key)" },
     { provider: "openai", model: "gpt-5.6-terra", label: "GPT-5.6 Terra (OpenAI key)" },
     { provider: "gemini", model: "gemini-3.8-flash", label: "Gemini 3.8 Flash (Google key)" },
@@ -26,7 +35,7 @@ const MODELS = [
     { provider: "anthropic", model: "claude-haiku-4-5", label: "Claude Haiku 4.5 (Anthropic key)" },
 ];
 
-const PROVIDER_LABEL = { openai: "OpenAI", gemini: "Google Gemini", anthropic: "Anthropic", compat: "OpenAI-compatible endpoint" };
+const PROVIDER_LABEL = { toapis: "ToAPIs", openai: "OpenAI", gemini: "Google Gemini", anthropic: "Anthropic", compat: "OpenAI-compatible endpoint" };
 
 /** settings.llm.compat = { url, model }: an Ollama / LM Studio / any /v1/chat/completions server. */
 function compatConfig() {
@@ -45,10 +54,10 @@ function compatHost(url) {
     try { return new URL(compatBase(url)).host; } catch (_) { return String(url || ""); }
 }
 
-function compatUnreachable(err, base) {
+function compatUnreachable(err, base, label) {
     const m = String((err && (err.message || err)) || "");
-    if (/abort|timeout/i.test(m)) return `No answer from ${base} within the timeout.`;
-    return `No server at ${base} (is Ollama / LM Studio running?) - ${m}`;
+    if (/abort|timeout/i.test(m)) return `No answer from ${label ? label + " at " : ""}${base} within the timeout.`;
+    return label ? `${label} at ${base} could not be reached - ${m}` : `No server at ${base} (is Ollama / LM Studio running?) - ${m}`;
 }
 
 function list() {
@@ -160,7 +169,7 @@ async function askAnthropic({ model, key, instruction, image, maxTokens }) {
  * A text-only model answers 400 on the image; we retry once without it and say so, so the
  * user learns the model never saw the crop.
  */
-async function askCompatible({ model, key, instruction, image, maxTokens, url }) {
+async function askCompatible({ model, key, instruction, image, maxTokens, url, label }) {
     const base = compatBase(url);
     const endpoint = base + "/chat/completions";
     const headers = { "Content-Type": "application/json", ...(key ? { Authorization: "Bearer " + key } : {}) };
@@ -174,7 +183,7 @@ async function askCompatible({ model, key, instruction, image, maxTokens, url })
         try {
             r = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
         } catch (err) {
-            throw new Error(compatUnreachable(err, base));
+            throw new Error(compatUnreachable(err, base, label));
         }
         if (!r.ok) {
             const e = new Error(`${model} at ${compatHost(url)}: ${await readError(r)}`);
@@ -210,7 +219,13 @@ async function askCompatible({ model, key, instruction, image, maxTokens, url })
     return { text, textOnly };
 }
 
-const ADAPTERS = { openai: askOpenAI, gemini: askGemini, anthropic: askAnthropic };
+/** ToAPIs' /v1/chat/completions: the OpenAI-compatible client with the image key and ToAPIs' host. */
+async function askToAPIs(a) {
+    const res = await askCompatible({ ...a, url: toapis.baseUrl(settings.get()) + "/v1", label: "ToAPIs" });
+    return res.text;
+}
+
+const ADAPTERS = { toapis: askToAPIs, openai: askOpenAI, gemini: askGemini, anthropic: askAnthropic };
 
 // ---- entry ----------------------------------------------------------------------------
 
