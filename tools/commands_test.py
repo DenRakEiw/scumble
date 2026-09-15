@@ -96,8 +96,23 @@ for (let p = 0; p < W * H; p++) if (docSel.mask[p] !== (selRef[p * 4 + 3] > 127 
 const bb = docBox.bounds;
 for (let y = 0; y < bb.h; y++) for (let x = 0; x < bb.w; x++) if (docBox.mask[y * bb.w + x] !== docSel.mask[(bb.y + y) * W + bb.x + x]) bad++;
 if (bad || docSel.width !== W || docBox.width !== bb.w || docBox.x !== bb.x) throw new Error("Document.selection() differs from the selection in " + bad + " pixels");
+// C6 (c1) review: `pad` with `maxSize` pads by whole pixels of the smaller picture, so the box's picture stays where the
+// unpadded box has it (the margin was drawn back rounded, up to half a pixel of the smaller picture off)
+const pads = [];
+{
+    const doc = new P.Document(editor);
+    const px = (cv) => cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+    for (const [box, maxSize, pad] of [[[101, 101, 301, 251], 100, 7], [[3, 5, 203, 155], 74, 9], [[240, 150, 440, 300], 60, 5]]) {
+        const a0 = doc.flatten({ box, maxSize }), a1 = doc.flatten({ box, maxSize, pad });
+        const d0 = px(a0), d1 = px(a1);
+        let m = 0, n = 0;
+        for (let i = 0; i < d0.length; i++) { const q = Math.abs(d0[i] - d1[i]); if (q > m) m = q; if (q > 1) n++; }
+        pads.push([box, maxSize, pad, [a0.width, a0.height], m, n]);
+        if (a0.width !== a1.width || a0.height !== a1.height || m > 1) throw new Error(`flatten of ${JSON.stringify(box)} at maxSize ${maxSize} with pad ${pad} differs from the unpadded box by ${m} levels on ${n} bytes`);
+    }
+}
 await c("select_rect", { x: 100, y: 80, w: 200, h: 120 });
-return { rect: a.selection, grown: g.selection, inverted: inv.selection, mask: sm.selection, mean, reads: spy.read };
+return { rect: a.selection, grown: g.selection, inverted: inv.selection, mask: sm.selection, mean, reads: spy.read, pads };
 """),
     ("layers", """
 const before = (await c("list_layers")).layers.length;
@@ -162,9 +177,12 @@ for (const [name, rect, flatsWanted] of [["clear of the text", { x: 260, y: 180,
     const flatRef = editor.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, W, H).data;
     const selRef = editor.sel.readRect(0, 0, W, H).data;
     editor.releaseCaches({ mirrors: true });
-    const f0 = editor.flattenToCanvas; let flats = 0;
-    editor.flattenToCanvas = function (...q) { flats++; return f0.apply(this, q); };
+    const f0 = editor.flattenToCanvas; let flats = 0, lastFlat = null;
+    editor.flattenToCanvas = function (...q) { flats++; return (lastFlat = f0.apply(this, q)); };
     try { await c("run_action", { id: "sample.selection_layer" }); } finally { editor.flattenToCanvas = f0; }
+    // C6 (c1) review: the whole flatten a box read fell back to is let go once the composite changes (the copy the action
+    // added is such a change); it stayed, 572 MB of canvas at 15000 x 10000, until the next whole flatten replaced it
+    const kept = !!(lastFlat && editor.flatCache && editor.flatCache.canvas === lastFlat);
     const copy = (await c("list_layers")).layers.filter((l) => l.name === "Selection copy").find((l) => l.x === rect.x && l.y === rect.y);
     if (!copy || copy.w !== 200 || copy.h !== 120) throw new Error("selection copy " + name + ": " + JSON.stringify(copy));
     if (flats !== flatsWanted) throw new Error(`selection to layer ${name} flattened the picture ${flats} times, ${flatsWanted} expected`);
@@ -177,7 +195,8 @@ for (const [name, rect, flatsWanted] of [["clear of the text", { x: 260, y: 180,
         for (let k = 0; k < 4; k++) { const want = on ? flatRef[j + k] : 0; const d = Math.abs(got[i + k] - want); if (d) wrong++; if (d > max) max = d; }
     }
     if (wrong) throw new Error(`the selection copy ${name} differs from the whole flatten in ${wrong} bytes (max ${max})`);
-    copies[name] = { x: copy.x, y: copy.y, flats };
+    copies[name] = { x: copy.x, y: copy.y, flats, kept };
+    if (kept) throw new Error(`the whole flatten of the box read ${name} is still kept after the composite changed`);
     await c("remove_layer", { layer: copy.id });
 }
 await c("select_rect", { x: 100, y: 80, w: 200, h: 120 });

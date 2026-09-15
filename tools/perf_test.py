@@ -450,6 +450,16 @@ BENCH = """
             out.point_add = await op(() => cmds.run("film.add_point", { x: Math.round(W * 0.6), y: Math.round(H * 0.6), radius: 300, exposure: 0.5, doc: docId }));
             const pl = ed.layers.find((l) => l.kind === "filter" && l.filter === "film.points");
             if (pl) { ed.removeLayer(pl.id); ed.renderLayers(); }
+            // the same with the filter layers and the matched result hidden: the film look's halation depends on the whole
+            // picture, so above it is the whole flatten below the points layer; without it one box of the picture
+            const hide = ed.layers.filter((l) => l.visible && (l.kind === "filter" || (l.match && l.match.strength > 0)));
+            for (const l of hide) l.visible = false;
+            ed.uploaded.baseHash = null; ed.sceneSig = null; ed.draw();
+            out.point_add_plain = await op(() => cmds.run("film.add_point", { x: Math.round(W * 0.6), y: Math.round(H * 0.6), radius: 300, exposure: 0.5, doc: docId }));
+            const pl2 = ed.layers.find((l) => l.kind === "filter" && l.filter === "film.points");
+            if (pl2) { ed.removeLayer(pl2.id); ed.renderLayers(); }
+            for (const l of hide) l.visible = true;
+            ed.uploaded.baseHash = null; ed.sceneSig = null; ed.draw();
         }
         if (cmds.names().includes("sample.mean_color")) {
             box1000();
@@ -613,6 +623,7 @@ OP_ROWS = [
     ("PNG of the composite", "png"),
     ("the same without the worker", "png_main"),
     ("film point add (look under it)", "point_add"),
+    ("  the same, stack without filter/match", "point_add_plain"),
     ("sample.mean_color, 1000 px sel.", "mean_color"),
     ("  the same, stack without filter/match", "mean_color_plain"),
     ("bucket in a 1000 px selection", "bucket_sel"),

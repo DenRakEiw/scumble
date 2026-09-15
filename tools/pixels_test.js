@@ -1504,12 +1504,34 @@ function pixelsCases(P, T) {
                 for (let guard = 0; s8.pending && guard < 20; guard++) { for (const job of j8.splice(0)) answer(job); await tick(); }
                 await s8.settled();
             }
+            // (8b) a read that is not for the screen (a box the film points, the probe or the wand sample at level 0) keeps a
+            // region canvas of its own: it took the place of the screen's or the navigator's, and the next frame rebuilt the
+            // screen's whole region (the C6 c1 review). A read inside a display region at its level uses that one.
+            {
+                const z = twin();
+                z.regionCanvas([0, 0, W, H], 3);          // exact: builds the chains, so the display reads ask no worker
+                z.regionCanvas([0, 0, 300, 300], 1, true);   // the screen
+                const shown = z._regions.get(1);
+                z.regionCanvas([0, 0, W, H], 3, true);    // the navigator
+                const nav = z._regions.get(3);
+                if (!shown || !nav) throw new Error("(8b) the display reads kept no region canvas");
+                const box = z.regionCanvas([500, 400, 503, 403], 0);   // a sampled box, clear of the screen's region
+                if (z._regions.get(1) !== shown || z._regions.get(3) !== nav) throw new Error("(8b) a sampled box at level 0 pushed out a display region: " + JSON.stringify(Array.from(z._regions.keys())));
+                const own = z._regions.get("sample");
+                if (!own || own.canvas !== box.canvas || own.level !== 0) throw new Error("(8b) the sampled box has no region of its own");
+                const inside = z.regionCanvas([10, 10, 20, 20], 1);
+                if (inside.canvas !== shown.canvas || z._regions.get("sample") !== own) throw new Error("(8b) a sampled read inside the screen's region did not use it");
+                z.fill([501, 401, 502, 402], "#00ff00");
+                if (own.dirty.size !== 1) throw new Error("(8b) a write inside the sampled region did not mark its cell");
+                const ownBytes = own.canvas.width * own.canvas.height * 4, bytes = z.releaseDisplay();
+                if (z._regions || bytes < ownBytes) throw new Error("(8b) releaseDisplay did not give the regions back");
+            }
             // (9) a write outside a region canvas's tiles leaves its cells alone: its rebuild threshold counts dirty cells,
             // and a write elsewhere in the picture rebuilt the whole region every frame (the C6 b review)
             {
                 const z = twin();
                 z.regionCanvas([0, 0, 200, 200], 0);
-                const rz = z._regions.get(0);
+                const rz = z._regions.get("sample");
                 if (rz.tx1 !== 1 || rz.ty1 !== 1) throw new Error("(9) the region's tiles are " + [rz.tx0, rz.ty0, rz.tx1, rz.ty1]);
                 z.fill([530, 300, 600, 500], "#00ff00");   // tile (2, 1): outside
                 if (rz.dirty.size) throw new Error(`(9) a write outside the region marked ${rz.dirty.size} of its cells dirty`);

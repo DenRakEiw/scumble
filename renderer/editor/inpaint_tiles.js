@@ -47,6 +47,8 @@ export const CANVAS_MAX_PIXELS = 268435456;
 export const CANVAS_MAX_SIDE = 65535;
 /** Region canvases kept per pixels object: the screen's level and the navigator's. */
 const REGION_LEVELS = 2;
+/** The key of the one region canvas kept besides them, for reads that are not for the screen (C6 c1 review). */
+const SAMPLE_REGION = "sample";
 /** Mips per tile: 128, 64, 32, 16, 8 px. */
 export const MIP_LEVELS = 5;
 /** The gutter a tile carries in an atlas slot, on every side (docs/PLAN_BCE.md §C3). */
@@ -1655,8 +1657,14 @@ const tiled = (Base) => class extends Base {
         const tx0 = r[0] >> 8, ty0 = r[1] >> 8, tx1 = (r[2] - 1) >> 8, ty1 = (r[3] - 1) >> 8;
         const lastX = (this._w - 1) >> 8, lastY = (this._h - 1) >> 8;
         if (!this._regions) this._regions = new Map();
-        let rc = this._regions.get(level);
-        if (!rc || tx0 < rc.tx0 || ty0 < rc.ty0 || tx1 > rc.tx1 || ty1 > rc.ty1) {
+        const holds = (q) => !!q && q.level === level && tx0 >= q.tx0 && ty0 >= q.ty0 && tx1 <= q.tx1 && ty1 <= q.ty1;
+        // A read that is not for the screen or the navigator (a box the film points, the probe, a plugin or the wand
+        // sample, the film panel's picture) uses a display region at its level when that one holds the range, and
+        // otherwise a region of its own: taking a display region's place made the next frame rebuild the screen's whole
+        // region per pixels object, 40-60 ms of a point add at 4000 x 3000 (the C6 c1 review)
+        let key = level, rc = this._regions.get(level);
+        if (!display && !holds(rc)) { key = SAMPLE_REGION; rc = this._regions.get(key); }
+        if (!holds(rc)) {
             // one tile of margin on each side, inside the image
             const ax0 = Math.max(0, tx0 - 1), ay0 = Math.max(0, ty0 - 1);
             const ax1 = Math.min(lastX, tx1 + 1), ay1 = Math.min(lastY, ty1 + 1);
@@ -1668,18 +1676,23 @@ const tiled = (Base) => class extends Base {
                 img: new ImageData(cell, cell), zero: new ImageData(cell, cell),
                 dirty: new Set(), stale: new Set(), all: true,
             };
-            this._regions.set(level, rc);
-            // the screen's level and the navigator's differ, so two are kept; a third is one
-            // level nothing is drawing at any more
-            while (this._regions.size > REGION_LEVELS) {
-                const [k, old] = this._regions.entries().next().value;
-                if (k === level) break;
-                old.canvas.width = 1; old.canvas.height = 1;
-                this._regions.delete(k);
+            this._regions.delete(key);   // inserted last: the Map's order is the LRU
+            this._regions.set(key, rc);
+            if (key !== SAMPLE_REGION) {
+                // the screen's level and the navigator's differ, so two are kept; a third is one
+                // level nothing is drawing at any more
+                let n = this._regions.size - (this._regions.has(SAMPLE_REGION) ? 1 : 0);
+                for (const [k, old] of this._regions) {
+                    if (n <= REGION_LEVELS) break;
+                    if (k === SAMPLE_REGION || k === level) continue;
+                    old.canvas.width = 1; old.canvas.height = 1;
+                    this._regions.delete(k);
+                    n--;
+                }
             }
-        } else {
-            this._regions.delete(level);   // re-inserted last: the Map's order is the LRU
-            this._regions.set(level, rc);
+        } else if (display) {
+            this._regions.delete(key);   // re-inserted last: the Map's order is the LRU
+            this._regions.set(key, rc);
         }
         if (!display && rc.stale.size) { for (const key of rc.stale) rc.dirty.add(key); rc.stale.clear(); }
         else if (rc.stale.size) {

@@ -10,10 +10,10 @@ import { PRELUDE, luma, clamp01, sstep, mix, loop, blur, num, pct, makeRunner, s
 const FILTER_ID = "film.points";
 const MAX_POINTS = 64;
 
-const POINTS = shader("control points", { u_pts: "sampler2D", u_count: "int", u_blur: "sampler2D", u_useBlur: "bool", u_strength: "float" }, `
+const POINTS = shader("control points", { u_pts: "sampler2D", u_count: "int", u_blur: "sampler2D", u_useBlur: "bool", u_strength: "float", u_origin: "vec2" }, `
 vec3 opp(vec3 c) { float L = luma(c); return vec3(L, c.r - L, c.b - L); }
 vec4 shade(vec4 c, vec2 uv) {
-    vec2 p = uv * u_size;
+    vec2 p = uv * u_size + u_origin;   // the pass's pixel in the image's pixels at this scale (C6 c1 review)
     vec3 o3 = opp(c.rgb);
     float ev = 0.0, con = 0.0, sat = 0.0, warm = 0.0, str = 0.0, wsum = 0.0;
     for (int i = 0; i < ${MAX_POINTS}; i++) {
@@ -58,26 +58,21 @@ function pointsTexture(points, scale) {
 }
 
 /**
- * How much of the picture around a point is composited to read its colour: the filters below the points layer see
- * that margin of the picture, so a blur-based one (glow, halation, tonal contrast at their default radii) gives the
- * point the colour the whole picture has there. Measured against a full flatten of the layers below (docs/PLAN_BCE.md
- * §C6 c1): glow (40 px) 5 levels without a margin, 1 at 64, 0 at 128; halation (30 px) 0 at 64; tonal contrast (40 px)
- * 1 at 128. The film look's own halation is sized from what the pass composites and never matches the whole picture's.
- */
-const POINT_PAD = 128;
-
-/**
  * The colour a point compares every pixel with: the 3 x 3 mean (2 x 2 at a corner) under image point x, y of the
- * points layer's input, the picture of every layer below it, at full resolution. Read as one small box of that
- * picture (C6 c1). It used to come from a 256 px copy of the input the last full-resolution render had left (stale
- * after any change below), or else from the whole flattened picture with the points' own effect and the layers above.
+ * points layer's input, the picture of every layer below it, at full resolution (C6 c1). Read as an exact box of that
+ * picture: padded as far as the filters below say they reach, or, below a filter no margin can give (a vignette,
+ * normalise, a frame, a light leak, the film look's halation: their picture depends on the whole image), cut out of
+ * the whole flatten below the points layer. A box padded by a fixed 128 px gave a point under a vignette near the
+ * corner a colour 40 levels off (the C6 c1 review). It used to come from a 256 px copy of the input the last
+ * full-resolution render had left (stale after any change below), or else from the whole flattened picture with the
+ * points' own effect and the layers above.
  */
 function sampleColor(doc, layer, x, y) {
     const cx = Math.round(x), cy = Math.round(y);
     const x0 = Math.max(0, cx - 1), y0 = Math.max(0, cy - 1);
     const x1 = Math.min(doc.width, cx + 2), y1 = Math.min(doc.height, cy + 2);
     if (x1 <= x0 || y1 <= y0) return [0.5, 0, 0];
-    const canvas = doc.flatten({ box: [x0, y0, x1, y1], below: layer.id, pad: POINT_PAD });
+    const canvas = doc.flatten({ box: [x0, y0, x1, y1], below: layer.id, exact: true });
     const d = canvas.getContext("2d").getImageData(0, 0, x1 - x0, y1 - y0).data;
     let r = 0, g = 0, b = 0, n = 0;
     for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
@@ -98,7 +93,8 @@ export function makePoints(scumble) {
             { key: "strength", label: "Strength", min: 0, max: 100, step: 1, default: 100, unit: "%", keepPreset: true },
         ],
         control: (layer, param, callbacks) => buildControl(layer, param, callbacks),
-        reach: (p) => (Array.isArray(p.points) && p.points.some((q) => num(q.structure, 0) !== 0) ? 16 : 0),   // its structure blur (4 px)
+        // its structure blur (4 px); 0 without it: the points are placed by `info.origin`, so a pixel's result does not depend on the pass
+        reach: (p) => (Array.isArray(p.points) && p.points.some((q) => num(q.structure, 0) !== 0) ? 16 : 0),
         apply(src, p, info) {
             const scale = info.scale || 1;
             const points = Array.isArray(p.points) ? p.points : [];
@@ -107,10 +103,13 @@ export function makePoints(scumble) {
             const tex = pointsTexture(points, scale);
             const useBlur = points.some((q) => num(q.structure, 0) !== 0);
             const b = useBlur ? blur(src, 4 * scale) : null;
-            return run(POINTS, src, { u_pts: tex, u_count: tex.n, u_blur: b, u_useBlur: useBlur, u_strength: strength }, info, () => {
+            // where the input's corner sits in the image, in its own pixels: a pass over a box or a view that does not start at
+            // the origin placed every point that far off (C6 c1 review), and a box read over a point missed its effect
+            const org = info.origin || [0, 0], ox = +org[0] || 0, oy = +org[1] || 0;
+            return run(POINTS, src, { u_pts: tex, u_count: tex.n, u_blur: b, u_useBlur: useBlur, u_strength: strength, u_origin: [ox, oy] }, info, () => {
                 const d = tex.data, n = tex.n;
                 return loop(src, (c, x, y, j, g) => {
-                    const px = x + 0.5, py = y + 0.5;
+                    const px = x + 0.5 + ox, py = y + 0.5 + oy;
                     const o3 = opp(c[0], c[1], c[2]);
                     let ev = 0, con = 0, sat = 0, warm = 0, str = 0, wsum = 0;
                     for (let i = 0; i < n; i++) {

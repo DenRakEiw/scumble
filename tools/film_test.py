@@ -183,6 +183,98 @@ if (far.join() !== farBase.join()) throw new Error("pixels far from the points c
 window.__pointsLayer = r.layer;
 return { layer: r.layer, near, nearBase, far };
 """),
+    ("points_in_a_box_away_from_the_origin", """
+// C6 (c1) review: the control points are placed in the image, whatever part of it a pass composites. Their shader and
+// CPU path measured a point from the pass's own corner, so a box read over a point (the sample plugin's exact reads, a
+// region pass on the screen at zoom) returned the picture without the point's effect. And a point's colour is the
+// points layer's input even under a filter no box of its surroundings can give (a vignette): the whole flatten below.
+// Its own document, closed at the end; the film document is active again after it.
+const P = await import("./plugins.js");
+const H0 = (await import("./editor/host.js")).host;
+const d = await c("new_document");
+const ed = H0.editors().find((e) => e.node.id === d.id);
+H0.shell.activate(ed);
+await c("new_canvas", { width: 1600, height: 1200, doc: d.id });
+const W = 1600, H = 1200;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#506070"); g.addColorStop(1, "#907860");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 120; i++) { x.fillStyle = `hsl(${(i * 53) % 360},45%,${35 + (i * 11) % 30}%)`; x.fillRect((i * 331) % (W - 60), (i * 197) % (H - 60), 60, 60); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "pointsbox.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const doc = new P.Document(ed);
+const read = (cv, x = 0, y = 0, w = cv.width, h = cv.height) => cv.getContext("2d").getImageData(x, y, w, h).data;
+const diff = (a, b) => { let m = 0, n = 0; for (let i = 0; i < a.length; i++) { const q = Math.abs(a[i] - b[i]); if (q > m) m = q; if (q > 1) n++; } return [m, n]; };
+const out = { tiles: ed.tileMode };
+const r = await c("film.add_point", { x: 1100, y: 800, radius: 250, tolerance: 100, exposure: 1, doc: d.id });
+const idx = ed.layers.findIndex((l) => l.id === r.layer);
+// (1) an exact box over the point at full resolution, clear of the origin
+const box = [1000, 700, 1200, 900];
+if (ed.boxReach(box) !== 0) throw new Error("the stack's reach is " + ed.boxReach(box) + ": the step would not read a box");
+const whole = ed.flattenToCanvas({ forRun: true });
+const belowPts = ed.flattenToCanvas({ forRun: true, upTo: idx });
+const want = read(whole, box[0], box[1], 200, 200);
+const [acts] = diff(want, read(belowPts, box[0], box[1], 200, 200));
+if (acts < 40) throw new Error("the point barely changes the picture around it (" + acts + " levels): the step proves nothing");
+const [bm, bn] = diff(read(doc.flatten({ box, exact: true })), want);
+out.box = { acts, max: bm, over1: bn };
+if (bm > 1) throw new Error("an exact box over the point differs from the whole flatten by " + bm + " levels on " + bn + " bytes: the point is not where the image has it");
+// (2) mean_color of a selection at the point: the whole flatten's mean there
+await c("select_rect", { x: 1050, y: 750, w: 100, h: 100, doc: d.id });
+const mean = await c("sample.mean_color", { doc: d.id });
+await c("select_none", { doc: d.id });
+{
+    const px = read(whole, 1050, 750, 100, 100); let s = [0, 0, 0];
+    for (let i = 0; i < px.length; i += 4) { s[0] += px[i]; s[1] += px[i + 1]; s[2] += px[i + 2]; }
+    const m = s.map((v) => Math.round(v / 10000));
+    out.mean = [mean.rgb, m];
+    if (JSON.stringify(mean.rgb) !== JSON.stringify(m)) throw new Error("mean_color at the point " + JSON.stringify(mean.rgb) + " is not the whole flatten's " + JSON.stringify(m));
+}
+// (3) a pass at 0.5 over a region that does not start at the origin: the pass over the whole image there
+{
+    const reg = ed.sampleRegion("image", [800, 600, 1400, 1000], 0.5, { forRun: true });
+    const all = ed.sampleRegion("image", [0, 0, W, H], 0.5, { forRun: true });
+    const [hm, hn] = diff(read(reg), read(all, 400, 300, 300, 200));
+    out.half = { max: hm, over1: hn };
+    if (hm > 2) throw new Error("a pass at 0.5 over the point's region differs from the pass over the whole image by " + hm + " levels on " + hn + " bytes");
+    // the CPU path places the points by the origin as the shader does
+    const F = await import("./editor/inpaint_filters.js");
+    const GL = await import("./editor/inpaint_filters_gl.js");
+    const layer = ed.layers.find((l) => l.id === r.layer);
+    const src = ed.sampleRegion("image", [800, 600, 1400, 1000], 1, { forRun: true, upTo: idx });
+    const info = { scale: 1, origin: [800, 600], seed: 7, cache: {} };
+    const cpu = read(F.applyFilter("film.points", src, layer.params, { ...info, cpu: true }));
+    const gpu = read(F.applyFilter("film.points", src, layer.params, { ...info, cache: {} }));
+    const [cm, cn] = diff(cpu, read(src));
+    const [gm, gn] = diff(cpu, gpu);
+    out.cpu = { acts: cm, vsGpu: gm, gl: GL.glFiltersAvailable() };
+    if (cm < 40) throw new Error("the CPU path over the point's region changed " + cm + " levels: the point is not where the image has it");
+    if (GL.glFiltersAvailable() && gm > 2) throw new Error("the points' CPU and GPU paths with an origin differ by " + gm + " levels on " + gn + " bytes");
+}
+// (4) a vignette under the points layer: its picture depends on the whole image, so no margin around a box gives the
+// input under a point near the corner; the point's colour is the whole flatten below the points layer there
+const vig = await c("add_filter", { type: "vignette", doc: d.id });
+await c("move_layer", { layer: vig.id, to: "bottom", doc: d.id });
+const f0 = ed.flattenToCanvas; let flats = 0;
+ed.flattenToCanvas = function (...q) { flats++; return f0.apply(this, q); };
+let r2;
+try { r2 = await c("film.add_point", { x: 1500, y: 1120, radius: 80, tolerance: 10, exposure: 1, doc: d.id }); } finally { ed.flattenToCanvas = f0; }
+const pts = ed.layers.findIndex((l) => l.id === r.layer);
+const opp = (rr, gg, bb) => { const L = 0.299 * rr + 0.587 * gg + 0.114 * bb; return [L, rr - L, bb - L]; };
+const mean9 = (cv, x0, y0) => { const q = read(cv, x0, y0, 3, 3); let a = 0, b = 0, e = 0; for (let i = 0; i < 36; i += 4) { a += q[i]; b += q[i + 1]; e += q[i + 2]; } return opp(a / 9 / 255, b / 9 / 255, e / 9 / 255); };
+const want2 = mean9(ed.flattenToCanvas({ forRun: true, upTo: pts }), 1499, 1119);
+const padded = mean9(doc.flatten({ box: [1499, 1119, 1502, 1122], below: r.layer, pad: 128 }), 0, 0);
+out.vignette = { got: r2.point.color, want: want2, padded, flats };
+if (Math.abs(padded[0] - want2[0]) < 0.02) throw new Error("the vignette's picture in a padded box is the whole picture's under the point: the step proves nothing " + JSON.stringify(out.vignette));
+if (!r2.point.color.every((v, k) => Math.abs(v - want2[k]) < 1e-6)) throw new Error("the point under a vignette took " + JSON.stringify(r2.point.color) + ", the picture below the points layer is " + JSON.stringify(want2));
+await c("close_document", { doc: d.id, force: true });
+await c("activate_document", { doc: window.__filmDoc });
+return out;
+"""),
     ("point_tool", """
 const H = (await import("./editor/host.js")).host;
 const layer = editor.layers.find((l) => l.id === window.__pointsLayer);

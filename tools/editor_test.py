@@ -1766,6 +1766,30 @@ for (const s of [1, 0.5]) {
     }
     out["s" + s] = { part, wholePart, max, over1: n, moved };
     if (max > 1) throw new Error(`the ${s} pass over the box differs from the pass over the whole layer by ${max} levels on ${n} bytes`);
+    if (s === 1) out.boxAt1 = read(a);
+}
+// C6 (c1) review: the pass over `whole` matches its part through the same function, so a part matched or placed wrong
+// moves both passes alike. The reference that does not: the screen at 1:1 on Canvas 2D, which draws the whole layer
+// matched (layerMatchedPixels) with the same statistics
+{
+    const compOff = ed.compositorOff;
+    ed.compositorOff = true;
+    ed.setTool("rect"); ed.hover = null;
+    ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false;
+    ed.view.x = -400; ed.view.y = -450;
+    ed.sceneSig = null; ed.draw(); await ed.mipsSettled(); await wait(60); ed.sceneSig = null; ed.draw(); await wait(60);
+    const c0 = ed.imageToScreen(box[0], box[1]).map(Math.round);
+    const [ix, iy] = ed.canvasToImage(c0[0], c0[1]).map(Math.round);
+    const scr = ed.canvas.getContext("2d").getImageData(c0[0], c0[1], box[2] - box[0], box[3] - box[1]).data;
+    ed.compositorOff = compOff;
+    const ref = out.boxAt1;
+    delete out.boxAt1;
+    let max = 0, n = 0;
+    for (let i = 0; i < scr.length; i++) { const d = Math.abs(scr[i] - ref[i]); if (d > max) max = d; if (d > 2) n++; }
+    out.screen = { at: [ix, iy], max, over2: n };
+    if (ix !== box[0] || iy !== box[1]) throw new Error("the screen's region is at " + [ix, iy] + ", not the box's corner");
+    if (max > 2) throw new Error(`the 1 pass over the box differs from the screen at 1:1 by ${max} levels on ${n} bytes: the matched part is matched or placed wrong`);
+    ed.fitView(); ed.sceneSig = null; ed.draw();
 }
 await run("remove_layer", { layer: L.id, doc: window.__t });
 return out;
@@ -2880,6 +2904,18 @@ out.stroke = { during, worst: ws, differing: ns, reach: [wr, nr] };
 if (wr < 100 || nr < 3000) throw new Error("the mask stroke barely changed the screen, so the comparison proves nothing: " + JSON.stringify(out.stroke));
 if (ws > 2) throw new Error("the mask stroke's preview on the filter layer is not what the commit wrote: " + ws + " levels on " + ns + " bytes");
 if (ed.tileMode && (during.maskPreview || during.mirror)) throw new Error("the mask stroke on the filter layer made a full-size preview or the mask's mirror: " + JSON.stringify(during));
+// C6 (c1) review: the pass scratches are counted by memoryReport and given back by releaseCaches (Free VRAM, the memory
+// watch); the filter mask's stroke scratch stayed for the tab's life, and none of the three was counted
+if (ed.tileMode) {
+    const kept = ["_filterMaskView", "_passView", "_passMaskView"].filter((k) => ed[k] && ed[k].width > 1);
+    const listed = ed.memoryReport().scratch.list.map((s) => s.name);
+    out.passScratches = { kept, listed: kept.filter((k) => listed.includes(k)) };
+    if (!kept.includes("_filterMaskView")) throw new Error("the mask stroke on the filter layer kept no pass scratch: the check proves nothing " + JSON.stringify(kept));
+    if (kept.some((k) => !listed.includes(k))) throw new Error("memoryReport does not count the pass scratches " + JSON.stringify(kept.filter((k) => !listed.includes(k))));
+    ed.releaseCaches({ deep: true, mirrors: true });
+    const left = ["_filterMaskView", "_passView", "_passMaskView"].filter((k) => ed[k]);
+    if (left.length) throw new Error("releaseCaches kept the pass scratches " + JSON.stringify(left));
+}
 await run("close_document", { doc: d.id, force: true });
 return out;
 """),

@@ -1185,7 +1185,13 @@ class UploadCache {
     get baseHash() { return this._baseHash; }
 
     set baseHash(v) {
-        if (v == null) this._editor.compositeVersion++;
+        if (v == null) {
+            const ed = this._editor;
+            ed.compositeVersion++;
+            // the whole flatten kept for the version before is never read again: let it go now, not when the next
+            // whole flatten replaces it (a box read's fallback kept 572 MB of canvas at 15000 x 10000: the C6 c1 review)
+            if (ed.flatCache && ed.flatCache.version !== ed.compositeVersion) ed.flatCache = null;
+        }
         this._baseHash = v;
     }
 }
@@ -4684,13 +4690,18 @@ class InpaintEditor {
         const w = Math.max(1, Math.round((x1 - x0) * scale)), h = Math.max(1, Math.round((y1 - y0) * scale));
         // C6 (c1): `pad` image pixels of the surroundings are composited too (clamped to the image), so a filter that reads
         // its neighbours sees them, and the canvas handed back is still the box: a CPU canvas, read back without a GPU wait
-        const pad = source !== "layer" && opts.pad > 0 ? Math.ceil(opts.pad) : 0;
-        if (pad) {
-            const pb = [Math.max(0, x0 - pad), Math.max(0, y0 - pad), Math.min(this.width, x1 + pad), Math.min(this.height, y1 + pad)];
+        // The margin is whole pixels of the canvas handed back on every side (clamped to the image), so the padded pass
+        // samples on the unpadded one's grid and is drawn back at whole pixels: at a scale below 1 a margin of whole image
+        // pixels put the box's picture up to half a pixel of the canvas off (the C6 c1 review). At 1 it is the same margin.
+        const pad = source !== "layer" && opts.pad > 0 ? Math.ceil(opts.pad * scale) : 0;
+        const kl = Math.min(pad, Math.floor(x0 * scale)), kt = Math.min(pad, Math.floor(y0 * scale));
+        const kr = Math.min(pad, Math.floor((this.width - x1) * scale)), kb = Math.min(pad, Math.floor((this.height - y1) * scale));
+        if (kl > 0 || kt > 0 || kr > 0 || kb > 0) {
+            const pb = [x0 - kl / scale, y0 - kt / scale, x1 + kr / scale, y1 + kb / scale];
             const big = this.sampleRegion(source, pb, scale, { ...opts, pad: 0 });
             const c = makeCanvas(w, h);
             const cctx = c.getContext("2d", { willReadFrequently: true });
-            cctx.drawImage(big, Math.round((pb[0] - x0) * scale), Math.round((pb[1] - y0) * scale));
+            cctx.drawImage(big, -kl, -kt);
             return c;
         }
         const c = makeCanvas(w, h);
@@ -10869,7 +10880,7 @@ class InpaintEditor {
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }
-        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView"]) {
+        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView", "_filterMaskView"]) {
             if (this[name]) { freed += px(this[name]); this[name] = null; }
         }
         if (this.flatCache) { freed += px(this.flatCache.canvas); this.flatCache = null; }
@@ -11353,7 +11364,7 @@ class InpaintEditor {
         const scratch = [];
         addPixels(scratch, "_baseCanvas", this._basePx);   // the name mem_test and the docs know
         addPixels(scratch, "selection", this.sel);
-        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "filterMaskCanvas"]) add(scratch, name, this[name]);
+        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "filterMaskCanvas", "_passView", "_passMaskView", "_filterMaskView"]) add(scratch, name, this[name]);
         add(scratch, "flatCache", this.flatCache && this.flatCache.canvas);
 
         // undo / redo: the rect copies plus the canvases (or tiles) the "layers" / "canvas" snapshots
