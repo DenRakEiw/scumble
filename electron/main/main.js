@@ -23,6 +23,8 @@ const plugins = require("./plugins");
 const { Bridge } = require("./bridge");
 const { LocalServer, LocalClient } = require("./local");
 const { Updater } = require("./updater");
+const { resolveTileMode, DEFAULT_ON: TILES_DEFAULT_ON } = require("./tilemode");
+const { restartPlan } = require("./restart");
 
 // ---- command line -------------------------------------------------------------------------
 //
@@ -138,26 +140,21 @@ function installProtocol() {
 // ---- window ---------------------------------------------------------------------------
 
 /**
- * The editor's pixel backend (docs/PLAN_BCE.md §C2, "C2 as built", step b): the tile store or one
- * canvas per layer. The command line wins (--tiles / --no-tiles), then the environment
- * (SCUMBLE_TILES=1 / 0), then `tiles` in settings.json when the user put a boolean there, and
- * otherwise the build: on in a dev run, off in the packaged app until C7. The default is resolved
- * here and never written: settings.set() stores the whole merged object, so a computed default in
- * settings.DEFAULTS would stick to whichever build saved first. `from` says which of them decided.
+ * The editor's pixel backend (docs/PLAN_BCE.md §C2, "C2 as built", step b; §C7): the tile store or
+ * one canvas per layer, resolved by electron/main/tilemode.js: --tiles / --no-tiles, then
+ * SCUMBLE_TILES=1 / 0, then a boolean `tiles` in settings.json (Settings › Rendering › Tile engine),
+ * else on (since 0.1.13 in the packaged app too). Never written as a default. `from` says what decided.
  */
 function tileMode() {
-    const argv = process.argv;
-    if (argv.includes("--tiles")) return { on: true, from: "command line" };
-    if (argv.includes("--no-tiles")) return { on: false, from: "command line" };
-    const env = process.env.SCUMBLE_TILES;
-    if (env === "1" || env === "0") return { on: env === "1", from: "SCUMBLE_TILES" };
-    const s = settings.get().tiles;
-    if (typeof s === "boolean") return { on: s, from: "settings" };
-    return { on: !app.isPackaged, from: app.isPackaged ? "packaged build" : "dev build" };
+    return resolveTileMode({ argv: process.argv, env: process.env, setting: settings.get().tiles, packaged: app.isPackaged });
 }
+
+/** What the window was created with; a change of the setting reaches the next start. */
+let windowTiles = null;
 
 function createWindow() {
     const tiles = tileMode();
+    windowTiles = tiles;
     const saved = settings.get().window || {};
     win = new BrowserWindow({
         width: saved.width || 1600,
@@ -499,6 +496,30 @@ function installIpc() {
     }));
     // the card as a whole (electron/main/gpumem.js): what ComfyUI and everything else hold too
     ipcMain.handle("app:gpuMemory", () => gpumem.gpuMemory());
+    // the pixel backend (Settings › Rendering › Tile engine): what this window runs, what the next start
+    // would take with the settings as they are now, the stored boolean (null when none) and the default
+    ipcMain.handle("app:tileMode", () => {
+        const s = settings.get().tiles;
+        return {
+            window: windowTiles,
+            next: tileMode(),
+            setting: typeof s === "boolean" ? s : null,
+            defaultOn: TILES_DEFAULT_ON,
+            argv: process.argv.includes("--tiles") ? "--tiles" : process.argv.includes("--no-tiles") ? "--no-tiles" : null,
+            env: process.env.SCUMBLE_TILES === "1" || process.env.SCUMBLE_TILES === "0" ? process.env.SCUMBLE_TILES : null,
+        };
+    });
+    // quit and start again (a backend change needs a new window), electron/main/restart.js: the command line
+    // without --mcp / --headless / --cmd, or through the installer while an update is downloaded; refused
+    // while an agent drives the app, whose session would end with it
+    ipcMain.handle("app:relaunch", () => {
+        if (agentMode || local.clients.size) throw new Error("An agent is connected to Scumble; restart it after the agent is done.");
+        const plan = restartPlan({ argv: process.argv.slice(1), updateState: updater.status.state });
+        if (plan.install && updater.install()) return { installing: updater.status.version };
+        app.relaunch({ args: restartPlan({ argv: process.argv.slice(1) }).args });
+        setImmediate(() => app.quit());
+        return { relaunching: true };
+    });
     // updates (electron/main/updater.js): GitHub Releases feed, checked at start unless switched off
     ipcMain.handle("update:status", () => updater.status);
     ipcMain.handle("update:check", () => updater.check({ manual: true }));

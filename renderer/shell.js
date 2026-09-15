@@ -14,7 +14,7 @@ const $ = (id) => document.getElementById(id);
 // old layer.canvas / layer.mask / editor.selection names throw instead of warning (SCUMBLE_STRICT=0 turns
 // it off; a packaged build and the ComfyUI node warn once); --pixels-copy makes toCanvas() hand out
 // copies, the gates' check that nothing writes into one; `tiles` is the backend every editor of this window
-// takes (docs/PLAN_BCE.md §C2 step b: --tiles / --no-tiles, SCUMBLE_TILES, settings.tiles, else on in dev)
+// takes (docs/PLAN_BCE.md §C2 step b, §C7: --tiles / --no-tiles, SCUMBLE_TILES, settings.tiles, else on)
 if (window.scumble && window.scumble.pixels) {
     const p = window.scumble.pixels;
     setPixelsOptions({ strict: !!p.strict, copy: !!p.copy, ...(typeof p.tiles === "boolean" ? { tiles: p.tiles, tilesFrom: p.tilesFrom || null } : {}) });
@@ -55,7 +55,7 @@ const ui = {
     compatKeyState: $("set-compat-key-state"), compatTest: $("set-compat-test"), compatState: $("set-compat-state"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
-    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
+    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
@@ -1278,6 +1278,7 @@ async function openSettings() {
     ui.setGpuLimit.value = (settings.memory && settings.memory.gpuLimitMB) != null ? settings.memory.gpuLimitMB : 3072;
     ui.setCardMin.value = (settings.memory && settings.memory.cardMinFreeMB) != null ? settings.memory.cardMinFreeMB : 2048;
     ui.setAtlas.value = (settings.memory && settings.memory.atlasMB) != null ? settings.memory.atlasMB : 512;
+    await renderTileMode();
     try {
         const mb = await gpuMemoryMB();
         const card = await cardMemory();
@@ -1367,6 +1368,82 @@ ui.setAtlas.addEventListener("change", async () => {
     settings = await window.scumble.settings.set({ memory: { ...(settings.memory || {}), atlasMB: v } });
     applyAtlasBudget(v);
 });
+
+/**
+ * Settings › Rendering › Tile engine (docs/PLAN_BCE.md §C7). The box shows the boolean `tiles` in
+ * settings.json, or the default while there is none, and writes the boolean when it is changed; opening
+ * the dialog writes nothing. The note says what this window runs and what decided it (electron/main/
+ * tilemode.js): the command line and SCUMBLE_TILES win over the box, and a change reaches the next start.
+ */
+async function renderTileMode() {
+    let t;
+    try { t = await window.scumble.tileMode(); } catch (err) { ui.setTilesNote.textContent = String(err.message || err); return null; }
+    ui.setTiles.checked = typeof t.setting === "boolean" ? t.setting : !!t.defaultOn;
+    const w = t.window || t.next;
+    const onOff = (on) => (on ? "on" : "off");
+    const source = (from) => (from === "command line" ? `set by ${t.argv} on the command line`
+        : from === "SCUMBLE_TILES" ? `set by SCUMBLE_TILES=${t.env} in the environment`
+            : from === "settings" ? "set by this box" : "the default");
+    const text = [`This window runs with the tile engine ${onOff(w.on)} (${source(w.from)}).`];
+    if (t.next.from === "command line") text.push(`The command line wins over this box: it decides only when Scumble is started without ${t.argv}.`);
+    else if (t.next.from === "SCUMBLE_TILES") text.push("The environment wins over this box: it decides only when Scumble is started without SCUMBLE_TILES.");
+    else if (t.next.on !== w.on) text.push(`After a restart Scumble runs with the tile engine ${onOff(t.next.on)}.`);
+    else text.push("A change takes effect after a restart.");
+    ui.setTilesRestart.hidden = t.next.on === w.on;
+    if (!ui.setTilesRestart.hidden) {
+        // with an update downloaded the restart goes through its installer (electron/main/restart.js)
+        let upd = null;
+        try { upd = await window.scumble.updates.status(); } catch (_) { /* no updater */ }
+        if (upd && upd.state === "downloaded") text.push(`Restart now also installs ${upd.version}.`);
+    }
+    ui.setTilesNote.textContent = text.join(" ");
+    ui.setTilesRestart.disabled = false;
+    return t;
+}
+ui.setTiles.addEventListener("change", async () => {
+    settings = await window.scumble.settings.set({ tiles: ui.setTiles.checked });
+    await renderTileMode();
+});
+ui.setTilesRestart.addEventListener("click", async () => {
+    const working = host.editors().filter(busy);
+    if (working.length && !window.confirm(`${working.length === 1 ? "A document is" : working.length + " documents are"} still working. Restart anyway?`)) return;
+    ui.setTilesRestart.disabled = true;
+    try {
+        await saveBeforeRestart((text) => { ui.setTilesNote.textContent = text; });
+        await window.scumble.relaunch();
+    } catch (err) {
+        ui.setTilesNote.textContent = String(err.message || err);
+        ui.setTilesRestart.disabled = false;
+    }
+});
+
+/**
+ * Everything a restart must not lose, saved now. The autosave bundle holds each layer's uploaded file,
+ * and a layer is uploaded only 15 s after its last change (scheduleAutosave): saving the bundle alone
+ * restored the pixels from before that, and a new layer never uploaded came back without its pixels at
+ * all. So every edited layer and mask is uploaded first. A picture above the size getValue encodes on
+ * the spot gets its selection PNG in the background (encodeSelectionSoon), so that is waited for too
+ * (at most a minute), or the saved selection would be the one before. `say` gets a status line.
+ */
+async function saveBeforeRestart(say = () => {}) {
+    const eds = host.editors();
+    if (eds.some((ed) => ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx)))) say("Saving the edited layers before the restart...");
+    for (const ed of eds) if (ed.base && typeof ed.syncLayers === "function") await ed.syncLayers();
+    const selectionPending = (ed) => ed.base && ed.sel && (ed._selEncoding || !ed.selectionEncoded || !ed.selectionDataUrl);
+    const failed = new Set();   // an encode that could not start (toCanvas throws above the canvas limit)
+    const until = Date.now() + 60000;
+    for (;;) {
+        for (const ed of eds) {
+            if (!selectionPending(ed) || ed._selEncoding || failed.has(ed)) continue;
+            try { ed.getValue(); } catch (_) { /* reported by bundle() */ }
+            if (selectionPending(ed) && !ed._selEncoding) failed.add(ed);
+        }
+        if (!eds.some((ed) => selectionPending(ed) && !failed.has(ed)) || Date.now() > until) break;
+        say("Saving the selection before the restart...");
+        await new Promise((r) => setTimeout(r, 100));
+    }
+    await window.scumble.state.save(JSON.stringify(host.bundle()));
+}
 ui.aboutRepo.addEventListener("click", (e) => { e.preventDefault(); window.scumble.openExternal("https://github.com/DenRakEiw/scumble"); });
 
 // keys typed into the dialog must not reach the editor's window-level shortcut handler
@@ -1510,4 +1587,4 @@ ui.logOpen.addEventListener("click", () => window.scumble.log.open());
 ui.logClear.addEventListener("click", async () => { await window.scumble.log.clear(); logState.entries = []; renderLog(); });
 host.openConsole = () => openConsole();
 
-export { newDocument, activate, closeDocument, openSettings, openConsole, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory, cardMemory, cardShortfall };
+export { newDocument, activate, closeDocument, openSettings, openConsole, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory, cardMemory, cardShortfall, saveBeforeRestart };

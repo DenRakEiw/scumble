@@ -5,68 +5,109 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.13 — unreleased
 
-- **The screen draws the tiles themselves (tile mode).** With the tile backend on, the GPU
-  compositor now keeps the tiles the view shows in an atlas of its own and draws them
-  directly, instead of building a full-size copy of every layer in memory and a second one on
-  the graphics card first. Zooming a 15000 × 10000 picture back to 1:1 took a second before
-  and takes 35 ms now, and the graphics memory the screen needs for such a document drops
-  from over a gigabyte to about 90 MB. *Settings › Rendering › Tile atlas* says how much
-  graphics memory it may use (512 MB by default). Tile mode is still off in the installed
-  app (`--tiles` turns it on) and still not fit for everyday work.
-- **And so does everything else on the screen (tile mode).** The selection's outline and its
+- **The tile engine is on.** Scumble now keeps the picture, every layer, every mask and the
+  selection in small tiles of 256 px, and the screen draws only the tiles the view shows, at
+  the zoom you see them. It is what the installed app runs from this version on; the bullets
+  below marked *(tile engine)* are the work that got it there, and their numbers compare the
+  tile engine before and after that work. What it changes on a very large picture is where the
+  memory goes: a 15000 × 10000 picture with three full-size paint layers, a colour-matched result
+  and a film look held about 7.5 GB in the graphics process (much of it on the graphics card,
+  which ComfyUI uses too) and 0.7 GB in the window's own process; with the tile engine it is about 2 GB and 4.5 GB.
+  Several such pictures open at once add up in the window's process (three came to over 10 GB
+  and made panning slow), so close the tabs of large pictures you are not working on. On that
+  picture panning at 1:1 takes about 3 ms a frame, a brush or mask dab about a millisecond, and
+  after a flip or *Mask from selection* the screen shows a coarse picture at once and the sharp
+  one within about a second; without a filter layer in the picture, zooming in to 1:1 draws its
+  first frame in about 20 ms.
+  - **To switch it off**, untick *Settings › Rendering › Tile engine* and press *Restart now*:
+    every layer is then one canvas as large as the picture again, as in 0.1.12. `--no-tiles` on
+    the command line does the same for one start, `--tiles` the opposite; the row says when the
+    command line decides instead of the box. *Restart now* saves the open pictures first, your
+    last strokes included, and when an update has already been downloaded it installs that too.
+  - **Still slow, or still making full-size copies, with it on** (later steps): the smudge brush
+    on a very large picture (0.4 to 0.75 s for every mouse move at 15000 × 10000); the magic wand
+    when its region reaches across the whole picture (the window stops for several seconds) and
+    inverting the selection (about a second), both much longer than with the tile engine off;
+    renders, exports, the object tool (O), prompt upsampling and the `screenshot` command, which
+    still build the whole picture: at 15000 × 10000 that holds the window for a few seconds (a
+    little longer than with the tile engine off), and with a film look in the picture for around
+    ten seconds, about as long as with it off; placing a film control point where a film look
+    lies below it, which flattens the picture below the points (about 5 s at 15000 × 10000);
+    removing a background, *select by text* on a layer, *select from layer*, and the autosave 15 s
+    after you changed a full-size layer, which each make a full-size copy of that layer (up to
+    about a quarter of a second at 15000 × 10000, where the tile engine off uses the layer
+    itself); and the first second after a change to a whole layer or mask, while the sharp
+    picture comes in.
+- **The screen draws the tiles themselves (tile engine).** The GPU compositor now keeps the tiles
+  the view shows in an atlas of its own and draws them directly, instead of building a full-size
+  copy of every layer in memory and a second one on the graphics card first. Zooming a
+  15000 × 10000 picture back to 1:1 took a second before and takes 35 ms now, and the graphics
+  memory the screen needs for such a document drops from over a gigabyte to about 90 MB.
+  *Settings › Rendering › Tile atlas* says how much graphics memory it may use (512 MB by
+  default).
+- **And so does everything else on the screen (tile engine).** The selection's outline and its
   tint, the navigator, and every drawing path the graphics card cannot take (a filter layer in
   the picture, a live brush stroke, a transform, the before/after view) now read the tiles the
   view shows instead of a full-size copy of the layer. On a 15000 × 10000 picture panning at
   1:1 with a film look in the stack went from 41 ms a frame to 2.5, the opacity slider from 56
   to 8, a selection change from 78 to 21 and undo from 66 to 18, and the copies the display
-  holds fell from 956 MB to 196. The first brush stroke on such a picture still pauses for
-  about a third of a second while the live preview is made; that comes next.
+  holds fell from 956 MB to 196.
+- **Fewer full-size copies behind small things (tile engine).** Peeking at the base, dragging or
+  scaling a full-size layer, the eyedropper and the magic wand on a picture with a masked layer,
+  and a filter layer with a mask each made a full-size copy of a layer (572 MB on a
+  15000 × 10000 picture, twice that for a masked one) before they drew. They read the tiles now:
+  the peek's first frame went from 558 ms to 60, a layer drag's first frame from 425 ms to under
+  a millisecond, the eyedropper on a masked layer from a second to 20 ms, and the magic wand with
+  a masked full-size layer in the picture from 1.3–1.8 s to about 0.3 s. While a brush stroke
+  runs on a layer, its row in the layer list shows the layer as it was before the stroke.
 - **A brush stroke no longer pauses on a large picture.** The live preview of a stroke used to
   be built as a copy of the whole layer, filled from a full-size copy of its pixels: on a
   15000 × 10000 picture the first dab of every stroke stopped the window for about a fifth of
   a second and cost a gigabyte. It is now composed only in the part of the picture the window
   shows, at the resolution it is shown at. The first dab takes about a millisecond, and the
-  copies the display holds while you paint drop by 1.1 GB in tile mode and by 570 MB with the
-  tile backend off — so this one helps the installed app too. While you paint zoomed out, the
-  soft edge of the stroke is now drawn at the zoom you see instead of being shrunk from the
-  full-resolution stroke; the pixels the stroke finally writes are unchanged.
+  copies the display holds while you paint drop by 1.1 GB with the tile engine and by 570 MB
+  with it off. While you paint zoomed out, the soft edge of the stroke is now drawn at the zoom
+  you see instead of being shrunk from the full-resolution stroke; the pixels the stroke finally
+  writes are unchanged.
 - **Painting right across a large picture.** A stroke that crosses the whole picture used to make
   two more copies of itself, each as large as the area it spans, and to apply itself to the layer
   in one piece. On a 15000 × 10000 picture a stroke of forty dabs across the diagonal took 870 ms
   of drawing and 1.3 s to apply, and held 1.1 GB while you drew it. It is now clipped and applied
   in bands of 1024 px, and only in the bands a dab really touched: 29 ms of drawing, 280 ms to
-  apply, and those 1.1 GB are gone. The result is the same picture.
-- **A stroke only remembers where you painted (tile mode).** The buffer a stroke is drawn into
+  apply (measured with the tile engine), and those 1.1 GB are gone. The result is the same picture.
+- **A stroke only remembers where you painted (tile engine).** The buffer a stroke is drawn into
   used to be a rectangle around everything the stroke had touched, so a line from one corner of a
-  15000 × 10000 picture to the other held 560 MB for a line a few hundred pixels wide. In tile
-  mode it now keeps only the tiles the brush actually reached: 26 MB for that same stroke, and no
+  15000 × 10000 picture to the other held 560 MB for a line a few hundred pixels wide. It now
+  keeps only the tiles the brush actually reached: 26 MB for that same stroke, and no
   copying while it grows. Nothing changes for the gradient tool, which covers the whole layer by
   its nature and keeps the buffer it had.
-- **Layer masks cost almost nothing now (tile mode).** A layer with a transparency mask used to be
+- **Layer masks cost almost nothing now (tile engine).** A layer with a transparency mask used to be
   kept as a second, complete copy of itself with the mask multiplied in, rebuilt from scratch every
   time you changed either. On a 15000 × 10000 picture that copy and what it was built from came to
   1.86 GB, and one dab of the mask brush stopped the window for a quarter of a second. The mask is
   now applied while the picture is drawn, from the same tiles as everything else: that dab takes
   about a millisecond and the 1.86 GB are gone. When a *whole* mask or layer changes at once (mask
   from selection, a flip, a filter applied to the layer), preparing every tile for the screen no
-  longer adds a quarter to half a second on such a picture (tile mode): the next frame shows a
+  longer adds a quarter to half a second on such a picture: the next frame shows a
   coarse picture of the new tiles, and the sharp one follows within about a second. The change
   itself still holds the window for most of a second on a 15000 × 10000 picture (0.8 s for a
   flip, 1.2 to 1.4 s for mask from selection).
 - **Growing, shrinking, feathering and inverting a selection.** These four used to move the whole
   selection through a background worker whatever you had selected — on a 15000 × 10000 picture,
   600 MB of it, three times over. They now work on the area the selection covers plus what the
-  operation reaches past its edge. Grow went from 4.2 s to 2.3, shrink from 3.3 to 1.5, feather
-  from 2.4 s to 0.6 and inverting from 2.7 s to 1.0, and the window stops responding for a fifth
-  to a sixth of that. The smaller your selection, the bigger the difference. (The magic wand and
-  the bucket are unchanged; they are next.)
+  operation reaches past its edge. With the tile engine, grow went from 4.2 s to 1.3–2.3, shrink
+  from 3.3 to 1.5–1.8, feather from 2.4 to 0.6–1.0 and inverting from 2.7 to about 1.0 (each
+  range spans the run when the change was made and the last run before this release). Grow and
+  shrink keep the window responding for most of that time, feather holds it for about half, and
+  inverting for all of it. With the tile engine off these were already quicker and gain as well (grow 2.3 s to 1.3). The smaller your selection, the bigger the difference.
+  (The magic wand and the bucket are not part of this.)
 - **A control point takes the colour under it, before its own effect.** A point of the film pack's
   control points changes the pixels whose colour is close to the colour it was placed on. That colour
   came from a small copy of the picture that the last full-resolution render had left — so after a
   change below the points it could be the colour from before that change — or else from the whole
   flattened picture, with the points' own adjustment and the layers above them in it. It is now the
   colour of the picture under the points layer where you place or move the point, read from a small
-  area around it instead of the whole picture: in tile mode, on a 15000 × 10000 picture, adding a
+  area around it instead of the whole picture: with the tile engine, on a 15000 × 10000 picture, adding a
   point takes about a tenth of a second. Under a filter whose result depends on the whole picture (a
   film look's halation, a vignette, a frame) the picture below the points is still flattened, as
   before, so that the colour is right there too. Points you placed before keep their colour. And a
@@ -74,7 +115,7 @@ the section for its version; `docs/` and the commit history hold the technical d
   by the distance of the view's corner from the picture's (exports were right).
 - **The sample plugin reads only what it needs.** Its mean colour of a selection and *Selection to
   new layer* read the selection's area of the picture, and its colour probe a square of 256 px
-  around the cursor, instead of the whole flattened picture: in tile mode 2.6 s to 0.06–0.3 s for a
+  around the cursor, instead of the whole flattened picture: with the tile engine 2.6 s to 0.06–0.3 s for a
   1000 px selection on a 15000 × 10000 picture. With a filter that reads the whole picture (a film
   look's halation, a vignette) they still flatten it, as before.
 

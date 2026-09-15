@@ -2755,6 +2755,120 @@ three full ones); `mem_test.py` as above; the installer built and the gates run 
 `dist/win-unpacked/Scumble.exe` on its own profile (`CLAUDE.md` 2026-09-12 second block has
 the recipe).
 
+#### The default, as built (2026-09-15, for 0.1.13)
+
+The user's decision: the tile engine is on by default in the installed app from 0.1.13, with a switch in Settings ›
+Rendering; the canvas backend stays as the escape hatch; the node keeps its own default (off). Built ahead of the rest of
+C7 (node browser, Firefox, the 30k gate, the docs list above), which stays open. **The default went on before §C7's own
+gates were met**, on that decision: the `mem_test.py` bound above was not met (see "Not met" at the end of this section),
+and the 30k and exe gates have not run.
+
+- **The precedence** moved into `electron/main/tilemode.js` (`resolveTileMode({ argv, env, setting, packaged })`, no
+  Electron, so `tools/tilemode_test.js` runs it in plain Node): `--tiles` / `--no-tiles`, then `SCUMBLE_TILES=1` / `0`,
+  then a boolean `tiles` in settings.json, else **on** (`DEFAULT_ON`) in a dev run and in the packaged app alike, `from`
+  "default" (it was "dev build" / "packaged build"). `packaged` is still passed and ignored, so the test pins that the
+  installed app takes the same default. Still never written: `tiles` is not in `settings.DEFAULTS`.
+- **The row** Settings › Rendering › Tile engine (`renderTileMode` in `renderer/shell.js`): the box shows the stored
+  boolean, or the default while there is none, and a change writes `{ tiles: <checked> }`; opening the dialog writes
+  nothing. The note says what this window runs and what decided it, from the new IPC `app:tileMode` (`window`: what
+  `createWindow` resolved, `next`: the precedence with the settings as they are now, `setting`, `defaultOn`, `argv`,
+  `env`). While the command line or `SCUMBLE_TILES` decides, the note says they win over the box; otherwise "Restart now"
+  appears when the next start would differ. **Restart now** is a new IPC, `app:relaunch` (it did not exist; a few lines:
+  `app.relaunch()` then `app.quit()`, refused while an agent is attached, whose session would end with it). The button
+  saves first and asks when a document is still working. Checked by hand on a dev instance with its own profile: untick,
+  Restart now, the new window runs canvases "from settings" with the document restored.
+- **The release review's fixes to Restart now** (three findings, each confirmed by two verifiers on check instances):
+  - *It lost the last edits.* It saved only the autosave bundle, which names each layer's uploaded file, and a layer is
+    uploaded 15 s after its last change (`scheduleAutosave`): a layer filled 2.5 s before came back without its pixels
+    (`layers: []`), an older layer with the file from before. `saveBeforeRestart()` in `renderer/shell.js` (exported for
+    the gate) now runs `syncLayers()` on every editor first, and for a picture above `SYNC_ENCODE_PX` waits for the
+    selection's background encode (at most 60 s; an encode that cannot start is not waited for), then saves the bundle.
+    Checked by hand after the fix: the same fill, Restart now, the relaunched window holds the layer with its red pixel.
+  - *An agent's or a headless process came back without a window.* `app.relaunch()` with no arguments reuses
+    `process.argv`, so a `--mcp` process whose window the user had opened quit after the restart (its stdin gone), and a
+    `--headless` one came back invisible holding the instance lock. `electron/main/restart.js` `relaunchArgs(argv)` drops
+    `--mcp`, `--headless` and `--cmd` with its name and JSON (parseArgs' rule) and keeps everything else. Checked by hand
+    on 9555 for both: the relaunched process has neither switch on its command line and a visible window.
+  - *With an update downloaded, a plain quit runs its installer.* `autoInstallOnAppQuit` installs silently without
+    `--force-run`, and the NSIS script kills every process under the install folder, the relaunched Scumble included (read
+    from electron-updater's `BaseUpdater` / `NsisUpdater` and app-builder-lib's `allowOnlyOneInstallerInstance.nsh`; not
+    run live, which needs a packaged build and a newer release). `restartPlan({ argv, updateState })` returns
+    `{ install: true }` in the `downloaded` state and `app:relaunch` then calls `updater.install()` (`quitAndInstall(true,
+    true)`, which starts the new version; that start has no command line, so the setting decides). The row's note says
+    "Restart now also installs x.y.z" in that state.
+- **Gate**: `editor_test.py` `tile_engine_row_writes_the_setting_and_names_its_source` (right after
+  `pixel_backend_is_the_one_the_flag_chose`): `node tools/tilemode_test.js` (twelve cases: the default in a dev run and
+  packaged, non-boolean settings ignored, the setting both ways, the environment over the setting, the command line over
+  both, look-alike arguments ignored); then the row: opening writes nothing, the box and the note against the stored value
+  and this window's source, main, the preload and the `status` command agree on `{ tiles, from }`, two clicks each write
+  the boolean, and the next start takes it, or stays with the command line / environment and the note says so; the
+  setting is put back (no key when there was none). Checked alone on four instances: nothing set, `SCUMBLE_TILES=1`,
+  `--no-tiles`, `{"tiles": false}` in settings.json. The step also runs `node tools/restart_test.js` (ten cases: a plain
+  command line kept, `--mcp` / `--headless` / `--cmd name json` dropped, look-alikes kept, a downloaded update installs, a
+  downloading one does not). The next step, `restart_now_saves_the_edits_of_the_last_seconds`, calls
+  `saveBeforeRestart()` (the button itself would end the instance) and reads `autosave.json` back: a paint layer filled a
+  moment before has a file holding the fill, and on a 5000 × 4000 picture the saved selection is the one made just
+  before, not the one before it.
+- **Mutations, each red** (the source restored and compared byte for byte):
+
+  | mutation | red |
+  |---|---|
+  | the row writes nothing | "click 1: the box is True but settings.json holds [False, None]" |
+  | the fallback off in the packaged app again (`on: !packaged`) | tilemode_test: "nothing set, packaged app: {on: false}" |
+  | the fallback off everywhere (`DEFAULT_ON = false`) | tilemode_test: "the default is false, not on"; in the app the step's plain-Node part first |
+  | the setting ignored | tilemode_test: "the setting off: {on: true, from: default}" |
+  | no `syncLayers()` before the save | "the saved document has no file for the layer painted just before the restart: {ref: null}" |
+  | the selection encode not waited for | "the saved selection is not the one made just before the restart: {inNew: [0,0,0,0], inOld: [255,0,0,255]}" |
+  | a downloaded update ignored | restart_test: "a downloaded update is installed instead: {args: [...]}" |
+  | `--headless` kept | restart_test: "a --headless start comes back with its window" |
+  | `--mcp` kept | restart_test: "an agent's --mcp process comes back as a window" |
+
+- **Memory** (`mem_test.py 15000x10000 --rounds 2`, fresh dev instances, strict; the document is a painted base, three
+  full-size paint layers, a colour-matched 2048 px result, a film look and a levels layer). Renderer / GPU process
+  private MB:
+
+  | | start | built (round 1, 2) | closed (round 1, 2) | after collection (round 1, 2) | free |
+  |---|---|---|---|---|---|
+  | tiles on | 87 / 208 | 4756 / 1647, 4325 / 2283 | 4780 / 5110, 4811 / 6310 | 250 / 333, 242 / 384 | 204 / 405 |
+  | tiles off | 87 / 208 | 703 / 7819, 697 / 7238 | 1270 / 8888, 1266 / 8957 | 105 / 556, 107 / 345 | 107 / 370 |
+
+  Pan 5.5 / 5.1 ms on tiles (the user's ComfyUI job was running during that run), 3.5 / 3.6 on canvases; the levels tick
+  12.3 → 15.0 ms on tiles (the phase-6 drift check reads FAIL at +22 %), 10.3 → 8.9 on canvases. With the tabs kept open
+  (`--keep`, tiles on only; canvases were not run that way, because two or three 15k documents on that backend put 15 to
+  23 GB into the graphics process on the card the user's ComfyUI jobs use): two documents 7044-7056 / 2126-2296 built,
+  9637 / 8703 closed; three 10426 / 3394 built, 12760 / 8828 closed, 234 / 349 after free. The renderer passed 8 GB
+  without a crash (the "about 8 GB" in `PERFORMANCE.md` §4 did not bite here), but the pan was 64.6 ms and the levels tick
+  63.8 ms with three open (5.1 and 11.1 with one), and the levels tick 49-58 ms with two. Not broken down. The
+  `CHANGELOG.md` bullet tells users to close the tabs of large pictures they are not working on.
+- **Runs** (fresh dev instances, strict, each on the first try): `rel-tiles` (`--tiles on`), `rel-canvas` (`--tiles off`)
+  and `rel-default` (no `--tiles`: the new default, "default" in the backend step and the row) with `pixels editor
+  composite commands shape brush film glb ailabel size transparent generate log mcp nodecopy` ALL PASS, `rel-copy`
+  (`--copy --tiles off pixels editor composite commands`) ALL PASS. After the release review's fixes (above): `rel-final-tiles`
+  and `rel-final-default` (the same fifteen gates) ALL PASS on the first try; `rel-final-canvas` (`--tiles off pixels
+  editor composite commands`) failed once in `live_stroke_preview_shows_what_the_commit_writes` ("paint: the preview is
+  not what the commit wrote (157 levels on 66399 of 518400 bytes)", a step the fixes do not touch; a known flake) and
+  passed on the re-run with every step. No `smoke`, no `npm run dist` and no exe gates in this step: those belong to the
+  release.
+- **Not met: §C7's memory gate.** The run above is `--rounds 2`, not 4. With one document built the GPU process sits
+  1.4 to 2.1 GB above its start (208 → 1647 / 2283 MB; with `--keep` 1405 for one, 2126-2296 for two, 3394 for three),
+  against the bound of 300 MB per open document; the renderer was never compared with the tile bytes reported (the log
+  prints none once no document is live). The "GPU process back within 300 MB of the baseline: PASS" line in the log is
+  phase 6's check after closing, not this bound. Closed documents are collected, which is the part that holds. The
+  levels-tick drift check reads FAIL (+22 %).
+- **Measured in the release review, not broken down** (check instances, 15000 × 10000, the `perf_test.py` document):
+  - *The whole flatten.* Cold `flattenToCanvas({ forRun: true })` after an edit: with the film look 4.7-11.4 s on tiles
+    and 5.3-7.4 s on canvases, the window blocked 7-17 s per Generate on tiles and 8.7-10.9 s on canvases; without the
+    film look 0.9-2.5 s on tiles against 0.22-0.31 s, blocked 2.8-4.9 s against 2.3-2.8. `promptContextCanvas` after a
+    fill blocked 7.8-8.1 s on tiles. `perf_test.py`'s "full composite" worst (its cold call; the bracket nulls `flatCache`
+    but does not bump `compositeVersion`) read 1.9-2.7 s in every C5 run and 4.9-8.0 s in every run since C6 (b).
+  - *A stroke after other work.* The 40-dab stroke on a fresh document reads 30-47 ms of drawing and 268-339 ms to
+    apply on tiles; `perf_test.py`'s rows, which run it after grow, shrink, invert, feather, the wands, the bucket and a
+    fill / undo / clear on the layer, read 138-193 / 559-678, and adding that series before the stroke on a check instance
+    gave 115-126 / 617-1608. It depends on the document's edit history.
+  - *Whole-layer copies on tiles.* `layer.px.toCanvas()` of a full-size 15k layer 184-253 ms (0.0-0.1 on canvases, the
+    layer's own canvas); the synchronous part of `syncLayers()` 151 ms against 1.2. Behind the autosave, the in-app
+    background removal (`cutoutInApp`), select by text on a layer (`segmentSource`, `layerAlpha`) and select from layer.
+
 ---
 
 ## 3. Phase E: full resolution per tile and the worker pool (2 weeks)
@@ -2927,7 +3041,7 @@ atlas budget row of C3 is the only new setting.
 | selection | `MaskPixels`, bounds from the tile set + border-tile scan | no readback of a GPU canvas ever again |
 | mask tiles | RGBA in C2, one channel in C5 (with the selection as mask tiles) | callers draw red / white into masks until then (§C2 "C2 as built") |
 | bounds from mips | no: exact per-tile extents of the border tiles, every allocated tile holds a pixel | the kernel's rounded alpha loses an alpha-1 pixel at the first mip |
-| the flag's precedence | `--tiles` / `--no-tiles`, then `SCUMBLE_TILES`, then a boolean `tiles` in settings.json, else on in dev and off packaged; per editor, fixed for its life; the node: `localStorage["inpaint_canvas.tiles"]` | a computed default must never be written (`settings.set` stores the merged object); pixels of one editor must blit and restore into each other (§C2 "C2 as built", step b) |
+| the flag's precedence | `--tiles` / `--no-tiles`, then `SCUMBLE_TILES`, then a boolean `tiles` in settings.json (the Settings › Rendering › Tile engine row writes it), else on, in the packaged app too since 0.1.13 (`electron/main/tilemode.js`, §C7 "the default, as built"); per editor, fixed for its life; the node: `localStorage["inpaint_canvas.tiles"]` | a computed default must never be written (`settings.set` stores the merged object); pixels of one editor must blit and restore into each other (§C2 "C2 as built", step b) |
 | display in C2 | `canvasOf(px)` (the mirror on tiles) for everything drawn at once, `toCanvas()` for what is kept; level 0 refreshed from `displayRectSource` | a copy per frame rebuilt the pyramid and the texture map every frame; a draw from a changed CPU mirror into a GPU level cost about 100 ms at 48 MP |
 | feather | Gaussian ramp on the EDT | one kernel for grow / shrink / feather; look changes slightly, said in the CHANGELOG |
 | compositor | atlas pages per (source, level), 1 px gutter, instanced draw per layer, mask sampler | no canvas round trip; `MAX_TEXTURE_SIZE` stops being a document limit |

@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld("scumble", {
     }),
     // the graphics card's memory as a whole ({ usedMB, totalMB, source } or null), docs/PLAN_TILES.md phase A item 5
     gpuMemory: () => ipcRenderer.invoke("app:gpuMemory"),
+    // the pixel backend: { window, next, setting, defaultOn, argv, env } (electron/main/tilemode.js)
+    tileMode: () => ipcRenderer.invoke("app:tileMode"),
+    // quit and start again as a window (electron/main/restart.js), or install a downloaded update
+    relaunch: () => ipcRenderer.invoke("app:relaunch"),
     openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
     settings: {
         get: () => ipcRenderer.invoke("settings:get"),

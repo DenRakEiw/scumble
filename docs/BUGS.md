@@ -39,7 +39,8 @@ still unanswered.
 ### Selection undo and bounds lose isolated pixels above 1 MP (canvas backend)
 
 **Found** 2026-09-14 by C2's final review (`docs/PLAN_BCE.md` §C2), present since phase A (0.1.10):
-on the canvas backend, which is what the packaged app runs, a selection above 1 MP takes its extent
+on the canvas backend, which is what the packaged app ran until 0.1.13 and still runs with Settings ›
+Rendering › Tile engine switched off, a selection above 1 MP takes its extent
 from the selection's 1/16 display level (`selectionExtent()` in `inpaint_canvas.js`). Four smoothed
 halvings round an isolated pixel away (below about alpha 128 always, and at sizes that do not halve
 evenly even alpha 255), so the selection's undo step does not copy it and its bounds scan does not
@@ -65,6 +66,21 @@ and painting stutter badly.
 smoother (2026-09-11), which is what the pipeline predicts: after decoding, base and layers
 are RGBA canvases and the format cannot matter. So the heading is misleading and the bug is
 about the *size*. It is the untiled full-resolution layers that are the suspect.
+
+**Update 2026-09-15, for 0.1.13: the tile engine is on by default.** Most of what follows describes
+the state before it (untiled layers, "layer tiles were deliberately not built"); it stays as the
+record. Layers, masks and the selection are tiles now (`docs/PLAN_BCE.md` C2 to C6), and 0.1.13 runs
+them in the installed app unless *Settings › Rendering › Tile engine* is unticked (or `--no-tiles`).
+Measured on a 15000 × 10000 document with three full-size paint layers, a colour-matched result, a
+film look and a levels layer (`mem_test.py`, one document open; `PLAN_BCE.md` §C7 "The default, as
+built"): about 4.5 GB in the renderer and 1.6-2.3 GB in the GPU process on tiles, against 0.7 GB and
+7.2-7.8 GB with the tile engine off. The entry stays open until the user reports on their own 15k
+file. What to ask for: the file's size and layer count, whether panning and painting still stutter
+with the tile engine on, the same with it off (after *Restart now*), and the card's and the GPU
+process's numbers from Settings › Rendering while it stutters. What is known to be still slow on
+tiles is the "Still slow" list under 0.1.13 in `CHANGELOG.md` (smudge, the whole-picture wand,
+invert, the whole flatten behind renders and exports); with two 15k documents open at once a levels
+tick took 49-58 ms on tiles and with three the pan took 65 ms, not broken down yet.
 
 **What is already known**
 

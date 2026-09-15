@@ -25,7 +25,7 @@ import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVA
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
- * one (Scumble passes --tiles / SCUMBLE_TILES / settings.tiles / the build through setPixelsOptions),
+ * one (Scumble passes --tiles / SCUMBLE_TILES / settings.tiles / its default, on, through setPixelsOptions),
  * else the browser's switch localStorage "inpaint_canvas.tiles" = "1" (the ComfyUI node; off by default).
  */
 function editorTileMode() {

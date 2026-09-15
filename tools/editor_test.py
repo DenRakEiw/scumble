@@ -25,6 +25,9 @@ counting, the 268 MP refusal on tiles and a selection encode that cannot throw o
 C6 (a): a second mask from selection and its undo reach the screen on both paths, a write that ends on a tile
 border or an undo of whole tiles leaves no neighbour's old edge line in the atlas, and the atlas gives back the
 pages of pixels the document replaced and holds nothing alive after a collection.
+C7, the default: the tile engine is on unless the command line, SCUMBLE_TILES or the Settings › Rendering
+row chose otherwise (the precedence in plain Node, tools/tilemode_test.js), and that row writes the setting
+and names the source.
 C6 (b2): mip chains of the selection that land from the mips worker run no colour match and no filter pass again, and
 the chains of a layer below a matched one and a filter layer do, once, and the screen ends exact either way; a layer
 above them or the base replaced under them follows the same rule, a flatten after the landings keeps nothing a sampled
@@ -37,6 +40,7 @@ Start the app first: ./node_modules/.bin/electron . --remote-debugging-port=9555
 import asyncio
 import json
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -163,7 +167,7 @@ return host.editors().length;
 
 
 # C2 step (b) (docs/PLAN_BCE.md §C2): the pixel backend. The gates start the app with
-# SCUMBLE_TILES=1 or 0 (run_gates.sh --tiles on|off); without it the dev build's default applies.
+# SCUMBLE_TILES=1 or 0 (run_gates.sh --tiles on|off); without it the default applies (on, since 0.1.13).
 def expected_tiles():
     v = os.environ.get("SCUMBLE_TILES")
     return True if v == "1" else False if v == "0" else None
@@ -1191,6 +1195,193 @@ async def screen_step(c):
 async def backend_step(c):
     exp = expected_tiles()
     return await c.eval(PRE % BACKEND_STEP.replace("__EXPECT__", "null" if exp is None else ("true" if exp else "false")), timeout=180)
+
+
+TILE_ROW_READ = """
+const shell = await import("./shell.js");
+const box = document.getElementById("set-tiles"), note = document.getElementById("set-tiles-note"), restart = document.getElementById("set-tiles-restart");
+if (__OPEN__) {
+    for (const d of document.querySelectorAll("dialog[open]")) d.close();
+    await shell.openSettings();
+    await wait(200);
+}
+if (!box || !note || !restart || !document.querySelector("#shell-settings[open]")) throw new Error("the settings dialog or its Tile engine row is missing");
+if (__CLICK__) {
+    const want = !box.checked;
+    box.click();
+    for (let i = 0; i < 50 && ((await window.scumble.settings.get()).tiles !== want || box.checked !== want); i++) await wait(40);
+    await wait(150);   // the note is written after the setting
+}
+const st = await run("status", { doc: window.__t });
+return { checked: box.checked, note: note.textContent, restartHidden: restart.hidden, mode: await window.scumble.tileMode(),
+    status: st.pixels, pixels: { tiles: window.scumble.pixels.tiles, from: window.scumble.pixels.tilesFrom },
+    userData: (await window.scumble.info()).userData, relaunch: typeof window.scumble.relaunch };
+"""
+
+
+async def tile_engine_row_writes_the_setting_and_names_its_source(c):
+    """C7, the default (docs/PLAN_BCE.md §C7): the tile engine is on unless something chose otherwise, in the
+    packaged app too. The precedence (electron/main/tilemode.js) is checked in plain Node for every source
+    (tools/tilemode_test.js). Then Settings › Rendering › Tile engine: opening the dialog writes nothing into
+    settings.json; the box shows the stored boolean or the default; the note names what decided this window's
+    backend, as the status command and the preload do; a click writes the boolean, and while the command line
+    or SCUMBLE_TILES decides, the next start stays theirs and the note says so, otherwise the next start takes
+    the setting and "Restart now" appears when it differs from this window. The setting is put back as it was
+    (no key when there was none). Restart itself is not clicked: it would end the gate's instance."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    r = subprocess.run(["node", os.path.join(here, "tilemode_test.js")], capture_output=True, text=True, timeout=60)
+    if r.returncode != 0 or not r.stdout.strip().endswith("PASS"):
+        raise Exception("the precedence in plain Node: " + (r.stdout + r.stderr)[-900:])
+    # what Restart now starts: a window again (no --mcp / --headless / --cmd), the installer while an update waits
+    rr = subprocess.run(["node", os.path.join(here, "restart_test.js")], capture_output=True, text=True, timeout=60)
+    if rr.returncode != 0 or not rr.stdout.strip().endswith("PASS"):
+        raise Exception("the restart plan in plain Node: " + (rr.stdout + rr.stderr)[-900:])
+    def read(opn, click):
+        js = TILE_ROW_READ.replace("__OPEN__", "true" if opn else "false").replace("__CLICK__", "true" if click else "false")
+        return c.eval(PRE % js, timeout=60)
+
+    path = os.path.join(await c.eval("(async () => (await window.scumble.info()).userData)()"), "settings.json")
+
+    def stored():
+        """(whether settings.json has a `tiles` key, its value)"""
+        try:
+            with open(path, encoding="utf-8") as f:
+                d = json.load(f)
+        except FileNotFoundError:
+            return (False, None)
+        return ("tiles" in d, d.get("tiles"))
+
+    # before the dialog: what the file holds (the gate's fresh profile holds no `tiles`)
+    before = stored()
+    opened = await read(True, False)
+    out = {"file_before": before, "opened": {k: opened[k] for k in ("checked", "note", "restartHidden", "status", "pixels")}, "mode": opened["mode"]}
+    if stored() != before:
+        raise Exception("opening the settings dialog wrote the tile setting: %s -> %s" % (before, stored()))
+    m = opened["mode"]
+    w, nxt = m["window"], m["next"]
+    if not w or w["on"] != opened["pixels"]["tiles"] or w["from"] != opened["pixels"]["from"] or opened["status"] != {"tiles": w["on"], "from": w["from"]}:
+        raise Exception("this window's backend is said differently by main, the preload and the status command: %s" % json.dumps(out))
+    if opened["relaunch"] != "function":
+        raise Exception("no relaunch in the preload")
+    forced = w["from"] in ("command line", "SCUMBLE_TILES")
+    env = os.environ.get("SCUMBLE_TILES")
+    if not forced and env is None:
+        want_w = {"on": before[1], "from": "settings"} if before[0] and isinstance(before[1], bool) else {"on": True, "from": "default"}
+        if w != want_w:
+            raise Exception("this window's backend is %s, settings.json %s gives %s" % (json.dumps(w), before, json.dumps(want_w)))
+    want_box = before[1] if before[0] and isinstance(before[1], bool) else m["defaultOn"]
+    if opened["checked"] != want_box or m["defaultOn"] is not True:
+        raise Exception("the box shows %s, the setting and the default say %s (default %s)" % (opened["checked"], want_box, m["defaultOn"]))
+    words = {"command line": "on the command line", "SCUMBLE_TILES": "SCUMBLE_TILES=", "settings": "set by this box", "default": "the default"}[w["from"]]
+    if words not in opened["note"] or ("tile engine " + ("on" if w["on"] else "off")) not in opened["note"]:
+        raise Exception("the note does not name this window's backend and its source (%s): %s" % (words, opened["note"]))
+    clicks = []
+    try:
+        for i in range(2):
+            got = await read(False, True)
+            has, val = stored()
+            row = {"checked": got["checked"], "file": [has, val], "next": got["mode"]["next"], "restartHidden": got["restartHidden"], "note": got["note"]}
+            clicks.append(row)
+            if not has or val is not got["checked"]:
+                raise Exception("click %d: the box is %s but settings.json holds %s" % (i + 1, got["checked"], [has, val]))
+            if got["mode"]["setting"] is not got["checked"]:
+                raise Exception("click %d: main reads the setting as %s" % (i + 1, got["mode"]["setting"]))
+            n = got["mode"]["next"]
+            if forced:
+                if n["from"] != w["from"] or n["on"] != w["on"] or not got["restartHidden"] or "wins over this box" not in got["note"]:
+                    raise Exception("click %d: the command line or the environment no longer wins, or the note does not say so: %s" % (i + 1, json.dumps(row)))
+            else:
+                if n["from"] != "settings" or n["on"] != got["checked"]:
+                    raise Exception("click %d: the next start does not take the setting: %s" % (i + 1, json.dumps(row)))
+                if got["restartHidden"] != (n["on"] == w["on"]):
+                    raise Exception("click %d: Restart now is %s while the next start is %s and this window %s" % (i + 1, "hidden" if got["restartHidden"] else "shown", n["on"], w["on"]))
+                if n["on"] != w["on"] and "After a restart" not in got["note"]:
+                    raise Exception("click %d: the note does not say what the restart changes: %s" % (i + 1, got["note"]))
+    finally:
+        # put the setting back as it was: no key when there was none (undefined is dropped by JSON)
+        restore = json.dumps(before[1]) if before[0] else "undefined"
+        await c.eval("(async () => { await window.scumble.settings.set({ tiles: %s }); const d = document.querySelector('#shell-settings[open]'); if (d) d.close(); return 1; })()" % restore)
+    out["clicks"] = clicks
+    out["file_after"] = stored()
+    if out["file_after"] != before:
+        raise Exception("the tile setting was not put back: %s -> %s" % (before, out["file_after"]))
+    back = await c.eval("(async () => (await window.scumble.tileMode()).next)()")
+    if (forced and back != w) or (not forced and not before[0] and back != {"on": True, "from": "default"}):
+        raise Exception("after the restore the next start is %s (this window %s)" % (json.dumps(back), json.dumps(w)))
+    out["node"] = [r.stdout.strip().splitlines()[-1], rr.stdout.strip().splitlines()[-1]]
+    return out
+
+
+RESTART_SAVE_STEP = """
+// Settings › Rendering › Restart now saves before it quits (renderer/shell.js saveBeforeRestart). The autosave bundle
+// names each layer's uploaded file, and a layer is uploaded 15 s after its last change: saving the bundle alone kept
+// the file from before (a new layer had none and came back empty), and a picture above SYNC_ENCODE_PX saved the
+// selection from before its background encode landed. The button itself is not clicked (it would end the instance):
+// what it saves is read back from autosave.json.
+const shell = await import("./shell.js");
+const { api } = await import("./editor/host.js");
+const fails = [], out = {};
+const doc = await run("new_document");
+const ed = ednow(doc.id);
+host.shell.activate(ed);
+const saved = async () => {
+    const b = JSON.parse((await window.scumble.state.load()) || "{}");
+    const d = (b.docs || []).find((x) => x.id === doc.id);
+    return d ? JSON.parse(d.state || "{}") : null;
+};
+const pixelOf = async (url, x, y) => {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("could not load " + url.slice(0, 80))); img.src = url; });
+    const cv = document.createElement("canvas"); cv.width = 1; cv.height = 1;
+    const g = cv.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, x, y, 1, 1, 0, 0, 1, 1);
+    return Array.from(g.getImageData(0, 0, 1, 1).data);
+};
+try {
+    // (1) a paint layer filled a moment ago, never uploaded
+    await run("new_canvas", { width: 640, height: 480, doc: doc.id });
+    await run("add_paint_layer", { doc: doc.id });
+    await run("select_rect", { x: 20, y: 20, w: 200, h: 100, doc: doc.id });
+    const L = ed.layers.find((l) => l.kind === "paint");
+    ed.fillSelection();
+    await wait(100);
+    out.before = { dirty: !!L.dirty, ref: L.ref || null };
+    if (!L.dirty || L.ref) fails.push("the layer is not an unsaved edit before the save: " + JSON.stringify(out.before));
+    await shell.saveBeforeRestart();
+    const s1 = await saved();
+    const sl = s1 && (s1.layers || []).find((l) => l.id === L.id);
+    out.layer = sl ? { ref: sl.ref, x: sl.x, y: sl.y } : null;
+    if (!sl || !sl.ref) fails.push("the saved document has no file for the layer painted just before the restart: " + JSON.stringify(out.layer));
+    else {
+        const px = await pixelOf(api.apiURL("/view?" + new URLSearchParams({ filename: sl.ref.filename, subfolder: sl.ref.subfolder || "", type: sl.ref.type || "input" })), 100 - (sl.x || 0), 60 - (sl.y || 0));
+        out.layer.pixel = px;
+        if (!(px[3] > 0)) fails.push("the saved layer file does not hold the fill: " + JSON.stringify(out.layer));
+    }
+    // (2) a selection changed a moment ago on a picture above SYNC_ENCODE_PX (5000 x 4000)
+    await run("new_canvas", { width: 5000, height: 4000, doc: doc.id });
+    await run("select_rect", { x: 0, y: 0, w: 100, h: 100, doc: doc.id });
+    ed.getValue();
+    for (let i = 0; i < 200 && (ed._selEncoding || !ed.selectionEncoded); i++) await wait(50);
+    await run("select_rect", { x: 2000, y: 2000, w: 300, h: 300, doc: doc.id });
+    out.selBefore = { encoded: !!ed.selectionEncoded, encoding: !!ed._selEncoding };
+    await shell.saveBeforeRestart();
+    const s2 = await saved();
+    if (!s2 || !s2.selection) fails.push("the saved document has no selection");
+    else {
+        out.sel = { inNew: await pixelOf(s2.selection, 2100, 2100), inOld: await pixelOf(s2.selection, 50, 50) };
+        if (!(out.sel.inNew[3] > 0) || out.sel.inOld[3] > 0) fails.push("the saved selection is not the one made just before the restart: " + JSON.stringify(out.sel));
+    }
+} finally {
+    await run("close_document", { doc: doc.id, force: true });
+    host.shell.activate(ednow(window.__t));
+}
+if (fails.length) throw new Error(fails.join(" | "));
+return out;
+"""
+
+
+async def restart_save_step(c):
+    return await c.eval(PRE % RESTART_SAVE_STEP, timeout=180)
 
 
 async def edit_step(c):
@@ -3752,6 +3943,8 @@ if (fails.length) throw new Error(fails.join(" | ") + " " + JSON.stringify(out))
 return { tiles: out.tiles, level: out.level, rows: out.rows.map((r) => r.path + ": sel asked " + r.selAsked + " reruns " + r.sel + " exact " + r.selExact[0] + "; layer asked " + r.layerAsked + " reruns " + r.layer + " exact " + r.layerExact[0] + "; top asked " + r.topAsked + " reruns " + r.top + " exact " + r.topExact[0] + "; sampled with " + r.samplePending + " pending, after " + r.sample + "; sampled before the frame, exact " + r.raceExact[0] + "; base asked " + r.baseAsked + " reruns " + r.base) };
 """),
     ("pixel_backend_is_the_one_the_flag_chose", lambda c: backend_step(c)),
+    ("tile_engine_row_writes_the_setting_and_names_its_source", lambda c: tile_engine_row_writes_the_setting_and_names_its_source(c)),
+    ("restart_now_saves_the_edits_of_the_last_seconds", lambda c: restart_save_step(c)),
     ("editing_on_the_flags_backend_in_pixels_and_on_screen", lambda c: edit_step(c)),
     ("pixels_nothing_draws_get_no_display_mirror", lambda c: undrawn_step(c)),
     ("selection_overlay_is_drawn_from_the_mask_itself", lambda c: selection_step(c)),
