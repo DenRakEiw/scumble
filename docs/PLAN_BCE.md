@@ -2598,6 +2598,24 @@ a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each
     through a premultiplied canvas); on tiles no mirror of the layer or its mask and no `_masked`.
   - Mutations, each red: the tile branch off ("the layer as the sample source made a display copy: px, mask, masked"); no
     destination-in ("the eyedropper on the masked layer: ... outsideStatus: Colour #20a040 picked").
+- **(c2c) A filter layer's mask in a region pass.** `applyFilterLayer` masked the filter's output with `maskPx.drawTo`: on tiles the
+  mask's display mirror (572 MB, synced per written tile) and a sub-rectangle draw of it per pass, on every screen frame with a
+  masked filter layer (a filter layer puts the screen on Canvas 2D), the film panel, the eyedropper and the flood's passes. A mask
+  stroke on the filter layer drew `maskWithStroke`: a full-size live preview filled from that mirror. **Built**: in a region pass
+  with a tile mask, the mask's region canvas at the pass's level drawn with the transform from the pass's rectangle to the
+  mask canvas; during a mask stroke on the layer, the mask and the stroke over it (`drawStrokeInto`, the filter layer's rectangle
+  being the image) in a scratch of the pass's size (`_filterMaskView`), destination-in. The full-resolution pass (`vp` null: exports,
+  runs) and the canvas backend keep `drawTo` / `maskWithStroke`. **After**: the masked filter pan row 3.8 [15.9] ms, no mirror of the
+  mask (572 MB before, 3.1-3.8 ms median then too).
+  - Gate: new `a_masked_filter_layer_reads_its_mask_from_tiles` (both backends): a 2400 x 1600 textured base, an invert filter layer
+    masked to x < 1100, 1:1. The screen over the mask's edge equals the whole flatten (0 levels on both backends) and made no mirror
+    of the mask; a sampled pass at 0.08 is the inverted plain pass left of the edge and the plain pass right of it (0 and 0
+    levels) and made no mirror; eight erasing dabs on the mask: the screen before the commit is the screen after it (0 levels, the
+    stroke changed 67,500 bytes by up to 191), and on tiles no `maskPreview` and no mirror during the gesture (the canvas backend
+    still makes its preview, as before).
+  - Mutations, each red: the tile branch off ("the screen made the filter mask's display mirror"); the mask's transform without the
+    pass's x ("the screen with the masked filter layer differs from the flatten by 203 levels on 226800 bytes"); the stroke through
+    `maskWithStroke` again ("made a full-size preview or the mask's mirror: maskPreview true, mirror true").
 
 ### C7. Both hosts, the flag, the release (3 days)
 

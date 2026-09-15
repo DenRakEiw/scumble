@@ -2758,6 +2758,93 @@ ed.compositorOff = compOff;
 await run("select_none", { doc: d.id });
 return out;
 """),
+    ("a_masked_filter_layer_reads_its_mask_from_tiles", """
+// C6 (c2c): a filter layer's mask in a region pass (the screen with a filter layer in the stack, a sampled pass) is drawn from
+// the mask's tiles at the pass's level, and a mask stroke on the filter layer is composed in a scratch of the pass's size: no
+// display mirror of the mask and no full-size live preview of it. Both backends (the canvas backend keeps its path).
+const P = await import("./editor/inpaint_pixels.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 2400, height: 1600, doc: d.id });
+const W = 2400, H = 1600;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    x.fillStyle = "#30507a"; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 80; i++) { x.fillStyle = `hsl(${(i * 41) % 360},70%,${30 + (i * 7) % 40}%)`; x.fillRect((i * 283) % (W - 100), (i * 131) % (H - 80), 100, 80); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "fmask.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const F = ed.addFilterLayer("invert");
+F.maskPx = ed.pixels.Mask.empty(W, H);
+F.maskPx.fill([0, 0, 1100, H], "#ffffff");
+ed.markMaskChanged(F);
+ed.renderLayers();
+ed.setTool("rect");
+ed.hover = null;
+ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false;
+ed.view.x = -700; ed.view.y = -500;
+ed.sceneSig = null; ed.draw(); await ed.mipsSettled(); await wait(60); ed.sceneSig = null; ed.draw(); await wait(60);
+const out = { tiles: ed.tileMode };
+// the screen at 1:1 against the whole flatten: a region of screen pixels is a region of image pixels
+const c0 = ed.imageToScreen(900, 700).map(Math.round);
+const SW = 400, SH = 300;
+const ix = Math.round(ed.canvasToImage(c0[0], c0[1])[0]), iy = Math.round(ed.canvasToImage(c0[0], c0[1])[1]);
+const screen = () => ed.canvas.getContext("2d").getImageData(c0[0], c0[1], SW, SH).data;
+const diff = (a, b) => { let worst = 0, n = 0; for (let i = 0; i < a.length; i++) { const q = Math.abs(a[i] - b[i]); if (q) n++; if (q > worst) worst = q; } return [worst, n]; };
+const flatAt = () => ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(ix, iy, SW, SH).data;
+const s0 = screen();
+out.mirrorAfterScreen = ed.tileMode ? !!P.displayCanvasIfMade(F.maskPx) : null;
+const [sw0, sn0] = diff(s0, flatAt());
+out.screen = [sw0, sn0, ix, iy];
+if (sw0 > 2) throw new Error("the screen with the masked filter layer differs from the flatten by " + sw0 + " levels on " + sn0 + " bytes");
+if (out.mirrorAfterScreen) throw new Error("the screen made the filter mask's display mirror");
+// the split on either side of the mask's edge: inverted left, plain right, at 1:1 and in a sampled pass at 0.08
+ed.releaseCaches({ mirrors: true });
+const small = ed.sampleRegion("image", [0, 0, W, H], 0.08, { forRun: true }).getContext("2d").getImageData(0, 0, 192, 128).data;
+if (ed.tileMode && P.displayCanvasIfMade(F.maskPx)) throw new Error("a sampled pass made the filter mask's display mirror");
+F.visible = false;
+const plain = ed.sampleRegion("image", [0, 0, W, H], 0.08, { forRun: true }).getContext("2d").getImageData(0, 0, 192, 128).data;
+F.visible = true;
+// the mask's edge is at 1100 px, 88 px in the pass: inverted to its left, untouched to its right
+let inv = 0, same = 0;
+for (let y = 0; y < 128; y++) for (let x = 0; x < 192; x++) {
+    if (x > 84 && x < 92) continue;
+    const i = (y * 192 + x) * 4;
+    for (let k = 0; k < 3; k++) {
+        if (x <= 84) inv = Math.max(inv, Math.abs(small[i + k] - (255 - plain[i + k])));
+        else same = Math.max(same, Math.abs(small[i + k] - plain[i + k]));
+    }
+}
+out.sampled = { invertedLeft: inv, plainRight: same };
+if (inv > 2 || same > 1) throw new Error("the sampled pass's split at the filter mask's edge is off: " + JSON.stringify(out.sampled));
+// a mask stroke on the filter layer: the frames before the commit against the frame after it
+ed.sceneSig = null; ed.draw(); await wait(60);
+ed.activeLayerId = F.id;
+ed.brushSize = 90; ed.hardness = 0.6; ed.brushOpacity = 1;
+const p = { kind: "maskpaint", layer: F, stroke: ed.newStrokeBuffer(F.maskPx), clip: null, erase: true, white: true, last: [900, 850], pressure: 1 };
+ed.pointer = p;
+for (let i = 1; i <= 8; i++) { const x = 900 + i * 20, y = 850 + (i % 3) * 20; ed.layerDab(p, p.last[0], p.last[1], x, y); p.last = [x, y]; ed.hover = null; ed.sceneSig = null; ed.draw(); }
+await wait(40); ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40);
+const during = { maskPreview: !!ed.maskPreview, mirror: ed.tileMode ? !!P.displayCanvasIfMade(F.maskPx) : null };
+const before = screen();
+const box = ed.strokeRect(p, F.maskPx);
+ed.commitStroke(p);
+ed.pointer = null;
+ed.markMaskChanged(F, box);
+ed.releaseStrokeScratch();
+ed.hover = null; ed.sceneSig = null; ed.draw(); await ed.mipsSettled(); await wait(60); ed.sceneSig = null; ed.draw(); await wait(60);
+const after = screen();
+const [ws, ns] = diff(before, after), [wr, nr] = diff(s0, after);
+out.stroke = { during, worst: ws, differing: ns, reach: [wr, nr] };
+if (wr < 100 || nr < 3000) throw new Error("the mask stroke barely changed the screen, so the comparison proves nothing: " + JSON.stringify(out.stroke));
+if (ws > 2) throw new Error("the mask stroke's preview on the filter layer is not what the commit wrote: " + ws + " levels on " + ns + " bytes");
+if (ed.tileMode && (during.maskPreview || during.mirror)) throw new Error("the mask stroke on the filter layer made a full-size preview or the mask's mirror: " + JSON.stringify(during));
+await run("close_document", { doc: d.id, force: true });
+return out;
+"""),
     ("a_new_mask_and_a_neighbours_write_reach_the_screen", """
 // C6 (a), on the screen and on both backends (on canvases there is no atlas and no region view, and the rows
 // have to be right all the same).

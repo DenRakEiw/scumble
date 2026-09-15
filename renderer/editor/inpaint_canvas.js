@@ -7456,8 +7456,43 @@ class InpaintEditor {
             mctx.globalCompositeOperation = "destination-in";
             const ms = layer.maskPx.width / this.width;   // a filter layer's mask covers the whole image
             const g = this.pointer;
+            const stroke = !!(g && g.kind === "maskpaint" && g.layer === layer);
+            if (vp && isTilePixels(layer.maskPx)) {
+                // C6 (c2): in a region pass the part of the mask the pass shows, from the mask's tiles at the pass's level,
+                // and during a mask stroke on this layer the stroke over it in a scratch of the pass's size. drawTo gave
+                // the mask's display mirror (572 MB at 15000 x 10000, synced per written tile) and a sub-rectangle draw of
+                // it per pass; the stroke a full-size live preview filled from that mirror.
+                const sx = m.width / rw, sy = m.height / rh;
+                const mvp = { ...vp, sx, sy };
+                const whole = { x: 0, y: 0, w: this.width, h: this.height };
+                mctx.save();
+                try {
+                    if (stroke) {
+                        const sc = this.passScratch("_filterMaskView", m.width, m.height), sctx = sc.getContext("2d");
+                        sctx.save();
+                        try {
+                            sctx.setTransform(1, 0, 0, 1, 0, 0);
+                            sctx.globalAlpha = 1;
+                            sctx.globalCompositeOperation = "source-over";
+                            sctx.clearRect(0, 0, m.width, m.height);
+                            sctx.setTransform(sx, 0, 0, sy, -rx * sx, -ry * sy);
+                            this.drawTilesInto(sctx, layer.maskPx, 0, 0, this.width, this.height, mvp);
+                            this.drawStrokeInto(sctx, whole, layer.maskPx, g.erase ? "destination-out" : "source-over", mvp, [0, 0, m.width, m.height]);
+                        } finally {
+                            sctx.restore();
+                        }
+                        mctx.setTransform(1, 0, 0, 1, 0, 0);
+                        mctx.drawImage(sc, 0, 0);
+                    } else {
+                        mctx.setTransform(sx, 0, 0, sy, -rx * sx, -ry * sy);
+                        this.drawTilesInto(mctx, layer.maskPx, 0, 0, this.width, this.height, mvp);
+                    }
+                } finally {
+                    mctx.restore();
+                }
+            }
             // during a mask stroke on this layer its live preview (the mask's size), otherwise the mask's own pixels
-            if (g && g.kind === "maskpaint" && g.layer === layer) mctx.drawImage(this.maskWithStroke(layer), rx * ms, ry * ms, rw * ms, rh * ms, 0, 0, m.width, m.height);
+            else if (stroke) mctx.drawImage(this.maskWithStroke(layer), rx * ms, ry * ms, rw * ms, rh * ms, 0, 0, m.width, m.height);
             else layer.maskPx.drawTo(mctx, rx * ms, ry * ms, rw * ms, rh * ms, 0, 0, m.width, m.height);
             mctx.globalCompositeOperation = "source-over";
             src = m;
