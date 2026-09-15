@@ -5647,6 +5647,17 @@ class InpaintEditor {
     /**
      * Add the box a dab changed (image coordinates, padded) to the gesture's dirty
      * rectangles, one per live preview: each preview refreshes its own and takes it.
+     *
+     * The dab also changed the scene the screen shows, so the scene cache's key moves on
+     * (`pixelVersion`, which `sceneSignature` reads). Every stroke kind that draws into a
+     * stroke buffer comes through here (layerDab, cloneDab, gradientDab, shapeDab); a write
+     * into pixels says so through touchSource / touchSourceRect instead. 28bfad0 (C5 c) took
+     * the per-dab `touchSource(buffer canvas)` out of those four with nothing in its place:
+     * from then on every frame of a gesture blitted the scene built at the press, and the
+     * brush, the eraser, clone, the gradient and a dragged shape showed nothing until the
+     * release (0.1.13, docs/PLAN_BCE.md §C7 "The live stroke that did not show"). Only the
+     * key: no display level, no mirror and no pixels are touched, which is what the stroke
+     * store and the region preview are for.
      */
     strokeDirty(p, x0, y0, x1, y1, pad) {
         const b = [Math.min(x0, x1) - pad, Math.min(y0, y1) - pad, Math.max(x0, x1) + pad, Math.max(y0, y1) + pad];
@@ -5654,6 +5665,7 @@ class InpaintEditor {
             const d = p[k];
             p[k] = d ? [Math.min(d[0], b[0]), Math.min(d[1], b[1]), Math.max(d[2], b[2]), Math.max(d[3], b[3])] : b;
         }
+        this.pixelVersion++;
     }
 
     /** A live preview's dirty rectangle in `target`'s pixels (clamped), taken; null when nothing changed. `target`: pixels or a canvas of their size. */

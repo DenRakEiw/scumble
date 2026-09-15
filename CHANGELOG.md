@@ -3,6 +3,15 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.14 — unreleased
+
+- **Painting shows the stroke again while you paint.** In 0.1.13 the brush, the eraser (also on a
+  layer's mask), the clone and heal brushes, the gradient and a dragged rectangle, ellipse or
+  freehand shape showed only the first dab while the mouse button was down, and the whole stroke
+  appeared when you let go.
+  The stroke itself was always painted correctly; only the screen was not redrawn during it. It
+  happened with the tile engine on and off, at every zoom and on every picture size.
+
 ## 0.1.13 — 2026-09-15
 
 - **The tile engine is on.** Scumble now keeps the picture, every layer, every mask and the

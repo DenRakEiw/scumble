@@ -2869,6 +2869,154 @@ and the 30k and exe gates have not run.
     layer's own canvas); the synchronous part of `syncLayers()` 151 ms against 1.2. Behind the autosave, the in-app
     background removal (`cutoutInApp`), select by text on a layer (`segmentSource`, `layerAlpha`) and select from layer.
 
+#### The live stroke that did not show (0.1.13, fixed for 0.1.14)
+
+- **Symptom** (the user, 2026-09-15 17:57, installed 0.1.13 with the tile engine on by default, a screen recording):
+  with the eraser, and then with the brush, nothing but the first dab reached the screen while the button was down; the
+  change appeared on the release, one step per stroke. Their picture: 17315 × 9257, a "merged copy" layer of 14246 ×
+  2259 at (1719, 4514) over the base, the selection kept with marching ants, the eraser at 188 px and 43 %, zoomed out
+  well below 0.5.
+- **Reproduced** on `dist/win-unpacked/Scumble.exe` (0.1.13) with CDP mouse events and screenshots with the button still
+  down: half way through and 500 ms after the last move the screen held the press dab only. Nothing varied changed it:
+  tiles on or off, 4000 × 3000 or 17315 × 9257, the layer at the origin or not, fit or 1:1, ants or tint, a selection
+  or none, a filter layer above, a hard tip, a pen. `drawScene` ran 37 times in 36 moves and rebuilt the scene once.
+- **Cause.** The screen keeps its composited scene in `sceneCanvas` behind `sceneSignature()`, and the only input of
+  that signature that moves during a gesture is `pixelVersion`, which `touchSource` / `touchSourceRect` raise. Up to
+  4bd31a4 every dab called `touchSource(buffer.canvas)` after `StrokeBuffer.ensure()`. **28bfad0 (C5 c)** replaced
+  `ensure()` with `draw(x0, y0, x1, y1, fn)` and dropped that call from `layerDab`, `cloneDab`, `gradientDab` and
+  `shapeDab` with nothing in its place. From then on every frame of a stroke found the signature of the press and
+  blitted that scene with the overlays over it (the ring and the ants kept moving); `layerRegionView`, which takes the
+  dab's dirty box, was never reached again until the release, where `markLayerChanged` raised `pixelVersion`. The
+  brush, the eraser, the clone tool, the gradient and a dragged rectangle lost their preview (measured, below); a
+  stroke on a mask, heal, and the ellipse and freehand shapes go through the same four functions (read from the code).
+  Smudge (which touches its target per dab) and the quick-mask brush (`touchSourceRect`) kept theirs.
+- **First bad commit: 28bfad0**, on both backends (bisect with dev worktrees and the same CDP stroke: 7f01699 = 0.1.12
+  and 4bd31a4 good on both; 28bfad0, every commit after it, and 5ee9918 = 0.1.13 bad). Not a tile bug and not caused by
+  7a89601 (tiles on by default); 0.1.13 was the first release that carried C5.
+- **Why no gate saw it.**
+  - `editor_test.py` `live_stroke_preview_shows_what_the_commit_writes` set `ed.sceneSig = null` before every
+    `ed.draw()` of the gesture and called `layerDab` / `shapeDab` and `draw` itself: it did by hand exactly what the dab
+    had stopped doing, and it asks whether the preview is *right*, never whether a frame the app draws shows it *at all*.
+  - `erase_stroke_keeps_the_rest_of_the_layer_on_screen` drives the pointer handlers but reads the screen after the
+    release only. No gate read the screen during a real stroke.
+  - `perf_test.py`'s "brush dab + frame" and "stroke across the picture" call `layerDab` then `draw()` without clearing
+    the signature, so since 28bfad0 they timed a blit of the cached scene. Their medians did not move at 28bfad0
+    (0.1 ms and 720 → 620-892 ms at C5 b / C5 c, inside the noise of that document), so they did not show it either.
+- **Fix** (`renderer/editor/inpaint_canvas.js`): `strokeDirty()`, which every one of the four dab kinds already calls
+  to record its dirty box, raises `this.pixelVersion` as well. Only the scene's key moves: no `touchSource` on the
+  buffer (on tiles that is `px.touch()` on the sparse store; on canvases a `_dispVer` no reader of a stroke buffer
+  looks at), no display level, no mirror, and the frame is the region preview C5 built (`layerRegionView` redraws the
+  dab's box). The canvas backend gets exactly its 4bd31a4 behaviour back.
+- **Gate.**
+  - New `editor_test.py` step `live_stroke_reaches_the_screen_before_the_release` (right after the preview step; both
+    backends through the gate runner's `--tiles on` / `--tiles off`). The user's case built the user's way: a textured
+    10000 × 5000 picture, `select_rect` 1000, 1300, 7600 × 2400, copy merged, paste ("merged copy added (7600 × 2400 at
+    1000, 1300)"), the copy inverted so an erase shows something, the selection kept with ants, a 188 px brush at 43 %.
+    The setup asserts that the copy carries the picture's texture (at least 4 colours in 6 samples) on both backends.
+  - Strokes are driven by `Input.dispatchMouseEvent` (press, 24 moves 40 ms apart, release) with `Page.bringToFront`,
+    frames only from the app's `drawSoon`; the step never calls a dab or `draw` and never writes `sceneSig`. It fails
+    with its own message when `requestAnimationFrame` does not run (a hidden window), when fewer than a third of the
+    moves got a frame, and when the stroke's pointer is not where the step moved it half way and at the end (a real
+    mouse over the window).
+  - Rows: brush and eraser at 0.18 and at 0.45 (both asserted below 0.5; at 0.45 the layer is wider than the view)
+    and at 1:1 (wider too); then a rectangle shape, the gradient and the clone tool at 1:1. **Every row sets its scale
+    and centres its stroke**; nothing depends on the window's fitted scale.
+  - The editor canvas is read (one `getImageData` of the stroke's rectangle) before the press; **half way and right
+    after the last move with no rest**, two of the page's own frames after the move; after a 0.4 s rest with the button
+    still down; and after the release once the chains settled.
+  - Asserted:
+    - right after the last move, and again after the rest, the screen shows ≥ 95 % of the pixels the release changes
+      (outside the brush ring discs at the start and the end);
+    - half way, with the hand moving, ≥ 90 % of the pixels behind the cursor for the brush, the eraser and the clone
+      tool; for the shape and the gradient, which are redrawn whole per move, ≥ 10 % of what the release changes
+      anywhere (measured 0.21 for the rectangle, which is a quarter of the last one half way, and 0.44 for the gradient);
+    - the stroke changes ≥ 2000 pixels at all;
+    - the rested frame equals the frame after the commit outside the ring discs, to 2 levels at 1:1 and to 20 zoomed
+      out (measured on the textured copy: 2-3 on tiles; 7-12 at 0.18 and 3-5 at 0.45 on canvases, at DPR 1.5 and 1;
+      never a byte over 30);
+    - on tiles the stroke makes no display mirror of the layer, and the layer has none before it. The clone tool makes
+      one (below) and is left out; it runs last, so its mirror cannot hide another tool's.
+  - The preview step's blind spot: its gesture frames draw without `sceneSig = null` now (the dab loops, the frame
+    before the commit, the "reach" floor and the shape case); the frames after the commit keep theirs.
+  - **Red on 5ee9918's editor** (the fixed file swapped for HEAD's, strict dev instances; the first version of the
+    step): on tiles and on canvases the new step fails every one of the nine strokes, "with the button still down the
+    screen shows 0 of the 10831 pixels the release shows (0.000)" and the like, the end frame 201-255 levels from the
+    frame after the commit; the preview step fails at its first case, "paint_clipped: the preview is not what the
+    commit wrote (157 levels on 138452 of 518400 bytes)" (131984 on canvases).
+  - **Green with the fix**, the final step, three fresh canvas-backend runs and one on tiles reading the same numbers:
+    right after the last move 0.996-1.0 of the release's pixels, half way 0.996-1.0 behind the cursor (the DPR-1
+    viewports included).
+- **Mutations, each red** (strict dev instances, tiles unless named; the fixed file restored byte for byte after each;
+  logs in the session's `bug-live/runs2` and `runs3`):
+
+  | mutation | red |
+  |---|---|
+  | no bump in `strokeDirty` (0.1.13) | new step: every stroke, "right after the last move … shows 0 of the 10602 pixels", the rested frame 201-228 levels off (18 of 18 "0 of" checks at the end); preview step: "paint_clipped: … 157 levels" |
+  | the bump in `layerDab` only | new step (first version): "1to1_shape / 1to1_clone / 1to1_gradient: … shows 0 of the 44491 / 52844 / 49656 pixels"; preview step: "shape: the preview is not what the commit wrote (93 levels on 355200 of 518400 bytes)" |
+  | no bump; `onPointerMove` clears `sceneSig` after a stroke's dab instead | preview step: "paint_clipped: … 157 levels" (the new step passes: the pointer path is covered, a dab outside it is not) |
+  | the bump kept, but `drawScene` rebuilds the scene only once the pointer has rested 100 ms (a 110 ms timer redraws) | new step: every stroke, "right after the last move … shows 0 of the 10602 pixels" and "half way … shows 0 of the 4593 pixels behind the cursor"; the rested checks pass, which is what the first version of the step read |
+  | `gradientDab` makes the layer's display mirror (`canvasOf(layer.px)`) | new step: "1to1_gradient: the stroke made a display mirror of the layer" (the first version ran clone just before the gradient and could not see it) |
+  | the test's setup empties the picture's canvas on both backends again | on canvases: "the merged copy is flat, not the picture: ["0,0,0,255"]" |
+  | the old rows: `fitView()` for the zoomed-out rows, in a DPR-1 viewport (`Emulation.setDeviceMetricsOverride`, 1600 × 1000 and 1200 × 1000 CSS px) | canvases, editor canvas 1886 × 1292, fit 0.121: "z018_paint: … not the frame after the commit (22 levels, bound 20)"; tiles, 1286 × 1292: the setup throws "not inside the layer". The final step passes in both viewports on both backends |
+
+- **Review round** (two lenses, two refuting verifiers per finding; all four confirmed and fixed):
+  - *The picture's canvas was emptied on the canvas backend*, which adopts it: on `--tiles off` the rows painted on a
+    flat black copy (which is also why the clone stroke changed about 7,100 pixels on canvases against 52,800 on tiles).
+    The shrink is guarded by `ed.tileMode`, as at the three other sites in the file, and the setup asserts texture;
+    the clone row now changes 53,907 pixels on canvases and 53,885 on tiles.
+  - *The zoomed-out rows depended on the window*: `fitView()` gave 0.18 on the usual 1865 px canvas and 0.12 in a DPR-1
+    window, where canvases went over the bound and a narrower canvas threw in the setup. The rows set their scale.
+  - *The shots came after rests* (0.15 s before "half way", 0.4 s before "end"), so a preview that appears only once the
+    hand stops passed. The shots are taken right after a move now; the rested frame is kept for the comparison with
+    the commit only.
+  - *The mirror check was vacuous for the gradient*, which ran after the clone row's mirror. Clone runs last, and a row
+    whose layer already has a mirror fails.
+  - *`perf_test.py`'s "stroke commit (undo copy)" timed the dab frames' backlog*: with the fix the 60 tight-loop dabs
+    rebuild the scene, and the drain ran only after the commit row. The drain (`strokeView` added; display canvases only
+    read if they exist, so the paint layer's mirror is not made before the commit) and a 300 ms rest now come before
+    the commit; the row's bracket is the dabs plus the commit, without the drain.
+- **Costs, A/B** (`perf_test.py 15000x10000`, tiles, fresh dev instances, not strict; "HEAD" is 5ee9918's editor file;
+  medians, [the bracket]). With the harness as it was:
+
+  | run | brush dab + frame | stroke commit (undo copy) [whole stroke] | stroke across the picture (40 dabs) | its commit, band by band |
+  |---|---|---|---|---|
+  | HEAD (`bug-live-perf-before`) | 0.1 [15.6] | 18.4 [40.9] | 143 | 500 |
+  | HEAD | 0.1 [6.0] | 25.8 [38.7] | 172 | 646 |
+  | fix (`bug-live-perf`) | 0.9 [6.2] | 67.5 [158.6] | 238 | 607 |
+  | fix | 0.9 [5.2] | 162.3 [245.5] | 166 | 598 |
+
+  With the drain before the commit (the harness committed with this fix; `bug-live-perf2-*`, and one run of the fix
+  per variant of the drain):
+
+  | run | brush dab + frame | stroke commit (undo copy) [dabs + commit] | undo step | stroke across the picture (40 dabs) | its commit, band by band |
+  |---|---|---|---|---|---|
+  | HEAD a | 0.1 [5.2] | 24.3 [36.7] | 34.3 | 129 | 652 |
+  | HEAD b | 0.1 [6.4] | 20.5 [35.1] | 51.9 | 113 | 568 |
+  | fix a | 0.9 [5.3] | 16.9 [99.9] | 44.0 | 164 | 688 |
+  | fix b | 0.9 [5.9] | 17.8 [104.6] | 43.8 | 221 | 649 |
+  | fix, drain without the rest | 0.9 [5.9] | 18.0 [100.7] | 43.4 | | |
+  | fix, rest without the drain | 0.8 [5.7] | 17.6 [95.0] | 17.0 | | |
+  | fix, neither (the old harness) | 0.8 [5.6] | 49.6 [130.8] | 35.7 | | |
+
+  - "Brush dab + frame" and the dabs in the commit row's bracket **moved, by the frames**: since 28bfad0 those rows
+    timed `layerDab` plus a blit of the cached scene. With the fix every dab's `draw()` rebuilds the scene again
+    (0.9 ms, C5 (a)'s own "first dab plus its frame", 180.6 → 0.9 ms; the 60 dabs about 100 ms against 35).
+  - **The commit itself did not move**: 16.9-18.0 ms on the fix against 20.5-24.3 on HEAD once the frames' backlog is
+    drained first; 49.6-162 ms when it is not.
+  - "Undo step" is one shot, not a median: 17-52 ms in these runs on both sides, 7.9-83 ms in the C6 runs.
+  - "Stroke across the picture" (113-221) and "its commit" (568-688) stay inside the spread of these runs and of the C6
+    runs before them (113-193 and 517-698).
+  - No mirror: the new step checks it on tiles for every stroke but clone, and the preview step checks mirror and
+    pyramid.
+- **Seen on the way, not changed here:**
+  - On tiles the clone tool makes a display mirror of the layer during a stroke, before and after the fix; the step
+    leaves clone out of its mirror check.
+  - `rel-final-canvas`'s one failure of the preview step in the 0.1.13 runs (above: "157 levels on 66399 bytes", filed
+    as a flake) reads like this bug's red, but the step cleared `sceneSig` then; not reproduced.
+  - One canvas-backend run of the step, among seven with identical numbers, read different pixel counts on several rows
+    (the rectangle's release changed 14,964 pixels instead of 44,591, and half way showed 202). A real mouse over the
+    window during that run is the likeliest reading; the step now checks where the stroke's pointer is and says so.
+
 ---
 
 ## 3. Phase E: full resolution per tile and the worker pool (2 weeks)

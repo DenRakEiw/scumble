@@ -289,25 +289,33 @@ BENCH = """
         ed.draw();
     }, 60);
     out.stroke_frame = dab;
+    const dabsMs = performance.now() - strokeStart;
+    // The 60 frames above were issued in a tight loop, so the GPU still holds their work; a
+    // real stroke is paced by the display. Drain it, so the rows from the commit on measure their
+    // own cost and not that backlog (a readback of one pixel waits for a canvas's queue). The canvases
+    // read are the ones the frames drew into (the live stroke's region scratch `strokeView` among them:
+    // since 0.1.14 every dab's frame rebuilds the scene again) and the pixels' display canvases: on
+    // tiles a readRect reads renderer memory and waits for nothing, so the drain cannot go through the
+    // pixels (C2 step b). Before the commit the display canvases are only read if they exist: making
+    // the paint layer's mirror there would change what the commit costs.
+    const { canvasOf, displayCanvasIfMade } = window.__perf.pixels;
+    const settle = (make = true) => {
+        const disp = make ? canvasOf : displayCanvasIfMade;
+        for (const c of [disp(ed.sel), disp(paintLayer.px), ed.strokeView, ed.viewCanvas, ed.sceneCanvas, ed.canvas]) {
+            try { if (c) c.getContext("2d").getImageData(0, 0, 1, 1); } catch (_) { /* no 2D context */ }
+        }
+        try { const comp = ed.compositor(); if (comp) comp.gl.finish(); } catch (_) { /* no compositor */ }
+    };
+    settle(false);
+    await new Promise((r) => setTimeout(r, 300));
     const commitAt = performance.now();
     const strokeBox = ed.strokeRect(p, paintLayer.px);   // what the real pointer-up passes on
     ed.commitStroke(p);
     ed.pointer = null;
     ed.markLayerChanged(paintLayer, strokeBox);
-    out.stroke_commit = [+(performance.now() - commitAt).toFixed(1), +(performance.now() - strokeStart).toFixed(1)];
+    // [the commit, the dabs and their frames plus the commit] (the drain and the rest between them not counted)
+    out.stroke_commit = [+(performance.now() - commitAt).toFixed(1), +(dabsMs + performance.now() - commitAt).toFixed(1)];
     out.undo_bytes = ed.undoBytes;
-    // The 60 frames above were issued in a tight loop, so the GPU still holds their work; a
-    // real stroke is paced by the display. Drain it, so the rows below measure their own cost
-    // and not that backlog (a readback of one pixel waits for a canvas's queue). The canvases read
-    // are the ones the frames drew into and the pixels' display canvases: on tiles a readRect reads
-    // renderer memory and waits for nothing, so the drain cannot go through the pixels (C2 step b).
-    const { canvasOf } = window.__perf.pixels;
-    const settle = () => {
-        for (const c of [canvasOf(ed.sel), canvasOf(paintLayer.px), ed.viewCanvas, ed.sceneCanvas, ed.canvas]) {
-            try { if (c) c.getContext("2d").getImageData(0, 0, 1, 1); } catch (_) { /* no 2D context */ }
-        }
-        try { const comp = ed.compositor(); if (comp) comp.gl.finish(); } catch (_) { /* no compositor */ }
-    };
     ed.draw();
     settle();
     const undoAt = performance.now();

@@ -77,6 +77,298 @@ return 1;
     return out
 
 
+LIVE_SETUP = """
+// the user's report of 0.1.13: a large picture, a rectangle selected, copied merged and pasted ("merged copy added
+// (w x h at x, y). Move it with T."), the selection kept and shown as marching ants
+const d = await run("new_document");
+window.__lv = d.id;
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await run("new_canvas", { width: 10000, height: 5000, doc: d.id });
+const pic = document.createElement("canvas");
+pic.width = 10000; pic.height = 5000;
+const g = pic.getContext("2d");
+for (let y = 0; y < 5000; y += 200) {
+    for (let x = 0; x < 10000; x += 200) {
+        g.fillStyle = "hsl(" + ((x * 7 + y * 13) / 200 * 23 % 360) + ",70%," + (35 + ((x + y) / 200 % 3) * 12) + "%)";
+        g.fillRect(x, y, 200, 200);
+    }
+}
+const picture = ed.addLayer({ name: "picture", kind: "image", ref: null, px: ed.pixels.Layer.fromCanvas(pic), x: 0, y: 0, w: 10000, h: 5000, dirty: true });
+if (ed.tileMode) { pic.width = 1; pic.height = 1; }   // the canvas backend adopts the canvas as the layer's pixels
+ed.markLayerChanged(picture);
+await run("select_rect", { x: 1000, y: 1300, w: 7600, h: 2400, doc: d.id });
+ed.copySelection({ merged: true });
+const L = ed.pasteClipboard();
+ed.clipboard = null;
+const status = ed.status;
+if (!L || L.x !== 1000 || L.y !== 1300 || L.w !== 7600 || L.h !== 2400) throw new Error("the merged copy is not where it was copied from: " + status);
+// a merged copy is the picture itself: inverted, so an erase shows the picture under it
+L.name = "merged copy";
+L.px.drawInto(null, (ctx) => { ctx.globalCompositeOperation = "difference"; ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, L.px.width, L.px.height); });
+ed.markLayerChanged(L);
+// the copy has to carry the picture's texture on both backends: a flat copy (the picture's canvas emptied under the
+// canvas backend, which adopts it) makes every row a stroke on one colour, where resampling and clone show nothing
+const texture = new Set();
+for (const [x, y] of [[100, 100], [300, 100], [700, 500], [2500, 1300], [5300, 900], [7300, 2100]]) texture.add(Array.from(L.px.readRect(x, y, 1, 1).data).join(","));
+if (texture.size < 4) throw new Error("the merged copy is flat, not the picture: " + JSON.stringify([...texture]));
+ed.activeLayerId = L.id;
+ed.selectionDisplay = "ants";
+ed.renderLayers();
+ed.drawSoon();
+await ed.mipsSettled();
+await wait(300);
+return { status, tiles: ed.tileMode, layer: [L.x, L.y, L.w, L.h], texture: texture.size, bounds: ed.getBounds(), canvas: [ed.canvas.width, ed.canvas.height] };
+"""
+
+LIVE_PREP = """
+const P = await import("./editor/inpaint_pixels.js");
+const ed = ednow(window.__lv);
+host.shell.activate(ed);
+const L = ed.layers.find((l) => l.name === "merged copy");
+ed.activeLayerId = L.id;
+ed.renderLayers();
+ed.setTool(o.tool);
+ed.brushSize = 188; ed.hardness = 0.43; ed.eraseHardness = 0.43; ed.brushOpacity = 1; ed.color = "#00ff40";
+ed.brushTipId = null;
+ed.shapeOpts = { kind: "rectangle", fill: true, stroke: false, width: 4, radius: 0, color: "#000000" };
+ed.gradientOpts = { type: "linear", to: "transparent" };
+ed.cloneOpts = { sample: "image", aligned: false };
+ed.cloneSource = o.tool === "clone" ? { x: o.x0 - 700, y: o.y - 900 } : null;
+ed.cloneOffset = null;
+ed.selectionDisplay = "ants";
+const cx = (o.x0 + o.x1) / 2;
+// every row sets its scale and centres the stroke: a fitted view's scale is the window's (0.18 on a 1865 px canvas, 0.12 on
+// a DPR-1 window of 1241 px, where the rows' rectangles left the layer), so the step would measure a different zoom per monitor
+ed.view.angle = 0; ed.view.scale = o.scale; ed._fitted = false;
+ed.view.x = Math.round(ed.canvas.width / 2 - cx * o.scale);
+ed.view.y = Math.round(ed.canvas.height / 2 - o.y * o.scale);
+ed.drawSoon();
+await wait(200);
+await ed.mipsSettled();
+await wait(300);
+// the app draws a stroke's frames through requestAnimationFrame (drawSoon), which a hidden window never runs
+const raf = await new Promise((r) => { const t = setTimeout(() => r(false), 3000); requestAnimationFrame(() => { clearTimeout(t); r(true); }); });
+if (!raf) throw new Error("requestAnimationFrame does not fire (" + document.visibilityState + "): the window is hidden, so no frame is drawn during a stroke; the step needs the window in front");
+const rect = ed.canvas.getBoundingClientRect();
+const k = rect.width / ed.canvas.width;
+const s = ed.view.scale;
+if (o.view !== "1:1" && !(s < 0.5)) throw new Error("the zoomed-out row is at " + s + ", not below 0.5");
+const n = o.moves, dy = o.dy || 0;
+const dev = [], css = [];
+for (let i = 0; i <= n; i++) {
+    const [sx, sy] = ed.imageToScreen(o.x0 + (o.x1 - o.x0) * i / n, o.y + dy * (2 * i / n - 1));
+    dev.push([sx, sy]);
+    css.push([rect.left + sx * k, rect.top + sy * k]);
+}
+const ringR = (188 / 2) * s;
+const pad = Math.ceil(ringR + 14 + dy * s);
+const [, my] = ed.imageToScreen(cx, o.y);
+const x0 = Math.floor(dev[0][0] - pad), x1 = Math.ceil(dev[n][0] + pad), y0 = Math.floor(my - pad), y1 = Math.ceil(my + pad);
+if (x0 < 0 || y0 < 0 || x1 > ed.canvas.width || y1 > ed.canvas.height) throw new Error("the editor canvas (" + ed.canvas.width + " x " + ed.canvas.height + ") is too small for the stroke's rectangle of " + (x1 - x0) + " x " + (y1 - y0) + " px at " + s + ": " + JSON.stringify([x0, y0, x1, y1]));
+const la = ed.imageToScreen(L.x, L.y), lb = ed.imageToScreen(L.x + L.w, L.y + L.h);
+if (x0 < la[0] + 8 || x1 > lb[0] - 8 || y0 < la[1] + 8 || y1 > lb[1] - 8) throw new Error("the stroke's rectangle is not inside the layer, clear of the ants on its edge");
+window.__lvShots = {};
+window.__lvClip = [x0, y0, x1 - x0, y1 - y0];
+window.__lvGeo = { dev, ringR };
+window.__lvMirror0 = ed.tileMode ? !!P.displayCanvasIfMade(L.px) : null;
+return { css, scale: +s.toFixed(4), layerWiderThanView: la[0] < 0 || lb[0] > ed.canvas.width, layerAt: [L.x, L.y],
+         clip: window.__lvClip, visible: document.visibilityState, mirrorBefore: window.__lvMirror0 };
+"""
+
+LIVE_SHOT = """
+const P = await import("./editor/inpaint_pixels.js");
+const ed = ednow(window.__lv);
+const L = ed.layers.find((l) => l.name === "merged copy");
+const [x, y, w, h] = window.__lvClip;
+// NOW: no rest after the pointer event that came before. Two frames of the page's own, so the frame the move asked for
+// (drawSoon, registered while the event was handled) has run, and nothing later: a preview that shows only once the hand
+// has stopped for a moment is not on the screen yet
+if (NOW) await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+// one readback of the editor's own canvas: what the window shows, as the app's last frame drew it
+window.__lvShots[NAME] = ed.canvas.getContext("2d").getImageData(x, y, w, h).data;
+return { pointer: ed.pointer ? ed.pointer.kind : null, last: ed.pointer && ed.pointer.last ? ed.pointer.last.map((v) => +v.toFixed(1)) : null,
+         frames: window.__lvFrames || 0, mirror: ed.tileMode ? !!P.displayCanvasIfMade(L.px) : null };
+"""
+
+LIVE_MEASURE = """
+const S = window.__lvShots, G = window.__lvGeo;
+const [cx0, cy0, W, H] = window.__lvClip;
+const n = G.dev.length - 1, half = Math.floor(n / 2);
+const R = G.ringR + 6;
+const loc = (p) => [p[0] - cx0, p[1] - cy0];
+const p0 = loc(G.dev[0]), pH = loc(G.dev[half]), pN = loc(G.dev[n]);
+const off = (x, y, q) => (x - q[0]) * (x - q[0]) + (y - q[1]) * (y - q[1]) > R * R;
+// pixels whose largest channel moved by more than 30 levels, where `keep` says; the brush ring is never counted
+const count = (a, b, keep) => {
+    let c = 0;
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            if (!keep(x, y)) continue;
+            const i = (y * W + x) * 4;
+            if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) > 30) c++;
+        }
+    }
+    return c;
+};
+// mid: the part of the path the cursor has left behind at half way; end: all of it, the button still down
+const keepMid = (x, y) => x < pH[0] - R && off(x, y, p0);
+const keepEnd = (x, y) => off(x, y, p0) && off(x, y, pN);
+const midRef = count(S.pre, S.after, keepMid), mid = count(S.pre, S.mid, keepMid);
+const endRef = count(S.pre, S.after, keepEnd), end = count(S.pre, S.end, keepEnd), endNow = count(S.pre, S.endNow, keepEnd);
+// half way, anywhere outside the ring discs: for a shape or a gradient, which are redrawn whole per move (the frame half way is
+// not a part of the last one), the stroke only has to be on the screen at all
+const midAny = count(S.pre, S.mid, keepEnd);
+const ratio = (a, b) => (b ? +(a / b).toFixed(3) : null);
+// a frame against the frame after the commit, outside the ring discs too: the ring drawn over the stroke's start and end is an
+// overlay the release may or may not leave there
+const vs = (A) => {
+    let worst = 0, differing = 0, big = 0;
+    for (let i = 0; i < A.length; i++) {
+        if ((i & 3) === 3) continue;
+        const px = (i >> 2) % W, py = ((i >> 2) - px) / W;
+        if (!keepEnd(px, py)) continue;
+        const q = Math.abs(A[i] - S.after[i]);
+        if (q) differing++;
+        if (q > 30) big++;
+        if (q > worst) worst = q;
+    }
+    return { worst, differing, over30: big, bytes: A.length };
+};
+const out = { mid: [mid, midRef, ratio(mid, midRef)], midAny: [midAny, endRef, ratio(midAny, endRef)], endNow: [endNow, endRef, ratio(endNow, endRef)],
+              end: [end, endRef, ratio(end, endRef)], endNowVsAfter: vs(S.endNow), endVsAfter: vs(S.end) };
+window.__lvShots = null;
+return out;
+"""
+
+
+async def live_stroke_reaches_the_screen_before_the_release(c):
+    """0.1.13 (the user's report): with the brush or the eraser nothing but the press dab reached the screen while
+    the button was down; the whole stroke appeared on the release. 28bfad0 (C5 c) had taken the per-dab
+    touchSource out of layerDab, cloneDab, gradientDab and shapeDab, and that was the only thing that moved the
+    scene cache's signature during a stroke: every frame of the gesture blitted the scene built at the press.
+    `live_stroke_preview_shows_what_the_commit_writes` did not see it, because it cleared `sceneSig` by hand before
+    every draw and called layerDab and draw itself.
+
+    This step drives the real gesture: CDP mouse events through the page, the window in front, the app's own frames
+    (drawSoon, requestAnimationFrame), no direct dab or draw call and no `sceneSig` written. On the user's case (a
+    7600 x 2400 merged copy of a textured 10000 x 5000 picture pasted where it was copied, the selection kept with
+    marching ants, a soft 188 px brush) the brush and the eraser at 0.18 and at 0.45 (both below 0.5; at 0.45 the
+    layer is wider than the view) and at 1:1 (wider too), then a rectangle shape, the gradient and the clone tool at
+    1:1. Every row sets its own scale, so the step measures the same zoom whatever window it gets.
+
+    The editor's canvas is read with no rest after a move, two of the page's frames after it: half way through the
+    stroke and right after the last move, the button still down. By then the stroke has to be on the screen: 95 % of
+    what the release shows over the whole path; half way 90 % of the pixels behind the cursor for the brush, the
+    eraser and the clone tool, and for a shape or a gradient (redrawn whole per move) a tenth of what the release
+    shows anywhere (the rectangle half way is a quarter of the last one: measured 0.21, the gradient 0.44). A preview that appears only once the hand rests fails there. The canvas is read once more after a
+    rest with the button still down, and that frame has to be the frame after the commit (to 2 levels at 1:1, like
+    the preview step; to 20 zoomed out, where the preview is composed from levels). On tiles the stroke makes no display
+    mirror of the layer; the clone tool, which makes one (its sample), runs last so it cannot hide another tool's.
+    Red on 0.1.13 on both backends: 0 of the pixels, every stroke."""
+    setup = await c.eval(PRE % LIVE_SETUP, timeout=240)
+    out = {"setup": setup, "strokes": {}}
+    # a row of the 2400 px layer per stroke; 0.45 shows the 7600 px layer wider than a canvas of 3420 px, 1:1 wider than 7600
+    rows = [
+        ("z018_paint", dict(tool="paint", view="z018", scale=0.18, y=1600, x0=3660, x1=5710)),
+        ("z018_erase", dict(tool="erase", view="z018", scale=0.18, y=1850, x0=3660, x1=5710)),
+        ("z045_paint", dict(tool="paint", view="z045", scale=0.45, y=2100, x0=4000, x1=5100, wider=True)),
+        ("z045_erase", dict(tool="erase", view="z045", scale=0.45, y=2350, x0=4000, x1=5100, wider=True)),
+        ("1to1_paint", dict(tool="paint", view="1:1", scale=1, y=2600, x0=4300, x1=4800, wider=True)),
+        ("1to1_erase", dict(tool="erase", view="1:1", scale=1, y=2850, x0=4300, x1=4800, wider=True)),
+        ("1to1_shape", dict(tool="shape", view="1:1", scale=1, y=3100, x0=4300, x1=4800, dy=60, wider=True)),
+        ("1to1_gradient", dict(tool="gradient", view="1:1", scale=1, y=2475, x0=4300, x1=4800, wider=True)),
+        # last: the clone tool makes a display mirror of the layer on tiles, and a stroke after it could not be checked for one
+        ("1to1_clone", dict(tool="clone", view="1:1", scale=1, y=3350, x0=4300, x1=4800, wider=True)),
+    ]
+    fails = []
+    try:
+        await live_strokes(c, rows, setup, out, fails)
+    finally:
+        await c.eval(PRE % "try { await run(\"close_document\", { doc: window.__lv, force: true }); } catch (_) { /* gone */ } return 1;")
+    if fails:
+        raise Exception(" | ".join(fails) + " " + json.dumps(out["strokes"]))
+    return out["strokes"]
+
+
+async def live_strokes(c, rows, setup, out, fails):
+    gap = 0.04
+    for name, o in rows:
+        o["moves"] = 24
+        info = await c.eval(PRE % ("const o = " + json.dumps(o) + ";\n" + LIVE_PREP), timeout=120)
+        pts = info["css"]
+        n = len(pts) - 1
+        shot = lambda nm, now=False: c.eval(PRE % LIVE_SHOT.replace("NAME", json.dumps(nm)).replace("NOW", "true" if now else "false"), timeout=60)  # noqa: E731
+        await c.call("Page.bringToFront")
+        await c.call("Input.dispatchMouseEvent", type="mouseMoved", x=pts[0][0], y=pts[0][1], button="none", buttons=0, pointerType="mouse")
+        await asyncio.sleep(0.3)
+        await shot("pre")
+        await c.eval("(() => { window.__lvFrames = 0; window.__lvCount = true; const f = () => { if (!window.__lvCount) return; window.__lvFrames++; requestAnimationFrame(f); }; requestAnimationFrame(f); return 1; })()")
+        await c.call("Input.dispatchMouseEvent", type="mousePressed", x=pts[0][0], y=pts[0][1], button="left", buttons=1, clickCount=1, pointerType="mouse")
+        await asyncio.sleep(gap)
+        mid = None
+        for i in range(1, n + 1):
+            await c.call("Input.dispatchMouseEvent", type="mouseMoved", x=pts[i][0], y=pts[i][1], button="left", buttons=1, pointerType="mouse")
+            if i == n // 2:
+                mid = await shot("mid", now=True)   # no rest: the hand is still moving
+            elif i < n:
+                await asyncio.sleep(gap)
+        end_now = await shot("endNow", now=True)   # right after the last move, no rest
+        await asyncio.sleep(0.4)
+        end = await shot("end")          # rested, the button still down: the frame the commit's frame is compared with
+        await c.call("Input.dispatchMouseEvent", type="mouseReleased", x=pts[n][0], y=pts[n][1], button="left", buttons=0, clickCount=1, pointerType="mouse")
+        await c.eval(PRE % "const ed = ednow(window.__lv); await wait(300); window.__lvCount = false; await ed.mipsSettled(); await wait(400); return 1;", timeout=120)
+        after = await shot("after")
+        m = await c.eval(PRE % LIVE_MEASURE, timeout=60)
+        row = {"scale": info["scale"], "wider": info["layerWiderThanView"], "frames": end["frames"], "pointer": [mid["pointer"], end["pointer"], after["pointer"]], **m}
+        if setup["tiles"]:
+            row["mirror"] = [info["mirrorBefore"], end["mirror"]]
+        out["strokes"][name] = row
+        tool = o["tool"]
+        behind = tool in ("paint", "erase", "clone")
+        if end["pointer"] != "layerpaint" or after["pointer"] is not None:
+            fails.append("%s: the gesture was not a stroke held to the end and released (%s)" % (name, row["pointer"]))
+            continue
+        # the stroke went where the step moved it: a real mouse over the window (the user's hand) moves the pointer as well
+        dy = o.get("dy", 0)
+        slack = 3 / info["scale"] + 1
+        want = {"mid": [(o["x0"] + o["x1"]) / 2, o["y"], mid], "endNow": [o["x1"], o["y"] + dy, end_now]}
+        astray = [k for k, (wx, wy, got) in want.items() if not got["last"] or abs(got["last"][0] - wx) > slack or abs(got["last"][1] - wy) > slack]
+        if astray:
+            fails.append("%s: the pointer is not where the step moved it at %s (%s; a real mouse over the window?)" % (name, astray, json.dumps({k: [v[0], v[1], v[2]['last']] for k, v in want.items()})))
+            continue
+        if end["frames"] < n // 3:
+            fails.append("%s: only %d frames were drawn during %d moves (the window is not in front?)" % (name, end["frames"], n))
+            continue
+        if m["end"][1] < 2000:
+            fails.append("%s: the stroke changes only %d pixels of the screen, so the check proves nothing" % (name, m["end"][1]))
+            continue
+        if m["endNow"][2] < 0.95:
+            fails.append("%s: right after the last move, the button still down, the screen shows %d of the %d pixels the release shows (%.3f)" % (name, m["endNow"][0], m["endNow"][1], m["endNow"][2]))
+        if m["end"][2] < 0.95:
+            fails.append("%s: after a rest with the button still down the screen shows %d of the %d pixels the release shows (%.3f)" % (name, m["end"][0], m["end"][1], m["end"][2]))
+        if behind and (m["mid"][1] < 500 or m["mid"][2] is None or m["mid"][2] < 0.9):
+            fails.append("%s: half way through the stroke, the hand moving, the screen shows %d of the %d pixels behind the cursor (%s)" % (name, m["mid"][0], m["mid"][1], m["mid"][2]))
+        if not behind and m["midAny"][2] < 0.1:
+            fails.append("%s: half way through the stroke, the hand moving, the screen shows %d pixels of the stroke, against %d after the release (%.3f)" % (name, m["midAny"][0], m["midAny"][1], m["midAny"][2]))
+        if o.get("wider") and not info["layerWiderThanView"]:
+            fails.append("%s: the layer is not wider than the view at %s" % (name, info["scale"]))
+        eq = m["endVsAfter"]
+        # at 1:1 neither the preview nor the commit resamples: the same pixels, to 2 levels (the preview step's bound). Zoomed
+        # out the preview is the layer's level with the stroke's level over it and the commit's frame the level of the written
+        # pixels: measured on the textured copy 2 to 3 levels on tiles, 7 to 12 at 0.18 and 3 to 5 at 0.45 on canvases (DPR 1.5 and 1), never a byte
+        # over 30. At 0.12 (a fitted view in a DPR-1 window) canvases gave 27, which is why every row sets its scale
+        bound = 2 if o["view"] == "1:1" else 20
+        if eq["worst"] > bound:
+            fails.append("%s: the last frame before the release is not the frame after the commit (%d levels, bound %d, on %d bytes)" % (name, eq["worst"], bound, eq["differing"]))
+        # C5's cost: the live stroke is composed in the region the screen shows. The clone tool is left out: it makes a display
+        # mirror of the layer on tiles in 0.1.13 already (its whole-picture sample), which is not what this step is about
+        if setup["tiles"] and tool != "clone" and end["mirror"] and not info["mirrorBefore"]:
+            fails.append("%s: the stroke made a display mirror of the layer" % name)
+        if setup["tiles"] and tool != "clone" and info["mirrorBefore"]:
+            fails.append("%s: the layer had a display mirror before the stroke, so the step cannot tell whether the stroke makes one" % name)
+
+
 SVG_SAMPLE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><rect width="400" height="200" fill="#fff"/><rect width="200" height="200" fill="#f00"/><circle cx="300" cy="100" r="60" fill="#00f"/></svg>'
 
 
@@ -2839,6 +3131,10 @@ return out;
 // resamples, so the screen just before the commit and just after it are the same pixels. Five
 // gestures: paint, erase, alpha lock, a masked layer and a stroke on the mask itself, the first of
 // them clipped to a selection. On tiles the stroke must make no display mirror and no pyramid entry.
+// The frames during a gesture are drawn without `sceneSig = null`: until 0.1.14 this step cleared the scene
+// cache's key by hand before every draw, which is exactly what a dab had stopped doing since 28bfad0, so it
+// passed while the app showed no stroke until the release. The real pointer path is
+// `live_stroke_reaches_the_screen_before_the_release`.
 const P = await import("./editor/inpaint_pixels.js");
 const d = await run("new_document");
 window.__tv = d.id;
@@ -2913,9 +3209,9 @@ const one = async (name, opts) => {
             if (ed.tileMode && (!thumbs || passCheck.row.previews.some(Boolean))) throw new Error(name + ": the layer's row drawn during the stroke did not come from its thumbnail: " + JSON.stringify(passCheck.row));
             if (ed.tileMode && (P.displayCanvasIfMade(L.px) || (L.maskPx && P.displayCanvasIfMade(L.maskPx)))) throw new Error(name + ": the layer's row drawn during the stroke made a display mirror");
         }
-        ed.hover = null; ed.sceneSig = null; ed.draw();
+        ed.hover = null; ed.draw();   // never `sceneSig = null` during the gesture: a dab has to move the scene's key itself (0.1.13)
     }
-    await wait(40); ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40);
+    await wait(40); ed.hover = null; ed.draw(); await wait(40);
     const used = !!(ed.strokeView && ed._strokeViewOf === p);
     const mirror = ed.tileMode ? !!P.displayCanvasIfMade(L.px) : null;
     const pyramid = ed.tileMode ? !!ed.pyramids.get(P.displayCanvasIfMade(L.px)) : null;
@@ -2959,8 +3255,8 @@ const clean = shot();
 {
     const p = { kind: "layerpaint", layer: emptyL, stroke: ed.newStrokeBuffer(emptyL.px), clip: null, erase: false, last: [800, 900], pressure: 1 };
     ed.pointer = p;
-    for (let i = 1; i <= 8; i++) { const x = 800 + i * 56, y = 900 + (i % 3) * 26; ed.layerDab(p, p.last[0], p.last[1], x, y); p.last = [x, y]; ed.hover = null; ed.sceneSig = null; ed.draw(); }
-    await wait(40); ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40);
+    for (let i = 1; i <= 8; i++) { const x = 800 + i * 56, y = 900 + (i % 3) * 26; ed.layerDab(p, p.last[0], p.last[1], x, y); p.last = [x, y]; ed.hover = null; ed.draw(); }
+    await wait(40); ed.hover = null; ed.draw(); await wait(40);
     out.reach = diff(clean, shot());
     ed.pointer = null;
     ed.releaseStrokeScratch();
@@ -2988,9 +3284,9 @@ await one("mask_stroke", { kind: "maskpaint", mask: true });
     const p = ed.pointer;
     if (!p || !p.stroke) throw new Error("the shape tool refused the gesture: " + ed.status);
     ed.shapeDab(p, 1500, 1300, {});
-    ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40);
+    ed.hover = null; ed.draw(); await wait(40);
     ed.shapeDab(p, 900, 900, {});
-    ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40);
+    ed.hover = null; ed.draw(); await wait(40);
     const used = !!(ed.strokeView && ed._strokeViewOf === p);
     const before = shot();
     const box = ed.strokeRect(p, L.px);
@@ -3011,6 +3307,7 @@ ed.compositorOff = compOff;
 await run("select_none", { doc: d.id });
 return out;
 """),
+    ("live_stroke_reaches_the_screen_before_the_release", lambda c: live_stroke_reaches_the_screen_before_the_release(c)),
     ("a_masked_filter_layer_reads_its_mask_from_tiles", """
 // C6 (c2c): a filter layer's mask in a region pass (the screen with a filter layer in the stack, a sampled pass) is drawn from
 // the mask's tiles at the pass's level, and a mask stroke on the filter layer is composed in a scratch of the pass's size: no
