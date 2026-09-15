@@ -2390,6 +2390,61 @@ its region view runs only for a live stroke, which is keyed by the gesture. So n
   ALL PASS, `c6bf-final-perf` PASS. Each mutation in the table above ran on a fresh tile-mode instance with the source
   restored and compared byte for byte.
 
+**(b3) The wand and the bucket after (b2), and a sampled pass that matches only what it shows** (`inpaint_canvas.js`,
+`tools/editor_test.py`):
+
+- **The question.** The (b2) review's benchmark runs read "magic wand (an object)" at 488-868 ms and "bucket fill" at
+  335-962 ms blocked on the (b2) tree, against about 280 and 315-353 with (b2)'s `watchChains` change reverted, and called it
+  noise. Settled with 726dc66's `perf_test.py` on both trees: a worktree of 987961b (A) against 726dc66 (B), fresh tile-mode
+  instances, alternating A1 B1 ... A4 B4, 15000 x 10000, the ComfyUI queue empty before and after every run:
+
+  | run | invert's landings: re-runs [longest block] | magic wand (an object), blocked [wall] | bucket fill, blocked [wall] |
+  |---|---|---|---|
+  | A1-A4 | 32 [46-65 ms] | 248 [415], 293 [625], 332 [706], 330 [837] | 298 [645], 308 [655], 339 [728], 480 [956] |
+  | B1-B4 | 0 [231-362 ms] | 424 [1018], 321 [716], 655 [1124], 424 [929] | 821 [1398], 427 [830], 769 [1405], 342 [801] |
+
+  So the rows did move the wrong way. The same two operations repeated six times each on the benchmark's document with none of
+  the rows before them (two instances per tree, the same `op()` probe) did not: blocked A 166-232 / 186-299 ms, B 132-264 /
+  139-248 ms (wand / bucket), walls A 284-369 / 454-536, B 301-563 / 490-710. What the rows are charged with is the state the
+  rows before leave.
+- **Broken down** with a trace of both rows in the full benchmark (`matchStats`, `filteredCanvas`, `layerMatchedPixels`,
+  `sampleRegion`, the draws, `getImageData` over 2 ms, the probe's gaps), one run per tree, then again for the fix:
+  - On B every fine box of the flood colour-matched the **whole** matched result (2048 x 2048): `layerMatchedPixels` in the
+    sampled pass 196-224 ms (its `matchStats` 0 ms, the screen's statistics), and the film look pass behind it 138-164 ms
+    waiting for the GPU. Since (b2) a sampled pass takes the screen's valid statistics, and `layerMatchedPixels` then matches all
+    of its source for a box of a few hundred pixels.
+  - On A the same passes took 16.9 ms, all of it their own `matchStats` (two 296 x 296 readbacks) and nothing for the match:
+    a landing of the selection had dropped `_mstatsView` between the coarse and the fine pass, the box computed statistics from
+    its own few hundred pixels, found fewer than 64 of the layer's surroundings, and stored **null** in the screen's slot. The
+    match was skipped inside the wand, which is why A was cheaper. Forcing that drop between the passes on a 6000 x 4000 document
+    reproduces it on A, and on B and the fix too, where the null goes to `_mstatsSample` instead: the flood then reads the matched
+    layer unmatched and the wand selects a different region on all three trees ([1200, 1000, 3648, 3048] against [1200, 1200,
+    1600, 1800] without the drop). That race is the one (b2) left to C6 (c) and stays there (statistics that do not depend on the
+    pass, slice 7).
+  - The rest of the rows' longest block is the same work on both trees, placed differently: the selection undo copy
+    (`snapshotSelection`, 143-175 ms on A and on the fix) and a scene composite of 60-80 ms, which on A a landing ran during the
+    flood's wait and on B lands in the operation's own last draw.
+- **Built**: `layerMatchedPart(layer, below, vp)`. A sampled pass (`vp.sample`) matches the part of the layer its region shows,
+  one source pixel wider on every side for the draw's filtering, with the whole layer's statistics, and draws that part where it
+  sits (`drawLayer`); the cache slot `_mcacheSample` keys on the part. The screen and the full-resolution flatten keep
+  `layerMatchedPixels`. Both backends take it; the pixels are unchanged (0 levels, below).
+- **After**, traced: the part costs 7-27 ms per box and the film look behind it 31-51 ms. The rows themselves stay noisy on the
+  fix: three alternating runs against B's 440 [1074], 686 [1056], 635 [1072] (wand) and 394 [922], 789 [1522], 411 [870]
+  (bucket) read 542 [831], 552 [1372], 4294 [5046] and 795 [1302], 541 [1168], 971 [1578], and two more 260 [591] / 590 [910]
+  and 382 [785] / 556 [1221]. The 4.3 s wand is one run of five and was not broken down. The repeated operations on the fix:
+  blocked 144-227 / 147-228 ms, walls 336-432 / 509-686.
+- **Gate**: `editor_test.py` `a_sampled_pass_matches_only_the_part_of_a_matched_layer_it_shows` (both backends). A 3000 x 2000
+  base, a colour-matched 1200 x 900 layer at 700, 500, the screen's statistics made. A `sampleRegion` over a box that cuts the
+  layer's left edge, at scale 1 and at 0.5, matched at most 302 x 302 of the layer's source pixels (measured 301 x 302, the whole
+  layer 1200 x 900), and its pixels are the same box cut out of a pass over the whole layer within 1 level (measured 0 on both
+  backends); floor: the box's pixels of the layer are 15 levels from the layer's own.
+- **Mutations, each red** (tile mode, fresh instance, the source restored and compared):
+
+  | mutation | red |
+  |---|---|
+  | the part is the whole layer again | "a 1 pass over a box matched [1200,900] source pixels of the layer" |
+  | the part cut two source pixels too tight on every side | "the 1 pass over the box differs from the pass over the whole layer by 148 levels on 2694 bytes" |
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in

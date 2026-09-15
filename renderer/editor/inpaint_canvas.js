@@ -9684,6 +9684,13 @@ class InpaintEditor {
             const live = this.layerRegionView(layer, vp);
             if (live) { ctx.drawImage(live, vp.x, vp.y, vp.w, vp.h); return; }
         }
+        // C6 (b3): a sampled pass (the wand's and the bucket's boxes, a plugin's flatten) matches the part of the
+        // layer its region shows, not the whole layer
+        if (matched && vp && vp.sample) {
+            const part = this.layerMatchedPart(layer, ctx.canvas, vp);
+            if (part) ctx.drawImage(part.canvas, part.x, part.y, part.w, part.h);
+            return;
+        }
         const src = matched ? this.layerMatchedPixels(layer, ctx.canvas, vp) : this.layerPixels(layer, true);
         ctx.drawImage(this.displaySource(src, vp ? (layer.w * vp.sx) / src.width : 1, !!(vp && vp.screen)), layer.x, layer.y, layer.w, layer.h);
     }
@@ -9722,6 +9729,43 @@ class InpaintEditor {
         const out = st && strength > 0 ? matchCanvas(out0, st, strength) : out0;
         layer[slot] = { version: this.compositeVersion, key, canvas: out };
         return out;
+    }
+
+    /**
+     * The colour-matched pixels of the part of `layer` a sampled pass shows (C6 b3), with where they go in the image:
+     * `{ canvas, x, y, w, h }`, or null when the pass's region misses the layer. The statistics are the whole
+     * layer's, as `layerMatchedPixels` takes them; only the pixels matched are cut to the region, one source pixel
+     * wider on every side for the draw's filtering.
+     *
+     * The wand's and the bucket's fine boxes are a few hundred pixels of a layer that can be 2048 px and more: each
+     * box matched the whole layer (a GPU pass and a readback of its size, 200 ms at 15000 x 10000 behind the queue
+     * the box's own composite had just filled). Before C6 (b2) those boxes computed their own statistics from the
+     * box, found too few pixels of the layer's surroundings in it, and stored null in the screen's slot: the match
+     * was skipped, and the screen showed the layer unmatched until the composite changed.
+     */
+    layerMatchedPart(layer, below, vp) {
+        const m = layer.match || {};
+        const strength = Math.min(1, Math.max(0, (m.strength || 0) / 100));
+        const px = this.layerPixels(layer, true);
+        const out0 = this.displaySource(px, (layer.w * vp.sx) / px.width, false);
+        const fx = out0.width / layer.w, fy = out0.height / layer.h;   // source pixels per image pixel
+        const cx0 = Math.max(0, Math.floor((vp.x - layer.x) * fx) - 1), cy0 = Math.max(0, Math.floor((vp.y - layer.y) * fy) - 1);
+        const cx1 = Math.min(out0.width, Math.ceil((vp.x + vp.w - layer.x) * fx) + 1), cy1 = Math.min(out0.height, Math.ceil((vp.y + vp.h - layer.y) * fy) + 1);
+        if (cx1 <= cx0 || cy1 <= cy0) return null;
+        const key = JSON.stringify([m.strength, m.source, layer.x, layer.y, layer.w, layer.h, out0.width, out0.height, cx0, cy0, cx1, cy1]);
+        const c = layer._mcacheSample;
+        if (c && c.version === this.compositeVersion && c.key === key && c.part) return c.part;
+        const st = this.matchStats(layer, below, vp, out0);
+        const cw = cx1 - cx0, ch = cy1 - cy0;
+        let crop = out0;
+        if (cx0 > 0 || cy0 > 0 || cw < out0.width || ch < out0.height) {
+            crop = makeCanvas(cw, ch);
+            crop.getContext("2d").drawImage(out0, cx0, cy0, cw, ch, 0, 0, cw, ch);
+        }
+        const out = st && strength > 0 ? matchCanvas(crop, st, strength) : crop;
+        const part = { canvas: out, x: layer.x + cx0 / fx, y: layer.y + cy0 / fy, w: cw / fx, h: ch / fy };
+        layer._mcacheSample = { version: this.compositeVersion, key, canvas: out, part };
+        return part;
     }
 
     /**

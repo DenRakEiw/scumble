@@ -1609,6 +1609,66 @@ ed.clearSelection();
 await run("remove_layer", { layer: layer.id, doc: window.__t });
 return out;
 """),
+    ("a_sampled_pass_matches_only_the_part_of_a_matched_layer_it_shows", """
+// C6 (b3): a sampled pass (the wand's and the bucket's fine boxes, a plugin's flatten with a box) matched the whole
+// colour-matched layer for a box of a few hundred pixels: a GPU pass and a readback of the layer's size per box. It
+// matches the part its region shows now, with the whole layer's statistics, and the pixels are the ones a pass over
+// the whole layer draws there. Both backends, at scale 1 and at 0.5.
+await run("new_canvas", { width: 3000, height: 2000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#304060"); g.addColorStop(1, "#c09050");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 400; i++) { x.fillStyle = `hsl(${(i * 47) % 360},60%,${30 + (i * 13) % 50}%)`; x.fillRect((i * 733) % W, (i * 419) % H, 40, 40); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "match.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const lc = document.createElement("canvas"); lc.width = 1200; lc.height = 900;
+{
+    const x = lc.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 1200, 900); g.addColorStop(0, "#20c040"); g.addColorStop(1, "#c02080");
+    x.fillStyle = g; x.fillRect(0, 0, 1200, 900);
+    for (let i = 0; i < 200; i++) { x.fillStyle = `hsl(${(i * 71) % 360},80%,50%)`; x.fillRect((i * 331) % 1200, (i * 197) % 900, 7, 7); }
+}
+const L = ed.addLayer({ name: "Matched", kind: "result", px: ed.pixels.Layer.fromCanvas(lc), x: 700, y: 500, w: 1200, h: 900, dirty: true });
+L.match = { strength: 100, source: "surroundings" };
+ed.markMatchChanged(L);
+ed.renderLayers(); ed.fitView(); ed.sceneSig = null; ed.draw();
+await ed.mipsSettled(); ed.sceneSig = null; ed.draw();
+if (!(L._mstatsView && L._mstatsView.stats)) throw new Error("the screen made no statistics for the matched layer");
+const read = (c, x = 0, y = 0, w = c.width, h = c.height) => c.getContext("2d").getImageData(x, y, w, h).data;
+const out = {};
+const box = [600, 600, 1000, 900], whole = [600, 400, 2000, 1500];   // the box cuts the layer's left edge; `whole` holds all of it
+for (const s of [1, 0.5]) {
+    const a = ed.sampleRegion("image", box, s, { forRun: true });
+    const cache = L._mcacheSample;
+    const part = cache && cache.canvas ? [cache.canvas.width, cache.canvas.height] : null;
+    // the box shows 300 x 300 of the layer's 1200 x 900 source pixels: matched with one pixel of margin, 302 at most
+    if (!part || part[0] > 302 || part[1] > 302) throw new Error(`a ${s} pass over a box matched ${JSON.stringify(part)} source pixels of the layer, not the part the box shows`);
+    const b = ed.sampleRegion("image", whole, s, { forRun: true });
+    const wholePart = L._mcacheSample && L._mcacheSample.canvas ? [L._mcacheSample.canvas.width, L._mcacheSample.canvas.height] : null;
+    const da = read(a), db = read(b, (box[0] - whole[0]) * s, (box[1] - whole[1]) * s, a.width, a.height);
+    let max = 0, n = 0;
+    for (let i = 0; i < da.length; i++) { const d = Math.abs(da[i] - db[i]); if (d > max) max = d; if (d > 1) n++; }
+    // the floor: the matched pixels are not the layer's own (the match moved them)
+    let moved = 0, cnt = 0;
+    if (s === 1) {
+        const own = L.px.readRect(0, 100, 300, 300).data, got = read(a, 100, 0, 300, 300);
+        for (let i = 0; i < own.length; i += 4) { moved += Math.abs(own[i] - got[i]) + Math.abs(own[i + 1] - got[i + 1]) + Math.abs(own[i + 2] - got[i + 2]); cnt += 3; }
+        moved = +(moved / cnt).toFixed(1);
+        if (moved < 10) throw new Error("the box's pixels of the layer are not matched: " + moved + " levels from the layer's own");
+    }
+    out["s" + s] = { part, wholePart, max, over1: n, moved };
+    if (max > 1) throw new Error(`the ${s} pass over the box differs from the pass over the whole layer by ${max} levels on ${n} bytes`);
+}
+await run("remove_layer", { layer: L.id, doc: window.__t });
+return out;
+"""),
     ("stroke_buffers_cover_the_gesture_not_the_layer", """
 // Phase A item 2 (docs/PLAN_TILES.md): a stroke's buffer and its selection clip cover what the
 // gesture touched, not the layer; the live preview is refreshed inside the dab's rectangle; the
