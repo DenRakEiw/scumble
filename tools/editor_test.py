@@ -284,6 +284,35 @@ if (flag) {
     ed.removeLayer(fx.id);
     ed.renderLayers();
 }
+// C6 (c2d): a move drag of a tile layer draws it from its tiles too (the drag keeps the view on Canvas 2D): its first frame
+// made the layer's display mirror and a pyramid of it before. Both frames are Canvas 2D here, the drag's last and the one
+// after the pointer is let go, so they are the same picture.
+{
+    const compOff = ed.compositorOff;
+    ed.compositorOff = true;
+    ed.releaseCaches({ mirrors: true });
+    const g = ed.canvas.getContext("2d");
+    const [qx, qy] = ed.imageToScreen(500, 300).map(Math.round), [rx2, ry2] = ed.imageToScreen(2300, 1550).map(Math.round);
+    const shot = () => g.getImageData(qx, qy, rx2 - qx, ry2 - qy).data;
+    const x0 = M.x;
+    ed.hover = null;
+    ed.pointer = { kind: "move", layer: M, start: [0, 0], orig: { x: M.x, y: M.y } };
+    for (let i = 1; i <= 6; i++) { M.x = x0 + 6 * i; ed.hover = null; ed.draw(); }
+    await wait(40); ed.hover = null; ed.sceneSig = null; ed.draw();
+    const drag = shot();
+    const mv = { mirror: flag ? !!P.displayCanvasIfMade(M.px) : null, pyramid: flag ? !!ed.pyramids.get(P.displayCanvasIfMade(M.px)) : null, regions: flag ? M.px.regionCanvasesIfMade().length : null };
+    ed.pointer = null;
+    ed.markLayerChanged(M);
+    ed.hover = null; ed.sceneSig = null; ed.draw(); await wait(40); ed.sceneSig = null; ed.draw();
+    const let_go = shot();
+    let worst = 0, n = 0;
+    for (let i = 0; i < drag.length; i++) { const q = Math.abs(drag[i] - let_go[i]); if (q) n++; if (q > worst) worst = q; }
+    out.moveDrag = { ...mv, worst, differing: n };
+    M.x = x0; ed.markLayerChanged(M); ed.compositorOff = compOff;
+    if (flag && (mv.mirror || mv.pyramid)) throw new Error("a move drag made a display mirror or a pyramid of the tile layer: " + JSON.stringify(out.moveDrag));
+    if (flag && !mv.regions) throw new Error("a move drag did not draw the layer from its tiles: " + JSON.stringify(out.moveDrag));
+    if (worst > 2) throw new Error("the drag's last frame is not the frame after it: " + worst + " levels on " + n + " bytes");
+}
 return out;
 """
 

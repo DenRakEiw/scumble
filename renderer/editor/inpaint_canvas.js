@@ -9859,12 +9859,15 @@ class InpaintEditor {
         }
         const vp = this.viewPass;
         const gesture = this.pointer && this.pointer.layer === layer;
+        // C6 (c2d): only a paint or mask stroke puts pixels on the screen that are not in the tiles; a move, a scale or a
+        // smudge leaves them there (the smudge writes into the tiles), so those gestures draw the tiles like any frame
+        const painting = gesture && (this.pointer.kind === "layerpaint" || this.pointer.kind === "maskpaint");
         const full = ctx.canvas.width === this.width && ctx.canvas.height === this.height;
         const matched = this.matchActive(layer) && !gesture && (vp || full);
         // C3: a plain tile-backed layer in a region pass draws the part of itself the view shows, at
         // the view's level, straight from its tiles. A mask, a colour match or a live stroke has
         // prepared a canvas, and the canvas backend keeps the display pyramid.
-        if (vp && !matched && !gesture && !layer.maskPx && isTilePixels(layer.px)) {
+        if (vp && !matched && !painting && !layer.maskPx && isTilePixels(layer.px)) {
             this.drawTilesInto(ctx, layer.px, layer.x, layer.y, layer.w, layer.h, vp);
             return;
         }

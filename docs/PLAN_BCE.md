@@ -2616,6 +2616,20 @@ a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each
   - Mutations, each red: the tile branch off ("the screen made the filter mask's display mirror"); the mask's transform without the
     pass's x ("the screen with the masked filter layer differs from the flatten by 203 levels on 226800 bytes"); the stroke through
     `maskWithStroke` again ("made a full-size preview or the mask's mirror: maskPreview true, mirror true").
+- **(c2d) A move, scale or smudge gesture in a region pass.** `drawLayer` skipped the tile branch for any gesture on the layer, so a
+  transform-tool move or scale, a text layer's drag and a smudge drew `layerPixels`: the layer's mirror, and a GPU copy of it at 1:1
+  or a Skia pyramid at fit, on the first frame of every drag after a write (the drag keeps the screen on Canvas 2D). **Built**: only
+  a paint or mask stroke keeps a layer off its tiles (`painting`); `matched` still goes by `gesture` (a colour match waits for the end
+  of any gesture, as before). A move at 1:1 rebuilds the region canvas when it leaves the one-tile margin, as a pan does; a scale
+  changes the level. **After**: the move drag's first frame 425 [11] ms and 572 MB → 0.1 [0.2] ms (the CPU time of the frame; the
+  draws of the region canvases are queued on the GPU) and no mirror. The smudge's own dab still reads the layer's mirror
+  (`smudgeDab` → `target.drawTo`, 400-750 ms a move at 15k): its own step, `CLAUDE.md` item 5, not this one; the pending transform's
+  mesh preview (`drawLayer`'s `pending` branch) keeps its mirror too (map S7: a gesture preview, measured first before it is built).
+  - Gate: the display step (`pixel_backend_is_the_one_the_flag_chose`, both backends) drags a full-size paint layer 36 px in six
+    frames at 0.2 on Canvas 2D (`compositorOff`, released caches first): on tiles no mirror and no pyramid of the layer, its region
+    canvas drawn, and the drag's last frame is the frame after the pointer is let go (0 levels on both backends).
+  - Mutation, red: the tile branch skipped for any gesture again ("a move drag made a display mirror or a pyramid of the tile layer:
+    mirror true, pyramid true, regions 0").
 
 ### C7. Both hosts, the flag, the release (3 days)
 
