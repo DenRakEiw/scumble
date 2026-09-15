@@ -3019,6 +3019,34 @@ and the 30k and exe gates have not run.
 
 ---
 
+## 2b. Phase R: Rust kernels, after C7 and before E (2 to 3 days)
+
+Decided with the user on 2026-09-15: once C7 is closed (C6 (c) slices 3 to 7, C6 (d), C4, the rest of
+§C7) and the user has tested the tile engine on their own 15k file, the kernels get a second, real
+chance in Rust, **before** phase E builds its worker pool on them.
+
+- **What exists.** Phase B's crate is in the history at **c75c4f1** (`crates/px/`: `Cargo.toml`,
+  `rust-toolchain.toml`, `.cargo/config.toml`, `src/{lib,mip,edt,flood,composite,png}.rs`) with its built
+  `renderer/editor/px/px.wasm` / `px_scalar.wasm`, the loader `px.js` and the benchmark `bench.js`; it was
+  deleted from the branch after B3. `git checkout c75c4f1 -- crates/px renderer/editor/px/px.js
+  renderer/editor/px/bench.js` brings it back. No Rust toolchain is installed on this machine by default
+  (§B0 says how).
+- **Why again.** B measured the kernels **in isolation** and decided JS (EDT band 2.0 to 2.2×, opaque mip
+  chain 2.0 to 2.4×, against the 3× rule, `PERFORMANCE.md` §10). Since then the engine exists: mips run in
+  a worker (`ChainScheduler`), the flood runs whole-picture in the worker (3.1 s at 15k), grow / shrink /
+  feather go through the EDT band by band, and phase E will run every kernel per band in a pool. R measures
+  the kernels **where they now run** (the `mips` worker job, the wand's flood, the EDT band, a composite
+  band) and with tiles living in wasm memory, which B only sketched (B1's second bullet).
+- **The decision rule stays B's**: Rust where a kernel is at least 3× its JS twin after the copy cost, on
+  the real job; otherwise the JS kernel stays and R leaves only its table in `PERFORMANCE.md`. The binding
+  findings of B hold: tile buffers on a 4 KB boundary, V8's efficiency mode slowing JS (not wasm) in a
+  window that is not in front, tile size 256.
+- **Gate**: `node tools/px_test.js` with the Rust kernels bit-identical to the JS twins, the tile gates
+  (`run_gates.sh --tiles on pixels editor composite commands`) and `perf_test.py 15000x10000` A/B against
+  the JS kernels, in the same session.
+
+---
+
 ## 3. Phase E: full resolution per tile and the worker pool (2 weeks)
 
 ### E1. Cross-origin isolation and the worker pool (3 days)
@@ -3229,6 +3257,7 @@ atlas budget row of C3 is the only new setting.
 | C5 | 5 |
 | C6 | 3 |
 | C7 | 3 |
+| R (after C7, decided 2026-09-15) | 2 to 3 |
 | E1 | 3 |
 | E2 | 4 |
 | E3 | 3 |

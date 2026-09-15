@@ -75,9 +75,86 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
-## Where things stand (2026-09-15: 0.1.13 tagged, tiles on by default)
+## Where things stand (2026-09-15, late: 0.1.14 tagged, the live stroke, the atlas field, ToAPIs)
 
-**Read this block first; it supersedes the "Where the next session starts" part of the block below.** The records are
+**Read this block first; it supersedes the "Where the next session starts" part of the block below.** 0.1.13 is
+published. 0.1.14 is tagged and its **draft** is built; publishing it is the user's step
+(`gh release edit v0.1.14 --draft=false`). `CHANGELOG.md` 0.1.14 has the user-facing bullets.
+
+**What 0.1.14 carries, on `main`, pushed:**
+- **The live stroke** (74d60ac). In 0.1.13 brush, eraser (also on a mask), clone / heal, gradient and a dragged
+  rectangle / ellipse / freehand shape showed only the first dab until the release, on both backends, every size and
+  zoom (reported with a screen recording on the installed 0.1.13).
+  - Cause: the screen keeps its composited scene behind `sceneSignature()`, whose only input that moves during a gesture
+    is `pixelVersion`. Every dab used to raise it through `touchSource(buffer canvas)`; **28bfad0** (C5 c, the sparse
+    stroke store) dropped that call from `layerDab`, `cloneDab`, `gradientDab` and `shapeDab`. First bad commit 28bfad0,
+    bisected on both backends (4bd31a4 good).
+  - Fix: `strokeDirty()` raises `pixelVersion`; only the scene key moves (no mirror, no display level).
+  - Gates: `editor_test.py` `live_stroke_reaches_the_screen_before_the_release` (shots right after a move, no rests) and
+    the reworked `live_stroke_preview_shows_what_the_commit_writes`; `docs/PLAN_BCE.md` §C7 "The live stroke that did not
+    show" has the A/B and the review round. Scratch records: `bug-live/fix.md`, `finish.md`.
+- **The atlas field** (a8303fd). *Settings › Rendering › Tile atlas* had `min="16" step="64"`, so its own default 512 was
+  invalid and the dialog's *Close* (a validated form submit) refused to close. All three memory rows are `step="1"`
+  now, stored values are shown rounded (`wholeMB()`), Generate new's width / height are clamped to 64..8192. Gate step
+  `settings_form_accepts_its_own_values`.
+- **ToAPIs** (6ff9666, 0adb281, 837f7b7, e3a47b4, review fixes ec7b032), the user's decisions of 2026-09-15:
+  - first in every provider list, key link `https://toapis.com/login?aff=vfR1` (referral; README says so for ToAPIs and
+    WaveSpeed); recipe defaults unchanged, **no automatic fallback**; the official channel is the default where one
+    exists (the mask only on `gpt-image-2-official`), a *Channel* row for vip / standard; upsampling through ToAPIs' Chat
+    Completions (three rows, only with a key); *check balance* (`GET /v1/balance`).
+  - **Nothing has run against the live API**, on the user's decision: no key was used, every variant note says so and
+    says crop, mask and references become public `files.toapis.com` URLs.
+  - `docs/RECIPES.md` "ToAPIs" › **"Only a real key can verify"** is the live-test list: `image_urls` strings vs `{url}`
+    objects per channel, a PNG's alpha surviving the upload and the mask polarity on `gpt-image-2-official`, the real
+    output size for custom ratios and `auto`, the ids `gemini-3.1-flash-lite-image-official` and
+    `gemini-3-pro-image-official`, `metadata.prompt_extend: false` on Qwen, FLUX over 1440, `billing.cost_usd` per tier,
+    durations, which result shape arrives, the error language, JPEG uploads for the fallback, which "10MB" is counted,
+    the Nano Banana / Seedream pro output sizes per tier, how the gateway answers status queries in an outage, and
+    whether Seedream's 3:1 limit applies to references. The design (scratchpad `toapis/design.md`) lists the same.
+  - **The review round** (two lenses, two refuting verifiers per finding; ec7b032): provider setting targets named no
+    recipe, so a *Channel* "standard" chosen on Qwen via ToAPIs ran GPT Image 2 on its maskless channel (major; the node
+    id is `provider/<recipe>/<provider>` now); the Generate-new dialog sent "64:43" for 3:2; one 5xx on a status query
+    or the download threw a paid task away; *auto* bought 2K where 1K covers (page tables in `options.tier_sizes`);
+    references never got the JPEG fallback; Seedream's 3:1 input was unchecked (`limits.ratio` widens the crop,
+    `options.max_ratio` refuses); upsampling retried any 4xx without the crop and lost "text only"; the 10 MB guard
+    counted MiB. Ten adapter / llm mutations red in `node tools/toapis_test.js` (57 checks), three app mutations red in
+    the `toapis` gate. Records: scratchpad `toapis/build/build.md` and `release.md`.
+
+**The release.** The commit that carries this block is tagged `v0.1.14` and the workflow builds a **draft** from
+`CHANGELOG.md` 0.1.14. Publishing it is the user's step. Still the user's call: the v0.1.11 draft and the merged branches
+(`c2-tiles`, `fix-mask-undo`, `px-spike`, `c0-editor-source`).
+
+Gates on ec7b032 (fresh instances, logs under `dist/gates/gates/<label>/`):
+- `rel14-tiles` (`--strict --tiles on`, pixels editor composite commands shape brush film glb ailabel size transparent
+  generate log mcp nodecopy toapis llm): ALL PASS.
+- `rel14-canvas` (`--strict --tiles off`, pixels editor composite commands size generate transparent toapis): the known
+  flake, `commands_test.py` hanging after every step had printed `[ok]` (the runner's 420 s timeout); the re-run
+  `rel14-canvas2` ALL PASS.
+- `npm run dist` → `Scumble Setup 0.1.14.exe`. Against `dist/win-unpacked/Scumble.exe`, each on its own profile:
+  `rel14-exe` (pixels editor commands composite brush toapis mcp, no `--tiles`: `{ tiles: true, from: "default" }`) ALL
+  PASS; `rel14-exe-canvas` (`--tiles off`: pixels editor composite) ALL PASS; `rel14-exe-smoke` a real Flux run in 97 s,
+  PASS, the ComfyUI queue empty before and after.
+
+**Where the next session starts:**
+1. **C6 (c) slices 3 to 7** of `dist/c6map/c/critic.md` §5 (the maps are older than the code; see the block below for
+   what each slice holds and the user's three decisions for C6 (c)).
+2. **C6 (d)**, the base; then **C4** (`snapshotRect`'s box sharing no tile unless tile-aligned, the `frozen` counter);
+   then the rest of **§C7** (the node's browser, Firefox, the 30k gate, the docs list, the memory gate).
+3. **The user tests the tile engine on their own 15k file** (what to ask for: the block below, "What the user is to test").
+4. **Phase R, Rust kernels** (`docs/PLAN_BCE.md` §2b, decided 2026-09-15 to come after C7): the crate is in the history
+   at c75c4f1 (`crates/px/`, `renderer/editor/px/px.js`, `bench.js`), 2 to 3 days, B's 3× rule measured on the real jobs.
+5. **Phase E**.
+
+**Also known, not built:**
+- **The object tool (O) on 15k documents is slow**: two full flattens for the model input, a 320 MB id map, about
+  1.3 GB per hovered object. The input belongs to C6 (c) slice 6 (`sourceCanvas`, the cutout input, `segmentPoint`,
+  the input hash); the id map and the hover shapes need a follow-up of their own.
+- **The user's helper models** now live in `ComfyUI/models/onnx`, with Scumble's model folder set to `ComfyUI/models`.
+- **The Helpers list in Settings was empty once** in the user's running 0.1.13 window; cause unknown, not reproduced.
+
+## Where things stood (2026-09-15: 0.1.13 tagged, tiles on by default)
+
+**The block above supersedes this one's "Where the next session starts".** The records are
 `docs/PLAN_BCE.md` §C6 "C6 as built" ((b2), (b3), (c1), (c2), each with its measurements, its mutations and the review fixes)
 and §C7 "The default, as built"; `CHANGELOG.md` 0.1.13 has the user-facing bullets.
 

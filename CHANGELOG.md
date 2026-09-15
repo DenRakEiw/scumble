@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.14 — unreleased
+## 0.1.14 — 2026-09-15
 
 - **Painting shows the stroke again while you paint.** In 0.1.13 the brush, the eraser (also on a
   layer's mask), the clone and heal brushes, the gradient and a dragged rectangle, ellipse or
@@ -48,8 +48,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   refuses the picture itself, and the status line then says *text only*.
 - **Switching models starts from that model's own settings.** Picking another API model used to
   keep a setting of the same name from the model before, so a *Channel* or *Quality* chosen for
-  one model could silently change how the next one ran. Each model and provider now keeps its
-  own values, and a document from an earlier version shows the model's defaults once.
+  one model could silently change how the next one ran. A model you switch to now starts from
+  its own defaults (switching back does too), and a document saved by an earlier version shows
+  its model's defaults once.
 - **Generate a new image sends the aspect ratio you picked** (3:2, 21:9 ...) instead of the
   rounded pixel size, which some models read as a slightly different ratio.
 
