@@ -25,6 +25,10 @@ counting, the 268 MP refusal on tiles and a selection encode that cannot throw o
 C6 (a): a second mask from selection and its undo reach the screen on both paths, a write that ends on a tile
 border or an undo of whole tiles leaves no neighbour's old edge line in the atlas, and the atlas gives back the
 pages of pixels the document replaced and holds nothing alive after a collection.
+C6 (b2): mip chains of the selection that land from the mips worker run no colour match and no filter pass again, and
+the chains of a layer below a matched one and a filter layer do, once, and the screen ends exact either way; a layer
+above them or the base replaced under them follows the same rule, a flatten after the landings keeps nothing a sampled
+pass made while they were on their way, and a flatten right after them does not set the screen's colour match.
 
     python tools/editor_test.py
 
@@ -2955,7 +2959,8 @@ return out;
 // C6 (b) review, with the mips worker on tiles (skipped elsewhere). A stroke clipped to a selection whose chains are
 // still on their way: a striped selection inverted at fit on a 4000 x 3000 document, the worker's answers held back
 // 3 s (a 15000 x 10000 document's take lasts that long), and 40 dabs drawn meanwhile. Once the chains have landed, the
-// live preview is what its view scratch gives when built again: the dabs drawn before the landing kept the clip of the
+// live preview is what its view scratch gives when built again, both on the screen as the landings left it (C6 b2: they
+// draw the scene again for a stroke clipped to the selection) and after frames of the step's own: the dabs drawn before the landing kept the clip of the
 // selection before the invert until the commit. Nothing else may rebuild the scratch meanwhile: the film panel's
 // flatten of the document (500 ms after a change) draws the layer through it for the whole picture and makes the next
 // screen frame rebuild it, so the step lets that run before the first dab and fails if a sampled pass came during it.
@@ -3020,6 +3025,10 @@ try {
     if (out.sampled) fails.push("a sampled pass of the document (" + out.sampled + ") came during the gesture and rebuilt the stroke's scratch");
     out.pendingAfterDabs = sch.pending;
     await ed.mipsSettled();
+    // C6 (b2): the screen as the landings left it, before a frame of the step's own. A landing of the selection's chains
+    // draws only the overlays, except for a stroke clipped to the selection, whose scene it draws again.
+    for (let i = 0; i < 50; i++) { await wait(40); if (!ed._drawQueued) break; }
+    const a0 = g.getImageData(0, 0, CW, CH).data;
     await wait(50); frame(); await wait(30); frame();
     const a = g.getImageData(0, 0, CW, CH).data;
     out.at = { gl: ed.glCompositeUsable({}), view: !!(ed.strokeView && ed._strokeViewOf === p), sig: String(ed._strokeViewSig).split(",").slice(0, 6).join("/"), pending: sch.pending, strokeTiles: p.stroke && p.stroke.px && p.stroke.px.tileList ? p.stroke.px.tileList().filter((t) => !(t.mips && t.mipsVersion === t.version)).length : -1 };
@@ -3032,6 +3041,12 @@ try {
         if (b[i] > 200 && b[i + 1] < 60 && b[i + 2] < 60) red++;
     }
     out.live = [worst, n]; out.red = red;
+    {
+        let w0 = 0, n0 = 0;
+        for (let i = 0; i < a0.length; i++) { const v = Math.abs(a0[i] - b[i]); if (v) { n0++; if (v > w0) w0 = v; } }
+        out.landed = [w0, n0];
+        if (w0 > 2) fails.push("the screen the landings of the selection's chains left is not the live preview built again (" + w0 + " levels on " + n0 + " bytes)");
+    }
     out.bt = { gl: ed.glCompositeUsable({}), sig: String(ed._strokeViewSig).split(",").slice(0, 6).join("/"), pending: sch.pending };
     if (n) {
         let x0 = CW, y0 = CH, x1 = -1, y1 = -1, sample = null;
@@ -3103,6 +3118,210 @@ try {
 }
 if (fails.length) throw new Error(fails.join(" | ") + " " + JSON.stringify(out));
 return out;
+"""),
+    ("landings_of_the_selection_leave_the_filter_and_the_colour_match", """
+// C6 (b2), on both backends (on the canvas backend nothing is ever on its way: the counts stay 0 and the screens are
+// checked as they are). A 4000 x 3000 document at fit: a painted layer, a colour-matched result over part of it, and on
+// the "2d" path an invert filter layer on top (the Canvas 2D path); on the "gpu" path the filter is not there and the
+// GPU compositor takes the stack, the match's backdrop from the atlas. The selection is shown as a tint.
+// (i) A whole selection change (an invert of a rectangle) at fit: its chains go to the mips worker. From the end of the
+// operation's own frame until they have landed and been drawn, the screen's colour match and filter pass run again 0
+// times (a landing of the selection's chains dropped every layer's view caches and ran both again per batch), and the
+// screen as the landings left it (no frame of the step's own: a landing that draws nothing leaves the tint coarse) is the
+// view drawn from released caches.
+// (ii) A whole change of the painted layer below the matched one (a flip): once its chains have landed the colour match
+// (and on the 2d path the filter) has run again exactly once (not once per batch of chains), and the screen as the
+// landings left it is the view drawn from released caches.
+// (iii) A whole change of a layer above the matched one and the filter: its landings run neither again (the caches below
+// the landed layer stay), and the screen is exact.
+// (iv) A sampled pass (a plugin's flatten at 512 px) while the flip's chains are on their way, after a screen frame of
+// that time: the same flatten after they have landed is the flatten with the sampled pass's caches made again (the
+// review of C6 b2: the matched pixels made from the coarse picture's statistics outlived the settle).
+// (v) The base replaced under the layers: once its chains have landed the colour match (and the filter) ran again once.
+// (vi) The film panel's flatten (192 px) right after the settle of a flip, before the screen's next frame: the screen as
+// the landings left it is still the view drawn from released caches (the flatten made the screen's statistics from its
+// own small picture, 5 levels off on the whole matched layer).
+const T = await import("./editor/inpaint_tiles.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+await wait(200);
+const W = 4000, H = 3000;
+await run("new_canvas", { width: W, height: H, doc: d.id });
+const c = document.createElement("canvas"); c.width = W; c.height = H;
+{
+    const x = c.getContext("2d");
+    const gr = x.createLinearGradient(0, 0, W, H);
+    gr.addColorStop(0, "#1c4f8a"); gr.addColorStop(1, "#e0a040");
+    x.fillStyle = gr; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 120; i++) { x.fillStyle = `hsl(${(i * 37) % 360},80%,55%)`; x.beginPath(); x.arc((i * 977) % W, (i * 613) % H, 90, 0, Math.PI * 2); x.fill(); }
+    x.fillStyle = "#000"; x.fillRect(0, 0, 900, 400);   // an asymmetric block: a flip moves it
+}
+const P = ed.addLayer({ name: "Paint", kind: "paint", px: ed.pixels.Layer.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
+if (ed.tileMode) { c.width = 1; c.height = 1; }   // the canvas backend adopts the canvas as the layer's pixels
+const rc = document.createElement("canvas"); rc.width = 1200; rc.height = 900;
+{
+    const x = rc.getContext("2d");
+    const gr = x.createLinearGradient(0, 0, 1200, 900);
+    gr.addColorStop(0, "#f0e0c0"); gr.addColorStop(1, "#402010");
+    x.fillStyle = gr; x.fillRect(0, 0, 1200, 900);
+}
+const R = ed.addLayer({ name: "Result", kind: "result", px: ed.pixels.Layer.fromCanvas(rc), x: 1400, y: 1000, w: 1200, h: 900, dirty: true });
+R.match = { strength: 80, source: "surroundings" };
+ed.markMatchChanged(R);
+const display = ed.selectionDisplay;
+ed.selectionDisplay = "tint";   // the ants move every 120 ms, and the screens compared below are further apart
+// the screens are read as the editor's own frames left them: a tool without a ring under the pointer. One gate run read
+// 193 levels on 1,145 bytes in one of them on the canvas backend, most likely the default selection brush's ring under a
+// real pointer over the window (the ring alone is 203 levels on 576 bytes over white at fit; the marquee draws nothing)
+ed.setTool("rect");
+ed.hover = null;
+const hasGl = !!ed.compositor();
+const out = { tiles: ed.tileMode, rows: [] };
+const fails = [];
+const async_ = () => ed.tileMode && T.chainStats().async;
+const g = ed.canvas.getContext("2d");
+const read = () => g.getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+const diff = (a, b) => { let worst = 0, n = 0; for (let i = 0; i < a.length; i++) { const v = Math.abs(a[i] - b[i]); if (v) { n++; if (v > worst) worst = v; } } return [worst, n]; };
+// the frames the editor queued itself (the landings' draws, a pyramid level per frame), and none of the step's own
+const drawn = async () => { for (let i = 0; i < 75; i++) { await wait(40); if (!ed._drawQueued && !ed._pyramidPending) break; } };
+const frame = () => { ed.hover = null; ed.sceneSig = null; ed.draw(); };
+const levels = async () => { for (let i = 0; i < 10; i++) { frame(); await wait(30); if (!ed._pyramidPending) break; } };
+// a plugin's flatten at 512 px (renderer/plugins.js `flatten({ maxSize: 512 })`)
+const sample = () => { const cv = ed.sampleRegion("image", [0, 0, W, H], 512 / Math.max(W, H), { forRun: true }); return cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data; };
+// a colour match or a filter pass the screen ran again: a miss of the view's cache (the screen's or the navigator's slot;
+// a sampled pass keeps its own)
+const reruns = { on: false, match: 0, filter: 0 };
+const wrapMiss = (name, slot, key) => {
+    const f = ed[name];
+    ed[name] = function (layer, ...a) {
+        const vp = this.viewPass;
+        if (!reruns.on || !vp) return f.call(this, layer, ...a);
+        const was = layer[slot];
+        try { return f.call(this, layer, ...a); } finally { if (layer[slot] !== was) reruns[key]++; }
+    };
+};
+wrapMiss("matchStats", "_mstatsView", "match");
+wrapMiss("filteredCanvas", "_fcacheView", "filter");
+const count = async () => { reruns.match = 0; reruns.filter = 0; reruns.on = true; await ed.mipsSettled(); await drawn(); reruns.on = false; return [reruns.match, reruns.filter]; };
+const exact = async (label, path, shown) => {
+    ed.releaseCaches({ mirrors: true });
+    await levels(); await ed.mipsSettled(); await levels();
+    // a match made while a display pyramid was still being built keeps the statistics of that level: made again with every level there
+    for (const l of ed.layers) { l._fcacheView = null; l._mcacheView = null; l._mstatsView = null; }
+    await levels();
+    const [worst, n] = diff(shown, read());
+    // 3 levels as in the whole-change step; on the canvas backend with a filter layer the released view is no reference
+    // (31 levels on about 726,000 bytes with no change at all, measured there)
+    if ((ed.tileMode || path === "gpu") && worst > 3) fails.push(path + ", " + label + ": the screen is not the view drawn from released caches (" + worst + " levels on " + n + " bytes)");
+    return [worst, n];
+};
+try {
+    for (const path of ["gpu", "2d"]) {
+        const fx = path === "2d" ? ed.addFilterLayer("invert") : null;
+        // a layer on top of the stack, clear of the result (iii)
+        const tc = document.createElement("canvas"); tc.width = 1200; tc.height = 900;
+        {
+            const x = tc.getContext("2d");
+            x.fillStyle = "#30a050"; x.fillRect(0, 0, 1200, 900);
+            x.fillStyle = "#f0f0f0"; x.fillRect(0, 0, 1200, 250);   // an asymmetric band: a flip moves it
+        }
+        const top = ed.addLayer({ name: "Top", kind: "paint", px: ed.pixels.Layer.fromCanvas(tc), x: 2700, y: 2000, w: 1200, h: 900, dirty: true });
+        if (ed.tileMode) { tc.width = 1; tc.height = 1; }
+        if (ed.layers[ed.layers.length - 1] !== top) fails.push(path + ": the layer on top is not on top");
+        ed.activeLayerId = P.id;
+        ed.renderLayers();
+        ed.fitView();
+        out.level = ed.tileLevel(ed.view.scale);
+        await run("select_rect", { x: 800, y: 600, w: 1600, h: 1200, doc: d.id });
+        await levels(); await ed.mipsSettled(); await levels();
+        if (hasGl && ed.glCompositeUsable({}) !== (path === "gpu")) fails.push(path + ": the view took the other path");
+        const row = { path };
+        // (i)
+        T.chainStats(true);
+        await ed.invertSelection();
+        row.selAsked = T.chainStats().requested;
+        row.sel = await count();
+        if (async_() && !row.selAsked) fails.push(path + ": the whole selection change asked the mips worker for nothing");
+        if (row.sel[0] || row.sel[1]) fails.push(path + ": the landings of the selection's chains ran the colour match " + row.sel[0] + " and the filter " + row.sel[1] + " times again");
+        row.selExact = await exact("after the selection's landings", path, read());
+        // (ii)
+        await levels();
+        ed.activeLayerId = P.id;
+        T.chainStats(true);
+        ed.flipLayer("h");
+        row.layerAsked = T.chainStats().requested;
+        row.layer = await count();
+        if (async_()) {
+            if (!row.layerAsked) fails.push(path + ": the flip asked the mips worker for nothing");
+            if (row.layerAsked <= 128) fails.push(path + ": the flip's chains fit one batch (" + row.layerAsked + "), so once and once per batch are the same");
+            if (row.layer[0] !== 1) fails.push(path + ": the colour match above the flipped layer ran again " + row.layer[0] + " times once its chains landed, once expected");
+            if (fx && row.layer[1] !== 1) fails.push(path + ": the filter above the flipped layer ran again " + row.layer[1] + " times once its chains landed, once expected");
+        }
+        row.layerExact = await exact("after the layer's landings", path, read());
+        // (iii)
+        await levels();
+        ed.activeLayerId = top.id;
+        T.chainStats(true);
+        ed.flipLayer("v");
+        row.topAsked = T.chainStats().requested;
+        row.top = await count();
+        if (async_() && !row.topAsked) fails.push(path + ": the flip of the layer on top asked the mips worker for nothing");
+        if (row.top[0] || row.top[1]) fails.push(path + ": the landings of the layer on top ran the colour match " + row.top[0] + " and the filter " + row.top[1] + " times again below it");
+        row.topExact = await exact("after the landings of the layer on top", path, read());
+        // (iv)
+        await levels();
+        ed.activeLayerId = P.id;
+        T.chainStats(true);
+        ed.flipLayer("h");
+        row.samplePending = ed.tileMode ? T.chainScheduler().pending : 0;
+        frame();   // the screen's statistics of this moment
+        sample();   // the flatten while the chains are on their way
+        await ed.mipsSettled(); await drawn();
+        const after = sample();
+        for (const l of ed.layers) { l._mcacheSample = null; l._fcacheSample = null; }
+        row.sample = diff(after, sample());
+        if (async_() && !row.samplePending) fails.push(path + ": nothing was on its way during the sampled pass");
+        if (row.sample[0]) fails.push(path + ": the flatten after the landings kept the sampled pass's caches from while they were on their way (" + row.sample[0] + " levels on " + row.sample[1] + " bytes)");
+        // (vi)
+        await levels();
+        ed.activeLayerId = P.id;
+        ed.flipLayer("h");
+        await ed.mipsSettled();
+        // the film panel's flatten (192 px), between the drop of the view's caches and the next screen frame
+        ed.sampleRegion("image", [0, 0, W, H], 192 / Math.max(W, H), { forRun: true });
+        await drawn();
+        row.raceExact = await exact("after a sampled pass between the settle and the screen's frame", path, read());
+        // (v)
+        await levels();
+        const bc = document.createElement("canvas"); bc.width = W; bc.height = H;
+        { const x = bc.getContext("2d"); x.fillStyle = path === "gpu" ? "#406080" : "#806040"; x.fillRect(0, 0, W, H); }
+        T.chainStats(true);
+        await ed.setBaseFromCanvas(bc, { keepLayers: true });
+        bc.width = 1; bc.height = 1;
+        if (ed.layers.indexOf(R) < 0) fails.push(path + ": the new base took the layers");
+        frame();   // a frame of the new base (the chains it asks for may have been asked for by the base's own fit)
+        row.baseAsked = T.chainStats().requested;
+        row.base = await count();
+        if (async_()) {
+            if (!row.baseAsked) fails.push(path + ": the new base asked the mips worker for nothing");
+            if (row.base[0] !== 1) fails.push(path + ": the colour match ran again " + row.base[0] + " times once the new base's chains landed, once expected");
+            if (fx && row.base[1] !== 1) fails.push(path + ": the filter ran again " + row.base[1] + " times once the new base's chains landed, once expected");
+        }
+        out.rows.push(row);
+        ed.removeLayer(top.id);
+        if (fx) ed.removeLayer(fx.id);
+        ed.renderLayers();
+    }
+    if (hasGl && ed.compositorOff) fails.push("the GPU compositor failed during the step");
+} finally {
+    delete ed.matchStats; delete ed.filteredCanvas;
+    ed.selectionDisplay = display;
+    await ed.mipsSettled();
+    await run("close_document", { doc: d.id, force: true });
+}
+if (fails.length) throw new Error(fails.join(" | ") + " " + JSON.stringify(out));
+return { tiles: out.tiles, level: out.level, rows: out.rows.map((r) => r.path + ": sel asked " + r.selAsked + " reruns " + r.sel + " exact " + r.selExact[0] + "; layer asked " + r.layerAsked + " reruns " + r.layer + " exact " + r.layerExact[0] + "; top asked " + r.topAsked + " reruns " + r.top + " exact " + r.topExact[0] + "; sampled with " + r.samplePending + " pending, after " + r.sample + "; sampled before the frame, exact " + r.raceExact[0] + "; base asked " + r.baseAsked + " reruns " + r.base) };
 """),
     ("pixel_backend_is_the_one_the_flag_chose", lambda c: backend_step(c)),
     ("editing_on_the_flags_backend_in_pixels_and_on_screen", lambda c: edit_step(c)),

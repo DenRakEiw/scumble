@@ -13,6 +13,16 @@ interactive paths: opacity / match / filter slider ticks, pan, wheel zoom, fit, 
 stroke, the cached scene redraw (hover, marching ants), the full-resolution composite,
 getValue after a selection change, and the undo step of a stroke. Times are milliseconds,
 median of the repeats, max in brackets. No ComfyUI needed; nothing is uploaded.
+
+The operation rows ("blocked [wall]") time an operation, not a frame. On tiles with the mips worker
+(C6 b) an operation starts only once no mip chain of the rows before it is on its way
+(`ed.mipsSettled()`), so a row is not charged with their landings, and its probe of the main thread
+runs until the chains the operation itself asked for have landed: "blocked" is the longest the window
+was held by the operation or by the landings and redraws it caused. "wall" stays the operation's own
+time. "its landings" under invert counts the colour matches and filter passes the screen ran again
+while those chains landed; its bracket is the longest block from the end of the operation until they
+had landed, whatever held the window: it includes the selection's background encode and any other
+timer of that window, not only the landings and their draws.
 """
 import asyncio
 import json
@@ -319,21 +329,43 @@ BENCH = """
     // --- operations that are not per frame: how long do they hold the main thread? -----
     // (sample it every millisecond and take the longest gap; wall time and blocking are
     // very different things once the worker does the work)
+    // `since`: the longest gap that started at or after that time (whatever ran after an operation: its landings, its
+    // selection encode, any other timer)
     const probe = () => {
         let last = performance.now(), worst = 0, stop = false;
-        const tick = () => { const now = performance.now(); if (now - last > worst) worst = now - last; last = now; if (!stop) setTimeout(tick, 0); };
+        const gaps = [];
+        const tick = () => { const now = performance.now(); if (now - last > worst) worst = now - last; if (now - last > 4) gaps.push([last, now - last]); last = now; if (!stop) setTimeout(tick, 0); };
         setTimeout(tick, 0);
-        return () => { stop = true; return +worst.toFixed(1); };
+        return (since = -Infinity) => { stop = true; return since === -Infinity ? +worst.toFixed(1) : +Math.max(0, ...gaps.filter((q) => q[0] >= since).map((q) => q[1])).toFixed(1); };
     };
+    // the screen's colour matches and filter passes run again (a cache miss of a screen pass), counted while `on`
+    const reruns = { on: false, n: 0 };
+    for (const [name, slotOf] of [["matchStats", () => "_mstatsView"], ["filteredCanvas", () => "_fcacheView"]]) {
+        const f = ed[name];
+        ed[name] = function (layer, ...a) {
+            if (!reruns.on || !(this.viewPass && this.viewPass.screen)) return f.call(this, layer, ...a);
+            const was = layer[slotOf()];
+            try { return f.call(this, layer, ...a); } finally { if (layer[slotOf()] !== was) reruns.n++; }
+        };
+    }
+    let landings = null;
     const op = async (fn) => {
+        // C6 (b): the chains the rows before asked for land first, so this row is not charged with them
+        await ed.mipsSettled();
         await new Promise((r) => setTimeout(r, 60));
         settle();   // the row before may have left GPU work queued; this row measures its own
         await new Promise((r) => setTimeout(r, 30));
         const done = probe();
         const t0 = performance.now();
         await fn();
-        const wall = +(performance.now() - t0).toFixed(1);
+        const t1 = performance.now();
+        const wall = +(t1 - t0).toFixed(1);
+        // ... and the probe runs on until the chains this operation asked for have landed and been drawn
+        reruns.n = 0; reruns.on = true;
+        await ed.mipsSettled();
         await new Promise((r) => setTimeout(r, 30));
+        reruns.on = false;
+        landings = [reruns.n, done(t1)];
         return [done(), wall];   // [blocked, wall]
     };
     const rect = () => {
@@ -346,6 +378,9 @@ BENCH = """
     out.grow = await op(() => ed.growSelection(16));
     out.shrink = await op(() => ed.growSelection(-16));
     out.invert = await op(() => ed.invertSelection());
+    // C6 (b2): with the filter layer and the colour-matched result visible, the landings of the inverted selection's
+    // chains redraw the overlays only; they used to run the match and the filter again per batch of chains
+    out.invert_landings = landings;
     rect();
     out.feather = await op(() => ed.featherSelection(8));
     rect();
@@ -454,6 +489,7 @@ OP_ROWS = [
     ("grow +16", "grow"),
     ("shrink -16", "shrink"),
     ("invert", "invert"),
+    ("  its landings: re-runs [longest block until settled]", "invert_landings"),
     ("feather 8", "feather"),
     ("magic wand (whole-image band)", "wand"),
     ("magic wand (an object)", "wand_object"),
@@ -589,6 +625,9 @@ async def main():
         cells = []
         for r in results:
             v = r.get(key)
+            if v and key.endswith("_landings"):
+                cells.append("%22s" % f"{v[0]}  [{v[1]:.0f} ms]")
+                continue
             cells.append("%22s" % ("-" if not v else f"{v[0]:.0f} ms  [{v[1]:.0f}]"))
         print("%-28s%s" % (label, "".join(cells)))
     print()

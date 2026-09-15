@@ -7060,7 +7060,7 @@ class InpaintEditor {
         layer._mcache = null;
         layer._mcacheView = null; layer._mcacheSample = null;
         layer._mstats = null;
-        layer._mstatsView = null;
+        layer._mstatsView = null; layer._mstatsSample = null;
         layer.exportRef = null;
         // `rect` (in the layer pixels' own coordinates) keeps the cached levels and refreshes them there
         if (rect) this.touchSourceRect(layer.px, rect[0], rect[1], rect[2], rect[3]);
@@ -7104,7 +7104,7 @@ class InpaintEditor {
                 keep = b[2] <= l.x - pad || b[0] >= l.x + l.w + pad || b[3] <= l.y - pad || b[1] >= l.y + l.h + pad;
             }
             if (!keep) continue;
-            for (const slot of ["_mstats", "_mstatsView"]) if (l[slot] && l[slot].version === v0) l[slot].version = v1;
+            for (const slot of ["_mstats", "_mstatsView", "_mstatsSample"]) if (l[slot] && l[slot].version === v0) l[slot].version = v1;
         }
     }
 
@@ -9696,7 +9696,7 @@ class InpaintEditor {
         layer._mcache = null;
         layer._mcacheView = null; layer._mcacheSample = null;
         layer._mstats = null;
-        layer._mstatsView = null;
+        layer._mstatsView = null; layer._mstatsSample = null;
         this.uploaded.baseHash = null;
         this.uploaded.controlHash = null;
     }
@@ -9728,13 +9728,22 @@ class InpaintEditor {
      * Mean and spread of the layer and of what it is matched against, both at 256 px.
      * Cached per composite version: in a region pass the statistics are taken once from
      * whatever the view showed then, so panning and zooming never shift the colours.
+     *
+     * A sampled pass (`sampleRegion`) takes the screen's statistics when they are there, and
+     * otherwise makes its own in `_mstatsSample`, never in the screen's slot (C6 b2 review):
+     * the film panel's 192 px flatten that ran between the drop of the view's caches after a
+     * whole change and the next screen frame made the screen's statistics from its own small
+     * picture, and the screen showed the match 5 levels off on the whole matched layer until
+     * the composite changed again. A 1 x 1 eyedropper pass that came first could store null statistics there too.
      */
     matchStats(layer, below, vp, out0) {
         const m = layer.match || {};
         const key = JSON.stringify([m.strength, m.source, layer.x, layer.y, layer.w, layer.h]);
-        const slot = vp ? "_mstatsView" : "_mstats";
+        const valid = (c) => c && c.version === this.compositeVersion && c.key === key;
+        if (vp && vp.sample && valid(layer._mstatsView)) return layer._mstatsView.stats;
+        const slot = vp ? (vp.sample ? "_mstatsSample" : "_mstatsView") : "_mstats";
         const cached = layer[slot];
-        if (cached && cached.version === this.compositeVersion && cached.key === key) return cached.stats;
+        if (valid(cached)) return cached.stats;
         // `below` may be a thunk: building it costs a composite, and only a miss needs it
         below = typeof below === "function" ? below() : below;
         const px = out0;
@@ -9994,6 +10003,17 @@ class InpaintEditor {
      * While mip chains are in the mips worker (C6 b), wait for the next batch to land and draw again: the frame
      * after a whole change of a large layer or mask showed a stale or coarse picture of the tiles still on their
      * way, and the rows' thumbnails did too. Nothing is kept when nothing is on its way.
+     *
+     * What a landing redraws depends on whose chains landed (C6 b2):
+     * - The selection's: only what is drawn over the scene (the tint, the marching ants, the quick mask, the
+     *   navigator). No filter layer and no colour match ever reads the selection, so the scene and the view's caches
+     *   stay. The exception is a live stroke clipped to the selection, whose view scratch is clipped by the
+     *   selection's region canvas (`layerRegionView` keys on its `chainEpoch`): the scene is drawn again for it.
+     * - The base's, a layer's or a mask's: the scene is drawn again at once, and the view's filter outputs and colour
+     *   matches of the layers above the lowest landed one are dropped once no chain is on its way any more
+     *   (`staleViewCachesAbove`). Dropping all of them at every landing ran the match (three readbacks) and the filter
+     *   pass again per batch of 128 chains, 16 to 20 times per whole change at 15000 x 10000, each 75 to 545 ms
+     *   behind a busy GPU queue.
      */
     watchChains() {
         const sch = chainScheduler();
@@ -10005,25 +10025,84 @@ class InpaintEditor {
             // (a layer at 1:1, a hidden one) changes nothing on the screen, and dropping the view's caches for it ran a
             // colour match and a filter pass again per batch (the C6 b review)
             const screen = stores.screen || stores;
-            let hit = screen.has(this._basePx) || screen.has(this.sel);
-            // a live stroke's sparse store: the view scratch of the gesture is built again from its region canvases
-            const sb = this.pointer && this.pointer.stroke;
-            if (sb && sb.px && screen.has(sb.px)) { hit = true; this._strokeViewSig = null; }
+            const base = screen.has(this._basePx);
+            const landed = [];
             for (const l of this.layers) {
                 if (!stores.has(l.px) && !(l.maskPx && stores.has(l.maskPx))) continue;
-                if (screen.has(l.px) || (l.maskPx && screen.has(l.maskPx))) hit = true;
+                if (screen.has(l.px) || (l.maskPx && screen.has(l.maskPx))) landed.push(l);
                 this.redrawThumbsOf(l);
             }
-            if (hit) {
-                // the view's own caches were made from the picture the landing replaced: a filter layer's output and
-                // a colour match of the region the screen shows (their full-resolution caches never saw a stale mip)
-                for (const l of this.layers) { l._fcacheView = null; l._mcacheView = null; l._mstatsView = null; }
-                this.sceneSig = null;
+            let scene = base || landed.length > 0;
+            if (scene) this.staleViewCachesAbove(base, landed);
+            else if (!sch.pending) this.dropStaleViewCaches();   // the last batch was another store's
+            // a live stroke's sparse store: the view scratch of the gesture is built again from its region canvases
+            const p = this.pointer, sb = p && p.stroke;
+            if (sb && sb.px && screen.has(sb.px)) { scene = true; this._strokeViewSig = null; }
+            const sel = !!this.sel && screen.has(this.sel);
+            if (sel && sb && p.clip) scene = true;
+            if (scene) this.sceneSig = null;
+            if (scene || sel) {
                 this.drawSoon();
                 this.drawThumb();   // the navigator (the node's; the app has none mounted)
             }
             this.watchChains();
         });
+    }
+
+    /**
+     * Chains of the base (`base`) or of `landed` layers (their pixels or their masks) landed (C6 b2): the view's own
+     * caches of every layer above the lowest of them were made from the picture the landing replaced. A filter layer's
+     * output is made from everything below it, and a colour match's statistics (and so its matched pixels) from what is
+     * under the layer; the matched layer's own pixels come from its exact display canvas, not from mips, and a layer
+     * below the landed one reads nothing of it. Their full-resolution caches never saw a stale mip.
+     *
+     * They are dropped once, when no chain is on its way any more, not per landing: the screen shows the previous
+     * filter output and match meanwhile, as it shows the coarse picture, and the frame after the last landing is exact.
+     *
+     * The same layers' caches of sampled passes (`sampleRegion`: a plugin's `flatten({ maxSize })`, the film panel,
+     * the wand's coarse flood) go too. A sampled pass reads exact mips, but it takes the colour match's statistics
+     * from the screen's slot when they are there (`matchStats`), and a sampled pass while the chains were on their
+     * way kept matched pixels (and a filter output made from them) from the statistics of the coarse picture past the
+     * settle (the C6 b2 review: 5 to 6 levels on about 45,000 bytes of a 512 px flatten at 4000 x 3000).
+     */
+    staleViewCachesAbove(base, landed) {
+        const st = this._viewStale || (this._viewStale = { base: false, layers: new Set(), watch: false });
+        if (base) st.base = true;
+        for (const l of landed) st.layers.add(l);
+        const sch = chainScheduler();
+        // the last landing: dropped here, in the landing's own callback, which runs before the continuations of
+        // mipsSettled() (a reader that draws right after it sees the fresh match)
+        if (!sch.pending) { this.dropStaleViewCaches(); return; }
+        // otherwise when nothing is on its way any more, also when the rest of the queue was dropped without a landing
+        if (st.watch) return;
+        st.watch = true;
+        sch.settled().then(() => { st.watch = false; this.dropStaleViewCaches(); });
+    }
+
+    /** The drop `staleViewCachesAbove` put off; draws again when it dropped anything. */
+    dropStaleViewCaches() {
+        const st = this._viewStale;
+        if (!st || (!st.base && !st.layers.size)) return;
+        let from = st.base ? -1 : Infinity;
+        for (const l of st.layers) {
+            const i = this.layers.indexOf(l);
+            if (i < 0) { from = -1; break; }   // removed meanwhile: the layers above it moved down
+            if (i < from) from = i;
+        }
+        st.base = false;
+        st.layers.clear();
+        let dropped = false;
+        for (let i = from + 1; i < this.layers.length; i++) {
+            const l = this.layers[i];
+            l._fcacheSample = null; l._mcacheSample = null; l._mstatsSample = null;   // no draw for them: nothing on the screen came from them
+            if (!l._fcacheView && !l._mcacheView && !l._mstatsView) continue;
+            l._fcacheView = null; l._mcacheView = null; l._mstatsView = null;
+            dropped = true;
+        }
+        if (!dropped) return;
+        this.sceneSig = null;
+        this.drawSoon();
+        this.drawThumb();
     }
 
     /**
@@ -10533,6 +10612,7 @@ class InpaintEditor {
             l._fxCacheSample = null;
             l._mstats = null;
             l._mstatsView = null;
+            l._mstatsSample = null;
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }

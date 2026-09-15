@@ -2173,6 +2173,223 @@ its region view runs only for a live stroke, which is keyed by the gesture. So n
   its rows on a document the operation rows had given display mirrors (187 and 772 ms frames), which is why the block
   went back.
 
+**(b2) The A/B of the three rows, and the selection's landings** (`inpaint_canvas.js`, `tools/perf_test.py`,
+`tools/editor_test.py`):
+
+- **The A/B.** Three `perf_test.py` rows moved the wrong way in (b) and were not broken down: `getValue` 0 → 5-8 ms, "its
+  commit, band by band" 562 → 604-698 ms, "PNG of the composite" 30 → 88-284 ms blocked. They were measured against a
+  worktree of 00a3ade (A) with one script on both trees: perf_test.py's document and every row before the three, the (b)
+  whole-change block left out. Each run on a fresh tile-mode instance: a first pair (B0, then A0), then alternating A1 B1 A2 B2
+  A3 B3, plus a profiled run of
+  each, a traced run of B and a `getValue` check. 15000 x 10000, view 1865 x 1198 at fit, the ComfyUI queue empty.
+
+  | run | getValue 2nd / 3rd ms | commit blocked [wall] ms | PNG blocked [wall] ms | chains landed in the PNG row | stroke across (40 dabs) | invert |
+  |---|---|---|---|---|---|---|
+  | A0 | 0 / 0.1 | 421 [421] | 139 [3861] | - | 626 | 1072 |
+  | A1 | 0.1 / 0.1 | 452 [452] | 28 [3702] | - | 613 | 1085 |
+  | A2 | 0 / 0 | 458 [458] | 28 [3812] | - | 667 | 1153 |
+  | A3 | 0.1 / 0 | 677 [677] | 73 [3934] | - | 717 | 968 |
+  | A profiled | 0 / 0 | 459 [459] | 75 [3930] | - | 765 | 1019 |
+  | B0 | 4.4 / 4.6 | 547 [547] | 194 [4183] | 1255 | 111 | 689 |
+  | B1 | 8.3 / 7.9 | 534 [467] | 281 [4628] | 1383 | 171 | 668 |
+  | B2 | 7.7 / 8.0 | 657 [574] | 220 [4536] | 1383 | 221 | 737 |
+  | B3 | 11.1 / 9.0 | 621 [539] | 227 [4547] | 1255 | 188 | 655 |
+  | B profiled | 8.0 / 7.4 | 652 [581] | 313 [4386] | 1255 | 179 | 666 |
+  | B traced | 7.1 / 7.2 | 594 [594] | 217 [3711] | 1127 | 163 | 633 |
+
+  - **`getValue`: the benchmark's timing, not a cost of (b).** `getValue` stringifies `selectionDataUrl`, the selection's
+    PNG from the background encode, 3.74 MB at 15k. In B the 1.5 s autosave timer (`host.changed` → `saveAll` →
+    `getValue` → `encodeSelectionSoon`) fires during the benchmark's `await ed.mipsSettled()` waits, so by the row the PNG
+    has landed and the JSON is 3,745,427 characters; in A those awaits resolve at once and the JSON is 2,166 characters.
+    With the encode landed A's `getValue` is 7.1-7.8 ms too (B 7.3-8.1), and without the data URL both are 0.1 ms. The
+    cost is real in use (every autosave, both trees) and old.
+  - **The commit: the probe window and garbage collection, not the chains in flight.** Wall of the synchronous commit: A
+    421-677 (median 458 of the five runs), B 467-594 (median 561 of the six, 547 without the traced run). In B the probe's longest gap also swallows the frame after the commit
+    (35-82 ms), which in A is a gap of its own. The profiles: `commitStroke` 302 / 324 ms inclusive (A / B), the garbage
+    collector 202 / 339 ms. The hypothesis that the collector is busy with the 1,500-2,100 selection chains the stroke's
+    clip left in flight was measured on the tree of 987961b, three runs each, a fresh instance each, the CPU profile
+    around the commit alone:
+
+    | before the commit | chains pending | commit blocked [wall] ms | GC in the commit's profile | `commitStroke` inclusive |
+    |---|---|---|---|---|
+    | nothing | 2,057 | 592 [518], 531 [531], 659 [582] | 234, 260, 340 ms | 336, 307, 321 ms |
+    | `await ed.mipsSettled()` (433-576 ms) | 0 | 561 [561], 629 [629], 715 [715] | 308, 371, 364 ms | 309, 332, 420 ms |
+
+    With nothing in flight the commit is no faster and the collector no less busy: the garbage is the commit's own. The
+    largest self entry of the commit's profile is the collector (234-371 ms) in five of the six runs, and the band
+    `getImageData` (191-303 ms) in the sixth and the next in the other five. Not changed here.
+  - **The PNG row: the landings of the rows before it.** The encode itself did not change (A 28-75 ms blocked). In B
+    1,127-1,383 chains land during the row, in batches of 128, all but the last two the **selection's**, asked for by the
+    rows before: the 40-dab stroke's clip asks for 2,349 selection chains (the selection was just filled over the whole
+    picture), invert for 1,999, the wand for 1,452. Every landing that reached the selection counted as a screen hit in
+    `watchChains`, which dropped **every layer's `_fcacheView`, `_mcacheView` and `_mstatsView`** and `sceneSig` and drew
+    again. The perf document has a colour-matched result and a film look filter layer, so each such draw ran `matchStats`
+    again (three readbacks, the backdrop's waiting for the GPU queue) and the filter pass: matchStats 75, 110, 143, 370, 543
+    ms, applyFilterLayer 30-100 ms (once 3,136 ms behind the wand's GPU work). The PNG row's blocked time was one such draw.
+- **Who reads the selection, checked before the change.** The selection's mip chains are read only by `drawSelectionInto`
+  (a display region canvas), whose callers are the tint and the quick mask in `drawSceneOverlays`, the marching ants
+  (`drawMarchingAnts`, also an overlay), the navigator's `drawThumb`, and `drawStrokeInto` for a live stroke clipped to
+  the selection, whose view scratch `layerRegionView` keys on `sel.chainEpoch` (b). None of them is part of the scene
+  canvas except that scratch. Everything else reads the selection's exact pixels and no mip: `drawLayerThumb` does not draw
+  it; the compositor never gets it; `filteredCanvas` / `applyFilterLayer` and `matchStats` read the composite of the layers
+  (a filter layer's own mask through `maskPx.drawTo`); plugins read `readRect` (`Document.selection` in
+  `renderer/plugins.js`) and draw their overlays each frame outside the scene; `promptContextCanvas` uses `sel.drawTo`;
+  exports, uploads and `clipCanvasFor` use `readRect`, `toCanvas` or `drawTo`.
+- **Which view caches a landing of a layer makes stale, measured.** The matched layer's own pixels in a view pass come from
+  its display canvas (`layerPixels(layer, true)` → the mirror, or `_masked` from mirrors), never from mips, so a landing of
+  its own chains changes nothing of its match; its statistics and so its matched pixels read what is under it; a filter
+  layer's output reads everything below it; a layer below the landed one reads nothing of it. On perf_test.py's document
+  (15000 x 10000, fit, level 3; Paint 1 to 3, the matched result, the film look), each scenario from a settled screen,
+  counted from the end of the operation until `mipsSettled()`, two runs per rule, a fresh instance each, the card free.
+  "Screen" is the settled screen against the view drawn from released caches with every pyramid level built (the first
+  version of the script re-matched while the result's display pyramid was still being built, one level per frame, and read
+  62 levels on the result's rectangle with no operation at all):
+
+  | scenario | rule | landings | draws, total ms | colour matches / filter passes again | screen |
+  |---|---|---|---|---|---|
+  | invert of a 40 % selection | (b) | 16 (selection) | 16, 171-182 | 16 / 16 | 0 |
+  | | (b2) | 16 | 16, 10.5-11.7 | 0 / 0 | 0 |
+  | whole selection, then 40 clipped dabs, pointer held | (b) | 20 (2,349 selection, 91 stroke) | 19-20, 157-166 | 19-20 / 0 (the filter is off during a gesture below it) | 0 |
+  | | (b2) | 20 | 20, 37-42 | 0 / 0 | 5 levels on 73,548 bytes, the result's rectangle |
+  | flip of Paint 1, the match and the filter above it | (b) | 19 (Paint 1) | 19, 223-239 | 19 / 19 | 0 |
+  | | (b2) | 19 | 19, 34-37 | 1 / 1 | 0 |
+  | flip of Paint 1 moved to the top, both below it | (b) | 20 | 20, 210-238 | 20 / 20 | 0 |
+  | | (b2) | 20 | 20, 26-27 | 0 / 0 | 0 |
+
+  A match or filter pass costs 5-12 ms here, with nothing else on the card; the (b) A/B's 75-545 ms were each of them
+  behind the GPU work of the rows before. A rule tried on the way that kept every cache for a layer landing ("keep") left
+  the screen stale by 69 levels on 51,242 bytes after the flip below the match and the filter, and matched the reference
+  after the flip above them; so the caches below the landed layer stay, the ones above go. The 5 levels of the held stroke:
+  during a gesture nothing re-runs the match of a layer above the stroke (its statistics are keyed on the composite
+  version, which the commit moves), as on the canvas backend; the (b) rule re-ran it only because the selection's landings
+  dropped it, and the reference drops it too. The commit makes it exact. The longest block after the two flips in this
+  table is the film panel's flatten 500 ms after a change (135-301 ms, `sampleRegion` building exact chains: C6 c's); after
+  the invert it did not run and after the held stroke it took 3 ms.
+- **Built** (`watchChains`, `staleViewCachesAbove`, `dropStaleViewCaches`):
+  - A landing of the **selection's** chains draws again (`drawSoon`, the navigator) and drops no view cache and no
+    `sceneSig`: the scene canvas is reused and the overlays are drawn from the landed cells. For a live stroke clipped to
+    the selection (`pointer.stroke` with `pointer.clip`) the scene is drawn again, because its view scratch is clipped by
+    the selection's region canvas; the first version of the rule without it left that stroke's preview 77 levels off on 117,037 bytes at 15k.
+  - A landing of the **base's**, a **layer's** or a **mask's** chains (a reader of the screen asked for them) draws the
+    scene again at once and records the base or the layers. When no chain is on its way any more, `_fcacheView`,
+    `_mcacheView` and `_mstatsView` of every layer **above the lowest recorded one** are dropped (all of them for the base,
+    or when a recorded layer was removed meanwhile) and the view is drawn again, once. The drop runs in the last landing's
+    own callback, which runs before the continuations of `mipsSettled()`, so a reader that draws right after it sees the
+    fresh match; a `settled()` waiter covers a queue whose last entries were dropped without a landing.
+  - The same drop also nulls `_mcacheSample` and `_fcacheSample` of those layers, without a draw of its own (review fix).
+    A sampled pass (`sampleRegion`: a plugin's `flatten({ maxSize })`, the film panel's flatten 500 ms after a change)
+    reads exact mips but takes the match's statistics from the screen's slot, `_mstatsView`, when they are there; one that ran
+    while the chains were on their way cached matched pixels (and a filter output made from them) from the coarse
+    picture's statistics, and they outlived the settle until the composite version moved: a 512 px flatten after
+    `mipsSettled()` was 6 levels on 44,434 bytes off (GPU path) and 2 on 9,053 (with an invert filter above) at 4000 x
+    3000.
+  - A sampled pass takes the screen's statistics when they are valid and otherwise makes its own in `_mstatsSample`; it
+    never writes `_mstatsView` any more (found while gating the review fixes). The film panel's 192 px flatten that ran
+    between the settle's drop and the next screen frame made the screen's statistics from its own small picture, and the
+    whole matched layer stayed 5 levels off until the composite changed again: a full `editor` gate run failed the step's
+    (ii) screen with 5 levels on 355,031 bytes on both paths, and a run that put a 192 px flatten there on purpose read 5
+    on 368,150. A 1 x 1 eyedropper pass that came first after a change could store null statistics in that slot too (the
+    hand-over's probable bug; not measured). `_mstatsSample` is reset wherever
+    `_mstatsView` is, and dropped with the sampled caches at the settle. What is left: a sampled pass that comes first
+    after a change still keys its own statistics on the layer only, so a partial one (the eyedropper's box, the wand's fine
+    box) sets them for the sampled passes after it, the film panel's among them, until the screen has drawn (and a matched
+    picture cached from them until the composite changes); statistics of a pass whose region does not hold the layer's
+    ring are C6 (c)'s.
+  - Once per frame instead of once per batch would not have helped: the batches land 20-40 ms apart (16 landings in 324-378
+    ms after the invert above), more than a frame, and each one ran the match again. Meanwhile the screen shows the previous filter
+    output and match, as it shows the coarse picture of the tiles; with a filter layer covering the view that picture turns
+    sharp in one step when the last chain lands (0.74-0.95 s after a flip at 15k) instead of sharpening per batch.
+  - The canvas backend never has a chain on its way (`watchChains` returns at once): no change there, so no CHANGELOG
+    bullet (tile mode is off in the installed app).
+- **`perf_test.py`**: `op()` waits for `ed.mipsSettled()` before its probe starts, so a row is not charged with the landings
+  of the rows before it, and the probe runs until `mipsSettled()` after the operation, so "blocked" includes the landings
+  and redraws the operation caused; "wall" stays the operation's own time (the docstring says so). A new row under invert,
+  "its landings: re-runs [longest block until settled]", counts the screen's colour matches and filter passes run again
+  while the inverted selection's chains land; its bracket is the longest block from the end of the invert until they have
+  landed, whatever held the window (the review renamed it from "[longest block]": it is not a landing's block). Three runs on the final tree (`c6bf-perf1` to `-perf3`) and two with the `watchChains`
+  change reverted, the same benchmark (`c6bf-perf-reverted`, `-reverted2`), alternating:
+
+  | row | reverted | final |
+  |---|---|---|
+  | invert, blocked [wall] | 971 [968], 671 [671] | 864 [864], 1042 [1041], 820 [819] |
+  | &nbsp;&nbsp;its landings: re-runs [longest block until settled] | 30 [514 ms], 32 [51 ms] | 0 [258 ms], 0 [400 ms], 0 [360 ms] |
+  | stroke across the picture (40 dabs) | 170, 150 | 155, 168, 167 |
+  | its commit, band by band | 622, 590 | 610, 623, 587 |
+  | PNG of the composite | 26, 68 | 55, 48, 27 |
+  | getValue (autosave) | 7.7, 6.8 ms | 7.6, 8.9, 5.2 ms |
+  | frame after a whole change, fit; settled [longest block] | 35.3; 653 [127], 27.0; 678 [123] | 29.0; 653 [119], 30.7; 691 [132], 27.6; 607 [94] |
+
+  - One more run on the tree with the review fixes (`c6bf-final-perf`, the ComfyUI queue empty before and after): invert
+    949 [949], its landings 0 [356 ms], stroke across the picture 168, its commit 624, PNG of the composite 11, getValue
+    7.4 ms, magic wand (an object) 488, bucket fill 750, the frame after a whole change at fit 26.5 ms, settled 713 ms
+    [146].
+  - The PNG row is back at the encode's own 26-68 ms on both trees: what (b) charged it was the landings of the rows before,
+    which `op()` now waits for. The commit and `getValue` rows are as the A/B above explains.
+  - The longest block while the invert's chains land on the final tree is not a landing's draw (0 re-runs; the traced
+    landings, `ChainScheduler._land` with its flush, take 3-6 ms). A traced run (`encodeSelectionSoon`, `getValue`, the
+    draws, readbacks over 15 ms) puts the selection's background encode (170-209 ms) and a gap of 260-376 ms in that
+    window, on both trees. The gap sits between two landings and nothing traced ran in it; what held the thread there
+    (the delivery of a worker reply, a collection of landed chain buffers, something else) was not attributed.
+  - "magic wand (an object)" and "bucket fill" read 591-868 and 335-962 ms blocked on the final tree against 280-281 and
+    315-353 reverted in these runs. A traced pair of the same rows read the other way round (final 276 and 348, reverted 512
+    and 574): the rows are the flood's `applyShapeToSelection` (268-345 ms), the selection's encode and readbacks behind
+    the GPU queue, and they move by that much from run to run. Grow, shrink and feather swing between 190 and 570 ms as
+    before.
+- **Gates**:
+  - `editor_test.py` gains `landings_of_the_selection_leave_the_filter_and_the_colour_match` (both backends; on the canvas
+    backend nothing lands, the counts stay 0 and the screens are checked as they are). A 4000 x 3000 document at fit (level
+    1), a painted layer, a colour-matched result over part of it, the selection shown as a tint; on the GPU path, and with
+    an invert filter layer on top on the Canvas 2D path. (i) An invert of a rectangle selection asks the worker for chains
+    (156), and from the end of its frame until they have landed and been drawn the screen passes run `matchStats` and
+    `filteredCanvas` again 0 times; the screen as the landings left it, with no frame of the step's own, is the view drawn
+    from released caches (`releaseCaches({ mirrors: true })`, then the view caches made again once every pyramid level is
+    there) within 3 levels. (ii) A flip of the painted layer below the match (192 chains asked for, two batches) runs the
+    match again exactly once, and on the 2d path the filter, and the screen as the landings left it is the released view
+    within 3 levels. Measured: re-runs 0,0 and 1,0 (GPU), 0,0 and 1,1 (2d); the screens 0 to 2 levels.
+    The review found that the step checked "at least once" and never exercised the lower bound or the base, so a return
+    to the (b) rule for a layer's landings stayed green; it gained three parts. (iii) A flip of a layer on top of the stack
+    (20 chains) runs the match and the filter below it again 0 times, and the screen is exact. (iv) A 512 px flatten
+    (`sampleRegion`, as `flatten({ maxSize: 512 })`) right after a screen frame of a flip, with 192 chains on their way,
+    and the same flatten after they have landed equals the flatten with the sampled caches made again (0 levels). (v) The
+    base replaced under the layers (`setBaseFromCanvas`, `keepLayers`; 176 chains) runs the match again once, and on the
+    2d path the filter. (vi) A 192 px flatten right after `mipsSettled()` of a flip, before the screen's next frame: the
+    screen as the landings left it is the released view within 3 levels. The re-runs are counted as changes of the view's
+    slots in any region pass (a navigator pass would count). Measured: (iii) 0,0 exact 0 on both paths, (iv) 0 on 0
+    bytes, (v) 1,0 (GPU) and 1,1 (2d), (vi) 1 level (GPU) and 0 (2d).
+  - `a_clipped_stroke_takes_the_selection_its_mips_land_with` (b) reads the screen as the landings left it as well, before
+    its own frames, and compares it with the preview built again: 1 level on 115 bytes. Its frames of its own had hidden
+    the rule (the mutation below stayed green before).
+- **Mutations, each red** (tile mode, a fresh instance each, the source restored and compared byte for byte):
+
+  | mutation | red |
+  |---|---|
+  | a landing of the selection's chains drops every layer's view caches (the (b) rule) | the new step: "the landings of the selection's chains ran the colour match 2 and the filter 0 times again" (GPU), "2 and 2" (2d) |
+  | a landing of the selection's chains draws nothing | the new step: the screen after the selection's landings 93 levels on 638,953 bytes (GPU), 95 on 638,024 (2d) |
+  | a landing of a layer's chains drops no view cache | the new step: "the colour match above the flipped layer did not run again" on both paths, the filter's on 2d, the screen 7 levels on 393,967 bytes (GPU) and 33 on 784,176 (2d) |
+  | a landing of the selection's chains does not draw the scene for a stroke clipped to it | `a_clipped_stroke_takes_the_selection_its_mips_land_with`: "the screen the landings of the selection's chains left is not the live preview built again (255 levels on 106,829 bytes)"; green before the step read that screen |
+  | the settle leaves the sampled passes' caches (the code before the review fix) | the new step's (iv): 6 levels on 44,434 bytes (GPU), 2 on 9,053 (2d); with the statistics slot below in place, 6 on 44,434 and 1 on 2,300 |
+  | the settle drops the sampled matched pixels but not the filter output made from them | (iv) on the 2d path: 2 levels on 9,053 bytes; with the slot, 1 on 2,300 |
+  | a sampled pass makes its statistics in the screen's slot (the code before the second fix) | (vi): the screen 5 levels on 355,676 bytes (GPU) and 355,440 (2d) |
+  | a landing of a layer's chains drops every layer's view caches (the (b) rule; green on the step before the review) | (ii): the match 3 times again (and the filter 3 times on 2d), once expected, and the same for (v); (iii): the match 1 and the filter 0 (GPU) / 1 (2d) times again below the layer on top. A first run, before (vi) and the slot, read (ii) as 1 and failed on its screen (5 levels on 355,031 bytes) and on (iii) |
+  | the drop ignores the lowest landed layer and takes the layers below it too | (iii): the match 1 and the filter 0 (GPU) / 1 (2d) times again |
+  | a landing of the base's chains is not recorded | (v): the match 0 times again on both paths, the filter 0 times on 2d |
+
+  Not proven by a gate: the `settled()` waiter for a queue whose last entries were dropped without a landing (the gate
+  steps read the screen after waits that also cover it).
+- **Runs** (fresh instances, strict): `--tiles on` (`c6bf-tiles`) and `--tiles off` (`c6bf-canvas`) with `pixels editor
+  composite commands shape brush film glb ailabel size transparent generate log mcp nodecopy` ALL PASS; `--copy --tiles off
+  pixels editor composite commands`: `c6bf-copy` failed on `commands_test.py` running into the runner's 420 s timeout
+  after every step had printed `[ok]` (the known `Page.captureScreenshot` hang), `c6bf-copy2` ALL PASS with no change in
+  between; `perf:15000x10000` PASS in all five runs above.
+- **Runs after the review fixes** (fresh instances, strict): the first `c6bf-final-tiles` failed `editor` on the (ii) screen
+  (5 levels on 355,031 / 355,469 bytes: the statistics race above, which led to `_mstatsSample`) and `commands` on the
+  known hang after every step printed `[ok]`; the first `c6bf-final-canvas` failed the new (vi) on its GPU path with 193
+  levels on 1,145 bytes, most likely the default selection brush's ring under a real pointer over the window (the ring
+  alone is 203 levels on 576 bytes at fit), so the step now takes the marquee tool. After that: `c6bf-final-canvas`,
+  `c6bf-final-tiles` (the 15 gates each) and `c6bf-final-copy` (`--copy --tiles off pixels editor composite commands`)
+  ALL PASS, `c6bf-final-perf` PASS. Each mutation in the table above ran on a fresh tile-mode instance with the source
+  restored and compared byte for byte.
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in
