@@ -75,9 +75,157 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
-## Where things stand (2026-09-15, 01:30: C6 steps a and b are built and pushed)
+## Where things stand (2026-09-15: 0.1.13 tagged, tiles on by default)
 
-**Read this block first; it supersedes the "Where the next session starts" part of the block below.** `docs/PLAN_BCE.md`
+**Read this block first; it supersedes the "Where the next session starts" part of the block below.** The records are
+`docs/PLAN_BCE.md` §C6 "C6 as built" ((b2), (b3), (c1), (c2), each with its measurements, its mutations and the review fixes)
+and §C7 "The default, as built"; `CHANGELOG.md` 0.1.13 has the user-facing bullets.
+
+**The user's decision (2026-09-15): the tile engine is on by default in the installed app from 0.1.13**, with a switch in
+Settings › Rendering to turn it off (the user is the only user so far and wants to test it on their own 15k files). The
+canvas backend stays as the escape hatch. The node (ComfyUI-InpaintCanvas) is not released with it and keeps its own default
+(off).
+
+**Built since the block below, on `main`, pushed:**
+- **C6 (b2)** 726dc66, the three benchmark rows that moved in (b), broken down by an A/B against 00a3ade:
+  - `getValue` 5-8 ms is the selection's PNG, whose background encode lands during the benchmark's waits: old, on both trees.
+  - The commit's time is the collector working on the commit's own garbage, not the chains in flight.
+  - The PNG row was charged with the landings the rows before it had asked for.
+
+  Built: a landing of the **selection's** chains draws the overlays again and drops no view cache. A landing of a layer's, a
+  mask's or the base's chains drops `_fcacheView` / `_mcacheView` / `_mstatsView` only **above the lowest landed layer**, once,
+  when everything has settled. A sampled pass keeps statistics of its own (`_mstatsSample`). `perf_test.py`'s `op()` waits for
+  `mipsSettled()`. Invert's re-runs while its chains land went from 30 to 0.
+- **C6 (b3)** bc3814d, `layerMatchedPart`: a sampled pass colour-matches only the part of a matched layer it shows. Before, every
+  fine box of the flood matched the whole 2048² result (196-224 ms a box); now 7-27 ms. The wand and bucket rows stay noisy,
+  because they depend on the state the rows before them leave.
+- **C6 (c1)** 81210d1, box reads at level 0:
+  - A film control point's colour is the 3 × 3 mean of the **points layer's input** under it (the user's decision):
+    `flatten({ box, below, exact })` / `readBox`, padded by the new optional filter field `reach`, or cut out of the whole
+    flatten below the points when a filter declares no reach (the look's halation, vignette, normalise, frame).
+  - `Document.selection()` reads its bounds (`selection({ box: true })`); the sample plugin's `mean_color` with a selection,
+    *Selection to new layer* and the probe read boxes.
+  - The bucket's fine rounds read `sel.toCanvas(box)`.
+  - The filter cache key carries the pass's box and scale.
+  - A point add without filter layers takes 109-143 ms at 15k. Under the perf document's film look it is the whole flatten
+    below again: 5.1-5.4 s, the same as before (c1).
+- **C6 (c2)** 1513624 … b1a9afb, six holes in region passes that still made display mirrors, one commit each:
+  - (a) A masked layer, or a live stroke outside the screen's own, composes in a pass scratch (`drawLayerPass`).
+  - (b) `sampleRegion("layer")` reads tiles.
+  - (c) A filter layer's mask reads tiles, and so does a mask stroke on it.
+  - (d) A move / scale / smudge gesture draws the layer from tiles.
+  - (e) A layer's row during a stroke on it comes from its thumbnail. The row shows the picture from before the stroke.
+  - (f) The peek is a base-only pass.
+
+  At 15k: the wand with a masked layer 1.3-1.8 s → 0.3 s, the eyedropper on it 1044 → 15-34 ms, the peek's first frame 558 → 50-60
+  ms, a move drag's first frame 425 → 0.2 ms. The perf footer holds 1 mirror of 16 MB, against 2 of 588 MB.
+- **Review fixes** 10def79 for (b3), (c1) and (c2):
+  - The control points' shader and CPU path now add the pass's origin. A zoomed view had shown the effect shifted since phase 1, on
+    both backends.
+  - A point's colour is padded by the declared reach.
+  - `pad` counts whole canvas pixels.
+  - A level-0 read that is not for the screen takes a region slot of its own.
+  - `flatCache` lets go when the composite version moves.
+  - `_filterMaskView` is released and counted.
+- **The default** 7a89601:
+  - `electron/main/tilemode.js`: `--tiles` / `--no-tiles` > `SCUMBLE_TILES` > a boolean `tiles` in settings.json > **on**, with
+    `from: "default"`. Nothing writes the setting on its own.
+  - Settings › Rendering › *Tile engine*: a box, a note saying what decided this window, and *Restart now*. The button is IPC
+    `app:relaunch` in `electron/main/restart.js`. It saves first (`saveBeforeRestart()`: `syncLayers()`, then waits for the
+    selection's encode), drops `--mcp` / `--headless` / `--cmd` from the relaunch, and installs an update that has already been
+    downloaded.
+  - Gate steps `tile_engine_row_writes_the_setting_and_names_its_source` and `restart_now_saves_the_edits_of_the_last_seconds`,
+    plus `node tools/tilemode_test.js` and `node tools/restart_test.js`.
+- **Memory**, `mem_test.py 15000x10000 --rounds 2`, one document, renderer / GPU process:
+  - Tiles on: about 4.5 GB / 2 GB. Tiles off: 0.7 GB / 7.5 GB. Closed documents are collected on both backends.
+  - Three 15k documents open on tiles: 10.4 GB renderer and a 65 ms pan.
+  - **§C7's memory gate is not met** (at most 300 MB of GPU process per document, 4 rounds, the renderer against the tile bytes).
+    The levels-tick drift check reads FAIL (+22 %). The default went on anyway, on the user's decision.
+
+**The release.**
+- The commit that carries this block is tagged `v0.1.13`, and the workflow builds a **draft**. **Publishing it is the user's
+  step** (`gh release edit v0.1.13 --draft=false`); only then do installed apps update.
+- The v0.1.11 draft and the merged branches (`c2-tiles`, `fix-mask-undo`, `px-spike`, `c0-editor-source`) are still the user's
+  call.
+
+Gates:
+- **Dev, on 7a89601** (fresh instances, strict), all ALL PASS:
+  - `rel-final-tiles` and `rel-final-default`, the fifteen gates each.
+  - `rel-final-canvas` (`--tiles off pixels editor composite commands`), on the re-run. The first run hit
+    `live_stroke_preview_shows_what_the_commit_writes` on canvases, 157 levels, a flake.
+  - Before the review fixes: `rel-tiles`, `rel-canvas`, `rel-default` and `rel-copy`.
+  - `rel-smoke`: a real Flux run, PASS, the queue empty before and after. The run took **387 s**, against the runner's 420 s timeout
+    (91 s on the exe right after). Probably ComfyUI loading the models again after the user's own jobs; not checked.
+- **Built:** `npm run dist` → `Scumble Setup 0.1.13.exe`.
+- **Against `dist/win-unpacked/Scumble.exe`**, each on its own profile, all ALL PASS:
+  - `rel-exe`: pixels editor commands ailabel brush glb composite mcp, with no `--tiles`. The backend step and the row read
+    `{ tiles: true, from: "default" }`.
+  - `rel-exe-canvas`: `--tiles off`, pixels editor composite commands.
+  - `rel-exe-smoke`: a real Flux run in 91 s, the queue empty before and after.
+
+**What the user is to test:** their own 15k file in the installed 0.1.13, with tiles on. If it stutters, ask for two things:
+- **which action** it was: pan, zoom, brush, mask, a selection operation, the wand, Generate or export;
+- **Settings › Rendering's numbers** while it stutters, and *Help › Console › Copy all* for any error.
+
+Then the same with the engine off (untick the box, *Restart now*) for comparison. What is still slow on purpose is listed in the
+CHANGELOG's lead bullet:
+- the smudge brush;
+- a wand across the whole picture, and invert;
+- whole flattens: renders, exports, the object tool, upsampling, `screenshot`;
+- a film point under a film look;
+- whole-layer copies: background removal, select by text, select from layer, the autosave;
+- several 15k tabs open at once.
+
+**Where the next session starts:**
+1. **C6 (c) slices 3 to 7** of `dist/c6map/c/critic.md` §5.
+   - **Where the maps are:** the critic and the five maps it checked (`commands-plugins.md`, `match.md`, `objects.md`,
+     `region-holes.md`, `sample-region.md`) are copied there from the session scratchpad, with the user's decisions as
+     `decisions.md`. The build / fix reports of (b2) and (c1) sit in `dist/c6map/` (`b2-ab.md`, `b2-build.md`, `b2-fix.md`,
+     `c1-build.md`, `c1-fix.md`), the release default's in `dist/c6map/rel/`. All of this is git-ignored.
+   - **What is done:** slice 1 is (c1) and slice 2 is (c2) a-f. Slice 0's A/B was (b2).
+   - **The maps are older than the code:** they were written at 987961b, before (b2) … (c2). Line numbers have moved, and some
+     items are done: the bucket's `toCanvas`, the filter cache key, `_mstatsSample`, the origin of the control points.
+   - **What is left:**
+     - **3:** a one-shot exact reader in `inpaint_tiles.js`: a `keep` separate from `screen`, a landing handed to the read that
+       waits for it, and the thumbnail route.
+     - **4:** async readers on it: the film panel's `flatten({ maxSize, settled })`, the glb backdrop, the flood's coarse pass.
+     - **5:** `promptContextCanvas` and `screenshot`.
+     - **6:** the helper inputs: `sourceCanvas`, the cutout input, `segmentPoint`, the input hash.
+     - **7:** colour match:
+       - 7a: the null-statistics race, which (b2) / (b3) left and reproduced (a statistics drop between the flood's passes
+         makes the wand select a different region);
+       - 7b: the matched region view;
+       - 7c: statistics independent of the pass, per decision 1 below;
+       - 7d: GPU uniforms.
+   - Critic §6 lists the open measurement decisions.
+2. **The user's decisions for C6 (c)** (2026-09-15), copied from `decisions.md`:
+   1. Colour match statistics independent of the pass: **(a)**. The screen, the navigator, the eyedropper, the wand / bucket
+      samples and the plugin panels share one statistics entry per layer per change, taken from levels of the whole padded
+      surroundings. The full-resolution flatten (exports, runs, uploads) keeps its own `_mstats`, and its output stays
+      byte-identical. Measure during the build how far (b) (the export on the same entry) would move real inpaint results,
+      including a sampling that keeps texture (point samples instead of box means), and report it. (b) comes back to the user
+      only with those numbers.
+   2. Film control points read the colour of the points layer's input (everything below the points layer) under the point, not
+      the whole composite: **(b)**. CHANGELOG bullet. *(Built in (c1).)*
+   3. `sample.mean_color` without a selection stays an exact full-resolution read: **(a)** (phase E makes it fast). With a
+      selection it reads the selection's bounds. *(Built in (c1).)*
+3. **C6 (d), the base:** item 3 of the block below.
+4. **C4:** item 4 of the block below, including `snapshotRect`'s box that shares no tile unless it is tile-aligned, and the
+   `frozen` counter.
+5. **The smudge tool on tiles:** 400-750 ms per move at 15k, read from the layer's mirror; it needs its own step.
+6. **Measured in the release review and not broken down** (§C7 "The default, as built"):
+   - A cold whole flatten on tiles: 4.7-11.4 s with a film look, 0.9-2.5 s without, against 0.22-0.31 s on canvases.
+   - `perf_test.py`'s "full composite" worst: 1.9-2.7 s in C5, 4.9-8.0 s since C6 (b).
+   - A whole-layer `toCanvas()` 184-253 ms.
+   - Several open 15k documents: the levels tick 49-64 ms.
+
+   The rest of §C7 is open too: the node's browser, Firefox, the 30k gate, the docs list, the memory gate.
+7. **The node repo** is still at 647db5d, behind by C3, C5, C6 and this default. `nodecopy` passes. Build it into the real repo only
+   when a node version is meant to ship.
+
+## Where things stood (2026-09-15, 01:30: C6 steps a and b are built and pushed)
+
+**The block above supersedes this one's "Where the next session starts".** `docs/PLAN_BCE.md`
 §C6 "C6 as built" is the record (measurements, decisions, every mutation with its red, the review fixes). The user stopped the
 session here on purpose ("commit und push, dann Stop bis morgen").
 

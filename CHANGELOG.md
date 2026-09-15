@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.13 — unreleased
+## 0.1.13 — 2026-09-15
 
 - **The tile engine is on.** Scumble now keeps the picture, every layer, every mask and the
   selection in small tiles of 256 px, and the screen draws only the tiles the view shows, at
