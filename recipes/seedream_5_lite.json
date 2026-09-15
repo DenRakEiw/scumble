@@ -3,9 +3,57 @@
   "kind": "provider",
   "name": "Seedream 5.0 Lite",
   "family": "ByteDance",
-  "description": "ByteDance's fast Seedream 5 with built-in reasoning, up to 3K. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "ByteDance's fast Seedream 5 with built-in reasoning, up to 3K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {
+    "toapis": {
+      "model": "doubao-seedream-5-0",
+      "input": "edit",
+      "options": {
+        "size": "preset",
+        "ratios": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "3:2",
+          "2:3",
+          "21:9",
+          "9:21"
+        ],
+        "tiers": {
+          "2K": 2048,
+          "3K": 3072
+        },
+        "tier_key": "metadata.resolution",
+        "max_images": 10
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "metadata.resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "2K",
+              "3K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          2048,
+          3072
+        ]
+      },
+      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The model takes aspect presets: a crop of another shape comes back re-framed and is centre-cropped. Resolution 2K or 3K only (no 1K or 4K on ToAPIs)."
+    },
     "fal": {
       "model": "fal-ai/bytedance/seedream/v5/lite/edit",
       "input": "edit",

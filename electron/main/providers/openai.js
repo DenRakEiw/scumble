@@ -15,7 +15,7 @@
 // `stream` / `partial_images` are not used: the app wants the finished image, not previews.
 "use strict";
 
-const { readError, closestSize } = require("./util");
+const { readError, closestSize, fitPixels } = require("./util");
 
 const STANDARD_SIZES = ["1024x1024", "1536x1024", "1024x1536"];
 
@@ -38,33 +38,7 @@ function sizeRules(model) {
 function sizeFor(model, w, h) {
     const r = sizeRules(model);
     if (!r.custom) return closestSize(w, h, STANDARD_SIZES);
-    let cw = Math.max(1, Math.round(w)), ch = Math.max(1, Math.round(h));
-    if (r.maxRatio && Math.max(cw, ch) / Math.min(cw, ch) > r.maxRatio) {
-        // a very long crop: keep the short edge and pull the long one back to the ratio
-        if (cw > ch) cw = Math.round(ch * r.maxRatio); else ch = Math.round(cw * r.maxRatio);
-    }
-    const fit = (k) => { cw = Math.max(1, Math.round(cw * k)); ch = Math.max(1, Math.round(ch * k)); };
-    if (Math.max(cw, ch) > r.max) fit(r.max / Math.max(cw, ch));
-    if (r.maxPixels && cw * ch > r.maxPixels) fit(Math.sqrt(r.maxPixels / (cw * ch)));
-    if (r.minPixels && cw * ch < r.minPixels) {
-        // too few pixels for the model: grow, but never past an edge or the area ceiling
-        const k = Math.min(Math.sqrt(r.minPixels / (cw * ch)), r.max / Math.max(cw, ch));
-        fit(k);
-    }
-    const snap = (v) => Math.max(r.step, Math.min(r.max, Math.round(v / r.step) * r.step));
-    cw = snap(cw); ch = snap(ch);
-    // rounding can drop back under the minimum: take the next step up on both edges
-    while (r.minPixels && cw * ch < r.minPixels && cw + r.step <= r.max && ch + r.step <= r.max) { cw += r.step; ch += r.step; }
-    // stepping in whole multiples drifts the ratio, and 3:1 is a hard refusal: widen the
-    // short edge rather than cutting the long one, which also keeps the pixel floor met
-    if (r.maxRatio) {
-        const need = (long) => Math.min(r.max, Math.max(r.step, Math.ceil(long / r.maxRatio / r.step) * r.step));
-        if (cw > ch * r.maxRatio) ch = need(cw);
-        else if (ch > cw * r.maxRatio) cw = need(ch);
-    }
-    if (r.maxPixels && cw * ch > r.maxPixels) {
-        while (cw * ch > r.maxPixels && cw > r.step && ch > r.step) { cw -= r.step; ch -= r.step; }
-    }
+    const [cw, ch] = fitPixels(w, h, r);
     return `${cw}x${ch}`;
 }
 

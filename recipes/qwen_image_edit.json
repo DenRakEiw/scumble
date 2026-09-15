@@ -3,9 +3,65 @@
   "kind": "provider",
   "name": "Qwen Image Edit",
   "family": "Qwen",
-  "description": "Alibaba's Qwen image editor; fal's inpaint endpoint takes the mask, Replicate's edits the whole crop. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Alibaba's Qwen image editor; fal's inpaint endpoint takes the mask, Replicate's edits the whole crop. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {
+    "toapis": {
+      "model": "qwen-image-3.0",
+      "input": "edit",
+      "fixed": {
+        "metadata.prompt_extend": false
+      },
+      "options": {
+        "size": "pixels",
+        "pixels": {
+          "step": 16,
+          "max": 4096,
+          "minPixels": 262144,
+          "maxPixels": 4194304,
+          "maxRatio": 8
+        },
+        "seed": "metadata.seed",
+        "negative": "metadata.negative_prompt",
+        "max_images": 3,
+        "channels": {
+          "standard": {},
+          "pro": {
+            "model": "qwen-image-3.0-pro"
+          }
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "channel",
+          "label": "Channel",
+          "spec": [
+            [
+              "standard",
+              "pro"
+            ],
+            {
+              "default": "standard"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 2048,
+        "step": 16,
+        "pixels": 4194304,
+        "minPixels": 262144
+      },
+      "text": {
+        "sizes": [
+          1024,
+          1536,
+          2048
+        ]
+      },
+      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Qwen Image 3.0 (standard) or 3.0 Pro, not the inpaint model: Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The crop goes at its own size in pixels, with the seed and the negative prompt; the model's own prompt rewriting is switched off. At most two reference layers (three images in all)."
+    },
     "fal": {
       "model": "fal-ai/qwen-image-edit/inpaint",
       "input": "fill",

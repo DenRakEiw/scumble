@@ -436,6 +436,7 @@ function installIpc() {
     ipcMain.handle("keys:clear", (_e, name) => keys.clear(name));
     ipcMain.handle("providers:list", () => providers.describeAll());
     ipcMain.handle("provider:edit", (_e, request) => providers.edit(request));
+    ipcMain.handle("provider:balance", (_e, id) => providers.balance(id));
     // vision language models on the provider keys (prompt upsampling)
     ipcMain.handle("llm:list", () => llm.list());
     ipcMain.handle("llm:ask", (_e, req) => llm.ask(req));

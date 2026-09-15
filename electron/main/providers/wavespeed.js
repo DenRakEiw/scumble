@@ -16,7 +16,7 @@
 // Referral: the key link (keyUrl) carries DenRakEiw's WaveSpeed referral code.
 "use strict";
 
-const { fetchImage, readError, sleep, num } = require("./util");
+const { fetchImage, readError, sleep, num, closestAspect } = require("./util");
 
 const BASE = "https://api.wavespeed.ai/api/v3/";
 const POLL_MS = 2000;
@@ -44,19 +44,6 @@ async function upload(ctx, bytes, name) {
     const d = ((await r.json()) || {}).data || {};
     if (!d.download_url) throw new Error("WaveSpeed upload answered without download_url: " + JSON.stringify(d).slice(0, 200));
     return d.download_url;
-}
-
-/** The preset ("W:H") whose aspect is closest to w:h. */
-function closestAspect(w, h, presets) {
-    const want = Math.log(w / h);
-    let best = presets[0], bestD = Infinity;
-    for (const p of presets) {
-        const [a, b] = String(p).split(":").map(Number);
-        if (!a || !b) continue;
-        const d = Math.abs(Math.log(a / b) - want);
-        if (d < bestD) { best = p; bestD = d; }
-    }
-    return best;
 }
 
 /** "W*H" for the crop, fitted into max_side and a multiple of 16 (the fill models' size input). */

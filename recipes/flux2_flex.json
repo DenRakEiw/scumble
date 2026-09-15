@@ -3,9 +3,55 @@
   "kind": "provider",
   "name": "FLUX.2 [flex]",
   "family": "Black Forest Labs",
-  "description": "FLUX.2 with exposed steps and guidance, up to ten references. Also on WaveSpeedAI. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "FLUX.2 with exposed steps and guidance, up to ten references. Also on WaveSpeedAI. Also on ToAPIs. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "bfl",
   "providers": {
+    "toapis": {
+      "model": "flux-2-flex",
+      "input": "edit",
+      "options": {
+        "size": "preset",
+        "ratios": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "3:2",
+          "2:3"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048
+        },
+        "tier_key": "metadata.resolution",
+        "max_images": 8
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "metadata.resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024,
+          2048
+        ]
+      },
+      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The model takes aspect presets: a crop of another shape comes back re-framed and is centre-cropped. Up to seven reference layers; the crop keeps BFL's 1440 px ceiling until a live run shows what ToAPIs takes."
+    },
     "bfl": {
       "model": "flux-2-flex",
       "input": "edit",

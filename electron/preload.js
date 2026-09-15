@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld("scumble", {
     providers: {
         list: () => ipcRenderer.invoke("providers:list"),
         edit: (request) => ipcRenderer.invoke("provider:edit", request),
+        balance: (id) => ipcRenderer.invoke("provider:balance", id),
     },
     llm: {
         list: () => ipcRenderer.invoke("llm:list"),

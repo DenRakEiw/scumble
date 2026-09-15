@@ -19,7 +19,7 @@
 // Recipe settings are copied by key, so a setting's key is the full input key.
 "use strict";
 
-const { readError, sleep, num } = require("./util");
+const { readError, sleep, num, closestAspect } = require("./util");
 
 const BASE = "https://cloud.comfy.org";
 const POLL_MS = 2000;
@@ -30,18 +30,6 @@ function fit(w, h, lo, hi, step) {
     if (Math.min(w, h) * k < lo) k = lo / Math.min(w, h);
     const r = (v) => Math.max(lo, Math.min(hi, Math.round(v * k / step) * step));
     return [r(w), r(h)];
-}
-
-function closestAspect(w, h, presets) {
-    const want = Math.log(w / h);
-    let best = presets[0], bestD = Infinity;
-    for (const p of presets) {
-        const [a, b] = String(p).split(":").map(Number);
-        if (!a || !b) continue;
-        const d = Math.abs(Math.log(a / b) - want);
-        if (d < bestD) { best = p; bestD = d; }
-    }
-    return best;
 }
 
 const GEMINI_AR = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];

@@ -3,9 +3,118 @@
   "kind": "provider",
   "name": "Nano Banana 2 (Gemini 3.1 Flash Image)",
   "family": "Google",
-  "description": "Google's generalist image model, 0.5K to 4K. Keys: Google AI Studio, fal.ai or Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Google's generalist image model, 0.5K to 4K. Keys: Google AI Studio, fal.ai or Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {
+    "toapis": {
+      "model": "gemini-3.1-flash-image-official",
+      "input": "edit",
+      "options": {
+        "size": "preset",
+        "ratios": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "21:9",
+          "4:1",
+          "8:1"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048,
+          "4K": 4096
+        },
+        "tier_key": "metadata.resolution",
+        "max_images": 14,
+        "channels": {
+          "official": {},
+          "vip": {
+            "model": "gemini-3.1-flash-image-preview-vip",
+            "urls": "objects",
+            "ratios": [
+              "1:1",
+              "2:3",
+              "3:2",
+              "3:4",
+              "4:3",
+              "4:5",
+              "5:4",
+              "9:16",
+              "16:9",
+              "21:9"
+            ]
+          },
+          "standard": {
+            "model": "gemini-3.1-flash-image-preview",
+            "urls": "objects",
+            "ratios": [
+              "1:1",
+              "3:2",
+              "2:3",
+              "4:3",
+              "3:4",
+              "16:9",
+              "9:16",
+              "5:4",
+              "4:5",
+              "21:9",
+              "1:4",
+              "4:1",
+              "1:8",
+              "8:1"
+            ],
+            "max_images": 6
+          }
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "channel",
+          "label": "Channel",
+          "spec": [
+            [
+              "official",
+              "vip",
+              "standard"
+            ],
+            {
+              "default": "official"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "metadata.resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024,
+          2048,
+          4096
+        ]
+      },
+      "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The model takes aspect presets: a crop of another shape comes back re-framed and is centre-cropped. Channel official is Google's own cloud (Vertex AI); vip and standard cost less, and their image list form is not verified."
+    },
     "gemini": {
       "model": "gemini-3.1-flash-image",
       "input": "fill",
