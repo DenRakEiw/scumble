@@ -5,7 +5,7 @@
 // the sky changes the sky and not the roof inside the circle. The tool (U) places, moves and
 // resizes points on the canvas; the layer row shows sliders for the selected point.
 
-import { PRELUDE, luma, clamp01, sstep, mix, loop, blur, num, pct, makeRunner, shader, makeCanvas, resolve } from "./common.js";
+import { PRELUDE, luma, clamp01, sstep, mix, loop, blur, num, pct, makeRunner, shader } from "./common.js";
 
 const FILTER_ID = "film.points";
 const MAX_POINTS = 64;
@@ -57,18 +57,28 @@ function pointsTexture(points, scale) {
     return { data, width: 4, height: Math.max(1, n), n };
 }
 
-/** Colour under image point x, y (3 x 3 mean) from the layer's cached input, else from `fallback()`. */
-function sampleColor(layer, x, y, fallback) {
-    const s = layer && layer._fxCache && layer._fxCache.sample;
-    let canvas, sx, sy;
-    if (s) { canvas = s.canvas; sx = s.sx; sy = s.sy; }
-    else { canvas = fallback(); sx = 1; sy = 1; }
-    const ctx = canvas.getContext("2d");
-    const cx = Math.round(x * sx), cy = Math.round(y * sy);
+/**
+ * How much of the picture around a point is composited to read its colour: the filters below the points layer see
+ * that margin of the picture, so a blur-based one (glow, halation, tonal contrast at their default radii) gives the
+ * point the colour the whole picture has there. Measured against a full flatten of the layers below (docs/PLAN_BCE.md
+ * §C6 c1): glow (40 px) 5 levels without a margin, 1 at 64, 0 at 128; halation (30 px) 0 at 64; tonal contrast (40 px)
+ * 1 at 128. The film look's own halation is sized from what the pass composites and never matches the whole picture's.
+ */
+const POINT_PAD = 128;
+
+/**
+ * The colour a point compares every pixel with: the 3 x 3 mean (2 x 2 at a corner) under image point x, y of the
+ * points layer's input, the picture of every layer below it, at full resolution. Read as one small box of that
+ * picture (C6 c1). It used to come from a 256 px copy of the input the last full-resolution render had left (stale
+ * after any change below), or else from the whole flattened picture with the points' own effect and the layers above.
+ */
+function sampleColor(doc, layer, x, y) {
+    const cx = Math.round(x), cy = Math.round(y);
     const x0 = Math.max(0, cx - 1), y0 = Math.max(0, cy - 1);
-    const w = Math.min(3, canvas.width - x0), h = Math.min(3, canvas.height - y0);
-    if (w <= 0 || h <= 0) return [0.5, 0, 0];
-    const d = ctx.getImageData(x0, y0, w, h).data;
+    const x1 = Math.min(doc.width, cx + 2), y1 = Math.min(doc.height, cy + 2);
+    if (x1 <= x0 || y1 <= y0) return [0.5, 0, 0];
+    const canvas = doc.flatten({ box: [x0, y0, x1, y1], below: layer.id, pad: POINT_PAD });
+    const d = canvas.getContext("2d").getImageData(0, 0, x1 - x0, y1 - y0).data;
     let r = 0, g = 0, b = 0, n = 0;
     for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
     return opp(r / n / 255, g / n / 255, b / n / 255);
@@ -88,15 +98,9 @@ export function makePoints(scumble) {
             { key: "strength", label: "Strength", min: 0, max: 100, step: 1, default: 100, unit: "%", keepPreset: true },
         ],
         control: (layer, param, callbacks) => buildControl(layer, param, callbacks),
+        reach: (p) => (Array.isArray(p.points) && p.points.some((q) => num(q.structure, 0) !== 0) ? 16 : 0),   // its structure blur (4 px)
         apply(src, p, info) {
-            const cache = info.cache || (info.cache = {});
-            // a small copy of the input for colour sampling when a point is placed (image coordinates via sx, sy)
             const scale = info.scale || 1;
-            const imgW = src.width / scale, imgH = src.height / scale;
-            const k = Math.min(1, 256 / Math.max(src.width, src.height));
-            const small = makeCanvas(Math.round(src.width * k), Math.round(src.height * k));
-            small.getContext("2d").drawImage(resolve(src), 0, 0, small.width, small.height);   // src may be a GPU surface
-            cache.sample = { canvas: small, sx: small.width / imgW, sy: small.height / imgH };
             const points = Array.isArray(p.points) ? p.points : [];
             const strength = pct(p.strength, 100);
             if (!points.length || strength <= 0) return src;
@@ -151,7 +155,7 @@ export function makePoints(scumble) {
         const points = Array.isArray(layer.params.points) ? layer.params.points.slice() : [];
         const id = points.reduce((m, q) => Math.max(m, q.id || 0), 0) + 1;
         const pt = { id, x: Math.round(x), y: Math.round(y), r: Math.round(r), tol: 50, ev: 0, contrast: 0, sat: 0, warmth: 0, structure: 0, ...attrs };
-        pt.color = attrs.color || sampleColor(layer, pt.x, pt.y, () => doc.flatten());
+        pt.color = attrs.color || sampleColor(doc, layer, pt.x, pt.y);
         points.push(pt);
         layer._fpSel = id;
         return { points, pt };
@@ -232,7 +236,7 @@ export function makePoints(scumble) {
             const layer = doc.rawLayer(drag.layerId);
             if (drag.changed) {
                 const points = (layer.params.points || []).map((q) => ({ ...q }));
-                if (drag.mode === "move") { const pt = points.find((q) => q.id === drag.ptId); if (pt) pt.color = sampleColor(layer, pt.x, pt.y, () => doc.flatten()); }
+                if (drag.mode === "move") { const pt = points.find((q) => q.id === drag.ptId); if (pt) pt.color = sampleColor(doc, layer, pt.x, pt.y); }
                 doc.setFilterParams(layer.id, { points });
             }
             drag = null;

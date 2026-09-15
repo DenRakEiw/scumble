@@ -1596,6 +1596,33 @@ out.filled = { left: at(1000, 1400), right: at(4000, 1600), red: at(2500, 500), 
 if (out.filled.left[1] !== 255 || out.filled.right[1] !== 255 || out.filled.red[3] !== 0 || out.filled.white[3] !== 0) throw new Error("bucket pixels: " + JSON.stringify(out.filled));
 await ed.undoStep();
 if (at(4000, 1600)[3] !== 0) throw new Error("the bucket's undo did not clear the fill");
+// C6 (c1): the bucket inside a selection floods box by box, and each box takes its part of the selection, not a canvas
+// of the whole selection per round (572 MB at 15000 x 10000). The selection cuts the right blob at x = 3900.
+ed.sel.clear();
+ed.sel.fill([3900, 1000, 4600, 2100], "#ff0000");
+ed.markSelectionChanged([3900, 1000, 4600, 2100]);
+ed.getBounds();
+{
+    const selObj = ed.sel, spyName = ed.tileMode ? "_materialise" : "toCanvas";
+    const own = Object.prototype.hasOwnProperty.call(selObj, spyName), orig = selObj[spyName];
+    const areas = [];
+    selObj[spyName] = function (r) {
+        // the autosave's background encode of the selection is a whole read of its own, not the flood's
+        if (!/encodeSelectionSoon/.test(new Error().stack)) areas.push(r ? (r[2] - r[0]) * (r[3] - r[1]) : W * H);
+        return orig.call(this, r);
+    };
+    const fr = { rounds: null, box: null };
+    ed.floodRegion = async (x, y, o) => { const r = await oFlood(x, y, o); fr.rounds = r.rounds; fr.box = [r.x, r.y, r.w, r.h]; return r; };
+    try { await ed.bucketFill(4100, 1600); } finally { if (own) selObj[spyName] = orig; else delete selObj[spyName]; ed.floodRegion = oFlood; }
+    out.bucketInSelection = { rounds: fr.rounds, box: fr.box, selectionReads: areas };
+    if (!(fr.rounds >= 1)) throw new Error("the bucket in a selection did not take the box path: " + JSON.stringify(fr));
+    if (!areas.length) throw new Error("the bucket in a selection read no part of the selection (the spy saw nothing)");
+    if (areas.some((a) => a >= W * H)) throw new Error("the bucket read the whole selection for a box: " + JSON.stringify(areas));
+    const inside = at(4100, 1600), outside = at(3700, 1600);
+    if (inside[1] !== 255 || outside[3] !== 0) throw new Error("the bucket in a selection filled " + JSON.stringify({ inside, outside }));
+    await ed.undoStep();
+    ed.clearSelection();
+}
 // the eyedropper composites one pixel: the red block through the (empty) layer
 ed.pickColor(2500, 500);
 out.picked = ed.color;
@@ -1668,6 +1695,36 @@ for (const s of [1, 0.5]) {
 }
 await run("remove_layer", { layer: L.id, doc: window.__t });
 return out;
+"""),
+    ("a_sampled_pass_keys_its_filter_output_on_its_box_and_scale", """
+// C6 (c1): a filter layer's output in a sampled pass was cached under the pass's size and origin only, so a pass over
+// another box or at another scale with the same size and origin (the film panel's 192 px picture of the whole image,
+// then a 192 x 128 box at the corner at full resolution) got the first pass's filter output. Both backends.
+await run("new_canvas", { width: 1200, height: 800, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    for (let i = 0; i < 60; i++) { x.fillStyle = `hsl(${(i * 37) % 360},70%,${25 + (i * 11) % 50}%)`; x.fillRect((i * 97) % W, (i * 53) % H, 90, 70); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "key.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const fx = ed.addFilterLayer("invert");
+ed.renderLayers(); ed.fitView(); ed.draw();
+await ed.mipsSettled();
+const small = ed.sampleRegion("image", [0, 0, W, H], 192 / W, { forRun: true });   // 192 x 128 at the origin
+const box = ed.sampleRegion("image", [0, 0, 192, 128], 1, { forRun: true });         // 192 x 128 at the origin too
+if (small.width !== box.width || small.height !== box.height) throw new Error("the two passes are not the same size: " + [small.width, small.height, box.width, box.height]);
+const flat = ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, 192, 128).data;
+const got = box.getContext("2d").getImageData(0, 0, 192, 128).data;
+let max = 0, n = 0;
+for (let i = 0; i < got.length; i++) { const d = Math.abs(got[i] - flat[i]); if (d > max) max = d; if (d) n++; }
+ed.removeLayer(fx.id);
+if (max > 1) throw new Error(`the full-resolution box after the 192 px picture differs from the flatten by ${max} levels on ${n} bytes: it took the other pass's filter output`);
+return { max, bytes: n };
 """),
     ("stroke_buffers_cover_the_gesture_not_the_layer", """
 // Phase A item 2 (docs/PLAN_TILES.md): a stroke's buffer and its selection clip cover what the

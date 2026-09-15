@@ -4597,7 +4597,10 @@ class InpaintEditor {
                 const args = { bitmap, x, y, tolerance, contiguous, color };
                 if (clipping) {
                     // only the box of the selection: a crop, not a copy of the whole canvas
-                    const selBitmap = await createImageBitmap(this.sel.toCanvas(), at[0], at[1], W, H);
+                    // C6 (c1): the box's part of the selection, not a canvas of the whole selection per round (572 MB at 15k)
+                    // (a whole-image flood keeps toCanvas(): on canvases that is the selection's own canvas, no copy)
+                    const all = !at[0] && !at[1] && W === this.width && H === this.height;
+                    const selBitmap = await createImageBitmap(this.sel.toCanvas(all ? null : [at[0], at[1], at[0] + W, at[1] + H]));
                     transfer.push(selBitmap);
                     args.selBitmap = selBitmap;
                 }
@@ -4679,6 +4682,17 @@ class InpaintEditor {
     sampleRegion(source, box, scale, opts = {}) {
         const [x0, y0, x1, y1] = box;
         const w = Math.max(1, Math.round((x1 - x0) * scale)), h = Math.max(1, Math.round((y1 - y0) * scale));
+        // C6 (c1): `pad` image pixels of the surroundings are composited too (clamped to the image), so a filter that reads
+        // its neighbours sees them, and the canvas handed back is still the box: a CPU canvas, read back without a GPU wait
+        const pad = source !== "layer" && opts.pad > 0 ? Math.ceil(opts.pad) : 0;
+        if (pad) {
+            const pb = [Math.max(0, x0 - pad), Math.max(0, y0 - pad), Math.min(this.width, x1 + pad), Math.min(this.height, y1 + pad)];
+            const big = this.sampleRegion(source, pb, scale, { ...opts, pad: 0 });
+            const c = makeCanvas(w, h);
+            const cctx = c.getContext("2d", { willReadFrequently: true });
+            cctx.drawImage(big, Math.round((pb[0] - x0) * scale), Math.round((pb[1] - y0) * scale));
+            return c;
+        }
         const c = makeCanvas(w, h);
         const ctx = c.getContext("2d");
         ctx.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
@@ -4699,6 +4713,67 @@ class InpaintEditor {
         } finally {
             this.viewPass = prev;
         }
+        return c;
+    }
+
+    /**
+     * How far around a pixel (in image pixels) the composite of the layers below `upTo` (all of them when null) reads,
+     * for a read of `box` ([x0, y0, x1, y1]) at scale 1 that has to equal the full-resolution flatten there (C6 c1):
+     * the sum of the visible filter layers' `reach` (a filter reads that far around each pixel of what is below it,
+     * so the reaches of stacked filters add up). Infinity when a box of any margin cannot give those pixels: a filter
+     * that does not say how far it reads (or depends on the picture's size, vignette, normalise, a frame), a
+     * colour-matched layer near the box (its statistics are the whole layer's surroundings), or a layer drawn scaled,
+     * at a fractional position or through a pending transform. Measured on tiles against the whole flatten: a text layer
+     * (rendered at twice its size) 1 level at opacity 1 and 2 at 0.8 on its anti-aliased edge, a layer at a fractional
+     * position 13 levels on its last column and row; unscaled layers at whole positions 0.
+     */
+    boxReach(box, { forRun = true, upTo = null } = {}) {
+        const end = upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
+        const shown = [];
+        let reach = 0;
+        for (let i = 0; i < end; i++) {
+            const l = this.layers[i];
+            if (this.compareShow && l.kind === "result" && l.id !== this.compareShow) continue;
+            if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
+            if (l.kind === "filter") {
+                const def = FILTERS[l.filter];
+                let r = def ? def.reach : undefined;
+                if (typeof r === "function") { try { r = r(l.params || {}); } catch (_) { r = undefined; } }
+                if (!(r >= 0) || !Number.isFinite(r)) return Infinity;
+                reach += r;
+                continue;
+            }
+            if (forRun && (this.isControl(l) || this.isReference(l))) continue;
+            shown.push(l);
+        }
+        const bs = this.basePx;
+        if (bs && (bs.width !== this.width || bs.height !== this.height)) return Infinity;
+        const b = [box[0] - reach, box[1] - reach, box[2] + reach, box[3] + reach];
+        for (const l of shown) {
+            const near = l.x < b[2] && l.x + l.w > b[0] && l.y < b[3] && l.y + l.h > b[1];
+            if (!near) continue;
+            if (this.matchActive(l) || (this.pending && this.pending.layer === l)) return Infinity;
+            const px = l.px;
+            if (px.width !== l.w || px.height !== l.h || l.x !== Math.round(l.x) || l.y !== Math.round(l.y)) return Infinity;
+        }
+        return reach;
+    }
+
+    /**
+     * The pixels of `box` ([x0, y0, x1, y1], whole image pixels inside the image) as the full-resolution flatten has
+     * them (C6 c1), as a CPU canvas of the box: a region pass at level 0 over the box with a margin as wide as
+     * `boxReach` says, or, when no margin can give them, the box cut out of the whole flatten (`compositeCanvas`,
+     * kept until the composite changes). `upTo` stops before that layer index. Byte for byte on a stack of
+     * pointwise layers; a blur in the stack reads the same pixels, and Skia's blur of a smaller canvas comes out up to
+     * 1 to 3 levels apart (measured, docs/PLAN_BCE.md §C6 c1).
+     */
+    readBox(box, { forRun = true, upTo = null } = {}) {
+        const reach = this.boxReach(box, { forRun, upTo });
+        const o = upTo == null ? { forRun } : { forRun, upTo };
+        if (Number.isFinite(reach)) return this.sampleRegion("image", box, 1, { ...o, pad: reach });
+        const flat = this.compositeCanvas(o);
+        const c = makeCanvas(box[2] - box[0], box[3] - box[1]);
+        c.getContext("2d", { willReadFrequently: true }).drawImage(flat, -box[0], -box[1]);
         return c;
     }
 
@@ -7218,7 +7293,7 @@ class InpaintEditor {
      */
     filteredCanvas(layer, below, forRun, preview, keepSurface = false) {
         const vp = this.viewPass;
-        const key = JSON.stringify([layer.filter, layer.params, layer.lut && layer.lut.ref && layer.lut.ref.filename, layer.plate && layer.plate.ref && layer.plate.ref.filename, !!forRun, !!preview, below.width, below.height, vp ? [vp.x, vp.y] : 0]);
+        const key = JSON.stringify([layer.filter, layer.params, layer.lut && layer.lut.ref && layer.lut.ref.filename, layer.plate && layer.plate.ref && layer.plate.ref.filename, !!forRun, !!preview, below.width, below.height, vp ? [vp.x, vp.y, vp.w, vp.h, vp.sx, vp.sy] : 0]);   // C6 (c1): a pass of the same size and origin over another box or at another scale is another picture
         const slot = vp ? (vp.sample ? "_fcacheSample" : "_fcacheView") : "_fcache";
         const c = layer[slot];
         if (!keepSurface && c && c.version === this.compositeVersion && c.key === key) return c.canvas;
@@ -7330,8 +7405,8 @@ class InpaintEditor {
     }
 
     /** Is the next layer that gets drawn after `i` a filter layer? (may the chain go on?) */
-    nextIsFilterLayer(i, forRun) {
-        for (let j = i + 1; j < this.layers.length; j++) {
+    nextIsFilterLayer(i, forRun, end = this.layers.length) {
+        for (let j = i + 1; j < end; j++) {
             const l = this.layers[j];
             if (this.compareShow && l.kind === "result" && l.id !== this.compareShow) continue;
             if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
@@ -9597,7 +9672,8 @@ class InpaintEditor {
 
     drawComposite(ctx, opts = {}) {
         if (!this.base) return;
-        const hasFilters = !opts.controlOnly && this.layers.some((l) => l.visible && (l.kind === "filter" || this.matchActive(l)));
+        const below = opts.upTo == null ? this.layers : this.layers.slice(0, Math.max(0, opts.upTo));
+        const hasFilters = !opts.controlOnly && below.some((l) => l.visible && (l.kind === "filter" || this.matchActive(l)));
         // In a region pass the target canvas is already the filter input: no full-size copy.
         if (this.viewPass || !hasFilters) { this.drawLayersInto(ctx, opts); return; }
         // Filters need the composite below them at image resolution: build it offscreen first.
@@ -9613,7 +9689,8 @@ class InpaintEditor {
         ctx.drawImage(this.flatCanvas, 0, 0);
     }
 
-    drawLayersInto(ctx, { forRun = false, controlOnly = false } = {}) {
+    /** `upTo`: the composite of the layers below that index only (C6 c1: what a filter layer there takes as its input). */
+    drawLayersInto(ctx, { forRun = false, controlOnly = false, upTo = null } = {}) {
         if (controlOnly) {
             ctx.fillStyle = "#000";
             ctx.fillRect(0, 0, this.width, this.height);
@@ -9628,11 +9705,12 @@ class InpaintEditor {
             else if (bs) ctx.drawImage(this.displaySource(bs, vp ? vp.sx : 1, !!(vp && vp.screen)), 0, 0, this.width, this.height);
         }
         let chain = null;   // filter layers that follow each other keep the composite on the GPU
-        for (let i = 0; i < this.layers.length; i++) {
+        const end = upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
+        for (let i = 0; i < end; i++) {
             const layer = this.layers[i];
             if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
             if ((!layer.visible && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
-            if (layer.kind === "filter") { if (!controlOnly) chain = this.applyFilterLayer(ctx, layer, i, forRun, chain, this.nextIsFilterLayer(i, forRun)); continue; }
+            if (layer.kind === "filter") { if (!controlOnly) chain = this.applyFilterLayer(ctx, layer, i, forRun, chain, this.nextIsFilterLayer(i, forRun, end)); continue; }
             const ctrl = this.isControl(layer);
             if (controlOnly && !ctrl) continue;
             if (forRun && (ctrl || this.isReference(layer))) continue;

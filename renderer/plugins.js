@@ -71,14 +71,25 @@ export class Document {
      * ([x0, y0, x1, y1], image coordinates) for a part of it: both are composited at that
      * size and for that box only, which is what a thumbnail or a colour sample should ask
      * for. A full-resolution flatten of a 15k document is 150 million pixels and a second.
+     *
+     * `below` (a layer key): the layers under that layer only, the picture a filter layer there
+     * takes as its input. `pad` (with `box`): the box is composited with that many pixels of its
+     * surroundings, so a filter that reads its neighbours sees them; the canvas is still the box.
+     * `exact` (with `box`, no `maxSize`): the box's pixels as the full-resolution flatten has them:
+     * padded as far as the stack's filters say they reach, or cut out of the whole flatten when
+     * a filter does not say (or a colour-matched layer is near the box).
      */
-    flatten({ maxSize = 0, box = null } = {}) {
+    flatten({ maxSize = 0, box = null, below = null, pad = 0, exact = false } = {}) {
         this._need();
         const ed = this.editor;
-        if (!maxSize && !box) return ed.flattenToCanvas({ forRun: true });
+        const upTo = below == null ? null : ed.layers.indexOf(findLayer(ed, below));
+        const o = upTo == null ? { forRun: true } : { forRun: true, upTo };
+        if (!maxSize && !box) return ed.flattenToCanvas(o);
         const b = box ? [Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(ed.width, Math.ceil(box[2])), Math.min(ed.height, Math.ceil(box[3]))] : [0, 0, ed.width, ed.height];
+        if (b[2] <= b[0] || b[3] <= b[1]) throw new Error(`the box ${JSON.stringify(box)} is outside the ${ed.width}x${ed.height} image`);
         const scale = maxSize > 0 ? Math.min(1, maxSize / Math.max(1, b[2] - b[0], b[3] - b[1])) : 1;
-        return ed.sampleRegion("image", b, scale, { forRun: true });
+        if (exact && box && scale === 1) return ed.readBox(b, o);
+        return ed.sampleRegion("image", b, scale, pad > 0 ? { ...o, pad } : o);
     }
 
     /**
@@ -142,15 +153,27 @@ export class Document {
         return layerSummary(this.editor, layer);
     }
 
-    /** The selection as a Uint8Array of width × height (1 = selected) plus its bounds, or null without a selection. */
-    selection() {
+    /**
+     * The selection as a Uint8Array of width × height (1 = selected) plus its bounds, or null without a selection.
+     * `box: true`: the mask of the bounds only (`width` × `height` are the bounds' size, `x`, `y` where they sit).
+     * Only the bounds are read either way: nothing outside them is selected.
+     */
+    selection({ box = false } = {}) {
         this._need();
         const b = bounds(this.editor);
         if (!b) return null;
+        const d = this.editor.sel.readRect(b.x, b.y, b.w, b.h).data;
+        if (box) {
+            const mask = new Uint8Array(b.w * b.h);
+            for (let i = 0, j = 3; i < mask.length; i++, j += 4) mask[i] = d[j] > 127 ? 1 : 0;
+            return { mask, bounds: b, width: b.w, height: b.h, x: b.x, y: b.y };
+        }
         const W = this.width, H = this.height;
-        const d = this.editor.sel.readRect(0, 0, W, H).data;
         const mask = new Uint8Array(W * H);
-        for (let i = 0, j = 3; i < mask.length; i++, j += 4) mask[i] = d[j] > 127 ? 1 : 0;
+        for (let y = 0; y < b.h; y++) {
+            let j = y * b.w * 4 + 3, i = (b.y + y) * W + b.x;
+            for (let x = 0; x < b.w; x++, i++, j += 4) mask[i] = d[j] > 127 ? 1 : 0;
+        }
         return { mask, bounds: b, width: W, height: H };
     }
 
@@ -241,7 +264,12 @@ function registerFilter(entry, def) {
     };
     // chain: this apply() runs its own shader stages, so it can take a GPU surface as input
     // (and hand one back). Without it the framework resolves the input to a canvas first.
-    FILTERS[id] = { label: def.label || def.id, params, apply, plugin: entry.id, chain: !!def.chain, control: typeof def.control === "function" ? def.control : undefined };
+    // reach: how many image pixels around a pixel its result reads (0 = pixel by pixel), a number or a function of the
+    // params; left out when the result depends on the whole picture or its size (C6 c1: readers of a box pad by it)
+    let reach;
+    if (typeof def.reach === "function") reach = (p) => { try { return def.reach(p); } catch (err) { report(entry, `filter ${def.id} reach`, err); return undefined; } };
+    else if (def.reach != null) { reach = +def.reach; if (!(reach >= 0)) throw new Error(`filter "${id}": reach must be a number >= 0 or a function of the params`); }
+    FILTERS[id] = { label: def.label || def.id, params, apply, plugin: entry.id, chain: !!def.chain, control: typeof def.control === "function" ? def.control : undefined, reach };
     FILTER_IDS.push(id);
     if (def.glsl) {
         if (typeof def.glsl.code !== "string") throw new Error(`filter "${id}": glsl.code must be the fragment source defining vec4 shade(vec4 color, vec2 uv)`);

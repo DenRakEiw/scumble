@@ -65,9 +65,39 @@ const m = new Uint8Array(editor.width * editor.height);
 for (let y = 10; y < 60; y++) m.fill(1, y * editor.width + 20, y * editor.width + 120);
 const sm = await c("select_mask", { mask: Array.from(m) });
 if (!sm.selection || sm.selection.w !== 100 || sm.selection.h !== 50) throw new Error("select_mask: " + JSON.stringify(sm));
-const mean = await c("sample.mean_color");
+// C6 (c1): sample.mean_color with a selection reads the selection's bounds (exactly, as the whole flatten has them), and
+// Document.selection() reads only the bounds too; neither flattens the picture or makes a display mirror
+const P = await import("./plugins.js");
+const W = editor.width, H = editor.height;
+const flatRef = editor.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, W, H).data;
+const selRef = editor.sel.readRect(0, 0, W, H).data;
+const spy = { flatten: 0, read: [] };
+const f0 = editor.flattenToCanvas, rr0 = editor.sel.readRect, ownRead = Object.prototype.hasOwnProperty.call(editor.sel, "readRect");
+editor.releaseCaches({ mirrors: true });
+editor.flattenToCanvas = function (...q) { spy.flatten++; return f0.apply(this, q); };
+editor.sel.readRect = function (x, y, w, h) { spy.read.push([x, y, w, h]); return rr0.call(this, x, y, w, h); };
+let mean, docSel, docBox;
+try {
+    mean = await c("sample.mean_color");
+    const doc = new P.Document(editor);
+    docSel = doc.selection();
+    docBox = doc.selection({ box: true });
+} finally { editor.flattenToCanvas = f0; if (ownRead) editor.sel.readRect = rr0; else delete editor.sel.readRect; }
+if (spy.flatten) throw new Error("mean_color with a selection flattened the picture " + spy.flatten + " times");
+if (editor.tileMode && editor.memoryReport().tiles.mirrors) throw new Error("mean_color made " + editor.memoryReport().tiles.mirrors + " display mirrors");
+const bArea = sm.selection.w * sm.selection.h;
+if (spy.read.some((q) => q[2] * q[3] > bArea)) throw new Error("the selection was read beyond its bounds: " + JSON.stringify(spy.read));
+let sr = 0, sg = 0, sb = 0, sn = 0;
+for (let p = 0, i = 0; p < W * H; p++, i += 4) { if (selRef[i + 3] <= 127) continue; sr += flatRef[i]; sg += flatRef[i + 1]; sb += flatRef[i + 2]; sn++; }
+const meanRef = [sr, sg, sb].map((v) => Math.round(v / sn));
+if (mean.pixels !== sn || JSON.stringify(mean.rgb) !== JSON.stringify(meanRef)) throw new Error("mean_color " + JSON.stringify(mean) + " is not the whole flatten's " + JSON.stringify({ pixels: sn, rgb: meanRef }));
+let bad = 0;
+for (let p = 0; p < W * H; p++) if (docSel.mask[p] !== (selRef[p * 4 + 3] > 127 ? 1 : 0)) bad++;
+const bb = docBox.bounds;
+for (let y = 0; y < bb.h; y++) for (let x = 0; x < bb.w; x++) if (docBox.mask[y * bb.w + x] !== docSel.mask[(bb.y + y) * W + bb.x + x]) bad++;
+if (bad || docSel.width !== W || docBox.width !== bb.w || docBox.x !== bb.x) throw new Error("Document.selection() differs from the selection in " + bad + " pixels");
 await c("select_rect", { x: 100, y: 80, w: 200, h: 120 });
-return { rect: a.selection, grown: g.selection, inverted: inv.selection, mask: sm.selection, mean };
+return { rect: a.selection, grown: g.selection, inverted: inv.selection, mask: sm.selection, mean, reads: spy.read };
 """),
     ("layers", """
 const before = (await c("list_layers")).layers.length;
@@ -122,10 +152,39 @@ if (editor.undo.length !== before + 1) throw new Error("no undo step");
 await c("undo");
 const back = doc.getPixels("Test paint").data.data;
 if (back[0] !== 200) throw new Error("undo did not restore the pixels: " + back.slice(0, 3));
-const sel = await c("run_action", { id: "sample.selection_layer" });
+// C6 (c1): selection to layer reads the selection's bounds of the picture, exactly as the whole flatten has them. Clear
+// of the text layer the stack is pixel by pixel (the Poster filter declares reach 0): a box read, no flatten, no display
+// mirror. Over the text layer (drawn at half its pixels' size) a box read cannot be exact: the whole flatten, cropped.
+const W = editor.width, H = editor.height;
+const copies = {};
+for (const [name, rect, flatsWanted] of [["clear of the text", { x: 260, y: 180, w: 200, h: 120 }, 0], ["over the text", { x: 100, y: 80, w: 200, h: 120 }, 1]]) {
+    await c("select_rect", rect);
+    const flatRef = editor.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, W, H).data;
+    const selRef = editor.sel.readRect(0, 0, W, H).data;
+    editor.releaseCaches({ mirrors: true });
+    const f0 = editor.flattenToCanvas; let flats = 0;
+    editor.flattenToCanvas = function (...q) { flats++; return f0.apply(this, q); };
+    try { await c("run_action", { id: "sample.selection_layer" }); } finally { editor.flattenToCanvas = f0; }
+    const copy = (await c("list_layers")).layers.filter((l) => l.name === "Selection copy").find((l) => l.x === rect.x && l.y === rect.y);
+    if (!copy || copy.w !== 200 || copy.h !== 120) throw new Error("selection copy " + name + ": " + JSON.stringify(copy));
+    if (flats !== flatsWanted) throw new Error(`selection to layer ${name} flattened the picture ${flats} times, ${flatsWanted} expected`);
+    if (!flatsWanted && editor.tileMode && editor.memoryReport().tiles.mirrors) throw new Error("selection to layer made " + editor.memoryReport().tiles.mirrors + " display mirrors");
+    const got = doc.getPixels(copy.id).data.data;
+    let wrong = 0, max = 0;
+    for (let y = 0; y < copy.h; y++) for (let x = 0; x < copy.w; x++) {
+        const i = (y * copy.w + x) * 4, j = ((copy.y + y) * W + copy.x + x) * 4;
+        const on = selRef[j + 3] > 127;
+        for (let k = 0; k < 4; k++) { const want = on ? flatRef[j + k] : 0; const d = Math.abs(got[i + k] - want); if (d) wrong++; if (d > max) max = d; }
+    }
+    if (wrong) throw new Error(`the selection copy ${name} differs from the whole flatten in ${wrong} bytes (max ${max})`);
+    copies[name] = { x: copy.x, y: copy.y, flats };
+    await c("remove_layer", { layer: copy.id });
+}
+await c("select_rect", { x: 100, y: 80, w: 200, h: 120 });
+await c("run_action", { id: "sample.selection_layer" });
 const copy = (await c("list_layers")).layers.find((l) => l.name === "Selection copy");
 if (!copy || copy.w !== 200 || copy.h !== 120) throw new Error("selection copy: " + JSON.stringify(copy));
-return { action: r, copy: { w: copy.w, h: copy.h, x: copy.x, y: copy.y } };
+return { action: r, copy: { w: copy.w, h: copy.h, x: copy.x, y: copy.y }, copies };
 """),
     ("plugin_tool_and_panel", """
 const H = (await import("./editor/host.js")).host;
@@ -134,8 +193,36 @@ if (editor.tool !== "sample.probe") throw new Error("tool not set");
 const btn = editor.toolButtons["sample.probe"];
 if (!btn || !btn.classList.contains("ipc-active")) throw new Error("tool button missing or not active");
 const fake = { shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, button: 0, pressure: 0.5, pointerType: "mouse", type: "pointermove" };
-const handled = H.pluginPointer(editor, "move", fake, 150, 100);
+// C6 (c1): the probe reads one box of 256 px per square the cursor enters, exactly as the whole flatten has it: no
+// flatten, no mirror, and no readback per hover (a canvas per pixel would count toward Chromium's acceleration latch)
+const W = editor.width, H2 = editor.height;
+const flatRef = editor.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(0, 0, W, H2).data;
+editor.releaseCaches({ mirrors: true });
+const f0 = editor.flattenToCanvas, gid = CanvasRenderingContext2D.prototype.getImageData;
+let flats = 0; const readCanvases = new Set();
+editor.flattenToCanvas = function (...q) { flats++; return f0.apply(this, q); };
+CanvasRenderingContext2D.prototype.getImageData = function (...q) { readCanvases.add(this.canvas); return gid.apply(this, q); };
+const hovers = [];
+let handled;
+try {
+    editor.setTool("select");
+    editor.setTool("sample.probe");   // a new tool selection starts with no squares read
+    for (let k = 0; k < 20; k++) {
+        const [x, y] = [[300, 100], [400, 300], [40, 300]][k % 3];   // three squares clear of the text layer
+        const hx = x + (k % 5), hy = y + (k % 7);
+        handled = H.pluginPointer(editor, "move", fake, hx, hy);
+        const i = (hy * W + hx) * 4;
+        hovers.push([hx, hy, editor.status, [flatRef[i], flatRef[i + 1], flatRef[i + 2]]]);
+    }
+} finally { editor.flattenToCanvas = f0; CanvasRenderingContext2D.prototype.getImageData = gid; }
 if (!handled || !/rgb\\(/.test(editor.status)) throw new Error("hover did not probe: " + editor.status);
+for (const [hx, hy, st, want] of hovers) if (!st.includes(`${hx}, ${hy}: rgb(${want[0]}, ${want[1]}, ${want[2]})`)) throw new Error(`the probe at ${hx}, ${hy} said "${st}", the whole flatten has rgb(${want})`);
+if (flats) throw new Error("the probe flattened the picture " + flats + " times");
+if (readCanvases.size > 3) throw new Error("20 hovers over 3 squares read back " + readCanvases.size + " canvases");
+if (editor.tileMode && editor.memoryReport().tiles.mirrors) throw new Error("the probe made " + editor.memoryReport().tiles.mirrors + " display mirrors");
+// the square with the text layer in it (drawn at half its pixels' size): the whole flatten, once, and exact
+H.pluginPointer(editor, "move", fake, 150, 100);
+{ const i = (100 * W + 150) * 4; if (!editor.status.includes(`150, 100: rgb(${flatRef[i]}, ${flatRef[i + 1]}, ${flatRef[i + 2]})`)) throw new Error("the probe over the text layer said " + editor.status); }
 const down = H.pluginPointer(editor, "down", { ...fake, type: "pointerdown" }, 150, 100);
 if (!down || !editor.pointer || editor.pointer.kind !== "plugin") throw new Error("down not routed");
 H.pluginPointer(editor, "up", fake, 150, 100, editor.pointer); editor.pointer = null;

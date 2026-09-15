@@ -93,12 +93,12 @@ One tab. Pixel access is ImageData in and out; every write is one undo step.
 | `run(name, args)` | a command on this document |
 | `layers()`, `layer(key)`, `activeLayer()` | summaries: `{ id, name, kind, visible, opacity, blend, x, y, w, h, locked, mask, filter, params, text, ... }` |
 | `rawLayer(key)` | the editor's layer object (`px`, `maskPx`, params ...); unstable, see "Layer pixels" below |
-| `flatten({ maxSize, box })` | the visible picture as a canvas at image size; `maxSize` (long side) or `box` (`[x0, y0, x1, y1]`) composite only that size or part, which a thumbnail or a colour sample should ask for |
+| `flatten({ maxSize, box, below, pad, exact })` | the visible picture as a canvas at image size; `maxSize` (long side) or `box` (`[x0, y0, x1, y1]`) composite only that size or part, which a thumbnail or a colour sample should ask for. `below` (a layer key): the layers under that layer only, the picture a filter layer there takes as its input. `pad` (with `box`): the box is composited with that many pixels of its surroundings, so a filter that reads its neighbours sees them; the canvas is still the box. `exact` (with `box`, no `maxSize`): the box's pixels as the full-resolution flatten has them (see "Reading a part of the picture" below) |
 | `getPixels()` | `{ data: ImageData, x: 0, y: 0, w, h }` of the flattened picture |
 | `getPixels(layer)` | the layer's own pixels (unmasked) plus its placement `x, y, w, h` in image pixels; `w, h` differ from the ImageData size when the layer is scaled |
 | `setPixels(layer, imageData, { undo = true })` | write a layer's pixels back (same size, or the pixels are replaced and the placement kept); filter and locked layers refuse |
 | `addLayer(imageData \| canvas \| null, { name, x, y, w, h, activate })` | a new paint layer, placed at `x, y`; `null` = empty at image size; a canvas is adopted (do not draw into it afterwards) |
-| `selection()` | `{ mask: Uint8Array(width × height), bounds: {x, y, w, h}, width, height }` or `null` |
+| `selection({ box })` | `{ mask: Uint8Array(width × height), bounds: {x, y, w, h}, width, height }` or `null`; with `box: true` the mask of the bounds only (`width` × `height` are the bounds' size, `x`, `y` where they sit). Only the bounds are read either way |
 | `setSelection(mask, mode)` | from a `Uint8Array` (>0 = selected); `replace`, `add`, `subtract` |
 | `undo()`, `redo()` | |
 | `draw()` | repaint the canvas and overlays (no cache invalidation) |
@@ -110,6 +110,30 @@ Layers are addressed like in the commands: id, exact name, a unique part of the 
 `"active"`. The base image has no layer object of its own; to change it, duplicate it into a
 layer (`run("duplicate_layer")` on the base is not possible, use `getPixels()` + `addLayer`)
 or flatten.
+
+### Reading a part of the picture (0.1.13)
+
+A plugin that needs a few pixels of the picture should not flatten all of it: on a 15000 ×
+10000 picture that is 150 million pixels, a full-resolution run of every filter layer, and in
+tile mode a full-size display copy of every layer kept afterwards. `flatten({ box })` composites
+the box only. Two things differ from the whole flatten inside a box, and the options handle them:
+
+- **Filters that read their neighbours** (blur, sharpen, glow, halation, structure) see only
+  the box. `pad` gives them its surroundings. `exact: true` pads by as far as the stack's
+  filter layers say they reach (a filter's `reach`, below), so the box comes out as the whole
+  flatten has it; when a filter does not say, or its result depends on the whole picture
+  (vignette, normalise, the film look's halation, a frame or light leak), or a colour-matched
+  layer is near the box, or a layer near it is drawn scaled or at a fractional position (a text
+  layer is rendered at twice its size), it flattens the whole picture once (kept until the
+  picture changes) and cuts the box out of it. Byte for byte on a stack of pixel-by-pixel
+  layers; with a blur in the stack Skia's blur of the smaller canvas comes out 1 to 3 levels apart.
+- **`below`** stops at a layer: the input of a filter layer there.
+
+The built-in plugins do this: the film pack's control points read the 3 × 3 colour under a
+point from `flatten({ box, below: <the points layer>, pad: 128 })`; the sample plugin's
+`mean_color` and *Selection to new layer* read the selection's bounds with `exact: true`, and its
+probe tool one 256 px square per square the cursor enters. `flatten()` without options and
+`getPixels()` are unchanged: the whole picture at full resolution.
 
 ### Layer pixels (0.1.12)
 
@@ -186,7 +210,11 @@ The filter appears in the type list of every filter layer, works in `add_filter`
 canvas and returns a canvas of the same size (returning nothing keeps the input);
 `info.scale` is 1 at full resolution and smaller for previews (shrink radii with it),
 `info.seed` the layer's seed, `info.cache` an object that lives with the layer for reuse
-between runs. The GLSL fragment gets `u_src` (the input; sample neighbours with
+between runs. `reach` (optional, 0.1.13): how many image pixels around a pixel (at full
+resolution) the filter's result there reads, a number or a function of the params; 0 for a
+filter that works pixel by pixel, left out when the result depends on the whole picture or its
+size. Readers of a box of the picture pad by it (`flatten({ box, exact: true })`), and a filter
+without it makes them flatten the whole picture. The GLSL fragment gets `u_src` (the input; sample neighbours with
 `uv + vec2(dx, dy) / u_size`), `u_size`, `u_scale`, `u_seed` and the declared uniforms, and
 is compiled lazily on first use; when it fails to compile the CPU path runs and a warning
 names the error in the console. `values(params, info, src)` also gets the source canvas.

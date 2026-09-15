@@ -107,10 +107,71 @@ await c("remove_layer", { layer: l1.id });
 return { stocks: looks.stocks.length, bw: bw.stocks.length };
 """),
     ("add_point_command", """
-const r = await c("film.add_point", { x: 130, y: 120, radius: 100, exposure: 1, saturation: 30 });
+// C6 (c1): a point's colour is the 3 x 3 mean under it of the points layer's input (everything below that layer) at
+// full resolution, read as one small box: no whole flatten, no mirror, and not the picture the last full-resolution
+// render left (it went stale), not the points' own effect, not the layers above.
+const P = await import("./plugins.js");
+const ed = editor;
+const opp = (r, g, b) => { const L = 0.299 * r + 0.587 * g + 0.114 * b; return [L, r - L, b - L]; };
+const colourBelow = (layerId, x, y) => {
+    const idx = ed.layers.findIndex((l) => l.id === layerId);
+    const flat = ed.flattenToCanvas({ forRun: true, upTo: idx });
+    const d = flat.getContext("2d").getImageData(x - 1, y - 1, 3, 3).data;
+    let r = 0, g = 0, b = 0; for (let i = 0; i < 36; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+    return opp(r / 9 / 255, g / 9 / 255, b / 9 / 255);
+};
+const same = (a, b) => a.every((v, k) => Math.abs(v - b[k]) < 1e-6);
+const counted = async (fn) => {
+    const f0 = ed.flattenToCanvas, d0 = P.Document.prototype.flatten;
+    const n = { flatten: 0, whole: 0 };
+    ed.flattenToCanvas = function (...a) { n.flatten++; return f0.apply(this, a); };
+    P.Document.prototype.flatten = function (o) { if (!o || (!o.maxSize && !o.box)) n.whole++; return d0.call(this, o); };
+    try { return [await fn(), n]; } finally { ed.flattenToCanvas = f0; P.Document.prototype.flatten = d0; }
+};
+const T = await import("./editor/inpaint_tiles.js");
+ed.releaseCaches({ mirrors: true });
+const [r, n1] = await counted(() => c("film.add_point", { x: 130, y: 120, radius: 100, exposure: 1, saturation: 30 }));
 if (!r.layer || r.points !== 1 || r.point.r !== 100 || !Array.isArray(r.point.color)) throw new Error("add_point: " + JSON.stringify(r));
-const r2 = await c("film.add_point", { x: 400, y: 260, exposure: -1 });
+if (n1.flatten || n1.whole) throw new Error("placing a point flattened the picture: " + JSON.stringify(n1));
+if (ed.tileMode && ed.memoryReport().tiles.mirrors) throw new Error("placing a point made " + ed.memoryReport().tiles.mirrors + " display mirrors");
+const want1 = colourBelow(r.layer, 130, 120);
+if (!same(r.point.color, want1)) throw new Error("point 1's colour " + JSON.stringify(r.point.color) + " is not the picture below it " + JSON.stringify(want1));
+// what the last full-resolution render leaves (the export, a run): the colour must not come from it after a change below
+ed.flattenToCanvas({ forRun: true });
+const under = await c("add_paint_layer", { name: "Under the points" });
+await c("move_layer", { layer: under.id, to: "bottom" });
+{   // a hard edge through x = 400 around the second point's place: red left of it, green from it on
+    const U = ed.layers.find((l) => l.id === under.id);
+    const img = new ImageData(120, 120);
+    for (let y = 0; y < 120; y++) for (let x = 0; x < 120; x++) { const i = (y * 120 + x) * 4; if (x < 60) { img.data[i] = 220; img.data[i + 1] = 30; img.data[i + 2] = 40; } else { img.data[i] = 30; img.data[i + 1] = 200; img.data[i + 2] = 60; } img.data[i + 3] = 255; }
+    U.px.writeRect(img, 340, 200);
+    ed.markLayerChanged(U, [340, 200, 460, 320]);
+}
+const [r2, n2] = await counted(() => c("film.add_point", { x: 400, y: 260, exposure: -1 }));
 if (r2.layer !== r.layer || r2.points !== 2) throw new Error("second point went elsewhere: " + JSON.stringify(r2));
+if (n2.flatten || n2.whole) throw new Error("the second point flattened the picture: " + JSON.stringify(n2));
+const want2 = colourBelow(r.layer, 400, 260);
+if (!same(r2.point.color, want2)) throw new Error("point 2 on the edge painted below took " + JSON.stringify(r2.point.color) + ", the picture below is " + JSON.stringify(want2));
+// a point where point 1 already acts, under a layer above the points layer: still the colour below both
+const over = await c("add_paint_layer", { name: "Over the points" });
+{
+    const O = ed.layers.find((l) => l.id === over.id);
+    const img = new ImageData(40, 40); for (let i = 0; i < img.data.length; i += 4) { img.data[i] = 10; img.data[i + 1] = 10; img.data[i + 2] = 250; img.data[i + 3] = 255; }
+    O.px.writeRect(img, 110, 100);
+    ed.markLayerChanged(O, [110, 100, 150, 140]);
+}
+const pl = P.Document ? new P.Document(ed) : null;
+const layerObj = ed.layers.find((l) => l.id === r.layer);
+const [r3] = await counted(() => c("film.add_point", { x: 132, y: 121, exposure: 0.5 }));
+const want3 = colourBelow(r.layer, 132, 121);
+if (!same(r3.point.color, want3)) throw new Error("point 3 took " + JSON.stringify(r3.point.color) + " with the points' own effect or the layer above in it; the picture below is " + JSON.stringify(want3));
+const flatNow = ed.flattenToCanvas({ forRun: true }).getContext("2d").getImageData(131, 120, 3, 3).data;
+const whole3 = (() => { let a = 0, b = 0, cc = 0; for (let i = 0; i < 36; i += 4) { a += flatNow[i]; b += flatNow[i + 1]; cc += flatNow[i + 2]; } return opp(a / 9 / 255, b / 9 / 255, cc / 9 / 255); })();
+if (same(whole3, want3)) throw new Error("the test cannot tell the picture below from the whole picture at point 3");
+// back to the two points the steps after this one expect, and the helper layers gone
+await c("remove_layer", { layer: over.id });
+await c("remove_layer", { layer: under.id });
+pl.setFilterParams(r.layer, { points: layerObj.params.points.slice(0, 2) });
 // the picture changed near point 1 and not far away from both
 const flat = editor.flattenToCanvas({ forRun: true }).getContext("2d");
 const bc = document.createElement("canvas"); bc.width = editor.width; bc.height = editor.height; editor.basePx.drawTo(bc.getContext("2d"), 0, 0);

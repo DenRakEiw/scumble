@@ -364,6 +364,9 @@ export function makeFilters(scumble) {
             S("grain", "Grain", 0, 200, 1, 100, "%"),
             S("halation", "Halation", 0, 100, 1, 100, "%"),
         ],
+        // pixel by pixel (the grain field is anchored at the image's origin), except its halation: sized from the long
+        // side of whatever the pass composites (1.2 % of it), so no margin around a box gives the full picture's
+        reach: (p) => { const stock = STOCK_BY_ID[p.preset] || null; return (stock ? stock.halation : 0) / 100 * pct(p.halation, 100) * pct(p.strength, 100) > 0 ? Infinity : 0; },
         apply(src, p, info) {
             const cache = info.cache || (info.cache = {});
             let out = lookStage(run, src, p, info);
@@ -392,6 +395,7 @@ export function makeFilters(scumble) {
             S("hue", "Hue", 0, 360, 1, 12, "°"),
             S("saturation", "Colour", 0, 100, 1, 85, "%"),
         ],
+        reach: (p) => Math.ceil(3 * num(p.radius, 30)) + 4,   // its blur's three sigma (measured against a whole flatten, docs/PLAN_BCE.md §C6 c1)
         apply(src, p, info) {
             const sat = pct(p.saturation, 85);
             return halationStage(run, src, { thr: pct(p.threshold, 65), sigma: num(p.radius, 30) * (info.scale || 1), strength: pct(p.strength, 40), tint: hueRgb(num(p.hue, 12)).map((v) => mix(1, v, sat)) }, info);
@@ -407,6 +411,7 @@ export function makeFilters(scumble) {
             S("amount", "Amount", 0, 100, 1, 50, "%"),
             S("threshold", "Highlights only", 0, 100, 1, 0, "%"),
         ],
+        reach: (p) => Math.ceil(3 * num(p.radius, 40)) + 4,
         apply(src, p, info) {
             const amount = pct(p.amount, 50);
             if (amount <= 0) return src;
@@ -431,6 +436,7 @@ export function makeFilters(scumble) {
             S("saturation", "Saturation", -100, 100, 1, 10, "%"),
             S("protect", "Protect ends", 0, 100, 1, 50, "%"),
         ],
+        reach: (p) => Math.ceil(3 * num(p.radius, 40)) + 4,
         apply(src, p, info) {
             const h = pct(p.highlights, 20), m = pct(p.midtones, 30), s = pct(p.shadows, 20), sat = pct(p.saturation, 10), protect = pct(p.protect, 50);
             const b = blur(src, num(p.radius, 40) * (info.scale || 1));
@@ -457,6 +463,7 @@ export function makeFilters(scumble) {
             S("radius", "Radius", 0.5, 30, 0.5, 3, "px"),
             { key: "luminance", label: "Luminance only", type: "bool", default: true, keepPreset: true },
         ],
+        reach: (p) => Math.ceil(3 * num(p.radius, 3)) + 4,
         apply(src, p, info) {
             const amount = pct(p.amount, 30);
             if (amount === 0) return src;
@@ -480,6 +487,7 @@ export function makeFilters(scumble) {
             S("contrast", "Contrast", 0, 100, 1, 30, "%"),
             S("brightness", "Brightness", -50, 50, 1, 0),
         ],
+        reach: 0,
         apply(src, p) {
             const st = pct(p.strength, 70), de = pct(p.desaturate, 50), co = pct(p.contrast, 30), br = num(p.brightness, 0) / 100;
             return loop(src, (c) => {
@@ -517,6 +525,7 @@ export function makeFilters(scumble) {
             S("contrast", "Contrast", -50, 50, 1, 0),
             S("shift", "Green ↔ magenta", -100, 100, 1, 0),
         ],
+        reach: 0,
         apply(src, p, info) {
             const { style, tables } = xproTables(p, info.cache || {});
             const st = pct(p.strength, 100), co = num(p.contrast, 0) / 100, sat = style.sat;
@@ -546,6 +555,7 @@ export function makeFilters(scumble) {
             S("balance", "Balance", -100, 100, 1, 0),
             { key: "preserve", label: "Keep luminance", type: "bool", default: true, keepPreset: true },
         ],
+        reach: 0,
         apply(src, p) {
             const hi = tint(num(p.hi_hue, 45), pct(p.hi_sat, 30)), sh = tint(num(p.sh_hue, 215), pct(p.sh_sat, 30)), bal = num(p.balance, 0) / 100 * 0.5, keep = p.preserve !== false;
             return loop(src, (c) => {
@@ -647,6 +657,7 @@ export function makeFilters(scumble) {
             S("tone_strength", "Toning", 0, 100, 1, 50, "%"),
             S("grain", "Grain", 0, 100, 1, 0, "%"),
         ],
+        reach: 16,   // its structure blur (4 px) three sigma; its grain is anchored
         apply(src, p, info) {
             const w = bwWeights(num(p.filter_hue, 0), pct(p.filter_strength, 0));
             const st = pct(p.structure, 20), sh = num(p.shadows, 0) / 100, hi = num(p.highlights, 0) / 100, br = num(p.brightness, 0) / 100, co = num(p.contrast, 10) / 100;

@@ -825,6 +825,11 @@ function applyInvert(src) { return applyTables(src, INVERT_TABLE); }
 // registry
 // ---------------------------------------------------------------------------
 
+// `reach` (C6 c1): how many image pixels around a pixel (at full resolution) the filter's result there reads, as a
+// number or a function of the params. 0 for a filter that works pixel by pixel. Left out for a filter whose result
+// depends on the whole picture or its size (normalise, vignette): a read of a box then cannot be composited with a
+// margin and takes the whole flatten (InpaintEditor.boxReach / readBox).
+
 export const FILTERS = {
     grain: {
         label: "Film / Grain",
@@ -839,6 +844,7 @@ export const FILTERS = {
         ],
         presets: GRAIN_PRESETS,
         plate: true,
+        reach: 0,   // the grain field is anchored at the image's origin: a pixel's grain does not depend on the pass
         apply: applyGrain,
     },
     sharpen: {
@@ -848,6 +854,7 @@ export const FILTERS = {
             { key: "radius", label: "Radius", min: 0.3, max: 12, step: 0.1, default: 1.5, unit: "px" },
             { key: "threshold", label: "Threshold", min: 0, max: 64, step: 1, default: 0 },
         ],
+        reach: (p) => Math.ceil(3 * Math.max(0.3, p.radius ?? 1.5)) + 4,   // its blur's three sigma, measured against a whole flatten
         apply: applySharpen,
     },
     blur: {
@@ -855,6 +862,7 @@ export const FILTERS = {
         params: [
             { key: "radius", label: "Radius", min: 0, max: 64, step: 0.5, default: 4, unit: "px" },
         ],
+        reach: (p) => ((p.radius ?? 4) < 0.05 ? 0 : Math.ceil(3 * (p.radius ?? 4)) + 4),
         apply: applyBlur,
     },
     levels: {
@@ -866,6 +874,7 @@ export const FILTERS = {
             { key: "outBlack", label: "Out black", min: 0, max: 255, step: 1, default: 0 },
             { key: "outWhite", label: "Out white", min: 0, max: 255, step: 1, default: 255 },
         ],
+        reach: 0,
         apply: applyLevels,
     },
     curves: {
@@ -874,6 +883,7 @@ export const FILTERS = {
             { key: "curves", label: "Curves", type: "custom", default: curveDefaults() },
         ],
         control: curvesControl,
+        reach: 0,
         apply: applyCurves,
     },
     brightness_contrast: {
@@ -882,6 +892,7 @@ export const FILTERS = {
             { key: "brightness", label: "Brightness", min: -100, max: 100, step: 1, default: 0 },
             { key: "contrast", label: "Contrast", min: -100, max: 100, step: 1, default: 0 },
         ],
+        reach: 0,
         apply: applyBrightnessContrast,
     },
     hue_sat: {
@@ -891,6 +902,7 @@ export const FILTERS = {
             { key: "saturation", label: "Saturation", min: -100, max: 100, step: 1, default: 0, unit: "%" },
             { key: "lightness", label: "Lightness", min: -100, max: 100, step: 1, default: 0, unit: "%" },
         ],
+        reach: 0,
         apply: applyHueSat,
     },
     color_balance: {
@@ -907,6 +919,7 @@ export const FILTERS = {
             { key: "high_yb", label: "High Y–B", min: -100, max: 100, step: 1, default: 0 },
             { key: "preserve", label: "Preserve luminosity", type: "bool", default: true },
         ],
+        reach: 0,
         apply: applyColorBalance,
     },
     bw: {
@@ -918,11 +931,13 @@ export const FILTERS = {
             { key: "tint_hue", label: "Tint hue", min: 0, max: 360, step: 1, default: 35, unit: "°" },
             { key: "tint_strength", label: "Tint", min: 0, max: 100, step: 1, default: 0, unit: "%" },
         ],
+        reach: 0,
         apply: applyBlackWhite,
     },
     invert: {
         label: "Invert",
         params: [],
+        reach: 0,
         apply: applyInvert,
     },
     normalize: {
@@ -940,6 +955,7 @@ export const FILTERS = {
             { key: "strength", label: "Strength", min: 0, max: 100, step: 1, default: 100, unit: "%" },
         ],
         needsLut: true,
+        reach: 0,
         apply: applyLut,
     },
     vignette: {

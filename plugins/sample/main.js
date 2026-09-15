@@ -7,7 +7,7 @@
 //   tool     Colour probe (K): hover to read the colour under the cursor
 //   command  sample.mean_color for scripts and MCP
 
-let probeCache = null;   // { doc, data } the flattened pixels while the probe tool is active
+let probeCache = null;   // { doc, tiles: Map "tx,ty" -> ImageData } the flattened pixels of the 256 px squares the probe went over
 
 export function activate(scumble) {
     const { ui } = scumble;
@@ -20,6 +20,7 @@ export function activate(scumble) {
             { key: "levels", label: "Levels", type: "number", min: 2, max: 32, step: 1, default: 6 },
             { key: "mono", label: "Monochrome", type: "bool", default: false },
         ],
+        reach: 0,   // pixel by pixel: a box of the picture needs no margin around it (docs/PLUGINS.md)
         // CPU path: src is a canvas, return a new canvas of the same size
         apply(src, p) {
             const out = scumble.makeCanvas(src.width, src.height);
@@ -62,20 +63,26 @@ export function activate(scumble) {
         return layer.id;
     }
 
-    function selectionToLayer(doc) {
-        const sel = doc.selection();
-        if (!sel) { doc.status("Nothing selected."); return null; }
+    // the flattened pixels of the selection's bounds: a box of the picture read as the full flatten has it (exact), the
+    // bounds' mask with it; nothing outside the bounds is selected, so nothing else is read
+    function selectionBox(doc) {
+        const sel = doc.selection({ box: true });
+        if (!sel) return null;
         const { x, y, w, h } = sel.bounds;
-        const flat = doc.getPixels();               // the whole picture at image size
+        const flat = doc.flatten({ box: [x, y, x + w, y + h], exact: true }).getContext("2d").getImageData(0, 0, w, h).data;
+        return { sel, flat };
+    }
+
+    function selectionToLayer(doc) {
+        const got = selectionBox(doc);
+        if (!got) { doc.status("Nothing selected."); return null; }
+        const { sel, flat } = got;
+        const { x, y, w, h } = sel.bounds;
         const out = new ImageData(w, h);
-        const W = sel.width;
-        for (let yy = 0; yy < h; yy++) {
-            for (let xx = 0; xx < w; xx++) {
-                const i = (y + yy) * W + (x + xx);
-                if (!sel.mask[i]) continue;
-                const s = i * 4, t = (yy * w + xx) * 4;
-                out.data[t] = flat.data.data[s]; out.data[t + 1] = flat.data.data[s + 1]; out.data[t + 2] = flat.data.data[s + 2]; out.data[t + 3] = flat.data.data[s + 3];
-            }
+        for (let i = 0; i < w * h; i++) {
+            if (!sel.mask[i]) continue;
+            const t = i * 4;
+            out.data[t] = flat[t]; out.data[t + 1] = flat[t + 1]; out.data[t + 2] = flat[t + 2]; out.data[t + 3] = flat[t + 3];
         }
         const layer = doc.addLayer(out, { name: "Selection copy", x, y });
         doc.status(`${layer.name} added (${w} × ${h}).`);
@@ -104,11 +111,20 @@ export function activate(scumble) {
     scumble.actions.register({ id: "selection_layer", label: "Selection to new layer", run: (doc) => selectionToLayer(doc) });
 
     // ---- tool: colour probe ---------------------------------------------------------------------
+    const TILE = 256;
     const probe = (doc, ev) => {
         if (!doc.loaded || !ev.inside) return;
-        if (!probeCache || probeCache.doc !== doc.id) probeCache = { doc: doc.id, data: doc.getPixels().data };
+        if (!probeCache || probeCache.doc !== doc.id) probeCache = { doc: doc.id, tiles: new Map() };
         const x = Math.floor(ev.x), y = Math.floor(ev.y);
-        const i = (y * probeCache.data.width + x) * 4, d = probeCache.data.data;
+        // one read per 256 px square the cursor enters, not the whole picture per change and not one pixel per hover
+        const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE), key = tx + "," + ty;
+        let img = probeCache.tiles.get(key);
+        if (!img) {
+            const box = [tx * TILE, ty * TILE, Math.min(doc.width, (tx + 1) * TILE), Math.min(doc.height, (ty + 1) * TILE)];
+            img = doc.flatten({ box, exact: true }).getContext("2d").getImageData(0, 0, box[2] - box[0], box[3] - box[1]);
+            probeCache.tiles.set(key, img);
+        }
+        const i = ((y - ty * TILE) * img.width + (x - tx * TILE)) * 4, d = img.data;
         const hex = "#" + [d[i], d[i + 1], d[i + 2]].map((v) => v.toString(16).padStart(2, "0")).join("");
         doc.status(`${x}, ${y}: rgb(${d[i]}, ${d[i + 1]}, ${d[i + 2]}) ${hex}${ev.button === 0 && ev.raw.type === "pointerdown" ? " (copied)" : ""}`);
         return hex;
@@ -132,8 +148,10 @@ export function activate(scumble) {
         params: {},
         needsImage: true,
         run(doc) {
-            const flat = doc.getPixels().data.data;
-            const sel = doc.selection();
+            // with a selection only its bounds are read (the whole picture without one)
+            const got = selectionBox(doc);
+            const sel = got && got.sel;
+            const flat = got ? got.flat : doc.getPixels().data.data;
             let r = 0, g = 0, b = 0, n = 0;
             for (let i = 0, j = 0; i < flat.length; i += 4, j++) {
                 if (sel && !sel.mask[j]) continue;

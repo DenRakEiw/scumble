@@ -434,6 +434,43 @@ BENCH = """
     out.png = await op(async () => { const u = await ed.snapUrl(flat); URL.revokeObjectURL(u); });
     out.png_main = await op(() => new Promise((r) => flat.toBlob(r, "image/png")));
 
+    // --- C6 (c1): readers of a small box at level 0, after every row above so they move none of them ---------------
+    {
+        const cmds = (await import("./commands.js")).commands;
+        const docId = ed.node.id;
+        const box1000 = () => {
+            const x0 = Math.round(W * 0.55), y0 = Math.round(H * 0.55);
+            ed.sel.clear();
+            ed.sel.fill([x0, y0, x0 + 1000, y0 + 1000], "#ff0000");
+            ed.markSelectionChanged([x0, y0, x0 + 1000, y0 + 1000]);
+            ed.getBounds();
+        };
+        // a control point with the film look under it: its colour is what the points layer takes as its input there
+        if (cmds.names().includes("film.add_point")) {
+            out.point_add = await op(() => cmds.run("film.add_point", { x: Math.round(W * 0.6), y: Math.round(H * 0.6), radius: 300, exposure: 0.5, doc: docId }));
+            const pl = ed.layers.find((l) => l.kind === "filter" && l.filter === "film.points");
+            if (pl) { ed.removeLayer(pl.id); ed.renderLayers(); }
+        }
+        if (cmds.names().includes("sample.mean_color")) {
+            box1000();
+            out.mean_color = await op(() => cmds.run("sample.mean_color", { doc: docId }));   // the film look and the matched result shown
+            const hide = ed.layers.filter((l) => l.visible && (l.kind === "filter" || (l.match && l.match.strength > 0)));
+            for (const l of hide) l.visible = false;
+            ed.uploaded.baseHash = null; ed.sceneSig = null; ed.draw();
+            out.mean_color_plain = await op(() => cmds.run("sample.mean_color", { doc: docId }));
+            for (const l of hide) l.visible = true;
+            ed.uploaded.baseHash = null; ed.sceneSig = null; ed.draw();
+        }
+        // the bucket inside one of the base's discs (the wand's object above) with a 1000 px selection around it: a bounded
+        // region, flooded box by box, each box clipped to its part of the selection
+        ed.sel.clear();
+        ed.sel.fill([477, 113, 1477, 1113], "#ff0000");
+        ed.markSelectionChanged([477, 113, 1477, 1113]);
+        ed.getBounds();
+        ed.activeLayerId = paintLayer.id;
+        out.bucket_sel = await op(() => ed.bucketFill(977, 613));
+    }
+
     let mem = null;
     try { mem = Math.round((await performance.measureUserAgentSpecificMemory()).bytes / 1048576); } catch (_) { /* needs isolation */ }
 
@@ -501,6 +538,10 @@ OP_ROWS = [
     ("its commit, band by band", "long_commit"),
     ("PNG of the composite", "png"),
     ("the same without the worker", "png_main"),
+    ("film point add (look under it)", "point_add"),
+    ("sample.mean_color, 1000 px sel.", "mean_color"),
+    ("  the same, stack without filter/match", "mean_color_plain"),
+    ("bucket in a 1000 px selection", "bucket_sel"),
 ]
 
 

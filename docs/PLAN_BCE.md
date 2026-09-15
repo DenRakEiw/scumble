@@ -2445,6 +2445,107 @@ its region view runs only for a live stroke, which is keyed by the gesture. So n
   | the part is the whole layer again | "a 1 pass over a box matched [1200,900] source pixels of the layer" |
   | the part cut two source pixels too tight on every side | "the 1 pass over the box differs from the pass over the whole layer by 148 levels on 2694 bytes" |
 
+**(c1) Box reads at level 0** (`inpaint_canvas.js`, `inpaint_filters.js`, `renderer/plugins.js`, `plugins/film/points.js`,
+`plugins/film/filters.js`, `plugins/sample/main.js`, the three gates, `tools/perf_test.py`, `docs/PLUGINS.md`):
+
+- **Measured before** (15000 x 10000, tiles on, `perf_test.py` with the new rows at its end, on bc3814d; two runs, the second
+  through a worktree of it, the ComfyUI queue empty):
+
+  | row | before | after |
+  |---|---|---|
+  | film point add, the film look under it, blocked [wall] | 5076 [5069], 5128 [5117] | 362 [349], 261 [256] |
+  | `sample.mean_color`, 1000 px selection, film look and matched result shown | 5254 [5254], 5220 [5220] | 5110 [5042], 4479 [4479] |
+  | the same with the filter layer and the matched result hidden | 2615 [2615], 2789 [2788] | 154 [149], 306 [304] |
+  | bucket in a 1000 px selection (inside a disc of the base) | 328 [629] | 348 [536] |
+
+  On a 15000 x 10000 base with a film look the point's colour read itself is 2.7-3.9 ms (box padded by 0 or 128 px) and
+  3.4-5.9 ms (256 px); the whole `film.add_point` command 11-12 ms. The row's blocked time is the frame the new points
+  layer draws. `mean_color` with the film look shown stays a whole flatten by design (below). The bucket row did not move: the
+  whole selection materialised per fine round (a 572 MB canvas holding a few tiles) was not what held the window longest; the
+  row was not broken down further.
+- **The film control points' colour** (the user's decision): the 3 x 3 mean at full resolution of the points layer's
+  **input** under the point, the picture its shader compares every pixel with. Before, `sampleColor` read a 256 px copy
+  of that input left by the last full-resolution `apply` (stale after any change below; nothing dropped it), or else
+  `doc.flatten()`: the whole composite with the points' own effect and the layers above. Now one `flatten({ box, below:
+  <points layer>, pad: 128 })`; `apply` no longer makes the copy. `below` is `drawLayersInto`'s new `upTo` (the loop, the
+  filter chain's look-ahead and `drawComposite`'s filter test stop at that index), which match §4's statistics pass wants too
+  (`sampleRegion(..., { upTo })`). The pad, measured on a 1600 x 1200 textured base with bright discs: the box read against a
+  crop of the whole flatten (max level difference in the box; the 3 x 3 mean's difference in the points' colour space):
+
+  | filter below | pad 0 | 8 | 16 | 32 | 64 | 128 | 256 |
+  |---|---|---|---|---|---|---|---|
+  | glow (40 px) | 5 | 5 | 5 | 4 | 1 | 0 | 0 |
+  | halation (30 px) | 2 | 2 | 2 | 2 | 0 | 0 | 0 |
+  | tonal contrast (40 px) | 7 | 10 | 11 | 9 | 1 | 1 | 1 |
+  | structure (3 px), film b&w | 14, 7 | 0, 1 | 0, 0 | 0 | 0 | 0 | 0 |
+  | Gaussian blur 4 / 64 px | 28 / 28 | 1 / 29 | 0 / 30 | 0 / 24 | 0 / 2 | 0 / 1 | 0 / 1 |
+  | the film look (portra 400), a 300 x 200 box | 8 | 7 | 7 | 7 | 7 | 6 | 4 |
+
+  128 px, where the blur-based film filters at their default radii meet the whole picture. The film look's own halation is
+  sized from the long side of what a pass composites (1.2 % of it) and never matches the whole picture's in a box: at the
+  centre of that picture 0 (no highlight near), 1 level with CineStill 800T, 2-8 on a 300 x 200 box. The grain field is
+  anchored at the image's origin and reads 0 at every pad.
+- **`sampleRegion(..., { pad })`**: the box composited with a margin (clamped to the image) and handed back as a CPU canvas of
+  the box. **`readBox(box, { upTo })`**: the full flatten's pixels of the box: padded by `boxReach`, the sum of the visible filter
+  layers' **`reach`** (a new optional field of a filter definition: a number or a function of the params, the image pixels a
+  result pixel reads around it; plugins pass it through `filters.register`). Infinity, and so the whole flatten cut out
+  (`compositeCanvas`, kept per composite version), when a filter declares none (normalise, vignette, frame, light leak, the look
+  with halation, any plugin filter that does not say), a colour-matched layer is near the padded box, or a layer near it is
+  drawn scaled, at a fractional position or through a pending transform. Measured on tiles against the whole flatten: a text
+  layer (rendered at twice its size) 1 level at opacity 1 and 2 at 0.8 on its anti-aliased edge; a layer at a fractional
+  position 13 levels on its last column and row; an unscaled layer at a whole position 0; the canvas backend 0-1. Declared:
+  grain, levels, curves, brightness / contrast, hue / saturation, colour balance, black & white, invert, LUT, bleach bypass,
+  cross processing, split toning and the sample's posterize 0; blur, sharpen, halation, glow, tonal contrast and structure
+  `ceil(3 * radius) + 4`; film b&w 16; control points 16 with structure, else 0. With a blur in the stack the padded box comes
+  out within 1-3 levels of the whole flatten (Skia's blur of a smaller canvas: sharpen 12 px 2-3 at any pad).
+- **`Document`**: `flatten({ below, pad, exact })` (`exact` with a box: `readBox`); `selection()` reads the bounds
+  (`sel.readRect` of the bounds, the W x H mask filled row by row: the contract unchanged), and `selection({ box: true })` hands
+  back the bounds' mask alone. `flatten()`, `getPixels()` and `selection()` without options keep their contracts.
+- **The sample plugin**: `mean_color` with a selection and *Selection to new layer* read `selection({ box: true })` and
+  `flatten({ box: bounds, exact: true })`; `mean_color` without a selection stays the whole `getPixels()` (the user's decision,
+  phase E). The probe tool reads one 256 px square per square the cursor enters (`exact`), kept until the document changes: not a
+  flatten per change, not a pass per hover (a readback per pixel would count toward Chromium's acceleration latch).
+- **The bucket's fine rounds** take `sel.toCanvas(box)` for their clip instead of `toCanvas()` of the whole selection per round;
+  a whole-image flood keeps `toCanvas()` (the canvas backend's own canvas, no copy).
+- **The filter cache key trap** (critic §2): `filteredCanvas` keyed a sampled pass on its size and origin only, so a full
+  resolution box at the origin after the film panel's 192 px picture of the whole image (both 192 x 128 at 0, 0) got the
+  panel's filter output. The key carries the pass's `w`, `h`, `sx`, `sy` now.
+- **Not built, and why**: a box read for scaled layers (the 1-2 levels above; `exact` would not be exact), and a colour-matched
+  layer's statistics for a box (slice 7). `mean_color` with the perf document's film look shown stays a whole flatten: its
+  halation depends on the pass's size. The level choice for a scaled layer in a sampled pass at scale 1 was tried (level 0 for
+  every layer, so a text layer draws like the flatten): it did not make the text layer exact on tiles and would have changed the
+  eyedropper's and the flood's picture of downscaled layers against the canvas backend, so it was taken out again.
+- **Gates** (both backends):
+  - `film_test.py` `add_point_command`: counters on `flattenToCanvas` and on `Document.flatten` without options stay 0 and
+    no display mirror is made (tiles); point 1's colour is the whole flatten below the points layer (`upTo`) within 1e-6; after a
+    full-resolution flatten a paint layer under the points gets a red / green edge at x = 400 and point 2 on that edge takes the
+    new colour; point 3 inside point 1's reach under a blue layer above the points layer takes the colour below both, and the
+    step checks that the whole picture there differs.
+  - `commands_test.py` `selection`: `mean_color` of a 100 x 50 mask equals the mean of the whole flatten's thresholded pixels
+    exactly (pixels and rgb), no flatten, no mirror, every `sel.readRect` within the bounds (three reads of 100 x 50);
+    `Document.selection()` and `selection({ box: true })` equal the thresholded whole selection byte for byte.
+    `plugin_action_and_undo`: *Selection to new layer* clear of the text layer: no flatten, no mirror, the copy equals the whole
+    flatten's masked pixels exactly; over the text layer: one flatten, the same exactness. `plugin_tool_and_panel`: 20 hovers
+    over three squares clear of the text layer say the whole flatten's rgb, no flatten, at most three canvases read back, no
+    mirror; the square with the text says the same through one flatten.
+  - `editor_test.py` `wand_and_bucket_flood_a_region_not_the_image`: the bucket inside a selection that cuts the right blob
+    (the box path, one round) reads its part of the selection (680,625 px, not 15,000,000) and fills inside, not outside.
+    New `a_sampled_pass_keys_its_filter_output_on_its_box_and_scale`: a 192 x 128 box at full resolution after a 192 px pass of
+    a 1200 x 800 picture with an invert filter layer equals the flatten (0 levels).
+- **Mutations, each red** (tile mode, fresh instance, the source restored and compared):
+
+  | mutation | red |
+  |---|---|
+  | the points' colour from `doc.flatten()` again | "placing a point flattened the picture: {flatten: 1, whole: 1}" |
+  | the points' box one pixel to the right | "point 1's colour [0.3157, -0.0621, 0.1863] is not the picture below it [0.3153, -0.0630, 0.1867]" |
+  | the points' box of the whole composite (no `below`) | "point 3 took [0.1465, -0.1073, 0.8339] with the points' own effect or the layer above in it" |
+  | the bucket's rounds read the whole selection | "the bucket read the whole selection for a box: [15000000]" |
+  | `mean_color`'s box one pixel to the right | "mean_color ... rgb [35,22,128] is not the whole flatten's ... [34,22,128]" |
+  | `selection()` reads its bounds one column short | "mean_color {pixels: 4950} is not the whole flatten's {pixels: 5000}" |
+  | the probe reads `getPixels()` | "the probe flattened the picture 3 times" |
+  | the filter key without the pass's box and scale | "differs from the flatten by 255 levels on 59240 bytes: it took the other pass's filter output" |
+  | the selection box readers read the whole picture too | "mean_color with a selection flattened the picture 1 times" |
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in
