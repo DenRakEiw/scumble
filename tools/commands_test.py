@@ -386,6 +386,9 @@ const oldShot = (a) => {
     }
     return cv;
 };
+// primed cells a read holds until it releases them; another reader's (the film panel renders 500 ms after a change)
+// may hold some for a moment, so a leak is cells that never drain
+const primedDrained = async (ed) => { for (let i = 0; i < 60; i++) { const t = ed.memoryReport().tiles; if (!t || !t.primedBytes) return 0; await new Promise((r) => setTimeout(r, 50)); } return ed.memoryReport().tiles.primedBytes; };
 const bytesOf = (cv) => cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
 const cases = [
     { what: "image", max_size: 1024 },                     // level 1
@@ -411,7 +414,8 @@ try {
             if (flats) throw new Error(`${a.what} ${a.max_size}: the screenshot flattened the picture ${flats} times`);
             if (rep.tiles.mirrors) throw new Error(`${a.what} ${a.max_size}: the screenshot made ${rep.tiles.mirrors} display mirrors (${(rep.tiles.mirrorBytes / 1048576).toFixed(1)} MB)`);
             if (P.displayCanvasIfMade(ed.sel) || P.displayCanvasIfMade(L.px)) throw new Error(`${a.what} ${a.max_size}: a display mirror of the selection or the layer was made`);
-            if (rep.tiles.primedBytes) throw new Error(`${a.what} ${a.max_size}: ${rep.tiles.primedBytes} bytes of primed cells were left behind`);
+            const leftP = await primedDrained(ed);
+            if (leftP) throw new Error(`${a.what} ${a.max_size}: ${leftP} bytes of primed cells were left behind`);
         }
         const x = bytesOf(got.canvas), refC = oldShot(a), y = bytesOf(refC);
         if (got.canvas.width !== refC.width || got.canvas.height !== refC.height) throw new Error(`${a.what} ${a.max_size}: ${got.canvas.width}x${got.canvas.height} against the old ${refC.width}x${refC.height}`);

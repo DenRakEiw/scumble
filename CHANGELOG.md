@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.15 — unreleased
+## 0.1.15 — 2026-09-16
 
 - **The film looks panel and the 3D dialog no longer freeze the window on a large picture.** Half a
   second after every change to a document, the *Film looks* panel makes a small picture of it for its

@@ -75,6 +75,24 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
+## Where things stand (2026-09-16, evening: 0.1.15 tagged)
+
+**Read this block first; the block below (7a) still says what the next session starts with: 7b.**
+
+- **0.1.15** carries C6 (c) slices 3 to 7a (`CHANGELOG.md` 0.1.15). The commit that carries this block is tagged
+  `v0.1.15`; the workflow builds a **draft** from the CHANGELOG section. **Publishing it is the user's step**
+  (`gh release edit v0.1.15 --draft=false`). After the tag, `package.json` went to **0.1.16** with an empty section.
+- Gates for the release: `npm run dist` -> `Scumble Setup 0.1.15.exe`; against `dist/win-unpacked/Scumble.exe`, own
+  profiles: `rel15-exe` (pixels editor commands composite brush film glb toapis mcp, the default `{ tiles: true, from:
+  "default" }`) all PASS but `commands`, and `rel15-exe-canvas` (`--tiles off`: pixels editor composite commands) ALL
+  PASS. No Flux run, on the user's word.
+- **The `commands` failure was the test**: `screenshot_reads_levels` read `memoryReport().tiles.primedBytes` right after
+  the call, and the built-in film panel's own settled flatten (500 ms after a change) holds primed cells on the same
+  pixels for a moment - the same cause as the one-off "primed cells were left behind" in slice 6's step. The three steps
+  (`screenshot_reads_levels`, `prompt_context_reads_levels_not_a_flatten`, `helper_inputs_read_levels_and_upload_nothing`)
+  wait up to 3 s for the cells to drain now; a mutation that drops `job.release()` in `shotCanvas` stays red ("192512
+  bytes of primed cells were left behind"). `rel15-exe2` (commands editor on the exe) ALL PASS.
+
 ## Where things stand (2026-09-16, evening: C6 (c) slice 7a is built and pushed)
 
 **Read this block first; it supersedes the "What the next session starts with" of the block below.** `docs/PLAN_BCE.md`

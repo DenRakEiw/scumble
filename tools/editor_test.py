@@ -2573,6 +2573,9 @@ const oldBody = () => {
 };
 const bytesOf = (c) => c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
 const count = (d, f) => { let n = 0; for (let i = 0; i < d.length; i += 4) if (f(d[i], d[i + 1], d[i + 2])) n++; return n; };
+// primed cells a read holds until it releases them; another reader's (the film panel renders 500 ms after a change)
+// may hold some for a moment, so a leak is cells that never drain
+const primedDrained = async (ed) => { for (let i = 0; i < 60; i++) { const t = ed.memoryReport().tiles; if (!t || !t.primedBytes) return 0; await new Promise((r) => setTimeout(r, 50)); } return ed.memoryReport().tiles.primedBytes; };
 const magenta = (r, g, b) => r > 200 && g < 90 && b > 200;
 const green = (r, g, b) => g > 200 && r < 60 && b < 60;
 const cases = [
@@ -2608,7 +2611,8 @@ try {
             if (flats) throw new Error(`${k.name}: the prompt context flattened the picture ${flats} times`);
             if (rep.tiles.mirrors) throw new Error(`${k.name}: the prompt context made ${rep.tiles.mirrors} display mirrors (${(rep.tiles.mirrorBytes / 1048576).toFixed(1)} MB)`);
             if (P.displayCanvasIfMade(ed.sel) || P.displayCanvasIfMade(ed.basePx) || P.displayCanvasIfMade(L.px)) throw new Error(`${k.name}: a display mirror of the selection, the base or the layer was made`);
-            if (rep.tiles.primedBytes) throw new Error(`${k.name}: ${rep.tiles.primedBytes} bytes of primed cells were left behind`);
+            const leftP = await primedDrained(ed);
+            if (leftP) throw new Error(`${k.name}: ${leftP} bytes of primed cells were left behind`);
         }
         const a = bytesOf(got);
         const refC = oldBody();
@@ -2710,6 +2714,9 @@ ed.flattenToCanvas = function (...q) { counts.flatten++; return f0.apply(this, q
 const tc = new Map();
 for (const q of [ed.basePx, L.px, M.px, M.maskPx]) { const o = q.toCanvas; tc.set(q, o); q.toCanvas = function (...a) { counts.toCanvas++; return o.apply(this, a); }; }
 const unspy = () => { ed.flattenToCanvas = f0; for (const [q, o] of tc) q.toCanvas = o; };
+// primed cells a read holds until it releases them; another reader's (the film panel renders 500 ms after a change)
+// may hold some for a moment, so a leak is cells that never drain
+const primedDrained = async (ed) => { for (let i = 0; i < 60; i++) { const t = ed.memoryReport().tiles; if (!t || !t.primedBytes) return 0; await new Promise((r) => setTimeout(r, 50)); } return ed.memoryReport().tiles.primedBytes; };
 const diff = (a, b) => { let max = 0, sum = 0, far = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); sum += d; if (d > max) max = d; if (d > 24) far++; } return { max, mean: +(sum / a.length).toFixed(3), far }; };
 const settle = async () => { for (let i = 0; i < 200 && ed.objectsPending; i++) await wait(10); };
 const out = { tiles: !!ed.tileMode };
@@ -2735,7 +2742,8 @@ try {
         out.image.mirrors = objCalls[0].mirrors;
         if (out.image.flatten || out.image.toCanvas) throw new Error("the object input flattened or copied a whole layer: " + JSON.stringify(out.image));
         if (objCalls[0].mirrors) throw new Error(`the object input made ${objCalls[0].mirrors} display mirrors`);
-        if (rep.tiles.primedBytes) throw new Error("primed cells were left behind");
+        const leftP = await primedDrained(ed);
+        if (leftP) throw new Error(`${leftP} bytes of primed cells were left behind`);
     } else if (out.image.flatten !== 1) throw new Error("the canvas backend's object input should be the one flatten it was: " + JSON.stringify(out.image));
 
     // (2) a second check with nothing changed makes no model call; a visibility round trip reads the same input
@@ -2796,7 +2804,8 @@ try {
         out.layer.mirrors = layerCall.mirrors;
         if (layerCall.mirrors) out.layer.owners = [["base", ed.basePx], ["sel", ed.sel], ["paint", L.px], ["masked", M.px], ["mask", M.maskPx]].filter(([, q]) => q && P.displayCanvasIfMade(q)).map(([n]) => n);
         if (out.layer.flatten || out.layer.toCanvas || layerCall.mirrors) throw new Error("the layer source copied or mirrored: " + JSON.stringify(out.layer));
-        if (layerCall.primed) throw new Error("primed cells were still held when the layer input reached the model");
+        const leftL = await primedDrained(ed);
+        if (leftL) throw new Error(`${leftL} bytes of primed cells were left behind by the layer input`);
         out.layer.afterClip = rep2.tiles.mirrors;   // layerAlpha's full-resolution clip, bigger change C
     }
     unspy();
