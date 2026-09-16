@@ -77,28 +77,31 @@ code.
 
 ## Where things stand (2026-09-16, afternoon: C6 (c) slice 6 is built and pushed)
 
-**Read this block first; it supersedes the "What the next session starts with" of the block below.** 
-§C6 "C6 (c) slice 6 as built" is the record;  0.1.15 has its bullet.
+**Read this block first; it supersedes the "What the next session starts with" of the block below.** `docs/PLAN_BCE.md`
+§C6 "C6 (c) slice 6 as built" is the record; `CHANGELOG.md` 0.1.15 has its bullet.
 
-- **Slice 6**, the in-app helper models' inputs ():  (one uniform region pass on
-  tiles, then the squash; a layer with its mask from its tiles),  (the layer's levels),  (the
-  map and the SAM2 embedding are keyed on a SHA-1 of the 1024 px input),  (one member for the three IPC
-  calls).  takes the in-app branch before , so nothing is flattened, encoded or uploaded;
-  the hover compares  with  instead of . Canvas backend
+- **Slice 6**, the in-app helper models' inputs (`renderer/editor/host.js`): `objectInput` (one uniform region pass on
+  tiles, then the squash; a layer with its mask from its tiles), `cutoutInput` (the layer's levels), `inputHash` (the
+  map and the SAM2 embedding are keyed on a SHA-1 of the 1024 px input), `helperCall` (one member for the three IPC
+  calls). `ensureObjects` takes the in-app branch before `segmentSource`, so nothing is flattened, encoded or uploaded;
+  the hover compares `objects.version` with `compositeVersion` instead of `uploaded.baseHash`. Canvas backend
   byte-identical. At 15k: object input 1955 -> 174 ms blocked and 1733 -> 16 MB (the matched result, slice 7b), cutout
-  input 571 -> 38 ms. Gate  (model stand-in), seven mutations red, all
+  input 571 -> 38 ms. Gate `helper_inputs_read_levels_and_upload_nothing` (model stand-in), seven mutations red, all
   gates PASS on both backends.
 - **Not run:** a real SAM2 / RMBG model on this code (no model in a gate profile; the IPC shape is unchanged).
-- **Still slow in the object tool** ( §7 to §9, bigger changes A, B, C): the label map at image
+- **Still slow in the object tool** (`dist/c6map/c/objects.md` §7 to §9, bigger changes A, B, C): the label map at image
   size (286 MB), a W x H shape canvas per hovered object (200-400 ms each at 15k, up to 13 kept), the point prompt's
-  W x H mask and 's full-resolution clip in "active layer" mode. The map recommends A before or with C4.
-- **Flake seen twice today:**   with the last two of four tabs alive
-  (), once per backend; both re-runs passed. Not investigated.
+  W x H mask and `layerAlpha`'s full-resolution clip in "active layer" mode. The map recommends A before or with C4.
+- **Flake seen twice today:** `editor_test.py` `closed_tabs_are_collected` with the last two of four tabs alive
+  (`[false, false, true, true]`), once per backend; both re-runs passed. Not investigated.
+- **Trap met today:** a Bash-tool heredoc that is not quoted (`<<EOF`) runs every backtick span of the text it carries
+  as a command. Markdown full of `code` then executes file names as shell scripts (it did, without damage) and commits
+  the text with the spans missing. Quote the delimiter (`<<'EOF'`) or write the text with the Write tool.
 
 **What the next session starts with:**
 1. **Slice 7**, colour match: 7a (the null-statistics race, a real bug), 7b (the matched region view, which also removes
    the 16 MB mirror slices 5 and 6 still show), 7c (statistics independent of the pass, the user's decision (a), with
-   the measurement for (b)), 7d (GPU uniforms). .
+   the measurement for (b)), 7d (GPU uniforms). `dist/c6map/c/match.md`.
 2. Then C6 (d), the object tool's bigger change A (ask the user where it goes), C4, the rest of §C7, phase R.
 
 ## Where things stand (2026-09-16, day: C6 (c) slice 5 is built and pushed)
