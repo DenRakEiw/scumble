@@ -1,16 +1,18 @@
-// The pixel kernels of the tile engine without Electron: renderer/editor/px/kernels_js.js
-// (docs/PLAN_BCE.md §B2; phase B chose them over Rust, docs/PERFORMANCE.md §10).
+// The pixel kernels of the tile engine without Electron: renderer/editor/px/kernels_js.js and
+// their Rust builds px.wasm / px_scalar.wasm (docs/PLAN_BCE.md §B2, §2b).
 //
 //     node tools/px_test.js
 //
-// Every kernel against a plain reference written here from the documented formulas (no fast
-// paths, no word tricks), byte for byte on random inputs; the twins against the editor's
-// current code (`distanceTransform`, `floodMask` in inpaint_raster.js) and against first
-// principles (brute force distances, repeated halving, float source-over, PNG unfiltering,
-// zlib inflate). The Rust kernels these references were checked against are in the history
-// of the branch px-spike.
+// Every JS kernel against a plain reference written here from the documented formulas (no fast
+// paths, no word tricks), byte for byte on random inputs, and against the editor's current code
+// (`distanceTransform`, `floodMask` in inpaint_raster.js) and first principles (brute force
+// distances, repeated halving, float source-over, PNG unfiltering, zlib inflate). Then every
+// Rust kernel of both builds against its JS twin, byte for byte (the EDT as f32 bits), and the
+// module's memory: alloc / free, a view that goes stale when memory grows and the fresh one that
+// replaces it, pointers above 2 GB, the arena's take / reset.
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
@@ -21,6 +23,61 @@ let failures = 0;
 function check(name, ok, detail = "") {
     console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? "  " + detail : ""}`);
     if (!ok) failures++;
+}
+
+async function memoryCases(px, label) {
+    const MB = 1 << 20;
+    const a = px.alloc(MB);
+    check(`${label} alloc returns an 8-aligned pointer`, a > 0 && a % 8 === 0, `ptr ${a}`);
+    const stale = px.u8();
+    for (let i = 0; i < 4096; i++) stale[a + i] = (i * 31) & 255;
+    const before = px.byteLength;
+    const big = px.alloc(256 * MB);            // forces memory.grow
+    check(`${label} a large alloc grows memory`, px.byteLength > before, `${before} -> ${px.byteLength}`);
+    check(`${label} the old view is detached after growth`, stale.byteLength === 0 || stale.buffer !== px.memory.buffer);
+    const fresh = px.u8();
+    let same = true;
+    for (let i = 0; i < 4096; i++) if (fresh[a + i] !== ((i * 31) & 255)) { same = false; break; }
+    check(`${label} the fresh view sees the bytes written before growth`, same);
+    px.free(big, 256 * MB);
+    px.free(a, MB);
+
+    // f32 round trip through put / get
+    const f = new Float32Array([1.5, -2.25, 1e20, 0]);
+    const p = px.alloc(f.byteLength);
+    px.put(p, f);
+    const back = px.get(Float32Array, p, 4);
+    check(`${label} put / get of a Float32Array`, back.every((v, i) => v === f[i]));
+    px.free(p, f.byteLength);
+
+    // the arena: two jobs of the same shape allocate once
+    const arena = px.arena(64 * 1024);
+    const x = arena.take(100_000), y = arena.take(50_000);
+    check(`${label} arena blocks do not overlap`, y >= x + 100_000 || x >= y + 50_000);
+    arena.reset();
+    const x2 = arena.take(100_000), y2 = arena.take(50_000);
+    arena.reset();
+    const chunks = arena.chunks.length;
+    const x3 = arena.take(100_000), y3 = arena.take(50_000);
+    check(`${label} after a reset the job fits one kept chunk`, chunks === 1 && arena.chunks.length === 1 && x3 === x2 && y3 === y2,
+        `chunks ${chunks}`);
+    arena.dispose();
+
+    // pointers above 2 GB come back as negative i32 from the export
+    const GB = 1024 * MB;
+    const blocks = [];
+    let high = 0;
+    try {
+        while (px.byteLength < 2.2 * GB) blocks.push(px.alloc(512 * MB));
+        high = px.alloc(MB);
+        const v = px.u8();
+        v[high] = 77; v[high + MB - 1] = 78;
+        check(`${label} a pointer above 2 GB is usable`, high > 2 * GB && v[high] === 77 && v[high + MB - 1] === 78, `ptr ${high}`);
+    } catch (e) {
+        check(`${label} a pointer above 2 GB is usable`, false, String(e));
+    }
+    if (high) px.free(high, MB);
+    for (const b of blocks) px.free(b, 512 * MB);
 }
 
 // ---- inputs ------------------------------------------------------------------------------------
@@ -146,7 +203,7 @@ async function edtCases(ref, label, js, raster) {
         const a = js.distTransform(feature, w, h), b = ref.distTransform(feature, w, h);
         if (!eqBytes(a, b)) { ok = false; detail = `${w}x${h} ${firstDiff(a, b)}`; }
     }
-    check(`js distTransform equals distanceTransform (inpaint_raster.js) bit for bit`, ok, detail);
+    check(`js distTransform equals the ${label} bit for bit`, ok, detail);
     // brute force on a small case: the exact squared distance
     const w = 41, h = 29, feature = blobs(w, h, 99, 2), d = js.distTransform(feature, w, h);
     let exact = true;
@@ -174,7 +231,7 @@ async function floodCases(ref, label, js, raster) {
             }
         }
     }
-    check(`js flood equals floodMask (inpaint_raster.js), with the count`, ok, detail);
+    check(`js flood equals the ${label}, with the count`, ok, detail);
 }
 
 async function compositeCases(ref, label, js) {
@@ -337,6 +394,7 @@ const reference = {
 async function main() {
     const js = await import(pathToFileURL(path.join(PX_DIR, "kernels_js.js")).href);
     const raster = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_raster.js")).href);
+    const { loadPx } = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
     const ref = {
         ...reference,
         distTransform: (f, w, h) => raster.distanceTransform(f, w, h),
@@ -346,12 +404,23 @@ async function main() {
             return m;
         },
     };
-    const label = "reference";
+    const label = "reference (distanceTransform / floodMask for the EDT and the flood)";
     await mipCases(ref, label, js);
     await edtCases(ref, label, js, raster);
     await floodCases(ref, label, js, raster);
     await compositeCases(ref, label, js);
     await pngCases(ref, label, js);
+    for (const [name, file] of [["simd", "px.wasm"], ["scalar", "px_scalar.wasm"]]) {
+        const px = await loadPx(fs.readFileSync(path.join(PX_DIR, file)));
+        const label = `rust ${name}`;
+        check(`${label} module reports its SIMD flag`, px.simd === (name === "simd"));
+        await mipCases(px, label, js);
+        await edtCases(px, label, js, raster);
+        await floodCases(px, label, js, raster);
+        await compositeCases(px, label, js);
+        await pngCases(px, label, js);
+        await memoryCases(px, label);
+    }
     console.log(failures ? `FAIL (${failures})` : "PASS");
     process.exit(failures ? 1 : 0);
 }

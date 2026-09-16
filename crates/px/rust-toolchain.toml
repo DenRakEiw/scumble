@@ -1,0 +1,6 @@
+# The exact compiler that built the committed renderer/editor/px/*.wasm, so a rebuild
+# reproduces them byte for byte (tools/build_px.py --check).
+[toolchain]
+channel = "1.98.1"
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"
