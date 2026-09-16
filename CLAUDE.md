@@ -75,17 +75,21 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
-## Where things stand (2026-09-16, evening: 0.1.15 tagged)
+## Where things stand (2026-09-16, evening: 0.1.15 published)
 
 **Read this block first; the block below (7a) still says what the next session starts with: 7b.**
 
 - **0.1.15** carries C6 (c) slices 3 to 7a (`CHANGELOG.md` 0.1.15). The commit that carries this block is tagged
-  `v0.1.15`; the workflow builds a **draft** from the CHANGELOG section. **Publishing it is the user's step**
-  (`gh release edit v0.1.15 --draft=false`). After the tag, `package.json` went to **0.1.16** with an empty section.
+  `v0.1.15`; **published** on the user's go (2026-09-16, Latest; `latest.yml` on the feed says 0.1.15). After the tag, `package.json` went to **0.1.16** with an empty section.
 - Gates for the release: `npm run dist` -> `Scumble Setup 0.1.15.exe`; against `dist/win-unpacked/Scumble.exe`, own
   profiles: `rel15-exe` (pixels editor commands composite brush film glb toapis mcp, the default `{ tiles: true, from:
   "default" }`) all PASS but `commands`, and `rel15-exe-canvas` (`--tiles off`: pixels editor composite commands) ALL
   PASS. No Flux run, on the user's word.
+- **The user needs their ComfyUI instance for now** (2026-09-16): no `smoke`, and no gate that forwards to it
+  (`commands`' `large_upload_route` uploads through the mirror to a connected ComfyUI) until they say it is free.
+- **New in `docs/BUGS.md`:** a headless MCP instance (this repo's `.mcp.json` starts the dev app with `--mcp`) held the
+  default profile's single-instance lock and Scumble showed no window on start. Stopping the two `electron.exe ... --mcp`
+  processes fixed it; cause of the missing hand-over not measured.
 - **The `commands` failure was the test**: `screenshot_reads_levels` read `memoryReport().tiles.primedBytes` right after
   the call, and the built-in film panel's own settled flatten (500 ms after a change) holds primed cells on the same
   pixels for a moment - the same cause as the one-off "primed cells were left behind" in slice 6's step. The three steps

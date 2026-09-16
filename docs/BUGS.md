@@ -19,6 +19,35 @@ Nothing at the moment.
 
 ## Open
 
+### A headless MCP instance keeps Scumble from starting
+
+**Reported** 2026-09-16 ("wieso kann ich die app nicht starten?"), during a Claude Code session in `F:\canvas`.
+
+**Seen:** starting Scumble showed no window at all. Two processes were running, both started by that session's MCP
+registration (`.mcp.json`: `electron.exe electron/main/mcp/launch.js --mcp`, i.e. the dev app from `F:\canvas`):
+the launcher and `electron.exe F:\canvas --mcp`. No Scumble was running when the session began, so the MCP server had
+started the app **headless** (`AgentBackend` in `electron/main/main.js`), on the default profile `%APPDATA%\Scumble`.
+It held that profile's single-instance lock since the start of the session. After both were stopped, the packaged app
+started normally.
+
+**Known:** both instances use the same `userData`, so a second start is meant to hand over to the running one:
+`app.on("second-instance", () => showWindow())` (`main.js` 573 for the headless agent path, 626 for the normal start),
+and `showWindow()` creates the window or restores a hidden one. `docs/MCP.md` and CLAUDE.md say "a second start of
+Scumble shows it". Here nothing appeared.
+
+**Not known, to measure first:**
+- Which binary the user started (the installed 0.1.14 in `%LOCALAPPDATA%\Programs`, or `dist\win-unpacked\Scumble.exe`),
+  and whether a second start of the **same** build as the headless one shows the window (dev headless + dev start,
+  exe headless + exe start). A dev and a packaged Electron may not share the lock or the hand-over.
+- Whether `second-instance` fires in the headless instance at all (log it), and whether `showWindow()` then creates a
+  window that stays hidden or off screen.
+- Whether the headless instance's renderer was ready (`bridge` ready) when the second start arrived.
+
+**Workaround:** start Scumble before Claude Code, so the MCP server drives the visible window; or stop the leftover
+`electron.exe ... --mcp` processes. A fix belongs in the hand-over (the running headless instance shows its window on a
+second start of any build), with a gate step in `tools/mcp_test.py`: start headless through the launcher, start the
+app a second time, assert a visible window within a few seconds.
+
 ### Erasing switches the active layer to the base
 
 Reported 2026-09-11, same session as the vanishing layer (fixed in 0.1.8, see
