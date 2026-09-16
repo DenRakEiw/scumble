@@ -17,6 +17,13 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **For plugin authors**: `flatten({ maxSize })` and `flatten({ box })` take `settled: true`, which
   returns a promise and does the same thing. `docs/PLUGINS.md` → "A picture that does not freeze the
   window".
+- **Screenshots for agents and prompt upsampling no longer stall a large picture.** The picture an
+  agent asks for after a change (`screenshot` over MCP) and the one a language model is shown when you
+  upsample a prompt are at most 1024 px wide, but they were made from the whole document at full size:
+  on a 15000 × 10000 picture about **2 seconds** of a frozen window and **1.7 GB** of memory each
+  time. With the tile engine on they now take **0.1 to 0.7 s** and read only the scaled-down picture.
+  Edges in these small pictures come out slightly smoother than before; with the tile engine off
+  nothing changes.
 
 ## 0.1.14 — 2026-09-15
 

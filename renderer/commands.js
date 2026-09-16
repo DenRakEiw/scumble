@@ -96,6 +96,54 @@ function requireImage(ed) {
     if (!ed.base || !ed.width) throw new Error("no image loaded: use load_image or new_canvas first");
 }
 
+/**
+ * The picture `screenshot` encodes, before the layer outlines and the JPEG: `{ canvas, w, h, s, src }`, exported for
+ * the gate. On tiles (C6 c5) the image is a region pass at the output's level, a layer is read from its own tiles and
+ * the selection tint from the mask's, each with its chains built in the mips worker. Before, it was a full-resolution
+ * flatten and the display mirrors of the layer and the selection: at 15000 x 10000 about 3.4 GB made and 2.9 GB kept
+ * for a 1024 px JPEG, on a command an agent calls after most steps. The canvas backend keeps its old draws.
+ */
+export async function shotCanvas(ed, a) {
+    const max = clampInt(a.max_size, 64, 4096, 1024);
+    const tiles = !!ed.tileMode;
+    const layer = a.what === "layer" ? findLayer(ed, a.layer) : null;
+    // a layer alone is its own pixels (unmasked, at their resolution); the picture is a composite
+    const src = layer ? { w: layer.px.width, h: layer.px.height } : { w: ed.width, h: ed.height };
+    const s = Math.min(1, max / Math.max(src.w, src.h));
+    const w = Math.max(1, Math.round(src.w * s)), h = Math.max(1, Math.round(src.h * s));
+    const c = makeCanvas(w, h);
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#202020"; ctx.fillRect(0, 0, w, h);
+    if (layer) {
+        const px = layer.px;
+        const job = tiles && typeof px.primeRegion === "function" ? await px.primeRegion([0, 0, src.w, src.h], ed.tileLevel(w / src.w)) : null;
+        try {
+            if (job && layer.px === px) {
+                ctx.save();
+                ctx.imageSmoothingEnabled = true;
+                ctx.setTransform(w / src.w, 0, 0, h / src.h, 0, 0);
+                ed.drawTilesInto(ctx, px, 0, 0, src.w, src.h, { x: 0, y: 0, w: src.w, h: src.h, sx: w / src.w, sy: h / src.h });
+                ctx.restore();
+            } else layer.px.drawTo(ctx, 0, 0, w, h);
+        } finally {
+            if (job) job.release();
+        }
+    } else if (tiles) {
+        ctx.drawImage(await ed.sampleRegionSettled("image", [0, 0, src.w, src.h], s, { forRun: a.what !== "editor" }), 0, 0);
+    } else {
+        ctx.drawImage(ed.flattenToCanvas({ forRun: a.what !== "editor" }), 0, 0, w, h);
+    }
+    const b = bounds(ed);
+    if (a.show_selection !== false && b && ed.sel && !layer) {
+        const m = await ed.selectionCanvasSettled([0, 0, src.w, src.h], s, w, h);
+        ctx.globalAlpha = 0.35;
+        if (m) ctx.drawImage(m, 0, 0); else ed.sel.drawTo(ctx, 0, 0, w, h);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = "#ff40ff"; ctx.lineWidth = 2; ctx.strokeRect(b.x * s, b.y * s, b.w * s, b.h * s);
+    }
+    return { canvas: c, w, h, s, src };
+}
+
 export function bounds(ed) {
     const b = ed.getBounds && ed.getBounds();
     return b ? { x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] } : null;
@@ -739,21 +787,8 @@ const COMMANDS = {
         needsImage: true, description: "A JPEG of the image (what = image: the flattened picture; editor: with hidden helpers; layer: one layer alone), base64 in `data`.",
         params: { what: P.str("image, editor or layer", { enum: ["image", "editor", "layer"], default: "image" }), layer: P.layer("for what = layer"), max_size: P.int("long side in pixels (64..4096)", { default: 1024 }), quality: P.num("JPEG quality 0.3..0.95", { default: 0.85 }), show_selection: P.bool("tint and outline the selection", { default: true }), show_layers: P.bool("outline and label the layers", { default: false }) },
         async run(ed, a) {
-            const max = clampInt(a.max_size, 64, 4096, 1024);
-            // a layer alone is its own pixels (unmasked, at their resolution); the picture is a composite canvas
-            const src = a.what === "layer" ? (() => { const l = findLayer(ed, a.layer); return { px: l.px, w: l.px.width, h: l.px.height }; })() : { canvas: ed.flattenToCanvas({ forRun: a.what !== "editor" }), w: ed.width, h: ed.height };
-            const s = Math.min(1, max / Math.max(src.w, src.h));
-            const w = Math.max(1, Math.round(src.w * s)), h = Math.max(1, Math.round(src.h * s));
-            const c = makeCanvas(w, h);
+            const { canvas: c, w, h, s, src } = await shotCanvas(ed, a);
             const ctx = c.getContext("2d");
-            ctx.fillStyle = "#202020"; ctx.fillRect(0, 0, w, h);
-            if (src.px) src.px.drawTo(ctx, 0, 0, w, h);
-            else ctx.drawImage(src.canvas, 0, 0, w, h);
-            const b = bounds(ed);
-            if (a.show_selection !== false && b && ed.sel && a.what !== "layer") {
-                ctx.globalAlpha = 0.35; ed.sel.drawTo(ctx, 0, 0, w, h); ctx.globalAlpha = 1;
-                ctx.strokeStyle = "#ff40ff"; ctx.lineWidth = 2; ctx.strokeRect(b.x * s, b.y * s, b.w * s, b.h * s);
-            }
             if (a.show_layers && a.what !== "layer") {
                 ctx.strokeStyle = "#7cc7ff"; ctx.lineWidth = 1; ctx.font = "12px sans-serif"; ctx.fillStyle = "#7cc7ff";
                 for (const l of ed.layers) { if (l.kind === "filter" || !l.visible) continue; ctx.strokeRect(l.x * s, l.y * s, l.w * s, l.h * s); ctx.fillText(l.name, l.x * s + 3, l.y * s + 13); }

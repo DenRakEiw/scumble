@@ -75,6 +75,37 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
+## Where things stand (2026-09-16, day: C6 (c) slice 5 is built and pushed)
+
+**Read this block first; it supersedes the "What the next session starts with" of the block below.** `docs/PLAN_BCE.md`
+§C6 "C6 (c) slice 5 as built" is the record. `CHANGELOG.md` 0.1.15 has its bullet. `package.json` is still **0.1.15**,
+unreleased. `docs/BUGS.md` no longer lists the live-stroke fix (0.1.14 is published).
+
+**Done this session:**
+- **The two owed benchmark runs** for slices 3 and 4, `perf:15000x10000` on the tree of 01cc8d0: `slice34-perf-tiles`
+  (192 px picture after a whole change: old way 468 ms, settled 43 ms [1134 wall], 98 chains built here against 2,360,
+  32.7 MB left against 221) and `slice34-perf-canvas`, both PASS. **`smoke` was dropped on the user's word** ("echten
+  flux lauf brauchen wir nicht, das funktioniert").
+- **Slice 5**: `promptContextCanvas()` is async and reads levels on tiles (`sampleRegionSettled` plus
+  `selectionCanvasSettled`, the selection's own tiles, exact); `drawSelectionInto` takes `display`; `screenshot` is
+  `shotCanvas(ed, a)` in `renderer/commands.js`, which reads the image, a layer and the tint from levels. Canvas backend
+  byte-identical. At 15k: screenshot 2122 -> 286 ms blocked, 1717 -> 0 MB of mirrors; prompt context about 1.9 s -> 0.07
+  to 0.7 s, 1.7 GB -> 16 MB, and that 16 MB is the colour-matched result's mirror (slice 7b). Gates
+  `prompt_context_reads_levels_not_a_flatten` and `screenshot_reads_levels`, five mutations red, three new rows in
+  `perf_test.py`.
+
+**Gate runs** (fresh instances, own profiles, strict): `s5-tiles2` and `s5-canvas` (commands editor) ALL PASS;
+`s5-all-tiles` (pixels composite shape brush film glb ailabel size transparent generate log llm toapis nodecopy) and
+`s5-all-canvas` (pixels composite film glb llm) PASS; `mcp` failed on both only because `tools/mcp_test.py` looked for
+`test_base.png` in `%APPDATA%/Scumble` whatever `--user-data-dir` said, and that file is no longer in the user's own
+profile. It reads the image from the profile it is given now; `s5-mcp-tiles` and `s5-mcp-canvas` PASS.
+
+**What the next session starts with:**
+1. **C6 (c) slice 6**, the helper inputs (`sourceCanvas`, the cutout input, `segmentPoint`, the input hash;
+   `dist/c6map/c/critic.md` §5 and `objects.md`). Also the first half of the slow object tool (O) on 15k documents.
+2. **Slice 7**, colour match: 7a is a real reproduced bug; 7b also removes the 16 MB mirror the slice 5 rows still show.
+3. Then C6 (d), C4, the rest of §C7, phase R.
+
 ## Where things stand (2026-09-16, night: C6 (c) slices 3 and 4 are built and pushed)
 
 **Read this block first; it supersedes the "Where the next session starts" of every block below.** `docs/PLAN_BCE.md`

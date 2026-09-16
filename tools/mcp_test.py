@@ -79,7 +79,8 @@ def raw_check():
         raise RuntimeError(f"stdout does not start with a JSON message: {p.stdout[:40]!r}")
     return f"{len(p.stdout)} bytes, starts with {chr(p.stdout[0])!r}"
 
-TEST_IMAGE = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~/.config")), "Scumble", "files", "input", "inpaint_canvas", "test_base.png")
+# the profile the app runs on holds the image: the one --user-data-dir names, else the default profile
+TEST_IMAGE = os.path.join(USER_DATA or os.path.join(os.environ.get("APPDATA", os.path.expanduser("~/.config")), "Scumble"), "files", "input", "inpaint_canvas", "test_base.png")
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 

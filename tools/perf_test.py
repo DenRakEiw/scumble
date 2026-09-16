@@ -520,6 +520,24 @@ BENCH = """
         ed.getBounds();
         ed.activeLayerId = paintLayer.id;
         out.bucket_sel = await op(() => ed.bucketFill(977, 613));
+        // C6 (c5): the screenshot an agent takes after most steps, and the picture a language model is shown for
+        // upsampling. Both were a full-resolution flatten plus the display mirrors of the selection (and a layer).
+        // Each row starts from released mirrors; [MB] is what the row itself made of them.
+        {
+            const mirrorsNow = () => { const t = ed.memoryReport().tiles; return t ? t.mirrorBytes : 0; };
+            const shot = async (key, fn) => {
+                ed.releaseCaches({ mirrors: true });
+                let made = 0;
+                out[key] = await op(async () => { const m0 = mirrorsNow(); await fn(); made = mirrorsNow() - m0; });
+                out[key + "_mb"] = [+(made / 1048576).toFixed(0), 0];
+            };
+            rect();
+            await shot("screenshot", () => cmds.run("screenshot", { max_size: 1024, doc: docId }));
+            ed.sel.clear(); ed.markSelectionChanged(null);
+            await shot("prompt_ctx", () => ed.promptContextCanvas());
+            box1000();
+            await shot("prompt_ctx_sel", () => ed.promptContextCanvas());
+        }
     }
 
     // --- C6 (c2): region passes over a masked layer, a masked filter layer, peek and a move drag ------------------
@@ -674,6 +692,12 @@ OP_ROWS = [
     ("sample.mean_color, 1000 px sel.", "mean_color"),
     ("  the same, stack without filter/match", "mean_color_plain"),
     ("bucket in a 1000 px selection", "bucket_sel"),
+    ("screenshot 1024 (MCP)", "screenshot"),
+    ("  mirrors made MB", "screenshot_mb"),
+    ("prompt context, no selection", "prompt_ctx"),
+    ("  mirrors made MB", "prompt_ctx_mb"),
+    ("prompt context, 1000 px selection", "prompt_ctx_sel"),
+    ("  mirrors made MB", "prompt_ctx_sel_mb"),
     ("magic wand, a masked layer", "wand_masked"),
     ("  mirrors made MB [_masked]", "wand_masked_mb"),
     ("eyedropper, Sample: the masked layer", "pick_layer"),

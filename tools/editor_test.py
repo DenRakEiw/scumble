@@ -2512,6 +2512,139 @@ if (out.async) {
 await run("remove_layer", { layer: L.id, doc: window.__t });
 return out;
 """),
+    ("prompt_context_reads_levels_not_a_flatten", """
+// C6 (c5): the picture a language model is shown for upsampling (the crop, the selection outlined in magenta or
+// filled green, long side <= 1024) was a full-resolution flatten plus the selection's display mirror: at
+// 15000 x 10000 about 3.4 GB made and 2.9 GB kept. On tiles it is a region pass at the output's level and the
+// selection from its own tiles, with the chains built in the mips worker. On canvases it stays the old picture,
+// byte for byte.
+await run("new_canvas", { width: 3000, height: 2000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const P = await import("./editor/inpaint_pixels.js");
+const W = ed.width, H = ed.height;
+// smooth content: a mip level and a bilinear draw of the whole flatten agree to a few levels there, so the old
+// picture is the yardstick
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#284878"); g.addColorStop(1, "#c89048");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 6; i++) { x.fillStyle = `hsl(${i * 60},55%,50%)`; x.beginPath(); x.arc(400 + i * 440, 1000 + (i % 2) * 300, 320, 0, 7); x.fill(); }
+}
+const baseRef = base.getContext("2d").getImageData(0, 0, W, H).data;
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "promptctx.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const paint = document.createElement("canvas"); paint.width = W; paint.height = H;
+{ const x = paint.getContext("2d"); x.fillStyle = "#808080"; x.fillRect(1600, 200, 1200, 900); }
+const L = ed.addLayer({ name: "Multiply", kind: "paint", px: ed.pixels.Layer.fromCanvas(paint), x: 0, y: 0, w: W, h: H, dirty: true });
+L.blend = "multiply";
+ed.renderLayers(); ed.fitView(); ed.draw();
+await ed.mipsSettled();
+
+// the body as it was before C6 (c5): the yardstick on tiles, and the exact expectation on canvases
+const oldBody = () => {
+    const [x, y, w, h] = ed.cropRect();
+    const flat = ed.flattenToCanvas({ forRun: true });
+    const scale = Math.min(1, 1024 / Math.max(w, h));
+    const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w * scale)); c.height = Math.max(1, Math.round(h * scale));
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(flat, x, y, w, h, 0, 0, c.width, c.height);
+    if (ed.getBounds()) {
+        const t = document.createElement("canvas"); t.width = c.width; t.height = c.height;
+        const r = t.getContext("2d");
+        if (ed.cropSettings.fill === "green") {
+            ed.sel.drawTo(r, x, y, w, h, 0, 0, c.width, c.height);
+            r.globalCompositeOperation = "source-in"; r.fillStyle = "#00ff00"; r.fillRect(0, 0, c.width, c.height);
+        } else {
+            const px = Math.max(2, Math.round(c.width / 300));
+            for (let dx = -px; dx <= px; dx += px) for (let dy = -px; dy <= px; dy += px) ed.sel.drawTo(r, x, y, w, h, dx, dy, c.width, c.height);
+            r.globalCompositeOperation = "destination-out"; ed.sel.drawTo(r, x, y, w, h, 0, 0, c.width, c.height);
+            r.globalCompositeOperation = "source-in"; r.fillStyle = "#ff00ff"; r.fillRect(0, 0, c.width, c.height);
+        }
+        ctx.drawImage(t, 0, 0);
+    }
+    return c;
+};
+const bytesOf = (c) => c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+const count = (d, f) => { let n = 0; for (let i = 0; i < d.length; i += 4) if (f(d[i], d[i + 1], d[i + 2])) n++; return n; };
+const magenta = (r, g, b) => r > 200 && g < 90 && b > 200;
+const green = (r, g, b) => g > 200 && r < 60 && b < 60;
+const cases = [
+    { name: "no selection", sel: null, fill: "magenta" },
+    { name: "whole ring", sel: [300, 250, 2300, 1500], fill: "magenta" },     // a crop above 1024: a level above 0
+    { name: "whole green", sel: [300, 250, 2300, 1500], fill: "green" },
+    { name: "small ring", sel: [1210, 530, 610, 410], fill: "magenta" },       // a crop at or near scale 1
+];
+const out = { tiles: !!ed.tileMode, cases: {} };
+const fill0 = ed.cropSettings.fill;
+try {
+    for (const k of cases) {
+        await run("select_none", { doc: window.__t });
+        if (k.sel) {
+            // an ellipse off the tile grid, so the edge is not a straight run of whole tiles
+            ed.sel.drawInto(null, (s) => { s.fillStyle = "#ff0000"; s.beginPath(); s.ellipse(k.sel[0] + k.sel[2] / 2 + 0.5, k.sel[1] + k.sel[3] / 2 + 0.5, k.sel[2] / 2, k.sel[3] / 2, 0, 0, Math.PI * 2); s.fill(); });
+            ed.markSelectionChanged();
+        }
+        ed.cropSettings.fill = k.fill;
+        ed.renderLayers(); ed.draw();
+        await ed.mipsSettled();
+        ed.releaseCaches({ mirrors: true, deep: true });
+        const f0 = ed.flattenToCanvas;
+        let flats = 0;
+        ed.flattenToCanvas = function (...q) { flats++; return f0.apply(this, q); };
+        let got;
+        try { got = await ed.promptContextCanvas(); } finally { ed.flattenToCanvas = f0; }
+        const rep = ed.memoryReport();
+        const crop = ed.cropRect();
+        const row = { size: [got.width, got.height], crop, flats };
+        if (ed.tileMode) {
+            row.mirrors = rep.tiles.mirrors;
+            if (flats) throw new Error(`${k.name}: the prompt context flattened the picture ${flats} times`);
+            if (rep.tiles.mirrors) throw new Error(`${k.name}: the prompt context made ${rep.tiles.mirrors} display mirrors (${(rep.tiles.mirrorBytes / 1048576).toFixed(1)} MB)`);
+            if (P.displayCanvasIfMade(ed.sel) || P.displayCanvasIfMade(ed.basePx) || P.displayCanvasIfMade(L.px)) throw new Error(`${k.name}: a display mirror of the selection, the base or the layer was made`);
+            if (rep.tiles.primedBytes) throw new Error(`${k.name}: ${rep.tiles.primedBytes} bytes of primed cells were left behind`);
+        }
+        const a = bytesOf(got);
+        const refC = oldBody();
+        const b = bytesOf(refC);
+        if (got.width !== refC.width || got.height !== refC.height) throw new Error(`${k.name}: ${got.width}x${got.height} against the old ${refC.width}x${refC.height}`);
+        let max = 0, far = 0;
+        const n = a.length;
+        for (let i = 0; i < n; i++) { const d = Math.abs(a[i] - b[i]); if (d > max) max = d; if (d > 4) far++; }
+        row.max = max; row.far = far;
+        const mk = k.fill === "green" ? green : magenta;
+        row.marked = [count(a, mk), count(b, mk)];
+        if (!ed.tileMode) {
+            if (max) throw new Error(`${k.name}: the canvas backend's picture changed by ${max} levels on ${far} bytes`);
+        } else {
+            // a level of the tiles against a bilinear draw of the whole flatten: the selection's edge is box-soft
+            // instead of stair-stepped, the rest agrees
+            if (far > n * 0.02) throw new Error(`${k.name}: ${far} of ${n} bytes differ by more than 4 levels from the old picture (max ${max})`);
+        }
+        if (k.sel) {
+            if (!row.marked[0]) throw new Error(`${k.name}: no ${k.fill} pixels in the picture`);
+            if (Math.abs(row.marked[0] - row.marked[1]) > row.marked[1] * 0.15 + 20) throw new Error(`${k.name}: ${row.marked[0]} ${k.fill} pixels against the old picture's ${row.marked[1]}`);
+        } else if (row.marked[0] !== row.marked[1]) throw new Error(`${k.name}: a selection was drawn with none`);
+        // the multiply layer darkens: the picture is the composite, not the base alone
+        const sc = got.width / crop[2];
+        const qx = Math.round((2200 - crop[0]) * sc), qy = Math.round((400 - crop[1]) * sc);
+        if (qx >= 0 && qy >= 0 && qx < got.width && qy < got.height) {
+            const i = (qy * got.width + qx) * 4, bi = (400 * W + 2200) * 4;
+            row.multiply = [a[i], baseRef[bi]];
+            if (baseRef[bi] - a[i] < 30) throw new Error(`${k.name}: the multiply layer is not in the picture (${a[i]} against the base's ${baseRef[bi]})`);
+        }
+        out.cases[k.name] = row;
+    }
+} finally {
+    ed.cropSettings.fill = fill0;
+    await run("select_none", { doc: window.__t });
+}
+await run("remove_layer", { layer: L.id, doc: window.__t });
+return out;
+"""),
     ("stroke_buffers_cover_the_gesture_not_the_layer", """
 // Phase A item 2 (docs/PLAN_TILES.md): a stroke's buffer and its selection clip cover what the
 // gesture touched, not the layer; the live preview is refreshed inside the dab's rectangle; the

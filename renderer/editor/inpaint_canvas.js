@@ -1561,9 +1561,11 @@ class InpaintEditor {
      * as it always was. `scale` is the destination pixels per image pixel.
      *
      * `region` is the image rectangle to cover ({ x, y, w, h }); the whole image when it is null,
-     * which is what the navigator's thumbnail wants.
+     * which is what the navigator's thumbnail wants. `display` false reads exact levels, for a picture that is
+     * not the screen (C6 c5: the prompt context, `screenshot`): a display read may show coarse cells of tiles whose
+     * chains are still in the worker, and asks for them as screen chains, whose landing redraws the screen.
      */
-    drawSelectionInto(ctx, scale, region = null) {
+    drawSelectionInto(ctx, scale, region = null, display = true) {
         if (this.selectionHasNoTiles()) return;
         if (!isTilePixels(this.sel)) {
             ctx.drawImage(this.displaySource(this.sel, scale, true), 0, 0, this.width, this.height);
@@ -1571,8 +1573,8 @@ class InpaintEditor {
         }
         const level = this.tileLevel(scale);
         const r = region || { x: 0, y: 0, w: this.width, h: this.height };
-        // every caller draws for the screen (the ants, the tint, the navigator, a live stroke's clip): display (C6 b)
-        const rc = this.sel.regionCanvas([r.x, r.y, r.x + r.w, r.y + r.h], level, true);
+        // the screen's callers (the ants, the tint, the navigator, a live stroke's clip) draw with display (C6 b)
+        const rc = this.sel.regionCanvas([r.x, r.y, r.x + r.w, r.y + r.h], level, display);
         if (!rc) return;
         // the canvas holds whole tiles, its last row and column the clamp past the image's edge: the
         // draw is cropped to the image, which is what the whole-image draw of the other path covers
@@ -4879,6 +4881,31 @@ class InpaintEditor {
         }
     }
 
+    /**
+     * The selection over `box` ([x0, y0, x1, y1] in image coordinates) at `scale`, as a canvas of `w` x `h` whose
+     * alpha is the mask (C6 c5): exact levels from the mask's tiles, with the chains built in the mips worker, as
+     * `sampleRegionSettled` does for the picture. Null on the canvas backend (the caller keeps `sel.drawTo`). Before,
+     * every such draw was `sel.drawTo`, which on tiles is the selection's display mirror: 600 MB at 15000 x 10000,
+     * kept, for a 1024 px picture.
+     */
+    async selectionCanvasSettled(box, scale, w, h) {
+        if (!this.tileMode || !isTilePixels(this.sel)) return null;
+        const m = makeCanvas(w, h);
+        if (this.selectionHasNoTiles()) return m;
+        const sel = this.sel;
+        const job = await sel.primeRegion(box, this.tileLevel(scale));
+        try {
+            if (this.sel !== sel) return m;   // replaced while its chains were on their way: nothing of it to draw
+            const mc = m.getContext("2d");
+            mc.imageSmoothingEnabled = true;
+            mc.setTransform(scale, 0, 0, scale, -box[0] * scale, -box[1] * scale);
+            this.drawSelectionInto(mc, scale, { x: box[0], y: box[1], w: box[2] - box[0], h: box[3] - box[1] }, false);
+        } finally {
+            job.release();
+        }
+        return m;
+    }
+
     readBox(box, { forRun = true, upTo = null } = {}) {
         const reach = this.boxReach(box, { forRun, upTo });
         const o = upTo == null ? { forRun } : { forRun, upTo };
@@ -6317,7 +6344,7 @@ class InpaintEditor {
                 seg_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(ref) } },
             };
             if (fromPrompt && llm.inApp) {
-                text = (await host.askLLM(llm, segmentTermInstruction(this.promptInput.value.trim()), this.promptContextCanvas())).text.replace(/[."']/g, "").trim();
+                text = (await host.askLLM(llm, segmentTermInstruction(this.promptInput.value.trim()), await this.promptContextCanvas())).text.replace(/[."']/g, "").trim();
                 if (!text) throw new Error(`${llm.label} named no object`);
                 this.setStatus(`Segmenting "${text}" (from the prompt, ${llm.label}) with ${backend.label} ...`);
             } else if (fromPrompt) {
@@ -6389,21 +6416,37 @@ class InpaintEditor {
 
     // ---- prompt upsampling -----------------------------------------------------
 
-    /** The crop the model will see, with the selection tinted red (or solid green when Fill is green), long side <= 1024. */
-    promptContextCanvas() {
+    /**
+     * The crop the model will see, with the selection outlined in magenta (or solid green when Fill is green), long
+     * side <= 1024. A promise: on tiles (C6 c5) the picture is a region pass at the output's level and the selection
+     * the mask's own levels, both with their chains built in the mips worker. It was a full-resolution flatten and the
+     * selection's display mirror: at 15000 x 10000 about 3.4 GB made and 2.9 GB kept for a 1024 px picture.
+     */
+    async promptContextCanvas() {
         const [x, y, w, h] = this.cropRect();
-        const flat = this.flattenToCanvas({ forRun: true });
         const scale = Math.min(1, 1024 / Math.max(w, h));
-        const c = makeCanvas(Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale)));
-        const ctx = c.getContext("2d");
-        ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(flat, x, y, w, h, 0, 0, c.width, c.height);
+        const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+        let c, ctx;
+        if (this.tileMode) {
+            c = await this.sampleRegionSettled("image", [x, y, x + w, y + h], scale, { forRun: true });
+            ctx = c.getContext("2d");
+            ctx.setTransform(1, 0, 0, 1, 0, 0);   // the pass left its transform on the context
+        } else {
+            const flat = this.flattenToCanvas({ forRun: true });
+            c = makeCanvas(cw, ch);
+            ctx = c.getContext("2d");
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(flat, x, y, w, h, 0, 0, c.width, c.height);
+        }
         if (this.getBounds()) {
+            // the selection at the output's size: from its tiles, or `sel.drawTo` on canvases (as it always was)
+            const m = await this.selectionCanvasSettled([x, y, x + w, y + h], scale, c.width, c.height);
+            const drawSel = (t, dx, dy) => m ? t.drawImage(m, dx, dy) : this.sel.drawTo(t, x, y, w, h, dx, dy, c.width, c.height);
             if (this.cropSettings.fill === "green") {
                 // what the generator sees: the area solid green
                 const tmp = makeCanvas(c.width, c.height);
                 const t = tmp.getContext("2d");
-                this.sel.drawTo(t, x, y, w, h, 0, 0, c.width, c.height);
+                drawSel(t, 0, 0);
                 t.globalCompositeOperation = "source-in";
                 t.fillStyle = "#00ff00";
                 t.fillRect(0, 0, c.width, c.height);
@@ -6414,9 +6457,9 @@ class InpaintEditor {
                 const ring = makeCanvas(c.width, c.height);
                 const r = ring.getContext("2d");
                 const px = Math.max(2, Math.round(c.width / 300));
-                for (let dx = -px; dx <= px; dx += px) for (let dy = -px; dy <= px; dy += px) this.sel.drawTo(r, x, y, w, h, dx, dy, c.width, c.height);
+                for (let dx = -px; dx <= px; dx += px) for (let dy = -px; dy <= px; dy += px) drawSel(r, dx, dy);
                 r.globalCompositeOperation = "destination-out";
-                this.sel.drawTo(r, x, y, w, h, 0, 0, c.width, c.height);
+                drawSel(r, 0, 0);
                 r.globalCompositeOperation = "source-in";
                 r.fillStyle = "#ff00ff";
                 r.fillRect(0, 0, c.width, c.height);
@@ -6449,7 +6492,7 @@ class InpaintEditor {
             this.upsamplePending = { previous: this.promptInput.value, useCase };
             this.setStatus(`Upsampling the prompt for "${useCase}" with ${backend.label} ...`);
             if (backend.inApp) { await host.upsampleInApp(this, backend, upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : "")); return; }
-            const { ref } = await uploadCanvas(this.promptContextCanvas(), `n${this.node.id}_promptctx`);
+            const { ref } = await uploadCanvas(await this.promptContextCanvas(), `n${this.node.id}_promptctx`);
             const prompt = {
                 up_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(ref) } },
                 ...backend.build("up_load", upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : "")),

@@ -1294,7 +1294,7 @@ export const host = {
      * (the editor's catch resets the pending state).
      */
     async upsampleInApp(editor, backend, instruction) {
-        const res = await this.askLLM(backend, instruction, editor.promptContextCanvas());
+        const res = await this.askLLM(backend, instruction, await editor.promptContextCanvas());
         if (!editor.upsamplePending) return;   // cancelled meanwhile
         editor.applyTextResult({ text: res.text });
         const note = res.note ? `, ${res.note}` : "";   // "text only": the model refused the crop and answered on the words alone

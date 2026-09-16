@@ -2809,6 +2809,77 @@ all five mutations came out green, which proved nothing):
 runs) are slices 5 and 6 and phase E; the colour-match work is slice 7. A read at level 0 primes nothing, because it
 reads no chain: `readBox`'s 62.6 ms at 15k is composition, not levels.
 
+#### C6 (c) slice 5 as built (2026-09-16): the prompt context and `screenshot` read levels
+
+Slice 5 of `dist/c6map/c/critic.md` §5.
+
+**What it was.** Two readers made a whole-picture composite at full resolution for a picture of at most 1024 px:
+- `promptContextCanvas()`, the picture a language model is shown for upsampling (and for "select by text" with a term
+  taken from the prompt): `flattenToCanvas({ forRun: true })`, the crop drawn down, and the selection drawn up to ten
+  times through `sel.drawTo`, which on tiles is the selection's display mirror;
+- the `screenshot` command, which the MCP instructions tell an agent to call after most changes: the same flatten, a
+  layer through `px.drawTo` (its mirror) and the tint through `sel.drawTo`.
+
+**What was built.**
+- `promptContextCanvas()` is **async** now (its three callers already were: `host.upsampleInApp`, `upsamplePrompt`,
+  `segmentByText`). On tiles the picture is `sampleRegionSettled("image", crop, scale, { forRun: true })`, so the
+  chains come from the worker as in slices 3 and 4, and the selection is one exact read of its own tiles
+  (`selectionCanvasSettled`), drawn nine times for the ring instead of nine scaled draws of the mirror. On canvases
+  the old body runs unchanged.
+- `drawSelectionInto(ctx, scale, region, display = true)`: `display` false reads exact levels. The screen's callers
+  keep `true`; a picture that is not the screen must not show coarse cells or ask for screen chains.
+- `selectionCanvasSettled(box, scale, w, h)` in the editor: the selection over a box at a scale as a canvas whose alpha
+  is the mask, primed through `sel.primeRegion`, null on the canvas backend.
+- `screenshot` is `shotCanvas(ed, a)` (exported from `renderer/commands.js` for the gate) plus the layer outlines and
+  the JPEG. On tiles: the image through `sampleRegionSettled`, a layer through `primeRegion` and `drawTilesInto` (still
+  unmasked, as before), the tint through `selectionCanvasSettled`. The node's own hand-kept `screenshot` in
+  `js/inpaint_bridge.js` is not touched (the node runs tiles off).
+
+**Measured**, `perf_test.py 15000x10000`, tiles on, new rows, the renderer files of 01cc8d0 against this step in the same
+session (each row starts from released mirrors; [MB] is what the row itself made):
+
+| row | before: blocked [wall], MB | after: blocked [wall], MB |
+|---|---|---|
+| `screenshot` 1024 (MCP) | 2122 [2120], 1717 MB | **286 [449], 0 MB** |
+| prompt context, no selection | 1887 [1816], 1733 MB | **68-485 [68-446], 16 MB** |
+| prompt context, 1000 px selection | 1985 [1983], 1717 MB | **94-724 [94-665], 16 MB** |
+
+The after rows swing between runs (two runs given); the op rows have always done that on the shared card. The 16 MB
+that is left is the colour-matched result's display mirror (a 2048 x 2048 layer), found by listing the owners of every
+mirror before and after the row: that is `layerMatchedPixels`, slice 7b's. The screenshot row reads 0 only because an
+earlier row had already made that mirror.
+
+**The picture.** On canvases both readers are **byte-identical** to the old code (the gates compare against a copy of
+the old body in the same instance). On tiles the picture is box-filtered levels instead of a bilinear draw of the whole
+flatten: on a smooth 3000 x 2000 document the mean difference is 0.19 levels at 1024 px, and 0.4 % of the bytes differ
+by more than 4 levels (edges, which the old draw stair-stepped); at 256 px about 2 %.
+
+**Gates.** `editor_test.py` `prompt_context_reads_levels_not_a_flatten` (four cases: no selection, an ellipse ring and
+the green fill over a crop above 1024 px, a small ring; no flatten, no mirror, no cells left, the ring's and the fill's
+pixel count within 15 % of the old picture, the multiply layer in the picture) and `commands_test.py`
+`screenshot_reads_levels` (image at 1024 and 256, editor, a layer at 300 and at scale 1; no flatten, no mirror, no
+cells left, the layer's block in the picture, scale 1 within 1 level). Runs: `s5-tiles2` and `s5-canvas` (commands,
+editor) ALL PASS; `s5-tiles` failed once on the screenshot tolerance (2.1 % of the bytes over 4 levels at 256 px against
+a 2 % bound; the bound is 5 % and a mean of 2 levels now) and on `closed_tabs_are_collected`, which passed on the re-run
+and touches none of this code.
+
+The other gates: (fresh instances, own profiles, strict): `s5-tiles2` and `s5-canvas` (commands editor) ALL PASS;
+`s5-all-tiles` (pixels composite shape brush film glb ailabel size transparent generate log llm toapis nodecopy) and
+`s5-all-canvas` (pixels composite film glb llm) PASS; `mcp` failed on both only because `tools/mcp_test.py` looked for
+`test_base.png` in `%APPDATA%/Scumble` whatever `--user-data-dir` said, and that file is no longer in the user's own
+profile. It reads the image from the profile it is given now; `s5-mcp-tiles` and `s5-mcp-canvas` PASS.
+
+**Five mutations, each red** (each against a fresh instance):
+- the prompt context's tile branch off → "the prompt context flattened the picture 1 times";
+- `selectionCanvasSettled` returns null → "the screenshot made 1 display mirrors" and the same in the prompt step;
+- the layer screenshot through `px.drawTo` → "layer 300: the screenshot made 1 display mirrors";
+- the ring's offsets dropped → "369 magenta pixels against the old picture's 7398";
+- the screenshot's image through the flatten → "the screenshot flattened the picture 1 times".
+
+**Not gated:** a read with `display` true where false is meant. On a document whose selection chains are all present
+it reads the same bytes, and a gate that catches it needs the selection's chains to be missing while the screen does
+not draw; the screen draws on its own frames during the awaits, so such a check would be a flake.
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in

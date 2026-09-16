@@ -13,21 +13,7 @@ the ones that were performance work.
 
 An entry here leaves the file when the release named in it is published.
 
-### The brush and the eraser show nothing until the mouse button is released (0.1.13)
-
-**Reported** 2026-09-15 17:57 on the installed 0.1.13 (tile engine on by default), with a screen recording: with the
-eraser, and then with the brush, only the first dab was on the screen while the button was down, and the whole stroke
-appeared on the release.
-
-**Closed with the fix for 0.1.14** (not released yet). Reproduced on the 0.1.13 exe with real mouse events on the
-first try, on both backends, at every size and zoom tried. First bad commit 28bfad0 (C5 c): it took the per-dab
-`touchSource` out of `layerDab`, `cloneDab`, `gradientDab` and `shapeDab`, the only thing that moved the scene cache's
-key during a stroke, so every frame of a gesture showed the scene built at the press. `strokeDirty()` raises
-`pixelVersion` now. Gate: `editor_test.py` `live_stroke_reaches_the_screen_before_the_release` (real pointer events,
-the screen read right after a move, with the hand still moving, and before the release; red on 0.1.13 for every stroke
-on both backends), and the preview step no longer
-clears the scene cache by hand. The whole record, with the bisect, the mutations and the A/B, is `docs/PLAN_BCE.md` §C7
-"The live stroke that did not show".
+Nothing at the moment.
 
 ---
 

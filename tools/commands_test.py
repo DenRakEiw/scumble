@@ -341,6 +341,109 @@ const img = await c("load_image", { filename: name, subfolder: "inpaint_canvas",
 if (img.width !== 400 || img.height !== 300) throw new Error("loading it back gave " + img.width + "x" + img.height);
 return { bytes: got, grew: after.bytes - before.bytes };
 """),
+    ("screenshot_reads_levels", """
+// C6 (c5): `screenshot` was a full-resolution flatten, and the display mirrors of a layer and of the selection:
+// at 15000 x 10000 about 3.4 GB made and 2.9 GB kept for a 1024 px JPEG, on a command an agent calls after most
+// steps. On tiles the image is a region pass at the output's level, a layer comes from its own tiles and the tint
+// from the selection's, with the chains built in the mips worker. On canvases the picture is the old one, byte for byte.
+const d = await c("new_document");
+await c("new_canvas", { width: 3000, height: 2000, doc: d.id });
+const ed = window.editor;
+const P = await import("./editor/inpaint_pixels.js");
+const W = ed.width, H = ed.height;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#305080"); g.addColorStop(1, "#d0a060");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 5; i++) { x.fillStyle = `hsl(${i * 72},60%,50%)`; x.beginPath(); x.arc(450 + i * 520, 900 + (i % 2) * 400, 330, 0, Math.PI * 2); x.fill(); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "shot.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const paint = document.createElement("canvas"); paint.width = 2400; paint.height = 1600;
+{ const x = paint.getContext("2d"); x.fillStyle = "#20c060"; x.fillRect(200, 200, 1400, 900); x.fillStyle = "rgba(200,40,40,0.6)"; x.fillRect(900, 600, 1300, 900); }
+const L = ed.addLayer({ name: "Shot layer", kind: "paint", px: ed.pixels.Layer.fromCanvas(paint), x: 300, y: 200, w: 2400, h: 1600, dirty: true });
+ed.sel.drawInto(null, (s) => { s.fillStyle = "#ff0000"; s.beginPath(); s.ellipse(1500.5, 1000.5, 900, 600, 0, 0, Math.PI * 2); s.fill(); });
+ed.markSelectionChanged();
+ed.renderLayers(); ed.fitView(); ed.draw();
+await ed.mipsSettled();
+
+// the function as it was before C6 (c5)
+const oldShot = (a) => {
+    const max = a.max_size;
+    const src = a.what === "layer" ? { px: L.px, w: L.px.width, h: L.px.height } : { canvas: ed.flattenToCanvas({ forRun: a.what !== "editor" }), w: ed.width, h: ed.height };
+    const s = Math.min(1, max / Math.max(src.w, src.h));
+    const w = Math.max(1, Math.round(src.w * s)), h = Math.max(1, Math.round(src.h * s));
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#202020"; ctx.fillRect(0, 0, w, h);
+    if (src.px) src.px.drawTo(ctx, 0, 0, w, h); else ctx.drawImage(src.canvas, 0, 0, w, h);
+    const b = raw.bounds(ed);
+    if (a.show_selection !== false && b && ed.sel && a.what !== "layer") {
+        ctx.globalAlpha = 0.35; ed.sel.drawTo(ctx, 0, 0, w, h); ctx.globalAlpha = 1;
+        ctx.strokeStyle = "#ff40ff"; ctx.lineWidth = 2; ctx.strokeRect(b.x * s, b.y * s, b.w * s, b.h * s);
+    }
+    return cv;
+};
+const bytesOf = (cv) => cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+const cases = [
+    { what: "image", max_size: 1024 },                     // level 1
+    { what: "image", max_size: 256 },                      // level 3
+    { what: "editor", max_size: 512, show_selection: false },
+    { what: "layer", layer: L.id, max_size: 300 },         // level 3 of the layer's own pixels
+    { what: "layer", layer: L.id, max_size: 4096 },        // scale 1: level 0
+];
+const out = { tiles: !!ed.tileMode, cases: [] };
+try {
+    for (const a of cases) {
+        await ed.mipsSettled();
+        ed.releaseCaches({ mirrors: true, deep: true });
+        const f0 = ed.flattenToCanvas;
+        let flats = 0;
+        ed.flattenToCanvas = function (...q) { flats++; return f0.apply(this, q); };
+        let got;
+        try { got = await raw.shotCanvas(ed, a); } finally { ed.flattenToCanvas = f0; }
+        const rep = ed.memoryReport();
+        const row = { what: a.what, max_size: a.max_size, size: [got.w, got.h], scale: +got.s.toFixed(4), flats };
+        if (ed.tileMode) {
+            row.mirrors = rep.tiles.mirrors;
+            if (flats) throw new Error(`${a.what} ${a.max_size}: the screenshot flattened the picture ${flats} times`);
+            if (rep.tiles.mirrors) throw new Error(`${a.what} ${a.max_size}: the screenshot made ${rep.tiles.mirrors} display mirrors (${(rep.tiles.mirrorBytes / 1048576).toFixed(1)} MB)`);
+            if (P.displayCanvasIfMade(ed.sel) || P.displayCanvasIfMade(L.px)) throw new Error(`${a.what} ${a.max_size}: a display mirror of the selection or the layer was made`);
+            if (rep.tiles.primedBytes) throw new Error(`${a.what} ${a.max_size}: ${rep.tiles.primedBytes} bytes of primed cells were left behind`);
+        }
+        const x = bytesOf(got.canvas), refC = oldShot(a), y = bytesOf(refC);
+        if (got.canvas.width !== refC.width || got.canvas.height !== refC.height) throw new Error(`${a.what} ${a.max_size}: ${got.canvas.width}x${got.canvas.height} against the old ${refC.width}x${refC.height}`);
+        let max = 0, far = 0, sum = 0;
+        for (let i = 0; i < x.length; i++) { const dd = Math.abs(x[i] - y[i]); sum += dd; if (dd > max) max = dd; if (dd > 4) far++; }
+        row.max = max; row.far = far; row.mean = +(sum / x.length).toFixed(3);
+        if (!ed.tileMode) {
+            if (max) throw new Error(`${a.what} ${a.max_size}: the canvas backend's picture changed by ${max} levels on ${far} bytes`);
+        } else {
+            // box-filtered levels against a bilinear draw of the whole flatten, which steps along every edge: the
+            // edges differ (at 256 px about 2 % of the bytes), the rest agrees
+            if (far > x.length * 0.05 || row.mean > 2) throw new Error(`${a.what} ${a.max_size}: ${far} of ${x.length} bytes differ by more than 4 levels from the old picture (max ${max}, mean ${row.mean})`);
+            if (got.s === 1 && max > 1) throw new Error(`${a.what} ${a.max_size}: a read at scale 1 differs by ${max} levels`);
+        }
+        // the layer is in the picture: its green block, over the fill or the base
+        const gx = Math.round((a.what === "layer" ? 600 : 650) * got.s), gy = Math.round((a.what === "layer" ? 400 : 450) * got.s);
+        const gi = (gy * got.w + gx) * 4;
+        row.green = [x[gi], x[gi + 1], x[gi + 2]];
+        if (!(x[gi + 1] > x[gi] + 60 && x[gi + 1] > x[gi + 2] + 60)) throw new Error(`${a.what} ${a.max_size}: the layer's green block is not at ${gx}, ${gy}: rgb(${row.green})`);
+        out.cases.push(row);
+    }
+    // the tint: inside the ellipse brighter red than outside, as in the old picture
+    const cv = (await raw.shotCanvas(ed, { what: "image", max_size: 512 })).canvas;
+    const t = bytesOf(cv), s = 512 / W;
+    const at = (px, py) => { const i = (Math.round(py * s) * cv.width + Math.round(px * s)) * 4; return [t[i], t[i + 1], t[i + 2]]; };
+    out.tint = { inside: at(1500, 300 + 150), outside: at(100, 1900) };
+} finally {
+    await c("close_document", { doc: d.id, force: true });
+    await c("activate_document", { doc: window.__testDoc });
+}
+return out;
+"""),
     ("close", """
 const before = (await c("list_documents")).documents.length;
 const r = await c("close_document", { doc: window.__testDoc });
