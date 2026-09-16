@@ -463,7 +463,6 @@ async def run(c, args):
     os.makedirs(OUT, exist_ok=True)
     info = await c.eval(BUILD, timeout=120)
     print("document:", info)
-    tiles = bool(await c.eval("!!window.__cmp.tileMode"))
     ok = True
     try:
         for name, js in (("full", FULL), ("view", VIEW)):
@@ -483,10 +482,11 @@ async def run(c, args):
             if diff is None:
                 print(f"[skip] {name}: Pillow missing, cannot compare (wrote {cur})")
                 continue
-            # C6 (c) 7b: on tiles the screen reads a colour-matched layer's side of its statistics from the tiles' levels,
-            # the references were taken from the display pyramid's: the matched layer of the view is 3 levels apart
-            # (measured, and only there); slice 7c moves the screen's statistics again
-            tol = max(args.tolerance, 3) if name == "view" and tiles else args.tolerance
+            # C6 (c) 7b / 7c: the screen takes a colour-matched layer's statistics from the entry every region pass shares
+            # (the layer's whole surroundings at 256 px), the references were taken with the view's own: the matched layer
+            # of the view is up to 3 levels apart on both backends, and only there (measured); the full-resolution
+            # composite keeps its own statistics and stays identical
+            tol = max(args.tolerance, 3) if name == "view" else args.tolerance
             if diff.get("differing", 0) == 0:
                 print(f"[ok] {name}: identical")
             elif diff.get("max", 999) <= tol:

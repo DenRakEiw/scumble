@@ -102,10 +102,10 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
 **What comes next, in order** (`dist/c6map/c/` holds the maps; they are older than the code):
 1. **7b is built** (2026-09-16, `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7b as built", CHANGELOG 0.1.16): a matched layer on
    tiles is matched in the part a pass shows from its tiles; 1144 MB of mirrors and 837 ms of first frame at 1:1 gone at 15k.
-2. **7c (next)**: the screen's and the navigator's statistics (`_mstatsView`) on the same entry as `sampledMatchStats` (the user's
-   decision (a)); the (b3) step's bound back to 2 (it is 8 until then) and `composite_test.py`'s view allowance of 3 on tiles off again; **measure (b)** (exports on the same entry, box means
-   and point samples) and report the numbers to the user.
-3. **7d**: the colour match as GPU uniforms.
+2. **7c is built** (2026-09-16, `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"): one statistics entry per layer for every
+   pass, provisional while chains are in the worker. **The (b) numbers are measured and not yet shown to the user**
+   (same section): box means 0.81 levels mean over 32 cases, 5.45 / p99 12 on one textured photo; point samples 0.56, max 8.
+3. **7d (next)**: the colour match as GPU uniforms.
 4. **C6 (d)**, the base (`basePx` eagerly, the `canvas` undo step without the `<img>`, `cropCanvasNow` / `resizeImageNow`,
    the upload round trips; details in `docs/HISTORY.md`, block "2026-09-15, 01:30").
 5. **The object tool's bigger change A** (`dist/c6map/c/objects.md` §7 to §9: the image-size label map, the per-object

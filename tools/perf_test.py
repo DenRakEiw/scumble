@@ -381,7 +381,7 @@ BENCH = """
     };
     // the screen's colour matches and filter passes run again (a cache miss of a screen pass), counted while `on`
     const reruns = { on: false, n: 0 };
-    for (const [name, slotOf] of [["matchStats", () => "_mstatsView"], ["filteredCanvas", () => "_fcacheView"]]) {
+    for (const [name, slotOf] of [["sampledMatchStats", () => "_mstatsSample"], ["filteredCanvas", () => "_fcacheView"]]) {
         const f = ed[name];
         ed[name] = function (layer, ...a) {
             if (!reruns.on || !(this.viewPass && this.viewPass.screen)) return f.call(this, layer, ...a);

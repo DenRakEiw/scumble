@@ -2318,7 +2318,7 @@ L.match = { strength: 100, source: "surroundings" };
 ed.markMatchChanged(L);
 ed.renderLayers(); ed.fitView(); ed.sceneSig = null; ed.draw();
 await ed.mipsSettled(); ed.sceneSig = null; ed.draw();
-if (!(L._mstatsView && L._mstatsView.stats)) throw new Error("the screen made no statistics for the matched layer");
+if (!(L._mstatsSample && L._mstatsSample.stats)) throw new Error("the screen made no statistics for the matched layer");
 const read = (c, x = 0, y = 0, w = c.width, h = c.height) => c.getContext("2d").getImageData(x, y, w, h).data;
 const out = {};
 const box = [600, 600, 1000, 900], whole = [600, 400, 2000, 1500];   // the box cuts the layer's left edge; `whole` holds all of it
@@ -2368,11 +2368,11 @@ for (const s of [1, 0.5]) {
     for (let i = 0; i < scr.length; i++) { const d = Math.abs(scr[i] - ref[i]); if (d > max) max = d; if (d > 2) n++; }
     out.screen = { at: [ix, iy], max, over2: n };
     if (ix !== box[0] || iy !== box[1]) throw new Error("the screen's region is at " + [ix, iy] + ", not the box's corner");
-    // C6 (c) 7a: a sampled pass takes the statistics of the layer's whole surroundings, the screen still takes its own
-    // from the view (slice 7c puts both on one entry and this bound back to 2). Measured 3-4 levels on 49-588 bytes;
-    // since 7b the screen reads the layer's side of its statistics from the tiles' levels: 6 on 1314 on tiles. A part
-    // matched or placed wrong is 148 levels off (the (b3) mutation)
-    if (max > 8) throw new Error(`the 1 pass over the box differs from the screen at 1:1 by ${max} levels on ${n} bytes: the matched part is matched or placed wrong`);
+    // C6 (c) 7c: the screen and a sampled pass take the same statistics (7a / 7b read 3 to 6 levels here while the
+    // screen took its own); on tiles both draw the same region canvas (0 levels). On canvases the screen matches the
+    // layer's GPU copy and the pass its CPU pyramid: 5 levels on 294 bytes. A part matched or placed wrong is 148 levels
+    // off (the (b3) mutation)
+    if (max > (ed.tileMode ? 2 : 6)) throw new Error(`the 1 pass over the box differs from the screen at 1:1 by ${max} levels on ${n} bytes: the matched part is matched or placed wrong`);
     ed.fitView(); ed.sceneSig = null; ed.draw();
 }
 await run("remove_layer", { layer: L.id, doc: window.__t });
@@ -3073,7 +3073,7 @@ try {
         const a = await screen();
         fitShots[path] = edgeStrip(a);
         tileCheck(path + " fit");
-        if (!(F._mstatsView && F._mstatsView.stats) || !(S._mstatsView && S._mstatsView.stats)) throw new Error(path + ": the screen made no statistics for the matched layers");
+        if (!(F._mstatsSample && F._mstatsSample.stats) || !(S._mstatsSample && S._mstatsSample.stats)) throw new Error(path + ": the screen made no statistics for the matched layers");
         const b = await oldScreen();
         const d = diff(a, b), e = diff(edgeStrip(a), edgeStrip(b));
         // the floor: the screen with the match off differs from the matched screen
@@ -3130,7 +3130,7 @@ try {
             await run("flip_layer", { layer: S.id, doc: window.__t });
             ed.sceneSig = null; ed.draw();
             const f1 = await screen();
-            for (const l of [F, S]) { l._mcacheView = null; l._mstatsView = null; }
+            for (const l of [F, S]) { l._mcacheView = null; l._mstatsSample = null; }
             const f2 = await screen();
             const df = diff(f1, f2);
             out.flip = { vsFresh: df };
@@ -3180,6 +3180,123 @@ try {
 }
 await run("remove_layer", { layer: S.id, doc: window.__t });
 await run("remove_layer", { layer: F.id, doc: window.__t });
+return out;
+"""),
+    ("colour_match_statistics_are_one_entry_for_every_pass", """
+// C6 (c) slice 7c: the screen took a colour-matched layer's statistics from whatever the view showed when it missed, a
+// sampled pass from the layer's whole surroundings (7a): the screen, the navigator and the eyedropper disagreed by a few
+// levels, and the screen's colours depended on where the view was after a change. Every region pass takes one entry per
+// layer per change now. The screen reads display levels for it; an entry read while chains are on their way is
+// provisional, goes when they have landed, and an exact reader makes it again at once. Both backends; (ii) and (iii) on
+// tiles with a worker.
+await run("new_canvas", { width: 4000, height: 3000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const T = await import("./editor/inpaint_tiles.js");
+const W = ed.width, H = ed.height;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const base = mk(W, H);
+{
+    const x = base.getContext("2d");
+    x.fillStyle = "#708090"; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 300; i++) { x.fillStyle = `hsl(${(i * 29) % 360},30%,${40 + (i * 7) % 30}%)`; x.fillRect((i * 733) % W, (i * 419) % H, 90, 70); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "match7c.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+// a full-size paint layer under the matched one: fine bright and dark stripes on its left half (a coarse picture of them,
+// a sample per block, is not their mean), dark on its right, so a flip changes the backdrop
+const pc = mk(W, H);
+{
+    const x = pc.getContext("2d");
+    x.fillStyle = "rgba(20,30,70,0.8)"; x.fillRect(0, 0, W, H);
+    x.fillStyle = "rgba(240,220,120,0.9)"; for (let sx = 0; sx < W / 2; sx += 5) x.fillRect(sx, 0, 2, H);
+}
+const P = ed.addLayer({ name: "Under", kind: "paint", px: ed.pixels.Layer.fromCanvas(pc), x: 0, y: 0, w: W, h: H, dirty: true });
+const lc = mk(1600, 1200);
+{ const x = lc.getContext("2d"); x.fillStyle = "#c83c3c"; x.fillRect(0, 0, 1600, 1200); for (let i = 0; i < 400; i++) { x.fillStyle = (i % 2) ? "#b43232" : "#e05050"; x.fillRect((i * 331) % 1600, (i * 197) % 1200, 30, 30); } }
+const L = ed.addLayer({ name: "Matched 7c", kind: "result", px: ed.pixels.Layer.fromCanvas(lc), x: 1200, y: 900, w: 1600, h: 1200, dirty: true });
+L.match = { strength: 100, source: "surroundings" };
+ed.markMatchChanged(L);
+await run("select_none", { doc: window.__t });
+ed.setTool("rect"); ed.hover = null;
+ed.renderLayers(); ed.fitView();
+const settle = async () => { ed.sceneSig = null; ed.draw(); await ed.mipsSettled(); await wait(80); ed.sceneSig = null; ed.draw(); };
+await settle();
+const out = { tiles: !!ed.tileMode, async: !!(ed.tileMode && T.chainStats().async) };
+const same = (a, b) => !!a && !!b && ["meanS", "meanT", "scale"].every((k) => a[k].every((v, i) => Math.abs(v - b[k][i]) < 1e-9));
+
+// (i) one entry: the screen at fit, a pan, 1:1, the navigator's thumbnail, the eyedropper, a 512 px picture, the wand
+const e0 = L._mstatsSample;
+if (!(e0 && e0.stats)) throw new Error("the screen made no statistics entry for the matched layer");
+let made = 0;
+const f0 = ed.sampledMatchStats;
+ed.sampledMatchStats = function (layer, ...a) { const was = layer._mstatsSample; try { return f0.call(this, layer, ...a); } finally { if (layer === L && layer._mstatsSample !== was) made++; } };
+const fill0 = ed.fillOpts;
+try {
+    ed.view.x += 137; ed.view.y -= 61; ed.sceneSig = null; ed.draw();
+    ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false;
+    ed.view.x = -(L.x + 400) + ed.canvas.width / 2; ed.view.y = -(L.y + 300) + ed.canvas.height / 2;
+    await settle();
+    ed.drawThumb();
+    ed.fillOpts = { tolerance: 20, contiguous: true, sample: "image" };
+    const c0 = ed.color; ed.pickColor(L.x + 200, L.y + 200); ed.color = c0;
+    ed.sampleRegion("image", [0, 0, W, H], 512 / W);
+    await ed.wandSelect(L.x + 205, L.y + 205, "replace");
+    await run("select_none", { doc: window.__t });
+    // ten ticks of the layer's own strength slider: its statistics do not depend on it
+    for (let i = 0; i < 10; i++) { L.match = { ...L.match, strength: 50 + i * 5 }; ed.markMatchChanged(L); ed.sceneSig = null; ed.draw(); }
+    L.match = { ...L.match, strength: 100 }; ed.markMatchChanged(L); ed.sceneSig = null; ed.draw();
+} finally {
+    ed.sampledMatchStats = f0;
+    ed.fillOpts = fill0;
+}
+out.one = { made, kept: L._mstatsSample === e0 };
+if (made || L._mstatsSample !== e0) throw new Error("the statistics were taken again without a change: " + JSON.stringify(out.one));
+
+// (ii) a whole change under the layer (a flip of the paint layer): at fit the screen's entry is provisional while the flip's
+// chains are in the worker; once they have landed the entry is the one exact levels give, and so is the screen
+const exactStats = () => { const keep = L._mstatsSample; L._mstatsSample = null; try { return ed.sampledMatchStats(L, false, false); } finally { L._mstatsSample = keep; } };
+if (out.async) {
+    ed.fitView(); await settle();
+    await run("flip_layer", { layer: P.id, doc: window.__t });
+    ed.sceneSig = null; ed.draw();
+    const first = L._mstatsSample;
+    out.provisional = !!(first && first.provisional);
+    if (!out.provisional) throw new Error("the screen's statistics right after a whole change under the layer are not provisional (the chains are in the worker)");
+    await ed.mipsSettled(); await wait(120); ed.sceneSig = null; ed.draw();
+    const settled = L._mstatsSample;
+    if (!settled || settled.provisional || settled === first) throw new Error("the provisional statistics were not made again after the chains landed: " + JSON.stringify({ same: settled === first, provisional: settled && settled.provisional }));
+    const ex = exactStats();
+    out.settledIsExact = same(settled.stats, ex);
+    if (!out.settledIsExact) throw new Error("the statistics made after the landing are not the exact ones: " + JSON.stringify({ settled: settled.stats, exact: ex }));
+    out.firstWasOff = !same(first.stats, ex);
+    if (!out.firstWasOff) throw new Error("the provisional statistics were already the exact ones, so (ii) proves nothing");
+    // the screen with that entry against the screen with it made again
+    const g = ed.canvas.getContext("2d"), read = () => g.getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+    const a = read();
+    L._mstatsSample = null; L._mcacheView = null;
+    ed.sceneSig = null; ed.draw();
+    const b = read();
+    let max = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d > max) max = d; }
+    out.screenVsFresh = max;
+    if (max > 1) throw new Error("after the landing the screen differs from the same view with the statistics made again by " + max + " levels");
+
+    // (iii) an exact reader right after another whole change takes exact statistics at once
+    await run("flip_layer", { layer: P.id, doc: window.__t });
+    ed.sceneSig = null; ed.draw();
+    if (!(L._mstatsSample && L._mstatsSample.provisional)) throw new Error("the second flip left no provisional entry, so (iii) proves nothing");
+    ed.fillOpts = { tolerance: 20, contiguous: true, sample: "image" };
+    const c1 = ed.color; ed.pickColor(L.x + 200, L.y + 200); ed.color = c1;
+    ed.fillOpts = fill0;
+    const byPick = L._mstatsSample;
+    if (!byPick || byPick.provisional) throw new Error("the eyedropper kept the provisional statistics");
+    await ed.mipsSettled(); await wait(120);
+    out.pickIsExact = same(byPick.stats, exactStats());
+    if (!out.pickIsExact) throw new Error("the eyedropper's statistics are not the exact ones");
+}
+await run("remove_layer", { layer: L.id, doc: window.__t });
+await run("remove_layer", { layer: P.id, doc: window.__t });
 return out;
 """),
     ("stroke_buffers_cover_the_gesture_not_the_layer", """
@@ -4730,13 +4847,13 @@ try {
     ed.flipLayer("h");   // new pixels: no chain on any tile, and nothing on the screen reads them
     frame();
     const sentinel = { sentinel: true };
-    for (const l of ed.layers) l._mstatsView = sentinel;
+    for (const l of ed.layers) l._fcacheView = sentinel;
     await ed.mipsSettled(); await wait(30);
     const st = T.chainStats();
     out.hidden = { requested: st.requested, handed: st.handed, thumb: st.thumb, kept: L.px.tileList ? L.px.tileList().filter((t) => t.mips).length : 0 };
     if (async_ && !st.requested) fails.push("the hidden layer's thumbnail asked for no chain");
     if (out.hidden.kept) fails.push("a hidden layer at 1:1 kept " + out.hidden.kept + " chains on its tiles for its thumbnail (" + JSON.stringify(st) + ")");
-    if (ed.layers.some((l) => l._mstatsView !== sentinel)) fails.push("a landing only a thumbnail asked for dropped the view's caches");
+    if (ed.layers.some((l) => l._fcacheView !== sentinel)) fails.push("a landing only a thumbnail asked for dropped the view's caches");
 } finally {
     delete ed.renderLayers;
     delete ed.drawLayerFitted;
@@ -4992,14 +5109,14 @@ const wrapMiss = (name, slot, key) => {
         try { return f.call(this, layer, ...a); } finally { if (layer[slot] !== was) reruns[key]++; }
     };
 };
-wrapMiss("matchStats", "_mstatsView", "match");
+wrapMiss("sampledMatchStats", "_mstatsSample", "match");
 wrapMiss("filteredCanvas", "_fcacheView", "filter");
 const count = async () => { reruns.match = 0; reruns.filter = 0; reruns.on = true; await ed.mipsSettled(); await drawn(); reruns.on = false; return [reruns.match, reruns.filter]; };
 const exact = async (label, path, shown) => {
     ed.releaseCaches({ mirrors: true });
     await levels(); await ed.mipsSettled(); await levels();
     // a match made while a display pyramid was still being built keeps the statistics of that level: made again with every level there
-    for (const l of ed.layers) { l._fcacheView = null; l._mcacheView = null; l._mstatsView = null; }
+    for (const l of ed.layers) { l._fcacheView = null; l._mcacheView = null; l._mstatsSample = null; }
     await levels();
     const [worst, n] = diff(shown, read());
     // 3 levels as in the whole-change step; on the canvas backend with a filter layer the released view is no reference

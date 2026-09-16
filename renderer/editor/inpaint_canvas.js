@@ -4737,7 +4737,8 @@ class InpaintEditor {
         }
         const prev = this.viewPass;
         // `sample`: this pass keeps its own filter and match caches, the screen's stay
-        this.viewPass = { x: x0, y: y0, w: x1 - x0, h: y1 - y0, sx: scale, sy: scale, sample: true, forRun: !!opts.forRun };
+        // `display` (C6 c 7c): the screen's colour-match statistics read the levels the screen shows
+        this.viewPass = { x: x0, y: y0, w: x1 - x0, h: y1 - y0, sx: scale, sy: scale, sample: true, forRun: !!opts.forRun, display: !!opts.display };
         try {
             this.drawComposite(ctx, opts);
         } finally {
@@ -7379,7 +7380,7 @@ class InpaintEditor {
         layer._mcache = null;
         layer._mcacheView = null; layer._mcacheSample = null;
         layer._mstats = null;
-        layer._mstatsView = null; layer._mstatsSample = null; layer._mstatsSampleRun = null;
+        layer._mstatsSample = null; layer._mstatsSampleRun = null;
         layer.exportRef = null;
         // `rect` (in the layer pixels' own coordinates) keeps the cached levels and refreshes them there
         if (rect) this.touchSourceRect(layer.px, rect[0], rect[1], rect[2], rect[3]);
@@ -7423,7 +7424,7 @@ class InpaintEditor {
                 keep = b[2] <= l.x - pad || b[0] >= l.x + l.w + pad || b[3] <= l.y - pad || b[1] >= l.y + l.h + pad;
             }
             if (!keep) continue;
-            for (const slot of ["_mstats", "_mstatsView", "_mstatsSample", "_mstatsSampleRun"]) if (l[slot] && l[slot].version === v0) l[slot].version = v1;
+            for (const slot of ["_mstats", "_mstatsSample", "_mstatsSampleRun"]) if (l[slot] && l[slot].version === v0) l[slot].version = v1;
         }
     }
 
@@ -7537,7 +7538,7 @@ class InpaintEditor {
      */
     filteredCanvas(layer, below, forRun, preview, keepSurface = false) {
         const vp = this.viewPass;
-        const key = JSON.stringify([layer.filter, layer.params, layer.lut && layer.lut.ref && layer.lut.ref.filename, layer.plate && layer.plate.ref && layer.plate.ref.filename, !!forRun, !!preview, below.width, below.height, vp ? [vp.x, vp.y, vp.w, vp.h, vp.sx, vp.sy] : 0]);   // C6 (c1): a pass of the same size and origin over another box or at another scale is another picture
+        const key = JSON.stringify([layer.filter, layer.params, layer.lut && layer.lut.ref && layer.lut.ref.filename, layer.plate && layer.plate.ref && layer.plate.ref.filename, !!forRun, !!preview, below.width, below.height, vp ? [vp.x, vp.y, vp.w, vp.h, vp.sx, vp.sy, !!(vp.screen || vp.display)] : 0]);   // C6 (c1): a pass of the same size and origin over another box or at another scale is another picture
         const slot = vp ? (vp.sample ? "_fcacheSample" : "_fcacheView") : "_fcache";
         const c = layer[slot];
         if (!keepSurface && c && c.version === this.compositeVersion && c.key === key) return c.canvas;
@@ -9845,19 +9846,15 @@ class InpaintEditor {
                 const opacity = layer.opacity == null ? 1 : layer.opacity, blend = layer.blend || "normal";
                 if (this.matchActive(layer) && this.matchFromTiles(layer)) {
                     // C6 (c) 7b: the part of the matched layer the view shows, matched from its tiles at the view's level
-                    const e = this.matchedRegionView(layer, { ...vp, screen: true }, () => this.glMatchBackdrop(comp, vw, vh, region, layers));
+                    const e = this.matchedRegionView(layer, { ...vp, screen: true }, null);
                     if (!e) continue;
                     layers.push(e.plain
                         ? this.glLayerSpec(layer.px, layer.x, layer.y, layer.w, layer.h, opacity, blend, sx, this.tileMaskOf(layer))
                         : { source: e.canvas, version: 0, cropW: e.sw, cropH: e.sh, x: e.x, y: e.y, w: e.w, h: e.h, opacity, blend });
                     continue;
                 }
-                // Canvas 2D takes the colour match's backdrop off the target it has drawn into
-                // so far; in a GPU pass nothing is drawn yet, so the stack below the layer is
-                // composited on its own (only when the statistics are not cached).
-                const matched = this.matchActive(layer)
-                    ? this.layerMatchedPixels(layer, () => this.glMatchBackdrop(comp, vw, vh, region, layers), vp)
-                    : null;
+                // the statistics are the layer's shared entry (C6 c 7c): no backdrop of this pass is read for them
+                const matched = this.matchActive(layer) ? this.layerMatchedPixels(layer, null, vp) : null;
                 // C5: a transparency mask on the same tile grid is applied in the atlas shader, so the
                 // layer's own tiles are drawn for it too. Only a colour match, a live stroke or a mask
                 // of another size still needs layerPixels to prepare a canvas.
@@ -9868,30 +9865,10 @@ class InpaintEditor {
             }
             return comp.composite({ width: vw, height: vh, region, layers });
         } catch (err) {
-            if (err && err.glBail) return null;   // no backdrop for a colour match: Canvas 2D draws this frame
             console.warn("Inpaint Canvas: the GPU compositor failed, staying on Canvas 2D:", (err && err.message) || err);
             this.compositorOff = true;
             return null;
         }
-    }
-
-    /**
-     * What is under a colour-matched layer in a GPU pass: the layers stacked so far,
-     * composited into a canvas of their own. The compositor draws into one canvas, so its
-     * result has to be copied before the frame itself is composited over it.
-     */
-    glMatchBackdrop(comp, vw, vh, region, layers) {
-        const c = comp.composite({ width: vw, height: vh, region, layers });
-        if (!c) { const err = new Error("the compositor could not build the colour match's backdrop"); err.glBail = true; throw err; }
-        if (!this.matchBackdrop) this.matchBackdrop = makeCanvas(vw, vh);
-        const out = this.matchBackdrop;
-        if (out.width !== vw || out.height !== vh) { out.width = vw; out.height = vh; }
-        const x = out.getContext("2d");
-        x.setTransform(1, 0, 0, 1, 0, 0);
-        x.globalAlpha = 1;
-        x.globalCompositeOperation = "copy";
-        x.drawImage(c, 0, 0);
-        return out;
     }
 
     /**
@@ -10091,9 +10068,12 @@ class InpaintEditor {
         layer._mcache = null;
         layer._mcacheView = null; layer._mcacheSample = null;
         layer._mstats = null;
-        layer._mstatsView = null; layer._mstatsSample = null; layer._mstatsSampleRun = null;
+        const v0 = this.compositeVersion;
         this.uploaded.baseHash = null;
         this.uploaded.controlHash = null;
+        // C6 (c) 7c: the layer's own shared statistics do not depend on its match settings (their key holds the source),
+        // only on its pixels and what is below it: a strength tick keeps them, and only the layers above match again
+        for (const slot of ["_mstatsSample", "_mstatsSampleRun"]) if (layer[slot] && layer[slot].version === v0) layer[slot].version = this.compositeVersion;
     }
 
     /**
@@ -10227,47 +10207,37 @@ class InpaintEditor {
 
     /**
      * Mean and spread of the layer and of what it is matched against, both at 256 px.
-     * Cached per composite version: in a region pass the statistics are taken once from
-     * whatever the view showed then, so panning and zooming never shift the colours.
      *
-     * A sampled pass (`sampleRegion`: the eyedropper, the wand's and the bucket's passes, a plugin's flatten) takes
-     * `sampledMatchStats` (C6 c 7a), whatever its own region holds.
+     * A region pass (the screen, the navigator, a sampled pass: the eyedropper, the wand's and the bucket's passes, a
+     * plugin's flatten) takes the entry `sampledMatchStats` keeps per layer per change (C6 c slices 7a and 7c): the
+     * screen, the navigator and every sampled pass match a layer with the same statistics, which do not move with the
+     * view. The full-resolution flatten (exports, runs, uploads) keeps its own, from the whole composite below the layer
+     * and the layer's own pixels (`out0`), cached per composite version.
      */
     matchStats(layer, below, vp, out0) {
+        if (vp) return this.sampledMatchStats(layer, !!vp.forRun, !!(vp.screen || vp.display));
         const m = layer.match || {};
         const key = JSON.stringify([m.strength, m.source, layer.x, layer.y, layer.w, layer.h]);
-        const valid = (c) => c && c.version === this.compositeVersion && c.key === key;
-        if (vp && vp.sample) return this.sampledMatchStats(layer, !!vp.forRun);
-        const slot = vp ? "_mstatsView" : "_mstats";
-        const cached = layer[slot];
-        if (valid(cached)) return cached.stats;
-        // `below` may be a thunk: building it costs a composite, and only a miss needs it
+        const cached = layer._mstats;
+        if (cached && cached.version === this.compositeVersion && cached.key === key) return cached.stats;
         below = typeof below === "function" ? below() : below;
         const s = Math.min(1, 256 / Math.max(layer.w, layer.h));
         const sw = Math.max(2, Math.round(layer.w * s)), sh = Math.max(2, Math.round(layer.h * s));
         const pad = Math.max(4, Math.round(Math.max(sw, sh) * 0.08));
         const pw = sw + 2 * pad, ph = sh + 2 * pad;
-        // layer alpha and the composite below, both padded, at statistics resolution. C6 (c) 7b: in a region pass a
-        // layer on tiles is read from its tiles at that resolution (the screen's display levels), not from out0
-        let lay, ld;
-        if (vp && !out0 && this.matchFromTiles(layer)) {
-            ({ lay, ld } = this.matchLayerPicture(layer, !!(vp.screen || vp.display)));
-        } else {
-            lay = makeCanvas(pw, ph);
-            const lctx = lay.getContext("2d");
-            lctx.drawImage(out0, 0, 0, out0.width, out0.height, pad, pad, sw, sh);
-            ld = lctx.getImageData(0, 0, pw, ph).data;
-        }
+        // layer alpha and the composite below, both padded, at statistics resolution
+        const lay = makeCanvas(pw, ph);
+        const lctx = lay.getContext("2d");
+        lctx.drawImage(out0, 0, 0, out0.width, out0.height, pad, pad, sw, sh);
+        const ld = lctx.getImageData(0, 0, pw, ph).data;
         const bel = makeCanvas(pw, ph);
         const bctx = bel.getContext("2d");
         const padImg = pad / s;
-        // `below` covers the whole image, or the region of the pass
-        const bx = vp ? vp.x : 0, by = vp ? vp.y : 0;
-        const bs = below.width / (vp ? vp.w : this.width);
-        bctx.drawImage(below, (layer.x - padImg - bx) * bs, (layer.y - padImg - by) * bs, (layer.w + 2 * padImg) * bs, (layer.h + 2 * padImg) * bs, 0, 0, pw, ph);
+        const bs = below.width / this.width;
+        bctx.drawImage(below, (layer.x - padImg) * bs, (layer.y - padImg) * bs, (layer.w + 2 * padImg) * bs, (layer.h + 2 * padImg) * bs, 0, 0, pw, ph);
         const bd = bctx.getImageData(0, 0, pw, ph).data;
         const stats = this.statsOfMatch(layer, lay, ld, bd, pad);
-        layer[slot] = { version: this.compositeVersion, key, stats };
+        layer._mstats = { version: this.compositeVersion, key, stats };
         return stats;
     }
 
@@ -10318,26 +10288,38 @@ class InpaintEditor {
      * between the wand's coarse and fine pass (a chain landing) made the wand select a different region.
      *
      * The backdrop is a sampled pass of its own over the padded box, of the layers below this one (`upTo`), and the
-     * layer is drawn from its own pixels at the same scale; both read exact levels, so a chain landing changes nothing
-     * here and does not drop the entry. The screen keeps its own statistics (slice 7c).
+     * layer is drawn from its own pixels at the same scale.
+     *
+     * C6 (c) 7c: the screen and the navigator take this entry too (`display`). They read the levels the screen shows, so
+     * a whole change of a 15000 x 10000 layer builds no chain on the main thread for them; an entry read that way while
+     * chains are on their way in the mips worker is `provisional`: it goes when they have landed (and the screen draws
+     * again with the entry made then), and a reader that wants exact levels makes it again at once. Read with every chain
+     * there, display and exact levels are the same bytes.
      */
-    sampledMatchStats(layer, forRun) {
+    sampledMatchStats(layer, forRun, display = false) {
         const m = layer.match || {};
         const key = JSON.stringify([m.source, layer.x, layer.y, layer.w, layer.h]);
         const slot = forRun ? "_mstatsSampleRun" : "_mstatsSample";
         const c = layer[slot];
-        if (c && c.version === this.compositeVersion && c.key === key) return c.stats;
+        const valid = c && c.version === this.compositeVersion && c.key === key;
+        if (valid && (display || !c.provisional)) return c.stats;
         // the layer, masked, at the statistics' scale
-        const { lay, ld, pad, pw, ph, fx, fy, box } = this.matchLayerPicture(layer, false);
+        const { lay, ld, pad, pw, ph, fx, fy, box } = this.matchLayerPicture(layer, display);
         // the composite of the layers below it over the same box, at the same scale
         const idx = this.layers.indexOf(layer);
-        const under = this.sampleRegion("image", box, Math.min(fx, fy), { forRun, upTo: Math.max(0, idx) });
+        const under = this.sampleRegion("image", box, Math.min(fx, fy), { forRun, upTo: Math.max(0, idx), display });
         const bel = makeCanvas(pw, ph);
         const bctx = bel.getContext("2d", { willReadFrequently: true });
         bctx.drawImage(under, 0, 0, pw, ph);
         const bd = bctx.getImageData(0, 0, pw, ph).data;
         const stats = this.statsOfMatch(layer, lay, ld, bd, pad);
-        layer[slot] = { version: this.compositeVersion, key, stats };
+        const sch = display && this.tileMode ? chainScheduler() : null;
+        const entry = { version: this.compositeVersion, key, stats, provisional: !!(sch && sch.pending) };
+        layer[slot] = entry;
+        const redraw = () => { this.sceneSig = null; this.drawSoon(); this.drawThumb(); };
+        // an exact reader replaced the entry the screen drew with
+        if (valid && c.provisional) redraw();
+        if (entry.provisional) sch.settled().then(() => { if (layer[slot] !== entry) return; layer[slot] = null; redraw(); });
         return stats;
     }
 
@@ -10670,22 +10652,13 @@ class InpaintEditor {
         st.base = false;
         st.layers.clear();
         let dropped = false;
-        // C6 (c) 7b: the lowest landed layer itself too, when it is colour-matched: its screen statistics and matched view
-        // are read from its own display levels now
-        const own = from >= 0 && this.matchActive(this.layers[from]) ? from : from + 1;
-        for (let i = own; i < this.layers.length; i++) {
+        for (let i = from + 1; i < this.layers.length; i++) {
             const l = this.layers[i];
-            if (i === from) {
-                if (!l._mcacheView && !l._mstatsView) continue;
-                l._mcacheView = null; l._mstatsView = null;
-                dropped = true;
-                continue;
-            }
-            // no draw for them: nothing on the screen came from them. The sampled passes' colour-match statistics stay: they
-            // are read from exact levels (C6 c 7a), which a landing does not change
+            // no draw for them: nothing on the screen came from them. The colour-match statistics stay: an entry read while
+            // chains were on their way is provisional and goes when they have landed (C6 c 7c, `sampledMatchStats`)
             l._fcacheSample = null; l._mcacheSample = null;
-            if (!l._fcacheView && !l._mcacheView && !l._mstatsView) continue;
-            l._fcacheView = null; l._mcacheView = null; l._mstatsView = null;
+            if (!l._fcacheView && !l._mcacheView) continue;
+            l._fcacheView = null; l._mcacheView = null;
             dropped = true;
         }
         if (!dropped) return;
@@ -11205,13 +11178,12 @@ class InpaintEditor {
             l._fxCacheView = null;
             l._fxCacheSample = null;
             l._mstats = null;
-            l._mstatsView = null;
             l._mstatsSample = null;
             l._mstatsSampleRun = null;
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }
-        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView", "_filterMaskView"]) {
+        for (const name of ["sceneCanvas", "viewCanvas", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView", "_filterMaskView"]) {
             if (this[name]) { freed += px(this[name]); this[name] = null; }
         }
         if (this.flatCache) { freed += px(this.flatCache.canvas); this.flatCache = null; }
@@ -11697,7 +11669,7 @@ class InpaintEditor {
         const scratch = [];
         addPixels(scratch, "_baseCanvas", this._basePx);   // the name mem_test and the docs know
         addPixels(scratch, "selection", this.sel);
-        for (const name of ["sceneCanvas", "viewCanvas", "matchBackdrop", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "filterMaskCanvas", "_passView", "_passMaskView", "_filterMaskView"]) add(scratch, name, this[name]);
+        for (const name of ["sceneCanvas", "viewCanvas", "flatCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "filterMaskCanvas", "_passView", "_passMaskView", "_filterMaskView"]) add(scratch, name, this[name]);
         add(scratch, "flatCache", this.flatCache && this.flatCache.canvas);
 
         // undo / redo: the rect copies plus the canvases (or tiles) the "layers" / "canvas" snapshots
@@ -11770,7 +11742,6 @@ class InpaintEditor {
 
     destroy() {
         if (this._compositor) { try { this._compositor.dispose(); } catch (_) { /* context gone */ } this._compositor = null; }
-        this.matchBackdrop = null;
         this.close();
         // after close(), which commits an open text edit: that step's blob URL is revoked with the rest
         this.clearUndo();   // the blob URLs of the whole-layer steps are revoked, not left behind

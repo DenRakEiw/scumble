@@ -12,6 +12,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   now, straight from the layer's tiles: **0.13 s**, a pan of 3 ms, and no copy at all. A matched layer can look up to a
   few levels different from before at its edges and in its colours, because its colour statistics are now read from the
   layer itself instead of a scaled-down screen copy. With the tile engine off nothing changes.
+- **The screen, the navigator and the eyedropper agree on a colour-matched layer.** The screen used to take a
+  matched layer's colour statistics from whatever part of the picture was in view right after a change, while the
+  eyedropper, the magic wand and the *Film looks* thumbnails took them from the layer's whole surroundings: the screen
+  could show the layer a few levels different from what the eyedropper picked, and after a change its colours depended
+  on where you were looking. All of them now use the same statistics, on both engines. A matched layer on screen can
+  look up to 3 levels different from before; exports and renders are unchanged.
 
 ## 0.1.15 — 2026-09-16
 

@@ -3129,6 +3129,83 @@ crash of its own failure message, fixed; then the stored view, above). `s7b-comp
 **Left for 7c / 7d:** the screen's statistics are still the screen's own (`_mstatsView`); the match is still a canvas per
 miss (7d moves it into the atlas shader, which also removes the per-miss upload).
 
+#### C6 (c) slice 7c as built (2026-09-16): one statistics entry for every pass, and the measurement for (b)
+
+The user's decision (a) of 2026-09-15 (`dist/c6map/c/decisions.md` 1), after `dist/c6map/c/match.md` §4.
+
+**Before.** The screen and the navigator took a colour-matched layer's statistics from the target of whichever pass
+missed first after a change (`_mstatsView`, the region the view showed then), a sampled pass from the layer's whole
+surroundings (`_mstatsSample`, 7a). The screen, the navigator and the eyedropper disagreed by a few levels
+(`a_sampled_pass_matches_only_the_part_of_a_matched_layer_it_shows` read 3 to 6 levels between the screen at 1:1 and a
+sampled pass), and the screen's colours after a change depended on where the view was. The GPU stack composited the
+stack below a matched layer a second time for its statistics (`glMatchBackdrop`).
+
+**What was built** (`renderer/editor/inpaint_canvas.js`):
+- `matchStats` hands every region pass to `sampledMatchStats(layer, forRun, display)`; only the full-resolution flatten
+  keeps `_mstats`. `_mstatsView` and `glMatchBackdrop` are gone.
+- The screen and the navigator read the entry with `display`: the layer at 256 px and the backdrop pass (`sampleRegion`
+  takes `display` now) read the levels the screen shows, so no chain is built on the main thread for them. An entry read
+  that way while the mips worker has chains on their way is `provisional`: it is dropped when they have landed (and the
+  screen and the thumbnail draw again), and a reader that wants exact levels (every sampled pass) makes it again at once.
+  With every chain there display and exact levels are the same bytes. The filter cache key of a pass holds `display`.
+- `markMatchChanged` keeps the layer's own shared entries (their key holds the source; a strength tick changes neither
+  the layer's pixels nor what is below it); matched layers above still match again.
+- `dropStaleViewCaches` no longer drops statistics (7b's own-layer drop is gone: `_mcacheView`'s key holds the
+  `chainEpoch`s, and statistics read from stale cells are provisional).
+
+**After.**
+- `a_sampled_pass_matches_only_the_part_of_a_matched_layer_it_shows`: screen against sampled pass **0 levels on tiles**
+  (was 6); its bound is 2 on tiles. On canvases 5 levels on 294 bytes (the screen matches the layer's GPU copy, the pass
+  its CPU pyramid), bound 6 as before.
+- `composite_test.py`: the stored view differs by up to 3 levels on the matched layer on **both** backends now (the
+  references were taken with the view's own statistics); the view step allows 3, the full-resolution composite stays
+  identical, gpu-vs-2d max 1.
+- `perf_test.py 15000x10000`, before (on acbbda5) and after: the slider ticks under the matched result 7.9 / 7.6 / 7.7 ms
+  before, 12.6 / 11.5 / 11.4 after the first build (each tick re-made the statistics with a backdrop pass of their own:
+  the view's target had been free), 9.2 / 8.9 / 8.5 with `markMatchChanged` keeping the layer's own entry. The first frame
+  at 1:1 over the full-size matched layer 110 / 112-129 ms, and its settled frame 0.4 → 34-36 ms: the provisional entry is
+  made again once the chains have landed, once. Eyedropper over it 46 / 16-58, wand 321 / 276-325. The rest within noise.
+
+**Gate.** `editor_test.py` `colour_match_statistics_are_one_entry_for_every_pass` (both backends; (ii) and (iii) on tiles
+with a worker), a 4000 x 3000 document with a full-size striped paint layer under a matched 1600 x 1200 layer: (i) the
+screen at fit, a pan, 1:1, the navigator's thumbnail, the eyedropper, a 512 px picture, the wand and ten strength ticks
+make no new entry; (ii) after a flip of the paint layer the screen's entry is provisional and not the exact one, and after
+the landing it is the exact one and the screen equals the screen with it made again; (iii) the eyedropper right after
+another flip takes exact statistics. Six mutations, each red (fresh instances): the screen on an entry of its own; never
+provisional; no drop after the landing; an exact reader taking a provisional entry; the backdrop and the layer read at
+exact levels (the provisional entry is already exact, so (ii) proves nothing); a strength tick dropping the layer's own
+entry ("made 11").
+
+**Runs:** `s7c-all-tiles` (editor pixels composite shape brush film glb ailabel size transparent generate log mcp llm toapis
+nodecopy) and `s7c-all-canvas` (editor pixels composite film glb mcp) ALL PASS on the build before the `markMatchChanged`
+change; after it `s7c-fin-tiles` (editor composite pixels film mcp) ALL PASS, `s7c-fin-canvas` (editor composite) failed
+`closed_tabs_are_collected` (the known flake, `[false, false, false, true]`) and `s7c-fin-canvas2` (editor) PASS.
+
+**The measurement for (b)** (decision 1 of `dist/c6map/c/decisions.md`: exports on the same entry; for the user, not
+decided here). Eight of the user's photos (1080 x 1440 to 6036 x 3018, from their ComfyUI `input` folder, read locally
+only), in each a result layer cut from another part of the same photo (30 % of each side), a colour cast
+(x1.12 / 0.96 / 0.84 + 10, or x0.9 / 1.05 / 1.1 - 8), a soft round alpha edge, matched at 100 % against its surroundings
+and underneath: 32 cases. Compared: the matched layer (pixels with alpha >= 128) with today's full-resolution statistics
+against the same with (box) the shared entry, box means of the tiles' levels, and (point) point samples of the
+full-resolution layer and composite at 256 px, nearest. Worst of each photo's four cases, levels per channel:
+
+| photo | size | box: mean / p99 / max | point: mean / p99 / max |
+|---|---|---|---|
+| a football scene | 4800 x 3584 | 1.04 / 4 / 10 | 0.46 / 3 / 9 |
+| a car composing | 1080 x 1440 | 0.38 / 2 / 2 | 0.33 / 2 / 5 |
+| a wide landscape (`1 2.jpg`) | 6036 x 3018 | **5.45 / 12 / 16** | 1.89 / 5 / 8 |
+| `3.jpg` | 2048 x 2048 | 1.30 / 3 / 5 | 0.89 / 3 / 5 |
+| `54566cffh.jpg` | 2999 x 2999 | 0.99 / 2 / 4 | 0.67 / 2 / 6 |
+| `555555555555.jpg` | 2202 x 2202 | 0.43 / 2 / 4 | 0.26 / 2 / 2 |
+| `5674576.jpg` | 4608 x 3712 | 0.33 / 2 / 2 | 0.04 / 1 / 2 |
+| `180sz.jpg` | 4054 x 2280 | 0.66 / 3 / 4 | 1.32 / 4 / 6 |
+
+Over all 32 cases the mean difference is 0.81 levels with box means and 0.56 with point samples; p99 above 4 levels in 2
+cases (box) and 1 (point). The outlier is the textured wide photo: box means average the texture away, so the spread the
+match scales by drops (scale 0.89 → 0.79 in red on one case), which is what `match.md` §4 predicted. Point samples keep
+the texture and stay within 8 levels everywhere. The statistics themselves cost 5 to 70 ms at full resolution and 5 to
+22 ms from levels on these sizes (the full-resolution flatten around them dominates an export either way).
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in
