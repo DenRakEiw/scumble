@@ -3242,6 +3242,58 @@ stack; its 7b GPU-crop mutation has nothing to mutate any more.
 **Runs:** `s7d-all-tiles` (editor pixels composite shape brush film glb ailabel size transparent generate log mcp llm toapis
 nodecopy) and `s7d-all-canvas` (editor pixels composite film glb mcp) ALL PASS.
 
+#### C6 (d) as built (2026-09-16): the base holds its pixels, not an image
+
+`dist/c6map/base.md` §7 (a map of d7234e4; line numbers have moved) and `critic.md`.
+
+**Before.** `this.base` was `{ ref, img }`: the <img> the base was decoded from, kept for the life of the base and of every
+canvas undo step (572 MB decoded at 15000 x 10000, invisible to the memory report), and `basePx` a getter that made the
+pixels from it on the first read, keyed on the <img>'s identity. A crop, a resize, an extend, a merge into the base, a
+flatten, "Generate new" and a new canvas each built the new base in a canvas, uploaded it, fetched it back as an <img> and
+decoded that again on the next frame; an undo of any of them decoded the old <img> again (0.5 to 0.8 s at 15k, C2's
+numbers). The resize drew the <img> itself.
+
+**What was built** (`renderer/editor/inpaint_canvas.js`):
+- `base` is an accessor over `{ ref, px }`; replacing it queues the release of the old base's atlas pages (the C6 a
+  mechanism the getter used to trigger). `basePx` / `_basePx` read `base.px`.
+- `setBase(ref, img)` makes the pixels at once and keeps no image; `setBasePixels(ref, px)` takes pixels the caller made;
+  `checkBaseSize` is the 268 MP refusal of both.
+- The producers keep the upload (the state, runs and uploads need the file) and take the pixels from their own canvas:
+  crop `basePx.resized(...)` (on tiles it shares the old base's tiles; the upload reads a canvas made for it and let go,
+  `uploadBase`), resize from a canvas of the pixels (`drawBaseInto`), extend / merge into the base / flatten / new canvas
+  `fromCanvas` of the canvas they built, `setBaseFromCanvas` a copy of the caller's canvas (`fromImage`, because the canvas
+  backend adopts a canvas it is given).
+- The canvas undo step holds the base object with its pixels (free on tiles: the base is never written); an undo puts the
+  same pixels object back. `heldPixels` and the memory report's step walk count a step's base.
+
+**The resize, measured before the change** (the one question `base.md` §7.5 left): the same `imageSmoothingQuality =
+"high"` draw from the <img> and from a canvas of its pixels, four of the user's photos (1080 x 1440 to 4800 x 3584) at 0.37,
+0.5, 0.8 and 1.6: mean 0.2 to 0.7 levels, max 22, 0 to 3 % of the bytes over 2 (identical at 0.5 on tiles, 1 to 8 levels
+max there on canvases). Two resamplers of the same quality; accepted.
+
+**After.** `perf_test.py 15000x10000` A/B in the same session: "undo step" 41.8 → 26.7 / 30.6 ms, every other row within
+noise (a first after-run read `screenshot` 366 ms and the prompt context 492 / 835 ms; the repeat read 73 / 71 / 129, the
+before run 19 / 56 / 132). The benchmark builds its document with `setBase` and never undoes a canvas step, so the decode
+this removes is not one of its rows.
+
+**Gate.** `editor_test.py` `the_base_holds_its_pixels_not_an_image` (both backends; the sharing on tiles): the base has no
+`img`; a crop shares 54 of its 70 tiles with the old base and its pixels are the old base's to the byte; a merge into the
+base and a flatten give the composite they baked (0 levels); an extend and a resize give the new sizes; no `fromImage`
+while editing; the memory report counts at least two whole bases in the steps; five undos bring the earlier base pixels
+objects back and five redos the last one, with no `fromImage`. `the_screen_draws_no_cpu_mirror_and_stale_textures_leave`
+replaces the base by assigning a new `{ ref, px }` where it assigned a new image. Four mutations, each red (fresh
+instances): the setter queuing no release ("kept the old base pixels' atlas pages"), the crop copying instead of sharing
+("shares no tile", `[0, 70]`), the report not counting a step's base (15.9 MB against the 50 MB floor), an undo decoding
+the base again ("did not bring the extended base's pixels back").
+
+**Runs:** `s6d-all-tiles` (editor pixels composite shape brush film glb ailabel size transparent generate log mcp llm toapis
+nodecopy) and `s6d-all-canvas` (editor pixels composite film glb mcp transparent generate size) ALL PASS. `commands` and
+`smoke` not run (the user's ComfyUI is in use); `commands_test.py` covers load_image and export through `setBase`.
+
+**Left:** the merge into the base and the resize still read the whole base at full resolution (a canvas made and let go),
+the upload of every new base is a full-resolution PNG (phase E streams both); `setValue` (a tab restored) still decodes
+its base from the file, which is where the pixels come from.
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in

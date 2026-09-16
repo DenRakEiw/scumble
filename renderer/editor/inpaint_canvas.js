@@ -1349,7 +1349,7 @@ class InpaintEditor {
         this.pixels = pixelsBackend(this.tileMode);   // { Layer, Mask, tiles }
         this.width = 0;
         this.height = 0;
-        this.base = null;            // { ref, img }; its pixels are this.basePx
+        this.base = null;            // { ref, px }: the file in the mirror and its pixels (this.basePx)
         this.layers = [];            // { id, name, kind, role, blend, ref, px (LayerPixels), x, y, w, h, opacity, visible, dirty,
                                      //   maskPx (MaskPixels, alpha = visible) | null, maskRef, maskDirty, maskEdit }
         this.activeLayerId = null;   // null = base
@@ -3755,10 +3755,9 @@ class InpaintEditor {
             this.setStatus(`Cropping canvas to ${nw} × ${nh} ...`);
             before = this.snapshot({ kind: "canvas" });
             if (this.pending) this.cancelPending();
-            const nb = makeCanvas(nw, nh);
-            this.basePx.drawTo(nb.getContext("2d"), -left, -top);
-            const { ref } = await uploadCanvas(nb, `n${this.node.id}_base`);
-            const img = await loadImageEl(viewUrl(ref));
+            // C6 (d): on tiles the new base shares the old one's tiles; the upload reads a canvas made for it and let go
+            const px = this.basePx.resized(nw, nh, { x: -left, y: -top });
+            const { ref } = await this.uploadBase(px);
             for (const l of this.layers) {
                 if (l.kind === "filter") {
                     l.w = nw; l.h = nh; l._fcache = null;
@@ -3770,7 +3769,7 @@ class InpaintEditor {
             }
             // a new object (the canvas undo step holds the old one): the old selection placed at -left, -top
             this.sel = this.sel.resized(nw, nh, { x: -left, y: -top });
-            this.base = { ref, img };
+            this.base = { ref, px };
             this.width = nw; this.height = nh;
             pushed = true;
             this.pushUndoSnapshot(before, { tracked: true });
@@ -3803,14 +3802,12 @@ class InpaintEditor {
             const nctx = nb.getContext("2d");
             nctx.imageSmoothingEnabled = true;
             nctx.imageSmoothingQuality = "high";
-            // Deliberately from the <img>, not basePx (an exception to PLAN_BCE §C1 rule 6): a
-            // scaled draw of an image element and of a canvas go through different resamplers
-            // in Chromium (the image decode cache against the canvas snapshot), so the new base
-            // could differ from the old path by levels. The <img> lives until C6, which has to
-            // settle this draw.
-            nctx.drawImage(this.base.img, 0, 0, nw, nh);
+            // C6 (d): from a canvas of the pixels, not the <img> they were decoded from (which is not kept). A scaled draw of
+            // an image element and of a canvas go through different resamplers in Chromium: measured on four photos at
+            // 0.37 / 0.5 / 0.8 / 1.6, 0.2 to 0.7 levels mean, at most 22, 0 to 3 % of bytes over 2 (identical at 0.5 on tiles)
+            this.drawBaseInto(nctx, 0, 0, nw, nh);
             const { ref } = await uploadCanvas(nb, `n${this.node.id}_base`);
-            const img = await loadImageEl(viewUrl(ref));
+            const px = this.pixels.Layer.fromCanvas(nb);
             for (const l of this.layers) {
                 if (l.kind === "filter") {
                     l.w = nw; l.h = nh; l._fcache = null;
@@ -3826,7 +3823,7 @@ class InpaintEditor {
             sc.imageSmoothingEnabled = true;
             this.sel.drawTo(sc, 0, 0, nw, nh);
             this.sel = this.pixels.Mask.fromCanvas(sel);
-            this.base = { ref, img };
+            this.base = { ref, px };
             this.width = nw; this.height = nh;
             pushed = true;
             this.pushUndoSnapshot(before, { tracked: true });
@@ -6778,7 +6775,7 @@ class InpaintEditor {
             }
             ctx.drawImage(flat, left, top);
             const { ref } = await uploadCanvas(nb, `n${this.node.id}_base`);
-            const img = await loadImageEl(viewUrl(ref));
+            const px = this.pixels.Layer.fromCanvas(nb);   // C6 (d): not the upload decoded again
 
             // Everything visible was baked into the new base; keep control and reference layers.
             const kept = this.layers.filter((l) => this.isControl(l) || this.isReference(l));
@@ -6795,7 +6792,7 @@ class InpaintEditor {
             }
             this.layers = kept;
             this.activeLayerId = null;
-            this.base = { ref, img };
+            this.base = { ref, px };
             this.width = nw; this.height = nh;
             // a new object (the canvas undo step holds the old one): the new border selected
             this.sel = this.pixels.Mask.empty(nw, nh);
@@ -8138,18 +8135,18 @@ class InpaintEditor {
                 before = this.snapshot({ kind: "canvas" });
                 const c = makeCanvas(this.width, this.height);
                 const ctx = c.getContext("2d");
-                this.basePx.drawTo(ctx, 0, 0);
+                this.drawBaseInto(ctx, 0, 0, this.width, this.height);
                 ctx.globalAlpha = layer.opacity;
                 ctx.globalCompositeOperation = layer.blend && layer.blend !== "normal" ? layer.blend : "source-over";
                 this.drawLayer(ctx, layer);
                 ctx.globalAlpha = 1;
                 ctx.globalCompositeOperation = "source-over";
                 const { ref } = await uploadCanvas(c, `n${this.node.id}_base`);
-                const img = await loadImageEl(viewUrl(ref));
+                const px = this.pixels.Layer.fromCanvas(c);   // C6 (d): not the upload decoded again
                 pushed = true;
                 this.pushUndoSnapshot(before, { tracked: true });
                 this.layers = this.layers.filter((l) => l.id !== layer.id);   // by id: a restore makes new layer objects
-                this.base = { ref, img };
+                this.base = { ref, px };
                 this.activeLayerId = null;
                 this.uploaded = this.makeUploaded();
                 this.renderLayers(); this.renderHistory(); this.renderInfo(); this.draw(); this.drawThumb(); this.notifyChanged();
@@ -8749,19 +8746,31 @@ class InpaintEditor {
 
     // ---- layers: management ------------------------------------------------
 
-    async setBase(ref, img, { keepLayers = true } = {}) {
-        // On tiles an image above Chromium's canvas limit decodes into tiles, but nothing in C2 can show, export
-        // or save it (the display mirror, toCanvas and the selection's PNG need one canvas of it), and the first
-        // autosave stored the tab as "{}" (C2's final review). Refused before anything changes; C3 draws tiles and
-        // E streams exports, which lift it. The canvas backend is left as it was.
-        if (this.tileMode && img.naturalWidth * img.naturalHeight > CANVAS_MAX_PIXELS) {
-            throw new Error(`${img.naturalWidth} × ${img.naturalHeight} px is above the canvas limit of 268 MP; the tile store cannot show an image that large yet (docs/PLAN_BCE.md §C3)`);
+    /** A new base from an <img> (or a canvas with `naturalWidth` / `naturalHeight`): its pixels are made here, the image is not kept. */
+    async setBase(ref, img, opts = {}) {
+        const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        this.checkBaseSize(w, h);   // before the decode
+        return this.setBasePixels(ref, this.pixels.Layer.fromImage(img, w, h), opts);
+    }
+
+    // On tiles an image above Chromium's canvas limit decodes into tiles, but nothing in C2 can show, export
+    // or save it (the display mirror, toCanvas and the selection's PNG need one canvas of it), and the first
+    // autosave stored the tab as "{}" (C2's final review). Refused before anything changes; C3 draws tiles and
+    // E streams exports, which lift it. The canvas backend is left as it was.
+    checkBaseSize(w, h) {
+        if (this.tileMode && w * h > CANVAS_MAX_PIXELS) {
+            throw new Error(`${w} × ${h} px is above the canvas limit of 268 MP; the tile store cannot show an image that large yet (docs/PLAN_BCE.md §C3)`);
         }
-        const sizeChanged = img.naturalWidth !== this.width || img.naturalHeight !== this.height;
+    }
+
+    /** A new base from pixels the caller made for it (and does not write again); `ref` is their file in the mirror. */
+    async setBasePixels(ref, px, { keepLayers = true } = {}) {
+        this.checkBaseSize(px.width, px.height);
+        const sizeChanged = px.width !== this.width || px.height !== this.height;
         this.historyGen++;   // a restore still loading must not put the old document over the new image
-        this.base = { ref, img };
-        this.width = img.naturalWidth;
-        this.height = img.naturalHeight;
+        this.base = { ref, px };
+        this.width = px.width;
+        this.height = px.height;
         // the history goes with the layers: a step of the old document applied to a new image put
         // its layers (or its base, for a crop) back on top of it
         if (!keepLayers || sizeChanged) { this.layers = []; this.activeLayerId = null; this.clearUndo(); }
@@ -8776,9 +8785,7 @@ class InpaintEditor {
         this.selectionDirty = true; this.selectionLoose = false;
         this.selectionDataUrl = null;
         this.selectionEncoded = false;
-        this._basePx = null;
-        this._basePxImg = null;
-        this.scheduleDetachedRelease();   // the old base's and the old layers' atlas pages go (C6 a)
+        this.scheduleDetachedRelease();   // the old layers' atlas pages go (C6 a); the old base's, the base setter queues
         this.flatCache = null;
         this.sceneSig = null;
         this.touchSource(this.sel);
@@ -9446,7 +9453,8 @@ class InpaintEditor {
         if (this.pending) this.cancelPending();
         if (this.textEdit) this.endTextEdit(false);
         const { ref } = await uploadCanvas(canvas, `n${this.node.id}_base`);
-        const img = await loadImageEl(viewUrl(ref));
+        // C6 (d): a copy of the caller's canvas (the canvas backend adopts a canvas it is given), not the upload decoded again
+        const px = this.pixels.Layer.fromImage(canvas, canvas.width, canvas.height);
         if (!keepLayers) {
             this.layers = [];
             this.activeLayerId = null;
@@ -9456,7 +9464,7 @@ class InpaintEditor {
             this.compare = null;
             this.sel = null;
         }
-        await this.setBase(ref, img, { keepLayers });
+        await this.setBasePixels(ref, px, { keepLayers });
         this.clearUndo();
         this.renderHistory();
         this.renderSelectionList();
@@ -9496,7 +9504,7 @@ class InpaintEditor {
             ctx.fillStyle = "#ffffff";
             ctx.fillRect(0, 0, w, h);
             const { ref } = await uploadCanvas(c, `n${this.node.id}_base`);
-            const img = await loadImageEl(viewUrl(ref));
+            const px = this.pixels.Layer.fromCanvas(c);   // C6 (d): not the upload decoded again
             this.layers = [];
             this.activeLayerId = null;
             this.history = [];
@@ -9504,7 +9512,7 @@ class InpaintEditor {
             this.guides = { x: [], y: [] };
             this.compare = null;
             this.sel = null;
-            await this.setBase(ref, img, { keepLayers: false });
+            await this.setBasePixels(ref, px, { keepLayers: false });
             this.clearUndo();
             this.renderHistory();
             this.renderSelectionList();
@@ -9730,18 +9738,46 @@ class InpaintEditor {
     }
 
     /**
-     * The base image's pixels (null exactly when there is no base image), built once per
-     * `base.img`: an <img> that large is re-decoded by Chromium on every draw. `this.base`
-     * stays `{ ref, img }`, so a new base object with a new image gets new pixels.
+     * The base image, `{ ref, px }` or null (C6 d): the file in the mirror (the state, runs, uploads) and its pixels, made
+     * once when the base is set. The base kept the <img> it was decoded from, `{ ref, img }`, and made its pixels from it
+     * on the first frame: at 15000 x 10000 a 572 MB decoded image kept for the life of the base and of every canvas undo
+     * step, a second decode of each crop, resize, extend, merge into the base, flatten and generated base after its own
+     * upload came back as an <img>, and 0.5 to 0.8 s of `fromImage` on the first frame after an undo of any of them.
+     * A base is never written, only replaced; a replaced base's atlas pages go (C6 a).
      */
-    get basePx() {
-        if (!this.base || !this.base.img) return null;
-        if (!this._basePx || this._basePxImg !== this.base.img) {
-            if (this._basePx) this.scheduleDetachedRelease();   // the old base's atlas pages go (C6 a)
-            this._basePx = this.pixels.Layer.fromImage(this.base.img);
-            this._basePxImg = this.base.img;
+    get base() { return this._base || null; }
+
+    set base(v) {
+        const old = this._base;
+        this._base = v || null;
+        if (old && (!v || old.px !== v.px)) this.scheduleDetachedRelease();
+    }
+
+    /** The base image's pixels; null exactly when there is no base image. */
+    get basePx() { return this._base ? this._base.px || null : null; }
+
+    get _basePx() { return this.basePx; }
+
+    /**
+     * The base drawn into `ctx` at `x, y, w, h` for a full-resolution use (a resize, a merge into the base): on tiles from
+     * a canvas made for this draw and let go after it, not the display mirror, which `drawTo` makes and keeps (572 MB at
+     * 15000 x 10000 for as long as the tab is in front).
+     */
+    drawBaseInto(ctx, x, y, w, h) {
+        const px = this.basePx;
+        if (!isTilePixels(px)) { px.drawTo(ctx, x, y, w, h); return; }
+        const c = px.toCanvas();
+        try { ctx.drawImage(c, x, y, w, h); } finally { c.width = 1; c.height = 1; }
+    }
+
+    /** Upload new base pixels (a PNG in the mirror); on tiles through a canvas made for it and let go. */
+    async uploadBase(px) {
+        const c = px.toCanvas();
+        try {
+            return await uploadCanvas(c, `n${this.node.id}_base`);
+        } finally {
+            if (isTilePixels(px)) { c.width = 1; c.height = 1; }
         }
-        return this._basePx;
     }
 
     /**
@@ -10398,13 +10434,14 @@ class InpaintEditor {
         try {
             this.setStatus("Flattening ...");
             before = this.snapshot({ kind: "canvas" });
-            const { ref, hash } = await uploadCanvas(this.flattenToCanvas({ forRun: true }), `n${this.node.id}_base`);
-            const img = await loadImageEl(viewUrl(ref));
+            const flat = this.flattenToCanvas({ forRun: true });
+            const { ref, hash } = await uploadCanvas(flat, `n${this.node.id}_base`);
+            const px = this.pixels.Layer.fromCanvas(flat);   // C6 (d): not the upload decoded again
             pushed = true;
             this.pushUndoSnapshot(before, { tracked: true });
             this.layers = this.layers.filter((l) => this.isControl(l) || this.isReference(l));
             this.activeLayerId = null;
-            this.base = { ref, img };
+            this.base = { ref, px };
             this.uploaded.baseHash = hash;
             this.uploaded.baseRef = ref;
             this.renderLayers();
@@ -11236,6 +11273,7 @@ class InpaintEditor {
                 add(st.px);
                 add(st.maskPx);   // on tiles: a mask / layerfull step's clone
                 add(st.selPx);    // on tiles: a canvas step's selection
+                add(st.base && st.base.px);   // a canvas step's base (C6 d: its pixels, where it held an <img>)
                 for (const l of st.layers || []) { add(l.px); add(l.maskPx); }
             }
         }
@@ -11713,7 +11751,7 @@ class InpaintEditor {
                 kinds[s.kind] = (kinds[s.kind] || 0) + 1;
                 if (s.kind === "layerrect" || s.kind === "selection") bytes += heldBytes(s.px);   // a rect / selection step's pixels copy
                 else held += heldBytes(s.px);   // on tiles: a whole-layer step's clone (its tiles the live layers do not hold)
-                held += heldBytes(s.maskPx) + heldBytes(s.selPx);
+                held += heldBytes(s.maskPx) + heldBytes(s.selPx) + heldBytes(s.base && s.base.px);
                 for (const l of s.layers || []) {
                     // snapshot copies are spreads: they carry px / maskPx, not the aliases
                     held += heldBytes(l.px) + heldBytes(l.maskPx);

@@ -18,6 +18,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   could show the layer a few levels different from what the eyedropper picked, and after a change its colours depended
   on where you were looking. All of them now use the same statistics, on both engines. A matched layer on screen can
   look up to 3 levels different from before; exports and renders are unchanged.
+- **Cropping, resizing, extending, flattening and their undo no longer decode the picture again.** Each of these
+  used to save the new picture, load it back as an image and decode it once more, and kept the decoded image in
+  memory for every undo step as well (about 570 MB each on a 15000 × 10000 picture); an undo of a crop or a flatten
+  then decoded the old picture again, half a second or more. The picture is now kept once, an undo puts it straight
+  back, and a crop with the tile engine on shares the unchanged parts of the picture instead of copying them. A resized
+  picture can come out up to a few levels different from before (a different, equally fine resampler).
 
 ## 0.1.15 — 2026-09-16
 

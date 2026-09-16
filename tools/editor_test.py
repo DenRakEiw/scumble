@@ -1186,8 +1186,8 @@ if (ed.tileMode) {
     }
     // the base replaced two ways, each queuing its own release (nothing else does in between, so a missing one
     // keeps the old base's pages): `setBase` with a new image into the open document (what load_image and a
-    // restore do; it keeps the layers here so the checks below still have them), and a new `base.img` the
-    // `basePx` getter finds on the next frame (what a crop, a resize, a merge into the base and a flatten do)
+    // restore do; it keeps the layers here so the checks below still have them), and a new base object with its own
+    // pixels (what a crop, a resize, a merge into the base and a flatten do: C6 d)
     {
         const c = document.createElement("canvas"); c.width = ed.width; c.height = ed.height;
         const cx = c.getContext("2d"); cx.fillStyle = "#808080"; cx.fillRect(0, 0, c.width, c.height);
@@ -1204,10 +1204,10 @@ if (ed.tileMode) {
         if (!a.newBase.now || ed._basePx === b0) throw new Error("the new base was not drawn from the atlas: " + JSON.stringify(a.newBase));
         const b1 = ed._basePx;
         const had1 = comp.pixelBytes(b1);
-        ed.base = { ref: ed.base.ref, img: await image() };
+        ed.base = { ref: ed.base.ref, px: ed.pixels.Layer.fromImage(await image()) };
         frame(); await wait(15); frame();
         a.baseImage = { had: had1, old: comp.pixelBytes(b1), now: comp.pixelBytes(ed._basePx), replaced: ed._basePx !== b1 };
-        if (!a.baseImage.replaced) throw new Error("the basePx getter did not replace the base's pixels for a new image: " + JSON.stringify(a.baseImage));
+        if (!a.baseImage.replaced) throw new Error("a new base object did not replace the base's pixels: " + JSON.stringify(a.baseImage));
         if (a.baseImage.old) throw new Error("a new base image kept the old base pixels' atlas pages: " + JSON.stringify(a.baseImage));
         if (!a.baseImage.now) throw new Error("the new base pixels were not drawn from the atlas: " + JSON.stringify(a.baseImage));
     }
@@ -3396,6 +3396,97 @@ try {
 await run("remove_layer", { layer: L.id, doc: window.__t });
 return out;
 """),
+    ("the_base_holds_its_pixels_not_an_image", """
+// C6 (d): the base kept the <img> it was decoded from and made its pixels from it on the first frame; every crop, resize,
+// extend, merge into the base and flatten uploaded its new base, fetched it back as an <img> and decoded it again, and an
+// undo of any of them decoded the old <img> again (0.5 to 0.8 s at 15000 x 10000). The base is { ref, px } now: pixels
+// made once, carried by the undo steps, shared tile by tile by a crop. Both backends; the sharing on tiles.
+await run("new_canvas", { width: 3000, height: 2000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const T = await import("./editor/inpaint_tiles.js");
+const W = ed.width, H = ed.height;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#284860"); g.addColorStop(1, "#d0a060");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 200; i++) { x.fillStyle = `hsl(${(i * 37) % 360},60%,50%)`; x.fillRect((i * 733) % W, (i * 419) % H, 60, 45); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "base6d.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const out = { tiles: !!ed.tileMode };
+if ("img" in ed.base) throw new Error("the base still keeps an image: " + Object.keys(ed.base));
+if (!ed.base.px || ed.basePx !== ed.base.px) throw new Error("the base holds no pixels of its own");
+const L = ed.pixels.Layer;
+let decodes = 0;
+const fi = L.fromImage;
+L.fromImage = function (...a) { decodes++; return fi.apply(this, a); };
+const bytes = (px) => px.readRect(0, 0, px.width, px.height).data;
+const diff = (a, b) => { if (a.length !== b.length) return Infinity; let m = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d > m) m = d; } return m; };
+try {
+    // a crop: on tiles the new base shares the old base's tiles; the pixels are the old base's shifted
+    const b0 = ed.basePx, d0 = bytes(b0);
+    await ed.cropCanvas({ left: -256, top: -256, right: -300, bottom: -100 });
+    const b1 = ed.basePx;
+    if (b1 === b0 || b1.width !== W - 556 || b1.height !== H - 356) throw new Error("the crop made no new base of the new size");
+    if (ed.tileMode) {
+        const old = new Set(b0.tileList());
+        const shared = b1.tileList().filter((t) => old.has(t)).length;
+        out.cropShared = [shared, b1.tileList().length];
+        if (!shared) throw new Error("the cropped base shares no tile with the base it came from: " + JSON.stringify(out.cropShared));
+    }
+    {
+        const part = b0.readRect(256, 256, b1.width, b1.height).data;
+        out.cropPixels = diff(part, bytes(b1));
+        if (out.cropPixels) throw new Error("the cropped base's pixels are not the old base's: " + out.cropPixels + " levels");
+    }
+    // a paint layer merged into the base, then a flatten with another one: each new base is the composite the step made
+    const P = ed.addPaintLayer();
+    P.px.drawInto(null, (x) => { x.fillStyle = "rgba(200,40,40,0.6)"; x.fillRect(300, 200, 900, 700); });
+    ed.markLayerChanged(P);
+    const expectMerge = bytes(L.fromCanvas(ed.flattenToCanvas({ forRun: true })));
+    await ed.mergeDown(P);
+    out.merge = diff(expectMerge, bytes(ed.basePx));
+    if (out.merge > 1) throw new Error("the base after a merge is not the composite it merged: " + out.merge + " levels");
+    const Q = ed.addPaintLayer();
+    Q.px.drawInto(null, (x) => { x.fillStyle = "rgba(40,200,90,0.5)"; x.fillRect(900, 500, 700, 600); });
+    ed.markLayerChanged(Q);
+    const expectFlat = bytes(L.fromCanvas(ed.flattenToCanvas({ forRun: true })));
+    await ed.flatten();
+    out.flatten = diff(expectFlat, bytes(ed.basePx));
+    if (out.flatten > 1) throw new Error("the base after a flatten is not the flattened composite: " + out.flatten + " levels");
+    // an extend and a resize
+    await ed.extendCanvas({ left: 64, top: 0, right: 64, bottom: 32 }, { fill: "#101010" });
+    const bE = ed.basePx;
+    if (bE.width !== W - 556 + 128 || bE.height !== H - 356 + 32) throw new Error("the extend made no base of the new size: " + [bE.width, bE.height]);
+    await ed.resizeImage(Math.round(bE.width * 0.6), Math.round(bE.height * 0.6));
+    const bR = ed.basePx;
+    if (bR.width !== Math.round(bE.width * 0.6)) throw new Error("the resize made no base of the new size");
+    out.decodesWhileEditing = decodes;
+    if (decodes) throw new Error("the base was decoded from an image again while editing: " + decodes + " times");
+    // the steps hold the bases' pixels: counted by the memory report
+    const rep = ed.memoryReport();
+    out.undoHeld = rep.undo.undo.heldLayerBytes;
+    // at least two whole old bases (the merged and the flattened one hold tiles of their own; the paint layers are a few tiles)
+    const baseBytes = ed.tileMode ? b0.tileList().length * 256 * 256 * 4 : W * H * 4;
+    if (!(out.undoHeld >= 2 * baseBytes)) throw new Error("the memory report does not count the bases the canvas steps hold: " + JSON.stringify({ held: out.undoHeld, baseBytes }));
+    // undo all five and redo them: the same pixels objects come back, nothing is decoded
+    const seen = [ed.basePx];
+    for (let i = 0; i < 5; i++) { await ed.undoStep(); seen.push(ed.basePx); }
+    if (seen[1] !== bE) throw new Error("the undo of the resize did not bring the extended base's pixels back");
+    if (seen[4] !== b1 || seen[5] !== b0) throw new Error("the undo of the merge / crop did not bring the earlier base pixels back");
+    for (let i = 0; i < 5; i++) await ed.redoStep();
+    if (ed.basePx !== bR) throw new Error("the redo did not bring the resized base's pixels back");
+    out.decodesInUndo = decodes;
+    if (decodes) throw new Error("an undo or redo decoded a base image: " + decodes + " times");
+} finally {
+    L.fromImage = fi;
+}
+ed.clearUndo();
+return out;
+"""),
     ("stroke_buffers_cover_the_gesture_not_the_layer", """
 // Phase A item 2 (docs/PLAN_TILES.md): a stroke's buffer and its selection clip cover what the
 // gesture touched, not the layer; the live preview is refreshed inside the dab's rectangle; the
@@ -3818,7 +3909,7 @@ ed.clearUndo();
 const S = ed.addPaintLayer();
 ed.pushUndoSnapshot(ed.snapshotRect(S, { x: 0, y: 0, w: 400, h: 300 }));
 const heldBefore = ed.undoBytes;
-await ed.setBase(ed.base.ref, ed.base.img, { keepLayers: false });
+await ed.setBasePixels(ed.base.ref, ed.basePx, { keepLayers: false });
 out.load = { heldBefore, undo: ed.undo.length, redo: ed.redo.length, bytes: ed.undoBytes, layers: ed.layers.length };
 if (!heldBefore || out.load.undo || out.load.redo || out.load.bytes) throw new Error("the history survived a same-size load: " + JSON.stringify(out.load));
 return out;
