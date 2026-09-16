@@ -2645,6 +2645,187 @@ try {
 await run("remove_layer", { layer: L.id, doc: window.__t });
 return out;
 """),
+    ("helper_inputs_read_levels_and_upload_nothing", """
+// C6 (c) slice 6: the in-app helper models' inputs. The object map read one or two full-resolution flattens (or a
+// whole layer on grey) for a 1024 x 1024 input, and before that `segmentSource` flattened the picture once more,
+// encoded it as a PNG and uploaded it, only for its hash; the cutout input was a whole-layer `toCanvas()`. Now the
+// inputs are read from levels on tiles, the map is keyed on a hash of the input itself, nothing is uploaded, and the
+// hover checks a composite version stamp. The model is a stand-in: `host.helperCall` answers here, no ONNX needed.
+await run("new_canvas", { width: 8000, height: 5000, doc: window.__t });   // s = 0.2048: level 2 on tiles
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const P = await import("./editor/inpaint_pixels.js");
+const W = ed.width, H = ed.height;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#305878"); g.addColorStop(1, "#c8a058");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 7; i++) { x.fillStyle = `hsl(${i * 51},60%,50%)`; x.beginPath(); x.arc(700 + i * 1100, 2500 + (i % 2) * 900, 600, 0, Math.PI * 2); x.fill(); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "objects.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+// a paint layer that covers the left part only (its right part is transparent: the cutout input is black there)
+const paint = document.createElement("canvas"); paint.width = 4000; paint.height = 3000;
+{ const x = paint.getContext("2d"); x.fillStyle = "#20c060"; x.fillRect(0, 0, 2000, 3000); x.fillStyle = "rgba(220,40,40,0.7)"; x.fillRect(600, 900, 1000, 1200); }
+const L = ed.addLayer({ name: "Objects paint", kind: "paint", px: ed.pixels.Layer.fromCanvas(paint), x: 1000, y: 800, w: 4000, h: 3000, dirty: true });
+// a masked layer on the document's grid, the left half shown
+const M = ed.addPaintLayer();
+M.px.drawInto(null, (x) => { x.fillStyle = "#4060e0"; x.fillRect(5200, 600, 2400, 3600); });
+M.maskPx = ed.pixels.Mask.empty(W, H);
+M.maskPx.fill([0, 0, 6400, H], "#ffffff");
+ed.markMaskChanged(M);
+ed.markLayerChanged(M);
+ed.renderLayers(); ed.fitView(); ed.draw();
+await ed.mipsSettled();
+
+// the model stand-in
+const calls = [];
+const saved = { sam2Model: host.sam2Model, helperCall: host.helperCall };
+let segmentFailsOnce = false;
+host.sam2Model = () => ({ id: "fake", label: "fake" });
+host.helperCall = async (name, a) => {
+    // the mirrors alive when the input reaches the model: what reading the input made (the layer mode's clip after the
+    // answer, `layerAlpha`, is a full-resolution read of its own and not this step's)
+    const t = ed.memoryReport().tiles;
+    calls.push({ name, key: a.key, image: a.image ? new Uint8Array(a.image) : null, mirrors: t ? t.mirrors : 0, primed: t ? t.primedBytes : 0 });
+    if (name === "objects") return { ids: new Uint16Array(a.outWidth * a.outHeight), width: a.outWidth, height: a.outHeight, count: 0, seconds: 0.01, provider: "fake" };
+    if (name === "segment") {
+        if (segmentFailsOnce && !a.image) { segmentFailsOnce = false; throw new Error("no embedding for " + a.key); }
+        return { mask: new Uint8Array(a.outWidth * a.outHeight), width: a.outWidth, height: a.outHeight, score: 0.5 };
+    }
+    if (name === "cutout") return { alpha: new Uint8Array(1024 * 1024).fill(255), size: 1024, seconds: 0.01, provider: "fake" };
+    throw new Error("unknown helper " + name);
+};
+const fetch0 = window.fetch;
+let uploads = 0;
+window.fetch = function (u, ...rest) { if (/upload/.test(String(u && u.url || u))) uploads++; return fetch0.call(this, u, ...rest); };
+const counts = { flatten: 0, toCanvas: 0 };
+const f0 = ed.flattenToCanvas;
+ed.flattenToCanvas = function (...q) { counts.flatten++; return f0.apply(this, q); };
+const tc = new Map();
+for (const q of [ed.basePx, L.px, M.px, M.maskPx]) { const o = q.toCanvas; tc.set(q, o); q.toCanvas = function (...a) { counts.toCanvas++; return o.apply(this, a); }; }
+const unspy = () => { ed.flattenToCanvas = f0; for (const [q, o] of tc) q.toCanvas = o; };
+const diff = (a, b) => { let max = 0, sum = 0, far = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); sum += d; if (d > max) max = d; if (d > 24) far++; } return { max, mean: +(sum / a.length).toFixed(3), far }; };
+const settle = async () => { for (let i = 0; i < 200 && ed.objectsPending; i++) await wait(10); };
+const out = { tiles: !!ed.tileMode };
+const baseRef0 = ed.uploaded.baseRef;
+const seg0 = ed.segSourceSel.value;
+try {
+    // (1) the image source: no flatten, no whole-layer copy, no mirror, no upload
+    ed.objects = null;
+    ed.releaseCaches({ mirrors: true, deep: true });
+    const c0 = { ...counts };
+    await ed.ensureObjects();
+    await settle();
+    const rep = ed.memoryReport();
+    const objCalls = calls.filter((c) => c.name === "objects");
+    if (objCalls.length !== 1) throw new Error(`${objCalls.length} object runs, expected 1`);
+    if (!ed.objects || !/^image:[0-9a-f]{20}$/.test(ed.objects.hash)) throw new Error("the map is not keyed on the input's hash: " + JSON.stringify(ed.objects && ed.objects.hash));
+    if (objCalls[0].key !== `${ed.node.id}:${ed.objects.hash}`) throw new Error("the embedding key is not the map's hash");
+    if (objCalls[0].image.length !== 1024 * 1024 * 4) throw new Error("the model input is not 1024 x 1024 RGBA");
+    if (uploads) throw new Error(`the in-app object map uploaded ${uploads} files`);
+    if (ed.uploaded.baseRef !== baseRef0) throw new Error("the in-app object map replaced the run's base upload");
+    out.image = { flatten: counts.flatten - c0.flatten, toCanvas: counts.toCanvas - c0.toCanvas };
+    if (ed.tileMode) {
+        out.image.mirrors = objCalls[0].mirrors;
+        if (out.image.flatten || out.image.toCanvas) throw new Error("the object input flattened or copied a whole layer: " + JSON.stringify(out.image));
+        if (objCalls[0].mirrors) throw new Error(`the object input made ${objCalls[0].mirrors} display mirrors`);
+        if (rep.tiles.primedBytes) throw new Error("primed cells were left behind");
+    } else if (out.image.flatten !== 1) throw new Error("the canvas backend's object input should be the one flatten it was: " + JSON.stringify(out.image));
+
+    // (2) a second check with nothing changed makes no model call; a visibility round trip reads the same input
+    await ed.ensureObjects(); await settle();
+    await run("set_layer", { layer: L.id, visible: false, doc: window.__t });
+    await run("set_layer", { layer: L.id, visible: true, doc: window.__t });
+    const v0 = ed.compositeVersion;
+    await ed.ensureObjects(); await settle();
+    if (calls.filter((c) => c.name === "objects").length !== 1) throw new Error("an unchanged picture ran the model again");
+    if (ed.objects.version !== v0) throw new Error("the map was not stamped with the composite version it was checked at");
+
+    // (3) the hover: 20 moves read nothing; after a write the next one reads once, and a new picture runs the model
+    const oi0 = host.objectInput;
+    let reads = 0;
+    host.objectInput = function (...a) { reads++; return oi0.apply(this, a); };
+    try {
+        for (let i = 0; i < 20; i++) ed.updateObjectHover(100 + i, 100);
+        await settle();
+        if (reads) throw new Error(`20 hovers over an unchanged picture read the input ${reads} times`);
+        L.px.drawInto(null, (x) => { x.fillStyle = "#ff00ff"; x.fillRect(100, 100, 64, 64); });
+        ed.markLayerChanged(L);
+        const hash1 = ed.objects.hash;
+        for (let i = 0; i < 5; i++) { ed.updateObjectHover(200 + i, 200); await settle(); }
+        if (reads !== 1) throw new Error(`hovers after a write read the input ${reads} times, expected 1`);
+        if (calls.filter((c) => c.name === "objects").length !== 2) throw new Error("a changed picture did not run the model");
+        if (ed.objects.hash === hash1) throw new Error("a changed picture kept the old hash");
+    } finally { host.objectInput = oi0; }
+
+    // (4) the picture against the old input (taken after the checks: it makes mirrors on tiles)
+    const lastImage = calls.filter((c) => c.name === "objects").pop().image;
+    unspy();
+    const refImage = host.modelInput(host.sourceCanvas(ed, null), 1024, null);
+    out.imageDiff = diff(lastImage, refImage);
+    if (!ed.tileMode ? out.imageDiff.max : (out.imageDiff.mean > 2 || out.imageDiff.far > lastImage.length * 0.01)) throw new Error("the object input differs from the old one: " + JSON.stringify(out.imageDiff));
+
+    // (5) the point prompt's re-encode, when the embedding is gone, sends the input the map's hash was taken of
+    segmentFailsOnce = true;
+    await host.segmentPoint(ed, [{ x: 3000, y: 2000, label: 1 }], null);
+    const seg = calls.filter((c) => c.name === "segment");
+    if (seg.length !== 2 || !seg[1].image) throw new Error("the re-encode did not send an image: " + seg.length);
+    if (seg[1].key !== `${ed.node.id}:${ed.objects.hash}`) throw new Error("the re-encode used another key");
+    const sd = diff(seg[1].image, lastImage);
+    if (sd.max) throw new Error("the re-encode's input is not the map's: " + JSON.stringify(sd));
+
+    // (6) the layer source: the masked layer on grey
+    ed.releaseCaches({ mirrors: true, deep: true });
+    ed.segSourceSel.value = "active layer";
+    ed.activeLayerId = M.id;
+    for (const [q] of tc) { const o = tc.get(q); q.toCanvas = function (...a) { counts.toCanvas++; return o.apply(this, a); }; }
+    ed.flattenToCanvas = function (...q) { counts.flatten++; return f0.apply(this, q); };
+    const c1 = { ...counts };
+    await ed.ensureObjects(); await settle();
+    const rep2 = ed.memoryReport();
+    const layerCall = calls.filter((c) => c.name === "objects").pop();
+    if (!ed.objects || ed.objects.layerId !== M.id || !ed.objects.hash.startsWith(`layer:${M.id}:`)) throw new Error("the layer source's map is not the layer's: " + JSON.stringify(ed.objects && ed.objects.hash));
+    out.layer = { flatten: counts.flatten - c1.flatten, toCanvas: counts.toCanvas - c1.toCanvas };
+    if (ed.tileMode) {
+        out.layer.mirrors = layerCall.mirrors;
+        if (layerCall.mirrors) out.layer.owners = [["base", ed.basePx], ["sel", ed.sel], ["paint", L.px], ["masked", M.px], ["mask", M.maskPx]].filter(([, q]) => q && P.displayCanvasIfMade(q)).map(([n]) => n);
+        if (out.layer.flatten || out.layer.toCanvas || layerCall.mirrors) throw new Error("the layer source copied or mirrored: " + JSON.stringify(out.layer));
+        if (layerCall.primed) throw new Error("primed cells were still held when the layer input reached the model");
+        out.layer.afterClip = rep2.tiles.mirrors;   // layerAlpha's full-resolution clip, bigger change C
+    }
+    unspy();
+    out.layerDiff = diff(layerCall.image, host.modelInput(host.sourceCanvas(ed, M), 1024, null));
+    if (!ed.tileMode ? out.layerDiff.max : (out.layerDiff.mean > 2 || out.layerDiff.far > layerCall.image.length * 0.01)) throw new Error("the layer source differs from the old one: " + JSON.stringify(out.layerDiff));
+
+    // (7) the cutout input: the paint layer's own pixels on black, the transparent half black
+    ed.releaseCaches({ mirrors: true, deep: true });
+    const o = tc.get(L.px);
+    let lc = 0;
+    L.px.toCanvas = function (...a) { lc++; return o.apply(this, a); };
+    const cut = await host.cutoutInput(ed, L);
+    L.px.toCanvas = o;
+    if (ed.tileMode && lc) throw new Error("the cutout input copied the whole layer");
+    let blackMax = 0;
+    for (let y = 0; y < 1024; y += 7) for (let x = 560; x < 1024; x += 7) { const i = (y * 1024 + x) * 4; blackMax = Math.max(blackMax, cut[i], cut[i + 1], cut[i + 2]); }
+    if (blackMax > 8) throw new Error("the cutout input's transparent half is not black: " + blackMax);
+    out.cutoutDiff = diff(cut, host.modelInput(L.px.toCanvas(), 1024, "#000000"));
+    if (!ed.tileMode ? out.cutoutDiff.max : (out.cutoutDiff.mean > 2 || out.cutoutDiff.far > cut.length * 0.01)) throw new Error("the cutout input differs from the old one: " + JSON.stringify(out.cutoutDiff));
+    out.cutoutToCanvas = lc;
+} finally {
+    unspy();
+    window.fetch = fetch0;
+    host.sam2Model = saved.sam2Model;
+    host.helperCall = saved.helperCall;
+    ed.segSourceSel.value = seg0;
+    ed.objects = null;
+}
+await run("remove_layer", { layer: M.id, doc: window.__t });
+await run("remove_layer", { layer: L.id, doc: window.__t });
+return out;
+"""),
     ("stroke_buffers_cover_the_gesture_not_the_layer", """
 // Phase A item 2 (docs/PLAN_TILES.md): a stroke's buffer and its selection clip cover what the
 // gesture touched, not the layer; the live preview is refreshed inside the dab's rectangle; the

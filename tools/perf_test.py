@@ -537,6 +537,12 @@ BENCH = """
             await shot("prompt_ctx", () => ed.promptContextCanvas());
             box1000();
             await shot("prompt_ctx_sel", () => ed.promptContextCanvas());
+            // C6 (c) slice 6: the in-app helper models' inputs (1024 x 1024), the new reader and the old one in this run
+            const H6 = (await import("./editor/host.js")).host;
+            await shot("object_input", () => H6.objectInput(ed, null));
+            await shot("object_input_old", async () => H6.modelInput(H6.sourceCanvas(ed, null), 1024, null));
+            await shot("cutout_input", () => H6.cutoutInput(ed, paintLayer));
+            await shot("cutout_input_old", async () => H6.modelInput(paintLayer.px.toCanvas(), 1024, "#000000"));
         }
     }
 
@@ -698,6 +704,12 @@ OP_ROWS = [
     ("  mirrors made MB", "prompt_ctx_mb"),
     ("prompt context, 1000 px selection", "prompt_ctx_sel"),
     ("  mirrors made MB", "prompt_ctx_sel_mb"),
+    ("object map input (1024 from levels)", "object_input"),
+    ("  mirrors made MB", "object_input_mb"),
+    ("  the same the old way (a flatten)", "object_input_old"),
+    ("  mirrors made MB", "object_input_old_mb"),
+    ("cutout input (1024 from levels)", "cutout_input"),
+    ("  the same the old way (toCanvas)", "cutout_input_old"),
     ("magic wand, a masked layer", "wand_masked"),
     ("  mirrors made MB [_masked]", "wand_masked_mb"),
     ("eyedropper, Sample: the masked layer", "pick_layer"),

@@ -6546,9 +6546,17 @@ class InpaintEditor {
         if (!objectBackendAvailable()) { this.setStatus(hostText("noObjectBackend", "Object selection needs a SAM2 model: download one in Settings › Helpers, or install ComfyUI-segment-anything-2 (Kijai) on the server.")); return; }
         this.objectsPending = { stage: "upload" };
         try {
+            if (host.objectsInApp()) {
+                // in-app SAM2 reads its own 1024 px input and keys the map on a hash of it: no full-resolution flatten,
+                // PNG and upload, whose only use here was that hash (C6 c slice 6)
+                const layerMode = this.segSourceSel && this.segSourceSel.value === "active layer";
+                const layer = layerMode ? this.activeLayer() : null;
+                if (layerMode && !layer) throw new Error("no active layer: pick a layer in the list or set Source to image");
+                await host.findObjects(this, { layer });
+                return;
+            }
             const { ref, hash, layer } = await this.segmentSource();
             if (this.objects && this.objects.hash === hash && this.objects.w === this.width && this.objects.h === this.height) { this.objectsPending = null; return; }
-            if (host.objectsInApp()) { await host.findObjects(this, { hash, layer }); return; }
             this.setStatus(`Finding objects with ${OBJECT_BACKEND.label} ...`);
             const prompt = {
                 obj_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(ref) } },
@@ -6632,7 +6640,11 @@ class InpaintEditor {
     }
 
     updateObjectHover(ix, iy) {
-        if (!this.objects || (this.objects.layerId === null && this.uploaded.baseHash === null)) {
+        // stale: an in-app map carries the composite version it was checked at (it uploads nothing, so `baseHash` stays
+        // null); a ComfyUI map is stale when the upload cache was cleared
+        const o = this.objects;
+        const stale = o && o.layerId === null && (o.version != null ? o.version !== this.compositeVersion : this.uploaded.baseHash === null);
+        if (!o || stale) {
             // nothing computed yet, or the image changed since: refresh once
             if (!this.objectsPending) this.ensureObjects();
             return;

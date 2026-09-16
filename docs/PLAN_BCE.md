@@ -2880,6 +2880,91 @@ profile. It reads the image from the profile it is given now; `s5-mcp-tiles` and
 it reads the same bytes, and a gate that catches it needs the selection's chains to be missing while the screen does
 not draw; the screen draws on its own frames during the awaits, so such a check would be a flake.
 
+#### C6 (c) slice 6 as built (2026-09-16): the helper models' inputs read levels and upload nothing
+
+Slice 6 of `dist/c6map/c/critic.md` §5, after `dist/c6map/c/objects.md` §2 to §5.
+
+**What it was.** The in-app helper models look at a 1024 x 1024 squash, and every one of their inputs was made at full
+resolution first:
+- the object map (the object tool, O): `ensureObjects` awaited `segmentSource()` before it knew SAM2 runs in-app, which
+  flattened the picture, encoded it as a PNG in the worker and uploaded it through the local mirror, **only for its hash**
+  (the in-app path threw the upload's `ref` away). Then `host.findObjects` flattened it again (`sourceCanvas`) for the
+  model input. In "active layer" mode both were a whole-layer copy on a grey canvas as large as the image;
+- the point prompt's re-encode (`segmentPoint`, when the embedding is gone) made the same input again;
+- the cutout (`cutoutInApp`) read `layer.px.toCanvas()`, a whole-layer copy on tiles.
+
+**What was built** (the app host only; the node's host has no in-app models and is unchanged):
+- `host.objectInput(editor, layer)`: on tiles the image is **one uniform region pass** at `max(1024 / W, 1024 / H)`
+  through `sampleRegionSettled` (so no axis is scaled up, and filters and colour-match statistics see an unsquashed
+  picture), then the squash. A layer is drawn with its mask from its own tiles at the same level, into a scratch, over
+  grey; a filter layer, a layer under a live stroke or a mask off the tile grid keep the old path. On canvases the old
+  input, byte for byte.
+- `host.cutoutInput(editor, layer)`: the layer's own pixels (no mask) from its levels at the larger of the two squash
+  scales, squashed onto black; `toCanvas()` on canvases, as before.
+- `host.inputHash(image)`: SHA-1 of the 4 MB input. The map is keyed `image:<hash>` or `layer:<id>:<hash>`, and so is the
+  SAM2 embedding in the main process: equal inputs share both, a visibility round trip or an undo back to the same
+  picture runs nothing.
+- `ensureObjects` takes the in-app branch **before** `segmentSource`, so nothing is flattened, encoded or uploaded there;
+  `uploaded.baseRef` (which a ComfyUI run reuses) is not touched. The ComfyUI path keeps `segmentSource` and its upload,
+  because there the upload is the model's input.
+- **The hover's staleness test.** It re-checked the map while `uploaded.baseHash` was null, which only the upload used to
+  set; without the upload every pointer move would have read and hashed the input. An in-app map now carries the
+  `compositeVersion` it was checked at (`objects.version`, also on the "same hash" early return), and the hover compares
+  that. Every `baseHash = null` bumps `compositeVersion` (`UploadCache`), so the stamp sees every change the old test saw.
+- `host.helperCall(name, args)`: the three IPC calls go through one member, so a gate can stand in for the model.
+
+**Measured**, `perf_test.py 15000x10000`, tiles on, the new reader and the old one in the same run (`s6-perf`):
+
+| row | blocked [wall] | mirrors made |
+|---|---|---|
+| object map input, from levels | **174 ms** [174] | 16 MB |
+| the same the old way (one flatten) | 1955 ms [1955] | 1733 MB |
+| cutout input of a full-size paint layer, from levels | **38 ms** [38] | 0 |
+| the same the old way (`toCanvas`) | 571 ms [571] | 0 |
+
+The old object path did the flatten **twice** plus a PNG encode and an upload of the whole picture; the row shows one of
+them. The 16 MB is the colour-matched result's mirror, as in slice 5 (slice 7b).
+
+**The picture.** On canvases the three inputs are byte-identical to the old ones. On tiles, against the old input on the
+8000 x 5000 gate document: the image mean 0.20 levels (1,643 of 4 M bytes over 24), the masked layer on grey 0.02, the
+cutout at most 1 level. The SAM2 answer may move by a few objects on real photos; nothing gates on object ids.
+
+**Not in this step, measured in the gate:** in "active layer" mode `applySegmentIds` clips the answer with `layerAlpha`,
+a full-resolution read of the layer that still makes its mirror and its mask's (two mirrors on the gate document) —
+`objects.md` §9 "bigger change C". The label map at image size (`Uint16Array(W*H)`, 286 MB at 15k), the hover shapes
+(`objectShape`, a W x H canvas per hovered object) and the point prompt's W x H mask are bigger changes A and B; they are
+the object tool's largest costs and are still there.
+
+**Gate.** `editor_test.py` `helper_inputs_read_levels_and_upload_nothing`, both backends, the model a stand-in through
+`host.helperCall`: an 8000 x 5000 document (level 2) with a paint layer that is half transparent and a masked layer.
+- image source: one model call, the key the map's hash, no upload, `baseRef` untouched, no flatten, no whole-layer copy
+  and no mirror at the moment the input reaches the model (on canvases: exactly the one flatten it always was);
+- nothing changed, and a visibility round trip: no second model call, the map stamped with the composite version;
+- 20 hovers read nothing; after a write the next hovers read once and run the model once, with a new hash;
+- the point prompt's re-encode (the embedding thrown away) sends the map's own input, byte for byte, under its key;
+- the layer source: its map keyed on the layer, no copy or mirror while reading, no primed cells held;
+- the cutout: no `toCanvas`, the transparent half black;
+- each input against the old one: identical on canvases, mean at most 2 levels and at most 1 % of the bytes over 24 on
+  tiles.
+
+Runs: `s6-tiles` (editor) PASS; `s6-canvas` failed only `closed_tabs_are_collected` (two of the four closed tabs still
+alive, a 223 s run; the same pattern once in slice 5 on tiles), `s6-canvas2` (editor commands) ALL PASS.
+`s6-all-tiles` (commands pixels composite shape brush film glb ailabel size transparent generate log mcp llm toapis
+nodecopy) and `s6-all-canvas` (commands pixels composite film glb mcp) ALL PASS.
+
+**Seven mutations, each red** (each against a fresh instance):
+- the object input's tile branch off → "the object input flattened or copied a whole layer: flatten 1, mirrors 4";
+- `ensureObjects` back through `segmentSource` first → "0 object runs, expected 1";
+- no version stamp → "hovers after a write read the input 2 times, expected 1";
+- the hash from `compositeVersion` instead of the input → "an unchanged picture ran the model again";
+- the layer source through `sourceCanvas` → "the layer source copied or mirrored: mirrors 2 (masked, mask)";
+- the cutout input through `toCanvas` → "the cutout input copied the whole layer";
+- the re-encode from the old reader → "the re-encode's input is not the map's: max 48".
+
+**Not run:** a real SAM2 or RMBG model on this code. The gate profile has no model files, and the IPC shape is unchanged
+(the same 1024 x 1024 RGBA bytes and key format); `smoke_test.py` without `--no-helpers` with a linked model folder is
+the check if one is wanted.
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in

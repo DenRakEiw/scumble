@@ -24,6 +24,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   time. With the tile engine on they now take **0.1 to 0.7 s** and read only the scaled-down picture.
   Edges in these small pictures come out slightly smoother than before; with the tile engine off
   nothing changes.
+- **The object tool and background removal start faster on large pictures.** With a helper model
+  downloaded in *Settings › Helpers*, choosing the object tool used to flatten the whole picture
+  twice at full size, save it as a PNG and store a copy, only to feed the model a 1024 px image; on a
+  15000 × 10000 picture that input alone took **about 2 seconds** and 1.7 GB each time. With the tile
+  engine on it now takes **under 0.2 s**, nothing is saved on the way, and moving the mouse over an
+  unchanged picture no longer checks it again. The input for background removal went from 0.6 s to
+  0.04 s. Showing the objects under the cursor on such a picture is still slow; that is next.
 
 ## 0.1.14 — 2026-09-15
 

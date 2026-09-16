@@ -1301,6 +1301,11 @@ export const host = {
         editor.setStatus(editor.status.replace(/\.$/, "") + ` (${backend.label.replace(/ \(.*\)$/, "")}, ${res.seconds.toFixed(1)} s${note}).`);
     },
 
+    /** One call into the in-app helper models (`objects`, `segment`, `cutout`); one member, so a gate can stand in for it. */
+    helperCall(name, args) {
+        return window.scumble.helpers[name](args);
+    },
+
     presentHelpers(kind) {
         return (this.helpers.models || []).filter((m) => m.kind === kind && m.present);
     },
@@ -1332,6 +1337,85 @@ export const host = {
         return c;
     },
 
+    /**
+     * The object tool's model input, 1024 x 1024 RGBA bytes: the flattened image, or one layer on neutral grey, squashed
+     * (C6 c5 slice 6). On tiles it is read from levels: one uniform region pass at `max(1024 / W, 1024 / H)` (so no axis
+     * is scaled up and filters run on an unsquashed picture), with its chains built in the mips worker, then the squash.
+     * It was one or two full-resolution flattens, or a whole-layer copy, for a 4 MB input: at 15000 x 10000 over 1.7 GB of
+     * canvases and mirrors each time the map was checked. On canvases it is the old picture, byte for byte.
+     */
+    async objectInput(editor, layer) {
+        const W = editor.width, H = editor.height;
+        if (!editor.tileMode) return this.modelInput(this.sourceCanvas(editor, layer), 1024, null);
+        const s = Math.min(1, Math.max(1024 / W, 1024 / H));
+        if (!layer) return this.modelInput(await editor.sampleRegionSettled("image", [0, 0, W, H], s, { forRun: true }), 1024, null);
+        const px = layer.px;
+        const tiled = layer.kind !== "filter" && px && typeof px.primeRegion === "function" && !editor.liveStrokeOn(layer) && (!layer.maskPx || editor.tileMaskOf(layer));
+        if (!tiled) return this.modelInput(this.sourceCanvas(editor, layer), 1024, null);
+        const tw = Math.max(1, Math.round(W * s)), th = Math.max(1, Math.round(H * s));
+        // the layer and its mask at the pass's level, in a scratch of their own (a destination-in over the grey would cut it)
+        const fx = layer.w / px.width, fy = layer.h / px.height;
+        const rect = [-layer.x / fx, -layer.y / fy, (W - layer.x) / fx, (H - layer.y) / fy];
+        const level = editor.tileLevel(fx * s);
+        const jobs = await Promise.all([px, layer.maskPx].filter(Boolean).map((q) => q.primeRegion(rect, level)));
+        try {
+            const scratch = document.createElement("canvas");
+            scratch.width = tw; scratch.height = th;
+            const x = scratch.getContext("2d");
+            x.imageSmoothingEnabled = true;
+            x.setTransform(s, 0, 0, s, 0, 0);
+            const vp = { x: 0, y: 0, w: W, h: H, sx: s, sy: s, sample: true };
+            editor.drawPixelsInto(x, layer, layer.px, vp);
+            if (layer.maskPx) {
+                x.globalCompositeOperation = "destination-in";
+                editor.drawPixelsInto(x, layer, layer.maskPx, vp);
+            }
+            const c = document.createElement("canvas");
+            c.width = tw; c.height = th;
+            const ctx = c.getContext("2d");
+            ctx.fillStyle = "#808080";
+            ctx.fillRect(0, 0, tw, th);
+            ctx.drawImage(scratch, 0, 0);
+            return this.modelInput(c, 1024, null);
+        } finally {
+            for (const j of jobs) j.release();
+        }
+    },
+
+    /**
+     * The cutout model's input, 1024 x 1024 RGBA bytes: the layer's own pixels (no mask), squashed onto black. On tiles
+     * from the layer's levels at the larger of the two squash scales (slice 6); it was a whole-layer `toCanvas()`, 572 MB
+     * for a 15000 x 10000 image layer. On canvases `toCanvas()` is the layer canvas itself, as before.
+     */
+    async cutoutInput(editor, layer) {
+        const px = layer.px;
+        if (!editor.tileMode || typeof px.primeRegion !== "function") return this.modelInput(px.toCanvas(), 1024, "#000000");
+        const pw = px.width, ph = px.height;
+        const s = Math.min(1, Math.max(1024 / pw, 1024 / ph));
+        const job = await px.primeRegion([0, 0, pw, ph], editor.tileLevel(s));
+        try {
+            if (layer.px !== px) return this.modelInput(layer.px.toCanvas(), 1024, "#000000");
+            const c = document.createElement("canvas");
+            c.width = 1024; c.height = 1024;
+            const ctx = c.getContext("2d");
+            ctx.fillStyle = "#000000"; ctx.fillRect(0, 0, 1024, 1024);
+            ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+            ctx.setTransform(1024 / pw, 0, 0, 1024 / ph, 0, 0);
+            editor.drawTilesInto(ctx, px, 0, 0, pw, ph, { x: 0, y: 0, w: pw, h: ph, sx: s, sy: s });
+            return new Uint8Array(ctx.getImageData(0, 0, 1024, 1024).data.buffer);
+        } finally {
+            job.release();
+        }
+    },
+
+    /** The key an object map and its SAM2 embedding are cached under: a hash of the model input itself. */
+    async inputHash(image) {
+        const d = new Uint8Array(await crypto.subtle.digest("SHA-1", image));
+        let h = "";
+        for (let i = 0; i < 10; i++) h += d[i].toString(16).padStart(2, "0");
+        return h;
+    },
+
     /** RGBA bytes of a source drawn (squashed) into size × size, on `background` where it is transparent. */
     modelInput(source, size, background) {
         const c = document.createElement("canvas");
@@ -1351,16 +1435,22 @@ export const host = {
     async findObjects(editor, pending) {
         const model = this.sam2Model();
         if (!model) { editor.objectsPending = null; editor.setStatus("No SAM2 model is downloaded (Settings › Helpers)."); return; }
-        editor.objectsPending = { stage: "run", ...pending };
         try {
-            const src = this.sourceCanvas(editor, pending.layer);
-            editor.setStatus(`Finding objects with ${model.label} (in-app) ...`);
-            const image = this.modelInput(src, 1024, null);
+            // slice 6: the key is a hash of the model input, not of an uploaded full-resolution PNG (nothing is uploaded
+            // on this path any more). Equal inputs share the map and the embedding; an undo back to the same picture too.
+            const version = editor.compositeVersion;
+            const image = await this.objectInput(editor, pending.layer);
+            const hash = (pending.layer ? `layer:${pending.layer.id}:` : "image:") + await this.inputHash(image);
+            pending = { ...pending, hash };
             const W = editor.width, H = editor.height;
+            const o = editor.objects;
+            if (o && o.hash === hash && o.w === W && o.h === H) { o.version = version; editor.objectsPending = null; return; }
+            editor.objectsPending = { stage: "run", ...pending };
+            editor.setStatus(`Finding objects with ${model.label} (in-app) ...`);
             const s = Math.min(1, 2048 / Math.max(W, H));
             const outW = Math.max(1, Math.round(W * s)), outH = Math.max(1, Math.round(H * s));
             editor.helperUsed = true;   // the ONNX sessions hold VRAM; freed before a local run like the ComfyUI helpers
-            const res = await window.scumble.helpers.objects({ model: model.id, key: `${editor.node.id}:${pending.hash}`, image, outWidth: outW, outHeight: outH });
+            const res = await this.helperCall("objects", { model: model.id, key: `${editor.node.id}:${pending.hash}`, image, outWidth: outW, outHeight: outH });
             if (editor.objectsPending && editor.objectsPending.hash !== pending.hash) return;   // a newer request took over
             let ids;
             if (res.width === W && res.height === H) {
@@ -1375,6 +1465,7 @@ export const host = {
             }
             editor.objectsPending = null;
             editor.applySegmentIds(ids, W, H, res.count, pending);
+            if (editor.objects) editor.objects.version = version;   // the hover's staleness test (updateObjectHover)
             editor.setStatus(`${res.count} objects found with ${model.label} in ${res.seconds.toFixed(1)} s (${res.provider}). Hover to preview, click to select, click again to deselect (Shift adds, Alt subtracts).${this.slowHelperHint(res)}`);
         } catch (err) {
             console.error(err);
@@ -1392,9 +1483,9 @@ export const host = {
         const model = (this.helpers.models || []).find((m) => m.id === backend.model);
         if (!model || !model.present) throw new Error(`${backend.label} is not downloaded any more (Settings › Helpers).`);
         // like the ComfyUI path: the layer's own pixels, transparent parts on black
-        const image = this.modelInput(layer.px.toCanvas(), 1024, "#000000");
+        const image = await this.cutoutInput(editor, layer);
         editor.helperUsed = true;
-        const res = await window.scumble.helpers.cutout({ model: model.id, image });
+        const res = await this.helperCall("cutout", { model: model.id, image });
         const c = document.createElement("canvas");
         c.width = res.size; c.height = res.size;
         const ctx = c.getContext("2d");
@@ -1423,12 +1514,12 @@ export const host = {
         const key = `${editor.node.id}:${editor.objects.hash}`;
         let res;
         try {
-            res = await window.scumble.helpers.segment({ model: model.id, key, points: pts, box: bx, outWidth: outW, outHeight: outH });
+            res = await this.helperCall("segment", { model: model.id, key, points: pts, box: bx, outWidth: outW, outHeight: outH });
         } catch (err) {
-            // embedding gone (freed, restarted): encode again from the same source
+            // embedding gone (freed, restarted): encode again from the same source, the input the map's hash was taken of
             const layer = editor.objects.layerId != null ? editor.layers.find((l) => l.id === editor.objects.layerId) : null;
-            const image = this.modelInput(this.sourceCanvas(editor, layer), 1024, null);
-            res = await window.scumble.helpers.segment({ model: model.id, key, image, points: pts, box: bx, outWidth: outW, outHeight: outH });
+            const image = await this.objectInput(editor, layer);
+            res = await this.helperCall("segment", { model: model.id, key, image, points: pts, box: bx, outWidth: outW, outHeight: outH });
         }
         if (res.width === W && res.height === H) return { mask: res.mask, score: res.score };
         const mask = new Uint8Array(W * H);
