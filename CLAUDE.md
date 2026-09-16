@@ -114,7 +114,13 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    docs, `--disable-gpu`, the memory walk (not met: +0.6 to +1.4 GB of GPU process per open 15k document on tiles), the exe
    gates (PASS). **Open, needing the user's ComfyUI:** the node in a real ComfyUI tab and in Firefox, `smoke`, `commands`.
    **Open, needing E5:** the 30k gate. **Next, when the user says so:** a release (0.1.16 has its CHANGELOG section).
-8. **Phase R**, Rust kernels (`docs/PLAN_BCE.md` §2b; the crate is in the history at c75c4f1), then **phase E**.
+8. **Phase R is next** (the user's go, 2026-09-17): Rust kernels (`docs/PLAN_BCE.md` §2b; the crate is in the history at
+   c75c4f1, `cargo` / `rustc` are installed). The user waived §2b's precondition (their own 15k test first). Then **phase E**.
+
+**Decision (b) of 7c is still the user's** (exports and runs on the shared statistics entry; the numbers are in
+`docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). Recommended to them on 2026-09-17: **keep the full-resolution statistics
+for exports and runs** (no change: the screen differs by at most 3 levels, a real result is never moved; if the screen and
+exports have to agree later, point samples, mean 0.56 / max 9 levels, not box means). Not confirmed yet; build nothing for it.
 
 **Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`
 are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,
