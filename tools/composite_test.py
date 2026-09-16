@@ -463,6 +463,7 @@ async def run(c, args):
     os.makedirs(OUT, exist_ok=True)
     info = await c.eval(BUILD, timeout=120)
     print("document:", info)
+    tiles = bool(await c.eval("!!window.__cmp.tileMode"))
     ok = True
     try:
         for name, js in (("full", FULL), ("view", VIEW)):
@@ -482,14 +483,18 @@ async def run(c, args):
             if diff is None:
                 print(f"[skip] {name}: Pillow missing, cannot compare (wrote {cur})")
                 continue
+            # C6 (c) 7b: on tiles the screen reads a colour-matched layer's side of its statistics from the tiles' levels,
+            # the references were taken from the display pyramid's: the matched layer of the view is 3 levels apart
+            # (measured, and only there); slice 7c moves the screen's statistics again
+            tol = max(args.tolerance, 3) if name == "view" and tiles else args.tolerance
             if diff.get("differing", 0) == 0:
                 print(f"[ok] {name}: identical")
-            elif diff["max"] <= args.tolerance:
-                print(f"[ok] {name}: max {diff['max']} levels, mean {diff['mean']:.3f} (within {args.tolerance})")
+            elif diff.get("max", 999) <= tol:
+                print(f"[ok] {name}: max {diff['max']} levels, mean {diff['mean']:.3f} (within {tol})")
             else:
                 ok = False
-                print(f"[FAIL] {name}: max {diff['max']} levels, mean {diff['mean']:.3f}, "
-                      f"{diff['differing']} of {diff['bytes']} bytes differ. Current: {cur}, reference: {ref}")
+                print(f"[FAIL] {name}: max {diff.get('max')} levels, mean {diff.get('mean')}, "
+                      f"{diff.get('differing')} of {diff.get('bytes')} bytes differ ({diff}). Current: {cur}, reference: {ref}")
         # the GPU filter chain against the canvas round trips, same document, same run
         fc = await c.eval(FILTER_CHAIN, timeout=300)
         if fc.get("skipped"):

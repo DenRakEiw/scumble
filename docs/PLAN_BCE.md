@@ -3034,6 +3034,101 @@ passed.
 sampled passes can disagree by a few levels (7c, the user's decision (a)); the matched layer's pixels in a region pass
 still come from its display mirror and a Skia pyramid (7b); the match on the GPU path is a canvas per miss (7d).
 
+#### C6 (c) slice 7b as built (2026-09-16): a colour-matched layer is matched from its tiles
+
+The second step of slice 7 of `dist/c6map/c/critic.md` §5, after `dist/c6map/c/match.md` §3 (GPU option A: the matched
+region as a canvas source; option B, uniforms in the atlas shader, is 7d).
+
+**Before.** A colour-matched layer in any region pass (the screen on the GPU stack and on Canvas 2D, the navigator, every
+sampled pass) was matched on its whole display mirror (`layerMatchedPixels`), or on the Skia pyramid level of it the pass
+drew, and a masked one on `_masked` and two more mirrors. On the 15000 x 10000 benchmark with its full-size masked paint
+layer matched: **1144 MB** of mirrors and `_masked` for every row below, a first frame at 1:1 of **837 ms**, a pan over it
+at 1:1 of 53 ms a frame (109 worst), and the document's display pyramids 196 MB.
+
+**What was built** (`renderer/editor/inpaint_canvas.js`, `inpaint_compositor.js`):
+- `matchFromTiles(layer)`: the layer on tiles, its mask (if any) on the same grid.
+- `matchedRegionView(layer, vp, below)`: the statistics first (a miss may run a pass of its own, which takes region
+  canvases and scratches), then the layer's region canvas at the pass's level, masked by the mask's region canvas
+  (`destination-in`, drawn at its own origin: it is kept while the range stays inside it) in a pass scratch, and
+  `matchCanvas` on that. Returns `{ canvas, sw, sh, x, y, w, h }` (`sw`, `sh` fractional at the layer's last row and column:
+  the canvas holds whole tiles and the clamp past the edge), `{ plain: true }` without statistics, or null. Kept in
+  `_mcacheView` (screen, navigator) or `_mcacheSample` under the region canvases' origin and size, the level, the pixel and
+  mask versions and `chainEpoch`s, and the statistics object itself: a pan inside the tile of margin reuses the match.
+- `drawLayer` takes it for every region pass on tiles (a plain result draws through `drawTilesInto`, or `drawLayerPass`
+  with a mask); `layerMatchedPart` (b3) stays for the canvas backend.
+- `glViewComposite` hands it over as a canvas source with `cropW` / `cropH`. The compositor's quad shader has `u_uvMax`,
+  and a source's quad ends at the crop (`composite()`, also for a window of a large source).
+- `matchStats`' screen branch reads the layer's side at 256 px from its tiles and mask at display levels
+  (`matchLayerPicture`, shared with `sampledMatchStats`, which reads exact levels), not from the pass's pyramid level.
+- `dropStaleViewCaches` drops the lowest landed layer's own `_mstatsView` / `_mcacheView` too when it is matched: they are
+  read from its own display levels now.
+- `passStores` primes a matched layer on tiles like any other.
+- The canvas backend is unchanged (`composite_test.py`'s view identical to its reference).
+
+**After** (`perf_test.py 15000x10000`, tiles, same session, A/B by stashing the renderer; the second "after" run in
+brackets where the first one read high):
+
+| row | before | after |
+|---|---|---|
+| matched masked layer, fit: first frame [settled] | 43.2 [4.0] ms | 14.4 [0.3] (18.0 [0.2]) |
+| the same at 1:1: first frame [settled] | 837.0 [2.2] | 126.8 [0.7] |
+| pan at 1:1 over it, median [worst] | 53.1 [109.1] | 3.4 [32.1] |
+| eyedropper over it | 29.5 | 91.0 (33.4) |
+| magic wand over it, blocked [wall] | 311 [1141] | 352 [589] (293 [497]) |
+| mirrors and `_masked` each of those rows made | 1144 MB | 0 |
+| footer: display pyramids | 196 MB | 0 |
+| footer: source textures of the compositor | 32.3 MB | 0.3 |
+| first frame fit -> 1:1, GPU | 18.0 | 1.4 |
+| prompt context / object map input, mirrors made | 16 MB | 0 |
+
+The 16 MB the slice 5 and 6 rows still showed was the benchmark's matched result's mirror; it is gone. The footer's two
+mirrors after the run (1144 MB) are the "the same the old way" rows' own. Every other row within the runs' noise ("undo
+of that fill" read 49 / 284 / 59 ms over three runs).
+
+**What moved:**
+- On tiles the screen's statistics read the layer exactly where the pass drew a smaller pyramid level: `composite_test.py`'s
+  stored view differs by 3 levels on the matched 260 x 180 layer, and only there (0 before 7b, A/B). The view step allows 3
+  on tiles, with the reason; slice 7c moves the screen's statistics again.
+- `a_sampled_pass_matches_only_the_part_of_a_matched_layer_it_shows`: the screen against a sampled pass at 1:1 reads 6
+  levels on 1314 bytes on tiles (3-4 on 49-588 before); its bound is 8 until 7c. The size bound on the matched part does
+  not apply on tiles (the part is a region canvas, which a read that holds the range reuses whatever its size).
+- Against the old path the screen differs by up to 10 levels on 8 to 10 bytes zoomed out and up to 20 on about 500 bytes
+  at 1:1 on a layer drawn scaled (tile mips against Skia's pyramid at the blocks' edges); a 512 px picture by up to 34 on
+  about 400 of 741,376 bytes.
+
+**Gate.** `editor_test.py` `a_colour_matched_layer_draws_from_its_own_tiles`, both backends: a 4100 x 2900 document, a
+full-size matched layer with a mask on its grid and a small one drawn scaled whose levels end inside a pixel (1401 / 8).
+On the GPU stack and on Canvas 2D: zoomed out at a fixed 0.4 (its edges a tenth into a screen pixel: the GPU rasterises
+by pixel centres) and at 1:1, no mirror, pyramid or `_masked` of either layer (tiles); the screen against the old path
+with the same statistics object (at most 0.5 % of bytes over 8 levels) and, at the small layer's right and bottom edges,
+at most 24 levels; a floor (the match moves the screen by more than 20); a pan by three tiles at the same region size
+against the match made again (at most 1 level); a change under the small layer and a flip of it, each against the
+statistics and match made again. Then the eyedropper, a 512 px picture (against the old path) and the wand's box passes
+on a small block, with no mirror. `editor_test.py` also takes `SCUMBLE_EDITOR_ONLY=step,step` to run the first step,
+those and the cleanup.
+
+**Seven mutations, each red** (fresh instances):
+- the key without the region canvases' origins → the pan, "124 levels on 1534516 bytes";
+- the mask not applied → "1065400 bytes by more than 8 levels (max 143)";
+- the GPU quad not cropped → the edges, 96 levels; the 2D draw not cropped → the edges, 42 levels;
+- the key without the statistics object → the change below, "60 levels on 44375 bytes";
+- `matchFromTiles` false (the old path) → "a display mirror of a matched layer was made";
+- the landed layer's own caches not dropped → the flip, 2 levels (weak, but red).
+
+Three of them were green on the first version of the step, each for a reason in the test: the pan changed the region's
+size (the key moved anyway), the small layer ended on a whole pixel at its level, and its edge was matched to the
+colour around it (it has a white last column now). A mutation of the quad shader alone (the texture squeezed by less than
+a level pixel) stayed green and was replaced by the draw past the edge, which is the error that shows.
+
+**Runs:** `s7b-all-tiles` (editor pixels composite shape brush film glb ailabel size transparent generate log mcp llm toapis
+nodecopy): all PASS but `editor` (`a_settled_read_builds_its_levels_in_the_worker_not_here` "took no cell from the
+worker", a step without a matched layer; PASS on the re-run `s7b-all-tiles2`) and `composite` (the known `KeyError 'bytes'`
+crash of its own failure message, fixed; then the stored view, above). `s7b-composite-tiles` and `-canvas` PASS;
+`s7b-all-canvas` (editor pixels composite film glb mcp) ALL PASS. No `commands` or `smoke`: the user's ComfyUI is in use.
+
+**Left for 7c / 7d:** the screen's statistics are still the screen's own (`_mstatsView`); the match is still a canvas per
+miss (7d moves it into the atlas shader, which also removes the per-miss upload).
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in

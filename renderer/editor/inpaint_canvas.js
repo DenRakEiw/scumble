@@ -4833,11 +4833,12 @@ class InpaintEditor {
             if ((!layer.visible && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
             if (layer.kind === "filter") { add(layer.maskPx, 0, 0, this.width, this.height); continue; }
             if (forRun && (this.isControl(layer) || this.isReference(layer))) continue;
-            // only the layers `drawLayer` really draws from tiles in a region pass. A colour-matched layer
+            // only the layers `drawLayer` really draws from tiles in a region pass. A colour-matched layer off tiles
             // (`layerMatchedPixels`), a layer under a live paint stroke and one whose mask is not on the same
             // tile grid are composed from a canvas instead, so priming them would buy a wait and nothing else.
+            // A colour-matched layer on tiles reads its tiles at the pass's level (C6 c 7b, `matchedRegionView`).
             const gesture = this.pointer && this.pointer.layer === layer;
-            if (this.matchActive(layer) && !gesture) continue;
+            if (this.matchActive(layer) && !gesture && !this.matchFromTiles(layer)) continue;
             if (this.liveStrokeOn(layer)) continue;
             if (layer.maskPx && !this.tileMaskOf(layer)) continue;
             add(layer.px, layer.x, layer.y, layer.w, layer.h);
@@ -9841,6 +9842,16 @@ class InpaintEditor {
             for (const layer of opts.baseOnly ? [] : this.layers) {
                 if (!layer.visible || !layer.px) continue;
                 if (this.isControl(layer) && opts.forRun) continue;
+                const opacity = layer.opacity == null ? 1 : layer.opacity, blend = layer.blend || "normal";
+                if (this.matchActive(layer) && this.matchFromTiles(layer)) {
+                    // C6 (c) 7b: the part of the matched layer the view shows, matched from its tiles at the view's level
+                    const e = this.matchedRegionView(layer, { ...vp, screen: true }, () => this.glMatchBackdrop(comp, vw, vh, region, layers));
+                    if (!e) continue;
+                    layers.push(e.plain
+                        ? this.glLayerSpec(layer.px, layer.x, layer.y, layer.w, layer.h, opacity, blend, sx, this.tileMaskOf(layer))
+                        : { source: e.canvas, version: 0, cropW: e.sw, cropH: e.sh, x: e.x, y: e.y, w: e.w, h: e.h, opacity, blend });
+                    continue;
+                }
                 // Canvas 2D takes the colour match's backdrop off the target it has drawn into
                 // so far; in a GPU pass nothing is drawn yet, so the stack below the layer is
                 // composited on its own (only when the statistics are not cached).
@@ -9853,8 +9864,7 @@ class InpaintEditor {
                 const tileMask = matched ? null : this.tileMaskOf(layer);
                 const px = matched || (layer.maskPx && !tileMask ? this.layerPixels(layer, true) : layer.px);
                 if (!px || px._livePreview) return null;
-                layers.push(this.glLayerSpec(px, layer.x, layer.y, layer.w, layer.h,
-                    layer.opacity == null ? 1 : layer.opacity, layer.blend || "normal", sx, tileMask));
+                layers.push(this.glLayerSpec(px, layer.x, layer.y, layer.w, layer.h, opacity, blend, sx, tileMask));
             }
             return comp.composite({ width: vw, height: vh, region, layers });
         } catch (err) {
@@ -10052,8 +10062,18 @@ class InpaintEditor {
             const live = this.layerRegionView(layer, vp);
             if (live) { ctx.drawImage(live, vp.x, vp.y, vp.w, vp.h); return; }
         }
+        // C6 (c) 7b: a colour-matched layer on tiles, in any region pass, is matched in the part its region shows, from its
+        // tiles and its mask at the pass's level: no display mirror, no Skia pyramid, no `_masked`
+        if (matched && vp && this.matchFromTiles(layer)) {
+            const e = this.matchedRegionView(layer, vp, ctx.canvas);
+            if (!e) return;
+            if (!e.plain) ctx.drawImage(e.canvas, 0, 0, e.sw, e.sh, e.x, e.y, e.w, e.h);
+            else if (layer.maskPx) this.drawLayerPass(ctx, layer, vp);
+            else this.drawTilesInto(ctx, layer.px, layer.x, layer.y, layer.w, layer.h, vp);
+            return;
+        }
         // C6 (b3): a sampled pass (the wand's and the bucket's boxes, a plugin's flatten) matches the part of the
-        // layer its region shows, not the whole layer
+        // layer its region shows, not the whole layer (the canvas backend; tiles take matchedRegionView above)
         if (matched && vp && vp.sample) {
             const part = this.layerMatchedPart(layer, ctx.canvas, vp);
             if (part) ctx.drawImage(part.canvas, part.x, part.y, part.w, part.h);
@@ -10097,6 +10117,75 @@ class InpaintEditor {
         const out = st && strength > 0 ? matchCanvas(out0, st, strength) : out0;
         layer[slot] = { version: this.compositeVersion, key, canvas: out };
         return out;
+    }
+
+    /** A colour-matched layer whose region passes read its tiles (C6 c 7b): its pixels on tiles, its mask on the same grid. */
+    matchFromTiles(layer) {
+        return !!layer.px && isTilePixels(layer.px) && (!layer.maskPx || !!this.tileMaskOf(layer));
+    }
+
+    /**
+     * The colour-matched pixels of the part of `layer` a region pass shows (C6 c slice 7b), for a layer on tiles
+     * (`matchFromTiles`): `{ canvas, sw, sh, x, y, w, h }` - draw `sw x sh` of the canvas (fractional at the layer's last
+     * row and column) at `x, y, w, h` in the image - or `{ plain: true }` when there are no statistics (draw the layer
+     * unmatched, from its tiles), or null when the region holds nothing of the layer.
+     *
+     * The pixels are the layer's region canvas at the pass's level, masked by the mask's region canvas on the same
+     * grid, and matched. `layerMatchedPixels` matched the layer's whole display mirror, or the Skia pyramid level of it
+     * the pass drew: 572 MB for the mirror and 197 MB for the pyramid of a full-size layer at 15000 x 10000, three more
+     * 572 MB canvases for a masked one (`_masked` and two mirrors), and a match of up to 600 MB per miss at 1:1.
+     *
+     * Kept per pass kind (`_mcacheView` for the screen and the navigator, `_mcacheSample` for a sampled pass) under the
+     * region canvases' origin and size, not the view's: a pan inside their tile of margin reuses the match. The
+     * statistics object is part of the key, so a new one (a change below, a drop on a landing) matches again; so do
+     * `chainEpoch`s, which move when the chains of a display read's stale cells land.
+     */
+    matchedRegionView(layer, vp, below) {
+        const m = layer.match || {};
+        const strength = Math.min(1, Math.max(0, (m.strength || 0) / 100));
+        // first: a statistics miss may run a pass of its own, which takes region canvases and scratches the view reads below
+        const st = this.matchStats(layer, below, vp, null);
+        if (!st || !(strength > 0)) return { plain: true };
+        const px = layer.px, mask = layer.maskPx || null;
+        const fx = layer.w / px.width, fy = layer.h / px.height;
+        const level = this.tileLevel(fx * vp.sx);
+        const display = !!(vp.screen || vp.display);
+        const rect = [(vp.x - layer.x) / fx, (vp.y - layer.y) / fy, (vp.x + vp.w - layer.x) / fx, (vp.y + vp.h - layer.y) / fy];
+        const rc = px.regionCanvas(rect, level, display);
+        if (!rc) return null;
+        // the canvas holds whole tiles, its last row and column the clamp past the pixels' own edge (as drawTilesInto)
+        const sw = Math.min(rc.canvas.width, (px.width - rc.x) / rc.f);
+        const sh = Math.min(rc.canvas.height, (px.height - rc.y) / rc.f);
+        if (!(sw > 0) || !(sh > 0)) return null;
+        const cw = Math.ceil(sw), ch = Math.ceil(sh);
+        // a separate pixels object: its region canvas does not replace the layer's
+        const mrc = mask ? mask.regionCanvas(rect, level, display) : null;
+        const slot = vp.sample ? "_mcacheSample" : "_mcacheView";
+        const key = JSON.stringify(["region", m.strength, m.source, layer.x, layer.y, layer.w, layer.h, level, display, rc.x, rc.y, cw, ch,
+            px.version, px.chainEpoch || 0,
+            mask ? [mask.version, mask.chainEpoch || 0, mrc ? [mrc.x, mrc.y, mrc.canvas.width, mrc.canvas.height] : -1] : -1]);
+        const c = layer[slot];
+        if (c && c.region && c.key === key && c.stats === st) return c.region;
+        let src = rc.canvas;
+        if (mask || cw !== rc.canvas.width || ch !== rc.canvas.height) {
+            src = this.passScratch("_matchRegion", cw, ch);
+            const x = src.getContext("2d");
+            x.setTransform(1, 0, 0, 1, 0, 0);
+            x.globalAlpha = 1;
+            x.globalCompositeOperation = "copy";
+            x.drawImage(rc.canvas, 0, 0, cw, ch, 0, 0, cw, ch);
+            if (mask) {
+                // the mask's region canvas may start at another tile (it is kept while the range stays inside it)
+                x.globalCompositeOperation = "destination-in";
+                if (mrc) x.drawImage(mrc.canvas, (mrc.x - rc.x) / rc.f, (mrc.y - rc.y) / rc.f);
+                else x.clearRect(0, 0, cw, ch);
+            }
+            x.globalCompositeOperation = "source-over";
+        }
+        const out = matchCanvas(src, st, strength);
+        const region = { canvas: out, sw, sh, x: layer.x + rc.x * fx, y: layer.y + rc.y * fy, w: sw * rc.f * fx, h: sh * rc.f * fy };
+        layer[slot] = { version: this.compositeVersion, key, stats: st, canvas: out, region };
+        return region;
     }
 
     /**
@@ -10154,17 +10243,21 @@ class InpaintEditor {
         if (valid(cached)) return cached.stats;
         // `below` may be a thunk: building it costs a composite, and only a miss needs it
         below = typeof below === "function" ? below() : below;
-        const px = out0;
-        const W = px.width, H = px.height;
         const s = Math.min(1, 256 / Math.max(layer.w, layer.h));
         const sw = Math.max(2, Math.round(layer.w * s)), sh = Math.max(2, Math.round(layer.h * s));
         const pad = Math.max(4, Math.round(Math.max(sw, sh) * 0.08));
         const pw = sw + 2 * pad, ph = sh + 2 * pad;
-        // layer alpha and the composite below, both padded, at statistics resolution
-        const lay = makeCanvas(pw, ph);
-        const lctx = lay.getContext("2d");
-        lctx.drawImage(px, 0, 0, W, H, pad, pad, sw, sh);
-        const ld = lctx.getImageData(0, 0, pw, ph).data;
+        // layer alpha and the composite below, both padded, at statistics resolution. C6 (c) 7b: in a region pass a
+        // layer on tiles is read from its tiles at that resolution (the screen's display levels), not from out0
+        let lay, ld;
+        if (vp && !out0 && this.matchFromTiles(layer)) {
+            ({ lay, ld } = this.matchLayerPicture(layer, !!(vp.screen || vp.display)));
+        } else {
+            lay = makeCanvas(pw, ph);
+            const lctx = lay.getContext("2d");
+            lctx.drawImage(out0, 0, 0, out0.width, out0.height, pad, pad, sw, sh);
+            ld = lctx.getImageData(0, 0, pw, ph).data;
+        }
         const bel = makeCanvas(pw, ph);
         const bctx = bel.getContext("2d");
         const padImg = pad / s;
@@ -10234,21 +10327,40 @@ class InpaintEditor {
         const slot = forRun ? "_mstatsSampleRun" : "_mstatsSample";
         const c = layer[slot];
         if (c && c.version === this.compositeVersion && c.key === key) return c.stats;
+        // the layer, masked, at the statistics' scale
+        const { lay, ld, pad, pw, ph, fx, fy, box } = this.matchLayerPicture(layer, false);
+        // the composite of the layers below it over the same box, at the same scale
+        const idx = this.layers.indexOf(layer);
+        const under = this.sampleRegion("image", box, Math.min(fx, fy), { forRun, upTo: Math.max(0, idx) });
+        const bel = makeCanvas(pw, ph);
+        const bctx = bel.getContext("2d", { willReadFrequently: true });
+        bctx.drawImage(under, 0, 0, pw, ph);
+        const bd = bctx.getImageData(0, 0, pw, ph).data;
+        const stats = this.statsOfMatch(layer, lay, ld, bd, pad);
+        layer[slot] = { version: this.compositeVersion, key, stats };
+        return stats;
+    }
+
+    /**
+     * The layer, masked, padded, at the colour-match statistics' scale (256 px on its long side), with its bytes:
+     * `{ lay, ld, pad, pw, ph, fx, fy, box }`, `box` the padded rectangle in image coordinates. A layer on tiles is read
+     * from its tiles and its mask at that scale, exact or (`display`, the screen's statistics) from the levels the screen
+     * shows; any other from the display pyramid of its canvas.
+     */
+    matchLayerPicture(layer, display) {
         const s = Math.min(1, 256 / Math.max(layer.w, layer.h));
         const sw = Math.max(2, Math.round(layer.w * s)), sh = Math.max(2, Math.round(layer.h * s));
         const pad = Math.max(4, Math.round(Math.max(sw, sh) * 0.08));
         const pw = sw + 2 * pad, ph = sh + 2 * pad;
         const fx = sw / layer.w, fy = sh / layer.h;
         const box = [layer.x - pad / fx, layer.y - pad / fy, layer.x + layer.w + pad / fx, layer.y + layer.h + pad / fy];
-        // the layer, masked, at the statistics' scale
         const lay = makeCanvas(pw, ph);
         const lctx = lay.getContext("2d", { willReadFrequently: true });
         lctx.imageSmoothingEnabled = true;
         lctx.setTransform(fx, 0, 0, fy, pad - layer.x * fx, pad - layer.y * fy);
-        const px = layer.px;
-        if (isTilePixels(px) && (!layer.maskPx || this.tileMaskOf(layer))) {
-            const vp = { x: box[0], y: box[1], w: box[2] - box[0], h: box[3] - box[1], sx: fx, sy: fy };
-            this.drawPixelsInto(lctx, layer, px, vp);
+        if (this.matchFromTiles(layer)) {
+            const vp = { x: box[0], y: box[1], w: box[2] - box[0], h: box[3] - box[1], sx: fx, sy: fy, display };
+            this.drawPixelsInto(lctx, layer, layer.px, vp);
             if (layer.maskPx) {
                 lctx.globalCompositeOperation = "destination-in";
                 this.drawPixelsInto(lctx, layer, layer.maskPx, vp);
@@ -10260,16 +10372,7 @@ class InpaintEditor {
         }
         lctx.setTransform(1, 0, 0, 1, 0, 0);
         const ld = lctx.getImageData(0, 0, pw, ph).data;
-        // the composite of the layers below it over the same box, at the same scale
-        const idx = this.layers.indexOf(layer);
-        const under = this.sampleRegion("image", box, Math.min(fx, fy), { forRun, upTo: Math.max(0, idx) });
-        const bel = makeCanvas(pw, ph);
-        const bctx = bel.getContext("2d", { willReadFrequently: true });
-        bctx.drawImage(under, 0, 0, pw, ph);
-        const bd = bctx.getImageData(0, 0, pw, ph).data;
-        const stats = this.statsOfMatch(layer, lay, ld, bd, pad);
-        layer[slot] = { version: this.compositeVersion, key, stats };
-        return stats;
+        return { lay, ld, pad, pw, ph, fx, fy, box };
     }
 
     flattenToCanvas(opts = {}) {
@@ -10567,8 +10670,17 @@ class InpaintEditor {
         st.base = false;
         st.layers.clear();
         let dropped = false;
-        for (let i = from + 1; i < this.layers.length; i++) {
+        // C6 (c) 7b: the lowest landed layer itself too, when it is colour-matched: its screen statistics and matched view
+        // are read from its own display levels now
+        const own = from >= 0 && this.matchActive(this.layers[from]) ? from : from + 1;
+        for (let i = own; i < this.layers.length; i++) {
             const l = this.layers[i];
+            if (i === from) {
+                if (!l._mcacheView && !l._mstatsView) continue;
+                l._mcacheView = null; l._mstatsView = null;
+                dropped = true;
+                continue;
+            }
             // no draw for them: nothing on the screen came from them. The sampled passes' colour-match statistics stay: they
             // are read from exact levels (C6 c 7a), which a landing does not change
             l._fcacheSample = null; l._mcacheSample = null;

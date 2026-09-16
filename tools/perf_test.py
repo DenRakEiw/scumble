@@ -617,6 +617,47 @@ BENCH = """
             out.move_mb = [mirrorMB(M.px), 0];
             ed.pointer = null; M.x = x0; ed.markLayerChanged(M); ed.sceneSig = null; ed.draw();
         }
+        // C6 (c) 7b: the masked full-size paint layer colour-matched. The first frame after a change of its match at fit and
+        // at 1:1 [that frame, the frame after its chains settled], a pan at 1:1, the eyedropper and the wand over it; each
+        // with the display mirrors of the layer and its mask it made [_masked]. Before 7b the match was made on the layer's
+        // `_masked` canvas and two display mirrors, and on a Skia pyramid of it below half size.
+        masked.match = { strength: 60, source: "underneath" };
+        ed.markMatchChanged(masked);
+        const matchedMB = () => [mirrorMB(masked.px, masked.maskPx), masked._masked ? 1 : 0];
+        const firstFrame = async (key, oneToOne) => {
+            await clean();
+            if (oneToOne) {
+                ed.view.scale = 1; ed._fitted = false;
+                ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
+                ed.sceneSig = null; ed.draw(); await ed.mipsSettled(); ed.sceneSig = null; ed.draw();
+                ed.releaseCaches({ mirrors: true });
+            }
+            ed.markMatchChanged(masked);
+            let t = performance.now();
+            ed.sceneSig = null; ed.draw();
+            const a = performance.now() - t;
+            await ed.mipsSettled();
+            t = performance.now();
+            ed.sceneSig = null; ed.draw();
+            out[key] = [+a.toFixed(1), +(performance.now() - t).toFixed(1)];
+            out[key + "_mb"] = matchedMB();
+        };
+        await firstFrame("match_full_fit", false);
+        await firstFrame("match_full_1to1", true);
+        out.match_full_pan = bench((i) => { ed.view.x += (i %% 2 ? -7 : 9); ed.view.y += 3; ed.draw(); }, 30);
+        out.match_full_pan_mb = matchedMB();
+        await clean();
+        {
+            const fillWas2 = ed.fillOpts;
+            ed.fillOpts = { tolerance: 32, contiguous: true, sample: "image" };
+            out.match_full_pick = await op(() => ed.pickColor(1100, 650));
+            out.match_full_pick_mb = matchedMB();
+            rect();
+            out.match_full_wand = await op(() => ed.wandSelect(1100, 650, "replace"));
+            out.match_full_wand_mb = matchedMB();
+            ed.fillOpts = fillWas2;
+        }
+        masked.match = null; ed.markMatchChanged(masked);
         masked.maskPx = null; ed.markLayerChanged(masked);
     }
 
@@ -728,6 +769,16 @@ C2_ROWS = [
     ("  mirrors made MB", "peek_1to1_mb"),
     ("move drag at fit: first [worst of 5]", "move_first"),
     ("  mirrors made MB", "move_mb"),
+    ("matched masked layer, fit: first [settled]", "match_full_fit"),
+    ("  mirrors made MB [_masked]", "match_full_fit_mb"),
+    ("the same at 1:1: first [settled]", "match_full_1to1"),
+    ("  mirrors made MB [_masked]", "match_full_1to1_mb"),
+    ("pan at 1:1 over it", "match_full_pan"),
+    ("  mirrors made MB [_masked]", "match_full_pan_mb"),
+    ("eyedropper over it", "match_full_pick"),
+    ("  mirrors made MB [_masked]", "match_full_pick_mb"),
+    ("magic wand over it", "match_full_wand"),
+    ("  mirrors made MB [_masked]", "match_full_wand_mb"),
 ]
 
 

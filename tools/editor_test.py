@@ -2326,8 +2326,11 @@ for (const s of [1, 0.5]) {
     const a = ed.sampleRegion("image", box, s, { forRun: true });
     const cache = L._mcacheSample;
     const part = cache && cache.canvas ? [cache.canvas.width, cache.canvas.height] : null;
-    // the box shows 300 x 300 of the layer's 1200 x 900 source pixels: matched with one pixel of margin, 302 at most
-    if (!part || part[0] > 302 || part[1] > 302) throw new Error(`a ${s} pass over a box matched ${JSON.stringify(part)} source pixels of the layer, not the part the box shows`);
+    // the box shows 300 x 300 of the layer's 1200 x 900 source pixels: matched with one pixel of margin, 302 at most. On
+    // tiles (C6 c 7b) the part matched is the layer's region canvas at the pass's level, which a read that holds the range
+    // reuses however large it is (here all of this small layer); `a_colour_matched_layer_draws_from_its_own_tiles` checks
+    // that no mirror is matched
+    if (!part || (!ed.tileMode && (part[0] > 302 || part[1] > 302))) throw new Error(`a ${s} pass over a box matched ${JSON.stringify(part)} source pixels of the layer, not the part the box shows`);
     const b = ed.sampleRegion("image", whole, s, { forRun: true });
     const wholePart = L._mcacheSample && L._mcacheSample.canvas ? [L._mcacheSample.canvas.width, L._mcacheSample.canvas.height] : null;
     const da = read(a), db = read(b, (box[0] - whole[0]) * s, (box[1] - whole[1]) * s, a.width, a.height);
@@ -2367,8 +2370,9 @@ for (const s of [1, 0.5]) {
     if (ix !== box[0] || iy !== box[1]) throw new Error("the screen's region is at " + [ix, iy] + ", not the box's corner");
     // C6 (c) 7a: a sampled pass takes the statistics of the layer's whole surroundings, the screen still takes its own
     // from the view (slice 7c puts both on one entry and this bound back to 2). Measured 3-4 levels on 49-588 bytes;
-    // a part matched or placed wrong is 148 levels off (the (b3) mutation)
-    if (max > 6) throw new Error(`the 1 pass over the box differs from the screen at 1:1 by ${max} levels on ${n} bytes: the matched part is matched or placed wrong`);
+    // since 7b the screen reads the layer's side of its statistics from the tiles' levels: 6 on 1314 on tiles. A part
+    // matched or placed wrong is 148 levels off (the (b3) mutation)
+    if (max > 8) throw new Error(`the 1 pass over the box differs from the screen at 1:1 by ${max} levels on ${n} bytes: the matched part is matched or placed wrong`);
     ed.fitView(); ed.sceneSig = null; ed.draw();
 }
 await run("remove_layer", { layer: L.id, doc: window.__t });
@@ -2963,6 +2967,219 @@ try {
 }
 await run("remove_layer", { layer: P7.id, doc: window.__t });
 await run("remove_layer", { layer: L.id, doc: window.__t });
+return out;
+"""),
+    ("a_colour_matched_layer_draws_from_its_own_tiles", """
+// C6 (c) slice 7b: a colour-matched layer in a region pass (the screen on both paths, the navigator, a sampled pass) was
+// matched on its whole display mirror, or the Skia pyramid level of it the pass drew: a 572 MB mirror and a 197 MB
+// pyramid for a full-size layer at 15000 x 10000, `_masked` and two more mirrors for a masked one. On tiles it is
+// matched now in the part the pass shows, from its tiles and its mask at the pass's level. The reference is the old
+// path (`matchFromTiles` off) with the same statistics object. Tile assertions on tiles only; the pictures on both.
+await run("new_canvas", { width: 4100, height: 2900, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const P = await import("./editor/inpaint_pixels.js");
+const W = ed.width, H = ed.height;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const base = mk(W, H);
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#405878"); g.addColorStop(1, "#b89060");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 40; i++) { x.fillStyle = `hsl(${(i * 47) % 360},40%,${35 + (i * 13) % 30}%)`; x.fillRect((i * 733) % W, (i * 419) % H, 180, 140); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "match7b.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+// a full-size matched layer with a mask on its grid (the part right of 2700 hidden)
+const fc = mk(W, H);
+{
+    const x = fc.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, 0); g.addColorStop(0, "#30b050"); g.addColorStop(1, "#b03090");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 30; i++) { x.fillStyle = `hsl(${(i * 71) % 360},70%,50%)`; x.fillRect((i * 331) % W, (i * 197) % H, 220, 160); }
+}
+const F = ed.addLayer({ name: "Matched full", kind: "result", px: ed.pixels.Layer.fromCanvas(fc), x: 0, y: 0, w: W, h: H, dirty: true });
+F.maskPx = ed.pixels.Mask.empty(W, H);
+F.maskPx.fill([0, 0, 2700, H], "#ffffff");
+ed.markMaskChanged(F);
+F.match = { strength: 80, source: "underneath" };
+// a small matched result, drawn scaled, whose levels end inside a pixel (1401 / 8 = 175.125: at fit, on a window 1865 px
+// wide, it is drawn at level 3, and a draw of the whole last pixel would reach 0.7 screen pixels past its edge)
+const sc = mk(1401, 1019);
+{
+    const x = sc.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 1401, 1019); g.addColorStop(0, "#e04030"); g.addColorStop(1, "#f0c020");
+    x.fillStyle = g; x.fillRect(0, 0, 1401, 1019);
+    for (let i = 0; i < 60; i++) { x.fillStyle = (i % 2) ? "#a02020" : "#f06040"; x.fillRect((i * 331) % 1401, (i * 197) % 1019, 60, 60); }
+    x.fillStyle = "#ffffff"; x.fillRect(1401 - 48, 0, 48, 1019);   // a white last column: it stays bright through the match, so a draw past the edge shows
+}
+const S = ed.addLayer({ name: "Matched small", kind: "result", px: ed.pixels.Layer.fromCanvas(sc), x: 517, y: 389, w: 353, h: 257, dirty: true });
+S.match = { strength: 100, source: "surroundings" };
+for (const l of [F, S]) ed.markMatchChanged(l);
+await run("select_none", { doc: window.__t });
+ed.setTool("rect"); ed.hover = null;
+ed.renderLayers(); ed.fitView();
+ed.releaseCaches({ mirrors: true, deep: true });
+const out = { tiles: !!ed.tileMode, gl: !!ed.glCompositeUsable({}) };
+const tileCheck = (where) => {
+    if (!ed.tileMode) return;
+    const t = ed.memoryReport().tiles;
+    const m = { mirrors: t ? t.mirrors : null, F: !!P.displayCanvasIfMade(F.px), Fmask: !!P.displayCanvasIfMade(F.maskPx), S: !!P.displayCanvasIfMade(S.px), masked: !!F._masked };
+    if (m.mirrors || m.F || m.Fmask || m.S || m.masked) throw new Error(where + ": a display mirror of a matched layer was made: " + JSON.stringify(m));
+};
+const screen = async () => {
+    ed.sceneSig = null; ed.draw(); await ed.mipsSettled(); await wait(60);
+    ed.sceneSig = null; ed.draw();
+    return ed.canvas.getContext("2d").getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+};
+// the old path with the statistics the new one made (the slot is kept): only the matched pixels are made again
+const oldScreen = async () => {
+    const f0 = ed.matchFromTiles;
+    ed.matchFromTiles = () => false;
+    for (const l of [F, S]) l._mcacheView = null;
+    try { return await screen(); } finally {
+        ed.matchFromTiles = f0;
+        for (const l of [F, S]) l._mcacheView = null;
+        ed.releaseCaches({ mirrors: true });
+        for (const l of [F, S]) { l._masked = null; l._maskedValid = false; }
+    }
+};
+const diff = (a, b) => { let max = 0, o3 = 0, o8 = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d > max) max = d; if (d > 3) o3++; if (d > 8) o8++; } return { max, o3, o8, of: a.length }; };
+// the screen's columns at S's right edge and rows at its bottom edge, and past them: the layer ends there on either path
+const edgeStrip = (px) => {
+    const [ex, ey] = ed.imageToScreen(S.x + S.w, S.y + S.h).map(Math.floor);
+    const [x0, y0] = ed.imageToScreen(S.x + S.w * 0.25, S.y + S.h * 0.25).map(Math.round);
+    const cw = ed.canvas.width, rows = [];
+    for (let y = y0; y < ey - 2; y++) for (let x = ex; x <= ex + 2; x++) { const i = (y * cw + x) * 4; rows.push(px[i], px[i + 1], px[i + 2]); }
+    for (let x = x0; x < ex - 2; x++) for (let y = ey; y <= ey + 2; y++) { const i = (y * cw + x) * 4; rows.push(px[i], px[i + 1], px[i + 2]); }
+    return rows;
+};
+// "fit": a fixed 0.4, whatever the window's size (the small layer at level 3, 1401 / 8 = 175.125). Its right and bottom
+// edges fall a tenth into a screen pixel: the GPU rasterises a quad by pixel centres, so a quad drawn 0.7 px past the edge
+// covers the next centre only from there
+const zoomOut = () => {
+    ed.view.angle = 0; ed.view.scale = 0.4; ed._fitted = false;
+    ed.view.x = -(S.x + S.w) * 0.4 + Math.round(ed.canvas.width * 0.3) + 0.1;
+    ed.view.y = -(S.y + S.h) * 0.4 + Math.round(ed.canvas.height * 0.6) + 0.1;
+};
+const compOff0 = ed.compositorOff;
+const fitShots = {};
+try {
+    for (const path of ed.glCompositeUsable({}) ? ["gl", "2d"] : ["2d"]) {
+        ed.compositorOff = path === "2d";
+        // zoomed out (the tile check calls it "fit")
+        zoomOut();
+        const a = await screen();
+        fitShots[path] = edgeStrip(a);
+        tileCheck(path + " fit");
+        if (!(F._mstatsView && F._mstatsView.stats) || !(S._mstatsView && S._mstatsView.stats)) throw new Error(path + ": the screen made no statistics for the matched layers");
+        const b = await oldScreen();
+        const d = diff(a, b), e = diff(edgeStrip(a), edgeStrip(b));
+        // the floor: the screen with the match off differs from the matched screen
+        const m0 = ed.matchActive;
+        ed.matchActive = () => false;
+        let u;
+        try { u = diff(a, await screen()); } finally { ed.matchActive = m0; }
+        out[path + "Fit"] = { vsOld: d, edge: e, vsUnmatched: u.max };
+        if (u.max < 20) throw new Error(path + ": the match does not move the colours on the screen, so this step proves nothing: " + JSON.stringify(out[path + "Fit"]));
+        // Skia's pyramid against the tiles' box-filtered mips: a few levels at the blocks' edges
+        if (d.o8 > d.of * 0.005) throw new Error(`${path} zoomed out: the matched layers differ from the old path on ${d.o8} bytes by more than 8 levels (max ${d.max})`);
+        if (e.max > 24) throw new Error(`${path} zoomed out: at the small layer's right and bottom edges the screen differs from the old path by ${e.max} levels (drawn past the layer's edge?)`);
+        // at 1:1 over the small layer's right edge and the full layer's mask edge
+        ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false;
+        // the view's top at image row 400, so the region canvas is not clamped at the image's top and a pan by three tiles keeps its size
+        ed.view.x = -(S.x + S.w) + ed.canvas.width * 0.3; ed.view.y = -400;
+        const a1 = await screen();
+        tileCheck(path + " 1:1");
+        const b1 = await oldScreen();
+        const d1 = diff(a1, b1), e1 = diff(edgeStrip(a1), edgeStrip(b1));
+        out[path + "One"] = { vsOld: d1, edge: e1 };
+        // the full layer is drawn unscaled here, the small one at level 1 against Skia's pyramid: its blocks' edges
+        if (d1.o8 > d1.of * 0.005) throw new Error(`${path} at 1:1: the matched layers differ from the old path on ${d1.o8} bytes by more than 8 levels (max ${d1.max})`);
+        // a pan past the region canvas's margin that keeps its size (a key without the origin would hit): the kept match must
+        // not be drawn for the new region
+        await screen();
+        const tilesOf = () => { const r = ed.viewportRegion(); return [Math.max(0, Math.floor(r.y / 256) - 1), Math.min((H - 1) >> 8, Math.floor((r.y + r.h - 1) / 256) + 1)]; };
+        const t0 = tilesOf();
+        ed.view.y -= 768;
+        const t1 = tilesOf();
+        if (t1[0] <= t0[0] || t1[1] <= t0[1] || t1[1] - t1[0] !== t0[1] - t0[0]) throw new Error(path + ": the pan does not move the region canvas by whole tiles at the same size, so it proves nothing: " + JSON.stringify([t0, t1]));
+        const p1 = await screen();
+        for (const l of [F, S]) l._mcacheView = null;
+        const p2 = await screen();
+        const dp = diff(p1, p2);
+        out[path + "Pan"] = { vsFresh: dp };
+        if (dp.max > 1) throw new Error(`${path}: after a pan the screen differs from the same view with the match made again by ${dp.max} levels on ${dp.o3} bytes over 3`);
+        tileCheck(path + " pan");
+        // a change under the small layer (the full layer's mask hides its left part): new statistics, so matched again. In
+        // the last pass only, so both passes above compare the same picture
+        if (path === "2d") {
+            zoomOut();
+            await screen();
+            F.maskPx.drawInto(null, (x) => { x.clearRect(0, 0, 1600, H); });
+            ed.markMaskChanged(F);
+            const c1 = await screen();
+            for (const l of [F, S]) l._mcacheView = null;
+            const c2 = await screen();
+            const dc = diff(c1, c2);
+            out.changeBelow = { vsFresh: dc };
+            if (dc.max > 1) throw new Error(`after a change under the matched layer the screen differs from the match made again by ${dc.max} levels on ${dc.o3} bytes over 3 (a match of the old statistics kept)`);
+            // a flip of the small layer: its first frames read coarse levels until its chains land, and the landing makes its
+            // statistics and its match again (they are read from its own levels now)
+            await run("flip_layer", { layer: S.id, doc: window.__t });
+            ed.sceneSig = null; ed.draw();
+            const f1 = await screen();
+            for (const l of [F, S]) { l._mcacheView = null; l._mstatsView = null; }
+            const f2 = await screen();
+            const df = diff(f1, f2);
+            out.flip = { vsFresh: df };
+            if (df.max > 1) throw new Error(`after a flip of the matched layer settled, the screen differs from its statistics and match made again by ${df.max} levels on ${df.o3} bytes over 3 (statistics of the coarse picture kept)`);
+        }
+    }
+    if (fitShots.gl) {
+        const g = diff(fitShots.gl, fitShots["2d"]);
+        out.glVs2dEdge = g;
+    }
+} finally {
+    ed.compositorOff = compOff0;
+    ed.fitView(); ed.sceneSig = null; ed.draw();
+}
+// sampled passes: the eyedropper, a 512 px picture (the film panel's kind), the wand
+const fill0 = ed.fillOpts;
+try {
+    ed.fillOpts = { tolerance: 30, contiguous: true, sample: "image" };
+    for (const l of [F, S]) { l._mcacheSample = null; }
+    const c0 = ed.color;
+    ed.pickColor(900, 700);
+    ed.color = c0;
+    tileCheck("eyedropper");
+    const s = 512 / W;
+    const pic = ed.sampleRegion("image", [0, 0, W, H], s);
+    tileCheck("512 px picture");
+    const f0 = ed.matchFromTiles;
+    ed.matchFromTiles = () => false;
+    let picOld;
+    try { for (const l of [F, S]) l._mcacheSample = null; picOld = ed.sampleRegion("image", [0, 0, W, H], s); }
+    finally { ed.matchFromTiles = f0; for (const l of [F, S]) { l._mcacheSample = null; l._masked = null; l._maskedValid = false; } ed.releaseCaches({ mirrors: true }); }
+    const read = (c) => c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    const dq = diff(read(pic), read(picOld));
+    out.picture = { vsOld: dq };
+    if (dq.o8 > dq.of * 0.005) throw new Error(`a 512 px picture differs from the old path on ${dq.o8} bytes by more than 8 levels (max ${dq.max})`);
+    // a block of the small layer (its first, 60 source pixels a side, 15 image pixels): the wand's coarse pass and its fine boxes, not a
+    // region that covers most of the picture (that one reads the full-resolution flatten, phase E's)
+    ed.fillOpts = { tolerance: 6, contiguous: true, sample: "image" };
+    await ed.wandSelect(S.x + 6, S.y + 6, "replace");
+    out.wand = ed.getBounds();
+    const wb = out.wand;
+    if (!wb || wb[2] - wb[0] > 400 || wb[3] - wb[1] > 400) throw new Error("the wand did not select a small region, so its boxes were not tested: " + JSON.stringify(wb));
+    tileCheck("wand");
+} finally {
+    ed.fillOpts = fill0;
+    await run("select_none", { doc: window.__t });
+}
+await run("remove_layer", { layer: S.id, doc: window.__t });
+await run("remove_layer", { layer: F.id, doc: window.__t });
 return out;
 """),
     ("stroke_buffers_cover_the_gesture_not_the_layer", """
@@ -4938,7 +5155,12 @@ async def run_all(c):
     await c.eval("(async () => { for (const d of document.querySelectorAll('dialog[open]')) d.close(); window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; return 1; })()")
     await c.eval("window.__exportPath = %s; 1" % json.dumps(os.path.join(os.environ.get("TEMP", os.getcwd()), "scumble_editor_test_export.png")))
     ok = True
+    # SCUMBLE_EDITOR_ONLY=name,name: the first step (it opens the test document), those steps and the cleanup, for iterating on
+    # a step; a gate run leaves it unset
+    only = set(filter(None, os.environ.get("SCUMBLE_EDITOR_ONLY", "").split(",")))
     for name, body in STEPS:
+        if only and name not in only and name not in (STEPS[0][0], "cleanup"):
+            continue
         try:
             res = await (body(c) if callable(body) else c.eval(PRE % body, timeout=180))
             # after every step: every pixels object an open editor holds is of that editor's backend (a site
@@ -4946,7 +5168,7 @@ async def run_all(c):
             mixed = await c.eval(BACKEND_SWEEP)
             if mixed:
                 raise Exception("pixels of the other backend held after the step: %s" % json.dumps(mixed)[:400])
-            print("[ok] %s: %s" % (name, json.dumps(res)[:280]))
+            print("[ok] %s: %s" % (name, json.dumps(res)[:4000 if only else 280]))
         except Exception as err:  # noqa: BLE001
             ok = False
             print("[FAIL] %s: %s" % (name, err))

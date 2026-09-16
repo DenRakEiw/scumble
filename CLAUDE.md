@@ -100,11 +100,10 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
   the real repo only when a node version is meant to ship.
 
 **What comes next, in order** (`dist/c6map/c/` holds the maps; they are older than the code):
-1. **7b, in progress this session**: the matched layer's pixels in a region pass from its tiles at the pass's level,
-   instead of its display mirror and a Skia pyramid (`dist/c6map/c/match.md` §3). Removes the 16 MB mirror slices 5 and 6
-   still show.
-2. **7c**: the screen's and the navigator's statistics (`_mstatsView`) on the same entry as `sampledMatchStats` (the user's
-   decision (a)); the (b3) step's bound back to 2 (it is 6 until then); **measure (b)** (exports on the same entry, box means
+1. **7b is built** (2026-09-16, `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7b as built", CHANGELOG 0.1.16): a matched layer on
+   tiles is matched in the part a pass shows from its tiles; 1144 MB of mirrors and 837 ms of first frame at 1:1 gone at 15k.
+2. **7c (next)**: the screen's and the navigator's statistics (`_mstatsView`) on the same entry as `sampledMatchStats` (the user's
+   decision (a)); the (b3) step's bound back to 2 (it is 8 until then) and `composite_test.py`'s view allowance of 3 on tiles off again; **measure (b)** (exports on the same entry, box means
    and point samples) and report the numbers to the user.
 3. **7d**: the colour match as GPU uniforms.
 4. **C6 (d)**, the base (`basePx` eagerly, the `canvas` undo step without the `<img>`, `cropCanvasNow` / `resizeImageNow`,

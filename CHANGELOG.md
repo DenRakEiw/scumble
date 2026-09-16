@@ -5,6 +5,14 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.16 — unreleased
 
+- **A colour-matched layer no longer costs a gigabyte on a large picture.** With the tile engine on, a layer with
+  *Colour match* switched on was matched on a full-size copy of itself (and of its mask) every time the view, the
+  eyedropper or the magic wand looked at it: on a 15000 × 10000 picture with a full-size matched layer that was **1.1 GB**
+  of memory, **0.8 s** for the first frame at 100 % and a pan of 50 to 100 ms a frame. Only the part on screen is matched
+  now, straight from the layer's tiles: **0.13 s**, a pan of 3 ms, and no copy at all. A matched layer can look up to a
+  few levels different from before at its edges and in its colours, because its colour statistics are now read from the
+  layer itself instead of a scaled-down screen copy. With the tile engine off nothing changes.
+
 ## 0.1.15 — 2026-09-16
 
 - **The film looks panel and the 3D dialog no longer freeze the window on a large picture.** Half a
