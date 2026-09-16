@@ -34,13 +34,15 @@ SRC = os.path.join(ROOT, "renderer", "editor")
 DEFAULT_NODE = r"F:\Comfyui\ComfyUI_windows_portable_nvidia\ComfyUI\custom_nodes\ComfyUI-InpaintCanvas"
 
 # the editor modules both hosts load (paths under renderer/editor/, "/" separated); app-only files
-# (host.js, stitch.js) stay here. px/kernels_js.js goes with the tile store (C2), which imports it.
+# (host.js, stitch.js) stay here. px/ goes with the tile store (C2), which imports it: the kernels, their JS twins, the
+# loader and the Rust build (BINARIES, copied byte for byte).
 FILES = [
     "inpaint_canvas.js", "inpaint_filters.js", "inpaint_filters_gl.js", "inpaint_curves.js",
     "inpaint_text.js", "inpaint_raster.js", "inpaint_export.js", "inpaint_worker.js",
     "inpaint_compositor.js", "inpaint_brushes.js", "inpaint_pixels.js", "inpaint_tiles.js",
-    "px/kernels_js.js",
+    "px/kernels_js.js", "px/kernels.js", "px/px.js",
 ]
+BINARIES = ["px/px.wasm"]
 NODE_OWN = ["host.js", "inpaint_node.js", "inpaint_bridge.js"]
 HEADER = "// Generated from DenRakEiw/scumble renderer/editor/{name} by tools/build_node.py. Do not edit here: edit it in the app repo and build.\n"
 DEV_MARK = "> **js/ is generated**"
@@ -71,7 +73,7 @@ def font_files(base):
 
 def tree_hash(js_dir):
     h = hashlib.sha256()
-    for name in FILES + font_files(js_dir):
+    for name in FILES + BINARIES + font_files(js_dir):
         p = os.path.join(js_dir, name)
         if not os.path.exists(p):
             continue
@@ -184,6 +186,12 @@ def main():
             p = os.path.join(js_dir, name)
             if not os.path.exists(p) or read(p) != generated(name):
                 problems.append(f"node js/{name} differs from what renderer/editor/{name} builds (hand edit, or a build is due)")
+        for name in BINARIES:
+            p = os.path.join(js_dir, name)
+            with open(os.path.join(SRC, name), "rb") as f:
+                want = f.read()
+            if not os.path.exists(p) or open(p, "rb").read() != want:
+                problems.append(f"node js/{name} differs from renderer/editor/{name}")
         if sorted(font_files(js_dir)) != sorted(font_files(SRC)):
             problems.append("node js/fonts differs from renderer/editor/fonts")
         dev = read(os.path.join(args.node, "DEVELOPMENT.md"))
@@ -194,6 +202,10 @@ def main():
         for name in FILES:
             write(os.path.join(js_dir, name), generated(name))
             print("wrote", name)
+        for name in BINARIES:
+            os.makedirs(os.path.dirname(os.path.join(js_dir, name)), exist_ok=True)
+            shutil.copyfile(os.path.join(SRC, name), os.path.join(js_dir, name))
+            print("copied", name)
         fonts_dst = os.path.join(js_dir, "fonts")
         if os.path.isdir(fonts_dst):
             shutil.rmtree(fonts_dst)

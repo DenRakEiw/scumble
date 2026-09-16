@@ -35,7 +35,7 @@
  */
 
 import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN, reentrantPixels } from "./inpaint_pixels.js";
-import { mipChain, mipChainBytes, clampExtend } from "./px/kernels_js.js";
+import { mipChain, mipChainBytes, clampExtend } from "./px/kernels.js";
 
 export const TILE_SIZE = 256;
 const TILE_BYTES = TILE_SIZE * TILE_SIZE * 4;

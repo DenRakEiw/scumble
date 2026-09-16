@@ -3,7 +3,7 @@
  * growing, colour parsing, mask-to-canvas. Pure functions on typed arrays, no
  * DOM state, kept out of inpaint_canvas.js so the tools stay small.
  */
-import { distTransform } from "./px/kernels_js.js";
+import { distTransform, rustPx, releaseIfLarge } from "./px/kernels.js";
 
 /** A 2D canvas in the window or in a worker. */
 export function makeRasterCanvas(w, h) {
@@ -89,10 +89,10 @@ const RED_CLEAR = (() => {
  * on its bounding box padded by n rather than on the whole image (3 s to under 1 s on a
  * 96 MP document with a selection covering a fifth of it).
  *
- * The distance transform is the tile engine's kernel (`distTransform` in px/kernels_js.js, the
- * same f32 values as `distanceTransform` above in less than half the time); `dist` replaces it
- * with another of the same signature (the Rust build, docs/PLAN_BCE.md §2b), and `ms`, when
- * given, collects the milliseconds of each part.
+ * The distance transform is the tile engine's kernel (`distTransform` in px/kernels.js: Rust when
+ * it has loaded, else the JS twin; the same f32 values as `distanceTransform` above in less than
+ * half the time); `dist` replaces it with another of the same signature, and `ms`, when given,
+ * collects the milliseconds of each part.
  */
 export function growMask(d, W, H, n, { dist = distTransform, ms = null } = {}) {
     const grow = n > 0;
@@ -134,6 +134,23 @@ export function growMask(d, W, H, n, { dist = distTransform, ms = null } = {}) {
     return d;
 }
 
+/**
+ * `growMask` and the bounds of its result, in one pass through the Rust kernel when it has loaded (the scans around
+ * the distance transform run there too); `ms.kernel` collects its time.
+ */
+export function growMaskBounds(d, W, H, n, { ms = null } = {}) {
+    const p = rustPx();
+    if (p) {
+        const t = ms ? performance.now() : 0;
+        try { return p.growMask(d, W, H, n); } finally { if (ms) ms.kernel = (ms.kernel || 0) + performance.now() - t; releaseIfLarge(); }
+    }
+    growMask(d, W, H, n, { ms });
+    const t = ms ? performance.now() : 0;
+    const bounds = maskBounds(d, W, H);
+    if (ms) ms.resultBounds = (ms.resultBounds || 0) + performance.now() - t;
+    return bounds;
+}
+
 /** Invert a selection in place (red where selected, alpha flipped). */
 export function invertMask(d) {
     for (let i = 0; i < d.length; i += 4) {
@@ -160,8 +177,16 @@ export function rgbToHex(r, g, b) {
  * (0..255, alpha included); `contiguous` grows a 4-connected region from the
  * seed with a scanline fill, otherwise every similar pixel of the buffer
  * counts (Photoshop's "contiguous" checkbox).
+ *
+ * The Rust flood (px/kernels.js) runs when it has loaded: the same mask, 1.3 to 1.4× faster on a
+ * whole 15k picture (docs/PERFORMANCE.md §12). The JS below is the fallback, and faster than
+ * the flood twin in px/kernels_js.js.
  */
 export function floodMask(data, W, H, sx, sy, tolerance = 32, contiguous = true) {
+    const p = rustPx();
+    if (p) {
+        try { return p.flood(data, W, H, sx | 0, sy | 0, Math.max(0, tolerance | 0), contiguous); } finally { releaseIfLarge(); }
+    }
     const out = new Uint8Array(W * H);
     sx = Math.max(0, Math.min(W - 1, sx | 0));
     sy = Math.max(0, Math.min(H - 1, sy | 0));

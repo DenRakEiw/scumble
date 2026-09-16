@@ -229,6 +229,51 @@ async function edtCases(ref, label, js, raster) {
     check(`js twin is the exact squared distance (brute force 41x29)`, exact);
 }
 
+/** The whole-job kernels (grow_mask, flood_shape) against the editor's JS for the same jobs. */
+async function jobCases(px, label, raster) {
+    let ok = true, detail = "";
+    const selection = (w, h, seed, empty = false) => {
+        const f = empty ? new Uint8Array(w * h) : blobs(w, h, seed, 4), d = new Uint8Array(w * h * 4);
+        for (let i = 0; i < w * h; i++) { d[i * 4] = 255; d[i * 4 + 3] = f[i] ? (seed & 1 ? 255 : 200) : (i % 7 ? 0 : 90); }
+        return d;
+    };
+    for (const [w, h, seed, n, empty] of [[1, 1, 1, 3, false], [64, 64, 2, 5, false], [300, 200, 3, -4, false], [257, 129, 4, 16, false], [120, 90, 5, -40, false], [80, 60, 6, 2, true], [400, 300, 7, 1, false]]) {
+        const src = selection(w, h, seed, empty);
+        const a = src.slice();
+        raster.growMask(a, w, h, n);
+        const ab = raster.maskBounds(a, w, h);
+        const b = src.slice(), bb = px.growMask(b, w, h, n);
+        if (!eqBytes(a, b) || JSON.stringify(ab) !== JSON.stringify(bb)) { ok = false; detail = `${w}x${h} n ${n} ${firstDiff(a, b) || `bounds ${ab} vs ${bb}`}`; }
+    }
+    check(`${label} grow_mask equals growMask + maskBounds (grow, shrink, empty, partial alpha)`, ok, detail);
+
+    ok = true; detail = "";
+    for (const [w, h, seed] of [[1, 1, 1], [97, 61, 2], [256, 256, 3], [640, 480, 5]]) {
+        const data = regions(w, h, seed), r = rng(seed + 9);
+        for (let k = 0; k < 6; k++) {
+            const sx = r() * w | 0, sy = r() * h | 0, tol = [0, 8, 32, 80, 255, 12][k], contiguous = k % 2 === 0;
+            const sel = k % 3 ? selection(w, h, seed + k) : null;
+            const mask = raster.floodMask(data, w, h, sx, sy, tol, contiguous);
+            if (sel) for (let p = 0; p < w * h; p++) if (sel[p * 4 + 3] < 128) mask[p] = 0;
+            const want = new Uint8Array(w * h * 4);
+            let count = 0, x0 = w, y0 = h, x1 = -1, y1 = -1;
+            for (let p = 0; p < w * h; p++) {
+                if (!mask[p]) continue;
+                want.set([18, 52, 86, 255], p * 4);
+                count++;
+                const x = p % w, y = (p / w) | 0;
+                x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = y;
+            }
+            const wantBounds = x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+            const got = px.floodShape(data, w, h, sx, sy, tol, contiguous, sel, 0x123456, (view, n, bounds) => ({ bytes: new Uint8Array(view), n, bounds }));
+            if (!eqBytes(got.bytes, want) || got.n !== count || JSON.stringify(got.bounds) !== JSON.stringify(wantBounds)) {
+                ok = false; detail = `${w}x${h} seed ${sx},${sy} tol ${tol} ${contiguous} sel ${!!sel} ${firstDiff(got.bytes, want) || `count ${got.n} vs ${count}, bounds ${got.bounds} vs ${wantBounds}`}`;
+            }
+        }
+    }
+    check(`${label} flood_shape equals floodMask, the selection clip, the count, the bounds and the shape`, ok, detail);
+}
+
 async function floodCases(ref, label, js, raster) {
     let ok = true, detail = "";
     for (const [w, h, seed] of [[1, 1, 1], [97, 61, 2], [256, 256, 3], [300, 17, 4], [640, 480, 5]]) {
@@ -431,6 +476,7 @@ async function main() {
         await mipCases(px, label, js);
         await edtCases(px, label, js, raster);
         await floodCases(px, label, js, raster);
+        await jobCases(px, label, raster);
         await compositeCases(px, label, js);
         await pngCases(px, label, js);
         await memoryCases(px, label);

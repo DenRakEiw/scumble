@@ -9,7 +9,7 @@
 //!   blocks of 16 KB and more start on a 4 KB page boundary (see `align_for`).
 //! - Every kernel is pure over its arguments: no globals, no allocation inside (the caller
 //!   allocates in and out buffers), so one instance per worker can run any of them. The
-//!   one exception is `deflate_zlib`, whose compressor state miniz_oxide allocates.
+//!   whole-job kernels (`grow_mask`, `flood_shape`) allocate their scratch inside.
 //! - Memory can grow during `px_alloc`; the JS side re-creates its views afterwards.
 //!
 //! Each kernel has a JS twin of the same shape in `renderer/editor/px/kernels_js.js` that
@@ -21,6 +21,7 @@ use std::alloc::{alloc, dealloc, Layout};
 mod composite;
 mod edt;
 mod flood;
+mod jobs;
 mod mip;
 mod png;
 
@@ -35,7 +36,7 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature; `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    2
+    4
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -142,6 +143,47 @@ pub unsafe extern "C" fn flood(
     )
 }
 
+// ---- whole jobs -------------------------------------------------------------------------
+
+/// `growMask` plus the bounds of its result over the selection `d` (w × h RGBA8, in place); `bounds` (4 i32) is
+/// written when the result is not empty. Returns 1 when something is selected, else 0.
+#[no_mangle]
+pub unsafe extern "C" fn grow_mask(d: *mut u8, w: usize, h: usize, n: i32, bounds: *mut i32) -> i32 {
+    jobs::grow_mask(slice::from_raw_parts_mut(d, w * h * 4), w, h, n, slice::from_raw_parts_mut(bounds, 4))
+}
+
+/// The flood job: the region around (sx, sy) of `rgba`, clipped to `sel` (0 for none), drawn over `rgba` in the colour
+/// `rgb` (0xRRGGBB); `info` (5 i32) gets count and bounds. Returns 0, or -1 when the stack was too small.
+#[no_mangle]
+pub unsafe extern "C" fn flood_shape(
+    rgba: *mut u8,
+    w: usize,
+    h: usize,
+    sx: i32,
+    sy: i32,
+    tol: i32,
+    contiguous: u32,
+    sel: *const u8,
+    rgb: u32,
+    stack: *mut u32,
+    stack_pairs: usize,
+    info: *mut i32,
+) -> i32 {
+    jobs::flood_shape(
+        slice::from_raw_parts_mut(rgba, w * h * 4),
+        w,
+        h,
+        sx,
+        sy,
+        tol,
+        contiguous != 0,
+        if sel.is_null() { None } else { Some(slice::from_raw_parts(sel, w * h * 4)) },
+        [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8],
+        slice::from_raw_parts_mut(stack, stack_pairs * 2),
+        slice::from_raw_parts_mut(info, 5),
+    )
+}
+
 // ---- composite --------------------------------------------------------------------------
 
 /// `n` sources over the tile `dst` (`px` pixels of RGBA8, straight alpha, in place).
@@ -172,11 +214,4 @@ pub unsafe extern "C" fn composite_tile(dst: *mut u8, px: usize, n: usize, srcs:
 pub unsafe extern "C" fn png_filter_rows(rgba: *const u8, w: usize, rows: usize, prev: *const u8, out: *mut u8) -> usize {
     let prev = if prev.is_null() { None } else { Some(slice::from_raw_parts(prev, w * 4)) };
     png::filter_rows(slice::from_raw_parts(rgba, w * 4 * rows), w, rows, prev, slice::from_raw_parts_mut(out, rows * (1 + 4 * w)))
-}
-
-/// A zlib stream of `len` bytes at `input` into `out` (`cap` bytes) at `level` (0..10);
-/// returns the bytes written or -1 when `cap` is too small.
-#[no_mangle]
-pub unsafe extern "C" fn deflate_zlib(input: *const u8, len: usize, out: *mut u8, cap: usize, level: u32) -> i32 {
-    png::deflate_zlib(slice::from_raw_parts(input, len), slice::from_raw_parts_mut(out, cap), level.min(10) as u8)
 }

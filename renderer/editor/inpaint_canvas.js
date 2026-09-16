@@ -17,6 +17,7 @@ import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromC
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
+import { setKernels, kernelsMode } from "./px/kernels.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
@@ -162,9 +163,9 @@ let WORKER_OFF = false;
 let workerSeq = 0;
 const workerJobs = new Map();
 
-// Phase R (docs/PLAN_BCE.md §2b): `InpaintEditor.kernels = "rust"` has the worker jobs with a pixel kernel (mips, grow /
-// shrink, the flood) run it from px/px.wasm; their replies carry the milliseconds of their parts, kept here for the
-// benchmark (`InpaintEditor.jobTimings(true)` reads and clears them).
+// The pixel kernels are Rust (px/kernels.js) in the window and in both workers; `InpaintEditor.kernels = "js"` forces the
+// JS twins everywhere, for the benchmark (tools/px_jobs.py). The worker jobs with a kernel reply with the milliseconds of
+// their parts, kept here (`InpaintEditor.jobTimings(true)` reads and clears them).
 const JOB_TIMINGS = [];
 function keepTiming(msg) {
     if (!msg.timing) return;
@@ -216,7 +217,7 @@ function workerCall(op, args = {}, transfer = []) {
             reject: (e) => { clearTimeout(timer); reject(e); },
         });
         try {
-            w.postMessage({ id, op, kernels: InpaintEditor.kernels || "js", ...args }, transfer);
+            w.postMessage({ id, op, kernels: kernelsMode(), ...args }, transfer);
         } catch (err) {
             clearTimeout(timer);
             workerJobs.delete(id);
@@ -269,7 +270,7 @@ function mipsTransport(tiles) {
         const timer = setTimeout(() => { if (jobs.delete(id)) reject(new Error("mips job timed out")); }, WORKER_TIMEOUT);
         jobs.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
         try {
-            w.postMessage({ id, op: "mips", kernels: InpaintEditor.kernels || "js", tiles }, tiles.map((t) => t.data));
+            w.postMessage({ id, op: "mips", kernels: kernelsMode(), tiles }, tiles.map((t) => t.data));
         } catch (err) {
             clearTimeout(timer);
             jobs.delete(id);
@@ -8422,6 +8423,9 @@ class InpaintEditor {
 
     /** File names every open editor and every open workflow tab still reference. */
     /** A job of the editor's worker, and the timings of the worker jobs since the last reset (phase R's benchmark, docs/PLAN_BCE.md §2b). */
+    static get kernels() { return kernelsMode(); }
+    static set kernels(mode) { setKernels(mode); }
+
     static workerJob(op, args = {}, transfer = []) {
         return workerCall(op, args, transfer);
     }

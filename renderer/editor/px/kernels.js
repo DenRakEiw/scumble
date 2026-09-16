@@ -1,0 +1,81 @@
+/**
+ * The pixel kernels the editor calls: the Rust build (px.wasm, SIMD128) once it has loaded, the JS twins in
+ * kernels_js.js before that and wherever it cannot load (a browser without wasm SIMD, a page whose CSP refuses wasm).
+ * Both give the same bytes (tools/px_test.js), so a caller never knows which one ran.
+ *
+ * Rust runs wherever it measured faster on the real job, however little (the user's decision of 2026-09-17, which
+ * replaced phase B's 3× rule; docs/PERFORMANCE.md §12). Each thread loads its own instance: this module starts the
+ * load when it is imported, in the window and in every worker.
+ *
+ * `setKernels("js")` forces the twins in this thread (the benchmark, tools/px_jobs.py). wasm memory never shrinks, so
+ * after a call that grew the instance past RELEASE_BYTES (a flood over a whole 15k picture takes about 0.8 GB) the
+ * instance is replaced by a fresh one of the same compiled module and the old memory is collected.
+ */
+import * as J from "./kernels_js.js";
+import { loadPx, Px } from "./px.js";
+
+export { OPS, mipChainBytes, deflate } from "./kernels_js.js";
+
+const RELEASE_BYTES = 256 * 1048576;
+
+let PX = null;
+let MODE = "rust";
+let LOADING = null;
+
+/** Resolves to the Rust kernels of this thread, or null when they cannot load (the twins then run). */
+export function kernelsReady() {
+    if (!LOADING) {
+        LOADING = loadPx(new URL("./px.wasm", import.meta.url)).then((px) => { PX = px; return px; }).catch((err) => {
+            console.warn("Inpaint Canvas: the Rust pixel kernels did not load, using the JS ones:", (err && err.message) || err);
+            return null;
+        });
+    }
+    return LOADING;
+}
+
+// not in Node (tools/px_test.js imports the loader and the twins directly): there is no fetch of a file URL
+if (typeof window !== "undefined" || typeof WorkerGlobalScope !== "undefined") kernelsReady();
+
+/** "rust" (the default) or "js", for this thread. */
+export function setKernels(mode) { MODE = mode === "js" ? "js" : "rust"; }
+export function kernelsMode() { return MODE; }
+/** What a call made now runs: "rust" only when it is wanted and loaded. */
+export function kernelsInUse() { return MODE === "rust" && PX ? "rust" : "js"; }
+/** The loaded Rust instance when this thread uses it, else null. */
+export function rustPx() { return MODE === "rust" ? PX : null; }
+
+/** After a call on a large buffer: let go of the grown memory. */
+export function releaseIfLarge() {
+    if (PX && PX.byteLength > RELEASE_BYTES) PX = new Px(new WebAssembly.Instance(PX.module, {}), PX.module);
+}
+
+export function mipHalf(src, sw, sh, dst = null) {
+    const p = rustPx();
+    return p ? p.mipHalf(src, sw, sh, dst) : J.mipHalf(src, sw, sh, dst);
+}
+
+export function mipChain(src, size, levels, out = null) {
+    const p = rustPx();
+    return p ? p.mipChain(src, size, levels, out) : J.mipChain(src, size, levels, out);
+}
+
+export function clampExtend(bytes, size, vw, vh) {
+    const p = rustPx();
+    return p ? p.clampExtend(bytes, size, vw, vh) : J.clampExtend(bytes, size, vw, vh);
+}
+
+export function distTransform(feature, W, H, out = null, scratch = null) {
+    const p = rustPx();
+    if (!p) return J.distTransform(feature, W, H, out || new Float32Array(W * H), scratch);
+    try { return p.distTransform(feature, W, H, out); } finally { releaseIfLarge(); }
+}
+
+export function compositeTile(dst, srcs, ops, alphas, masks = null) {
+    const p = rustPx();
+    return p ? p.compositeTile(dst, srcs, ops, alphas, masks) : J.compositeTile(dst, srcs, ops, alphas, masks);
+}
+
+export function pngFilterRows(rgba, w, rows, prev = null, out = null) {
+    const p = rustPx();
+    return p ? p.pngFilterRows(rgba, w, rows, prev, out) : J.pngFilterRows(rgba, w, rows, prev, out || undefined);
+}

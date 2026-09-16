@@ -308,19 +308,6 @@ export async function runBench({ impls, extras = {}, sizes = ["96", "150"], runs
                 release: () => { px.free(pb, n); px.free(pp, PW * 4); px.free(po, nOut); },
             };
         }, opts, { info: true });
-        const filtered = js.pngFilterRows(band, PW, PR, prev);
-        const r = { kernel: "PNG rows (deflate)", input: `the filtered band, ${(filtered.length / 1048576).toFixed(0)} MB, zlib level 6; JS column is CompressionStream("deflate")`, info: true };
-        r.js = await measure(() => js.deflate(filtered), { runs, warmups, minMs: 0 });
-        for (const [label, px] of rust) {
-            const cap = filtered.length + (filtered.length >> 8) + 1024, pi = px.alloc(filtered.length), po = px.alloc(cap);
-            px.u8().set(filtered, pi);
-            r[label] = await measure(() => { if (px.exports.deflate_zlib(pi, filtered.length, po, cap, 6) < 0) throw new Error("cap"); }, { runs, warmups, minMs: 0 });
-            if (label === "simd") r.copy = await measure(() => { px.u8().set(filtered, pi); }, opts);
-            px.free(pi, filtered.length); px.free(po, cap);
-        }
-        r.speedup = r.js / (r.simd + r.copy);
-        r.speedupNoCopy = r.js / r.simd;
-        row(r);
     }
 
     if (want("tiles")) {

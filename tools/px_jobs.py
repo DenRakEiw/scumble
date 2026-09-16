@@ -37,6 +37,11 @@ if "--rounds" in args:
     i = args.index("--rounds")
     ROUNDS = int(args[i + 1])
     del args[i:i + 2]
+ONLY = None
+if "--only" in args:   # one job or a comma list, e.g. --only wand_object
+    i = args.index("--only")
+    ONLY = args[i + 1].split(",")
+    del args[i:i + 2]
 SIZES = [a for a in args if not a.startswith("-")]
 RUNS = [(s, False) for s in SIZES] if SIZES else [("2048x1152", True), ("15000x10000", False)]
 if "--check" in args:
@@ -207,7 +212,9 @@ BODY = """
     };
 
     const rows = [];
+    const ONLY = %(only)s;
     const step = async (job, k, round, fn) => {
+        if (ONLY && !ONLY.includes(job)) return;
         window.__pxjobs = `${job} ${k} round ${round}`;
         rows.push({ job, kernels: k, round, ...(await fn()) });
     };
@@ -239,12 +246,16 @@ PARTS = {
     "mips_direct": ["kernel"],
     "mips_whole": ["kernel"],
     "band": ["kernel"],
-    "grow": ["edt", "bounds", "feature", "write", "read", "put", "resultBounds"],
-    "shrink": ["edt", "bounds", "feature", "write", "read", "put", "resultBounds"],
+    "grow": ["kernel", "edt", "bounds", "feature", "write", "read", "put", "resultBounds"],
+    "shrink": ["kernel", "edt", "bounds", "feature", "write", "read", "put", "resultBounds"],
     "wand_band": ["flood", "read", "clip", "bounds", "shape"],
     "wand_object": ["flood", "read", "clip", "bounds", "shape"],
 }
-KERNEL = {"mips_direct": ["kernel"], "mips_whole": ["kernel"], "band": ["kernel"], "grow": ["edt"], "shrink": ["edt"], "wand_band": ["flood"], "wand_object": ["flood"]}
+# the pixel work a kernel set does after the job has read its pixels: with Rust the grow job is one call ("kernel"),
+# the flood job one call ("flood") between reading the selection ("clip") and drawing the shape ("shape")
+PIXEL_WORK = ["kernel", "edt", "bounds", "feature", "write", "resultBounds"]
+KERNEL = {"mips_direct": ["kernel"], "mips_whole": ["kernel"], "band": ["kernel"], "grow": PIXEL_WORK, "shrink": PIXEL_WORK,
+          "wand_band": ["flood", "clip", "bounds", "shape"], "wand_object": ["flood", "clip", "bounds", "shape"]}
 
 
 def med(rows, key):
@@ -293,7 +304,7 @@ async def main():
         for size, check in RUNS:
             w, h = (int(v) for v in size.lower().split("x"))
             print(f"-- {size} ({w * h / 1e6:.1f} MP), {ROUNDS} rounds{', checking bytes' if check else ''} ...", flush=True)
-            body = BODY % {"w": w, "h": h, "rounds": ROUNDS if not check or SIZES else 1, "check": "true" if check else "false"}
+            body = BODY % {"w": w, "h": h, "rounds": ROUNDS if not check or SIZES else 1, "check": "true" if check else "false", "only": json.dumps(ONLY)}
             result = json.loads(await c.eval(body, timeout=3600))
             bad += report(result, check)
             if os.environ.get("PX_JOBS_JSON"):

@@ -1,13 +1,12 @@
-//! PNG rows: the filter per row (libpng's heuristic) and zlib deflate.
+//! PNG rows: the filter per row (libpng's heuristic).
 //!
 //! `filter_rows` writes, for every row of RGBA8, one filter-type byte and the filtered row.
 //! The filter is the one of None, Sub, Up, Average, Paeth whose output has the smallest sum
 //! of absolute values when the bytes are read as signed (ties go to the lower type, the order
 //! libpng tries them in). The row above the first one is `prev`, or zeros.
 //!
-//! `deflate_zlib` is miniz_oxide at a zlib level. It allocates its compressor state inside
-//! the call, the one exception to "no allocation in a kernel": this row of the benchmark is
-//! informational (docs/PLAN_BCE.md §B2).
+//! Deflate is not here: the browser's `CompressionStream("deflate")` was 1.4 to 2.2× faster than
+//! miniz_oxide (docs/PERFORMANCE.md §10), so the crate dropped it in phase R.
 
 #[inline(always)]
 fn cost(v: u8) -> u32 {
@@ -84,17 +83,4 @@ pub fn filter_rows(rgba: &[u8], w: usize, rows: usize, prev: Option<&[u8]>, out:
         filter_row(row, up, o);
     }
     rows * (stride + 1)
-}
-
-/// zlib stream of `input` into `out`; the bytes written, or -1 when `out` is too small.
-pub fn deflate_zlib(input: &[u8], out: &mut [u8], level: u8) -> i32 {
-    use miniz_oxide::deflate::core::{compress, create_comp_flags_from_zip_params, CompressorOxide, TDEFLFlush, TDEFLStatus};
-    let flags = create_comp_flags_from_zip_params(level.min(10) as i32, 15, 0);
-    let mut c = CompressorOxide::new(flags);
-    let (status, used, written) = compress(&mut c, input, out, TDEFLFlush::Finish);
-    if status == TDEFLStatus::Done && used == input.len() {
-        written as i32
-    } else {
-        -1
-    }
 }

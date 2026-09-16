@@ -11,7 +11,6 @@ crate-type = ["cdylib"]
 path = "src/lib.rs"
 
 [dependencies]
-miniz_oxide = "0.8"      # MIT, pure Rust deflate for the PNG kernel
 
 [profile.release]
 opt-level = 3

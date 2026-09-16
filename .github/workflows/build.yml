@@ -32,6 +32,12 @@ jobs:
       - name: Install
         run: npm ci
 
+      # the committed renderer/editor/px/*.wasm must be what crates/px builds; rustup installs the compiler
+      # crates/px/rust-toolchain.toml pins, with its wasm target, on the first cargo call
+      - name: Check the Rust kernels against their source
+        shell: bash
+        run: python tools/build_px.py --check
+
       - name: Check the version tag matches package.json
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash

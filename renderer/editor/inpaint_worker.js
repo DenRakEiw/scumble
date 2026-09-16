@@ -25,26 +25,17 @@
  * are closed as soon as they are drawn. Every reply carries the request's id; a failure
  * comes back as { ok: false, error } and the editor falls back to the main thread.
  *
- * `kernels: "rust"` on a mips, selection or flood job runs its pixel kernel from px/px.wasm
- * (loaded once per worker) instead of the JS one, the measurement of phase R
- * (docs/PLAN_BCE.md §2b). Those jobs reply with `timing`: the milliseconds of their parts.
+ * The pixel kernels come from px/kernels.js: the Rust build once this worker has loaded it, the
+ * JS twins before and without it. `kernels: "js"` on a job forces the twins (the benchmark,
+ * tools/px_jobs.py). The mips, selection, flood and band jobs reply with `timing`: the
+ * milliseconds of their parts.
  */
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
-import { floodMask, maskToColorCanvas, clipMaskToSelection, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile } from "./px/kernels_js.js";
+import { floodMask, maskToColorCanvas, clipMaskToSelection, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge } from "./px/kernels.js";
 
 const TILE = 256, LEVELS = 5;
 const now = () => performance.now();
-
-let PX = null;
-/**
- * The Rust kernels of this worker, instantiated on the first job that asks for them. The loader is imported only then:
- * the node's build carries neither it nor the module (tools/build_node.py).
- */
-function rustKernels() {
-    if (!PX) PX = import("./px/px.js").then(({ loadPx }) => loadPx(new URL("./px/px.wasm", import.meta.url))).catch((err) => { PX = null; throw err; });
-    return PX;
-}
 
 /**
  * The mip chains of a batch of tiles (docs/PLAN_BCE.md §C6 b): each tile's bytes (a copy, transferred) give
@@ -53,7 +44,7 @@ function rustKernels() {
  * ones it would build. The chains and the tile buffers go back transferred (the buffers for the next batch).
  */
 async function mips(msg) {
-    const p = msg.kernels === "rust" ? await rustKernels() : null;
+    const p = rustPx();
     const t0 = now();
     const out = p ? mipsRust(p, msg) : mipsJs(msg);
     out.timing = { op: "mips", kernels: p ? "rust" : "js", tiles: msg.tiles.length, kernel: now() - t0 };
@@ -115,17 +106,15 @@ function mipsRust(p, msg) {
  * null] }, the same `ops` and `alphas` for every column. Each dst comes back composited, transferred.
  */
 async function band(msg) {
-    const p = msg.kernels === "rust" ? await rustKernels() : null;
     const t0 = now();
     const transfer = [];
     for (const col of msg.columns) {
         const dst = new Uint8Array(col.dst);
         const srcs = col.srcs.map((b) => new Uint8Array(b)), masks = col.masks.map((b) => (b ? new Uint8Array(b) : null));
-        if (p) p.compositeTile(dst, srcs, msg.ops, msg.alphas, masks);
-        else compositeTile(dst, srcs, msg.ops, msg.alphas, masks);
+        compositeTile(dst, srcs, msg.ops, msg.alphas, masks);
         transfer.push(col.dst);
     }
-    return { dsts: transfer, transfer, timing: { op: "band", kernels: p ? "rust" : "js", tiles: msg.columns.length, kernel: now() - t0 } };
+    return { dsts: transfer, transfer, timing: { op: "band", kernels: kernelsInUse(), tiles: msg.columns.length, kernel: now() - t0 } };
 }
 
 const exports_ = new Map();   // job id -> { writer, format }
@@ -151,7 +140,6 @@ async function png(bitmap, wantHash) {
 
 /** grow / shrink / feather / invert, on the selection's pixels. */
 async function selection(msg) {
-    const p = msg.kernels === "rust" && msg.kind === "grow" ? await rustKernels() : null;
     const t0 = now();
     const c = canvasOf(msg.bitmap);
     const W = c.width, H = c.height;
@@ -167,18 +155,20 @@ async function selection(msg) {
     }
     const ctx = out.getContext("2d");
     const img = ctx.getImageData(0, 0, W, H);
-    const ms = { op: "selection", kind: msg.kind, kernels: p ? "rust" : "js", pixels: W * H, read: now() - t0 };
-    if (msg.kind === "invert") { invertMask(img.data); ctx.putImageData(img, 0, 0); }
-    else if (msg.kind === "grow") {
-        growMask(img.data, W, H, msg.n, { ms, dist: p ? (f, w, h) => p.distTransform(f, w, h) : undefined });
+    const ms = { op: "selection", kind: msg.kind, kernels: kernelsInUse(), pixels: W * H, read: now() - t0 };
+    // the editor would otherwise scan the whole selection for the bounds afterwards, on its own thread
+    let bounds;
+    if (msg.kind === "grow") {
+        bounds = growMaskBounds(img.data, W, H, msg.n, { ms });
         const t = now();
         ctx.putImageData(img, 0, 0);
         ms.put = now() - t;
+    } else {
+        if (msg.kind === "invert") { invertMask(img.data); ctx.putImageData(img, 0, 0); }
+        const tb = now();
+        bounds = maskBounds(img.data, W, H);
+        ms.resultBounds = now() - tb;
     }
-    // the editor would otherwise scan the whole selection for this afterwards, on its own thread
-    const tb = now();
-    const bounds = maskBounds(img.data, W, H);
-    ms.resultBounds = now() - tb;
     const bitmap = out.transferToImageBitmap();
     ms.total = now() - t0;
     return { bitmap, bounds, timing: ms };
@@ -190,16 +180,33 @@ async function selection(msg) {
  * arrives, so the editor can widen the box and ask again.
  */
 async function flood(msg) {
-    const p = msg.kernels === "rust" ? await rustKernels() : null;
     const t0 = now();
     const src = canvasOf(msg.bitmap);
     const W = src.width, H = src.height;
     const data = src.getContext("2d").getImageData(0, 0, W, H).data;
-    const ms = { op: "flood", kernels: p ? "rust" : "js", pixels: W * H, read: now() - t0 };
+    const ms = { op: "flood", kernels: kernelsInUse(), pixels: W * H, read: now() - t0 };
     let t = now();
     const lap = (key) => { const n = now(); ms[key] = n - t; t = n; };
-    const mask = p ? p.flood(data, W, H, msg.x | 0, msg.y | 0, Math.max(0, msg.tolerance | 0), msg.contiguous)
-        : floodMask(data, W, H, msg.x, msg.y, msg.tolerance, msg.contiguous);
+    const p = rustPx();
+    if (p) {
+        // one call for the flood, the clip, the count, the bounds and the shape, drawn from wasm memory without a copy
+        const sel = msg.selBitmap ? canvasOf(msg.selBitmap).getContext("2d").getImageData(0, 0, W, H).data : null;
+        lap("clip");
+        const [r, g, b] = hexToRgb(msg.color || "#ff0000");
+        const res = p.floodShape(data, W, H, msg.x, msg.y, msg.tolerance === undefined ? 32 : msg.tolerance, msg.contiguous !== false, sel, (r << 16) | (g << 8) | b, (view, count, bounds) => {
+            lap("flood");
+            const shape = new OffscreenCanvas(W, H);
+            shape.getContext("2d").putImageData(new ImageData(view, W, H), 0, 0);
+            lap("shape");
+            return { count, bounds, bitmap: shape.transferToImageBitmap() };
+        });
+        releaseIfLarge();
+        const bb = res.bounds;
+        const touches = bb ? { l: bb[0] === 0, t: bb[1] === 0, r: bb[2] === W, b: bb[3] === H } : null;
+        ms.total = now() - t0;
+        return { bitmap: res.bitmap, count: res.count, bounds: bb, touches, timing: ms };
+    }
+    const mask = floodMask(data, W, H, msg.x, msg.y, msg.tolerance, msg.contiguous);
     lap("flood");
     if (msg.selBitmap) clipMaskToSelection(mask, canvasOf(msg.selBitmap));
     lap("clip");
@@ -225,6 +232,8 @@ async function flood(msg) {
 }
 
 async function run(msg) {
+    setKernels(msg.kernels);
+    await kernelsReady();
     if (msg.op === "png") return png(msg.bitmap, !!msg.hash);
     if (msg.op === "selection") return selection(msg);
     if (msg.op === "flood") return flood(msg);

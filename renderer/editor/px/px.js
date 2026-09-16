@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 2;
+export const PX_ABI = 4;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -172,6 +172,43 @@ export class Px {
         } finally { a.reset(); }
     }
 
+    /**
+     * `growMask` and `maskBounds` of the result in one call: the selection `d` (RGBA8) grown or shrunk in place.
+     * Returns the result's bounds [x0, y0, x1, y1] or null.
+     */
+    growMask(d, w, h, n) {
+        const a = this.job, bytes = w * h * 4;
+        try {
+            const pd = this._in(a, d, bytes), pb = a.take(16);
+            const any = this.exports.grow_mask(pd, w, h, n, pb);
+            this._out(Uint8Array, pd, bytes, new Uint8Array(d.buffer, d.byteOffset, bytes));
+            if (!any) return null;
+            const b = this.view(Int32Array, pb, 4);
+            return [b[0], b[1], b[2], b[3]];
+        } finally { a.reset(); }
+    }
+
+    /**
+     * The flood job: the region around (sx, sy) clipped to `sel` (RGBA8 or null), drawn as the colour `rgb`
+     * (0xRRGGBB). `use(view, count, bounds)` gets the shape as a Uint8ClampedArray over wasm memory (valid only inside
+     * the call: an ImageData over it goes to putImageData without a copy) and its result is returned.
+     */
+    floodShape(rgba, w, h, sx, sy, tolerance, contiguous, sel, rgb, use) {
+        const a = this.job, bytes = w * h * 4;
+        let pairs = Math.max(4096, (w * h) >> 4);
+        try {
+            const pr = this._in(a, rgba, bytes), ps = sel ? this._in(a, sel, bytes) : 0, pi = a.take(20);
+            for (;;) {
+                const pst = a.take(pairs * 8);
+                if (this.exports.flood_shape(pr, w, h, sx | 0, sy | 0, Math.max(0, tolerance | 0), contiguous ? 1 : 0, ps, rgb >>> 0, pst, pairs, pi) >= 0) break;
+                pairs *= 2;
+            }
+            const info = this.view(Int32Array, pi, 5);
+            const bounds = info[3] < 0 ? null : [info[1], info[2], info[3], info[4]];
+            return use(new Uint8ClampedArray(this.memory.buffer, pr, bytes), info[0], bounds);
+        } finally { a.reset(); }
+    }
+
     compositeTile(dst, srcs, ops, alphas, masks = null) {
         const a = this.job, px = dst.byteLength >> 2, n = srcs.length;
         try {
@@ -200,21 +237,6 @@ export class Px {
             const pr = this._in(a, rgba, rows * 4 * w), pp = prev ? this._in(a, prev, 4 * w) : 0, po = a.take(n);
             this.exports.png_filter_rows(pr, w, rows, pp, po);
             return this._out(Uint8Array, po, n, out);
-        } finally { a.reset(); }
-    }
-
-    /** A zlib stream (miniz_oxide) of `bytes` at `level`; resolves like kernels_js `deflate`. */
-    deflate(bytes, level = 6) {
-        const a = this.job;
-        let cap = bytes.byteLength + (bytes.byteLength >> 8) + 1024;
-        try {
-            const pi = this._in(a, bytes);
-            for (;;) {
-                const po = a.take(cap);
-                const written = this.exports.deflate_zlib(pi, bytes.byteLength, po, cap, level);
-                if (written >= 0) return this._out(Uint8Array, po, written, null);
-                cap *= 2;
-            }
         } finally { a.reset(); }
     }
 }

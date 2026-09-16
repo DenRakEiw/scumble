@@ -1299,9 +1299,46 @@ What the numbers say:
 - **The composite clears the rule on the real tiles** (4.85×, B measured 4.68× on random ones): E2's band composite is
   the one kernel phase E builds on Rust.
 
-**Decision: the mips, the EDT and the flood stay JavaScript; phase E composites its bands with `composite_tile` from
-`px.wasm`** (the JS twin as the fallback where wasm cannot load, and the node until it ships the module). The switch and
-`tools/px_jobs.py` stay, so E and later work can measure again.
+That was the decision by B's 3× rule. **The user overruled the rule the same day: Rust wherever it is faster, however
+little; JS only where Rust is slower.** So every kernel above went to Rust, and the loops around the EDT and the flood,
+which the table shows to be most of those jobs, went with them.
+
+### 12.1 Rust by default (2026-09-17)
+
+- `renderer/editor/px/kernels.js` is the kernel module the editor imports (the tile store, `inpaint_raster.js`, the worker):
+  the Rust build once this thread has loaded it (the window and each worker load their own instance when the module is
+  imported), the JS twins before that and wherever wasm cannot load. The window's CSP gained `'wasm-unsafe-eval'`.
+- **Whole jobs in one call** (`crates/px/src/jobs.rs`): `grow_mask` is `growMask` and the bounds scan of its result;
+  `flood_shape` is the flood, the clip to the selection, the count, the bounds and the shape's pixels, written over the
+  picture's own buffer, which `putImageData` then takes as an `ImageData` over wasm memory without a copy.
+- **wasm memory never shrinks**: after a call that grew an instance past 256 MB (a whole-picture flood at 15k takes about
+  1.4 GB with a selection clip) the thread replaces it with a fresh instance of the same compiled module
+  (`releaseIfLarge`), and the old memory is collected.
+- The Rust `deflate_zlib` (miniz_oxide) is gone: `CompressionStream` was faster (§10). The crate has no dependency left,
+  and `tools/build_px.py` remaps paths, so the binaries hold no path of the machine that built them; a build in another
+  folder gives the same bytes, and `build.yml` checks the committed ones against the source.
+- The node ships `px/kernels.js`, `px/px.js` and `px/px.wasm` (`tools/build_node.py` copies the binary).
+
+`tools/px_jobs.py` at 15,000 × 10,000 on a fresh instance, "js" forcing the twins in every thread (window not in front):
+
+| job | pixel work JS / Rust ms | | worker job JS / Rust ms | | wall JS / Rust ms | |
+|---|---|---|---|---|---|---|
+| mips, every base tile | 517 / 378 | 1.37× | 517 / 378 | 1.37× | 1,009 / 718 | 1.41× |
+| mips after a whole change | 616 / 329 | 1.87× | 616 / 329 | 1.87× | 1,729 / 1,659 | 1.04× |
+| composite band (59 tiles) | 165 / 27 | 6.10× | 165 / 27 | 6.10× | 177 / 28 | 6.28× |
+| grow +16 | 518 / 185 | 2.80× | 847 / 313 | 2.71× | 1,040 / 573 | 1.81× |
+| shrink −16 | 510 / 170 | 2.99× | 685 / 290 | 2.36× | 966 / 578 | 1.67× |
+| wand over the whole picture | 1,606 / 687 | 2.34× | 2,630 / 1,391 | 1.89× | 4,572 / 3,058 | 1.50× |
+| wand, bounded region (six rounds of its own) | 19 / 5.3 | 3.61× | 69 / 52 | 1.33× | 161 / 145 | 1.11× |
+
+"Pixel work" is everything a job does after reading its pixels out of a canvas and before writing them back (for the wand
+the selection read and the shape's `putImageData` included). What is left is Chromium's: `getImageData` of the picture
+(0.7 s of the whole-picture wand), `putImageData`, and the scheduler and landings of the mips. The bounded wand's wall in
+the full run (670 / 765 ms) followed the whole-picture wand's chains; alone it is the row above.
+
+Gates: `node tools/px_test.js` (every Rust kernel of both builds against its twin, `grow_mask` against `growMask` +
+`maskBounds`, `flood_shape` against `floodMask` + clip + count + bounds + shape; a mutation of each whole-job kernel red),
+`px_jobs.py --check` (the same bytes from both kernel sets in the app), `run_gates.sh` with the tile engine on and off.
 
 **Found on the way:** grow and shrink still ran the old `distanceTransform`, not the twin C was meant to take from B. They
 run the twin now (the same f32 values, `tools/px_test.js`): a 6,032 × 4,032 band, the grow job's at 15k, takes 255 to 304

@@ -114,10 +114,12 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    docs, `--disable-gpu`, the memory walk (not met: +0.6 to +1.4 GB of GPU process per open 15k document on tiles), the exe
    gates (PASS). **Open, needing the user's ComfyUI:** the node in a real ComfyUI tab and in Firefox, `smoke`, `commands`.
    **Open, needing E5:** the 30k gate. **Next, when the user says so:** a release (0.1.16 has its CHANGELOG section).
-8. **Phase R is measured** (2026-09-17, branch `phase-r`, `docs/PLAN_BCE.md` §2b "Phase R as built", `docs/PERFORMANCE.md`
-   §12): mips, EDT and flood stay JS (1.2 to 2.4× on the real jobs); **E2's band composite runs `composite_tile` from
-   `px.wasm`** (4.85×). The crate is back in `crates/px`; `InpaintEditor.kernels = "rust"` and `tools/px_jobs.py` measure
-   again. Merge `phase-r` when the user agrees. Then **phase E**.
+8. **Phase R is built** (2026-09-17, `docs/PLAN_BCE.md` §2b "Phase R as built", `docs/PERFORMANCE.md` §12 and §12.1):
+   **the user's rule is Rust wherever it is faster, however little** (the 3× rule is gone). Every pixel kernel runs from
+   `renderer/editor/px/px.wasm` through `px/kernels.js` in the window and both workers, grow / shrink and the flood as one
+   whole-job call each; the JS twins are the fallback (`InpaintEditor.kernels = "js"`). `python tools/build_px.py` rebuilds
+   the binaries (commit them; `build.yml` checks them), `node tools/px_test.js` and `python tools/px_jobs.py --check` are the
+   gates. Then **phase E** (E2's band composite on `composite_tile`).
 
 **Decision (b) of 7c is still the user's** (exports and runs on the shared statistics entry; the numbers are in
 `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). Recommended to them on 2026-09-17: **keep the full-resolution statistics

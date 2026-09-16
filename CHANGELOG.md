@@ -5,8 +5,12 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.16 — unreleased
 
-- **Growing and shrinking a selection is faster.** The distance calculation behind *Grow* and *Shrink* takes about half
-  the time it did (0.3 s instead of 0.55 s for a large selection on a 15000 × 10000 picture); the result is the same.
+- **Grow, shrink, the magic wand and the picture's detail levels run as compiled code (Rust).** The pixel work behind
+  *Grow* and *Shrink*, the magic wand and the bucket, and the smaller copies of every layer the screen draws from now
+  runs as WebAssembly instead of JavaScript, with the same results to the last bit. On a 15000 × 10000 picture growing a
+  large selection takes 0.6 s instead of 1.0 s, a magic wand across the whole picture 3.1 s instead of 4.6 s, and the
+  detail levels after a change of a whole layer are built about 1.4 times as fast. Where the compiled code cannot load,
+  the JavaScript runs as before.
 - **A colour-matched layer no longer costs a gigabyte on a large picture.** With the tile engine on, a layer with
   *Colour match* switched on was matched on a full-size copy of itself (and of its mask) every time the view, the
   eyedropper or the magic wand looked at it: on a 15000 × 10000 picture with a full-size matched layer that was **1.1 GB**
