@@ -120,6 +120,9 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    whole-job call each; the JS twins are the fallback (`InpaintEditor.kernels = "js"`). `python tools/build_px.py` rebuilds
    the binaries (commit them; `build.yml` checks them), `node tools/px_test.js` and `python tools/px_jobs.py --check` are the
    gates. Then **phase E** (E2's band composite on `composite_tile`).
+9. **Phase N after E** (the user's wish, 2026-09-17, `docs/PLAN_BCE.md` §3b): measure what the browser still costs (pixel
+   readbacks such as the wand's 0.7 s `getImageData`, Chromium's memory limits, copies), cost the options up to a native
+   Rust editor (4 to 8 months), and let the user decide. N builds nothing.
 
 **Decision (b) of 7c is still the user's** (exports and runs on the shared statistics entry; the numbers are in
 `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). Recommended to them on 2026-09-17: **keep the full-resolution statistics

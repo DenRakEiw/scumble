@@ -3865,6 +3865,72 @@ writers; the 30k document's PSD written in ≤ 60 s.
 against the exe. Phase F's adaptive VRAM budget and Settings rows are **not** here; the
 atlas budget row of C3 is the only new setting.
 
+## 3b. Phase N: does a native Rust editor pay? (after E, 3 to 5 days of measuring, then the user decides)
+
+Asked by the user on 2026-09-17 after phase R: would the editor be faster if **everything** were Rust (the interface, the
+layers, the tile store, MCP)? The short answer given then: not the interface, the layer list, undo or MCP (microseconds to
+a few milliseconds each), not the screen (the GPU draws it through WebGL; a native build would use the same card through
+wgpu), and not the tile bookkeeping (a JS ↔ wasm call per small operation can cost more than it saves). What a native
+editor would remove are **the browser's own costs**, and N measures what is left of them once phase E is built. **N builds
+nothing**; it ends with a table, a recommendation and the user's decision.
+
+### What is being weighed
+
+1. **Pixel readbacks.** The whole-picture magic wand at 15k spends about 0.7 s in `getImageData` of the composite it floods
+   and about 0.8 s in the answer's way back (`putImageData`, `transferToImageBitmap`, the write into the selection); grow
+   reads its box out of a canvas (0.1 s). In a native editor pixels never live in a canvas.
+2. **Memory limits of Chromium.** The renderer's cap (about 8 GB, from an issue, never measured here), 268 MP of Canvas 2D
+   area, 65,535 px a side, a WebGL drawing buffer of about 33 MP, and wasm32's 4 GB per instance. Today they decide the
+   largest document and how many large documents can be open (§5: phase D is not built).
+3. **Copies.** One wand today goes canvas → ImageBitmap → worker canvas → ImageData → wasm memory → ImageData → canvas →
+   ImageBitmap → main thread → selection tiles. Each hop of a 15k picture is 600 MB.
+
+### What E (and D) already take away, so N measures after them
+
+- E1's `SharedArrayBuffer` tile arena: workers read tiles without a copy (hops of item 3).
+- E2's `compositeBand` from tiles: the wand, the bucket and the run's crop can read a band composite straight from the
+  tiles instead of a canvas read back (most of item 1), exports never hold a full-size canvas (most of item 2's 268 MP).
+- Phase D (not planned yet): tiles outside the renderer, which is the answer to the renderer's cap inside Electron.
+
+### N1. The measurement (2 to 3 days)
+
+- **Where the time goes**, on the rows people feel, at 15,000 × 10,000 and at E5's 30,000 × 20,000: open a file, the
+  whole-picture wand, grow / shrink, a stroke and its release, pan / zoom at 1:1, export PNG and PSD, a provider run's crop.
+  Each row split into (a) pixel work (JS or Rust), (b) browser boundaries (`getImageData`, `putImageData`,
+  `createImageBitmap`, `drawImage` from a large canvas, structured clones and transfers, copies into and out of wasm),
+  (c) GPU (uploads, readbacks, draws), (d) the rest (scheduler, layout, the main thread's own work). `px_jobs.py`'s `timing`
+  parts are the start; the boundaries get the same timers.
+- **The real memory limits** on the user's machine: the renderer's cap with typed arrays (allocate until it fails, in a
+  test profile), the largest document the app opens with 1, 3 and 10 full-size paint layers, four 15k documents open at
+  once, and the GPU process per document (§C7's gate, not met).
+- **Copies**: the count and the bytes of every hop per row above.
+
+### N2. The options, costed (1 to 2 days)
+
+| option | what it is | removes | costs | risk |
+|---|---|---|---|---|
+| A. Stay | Electron + wasm kernels after E | what E removes | nothing | the remaining browser share stays |
+| B. More Rust inside the app | the remaining hot paths as whole wasm jobs over tile memory (filters' CPU twins, colour-match statistics, feather, PackBits), read from the SAB arena | pixel work and the copies around it | days per path | small; the user's rule already asks for it |
+| C. Native tile store | phase D with the store in a utility process or a `napi-rs` addon (Rust), the renderer holding only what is on screen | the renderer's memory cap | 2 to 4 weeks | IPC copies on promotion; two processes to keep consistent |
+| D. Native editor | Rust + wgpu + a native UI (egui, iced or Slint), filters as WGSL, text through cosmic-text, brushes and shapes through tiny-skia or vello, no Electron | items 1 to 3 entirely | **4 to 8 months** for one person | brush and text look parity, the JS plugin API (needs an embedded JS engine or breaks), the ComfyUI node keeps the web editor (two editors, or the node frozen), Linux / Windows UI polish, re-deciding `CLAUDE.md`'s Electron decision |
+
+Option D is the mega-sized part; A to C are not. Tauri is **not** an option for D's goal: it is a webview with the same
+limits.
+
+### N3. The decision
+
+A recommendation written into this section with N1's table, by these questions:
+
+- After E, what share of the wall time of the rows above is (b) browser boundaries? If it is small (say under a third on
+  every row), A plus B is the answer.
+- Does a document the user really works with (size, layer count, documents open at once) hit a memory limit? If yes,
+  can C fix it? If yes, C before D.
+- Only if a large share is left **and** C cannot fix the limits does D get its own plan (`docs/PLAN_NATIVE.md`: phases, the
+  order, what ships in between, what happens to the node and the plugins), for the user to decide on.
+
+Gate: the table in `docs/PERFORMANCE.md` (a new section), the recommendation here, the user's decision recorded in
+`CLAUDE.md`.
+
 ---
 
 ## 4. Decisions in one table (for the session that builds it)
@@ -3931,6 +3997,7 @@ atlas budget row of C3 is the only new setting.
 | E4 | 2 |
 | E5 | 2 |
 | E6 | 2 |
+| N (after E: measure, cost, decide whether a native Rust editor pays) | 3 to 5 |
 
 Fifty working days for one person on nothing else; ten weeks. C1 is the step most likely to
 run over (277 sites, every one a coordinate system), and it is also the one that can ship
