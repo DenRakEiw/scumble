@@ -119,6 +119,13 @@ tiles is the "Still slow" list under 0.1.13 in `CHANGELOG.md` (smudge, the whole
 invert, the whole flatten behind renders and exports); with two 15k documents open at once a levels
 tick took 49-58 ms on tiles and with three the pan took 65 ms, not broken down yet.
 
+**Update 2026-09-16, after C4, C6 (c) 7b to 7d and C6 (d) (0.1.16, unreleased).** The numbers on the synthetic 15k
+document are in `docs/PERFORMANCE.md` §11: pan 2.6 ms (0.2 ms on the GPU stack), a brush dab and its frame 1.2 ms, undo of a
+stroke 26 ms, the first frame at 1:1 1.2 ms; a colour-matched full-size layer no longer makes 1.1 GB of copies, and a crop,
+flatten or undo of them no longer decodes the picture again. Still whole-picture and slow: invert (0.9 s), the band wand
+(1.8 s), a film point under a film look (2.2 s), renders and exports. The entry stays open until the user reports on
+their own 15k file (what to ask for: the 2026-09-15 update above).
+
 **What is already known**
 
 - The GPU compositor still applies at that size: it refuses only above `MAX_TEXTURE_SIZE`,

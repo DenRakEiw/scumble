@@ -3366,6 +3366,37 @@ three full ones); `mem_test.py` as above; the installer built and the gates run 
 `dist/win-unpacked/Scumble.exe` on its own profile (`CLAUDE.md` 2026-09-12 second block has
 the recipe).
 
+#### The rest of §C7, as far as it went (2026-09-16)
+
+After C6 (c) 7b to 7d, C6 (d) and C4, on 08db610 plus this commit.
+
+- **The node's browser: not run.** `nodecopy` (`build_node.py` into a scratch copy of the node repo, `--check`,
+  `node_test.py` against ComfyUI stand-ins) passes in every tile gate run of the day. A real run in the ComfyUI tab and the
+  Firefox pass need the user's ComfyUI, which the user needs for their own work (2026-09-16); Firefox is installed
+  (`C:/Program Files/Mozilla Firefox`). The node repo itself is still at 647db5d and was not built.
+- **`--disable-gpu`** (dev, tiles, own profile, `dist/gates/gates/c7-nogpu`): WebGL2 stays available (Chromium's software
+  renderer) and the compositor is used. `composite_test.py`: gpu-vs-2d max 2 levels (PASS); the stored references differ
+  by up to 5 levels on 42 % (full) and 25 % (view) of the bytes, the source-window step reads 14 levels at half zoom (FAIL:
+  its bound is 2). `editor_test.py` match steps: 7b and 7c PASS, `the_colour_match_on_the_gpu_stack_is_uniforms` 6 levels
+  on 717 bytes over 2 against its bound of 4 (FAIL). All of it reads like software rasterisation (the references were
+  taken on the card), not like wrong pixels; the bounds were not widened. Not broken down.
+- **The memory gate: not met** (`mem_test.py 15000x10000 --rounds 4`, `run_gates.sh` takes `mem:15000x10000,--rounds,4`
+  now). Closed documents are collected on both backends: the GPU process ends +199 MB above its start on tiles, +297 MB on
+  canvases, and the canvases alive at the end are the filter module's four 1024² scratches. With the document open: tiles
+  renderer 3.1-4.3 GB and GPU process +0.6 to +1.4 GB above its start (the bound is 300 MB), canvases 0.7 GB and +6.1 to
+  +6.7 GB. The renderer against the tile bytes (1.2×) is not compared: `mem_test.py` does not report them. The walk's own
+  "canvas upload" drift check read FAIL on tiles at 0.1 → 0.4 ms (below the timer's resolution in practice).
+- **The 30k gate: not run.** `perf_test.py` builds its document from full-size canvases, which cannot exist at 30000 x
+  20000 (above 268 MP); the per-tile build is E5's.
+- **The docs:** `docs/PERFORMANCE.md` §11 (the tile engine's rows against §9's, and the memory walk), `docs/BUGS.md` 15k
+  entry updated and left open for the user's own file, `docs/PLUGINS.md` already carried the deprecation of
+  `rawLayer().canvas`. Not written: the node's `DEVELOPMENT.md` §24 (the node repo is not touched until a node version
+  ships) and a 0.2.0 section (the version of the next release is the user's).
+- **The installer and the exe gates:** `npm run dist` → `Scumble Setup 0.1.16.exe` (local, not published). Against
+  `dist/win-unpacked/Scumble.exe` on their own profiles: `c7-exe` (no `--tiles`: the default, tiles; pixels editor composite
+  brush film glb mcp) ALL PASS, `c7-exe-canvas` (`--tiles off`: pixels editor composite) ALL PASS. No `smoke`, no
+  `commands` (the user's ComfyUI).
+
 #### The default, as built (2026-09-15, for 0.1.13)
 
 The user's decision: the tile engine is on by default in the installed app from 0.1.13, with a switch in Settings ›

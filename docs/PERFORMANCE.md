@@ -1214,6 +1214,46 @@ boundaries, and the crate is deleted from the branch.** The Rust code stays reac
 history of `px-spike` (commit c75c4f1 is the last one that has it, with the benchmark
 `renderer/editor/px/bench.js`, `tools/px_bench.js` and `tools/px_bench.html`).
 
+## 11. Phase C, the tile engine, where it stands (2026-09-16)
+
+The rows of §9's table on the same synthetic 15,000 × 10,000 document (`tools/perf_test.py 15000x10000`, base, three
+full-size paint layers, a 2048² colour-matched result, a film look), tile engine on, on the tree after C4
+(`dist/gates/gates/s4-perf-after2`; `docs/PLAN_BCE.md` §C3 to §C6 and "C4 as built" hold each step's A/B). Main thread
+held, milliseconds; the benchmark's discrete rows swing by a factor of 2 to 10 between runs on a shared card.
+
+| Step, 150 MP | 2026-09-12 (before A) | after phase A | tiles, 2026-09-16 |
+|---|---|---|---|
+| pan (fit / 1:1, Canvas 2D path with the film look) | 8.3 ms | - | 2.6 / 2.7 ms |
+| pan on the GPU stack (1:1 / fit) | - | - | 0.2 / 0.3 ms |
+| first frame after a zoom to 1:1 | 58 ms, once 320 | - | 1.2 ms (GPU stack) |
+| brush dab and its frame | - | - | 1.2 ms |
+| stroke commit | 13 ms | - | 20 ms |
+| selection change | 62 ms | 5 to 6 ms | 21 ms |
+| undo of a stroke | 99 ms | 42 ms | 26 ms |
+| selection bounds scan | 83 ms, worst 754 | 6 ms, first 460 to 490 | 2 ms, worst 22 |
+| grow +16 / shrink / invert / feather | 321 / 180 / 70 / 135 ms | 112 / 131 / 54 / 398 ms | 223 / 238 / 941 / 251 ms |
+| magic wand, a band across the picture / an object | 2076 ms | 1062 / 360 ms | 1803 / 688 ms |
+| bucket fill | 1646 ms | 490 to 620 ms | 623 ms |
+| PNG of the composite (worker) | 274 ms | - | 61 ms |
+| full composite (warm) | 9 ms | - | 99 ms, worst 2287 |
+| screenshot 1024 / prompt context | about 2 s each | - | 40 / 68 ms |
+| film point add under a film look | - | - | 2174 ms (a whole flatten below the points) |
+
+Memory (`tools/mem_test.py 15000x10000 --rounds 4`, `dist/gates/gates/c7-mem-tiles` and `-canvas`), one such document
+built per round, then closed and collected:
+
+| | canvases (tile engine off) | tiles |
+|---|---|---|
+| renderer, document open | 0.7 GB | 3.1 to 4.3 GB |
+| GPU process, document open, above its start | +6.1 to +6.7 GB | +0.6 to +1.4 GB |
+| GPU process after the fourth close and a collection, above its start | +297 MB | +199 MB |
+
+What moved and why: the display mirrors and Skia pyramids (C3, C5, C6 c), the undo copies (C2, C4) and the full-resolution
+readers of small pictures (C6 c) are gone on tiles; the pixels moved from GPU canvases into renderer memory. The rows that
+got slower than phase A's (selection change, invert, the band wand, the full composite) read or write the whole picture;
+that is phase E's (full resolution per tile and a worker pool). §C7's own memory bound (at most 300 MB of GPU process per
+open document, the renderer within 1.2× the tile bytes) is not met; `mem_test.py` does not report the tile bytes yet.
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first
