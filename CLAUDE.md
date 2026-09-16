@@ -75,6 +75,31 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
+## Where things stand (2026-09-16, evening: C6 (c) slice 7a is built and pushed)
+
+**Read this block first; it supersedes the "What the next session starts with" of the block below.** `docs/PLAN_BCE.md`
+§C6 "C6 (c) slice 7a as built" is the record; `CHANGELOG.md` 0.1.15 has its bullet (a user-visible fix).
+
+- **7a, the null-statistics race** (`renderer/editor/inpaint_canvas.js`): every sampled pass (eyedropper, wand, bucket,
+  plugin flattens, the film panel) now takes `sampledMatchStats(layer, forRun)`, one entry per layer per change from the
+  layer's whole padded surroundings (a sampled pass of its own over the padded box, `upTo` the layer), instead of
+  statistics from its own region. Reproduced red first on both backends: a 512 px picture after an eyedropper click was
+  102 levels off on 95,172 bytes, the eyedropper picked the unmatched colour. The loop is `statsOfMatch` now; a chain
+  landing no longer drops the sampled statistics. The screen (`_mstatsView`) and exports (`_mstats`) are unchanged.
+- Gate `sampled_passes_share_the_colour_match_statistics`, three mutations red; all gates PASS on both backends;
+  `perf_test.py` 15k within noise. `a_sampled_pass_matches_only_the_part_of_a_matched_layer_it_shows`'s screen bound is
+  6 levels until 7c (it read 3-4).
+- Seen once, not reproduced: slice 6's step failed "primed cells were left behind" (`s7a-red2`).
+
+**What the next session starts with:**
+1. **7b**, the matched region view (`dist/c6map/c/match.md` §3): the matched layer's pixels in a region pass from its tiles
+   at the pass's level instead of its display mirror and a Skia pyramid; this removes the 16 MB mirror slices 5 and 6
+   show.
+2. **7c**, statistics independent of the pass for the screen and the navigator too (the user's decision (a)): put
+   `_mstatsView` on the same entry as `sampledMatchStats`, the (b3) step's bound back to 2, and **measure (b)** (exports on
+   the same entry, box means and point samples) for the user. **7d**, the match as GPU uniforms.
+3. Then C6 (d), the object tool's bigger change A (ask the user), C4, the rest of §C7, phase R.
+
 ## Where things stand (2026-09-16, afternoon: C6 (c) slice 6 is built and pushed)
 
 **Read this block first; it supersedes the "What the next session starts with" of the block below.** `docs/PLAN_BCE.md`

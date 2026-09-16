@@ -2365,7 +2365,10 @@ for (const s of [1, 0.5]) {
     for (let i = 0; i < scr.length; i++) { const d = Math.abs(scr[i] - ref[i]); if (d > max) max = d; if (d > 2) n++; }
     out.screen = { at: [ix, iy], max, over2: n };
     if (ix !== box[0] || iy !== box[1]) throw new Error("the screen's region is at " + [ix, iy] + ", not the box's corner");
-    if (max > 2) throw new Error(`the 1 pass over the box differs from the screen at 1:1 by ${max} levels on ${n} bytes: the matched part is matched or placed wrong`);
+    // C6 (c) 7a: a sampled pass takes the statistics of the layer's whole surroundings, the screen still takes its own
+    // from the view (slice 7c puts both on one entry and this bound back to 2). Measured 3-4 levels on 49-588 bytes;
+    // a part matched or placed wrong is 148 levels off (the (b3) mutation)
+    if (max > 6) throw new Error(`the 1 pass over the box differs from the screen at 1:1 by ${max} levels on ${n} bytes: the matched part is matched or placed wrong`);
     ed.fitView(); ed.sceneSig = null; ed.draw();
 }
 await run("remove_layer", { layer: L.id, doc: window.__t });
@@ -2823,6 +2826,133 @@ try {
     ed.objects = null;
 }
 await run("remove_layer", { layer: M.id, doc: window.__t });
+await run("remove_layer", { layer: L.id, doc: window.__t });
+return out;
+"""),
+    ("sampled_passes_share_the_colour_match_statistics", """
+// C6 (c) slice 7a: the colour-match statistics a sampled pass used were those of whichever pass missed first after
+// a drop. The eyedropper's 1 x 1 pass, or a fine box of the wand, finds fewer than 64 pixels of the layer's
+// surroundings in its own region and stored null: every sampled pass after it drew the matched layer unmatched until
+// the composite changed. A drop between the wand's coarse and fine pass (a chain landing) made the wand select a
+// different region. Sampled passes now share one entry per layer per change, taken from the layer's whole padded
+// surroundings, whatever pass asks first. Both backends.
+await run("new_canvas", { width: 3000, height: 2000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height;
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    x.fillStyle = "#6a6a70"; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 3000; i++) { const v = 90 + ((i * 37) % 40); x.fillStyle = `rgb(${v},${v},${v + 6})`; x.fillRect((i * 733) % W, (i * 419) % H, 12, 12); }
+    x.fillStyle = "#203060"; x.fillRect(2500, 0, W - 2500, H);   // a dark right part, for (iv)
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "match7a.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+// an empty paint layer under the matched one, painted in (iv)
+const P7 = ed.addPaintLayer();
+// a strongly coloured layer: unmatched it is far from the grey around it, matched it is close to it
+const lc = document.createElement("canvas"); lc.width = 1200; lc.height = 900;
+{
+    const x = lc.getContext("2d");
+    x.fillStyle = "#c83c3c"; x.fillRect(0, 0, 1200, 900);
+    for (let i = 0; i < 600; i++) { x.fillStyle = (i % 2) ? "#b43232" : "#dc4646"; x.fillRect((i * 331) % 1200, (i * 197) % 900, 10, 10); }
+}
+const L = ed.addLayer({ name: "Matched 7a", kind: "result", px: ed.pixels.Layer.fromCanvas(lc), x: 900, y: 600, w: 1200, h: 900, dirty: true });
+L.match = { strength: 100, source: "surroundings" };
+ed.markMatchChanged(L);
+ed.renderLayers(); ed.fitView(); ed.sceneSig = null; ed.draw();
+await ed.mipsSettled(); ed.sceneSig = null; ed.draw();
+await wait(50);
+
+const drop = () => {
+    // what a chain landing (watchChains) or a change does to the caches, without a frame in between
+    for (const k of Object.keys(L)) if (/^_mstats|^_mcache/.test(k)) L[k] = null;
+};
+const pixelOf = (c, x, y) => Array.from(c.getContext("2d").getImageData(x, y, 1, 1).data);
+const far = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]));
+const out = { tiles: !!ed.tileMode };
+const px = 1500, py = 1050;   // inside the layer
+const unmatched = pixelOf(lc, px - L.x, py - L.y);
+
+// (i) the eyedropper first after a drop, then a picture of the whole image at 512 px. The eyedropper samples what the
+// tool bar's Sample says: the image here (a step before may have left it on the layer)
+const fill0 = ed.fillOpts;
+out.fillOptsBefore = fill0 || null;
+ed.fillOpts = { tolerance: 40, contiguous: true, sample: "image" };
+let pickedRgb = null;
+try {
+drop();
+const color0 = ed.color;
+ed.pickColor(px, py);
+const picked = ed.color;
+ed.color = color0;
+const s = 512 / W;
+const afterPick = ed.sampleRegion("image", [0, 0, W, H], s);
+// (ii) the same picture first after a drop
+drop();
+const alone = ed.sampleRegion("image", [0, 0, W, H], s);
+const qx = Math.floor(px * s), qy = Math.floor(py * s);
+out.pixel = { unmatched, afterPick: pixelOf(afterPick, qx, qy), alone: pixelOf(alone, qx, qy) };
+if (far(out.pixel.alone, unmatched) < 40) throw new Error("the match does not move this layer's colour, so this step proves nothing: " + JSON.stringify(out.pixel));
+const da = afterPick.getContext("2d").getImageData(0, 0, afterPick.width, afterPick.height).data;
+const db = alone.getContext("2d").getImageData(0, 0, alone.width, alone.height).data;
+let worst = 0, differing = 0;
+for (let i = 0; i < da.length; i++) { const d = Math.abs(da[i] - db[i]); if (d) { differing++; if (d > worst) worst = d; } }
+out.afterPickVsAlone = [worst, differing];
+if (worst > 1) throw new Error(`a 512 px picture after an eyedropper click differs from the same picture alone by ${worst} levels on ${differing} bytes (the click set the statistics)`);
+pickedRgb = [parseInt(picked.slice(1, 3), 16), parseInt(picked.slice(3, 5), 16), parseInt(picked.slice(5, 7), 16)];
+const flat = ed.flattenToCanvas({ forRun: false });
+const ref = pixelOf(flat, px, py);
+out.picked = { picked: pickedRgb, flatten: ref };
+if (far(pickedRgb, unmatched) < 30 && far(ref, unmatched) >= 40) throw new Error("the eyedropper picked the layer's unmatched colour: " + JSON.stringify(out.picked));
+if (far(pickedRgb, ref) > 12) throw new Error("the eyedropper's colour is far from the matched flatten's: " + JSON.stringify(out.picked));
+
+// (iii) the wand with a drop between its coarse and its fine pass selects what it selects without one
+const wandBounds = async (dropBetween) => {
+    await run("select_none", { doc: window.__t });
+    drop();
+    ed.sceneSig = null; ed.draw();
+    const f0 = ed.floodShape;
+    let n = 0;
+    ed.floodShape = async function (...a) { const r = await f0.apply(this, a); if (n++ === 0 && dropBetween) drop(); return r; };
+    try { await ed.wandSelect(px, py, "replace"); } finally { ed.floodShape = f0; }
+    return { bounds: ed.getBounds(), passes: n };
+};
+try {
+    const plain = await wandBounds(false);
+    const dropped = await wandBounds(true);
+    out.wand = { plain, dropped };
+    if (plain.passes < 2) throw new Error("the wand ran no fine pass on this document: " + JSON.stringify(out.wand));
+    if (JSON.stringify(plain.bounds) !== JSON.stringify(dropped.bounds)) throw new Error("a statistics drop between the wand's passes changed its selection: " + JSON.stringify(out.wand));
+} finally {
+    await run("select_none", { doc: window.__t });
+}
+} finally {
+    ed.fillOpts = fill0;
+}
+// (iv) the entry follows a change that leaves the layer's own caches alone: a paint layer below it painted dark over
+// the right part of its surroundings (the composite version moves, the slots stay)
+{
+    ed.fillOpts = { tolerance: 40, contiguous: true, sample: "image" };
+    const pc = ed.color;
+    ed.pickColor(px, py);   // the entry is made (and would be kept by a cache that does not look at the version)
+    ed.color = pc;
+    P7.px.drawInto(null, (x) => { x.fillStyle = "#101828"; x.fillRect(1500, 400, 900, 1300); });
+    ed.markLayerChanged(P7);
+    const c4 = ed.color;
+    ed.pickColor(px, py);
+    const p4 = ed.color;
+    ed.color = c4;
+    ed.fillOpts = fill0;
+    const rgb4 = [parseInt(p4.slice(1, 3), 16), parseInt(p4.slice(3, 5), 16), parseInt(p4.slice(5, 7), 16)];
+    const ref4 = pixelOf(ed.flattenToCanvas({ forRun: false }), px, py);
+    out.changed = { picked: rgb4, flatten: ref4, before: pickedRgb };
+    if (far(ref4, pickedRgb) < 12) throw new Error("the paint below did not change the layer's matched colour, so (iv) proves nothing: " + JSON.stringify(out.changed));
+    if (far(rgb4, ref4) > 12) throw new Error("after a change below the layer the eyedropper's colour is far from the matched flatten's (stale statistics): " + JSON.stringify(out.changed));
+}
+await run("remove_layer", { layer: P7.id, doc: window.__t });
 await run("remove_layer", { layer: L.id, doc: window.__t });
 return out;
 """),

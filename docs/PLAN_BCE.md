@@ -2965,6 +2965,75 @@ nodecopy) and `s6-all-canvas` (commands pixels composite film glb mcp) ALL PASS.
 (the same 1024 x 1024 RGBA bytes and key format); `smoke_test.py` without `--no-helpers` with a linked model folder is
 the check if one is wanted.
 
+#### C6 (c) slice 7a as built (2026-09-16): sampled passes share one colour-match statistics entry
+
+The first step of slice 7 of `dist/c6map/c/critic.md` §5 ("7a the null-stats bug"), after `dist/c6map/c/match.md` §1
+and the race (b3) reproduced and left here.
+
+**The bug, reproduced red first on both backends** (`editor_test.py` `sampled_passes_share_the_colour_match_statistics`
+against the unchanged code): a sampled pass (`sampleRegion`: the eyedropper, the wand's and the bucket's passes, a
+plugin's flatten, the film panel) took the screen's statistics when they were there and otherwise computed its own from
+**its own region** into `_mstatsSample`. A 1 x 1 eyedropper pass that came first after a drop holds no ring: it stored
+null, and every sampled pass after it drew the matched layer **unmatched** until the composite changed. On a 3000 x 2000
+document with a red layer matched to a grey surrounding, a 512 px picture after an eyedropper click was **102 levels off
+on 95,172 bytes** against the same picture alone, and the eyedropper itself picked the unmatched red (200, 60, 60) where
+the matched flatten has grey (106, 106, 112). (A first run read the same red for another reason: a step before had left
+the tool bar's *Sample* on the layer, which reads the layer unmatched on purpose; the step sets it to the image now.)
+
+**What was built** (`renderer/editor/inpaint_canvas.js`):
+- `sampledMatchStats(layer, forRun)`: one entry per layer per change (`_mstatsSample`, and `_mstatsSampleRun` for a
+  pass with `forRun`, whose backdrop leaves control and reference layers out), taken from the layer's **whole padded
+  surroundings** at 256 px, whatever pass asks first. The layer is drawn from its own pixels at that scale (from its
+  tiles with its mask, or its canvas), the backdrop is a sampled pass of its own over the padded box of the layers below
+  it (`upTo`). Both read exact levels.
+- `matchStats` hands every sampled pass (`vp.sample`) to it; the screen and the full-resolution flatten keep their own
+  statistics (`_mstatsView`, `_mstats`), so the screen and exports do not change in this step.
+- `statsOfMatch(layer, lay, ld, bd, pad)`: the loop over the layer and its ring, split out of `matchStats` so both use it.
+- `sampleRegion` puts `forRun` on its pass.
+- A chain landing no longer drops the sampled statistics (`dropStaleViewCaches`): they read exact levels, which a
+  landing does not change. Every other reset lists `_mstatsSampleRun` beside `_mstatsSample`, and `bumpComposite`
+  forwards it like the other slots.
+
+**After:** the same document reads 0 bytes of difference between the 512 px picture after an eyedropper click and alone,
+the eyedropper picks the matched grey, the wand with the statistics dropped between its coarse and its fine pass selects
+the same region as without, and after a paint layer below is painted dark over part of the ring the eyedropper follows
+the matched flatten again (61, 65, 76).
+
+**What moved:** `a_sampled_pass_matches_only_the_part_of_a_matched_layer_it_shows` compares a sampled pass with the
+screen at 1:1, which still takes its statistics from the view: 3-4 levels on 49-588 bytes now (0-2 before). Its bound is
+6 until slice 7c puts the screen on the same entry and the bound back to 2; the (b3) mutation it guards (a part matched
+or placed wrong) is 148 levels. `perf_test.py 15000x10000` before and after in the same session: every row within the
+runs' noise (wand 1767 / 2013 and 821 / 687 ms, bucket 618 / 585, `sample.mean_color` 1258 / 1380, film point add
+1832 / 1708, colour match tick 9.0 / 8.7).
+
+**Gate.** `sampled_passes_share_the_colour_match_statistics`, both backends: (i) the eyedropper first after a drop,
+then a 512 px picture; (ii) the same picture first after a drop, byte for byte; the eyedropper's colour within 12 levels
+of the matched flatten and not the unmatched colour; (iii) the wand with a drop between its passes selects the same
+bounds; (iv) after a paint layer below is painted over part of the surroundings (the version moves, the layer's slots
+stay), the eyedropper follows the flatten again. Runs: `s7a-fix2-on` / `-off`, `s7a-fix3`, `s7a-fix3-canvas`,
+`s7a-fix4` (editor) PASS; `s7a-all-tiles` (editor commands pixels composite shape brush film glb ailabel size transparent
+generate log mcp llm toapis nodecopy) and `s7a-all-canvas` (editor commands pixels composite film glb mcp) ALL PASS.
+
+**Three mutations, each red** (fresh instances):
+- sampled passes back to statistics from their own region → "a 512 px picture after an eyedropper click differs from the
+  same picture alone by 102 levels on 95172 bytes";
+- the shared entry without its padding (no ring in its backdrop) → the (b3) step, "18 levels on 179853 bytes";
+- the entry never recomputed (the version not checked) → "after a change below the layer the eyedropper's colour is far
+  from the matched flatten's: picked 106,106,112, flatten 61,65,76". A first version of (iv) moved the layer with
+  `set_layer x`, which clears the layer's slots itself, and this mutation stayed green; the paint below is the path that
+  does not.
+
+**Not gated:** the `forRun` split (no control or reference layer in the gate document) and the backdrop's `upTo` (a
+layer's own pixels in its backdrop change only the "underneath" source, which the gate does not use).
+
+**Seen once, not reproduced:** `helper_inputs_read_levels_and_upload_nothing` (slice 6) failed "primed cells were left
+behind" in one run on the tree with the unfinished 7a step (`s7a-red2`); two runs right after and every run since
+passed.
+
+**Left for 7b to 7d:** the screen's statistics (`_mstatsView`) still come from the view and the screen, the navigator and
+sampled passes can disagree by a few levels (7c, the user's decision (a)); the matched layer's pixels in a region pass
+still come from its display mirror and a Skia pyramid (7b); the match on the GPU path is a canvas per miss (7d).
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in

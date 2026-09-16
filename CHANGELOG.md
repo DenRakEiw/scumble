@@ -31,6 +31,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   engine on it now takes **under 0.2 s**, nothing is saved on the way, and moving the mouse over an
   unchanged picture no longer checks it again. The input for background removal went from 0.6 s to
   0.04 s. Showing the objects under the cursor on such a picture is still slow; that is next.
+- **Fixed: the eyedropper and the magic wand could ignore a layer's colour match.** Right after a
+  change, a click with the eyedropper on a colour-matched layer could pick the layer's original,
+  unmatched colour, and from then on the wand, the bucket and the *Film looks* thumbnails also saw
+  that layer unmatched until the picture changed again. The magic wand could also select a different
+  area depending on when it was clicked. All of them now use the same colour match for a layer, taken
+  from everything around it. On screen and in exports nothing changes.
 
 ## 0.1.14 — 2026-09-15
 
