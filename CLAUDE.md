@@ -118,17 +118,20 @@ checked against a full-resolution flatten.
 `a_settled_read_builds_its_levels_in_the_worker_not_here` (an A/B in one document: the settled read built 6 chains here
 against the old way's 32, 0.5 MB against 2.66, the same picture to the byte). Two new rows in `perf_test.py`
 ("192 px picture after a whole change", the old way and settled, with their chain counts and the MB they leave).
-**`run_gates.sh slice34-tiles --strict --tiles on` with all fifteen gates: ALL PASS.**
+**Runs** (fresh instances, own profiles, strict): `slice34-tiles --tiles on` with all fifteen gates **ALL PASS**;
+`slice34-canvas --tiles off` with fourteen (no nodecopy) all PASS but `editor`, which failed
+`live_stroke_reaches_the_screen_before_the_release` at `z045_paint` with its own "a real pointer over the window?"
+message - **the user confirmed they had moved the mouse over the test window**; the stroke itself arrived in full
+(`end` 1.0, only the middle sample off). `slice34-canvas2 --tiles off editor` **PASS** on the re-run.
 
 **What the next session starts with:**
-1. **`--tiles off`** (`bash tools/run_gates.sh slice34-canvas --strict --tiles off pixels editor composite commands shape
-   brush film glb ailabel size transparent generate log mcp`), about 4 minutes. It had not run when this block was
-   written - the user interrupted it - so **the canvas backend is unverified for this change**. Nothing in slices 3 and 4
-   touches that backend (`sampleRegionSettled` returns `sampleRegion` when `!tileMode`, and `primeRegion` is a tile-store
-   method), but the film panel and the glb dialog are now async on **both**.
-2. `perf:15000x10000` for the two new rows, and `smoke` (a real Flux run) before any release.
-3. **C6 (c) slices 5, 6, 7** of `dist/c6map/c/critic.md` §5 (5: `promptContextCanvas` and `screenshot`; 6: the helper
+1. `perf:15000x10000` for the two new rows, and `smoke` (a real Flux run) before any release. Neither has run for this
+   change.
+2. **C6 (c) slices 5, 6, 7** of `dist/c6map/c/critic.md` §5 (5: `promptContextCanvas` and `screenshot`; 6: the helper
    inputs; 7: colour match, whose 7a is a real reproduced bug). Then C6 (d), then C4, then the rest of §C7, then phase R.
+3. **A real pointer over a test window breaks the stroke steps.** `editor_test.py`'s live-stroke steps drive synthetic
+   pointer events; a real mouse over that window wins, and the step says so in its own failure text. Re-run before
+   believing an `editor` failure at `live_stroke_reaches_the_screen_before_the_release`.
 
 **Traps found this session, worth keeping:**
 - **A mutation that is not run against a fresh instance proves nothing.** The renderer caches the ES module it imported
