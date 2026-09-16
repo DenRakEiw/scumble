@@ -2401,6 +2401,117 @@ ed.removeLayer(fx.id);
 if (max > 1) throw new Error(`the full-resolution box after the 192 px picture differs from the flatten by ${max} levels on ${n} bytes: it took the other pass's filter output`);
 return { max, bytes: n };
 """),
+    ("a_settled_read_builds_its_levels_in_the_worker_not_here", """
+// C6 (c3) / slice 4: an exact read of a picture at a level - the film panel's 192 px flatten, the glb dialog's
+// backdrop, the flood's coarse pass - used to build a mip chain for every tile of every layer on this thread and
+// keep it: 2,088 chains and 510 ms in one task at 15000 x 10000, 185 MB left on the tiles. `sampleRegionSettled`
+// asks the mips worker for them, takes each one as it lands into a cell of its own and drops the chain.
+// The picture must be the one `sampleRegion` gives, byte for byte.
+await run("new_canvas", { width: 3000, height: 2000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const T = await import("./editor/inpaint_tiles.js");
+const W = ed.width, H = ed.height;
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+const base = document.createElement("canvas"); base.width = W; base.height = H;
+{
+    const x = base.getContext("2d");
+    for (let i = 0; i < 90; i++) { x.fillStyle = `hsl(${(i * 37) % 360},70%,${25 + (i * 11) % 50}%)`; x.fillRect((i * 97) % W, (i * 53) % H, 140, 110); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "settled.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const paint = document.createElement("canvas"); paint.width = W; paint.height = H;
+{
+    const x = paint.getContext("2d");
+    x.globalAlpha = 0.5;
+    for (let i = 0; i < 40; i++) { x.fillStyle = `hsl(${(i * 53) % 360},80%,55%)`; x.fillRect((i * 211) % W, (i * 149) % H, 120, 120); }
+}
+const L = ed.addLayer({ name: "Paint", kind: "paint", px: ed.pixels.Layer.fromCanvas(paint), x: 0, y: 0, w: W, h: H, dirty: true });
+ed.renderLayers(); ed.fitView(); ed.draw();
+await ed.mipsSettled();
+
+const scale = 192 / W;                       // the film panel's picture: level 3 here
+const bytesOf = (c) => c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+const diff = (a, b) => { let m = 0, n = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d) { n++; if (d > m) m = d; } } return [m, n]; };
+const out = { tileMode: !!ed.tileMode, async: !!(ed.tileMode && T.chainStats().async) };
+
+// a whole change, so no tile of the flipped layer has a chain
+const cold = async () => {
+    ed.flipLayer("h");
+    ed.renderLayers();
+    await pause(40);
+    ed.clearUndo();
+};
+
+// (i) the same picture both ways, in one state. The caches are given back in between, or the second read
+// would be handed the region canvas the first one filled and the comparison would be with itself.
+await cold();
+const settledC = bytesOf(await ed.sampleRegionSettled("image", [0, 0, W, H], scale, { forRun: true }));
+ed.releaseCaches({ mirrors: true, deep: true });
+await ed.mipsSettled();
+const syncC = bytesOf(ed.sampleRegion("image", [0, 0, W, H], scale, { forRun: true }));
+const [worst, n] = diff(settledC, syncC);
+if (worst) throw new Error(`the settled read differs from sampleRegion by ${worst} levels on ${n} bytes`);
+out.samePicture = [worst, n];
+
+// (ii) on tiles with a worker, an A/B in this same document: the two reads after two identical whole changes,
+// one settled and one the old way. The settled one must build far fewer chains on this thread - the old way's
+// count is the yardstick, so this cannot go green on a document whose tiles happen to have their chains
+// already. Without a worker (the canvas backend, a build with no module worker) everything is built where it
+// is read, exactly as before, and there is nothing to assert.
+if (out.async) {
+    const readWith = async (fn) => {
+        await cold();
+        await ed.mipsSettled();            // the flip's own screen chains are not this read's
+        ed.releaseCaches({ mirrors: true, deep: true });
+        await cold();                      // a second whole change: now no tile of that layer has a chain
+        await pause(40);
+        const m0 = ed.memoryReport().tiles;
+        T.chainStats(true);
+        const c = await fn();
+        const st = T.chainStats();
+        const m1 = ed.memoryReport().tiles;
+        if (!c || !c.width) throw new Error("the read gave no canvas");
+        await ed.mipsSettled();
+        return { main: st.main, primed: st.primed, requested: st.requested, handed: st.handed,
+                 keptMB: +((m1.chainBytes - m0.chainBytes) / 1048576).toFixed(2), primedBytes: m1.primedBytes,
+                 mirrors: m1.mirrors - m0.mirrors };
+    };
+    const e0 = ed.basePx.chainEpoch;
+    const A = await readWith(() => ed.sampleRegionSettled("image", [0, 0, W, H], scale, { forRun: true }));
+    const B = await readWith(async () => ed.sampleRegion("image", [0, 0, W, H], scale, { forRun: true }));
+    out.settled = A;
+    out.theOldWay = B;
+    if (!A.primed) throw new Error("the settled read took no cell from the worker: " + JSON.stringify(A));
+    if (!B.main) throw new Error("the old way built no chain on this thread, so this document proves nothing: " + JSON.stringify(B));
+    if (A.main * 3 >= B.main) throw new Error(`the settled read built ${A.main} chains on this thread against the old way's ${B.main}: it is not using the worker`);
+    if (A.keptMB * 2 >= B.keptMB) throw new Error(`the settled read left ${A.keptMB} MB of chains against the old way's ${B.keptMB}`);
+    if (A.primedBytes) throw new Error(`the settled read left ${A.primedBytes} bytes of cells behind: its jobs were not released`);
+    if (A.mirrors > 0) throw new Error("the settled read made a display mirror");
+    if (ed.basePx.chainEpoch !== e0) throw new Error("a read asked for its chains as a reader of the screen (chainEpoch moved)");
+}
+
+// (iii) the plugin API: flatten({ settled: true }) is the same picture as flatten({}) and is a promise
+{
+    const P = await import("./plugins.js");
+    const doc = new P.Document(ed, "settled-test");
+    await cold();
+    const p = doc.flatten({ maxSize: 192, settled: true });
+    if (!p || typeof p.then !== "function") throw new Error("flatten({ settled: true }) did not return a promise");
+    const whole = doc.flatten({ settled: true });
+    if (!whole || typeof whole.then !== "function") throw new Error("flatten({ settled: true }) with no maxSize did not return a promise");
+    await whole;
+    const got = bytesOf(await p);
+    ed.releaseCaches({ mirrors: true, deep: true });
+    await ed.mipsSettled();
+    const [w2, n2] = diff(got, bytesOf(doc.flatten({ maxSize: 192 })));
+    if (w2) throw new Error(`flatten({ settled: true }) differs from flatten({}) by ${w2} levels on ${n2} bytes`);
+    out.plugin = [w2, n2];
+}
+await run("remove_layer", { layer: L.id, doc: window.__t });
+return out;
+"""),
     ("stroke_buffers_cover_the_gesture_not_the_layer", """
 // Phase A item 2 (docs/PLAN_TILES.md): a stroke's buffer and its selection clip cover what the
 // gesture touched, not the layer; the live preview is refreshed inside the dab's rectangle; the

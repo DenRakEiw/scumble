@@ -70,7 +70,12 @@ export function openDialog({ scumble, doc, model, renderer, params, title }) {
         stage.appendChild(view);
         body.appendChild(stage);
         const backdrop = scumble.makeCanvas(sw, sh);
-        try { backdrop.getContext("2d").drawImage(doc.flatten({ maxSize: Math.max(sw, sh) }), 0, 0, sw, sh); } catch (_) { /* an empty document: the chequerboard shows */ }
+        // `settled` (C6 c3): the picture's levels are built in the app's worker, so opening this dialog over a large
+        // document does not hold the window while they are made. The dialog is up at once with the chequerboard and
+        // the object on it; the picture arrives a frame or two later and the preview is drawn again.
+        doc.flatten({ maxSize: Math.max(sw, sh), settled: true })
+            .then((flat) => { backdrop.getContext("2d").drawImage(flat, 0, 0, sw, sh); schedule(); })
+            .catch(() => { /* an empty document, or one closed while it was read: the chequerboard shows */ });
 
         const side = document.createElement("div");
         side.className = "glb-side";

@@ -78,18 +78,28 @@ export class Document {
      * `exact` (with `box`, no `maxSize`): the box's pixels as the full-resolution flatten has them:
      * padded as far as the stack's filters say they reach, or cut out of the whole flatten when
      * a filter does not say (or a colour-matched layer is near the box).
+     *
+     * `settled` (with `maxSize` or `box`, on the tile engine): **the call returns a promise** of the
+     * same canvas, and the mip levels it reads are built in the app's worker instead of on the thread
+     * your plugin runs on. Ask for it whenever you can await: a picture of a document whose tiles
+     * have no levels yet - every read right after a flip, a filter, a fill or an undo - costs half a
+     * second of frozen window at 15000 x 10000 without it. The document may have changed by the time
+     * it resolves, as after any await. Without `settled` the call stays synchronous, as before.
      */
-    flatten({ maxSize = 0, box = null, below = null, pad = 0, exact = false } = {}) {
+    flatten({ maxSize = 0, box = null, below = null, pad = 0, exact = false, settled = false } = {}) {
         this._need();
         const ed = this.editor;
         const upTo = below == null ? null : ed.layers.indexOf(findLayer(ed, below));
         const o = upTo == null ? { forRun: true } : { forRun: true, upTo };
-        if (!maxSize && !box) return ed.flattenToCanvas(o);
+        // a full-resolution flatten reads no mip level, so there is nothing to prime; `settled` still has to keep
+        // its promise, or a plugin that passes it with no maxSize and no box gets a canvas where it awaits one
+        if (!maxSize && !box) { const c = ed.flattenToCanvas(o); return settled ? Promise.resolve(c) : c; }
         const b = box ? [Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(ed.width, Math.ceil(box[2])), Math.min(ed.height, Math.ceil(box[3]))] : [0, 0, ed.width, ed.height];
         if (b[2] <= b[0] || b[3] <= b[1]) throw new Error(`the box ${JSON.stringify(box)} is outside the ${ed.width}x${ed.height} image`);
         const scale = maxSize > 0 ? Math.min(1, maxSize / Math.max(1, b[2] - b[0], b[3] - b[1])) : 1;
-        if (exact && box && scale === 1) return ed.readBox(b, o);
-        return ed.sampleRegion("image", b, scale, pad > 0 ? { ...o, pad } : o);
+        if (exact && box && scale === 1) return settled ? Promise.resolve(ed.readBox(b, o)) : ed.readBox(b, o);
+        const so = pad > 0 ? { ...o, pad } : o;
+        return settled ? ed.sampleRegionSettled("image", b, scale, so) : ed.sampleRegion("image", b, scale, so);
     }
 
     /**

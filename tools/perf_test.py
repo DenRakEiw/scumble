@@ -267,6 +267,39 @@ BENCH = """
         ed.view.x = Math.round(ed.canvas.width / 2 - W / 2); ed.view.y = Math.round(ed.canvas.height / 2 - H / 2);
         ed.sceneSig = null; ed.draw();
         await replaced("whole_1to1_gl");
+        // C6 (c3): a 192 px picture of the whole document right after a whole change - what the film looks panel
+        // makes for its thumbnails 500 ms after every change. [blocked, wall]: before slice 3 it built a mip chain
+        // for every tile of every layer on this thread, 510 ms in one task at 15000 x 10000, and kept 185 MB of them.
+        {
+            const T = await import("./editor/inpaint_tiles.js");
+            const sample = async (label, fn) => {
+                await ed.mipsSettled(); ed.sceneSig = null; ed.draw(); settleNow();
+                ed.pushUndo({ kind: "layerfull", id: target.id });
+                if (ed.tileMode) target.px = ed.turnedTilePixels(target.px, "h");
+                ed.markLayerChanged(target);
+                ed.renderLayers();
+                await new Promise((r) => setTimeout(r, 30));
+                ed.clearUndo();
+                const chainsAt = () => { const t = ed.memoryReport().tiles; return t ? t.chainBytes : 0; };
+                const c0 = chainsAt();
+                T.chainStats(true);
+                const held = gaps();
+                const t0 = performance.now();
+                await fn();
+                const wall = performance.now() - t0;
+                // a synchronous read runs in one task, so the 1 ms timer never fires inside it: its own time is the block
+                const blocked = Math.max(held(), label.endsWith("sync") ? wall : 0);
+                const cs = T.chainStats();
+                out[label] = [+blocked.toFixed(1), +wall.toFixed(1)];
+                out[label + "_chains"] = [cs.main, cs.primed];
+                out[label + "_keptMB"] = [+((chainsAt() - c0) / 1048576).toFixed(1), 0];
+                await ed.mipsSettled();
+                await new Promise((r) => setTimeout(r, 50));
+            };
+            const scale = 192 / Math.max(W, H);
+            await sample("panel_flatten_sync", async () => ed.sampleRegion("image", [0, 0, W, H], scale, { forRun: true }));
+            await sample("panel_flatten_settled", async () => ed.sampleRegionSettled("image", [0, 0, W, H], scale, { forRun: true }));
+        }
         if (fxLayer) fxLayer.visible = true;
         for (const l of matched) l.visible = true;
     }
@@ -601,6 +634,12 @@ ROWS = [
     ("  mips settled [longest block]", "whole_1to1_gl_settled"),
     ("  chains built here [asked]", "whole_1to1_gl_chains"),
     ("  chains landed [handed]", "whole_1to1_gl_landed"),
+    ("192 px picture after a whole change, the old way", "panel_flatten_sync"),
+    ("  chains built here [taken from the worker]", "panel_flatten_sync_chains"),
+    ("  chains it left on the tiles, MB", "panel_flatten_sync_keptMB"),
+    ("192 px picture after a whole change, settled", "panel_flatten_settled"),
+    ("  chains built here [taken from the worker]", "panel_flatten_settled_chains"),
+    ("  chains it left on the tiles, MB", "panel_flatten_settled_keptMB"),
     ("frame after a whole touch, fit", "touch_fit_gl"),
     ("  (the level of fit, whole-change rows)", "whole_level_row"),
     ("redraw with ants", "draw_with_ants"),

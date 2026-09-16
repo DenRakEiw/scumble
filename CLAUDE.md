@@ -75,6 +75,75 @@ code.
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
 
+## Where things stand (2026-09-16, night: C6 (c) slices 3 and 4 are built and pushed)
+
+**Read this block first; it supersedes the "Where the next session starts" of every block below.** `docs/PLAN_BCE.md`
+§C6 "C6 (c3) and slice 4 as built" is the record (the before/after tables, every decision, the six mutations with their
+red). `CHANGELOG.md` 0.1.15 has the two user-facing bullets. `package.json` is **0.1.15** with that section open.
+
+**0.1.14 is published** (Latest since 2026-09-15 21:13 UTC) - the block below still calls it a draft, which is stale.
+
+**What was built.** An exact read of the picture at a mip level - the film looks panel's 192 px thumbnails, the GLB
+dialog's backdrop, the magic wand's coarse pass - used to build a mip chain for **every tile of every layer on the main
+thread** and keep it. Measured on a synthetic 15000 x 10000 document, each row right after a flip:
+
+| read | in one task | chains built here | left on the tiles |
+|---|---|---|---|
+| `flatten({ maxSize: 192 })`, level 5 | 509.7 ms | 2,088 | +185.5 MB |
+| `flatten({ maxSize: 1024 })`, level 3 | 611.6 ms | 2,360 | +221 MB |
+| `sampleRegion` at 256 px | 463.6 ms | 2,360 | +221 MB |
+
+After the four rows the document held **669 MB** of chains nothing on the screen wanted.
+
+- **Slice 3**, `renderer/editor/inpaint_tiles.js`: `primeRegion(rect, level)` asks the mips worker for the **interior**
+  tiles' chains (`request(..., screen=false, keep=false)`; `keep` is a parameter of its own now), takes **only the level
+  it reads** out of each handed chain into a cell (256 bytes a tile at level 5 against 87 KB for the chain) and keeps no
+  chain. `_levelBytes` reads those cells **for exact reads only** - a display read has to take the same decision
+  `_stampAt` takes. The **edge tiles are left on the old path on purpose**: their chain is the clamp-extended
+  `edgeChain` and `_land` never hands the worker's `exts` over; 98 against 2,262 at 15k, about 13 ms, and that is what
+  makes the primed read byte-identical. `_primed` is a **Set** (a second read must not take the first one's landings),
+  and a job also settles on `sch.settled()`, because `_notify` drops a landing whose tile was replaced since.
+  `PRIME_CELL_BUDGET` 48 MB, counted across every read in flight (`primedPromised`).
+- **Slice 4**: `passStores` / `primePass` / `sampleRegionSettled` in `inpaint_canvas.js`,
+  `Document.flatten({ settled: true })` (a promise; `docs/PLUGINS.md` "A picture that does not freeze the window"), the
+  film looks panel's `render()` async with `busy` held across the await, the GLB backdrop filled after the dialog opens,
+  and `floodRegion`'s coarse pass awaited.
+
+**After**, same document, same method: the glb backdrop holds the main thread **46.6 ms** (was 700.6) and the flood's
+coarse pass **95.2 ms** (was 621.3); chains left behind **32.7 MB** (was 221); wall clock 700 -> 1193 ms, which is the
+trade. **The picture is byte-identical** to the old reader at 2048 x 1152 and at 15000 x 10000, at levels 3 and 5,
+checked against a full-resolution flatten.
+
+**Gates.** `pixels_test.js` `tiles_primed_exact_read_builds_no_chain_here` and `editor_test.py`
+`a_settled_read_builds_its_levels_in_the_worker_not_here` (an A/B in one document: the settled read built 6 chains here
+against the old way's 32, 0.5 MB against 2.66, the same picture to the byte). Two new rows in `perf_test.py`
+("192 px picture after a whole change", the old way and settled, with their chain counts and the MB they leave).
+**`run_gates.sh slice34-tiles --strict --tiles on` with all fifteen gates: ALL PASS.**
+
+**What the next session starts with:**
+1. **`--tiles off`** (`bash tools/run_gates.sh slice34-canvas --strict --tiles off pixels editor composite commands shape
+   brush film glb ailabel size transparent generate log mcp`), about 4 minutes. It had not run when this block was
+   written - the user interrupted it - so **the canvas backend is unverified for this change**. Nothing in slices 3 and 4
+   touches that backend (`sampleRegionSettled` returns `sampleRegion` when `!tileMode`, and `primeRegion` is a tile-store
+   method), but the film panel and the glb dialog are now async on **both**.
+2. `perf:15000x10000` for the two new rows, and `smoke` (a real Flux run) before any release.
+3. **C6 (c) slices 5, 6, 7** of `dist/c6map/c/critic.md` §5 (5: `promptContextCanvas` and `screenshot`; 6: the helper
+   inputs; 7: colour match, whose 7a is a real reproduced bug). Then C6 (d), then C4, then the rest of §C7, then phase R.
+
+**Traps found this session, worth keeping:**
+- **A mutation that is not run against a fresh instance proves nothing.** The renderer caches the ES module it imported
+  at start, so patching a file while the app runs leaves the gate reading the old code: the first mutation round came
+  out green on all five counter-proofs. Every round must close the app, patch, and start it again.
+- **A benchmark whose "before" row runs after a `mipsSettled()` is measuring a warm document.** The first A/B read
+  0.4 ms for a 192 px flatten because the flip's chains had already landed; the honest before is 509.7 ms.
+- **An A/B that flips between the two rows compares two different pictures.** Byte comparisons belong in one state, with
+  `releaseCaches({ mirrors: true, deep: true })` between the reads, or the second read is handed the region canvas the
+  first one filled and the comparison is with itself.
+- The review's four lenses found 13 things, **3 survived two refuters each**, and all three were about `passStores`
+  being a second copy of `drawLayersInto`: its `forRun` defaulted the other way, and it primed colour-matched layers,
+  layers under a live stroke and masks off the tile grid, which that pass reads from a canvas and not from tiles. A
+  second walk of the stack is the risk in this design; keep it next to `drawLayer`'s branches.
+
 ## Where things stand (2026-09-15, late: 0.1.14 tagged, the live stroke, the atlas field, ToAPIs)
 
 **Read this block first; it supersedes the "Where the next session starts" part of the block below.** 0.1.13 is

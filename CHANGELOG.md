@@ -3,6 +3,21 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.15 — unreleased
+
+- **The film looks panel and the 3D dialog no longer freeze the window on a large picture.** Half a
+  second after every change to a document, the *Film looks* panel makes a small picture of it for its
+  thumbnails; on a 15000 × 10000 document that picture used to be built entirely on the thread that
+  draws the window, which stopped for **half a second** each time — the cursor did not move, nothing
+  repainted — and left 185 MB of scaled-down copies behind. The same happened when the GLB dialog
+  opened and when the magic wand looked at the whole picture first. All three now have the app's
+  worker build what they need: the window is held for **47 ms instead of 700**, and 33 MB is kept
+  instead of 221. The picture itself is unchanged, to the byte; it appears about half a second later
+  than the frozen window used to show it.
+- **For plugin authors**: `flatten({ maxSize })` and `flatten({ box })` take `settled: true`, which
+  returns a promise and does the same thing. `docs/PLUGINS.md` → "A picture that does not freeze the
+  window".
+
 ## 0.1.14 — 2026-09-15
 
 - **Painting shows the stroke again while you paint.** In 0.1.13 the brush, the eraser (also on a

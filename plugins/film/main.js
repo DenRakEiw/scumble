@@ -85,14 +85,17 @@ export function activate(scumble) {
             };
 
             let timer = null, busy = false, dirty = true;
-            const render = () => {
+            const render = async () => {
                 dirty = false;
                 if (!doc.loaded) { for (const cv of cells.values()) { const c = cv.getContext("2d"); c.clearRect(0, 0, cv.width, cv.height); } return; }
                 if (busy) { dirty = true; return; }
-                busy = true;
+                busy = true;   // held across the await: a change that arrives meanwhile sets `dirty` and renders after
                 try {
-                    // composited at thumbnail size: a full flatten of a large document is a second per change
-                    const flat = doc.flatten({ maxSize: 192 });
+                    // composited at thumbnail size: a full flatten of a large document is a second per change.
+                    // `settled` (C6 c3): the levels it reads are built in the app's worker, so this panel no longer
+                    // holds the window for half a second 500 ms after every change to a large document.
+                    const flat = await doc.flatten({ maxSize: 192, settled: true });
+                    if (!doc.loaded) return;
                     const k = Math.min(96 / flat.width, 64 / flat.height);
                     const base = makeCanvas(Math.max(1, Math.round(flat.width * k)), Math.max(1, Math.round(flat.height * k)));
                     const bctx = base.getContext("2d");
@@ -107,7 +110,8 @@ export function activate(scumble) {
                 if (dirty) schedule();
             };
             const visible = () => box.offsetParent !== null && box.getClientRects().length > 0;
-            const schedule = () => { clearTimeout(timer); timer = setTimeout(() => { if (visible()) render(); else dirty = true; }, 500); };
+            const paint = () => { render().catch((err) => { console.warn("film looks panel:", err); }); };
+            const schedule = () => { clearTimeout(timer); timer = setTimeout(() => { if (visible()) paint(); else dirty = true; }, 500); };
 
             groupSel.addEventListener("change", () => { scumble.storage.set({ group: groupSel.value }); buildGrid(); dirty = true; schedule(); });
             buildGrid();

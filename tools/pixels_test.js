@@ -1592,6 +1592,143 @@ function pixelsCases(P, T) {
             return { ok: true, jobs: 3 };
         })],
 
+        // C6 (c3): a primed exact read. `primeRegion` asks the worker for the chains of the interior tiles of a
+        // region, hands each one to the job's cell at its landing and keeps none on the tile; the read that follows
+        // is byte for byte the read that built them all here, and it builds only the clamp-extended edge tiles.
+        ["tiles_primed_exact_read_builds_no_chain_here", both(async ({ B, Layer, pair }) => {
+            if (!B.tiles) return { ok: true, tilesOnly: true };
+            const K = await import("./editor/px/kernels_js.js");
+            const n = K.mipChainBytes(256, 5);
+            const jobs = [];
+            const sch = new T.ChainScheduler((tiles) => new Promise((resolve) => jobs.push({ tiles, resolve })), { budget: 0 });
+            const answer = () => {
+                for (const job of jobs.splice(0)) {
+                    const chains = [], exts = [], datas = [];
+                    for (const x of job.tiles) {
+                        const b = new Uint8Array(x.data);
+                        chains.push(K.mipChain(b, 256, 5, new Uint8Array(n)).buffer);
+                        if (x.vw < 256 || x.vh < 256) { K.clampExtend(b, 256, x.vw, x.vh); exts.push(K.mipChain(b, 256, 5, new Uint8Array(n)).buffer); } else exts.push(null);
+                        datas.push(x.data);
+                    }
+                    job.resolve({ chains, exts, datas });
+                }
+            };
+            const tick = () => new Promise((r) => setTimeout(r, 0));
+            const W = 1100, H = 900;                       // 5 x 4 tiles: 12 interior, 8 clamp-extended at the edge
+            const readRc = (res) => res.canvas.getContext("2d").getImageData(0, 0, res.canvas.width, res.canvas.height).data;
+            const chainBytesOf = (q) => { let b = 0; for (const t of q.tileList()) { if (t.mips) b += t.mips.byteLength; if (t.edge && t.edge.mips) b += t.edge.mips.byteLength; } return b; };
+            const same = (a, b, what) => { if (a.length !== b.length) throw new Error(what + ": sizes differ"); for (let j = 0; j < a.length; j++) if (a[j] !== b[j]) throw new Error(`${what}: differs at byte ${j} (${a[j]} against ${b[j]})`); };
+
+            for (const level of [3, 5]) {
+                const { pixels: p } = pair(W, H);
+                const { pixels: ex } = pair(W, H);                 // the same picture, read the old way
+                p._chains = sch;
+                const want = readRc(ex.regionCanvas([0, 0, W, H], level));   // exact, every chain built here
+
+                const m0 = T.chainStats().main, e0 = p.chainEpoch, c0 = chainBytesOf(p);
+                const done = p.primeRegion([0, 0, W, H], level);
+                await tick();                                     // the scheduler flushes in a microtask
+                if (!jobs.length) throw new Error(`level ${level}: primeRegion asked the worker for nothing`);
+                const asked = jobs.reduce((a, j) => a + j.tiles.length, 0);
+                if (asked !== 12) throw new Error(`level ${level}: ${asked} tiles asked for, expected the 12 interior ones`);
+                if (T.chainStats().main !== m0) throw new Error(`level ${level}: the prime built ${T.chainStats().main - m0} chains on this thread`);
+                answer();
+                const job = await done;
+                if (!job.live) throw new Error(`level ${level}: the job says it asked for nothing`);
+                if (job.cells.size !== 12) throw new Error(`level ${level}: ${job.cells.size} cells, expected 12`);
+                if (p.chainEpoch !== e0) throw new Error(`level ${level}: the prime moved chainEpoch, so it asked as a reader of the screen`);
+                if (job.bytes !== 12 * (256 >> level) * (256 >> level) * 4) throw new Error(`level ${level}: the cells are ${job.bytes} bytes`);
+
+                const got = readRc(p.regionCanvas([0, 0, W, H], level));
+                same(got, want, `level ${level}: the primed read`);
+                // only the eight edge tiles' clamp-extended chains were built here, and no chain is on an interior tile
+                const built = T.chainStats().main - m0;
+                if (built !== 8) throw new Error(`level ${level}: ${built} chains built on this thread, expected the 8 edge tiles`);
+                let kept = 0;
+                for (const t of p.tileList()) if (t.mips) kept++;
+                if (kept) throw new Error(`level ${level}: ${kept} interior tiles kept a chain the worker built`);
+                job.release();
+                if (p.primedBytes() !== 0) throw new Error(`level ${level}: release() left ${p.primedBytes()} bytes of cells`);
+                if (chainBytesOf(p) - c0 > 8 * n) throw new Error(`level ${level}: the read kept ${chainBytesOf(p) - c0} bytes of chains`);
+            }
+
+            // a tile that owns a stale chain buffer (an in-place whole write: a fill, a filter, a mask invert) gets its
+            // chain installed rather than handed over, and the read is still exact (critic item 3)
+            {
+                const { pixels: p } = pair(W, H);
+                const { pixels: ex } = pair(W, H);
+                p.regionCanvas([0, 0, W, H], 3);                  // every tile owns a chain now
+                p._chains = sch;
+                p.fill([0, 0, W, H], "#20c040");                  // in place: the tiles keep their (now stale) buffers
+                ex.fill([0, 0, W, H], "#20c040");
+                const want = readRc(ex.regionCanvas([0, 0, W, H], 3));
+                const done = p.primeRegion([0, 0, W, H], 3);
+                await tick();
+                answer();
+                const job = await done;
+                same(readRc(p.regionCanvas([0, 0, W, H], 3)), want, "an in-place write: the primed read");
+                if (!p.tileList().some((t) => t.mips && t.mipsVersion === t.version)) throw new Error("a tile that owned a buffer did not get its chain back");
+                job.release();
+            }
+
+            // a write after the landing must not be read from the cell: the cell carries the tile's version
+            {
+                const { pixels: p } = pair(W, H);
+                p._chains = sch;
+                const done = p.primeRegion([0, 0, W, H], 3);
+                await tick();
+                answer();
+                const job = await done;
+                p.fill([0, 0, 300, 300], "#ff00ff");              // tiles (0,0) and (1,0), after their chains landed
+                const { pixels: ex } = pair(W, H);
+                ex.fill([0, 0, 300, 300], "#ff00ff");
+                same(readRc(p.regionCanvas([0, 0, W, H], 3)), readRc(ex.regionCanvas([0, 0, W, H], 3)), "a write after the landing");
+                job.release();
+            }
+
+            // the cells are for exact reads only. A display read has to take the same decision `_stampAt` takes, or
+            // the atlas would build a slot from a cell under a stamp that reads stale at the very next frame.
+            {
+                const { pixels: p } = pair(W, H);
+                p._chains = sch;
+                const done = p.primeRegion([0, 0, W, H], 3);
+                await tick();
+                answer();
+                const job = await done;
+                const st = p.slotStamps(1, 1, 3, true);           // an interior tile, asked the way the atlas asks
+                const lv = p._levelBytes(1, 1, 3, true);
+                if (!lv || st[4] !== lv.stamp) throw new Error(`after a prime a display read and the atlas disagree: ${lv && lv.stamp} against ${st[4]}`);
+                job.release();
+                await tick();                                     // those two display reads asked for chains of their own
+                answer();
+            }
+
+            // no transport: the job holds nothing, resolves at once, and the read builds its chains as it always did
+            {
+                const { pixels: p } = pair(W, H);
+                p._chains = new T.ChainScheduler(null, { budget: 0 });
+                const job = await p.primeRegion([0, 0, W, H], 3);
+                if (job.live || job.cells.size) throw new Error("a prime without a worker asked for something");
+                const { pixels: ex } = pair(W, H);
+                same(readRc(p.regionCanvas([0, 0, W, H], 3)), readRc(ex.regionCanvas([0, 0, W, H], 3)), "no worker: the read");
+                job.release();
+            }
+
+            // level 0 reads no chain at all, so a prime there is a no-op
+            {
+                const { pixels: p } = pair(W, H);
+                p._chains = sch;
+                const before = jobs.length;
+                const job = await p.primeRegion([0, 0, W, H], 0);
+                await tick();
+                if (job.live) throw new Error("a prime at level 0 asked the worker for chains");
+                if (jobs.length !== before) throw new Error("a prime at level 0 queued a batch");
+                job.release();
+            }
+            await sch.settled();
+            return { ok: true, levels: [3, 5] };
+        })],
+
         // Whole tiles shared by a tile-aligned "copy" onto pixels that already hold content and a mirror
         // (an undo step put back at the layer origin): the missing source tiles clear, the mirror follows.
         ["tiles_aligned_blit_copy_onto_content", both(async ({ Layer, pair, snap, same }) => {

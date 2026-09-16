@@ -4654,7 +4654,9 @@ class InpaintEditor {
         };
         if (!o.contiguous || Math.max(W, H) <= FLOOD_COARSE_PX) return whole();
         const s = FLOOD_COARSE_PX / Math.max(W, H);
-        const coarse = this.sampleRegion(o.sample, [0, 0, W, H], s);
+        // C6 (c3): the coarse pass reads a level of every tile, and after a whole change it built them all here
+        // (2,360 chains, 460 ms at 15000 x 10000). `floodRegion` is already async and its caller already waits.
+        const coarse = await this.sampleRegionSettled(o.sample, [0, 0, W, H], s);
         const cr = await this.floodShape(coarse, Math.floor(x * s), Math.floor(y * s), { tolerance: o.tolerance, contiguous: true, clip: false });
         if (cr.close) cr.shape.close();
         const pad = Math.ceil(2 / s) + 8;
@@ -4793,6 +4795,90 @@ class InpaintEditor {
      * pointwise layers; a blur in the stack reads the same pixels, and Skia's blur of a smaller canvas comes out up to
      * 1 to 3 levels apart (measured, docs/PLAN_BCE.md §C6 c1).
      */
+    /**
+     * The tile stores a sampled pass over `box` at `scale` would read, each with the level it is read at and the
+     * rectangle of its own pixels the pass shows (C6 c3): the base and every layer the pass draws, with its mask.
+     * The same layers, in the same order, as `drawLayersInto`, and the same level and rectangle as `drawTilesInto`.
+     * A store missed here is not an error - its chains are built where they are read, as they were before - so this
+     * stays a plain walk of the stack rather than a second copy of the pass. A store named here that the pass does
+     * NOT read from tiles is worse than a miss: the read waits for chains nothing uses. So the branches `drawLayer`
+     * takes (a colour match, a live stroke, a mask off the tile grid) are repeated here, and `forRun` defaults the
+     * way `drawLayersInto` defaults it.
+     */
+    passStores(source, box, scale, { forRun = false, upTo = null, baseOnly = false, controlOnly = false } = {}) {
+        const out = [];
+        const vp = { x: box[0], y: box[1], w: box[2] - box[0], h: box[3] - box[1], sx: scale, sy: scale };
+        const add = (px, x, y, w, h) => {
+            if (!px || !isTilePixels(px) || !w || !h) return;
+            const fx = w / px.width, fy = h / px.height;
+            if (!(fx > 0) || !(fy > 0)) return;
+            out.push({ px, level: this.tileLevel(fx * scale), rect: [(vp.x - x) / fx, (vp.y - y) / fy, (vp.x + vp.w - x) / fx, (vp.y + vp.h - y) / fy] });
+        };
+        if (source === "layer") {
+            // the same branch `sampleRegion` takes: the active layer alone, with its mask
+            const l = this.activeLayer();
+            if (l && l.kind !== "filter" && l.px && !this.liveStrokeOn(l) && (!l.maskPx || this.tileMaskOf(l))) {
+                add(l.px, l.x, l.y, l.w, l.h);
+                add(l.maskPx, l.x, l.y, l.w, l.h);
+            }
+            return out;
+        }
+        if (!controlOnly) add(this.basePx, 0, 0, this.width, this.height);
+        const end = baseOnly || controlOnly ? 0 : upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
+        for (let i = 0; i < end; i++) {
+            const layer = this.layers[i];
+            if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
+            if ((!layer.visible && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
+            if (layer.kind === "filter") { add(layer.maskPx, 0, 0, this.width, this.height); continue; }
+            if (forRun && (this.isControl(layer) || this.isReference(layer))) continue;
+            // only the layers `drawLayer` really draws from tiles in a region pass. A colour-matched layer
+            // (`layerMatchedPixels`), a layer under a live paint stroke and one whose mask is not on the same
+            // tile grid are composed from a canvas instead, so priming them would buy a wait and nothing else.
+            const gesture = this.pointer && this.pointer.layer === layer;
+            if (this.matchActive(layer) && !gesture) continue;
+            if (this.liveStrokeOn(layer)) continue;
+            if (layer.maskPx && !this.tileMaskOf(layer)) continue;
+            add(layer.px, layer.x, layer.y, layer.w, layer.h);
+            add(layer.maskPx, layer.x, layer.y, layer.w, layer.h);
+        }
+        return out;
+    }
+
+    /**
+     * Ask the mips worker for every chain a sampled pass over `box` at `scale` needs, and resolve when they have
+     * landed (C6 c3). Resolves with the jobs, whose `release()` the caller owes after the read; resolves at once with
+     * an empty list on the canvas backend, without a worker, or for a pass at level 0 (which reads no chain).
+     */
+    async primePass(source, box, scale, opts = {}) {
+        if (!this.tileMode) return [];
+        // the pass `sampleRegion` really runs is the padded one (it recurses with the wider box), so prime that
+        const pad = source !== "layer" && opts.pad > 0 ? opts.pad : 0;
+        const b = pad ? [box[0] - pad, box[1] - pad, box[2] + pad, box[3] + pad] : box;
+        const stores = this.passStores(source, b, scale, opts);
+        if (!stores.length) return [];
+        const jobs = await Promise.all(stores.map((st) => st.px.primeRegion(st.rect, st.level)));
+        return jobs.filter((j) => j && j.live);
+    }
+
+    /**
+     * `sampleRegion`, with the chains it needs built in the mips worker instead of on this thread (C6 c3). The
+     * picture is `sampleRegion`'s, exactly; what changes is that a read of a document whose tiles have no chain -
+     * every read right after a flip, a filter, a fill or an undo - no longer holds the window for hundreds of
+     * milliseconds. At 15000 x 10000 a 192 px flatten after a flip built 2,088 chains here, 510 ms in one task.
+     *
+     * The caller must be able to wait: the picture arrives a frame or two later than `sampleRegion`'s would, and
+     * the document may have changed meanwhile, exactly as for any other await.
+     */
+    async sampleRegionSettled(source, box, scale, opts = {}) {
+        if (!this.tileMode) return this.sampleRegion(source, box, scale, opts);
+        const jobs = await this.primePass(source, box, scale, opts);
+        try {
+            return this.sampleRegion(source, box, scale, opts);
+        } finally {
+            for (const j of jobs) j.release();
+        }
+    }
+
     readBox(box, { forRun = true, upTo = null } = {}) {
         const reach = this.boxReach(box, { forRun, upTo });
         const o = upTo == null ? { forRun } : { forRun, upTo };
@@ -11294,7 +11380,7 @@ class InpaintEditor {
             into.push({ name, w: c.width, h: c.height, bytes, shared: seen.has(c) });
             seen.add(c);
         };
-        const tileSum = { pixels: 0, tiles: 0, bytes: 0, sharedTiles: 0, chains: 0, chainBytes: 0, mirrors: 0, mirrorBytes: 0, thumbnails: 0, thumbnailBytes: 0, regions: 0, regionBytes: 0 };
+        const tileSum = { pixels: 0, tiles: 0, bytes: 0, sharedTiles: 0, chains: 0, chainBytes: 0, mirrors: 0, mirrorBytes: 0, thumbnails: 0, thumbnailBytes: 0, regions: 0, regionBytes: 0, primedBytes: 0 };
         // the mip chains a tile keeps and its edge copy (C6 b): a buffer a copy on write shares is counted once
         const chainSeen = new Set();
         const addChains = (t) => {
@@ -11322,6 +11408,8 @@ class InpaintEditor {
             if (!isTilePixels(p)) { add(into, name, canvasOf(p)); return; }
             const [n, bytes, old] = newTiles(p);
             tileSum.pixels++; tileSum.tiles += n; tileSum.bytes += bytes; tileSum.sharedTiles += old;
+            // the cells of a primed exact read still in flight (C6 c3); zero unless one is reading right now
+            if (p.primedBytes) tileSum.primedBytes += p.primedBytes();
             into.push({ name, w: p.width, h: p.height, tiles: n, sharedTiles: old, bytes, shared: false });
             const m = p.displayCanvasIfMade();
             if (m && m.width && !seen.has(m)) { tileSum.mirrors++; tileSum.mirrorBytes += px(m); }

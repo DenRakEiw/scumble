@@ -49,6 +49,19 @@ export const CANVAS_MAX_SIDE = 65535;
 const REGION_LEVELS = 2;
 /** The key of the one region canvas kept besides them, for reads that are not for the screen (C6 c1 review). */
 const SAMPLE_REGION = "sample";
+/**
+ * The cells a primed exact read (`primeRegion`, C6 c3) may hold while it waits for the worker: one cell per tile at
+ * the level it reads, which is 579 KB for a whole 15000 x 10000 layer at level 5 and 9.3 MB at level 3. Above this a
+ * read builds its chains itself, as it did before: at level 1 the cells of a whole 15k layer would be 148 MB, and at
+ * that size the picture asked for is a 7500 x 5000 canvas of its own anyway.
+ */
+const PRIME_CELL_BUDGET = 48 * 1024 * 1024;
+/**
+ * The cells every primed read in flight has promised together. One pass primes every store it reads at once (a
+ * document with a base and five layers is six of them), and a second read may be in flight beside it, so the budget
+ * has to be counted across them and not per store.
+ */
+let primedPromised = 0;
 /** Mips per tile: 128, 64, 32, 16, 8 px. */
 export const MIP_LEVELS = 5;
 /** The gutter a tile carries in an atlas slot, on every side (docs/PLAN_BCE.md §C3). */
@@ -97,9 +110,10 @@ let chainSeq = 0;                  // a stamp per chain content: a slot or a cel
 let chainEpochSeq = 0;             // a pixels object's chainEpoch: moved when a chain from the worker lands in it
 /**
  * How many chains were built where (tests, perf_test.py): `main` on this thread and kept, `landed` from the worker,
- * `handed` of those given to a thumbnail and not kept, `thumb` a thumbnail's levels built into a scratch.
+ * `handed` of those given to a thumbnail or to a primed read and not kept, `thumb` a thumbnail's levels built into
+ * a scratch, `primed` the cells a primed read took from a handed chain (C6 c3).
  */
-const CHAIN_STATS = { main: 0, landed: 0, handed: 0, dropped: 0, requested: 0, batches: 0, coarse: 0, thumb: 0 };
+const CHAIN_STATS = { main: 0, landed: 0, handed: 0, dropped: 0, requested: 0, batches: 0, coarse: 0, thumb: 0, primed: 0 };
 let THUMB_MIPS = null;             // thumbnailCanvas: the levels of a tile that keeps no chain of its own
 const thumbScratch = () => THUMB_MIPS || (THUMB_MIPS = new Uint8Array(mipChainBytes(TILE_SIZE, MIP_LEVELS)));
 
@@ -228,20 +242,21 @@ export class ChainScheduler {
 
     /**
      * Ask for the chains of `t` (at its version, with the edge chain for a valid part of vw x vh) for `store` at `key`.
-     * `screen`: a reader of the screen asks (the atlas, a region canvas), and the chain is kept on the tile. A
-     * thumbnail's ask alone (false) keeps nothing on a tile that has no chain buffer of its own: the chain is handed to
-     * the thumbnail's cell and dropped, because a hidden layer, or one only ever seen at 1:1, kept a chain on every
+     * `screen`: a reader of the screen asks (the atlas, a region canvas), so the landing moves the pixels' `chainEpoch`
+     * and the screen draws again. `keep` (by default the same): the chain is kept on the tile. A thumbnail's ask alone,
+     * and a primed exact read's (C6 c3), keep nothing on a tile that has no chain buffer of its own: the chain is handed
+     * to the reader's cell and dropped, because a hidden layer, or one only ever seen at 1:1, kept a chain on every
      * tile for a picture of 40 px (196 MB a layer at 15000 x 10000: the C6 b review).
      *
      * An entry asked for again while it waits goes to the end of the queue, and the queue is flushed newest first: the
      * tiles the screen still shows go before the ones of pixels a later whole change replaced, which nothing asks
      * for any more (a flip after a flip waited for the first flip's chains: the C6 b review).
      */
-    request(store, key, t, vw, vh, screen = true) {
+    request(store, key, t, vw, vh, screen = true, keep = screen) {
         if (t.wantV === t.version && t.wantW === vw && t.wantH === vh && t.wantEntry) {
             // queued or in flight: its landing tells every store that asked (the first one inline, a rare second in `more`)
             const f = t.wantEntry;
-            if (screen) f.keep = true;
+            if (keep) f.keep = true;
             if (this.queue.get(t) === f) { this.queue.delete(t); this.queue.set(t, f); }
             if (f.store === store && f.key === key) { if (screen) f.screen = true; return; }
             if (!f.more) f.more = [];
@@ -249,7 +264,7 @@ export class ChainScheduler {
             f.more.push(store, key, screen);
             return;
         }
-        const e = { t, version: t.version, vw, vh, store, key, screen, keep: screen, more: null };
+        const e = { t, version: t.version, vw, vh, store, key, screen, keep, more: null };
         t.wantV = t.version; t.wantW = vw; t.wantH = vh;
         t.wantEntry = e;
         this.queue.set(t, e);
@@ -815,11 +830,114 @@ const tiled = (Base) => class extends Base {
                 th.cells.set(key, { version, bytes: handed.slice(at, at + th.cell * th.cell * 4) });
             }
         }
+        if (this._primed) for (const job of this._primed) job.landed(key, handed, version);
         if (this._regions) for (const rc of this._regions.values()) if (rc.stale.delete(key)) rc.dirty.add(key);
     }
 
     /** The scheduler of these pixels' chains: their own when a test gave them one, else the module's. */
     _scheduler() { return this._chains || CHAINS; }
+
+    /**
+     * Ask the worker for the chains an exact read of `rect` at `level` needs, and resolve when they have landed
+     * (C6 c3, docs/PLAN_BCE.md §C6). Before this, every exact read built them here: a 192 px picture of a
+     * 15000 x 10000 document right after a flip built 2,088 chains on the main thread, 510 ms in one task, and left
+     * 185 MB of them on the tiles.
+     *
+     * The chains are not kept. Each one is handed over at its landing (`request` with `keep` false) and only the
+     * level this read wants is sliced out of it into the job's cell, which `_levelBytes` then reads: 256 bytes a tile
+     * at level 5 against 87 KB for the chain. The last tile of a row or a column is left out, because its chain is
+     * the clamp-extended `edgeChain` and the worker's `exts` are never handed over; there are 98 of those against
+     * 2,262 interior tiles at 15000 x 10000 (13 ms), and the read builds them itself, exactly as before.
+     *
+     * Resolves with the job, whose `release()` gives the cells back: pass it to `regionCanvas` through `_primed`,
+     * which is where it already sits. Resolves at once, with a job that holds nothing, when there is no transport
+     * (no worker, or one that failed), at level 0 (no chain is read there), or when the cells would cost more than
+     * `PRIME_CELL_BUDGET`: the read then builds what it needs, as before.
+     */
+    primeRegion(rect, level) {
+        this._guard();
+        level = Math.max(0, Math.min(MIP_LEVELS, level | 0));
+        const sch = this._scheduler();
+        const r = level > 0 && sch.async ? pixelRect(rect, this._w, this._h) : null;
+        if (!r) return Promise.resolve(this._newPrime(level, null));
+        const cell = TILE_SIZE >> level;
+        const lastX = (this._w - 1) >> 8, lastY = (this._h - 1) >> 8;
+        // one tile of margin on each side, because that is the range `regionCanvas` allocates and fills
+        const tx0 = Math.max(0, (r[0] >> 8) - 1), ty0 = Math.max(0, (r[1] >> 8) - 1);
+        const tx1 = Math.min(lastX, ((r[2] - 1) >> 8) + 1), ty1 = Math.min(lastY, ((r[3] - 1) >> 8) + 1);
+        const want = [];
+        for (let ty = ty0; ty <= ty1; ty++) {
+            const vh = Math.min(TILE_SIZE, this._h - (ty << 8));
+            for (let tx = tx0; tx <= tx1; tx++) {
+                // an edge tile's chain is the clamp-extended one, which the worker's `exts` are never handed over
+                // for: built where it is read. This is `_levelBytes`'s own test - a picture whose size is a whole
+                // number of tiles has no edge tile in its last row or column.
+                const vw = Math.min(TILE_SIZE, this._w - (tx << 8));
+                if (vw < TILE_SIZE || vh < TILE_SIZE) continue;
+                const key = (ty << 16) | tx;
+                const t = this._tiles.get(key);
+                if (!t || (t.mipsVersion === t.version && t.mips)) continue;
+                want.push(key, t);
+            }
+        }
+        const promised = (want.length / 2) * cell * cell * 4;
+        if (!want.length || primedPromised + promised > PRIME_CELL_BUDGET) return Promise.resolve(this._newPrime(level, false));
+        const job = this._newPrime(level, true);
+        job.promised = promised;
+        primedPromised += promised;
+        for (let i = 0; i < want.length; i += 2) {
+            const key = want[i], t = want[i + 1];
+            job.want.add(key);
+            // `screen` false: the landing must not move `chainEpoch` (nothing on the screen changes) and must not
+            // drop the screen's view caches. `keep` false: the chain is handed over and dropped.
+            sch.request(this, key, t, TILE_SIZE, TILE_SIZE, false, false);
+        }
+        // A landing that never reaches this job leaves it waiting for ever: `_notify` drops one whose tile the store
+        // has replaced since (a copy on write), and a scheduler whose transport fails drains its queue. So the job is
+        // also done when nothing is on its way any more, and the read builds what did not arrive, as before.
+        sch.settled().then(() => { job.want.clear(); job.check(); });
+        job.check();   // every ask may have been answered inline (a scheduler that was already flushing)
+        return job.done;
+    }
+
+    /**
+     * The job `primeRegion` hands back. `live` false for one that asks for nothing (no worker, level 0, over budget):
+     * it holds no cells, is not installed, and its promise is already resolved.
+     */
+    _newPrime(level, live) {
+        const px = this;
+        const job = {
+            level, cells: new Map(), want: new Set(), bytes: 0, promised: 0, live, done: null, _resolve: null,
+            /** A chain of `key` landed (or its ask ended): keep the level this job reads, and settle when the last one is in. */
+            landed(key, handed, version) {
+                if (!this.want.delete(key)) return;
+                if (handed && this.level > 0) {
+                    const n = (TILE_SIZE >> this.level) * (TILE_SIZE >> this.level) * 4;
+                    const at = mipChainBytes(TILE_SIZE, this.level - 1);
+                    this.cells.set(key, { version, bytes: handed.slice(at, at + n) });
+                    this.bytes += n;
+                    CHAIN_STATS.primed++;
+                }
+                this.check();
+            },
+            check() { if (!this.want.size && this._resolve) { const f = this._resolve; this._resolve = null; f(this); } },
+            /** The cells go, and the job stops being one `_levelBytes` reads. */
+            release() {
+                this.cells.clear();
+                this.want.clear();
+                this.bytes = 0;
+                primedPromised -= this.promised;
+                this.promised = 0;
+                if (px._primed) { px._primed.delete(this); if (!px._primed.size) px._primed = null; }
+            },
+        };
+        if (!live) { job.done = Promise.resolve(job); return job; }
+        job.done = new Promise((res) => { job._resolve = res; });
+        // a Set, not one slot: a second read (the film panel's while the glb dialog's backdrop is on its way) must
+        // not take the first one's landings away and leave it waiting
+        (this._primed || (this._primed = new Set())).add(job);
+        return job;
+    }
 
     // -- tiles --
 
@@ -890,6 +1008,17 @@ const tiled = (Base) => class extends Base {
         if (!level) return { data: edge ? edgeCopy(t, vw, vh).data : t.data, off: 0, stamp: t.version };
         const off = mipChainBytes(TILE_SIZE, level - 1);
         if (edge ? edgeExact(t, vw, vh) : t.mipsVersion === t.version && t.mips) return { data: edge ? t.edge.mips : t.mips, off, stamp: t.version };
+        // C6 (c3): the level of a chain the worker built for a primed read, handed over at its landing and not kept
+        // on the tile. Exact, so its stamp is the tile's version; a write since then moved that version and the read
+        // below builds the chain itself, as it did before the prime. Only an exact read sees it: `_stampAt` takes the
+        // display decision without the cells, and a slot the atlas built from one would read stale at the next frame.
+        if (this._primed && !edge && !display) {
+            for (const job of this._primed) {
+                if (job.level !== level) continue;
+                const c = job.cells.get((ty << 16) | tx);
+                if (c && c.version === t.version) return { data: c.bytes, off: 0, stamp: t.version };
+            }
+        }
         if (display) {
             const sch = this._scheduler();
             if (!sch.mayBuild(t, vw, vh)) {
@@ -1768,6 +1897,13 @@ const tiled = (Base) => class extends Base {
             rc.dirty.clear();
         }
         return { canvas: rc.canvas, x: rc.x, y: rc.y, f };
+    }
+
+    /** The bytes the cells of the primed reads in flight hold (memoryReport, the gates); 0 when none is (C6 c3). */
+    primedBytes() {
+        let bytes = 0;
+        if (this._primed) for (const job of this._primed) bytes += job.bytes;
+        return bytes;
     }
 
     /** The region canvases that were made (memoryReport); an empty array when none. */

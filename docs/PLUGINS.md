@@ -93,7 +93,7 @@ One tab. Pixel access is ImageData in and out; every write is one undo step.
 | `run(name, args)` | a command on this document |
 | `layers()`, `layer(key)`, `activeLayer()` | summaries: `{ id, name, kind, visible, opacity, blend, x, y, w, h, locked, mask, filter, params, text, ... }` |
 | `rawLayer(key)` | the editor's layer object (`px`, `maskPx`, params ...); unstable, see "Layer pixels" below |
-| `flatten({ maxSize, box, below, pad, exact })` | the visible picture as a canvas at image size; `maxSize` (long side) or `box` (`[x0, y0, x1, y1]`) composite only that size or part, which a thumbnail or a colour sample should ask for. `below` (a layer key): the layers under that layer only, the picture a filter layer there takes as its input. `pad` (with `box`): the box is composited with that many pixels of its surroundings, so a filter that reads its neighbours sees them; the canvas is still the box (with `maxSize` the margin is rounded up to whole pixels of that canvas). `exact` (with `box`, no `maxSize`): the box's pixels as the full-resolution flatten has them (see "Reading a part of the picture" below) |
+| `flatten({ maxSize, box, below, pad, exact, settled })` | the visible picture as a canvas at image size; `maxSize` (long side) or `box` (`[x0, y0, x1, y1]`) composite only that size or part, which a thumbnail or a colour sample should ask for. `below` (a layer key): the layers under that layer only, the picture a filter layer there takes as its input. `pad` (with `box`): the box is composited with that many pixels of its surroundings, so a filter that reads its neighbours sees them; the canvas is still the box (with `maxSize` the margin is rounded up to whole pixels of that canvas). `exact` (with `box`, no `maxSize`): the box's pixels as the full-resolution flatten has them (see "Reading a part of the picture" below). `settled` (with `maxSize` or `box`): **the call returns a promise** of the same canvas, with the mip levels it reads built in the app's worker instead of on your thread (see "A picture that does not freeze the window" below) |
 | `getPixels()` | `{ data: ImageData, x: 0, y: 0, w, h }` of the flattened picture |
 | `getPixels(layer)` | the layer's own pixels (unmasked) plus its placement `x, y, w, h` in image pixels; `w, h` differ from the ImageData size when the layer is scaled |
 | `setPixels(layer, imageData, { undo = true })` | write a layer's pixels back (same size, or the pixels are replaced and the placement kept); filter and locked layers refuse |
@@ -134,6 +134,33 @@ point from `flatten({ box, below: <the points layer>, exact: true })`; the sampl
 `mean_color` and *Selection to new layer* read the selection's bounds with `exact: true`, and its
 probe tool one 256 px square per square the cursor enters. `flatten()` without options and
 `getPixels()` are unchanged: the whole picture at full resolution.
+
+### A picture that does not freeze the window (0.1.15)
+
+`flatten({ maxSize })` and `flatten({ box })` composite at a mip level of the layers. When a tile
+has no level yet — which is every tile of a layer right after a flip, a turn, a filter, a fill, an
+undo or a fresh result — that level is built where it is read. On a 15000 × 10000 picture that is
+2,088 chains and **half a second in one task**: the window does not repaint, the cursor does not
+move, and 185 MB of levels are left on the tiles afterwards.
+
+**`settled: true` makes the call a promise** and has the app's worker build those levels instead:
+
+```js
+const flat = await scumble.doc.flatten({ maxSize: 192, settled: true });
+```
+
+Measured at 15000 × 10000, right after a flip: the main thread is held **46 ms instead of 700**,
+and 33 MB of levels are kept instead of 221. The picture arrives about half a second later in wall
+clock, and it is the same picture, byte for byte. Ask for it wherever you can await:
+
+- the document may have changed by the time it resolves — check what you need again after the
+  await, exactly as after any other one;
+- if your panel guards itself with a `busy` flag, hold that flag **across** the await, or a second
+  change will start a second render into the same canvases (the film looks panel does this);
+- without the tile engine, at scale 1, and in a build with no worker the promise resolves with the
+  same canvas the synchronous call would have given, so the option is always safe to pass.
+
+The built-in plugins use it: the film looks panel's thumbnails and the GLB dialog's backdrop.
 
 ### Layer pixels (0.1.12)
 

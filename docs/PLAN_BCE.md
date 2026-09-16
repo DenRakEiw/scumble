@@ -2731,6 +2731,84 @@ a display mirror, a `_masked` canvas or a Skia pyramid on tiles, one commit each
   canvases of 46.1 MB, 5.3 MB of pyramids). Two more pairs of perf runs on the tree before and this one, alternating: see the review fixes
   under (c1).
 
+#### C6 (c3) and slice 4 as built (2026-09-16): a read that has the worker build its levels
+
+Slice 3 of `dist/c6map/c/critic.md` §5 ("a one-shot exact reader in `inpaint_tiles.js`") and slice 4 ("async readers on
+slice 3"), built together because slice 3 alone moves no row: nothing in the tree would have called it.
+
+**What it was.** `sampleRegion` at a level — the film looks panel's 192 px thumbnails, the GLB dialog's backdrop, the
+magic wand's coarse pass — runs `drawTilesInto` with `display` false, and `_levelBytes` then builds every missing mip
+chain with `plainChain` **on the main thread** and keeps it on the tile. Measured on a synthetic 15000 x 10000 document
+(three stores: the base and two full-size paint layers), each row right after a flip of one paint layer, so that layer's
+tiles have no chain:
+
+| read | in one task | chains built here | chains left on the tiles |
+|---|---|---|---|
+| `flatten({ maxSize: 192 })`, level 5 | 509.7 ms | 2,088 | +185.5 MB |
+| `flatten({ maxSize: 1024 })`, level 3 | 611.6 ms | 2,360 | +221 MB |
+| `sampleRegion` at 256 px | 463.6 ms | 2,360 | +221 MB |
+| `readBox` 1000 x 1000 at level 0 (the control) | 62.6 ms | 0 | 0 |
+
+After the four rows the document held **669 MB** of chains that nothing on the screen wanted.
+
+**What was built.**
+- `TilePixels.primeRegion(rect, level)` asks the scheduler for the chains of the **interior** tiles of the range, with
+  `screen` false (the landing must not move `chainEpoch` or drop the screen's view caches) and `keep` false (the chain is
+  handed over and dropped). `request(store, key, t, vw, vh, screen, keep)` took `keep` as a parameter for this; it was a
+  field derived from `screen` before.
+- Each landing reaches the job through `_chainLanded`, which slices **only the level the read wants** out of the handed
+  chain into a cell: 256 bytes a tile at level 5 against 87 KB for the chain. `_levelBytes` reads those cells, for
+  **exact reads only** — a display read has to take the same decision `_stampAt` takes, or the atlas would build a slot
+  from a cell under a stamp that reads stale at the very next frame (a counter-proof covers it).
+- **The edge tiles are left out on purpose.** Their chain is the clamp-extended `edgeChain`, and `_land` never hands the
+  worker's `exts` over (it installs them or drops them). There are 98 of them against 2,262 interior tiles at 15k, about
+  13 ms, and leaving them on the old path is what makes the primed read byte-identical to the read before it.
+- `_primed` is a **Set** of jobs, not one slot: a second read (the film panel's while the GLB backdrop is on its way)
+  must not take the first one's landings away and leave it waiting. A job also settles on `sch.settled()`, because a
+  landing whose tile the store has replaced since is dropped by `_notify` and would otherwise never reach it.
+- `PRIME_CELL_BUDGET` is 48 MB of cells: 579 KB for a whole 15k layer at level 5, 9.3 MB at level 3, but 148 MB at
+  level 1, where the picture asked for is a 7500 x 5000 canvas of its own anyway. Over the budget the read builds its
+  chains itself, as before.
+- Editor side: `passStores(source, box, scale, opts)` (the stores a pass reads, with the level and rectangle each is read
+  at), `primePass`, and `sampleRegionSettled`, which primes, awaits and then runs the ordinary `sampleRegion`.
+- Plugin side: `Document.flatten({ settled: true })` returns a promise (`docs/PLUGINS.md`, "A picture that does not
+  freeze the window"). The film looks panel's `render()` is async and holds its `busy` flag across the await; the GLB
+  dialog opens at once and fills its backdrop when it arrives; `floodRegion`'s coarse pass awaits.
+
+**After**, same document, same method:
+
+| read | held the main thread | wall clock | chains left |
+|---|---|---|---|
+| `flatten({ maxSize: 1024 })`, level 3 | **46.6 ms** (was 700.6) | 1193 ms | **+32.7 MB** (was 221) |
+| the flood's coarse pass at 256 px | **95.2 ms** (was 621.3) | 1217 ms | **+32.7 MB** (was 221) |
+
+The trade is explicit: the window keeps repainting, and the picture arrives about half a second later.
+
+**The picture is the same picture.** Against a full-resolution `flattenToCanvas` scaled down, in one state, at
+2048 x 1152 and at 15000 x 10000 and at levels 3 and 5: `settled` and `sampleRegion` differ by **0 bytes**, and both are
+the same 2 to 73 levels from the scaled flatten (the mip chain against Skia's downscale, which is older than this step).
+
+**Gates.** `pixels_test.js` `tiles_primed_exact_read_builds_no_chain_here` (levels 3 and 5 on a 1100 x 900 store with a
+fake transport: 12 interior tiles asked for, 12 cells, byte-equal to the exact read, 8 edge chains built here, no chain
+kept on an interior tile, `chainEpoch` unmoved, the cells released; plus a tile that owns a stale buffer, a write after
+the landing, the atlas's stamp, no transport, level 0). `editor_test.py`
+`a_settled_read_builds_its_levels_in_the_worker_not_here` (a 3000 x 2000 document: the same picture byte for byte, 6
+chains built here against 76 primed, no mirror, no cells left, and the plugin API's promise).
+
+**Six mutations, each red** (and this is where a trap sits: **the renderer caches the ES module it imported at start**,
+so a mutation only reaches a gate through a *fresh instance*. The first round patched the file with the app running and
+all five mutations came out green, which proved nothing):
+- the prime asks with `screen = true` → "the prime moved chainEpoch";
+- the prime keeps the chains → "0 cells, expected 12";
+- the cell is cut out one level off → the typed-array length;
+- the edge tiles are primed too → "20 tiles asked for, expected the 12 interior ones";
+- the cell's version is not checked against the tile's → a write after the landing is not seen;
+- the primed cells are visible to a display read → "a display read and the atlas disagree: 1219 against -1219.5".
+
+**What this does not do.** The whole-flatten readers (`promptContextCanvas`, `screenshot`, the helper inputs, exports and
+runs) are slices 5 and 6 and phase E; the colour-match work is slice 7. A read at level 0 primes nothing, because it
+reads no chain: `readBox`'s 62.6 ms at 15k is composition, not levels.
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in
