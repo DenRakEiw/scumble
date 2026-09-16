@@ -3487,6 +3487,115 @@ try {
 ed.clearUndo();
 return out;
 """),
+    ("undo_steps_share_whole_tiles_and_let_them_go", """
+// C4: a stroke's undo step was a copy of the box at floor(x) - 2, and a copy shares a tile only when it starts on the
+// tile's corner, so the step copied every tile the box overlapped; the redo copy grew by 6 px per round trip; and no
+// discarded step ever put a tile's `frozen` count down, so the document copied tiles on its next write for nothing. On
+// tiles the box is whole tiles now, a discarded step releases its own copies, and a restore that takes a step's pixels
+// takes them out of the step first. Pixels on both backends; the tile counts on tiles.
+await run("new_canvas", { width: 4000, height: 3000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const W = ed.width, H = ed.height, TS = 256;
+ed.clearUndo();
+const L = ed.addPaintLayer();
+L.px.drawInto(null, (x) => { const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#205080"); g.addColorStop(1, "#c08040"); x.fillStyle = g; x.fillRect(0, 0, W, H); });
+ed.markLayerChanged(L);
+ed.clearUndo();
+const out = { tiles: !!ed.tileMode };
+const all = () => L.px.readRect(0, 0, W, H).data;
+const same = (a, b) => { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i += 97) if (a[i] !== b[i]) return false; return true; };
+const stroke = (i) => {
+    const bx = 150 + (i * 353) % (W - 400), by = 120 + (i * 211) % (H - 300), bw = 90 + (i % 5) * 20, bh = 60 + (i % 4) * 15;
+    const snap = ed.snapshotRect(L, { x: bx, y: by, w: bw, h: bh });
+    const shotBefore = ed.tileMode ? snap.px.tileList().every((t) => L.px.tileList().includes(t)) : true;
+    L.px.drawInto([bx, by, bx + bw, by + bh], (x) => { x.fillStyle = `hsl(${i * 37},80%,50%)`; x.fillRect(bx, by, bw, bh); });
+    ed.markLayerChanged(L, [bx, by, bx + bw, by + bh]);
+    ed.pushUndoSnapshot(snap);
+    return { snap, shared: shotBefore, box: [bx, by, bw, bh] };
+};
+// (o) a step that shares tiles and is dropped without a write: their frozen count goes back down
+if (ed.tileMode) {
+    const box = [1000, 1000, 1600, 1500];
+    const inBox = () => L.px.tileList().filter((t) => t.frozen > 0).length;
+    ed.pushUndoSnapshot(ed.snapshotRect(L, { x: box[0], y: box[1], w: box[2] - box[0], h: box[3] - box[1] }));
+    const held = inBox();
+    ed.clearUndo();
+    out.dropped = { frozenWhileHeld: held, afterClear: inBox() };
+    if (!held) throw new Error("the step froze no tile, so this proves nothing");
+    if (out.dropped.afterClear) throw new Error("a dropped step left " + out.dropped.afterClear + " tiles frozen");
+}
+// (i) one stroke: the step shares the tiles until the stroke writes, then holds exactly the originals of the tiles it touched
+const s0 = all();
+const first = stroke(0);
+if (ed.tileMode) {
+    if (!first.shared) throw new Error("the stroke's undo copy did not share the layer's tiles");
+    const { snap } = first;
+    if (snap.x % TS || snap.y % TS) throw new Error("the undo box is not on the tile grid: " + [snap.x, snap.y]);
+    const live = new Set(L.px.tileList());
+    const own = snap.px.tileList().filter((t) => !live.has(t)).length;
+    const [bx, by, bw, bh] = first.box;
+    const touched = (Math.floor((bx + bw - 1) / TS) - Math.floor(bx / TS) + 1) * (Math.floor((by + bh - 1) / TS) - Math.floor(by / TS) + 1);
+    out.first = { own, touched, stepTiles: snap.px.tileList().length };
+    if (own !== touched) throw new Error("the step holds " + own + " tiles of its own, the stroke touched " + touched);
+}
+// (ii) 29 more strokes: the steps hold only touched tiles
+const strokes = [first];
+for (let i = 1; i < 30; i++) strokes.push(stroke(i));
+const s30 = all();
+if (ed.tileMode) {
+    const live = new Set(L.px.tileList());
+    const held = new Set();
+    for (const st of ed.undo) if (st && st.px) for (const t of st.px.tileList()) if (!live.has(t)) held.add(t);
+    const touched = new Set();
+    for (const { box: [bx, by, bw, bh] } of strokes) for (let ty = Math.floor(by / TS); ty <= Math.floor((by + bh - 1) / TS); ty++) for (let tx = Math.floor(bx / TS); tx <= Math.floor((bx + bw - 1) / TS); tx++) touched.add(ty * 1000 + tx);
+    out.thirty = { held: held.size, touchedTiles: touched.size, layerTiles: live.size };
+    // a tile touched by several strokes is held once per stroke that copied it: never more than the strokes' touches
+    const touches = strokes.reduce((a, { box: [bx, by, bw, bh] }) => a + (Math.floor((bx + bw - 1) / TS) - Math.floor(bx / TS) + 1) * (Math.floor((by + bh - 1) / TS) - Math.floor(by / TS) + 1), 0);
+    if (held.size > touches) throw new Error("30 steps hold more tiles than the strokes touched: " + JSON.stringify({ ...out.thirty, touches }));
+}
+// (iii) undo all 30, redo all 30: the pixels, and redo boxes that do not grow
+const boxes = ed.undo.slice(-30).map((st) => [st.x, st.y, st.w, st.h].join(","));
+for (let i = 0; i < 30; i++) await ed.undoStep();
+if (!same(all(), s0)) throw new Error("30 undos did not bring the layer back");
+for (let i = 0; i < 30; i++) await ed.redoStep();
+if (!same(all(), s30)) throw new Error("30 redos did not bring the strokes back");
+for (let i = 0; i < 30; i++) await ed.undoStep();
+for (let i = 0; i < 30; i++) await ed.redoStep();
+const boxes2 = ed.undo.slice(-30).map((st) => [st.x, st.y, st.w, st.h].join(","));
+out.boxesKept = boxes.join("|") === boxes2.join("|");
+if (!out.boxesKept) throw new Error("two undo / redo round trips changed the steps' boxes: " + boxes.slice(0, 3) + " -> " + boxes2.slice(0, 3));
+if (!same(all(), s30)) throw new Error("the second round trip lost the strokes");
+// (iv) the steps left untouched by writes into the layer: undo 10, write over the whole layer, the 10 redo steps still redo
+for (let i = 0; i < 10; i++) await ed.undoStep();
+const redoCopies = ed.redo.map((st) => st.px ? st.px.readRect(0, 0, st.px.width, st.px.height).data : null);
+L.px.drawInto(null, (x) => { x.fillStyle = "rgba(255,255,255,0.3)"; x.fillRect(0, 0, W, H); });
+ed.markLayerChanged(L);
+const redoAfter = ed.redo.map((st) => st.px ? st.px.readRect(0, 0, st.px.width, st.px.height).data : null);
+// (a write clears the redo stack in the editor's own paths; here it is written directly, so the steps are still there)
+out.redoKept = redoCopies.every((c, i) => !c || same(c, redoAfter[i]));
+if (!out.redoKept) throw new Error("a write into the layer changed the pixels an undo step holds (a shared tile written in place)");
+// (v) the history dropped: no tile of the layer or the selection stays frozen
+ed.clearUndo();
+if (ed.tileMode) {
+    const frozen = [...L.px.tileList(), ...ed.sel.tileList()].filter((t) => t.frozen > 0).length;
+    out.frozenAfterClear = frozen;
+    if (frozen) throw new Error(frozen + " tiles stay frozen after the history is gone");
+}
+// (vi) a selection step and a crop's canvas step: undo puts the selection back
+await run("select_rect", { x: 500, y: 400, w: 900, h: 700, doc: window.__t });
+const sb = JSON.stringify(ed.getBounds());
+await ed.cropCanvas({ left: -100, top: -50, right: 0, bottom: 0 });
+await ed.undoStep();
+out.selectionAfterCropUndo = [sb, JSON.stringify(ed.getBounds())];
+if (JSON.stringify(ed.getBounds()) !== sb) throw new Error("the undo of a crop did not put the selection back: " + JSON.stringify(out.selectionAfterCropUndo));
+await ed.redoStep(); await ed.undoStep();
+if (JSON.stringify(ed.getBounds()) !== sb) throw new Error("a second undo of the crop lost the selection");
+await run("select_none", { doc: window.__t });
+await run("remove_layer", { layer: L.id, doc: window.__t });
+ed.clearUndo();
+return out;
+"""),
     ("stroke_buffers_cover_the_gesture_not_the_layer", """
 // Phase A item 2 (docs/PLAN_TILES.md): a stroke's buffer and its selection clip cover what the
 // gesture touched, not the layer; the live preview is refreshed inside the dab's rectangle; the

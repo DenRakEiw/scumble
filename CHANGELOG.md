@@ -24,6 +24,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   then decoded the old picture again, half a second or more. The picture is now kept once, an undo puts it straight
   back, and a crop with the tile engine on shares the unchanged parts of the picture instead of copying them. A resized
   picture can come out up to a few levels different from before (a different, equally fine resampler).
+- **Brush strokes and selections keep less in the undo history.** With the tile engine on, the undo step of a stroke
+  copied every 256-pixel block its rectangle overlapped, even the parts the stroke never changed, and blocks a
+  discarded step had shared stayed marked as shared, so the next stroke copied them again. A step now keeps only the
+  blocks the stroke really changed, and undoing a stroke on a 15000 × 10000 picture takes about 26 ms instead of 43.
 
 ## 0.1.15 — 2026-09-16
 

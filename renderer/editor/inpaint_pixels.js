@@ -387,6 +387,9 @@ export class LayerPixels {
         return new this.constructor(c);
     }
 
+    /** Nothing to let go of on a canvas: the copy is dropped with the object (the tile backend counts its shared tiles, C4). */
+    release() {}
+
     clone() {
         this._guard();
         const c = makeCanvas(this.width, this.height);

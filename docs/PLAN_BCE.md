@@ -1368,6 +1368,54 @@ crop, filter), `commands_test.py` undo/redo, `shape_test.py`; `perf_test.py` row
 ms and selection change ≤ 5 ms at 15k; a 30-step stroke history on a 15k layer holds only
 the touched tiles (`memoryReport().undo`).
 
+#### C4 as built (2026-09-16): undo steps share whole tiles and let them go
+
+C2 had already replaced the undo steps' PNGs with copy-on-write clones on tiles, so what §C4 above describes was mostly
+there; `dist/c6map/critic.md` (WRONG, the `snapshotRect` item; MISSED, the redo copy) named what was left.
+
+**Before.**
+- `snapshotRect` put its box at `floor(x) - 2`, and `copyRect` shares a tile only when the copy starts on the tile's
+  corner: a stroke's step copied every tile its box overlapped into a new one. The same for a selection step's extent.
+- The redo (and undo) copy of a `layerrect` step was taken again through the padded box: it grew by 6 px per round trip.
+- Nothing ever put a tile's `frozen` count down. A tile a step had shared once stayed frozen after the step was gone, and
+  the document's next write into it copied the whole tile for nothing.
+
+**What was built.**
+- `inpaint_tiles.js` `release()`: every tile's `frozen` down by one, the map emptied. `inpaint_pixels.js` has a no-op.
+- `releaseSnapshot` releases a step's own `px`, `maskPx`, `selPx`. The restores that put a step's pixels into the
+  document take them out of the step first: a canvas step's selection, a mask step, a text step, a `layerfull` step.
+  A `layers` / `canvas` step's layers and base are the document's objects by reference and are never released.
+- `snapshotRect` on tiles grows its box to whole tiles; `snapshotRect(..., exact)` takes a step's box as it is (the copy
+  `historyStepNow` takes for the other stack). `snapshotSelection` on tiles grows the extent to whole tiles too.
+
+**After.** In a 4000 x 3000 layer: a stroke's step shares the layer's tiles until the stroke writes, then holds exactly the
+originals of the tiles it touched (1 for 1); 30 strokes hold 58 tiles for 56 touched tiles (a tile two strokes touched is
+held by both); two undo / redo round trips keep every box; a dropped step that froze 12 tiles leaves none frozen.
+`perf_test.py 15000x10000` A/B in one session: "undo step" 43.0 → 25.6 / 26.3 ms, "stroke commit" 17.7 → 16.2 / 20.0,
+"selection change" 20.0 → 20.7 / 21.3; "undo of that fill" read 37 → 361 → 29 ms over the before and two after runs (the
+row that swung the same way in 7b's runs), the rest within noise. **§C4's gate bound (undo and selection change at most
+5 ms at 15k) is not met and does not fit the rows:** "selection change" writes a third of the picture (5000 x 3333 px)
+into the mask, and "undo step" awaits the history queue and its frame. Not broken down further.
+
+**Gate.** `editor_test.py` `undo_steps_share_whole_tiles_and_let_them_go` (the pixels on both backends, the tile counts on
+tiles): (o) a dropped step leaves no tile frozen; (i) one stroke's step shares, is on the tile grid and holds exactly the
+touched tiles after the write; (ii) 30 strokes hold no more tiles than they touched; (iii) 30 undos, 30 redos and a second
+round trip give the pixels back and keep the boxes; (iv) a write into the layer leaves the pixels the redo steps hold;
+(v) no tile of the layer or the selection frozen after the history is gone; (vi) the undo of a crop, twice, puts the
+selection back. Five mutations, each red (fresh instances): no alignment ("did not share"), `release()` a no-op ("left 12
+tiles frozen"), the redo copy not exact (the boxes grew to 1280 x 1280 and more), a canvas step's selection left in the step
+("a second undo of the crop lost the selection"), a mask step's mask left in the step (`editor` in full:
+`a_new_mask_and_a_neighbours_write_reach_the_screen`, "the first mask back: the screen shows nothing").
+
+**Runs:** `s4-all-tiles` (editor pixels composite shape brush film glb ailabel size transparent generate log mcp llm toapis
+nodecopy): all PASS but `editor`, `closed_tabs_are_collected` `[false, false, false, true]` (the known flake; its third
+appearance on 2026-09-16), `s4-editor-tiles2` PASS; `s4-all-canvas` (editor pixels composite film glb mcp shape brush) ALL
+PASS.
+
+**Left:** `pointer.orig` of a selection move and `layer._textUndo` still hold clones that are never released (too high a
+count only costs a copy). The memory report still does not count `t.mips`, `t.edge`, `THUMB_MIPS`, `PREMUL` or the
+compositor's `tileBufs` (critic MISSED).
+
 ### C5. Painting into a stroke store, the selection as mask tiles (1 week)
 
 - `StrokeBuffer` becomes a sparse `LayerPixels` at the target's resolution (`p.stroke`);

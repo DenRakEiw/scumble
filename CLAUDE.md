@@ -109,8 +109,8 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
 4. **C6 (d) is built** (2026-09-16, `docs/PLAN_BCE.md` §C6 "C6 (d) as built"): the base is `{ ref, px }`, no <img>.
 5. **The object tool's bigger change A** (`dist/c6map/c/objects.md` §7 to §9: the image-size label map, the per-object
    shape canvases): ask the user where it goes.
-6. **C4 (next)** (`snapshotRect`'s box sharing no tile unless tile-aligned, the `frozen` counter, byte accounting).
-7. **The rest of §C7**: the node's browser, Firefox, the 30k gate, the docs list, the memory gate.
+6. **C4 is built** (2026-09-16, `docs/PLAN_BCE.md` §C4 "C4 as built"): steps on whole tiles, `release()`, exact redo boxes.
+7. **The rest of §C7 (next)**: the node's browser, Firefox, the 30k gate, the docs list, the memory gate.
 8. **Phase R**, Rust kernels (`docs/PLAN_BCE.md` §2b; the crate is in the history at c75c4f1), then **phase E**.
 
 **Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`

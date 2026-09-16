@@ -6834,14 +6834,28 @@ class InpaintEditor {
      * step of a brush stroke, so a stroke on a 100 MP layer costs what it covered. The step
      * holds the copy as pixels (`px`) and goes back with a "copy" blit.
      */
-    snapshotRect(layer, rect, mask = false) {
+    snapshotRect(layer, rect, mask = false, exact = false) {
         const target = mask ? layer.maskPx : layer.px;
         if (!target) return null;
-        const x = Math.max(0, Math.floor(rect.x) - 2), y = Math.max(0, Math.floor(rect.y) - 2);
-        const w = Math.min(target.width - x, Math.ceil(rect.w + (rect.x - x)) + 4);
-        const h = Math.min(target.height - y, Math.ceil(rect.h + (rect.y - y)) + 4);
+        let x, y, x1, y1;
+        if (exact) {
+            // the box of a step being undone or redone, taken again as it is: a margin added per round trip grew the redo
+            // copy by 6 px each time, and on tiles by a whole tile
+            x = rect.x; y = rect.y; x1 = rect.x + rect.w; y1 = rect.y + rect.h;
+        } else {
+            x = Math.max(0, Math.floor(rect.x) - 2); y = Math.max(0, Math.floor(rect.y) - 2);
+            x1 = Math.min(target.width, Math.ceil(rect.x + rect.w) + 4); y1 = Math.min(target.height, Math.ceil(rect.y + rect.h) + 4);
+            // C4: on tiles the box grows to the whole tiles it touches. `copyRect` shares a tile only when the copy starts on a
+            // tile's corner, so a box at floor(x) - 2 copied every tile it overlapped into a new one; over whole tiles the step
+            // shares them, and the stroke's own write is what copies the tiles it touches (the originals stay the step's)
+            if (isTilePixels(target)) {
+                x = x - (x % TILE_SIZE); y = y - (y % TILE_SIZE);
+                x1 = Math.min(target.width, Math.ceil(x1 / TILE_SIZE) * TILE_SIZE); y1 = Math.min(target.height, Math.ceil(y1 / TILE_SIZE) * TILE_SIZE);
+            }
+        }
+        const w = x1 - x, h = y1 - y;
         if (w <= 0 || h <= 0) return null;
-        const copy = target.copyRect([x, y, x + w, y + h]);
+        const copy = target.copyRect([x, y, x1, y1]);
         return { kind: "layerrect", id: layer.id, mask, x, y, w, h, px: copy, bytes: w * h * 4 };
     }
 
@@ -6858,9 +6872,14 @@ class InpaintEditor {
         const ext = this.selectionExtent();
         const bounds = this.selectionDirty ? undefined : this.cachedBounds;
         if (!ext) return { kind: "selection", empty: true, bytes: 0, bounds: null };
-        const [x, y, x1, y1] = ext;
+        let [x, y, x1, y1] = ext;
+        // C4: on tiles the whole tiles the extent touches, so the copy shares them (see snapshotRect)
+        if (isTilePixels(this.sel)) {
+            x -= x % TILE_SIZE; y -= y % TILE_SIZE;
+            x1 = Math.min(this.width, Math.ceil(x1 / TILE_SIZE) * TILE_SIZE); y1 = Math.min(this.height, Math.ceil(y1 / TILE_SIZE) * TILE_SIZE);
+        }
         const w = x1 - x, h = y1 - y;
-        const copy = this.sel.copyRect(ext);   // the extent is on whole pixels inside the selection
+        const copy = this.sel.copyRect([x, y, x1, y1]);   // the extent is on whole pixels inside the selection
         // on tiles the copy shares the selection's tiles and stays pixels at any size, counted like the PNG it
         // replaces (docs/PLAN_BCE.md §C2, the final review; C4 counts the tiles a step holds alone)
         if (w * h > SNAP_CANVAS_PX) return isTilePixels(copy) ? { kind: "selection", x, y, w, h, px: copy, bytes: 0, bounds } : { kind: "selection", x, y, w, h, url: this.snapUrl(copy.toCanvas()), bytes: 0, bounds };
@@ -6903,9 +6922,13 @@ class InpaintEditor {
             if (typeof v.then === "function") v.then((u) => { if (typeof u === "string" && u.startsWith("blob:")) URL.revokeObjectURL(u); }).catch(() => {});
             else if (typeof v === "string" && v.startsWith("blob:")) URL.revokeObjectURL(v);
         }
-        snap.px = null;
-        snap.maskPx = null;
-        snap.selPx = null;
+        // C4: the step's own copies let go of their tiles (a restore that put them into the document took them out of the
+        // step first); a `layers` / `canvas` step's layers and base are the document's objects by reference, never released
+        for (const k of ["px", "maskPx", "selPx"]) {
+            const p = snap[k];
+            if (p && typeof p.release === "function") p.release();
+            snap[k] = null;
+        }
     }
 
     /**
@@ -6925,7 +6948,7 @@ class InpaintEditor {
     snapshot(step) {
         if (step.kind === "layerrect") {
             const l = this.layers.find((x) => x.id === step.id);
-            return l ? this.snapshotRect(l, step, step.mask) : null;
+            return l ? this.snapshotRect(l, step, step.mask, true) : null;
         }
         if (step.kind === "selection") return this.snapshotSelection();
         if (step.kind === "layers") return { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), activeLayerId: this.activeLayerId };
@@ -7073,7 +7096,8 @@ class InpaintEditor {
             this.height = snap.height;
             this.layers = snap.layers.map((l) => installLayerAliases({ ...l, dirty: true, exportRef: null, _maskedValid: false, _mcache: null, _fxCache: null, maskDirty: !!l.maskPx }, this.pixels));
             this.activeLayerId = snap.activeLayerId;
-            let sel = snap.selPx || null;   // on tiles the step's clone, replaced (the step is released after this)
+            let sel = snap.selPx || null;   // on tiles the step's clone, taken out of the step (it is released after this)
+            snap.selPx = null;
             if (!sel) {
                 sel = this.pixels.Mask.empty(this.width, this.height);
                 if (selImg) sel.drawInto(null, (ctx) => ctx.drawImage(selImg, 0, 0));
@@ -7160,6 +7184,7 @@ class InpaintEditor {
                 this.renderLayers();
             } else if (snap.kind === "mask") {
                 layer.maskPx = snap.maskPx || (snap.url ? this.pixels.Mask.fromImage(needImage(images.url), snap.mw, snap.mh) : null);
+                snap.maskPx = null;   // the document's now, not the step's to release (C4)
                 if (!layer.maskPx) layer.maskEdit = false;
                 this.markMaskChanged(layer);
                 this.renderLayers();
@@ -7169,6 +7194,7 @@ class InpaintEditor {
                 layer._textToken = (layer._textToken || 0) + 1;
                 layer._textRendering = 0;
                 layer.px = snap.px || this.pixels.Layer.fromImage(needImage(images.url), snap.cw, snap.ch);   // replaced: rule 2
+                snap.px = null;   // the document's now (C4)
                 Object.assign(layer, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
                 layer.text = JSON.parse(JSON.stringify(snap.text));
                 layer._maskedValid = false;
@@ -7189,6 +7215,7 @@ class InpaintEditor {
                 layer.px = snap.px || this.pixels.Layer.fromImage(needImage(images.url), snap.cw, snap.ch);   // replaced: rule 2
                 Object.assign(layer, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
                 layer.maskPx = snap.maskPx || (snap.mask ? this.pixels.Mask.fromImage(needImage(images.mask), snap.mw, snap.mh) : null);
+                snap.px = null; snap.maskPx = null;   // the document's now (C4)
                 if (!layer.maskPx) layer.maskEdit = false;
                 layer.maskDirty = !!layer.maskPx;
                 layer._maskedValid = false;

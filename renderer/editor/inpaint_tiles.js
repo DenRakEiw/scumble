@@ -1558,6 +1558,20 @@ const tiled = (Base) => class extends Base {
         return out;
     }
 
+    /**
+     * Let go of every tile (C4): a tile's `frozen` counts the other pixels objects that hold it, and `clone`, `copyRect`
+     * over whole tiles and `blit` "copy" put it up, but nothing ever put it down, so a tile an undo step had shared once
+     * stayed frozen after the step was gone and the document's next write into it copied the whole tile for nothing.
+     * For pixels nothing reads or writes any more (an undo step's own copy that is discarded); the pixels are empty
+     * afterwards. Too many calls would let a holder write into a tile another one still reads: only the owner calls it,
+     * once.
+     */
+    release() {
+        this._guard();
+        for (const t of this._tiles.values()) if (t.frozen > 0) t.frozen--;
+        this._tiles.clear();
+    }
+
     resized(w, h, { x = 0, y = 0 } = {}) {
         this._guard();
         if (!Number.isInteger(x) || !Number.isInteger(y)) {
