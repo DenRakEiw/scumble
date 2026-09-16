@@ -9817,7 +9817,7 @@ class InpaintEditor {
      * The level is the one whose tiles are at least as dense as the screen:
      * `floor(-log2(scale))`, clamped to the mips a tile carries.
      */
-    glLayerSpec(px, x, y, w, h, opacity, blend, sx, mask = null) {
+    glLayerSpec(px, x, y, w, h, opacity, blend, sx, mask = null) {   // a tile store's spec may carry `match` (C6 c 7d)
         const scale = (w * sx) / px.width;
         if (isTilePixels(px)) {
             const level = scale > 0 && Number.isFinite(scale) ? Math.max(0, Math.min(MIP_LEVELS, Math.floor(-Math.log2(scale)))) : 0;
@@ -9845,12 +9845,13 @@ class InpaintEditor {
                 if (this.isControl(layer) && opts.forRun) continue;
                 const opacity = layer.opacity == null ? 1 : layer.opacity, blend = layer.blend || "normal";
                 if (this.matchActive(layer) && this.matchFromTiles(layer)) {
-                    // C6 (c) 7b: the part of the matched layer the view shows, matched from its tiles at the view's level
-                    const e = this.matchedRegionView(layer, { ...vp, screen: true }, null);
-                    if (!e) continue;
-                    layers.push(e.plain
-                        ? this.glLayerSpec(layer.px, layer.x, layer.y, layer.w, layer.h, opacity, blend, sx, this.tileMaskOf(layer))
-                        : { source: e.canvas, version: 0, cropW: e.sw, cropH: e.sh, x: e.x, y: e.y, w: e.w, h: e.h, opacity, blend });
+                    // C6 (c) 7d: the layer's own tiles in the atlas, matched in the atlas shader with the shared statistics:
+                    // no matched canvas, no upload of one, and a strength tick is a uniform
+                    const st = this.matchStats(layer, null, { ...vp, screen: true }, null);
+                    const k = Math.min(1, Math.max(0, ((layer.match && layer.match.strength) || 0) / 100));
+                    const spec = this.glLayerSpec(layer.px, layer.x, layer.y, layer.w, layer.h, opacity, blend, sx, this.tileMaskOf(layer));
+                    spec.match = st && k > 0 ? { meanS: st.meanS, meanT: st.meanT, scale: st.scale, k } : null;
+                    layers.push(spec);
                     continue;
                 }
                 // the statistics are the layer's shared entry (C6 c 7c): no backdrop of this pass is read for them

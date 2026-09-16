@@ -105,8 +105,8 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
 2. **7c is built** (2026-09-16, `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"): one statistics entry per layer for every
    pass, provisional while chains are in the worker. **The (b) numbers are measured and not yet shown to the user**
    (same section): box means 0.81 levels mean over 32 cases, 5.45 / p99 12 on one textured photo; point samples 0.56, max 8.
-3. **7d (next)**: the colour match as GPU uniforms.
-4. **C6 (d)**, the base (`basePx` eagerly, the `canvas` undo step without the `<img>`, `cropCanvasNow` / `resizeImageNow`,
+3. **7d is built** (2026-09-16, `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7d as built"): the match in the atlas shader.
+4. **C6 (d) (next)**, the base (`basePx` eagerly, the `canvas` undo step without the `<img>`, `cropCanvasNow` / `resizeImageNow`,
    the upload round trips; details in `docs/HISTORY.md`, block "2026-09-15, 01:30").
 5. **The object tool's bigger change A** (`dist/c6map/c/objects.md` §7 to §9: the image-size label map, the per-object
    shape canvases): ask the user where it goes.

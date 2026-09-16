@@ -3206,6 +3206,42 @@ match scales by drops (scale 0.89 → 0.79 in red on one case), which is what `m
 the texture and stay within 8 levels everywhere. The statistics themselves cost 5 to 70 ms at full resolution and 5 to
 22 ms from levels on these sizes (the full-resolution flatten around them dominates an export either way).
 
+#### C6 (c) slice 7d as built (2026-09-16): the colour match on the GPU stack is uniforms
+
+`dist/c6map/c/match.md` §3, GPU option B.
+
+**Before (7b).** On the GPU stack a colour-matched layer on tiles was its region canvas matched into a new canvas per
+change of the match (a strength tick, a pan past the region's margin, a landing) and uploaded as a texture of the
+compositor, drawn through a cropped quad.
+
+**What was built.**
+- `inpaint_compositor.js`: the atlas shader has `u_match`, `u_meanS`, `u_meanT`, `u_mScale`, `u_mK`. After the mask it
+  unpremultiplies the sample, applies `matchCanvas`' formula to the straight 0..255 values, clamps and premultiplies
+  again. A tile store's spec carries `match: { meanS, meanT, scale, k }` or null; `_drawTiles` sets the uniforms per layer.
+- `glViewComposite`: a matched layer on tiles (`matchFromTiles`) is the layer's own tile spec with its mask and `match`
+  from the shared statistics entry (7c). No matched canvas, no upload, and the instance cache is untouched by the match.
+- 7b's cropped canvas source (`cropW` / `cropH`, `u_uvMax`) is gone again: nothing hands the compositor a region canvas
+  any more. The Canvas 2D path keeps `matchedRegionView`.
+
+**After.** Against the Canvas 2D path (`matchCanvas` on each byte), inside the layer at 0.4 and at 1:1, a scaled layer with
+a soft mask at 60 %: **max 2 levels, no byte over 2**. Eight strength ticks at 1:1: no `matchedRegionView` or
+`layerMatchedPixels` call, no texture entry, no atlas or window upload. `perf_test.py 15000x10000` does not see the
+change: its stack always shows a filter layer, so the screen takes Canvas 2D, and its GPU-stack rows hide the matched
+result; every row within the runs' noise (A/B in the same session, `s7d-perf-before` / `-after`).
+
+**Found on the way:** at the image's own border the GPU stack and Canvas 2D differ by 255 levels on about 8,700 bytes at
+0.4 with no match at all (the step compares inside the layer, 3 screen pixels in). Not broken down.
+
+**Gate.** `editor_test.py` `the_colour_match_on_the_gpu_stack_is_uniforms` (tiles with a GPU compositor; skipped
+otherwise): the two views against Canvas 2D (at most 4 levels, at most 0.2 % of bytes over 2), a floor (the match moves the
+screen by more than 20), and the strength ticks. Four mutations, each red: the sample not unpremultiplied (41 levels on
+804,957 bytes), the uniform never switched on (the floor), the strength ignored (23 levels), the matched canvas path back
+on the GPU stack ("made a matched canvas"). `a_colour_matched_layer_draws_from_its_own_tiles` still passes on the GPU
+stack; its 7b GPU-crop mutation has nothing to mutate any more.
+
+**Runs:** `s7d-all-tiles` (editor pixels composite shape brush film glb ailabel size transparent generate log mcp llm toapis
+nodecopy) and `s7d-all-canvas` (editor pixels composite film glb mcp) ALL PASS.
+
 ### C7. Both hosts, the flag, the release (3 days)
 
 - The node's browser: `tools/build_node.py`, then `editor_test.py --node` and a real run in

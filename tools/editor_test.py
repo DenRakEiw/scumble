@@ -3299,6 +3299,103 @@ await run("remove_layer", { layer: L.id, doc: window.__t });
 await run("remove_layer", { layer: P.id, doc: window.__t });
 return out;
 """),
+    ("the_colour_match_on_the_gpu_stack_is_uniforms", """
+// C6 (c) slice 7d: on the GPU stack a colour-matched layer on tiles was a canvas per change of its match (7b: its region
+// canvas matched and uploaded as a texture; before, its whole display mirror). The atlas draws the layer's own tiles and
+// its shader applies the match: a strength tick is a uniform. The picture is the Canvas 2D path's (matchCanvas on each
+// byte) up to interpolation. Tiles with a GPU compositor only.
+await run("new_canvas", { width: 4100, height: 2900, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+if (!ed.tileMode || !ed.glCompositeUsable({})) return { skipped: "tiles with a GPU compositor only", tiles: !!ed.tileMode };
+const W = ed.width, H = ed.height;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const base = mk(W, H);
+{
+    const x = base.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#3a5070"); g.addColorStop(1, "#c09868");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 50; i++) { x.fillStyle = `hsl(${(i * 47) % 360},40%,${35 + (i * 13) % 30}%)`; x.fillRect((i * 733) % W, (i * 419) % H, 160, 120); }
+}
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "match7d.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+// a matched layer drawn scaled, with a soft mask on its grid, at 60 %: the strength and the mask both matter
+const lc = mk(1401, 1019);
+{
+    const x = lc.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 1401, 1019); g.addColorStop(0, "#20c040"); g.addColorStop(1, "#c02080");
+    x.fillStyle = g; x.fillRect(0, 0, 1401, 1019);
+    for (let i = 0; i < 80; i++) { x.fillStyle = `hsl(${(i * 71) % 360},80%,50%)`; x.fillRect((i * 331) % 1401, (i * 197) % 1019, 50, 50); }
+}
+const L = ed.addLayer({ name: "Matched 7d", kind: "result", px: ed.pixels.Layer.fromCanvas(lc), x: 900, y: 700, w: 1868, h: 1359, dirty: true });
+L.maskPx = ed.pixels.Mask.empty(1401, 1019);
+L.maskPx.drawInto(null, (x) => { const g = x.createRadialGradient(700, 510, 200, 700, 510, 640); g.addColorStop(0, "#ffffff"); g.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = g; x.fillRect(0, 0, 1401, 1019); });
+ed.markMaskChanged(L);
+L.match = { strength: 60, source: "surroundings" };
+ed.markMatchChanged(L);
+await run("select_none", { doc: window.__t });
+ed.setTool("rect"); ed.hover = null;
+ed.renderLayers();
+const g2 = ed.canvas.getContext("2d");
+const read = () => g2.getImageData(0, 0, ed.canvas.width, ed.canvas.height).data;
+const screen = async () => { ed.sceneSig = null; ed.draw(); await ed.mipsSettled(); await wait(60); ed.sceneSig = null; ed.draw(); return read(); };
+// inside the layer's rectangle, 3 screen pixels in from its edges: at the image's own border the GPU stack and Canvas 2D
+// differ with no match at all (255 levels on about 8,700 bytes at 0.4, measured), which is not this step's
+const diff = (a, b) => {
+    const cw = ed.canvas.width, ch = ed.canvas.height;
+    const [x0, y0] = ed.imageToScreen(L.x, L.y), [x1, y1] = ed.imageToScreen(L.x + L.w, L.y + L.h);
+    const ax = Math.max(0, Math.ceil(x0) + 3), ay = Math.max(0, Math.ceil(y0) + 3), bx = Math.min(cw, Math.floor(x1) - 3), by = Math.min(ch, Math.floor(y1) - 3);
+    let max = 0, o2 = 0, o8 = 0, n = 0;
+    for (let y = ay; y < by; y++) for (let x = ax; x < bx; x++) for (let k = 0; k < 3; k++) { const i = (y * cw + x) * 4 + k; const d = Math.abs(a[i] - b[i]); n++; if (d > max) max = d; if (d > 2) o2++; if (d > 8) o8++; }
+    return { max, o2, o8, of: n };
+};
+const out = {};
+const comp0 = ed.compositorOff;
+try {
+    for (const [name, view] of [["zoomed", () => { ed.view.angle = 0; ed.view.scale = 0.4; ed._fitted = false; ed.view.x = -(L.x + L.w / 2) * 0.4 + ed.canvas.width / 2; ed.view.y = -(L.y + L.h / 2) * 0.4 + ed.canvas.height / 2; }],
+                                ["one", () => { ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false; ed.view.x = -(L.x + 200) + 100; ed.view.y = -(L.y + 150) + 100; }]]) {
+        view();
+        ed.compositorOff = false;
+        L._mcacheView = null;   // the Canvas 2D shot before left one
+        const gl = await screen();
+        if (L._mcacheView) throw new Error(name + ": the GPU stack made a matched canvas");
+        ed.compositorOff = true;
+        const d2 = await screen();
+        ed.compositorOff = false;
+        const m0 = ed.matchActive;
+        ed.matchActive = () => false;
+        let plain;
+        try { plain = await screen(); } finally { ed.matchActive = m0; }
+        const d = diff(gl, d2), u = diff(gl, plain);
+        out[name] = { glVs2d: d, vsUnmatched: u.max };
+        if (u.max < 20) throw new Error(name + ": the match does not move the GPU screen, so this proves nothing: " + JSON.stringify(out[name]));
+        // interpolating premultiplied samples and matching the result against matching each byte first: a level or two
+        if (d.max > 4 || d.o2 > d.of * 0.002) throw new Error(`${name}: the GPU stack's match differs from the Canvas 2D path's by ${d.max} levels, ${d.o2} bytes over 2`);
+    }
+    // a strength tick at 1:1: a uniform, no matched canvas, no texture uploaded
+    ed.compositorOff = false;
+    await screen();
+    const comp = ed.compositor();
+    const s0 = comp.stats();
+    let regions = 0, matched = 0;
+    const r0 = ed.matchedRegionView, p0 = ed.layerMatchedPixels;
+    ed.matchedRegionView = function (...a) { regions++; return r0.apply(this, a); };
+    ed.layerMatchedPixels = function (...a) { matched++; return p0.apply(this, a); };
+    try {
+        for (let i = 0; i < 8; i++) { L.match = { ...L.match, strength: 40 + i * 7 }; ed.markMatchChanged(L); ed.sceneSig = null; ed.draw(); }
+    } finally { ed.matchedRegionView = r0; ed.layerMatchedPixels = p0; }
+    const s1 = comp.stats();
+    out.ticks = { regions, matched, textures: [s0.entries, s1.entries], atlasUploads: s1.atlas.uploads - s0.atlas.uploads, windowUploads: s1.windowUploads - s0.windowUploads };
+    if (regions || matched) throw new Error("a strength tick on the GPU stack made a matched canvas: " + JSON.stringify(out.ticks));
+    if (out.ticks.atlasUploads || out.ticks.windowUploads || s1.entries > s0.entries) throw new Error("a strength tick on the GPU stack uploaded: " + JSON.stringify(out.ticks));
+} finally {
+    ed.compositorOff = comp0;
+    ed.fitView(); ed.sceneSig = null; ed.draw();
+}
+await run("remove_layer", { layer: L.id, doc: window.__t });
+return out;
+"""),
     ("stroke_buffers_cover_the_gesture_not_the_layer", """
 // Phase A item 2 (docs/PLAN_TILES.md): a stroke's buffer and its selection clip cover what the
 // gesture touched, not the layer; the live preview is refreshed inside the dab's rectangle; the

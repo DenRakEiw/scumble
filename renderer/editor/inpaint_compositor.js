@@ -89,12 +89,11 @@ const FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;
 out vec4 fragColor;
-uniform vec2 u_uvMax;           // the part of the texture the quad shows, from its top left corner (a cropped source)
 ` + BLEND_GLSL + `
 void main() {
     // A layer's texture comes from a canvas, whose first row is the top, so it is sampled
     // upside down against the quad's own coordinates.
-    fragColor = blendOver(texture(u_source, vec2(v_uv.x, 1.0 - v_uv.y) * u_uvMax));
+    fragColor = blendOver(texture(u_source, vec2(v_uv.x, 1.0 - v_uv.y)));
 }`;
 
 // The same for one tile of an atlas page: the vertex shader has already put v_uv inside the
@@ -108,10 +107,22 @@ in vec2 v_muv;
 out vec4 fragColor;
 uniform sampler2D u_mask;
 uniform int u_hasMask;
+// C6 (c) 7d: a colour match (the stitch's per-channel mean and spread, straight 0..255 values), applied to the unpremultiplied
+// sample as matchCanvas applies it to each byte; u_match 0: none
+uniform int u_match;
+uniform vec3 u_meanS;
+uniform vec3 u_meanT;
+uniform vec3 u_mScale;
+uniform float u_mK;
 ` + BLEND_GLSL + `
 void main() {
     vec4 Sp = texture(u_source, v_uv);
     if (u_hasMask == 1) Sp *= texture(u_mask, v_muv).a;
+    if (u_match == 1 && Sp.a > 0.0) {
+        vec3 p = Sp.rgb / Sp.a * 255.0;
+        vec3 v = (p - u_meanT) * u_mScale + u_meanS;
+        Sp = vec4(clamp(p + (v - p) * u_mK, 0.0, 255.0) / 255.0 * Sp.a, Sp.a);
+    }
     fragColor = blendOver(Sp);
 }`;
 
@@ -290,6 +301,11 @@ export class GLCompositor {
             region: gl.getUniformLocation(this.atlasProg, "u_region"),
             mask: gl.getUniformLocation(this.atlasProg, "u_mask"),
             hasMask: gl.getUniformLocation(this.atlasProg, "u_hasMask"),
+            match: gl.getUniformLocation(this.atlasProg, "u_match"),
+            meanS: gl.getUniformLocation(this.atlasProg, "u_meanS"),
+            meanT: gl.getUniformLocation(this.atlasProg, "u_meanT"),
+            mScale: gl.getUniformLocation(this.atlasProg, "u_mScale"),
+            mK: gl.getUniformLocation(this.atlasProg, "u_mK"),
         };
         // record id -> { id, ref, levels: level -> { pages } }; the pages hold the tiles the screen showed.
         // The pixels are held weakly (C6 a): pixels a flip, a new mask or an undo replaced are in neither
@@ -804,6 +820,14 @@ export class GLCompositor {
         gl.uniform2f(this.atlasU.size, W, H);
         gl.uniform4f(this.atlasU.region, region.x, region.y, region.w, region.h);
         gl.uniform1i(this.atlasU.mask, 2);
+        const m = prepared.match;
+        gl.uniform1i(this.atlasU.match, m ? 1 : 0);
+        if (m) {
+            gl.uniform3f(this.atlasU.meanS, m.meanS[0], m.meanS[1], m.meanS[2]);
+            gl.uniform3f(this.atlasU.meanT, m.meanT[0], m.meanT[1], m.meanT[2]);
+            gl.uniform3f(this.atlasU.mScale, m.scale[0], m.scale[1], m.scale[2]);
+            gl.uniform1f(this.atlasU.mK, Math.max(0, Math.min(1, m.k)));
+        }
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, srcTex);
         for (const g of prepared.tiles) {
@@ -895,13 +919,11 @@ export class GLCompositor {
      *
      *   spec.width / spec.height   the output size in pixels (the viewport)
      *   spec.region                { x, y, w, h } of the image the output shows
-     *   spec.layers                bottom first: { source, version, x, y, w, h, opacity, blend }
+     *   spec.layers                bottom first: { source, version, x, y, w, h, opacity, blend }, or a tile
+     *                              store: { pixels, mask, level, match, x, y, w, h, opacity, blend }, `match`
+     *                              { meanS, meanT, scale, k } or null (C6 c 7d)
      *                              in image coordinates. `source` is a canvas the caller
      *                              already prepared (mask, colour match, stroke preview).
-     *                              `cropW` / `cropH` (optional, source pixels, may be fractional):
-     *                              only that much of the source from its top left corner is the
-     *                              layer, the rest is not drawn (a colour-matched region canvas,
-     *                              whose last row and column hold the clamp past the layer's edge).
      *
      * Returns the compositor's canvas, or null when it cannot do this stack (a source
      * larger than MAX_TEXTURE_SIZE, a lost context): the caller then uses Canvas 2D.
@@ -929,17 +951,13 @@ export class GLCompositor {
                 continue;
             }
             if (!l.source) continue;
-            const sw = l.cropW > 0 ? Math.min(l.source.width, l.cropW) : l.source.width;
-            const sh = l.cropH > 0 ? Math.min(l.source.height, l.cropH) : l.source.height;
+            const sw = l.source.width, sh = l.source.height;
             const fx = l.w / sw, fy = l.h / sh;   // image pixels per source pixel
             const need = { x: (region.x - l.x) / fx, y: (region.y - l.y) / fy, w: region.w / fx, h: region.h / fy };
             const s = this._source(l.source, l.version, need);
             if (!s) return null;
             if (!s.tex) continue;   // off screen
-            // the texture holds s.w x s.h source pixels from (s.x, s.y); a crop ends the quad inside it
-            const vw = Math.min(s.w, sw - s.x), vh = Math.min(s.h, sh - s.y);
-            if (!(vw > 0) || !(vh > 0)) continue;
-            prepared.push({ ...l, tex: s.tex, uvMax: [vw / s.w, vh / s.h], x: l.x + s.x * fx, y: l.y + s.y * fy, w: vw * fx, h: vh * fy });
+            prepared.push({ ...l, tex: s.tex, x: l.x + s.x * fx, y: l.y + s.y * fy, w: s.w * fx, h: s.h * fy });
         }
         if (this.canvas.width !== W || this.canvas.height !== H) {
             this.canvas.width = W;
@@ -962,7 +980,6 @@ export class GLCompositor {
         const uMode = gl.getUniformLocation(this.prog, "u_mode");
         const uOpacity = gl.getUniformLocation(this.prog, "u_opacity");
         const uSize = gl.getUniformLocation(this.prog, "u_size");
-        const uUvMax = gl.getUniformLocation(this.prog, "u_uvMax");
         gl.uniform1i(gl.getUniformLocation(this.prog, "u_backdrop"), 0);
         gl.uniform1i(gl.getUniformLocation(this.prog, "u_source"), 1);
         const loc = gl.getAttribLocation(this.prog, "a_pos");
@@ -1018,7 +1035,6 @@ export class GLCompositor {
             gl.uniform1i(uMode, BLEND_INDEX[l.blend] || 0);
             gl.uniform1f(uOpacity, l.opacity == null ? 1 : l.opacity);
             gl.uniform2f(uSize, W, H);
-            gl.uniform2f(uUvMax, l.uvMax[0], l.uvMax[1]);
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, src.tex);
             gl.activeTexture(gl.TEXTURE1);
