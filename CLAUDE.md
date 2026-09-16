@@ -114,8 +114,10 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    docs, `--disable-gpu`, the memory walk (not met: +0.6 to +1.4 GB of GPU process per open 15k document on tiles), the exe
    gates (PASS). **Open, needing the user's ComfyUI:** the node in a real ComfyUI tab and in Firefox, `smoke`, `commands`.
    **Open, needing E5:** the 30k gate. **Next, when the user says so:** a release (0.1.16 has its CHANGELOG section).
-8. **Phase R is next** (the user's go, 2026-09-17): Rust kernels (`docs/PLAN_BCE.md` §2b; the crate is in the history at
-   c75c4f1, `cargo` / `rustc` are installed). The user waived §2b's precondition (their own 15k test first). Then **phase E**.
+8. **Phase R is measured** (2026-09-17, branch `phase-r`, `docs/PLAN_BCE.md` §2b "Phase R as built", `docs/PERFORMANCE.md`
+   §12): mips, EDT and flood stay JS (1.2 to 2.4× on the real jobs); **E2's band composite runs `composite_tile` from
+   `px.wasm`** (4.85×). The crate is back in `crates/px`; `InpaintEditor.kernels = "rust"` and `tools/px_jobs.py` measure
+   again. Merge `phase-r` when the user agrees. Then **phase E**.
 
 **Decision (b) of 7c is still the user's** (exports and runs on the shared statistics entry; the numbers are in
 `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). Recommended to them on 2026-09-17: **keep the full-resolution statistics

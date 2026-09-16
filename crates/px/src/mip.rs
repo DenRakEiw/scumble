@@ -165,3 +165,29 @@ mod simd {
         }
     }
 }
+
+/// A square tile's bytes clamp-extended in place from their valid part (vw × vh): the columns
+/// right of vw repeat column vw − 1, the rows below vh repeat row vh − 1. The last tile of a row
+/// or a column gets this before its mips, so the image's own edge does not fade by a level.
+pub fn clamp_extend(b: &mut [u8], size: usize, vw: usize, vh: usize) {
+    if vw == 0 || vh == 0 {
+        return;
+    }
+    let stride = size * 4;
+    if vw < size {
+        for row in b.chunks_exact_mut(stride).take(vh) {
+            let (valid, rest) = row.split_at_mut(vw * 4);
+            let mut px = [0u8; 4];
+            px.copy_from_slice(&valid[(vw - 1) * 4..]);
+            for c in rest.chunks_exact_mut(4) {
+                c.copy_from_slice(&px);
+            }
+        }
+    }
+    if vh < size {
+        let last = (vh - 1) * stride;
+        for y in vh..size {
+            b.copy_within(last..last + stride, y * stride);
+        }
+    }
+}

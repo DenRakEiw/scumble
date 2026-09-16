@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 1;
+export const PX_ABI = 2;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -132,6 +132,16 @@ export class Px {
             const ps = this._in(a, src, size * size * 4), po = a.take(n);
             this.exports.mip_chain(ps, size, levels, po);
             return this._out(Uint8Array, po, n, out);
+        } finally { a.reset(); }
+    }
+
+    /** In place, like kernels_js `clampExtend`. */
+    clampExtend(bytes, size, vw, vh) {
+        const a = this.job, n = size * size * 4;
+        try {
+            const pb = this._in(a, bytes, n);
+            this.exports.clamp_extend(pb, size, vw, vh);
+            return this._out(Uint8Array, pb, n, new Uint8Array(bytes.buffer, bytes.byteOffset, n));
         } finally { a.reset(); }
     }
 

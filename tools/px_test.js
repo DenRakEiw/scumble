@@ -190,6 +190,20 @@ async function mipCases(ref, label, js) {
         if (!eqBytes(a, b) || !eqBytes(a, new Uint8Array(halved))) { ok = false; detail = `${size}/${levels} ${firstDiff(a, b) || "chain differs from halving"}`; }
     }
     check(`js mipChain equals the ${label} and repeated halving`, ok, detail);
+    ok = true; detail = "";
+    if (ref.clampExtend) {
+        for (const [size, vw, vh] of [[256, 256, 256], [256, 1, 1], [256, 37, 256], [256, 256, 200], [256, 100, 3], [64, 63, 1]]) {
+            const src = randomRGBA(size, size, size + vw * 7 + vh);
+            const a = js.clampExtend(src.slice(), size, vw, vh), b = ref.clampExtend(src.slice(), size, vw, vh);
+            let edge = true;
+            for (let y = 0; y < size && edge; y++) for (let x = 0; x < size; x++) {
+                const sy = Math.min(y, vh - 1), sx = Math.min(x, vw - 1), i = (y * size + x) * 4, j = (sy * size + sx) * 4;
+                if (a[i] !== src[j] || a[i + 1] !== src[j + 1] || a[i + 2] !== src[j + 2] || a[i + 3] !== src[j + 3]) { edge = false; break; }
+            }
+            if (!eqBytes(a, b) || !edge) { ok = false; detail = `${size} ${vw}x${vh} ${firstDiff(a, b) || "not the clamped edge"}`; }
+        }
+        check(`js clampExtend equals the ${label} and repeats the valid edge`, ok, detail);
+    }
 }
 
 async function edtCases(ref, label, js, raster) {

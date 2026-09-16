@@ -18,16 +18,33 @@
  *   mips            the mip chains of a batch of tiles, after a change of a whole layer or
  *                   mask (2,360 chains, about 300 ms, at 15000 x 10000). The editor runs
  *                   this job in a worker of its own, so a long flood does not hold it up.
+ *   band            a row of tiles composited, layer over layer (`compositeTile`): no caller in
+ *                   the editor yet; phase R measures the kernel phase E's band export will run.
  *
  * Pixels arrive as ImageBitmaps (transferred, never copied through structured cloning) and
  * are closed as soon as they are drawn. Every reply carries the request's id; a failure
  * comes back as { ok: false, error } and the editor falls back to the main thread.
+ *
+ * `kernels: "rust"` on a mips, selection or flood job runs its pixel kernel from px/px.wasm
+ * (loaded once per worker) instead of the JS one, the measurement of phase R
+ * (docs/PLAN_BCE.md §2b). Those jobs reply with `timing`: the milliseconds of their parts.
  */
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
-import { mipChain, mipChainBytes, clampExtend } from "./px/kernels_js.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile } from "./px/kernels_js.js";
 
 const TILE = 256, LEVELS = 5;
+const now = () => performance.now();
+
+let PX = null;
+/**
+ * The Rust kernels of this worker, instantiated on the first job that asks for them. The loader is imported only then:
+ * the node's build carries neither it nor the module (tools/build_node.py).
+ */
+function rustKernels() {
+    if (!PX) PX = import("./px/px.js").then(({ loadPx }) => loadPx(new URL("./px/px.wasm", import.meta.url))).catch((err) => { PX = null; throw err; });
+    return PX;
+}
 
 /**
  * The mip chains of a batch of tiles (docs/PLAN_BCE.md §C6 b): each tile's bytes (a copy, transferred) give
@@ -35,7 +52,15 @@ const TILE = 256, LEVELS = 5;
  * is what the atlas and the region canvases draw. The same kernels the main thread runs, so the bytes are the
  * ones it would build. The chains and the tile buffers go back transferred (the buffers for the next batch).
  */
-function mips(msg) {
+async function mips(msg) {
+    const p = msg.kernels === "rust" ? await rustKernels() : null;
+    const t0 = now();
+    const out = p ? mipsRust(p, msg) : mipsJs(msg);
+    out.timing = { op: "mips", kernels: p ? "rust" : "js", tiles: msg.tiles.length, kernel: now() - t0 };
+    return out;
+}
+
+function mipsJs(msg) {
     const n = mipChainBytes(TILE, LEVELS);
     const chains = [], exts = [], datas = [], transfer = [];
     for (const t of msg.tiles) {
@@ -55,6 +80,52 @@ function mips(msg) {
         transfer.push(t.data);
     }
     return { chains, exts, datas, transfer };
+}
+
+/** The same chains from the Rust kernels: each tile copied into wasm memory, its chain copied out. */
+function mipsRust(p, msg) {
+    const n = p.exports.mip_chain_bytes(TILE, LEVELS), a = p.job;
+    const chains = [], exts = [], datas = [], transfer = [];
+    try {
+        const pin = a.take(TILE * TILE * 4), pout = a.take(n);
+        for (const t of msg.tiles) {
+            p.u8().set(new Uint8Array(t.data, 0, TILE * TILE * 4), pin);
+            p.exports.mip_chain(pin, TILE, LEVELS, pout);
+            const chain = p.u8().slice(pout, pout + n);
+            chains.push(chain.buffer);
+            transfer.push(chain.buffer);
+            if (t.vw < TILE || t.vh < TILE) {
+                p.exports.clamp_extend(pin, TILE, t.vw, t.vh);
+                p.exports.mip_chain(pin, TILE, LEVELS, pout);
+                const ext = p.u8().slice(pout, pout + n);
+                exts.push(ext.buffer);
+                transfer.push(ext.buffer);
+            } else {
+                exts.push(null);
+            }
+            datas.push(t.data);
+            transfer.push(t.data);
+        }
+    } finally { a.reset(); }
+    return { chains, exts, datas, transfer };
+}
+
+/**
+ * A row of tiles composited (docs/PLAN_BCE.md §2b, E2): `columns` of { dst, srcs: [ArrayBuffer], masks: [ArrayBuffer or
+ * null] }, the same `ops` and `alphas` for every column. Each dst comes back composited, transferred.
+ */
+async function band(msg) {
+    const p = msg.kernels === "rust" ? await rustKernels() : null;
+    const t0 = now();
+    const transfer = [];
+    for (const col of msg.columns) {
+        const dst = new Uint8Array(col.dst);
+        const srcs = col.srcs.map((b) => new Uint8Array(b)), masks = col.masks.map((b) => (b ? new Uint8Array(b) : null));
+        if (p) p.compositeTile(dst, srcs, msg.ops, msg.alphas, masks);
+        else compositeTile(dst, srcs, msg.ops, msg.alphas, masks);
+        transfer.push(col.dst);
+    }
+    return { dsts: transfer, transfer, timing: { op: "band", kernels: p ? "rust" : "js", tiles: msg.columns.length, kernel: now() - t0 } };
 }
 
 const exports_ = new Map();   // job id -> { writer, format }
@@ -80,6 +151,8 @@ async function png(bitmap, wantHash) {
 
 /** grow / shrink / feather / invert, on the selection's pixels. */
 async function selection(msg) {
+    const p = msg.kernels === "rust" && msg.kind === "grow" ? await rustKernels() : null;
+    const t0 = now();
     const c = canvasOf(msg.bitmap);
     const W = c.width, H = c.height;
     let out = c;
@@ -94,10 +167,21 @@ async function selection(msg) {
     }
     const ctx = out.getContext("2d");
     const img = ctx.getImageData(0, 0, W, H);
+    const ms = { op: "selection", kind: msg.kind, kernels: p ? "rust" : "js", pixels: W * H, read: now() - t0 };
     if (msg.kind === "invert") { invertMask(img.data); ctx.putImageData(img, 0, 0); }
-    else if (msg.kind === "grow") { growMask(img.data, W, H, msg.n); ctx.putImageData(img, 0, 0); }
+    else if (msg.kind === "grow") {
+        growMask(img.data, W, H, msg.n, { ms, dist: p ? (f, w, h) => p.distTransform(f, w, h) : undefined });
+        const t = now();
+        ctx.putImageData(img, 0, 0);
+        ms.put = now() - t;
+    }
     // the editor would otherwise scan the whole selection for this afterwards, on its own thread
-    return { bitmap: out.transferToImageBitmap(), bounds: maskBounds(img.data, W, H) };
+    const tb = now();
+    const bounds = maskBounds(img.data, W, H);
+    ms.resultBounds = now() - tb;
+    const bitmap = out.transferToImageBitmap();
+    ms.total = now() - t0;
+    return { bitmap, bounds, timing: ms };
 }
 
 /**
@@ -106,11 +190,19 @@ async function selection(msg) {
  * arrives, so the editor can widen the box and ask again.
  */
 async function flood(msg) {
+    const p = msg.kernels === "rust" ? await rustKernels() : null;
+    const t0 = now();
     const src = canvasOf(msg.bitmap);
     const W = src.width, H = src.height;
     const data = src.getContext("2d").getImageData(0, 0, W, H).data;
-    const mask = floodMask(data, W, H, msg.x, msg.y, msg.tolerance, msg.contiguous);
+    const ms = { op: "flood", kernels: p ? "rust" : "js", pixels: W * H, read: now() - t0 };
+    let t = now();
+    const lap = (key) => { const n = now(); ms[key] = n - t; t = n; };
+    const mask = p ? p.flood(data, W, H, msg.x | 0, msg.y | 0, Math.max(0, msg.tolerance | 0), msg.contiguous)
+        : floodMask(data, W, H, msg.x, msg.y, msg.tolerance, msg.contiguous);
+    lap("flood");
     if (msg.selBitmap) clipMaskToSelection(mask, canvasOf(msg.selBitmap));
+    lap("clip");
     let count = 0, x0 = W, y0 = H, x1 = -1, y1 = -1;
     for (let y = 0; y < H; y++) {
         const row = y * W;
@@ -123,9 +215,13 @@ async function flood(msg) {
             y1 = y;
         }
     }
+    lap("bounds");
     const shape = maskToColorCanvas(mask, W, H, msg.color || "#ff0000");
+    lap("shape");
     const touches = x1 < 0 ? null : { l: x0 === 0, t: y0 === 0, r: x1 === W - 1, b: y1 === H - 1 };
-    return { bitmap: shape.transferToImageBitmap(), count, bounds: x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1], touches };
+    const bitmap = shape.transferToImageBitmap();
+    ms.total = now() - t0;
+    return { bitmap, count, bounds: x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1], touches, timing: ms };
 }
 
 async function run(msg) {
@@ -133,6 +229,7 @@ async function run(msg) {
     if (msg.op === "selection") return selection(msg);
     if (msg.op === "flood") return flood(msg);
     if (msg.op === "mips") return mips(msg);
+    if (msg.op === "band") return band(msg);
     if (msg.op === "export_begin") {
         const opts = { width: msg.width, height: msg.height };
         exports_.set(msg.job, { format: msg.format, writer: msg.format === "psd" ? new PsdWriter(opts) : new OraWriter(opts) });

@@ -3,6 +3,7 @@
  * growing, colour parsing, mask-to-canvas. Pure functions on typed arrays, no
  * DOM state, kept out of inpaint_canvas.js so the tools stay small.
  */
+import { distTransform } from "./px/kernels_js.js";
 
 /** A 2D canvas in the window or in a worker. */
 export function makeRasterCanvas(w, h) {
@@ -87,11 +88,19 @@ const RED_CLEAR = (() => {
  * Only pixels within n of the selection's edge can change, so the distance transform runs
  * on its bounding box padded by n rather than on the whole image (3 s to under 1 s on a
  * 96 MP document with a selection covering a fifth of it).
+ *
+ * The distance transform is the tile engine's kernel (`distTransform` in px/kernels_js.js, the
+ * same f32 values as `distanceTransform` above in less than half the time); `dist` replaces it
+ * with another of the same signature (the Rust build, docs/PLAN_BCE.md §2b), and `ms`, when
+ * given, collects the milliseconds of each part.
  */
-export function growMask(d, W, H, n) {
+export function growMask(d, W, H, n, { dist = distTransform, ms = null } = {}) {
     const grow = n > 0;
     const r = Math.abs(n);
+    let t = ms ? performance.now() : 0;
+    const lap = (key) => { if (!ms) return; const now = performance.now(); ms[key] = (ms[key] || 0) + now - t; t = now; };
     const box = maskBounds(d, W, H);
+    lap("bounds");
     const words = new Uint32Array(d.buffer, d.byteOffset, W * H);
     if (!box) {
         words.fill(RED_CLEAR);   // nothing selected: nothing to grow, nothing left to shrink
@@ -109,16 +118,19 @@ export function growMask(d, W, H, n) {
             feature[dst + x] = grow ? (sel ? 1 : 0) : (sel ? 0 : 1);
         }
     }
-    const dist = distanceTransform(feature, bw, bh);
+    lap("feature");
+    const dsq = dist(feature, bw, bh);
+    lap("edt");
     const r2 = r * r;
     words.fill(RED_CLEAR);
     for (let y = 0; y < bh; y++) {
         const dst = (by0 + y) * W + bx0, row = y * bw;
         for (let x = 0; x < bw; x++) {
-            const inside = grow ? dist[row + x] <= r2 : dist[row + x] > r2;
+            const inside = grow ? dsq[row + x] <= r2 : dsq[row + x] > r2;
             if (inside) d[(dst + x) * 4 + 3] = 255;
         }
     }
+    lap("write");
     return d;
 }
 

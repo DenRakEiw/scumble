@@ -162,6 +162,16 @@ let WORKER_OFF = false;
 let workerSeq = 0;
 const workerJobs = new Map();
 
+// Phase R (docs/PLAN_BCE.md §2b): `InpaintEditor.kernels = "rust"` has the worker jobs with a pixel kernel (mips, grow /
+// shrink, the flood) run it from px/px.wasm; their replies carry the milliseconds of their parts, kept here for the
+// benchmark (`InpaintEditor.jobTimings(true)` reads and clears them).
+const JOB_TIMINGS = [];
+function keepTiming(msg) {
+    if (!msg.timing) return;
+    JOB_TIMINGS.push(msg.timing);
+    if (JOB_TIMINGS.length > 5000) JOB_TIMINGS.splice(0, JOB_TIMINGS.length - 5000);
+}
+
 function editorWorker() {
     if (WORKER_OFF) return null;
     if (WORKER) return WORKER;
@@ -169,6 +179,7 @@ function editorWorker() {
         WORKER = new Worker(new URL("./inpaint_worker.js", import.meta.url), { type: "module" });
         WORKER.onmessage = (e) => {
             const msg = e.data || {};
+            keepTiming(msg);
             const job = workerJobs.get(msg.id);
             if (!job) return;
             workerJobs.delete(msg.id);
@@ -205,7 +216,7 @@ function workerCall(op, args = {}, transfer = []) {
             reject: (e) => { clearTimeout(timer); reject(e); },
         });
         try {
-            w.postMessage({ id, op, ...args }, transfer);
+            w.postMessage({ id, op, kernels: InpaintEditor.kernels || "js", ...args }, transfer);
         } catch (err) {
             clearTimeout(timer);
             workerJobs.delete(id);
@@ -229,6 +240,7 @@ function mipsWorker() {
         MIPS_WORKER = new Worker(new URL("./inpaint_worker.js", import.meta.url), { type: "module" });
         MIPS_WORKER.onmessage = (e) => {
             const msg = e.data || {};
+            keepTiming(msg);
             const job = mipsJobs.get(msg.id);
             if (!job) return;
             mipsJobs.delete(msg.id);
@@ -257,7 +269,7 @@ function mipsTransport(tiles) {
         const timer = setTimeout(() => { if (jobs.delete(id)) reject(new Error("mips job timed out")); }, WORKER_TIMEOUT);
         jobs.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
         try {
-            w.postMessage({ id, op: "mips", tiles }, tiles.map((t) => t.data));
+            w.postMessage({ id, op: "mips", kernels: InpaintEditor.kernels || "js", tiles }, tiles.map((t) => t.data));
         } catch (err) {
             clearTimeout(timer);
             jobs.delete(id);
@@ -8409,6 +8421,17 @@ class InpaintEditor {
     // ---- file cleanup ---------------------------------------------------------------
 
     /** File names every open editor and every open workflow tab still reference. */
+    /** A job of the editor's worker, and the timings of the worker jobs since the last reset (phase R's benchmark, docs/PLAN_BCE.md §2b). */
+    static workerJob(op, args = {}, transfer = []) {
+        return workerCall(op, args, transfer);
+    }
+
+    static jobTimings(reset = false) {
+        const out = JOB_TIMINGS.slice();
+        if (reset) JOB_TIMINGS.length = 0;
+        return out;
+    }
+
     static referencedFiles() {
         const keep = new Set();
         const scan = (text) => { for (const m of String(text || "").matchAll(/"filename"\s*:\s*"([^"]+)"/g)) keep.add(m[1]); };

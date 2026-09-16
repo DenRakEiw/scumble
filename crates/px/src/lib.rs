@@ -35,7 +35,7 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature; `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    1
+    2
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -85,6 +85,12 @@ pub extern "C" fn mip_chain_bytes(size: usize, levels: usize) -> usize {
 #[no_mangle]
 pub unsafe extern "C" fn mip_chain(src: *const u8, size: usize, levels: usize, out: *mut u8) {
     mip::mip_chain(slice::from_raw_parts(src, size * size * 4), size, levels, slice::from_raw_parts_mut(out, mip::chain_bytes(size, levels)));
+}
+
+/// Clamp-extend a square RGBA8 tile of `size` in place from its valid part `vw` × `vh`.
+#[no_mangle]
+pub unsafe extern "C" fn clamp_extend(bytes: *mut u8, size: usize, vw: usize, vh: usize) {
+    mip::clamp_extend(slice::from_raw_parts_mut(bytes, size * size * 4), size, vw, vh);
 }
 
 // ---- distance transform -----------------------------------------------------------------

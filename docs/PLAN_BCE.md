@@ -3687,6 +3687,29 @@ chance in Rust, **before** phase E builds its worker pool on them.
   (`run_gates.sh --tiles on pixels editor composite commands`) and `perf_test.py 15000x10000` A/B against
   the JS kernels, in the same session.
 
+#### Phase R as built (2026-09-17): the kernels measured where they run
+
+`docs/PERFORMANCE.md` §12 has the table. What was built: the crate back from c75c4f1 (`crates/px`, `tools/build_px.py`,
+`px.js`, both builds, `bench.js`, `tools/px_bench.*`) with `clamp_extend` added (ABI 2); `tools/px_test.js` holds every Rust
+kernel of both builds to its twin again, the memory cases included; the worker runs its mips, grow / shrink and flood jobs
+and a new `band` job (a row of tiles composited, no caller yet) from `px.wasm` when `InpaintEditor.kernels === "rust"`,
+and every such job replies with the milliseconds of its parts (`InpaintEditor.jobTimings`); `tools/px_jobs.py` is the
+benchmark and the byte check of both kernel sets. `growMask` takes the twin `distTransform` (it still ran
+`distanceTransform`).
+
+**The outcome by the rule:** mips 1.2 to 2.1×, EDT 2.3 to 2.4×, flood 1.3 to 1.4× (kernel, copies included, window not in
+front, which favours Rust), whole jobs 1.1 to 1.8×: **JS stays for all three.** The band composite measured **4.85×** on
+the real tiles: **E2 builds `compositeBand` on `composite_tile` from `px.wasm`**, with `kernels_js.js` `compositeTile` as
+the fallback. Consequences for E: the worker pool loads `px.wasm` once per worker for the band jobs only; `build.yml` gets
+B0's rebuild-and-compare step when the first caller lands (E2); `tools/build_node.py` carries `px/px.js` and the `.wasm`
+only then. A wasm flood would hold about 0.8 GB of worker memory for good at 15k (wasm memory does not shrink): any later
+Rust kernel over a whole picture has to be banded.
+
+Gates: `node tools/px_test.js` PASS (both builds, bit for bit), `tools/px_jobs.py` byte check PASS with three mutations
+red, `run_gates.sh --tiles on` and `--tiles off` with `pixels editor composite shape nodecopy` (the `commands` gate forwards
+an upload to ComfyUI, which the user needs; not run). `perf_test.py 15000x10000` A/B is not needed: nothing runs Rust by
+default, and `px_jobs.py` is that A/B on the jobs.
+
 ---
 
 ## 3. Phase E: full resolution per tile and the worker pool (2 weeks)
@@ -3848,7 +3871,7 @@ atlas budget row of C3 is the only new setting.
 |---|---|---|
 | wasm glue | none: `extern "C"` + `WebAssembly.instantiate` | no CLI version to pin, loads everywhere, tiles in linear memory anyway |
 | wasm threads | no; one instance per worker, tiles copied in and out | shared-memory wasm needs nightly and the node's browser has no SAB |
-| kernel language | **JS** (B measured 2.0 to 2.4×, `PERFORMANCE.md` §10); the twins in `kernels_js.js` are the kernels, `floodMask` stays for the wand | `PLAN_TILES.md` §2, the 3× rule |
+| kernel language | **JS** (B measured 2.0 to 2.4×, `PERFORMANCE.md` §10; R on the real jobs 1.2 to 2.4×, §12); the twins in `kernels_js.js` are the kernels, `floodMask` stays for the wand; **E2's band composite runs `composite_tile` from `px.wasm`** (R: 4.85×) | `PLAN_TILES.md` §2, the 3× rule |
 | tile size | **256** (B: a 400 px dab 1.6 ms of JS at 256 against 3.2 ms at 512; mips 1.14 against 1.30 ms per MP); tile buffers start on a 4 KB boundary | five mips to 8 px, 4 to 9 tiles per 400 px dab; 4K aliasing |
 | alpha | straight in tiles, premultiplied inside kernels and shaders | PNG, ImageData, plugins are straight; the compositor already premultiplies |
 | mip filter | alpha-weighted 2×2 box | no edge darkening; the one-time re-bake of `composite_test.py` refs |

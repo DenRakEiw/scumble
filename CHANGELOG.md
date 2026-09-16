@@ -5,6 +5,8 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.16 — unreleased
 
+- **Growing and shrinking a selection is faster.** The distance calculation behind *Grow* and *Shrink* takes about half
+  the time it did (0.3 s instead of 0.55 s for a large selection on a 15000 × 10000 picture); the result is the same.
 - **A colour-matched layer no longer costs a gigabyte on a large picture.** With the tile engine on, a layer with
   *Colour match* switched on was matched on a full-size copy of itself (and of its mask) every time the view, the
   eyedropper or the magic wand looked at it: on a 15000 × 10000 picture with a full-size matched layer that was **1.1 GB**

@@ -1254,6 +1254,59 @@ got slower than phase A's (selection change, invert, the band wand, the full com
 that is phase E's (full resolution per tile and a worker pool). §C7's own memory bound (at most 300 MB of GPU process per
 open document, the renderer within 1.2× the tile bytes) is not met; `mem_test.py` does not report the tile bytes yet.
 
+## 12. Phase R: the kernels where they run (2026-09-17)
+
+`docs/PLAN_BCE.md` §2b. Phase B's crate is back (`crates/px`, rustc 1.98.1, both builds byte for byte as at c75c4f1, plus
+`clamp_extend` for edge tiles, ABI 2), and the editor's worker can run its pixel kernels from `px/px.wasm`
+(`InpaintEditor.kernels = "rust"`, off by default; the loader is imported only then). `tools/px_jobs.py` runs the real
+jobs through the editor on a 15,000 × 10,000 document (a gradient base with discs and a full-size paint layer), JS and Rust
+alternating by round, and checks at 2,048 × 1,152 that both give the same bytes (every chain, the selection after grow,
+shrink and both wands, the composited band). A mutation of each Rust path (the flood's tolerance off by one, the edge
+tiles' clamp left out, one EDT value) turned that check red.
+
+**Rule (B's):** Rust where the kernel is at least 3× its JS twin, copies included, on the real job. The JS column uses
+the twin everywhere (see below for the grow job, which did not). Medians of three rounds, two runs on fresh instances,
+Ryzen 9 7900X3D; **the window was not in front in either run**, which slows the JS column only (V8's efficiency mode, §10)
+and so favours Rust. "kernel" is the kernel's part of the worker job (for Rust with the copies into and out of wasm
+memory), "job" the whole worker job, "wall" the operation on the main thread.
+
+| job at 15,000 × 10,000 | kernel JS ms | kernel Rust ms | kernel | job JS / Rust ms | job | wall JS / Rust ms | wall |
+|---|---|---|---|---|---|---|---|
+| mips, every base tile (2,360 in 19 batches) | 503 / 537 | 407 / 353 | **1.24× / 1.52×** | = kernel | | 958 / 973, 859 / 903 | 0.95 to 0.98× |
+| mips after a whole change (2,301 chains, until settled) | 554 / 677 | 394 / 320 | **1.41× / 2.12×** | = kernel | | 1,898 / 1,679, 1,900 / 1,432 | 1.13 to 1.33× |
+| grow +16, 24.4 MP box (EDT) | 288 / 274 | 127 / 120 | **2.28× / 2.28×** | 676 / 465, 734 / 417 | 1.45 to 1.76× | 922 / 671, 1,054 / 618 | 1.37 to 1.71× |
+| shrink −16 (EDT) | 327 / 316 | 134 / 129 | **2.43× / 2.44×** | 581 / 444, 730 / 436 | 1.31 to 1.67× | 805 / 689, 981 / 690 | 1.17 to 1.42× |
+| wand, a band across the whole picture (153 MP flooded) | 741 / 751 | 554 / 541 | **1.34× / 1.39×** | 2,492 / 2,232, 2,506 / 2,227 | 1.12× | 4,661 / 3,880, 4,132 / 3,719 | 1.11 to 1.20× |
+| wand, a bounded region (3.1 MP) | 2.6 / 3.5 | 2.3 / 2.4 | 1.13× / 1.46× | 40 / 35, 37 / 34 | 1.10 to 1.15× | 432 / 501, 658 / 472 | 0.86 to 1.39× |
+| **composite band**, one tile row (59 tiles, 4 layers over the base) | 148 | 30.5 | **4.85×** | = kernel | | 149 / 32 | 4.72× |
+
+(Two figures in a cell are the two runs; the band ran in the second only.) Parts of the jobs, JS / Rust, second run:
+grow reads the box 125 / 113 ms, scans its bounds 44 / 40, builds the feature 36 / 35, writes 52 / 53, scans the result's
+bounds 42 / 43; the whole-picture wand reads 747 / 707 ms, flood 751 / 541, bounds 231 / 261, the shape canvas 770 / 782.
+
+What the numbers say:
+
+- **Mips are not a kernel question any more.** B measured the chain alone at 0.075 against 0.033 ms a tile; in the job it
+  is 0.21 to 0.23 against 0.14 to 0.17 ms, because each chain is a new 87 KB buffer (both sides) and the tile's bytes
+  arrive by transfer. The wall time of a whole change is the scheduler, the landings and the frames; Rust moves it by 0.95
+  to 1.33×.
+- **The EDT stays at B's 2.3 to 2.4×** (the lower envelope does not vectorise, §10), and it is under half of the grow
+  job: the rest is reading the selection out of a canvas and four byte scans, the same in both.
+- **The flood is a quarter of the wand**: reading 150 MP out of a canvas, the bounds scan and the shape canvas are the
+  other three quarters, and `floodMask` is already faster than the twin B wrote (§10). A Rust flood makes the wand 1.1×.
+- **Memory**: a Rust flood copies the picture into the worker's wasm memory (600 MB plus the mask and the span stack at
+  15k), and wasm memory never shrinks: the editor's worker would keep about 0.8 GB for the rest of the session.
+- **The composite clears the rule on the real tiles** (4.85×, B measured 4.68× on random ones): E2's band composite is
+  the one kernel phase E builds on Rust.
+
+**Decision: the mips, the EDT and the flood stay JavaScript; phase E composites its bands with `composite_tile` from
+`px.wasm`** (the JS twin as the fallback where wasm cannot load, and the node until it ships the module). The switch and
+`tools/px_jobs.py` stay, so E and later work can measure again.
+
+**Found on the way:** grow and shrink still ran the old `distanceTransform`, not the twin C was meant to take from B. They
+run the twin now (the same f32 values, `tools/px_test.js`): a 6,032 × 4,032 band, the grow job's at 15k, takes 255 to 304
+ms against 538 to 575 in Node.
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first
