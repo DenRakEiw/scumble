@@ -4281,6 +4281,19 @@ tie, the gamma chunk ignored, a band's partial line dropped (a Paeth mutation of
 there means a = b). **Not done**: JPEG and WebP still open through an image and the reads (no reader of ours; a Rust
 decoder would be the way), and a PNG with a profile does too.
 
+#### B item 7 (agreed 2026-09-17, in place of item 6): the stacks `stackPlan` turns away
+
+Item 6 (one-channel masks) is set aside: it pays at 30k, the user works up to 15k. What the user's documents hold is a
+result layer with a colour match and often a film look, and those still take the region pass for an export and the
+canvases for the wand. In this order, each with its row and its gate:
+
+1. **Blend modes in `composite_tile`** (multiply, screen, overlay, darken, lighten, soft-light, hard-light, difference),
+   Rust and twin, held to Canvas 2D within the levels two canvases differ by.
+2. **Filter layers over worker-composited bands**: the stack below a filter from the workers into a shared buffer, the
+   filter on the GPU as today, the rows read back once; no region canvases.
+3. **A colour-matched layer**: its statistics from tiles, the match applied in the worker. Tied to the user's open
+   decision (b) of C6 (c) 7c; ask before building it.
+
 **Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
 order: 4, 1, 2, 3, 5, 6.
 
