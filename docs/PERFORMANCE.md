@@ -1449,6 +1449,28 @@ carry no pixels any more (E1's arena): 0.0 MB cloned on every row.
 - **Memory is not where it was feared**: 15.5 GB of typed arrays, 18 full 15k layers. A 30k document with more than three
   full layers is the one case that needs tiles outside the renderer (option C).
 
+### 14.1 After B items 1 to 5 (2026-09-17)
+
+`docs/PLAN_BCE.md` §3b has each item "as built". One full run of `tools/native_test.py 15000x10000` on a fresh offline
+instance, the same machine and document as the tables above, wall / longest block in milliseconds:
+
+| row | before B | after B 1 to 5 | item |
+|---|---|---|---|
+| open the PNG | 3,158 / 2,102 | **2,694 / 134** | 5 (the stream reader) |
+| grow +16 | 722 / 206 | **499 / 39** | 3 |
+| shrink −16 | 603 / 201 | **345 / 18** | 3 |
+| invert | 204 / 204 | 211 / 211 | not moved (item 6 would) |
+| wand across the picture | 4,218 / 1,626 | **1,426 / 151** | 2 |
+| wand, one disc | 133 / 61 | 110 / 65 | 2 |
+| a provider run's crop and stitch | 2,485 / 2,485 | **524 / 524** | 4 (still one block) |
+| export PNG | 3,510 / 191 | **1,842 / 41** | 1 |
+| export PSD | 3,861 / 147 | **1,281 / 70** | 1 |
+| pan / zoom, a stroke's frames | 0.1 to 2 ms a frame | the same | none needed |
+
+What these rows still hold of the browser: the coarse pass of the wand (a 2,048 px canvas), the stitch's canvases (0.26
+s), Canvas 2D for a stroke, and everything on a document with a filter layer, a blend mode or a colour match, which
+keeps the region pass for exports and the canvases for the wand.
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first
