@@ -169,7 +169,12 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    (2026-09-17): it is the 30k item, the user works up to 15k. Next instead, agreed the same day: B item 7, the worker
    path for the stacks it turns away today, in this order: blend modes in `composite_tile`, filter layers over
    worker-composited bands, a colour-matched layer** (`docs/PLAN_BCE.md` §3b "B item 7"). Such a document still saves the
-   old way (6.2 s at 15k with a levels layer against 1.8 s). Each item is measured
+   old way (6.2 s at 15k with a levels layer against 1.8 s). **The user's standing instruction (2026-09-17, late): build
+   everything up to release 0.1.18 without asking again**: B item 7 parts 1 and 2 (part 3, the colour match, only as far
+   as it does not take the open 7c (b) decision), then the release steps (installer, the exe gates on both backends and
+   `huge`, all `--offline`; the `v0.1.18` tag so CI makes the **draft**). Publishing the draft stays the user's. No
+   `smoke` and nothing that reaches the user's ComfyUI until the user says it is free. Nothing of item 7 is in the code
+   yet. Each item is measured
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
    the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
 
