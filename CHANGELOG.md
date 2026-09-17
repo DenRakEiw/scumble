@@ -5,6 +5,12 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.18 — unreleased
 
+- **The magic wand and the bucket are about three times as fast on large pictures.** On a document of ordinary layers
+  (no filter layer, blend mode or colour match) the background workers now put the picture under the wand together
+  from the layers' tiles and search it there, and the wand's selection comes back as finished pieces instead of a
+  picture that has to be drawn into the selection. A wand click that selects 58 million pixels of a 15000 × 10000
+  picture takes 1.4 seconds instead of 4.2, and the window stands still for 0.2 seconds instead of 1.6. The selection
+  and the fill are the same as before, pixel for pixel.
 - **Saving a large picture is about twice as fast again.** When a document holds only ordinary layers (normal blend
   mode, any opacity, with or without a transparency mask; no filter layer, no colour match), the background workers now
   put the picture together themselves, straight from the layers' tiles, while they compress it. A 15000 × 10000

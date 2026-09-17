@@ -4190,6 +4190,38 @@ bytes). So the gate is two levels on at most 0.1 % of the bytes, not bytes equal
 filter layer, a blend mode or a colour match keeps the region pass (6.2 s at 15k with a levels layer, `docs/BUGS.md`);
 blend modes in the kernel and a filter over worker-composited bands would be the next steps there.
 
+#### B item 2 as built (2026-09-17): the wand and the bucket over tiles
+
+- **`floodStack(sample)`** gives what the flood looks at as a stack plan: `stackPlan({ forRun: false })` for the image,
+  or the active layer alone through its mask over nothing (`sampleRegion`'s two branches); null sends the flood the old
+  way (a filter layer, a blend mode, a colour match, a scaled layer, the canvas backend, a document above the canvas
+  limit). `floodRegion` holds the stack as clones for the whole click.
+- **`floodOverTiles`**: one `SharedArrayBuffer` of the box (on the tile grid), filled by the pool, a tile row a job
+  (`stack_into`: `rowsOfStack` straight into its part of the buffer, `INTERACTIVE`), then one `flood` job on it
+  (`flood_shape`; the bucket's clip is the selection's tiles read by the worker as a store). No canvas, no bitmap, no
+  `getImageData` on the way in.
+- **The way out**: the bucket still takes the shape as a bitmap (it is drawn into a layer at an opacity and an
+  operator). The wand asks for `out: "tiles"`: the worker cuts the shape into the tiles that hold any of it, and
+  `applyTilesToSelection` writes them with `writeRect` (replace: after a `clear()`; add and subtract: merged with the
+  tile that is there). No `putImageData`, no `drawInto` scratch.
+- The coarse pass stays on a canvas of at most 2,048 px (10 ms).
+
+| 15,000 × 10,000, base and a full paint layer (`native_test.py`) | before | now |
+|---|---|---|
+| wand across the picture (58,302,622 px selected, the same count and bounds): wall / longest block | 4,218 / 1,626 ms | **1,425 / 175 ms** |
+| of it the flood job: read / flood / shape | 1,104 / 531 / 171 ms | 28 / 590 / 180 ms |
+| main thread inside browser natives | 3,154 ms | 106 ms |
+
+What is left: the flood itself (0.6 s, a quarter of it the copy of 600 MB into wasm memory), cutting the tiles (0.18 s),
+writing 900 tiles into the mask on the main thread (the 175 ms block: `normalizeBlock` and `_putBlock`), the coarse pass.
+**Gate**: `editor_test.py` `the_flood_over_tiles_is_the_flood_over_canvases` (layers off the grid and over the edge, a
+masked one, replace / add / subtract / undo, every similar pixel, the layer as the source, the bucket in a selection:
+the same selection and the same fill bytes as with `InpaintEditor.stacks = false`), and
+`wand_and_bucket_flood_a_region_not_the_image` still holds the wand to a flood of the whole flatten, pixel for pixel. Three mutations (the cut tiles a row off, subtract that does not clear, a store's columns not moved to the box) turned one of the two red.
+Where layers are partly transparent the composite under the wand can be a level off the canvases' (B item 1), so a
+region's edge can move where a pixel sits exactly on the tolerance; `px_jobs.py --check` (a 35 % paint layer) still
+gives the same selections.
+
 **Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
 order: 4, 1, 2, 3, 5, 6.
 

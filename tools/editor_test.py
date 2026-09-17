@@ -1622,7 +1622,9 @@ async def arena_step(c):
     left = res["slots"] - out["before"]["slots"]
     if left > 0:
         raise Exception("%d arena slots were not given back after their tiles were collected" % left)
-    if res["chunks"] > out["before"]["chunks"]:
+    # the arena keeps its last chunk (the next tile would allocate it again): on a fresh canvas-backend instance, where
+    # no tile existed before this step, one chunk stays
+    if res["chunks"] > max(1, out["before"]["chunks"]):
         raise Exception("the chunks the tiles filled were kept: %d before, %d after" % (out["before"]["chunks"], res["chunks"]))
     return {"arena": True, "slots": [out["before"]["slots"], out["mid"]["slots"], res["slots"]], "chunks": [out["before"]["chunks"], out["mid"]["chunks"], res["chunks"]], "dropped": res["droppedChunks"] - out["before"]["droppedChunks"]}
 
@@ -2275,7 +2277,11 @@ ed.getBounds();
     try { await ed.bucketFill(4100, 1600); } finally { if (own) selObj[spyName] = orig; else delete selObj[spyName]; ed.floodRegion = oFlood; }
     out.bucketInSelection = { rounds: fr.rounds, box: fr.box, selectionReads: areas };
     if (!(fr.rounds >= 1)) throw new Error("the bucket in a selection did not take the box path: " + JSON.stringify(fr));
-    if (!areas.length) throw new Error("the bucket in a selection read no part of the selection (the spy saw nothing)");
+    // B item 2: over a plain stack the pool's worker reads the selection's tiles where they lie, and nothing is read here
+    const overTiles = !!(ed.floodStack && ed.floodStack("image"));
+    out.bucketInSelection.overTiles = overTiles;
+    if (!areas.length && !overTiles) throw new Error("the bucket in a selection read no part of the selection (the spy saw nothing)");
+    if (areas.length && overTiles) throw new Error("the bucket over tiles still read the selection here: " + JSON.stringify(areas));
     if (areas.some((a) => a >= W * H)) throw new Error("the bucket read the whole selection for a box: " + JSON.stringify(areas));
     const inside = at(4100, 1600), outside = at(3700, 1600);
     if (inside[1] !== 255 || outside[3] !== 0) throw new Error("the bucket in a selection filled " + JSON.stringify({ inside, outside }));
@@ -5593,6 +5599,85 @@ return { tiles: out.tiles, level: out.level, rows: out.rows.map((r) => r.path + 
     ("c2_final_review_drag_undo_steps_writes_mirrors_report_limits", lambda c: final_step(c)),
     ("closed_tabs_are_collected", lambda c: closed_tabs_are_collected(c)),
     ("arena_slots_come_back_when_tiles_are_collected", lambda c: arena_step(c)),
+    ("the_flood_over_tiles_is_the_flood_over_canvases", """
+// B item 2 (docs/PLAN_BCE.md 3b): on a plain stack the pool composites the wand's and the bucket's picture from the tiles
+// and floods it there, and the wand's answer comes back as tiles of the selection. The same selection and the same fill
+// as the canvases give (`InpaintEditor.stacks = false`), byte for byte: every pixel here is opaque or empty, where the
+// two composites are the same bytes. Layers off the tile grid and over the picture's edge, a masked one, the three
+// modes, the layer as the sample source, the bucket clipped to a selection.
+if (!ednow(window.__t).tileMode) return { skipped: "the canvas backend has no tiles to flood over" };
+await run("new_canvas", { width: 3300, height: 2300, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const E = ed.constructor, W = ed.width, H = ed.height;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const base = mk(W, H), bx = base.getContext("2d");
+bx.fillStyle = "#f0f0e8"; bx.fillRect(0, 0, W, H);
+bx.fillStyle = "#2050c0"; bx.fillRect(300, 300, 1500, 900); bx.fillRect(1700, 1100, 1300, 700);
+bx.fillStyle = "#c03030"; bx.fillRect(700, 500, 400, 300);
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "flood_tiles.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const L = ed.pixels.Layer, M = ed.pixels.Mask;
+{
+    const c = mk(1201, 803), x = c.getContext("2d");
+    x.fillStyle = "#2050c0"; x.fillRect(0, 0, 1201, 803);          // joins the two blue blocks of the base
+    x.clearRect(500, 300, 200, 200);
+    ed.addLayer({ name: "Patch", kind: "paint", px: L.fromCanvas(c), x: 1433, y: 977, w: 1201, h: 803, dirty: true });
+    const c2 = mk(700, 500); c2.getContext("2d").fillStyle = "#30a040"; c2.getContext("2d").fillRect(0, 0, 700, 500);
+    const l2 = ed.addLayer({ name: "Masked", kind: "paint", px: L.fromCanvas(c2), x: W - 450, y: -120, w: 700, h: 500, dirty: true });
+    const m = mk(700, 500); m.getContext("2d").fillStyle = "#fff"; m.getContext("2d").fillRect(0, 0, 350, 500);
+    l2.maskPx = M.fromCanvas(m); l2.maskDirty = true;
+    window.__ftMasked = l2.id;
+}
+ed.renderLayers(); ed.draw();
+await ed.mipsSettled();
+if (!ed.floodStack("image")) throw new Error("no flood stack for a plain document");
+const hex = async (u8) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", u8))).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+const selHash = async () => hex(ed.sel.readRect(0, 0, W, H).data);
+const script = async () => {
+    const out = {};
+    ed.clearUndo(); ed.clearSelection();
+    ed.fillOpts = { tolerance: 32, contiguous: true, sample: "image" };
+    await ed.wandSelect(400, 400, "replace"); out.replace = [await selHash(), ed.getBounds()];
+    await ed.wandSelect(800, 600, "add"); out.add = [await selHash(), ed.getBounds()];
+    await ed.wandSelect(2000, 1400, "subtract"); out.subtract = [await selHash(), ed.getBounds()];
+    await ed.undoStep(); out.undo = [await selHash(), ed.getBounds()];
+    await ed.wandSelect(W - 300, 50, "replace"); out.masked = [await selHash(), ed.getBounds()];
+    ed.fillOpts = { tolerance: 32, contiguous: false, sample: "image" };
+    await ed.wandSelect(400, 400, "replace"); out.everywhere = [await selHash(), ed.getBounds()];
+    ed.fillOpts = { tolerance: 32, contiguous: true, sample: "layer" };
+    ed.activeLayerId = window.__ftMasked;
+    await ed.wandSelect(W - 300, 50, "replace"); out.layer = [await selHash(), ed.getBounds()];
+    // the bucket, clipped to a selection, into a new layer
+    ed.fillOpts = { tolerance: 32, contiguous: true, sample: "image" };
+    ed.sel.clear(); ed.sel.fill([200, 200, 1000, 1000], "#ff0000"); ed.markSelectionChanged([200, 200, 1000, 1000]); ed.getBounds();
+    const layer = ed.addPaintLayer(); ed.activeLayerId = layer.id; ed.color = "#e0c020"; ed.brushOpacity = 1;
+    await ed.bucketFill(400, 400);
+    out.bucket = [await hex(layer.px.readRect(0, 0, W, H).data), (ed.status.match(/^Filled [^ ]+ px/) || [ed.status])[0]];
+    ed.removeLayer(layer.id);
+    ed.clearSelection();
+    return out;
+};
+const seen = [];
+const oOver = ed.floodOverTiles.bind(ed);
+ed.floodOverTiles = async (...a) => { const r = await oOver(...a); seen.push(r ? (r.tiles ? "tiles" : "bitmap") : "none"); return r; };
+let over, canvases;
+try {
+    over = await script();
+    E.stacks = false;
+    const n = seen.length;
+    canvases = await script();
+    if (seen.length !== n) throw new Error("with stacks off the flood still ran over tiles");
+} finally { E.stacks = true; delete ed.floodOverTiles; }
+if (!seen.includes("tiles") || !seen.includes("bitmap") || seen.includes("none")) throw new Error("the floods over tiles answered " + JSON.stringify(seen));
+for (const k of Object.keys(canvases)) if (JSON.stringify(over[k]) !== JSON.stringify(canvases[k])) throw new Error(k + ": over tiles " + JSON.stringify(over[k]) + ", over canvases " + JSON.stringify(canvases[k]));
+if (!over.replace[1] || !over.layer[1]) throw new Error("nothing was selected: " + JSON.stringify(over));
+// the steps after this one expect the small document they had before it
+ed.clearUndo();
+await run("new_canvas", { width: 600, height: 300, doc: window.__t });
+return { over, floods: seen.length };
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

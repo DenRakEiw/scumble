@@ -171,12 +171,13 @@ function rowsOfTiles(msg, above = false) {
 /**
  * The rows `Y0` to `Y0 + n` of the image out of one store of a stack: `{ x, y, w, h, tiles }`, its pixels at (x, y) of
  * the image, `tiles[lty]` the names of its tile row `lty` from the left (as `rowsOfTiles` takes them). Into `out`, `W`
- * pixels wide: RGBA8, or with `alphaOnly` one byte a pixel, the alpha. False when no tile of the store lies there.
+ * pixels wide from the image's column `X0`: RGBA8, or with `alphaOnly` one byte a pixel, the alpha. False when no tile
+ * of the store lies there.
  */
-function storeRows(store, W, Y0, n, out, alphaOnly = false) {
+function storeRows(store, X0, W, Y0, n, out, alphaOnly = false) {
     const sx = store.x | 0, sy = store.y | 0;
     const y0 = Math.max(Y0, sy), y1 = Math.min(Y0 + n, sy + store.h);
-    const x0 = Math.max(0, sx), x1 = Math.min(W, sx + store.w);
+    const x0 = Math.max(X0, sx), x1 = Math.min(X0 + W, sx + store.w);
     if (y1 <= y0 || x1 <= x0) return false;
     let any = false;
     for (let lty = (y0 - sy) >> 8; lty * TILE < y1 - sy; lty++) {
@@ -190,7 +191,7 @@ function storeRows(store, W, Y0, n, out, alphaOnly = false) {
             const cx0 = Math.max(x0, sx + ltx * TILE), cx1 = Math.min(x1, sx + (ltx + 1) * TILE), k = cx1 - cx0;
             any = true;
             for (let Y = ry0; Y < ry1; Y++) {
-                const so = ((Y - sy - lty * TILE) * TILE + (cx0 - sx - ltx * TILE)) * 4, o = (Y - Y0) * W + cx0;
+                const so = ((Y - sy - lty * TILE) * TILE + (cx0 - sx - ltx * TILE)) * 4, o = (Y - Y0) * W + cx0 - X0;
                 if (alphaOnly) for (let i = 0; i < k; i++) out[o + i] = bytes[so + i * 4 + 3];
                 else out.set(bytes.subarray(so, so + k * 4), o * 4);
             }
@@ -203,24 +204,37 @@ function storeRows(store, W, Y0, n, out, alphaOnly = false) {
  * Rows of a plain stack composited here, from the tiles where they lie (docs/PLAN_BCE.md §3b, B item 1): `stack` is
  * `{ base, layers: [{ x, y, w, h, tiles, alpha, mask }] }`, every store as `storeRows` takes it, a layer drawn
  * source-over at `alpha` (0..255) through its mask's alpha (a store on the layer's own grid; where the mask has no
- * tile the layer shows nothing). The rows `y` to `y + rows`, or with `above` the one row over them (null at the top).
+ * tile the layer shows nothing). The rows `y` to `y + rows`, or with `above` the one row over them (null at the top),
+ * `w` pixels from the image's column `x0`. `into`: a cleared buffer of that size to composite in (a part of a shared one).
+ * `base` may be null: nothing below the layers (the wand's and the bucket's "sample the layer").
  */
-function rowsOfStack(msg, above = false) {
+function rowsOfStack(msg, above = false, into = null) {
     let Y0 = msg.y | 0, n = msg.rows;
     if (above) { if (Y0 <= 0) return null; Y0--; n = 1; }
-    const W = msg.w, st = msg.stack;
-    const dst = new Uint8Array(W * n * 4);
-    storeRows(st.base, W, Y0, n, dst);
+    const W = msg.w, X0 = msg.x0 | 0, st = msg.stack;
+    const dst = into || new Uint8Array(W * n * 4);
+    if (st.base) storeRows(st.base, X0, W, Y0, n, dst);
     const srcs = [], alphas = [], masks = [];
     for (const l of st.layers) {
         const src = new Uint8Array(W * n * 4);
-        if (!storeRows(l, W, Y0, n, src)) continue;
+        if (!storeRows(l, X0, W, Y0, n, src)) continue;
         let mask = null;
-        if (l.mask) { mask = new Uint8Array(W * n); storeRows({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, W, Y0, n, mask, true); }
+        if (l.mask) { mask = new Uint8Array(W * n); storeRows({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, X0, W, Y0, n, mask, true); }
         srcs.push(src); alphas.push(l.alpha); masks.push(mask);
     }
     if (srcs.length) compositeTile(dst, srcs, srcs.map(() => 0), alphas, masks);
     return dst;
+}
+
+/**
+ * Rows of a stack composited into a shared buffer (B item 2: the picture a flood reads, put together by the pool):
+ * `sab` holds `w` x `h` RGBA8 of the box at (`x0`, `y0`) of the image, zeroed; this job fills the rows `y` to `y + rows`.
+ */
+async function stackInto(msg) {
+    const t0 = now();
+    const at = ((msg.y | 0) - (msg.y0 | 0)) * msg.w * 4;
+    rowsOfStack(msg, false, new Uint8Array(msg.sab, at, msg.w * msg.rows * 4));
+    return { timing: { op: "stack_into", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0 } };
 }
 
 /** The rows of a part job, whichever way they come: bytes, a stack to composite, or one store's tiles. */
@@ -349,6 +363,7 @@ async function selection(msg) {
  * arrives, so the editor can widen the box and ask again.
  */
 async function flood(msg) {
+    if (msg.sab) return floodOverTiles(msg);
     const t0 = now();
     const src = canvasOf(msg.bitmap);
     const W = src.width, H = src.height;
@@ -400,6 +415,57 @@ async function flood(msg) {
     return { bitmap, count, bounds: x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1], touches, timing: ms };
 }
 
+/**
+ * The flood over a picture the pool composited from tiles (`stack_into`), B item 2: `sab` holds the box's RGBA8, `w` x
+ * `h`; `sel` is the selection as a store (the bucket's clip), read here from its tiles. No canvas on the way in. The
+ * shape goes back as a bitmap (the bucket draws it into a layer), or with `out: "tiles"` as the tiles of the box that
+ * hold any of it, `[{ tx, ty, data }]` of 256 x 256 RGBA8 each (the box starts on the tile grid, so they are the
+ * selection's own tiles): the wand writes them into the mask without a canvas on the way out either.
+ */
+async function floodOverTiles(msg) {
+    const p = rustPx();
+    if (!p) throw new Error(NO_PARTS);
+    const t0 = now();
+    const W = msg.w, H = msg.h;
+    const data = new Uint8Array(msg.sab, 0, W * H * 4);
+    const ms = { op: "flood", kernels: "rust", pixels: W * H, tiles: true, read: 0 };
+    let t = now();
+    const lap = (key) => { const n = now(); ms[key] = n - t; t = n; };
+    let sel = null;
+    if (msg.sel) { sel = new Uint8Array(W * H * 4); storeRows(msg.sel, msg.x0 | 0, W, msg.y0 | 0, H, sel); }
+    lap("clip");
+    const [r, g, b] = hexToRgb(msg.color || "#ff0000");
+    const res = p.floodShape(data, W, H, msg.x, msg.y, msg.tolerance === undefined ? 32 : msg.tolerance, msg.contiguous !== false, sel, (r << 16) | (g << 8) | b, (view, count, bounds) => {
+        lap("flood");
+        if (msg.out !== "tiles") {
+            const shape = new OffscreenCanvas(W, H);
+            shape.getContext("2d").putImageData(new ImageData(view, W, H), 0, 0);
+            lap("shape");
+            return { count, bounds, bitmap: shape.transferToImageBitmap() };
+        }
+        const tiles = [];
+        if (bounds) {
+            for (let ty = bounds[1] >> 8; ty * TILE < bounds[3]; ty++) for (let tx = bounds[0] >> 8; tx * TILE < bounds[2]; tx++) {
+                const x0 = tx * TILE, y0 = ty * TILE, bw = Math.min(TILE, W - x0), bh = Math.min(TILE, H - y0);
+                let any = false;
+                for (let yy = 0; yy < bh && !any; yy++) { const o = ((y0 + yy) * W + x0) * 4 + 3; for (let xx = 0; xx < bw; xx++) if (view[o + xx * 4]) { any = true; break; } }
+                if (!any) continue;
+                const out = new Uint8ClampedArray(TILE * TILE * 4);
+                for (let yy = 0; yy < bh; yy++) { const o = ((y0 + yy) * W + x0) * 4; out.set(view.subarray(o, o + bw * 4), yy * TILE * 4); }
+                tiles.push({ tx, ty, data: out.buffer });
+            }
+        }
+        lap("shape");
+        return { count, bounds, tiles };
+    });
+    releaseIfLarge();
+    const bb = res.bounds;
+    const touches = bb ? { l: bb[0] === 0, t: bb[1] === 0, r: bb[2] === W, b: bb[3] === H } : null;
+    ms.total = now() - t0;
+    if (res.tiles) return { tiles: res.tiles, count: res.count, bounds: bb, touches, transfer: res.tiles.map((x) => x.data), timing: ms };
+    return { bitmap: res.bitmap, count: res.count, bounds: bb, touches, timing: ms };
+}
+
 async function run(msg) {
     setKernels(msg.kernels);
     await kernelsReady();
@@ -409,6 +475,7 @@ async function run(msg) {
     if (msg.op === "mips") return mips(msg);
     if (msg.op === "band") return band(msg);
     if (msg.op === "png_part") return pngPart(msg);
+    if (msg.op === "stack_into") return stackInto(msg);
     if (msg.op === "hash") return hashJob(msg);
     if (msg.op === "psd_part") return psdPart(msg);
     if (msg.op === "png_read") return pngRead(msg);

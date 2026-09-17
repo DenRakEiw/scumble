@@ -154,8 +154,12 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    built"): a plain stack (no filter layer, blend mode or colour match) is composited by the pool's workers from the
    arena while they pack it (`stackPlan` / `stackSource` next to `boxReach`, `stackRows` in `inpaint_bands.js`,
    `rowsOfStack` in the worker); 15k PNG 3.5 s to 1.7 s, PSD 3.9 s to 1.3 s, within two levels of the flatten
-   (`export_test.py`). `InpaintEditor.stacks = false` forces the bands. **Next: item 2** (wand and bucket over tiles),
-   then 3 (selection jobs on mask tiles), 5 (the PNG reader in Rust). Each item is measured
+   (`export_test.py`). `InpaintEditor.stacks = false` forces the bands. **B item 2 is built** ("B item 2 as built"): the
+   wand and the bucket on a plain stack flood a `SharedArrayBuffer` the pool composited from the tiles (`floodStack`,
+   `floodOverTiles`, worker `stack_into` and `flood` with `sab`), and the wand's answer comes back as selection tiles
+   (`applyTilesToSelection`); 15k wand 4.2 s to 1.4 s, the block 1.6 s to 0.18 s, the same selection bytes
+   (`editor_test.py` `the_flood_over_tiles_is_the_flood_over_canvases`). **Next: item 3** (selection jobs on mask
+   tiles), then 5 (the PNG reader in Rust), 6 (one-channel masks). Each item is measured
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
    the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
 
@@ -197,6 +201,8 @@ Known flakes; **re-run before believing any of these**:
 - `composite_test.py` once got a 1200 × 794 canvas against its 1200 × 800 reference and then crashed with `KeyError 'bytes'`
   in its own failure message (a test bug, not fixed).
 - `node tools/brush_test.js` hung once at exit under load after printing every PASS.
+- `editor_test.py` `closed_tabs_are_collected` failed twice in five runs of the editor gate alone on the canvas backend
+  (`--tiles off`, 2026-09-17, B item 2) and passed on the rerun each time; the code under it had not changed.
 - `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed once with `requested: 0` in some twenty
   runs since the mip chains go through the pool; not reproduced.
 - `perf_test.py`'s magic wand row (whole-image band) read 2.1, 4.0 and 7.0 s in three runs of the same code while ComfyUI

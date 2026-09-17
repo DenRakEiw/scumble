@@ -76,6 +76,20 @@ export function bandRows(width, height, read, rows = TILE) {
  * (inpaint_worker.js `rowsOfStack`). Every tile must be in the arena: `stackInArena` says so beforehand.
  */
 export function stackRows(width, height, stores) {
+    const args = stackArgs(stores);
+    return {
+        width, height, align: TILE,
+        async part(y, n, needPrev) {
+            return { args: { y, stack: args(needPrev && y > 0 ? y - 1 : y, y + n) }, transfer: [] };
+        },
+    };
+}
+
+/**
+ * `(a, b) => stack`: what a worker needs to composite the image rows a to b of these stores (inpaint_worker.js
+ * `rowsOfStack`). `stores[0]`, the base, may be null (nothing below the layers).
+ */
+export function stackArgs(stores) {
     const cache = new Map();   // snap -> Map(lty -> names)
     const names = (snap, lty) => {
         let m = cache.get(snap);
@@ -95,21 +109,27 @@ export function stackRows(width, height, stores) {
         }
         return any ? out : null;
     };
-    return {
-        width, height, align: TILE,
-        async part(y, n, needPrev) {
-            const a = needPrev && y > 0 ? y - 1 : y, b = y + n;
-            const [base, ...over] = stores;
-            const layers = [];
-            for (const s of over) {
-                const tiles = rowsOf(s.snap, s.y, a, b);
-                if (!tiles || !(s.alpha > 0)) continue;
-                layers.push({ x: s.x, y: s.y, w: s.snap.width, h: s.snap.height, alpha: s.alpha, tiles, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null });
-            }
-            const stack = { base: { x: 0, y: 0, w: base.snap.width, h: base.snap.height, tiles: rowsOf(base.snap, 0, a, b) || {} }, layers };
-            return { args: { y, stack }, transfer: [] };
-        },
+    return (a, b) => {
+        const [base, ...over] = stores;
+        const layers = [];
+        for (const s of over) {
+            const tiles = rowsOf(s.snap, s.y, a, b);
+            if (!tiles || !(s.alpha > 0)) continue;
+            layers.push({ x: s.x, y: s.y, w: s.snap.width, h: s.snap.height, alpha: s.alpha, tiles, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null });
+        }
+        return { base: base ? { x: 0, y: 0, w: base.snap.width, h: base.snap.height, tiles: rowsOf(base.snap, 0, a, b) || {} } : null, layers };
     };
+}
+
+/** One store of tile pixels at (x, y) of the image as a worker reads its rows a to b (`storeRows`): the bucket's clip. */
+export function storeArgs(snap, x, y, a, b) {
+    const tiles = {};
+    for (let lty = Math.max(0, a - y) >> 8; lty * TILE < Math.min(snap.height, b - y); lty++) {
+        const n = snap.tileRowNames(lty);
+        if (n === null) throw new Error("a tile of the store is not in the arena");
+        if (n.some(Boolean)) tiles[lty] = n;
+    }
+    return { x, y, w: snap.width, h: snap.height, tiles };
 }
 
 /** Is every tile of these pixels in the arena (a worker reads tiles by slot only there)? */

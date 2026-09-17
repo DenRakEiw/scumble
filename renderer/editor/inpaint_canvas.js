@@ -24,7 +24,7 @@ import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { WorkerPool, poolSize, INTERACTIVE, EXPORT } from "./inpaint_pool.js";
 import { NO_PARTS, pngHeader } from "./inpaint_png.js";
-import { tileRows, bandRows, stackRows, stackInArena, writePng, PsdBandWriter, OraBandWriter } from "./inpaint_bands.js";
+import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, writePng, PsdBandWriter, OraBandWriter } from "./inpaint_bands.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, setChainTransport, chainScheduler } from "./inpaint_tiles.js";
 
@@ -4844,8 +4844,16 @@ class InpaintEditor {
      * takes the old path.
      */
     async floodRegion(x, y, o) {
+        // B item 2: a plain stack is composited by the pool from its tiles and flooded there; held as it is now
+        const held = this.holdStack(this.floodStack(o.sample));
+        try { return await this.floodRegionOf(held, x, y, o); } finally { if (held) held.release(); }
+    }
+
+    async floodRegionOf(held, x, y, o) {
         const W = this.width, H = this.height;
         const whole = async () => {
+            const t = held ? await this.floodOverTiles(held, [0, 0, W, H], x, y, o) : null;
+            if (t) return { ...t, x: 0, y: 0, w: W, h: H, rounds: 0 };
             const r = await this.floodShape(this.sampleCanvas(o.sample), x, y, { tolerance: o.tolerance, contiguous: o.contiguous, color: o.color, clip: o.clip });
             return { ...r, x: 0, y: 0, w: W, h: H, rounds: 0 };
         };
@@ -4862,11 +4870,16 @@ class InpaintEditor {
             : [x - pad, y - pad, x + pad, y + pad];
         for (let round = 1; ; round++) {
             box = [Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(W, Math.ceil(box[2])), Math.min(H, Math.ceil(box[3]))];
+            // over tiles the box lies on the tile grid: the answer's tiles are then the selection's own
+            if (held) box = [box[0] & ~(TILE_SIZE - 1), box[1] & ~(TILE_SIZE - 1), Math.min(W, Math.ceil(box[2] / TILE_SIZE) * TILE_SIZE), Math.min(H, Math.ceil(box[3] / TILE_SIZE) * TILE_SIZE)];
             const [bx, by, bx1, by1] = box, bw = bx1 - bx, bh = by1 - by;
             // a region that covers most of the picture is cheaper in one pass than box by box
             if (bw <= 0 || bh <= 0 || bw * bh > W * H * FLOOD_WHOLE_SHARE) return whole();
-            const fine = this.sampleRegion(o.sample, box, 1);
-            const r = await this.floodShape(fine, x - bx, y - by, { tolerance: o.tolerance, contiguous: true, color: o.color, clip: o.clip, at: [bx, by] });
+            let r = held ? await this.floodOverTiles(held, box, x, y, { ...o, contiguous: true }) : null;
+            if (!r) {
+                const fine = this.sampleRegion(o.sample, box, 1);
+                r = await this.floodShape(fine, x - bx, y - by, { tolerance: o.tolerance, contiguous: true, color: o.color, clip: o.clip, at: [bx, by] });
+            }
             const t = r.touches || {};
             const l = t.l && bx > 0, tp = t.t && by > 0, rt = t.r && bx1 < W, b = t.b && by1 < H;
             if (!(l || tp || rt || b) || round >= 8) {
@@ -5025,11 +5038,106 @@ class InpaintEditor {
      * now on, so the file is the picture of this moment whatever is painted while the workers read it.
      */
     stackSource(opts = { forRun: true }) {
-        const plan = this.stackPlan(opts);
+        const held = this.holdStack(this.stackPlan(opts));
+        if (!held) return null;
+        return { source: stackRows(this.width, this.height, held.stores), layers: held.stores.length - 1, release: held.release };
+    }
+
+    /** A stack plan (its first entry, the base, may be null) held as clones the workers read by slot: `{ stores, release() }`, or null when a tile is outside the arena. */
+    holdStack(plan) {
         if (!plan) return null;
-        for (const s of plan) if (!stackInArena(s.px) || (s.mask && !stackInArena(s.mask))) return null;
-        const stores = plan.map((s) => ({ snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha }));
-        return { source: stackRows(this.width, this.height, stores), layers: stores.length - 1, release() { for (const s of stores) { s.snap.release(); if (s.mask) s.mask.release(); } } };
+        for (const s of plan) if (s && (!stackInArena(s.px) || (s.mask && !stackInArena(s.mask)))) return null;
+        const stores = plan.map((s) => s && ({ snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha }));
+        return { stores, release() { for (const s of stores) if (s) { s.snap.release(); if (s.mask) s.mask.release(); } } };
+    }
+
+    /**
+     * What the wand and the bucket look at (`sample`: "image" or "layer") as a stack plan, when the workers can
+     * composite it from tiles (B item 2), else null and `sampleRegion` draws it. The branches are `sampleRegion`'s: the
+     * active layer alone, through its mask, over nothing; or the visible image, helper layers included.
+     */
+    floodStack(sample) {
+        if (InpaintEditor.stacks === false || !this.tileMode || this.huge || !partsUsable() || !arenaEnabled()) return null;
+        if (sample === "layer") {
+            const l = this.activeLayer();
+            if (l && l.kind !== "filter" && l.px) {
+                const plain = isTilePixels(l.px) && !this.liveStrokeOn(l) && (!l.maskPx || this.tileMaskOf(l)) && l.px.width === l.w && l.px.height === l.h && l.x === Math.round(l.x) && l.y === Math.round(l.y);
+                return plain ? [null, { px: l.px, mask: l.maskPx ? this.tileMaskOf(l) : null, x: l.x, y: l.y, alpha: 255 }] : null;
+            }
+        }
+        return this.stackPlan({ forRun: false });
+    }
+
+    /**
+     * The flood over `box` (on the tile grid, inside the image) of a held stack, without a canvas (B item 2): the pool
+     * composites the box from the tiles into one shared buffer, a tile row a job, and one worker floods it there. The
+     * answer is `floodShape`'s, with `tiles` in place of `shape` when `o.tiles` asks for the selection's tiles. Null when
+     * it cannot be done this way (too large for one buffer, no kernels, a failed job): the caller takes the canvases.
+     */
+    async floodOverTiles(held, box, x, y, o) {
+        const [bx, by, bx1, by1] = box, w = bx1 - bx, h = by1 - by;
+        if (!(w > 0 && h > 0) || w * h * 4 > 0x7fffffff) return null;
+        const pool = editorPool(), group = "flood" + (++partsSeq);
+        let selSnap = null;
+        try {
+            const sab = new SharedArrayBuffer(w * h * 4);
+            const args = stackArgs(held.stores);
+            const jobs = [];
+            for (let yy = by; yy < by1;) {
+                const n = Math.min(TILE_SIZE - (yy % TILE_SIZE), by1 - yy);
+                jobs.push(pool.run("stack_into", { sab, w, x0: bx, y0: by, y: yy, rows: n, stack: args(yy, yy + n) }, [], { priority: INTERACTIVE, group }));
+                yy += n;
+            }
+            await Promise.all(jobs);
+            let sel = null;
+            if (o.clip && this.getBounds()) {
+                if (!stackInArena(this.sel)) return null;
+                selSnap = this.sel.clone();
+                sel = storeArgs(selSnap, 0, 0, by, by1);
+            }
+            const r = await pool.run("flood", { sab, w, h, x0: bx, y0: by, x: x - bx, y: y - by, tolerance: o.tolerance, contiguous: o.contiguous, color: o.color, sel, out: o.tiles ? "tiles" : "bitmap" }, [], { priority: INTERACTIVE, group, timeout: 300000 });
+            return { shape: r.bitmap || null, tiles: r.tiles || null, count: r.count, bounds: r.bounds, touches: r.touches, close: !!r.bitmap };
+        } catch (err) {
+            pool.cancel(group);
+            if (!partsFailed(err)) console.warn("Inpaint Canvas: the region over tiles failed, using the canvases:", (err && err.message) || err);
+            return null;
+        } finally {
+            if (selSnap) selSnap.release();
+        }
+    }
+
+    /**
+     * The wand's answer as tiles of the selection (`floodOverTiles` with `tiles`), written into the mask: `tiles` are
+     * `[{ tx, ty, data }]` on the grid of the box at `at`, the shape opaque where the region is. What
+     * `applyShapeToSelection` does with a canvas, without one.
+     */
+    applyTilesToSelection(tiles, mode = "replace", box = null, at = [0, 0]) {
+        const hint = box ? this.boundsAfter(mode, box) : undefined;
+        this.pushUndo({ kind: "selection" });
+        if (mode === "replace") this.selectionLabel = "";
+        const old = mode === "replace" ? this.getBounds() : null;
+        if (mode === "replace") this.sel.clear();
+        const W = this.width, H = this.height;
+        for (const t of tiles) {
+            const X = at[0] + t.tx * TILE_SIZE, Y = at[1] + t.ty * TILE_SIZE, w = Math.min(TILE_SIZE, W - X), h = Math.min(TILE_SIZE, H - Y);
+            const src = new Uint8ClampedArray(t.data);
+            let out;
+            if (mode === "replace" && w === TILE_SIZE && h === TILE_SIZE) out = src;
+            else {
+                out = mode === "replace" ? new Uint8ClampedArray(w * h * 4) : this.sel.readRect(X, Y, w, h).data;
+                for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+                    const so = (yy * TILE_SIZE + xx) * 4, o = (yy * w + xx) * 4;
+                    if (!src[so + 3]) continue;
+                    if (mode === "subtract") { out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0; }
+                    else { out[o] = src[so]; out[o + 1] = src[so + 1]; out[o + 2] = src[so + 2]; out[o + 3] = src[so + 3]; }
+                }
+            }
+            this.sel.writeRect({ data: out, width: w, height: h }, X, Y);
+        }
+        const rect = box || [at[0], at[1], at[0] + 1, at[1] + 1];
+        const touched = old ? [Math.min(old[0], rect[0]), Math.min(old[1], rect[1]), Math.max(old[2], rect[2]), Math.max(old[3], rect[3])] : rect;
+        this.markSelectionChanged(hint, touched);
+        this.draw();
     }
 
     /**
@@ -5169,8 +5277,9 @@ class InpaintEditor {
         if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
         const o = this.fillOpts || { tolerance: 32, contiguous: true, sample: "image" };
         const t0 = performance.now();
-        const r = await this.floodRegion(x, y, { tolerance: o.tolerance, contiguous: o.contiguous, sample: o.sample });
-        this.applyShapeToSelection(r.shape, mode, r.bounds, [r.x, r.y]);
+        const r = await this.floodRegion(x, y, { tolerance: o.tolerance, contiguous: o.contiguous, sample: o.sample, tiles: true });
+        if (r.tiles) this.applyTilesToSelection(r.tiles, mode, r.bounds, [r.x, r.y]);
+        else this.applyShapeToSelection(r.shape, mode, r.bounds, [r.x, r.y]);
         if (r.close) r.shape.close();
         this.setStatus(`${r.count.toLocaleString()} px ${mode === "replace" ? "selected" : mode === "add" ? "added" : "subtracted"} (${Math.round(performance.now() - t0)} ms).`);
     }
