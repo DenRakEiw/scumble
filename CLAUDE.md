@@ -78,13 +78,15 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-16) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
-## Where things stand (2026-09-16, late)
+## Where things stand (2026-09-17)
 
-**Releases.** **0.1.16 is published** (Latest since 2026-09-17; `latest.yml` on the feed says 0.1.16). It carries C6 (c)
-slice 7b to 7d, C6 (d), C4, the rest of §C7 and phase R (Rust kernels by default). `package.json` is **0.1.17** with an
-empty section in `CHANGELOG.md`. Exe gates for 0.1.16: `rel16-exe` (log pixels editor composite brush film toapis mcp) and
-`rel16-exe-canvas` ALL PASS, `px_jobs.py --check` against the exe PASS; `smoke` and `commands` not run (the user's ComfyUI
-was busy). Check `gh release list` before believing any release state written down anywhere.
+**Releases.** **0.1.17 is published** (Latest since 2026-09-17; `latest.yml` on the feed says 0.1.17). It carries phase E
+(E1 to E5). `package.json` is **0.1.18** with an empty section in `CHANGELOG.md`. Exe gates for 0.1.17, all `--offline`:
+`rel17-exe` (log pixels editor composite brush film export toapis mcp pxjobs), `rel17-exe-huge` (`huge:30000x20000`) and
+`rel17-exe-canvas` (tiles off: pixels editor composite film export) ALL PASS; CI's `build_px.py --check` passed with the
+crate's new dependency (miniz_oxide). **`smoke` was not run** (the user's ComfyUI was busy); instead Pillow 12.2 from the
+ComfyUI's own Python read a PNG joined from parts (pixels exact, tEXt intact, `verify()` ok). Check `gh release list`
+before believing any release state written down anywhere.
 
 **Phase E is built** (2026-09-17, `docs/PLAN_BCE.md` §3 "E1 as built" and "E2 to E5 as built", CHANGELOG 0.1.17).
 What it is, because it is **not the plan's design**: there is no second compositor in the workers. A band of an export is a
@@ -113,7 +115,8 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
   `electron.exe ... --mcp` processes fixes it; the missing hand-over is not measured.
 - **§C7's memory gate is not met** (at most 300 MB of GPU process per document); the default went on anyway, on the user's
   decision.
-- **The node repo is behind** (master 647db5d, before C3). `nodecopy` builds and tests it in a scratch copy; build it into
+- **The node repo is behind** (master 647db5d, before C3, plus one local, unpushed commit 1f37ad0: `exportIsPlain` in the
+  node's own `js/host.js`, which the editor asks for since E2 and `build_node.py --check` insists on). `nodecopy` builds and tests it in a scratch copy; build it into
   the real repo only when a node version is meant to ship.
 
 **What comes next, in order** (`dist/c6map/c/` holds the maps; they are older than the code):
