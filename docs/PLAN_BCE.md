@@ -4136,6 +4136,30 @@ the 15.5 GB cap, wasm32's 4 GB per instance.
 **Recommendation: A plus B, no C now, no D.** D gets its own plan only if, after B, a row people feel is still mostly
 browser, or the user's documents reach the cap and C cannot hold them.
 
+#### B item 4 as built (2026-09-17): the masks of a provider run
+
+`stitch.js` `dilate` walked the whole radius for every pixel, twice, and `boxCol` read the mask with a stride of w.
+Now `dilateMask` and `boxBlurs` are kernels (`px/kernels.js`, ABI 7): Rust `dilate_mask` (van Herk / Gil-Werman, the
+vertical pass a row at a time) and `box_blurs` (the three passes of the gaussian in one call, f64 running sums in the
+twin's order) in `crates/px/src/maskf.rs`, the twins in `kernels_js.js` (a monotonic queue per row, the columns as the
+rows of the transposed mask; one running sum per column). **The same floats as the old loops, bit for bit**:
+`node tools/stitch_test.js` holds `dilate` and `gaussBlur` to the loops they replaced (kept in the test), `node
+tools/px_test.js` holds both Rust builds to the twins; a mutation of each (the queue's window, the column blur's edge,
+the short windows at the ends of a line in Rust) turned its test red.
+
+| 1,492 × 1,492 mask | old loop | twin | Rust simd |
+|---|---|---|---|
+| dilate by 47 (Node) | 370 ms | 43 ms | 19 ms |
+| gaussian, three box blurs (Node) | 37 ms | 22 ms | 15 ms |
+| **the row: a provider run's crop and stitch at 15k, 1,024 px selection** (`native_test.py provider_crop`) | 2,485 ms | 777 ms | **571 ms** |
+
+**The 0.2 s of the list is not met.** What is left of the 571 ms: the kernels 206 (four dilations and five gaussians
+over windows of up to about 2,000 px a side), per-pixel JS in `stitch.js` 190 (`colorMatch`, `stats`, `maskMax`,
+`maskClamp`, `maskToCanvas`, 20 to 30 ms each), Canvas 2D 260 (`drawImage` 111 and `getImageData` 95: the region, the
+resizes). It still blocks in one piece. The way on is the whole stitch in a worker, not more kernels; it is not on B's
+list and waits for the user's word. Gates: `size transparent generate` on both backends, `pxjobs pixels nodecopy`, all
+offline, ALL PASS.
+
 **Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
 order: 4, 1, 2, 3, 5, 6.
 

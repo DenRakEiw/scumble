@@ -604,3 +604,90 @@ export async function deflate(bytes) {
     const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
     return new Uint8Array(await new Response(stream).arrayBuffer());
 }
+
+// ---- float masks of a provider run (stitch.js) -------------------------------------------------------------------
+
+/**
+ * The running maximum of every row over [x - r, x + r] (clamped to the row), never below 0: a monotonic queue of
+ * indices, so a pixel costs the same whatever the radius (a loop over the radius took 1.9 s of a run's crop,
+ * docs/PERFORMANCE.md section 14). `idx` is scratch of at least w entries.
+ */
+function maxRows(src, dst, w, h, r, idx) {
+    for (let y = 0; y < h; y++) {
+        const row = y * w;
+        let head = 0, tail = 0, next = 0;
+        for (let x = 0; x < w; x++) {
+            for (const e = Math.min(w - 1, x + r); next <= e; next++) {
+                const v = src[row + next];
+                while (tail > head && src[row + idx[tail - 1]] <= v) tail--;
+                idx[tail++] = next;
+            }
+            while (idx[head] < x - r) head++;
+            const v = src[row + idx[head]];
+            dst[row + x] = v > 0 ? v : 0;
+        }
+    }
+}
+
+/** `src` (w x h) turned on its diagonal into `dst` (h x w), in blocks so both sides stay in the cache. */
+function transpose(src, dst, w, h) {
+    const B = 64;
+    for (let by = 0; by < h; by += B) for (let bx = 0; bx < w; bx += B) {
+        const ye = Math.min(h, by + B), xe = Math.min(w, bx + B);
+        for (let y = by; y < ye; y++) for (let x = bx; x < xe; x++) dst[x * h + y] = src[y * w + x];
+    }
+}
+
+/** Square dilation of a w x h float mask by r pixels (a max filter: the rows, then the columns as the rows of the
+ *  transposed mask); a new Float32Array. */
+export function dilateMask(data, w, h, r) {
+    const a = new Float32Array(w * h), b = new Float32Array(w * h), idx = new Int32Array(Math.max(w, h));
+    maxRows(data, a, w, h, r, idx);
+    transpose(a, b, w, h);
+    maxRows(b, a, h, w, r, idx);
+    transpose(a, b, h, w);
+    return b;
+}
+
+/** One box blur pass of radius r along rows (clamped edges). */
+function boxRow(src, dst, w, h, r) {
+    for (let y = 0; y < h; y++) {
+        const row = y * w;
+        let sum = 0;
+        for (let k = -r; k <= r; k++) sum += src[row + Math.min(w - 1, Math.max(0, k))];
+        const n = 2 * r + 1;
+        for (let x = 0; x < w; x++) {
+            dst[row + x] = sum / n;
+            const add = Math.min(w - 1, x + r + 1), sub = Math.max(0, x - r);
+            sum += src[row + add] - src[row + sub];
+        }
+    }
+}
+
+/** The same along columns: one running sum per column, walked row by row (the same sums in the same order as a walk
+ *  down each column, which read the mask with a stride of w). */
+function boxCol(src, dst, w, h, r) {
+    const sums = new Float64Array(w), n = 2 * r + 1;
+    for (let k = -r; k <= r; k++) {
+        const row = Math.min(h - 1, Math.max(0, k)) * w;
+        for (let x = 0; x < w; x++) sums[x] += src[row + x];
+    }
+    for (let y = 0; y < h; y++) {
+        const row = y * w, add = Math.min(h - 1, y + r + 1) * w, sub = Math.max(0, y - r) * w;
+        for (let x = 0; x < w; x++) {
+            dst[row + x] = sums[x] / n;
+            sums[x] += src[add + x] - src[sub + x];
+        }
+    }
+}
+
+/** A box blur along rows and then along columns for every radius that is not 0; a new Float32Array. */
+export function boxBlurs(data, w, h, radii) {
+    const a = Float32Array.from(data), b = new Float32Array(w * h);
+    for (const r of radii) {
+        if (r <= 0) continue;
+        boxRow(a, b, w, h, r);
+        boxCol(b, a, w, h, r);
+    }
+    return a;
+}

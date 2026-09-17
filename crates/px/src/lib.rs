@@ -22,6 +22,7 @@ mod composite;
 mod edt;
 mod flood;
 mod jobs;
+mod maskf;
 mod mip;
 mod png;
 mod psd;
@@ -37,7 +38,7 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature; `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    6
+    7
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -112,6 +113,20 @@ pub unsafe extern "C" fn dist_transform(feature: *const u8, w: usize, h: usize, 
         slice::from_raw_parts_mut(out, w * h),
         slice::from_raw_parts_mut(scratch, edt::scratch_bytes(w, h)),
     );
+}
+
+// ---- float masks (a provider run's crop and stitch) --------------------------------------
+
+/// Square dilation of a w x h mask of f32 by `r` pixels, in place, never below 0 (a whole job: it allocates its scratch).
+#[no_mangle]
+pub unsafe extern "C" fn dilate_mask(data: *mut f32, w: usize, h: usize, r: usize) {
+    maskf::dilate(slice::from_raw_parts_mut(data, w * h), w, h, r);
+}
+
+/// Box blurs of the radii `r0`, `r1`, `r2` (0: none), rows then columns each, in place with clamped edges.
+#[no_mangle]
+pub unsafe extern "C" fn box_blurs(data: *mut f32, w: usize, h: usize, r0: usize, r1: usize, r2: usize) {
+    maskf::box_blurs(slice::from_raw_parts_mut(data, w * h), w, h, &[r0, r1, r2]);
 }
 
 // ---- flood ------------------------------------------------------------------------------

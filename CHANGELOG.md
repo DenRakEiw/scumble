@@ -5,6 +5,10 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.18 — unreleased
 
+- **A run through an API provider starts and lands faster.** Before the picture goes out and when the result comes
+  back, Scumble works out the soft masks that blend the result into the image. On a 1024 px selection that froze the
+  window for about 2.5 seconds; it is about 0.6 seconds now, with exactly the same masks.
+
 ## 0.1.17 — 2026-09-17
 
 - **Pictures larger than 268 megapixels open.** Chromium cannot hold a canvas above 268 MP, and until now neither could

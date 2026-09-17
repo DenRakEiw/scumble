@@ -379,7 +379,7 @@ def profile_split(profile):
             out["program"] += ms
         elif not url:
             out["natives"][name or "(anonymous)"] = out["natives"].get(name or "(anonymous)", 0) + ms
-        elif "/px/" in url or url.endswith("inpaint_raster.js"):
+        elif "/px/" in url or url.endswith("inpaint_raster.js") or name.startswith("wasm-function") or url.startswith("wasm://"):
             out["px"] += ms
         else:
             f = url.rsplit("/", 1)[-1].split("?")[0]

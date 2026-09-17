@@ -229,6 +229,34 @@ async function edtCases(ref, label, js, raster) {
     check(`js twin is the exact squared distance (brute force 41x29)`, exact);
 }
 
+/** The float masks of a provider run (dilate_mask, box_blurs) against their twins: the same floats, bit for bit. */
+async function maskCases(px, label, js) {
+    const mask = (w, h, seed) => {
+        let s = seed >>> 0;
+        const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+        const data = new Float32Array(w * h);
+        const cx = rnd() * w, cy = rnd() * h, r = 2 + rnd() * Math.max(w, h) / 3;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) data[y * w + x] = Math.round(Math.min(1, Math.max(0, (r - Math.hypot(x - cx, y - cy)) / 3)) * 255) / 255;
+        for (let i = 0; i < w * h; i += 5) if (rnd() < 0.15) data[i] = Math.round(rnd() * 255) / 255;
+        return data;
+    };
+    const same = (a, b) => { for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return `value ${i} is ${a[i]}, the twin has ${b[i]}`; return a.length === b.length ? "" : "lengths differ"; };
+    let ok = true, detail = "";
+    for (const [w, h] of [[1, 1], [7, 3], [3, 97], [64, 64], [131, 77], [300, 211]]) {
+        const m = mask(w, h, w * 131 + h);
+        for (const r of [1, 2, 5, 40, 500]) { const d = same(px.dilateMask(m, w, h, r), js.dilateMask(m, w, h, r)); if (d) { ok = false; detail = `dilate ${w}x${h} by ${r}: ${d}`; } }
+        for (const radii of [[1, 1, 1], [0, 1, 2], [3, 3, 4], [17, 18, 18], [200, 200, 201], [0, 0, 0]]) { const d = same(px.boxBlurs(m, w, h, radii), js.boxBlurs(m, w, h, radii)); if (d) { ok = false; detail = `box blurs ${w}x${h} ${radii}: ${d}`; } }
+    }
+    check(`${label} dilate_mask and box_blurs equal their twins bit for bit`, ok, detail);
+    const big = mask(1492, 1492, 9);
+    const t0 = performance.now(); px.dilateMask(big, 1492, 1492, 47);
+    const t1 = performance.now(); js.dilateMask(big, 1492, 1492, 47);
+    const t2 = performance.now(); px.boxBlurs(big, 1492, 1492, [19, 20, 20]);
+    const t3 = performance.now(); js.boxBlurs(big, 1492, 1492, [19, 20, 20]);
+    const t4 = performance.now();
+    console.log(`       1492 x 1492: dilate ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)}; three box blurs ${label} ${(t3 - t2).toFixed(1)} ms, twin ${(t4 - t3).toFixed(1)}`);
+}
+
 /** The whole-job kernels (grow_mask, flood_shape) against the editor's JS for the same jobs. */
 async function jobCases(px, label, raster) {
     let ok = true, detail = "";
@@ -543,6 +571,7 @@ async function main() {
         await edtCases(px, label, js, raster);
         await floodCases(px, label, js, raster);
         await jobCases(px, label, raster);
+        await maskCases(px, label, js);
         await compositeCases(px, label, js);
         await pngCases(px, label, js);
         await pngPartCases(px, label);

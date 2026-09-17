@@ -10,6 +10,8 @@
 // Navier-Stokes inpainting (it behaves like "blur"), and the ECC alignment of the
 // result to its surroundings is not implemented (reported as not aligned).
 
+import { dilateMask, boxBlurs } from "./px/kernels.js";
+
 const MIN_AUTO_CROP = 512;
 
 function makeCanvas(w, h) {
@@ -82,27 +84,10 @@ function maskMax(a, b) { const o = maskOf(a.w, a.h); for (let i = 0; i < o.data.
 function maskClamp(m) { for (let i = 0; i < m.data.length; i++) m.data[i] = Math.min(1, Math.max(0, m.data[i])); return m; }
 
 /** Square dilation by px (max filter, separable). */
-function dilate(m, px) {
+export function dilate(m, px) {
     px = Math.floor(px);
     if (px <= 0) return m;
-    const { w, h } = m;
-    const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
-    for (let y = 0; y < h; y++) {
-        const row = y * w;
-        for (let x = 0; x < w; x++) {
-            let v = 0;
-            for (let k = Math.max(0, x - px), e = Math.min(w - 1, x + px); k <= e; k++) { const s = m.data[row + k]; if (s > v) v = s; }
-            tmp[row + x] = v;
-        }
-    }
-    for (let x = 0; x < w; x++) {
-        for (let y = 0; y < h; y++) {
-            let v = 0;
-            for (let k = Math.max(0, y - px), e = Math.min(h - 1, y + px); k <= e; k++) { const s = tmp[k * w + x]; if (s > v) v = s; }
-            out[y * w + x] = v;
-        }
-    }
-    return { data: out, w, h };
+    return { data: dilateMask(m.data, m.w, m.h, px), w: m.w, h: m.h };
 }
 
 function erode(m, px) {
@@ -112,34 +97,6 @@ function erode(m, px) {
     const d = dilate(inv, px);
     for (let i = 0; i < d.data.length; i++) d.data[i] = 1 - d.data[i];
     return d;
-}
-
-/** One box blur pass of radius r along rows (clamped edges), in place via a temp. */
-function boxRow(src, dst, w, h, r) {
-    for (let y = 0; y < h; y++) {
-        const row = y * w;
-        let sum = 0;
-        for (let k = -r; k <= r; k++) sum += src[row + Math.min(w - 1, Math.max(0, k))];
-        const n = 2 * r + 1;
-        for (let x = 0; x < w; x++) {
-            dst[row + x] = sum / n;
-            const add = Math.min(w - 1, x + r + 1), sub = Math.max(0, x - r);
-            sum += src[row + add] - src[row + sub];
-        }
-    }
-}
-
-function boxCol(src, dst, w, h, r) {
-    for (let x = 0; x < w; x++) {
-        let sum = 0;
-        for (let k = -r; k <= r; k++) sum += src[Math.min(h - 1, Math.max(0, k)) * w + x];
-        const n = 2 * r + 1;
-        for (let y = 0; y < h; y++) {
-            dst[y * w + x] = sum / n;
-            const add = Math.min(h - 1, y + r + 1), sub = Math.max(0, y - r);
-            sum += src[add * w + x] - src[sub * w + x];
-        }
-    }
 }
 
 /** Gaussian blur with standard deviation sigma (three box blurs), clamped edges like PIL's. */
@@ -153,13 +110,7 @@ export function gaussBlur(m, sigma) {
     const mIdeal = (12 * sigma * sigma - 3 * wl * wl - 12 * wl - 9) / (-4 * wl - 4);
     const mm = Math.round(mIdeal);
     const radii = [0, 1, 2].map((i) => ((i < mm ? wl : wu) - 1) / 2);
-    let a = Float32Array.from(m.data), b = new Float32Array(w * h);
-    for (const r of radii) {
-        if (r <= 0) continue;
-        boxRow(a, b, w, h, r);
-        boxCol(b, a, w, h, r);
-    }
-    return { data: a, w, h };
+    return { data: boxBlurs(m.data, w, h, radii), w, h };
 }
 
 /** Selection -> dilate(grow) -> blur(feather / 2.5); always opaque inside the selection. */

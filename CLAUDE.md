@@ -148,9 +148,11 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    through canvases, which workers over the arena can do without (option B, about 3 weeks, six items in order). Typed
    arrays end at **15.5 GB** in the renderer (18 full 15k layers), not 8. **The user's decision (2026-09-17): stay on
    Electron and build B; no native tile store, no native editor. The user works up to about 15k**, so B's item 6
-   (one-channel masks) goes last and 30k is not the size to tune for. **Next: B in the plan's order, starting with
-   item 4** (`stitch.js` `dilate` and the box blurs, the cheapest second), then 1 (exports composited in the pool), 2
-   (wand and bucket over tiles), 3 (selection jobs on mask tiles), 5 (the PNG reader in Rust). Each item is measured
+   (one-channel masks) goes last and 30k is not the size to tune for. **B item 4 is built** (2026-09-17, same
+   section, "B item 4 as built"): `dilateMask` / `boxBlurs` as kernels (ABI 7, `crates/px/src/maskf.rs`), a provider run's
+   crop 2.5 s to 0.57 s with the same floats; `node tools/stitch_test.js` is its gate beside `px_test.js`. **Next: item 1**
+   (exports composited in the pool), then 2 (wand and bucket over tiles), 3 (selection jobs on mask tiles), 5 (the PNG
+   reader in Rust). Each item is measured
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
    the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
 

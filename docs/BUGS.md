@@ -24,10 +24,10 @@ Nothing at the moment.
 **Written** 2026-09-17 with the measurement of phase N (`docs/PERFORMANCE.md` §14, `tools/native_test.py`,
 `tools/native_limits.py`). Seen while measuring, not reports; none is fixed.
 
-- **A provider run's crop blocks the window for 2.5 s, whatever the document's size.** A 1,024 px selection, a 1,492 px
-  patch: `stitch.js` `dilate` takes 1.9 s (a max filter that walks the whole radius for every pixel, twice), `boxCol` /
-  `boxRow` 0.35 s, all on the main thread in one piece. `native_test.py provider_crop` is the row. The number to beat:
-  under 0.2 s.
+- **A provider run's crop still blocks the window for 0.6 s** (2.5 s before B item 4, `docs/PLAN_BCE.md` §3b "B item 4
+  as built"): a 1,024 px selection, a 1,492 px patch, the mask kernels 0.2 s, per-pixel JS in `stitch.js` 0.2 s, Canvas 2D
+  0.26 s, all on the main thread in one piece. `native_test.py provider_crop` is the row. The number to beat: under
+  0.2 s, or no block at all (the stitch in a worker).
 - **The whole-picture wand on a document above the canvas limit works for 4.6 s and then refuses** ("larger than any
   canvas", 30000 × 20000, `native_test.py 30000x20000 wand_whole_picture`). Why it gets
   that far before it refuses is not read yet. Either it says so at once, or it floods over tiles.

@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 6;
+export const PX_ABI = 7;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -142,6 +142,26 @@ export class Px {
             const pb = this._in(a, bytes, n);
             this.exports.clamp_extend(pb, size, vw, vh);
             return this._out(Uint8Array, pb, n, new Uint8Array(bytes.buffer, bytes.byteOffset, n));
+        } finally { a.reset(); }
+    }
+
+    /** Square dilation of a w x h Float32Array by r pixels; a new array. */
+    dilateMask(data, w, h, r) {
+        const a = this.job, n = w * h;
+        try {
+            const pd = this._in(a, data, n * 4);
+            this.exports.dilate_mask(pd, w, h, r);
+            return this._out(Float32Array, pd, n, null);
+        } finally { a.reset(); }
+    }
+
+    /** Box blurs of up to three radii (rows then columns each) over a w x h Float32Array; a new array. */
+    boxBlurs(data, w, h, radii) {
+        const a = this.job, n = w * h;
+        try {
+            const pd = this._in(a, data, n * 4);
+            this.exports.box_blurs(pd, w, h, radii[0] | 0, radii[1] | 0, radii[2] | 0);
+            return this._out(Float32Array, pd, n, null);
         } finally { a.reset(); }
     }
 
