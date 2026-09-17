@@ -45,6 +45,7 @@ function release(held) {
     const c = chunks[held.chunk];
     if (!c) return;
     c.free.push(held.slot);
+    c.used_[held.slot] = 1;   // it holds its last tile's pixels: zeroed when it is handed out again
     c.used--;
     STATS.slots--;
     STATS.freed++;
@@ -63,7 +64,7 @@ function newChunk() {
     for (let s = SLOTS_PER_CHUNK - 1; s >= 0; s--) free.push(s);
     let index = chunks.indexOf(null);
     if (index < 0) index = chunks.length;
-    chunks[index] = { sab, free, used: 0 };
+    chunks[index] = { sab, free, used: 0, used_: new Uint8Array(SLOTS_PER_CHUNK) };
     STATS.chunks++;
     for (const fn of listeners) fn({ added: index, sab });
     return index;
@@ -88,7 +89,9 @@ export function allocTileBytes(owner) {
     STATS.slots++;
     STATS.allocated++;
     const bytes = new Uint8ClampedArray(c.sab, slot * SLOT_BYTES, SLOT_BYTES);
-    bytes.fill(0);   // a slot handed out again still holds its last tile's pixels
+    // a slot handed out again still holds its last tile's pixels; one of a new chunk is zero already, and zeroing it
+    // anyway was a memset of the whole document when one is opened (2.4 GB at 30000 x 20000)
+    if (c.used_[slot]) { bytes.fill(0); c.used_[slot] = 0; }
     owner.arenaChunk = index;
     owner.arenaSlot = slot;
     registry.register(owner, { chunk: index, slot });

@@ -157,7 +157,8 @@ export class PsdBandWriter {
         this.width = width; this.height = height;
         this.run = run; this.flights = flights; this.pause = pause;
         this.records = new Bytes();
-        this.channelData = new Bytes();
+        this.channelBlobs = [];
+        this.channelSize = 0;
         this.count = 0;
     }
 
@@ -180,11 +181,18 @@ export class PsdBandWriter {
         rec.u32(4 + 4 + name.length);
         rec.u32(0); rec.u32(0);
         rec.push(name);
+        // the layer's channels as one Blob right away: the packed rows of a large layer are hundreds of megabytes in
+        // thousands of buffers, which a Blob made at the end copied in one go (a second of blocked window at 30000 x 20000)
+        const pieces = [];
+        let size = 0;
         for (const [, pk] of packed) {
-            this.channelData.u16(1);
-            for (const l of pk.lens) this.channelData.push(l);
-            for (const d of pk.data) this.channelData.push(d);
+            pieces.push(Uint8Array.of(0, 1));
+            for (const l of pk.lens) pieces.push(l);
+            for (const d of pk.data) pieces.push(d);
+            size += 2 + 2 * lh + pk.total;
         }
+        this.channelBlobs.push(new Blob(pieces));
+        this.channelSize += size;
         this.count++;
     }
 
@@ -195,21 +203,21 @@ export class PsdBandWriter {
         w.ascii("8BPS"); w.u16(1); w.push(new Uint8Array(6)); w.u16(3); w.u32(this.height); w.u32(this.width); w.u16(8); w.u16(3);
         w.u32(0);   // colour mode data
         w.u32(0);   // image resources
-        let layerInfoLen = 2 + this.records.size + this.channelData.size;
+        let layerInfoLen = 2 + this.records.size + this.channelSize;
         const pad = layerInfoLen % 2;
         layerInfoLen += pad;
         w.u32(4 + layerInfoLen + 4);
         w.u32(layerInfoLen);
         w.i16(this.count);
         for (const p of this.records.parts) w.push(p);
-        for (const p of this.channelData.parts) w.push(p);
-        if (pad) w.u8(0);
-        w.u32(0);   // global layer mask info
+        const tail = new Bytes();
+        if (pad) tail.u8(0);
+        tail.u32(0);   // global layer mask info
         // merged image: RGB, PackBits, all row lengths first
-        w.u16(1);
-        for (const pk of [cr, cg, cb]) for (const l of pk.lens) w.push(l);
-        for (const pk of [cr, cg, cb]) for (const d of pk.data) w.push(d);
-        return new Blob(w.parts, { type: "image/vnd.adobe.photoshop" });
+        tail.u16(1);
+        for (const pk of [cr, cg, cb]) for (const l of pk.lens) tail.push(l);
+        for (const pk of [cr, cg, cb]) for (const d of pk.data) tail.push(d);
+        return new Blob([...w.parts, ...this.channelBlobs, ...tail.parts], { type: "image/vnd.adobe.photoshop" });
     }
 }
 

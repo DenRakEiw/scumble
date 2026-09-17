@@ -23,6 +23,7 @@
  *   hash            the short SHA-1 of a blob.
  *   psd_part        one part of a PSD's channel data: rows (bytes or tiles) as PackBits per channel.
  *   crc             CRC-32 and size of a blob (a zip entry of an ORA file).
+ *   png_read        a PNG file decoded as a stream, its rows back band by band (`progress` messages).
  *   band            a row of tiles composited, layer over layer (`compositeTile`): no caller in
  *                   the editor yet; phase R measures the kernel phase E's band export will run.
  *
@@ -37,7 +38,7 @@
  */
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
-import { pngChunk, crc32, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
+import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
 import { mipChain, mipChainBytes, clampExtend, compositeTile, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge } from "./px/kernels.js";
 
 const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
@@ -202,6 +203,22 @@ async function crcJob(msg) {
     return { crc: crc32(bytes), size: bytes.length };
 }
 
+/**
+ * A PNG file read as a stream (inpaint_png.js `readPng`, docs/PLAN_BCE.md §E2): every band of rows goes back as a
+ * `progress` message (`{ rgba, y0, rows }`, transferred) as soon as it is decoded, the reply carries the header. For a
+ * picture no canvas can hold (above 268 MP), which the browser's own decoder cannot hand over.
+ */
+async function pngRead(msg) {
+    const t0 = now();
+    let header = null;
+    const info = await readPng(msg.blob, {
+        rowsPerBand: msg.rowsPerBand || TILE,
+        onHeader: (h) => { header = h; self.postMessage({ id: msg.id, progress: true, header: h }); },
+        onRows: (rgba, y0, rows) => { self.postMessage({ id: msg.id, progress: true, rgba: rgba.buffer, y0, rows }, [rgba.buffer]); },
+    });
+    return { width: info.width, height: info.height, texts: info.texts, header, timing: { op: "png_read", kernels: "js", pixels: info.width * info.height, kernel: now() - t0 } };
+}
+
 /** The short SHA-1 of a blob (the name of an uploaded file). */
 async function hashJob(msg) {
     return { hash: await hashOf(msg.blob) };
@@ -332,6 +349,7 @@ async function run(msg) {
     if (msg.op === "png_part") return pngPart(msg);
     if (msg.op === "hash") return hashJob(msg);
     if (msg.op === "psd_part") return psdPart(msg);
+    if (msg.op === "png_read") return pngRead(msg);
     if (msg.op === "crc") return crcJob(msg);
     if (msg.op === "export_begin") {
         const opts = { width: msg.width, height: msg.height };

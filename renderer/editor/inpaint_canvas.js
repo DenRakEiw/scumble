@@ -23,7 +23,7 @@ import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { WorkerPool, poolSize, INTERACTIVE, EXPORT } from "./inpaint_pool.js";
-import { NO_PARTS } from "./inpaint_png.js";
+import { NO_PARTS, pngHeader } from "./inpaint_png.js";
 import { tileRows, bandRows, writePng, PsdBandWriter, OraBandWriter } from "./inpaint_bands.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, setChainTransport, chainScheduler } from "./inpaint_tiles.js";
@@ -59,6 +59,7 @@ const PYRAMID_LEVELS = 8;
 const FLOOD_COARSE_PX = 2048;               // the wand's and the bucket's first pass runs on a composite this large
 const FLOOD_WHOLE_SHARE = 0.4;              // a region box above this share of the image is flooded in one pass over the whole image
 const SNAP_CANVAS_PX = 16 * 1024 * 1024;   // a selection undo step up to this many pixels is a pixels copy, above it a PNG
+const SEL_BOX_MAX_PX = 64 * 1024 * 1024;    // the selection's PNG holds its box up to this size, above it the whole mask (written in parts)
 const SYNC_ENCODE_PX = 16 * 1024 * 1024;    // above this the selection PNG for getValue is encoded off the main thread
 const WORKER_TIMEOUT = 180000;              // a worker job that never answers falls back to the main thread
 const HANDLE_PX = 9;
@@ -492,6 +493,35 @@ function canvasRows(canvas) {
         ctx.drawImage(canvas, 0, y0, w, y1 - y0, 0, 0, w, y1 - y0);
         return ctx.getImageData(0, 0, w, y1 - y0).data;
     }, TILE_SIZE);
+}
+
+/** E5: the most a document on tiles may be: a band of it is a canvas, and its base is 4 bytes a pixel of memory. */
+const HUGE_MAX_SIDE = 65535;
+const HUGE_MAX_PIXELS = 1024 * 1024 * 1024;
+
+/** `{ width, height }` when `blob` is a PNG larger than any canvas (above 268 MP), else null. */
+async function hugePngSize(blob) {
+    const h = pngHeader(new Uint8Array(await blob.slice(0, 33).arrayBuffer()));
+    return h && h.width * h.height > CANVAS_MAX_PIXELS ? { width: h.width, height: h.height } : null;
+}
+
+/**
+ * The pixels of a PNG file decoded as a stream by a pool worker (inpaint_png.js `readPng`), written into tile pixels
+ * band by band: for a picture larger than any canvas. JPEG and WebP have no such reader; above 268 MP they are refused
+ * where they are loaded, with a message that names PNG.
+ */
+async function pixelsFromPngStream(blob, Cls, progress = null) {
+    let px = null, W = 0, H = 0;
+    await editorPool().run("png_read", { blob }, [], {
+        timeout: 600000,
+        onProgress: (m) => {
+            if (m.header) { W = m.header.width; H = m.header.height; px = Cls.empty(W, H); return; }
+            px.writeRect({ data: new Uint8ClampedArray(m.rgba), width: W, height: m.rows }, 0, m.y0);
+            if (progress) progress((m.y0 + m.rows) / H);
+        },
+    });
+    if (!px) throw new Error("the PNG gave no pixels");
+    return px;
 }
 
 /** Upload pixels as a PNG named by its hash: from their tiles when they are on tiles, else from their canvas. */
@@ -3918,7 +3948,7 @@ class InpaintEditor {
             this.pushUndoSnapshot(before, { tracked: true });
             this.uploaded = this.makeUploaded();
             this.selectionDirty = true; this.selectionLoose = false;
-            this.selectionDataUrl = null;
+            this.selectionDataUrl = null; this.selectionEncoded = false;
             this.renderLayers(); this.renderInfo(); this.fitView(); this.drawThumb(); this.notifyChanged();
             this.setStatus(`Canvas cropped to ${nw} × ${nh}; the layers keep their pixels (Ctrl+Z takes it back).`);
         } catch (err) {
@@ -3972,7 +4002,7 @@ class InpaintEditor {
             this.pushUndoSnapshot(before, { tracked: true });
             this.uploaded = this.makeUploaded();
             this.selectionDirty = true; this.selectionLoose = false;
-            this.selectionDataUrl = null;
+            this.selectionDataUrl = null; this.selectionEncoded = false;
             this.renderLayers(); this.renderInfo(); this.fitView(); this.drawThumb(); this.notifyChanged();
             this.setStatus(`Image resized to ${nw} × ${nh} (Ctrl+Z takes it back). Layers keep their own resolution.`);
         } catch (err) {
@@ -4659,6 +4689,26 @@ class InpaintEditor {
     }
 
     /**
+     * A rectangle ([x0, y0, x1, y1] in image pixels) into the selection: replace, add or subtract. Written as a fill
+     * (or a clear) of the box, never as a mask or a shape of the image's size (E5: `select_rect` and `select_all` made a
+     * W x H byte mask and a canvas of it, which no document above 268 MP has).
+     */
+    selectRectangle(box, mode = "replace") {
+        const b = [Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(this.width, Math.ceil(box[2])), Math.min(this.height, Math.ceil(box[3]))];
+        if (b[2] <= b[0] || b[3] <= b[1]) return false;
+        const hint = this.boundsAfter(mode, b);
+        this.pushUndo({ kind: "selection" });
+        if (mode === "replace") this.selectionLabel = "";
+        const old = mode === "replace" ? this.getBounds() : null;
+        if (mode === "replace") this.sel.clear();
+        if (mode === "subtract") this.sel.clear(b); else this.sel.fill(b, "#ff0000");
+        const touched = old ? [Math.min(old[0], b[0]), Math.min(old[1], b[1]), Math.max(old[2], b[2]), Math.max(old[3], b[3])] : b;
+        this.markSelectionChanged(hint, touched);
+        this.draw();
+        return true;
+    }
+
+    /**
      * The same with the region already drawn (a canvas or an ImageBitmap from the worker),
      * placed with its top left corner at `at` (image coordinates; the shape may be a box
      * of the image rather than all of it). `box` is the region's bounding box in image
@@ -4898,7 +4948,7 @@ class InpaintEditor {
      * (rendered at twice its size) 1 level at opacity 1 and 2 at 0.8 on its anti-aliased edge, a layer at a fractional
      * position 13 levels on its last column and row; unscaled layers at whole positions 0.
      */
-    boxReach(box, { forRun = true, upTo = null } = {}) {
+    boxReach(box, { forRun = true, upTo = null, loose = false } = {}) {
         const end = upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
         const shown = [];
         let reach = 0;
@@ -4910,13 +4960,16 @@ class InpaintEditor {
                 const def = FILTERS[l.filter];
                 let r = def ? def.reach : undefined;
                 if (typeof r === "function") { try { r = r(l.params || {}, { width: this.width, height: this.height }); } catch (_) { r = undefined; } }
-                if (!(r >= 0) || !Number.isFinite(r)) return Infinity;
+                // `loose` (E5, a document larger than any canvas: there is no whole flatten to fall back to): a filter
+                // that names no reach counts as pointwise, and the layers below are taken as a region pass draws them
+                if (!(r >= 0) || !Number.isFinite(r)) { if (loose) continue; return Infinity; }
                 reach += r;
                 continue;
             }
             if (forRun && (this.isControl(l) || this.isReference(l))) continue;
             shown.push(l);
         }
+        if (loose) return reach;
         const bs = this.basePx;
         if (bs && (bs.width !== this.width || bs.height !== this.height)) return Infinity;
         const b = [box[0] - reach, box[1] - reach, box[2] + reach, box[3] + reach];
@@ -5049,8 +5102,10 @@ class InpaintEditor {
     }
 
     readBox(box, { forRun = true, upTo = null } = {}) {
-        const reach = this.boxReach(box, { forRun, upTo });
+        let reach = this.boxReach(box, { forRun, upTo });
         const o = upTo == null ? { forRun } : { forRun, upTo };
+        // E5: no whole flatten exists of a document larger than any canvas; its box is a region pass (see `bandPlan`)
+        if (!Number.isFinite(reach) && this.huge) reach = this.boxReach(box, { forRun, upTo, loose: true });
         if (Number.isFinite(reach)) return this.sampleRegion("image", box, 1, { ...o, pad: reach });
         const flat = this.compositeCanvas(o);
         const c = makeCanvas(box[2] - box[0], box[3] - box[1]);
@@ -6945,7 +7000,7 @@ class InpaintEditor {
             this.pushUndoSnapshot(before, { tracked: true });
             this.uploaded = this.makeUploaded();
             this.selectionDirty = true; this.selectionLoose = false;
-            this.selectionDataUrl = null;
+            this.selectionDataUrl = null; this.selectionEncoded = false;
             for (const k of Object.keys(this.extendInputs)) this.extendInputs[k].value = 0;
             this.renderLayers();
             this.renderInfo();
@@ -7249,7 +7304,7 @@ class InpaintEditor {
             this.touchSource(sel);
             this.uploaded = this.makeUploaded();
             this.selectionDirty = true; this.selectionLoose = false;
-            this.selectionDataUrl = null;
+            this.selectionDataUrl = null; this.selectionEncoded = false;
             if (this.extendInputs) for (const k of Object.keys(this.extendInputs)) this.extendInputs[k].value = 0;
             this.renderLayers();
             this.renderInfo();
@@ -9076,10 +9131,19 @@ class InpaintEditor {
     // autosave stored the tab as "{}" (C2's final review). Refused before anything changes; C3 draws tiles and
     // E streams exports, which lift it. The canvas backend is left as it was.
     checkBaseSize(w, h) {
-        if (this.tileMode && w * h > CANVAS_MAX_PIXELS) {
-            throw new Error(`${w} × ${h} px is above the canvas limit of 268 MP; the tile store cannot show an image that large yet (docs/PLAN_BCE.md §C3)`);
+        if (!this.tileMode) return;
+        // E5: above the canvas limit of 268 MP a document lives on tiles only. What still bounds it: a band of it is a
+        // canvas (65,535 px a side), and its base alone is 4 bytes a pixel of memory (4 GB at a gigapixel).
+        if (w > HUGE_MAX_SIDE || h > HUGE_MAX_SIDE || w * h > HUGE_MAX_PIXELS) {
+            throw new Error(`${w} × ${h} px is above what a document can hold (${HUGE_MAX_SIDE.toLocaleString()} px a side, ${Math.round(HUGE_MAX_PIXELS / 1e6)} MP)`);
+        }
+        if (w * h > CANVAS_MAX_PIXELS && !partsUsable()) {
+            throw new Error(`${w} × ${h} px is above the canvas limit of 268 MP, and a document that large needs the worker pool and the compiled pixel kernels, which are not available here`);
         }
     }
+
+    /** Is this document larger than any canvas (268 MP)? Then nothing may ask for a canvas, a bitmap or an ImageData of it. */
+    get huge() { return this.width * this.height > CANVAS_MAX_PIXELS; }
 
     /** A new base from pixels the caller made for it (and does not write again); `ref` is their file in the mirror. */
     async setBasePixels(ref, px, { keepLayers = true } = {}) {
@@ -9128,6 +9192,15 @@ class InpaintEditor {
             const ext = ((file.name || "").match(/\.[a-z0-9]+$/i) || [".png"])[0];
             const stem = (file.name || "pasted").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
             const ref = await uploadBlob(file, stem + ext, { overwrite: false });
+            // E5: a PNG larger than any canvas is decoded as a stream into tiles (the browser's decoder has nowhere to put it)
+            const big = this.tileMode ? await hugePngSize(file) : null;
+            if (big) {
+                this.checkBaseSize(big.width, big.height);
+                this.setStatus(`Reading ${big.width} × ${big.height} px ...`);
+                const px = await pixelsFromPngStream(file, this.pixels.Layer, (f) => this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`));
+                await this.setBasePixels(ref, px, { keepLayers: false });
+                return;
+            }
             const img = await loadImageEl(viewUrl(ref));
             await this.setBase(ref, img, { keepLayers: false });
         } catch (err) {
@@ -10708,6 +10781,9 @@ class InpaintEditor {
     }
 
     flattenToCanvas(opts = {}) {
+        // E5: Chromium makes a canvas above its limit without complaint and draws nothing into it; a picture of nothing
+        // must not be saved, uploaded or sent to a model
+        if (this.huge) throw new Error(`this ${this.width} × ${this.height} document is larger than any canvas (268 MP): it is written as PNG, PSD or ORA at its full size, and read in boxes`);
         const prev = this.viewPass;
         this.viewPass = null;   // exports, runs and uploads always see the full-resolution composite
         try {
@@ -10727,15 +10803,23 @@ class InpaintEditor {
      */
     bandPlan(opts = { forRun: true }) {
         if (!this.tileMode || !this.base || !partsUsable() || InpaintEditor.bands === false) return null;
-        const reach = this.boxReach([0, 0, this.width, this.height], { forRun: !!opts.forRun, upTo: opts.upTo == null ? null : opts.upTo });
-        if (!Number.isFinite(reach)) return null;
+        const o = { forRun: !!opts.forRun, upTo: opts.upTo == null ? null : opts.upTo };
+        let reach = this.boxReach([0, 0, this.width, this.height], o), inexact = false;
+        if (!Number.isFinite(reach)) {
+            // E5: above the canvas limit there is no whole flatten to take instead. The bands are then what a region pass
+            // at full resolution draws: a colour-matched layer with the statistics the screen uses (`sampledMatchStats`,
+            // at most a few levels from the whole flatten's, docs/PLAN_BCE.md §C6 c 7c), a scaled layer resampled per band
+            if (!this.huge) return null;
+            reach = this.boxReach([0, 0, this.width, this.height], { ...o, loose: true });
+            inexact = true;
+        }
         // a wide margin (a film look's halation is 1.2 % of the long side: 544 px at 15000) is composited twice per band,
         // so the bands grow with it; never more than a canvas holds
         const r = Math.ceil(reach);
         let rows = Math.max(TILE_SIZE, Math.min(2048, Math.ceil((2 * r) / TILE_SIZE) * TILE_SIZE));
         while (rows > TILE_SIZE && this.width * (rows + 2 * r) > CANVAS_MAX_PIXELS / 2) rows -= TILE_SIZE;
         if (this.width * (rows + 2 * r) > CANVAS_MAX_PIXELS) return null;
-        return { reach: r, rows };
+        return { reach: r, rows, inexact };
     }
 
     /**
@@ -11736,17 +11820,36 @@ class InpaintEditor {
         this._selEncoding = true;
         const seq = this.selectionSeq;
         const sel = this.sel;   // a replaced selection is a new object: its PNG is not stored
-        // on tiles toCanvas throws above the canvas limit: a throw here left `_selEncoding` set for good (no
-        // selection saved in that tab again) and threw out of getValue (C2's final review)
-        let canvas;
+        // E5: on tiles the PNG holds the box the selection's tiles cover (`selectionBox` says where it goes), read from the
+        // tiles; a box too large for a canvas (an inverted selection of a huge document) is the whole mask written in
+        // parts by the pool. It was `sel.toCanvas()`: a canvas of the whole image for every change of the selection
+        // (600 MB at 15000 x 10000), and nothing at all above the canvas limit.
+        let blobOf, box = null;
         try {
-            canvas = sel.toCanvas();
+            const ext = isTilePixels(sel) ? sel.bounds() : null;
+            if (isTilePixels(sel) && !ext) {
+                this._selEncoding = false;
+                this.selectionDataUrl = null; this.selectionBox = null;
+                if (seq === this.selectionSeq) this.selectionEncoded = true;
+                return;
+            }
+            if (ext && (ext[2] - ext[0]) * (ext[3] - ext[1]) <= SEL_BOX_MAX_PX) {
+                box = [ext[0], ext[1], ext[2] - ext[0], ext[3] - ext[1]];
+                const c = document.createElement("canvas");
+                c.width = box[2]; c.height = box[3];
+                c.getContext("2d", { willReadFrequently: true }).putImageData(sel.readRect(box[0], box[1], box[2], box[3]), 0, 0);
+                blobOf = canvasToBlob(c).finally(() => { c.width = 1; c.height = 1; });
+            } else if (ext) {
+                blobOf = encodeTilePixels(sel).then((r) => { if (!r) throw new Error("the selection is too large to be saved without the worker pool"); return r.blob; });
+            } else {
+                blobOf = canvasToBlob(sel.toCanvas());
+            }
         } catch (err) {
             this._selEncoding = false;
             console.warn("Inpaint Canvas: selection encode failed", err);
             return;
         }
-        canvasToBlob(canvas)
+        blobOf
             .then((blob) => new Promise((res, rej) => {
                 const r = new FileReader();
                 r.onload = () => res(r.result);
@@ -11757,6 +11860,7 @@ class InpaintEditor {
                 this._selEncoding = false;
                 if (sel !== this.sel) return;
                 this.selectionDataUrl = url;
+                this.selectionBox = box;
                 if (seq === this.selectionSeq) {
                     this.selectionEncoded = true;
                     this.notifyChanged();   // save again, now with the fresh selection
@@ -11769,9 +11873,10 @@ class InpaintEditor {
 
     getValue() {
         if (!this.base) return this.lastValueString || "{}";
-        if (this.sel && (!this.selectionEncoded || !this.selectionDataUrl)) {
+        if (this.sel && !this.selectionEncoded) {
             if (this.width * this.height <= SYNC_ENCODE_PX) {
                 this.selectionDataUrl = this.sel.toCanvas().toDataURL("image/png");
+                this.selectionBox = null;
                 this.selectionEncoded = true;
             } else {
                 // a 100 MP toDataURL blocks the editor for seconds: encode in the background,
@@ -11795,6 +11900,8 @@ class InpaintEditor {
             })),
             history: this.history.slice(-100).map((h) => ({ key: h.key, name: h.name, ref: h.ref, x: h.x, y: h.y, w: h.w, h: h.h, prompt: h.prompt, layerId: h.layerId, time: h.time, seed: h.seed, mode: h.mode, denoise: h.denoise })),
             selection: this.selectionDataUrl,
+            // E5: where the selection's PNG goes when it holds a box of the mask and not all of it ([x, y, w, h])
+            ...(this.selectionDataUrl && this.selectionBox ? { selectionBox: this.selectionBox } : {}),
             selections: (this.savedSelections || []).map((s) => ({ name: s.name, url: s.url })),
             guides: this.guides && (this.guides.x.length || this.guides.y.length) ? this.guides : undefined,
             seen: Array.from(this.seenResults).slice(-200),
@@ -11819,9 +11926,22 @@ class InpaintEditor {
         const stale = () => this._loadToken !== token;
         this._loading = true;
         try {
-            const img = await loadImageEl(viewUrl(state.base));
-            if (stale()) return;
-            await this.setBase(state.base, img, { keepLayers: false });
+            // E5: the files of a document larger than any canvas are PNGs the browser's decoder has nowhere to put; they
+            // are fetched and decoded as a stream into tiles. Every other document loads as it always did.
+            const hugeDoc = this.tileMode && (+state.width || 0) * (+state.height || 0) > CANVAS_MAX_PIXELS;
+            const streamed = async (ref, Cls) => {
+                if (!hugeDoc) return null;
+                const blob = await (await fetch(viewUrl(ref))).blob();
+                return (await hugePngSize(blob)) ? pixelsFromPngStream(blob, Cls) : null;
+            };
+            const basePx = await streamed(state.base, this.pixels.Layer);
+            if (stale()) { if (basePx) basePx.release(); return; }
+            if (basePx) await this.setBasePixels(state.base, basePx, { keepLayers: false });
+            else {
+                const img = await loadImageEl(viewUrl(state.base));
+                if (stale()) return;
+                await this.setBase(state.base, img, { keepLayers: false });
+            }
             this.promptText = state.prompt || "";
             if (this.promptInput) this.promptInput.value = this.promptText;
             this.cropSettings = state.crop ? { ...CROP_DEFAULTS, ...state.crop } : { ...CROP_LEGACY };
@@ -11881,9 +12001,13 @@ class InpaintEditor {
                 }
                 if (!l.ref) continue;
                 try {
-                    const limg = await loadImageEl(viewUrl(l.ref));
+                    let pixels = await streamed(l.ref, this.pixels.Layer);
                     if (stale()) return;
-                    const pixels = this.pixels.Layer.fromImage(limg);
+                    if (!pixels) {
+                        const limg = await loadImageEl(viewUrl(l.ref));
+                        if (stale()) return;
+                        pixels = this.pixels.Layer.fromImage(limg);
+                    }
                     let maskPx = null;
                     if (l.mask && l.mask.filename) {
                         try { maskPx = this.pixels.Mask.fromImage(await loadImageEl(viewUrl(l.mask)), pixels.width, pixels.height); } catch (err) { console.warn("Inpaint Canvas: layer mask missing", l.mask, err); }
@@ -11915,10 +12039,21 @@ class InpaintEditor {
             this.renderSelectionList();
             for (const key of state.seen || []) this.seenResults.add(key);
             if (state.selection) {
-                const sel = await loadImageEl(state.selection);
-                if (stale()) return;
-                // over what setBase left (source-over, as always: a same-size restore keeps the old selection too)
-                this.sel.drawInto(null, (ctx) => ctx.drawImage(sel, 0, 0));
+                const sb = Array.isArray(state.selectionBox) && state.selectionBox.length === 4 ? state.selectionBox.map((v) => Math.round(+v) || 0) : null;
+                if (!sb && this.huge) {
+                    // E5: the whole mask of a document larger than any canvas, decoded as a stream into mask tiles
+                    const blob = await (await fetch(state.selection)).blob();
+                    const px = await pixelsFromPngStream(blob, this.pixels.Mask);
+                    if (stale()) { px.release(); return; }
+                    if (px.width === this.width && px.height === this.height) { this.sel.release(); this.sel = px; }
+                } else {
+                    const sel = await loadImageEl(state.selection);
+                    if (stale()) return;
+                    // over what setBase left (source-over, as always: a same-size restore keeps the old selection too);
+                    // a PNG of a box of the mask (E5, `selectionBox`) into that box
+                    if (sb) this.sel.drawInto([sb[0], sb[1], sb[0] + sb[2], sb[1] + sb[3]], (ctx) => ctx.drawImage(sel, sb[0], sb[1]));
+                    else this.sel.drawInto(null, (ctx) => ctx.drawImage(sel, 0, 0));
+                }
                 // touched after the write: setBase's info line and first frame built the display
                 // levels of the empty selection under the same version, and above 1 MP the bounds
                 // came from those, so a restored selection counted as none

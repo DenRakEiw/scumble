@@ -2,7 +2,8 @@
 # Run from F:/canvas with Git Bash. Never touches port 9557 (the preview) or the real node repo.
 # Gates on a fresh dev instance with its own profile (docs/PLAN_BCE.md §0).
 #
-#   bash tools/run_gates.sh <label> [--copy] [--strict] [--tiles on|off] [--exe PATH] gate [gate ...]
+#   bash tools/run_gates.sh <label> [--copy] [--strict] [--tiles on|off] [--offline] [--exe PATH] gate [gate ...]
+# --offline: the instance does not connect to ComfyUI (--no-comfy), so no upload is forwarded to the server.
 #
 # --tiles on|off: the pixel backend (C2). Dev: SCUMBLE_TILES=1 / 0. Exe: --tiles / --no-tiles.
 # Gate "nodecopy": build_node.py + node_test.py against a scratch copy of the node repo
@@ -16,13 +17,14 @@
 # Logs, profiles and the node copy go under $SCUMBLE_GATES (default F:/canvas/dist/gates, ignored by git).
 SP="${SCUMBLE_GATES:-/f/canvas/dist/gates}"
 LABEL="$1"; shift
-COPY=""; STRICT="0"; EXE=""; TILES=""
+COPY=""; STRICT="0"; EXE=""; TILES=""; OFFLINE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --copy) COPY="--pixels-copy"; shift ;;
     --strict) STRICT="1"; shift ;;
     --exe) EXE="$2"; shift 2 ;;
     --tiles) TILES="$2"; shift 2 ;;
+    --offline) OFFLINE="--no-comfy"; shift ;;
     *) break ;;
   esac
 done
@@ -52,10 +54,10 @@ esac
 
 if [ "$needs_app" = 1 ]; then
   if [ -n "$EXE" ]; then
-    "$EXE" --remote-debugging-port=9555 --user-data-dir="$PROFILE" $COPY $TILEARG > "$OUT/app.log" 2>&1 &
+    "$EXE" --remote-debugging-port=9555 --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE > "$OUT/app.log" 2>&1 &
   else
     if [ "$STRICT" = 1 ]; then export SCUMBLE_STRICT=1; else export SCUMBLE_STRICT=0; fi
-    ./node_modules/electron/dist/electron.exe . --remote-debugging-port=9555 --user-data-dir="$PROFILE" $COPY > "$OUT/app.log" 2>&1 &
+    ./node_modules/electron/dist/electron.exe . --remote-debugging-port=9555 --user-data-dir="$PROFILE" $COPY $OFFLINE > "$OUT/app.log" 2>&1 &
   fi
   for i in $(seq 1 90); do
     curl -s -m 2 http://127.0.0.1:9555/json/version > /dev/null && break
@@ -75,7 +77,8 @@ for g in "$@"; do
     nodecopy) NC="$SP/nodecopy"; rm -rf "$NC"; mkdir -p "$NC"; (cd "/f/Comfyui/ComfyUI_windows_portable_nvidia/ComfyUI/custom_nodes/ComfyUI-InpaintCanvas" && tar --exclude=.git --exclude=__pycache__ -cf - .) | (cd "$NC" && tar -xf -); { $T python tools/build_node.py --node "$NC" && $T python tools/build_node.py --node "$NC" --check && $T python tools/node_test.py --node "$NC"; } > "$OUT/$g.log" 2>&1; rc=$? ;;
     node) $T python tools/build_node.py --check > "$OUT/$g.log" 2>&1 && $T python tools/node_test.py >> "$OUT/$g.log" 2>&1; rc=$? ;;
     perf:*) $T python tools/perf_test.py ${g#perf:} > "$OUT/perf.log" 2>&1; rc=$? ;;
-    exportperf:*) timeout 1800 python tools/export_test.py --perf ${g#exportperf:} > "$OUT/exportperf.log" 2>&1; rc=$? ;;
+    huge:*) timeout 3000 python tools/huge_test.py ${g#huge:} > "$OUT/huge.log" 2>&1; rc=$? ;;
+    exportperf:*) timeout 1800 python tools/export_test.py --perf $(echo "${g#exportperf:}" | tr ',' ' ') > "$OUT/exportperf.log" 2>&1; rc=$? ;;
     # mem:15000x10000,--rounds,4 (commas for spaces); four rounds at 15k take longer than the other gates' 420 s
     mem:*) timeout 2400 python tools/mem_test.py $(echo "${g#mem:}" | tr ',' ' ') > "$OUT/mem.log" 2>&1; rc=$? ;;
     *) $T python "tools/${g}_test.py" > "$OUT/$g.log" 2>&1; rc=$? ;;

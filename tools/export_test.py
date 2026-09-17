@@ -521,7 +521,7 @@ for (let i = 0; i < 3; i++) {
     ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: L.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
     c.width = 1; c.height = 1;
 }
-ed.addFilterLayer("levels");
+{ const { FILTERS } = await import("./editor/inpaint_filters.js"); ed.addFilterLayer(FILTERS[__FILTER__] ? __FILTER__ : "levels"); }
 ed.renderLayers(); ed.fitView(); ed.draw();
 await ed.mipsSettled();
 const timed = async (fn) => {
@@ -531,6 +531,7 @@ const timed = async (fn) => {
     const t0 = performance.now();
     const r = await fn();
     on = false;
+    held = Math.max(held, performance.now() - last);   // a call that never yields is one block
     return { ms: Math.round(performance.now() - t0), blocked: Math.round(held), r };
 };
 const out = { size: [W, H] };
@@ -567,7 +568,7 @@ async def run_all(c):
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
     if "--perf" in sys.argv:
         w, h = sys.argv[sys.argv.index("--perf") + 1].lower().split("x")
-        res = await c.eval(PRE % (HELPERS, PERF.replace("__W__", w).replace("__H__", h)), timeout=1800)
+        res = await c.eval(PRE % (HELPERS, PERF.replace("__W__", w).replace("__H__", h).replace("__FILTER__", json.dumps(next((x.split("=")[1] for x in sys.argv if x.startswith("--filter=")), "levels")))), timeout=1800)
         print(json.dumps(res, indent=1))
         return True
     ok = True

@@ -357,9 +357,13 @@ const COMMANDS = {
     select_rect: {
         needsImage: true, description: "Select a rectangle in image pixels.",
         params: { x: P.int("left", { required: true }), y: P.int("top", { required: true }), w: P.int("width (alias width)", { required: true }), h: P.int("height (alias height)", { required: true }), mode: P.str("replace, add or subtract", { enum: ["replace", "add", "subtract"], default: "replace" }) },
-        async run(ed, a) { ed.applyMaskToSelection(rectMask(ed, +a.x || 0, +a.y || 0, +a.w || +a.width || 0, +a.h || +a.height || 0), a.mode || "replace"); return { selection: bounds(ed) }; },
+        async run(ed, a) {
+            const x = +a.x || 0, y = +a.y || 0, w = +a.w || +a.width || 0, h = +a.h || +a.height || 0;
+            if (!ed.selectRectangle([x, y, x + w, y + h], a.mode || "replace")) throw new Error(`empty rectangle ${x},${y} ${w}×${h} on a ${ed.width}×${ed.height} image`);
+            return { selection: bounds(ed) };
+        },
     },
-    select_all: { needsImage: true, description: "Select the whole image.", params: {}, async run(ed) { ed.applyMaskToSelection(rectMask(ed, 0, 0, ed.width, ed.height), "replace"); return { selection: bounds(ed) }; } },
+    select_all: { needsImage: true, description: "Select the whole image.", params: {}, async run(ed) { ed.selectRectangle([0, 0, ed.width, ed.height], "replace"); return { selection: bounds(ed) }; } },
     select_none: { needsImage: true, description: "Clear the selection.", params: {}, async run(ed) { ed.clearSelection(); return { selection: bounds(ed) }; } },
     select_invert: { needsImage: true, description: "Invert the selection.", params: {}, async run(ed) { await ed.invertSelection(); return { selection: bounds(ed) }; } },
     select_feather: { needsImage: true, description: "Soften the selection edge by a gaussian blur.", params: { radius: P.num("radius in pixels", { default: 8 }) }, async run(ed, a) { await ed.featherSelection(+a.radius || 8); return { selection: bounds(ed), status: ed.status }; } },

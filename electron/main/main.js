@@ -553,7 +553,8 @@ function startApp() {
     createWindow();
     local.listen(app.getPath("userData"));
     local.on("clients", () => { showAgents(); maybeQuit(); });
-    const url = settings.get().comfy && settings.get().comfy.url;
+    // --no-comfy: a test instance that stays off the server (no connect at start, so no upload is forwarded to it)
+    const url = !process.argv.includes("--no-comfy") && settings.get().comfy && settings.get().comfy.url;
     if (url) connectComfy().catch((err) => console.warn("connect at start:", err.message));
     const upd = settings.get().updates || {};
     if (app.isPackaged && !headless && !agentMode && upd.check !== false) setTimeout(() => updater.check().catch(() => {}), 8000);

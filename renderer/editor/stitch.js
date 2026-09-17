@@ -204,20 +204,24 @@ export function setSelectionWindowPixels(n) {
 /**
  * The selection as a 0..1 mask for a run: of the whole image, or (E2) on a large image of a window around the
  * selection's bounds, `{ data, w, h, ox, oy, fullW, fullH }`. A whole mask of a 15000 x 10000 image is a 600 MB
- * read and 600 MB of floats, and no ImageData holds one of 30000 x 20000. The margin is wider than any padding, grow
- * or feather a run uses; what a very soft selection has beyond it (alpha below a half, by definition outside the
- * bounds) counts as unselected.
+ * read and 600 MB of floats, and no ImageData holds one of 30000 x 20000.
  */
 function selectionWindow(editor) {
     const W = editor.width, H = editor.height;
-    const b = W * H > SEL_WINDOW_PIXELS && typeof editor.getBounds === "function" ? editor.getBounds() : null;
+    // on tiles the box of the mask's pixels that are not zero, soft tails and all; else the bounds of the selected
+    // pixels (alpha of a half and more) with a margin for the tails
+    let b = null, margin = SEL_WINDOW_MARGIN;
+    if (W * H > SEL_WINDOW_PIXELS) {
+        const ext = editor.tileMode && typeof editor.sel.bounds === "function" ? editor.sel.bounds() : null;
+        if (ext) { b = ext; margin = 0; } else if (typeof editor.getBounds === "function") b = editor.getBounds();
+    }
     if (!b) {
         const m = maskFromAlpha(editor.sel.readRect(0, 0, W, H));
         m.ox = 0; m.oy = 0; m.fullW = W; m.fullH = H;
         return m;
     }
-    const x0 = Math.max(0, b[0] - SEL_WINDOW_MARGIN), y0 = Math.max(0, b[1] - SEL_WINDOW_MARGIN);
-    const x1 = Math.min(W, b[2] + SEL_WINDOW_MARGIN), y1 = Math.min(H, b[3] + SEL_WINDOW_MARGIN);
+    const x0 = Math.max(0, b[0] - margin), y0 = Math.max(0, b[1] - margin);
+    const x1 = Math.min(W, b[2] + margin), y1 = Math.min(H, b[3] + margin);
     const m = maskFromAlpha(editor.sel.readRect(x0, y0, x1 - x0, y1 - y0));
     m.ox = x0; m.oy = y0; m.fullW = W; m.fullH = H;
     return m;

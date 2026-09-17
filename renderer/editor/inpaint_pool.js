@@ -6,7 +6,7 @@
  * the list's order. Priorities: INTERACTIVE (what the screen waits for: mip chains) before NORMAL before EXPORT (the
  * bands of a file being written); within one priority first come, first served. A `group` names jobs that belong
  * together (an export), and `cancel(group)` rejects the ones still queued and drops the answers of the ones a worker
- * already runs.
+ * already runs. A job may answer in pieces (`onProgress`: messages with `progress: true` before the reply).
  *
  * Workers are started when a job finds every running one busy, never ahead of need: a small document in the node's
  * browser tab keeps one. Each new worker gets the arena's chunks before its first job and every change after it
@@ -52,10 +52,10 @@ export class WorkerPool {
     stats() { return { ...this.stats_, workers: this.workers.length, size: this.size, pending: this.pending, off: this.off, arena: arenaEnabled() }; }
 
     /** Queue one job; resolves to the worker's reply, rejects with its error (or a CancelledError). */
-    run(op, args = {}, transfer = [], { priority = NORMAL, group = null } = {}) {
+    run(op, args = {}, transfer = [], { priority = NORMAL, group = null, onProgress = null, timeout = 0 } = {}) {
         if (this.off) return Promise.reject(new Error("no worker pool"));
         return new Promise((resolve, reject) => {
-            const job = { id: ++this.seq, op, args, transfer, group, resolve, reject, timer: null, cancelled: false };
+            const job = { id: ++this.seq, op, args, transfer, group, resolve, reject, timer: null, cancelled: false, onProgress, timeout };
             this.queues[Math.max(0, Math.min(PRIORITIES - 1, priority | 0))].push(job);
             this.stats_.run++;
             this._pump();
@@ -144,7 +144,7 @@ export class WorkerPool {
 
     _send(s, job) {
         s.job = job;
-        job.timer = setTimeout(() => this._lost(s, new Error(`pool job ${job.op} timed out`)), this.timeout);
+        job.timer = setTimeout(() => this._lost(s, new Error(`pool job ${job.op} timed out`)), job.timeout || this.timeout);
         try {
             s.w.postMessage({ id: job.id, op: job.op, ...(this.defaults ? this.defaults() : null), ...job.args }, job.transfer);
         } catch (err) {
@@ -158,6 +158,15 @@ export class WorkerPool {
     _reply(s, msg) {
         const job = s.job;
         if (!job || msg.id !== job.id) return;
+        // a job that answers in pieces (`png_read`: a band at a time): `progress` messages before the reply. A cancelled
+        // job's worker is stopped, since nothing else ends a stream it is in the middle of.
+        if (msg.progress) {
+            if (job.cancelled) { this._lost(s, new Error("cancelled")); return; }
+            clearTimeout(job.timer);
+            job.timer = setTimeout(() => this._lost(s, new Error(`pool job ${job.op} timed out`)), job.timeout || this.timeout);
+            if (job.onProgress) { try { job.onProgress(msg); } catch (err) { job.cancelled = true; job.reject(err); this._lost(s, err); } }
+            return;
+        }
         clearTimeout(job.timer);
         s.job = null;
         if (this.onTiming) { try { this.onTiming(msg); } catch (_) { /* ignore */ } }
