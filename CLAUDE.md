@@ -80,9 +80,18 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-16, late)
 
-**Releases.** **0.1.15 is published** (Latest since 2026-09-16; `latest.yml` on the feed says 0.1.15). It carries C6 (c)
-slices 3 to 7a (`CHANGELOG.md` 0.1.15). `package.json` is **0.1.16** with an empty section in `CHANGELOG.md`. Check
-`gh release list` before believing any release state written down anywhere.
+**Releases.** **0.1.16 is published** (Latest since 2026-09-17; `latest.yml` on the feed says 0.1.16). It carries C6 (c)
+slice 7b to 7d, C6 (d), C4, the rest of §C7 and phase R (Rust kernels by default). `package.json` is **0.1.17** with an
+empty section in `CHANGELOG.md`. Exe gates for 0.1.16: `rel16-exe` (log pixels editor composite brush film toapis mcp) and
+`rel16-exe-canvas` ALL PASS, `px_jobs.py --check` against the exe PASS; `smoke` and `commands` not run (the user's ComfyUI
+was busy). Check `gh release list` before believing any release state written down anywhere.
+
+**Phase E is started on the branch `phase-e`** (not merged): E1a (COOP / COEP, the window is cross-origin isolated,
+`log_test.py` asserts it) is committed with its gates; `renderer/editor/inpaint_arena.js` (the SharedArrayBuffer tile
+arena, slots freed through a FinalizationRegistry) is a draft committed there and **not wired in yet**. Next: wire the
+arena into `newTile` (`inpaint_tiles.js`: `u32Of` must use the view's offset, `imageDataOf` needs a copy for a shared
+view, check `texSubImage2D` with a shared view), then E1's pool (`inpaint_pool.js`) with the chain transport naming
+(chunk, slot). Merge `main` into `phase-e` first (0.1.17 bump).
 
 **Built.** C6 (c) slices 3 to 7a, each with its gates, mutations and measurements in `docs/PLAN_BCE.md` §C6 ("C6 (c3) and
 slice 4 as built", "slice 5 / 6 / 7a as built"). The tile engine is on by default in the installed app since 0.1.13, with a

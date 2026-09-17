@@ -3,7 +3,9 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.16 — unreleased
+## 0.1.17 — unreleased
+
+## 0.1.16 — 2026-09-17
 
 - **Grow, shrink, the magic wand and the picture's detail levels run as compiled code (Rust).** The pixel work behind
   *Grow* and *Shrink*, the magic wand and the bucket, and the smaller copies of every layer the screen draws from now
