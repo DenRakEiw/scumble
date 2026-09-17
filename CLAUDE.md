@@ -190,8 +190,8 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    (`InpaintEditor.stackFilters = false`, `stackBlends = false` are the A/B switches). Against the flatten: one level on
    1.1 % of the bytes below a filter, a filter never more than one level above what the pass shows. **Part 3 (the colour
    match) is not built and nothing of it is in the code**: a matched layer on the worker path needs its statistics from
-   tiles instead of from the whole flatten, which moves an export by a few levels, and that is the user's open decision
-   (b) of 7c. A document with a colour-matched layer, a scaled or a fractional layer still saves the old way. Not done
+   tiles instead of from the whole flatten, which moves an export by a few levels. That was the user's decision (b) of
+   7c, **made on 2026-09-18: they may move (point samples); part 3 is next after the release**, see below. A document with a colour-matched layer, a scaled or a fractional layer still saves the old way. Not done
    in part 2: the longest block (0.15 s against the plan's 0.05), an asynchronous read, a mask folded into the alpha
    (a filter at an opacity through a mask is a level off on 18 % of the bytes). Each item is measured
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
@@ -206,10 +206,14 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    `build_node.py --check` (the node is built from the same files), and the docs' references to moved functions
    follow. Not before the release, and never mixed with feature work: a published state to compare against comes first.
 
-**Decision (b) of 7c is still the user's** (exports and runs on the shared statistics entry; the numbers are in
-`docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). Recommended to them on 2026-09-17: **keep the full-resolution statistics
-for exports and runs** (no change: the screen differs by at most 3 levels, a real result is never moved; if the screen and
-exports have to agree later, point samples, mean 0.56 / max 9 levels, not box means). Not confirmed yet; build nothing for it.
+**Decision (b) of 7c is made (the user, 2026-09-18): exports and runs of a colour-matched layer may move.** They may
+take their statistics from tiles instead of from the whole flatten, with **point samples** (measured mean 0.56, max 8
+to 9 levels against the full-resolution statistics; not box means, which were 5.45 / p99 12 on a textured photo;
+`docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). This unblocks **B item 7 part 3**: a colour-matched layer on the
+worker path (its statistics from tiles, the match applied in the worker, `stackPlan` no longer turning it away), so the
+user's usual document (a result layer with a match, often a film look) saves and selects the fast way. Nothing of part 3
+is in the code yet. Build it after 0.1.18 is published, measure the export against the whole flatten's statistics
+before and after, and say in the CHANGELOG that a matched layer's export can move by a few levels.
 
 **Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`
 are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,

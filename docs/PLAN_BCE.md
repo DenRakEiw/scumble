@@ -4291,8 +4291,9 @@ canvases for the wand. In this order, each with its row and its gate:
    Rust and twin, held to Canvas 2D within the levels two canvases differ by.
 2. **Filter layers over worker-composited bands**: the stack below a filter from the workers into a shared buffer, the
    filter on the GPU as today, the rows read back once; no region canvases.
-3. **A colour-matched layer**: its statistics from tiles, the match applied in the worker. Tied to the user's open
-   decision (b) of C6 (c) 7c; ask before building it.
+3. **A colour-matched layer**: its statistics from tiles, the match applied in the worker. Tied to the user's
+   decision (b) of C6 (c) 7c, **made on 2026-09-18: exports and runs may take the statistics from tiles (point
+   samples, mean 0.56 / max 8 to 9 levels from the full-resolution ones), so part 3 can be built.** Not built yet.
 
 #### B item 7, part 1 as built (2026-09-18): the blend modes in `composite_tile`
 
