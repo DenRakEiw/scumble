@@ -178,6 +178,15 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
    the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
 
+11. **After release 0.1.18, agreed with the user on 2026-09-17: split `renderer/editor/inpaint_canvas.js`** (over 12,000
+   lines, one class). Only that file; the others (1,000 to 2,200 lines, one subject each) stay. **Moves only: no
+   behaviour change, no renaming, no tidying on the way.** Stage 1 (half a day): the loose functions at the top of the
+   file into modules of their own (the worker and pool plumbing, the PNG encoders, upload and hashing). Then decide with
+   the user whether stage 2 pays: the class's methods by subject into files that are hung into the class (selection,
+   wand and bucket, export, undo, colour match, tools and UI). After each stage every gate on both backends and
+   `build_node.py --check` (the node is built from the same files), and the docs' references to moved functions
+   follow. Not before the release, and never mixed with feature work: a published state to compare against comes first.
+
 **Decision (b) of 7c is still the user's** (exports and runs on the shared statistics entry; the numbers are in
 `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). Recommended to them on 2026-09-17: **keep the full-resolution statistics
 for exports and runs** (no change: the screen differs by at most 3 levels, a real result is never moved; if the screen and
