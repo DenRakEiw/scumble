@@ -16,7 +16,9 @@
  */
 import { arenaChunks, onArenaChange, arenaEnabled } from "./inpaint_arena.js";
 
-export const INTERACTIVE = 0, NORMAL = 1, EXPORT = 2;
+export const INTERACTIVE = 0;
+export const NORMAL = 1;
+export const EXPORT = 2;
 const PRIORITIES = 3;
 const JOB_TIMEOUT = 120000;
 

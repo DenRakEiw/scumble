@@ -305,6 +305,11 @@ export const host = {
         return out;
     },
 
+    /** Is the export the picture as it is (no Size row, no frame)? Then a PNG is written in bands, without a canvas (E2). */
+    exportIsPlain(editor) {
+        return !this.exportPixels(editor) && !this.exportFrame(editor);
+    },
+
     /** What exportImage() encodes: the flattened image, scaled when the Size row asks for it, framed when the Canvas row does. */
     exportCanvas(editor, fmt) {
         let canvas = editor.flattenToCanvas({ forRun: true });

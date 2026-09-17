@@ -365,6 +365,44 @@ async function pngCases(ref, label, js) {
     check(`CompressionStream("deflate") inflates back to the input`, eqBytes(new Uint8Array(zlib.inflateSync(n)), bytes), `${bytes.length} -> ${n.length}`);
 }
 
+// E2: the parts of a PNG's zlib stream, deflated one by one (any order, any worker), are one stream when joined:
+// header, the parts, the Adler-32 joined from the parts' own sums. Node's inflate checks the checksum itself.
+async function pngPartCases(px, label) {
+    const zlib = require("node:zlib");
+    const png = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_png.js")).href);
+    const w = 700, rows = [5, 1, 64, 30];
+    const total = rows.reduce((a, b) => a + b, 0);
+    const src = randomRGBA(w, total, 21);
+    src.fill(9, 0, w * 4 * 3);                                     // runs, so that deflate has something to match
+    for (let y = 10; y < 60; y += 2) src.copyWithin(y * w * 4, 0, w * 4);
+    for (const level of [1, 2, 6]) {
+        const parts = [];
+        let y = 0;
+        rows.forEach((n, i) => {
+            const prev = y ? src.subarray((y - 1) * w * 4, y * w * 4) : null;
+            parts.push(px.pngPart(src.subarray(y * w * 4, (y + n) * w * 4), w, n, prev, level, i === rows.length - 1));
+            y += n;
+        });
+        let adler = 1;
+        for (const p of parts) adler = png.adlerCombine(adler, p.adler, p.raw);
+        const tail = Buffer.from([adler >>> 24, (adler >>> 16) & 255, (adler >>> 8) & 255, adler & 255]);
+        const stream = Buffer.concat([Buffer.from([0x78, 0x9C]), ...parts.map((p) => Buffer.from(p.bytes)), tail]);
+        let out = null, err = "";
+        try { out = new Uint8Array(zlib.inflateSync(stream)); } catch (e) { err = String(e.message || e); }
+        const want = px.pngFilterRows(src, w, total, null);
+        check(`${label} pngPart level ${level}: ${rows.length} parts join into one zlib stream with a valid Adler-32`, !!out && eqBytes(out, want), err || `${want.length} -> ${stream.length}`);
+        check(`${label} pngPart level ${level}: the joined rows unfilter back to the input`, !!out && eqBytes(unfilter(out, w, total, null), src));
+    }
+    const big = px.pngPart(new Uint8Array(4096 * 64 * 4), 4096, 64, null, 2, true);
+    check(`${label} pngPart of an empty band is small`, big.bytes.length < 4096, `${big.bytes.length} bytes`);
+    // incompressible rows: the output is larger than the input and the first buffer is still enough
+    const noise = randomRGBA(900, 40, 77);
+    const np = px.pngPart(noise, 900, 40, null, 1, true);
+    let nout = null;
+    try { nout = new Uint8Array(zlib.inflateRawSync(Buffer.from(np.bytes))); } catch (_) { /* reported below */ }
+    check(`${label} pngPart of noise inflates back`, !!nout && nout.length === np.raw);
+}
+
 function unfilter(f, w, rows, prev) {
     const n = w * 4, out = new Uint8Array(rows * n);
     for (let y = 0; y < rows; y++) {
@@ -479,6 +517,7 @@ async function main() {
         await jobCases(px, label, raster);
         await compositeCases(px, label, js);
         await pngCases(px, label, js);
+        await pngPartCases(px, label);
         await memoryCases(px, label);
     }
     console.log(failures ? `FAIL (${failures})` : "PASS");

@@ -1989,6 +1989,23 @@ const tiled = (Base) => class extends Base {
     /** The tiles, for counting (memoryReport): never write into one (use `writable`). */
     tileList() { this._guard(); return Array.from(this._tiles.values()); }
 
+    /**
+     * The tiles of row `ty` from the left as a worker job names them (E1: `{ chunk, slot }`, null for a tile that does
+     * not exist), or null when one of them is not in the arena (the job then gets the rows as bytes, `readRect`). The
+     * caller holds these pixels (a `clone()`, so nobody writes into the tiles) until the job has answered.
+     */
+    tileRowNames(ty) {
+        this._guard();
+        const n = Math.ceil(this._w / TILE_SIZE), out = new Array(n).fill(null);
+        for (let tx = 0; tx < n; tx++) {
+            const t = this._tiles.get((ty << 16) | tx);
+            if (!t) continue;
+            if (t.arenaSlot < 0) return null;
+            out[tx] = { chunk: t.arenaChunk, slot: t.arenaSlot };
+        }
+        return out;
+    }
+
     // -- in place --
 
     clear(rect = null) {

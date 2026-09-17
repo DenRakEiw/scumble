@@ -18,6 +18,9 @@
  *   mips            the mip chains of a batch of tiles, after a change of a whole layer or
  *                   mask (2,360 chains, about 300 ms, at 15000 x 10000). The editor runs
  *                   this job in a worker of its own, so a long flood does not hold it up.
+ *   png_part        one part of a PNG written in parts (inpaint_png.js): rows, as bytes or as the tiles that hold
+ *                   them, filtered and deflated into a finished IDAT chunk. Stateless, so the pool runs them.
+ *   hash            the short SHA-1 of a blob.
  *   band            a row of tiles composited, layer over layer (`compositeTile`): no caller in
  *                   the editor yet; phase R measures the kernel phase E's band export will run.
  *
@@ -32,6 +35,7 @@
  */
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
+import { pngChunk, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
 import { mipChain, mipChainBytes, clampExtend, compositeTile, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge } from "./px/kernels.js";
 
 const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
@@ -135,6 +139,51 @@ async function band(msg) {
         transfer.push(col.dst);
     }
     return { dsts: transfer, transfer, timing: { op: "band", kernels: kernelsInUse(), tiles: msg.columns.length, kernel: now() - t0 } };
+}
+
+/**
+ * The rows `r0` to `r0 + rows` of one tile row as RGBA8, `w` wide: `tiles` holds the row's tiles from the left (null
+ * for one that does not exist: transparent). With `above`, the single row above them instead (the PNG filter's `prev`):
+ * row `r0 - 1` of the same tiles, or the last row of `prevTiles`, or null for the picture's first row.
+ */
+function rowsOfTiles(msg, above = false) {
+    let tiles = msg.tiles, r0 = msg.r0 | 0, rows = msg.rows;
+    if (above) {
+        if (r0 > 0) { r0--; rows = 1; } else if (msg.prevTiles) { tiles = msg.prevTiles; r0 = TILE - 1; rows = 1; } else return null;
+    }
+    const w = msg.w, out = new Uint8Array(w * rows * 4);
+    for (let tx = 0; tx * TILE < w; tx++) {
+        const t = tiles[tx];
+        if (!t) continue;
+        const { bytes } = tileBytes(t);
+        const n = Math.min(TILE, w - tx * TILE) * 4;
+        for (let y = 0; y < rows; y++) {
+            const so = (r0 + y) * TILE * 4;
+            out.set(bytes.subarray(so, so + n), (y * w + tx * TILE) * 4);
+        }
+    }
+    return out;
+}
+
+/**
+ * One part of a PNG's pixels (inpaint_png.js, docs/PLAN_BCE.md §E2): rows as bytes (`rgba`, `prev`) or as tiles
+ * (`tiles`, `prevTiles`, `r0`), filtered and deflated by the Rust kernel, as a finished IDAT chunk.
+ */
+async function pngPart(msg) {
+    const p = rustPx();
+    if (!p) throw new Error(NO_PARTS);
+    const t0 = now();
+    const rgba = msg.rgba ? new Uint8Array(msg.rgba, 0, msg.w * msg.rows * 4) : rowsOfTiles(msg);
+    const prev = msg.rgba ? (msg.prev ? new Uint8Array(msg.prev, 0, msg.w * 4) : null) : rowsOfTiles(msg, true);
+    const r = p.pngPart(rgba, msg.w, msg.rows, prev, msg.level === undefined ? PNG_LEVEL : msg.level, !!msg.last);
+    releaseIfLarge();
+    const chunk = pngChunk("IDAT", r.bytes);
+    return { chunk: chunk.buffer, adler: r.adler, raw: r.raw, transfer: [chunk.buffer], timing: { op: "png_part", kernels: "rust", pixels: msg.w * msg.rows, kernel: now() - t0 } };
+}
+
+/** The short SHA-1 of a blob (the name of an uploaded file). */
+async function hashJob(msg) {
+    return { hash: await hashOf(msg.blob) };
 }
 
 const exports_ = new Map();   // job id -> { writer, format }
@@ -259,6 +308,8 @@ async function run(msg) {
     if (msg.op === "flood") return flood(msg);
     if (msg.op === "mips") return mips(msg);
     if (msg.op === "band") return band(msg);
+    if (msg.op === "png_part") return pngPart(msg);
+    if (msg.op === "hash") return hashJob(msg);
     if (msg.op === "export_begin") {
         const opts = { width: msg.width, height: msg.height };
         exports_.set(msg.job, { format: msg.format, writer: msg.format === "psd" ? new PsdWriter(opts) : new OraWriter(opts) });

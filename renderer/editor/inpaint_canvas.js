@@ -22,7 +22,9 @@ import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, 
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
-import { WorkerPool, poolSize, INTERACTIVE } from "./inpaint_pool.js";
+import { WorkerPool, poolSize, INTERACTIVE, EXPORT } from "./inpaint_pool.js";
+import { PngStreamWriter, partRows, NO_PARTS } from "./inpaint_png.js";
+import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, setChainTransport, chainScheduler } from "./inpaint_tiles.js";
 
 /**
@@ -398,6 +400,132 @@ async function uploadBlob(blob, filename, { overwrite = true, type = "input", su
 async function uploadCanvas(canvas, prefix) {
     const { blob, hash } = await encodeCanvas(canvas, { hash: true });
     return { ref: await uploadBlob(blob, `${prefix}_${hash}.png`), hash };
+}
+
+// ---- PNGs written in parts by the pool (docs/PLAN_BCE.md §E2, inpaint_png.js) ------------------------------
+// A picture is cut into parts of whole rows, each filtered and deflated by a pool worker, and the file is joined
+// from them: no canvas of the picture, no bitmap of it, no RGBA buffer of it. `PARTS_OFF` once the workers have no
+// Rust kernels (or there are no workers): every caller then keeps its canvas path.
+
+let PARTS_OFF = false;
+let partsSeq = 0;
+
+function partsUsable() {
+    return !PARTS_OFF && InpaintEditor.pngParts !== false && kernelsMode() === "rust" && typeof Worker === "function" && !editorPool().off;
+}
+
+function partsWriter(width, height, texts, group) {
+    const pool = editorPool();
+    return new PngStreamWriter(width, height, {
+        texts,
+        flights: pool.size * 2,
+        run: (args, transfer) => pool.run("png_part", args, transfer, { priority: EXPORT, group }),
+    });
+}
+
+/** A failure that means "not this way" (no kernels, no pool), against one that is the caller's to see. */
+function partsFailed(err) {
+    const msg = String((err && err.message) || err);
+    if (msg.includes(NO_PARTS) || msg.includes("no worker pool")) { PARTS_OFF = true; return true; }
+    return false;
+}
+
+async function hashInPool(blob) {
+    try { return (await editorPool().run("hash", { blob }, [], { priority: EXPORT })).hash; } catch (_) { return hashBlob(blob); }
+}
+
+/**
+ * PNG of tile pixels straight from their tiles: `{ blob, hash }`, or null when parts cannot be used (the caller
+ * encodes a canvas). The pixels are held as a copy-on-write clone while the workers read them, so a stroke meanwhile
+ * writes into tiles of its own and the file is the picture of the moment of the call.
+ */
+async function encodeTilePixels(px, { hash = false, texts = null } = {}) {
+    if (!partsUsable() || !isTilePixels(px)) return null;
+    const w = px.width, h = px.height;
+    const snap = px.clone();
+    const group = "png" + (++partsSeq);
+    try {
+        const writer = partsWriter(w, h, texts, group);
+        const per = partRows(w, TILE_SIZE);
+        const byName = arenaEnabled();
+        for (let ty = 0; ty * TILE_SIZE < h; ty++) {
+            const valid = Math.min(TILE_SIZE, h - ty * TILE_SIZE);
+            const tiles = byName ? snap.tileRowNames(ty) : null;
+            const prevTiles = tiles && ty > 0 ? snap.tileRowNames(ty - 1) : null;
+            for (let r0 = 0; r0 < valid; r0 += per) {
+                const rows = Math.min(per, valid - r0);
+                await writer.room();
+                if (tiles && (r0 > 0 || ty === 0 || prevTiles)) { writer.add(rows, { tiles, prevTiles: r0 === 0 ? prevTiles : null, r0 }); continue; }
+                const y = ty * TILE_SIZE + r0;
+                const rgba = snap.readRect(0, y, w, rows).data.buffer;
+                const prev = y > 0 ? snap.readRect(0, y - 1, w, 1).data.buffer : null;
+                writer.add(rows, { rgba, prev }, prev ? [rgba, prev] : [rgba]);
+            }
+        }
+        const blob = await writer.finish();
+        return { blob, hash: hash ? await hashInPool(blob) : null };
+    } catch (err) {
+        editorPool().cancel(group);
+        if (partsFailed(err)) return null;
+        throw err;
+    } finally {
+        snap.release();
+    }
+}
+
+/**
+ * PNG of a picture that arrives in bands: `band(y0, y1)` gives (or resolves to) the RGBA8 of those rows as a typed
+ * array of its own (its buffer is transferred away). `{ blob, hash }`, or null when parts cannot be used. Bands are
+ * asked for one after the other, each only when the workers have room, with a task's pause between them.
+ */
+async function encodeBands(width, height, band, { hash = false, texts = null, rows = TILE_SIZE, progress = null } = {}) {
+    if (!partsUsable()) return null;
+    const group = "png" + (++partsSeq);
+    try {
+        const writer = partsWriter(width, height, texts, group);
+        const per = partRows(width, rows);
+        const stride = width * 4;
+        let prev = null;
+        for (let y0 = 0; y0 < height; y0 += rows) {
+            const y1 = Math.min(height, y0 + rows);
+            await writer.room();
+            const data = await band(y0, y1);
+            if (data.length !== (y1 - y0) * stride) throw new Error(`a band of ${data.length} bytes for ${y1 - y0} rows of ${width}`);
+            const lastRow = data.slice(data.length - stride);
+            if (per >= y1 - y0) {
+                writer.add(y1 - y0, { rgba: data.buffer, prev: prev ? prev.buffer : null }, prev ? [data.buffer, prev.buffer] : [data.buffer]);
+            } else {
+                for (let r = 0; r < y1 - y0; r += per) {
+                    const n = Math.min(per, y1 - y0 - r);
+                    const part = data.slice(r * stride, (r + n) * stride);
+                    const above = r > 0 ? data.slice((r - 1) * stride, r * stride) : prev;
+                    writer.add(n, { rgba: part.buffer, prev: above ? above.buffer : null }, above ? [part.buffer, above.buffer] : [part.buffer]);
+                    if (r + n < y1 - y0) await writer.room();
+                }
+            }
+            prev = lastRow;
+            if (progress) progress(y1 / height);
+            await new Promise((r) => setTimeout(r, 0));
+        }
+        const blob = await writer.finish();
+        return { blob, hash: hash ? await hashInPool(blob) : null };
+    } catch (err) {
+        editorPool().cancel(group);
+        if (partsFailed(err)) return null;
+        throw err;
+    }
+}
+
+/** Upload pixels as a PNG named by its hash: from their tiles when they are on tiles, else from their canvas. */
+async function uploadPixels(px, prefix) {
+    const r = await encodeTilePixels(px, { hash: true });
+    if (r) return { ref: await uploadBlob(r.blob, `${prefix}_${r.hash}.png`), hash: r.hash };
+    const c = px.toCanvas();
+    try {
+        return await uploadCanvas(c, prefix);
+    } finally {
+        if (isTilePixels(px)) { c.width = 1; c.height = 1; }
+    }
 }
 
 const CRC_TABLE = (() => {
@@ -6431,7 +6559,7 @@ class InpaintEditor {
                 ref = this.base.ref;
                 this.uploaded.baseHash = "orig:" + this.base.ref.filename;
             } else {
-                const up = await uploadCanvas(this.flattenToCanvas({ forRun: true }), `n${this.node.id}_base`);
+                const up = await this.uploadComposite({ forRun: true }, `n${this.node.id}_base`);
                 ref = up.ref; this.uploaded.baseHash = up.hash;
             }
             this.uploaded.baseRef = ref;
@@ -8454,6 +8582,11 @@ class InpaintEditor {
         return workerCall(op, args, transfer);
     }
 
+    /** The PNG writers of E2 and the pool, for tests and benchmarks (tools/export_test.py). */
+    static get parts() {
+        return { usable: partsUsable, encodeTilePixels, encodeBands, encodeCanvas, uploadPixels, pool: editorPool };
+    }
+
     static jobTimings(reset = false) {
         const out = JOB_TIMINGS.slice();
         if (reset) JOB_TIMINGS.length = 0;
@@ -8537,9 +8670,23 @@ class InpaintEditor {
         const stem = ((this.saveNameInput && this.saveNameInput.value) || "inpaint_canvas").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._ -]/gi, "_") || "inpaint_canvas";
         try {
             this.setStatus("Saving ...");
-            const canvas = host.exportCanvas(this, fmt);
-            let blob, note = "";
-            if (fmt === "psd" || fmt === "ora") {
+            let blob, note = "", embedded = false;
+            let pngTexts = null;
+            if (fmt === "png") {
+                // Same metadata as SaveImage: the workflow (and the canvas prompt), so the file loads back into ComfyUI.
+                try {
+                    pngTexts = { workflow: asciiJson(host.workflowForPng(this)), inpaint_canvas: asciiJson({ prompt: this.promptText, negative: this.negativeText, width: this.width, height: this.height, seed: this.genSettings.seed, mode: this.genSettings.mode }) };
+                } catch (err) { console.warn("Inpaint Canvas: could not embed the workflow", err); }
+            }
+            // E2: a PNG of the picture as it is is written in bands by the worker pool, without a canvas of the picture
+            if (fmt === "png" && host.exportIsPlain(this)) {
+                const t0 = performance.now();
+                const r = await this.encodeComposite({ forRun: true }, { texts: pngTexts, progress: (f) => this.setStatus(`Saving ... ${Math.round(f * 100)} %`) });
+                if (r) { blob = r.blob; embedded = !!pngTexts; note = `, ${Math.round(performance.now() - t0)} ms`; }
+            }
+            const canvas = blob ? { width: this.width, height: this.height } : host.exportCanvas(this, fmt);
+            if (blob) { /* written in bands */ }
+            else if (fmt === "psd" || fmt === "ora") {
                 const t0 = performance.now();
                 const { layers, skipped } = this.exportLayerStack();
                 blob = await buildLayered(fmt, { width: this.width, height: this.height, layers, composite: canvas });
@@ -8547,17 +8694,13 @@ class InpaintEditor {
             } else {
                 blob = await new Promise((r) => canvas.toBlob(r, fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png", host.exportQuality(this)));
             }
-            if (fmt === "png") {
-                // Same metadata as SaveImage: the workflow (and the canvas prompt), so the file loads back into ComfyUI.
-                try {
-                    const workflow = host.workflowForPng(this);
-                    blob = pngWithText(await blob.arrayBuffer(), { workflow: asciiJson(workflow), inpaint_canvas: asciiJson({ prompt: this.promptText, negative: this.negativeText, width: this.width, height: this.height, seed: this.genSettings.seed, mode: this.genSettings.mode }) });
-                } catch (err) { console.warn("Inpaint Canvas: could not embed the workflow", err); }
+            if (fmt === "png" && !embedded && pngTexts) {
+                try { blob = pngWithText(await blob.arrayBuffer(), pngTexts); embedded = true; } catch (err) { console.warn("Inpaint Canvas: could not embed the workflow", err); }
             }
             const saved = await host.saveExport(blob, `${stem}.${fmt}`, { editor: this, download });
             if (!saved) { this.setStatus("Save cancelled."); return null; }
             const kb = Math.round(blob.size / 1024);
-            this.setStatus(`Saved ${saved.path} (${canvas.width} × ${canvas.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " kB"}${fmt === "png" ? ", " + hostText("pngEmbedded", "recipe embedded") : ""}${note}).`);
+            this.setStatus(`Saved ${saved.path} (${canvas.width} × ${canvas.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " kB"}${fmt === "png" && embedded ? ", " + hostText("pngEmbedded", "recipe embedded") : ""}${note}).`);
             return saved;
         } catch (err) {
             console.error(err);
@@ -9850,12 +9993,7 @@ class InpaintEditor {
 
     /** Upload new base pixels (a PNG in the mirror); on tiles through a canvas made for it and let go. */
     async uploadBase(px) {
-        const c = px.toCanvas();
-        try {
-            return await uploadCanvas(c, `n${this.node.id}_base`);
-        } finally {
-            if (isTilePixels(px)) { c.width = 1; c.height = 1; }
-        }
+        return uploadPixels(px, `n${this.node.id}_base`);
     }
 
     /**
@@ -10484,6 +10622,77 @@ class InpaintEditor {
         }
     }
 
+    /**
+     * How the full-resolution composite is read in bands (docs/PLAN_BCE.md §E2): `{ reach }` when a band composited with
+     * that margin above and below equals the whole flatten there (`boxReach`: pointwise layers 0, a blur its radius), or
+     * null when only the whole flatten gives those pixels (a colour-matched layer, a scaled one, a filter that reads the
+     * whole picture) and the caller keeps its canvas. Only on tiles, and only with the pool's PNG parts.
+     */
+    bandPlan(opts = { forRun: true }) {
+        if (!this.tileMode || !this.base || !partsUsable() || InpaintEditor.bands === false) return null;
+        const reach = this.boxReach([0, 0, this.width, this.height], { forRun: !!opts.forRun, upTo: opts.upTo == null ? null : opts.upTo });
+        if (!Number.isFinite(reach)) return null;
+        return { reach: Math.ceil(reach) };
+    }
+
+    /**
+     * The rows `y0` to `y1` of the full-resolution composite as RGBA8 (a typed array of its own): a region pass at level
+     * 0 over those rows and `reach` more on either side, drawn into a CPU canvas and read there. The pass's own canvas is
+     * never read back itself: a hundred `getImageData` calls on canvases of the GPU make Chromium put every new canvas
+     * in software (CLAUDE.md, traps).
+     */
+    readBand(y0, y1, opts, reach = 0) {
+        const W = this.width;
+        const kt = Math.min(reach, y0), kb = Math.min(reach, this.height - y1);
+        const big = this.sampleRegion("image", [0, y0 - kt, W, y1 + kb], 1, { ...opts, pad: 0 });
+        const c = document.createElement("canvas");
+        c.width = W; c.height = y1 - y0;
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        try {
+            ctx.drawImage(big, 0, -kt);
+            return ctx.getImageData(0, 0, W, y1 - y0).data;
+        } finally {
+            big.width = 1; big.height = 1;
+            c.width = 1; c.height = 1;
+        }
+    }
+
+    /**
+     * The composite as a PNG written in bands: `{ blob, hash, width, height }`, or null when it cannot be (`bandPlan`)
+     * and the caller flattens into a canvas. `each(data, y0, y1)` sees every band before it goes to the workers (the
+     * flatten writes its new base from them). The picture must not change while its bands are read: a change restarts
+     * the read once, a second one fails it.
+     */
+    async encodeComposite(opts = { forRun: true }, { hash = false, texts = null, each = null, progress = null } = {}) {
+        const plan = this.bandPlan(opts);
+        if (!plan) return null;
+        for (let round = 0; ; round++) {
+            const version = this.compositeVersion;
+            const changed = () => this.compositeVersion !== version;
+            try {
+                const r = await encodeBands(this.width, this.height, (y0, y1) => {
+                    if (changed()) throw new Error("the picture changed");
+                    const data = this.readBand(y0, y1, opts, plan.reach);
+                    if (each) each(data, y0, y1);
+                    return data;
+                }, { hash, texts, progress });
+                if (!r) return null;
+                if (changed()) throw new Error("the picture changed");
+                return { ...r, width: this.width, height: this.height };
+            } catch (err) {
+                if (!/the picture changed/.test(String(err && err.message))) throw err;
+                if (round >= 1) throw new Error("the picture changed while it was written; try again");
+            }
+        }
+    }
+
+    /** Upload the composite as a PNG named by its hash: in bands when it can be read that way (E2), else from a canvas. */
+    async uploadComposite(opts, prefix) {
+        const r = await this.encodeComposite(opts, { hash: true });
+        if (r) return { ref: await uploadBlob(r.blob, `${prefix}_${r.hash}.png`), hash: r.hash };
+        return uploadCanvas(this.flattenToCanvas(opts), prefix);
+    }
+
     maskToCanvas() {
         const c = makeCanvas(this.width, this.height);
         const ctx = c.getContext("2d");
@@ -10512,9 +10721,24 @@ class InpaintEditor {
         try {
             this.setStatus("Flattening ...");
             before = this.snapshot({ kind: "canvas" });
-            const flat = this.flattenToCanvas({ forRun: true });
-            const { ref, hash } = await uploadCanvas(flat, `n${this.node.id}_base`);
-            const px = this.pixels.Layer.fromCanvas(flat);   // C6 (d): not the upload decoded again
+            // E2: the upload and the new base from the same bands, without a canvas of the picture
+            let px = null, ref, hash;
+            const banded = await this.encodeComposite({ forRun: true }, {
+                hash: true,
+                each: (data, y0, y1) => {
+                    if (y0 === 0) { if (px) px.release(); px = this.pixels.Layer.empty(this.width, this.height); }
+                    px.writeRect({ data, width: this.width, height: y1 - y0 }, 0, y0);
+                },
+            });
+            if (banded) {
+                hash = banded.hash;
+                ref = await uploadBlob(banded.blob, `n${this.node.id}_base_${hash}.png`);
+            } else {
+                if (px) px.release();
+                const flat = this.flattenToCanvas({ forRun: true });
+                ({ ref, hash } = await uploadCanvas(flat, `n${this.node.id}_base`));
+                px = this.pixels.Layer.fromCanvas(flat);   // C6 (d): not the upload decoded again
+            }
             pushed = true;
             this.pushUndoSnapshot(before, { tracked: true });
             this.layers = this.layers.filter((l) => this.isControl(l) || this.isReference(l));
@@ -10542,12 +10766,12 @@ class InpaintEditor {
     async syncLayers() {
         for (const layer of this.layers) {
             if (layer.dirty && layer.px) {
-                const { ref } = await uploadCanvas(layer.px.toCanvas(), `n${this.node.id}_layer`);
+                const { ref } = await uploadPixels(layer.px, `n${this.node.id}_layer`);
                 layer.ref = ref;
                 layer.dirty = false;
             }
             if (layer.maskDirty && layer.maskPx) {
-                const { ref } = await uploadCanvas(layer.maskPx.toCanvas(), `n${this.node.id}_lmask`);
+                const { ref } = await uploadPixels(layer.maskPx, `n${this.node.id}_lmask`);
                 layer.maskRef = ref;
                 layer.maskDirty = false;
             }
@@ -11629,7 +11853,7 @@ class InpaintEditor {
                 baseRef = this.base.ref;
                 hash = "orig:" + this.base.ref.filename;
             } else {
-                const up = await uploadCanvas(this.flattenToCanvas({ forRun: true }), `n${id}_base`);
+                const up = await this.uploadComposite({ forRun: true }, `n${id}_base`);
                 baseRef = up.ref; hash = up.hash;
             }
             this.uploaded.baseHash = hash;

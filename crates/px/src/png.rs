@@ -5,8 +5,32 @@
 //! of absolute values when the bytes are read as signed (ties go to the lower type, the order
 //! libpng tries them in). The row above the first one is `prev`, or zeros.
 //!
-//! Deflate is not here: the browser's `CompressionStream("deflate")` was 1.4 to 2.2× faster than
-//! miniz_oxide (docs/PERFORMANCE.md §10), so the crate dropped it in phase R.
+//! `deflate_part` compresses one part of a zlib stream as raw deflate. Every part but the last ends on a sync flush
+//! (an empty stored block, byte aligned), so parts compressed independently, in any order and on any thread, are one
+//! valid deflate stream when they are written one after the other; the last part ends the stream. The caller adds
+//! the two zlib header bytes in front and the Adler-32 of all the uncompressed bytes behind (`adler32`, chained
+//! through `start`). The browser's `CompressionStream("deflate")` is 1.4 to 2.2× faster than miniz_oxide on one
+//! thread (docs/PERFORMANCE.md §10) but cannot flush, so it cannot be run in parallel: eight workers win.
+
+use miniz_oxide::deflate::core::{compress, create_comp_flags_from_zip_params, CompressorOxide, TDEFLFlush, TDEFLStatus};
+
+/// Raw deflate of `src` into `out`; returns the bytes written, or -1 when `out` was too small.
+pub fn deflate_part(src: &[u8], level: i32, last: bool, out: &mut [u8]) -> isize {
+    let flags = create_comp_flags_from_zip_params(level, -15, 0);
+    let mut c = Box::new(CompressorOxide::new(flags));
+    let (status, consumed, written) = compress(&mut c, src, out, if last { TDEFLFlush::Finish } else { TDEFLFlush::Sync });
+    let done = if last { status == TDEFLStatus::Done } else { status == TDEFLStatus::Okay };
+    if !done || consumed != src.len() {
+        return -1;
+    }
+    written as isize
+}
+
+pub fn adler32(src: &[u8], start: u32) -> u32 {
+    let mut a = adler2::Adler32::from_checksum(start);
+    a.write_slice(src);
+    a.checksum()
+}
 
 #[inline(always)]
 fn cost(v: u8) -> u32 {

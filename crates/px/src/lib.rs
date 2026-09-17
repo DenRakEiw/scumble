@@ -36,7 +36,7 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature; `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    4
+    5
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -214,4 +214,17 @@ pub unsafe extern "C" fn composite_tile(dst: *mut u8, px: usize, n: usize, srcs:
 pub unsafe extern "C" fn png_filter_rows(rgba: *const u8, w: usize, rows: usize, prev: *const u8, out: *mut u8) -> usize {
     let prev = if prev.is_null() { None } else { Some(slice::from_raw_parts(prev, w * 4)) };
     png::filter_rows(slice::from_raw_parts(rgba, w * 4 * rows), w, rows, prev, slice::from_raw_parts_mut(out, rows * (1 + 4 * w)))
+}
+
+/// Raw deflate of `len` bytes at `src` into `out` (`cap` bytes) at zlib `level` (0 to 10); every part but the `last`
+/// ends on a sync flush. Returns the bytes written, or -1 when `cap` was too small.
+#[no_mangle]
+pub unsafe extern "C" fn deflate_part(src: *const u8, len: usize, level: i32, last: u32, out: *mut u8, cap: usize) -> isize {
+    png::deflate_part(slice::from_raw_parts(src, len), level, last != 0, slice::from_raw_parts_mut(out, cap))
+}
+
+/// The Adler-32 of `len` bytes at `src`, continued from `start` (1 for a new checksum).
+#[no_mangle]
+pub unsafe extern "C" fn adler32(src: *const u8, len: usize, start: u32) -> u32 {
+    png::adler32(slice::from_raw_parts(src, len), start)
 }

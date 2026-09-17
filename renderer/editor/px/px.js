@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 4;
+export const PX_ABI = 5;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -237,6 +237,29 @@ export class Px {
             const pr = this._in(a, rgba, rows * 4 * w), pp = prev ? this._in(a, prev, 4 * w) : 0, po = a.take(n);
             this.exports.png_filter_rows(pr, w, rows, pp, po);
             return this._out(Uint8Array, po, n, out);
+        } finally { a.reset(); }
+    }
+
+    /**
+     * One part of a PNG's zlib stream (docs/PLAN_BCE.md §E2): `rows` rows of RGBA8 filtered (`pngFilterRows`) and
+     * deflated raw at `level`, every part but the `last` ending on a sync flush, so the parts of a picture are one
+     * deflate stream when written one after the other. `{ bytes, adler, raw }`: the deflated part (a copy), the
+     * Adler-32 of its `raw` filtered bytes alone (joined by `adlerCombine`).
+     */
+    pngPart(rgba, w, rows, prev, level, last) {
+        const a = this.job, n = rows * (1 + 4 * w);
+        try {
+            const pr = this._in(a, rgba, rows * 4 * w), pp = prev ? this._in(a, prev, 4 * w) : 0, pf = a.take(n);
+            this.exports.png_filter_rows(pr, w, rows, pp, pf);
+            const adler = this.exports.adler32(pf, n, 1) >>> 0;
+            // stored blocks are the worst case: 5 bytes per 64 KB, and the flush's own
+            let cap = n + Math.ceil(n / 65535) * 5 + 64;
+            for (;;) {
+                const po = a.take(cap);
+                const written = this.exports.deflate_part(pf, n, level, last ? 1 : 0, po, cap);
+                if (written >= 0) return { bytes: this.u8().slice(po, po + written), adler, raw: n };
+                cap *= 2;
+            }
         } finally { a.reset(); }
     }
 }

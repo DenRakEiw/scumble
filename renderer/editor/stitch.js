@@ -62,6 +62,14 @@ function maskFromCanvasAlpha(canvas, x0, y0, w, h) {
     return maskFromAlpha(canvas.getContext("2d").getImageData(x0, y0, w, h));
 }
 
+/** The box w x h at (x, y) of the full-resolution composite a run sees, as a canvas of the box. */
+function regionOf(editor, x, y, w, h) {
+    if (editor.tileMode && typeof editor.readBox === "function") return editor.readBox([x, y, x + w, y + h], { forRun: true });
+    const c = makeCanvas(w, h);
+    c.getContext("2d").drawImage(editor.flattenToCanvas({ forRun: true }), x, y, w, h, 0, 0, w, h);
+    return c;
+}
+
 /** The alpha channel of ImageData (a readRect of the selection, say) as a 0..1 mask. */
 function maskFromAlpha(img) {
     const w = img.width, h = img.height, d = img.data;
@@ -169,10 +177,50 @@ function compositeMask(sel, grow, feather, blend) {
     return maskClamp(maskMax(m, sel));
 }
 
+/** The part w x h at (x0, y0) of a mask, in image coordinates; outside a window mask (`selectionWindow`) it is 0. */
 function cropMask(m, x0, y0, w, h) {
     const o = maskOf(w, h);
-    for (let y = 0; y < h; y++) o.data.set(m.data.subarray((y0 + y) * m.w + x0, (y0 + y) * m.w + x0 + w), y * w);
+    const ox = m.ox | 0, oy = m.oy | 0;
+    const sx0 = Math.max(x0, ox), sx1 = Math.min(x0 + w, ox + m.w);
+    if (sx1 <= sx0) return o;
+    for (let y = Math.max(y0, oy), y1 = Math.min(y0 + h, oy + m.h); y < y1; y++) {
+        const row = (y - oy) * m.w;
+        o.data.set(m.data.subarray(row + sx0 - ox, row + sx1 - ox), (y - y0) * w + (sx0 - x0));
+    }
     return o;
+}
+
+/** Above this many pixels the selection is read in a window around its bounds, not over the whole image (E2). */
+let SEL_WINDOW_PIXELS = 16 * 1024 * 1024;
+const SEL_WINDOW_MARGIN = 2048;
+
+/** Tests: the image size above which the selection is read in a window (Infinity: always the whole image). Returns the old value. */
+export function setSelectionWindowPixels(n) {
+    const was = SEL_WINDOW_PIXELS;
+    SEL_WINDOW_PIXELS = n;
+    return was;
+}
+
+/**
+ * The selection as a 0..1 mask for a run: of the whole image, or (E2) on a large image of a window around the
+ * selection's bounds, `{ data, w, h, ox, oy, fullW, fullH }`. A whole mask of a 15000 x 10000 image is a 600 MB
+ * read and 600 MB of floats, and no ImageData holds one of 30000 x 20000. The margin is wider than any padding, grow
+ * or feather a run uses; what a very soft selection has beyond it (alpha below a half, by definition outside the
+ * bounds) counts as unselected.
+ */
+function selectionWindow(editor) {
+    const W = editor.width, H = editor.height;
+    const b = W * H > SEL_WINDOW_PIXELS && typeof editor.getBounds === "function" ? editor.getBounds() : null;
+    if (!b) {
+        const m = maskFromAlpha(editor.sel.readRect(0, 0, W, H));
+        m.ox = 0; m.oy = 0; m.fullW = W; m.fullH = H;
+        return m;
+    }
+    const x0 = Math.max(0, b[0] - SEL_WINDOW_MARGIN), y0 = Math.max(0, b[1] - SEL_WINDOW_MARGIN);
+    const x1 = Math.min(W, b[2] + SEL_WINDOW_MARGIN), y1 = Math.min(H, b[3] + SEL_WINDOW_MARGIN);
+    const m = maskFromAlpha(editor.sel.readRect(x0, y0, x1 - x0, y1 - y0));
+    m.ox = x0; m.oy = y0; m.fullW = W; m.fullH = H;
+    return m;
 }
 
 function resizeMask(m, w, h) {
@@ -202,6 +250,7 @@ function maskToCanvas(m, { luminance = false } = {}) {
 
 function selectionBbox(m, padding) {
     const { w, h } = m;
+    const ox = m.ox | 0, oy = m.oy | 0, W = m.fullW || w, H = m.fullH || h;
     let x0 = w, y0 = h, x1 = -1, y1 = -1;
     for (let y = 0; y < h; y++) {
         const row = y * w;
@@ -209,8 +258,8 @@ function selectionBbox(m, padding) {
             if (m.data[row + x] > 0.5) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
         }
     }
-    if (x1 < 0) return { has: false, x0: 0, y0: 0, x1: w, y1: h };
-    return { has: true, x0: Math.max(0, x0 - padding), y0: Math.max(0, y0 - padding), x1: Math.min(w, x1 + 1 + padding), y1: Math.min(h, y1 + 1 + padding) };
+    if (x1 < 0) return { has: false, x0: 0, y0: 0, x1: W, y1: H };
+    return { has: true, x0: Math.max(0, ox + x0 - padding), y0: Math.max(0, oy + y0 - padding), x1: Math.min(W, ox + x1 + 1 + padding), y1: Math.min(H, oy + y1 + 1 + padding) };
 }
 
 // ---- fill modes ---------------------------------------------------------------------------
@@ -326,8 +375,7 @@ export function prepareCrop(editor, params, limits) {
     const m = Math.max(1, Math.round((limits && limits.step) || +params.multiple_of || 64));
     const fixedSize = Math.max(0, Math.round(+params.target_size || 0));
 
-    const base = editor.flattenToCanvas({ forRun: true });
-    const sel = maskFromAlpha(editor.sel.readRect(0, 0, width, height));
+    const sel = selectionWindow(editor);
     const bb0 = selectionBbox(sel, 0);
     const hasSelection = bb0.has;
     let { pad, grow, feather, blend } = autoSelectionParams(bb0.x1 - bb0.x0, bb0.y1 - bb0.y0, strength);
@@ -362,8 +410,10 @@ export function prepareCrop(editor, params, limits) {
     const cw = x1 - x0, ch = y1 - y0;
     const targetSize = emitTarget(limits, fixedSize, cw, ch);
 
+    // E2: the crop box composited on its own (`readBox`: a region pass at full resolution, or the box cut out of the
+    // whole flatten when no margin gives those pixels), never the whole image for a box of it
     let crop = makeCanvas(cw, ch);
-    crop.getContext("2d").drawImage(base, x0, y0, cw, ch, 0, 0, cw, ch);
+    crop.getContext("2d").drawImage(regionOf(editor, x0, y0, cw, ch), 0, 0);
     const cropOrig = makeCanvas(cw, ch);
     cropOrig.getContext("2d").drawImage(crop, 0, 0);
     const selCrop = cropMask(sel, x0, y0, cw, ch);
@@ -495,7 +545,7 @@ export function finishResult(editor, info, sel, resultImage) {
     const blend = cropMask(full, x - wx0, y - wy0, w, h);
 
     const region = makeCanvas(w, h);
-    region.getContext("2d").drawImage(editor.flattenToCanvas({ forRun: true }), x, y, w, h, 0, 0, w, h);
+    region.getContext("2d").drawImage(regionOf(editor, x, y, w, h), 0, 0);
     const align = { aligned: false, reason: "not available in the app" };
     // A cut-out (the model was asked for a transparent background) is never colour matched:
     // the statistics would read the transparent pixels' black, and the asset was never meant
