@@ -150,9 +150,12 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    Electron and build B; no native tile store, no native editor. The user works up to about 15k**, so B's item 6
    (one-channel masks) goes last and 30k is not the size to tune for. **B item 4 is built** (2026-09-17, same
    section, "B item 4 as built"): `dilateMask` / `boxBlurs` as kernels (ABI 7, `crates/px/src/maskf.rs`), a provider run's
-   crop 2.5 s to 0.57 s with the same floats; `node tools/stitch_test.js` is its gate beside `px_test.js`. **Next: item 1**
-   (exports composited in the pool), then 2 (wand and bucket over tiles), 3 (selection jobs on mask tiles), 5 (the PNG
-   reader in Rust). Each item is measured
+   crop 2.5 s to 0.57 s with the same floats; `node tools/stitch_test.js` is its gate beside `px_test.js`. **B item 1 is built** (2026-09-17, "B item 1 as
+   built"): a plain stack (no filter layer, blend mode or colour match) is composited by the pool's workers from the
+   arena while they pack it (`stackPlan` / `stackSource` next to `boxReach`, `stackRows` in `inpaint_bands.js`,
+   `rowsOfStack` in the worker); 15k PNG 3.5 s to 1.7 s, PSD 3.9 s to 1.3 s, within two levels of the flatten
+   (`export_test.py`). `InpaintEditor.stacks = false` forces the bands. **Next: item 2** (wand and bucket over tiles),
+   then 3 (selection jobs on mask tiles), 5 (the PNG reader in Rust). Each item is measured
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
    the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
 

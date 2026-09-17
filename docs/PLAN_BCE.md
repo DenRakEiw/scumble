@@ -4160,6 +4160,36 @@ resizes). It still blocks in one piece. The way on is the whole stitch in a work
 list and waits for the user's word. Gates: `size transparent generate` on both backends, `pxjobs pixels nodecopy`, all
 offline, ALL PASS.
 
+#### B item 1 as built (2026-09-17): a plain stack is composited by the workers that pack it
+
+- **`stackPlan`** (next to `boxReach`, the third walk of the stack): the base and every layer the composite shows, as
+  `{ px, mask, x, y, alpha }`, or null as soon as one needs more than source-over of its own tiles at an opacity through
+  a mask on its own grid: a filter layer, a blend mode, a colour match, a transform in progress, a live stroke, a scaled
+  or fractional layer, a base that is not the document's size. `stackSource` checks that every tile is in the arena
+  and holds copy-on-write clones, so the file is the picture of the moment of the call (no "the picture changed").
+- **`stackRows`** (`inpaint_bands.js`) is a row source like `tileRows`: a part names, per store, the tile rows its image
+  rows touch (and the row above, for the PNG filter). Layers with no tile there are left out of the part.
+- **The worker** (`rowsOfStack`): the base's rows into a buffer, each layer's rows into a buffer of the same run (any
+  offset, over the picture's edges, sparse), its mask's alpha as coverage, then **one `composite_tile` call over the
+  whole run** (the kernel takes any pixel count), then `png_part` / `psd_part` as before. No canvas anywhere.
+- Used by `encodeComposite` (PNG export, the run's base upload; not with `each`, which the flatten uses to take the
+  rows on the main thread) and for the merged picture of PSD and ORA. `InpaintEditor.stacks = false` forces the bands.
+
+| 15,000 × 10,000, base and a full paint layer (`native_test.py`) | before | now |
+|---|---|---|
+| export PNG (235 MB): wall / longest block / main thread idle | 3,510 / 191 ms / 9 % | **1,712 / 79 ms / 88 %** |
+| export PSD (925 MB) | 3,861 / 147 ms | **1,253 / 69 ms** |
+| compositing, summed over the workers | (2.8 s of canvases on the main thread) | 1.45 s of 12.9 s of `png_part` |
+
+The PNG is now bound by the deflate (12.9 s of CPU over eight workers). **Against the flatten** (`export_test.py`
+`a_plain_stack_is_composited_by_the_workers`, four partial layers, one masked off the grid, two over the picture's
+edges): 4.4 % of the bytes one level apart, 9 of 25 million two levels, none more. Measured per kind of layer: the same
+bytes as the GPU flatten for an opaque layer at 60 %, a masked one and a flat half-transparent one; one level on 3 to
+10 % under soft alpha, never two; **a GPU and a CPU canvas of the same single layer differ by more** (two levels on 824
+bytes). So the gate is two levels on at most 0.1 % of the bytes, not bytes equal. Three mutations of the worker (the opacity dropped, the mask dropped, a store's rows off by one) turned that step red. Gates on both backends, offline: `pixels editor composite commands film` and on tiles `export log mcp pxjobs nodecopy`, ALL PASS. **Not covered**: a document with a
+filter layer, a blend mode or a colour match keeps the region pass (6.2 s at 15k with a levels layer, `docs/BUGS.md`);
+blend modes in the kernel and a filter over worker-composited bands would be the next steps there.
+
 **Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
 order: 4, 1, 2, 3, 5, 6.
 

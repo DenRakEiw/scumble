@@ -8,6 +8,7 @@
  *
  *   tileRows(snap, byName)             tile pixels; `snap` is a clone the caller releases when the file is written
  *   bandRows(width, height, read, n)   a picture that is composited in bands: `read(y0, y1)` gives RGBA8 of its own
+ *   stackRows(width, height, stores)   a plain stack of tile pixels, composited by the worker that packs the rows
  *
  * The **writers** cut a source into parts of about 8 MB, keep a bounded number of them in the workers and join the
  * answers: `writePng` (one zlib stream from parts deflated in parallel, inpaint_png.js), `PsdBandWriter` (PackBits per
@@ -66,6 +67,55 @@ export function bandRows(width, height, read, rows = TILE) {
             return { args: { rgba, prev }, transfer: prev ? [rgba, prev] : [rgba] };
         },
     };
+}
+
+/**
+ * A plain stack as a row source (docs/PLAN_BCE.md §3b, B item 1): `stores[0]` is the base, the others the layers from
+ * the bottom, each `{ snap, mask, x, y, alpha }` (`snap` and `mask` clones of tile pixels the caller releases, `mask`
+ * on the layer's grid or null, `alpha` 0..255). A part names the tiles its rows touch; the worker composites them
+ * (inpaint_worker.js `rowsOfStack`). Every tile must be in the arena: `stackInArena` says so beforehand.
+ */
+export function stackRows(width, height, stores) {
+    const cache = new Map();   // snap -> Map(lty -> names)
+    const names = (snap, lty) => {
+        let m = cache.get(snap);
+        if (!m) cache.set(snap, m = new Map());
+        if (!m.has(lty)) { m.set(lty, snap.tileRowNames(lty)); if (m.size > 4) m.delete(m.keys().next().value); }
+        return m.get(lty);
+    };
+    // the tile rows of a store that the image rows a to b touch: { lty: names }, or null when it has no tile there
+    const rowsOf = (snap, sy, a, b) => {
+        const out = {};
+        let any = false;
+        const lo = Math.max(0, a - sy), hi = Math.min(snap.height, b - sy);
+        for (let lty = lo >> 8; lty * TILE < hi; lty++) {
+            const n = names(snap, lty);
+            if (n === null) throw new Error("a tile of the stack is not in the arena");
+            if (n.some(Boolean)) { out[lty] = n; any = true; }
+        }
+        return any ? out : null;
+    };
+    return {
+        width, height, align: TILE,
+        async part(y, n, needPrev) {
+            const a = needPrev && y > 0 ? y - 1 : y, b = y + n;
+            const [base, ...over] = stores;
+            const layers = [];
+            for (const s of over) {
+                const tiles = rowsOf(s.snap, s.y, a, b);
+                if (!tiles || !(s.alpha > 0)) continue;
+                layers.push({ x: s.x, y: s.y, w: s.snap.width, h: s.snap.height, alpha: s.alpha, tiles, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null });
+            }
+            const stack = { base: { x: 0, y: 0, w: base.snap.width, h: base.snap.height, tiles: rowsOf(base.snap, 0, a, b) || {} }, layers };
+            return { args: { y, stack }, transfer: [] };
+        },
+    };
+}
+
+/** Is every tile of these pixels in the arena (a worker reads tiles by slot only there)? */
+export function stackInArena(px) {
+    for (let ty = 0; ty * TILE < px.height; ty++) if (px.tileRowNames(ty) === null) return false;
+    return true;
 }
 
 /** Walk a source in parts: `each(y, n)` for every part, in order, none crossing `source.align`. */

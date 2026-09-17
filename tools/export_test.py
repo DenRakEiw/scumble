@@ -485,6 +485,80 @@ await run("undo", { doc: window.__ex });
 if (ed.layers.length !== n) throw new Error("undo did not bring the layers back: " + ed.layers.length);
 return { status: ed.status, layers: n };
 """),
+    ("a_plain_stack_is_composited_by_the_workers", """
+// B item 1 (docs/PLAN_BCE.md 3b): no filter, no blend mode, no match: the workers composite the rows from the arena.
+// A layer with soft alpha at 60 %, a masked one off the tile grid, a sparse one hanging over two edges of the picture.
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const E = Editor(ed);
+const W = 3100, H = 2050;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const paint = (c, hue) => { const x = c.getContext("2d"); const g = x.createLinearGradient(0, 0, c.width, c.height); g.addColorStop(0, `hsl(${hue},70%,45%)`); g.addColorStop(1, `hsl(${(hue + 120) % 360},80%,30%)`); x.fillStyle = g; x.fillRect(0, 0, c.width, c.height); return c; };
+const base = paint(mk(W, H), 200);
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "export_stack.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const L = ed.pixels.Layer, M = ed.pixels.Mask;
+{
+    const c = mk(W, H), x = c.getContext("2d");
+    for (let k = 0; k < 30; k++) { x.fillStyle = `hsla(${k * 47},75%,55%,${0.15 + (k % 6) * 0.15})`; x.fillRect((k * 811) % W, (k * 457) % H, W / 7, H / 7); }
+    ed.addLayer({ name: "Soft", kind: "paint", px: L.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true }).opacity = 0.6;
+}
+{
+    const w = 1111, h = 777;
+    const m = mk(w, h), mx = m.getContext("2d");
+    const g = mx.createRadialGradient(w / 2, h / 2, 20, w / 2, h / 2, w / 2);
+    g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    mx.fillStyle = g; mx.fillRect(0, 0, w, h);
+    const l = ed.addLayer({ name: "Masked", kind: "result", px: L.fromCanvas(paint(mk(w, h), 20)), x: 701, y: 333, w, h, dirty: true });
+    l.maskPx = M.fromCanvas(m); l.maskDirty = true;
+}
+{
+    const w = 900, h = 600, c = mk(w, h), x = c.getContext("2d");
+    x.fillStyle = "#30e080"; x.beginPath(); x.arc(450, 300, 280, 0, Math.PI * 2); x.fill();
+    ed.addLayer({ name: "Over the corner", kind: "paint", px: L.fromCanvas(c), x: W - 500, y: H - 310, w, h, dirty: true }).opacity = 0.85;
+    const c2 = mk(400, 300); c2.getContext("2d").fillStyle = "rgba(240,40,40,0.5)"; c2.getContext("2d").fillRect(0, 0, 400, 300);
+    ed.addLayer({ name: "Over the origin", kind: "paint", px: L.fromCanvas(c2), x: -150, y: -120, w: 400, h: 300, dirty: true });
+}
+ed.renderLayers(); ed.fitView(); ed.draw();
+await ed.mipsSettled();
+const plan = ed.stackPlan({ forRun: true });
+if (!plan || plan.length !== 5) throw new Error("the stack plan of a plain document is " + JSON.stringify(plan && plan.length));
+const r = await ed.encodeComposite({ forRun: true }, { hash: true });
+if (!r || r.stack !== 4) throw new Error("the composite was not written from the stack: " + JSON.stringify(r && { stack: r.stack }));
+const flat = ed.flattenToCanvas({ forRun: true });
+const old = await E.parts.encodeCanvas(flat, { hash: false });
+flat.width = 1; flat.height = 1;
+const a = await decode(r.blob), b = await decode(old.blob);
+const dd = diff(a.data, b.data, W);
+// Integer premultiplied maths in the worker against Skia's floats on a GPU canvas, rounded once per layer. Measured per
+// layer kind: the same bytes for an opaque layer at an opacity, a masked one and a flat half-transparent one, one level
+// on 3 to 10 % of the bytes under soft alpha, never two; a GPU and a CPU canvas of the same stack differ by more (two
+// levels on some bytes of a single layer). Four partial layers over each other here: two levels on a few bytes.
+const twos = (() => { let n = 0; for (let i = 0; i < a.data.length; i++) if (Math.abs(a.data[i] - b.data[i]) > 1) n++; return n; })();
+if (dd.bytes < 0 || dd.worst > 2 || twos > a.data.length / 1000) throw new Error("the stack composited by the workers differs from the flatten: " + JSON.stringify({ dd, twos }));
+// the same through the bands of the region pass, which the stack replaced
+E.stacks = false;
+let viaBands;
+try { viaBands = await ed.encodeComposite({ forRun: true }, { hash: false }); } finally { E.stacks = true; }
+if (!viaBands || viaBands.stack != null) throw new Error("with stacks off the composite still came from the stack");
+const db = diff(a.data, (await decode(viaBands.blob)).data, W);
+if (db.bytes < 0 || db.worst > 2) throw new Error("the stack differs from the bands: " + JSON.stringify(db));
+// a PSD's merged picture comes the same way, and the file is whole
+const psd = await ed.exportLayeredBands("psd");
+if (!psd || psd.layers !== 5) throw new Error("the PSD of the plain stack: " + JSON.stringify(psd && { layers: psd.layers }));
+// what the stack cannot draw falls back: a blend mode, a filter layer
+ed.layers[0].blend = "multiply";
+const p2 = ed.stackPlan({ forRun: true });
+ed.layers[0].blend = "normal";
+const fx = ed.addFilterLayer("levels");
+const p3 = ed.stackPlan({ forRun: true });
+ed.removeLayer(fx.id);
+if (p2 || p3) throw new Error("a blend mode or a filter layer still gave a stack plan");
+await run("close_document", { doc: d.id, force: true });
+return { flatten: dd, twos, bands: db, fraction: +(dd.bytes / a.data.length).toFixed(5), psdMB: +(psd.blob.size / 1048576).toFixed(1) };
+"""),
     ("close", """
 const id = window.__ex;
 window.__exRef = null;

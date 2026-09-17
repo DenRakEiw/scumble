@@ -169,6 +169,67 @@ function rowsOfTiles(msg, above = false) {
 }
 
 /**
+ * The rows `Y0` to `Y0 + n` of the image out of one store of a stack: `{ x, y, w, h, tiles }`, its pixels at (x, y) of
+ * the image, `tiles[lty]` the names of its tile row `lty` from the left (as `rowsOfTiles` takes them). Into `out`, `W`
+ * pixels wide: RGBA8, or with `alphaOnly` one byte a pixel, the alpha. False when no tile of the store lies there.
+ */
+function storeRows(store, W, Y0, n, out, alphaOnly = false) {
+    const sx = store.x | 0, sy = store.y | 0;
+    const y0 = Math.max(Y0, sy), y1 = Math.min(Y0 + n, sy + store.h);
+    const x0 = Math.max(0, sx), x1 = Math.min(W, sx + store.w);
+    if (y1 <= y0 || x1 <= x0) return false;
+    let any = false;
+    for (let lty = (y0 - sy) >> 8; lty * TILE < y1 - sy; lty++) {
+        const names = store.tiles[lty];
+        if (!names) continue;
+        const ry0 = Math.max(y0, sy + lty * TILE), ry1 = Math.min(y1, sy + (lty + 1) * TILE);
+        for (let ltx = (x0 - sx) >> 8; ltx * TILE < x1 - sx; ltx++) {
+            const t = names[ltx];
+            if (!t) continue;
+            const { bytes } = tileBytes(t);
+            const cx0 = Math.max(x0, sx + ltx * TILE), cx1 = Math.min(x1, sx + (ltx + 1) * TILE), k = cx1 - cx0;
+            any = true;
+            for (let Y = ry0; Y < ry1; Y++) {
+                const so = ((Y - sy - lty * TILE) * TILE + (cx0 - sx - ltx * TILE)) * 4, o = (Y - Y0) * W + cx0;
+                if (alphaOnly) for (let i = 0; i < k; i++) out[o + i] = bytes[so + i * 4 + 3];
+                else out.set(bytes.subarray(so, so + k * 4), o * 4);
+            }
+        }
+    }
+    return any;
+}
+
+/**
+ * Rows of a plain stack composited here, from the tiles where they lie (docs/PLAN_BCE.md §3b, B item 1): `stack` is
+ * `{ base, layers: [{ x, y, w, h, tiles, alpha, mask }] }`, every store as `storeRows` takes it, a layer drawn
+ * source-over at `alpha` (0..255) through its mask's alpha (a store on the layer's own grid; where the mask has no
+ * tile the layer shows nothing). The rows `y` to `y + rows`, or with `above` the one row over them (null at the top).
+ */
+function rowsOfStack(msg, above = false) {
+    let Y0 = msg.y | 0, n = msg.rows;
+    if (above) { if (Y0 <= 0) return null; Y0--; n = 1; }
+    const W = msg.w, st = msg.stack;
+    const dst = new Uint8Array(W * n * 4);
+    storeRows(st.base, W, Y0, n, dst);
+    const srcs = [], alphas = [], masks = [];
+    for (const l of st.layers) {
+        const src = new Uint8Array(W * n * 4);
+        if (!storeRows(l, W, Y0, n, src)) continue;
+        let mask = null;
+        if (l.mask) { mask = new Uint8Array(W * n); storeRows({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, W, Y0, n, mask, true); }
+        srcs.push(src); alphas.push(l.alpha); masks.push(mask);
+    }
+    if (srcs.length) compositeTile(dst, srcs, srcs.map(() => 0), alphas, masks);
+    return dst;
+}
+
+/** The rows of a part job, whichever way they come: bytes, a stack to composite, or one store's tiles. */
+function partRowsOf(msg) {
+    if (msg.rgba) return new Uint8Array(msg.rgba, 0, msg.w * msg.rows * 4);
+    return msg.stack ? rowsOfStack(msg) : rowsOfTiles(msg);
+}
+
+/**
  * One part of a PNG's pixels (inpaint_png.js, docs/PLAN_BCE.md §E2): rows as bytes (`rgba`, `prev`) or as tiles
  * (`tiles`, `prevTiles`, `r0`), filtered and deflated by the Rust kernel, as a finished IDAT chunk.
  */
@@ -176,12 +237,13 @@ async function pngPart(msg) {
     const p = rustPx();
     if (!p) throw new Error(NO_PARTS);
     const t0 = now();
-    const rgba = msg.rgba ? new Uint8Array(msg.rgba, 0, msg.w * msg.rows * 4) : rowsOfTiles(msg);
-    const prev = msg.rgba ? (msg.prev ? new Uint8Array(msg.prev, 0, msg.w * 4) : null) : rowsOfTiles(msg, true);
+    const rgba = partRowsOf(msg);
+    const tc = now();
+    const prev = msg.rgba ? (msg.prev ? new Uint8Array(msg.prev, 0, msg.w * 4) : null) : msg.stack ? rowsOfStack(msg, true) : rowsOfTiles(msg, true);
     const r = p.pngPart(rgba, msg.w, msg.rows, prev, msg.level === undefined ? PNG_LEVEL : msg.level, !!msg.last);
     releaseIfLarge();
     const chunk = pngChunk("IDAT", r.bytes);
-    return { chunk: chunk.buffer, adler: r.adler, raw: r.raw, transfer: [chunk.buffer], timing: { op: "png_part", kernels: "rust", pixels: msg.w * msg.rows, kernel: now() - t0 } };
+    return { chunk: chunk.buffer, adler: r.adler, raw: r.raw, transfer: [chunk.buffer], timing: { op: "png_part", kernels: "rust", pixels: msg.w * msg.rows, kernel: now() - t0, compose: msg.stack ? tc - t0 : 0 } };
 }
 
 /**
@@ -190,7 +252,7 @@ async function pngPart(msg) {
  */
 async function psdPart(msg) {
     const t0 = now();
-    const rgba = msg.rgba ? new Uint8Array(msg.rgba, 0, msg.w * msg.rows * 4) : rowsOfTiles(msg);
+    const rgba = partRowsOf(msg);
     const packed = psdPackRows(rgba, msg.w, msg.rows);
     releaseIfLarge();
     const channels = packed.map((c) => ({ lens: c.lens.buffer, data: c.data.buffer }));

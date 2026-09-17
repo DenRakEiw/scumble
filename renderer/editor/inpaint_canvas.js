@@ -24,7 +24,7 @@ import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { WorkerPool, poolSize, INTERACTIVE, EXPORT } from "./inpaint_pool.js";
 import { NO_PARTS, pngHeader } from "./inpaint_png.js";
-import { tileRows, bandRows, writePng, PsdBandWriter, OraBandWriter } from "./inpaint_bands.js";
+import { tileRows, bandRows, stackRows, stackInArena, writePng, PsdBandWriter, OraBandWriter } from "./inpaint_bands.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, setChainTransport, chainScheduler } from "./inpaint_tiles.js";
 
@@ -460,10 +460,15 @@ async function encodeTilePixels(px, { hash = false, texts = null } = {}) {
  * only when the workers have room, with a task's pause between them.
  */
 async function encodeBands(width, height, band, { hash = false, texts = null, rows = TILE_SIZE, progress = null } = {}) {
+    return encodeRows(bandRows(width, height, band, rows), { hash, texts, progress });
+}
+
+/** PNG of any row source (inpaint_bands.js): `{ blob, hash }`, or null when parts cannot be used. */
+async function encodeRows(source, { hash = false, texts = null, progress = null } = {}) {
     if (!partsUsable()) return null;
     const group = "png" + (++partsSeq);
     try {
-        const blob = await writePng(bandRows(width, height, band, rows), partsRun(group), { texts, flights: partsFlights(), progress, pause: bandPause });
+        const blob = await writePng(source, partsRun(group), { texts, flights: partsFlights(), progress, pause: bandPause });
         return { blob, hash: hash ? await hashInPool(blob) : null };
     } catch (err) {
         editorPool().cancel(group);
@@ -4984,6 +4989,50 @@ class InpaintEditor {
     }
 
     /**
+     * The full-resolution composite as a plain stack the pool's workers can composite from the arena themselves
+     * (docs/PLAN_BCE.md §3b, B item 1): `[{ px, mask, x, y, alpha }]`, the base first, or null when any layer the
+     * composite shows needs more than source-over of its tiles at an opacity through a mask on its own grid (a filter
+     * layer, a blend mode, a colour match, a transform in progress, a live stroke, a scaled or fractional layer). The
+     * same layers in the same order as `drawLayersInto` draws them, and the same exclusions as `boxReach`: this is a
+     * third walk of the stack, so it stays next to the second.
+     */
+    stackPlan({ forRun = true, upTo = null } = {}) {
+        if (!this.tileMode || !this.base || !partsUsable() || !arenaEnabled() || InpaintEditor.bands === false || InpaintEditor.stacks === false) return null;
+        const bs = this.basePx;
+        if (!bs || !isTilePixels(bs) || bs.width !== this.width || bs.height !== this.height) return null;
+        const out = [{ px: bs, mask: null, x: 0, y: 0, alpha: 255 }];
+        const end = upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
+        for (let i = 0; i < end; i++) {
+            const l = this.layers[i];
+            if (this.compareShow && l.kind === "result" && l.id !== this.compareShow) continue;
+            if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
+            if (l.kind === "filter") return null;
+            if (forRun && (this.isControl(l) || this.isReference(l))) continue;
+            if (l.blend && l.blend !== "normal") return null;
+            if (this.matchActive(l) || (this.pending && this.pending.layer === l) || this.liveStrokeOn(l)) return null;
+            const px = l.px;
+            if (!isTilePixels(px) || px.width !== l.w || px.height !== l.h || l.x !== Math.round(l.x) || l.y !== Math.round(l.y)) return null;
+            const mask = l.maskPx ? this.tileMaskOf(l) : null;
+            if (l.maskPx && !mask) return null;
+            const alpha = Math.round(Math.max(0, Math.min(1, l.opacity ?? 1)) * 255);
+            out.push({ px, mask, x: l.x, y: l.y, alpha });
+        }
+        return out;
+    }
+
+    /**
+     * `stackPlan` as a row source: `{ source, release() }`, or null. The pixels are held as copy-on-write clones from
+     * now on, so the file is the picture of this moment whatever is painted while the workers read it.
+     */
+    stackSource(opts = { forRun: true }) {
+        const plan = this.stackPlan(opts);
+        if (!plan) return null;
+        for (const s of plan) if (!stackInArena(s.px) || (s.mask && !stackInArena(s.mask))) return null;
+        const stores = plan.map((s) => ({ snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha }));
+        return { source: stackRows(this.width, this.height, stores), layers: stores.length - 1, release() { for (const s of stores) { s.snap.release(); if (s.mask) s.mask.release(); } } };
+    }
+
+    /**
      * The pixels of `box` ([x0, y0, x1, y1], whole image pixels inside the image) as the full-resolution flatten has
      * them (C6 c1), as a CPU canvas of the box: a region pass at level 0 over the box with a margin as wide as
      * `boxReach` says, or, when no margin can give them, the box cut out of the whole flatten (`compositeCanvas`,
@@ -8743,6 +8792,9 @@ class InpaintEditor {
             const opts = { width: W, height: H, run: partsRun(group), flights: partsFlights(), pause: bandPause };
             const writer = fmt === "psd" ? new PsdBandWriter(opts) : new OraBandWriter(opts);
             const { stack, skipped } = this.exportLayerSources(held);
+            // B item 1: the merged picture of a plain stack is composited by the workers, from clones taken now with the layers'
+            const stackOf = this.stackSource({ forRun: true });
+            if (stackOf) held.push({ release: () => stackOf.release() });
             const steps = stack.length + 1;
             let done = 0;
             const report = (f) => { if (progress) progress((done + f) / steps); };
@@ -8751,9 +8803,10 @@ class InpaintEditor {
                 try { await writer.layer(L.meta, o.source, report); } finally { o.close(); }
                 done++;
             }
-            const plan = this.bandPlan({ forRun: true });
+            const plan = stackOf ? null : this.bandPlan({ forRun: true });
             let composite;
-            if (plan) {
+            if (stackOf) composite = stackOf.source;
+            else if (plan) {
                 composite = bandRows(W, H, (y0, y1) => {
                     if (this.compositeVersion !== version) throw new Error("the picture changed while it was written; try again");
                     return this.readBand(y0, y1, { forRun: true }, plan.reach);
@@ -10851,6 +10904,14 @@ class InpaintEditor {
      * the read once, a second one fails it.
      */
     async encodeComposite(opts = { forRun: true }, { hash = false, texts = null, each = null, progress = null } = {}) {
+        // B item 1: a plain stack is composited by the workers that pack it, from the tiles; `each` wants the rows here
+        const stack = each ? null : this.stackSource(opts);
+        if (stack) {
+            try {
+                const r = await encodeRows(stack.source, { hash, texts, progress });
+                if (r) return { ...r, width: this.width, height: this.height, stack: stack.layers };
+            } finally { stack.release(); }
+        }
         const plan = this.bandPlan(opts);
         if (!plan) return null;
         for (let round = 0; ; round++) {

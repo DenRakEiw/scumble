@@ -5,6 +5,13 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.18 — unreleased
 
+- **Saving a large picture is about twice as fast again.** When a document holds only ordinary layers (normal blend
+  mode, any opacity, with or without a transparency mask; no filter layer, no colour match), the background workers now
+  put the picture together themselves, straight from the layers' tiles, while they compress it. A 15000 × 10000
+  picture with a full paint layer saves as PNG in 1.7 seconds instead of 3.5 and as PSD in 1.3 instead of 3.9, and the
+  window stays free the whole time. Documents with a filter layer, a blend mode or a colour-matched layer are saved as
+  before. The pixels can differ from the old way by one level in places where layers are partly transparent (the
+  browser's own canvases differ from each other by more).
 - **A run through an API provider starts and lands faster.** Before the picture goes out and when the result comes
   back, Scumble works out the soft masks that blend the result into the image. On a 1024 px selection that froze the
   window for about 2.5 seconds; it is about 0.6 seconds now, with exactly the same masks.
