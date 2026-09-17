@@ -5,6 +5,11 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.18 — unreleased
 
+- **Opening a large PNG no longer freezes the window.** A PNG of 32 megapixels and more that needs no colour
+  management (8 bits, no colour profile, no gamma entry) is now read by a background worker straight into the tile
+  engine, the way pictures above 268 MP already were. A 15000 × 10000 file opens in 2.7 seconds instead of 3.2, and
+  the window stands still for 0.1 seconds instead of 2.1. The pixels are the same. Files with a colour profile, 16-bit
+  files, JPEG and WebP open as before.
 - **Grow, shrink and feather of a large selection are faster and hardly hold the window.** A background worker now
   reads the selection straight from its tiles and sends back only the pieces that changed. Growing a 6000 × 4000
   selection by 16 px on a 15000 × 10000 picture takes 0.5 seconds instead of 0.7, shrinking 0.3 instead of 0.6, and

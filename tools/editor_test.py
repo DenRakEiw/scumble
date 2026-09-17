@@ -5755,6 +5755,59 @@ ed.clearUndo(); ed.clearSelection();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });
 return out;
 """),
+    ("a_large_plain_png_opens_through_the_stream_reader", """
+// B item 5 (docs/PLAN_BCE.md 3b): a PNG of `InpaintEditor.pngStreamFrom` pixels and more that needs no colour management
+// is decoded by a pool worker straight into tiles, not through an image and a dozen reads of a canvas. The same pixels
+// either way; a file with a gamma or a profile chunk, 16 bits or interlacing keeps the browser's decoder.
+if (!ednow(window.__t).tileMode) return { skipped: "the stream reader fills tiles" };
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const E = ed.constructor, PNG = await import("./editor/inpaint_png.js");
+const W = 1500, H = 1100;
+const c = document.createElement("canvas"); c.width = W; c.height = H;
+const x = c.getContext("2d");
+const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#e04030"); g.addColorStop(0.5, "#30c0a0"); g.addColorStop(1, "#2030d0");
+x.fillStyle = g; x.fillRect(0, 0, W, H);
+x.clearRect(200, 150, 300, 200);
+x.fillStyle = "rgba(255,255,0,0.4)"; x.fillRect(700, 300, 500, 500);
+// partly transparent pixels over nothing: what a canvas does to straight alpha is what `writeRect` does to the reader's rows
+x.fillStyle = "rgba(10,200,90,0.35)"; x.fillRect(250, 180, 100, 100);
+const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+const was = E.pngStreamFrom;
+const hex = async (u8) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", u8))).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+const out = {};
+try {
+    E.pngStreamFrom = 1000000;
+    const route = await E.parts.pngRoute(blob);
+    if (!route || route.width !== W) throw new Error("a plain 8-bit PNG above the threshold was not routed to the reader: " + JSON.stringify(route));
+    let streamed = 0;
+    const pool = E.parts.pool(), oRun = pool.run.bind(pool);
+    pool.run = (op, ...a) => { if (op === "png_read") streamed++; return oRun(op, ...a); };
+    try {
+        await ed.loadFile(new File([blob], "stream_a.png", { type: "image/png" }));
+        if (ed.width !== W || streamed !== 1) throw new Error("the file was not read as a stream: " + streamed + ", " + ed.status);
+        out.stream = await hex(ed.basePx.readRect(0, 0, W, H).data);
+        E.pngStreamFrom = 0;
+        await ed.loadFile(new File([blob], "stream_b.png", { type: "image/png" }));
+        if (streamed !== 1) throw new Error("with the threshold off the file was still read as a stream");
+        out.image = await hex(ed.basePx.readRect(0, 0, W, H).data);
+    } finally { pool.run = oRun; }
+    if (out.stream !== out.image) throw new Error("the stream reader and the image give different pixels: " + JSON.stringify(out));
+    // a gamma chunk in front of the pixels: the browser applies it, the reader would not, so it is not the reader's file
+    E.pngStreamFrom = 1000000;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const gama = PNG.pngChunk("gAMA", Uint8Array.of(0, 0, 0x6f, 0x1a));   // 1 / 3.5
+    const withGamma = new Blob([bytes.subarray(0, 33), gama, bytes.subarray(33)], { type: "image/png" });
+    out.gamma = await E.parts.pngRoute(withGamma);
+    if (out.gamma) throw new Error("a PNG with a gAMA chunk was routed to the reader");
+    E.pngStreamFrom = 1e9;
+    out.small = await E.parts.pngRoute(blob);
+    if (out.small) throw new Error("a PNG below the threshold was routed to the reader");
+} finally { E.pngStreamFrom = was; }
+ed.clearUndo();
+await run("new_canvas", { width: 600, height: 300, doc: window.__t });
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

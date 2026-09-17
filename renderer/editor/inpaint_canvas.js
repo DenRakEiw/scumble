@@ -507,7 +507,28 @@ const HUGE_MAX_PIXELS = 1024 * 1024 * 1024;
 /** `{ width, height }` when `blob` is a PNG larger than any canvas (above 268 MP), else null. */
 async function hugePngSize(blob) {
     const h = pngHeader(new Uint8Array(await blob.slice(0, 33).arrayBuffer()));
-    return h && h.width * h.height > CANVAS_MAX_PIXELS ? { width: h.width, height: h.height } : null;
+    if (!h) return null;
+    if (h.width * h.height > CANVAS_MAX_PIXELS) return { width: h.width, height: h.height };
+    // B item 5: a large PNG that needs nothing of the browser's decoder but its inflater goes the same way. Through an
+    // image it is decoded, drawn and read back in a dozen `getImageData` calls (2.1 s of blocked window at 150 MP); as
+    // a stream the window never waits. Only what the reader reads exactly as the browser shows it: 8 bits, not
+    // interlaced, and no colour profile, gamma or chromaticities, which the browser applies and the reader does not.
+    const from = InpaintEditor.pngStreamFrom;
+    if (!(from > 0) || h.width * h.height < from || h.bitDepth !== 8 || h.interlace || !partsUsable()) return null;
+    return (await pngIsPlainSrgb(blob)) ? { width: h.width, height: h.height } : null;
+}
+
+/** The chunks before the first IDAT hold no iCCP, gAMA or cHRM (an sRGB chunk is what the reader assumes anyway). */
+async function pngIsPlainSrgb(blob) {
+    for (let at = 8, n = 0; at + 8 <= blob.size && n < 64; n++) {
+        const head = new Uint8Array(await blob.slice(at, at + 8).arrayBuffer());
+        const len = ((head[0] << 24) | (head[1] << 16) | (head[2] << 8) | head[3]) >>> 0;
+        const type = String.fromCharCode(head[4], head[5], head[6], head[7]);
+        if (type === "IDAT") return true;
+        if (type === "iCCP" || type === "gAMA" || type === "cHRM" || type === "IEND") return false;
+        at += 12 + len;
+    }
+    return false;
 }
 
 /**
@@ -8837,8 +8858,11 @@ class InpaintEditor {
 
     /** The PNG writers of E2 and the pool, for tests and benchmarks (tools/export_test.py). */
     static get parts() {
-        return { usable: partsUsable, encodeTilePixels, encodeBands, encodeCanvas, uploadPixels, buildLayered, pool: editorPool };
+        return { usable: partsUsable, encodeTilePixels, encodeBands, encodeCanvas, uploadPixels, buildLayered, pool: editorPool, pngRoute: hugePngSize };
     }
+
+    /** PNG files of at least this many pixels are opened through the stream reader when they need no colour management (0: only above the canvas limit). */
+    static pngStreamFrom = 32 * 1024 * 1024;
 
     static jobTimings(reset = false) {
         const out = JOB_TIMINGS.slice();

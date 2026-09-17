@@ -14,6 +14,8 @@
  * Without the Rust kernels in the workers a part fails with `NO_PARTS`, and the caller keeps its canvas path.
  */
 
+import { pngUnfilterRows } from "./px/kernels.js";
+
 export const PNG_LEVEL = 2;               // measured (E2): 84 MB/s a worker and 0.349 of the raw size; level 6 is 13 MB/s for 0.327
 export const PART_BYTES = 8 * 1048576;    // raw bytes of a part: what one worker holds three times over while it runs
 export const NO_PARTS = "png parts need the Rust kernels";
@@ -224,10 +226,8 @@ export async function readPng(blob, { onHeader = null, onRows, rowsPerBand = 256
     })();
 
     // -- inflated bytes -> rows -> RGBA bands --
-    let prev = new Uint8Array(rowBytes), cur = new Uint8Array(rowBytes);
-    const line = new Uint8Array(stride);
+    const prev = new Uint8Array(rowBytes);
     let lineAt = 0, y = 0;
-    let band = null, bandY = 0, bandRows = 0;
     const sample = (src, i, depth) => {   // sample i of a packed row of 1, 2 or 4 bits
         const per = 8 / depth, b = src[Math.floor(i / per)];
         return (b >> (8 - depth - (i % per) * depth)) & ((1 << depth) - 1);
@@ -271,32 +271,26 @@ export async function readPng(blob, { onHeader = null, onRows, rowsPerBand = 256
             }
         }
     };
-    const row = () => {
-        const ft = line[0], s = line.subarray(1);
-        if (ft === 0) cur.set(s);
-        else if (ft === 1) { for (let i = 0; i < rowBytes; i++) cur[i] = (s[i] + (i >= bpp ? cur[i - bpp] : 0)) & 255; }
-        else if (ft === 2) { for (let i = 0; i < rowBytes; i++) cur[i] = (s[i] + prev[i]) & 255; }
-        else if (ft === 3) { for (let i = 0; i < rowBytes; i++) cur[i] = (s[i] + (((i >= bpp ? cur[i - bpp] : 0) + prev[i]) >> 1)) & 255; }
-        else if (ft === 4) {
-            for (let i = 0; i < rowBytes; i++) {
-                const a = i >= bpp ? cur[i - bpp] : 0, b = prev[i], c = i >= bpp ? prev[i - bpp] : 0;
-                let pa = b - c; if (pa < 0) pa = -pa;
-                let pb = a - c; if (pb < 0) pb = -pb;
-                let pc = a + b - 2 * c; if (pc < 0) pc = -pc;
-                cur[i] = (s[i] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 255;
-            }
-        } else throw new Error("PNG row " + y + " has filter type " + ft);
-        if (!band) { band = new Uint8ClampedArray(Math.min(rowsPerBand, height - y) * width * 4); bandY = y; bandRows = 0; }
-        toRgba(cur, band, bandRows * width * 4);
-        bandRows++;
-        const t = prev; prev = cur; cur = t;
-        y++;
-    };
+    // A band of lines is collected and its filters are undone in one call of the kernel (px/kernels.js: Rust, or the
+    // twin); an 8-bit RGB or RGBA picture comes out of that call as RGBA8, any other kind row by row through `toRgba`.
+    let lines = null, held = 0, bandY = 0;
+    const spent = { unfilter: 0, deliver: 0 };   // milliseconds: the filters undone, and inside `onRows`; the rest is the inflater
+    const clock = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
     const emit = async () => {
-        if (!band || !bandRows) return;
-        const out = band, at = bandY, n = bandRows;
-        band = null; bandRows = 0;
+        if (!held) return;
+        const n = held, at = bandY;
+        const out = new Uint8ClampedArray(n * width * 4);
+        const fast = bitDepth === 8 && (colorType === 6 || (colorType === 2 && !trns));   // tRNS comes before the first IDAT
+        const t0 = clock();
+        const block = lines.subarray(0, n * stride);
+        const done = pngUnfilterRows(block, n, rowBytes, bpp, prev, fast ? { w: width, channels, out } : null);
+        if (done !== n) throw new Error("PNG row " + (at + done) + " has filter type " + block[done * stride]);
+        if (!fast) for (let r = 0; r < n; r++) toRgba(block.subarray(r * stride + 1, (r + 1) * stride), out, r * width * 4);
+        held = 0;
+        const t1 = clock();
+        spent.unfilter += t1 - t0;
         await onRows(out, at, n);
+        spent.deliver += clock() - t1;
     };
     const drainRows = async () => {
         for (;;) {
@@ -304,14 +298,17 @@ export async function readPng(blob, { onHeader = null, onRows, rowsPerBand = 256
             if (done) break;
             let o = 0;
             while (o < value.length && y < height) {
-                const n = Math.min(stride - lineAt, value.length - o);
-                line.set(value.subarray(o, o + n), lineAt);
-                lineAt += n; o += n;
-                if (lineAt === stride) {
-                    lineAt = 0;
-                    row();
-                    if (bandRows >= rowsPerBand || y === height) await emit();
-                }
+                if (!lines) lines = new Uint8Array(Math.min(rowsPerBand, height) * stride);
+                if (!held && !lineAt) bandY = y;
+                // as much of the band as this piece holds, in one copy
+                const room = Math.min(rowsPerBand, height - bandY) * stride - (held * stride + lineAt);
+                const n = Math.min(room, value.length - o);
+                lines.set(value.subarray(o, o + n), held * stride + lineAt);
+                o += n;
+                const total = lineAt + n;
+                const whole = Math.floor(total / stride);
+                held += whole; y += whole; lineAt = total - whole * stride;
+                if (held >= Math.min(rowsPerBand, height - bandY)) await emit();
             }
         }
         await emit();
@@ -321,5 +318,5 @@ export async function readPng(blob, { onHeader = null, onRows, rowsPerBand = 256
     })();
     await Promise.all([feed, drain]);
     if (y !== height) throw new Error(`the PNG ended after ${y} of ${height} rows`);
-    return { width, height, bitDepth, colorType, texts };
+    return { width, height, bitDepth, colorType, texts, spent };
 }

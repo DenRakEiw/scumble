@@ -691,3 +691,42 @@ export function boxBlurs(data, w, h, radii) {
     }
     return a;
 }
+
+// ---- PNG rows read (inpaint_png.js `readPng`) -----------------------------------------------------------------------
+
+/**
+ * Undo the row filters of `rows` PNG lines: `lines` holds them one after the other, a filter-type byte and `rowBytes`
+ * filtered bytes each; `bpp` is the bytes of a whole pixel; `prev` the unfiltered row above the first line (zeros at the
+ * top) and the last row afterwards. In place; or with `rgba` = `{ w, channels, out }` for an 8-bit RGB (3) or RGBA (4)
+ * picture, also written to `out` as RGBA8. Returns the lines undone: fewer than `rows` at an unknown filter type.
+ */
+export function pngUnfilterRows(lines, rows, rowBytes, bpp, prev, rgba = null) {
+    const stride = rowBytes + 1;
+    let up = prev;
+    for (let y = 0; y < rows; y++) {
+        const ft = lines[y * stride], cur = lines.subarray(y * stride + 1, (y + 1) * stride);
+        if (ft === 1) { for (let i = bpp; i < rowBytes; i++) cur[i] = (cur[i] + cur[i - bpp]) & 255; }
+        else if (ft === 2) { for (let i = 0; i < rowBytes; i++) cur[i] = (cur[i] + up[i]) & 255; }
+        else if (ft === 3) { for (let i = 0; i < rowBytes; i++) cur[i] = (cur[i] + (((i >= bpp ? cur[i - bpp] : 0) + up[i]) >> 1)) & 255; }
+        else if (ft === 4) {
+            for (let i = 0; i < rowBytes; i++) {
+                const a = i >= bpp ? cur[i - bpp] : 0, b = up[i], c = i >= bpp ? up[i - bpp] : 0;
+                let pa = b - c; if (pa < 0) pa = -pa;
+                let pb = a - c; if (pb < 0) pb = -pb;
+                let pc = a + b - 2 * c; if (pc < 0) pc = -pc;
+                cur[i] = (cur[i] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 255;
+            }
+        } else if (ft !== 0) return y;
+        up = cur;
+    }
+    if (rows > 0) prev.set(lines.subarray((rows - 1) * stride + 1, rows * stride));
+    if (rgba) {
+        const { w, channels, out } = rgba;
+        for (let y = 0; y < rows; y++) {
+            const src = lines.subarray(y * stride + 1, (y + 1) * stride);
+            if (channels === 4) out.set(src, y * w * 4);
+            else for (let x = 0, i = 0, o = y * w * 4; x < w; x++, i += 3, o += 4) { out[o] = src[i]; out[o + 1] = src[i + 1]; out[o + 2] = src[i + 2]; out[o + 3] = 255; }
+        }
+    }
+    return rows;
+}

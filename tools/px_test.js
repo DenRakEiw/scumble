@@ -229,6 +229,46 @@ async function edtCases(ref, label, js, raster) {
     check(`js twin is the exact squared distance (brute force 41x29)`, exact);
 }
 
+/** png_unfilter_rows against its twin: every filter type, pixels of 1, 2, 3, 4, 6 and 8 bytes, the row above carried over. */
+async function pngReadCases(px, label, js) {
+    let s = 12345;
+    const rnd = () => { s = (Math.imul(s, 1103515245) + 12345) >>> 0; return s >>> 8; };
+    let ok = true, detail = "";
+    for (const [w, bpp, rows] of [[1, 1, 3], [7, 3, 9], [33, 4, 12], [64, 4, 5], [19, 8, 7], [50, 2, 6], [21, 6, 4]]) {
+        const rowBytes = w * bpp, stride = rowBytes + 1;
+        const make = () => { const l = new Uint8Array(rows * stride); for (let i = 0; i < l.length; i++) l[i] = rnd() & 255; for (let y = 0; y < rows; y++) l[y * stride] = y % 5; return l; };
+        const first = make(), second = make();
+        for (const channels of bpp === 3 || bpp === 4 ? [0, bpp] : [0]) {
+            const run = (k) => {
+                const prev = new Uint8Array(rowBytes), outs = [];
+                for (const block of [first, second]) {
+                    const lines = block.slice(), out = channels ? new Uint8ClampedArray(rows * w * 4) : null;
+                    const done = k.pngUnfilterRows(lines, rows, rowBytes, bpp, prev, channels ? { w, channels, out } : null);
+                    outs.push(done, channels ? out : lines, prev.slice());
+                }
+                return outs;
+            };
+            const a = run(px), b = run(js);
+            for (let i = 0; i < a.length; i++) {
+                const same = typeof a[i] === "number" ? a[i] === b[i] : eqBytes(a[i], b[i]);
+                if (!same) { ok = false; detail = `${w} px of ${bpp} bytes, channels ${channels}, item ${i}`; }
+            }
+        }
+    }
+    const bad = new Uint8Array(3 * 9); bad[9] = 7;
+    const d1 = px.pngUnfilterRows(bad.slice(), 3, 8, 4, new Uint8Array(8)), d2 = js.pngUnfilterRows(bad.slice(), 3, 8, 4, new Uint8Array(8));
+    if (d1 !== 1 || d2 !== 1) { ok = false; detail = `an unknown filter type stopped at ${d1} / ${d2}, not at line 1`; }
+    check(`${label} png_unfilter_rows equals its twin (five filters, six pixel sizes, RGB and RGBA out, the row above carried)`, ok, detail);
+    const W = 15000, R = 256, big = new Uint8Array(R * (W * 3 + 1));
+    for (let i = 0; i < big.length; i++) big[i] = (i * 7) & 255;
+    for (let y = 0; y < R; y++) big[y * (W * 3 + 1)] = 4;
+    const out = new Uint8ClampedArray(R * W * 4);
+    const t0 = performance.now(); px.pngUnfilterRows(big.slice(), R, W * 3, 3, new Uint8Array(W * 3), { w: W, channels: 3, out });
+    const t1 = performance.now(); js.pngUnfilterRows(big.slice(), R, W * 3, 3, new Uint8Array(W * 3), { w: W, channels: 3, out });
+    const t2 = performance.now();
+    console.log(`       256 rows of 15,000 RGB pixels, Paeth: ${label} ${(t1 - t0).toFixed(1)} ms, twin ${(t2 - t1).toFixed(1)} ms`);
+}
+
 /** The float masks of a provider run (dilate_mask, box_blurs) against their twins: the same floats, bit for bit. */
 async function maskCases(px, label, js) {
     const mask = (w, h, seed) => {
@@ -572,6 +612,7 @@ async function main() {
         await floodCases(px, label, js, raster);
         await jobCases(px, label, raster);
         await maskCases(px, label, js);
+        await pngReadCases(px, label, js);
         await compositeCases(px, label, js);
         await pngCases(px, label, js);
         await pngPartCases(px, label);

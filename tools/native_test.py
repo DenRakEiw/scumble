@@ -455,6 +455,8 @@ async def run_all(c):
                 break
             continue
         report(name, r, prof)
+        if "--js" in ARGS and name == "build_the_file":   # the JS twins in every thread, for an A/B of a kernel on its row
+            print(await c.eval("(async () => { const E = (await import('./editor/inpaint_canvas.js')).InpaintEditor || window.editor.constructor; E.kernels = 'js'; return 'kernels: ' + E.kernels; })()"))
         results["rows"][name] = {"row": r, "profile": prof}
     for level, text in (await c.logs())[-15:]:
         if level == "error":

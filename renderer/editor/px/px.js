@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 7;
+export const PX_ABI = 8;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -142,6 +142,26 @@ export class Px {
             const pb = this._in(a, bytes, n);
             this.exports.clamp_extend(pb, size, vw, vh);
             return this._out(Uint8Array, pb, n, new Uint8Array(bytes.buffer, bytes.byteOffset, n));
+        } finally { a.reset(); }
+    }
+
+    /**
+     * The row filters of `rows` PNG lines undone (kernels_js.js `pngUnfilterRows`): `lines` in place, or with `rgba`
+     * (`{ w, channels, out }`, 8-bit RGB or RGBA) the rows straight into `out` as RGBA8 and `lines` left as they were.
+     * `prev` becomes the last row. Returns the lines undone.
+     */
+    pngUnfilterRows(lines, rows, rowBytes, bpp, prev, rgba = null) {
+        const a = this.job, n = rows * (rowBytes + 1);
+        try {
+            const pl = this._in(a, lines, n), pp = this._in(a, prev, rowBytes);
+            const po = rgba ? a.take(rows * rgba.w * 4) : 0;
+            const done = this.exports.png_unfilter_rows(pl, rows, rowBytes, bpp, pp, rgba ? rgba.w : 0, rgba ? rgba.channels : 0, po);
+            if (done === rows) {
+                if (rgba) rgba.out.set(this.view(Uint8Array, po, rows * rgba.w * 4));
+                else lines.set(this.view(Uint8Array, pl, n));
+                prev.set(this.view(Uint8Array, pp, rowBytes));
+            }
+            return done;
         } finally { a.reset(); }
     }
 

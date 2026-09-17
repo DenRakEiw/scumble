@@ -4247,6 +4247,40 @@ on 0.8 % of the pixels (7 with a CPU canvas in the worker), colour equal whereve
 Skia's on the GPU in both; the box it blurs lies on the tile grid here and tight around the selection there (that this
 is the cause is not measured). The gate allows 8 levels. Three mutations (every tile sent back, the bounds left in the box's coordinates, an emptied tile not cleared) turned the editor gate red; gates on both backends, offline, ALL PASS.
 
+#### B item 5 as built (2026-09-17): the PNG reader, and what N1 had wrong about it
+
+**N1 called the stream reader's time "JS inflate". It is not**: `readPng` inflates through the browser's
+`DecompressionStream`, natively and on another thread; what ran in JS was the undoing of the row filters. Timed now
+(`readPng` returns `spent`, the worker's `timing` carries it): of 8.4 s for 600 MP, **3.8 s are the filters and the
+RGBA rows, 0.14 s the delivery, and the rest is waiting for the inflater**, which hands over 2.4 GB at about 300 MB/s and
+cannot be run in parallel on a single zlib stream.
+
+- **`png_unfilter_rows`** (ABI 8, `crates/px/src/png.rs`, twin `pngUnfilterRows`): a band of lines undone in one call,
+  Sub, Average and Paeth a pixel at a time with the channels side by side for pixels of 3 and 4 bytes, and 8-bit RGB /
+  RGBA straight out as RGBA8. `readPng` collects a band of lines and calls it once. 256 rows of 15,000 RGB pixels, all
+  Paeth, in Node: 30 ms against the twin's 71 (simd; the scalar build 44 against 48). `px_test.js` holds both builds to
+  the twin (five filters, pixels of 1 to 8 bytes, the row above carried from call to call, an unknown filter type).
+- **On the row it changes nothing that can be seen**: the 30k open is 10.6 s as before (8.4 s of `png_read` against
+  7.4 to 8.1 s in earlier runs). The reader is bound by the inflater; the kernel only frees the worker's core. It stays
+  because the user's rule is Rust wherever it is faster, and the twin is what it replaced.
+- **What did move a row: every large plain PNG goes through the reader** (`hugePngSize`, `InpaintEditor.pngStreamFrom`
+  = 32 MP; 0 turns it off). Through an image a 150 MP file was decoded, drawn and read back in 13 `getImageData` calls;
+  as a stream a pool worker decodes it into tiles. Only files the reader reads exactly as the browser shows them: 8
+  bits, not interlaced, and no `iCCP`, `gAMA` or `cHRM` chunk before the first `IDAT` (`pngIsPlainSrgb`), since the
+  browser applies those and the reader does not.
+
+| open a 276 MB PNG of 15,000 × 10,000 (`native_test.py`) | before | now |
+|---|---|---|
+| wall / longest block | 3,158 / 2,102 ms | **2,724 / 118 ms** |
+| main thread inside `getImageData` | 1,717 ms | 0 |
+
+**Gate**: `editor_test.py` `a_large_plain_png_opens_through_the_stream_reader` (the same base bytes through the reader
+and through the image, partly transparent pixels included; a `gAMA` chunk or a size below the threshold keeps the
+image), `export_test.py` `reader_matches_the_browser`, `px_test.js`. Mutations that turned them red: Paeth's second
+tie, the gamma chunk ignored, a band's partial line dropped (a Paeth mutation of the first tie is equivalent: a tie
+there means a = b). **Not done**: JPEG and WebP still open through an image and the reads (no reader of ours; a Rust
+decoder would be the way), and a PNG with a profile does too.
+
 **Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
 order: 4, 1, 2, 3, 5, 6.
 

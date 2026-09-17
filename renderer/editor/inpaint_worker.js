@@ -292,7 +292,7 @@ async function pngRead(msg) {
         onHeader: (h) => { header = h; self.postMessage({ id: msg.id, progress: true, header: h }); },
         onRows: (rgba, y0, rows) => { self.postMessage({ id: msg.id, progress: true, rgba: rgba.buffer, y0, rows }, [rgba.buffer]); },
     });
-    return { width: info.width, height: info.height, texts: info.texts, header, timing: { op: "png_read", kernels: "js", pixels: info.width * info.height, kernel: now() - t0 } };
+    return { width: info.width, height: info.height, texts: info.texts, header, timing: { op: "png_read", kernels: kernelsInUse(), pixels: info.width * info.height, kernel: now() - t0, unfilter: info.spent.unfilter, deliver: info.spent.deliver } };
 }
 
 /** The short SHA-1 of a blob (the name of an uploaded file). */

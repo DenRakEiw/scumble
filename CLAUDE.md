@@ -162,7 +162,11 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    shrink and feather read the selection's box from its tiles in a pool worker and send back the tiles that changed
    (`selectionOverTiles`); 15k grow 0.72 s to 0.51 s, shrink 0.60 s to 0.32 s, the blocks 0.2 s to 0.09 / 0.02 s; grow
    and shrink the same bytes, feather within 5 levels of alpha (the GPU blur). Invert stays on the main thread (0.2 s).
-   **Next: item 5** (the PNG reader in Rust), then 6 (one-channel masks). Each item is measured
+   **B item 5 is built** ("B item 5 as built"): `png_unfilter_rows` (ABI 8) undoes a band of PNG row filters in one
+   call, and every plain 8-bit PNG of 32 MP and more (no `iCCP` / `gAMA` / `cHRM`) opens through the stream reader
+   (`InpaintEditor.pngStreamFrom`); 15k open 3.2 s to 2.7 s, the block 2.1 s to 0.12 s. The reader is bound by the
+   browser's inflater, not by JS as N1 said. **Next: item 6** (one-channel masks), when the user wants it: it is the 30k
+   item, and the user works up to 15k. **Ask before starting it.** Each item is measured
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
    the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
 

@@ -1410,7 +1410,7 @@ carry no pixels any more (E1's arena): 0.0 MB cloned on every row.
 
 | row | wall | longest block | main: browser 2D + copies | main: GPU | main: pixel JS | worker: pixel work | worker: canvas I/O | browser share |
 |---|---|---|---|---|---|---|---|---|
-| open through the stream reader | 9,640 | 159 | 610 | 102 | 329 | 7,397 (`png_read`, JS inflate, one worker) + 1,584 mips | 0 | 6 %: this row is pixel work |
+| open through the stream reader | 9,640 | 159 | 610 | 102 | 329 | 7,397 (`png_read`, one worker: the browser's inflater and, in JS, the row filters; corrected in `docs/PLAN_BCE.md` §3b "B item 5 as built") + 1,584 mips | 0 | 6 % |
 | pan / zoom | 211 | | 14 | 67 | | | | none: 0.06 to 0.4 ms a frame |
 | stroke and release | 490 | | 463 | | | | | 2.3 ms a frame, release 133 ms |
 | grow +16 (96 MP box) | 3,556 | 953 | 933 | 334 | 192 | 1,735 | 739 | **47 %** |
@@ -1443,8 +1443,9 @@ carry no pixels any more (E1's arena): 0.0 MB cloned on every row.
   decodes into an image and reads it in bands. Since E1 the tiles lie in shared memory that every worker can read, and
   since R the kernels are Rust: all five rows can run over tile memory without a canvas, inside Electron.
 - **Two rows are slow for reasons no shell changes**: `stitch.js` `dilate` is a max filter of O(w · h · radius) in JS
-  (1.9 of the crop's 2.5 s on a 1,492 px patch), and the stream reader inflates in JS on one worker (12 ms a megapixel
-  against about 6 for Chromium's own decoder).
+  (1.9 of the crop's 2.5 s on a 1,492 px patch), and the stream reader takes 12 ms a megapixel on one worker against
+  about 6 for Chromium's own decoder (**not** a JS inflate, as this said at first: the inflater is the browser's and
+  is the limit, `docs/PLAN_BCE.md` §3b "B item 5 as built").
 - **Memory is not where it was feared**: 15.5 GB of typed arrays, 18 full 15k layers. A 30k document with more than three
   full layers is the one case that needs tiles outside the renderer (option C).
 

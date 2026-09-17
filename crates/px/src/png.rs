@@ -108,3 +108,100 @@ pub fn filter_rows(rgba: &[u8], w: usize, rows: usize, prev: Option<&[u8]>, out:
     }
     rows * (stride + 1)
 }
+
+// ---- reading: the filters undone ---------------------------------------------------------------------------------
+
+fn sub_px<const B: usize>(cur: &mut [u8]) {
+    let mut a = [0u8; B];
+    for x in cur.chunks_exact_mut(B) {
+        for k in 0..B { x[k] = x[k].wrapping_add(a[k]); }
+        a.copy_from_slice(x);
+    }
+}
+
+fn avg_px<const B: usize>(cur: &mut [u8], up: &[u8]) {
+    let mut a = [0u8; B];
+    for (x, b) in cur.chunks_exact_mut(B).zip(up.chunks_exact(B)) {
+        for k in 0..B { x[k] = x[k].wrapping_add(((a[k] as u16 + b[k] as u16) >> 1) as u8); }
+        a.copy_from_slice(x);
+    }
+}
+
+fn paeth_px<const B: usize>(cur: &mut [u8], up: &[u8]) {
+    let mut a = [0i16; B];
+    let mut c = [0i16; B];
+    for (x, b) in cur.chunks_exact_mut(B).zip(up.chunks_exact(B)) {
+        for k in 0..B {
+            let ib = b[k] as i16;
+            let pa = (ib - c[k]).abs();
+            let pb = (a[k] - c[k]).abs();
+            let pc = (a[k] + ib - 2 * c[k]).abs();
+            // the order of the ties is the standard's: a, then b, then c
+            let pred = if pa <= pb && pa <= pc { a[k] } else if pb <= pc { ib } else { c[k] };
+            x[k] = x[k].wrapping_add(pred as u8);
+            a[k] = x[k] as i16;
+            c[k] = ib;
+        }
+    }
+}
+
+/// Undo the filters of `rows` lines in place: each line is its filter-type byte and `row_bytes` filtered bytes, `bpp`
+/// the bytes of a whole pixel (the distance of the "left" byte). `prev` is the unfiltered row above the first line
+/// (zeros at the top of the picture) and holds the last row afterwards, for the next call. The number of lines undone:
+/// `rows`, or the index of the line whose filter type is none of the five.
+pub fn unfilter_rows(lines: &mut [u8], rows: usize, row_bytes: usize, bpp: usize, prev: &mut [u8]) -> usize {
+    let stride = row_bytes + 1;
+    for y in 0..rows {
+        let (done, rest) = lines.split_at_mut(y * stride);
+        let line = &mut rest[..stride];
+        let ft = line[0];
+        let cur = &mut line[1..];
+        let up: &[u8] = if y == 0 { &prev[..row_bytes] } else { &done[(y - 1) * stride + 1..y * stride] };
+        match (ft, bpp) {
+            (0, _) => {}
+            (2, _) => {
+                for i in 0..row_bytes { cur[i] = cur[i].wrapping_add(up[i]); }
+            }
+            // a pixel at a time, its channels side by side: the dependency is on the pixel before, not the byte before
+            (1, 3) => sub_px::<3>(cur),
+            (1, 4) => sub_px::<4>(cur),
+            (3, 3) => avg_px::<3>(cur, up),
+            (3, 4) => avg_px::<4>(cur, up),
+            (4, 3) => paeth_px::<3>(cur, up),
+            (4, 4) => paeth_px::<4>(cur, up),
+            (1, _) => {
+                for i in bpp..row_bytes { cur[i] = cur[i].wrapping_add(cur[i - bpp]); }
+            }
+            (3, _) => {
+                for i in 0..bpp.min(row_bytes) { cur[i] = cur[i].wrapping_add(up[i] >> 1); }
+                for i in bpp..row_bytes { cur[i] = cur[i].wrapping_add(((cur[i - bpp] as u16 + up[i] as u16) >> 1) as u8); }
+            }
+            (4, _) => {
+                for i in 0..bpp.min(row_bytes) { cur[i] = cur[i].wrapping_add(up[i]); }   // paeth(0, b, 0) is b
+                for i in bpp..row_bytes { cur[i] = cur[i].wrapping_add(paeth(cur[i - bpp], up[i], up[i - bpp])); }
+            }
+            _ => return y,
+        }
+    }
+    if rows > 0 {
+        let last = (rows - 1) * stride + 1;
+        prev[..row_bytes].copy_from_slice(&lines[last..last + row_bytes]);
+    }
+    rows
+}
+
+/// The unfiltered lines of an 8-bit RGB or RGBA picture as RGBA8: `channels` is 3 (alpha 255) or 4.
+pub fn lines_to_rgba(lines: &[u8], rows: usize, w: usize, channels: usize, out: &mut [u8]) {
+    let stride = w * channels + 1;
+    for y in 0..rows {
+        let src = &lines[y * stride + 1..(y + 1) * stride];
+        let dst = &mut out[y * w * 4..(y + 1) * w * 4];
+        if channels == 4 {
+            dst.copy_from_slice(src);
+        } else {
+            for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(3)) {
+                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = 255;
+            }
+        }
+    }
+}

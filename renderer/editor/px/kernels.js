@@ -70,6 +70,13 @@ export function distTransform(feature, W, H, out = null, scratch = null) {
     try { return p.distTransform(feature, W, H, out); } finally { releaseIfLarge(); }
 }
 
+/** The row filters of PNG lines undone (the stream reader, inpaint_png.js): see kernels_js.js `pngUnfilterRows`. */
+export function pngUnfilterRows(lines, rows, rowBytes, bpp, prev, rgba = null) {
+    const p = rustPx();
+    if (!p) return J.pngUnfilterRows(lines, rows, rowBytes, bpp, prev, rgba);
+    try { return p.pngUnfilterRows(lines, rows, rowBytes, bpp, prev, rgba); } finally { releaseIfLarge(); }
+}
+
 /** Square dilation of a float mask by r pixels (a provider run's masks, stitch.js); a new Float32Array. */
 export function dilateMask(data, w, h, r) {
     const p = rustPx();

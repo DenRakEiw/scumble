@@ -38,7 +38,7 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature; `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    7
+    8
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -113,6 +113,21 @@ pub unsafe extern "C" fn dist_transform(feature: *const u8, w: usize, h: usize, 
         slice::from_raw_parts_mut(out, w * h),
         slice::from_raw_parts_mut(scratch, edt::scratch_bytes(w, h)),
     );
+}
+
+// ---- PNG rows read (the stream reader) -----------------------------------------------------
+
+/// Undo the row filters of `rows` lines (a filter byte and `row_bytes` bytes each) in place; `prev` is the row above and
+/// becomes the last row. With `channels` 3 or 4 (8-bit RGB / RGBA, `w` pixels) the rows also go to `out` as RGBA8; with
+/// 0 `out` is not touched. Returns the lines undone: fewer than `rows` when a line has an unknown filter type.
+#[no_mangle]
+pub unsafe extern "C" fn png_unfilter_rows(lines: *mut u8, rows: usize, row_bytes: usize, bpp: usize, prev: *mut u8, w: usize, channels: usize, out: *mut u8) -> usize {
+    let l = slice::from_raw_parts_mut(lines, rows * (row_bytes + 1));
+    let done = png::unfilter_rows(l, rows, row_bytes, bpp, slice::from_raw_parts_mut(prev, row_bytes));
+    if done == rows && (channels == 3 || channels == 4) {
+        png::lines_to_rgba(l, rows, w, channels, slice::from_raw_parts_mut(out, rows * w * 4));
+    }
+    done
 }
 
 // ---- float masks (a provider run's crop and stitch) --------------------------------------

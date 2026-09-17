@@ -35,9 +35,9 @@ Nothing at the moment.
   uncaught `RangeError: Array buffer allocation failed` out of `allocTileBytes` / `TileLayerPixels.writable`
   (`native_limits.py layers 15000x10000 22`). The arena counts a refused chunk and then falls back to a plain array, which
   fails the same way. Not measured: what a stroke or a paste does to the document when it hits that in the middle.
-- **Opening a 150 MP PNG blocks the window for 2.1 s**: the picture is decoded into an image and read in 13
-  `getImageData` calls of 44 MB (1.7 of the 3.2 s). The stream reader a 600 MP file goes through never blocks longer
-  than 0.16 s, but inflates in JS at half the decoder's speed.
+- **Opening a large JPEG, WebP or a PNG with a colour profile still blocks the window** (2.1 s at 150 MP): the picture is
+  decoded into an image and read in 13 `getImageData` calls. A plain 8-bit PNG of 32 MP and more goes through the stream
+  reader since B item 5 and blocks 0.12 s (`docs/PLAN_BCE.md` §3b).
 
 ### What phase E left open on large documents
 
