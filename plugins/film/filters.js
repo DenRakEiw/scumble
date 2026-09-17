@@ -120,9 +120,10 @@ vec3 blob(vec2 uv, vec4 b, vec4 s) {
     return I * mix(vec3(1.0), hueRgb(s.z), s.w);
 }
 vec4 shade(vec4 c, vec2 uv) {
-    vec3 leak = blob(uv, u_b0, u_s0);
-    if (u_n > 1) leak += blob(uv, u_b1, u_s1);
-    if (u_n > 2) leak += blob(uv, u_b2, u_s2);
+    vec2 puv = pictureUv(uv);   // E3: the leak sits in the picture, whatever part of it this pass composites
+    vec3 leak = blob(puv, u_b0, u_s0);
+    if (u_n > 1) leak += blob(puv, u_b1, u_s1);
+    if (u_n > 2) leak += blob(puv, u_b2, u_s2);
     return vec4(screen3(c.rgb, sat3(leak * u_strength)), c.a);
 }`;
 
@@ -133,8 +134,8 @@ float rrect(vec2 q, vec2 dims, float w, float r) {
     return length(max(pc, 0.0)) + min(max(pc.x, pc.y), 0.0) - r;
 }
 vec4 shade(vec4 c, vec2 uv) {
-    vec2 dims = u_size / min(u_size.x, u_size.y);
-    vec2 q = uv * dims;
+    vec2 dims = u_pictureSize / min(u_pictureSize.x, u_pictureSize.y);   // E3: the frame goes around the picture, not around the pass
+    vec2 q = pictureUv(uv) * dims;
     float dx = min(q.x, dims.x - q.x), dy = min(q.y, dims.y - q.y);
     float w = u_w, soft = max(0.0015, u_soft * w * 0.5), cov = 0.0;
     vec3 col = u_col;
@@ -364,9 +365,14 @@ export function makeFilters(scumble) {
             S("grain", "Grain", 0, 200, 1, 100, "%"),
             S("halation", "Halation", 0, 100, 1, 100, "%"),
         ],
-        // pixel by pixel (the grain field is anchored at the image's origin), except its halation: sized from the long
-        // side of whatever the pass composites (1.2 % of it), so no margin around a box gives the full picture's
-        reach: (p) => { const stock = STOCK_BY_ID[p.preset] || null; return (stock ? stock.halation : 0) / 100 * pct(p.halation, 100) * pct(p.strength, 100) > 0 ? Infinity : 0; },
+        // pixel by pixel (the grain field is anchored at the image's origin), except its halation: a blur of 1.2 % of the
+        // picture's long side (E3: of the whole picture, `info.full`, not of whatever part a pass composites, which made
+        // the halo as wide as the view), so a box needs three sigma of that around it
+        reach: (p, size) => {
+            const stock = STOCK_BY_ID[p.preset] || null;
+            if (!((stock ? stock.halation : 0) / 100 * pct(p.halation, 100) * pct(p.strength, 100) > 0)) return 0;
+            return size && size.width > 0 ? Math.ceil(3 * 0.012 * Math.max(size.width, size.height)) + 4 : Infinity;
+        },
         apply(src, p, info) {
             const cache = info.cache || (info.cache = {});
             let out = lookStage(run, src, p, info);
@@ -375,7 +381,7 @@ export function makeFilters(scumble) {
             const halBase = stock ? stock.halation : 0;
             const hal = halBase / 100 * pct(p.halation, 100) * strength;
             if (hal > 0) {
-                const longSide = Math.max(src.width, src.height);
+                const longSide = info.full ? Math.max(info.full[0], info.full[1]) : Math.max(src.width, src.height);
                 out = halationStage(run, out, { thr: 0.62, sigma: longSide * 0.012, strength: hal * 0.9, tint: hueRgb(12).map((v) => mix(1, v, 0.85)) }, info);
             }
             const g = stock ? stock.grain : { amount: 25, size: 1.5, speckle: 25, chroma: 0 };
@@ -585,11 +591,12 @@ export function makeFilters(scumble) {
             S("angle", "Angle", -90, 90, 1, 20, "°"),
             S("seed", "Variant", 0, 99, 1, 0),
         ],
-        apply(src, p) {
+        reach: 0,   // E3: placed in the whole picture (info.full, info.origin), so a part of it needs no margin
+        apply(src, p, info = {}) {
             const blobs = leakBlobs(p), st = pct(p.strength, 60);
-            const W = src.width, H = src.height, aspect = W / H;
+            const [W, H] = info.full || [src.width, src.height], [ox, oy] = info.full ? info.origin || [0, 0] : [0, 0], aspect = W / H;
             return loop(src, (c, x, y) => {
-                const u = (x + 0.5) / W, vv = (y + 0.5) / H;
+                const u = (x + ox + 0.5) / W, vv = (y + oy + 0.5) / H;
                 let r = 0, g = 0, b = 0;
                 for (const q of blobs) { const l = blobAt(u, vv, aspect, q.b, q.s); r += l[0]; g += l[1]; b += l[2]; }
                 c[0] = screen(c[0], clamp01(r * st)); c[1] = screen(c[1], clamp01(g * st)); c[2] = screen(c[2], clamp01(b * st));
@@ -601,7 +608,7 @@ export function makeFilters(scumble) {
                 const blobs = leakBlobs(p);
                 const z = { b: [0, 0, 0, 0], s: [1, 1, 0, 0] };
                 const q = [blobs[0] || z, blobs[1] || z, blobs[2] || z];
-                return { u_n: blobs.length, u_b0: q[0].b, u_s0: q[0].s, u_b1: q[1].b, u_s1: q[1].s, u_b2: q[2].b, u_s2: q[2].s, u_aspect: src ? src.width / src.height : 1, u_strength: pct(p.strength, 60) };
+                return { u_n: blobs.length, u_b0: q[0].b, u_s0: q[0].s, u_b1: q[1].b, u_s1: q[1].s, u_b2: q[2].b, u_s2: q[2].s, u_aspect: info && info.full ? info.full[0] / info.full[1] : src ? src.width / src.height : 1, u_strength: pct(p.strength, 60) };
             },
             code: LEAK_GLSL,
         },
@@ -625,11 +632,12 @@ export function makeFilters(scumble) {
             S("roughness", "Roughness", 0, 100, 1, 40, "%"),
             S("seed", "Variant", 0, 99, 1, 0),
         ],
-        apply(src, p) {
+        reach: 0,   // E3: drawn around the whole picture (info.full, info.origin)
+        apply(src, p, info = {}) {
             const u = frameUniforms(p);
-            const W = src.width, H = src.height, m = Math.min(W, H), dw = W / m, dh = H / m;
+            const [W, H] = info.full || [src.width, src.height], [ox, oy] = info.full ? info.origin || [0, 0] : [0, 0], m = Math.min(W, H), dw = W / m, dh = H / m;
             return loop(src, (c, x, y) => {
-                const { cov, col } = frameCoverage((x + 0.5) / m, (y + 0.5) / m, dw, dh, u);
+                const { cov, col } = frameCoverage((x + ox + 0.5) / m, (y + oy + 0.5) / m, dw, dh, u);
                 if (cov <= 0) return;
                 c[0] = mix(c[0], col[0], cov); c[1] = mix(c[1], col[1], cov); c[2] = mix(c[2], col[2], cov);
             });

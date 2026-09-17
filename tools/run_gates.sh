@@ -75,6 +75,7 @@ for g in "$@"; do
     nodecopy) NC="$SP/nodecopy"; rm -rf "$NC"; mkdir -p "$NC"; (cd "/f/Comfyui/ComfyUI_windows_portable_nvidia/ComfyUI/custom_nodes/ComfyUI-InpaintCanvas" && tar --exclude=.git --exclude=__pycache__ -cf - .) | (cd "$NC" && tar -xf -); { $T python tools/build_node.py --node "$NC" && $T python tools/build_node.py --node "$NC" --check && $T python tools/node_test.py --node "$NC"; } > "$OUT/$g.log" 2>&1; rc=$? ;;
     node) $T python tools/build_node.py --check > "$OUT/$g.log" 2>&1 && $T python tools/node_test.py >> "$OUT/$g.log" 2>&1; rc=$? ;;
     perf:*) $T python tools/perf_test.py ${g#perf:} > "$OUT/perf.log" 2>&1; rc=$? ;;
+    exportperf:*) timeout 1800 python tools/export_test.py --perf ${g#exportperf:} > "$OUT/exportperf.log" 2>&1; rc=$? ;;
     # mem:15000x10000,--rounds,4 (commas for spaces); four rounds at 15k take longer than the other gates' 420 s
     mem:*) timeout 2400 python tools/mem_test.py $(echo "${g#mem:}" | tr ',' ' ') > "$OUT/mem.log" 2>&1; rc=$? ;;
     *) $T python "tools/${g}_test.py" > "$OUT/$g.log" 2>&1; rc=$? ;;

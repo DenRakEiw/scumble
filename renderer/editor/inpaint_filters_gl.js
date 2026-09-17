@@ -713,9 +713,10 @@ const SETUP = {
         const { gl, u } = g;
         const k = Math.max(0, Math.min(1, (p.amount ?? 50) / 100));
         if (!k) return false;
-        // the statistics need pixels: a chained input is a texture, so the CPU path takes over there
-        if (isGLSurface(src)) return null;
-        const st = colourStats(src);
+        // the statistics need pixels: a chained input is a texture, so without the picture's own (`info.stats`, E3) the
+        // CPU path takes over there
+        if (!info.stats && isGLSurface(src)) return null;
+        const st = info.stats || colourStats(src);
         gl.uniform1i(u.u_mode, 7);
         gl.uniform3f(u.u_nMean, st.mean[0] / 255, st.mean[1] / 255, st.mean[2] / 255);
         gl.uniform3f(u.u_nLo, st.lo[0] / 255, st.lo[1] / 255, st.lo[2] / 255);
@@ -893,6 +894,12 @@ uniform vec2 u_tile;
 uniform float u_scale;
 uniform float u_seed;
 uniform bool u_dstTop;
+uniform vec2 u_pictureSize;
+uniform vec2 u_pictureOrigin;
+// E3: where uv of the input lies in the whole picture (0..1), and the whole picture's size in the input's pixels
+// (u_pictureSize). A pass composites a part of the picture (the screen's region, a band of an export); a filter whose
+// geometry belongs to the picture (a frame, a light leak) uses these instead of uv and u_size.
+vec2 pictureUv(vec2 uv) { return (u_pictureOrigin + uv * u_size) / u_pictureSize; }
 ${decls}
 out vec4 o;
 ${def.code}
@@ -916,7 +923,7 @@ function pluginProgram(g, pg) {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error("program: " + gl.getProgramInfoLog(prog));
     pg.prog = prog;
     pg.u = {};
-    for (const name of ["u_src", "u_size", "u_scale", "u_seed", "u_tile", "u_dstTop", ...Object.keys(pg.def.uniforms || {})]) pg.u[name] = gl.getUniformLocation(prog, name);
+    for (const name of ["u_src", "u_size", "u_scale", "u_seed", "u_tile", "u_dstTop", "u_pictureSize", "u_pictureOrigin", ...Object.keys(pg.def.uniforms || {})]) pg.u[name] = gl.getUniformLocation(prog, name);
     for (const [name, type] of Object.entries(pg.def.uniforms || {})) if (type === "sampler2D") pg.samplers.push({ name, unit: PLUGIN_TEX_UNIT + pg.samplers.length, tex: null });
     return prog;
 }
@@ -977,6 +984,9 @@ function applyPluginGL(id, pg, src, params, info, override) {
             gl.uniform1i(pg.u[s.name], s.unit);
         }
         gl.uniform2f(pg.u.u_size, W, H);
+        const full = info.full || [W, H], origin = info.full ? info.origin || [0, 0] : [0, 0];
+        if (pg.u.u_pictureSize != null) gl.uniform2f(pg.u.u_pictureSize, full[0], full[1]);
+        if (pg.u.u_pictureOrigin != null) gl.uniform2f(pg.u.u_pictureOrigin, origin[0], origin[1]);
         bindSource(g, src);
         return renderOut(g, pg.u.u_tile, pg.u.u_dstTop, W, H, id, info);
     } catch (err) {

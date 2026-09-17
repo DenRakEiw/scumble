@@ -13,7 +13,7 @@
 //   * receive stitched results from the backend and add them as layers
 
 import { api, host } from "./host.js";
-import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromCube, lutToCanvas, lutFromImage, plateStats } from "./inpaint_filters.js";
+import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromCube, lutToCanvas, lutFromImage, plateStats, colourStats } from "./inpaint_filters.js";
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
@@ -4931,7 +4931,7 @@ class InpaintEditor {
             if (l.kind === "filter") {
                 const def = FILTERS[l.filter];
                 let r = def ? def.reach : undefined;
-                if (typeof r === "function") { try { r = r(l.params || {}); } catch (_) { r = undefined; } }
+                if (typeof r === "function") { try { r = r(l.params || {}, { width: this.width, height: this.height }); } catch (_) { r = undefined; } }
                 if (!(r >= 0) || !Number.isFinite(r)) return Infinity;
                 reach += r;
                 continue;
@@ -7748,9 +7748,14 @@ class InpaintEditor {
         // where the input sits in the image, in its own pixels: filters with a field of
         // their own (grain) anchor it there instead of at the corner of the preview
         const origin = vp ? [vp.x * vp.sx, vp.y * vp.sy] : [0, 0];
+        // E3: the whole picture in the input's pixels, for a filter whose geometry belongs to the picture (a vignette, a
+        // frame), and the whole picture's statistics for one that reads them (normalise): a pass composites a part
+        const full = vp ? [this.width * vp.sx, this.height * vp.sy] : [input.width, input.height];
+        const def = FILTERS[layer.filter];
+        const stats = def && def.wholeStats ? this.belowStats(layer, forRun) : null;
         const chain = !this.filterChainOff && glChainUsable(input.width, input.height);   // filterChainOff: the Canvas 2D path, for composite_test
         beginScope();
-        try { canvas = applyFilter(layer.filter, input, layer.params, { scale, origin, seed: layer.id, lut: layer._lutData, plate: layer._plateImg || null, plateKey: layer.plate && layer.plate.ref && layer.plate.ref.filename, plateMean: layer.plate && layer.plate.mean, plateStd: layer.plate && layer.plate.std, cache: layer[fxSlot], chain }); }
+        try { canvas = applyFilter(layer.filter, input, layer.params, { scale, origin, full, stats, seed: layer.id, lut: layer._lutData, plate: layer._plateImg || null, plateKey: layer.plate && layer.plate.ref && layer.plate.ref.filename, plateMean: layer.plate && layer.plate.mean, plateStd: layer.plate && layer.plate.std, cache: layer[fxSlot], chain }); }
         catch (err) { console.error(err); }
         canvas = endScope(canvas);
         if (isGLSurface(canvas)) {
@@ -7761,6 +7766,26 @@ class InpaintEditor {
         }
         layer[slot] = { version: this.compositeVersion, key, canvas };
         return canvas;
+    }
+
+    /**
+     * `colourStats` of the whole picture below a filter layer (E3), for a filter that asks for them (`wholeStats`):
+     * from a 256 px sampled pass of the layers below it, kept per composite version. Every pass (the screen's region,
+     * a band of an export, the whole flatten) gives the filter the same numbers, so they all show the same picture;
+     * before, each pass took them from whatever part it composited.
+     */
+    belowStats(layer, forRun) {
+        const slot = forRun ? "_bstatsRun" : "_bstats";
+        const c = layer[slot];
+        if (c && c.version === this.compositeVersion) return c.stats;
+        const index = this.layers.indexOf(layer);
+        const s = Math.min(1, 256 / Math.max(this.width, this.height));
+        // an entry first: the sampled pass below must not ask for this layer's statistics again
+        const entry = { version: this.compositeVersion, stats: null };
+        layer[slot] = entry;
+        const small = this.sampleRegion("image", [0, 0, this.width, this.height], s, { forRun: !!forRun, upTo: Math.max(0, index) });
+        entry.stats = colourStats(small);
+        return entry.stats;
     }
 
     /**
@@ -10632,7 +10657,13 @@ class InpaintEditor {
         if (!this.tileMode || !this.base || !partsUsable() || InpaintEditor.bands === false) return null;
         const reach = this.boxReach([0, 0, this.width, this.height], { forRun: !!opts.forRun, upTo: opts.upTo == null ? null : opts.upTo });
         if (!Number.isFinite(reach)) return null;
-        return { reach: Math.ceil(reach) };
+        // a wide margin (a film look's halation is 1.2 % of the long side: 544 px at 15000) is composited twice per band,
+        // so the bands grow with it; never more than a canvas holds
+        const r = Math.ceil(reach);
+        let rows = Math.max(TILE_SIZE, Math.min(2048, Math.ceil((2 * r) / TILE_SIZE) * TILE_SIZE));
+        while (rows > TILE_SIZE && this.width * (rows + 2 * r) > CANVAS_MAX_PIXELS / 2) rows -= TILE_SIZE;
+        if (this.width * (rows + 2 * r) > CANVAS_MAX_PIXELS) return null;
+        return { reach: r, rows };
     }
 
     /**
@@ -10675,7 +10706,7 @@ class InpaintEditor {
                     const data = this.readBand(y0, y1, opts, plan.reach);
                     if (each) each(data, y0, y1);
                     return data;
-                }, { hash, texts, progress });
+                }, { hash, texts, progress, rows: plan.rows });
                 if (!r) return null;
                 if (changed()) throw new Error("the picture changed");
                 return { ...r, width: this.width, height: this.height };

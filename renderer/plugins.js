@@ -277,7 +277,7 @@ function registerFilter(entry, def) {
     // reach: how many image pixels around a pixel its result reads (0 = pixel by pixel), a number or a function of the
     // params; left out when the result depends on the whole picture or its size (C6 c1: readers of a box pad by it)
     let reach;
-    if (typeof def.reach === "function") reach = (p) => { try { return def.reach(p); } catch (err) { report(entry, `filter ${def.id} reach`, err); return undefined; } };
+    if (typeof def.reach === "function") reach = (p, size) => { try { return def.reach(p, size); } catch (err) { report(entry, `filter ${def.id} reach`, err); return undefined; } };
     else if (def.reach != null) { reach = +def.reach; if (!(reach >= 0)) throw new Error(`filter "${id}": reach must be a number >= 0 or a function of the params`); }
     FILTERS[id] = { label: def.label || def.id, params, apply, plugin: entry.id, chain: !!def.chain, control: typeof def.control === "function" ? def.control : undefined, reach };
     FILTER_IDS.push(id);

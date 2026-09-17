@@ -217,6 +217,55 @@ if (d.worst > 3) throw new Error("the blurred composite in bands is " + d.worst 
 if (seams.rows && seams.nearSeams === seams.rows) throw new Error("the differences sit on the band seams only: " + JSON.stringify(seams));
 return { reach: plan.reach, d, seams };
 """),
+    ("filters_of_the_whole_picture_in_bands", """
+// E3: a vignette, a normalise, a frame, a light leak and a film look with halation belong to the whole picture. Each
+// of them over the document, in bands against the whole flatten: no line at a band's edge, and within what a blur of
+// a smaller canvas gives (3 levels); the pointwise ones within 1.
+const ed = ednow(window.__ex);
+const E = Editor(ed);
+const { FILTERS } = await import("./editor/inpaint_filters.js");
+// every filter there is, at its defaults, plus the ones whose picture depends on the whole image with settings that show
+const special = {
+    vignette: [{ amount: 70, size: 40, softness: 40 }, 1],
+    normalize: [{ mode: "levels", amount: 80 }, 2],   // a stretch of the levels doubles the one level the composite below differs by
+    "film.frame": [{ width: 6 }, 1],
+    "film.light_leak": [{ strength: 80 }, 1],
+    "film.look": [{ preset: "portra400", halation: 100, grain: 0 }, 3],
+};
+const cases = [];
+for (const id of Object.keys(FILTERS)) {
+    if (id === "lut" || id === "film.points" || id.startsWith("sample.")) continue;   // need a LUT file / points; the sample plugin is the commands gate's
+    const sp = special[id];
+    cases.push([id, sp ? sp[0] : {}, sp ? sp[1] : null]);
+}
+const out = {};
+for (const [id, params, tolerance] of cases) {
+    const fx = ed.addFilterLayer(id);
+    Object.assign(fx.params, params);
+    ed.markFilterChanged(fx);
+    const plan = ed.bandPlan({ forRun: true });
+    if (!plan) { ed.removeLayer(fx.id); throw new Error(id + ": no band plan"); }
+    const r = await ed.encodeComposite({ forRun: true }, {});
+    const flat = ed.flattenToCanvas({ forRun: true });
+    const old = await E.parts.encodeCanvas(flat, {});
+    flat.width = 1; flat.height = 1;
+    const a = await decode(r.blob), b = await decode(old.blob);
+    const d = diff(a.data, b.data, ed.width);
+    const seams = d.bytes ? seamRows(a.data, b.data, ed.width, ed.height) : null;
+    ed.removeLayer(fx.id);
+    out[id] = [plan.reach, d.bytes, d.worst];
+    const allowed = tolerance != null ? tolerance : plan.reach > 0 ? 3 : 2;   // a blur of a smaller canvas: up to 3 levels (C6 c1); a contrast curve doubles the one level of the composite below
+    if (d.worst > allowed) throw new Error(id + " in bands is " + d.worst + " levels off the whole flatten: " + JSON.stringify({ d, seams, plan }));
+    // does the filter do anything at all here? (a filter that is skipped would pass everything above)
+    if (special[id]) {
+        const plain = window.__exRef;
+        let moved = 0;
+        for (let i = 0; i < plain.length; i += 4001) if (plain[i] !== a.data[i]) moved++;
+        if (!moved) throw new Error(id + " changed nothing in the picture");
+    }
+}
+return out;
+"""),
     ("a_matched_layer_keeps_the_whole_flatten", """
 const ed = ednow(window.__ex);
 const l = ed.layers.find((x) => x.id === window.__exMasked);
@@ -304,6 +353,66 @@ return { closed: id };
 """),
 ]
 
+# python tools/export_test.py --perf 15000x10000: the timings of a large document (printed, not gated)
+PERF = """
+const [W, H] = [__W__, __H__];
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const E = Editor(ed);
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const L = ed.pixels.Layer;
+{
+    const c = mk(W, H), x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, "hsl(210,70%,45%)"); g.addColorStop(1, "hsl(300,70%,25%)");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.globalAlpha = 0.7;
+    for (let i = 0; i < 60; i++) { x.fillStyle = `hsl(${(i * 37) % 360},80%,55%)`; x.beginPath(); x.arc((i * 977) % W, (i * 613) % H, W / 40, 0, 7); x.fill(); }
+    Object.defineProperty(c, "naturalWidth", { value: W }); Object.defineProperty(c, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "export_perf.png", subfolder: "inpaint_canvas", type: "input" }, c, { keepLayers: false });
+    c.width = 1; c.height = 1;
+}
+for (let i = 0; i < 3; i++) {
+    const c = mk(W, H), x = c.getContext("2d");
+    x.globalAlpha = 0.5;
+    x.fillStyle = `hsla(${i * 60},80%,50%,0.35)`; x.fillRect(i * 40, i * 40, W - i * 120, H - i * 120);
+    for (let k = 0; k < 20; k++) { x.fillStyle = `hsl(${(k * 53 + i * 90) % 360},70%,60%)`; x.fillRect((k * 811) % W, (k * 457) % H, W / 25, H / 25); }
+    ed.addLayer({ name: `Paint ${i + 1}`, kind: "paint", px: L.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true });
+    c.width = 1; c.height = 1;
+}
+ed.addFilterLayer("levels");
+ed.renderLayers(); ed.fitView(); ed.draw();
+await ed.mipsSettled();
+const timed = async (fn) => {
+    let held = 0, last = performance.now(), on = true;
+    const beat = () => { const n = performance.now(); held = Math.max(held, n - last); last = n; if (on) setTimeout(beat, 0); };
+    setTimeout(beat, 0);
+    const t0 = performance.now();
+    const r = await fn();
+    on = false;
+    return { ms: Math.round(performance.now() - t0), blocked: Math.round(held), r };
+};
+const out = { size: [W, H] };
+let readMs = 0, bands = 0;
+const readBand = ed.readBand.bind(ed);
+ed.readBand = (...args) => { const t = performance.now(); try { return readBand(...args); } finally { readMs += performance.now() - t; bands++; } };
+const a = await timed(() => ed.encodeComposite({ forRun: true }, {}));
+delete ed.readBand;
+out.composite_bands = { ms: a.ms, blocked: a.blocked, bands, readMs: Math.round(readMs), MB: a.r ? +(a.r.blob.size / 1048576).toFixed(1) : null };
+const b = await timed(() => E.parts.encodeTilePixels(ed.layers[0].px, { hash: true }));
+out.layer_from_tiles = { ms: b.ms, blocked: b.blocked, MB: b.r ? +(b.r.blob.size / 1048576).toFixed(1) : null };
+if (W * H <= 268435456) {
+    const c = await timed(async () => { const flat = ed.flattenToCanvas({ forRun: true }); const r = await E.parts.encodeCanvas(flat, { hash: true }); flat.width = 1; flat.height = 1; return r; });
+    out.composite_canvas = { ms: c.ms, blocked: c.blocked, MB: +(c.r.blob.size / 1048576).toFixed(1) };
+    const e = await timed(async () => { const cv = ed.layers[0].px.toCanvas(); const r = await E.parts.encodeCanvas(cv, { hash: true }); cv.width = 1; cv.height = 1; return r; });
+    out.layer_canvas = { ms: e.ms, blocked: e.blocked, MB: +(e.r.blob.size / 1048576).toFixed(1) };
+}
+out.pool = E.parts.pool().stats();
+await run("close_document", { doc: d.id, force: true });
+return out;
+"""
+
 PRE = """(async () => {
     const commands = window.__cmds.commands, host = window.__host;
     const run = (n, a) => commands.run(n, a || {});
@@ -316,6 +425,11 @@ PRE = """(async () => {
 
 async def run_all(c):
     await c.eval("(async () => { window.__cmds = await import('./commands.js'); window.__host = (await import('./editor/host.js')).host; await import('./shell.js'); return 1; })()")
+    if "--perf" in sys.argv:
+        w, h = sys.argv[sys.argv.index("--perf") + 1].lower().split("x")
+        res = await c.eval(PRE % (HELPERS, PERF.replace("__W__", w).replace("__H__", h)), timeout=1800)
+        print(json.dumps(res, indent=1))
+        return True
     ok = True
     tiles = await c.eval("(async () => { const h = (await import('./editor/host.js')).host; const e = h.editors()[0]; return e ? !!e.tileMode : null; })()")
     if tiles is False:
@@ -328,7 +442,7 @@ async def run_all(c):
             continue
         try:
             res = await c.eval(PRE % (HELPERS, body), timeout=600)
-            print("[ok] %s: %s" % (name, json.dumps(res)[:400]))
+            print("[ok] %s: %s" % (name, json.dumps(res)[:1500]))
         except Exception as err:  # noqa: BLE001
             ok = False
             print("[FAIL] %s: %s" % (name, str(err)[:900]))

@@ -255,8 +255,9 @@ await c("select_none", { doc: d.id });
     if (cm < 40) throw new Error("the CPU path over the point's region changed " + cm + " levels: the point is not where the image has it");
     if (GL.glFiltersAvailable() && gm > 2) throw new Error("the points' CPU and GPU paths with an origin differ by " + gm + " levels on " + gn + " bytes");
 }
-// (4) a vignette under the points layer: its picture depends on the whole image, so no margin around a box gives the
-// input under a point near the corner; the point's colour is the whole flatten below the points layer there
+// (4) a vignette under the points layer: its picture depends on the whole image. Since E3 it is placed in the whole
+// picture whatever part a pass composites (info.full, info.origin), so the point's colour is a box read and still the
+// whole flatten's below the points layer; before, only the whole flatten gave it (a padded box was 40 levels off)
 const vig = await c("add_filter", { type: "vignette", doc: d.id });
 await c("move_layer", { layer: vig.id, to: "bottom", doc: d.id });
 const f0 = ed.flattenToCanvas; let flats = 0;
@@ -269,7 +270,8 @@ const mean9 = (cv, x0, y0) => { const q = read(cv, x0, y0, 3, 3); let a = 0, b =
 const want2 = mean9(ed.flattenToCanvas({ forRun: true, upTo: pts }), 1499, 1119);
 const padded = mean9(doc.flatten({ box: [1499, 1119, 1502, 1122], below: r.layer, pad: 128 }), 0, 0);
 out.vignette = { got: r2.point.color, want: want2, padded, flats };
-if (Math.abs(padded[0] - want2[0]) < 0.02) throw new Error("the vignette's picture in a padded box is the whole picture's under the point: the step proves nothing " + JSON.stringify(out.vignette));
+if (Math.abs(padded[0] - want2[0]) > 0.005) throw new Error("the vignette's picture in a box is not the whole picture's under the point " + JSON.stringify(out.vignette));
+if (flats) throw new Error("a point under a vignette flattened the whole picture " + flats + " times: a box has been enough since E3");
 if (!r2.point.color.every((v, k) => Math.abs(v - want2[k]) < 1e-6)) throw new Error("the point under a vignette took " + JSON.stringify(r2.point.color) + ", the picture below the points layer is " + JSON.stringify(want2));
 await c("close_document", { doc: d.id, force: true });
 await c("activate_document", { doc: window.__filmDoc });

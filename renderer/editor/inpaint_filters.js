@@ -466,7 +466,7 @@ function applyLut(src, p, info) {
 // vignette
 // ---------------------------------------------------------------------------
 
-function applyVignette(src, p) {
+function applyVignette(src, p, info = {}) {
     const W = src.width, H = src.height;
     const out = makeCanvas(W, H);
     const ctx = out.getContext("2d");
@@ -475,8 +475,10 @@ function applyVignette(src, p) {
     if (amount <= 0) return out;
     const size = (p.size ?? 60) / 100;          // where the darkening starts, as a fraction of the half diagonal
     const softness = Math.max(0.02, (p.softness ?? 50) / 100);
-    const cx = W / 2, cy = H / 2;
-    const rMax = Math.hypot(cx, cy);
+    // E3: the vignette belongs to the picture, not to the part of it a pass composites (`info.full`, `info.origin`)
+    const [FW, FH] = info.full || [W, H], [ox, oy] = info.full ? info.origin || [0, 0] : [0, 0];
+    const cx = FW / 2 - ox, cy = FH / 2 - oy;
+    const rMax = Math.hypot(FW / 2, FH / 2);
     const r0 = rMax * size * (1 - softness * 0.5);
     const r1 = Math.min(rMax * 1.15, r0 + rMax * softness);
     const g = ctx.createRadialGradient(cx, cy, r0, cx, cy, r1);
@@ -556,10 +558,10 @@ export function colourStats(src) {
  * towards the mean; "levels": each channel stretched from its 1 % to its 99 % level.
  * `amount` mixes the result in.
  */
-function applyNormalize(src, p) {
+function applyNormalize(src, p, info = {}) {
     const k = Math.max(0, Math.min(1, (p.amount ?? 50) / 100));
     if (!k) return copyCanvas(src);
-    const st = colourStats(src);
+    const st = info.stats || colourStats(src);   // E3: the statistics of the whole picture, whatever part a pass composites
     const mode = p.mode || "colour";
     const { out, octx, img, px } = openPixels(src);
     const ym = LR * st.mean[0] + LG * st.mean[1] + LB * st.mean[2];
@@ -826,9 +828,14 @@ function applyInvert(src) { return applyTables(src, INVERT_TABLE); }
 // ---------------------------------------------------------------------------
 
 // `reach` (C6 c1): how many image pixels around a pixel (at full resolution) the filter's result there reads, as a
-// number or a function of the params. 0 for a filter that works pixel by pixel. Left out for a filter whose result
-// depends on the whole picture or its size (normalise, vignette): a read of a box then cannot be composited with a
-// margin and takes the whole flatten (InpaintEditor.boxReach / readBox).
+// number or a function of the params and the picture (`reach(params, { width, height })`). 0 for a filter that works
+// pixel by pixel. Left out for a filter no margin can serve: a read of a box then takes the whole flatten
+// (InpaintEditor.boxReach / readBox), and an export cannot be written in bands.
+//
+// E3: a filter that depends on the picture as a whole still has a reach when it takes what it needs from `info`
+// instead of from its input: `info.full` ([w, h], the whole picture in the input's pixels) and `info.origin` (where
+// the input sits in it) for a filter with a geometry of its own (vignette), `info.stats` (`colourStats` of the whole
+// picture below the layer, asked for with `wholeStats: true`) for one that reads statistics (normalise).
 
 export const FILTERS = {
     grain: {
@@ -947,6 +954,8 @@ export const FILTERS = {
                 options: [{ id: "colour", label: "Colours towards the mean" }, { id: "all", label: "Everything towards the mean" }, { id: "levels", label: "Stretch levels" }] },
             { key: "amount", label: "Amount", min: 0, max: 100, step: 1, default: 50, unit: "%" },
         ],
+        wholeStats: true,
+        reach: 0,
         apply: applyNormalize,
     },
     lut: {
@@ -965,6 +974,7 @@ export const FILTERS = {
             { key: "size", label: "Size", min: 10, max: 100, step: 1, default: 60, unit: "%" },
             { key: "softness", label: "Softness", min: 2, max: 100, step: 1, default: 50, unit: "%" },
         ],
+        reach: 0,
         apply: applyVignette,
     },
 };
