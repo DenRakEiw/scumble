@@ -242,7 +242,7 @@ own pixels (image coordinates times `info.scale`; `[0, 0]` for the whole picture
 a box, or the screen zoomed in, hands a filter a part of the picture: a filter that places
 something in the image (a point, a field of grain) adds `info.origin` to its pixel coordinates
 (`uv * u_size + origin` in GLSL, passed as a `vec2` uniform). `reach` (optional, 0.1.13): how many image pixels around a pixel (at full
-resolution) the filter's result there reads, a number or a function of the params; 0 for a
+resolution) the filter's result there reads, a number or a function of the params (and the picture's size, 0.1.17); 0 for a
 filter that works pixel by pixel, left out when the result depends on the whole picture or its
 size, or on where the input sits in it without `info.origin`. Readers of a box of the picture pad by it (`flatten({ box, exact: true })`), and a filter
 without it makes them flatten the whole picture. The GLSL fragment gets `u_src` (the input; sample neighbours with
@@ -253,8 +253,30 @@ A `sampler2D` uniform's value is a canvas, ImageData or image (uploaded as RGBA8
 it with the `uv` handed to `shade`), or `{ data, width, height }` with a Uint8ClampedArray
 (RGBA8; a 256 × 1 table, say) or a Float32Array (RGBA32F, read with `texelFetch`); add
 `linear: true` for bilinear filtering of 8-bit sources. Plugin samplers sit on texture
-units 5 and up. `u_seed` and `u_size` are taken (do not redeclare them), and `filter`,
-`half`, `sample` are reserved GLSL words.
+units 5 and up. `u_seed`, `u_size`, `u_pictureSize` and `u_pictureOrigin` are taken (do not
+redeclare them), and `filter`, `half`, `sample` are reserved GLSL words.
+
+**A filter that belongs to the whole picture (0.1.17).** A pass hands a filter a part of the
+picture: the screen's region, a box a tool reads, a band of an export (an export is written in
+bands of 256 rows and more, never from one canvas of the picture). A filter whose geometry is the
+picture's (a vignette, a frame, a light leak) or that reads numbers of the whole picture must not
+take them from its input, or every band gets a frame of its own:
+
+- `info.full` is the whole picture's size in the input's pixels (`[w, h]`, the image size times
+  `info.scale`) and `info.origin` where the input sits in it. In GLSL the same two are
+  `u_pictureSize` and `u_pictureOrigin`, and `pictureUv(uv)` gives the position in the whole
+  picture (0 to 1) for the `uv` handed to `shade`. Use those instead of `src.width` / `u_size`
+  and `uv` for anything placed in the picture.
+- `wholeStats: true` on the filter definition asks for `info.stats`: `{ mean, lo, hi }` per
+  channel (the 1 % and 99 % levels) of the whole picture below the filter layer, the same numbers
+  for every pass.
+- `reach` may take the picture's size: `reach(params, { width, height })`. The film look's
+  halation is a blur of 1.2 % of the picture's long side, so its reach is three sigma of that.
+
+A filter that does this has a `reach` (0 for a vignette), a box of the picture is exact under
+it, and a document with it is exported in bands. One that still depends on its input's size
+leaves `reach` out; a document larger than any canvas (above 268 MP) is then exported as the
+bands come out.
 
 Filters that need more than one pass (a blur between two shader stages) skip the `glsl`
 block and orchestrate in `apply`: blur with Canvas 2D, then `scumble.gl.shade(shader, canvas,

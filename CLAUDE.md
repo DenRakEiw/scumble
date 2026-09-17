@@ -86,13 +86,20 @@ empty section in `CHANGELOG.md`. Exe gates for 0.1.16: `rel16-exe` (log pixels e
 `rel16-exe-canvas` ALL PASS, `px_jobs.py --check` against the exe PASS; `smoke` and `commands` not run (the user's ComfyUI
 was busy). Check `gh release list` before believing any release state written down anywhere.
 
-**Phase E is on the branch `phase-e`** (not merged). **E1 is built** (2026-09-17, `docs/PLAN_BCE.md` §3 "E1 as built"):
-the window is cross-origin isolated, every tile's bytes are a slot of the SharedArrayBuffer arena
-(`renderer/editor/inpaint_arena.js`, slots back through a FinalizationRegistry), and the mip chains go through the worker
-pool (`renderer/editor/inpaint_pool.js`, up to 8 workers started on demand, priorities, `cancel(group)`), tiles named by
-(chunk, slot). Measured at 15k: mips settled 138 to 169 ms (was 320 to 394); **the gate's 5 ms blocked is not met** (86 to
-92 ms, the landings' frame: atlas slots built on the main thread, as before E1). **Next: E2** (`inpaint_bands.js`,
-`compositeBand` on `composite_tile`, `PngStreamWriter`), whose `smoke` gate needs the user's ComfyUI.
+**Phase E is built** (2026-09-17, `docs/PLAN_BCE.md` §3 "E1 as built" and "E2 to E5 as built", CHANGELOG 0.1.17).
+What it is, because it is **not the plan's design**: there is no second compositor in the workers. A band of an export is a
+**region pass at full resolution** (`sampleRegion` at scale 1 with `boxReach`'s margin, `readBand`), and the worker pool
+(`renderer/editor/inpaint_pool.js`, up to 8 workers started on demand, priorities, `cancel(group)`, `progress` replies) does
+everything that is not compositing: PNG parts (a Rust deflate with a sync flush per part, joined into one zlib stream:
+`inpaint_png.js`), PackBits for PSD, CRCs for ORA, hashes, PNG decoding as a stream, the mip chains. Tiles live in a
+SharedArrayBuffer arena (`inpaint_arena.js`) and workers read them by (chunk, slot). `inpaint_bands.js` holds the row sources
+and the PNG / PSD / ORA writers. Filters of the whole picture take `info.full` / `info.origin` / `info.stats`. A document
+may be larger than any canvas (268 MP): up to 65,535 px a side and a gigapixel, PNG only, opened through the stream reader;
+`tools/huge_test.py` is its gate (30000 × 20000: open 9.6 s, PNG 10.5 s, PSD 13.7 s). **Not met and written down in
+`docs/BUGS.md`**: an export in bands is slower in wall time than the whole flatten was (6.2 s against 3.4 s at 15k, the
+window stays usable), the halation on huge documents, invert at 30k, the 5 ms of the mip refresh. **`smoke` has not run on
+any of it** (the user's ComfyUI was busy): the node's base upload in bands and a real run on the new crop path have not met
+a real server.
 
 **Built.** C6 (c) slices 3 to 7a, each with its gates, mutations and measurements in `docs/PLAN_BCE.md` §C6 ("C6 (c3) and
 slice 4 as built", "slice 5 / 6 / 7a as built"). The tile engine is on by default in the installed app since 0.1.13, with a
@@ -129,8 +136,9 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    `renderer/editor/px/px.wasm` through `px/kernels.js` in the window and both workers, grow / shrink and the flood as one
    whole-job call each; the JS twins are the fallback (`InpaintEditor.kernels = "js"`). `python tools/build_px.py` rebuilds
    the binaries (commit them; `build.yml` checks them), `node tools/px_test.js` and `python tools/px_jobs.py --check` are the
-   gates. Then **phase E** (E2's band composite on `composite_tile`).
-9. **Phase N after E** (the user's wish, 2026-09-17, `docs/PLAN_BCE.md` §3b): measure what the browser still costs (pixel
+   gates.
+9. **Phase E is built** (2026-09-17, see above). Its open ends are in `docs/BUGS.md` ("What phase E left open").
+10. **Phase N after E** (the user's wish, 2026-09-17, `docs/PLAN_BCE.md` §3b): measure what the browser still costs (pixel
    readbacks such as the wand's 0.7 s `getImageData`, Chromium's memory limits, copies), cost the options up to a native
    Rust editor (4 to 8 months), and let the user decide. N builds nothing.
 
@@ -148,12 +156,15 @@ model has not run on the slice 6 code; the user has not reported back on their o
 
 ## Gate runner and flakes
 
-`bash tools/run_gates.sh <label> [--strict] [--copy] [--tiles on|off] [--exe PATH] <gates...>` starts a fresh instance on
+`bash tools/run_gates.sh <label> [--strict] [--copy] [--tiles on|off] [--offline] [--exe PATH] <gates...>` starts a fresh instance on
 port 9555 with its own profile (with `test_base.png`), runs each gate with a timeout, and writes logs and `summary.txt` under
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
-mcp nodecopy toapis llm`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs ComfyUI) and
-`perf:<W>x<H>`. Run a change on both backends (`--tiles on` and `--tiles off`); a release also runs against
+mcp nodecopy toapis llm export pxjobs`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
+against a connected instance). **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
+forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and
+forwards every upload of every gate to its input folder; use `--offline` for everything but `smoke`. Run a change on both backends (`--tiles on` and `--tiles off`); a release also runs against
 `dist/win-unpacked/Scumble.exe` with `--exe`, each run on its own profile.
 
 Known flakes; **re-run before believing any of these**:
@@ -169,6 +180,10 @@ Known flakes; **re-run before believing any of these**:
 - `composite_test.py` once got a 1200 × 794 canvas against its 1200 × 800 reference and then crashed with `KeyError 'bytes'`
   in its own failure message (a test bug, not fixed).
 - `node tools/brush_test.js` hung once at exit under load after printing every PASS.
+- `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed once with `requested: 0` in some twenty
+  runs since the mip chains go through the pool; not reproduced.
+- `perf_test.py`'s magic wand row (whole-image band) read 2.1, 4.0 and 7.0 s in three runs of the same code while ComfyUI
+  ran a job; an A/B against the commit before in the same minute read 3.5 s. It is the card, not the code.
 - The `commands` primed-cells checks wait up to 3 s for the film panel's own settled flatten; a failure "primed cells were
   left behind" seen once without a mutation was that race.
 
@@ -202,6 +217,13 @@ Known flakes; **re-run before believing any of these**:
 - `mcp_test.py --user-data-dir` must come before `--cmd`, which otherwise takes it for its JSON.
 
 **Tooling, shell, git**
+- The Bash tool's heredoc breaks on an apostrophe in its text even with a quoted delimiter (`unexpected EOF while looking
+  for matching`), and turns `\u0080` in Python source into the character. Write scripts and JS with the Write tool; a
+  patch script imports a small `patch(path, [(old, new)])` helper and asserts each `old` occurs once.
+- The Write tool itself turns `\u0080` in a JS regex into the literal character. Check a written file for non-ASCII
+  (`grep -nP "[^\x00-\x7F]"`) when it holds escapes.
+- A backtick in a comment inside a GLSL template literal ends the JS string; `node --check` on an ES module file here
+  reports nothing, the app reports `Unexpected identifier` at import.
 - A Bash-tool heredoc with an unquoted delimiter (`<<EOF`) runs every backtick span in its text as a command; quote it
   (`<<'EOF'`) or use the Write tool. Heredocs also turn `\\n` in Python source into real newlines, and long Python heredocs
   fail to parse: write scripts with the Write tool.
@@ -229,6 +251,14 @@ Known flakes; **re-run before believing any of these**:
 - `editor_test.py`'s `window.__t` is 600 × 300 by the time later steps run; call `new_canvas` first.
 
 **Tile engine code**
+- A tile's bytes are a view into a SharedArrayBuffer in the app: no `ImageData`, `Blob` or `crypto.subtle` over them
+  (`imageDataOf` copies into a scratch), `t.data.buffer` is the 64 MB chunk (use `byteOffset`), and a worker may read a
+  tile while this thread writes it: a job's answer counts only if the tile's version is still the one it was made from.
+- A worker must never write a tile it was given by slot; it extends or converts a copy.
+- Whoever hands tiles to a job holds them until the answer is in (a `clone()` for a file, the scheduler's batch for mips):
+  the slot goes back to the arena when the tile object is collected.
+- `makeCanvas` and `flattenToCanvas` throw above Chromium's canvas limits since E5. Code that needs the whole picture asks
+  `bandPlan` / `readBand` / `readBox`, or a row source (`inpaint_bands.js`).
 - A copy-on-write copy that takes the original's chain buffer must take ownership, or the last holder writes into it in place.
 - A rebuild that asks for chains and then drops them asks again forever; cells are kept per tile version.
 - `frozen` too high only costs a copy; too low writes into a shared tile. A release must never let go of pixels the document

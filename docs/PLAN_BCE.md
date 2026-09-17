@@ -3922,6 +3922,98 @@ writers; the 30k document's PSD written in ≤ 60 s.
 against the exe. Phase F's adaptive VRAM budget and Settings rows are **not** here; the
 atlas budget row of C3 is the only new setting.
 
+#### E2 to E5 as built (2026-09-17): bands through the region pass, files from the pool
+
+**What was kept of the plan, and what was not.** The plan had a second compositor: `compositeBand` in the workers on
+`composite_tile`, filter layers in a GPU worker on an `OffscreenCanvas`, the colour match per pixel in the kernel. That
+is a second walk of the layer stack, which CLAUDE.md names as where this design breaks, and every branch `drawLayer` has
+(a scaled layer, a blend mode, a text layer, a pending transform, a colour match, 23 filters and the plugins' own) would
+have needed a twin that gives Skia's bytes. **Built instead: a band is a region pass** at full resolution (`sampleRegion`
+at scale 1, the pass the screen, the wand and `readBox` already use) with `boxReach`'s margin above and below, read on a
+CPU canvas and handed to the pool, which does everything that is not compositing: PNG filtering and deflate, PackBits,
+CRCs, hashes, PNG decoding. One compositor, one set of filter code, and the screen shows what the file holds. The price
+is the region pass's speed on this thread (below); the plan's worker compositor stays the way to make plain stacks
+faster, and the arena is what it would read.
+
+**E2.**
+- `renderer/editor/inpaint_png.js`: `PngStreamWriter`. A PNG's pixels are one zlib stream, and `CompressionStream` cannot
+  flush, so it cannot be run in parallel (25 MB/s on one thread, §10: 24 s for a 15k picture). The px crate has
+  **miniz_oxide** back (`deflate_part`: raw deflate, every part but the last ended on a **sync flush**, plus `adler32`):
+  parts of about 8 MB are filtered (`png_filter_rows`) and deflated by any worker in any order and are one stream when
+  written in order; the file is signature, IHDR, tEXt, an IDAT with the two zlib header bytes, each part's finished
+  IDAT chunk (CRC made in the worker), an IDAT with the Adler-32 joined from the parts' own (`adlerCombine`), IEND, as a
+  Blob of those pieces. Level 2: 84 MB/s a worker for 0.349 of the raw size (level 6: 13 MB/s for 0.327), and files
+  less than half the size of the canvas encoder's (6.5 MB against 15.4 MB for the test document). `readPng` is the
+  reader: chunk framing here, `DecompressionStream("deflate")`, the five row filters, every colour type at 1 to 16 bits,
+  `tRNS`; interlaced files are refused. Held against the browser's decoder byte for byte.
+- `renderer/editor/inpaint_bands.js`: **row sources** (`tileRows`: tile pixels, named by arena slot and read by the
+  worker where they lie, held as a copy-on-write clone so a stroke meanwhile writes elsewhere; `bandRows`: a picture
+  composited in bands; the editor's `canvasRows` for a canvas) and the writers over them (`writePng`, `PsdBandWriter`,
+  `OraBandWriter`), with a bounded number of parts in flight.
+- The editor: `uploadPixels` (layer and mask uploads of `syncLayers`, `uploadBase`), `encodeComposite` / `uploadComposite`
+  (the PNG export, the flatten, which writes its new base from the same bands, the node's base upload), `bandPlan`,
+  `readBand`. A band is composited into the pass's canvas and drawn into a `willReadFrequently` canvas that is read:
+  a hundred `getImageData` calls on GPU canvases put Chromium's canvases in software. A change of the composite while
+  bands are read restarts the read once and then fails it.
+- A run (`stitch.js`): the crop box and the stitched region come from `readBox`, never from a whole flatten, and the
+  selection is read in a window (`selectionWindow`: on tiles the box of the mask's pixels that are not zero) above 16 MP.
+  Crop, masks and patch are byte for byte the whole-image way's (`export_test.py`).
+- **Not built**: JPEG / WebP and the Size row through bands (they take the canvas path, and are refused above 268 MP);
+  the uploads of the canvas-sized edits (resize, extend, merge into the base) still encode the canvas they drew.
+
+**E3.** `reach` was the plan's `halo` already (C6 c1). What E3 adds is what made a reach impossible: a filter of the whole
+picture took its geometry or its statistics from its input, so every pass had its own (the screen showed a vignette
+around the view, a band would get a frame of its own). Now `info.full` / `info.origin` (`u_pictureSize`,
+`u_pictureOrigin`, `pictureUv()` in plugin shaders) and `info.stats` (`wholeStats`, from a 256 px sampled pass of the
+layers below, per composite version): the vignette, normalise, the film pack's frame, light leak and the look's halation
+(1.2 % of the **picture's** long side; `reach(params, { width, height })`) are the same picture in every pass, have a
+reach, and are exported in bands; bands grow with a wide reach (`bandPlan.rows`). No GPU worker: the filters run where
+they always ran. `export_test.py` `filters_of_the_whole_picture_in_bands`: all 23 filters at 6000 × 4000 in bands against
+the whole flatten, worst 1 level for the pointwise ones and the blurs, 2 where a contrast curve doubles the one level
+the composite below differs by.
+
+**E4.** `PsdBandWriter` gives `PsdWriter`'s bytes from row sources (a Rust `psd_pack_rows` held to the JS `packBits`; a
+layer's channels become a Blob as soon as it is packed), `OraBandWriter` a stored zip of part-written PNGs with CRCs
+from the pool. A layer on tiles at its own size without a mask is read from its tiles; any other is drawn into a canvas
+of its size when its turn comes (one at a time), as before. 6000 × 4000, three layers: PSD 0.76 s (1.07 s before, on the
+main thread), structure and records identical, pixels within the GPU canvas's un-premultiply (1 level on 343 bytes).
+
+**E5.** `checkBaseSize` no longer stops at 268 MP (65,535 px a side and a gigapixel are what is left). A PNG above the
+limit opens through `png_read` in a pool worker (bands back as `progress` messages, written with `writeRect`), and so do
+the files of a restore. What else needed a canvas of the picture and was changed: the selection's PNG for the autosave
+(now the box its tiles cover, `selectionBox`, or the whole mask written in parts), `select_rect` / `select_all` (a fill
+of a box), the run's selection read. Above the limit `bandPlan` and `readBox` take a **loose** reach (no whole flatten
+exists to fall back to: a colour-matched layer is matched with the statistics the screen uses, a scaled layer resampled
+per band), and `flattenToCanvas` and `makeCanvas` refuse with a message instead of handing out a canvas that draws
+nothing. New arena chunks are not zeroed a second time (a memset of the whole document when one is opened).
+`--no-comfy` (`run_gates.sh --offline`) keeps a test instance off the server, so uploads of this size are not forwarded.
+
+**Gates** (`--offline`, tiles on unless said): `export` (the 6000 × 4000 document: PNG parts, bands against the flatten,
+every filter, a run's box, PSD and ORA, the flatten), `huge:30000x20000`, `pixels editor composite commands shape brush
+film glb ailabel size transparent generate log mcp nodecopy toapis llm pxjobs` PASS; tiles off: `pixels editor composite
+commands shape brush film glb ailabel size transparent generate` PASS. `node tools/px_test.js` PASS (the deflate parts
+inflate as one stream with a valid Adler-32 in Node's zlib; PackBits equals the writer's). **Not run: `smoke`** (the
+user's ComfyUI was in use), so the node's base upload in bands and a real run on the new crop path have not met a real
+server.
+
+**Measured** (this machine, 8 workers, the user's ComfyUI holding the card):
+
+| | before | E |
+|---|---|---|
+| a full 15k paint layer as a PNG (autosave, upload): wall [longest block] | 1.2 s [186 ms] | 0.78 s [6 ms] |
+| 15k composite as a PNG, 3 paint layers + levels | 3.4 s [2.4 s] | 6.2 s [0.7 s] |
+| the same with the film look | 8.2 s [3.1 s] | 9.5 s [1.2 s] |
+| 6000 × 4000 PSD, 3 layers | 1.07 s (blocked) | 0.76 s |
+| 30000 × 20000 (600 MP): open from a 1.1 GB PNG | refused | 9.6 s [121 ms] |
+| … PNG export / PSD export (3.7 GB) | | 10.5 s [199 ms] / 13.7 s [279 ms] |
+| … pan, zoom, a stroke's frame; its release | | 0.1 to 1.8 ms; 55 to 77 ms |
+| … grow 16; invert; invert back | | 48 ms [18]; 0.53 s; 1.2 s (blocked) |
+| … restore from the autosave state | | 11.2 s [91 ms] |
+
+**The plan's numbers that are not met**: the 15k film-look export in 3 s with 50 ms blocked (9.5 s, 1.2 s); 50 ms blocked
+for the 30k PNG (199 ms); invert in 100 ms blocked at 30k (0.5 to 1.2 s). `docs/BUGS.md` has them with what would fix
+them. Met: open ≤ 90 s (9.6), PNG ≤ 30 s (10.5), PSD ≤ 60 s (13.7), the screen within a frame, grow.
+
 ## 3b. Phase N: does a native Rust editor pay? (after E, 3 to 5 days of measuring, then the user decides)
 
 Asked by the user on 2026-09-17 after phase R: would the editor be faster if **everything** were Rust (the interface, the

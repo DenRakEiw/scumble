@@ -5,10 +5,41 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.17 — unreleased
 
+- **Pictures larger than 268 megapixels open.** Chromium cannot hold a canvas above 268 MP, and until now neither could
+  Scumble. A PNG of that size is now read piece by piece straight into the tile engine: a 30000 × 20000 file (600 MP,
+  1.1 GB) opens in about 10 seconds, and you can pan, zoom, paint, select, run a model on a selection, undo and close
+  and reopen it like any other document. Such a document is saved as **PNG, PSD or ORA at its full size**; JPEG, WebP,
+  a reduced size and the steps that rebuild the whole picture (resize, extend) need one canvas of it and say so instead
+  of writing an empty file. The limits now are 65,535 px a side and one gigapixel. Only PNG files are read this way,
+  and only with the tile engine on.
+- **Saving no longer freezes the window.** A PNG is now written in strips: the picture is put together a strip at a
+  time and up to eight background workers compress the strips at once. On a 15000 × 10000 picture the window used to
+  stand still for 2.4 seconds while the file was made; now it keeps answering, and a progress figure counts up in the
+  status line. The whole save takes longer than before on such a picture (about 6 seconds instead of 3.5), because the
+  strips are put together more slowly than one big picture was. The files are **less than half the size** (the
+  compression is better than the browser's own). The same goes for *Flatten*. With a colour-matched layer in the
+  document the save works as before.
+- **PSD and ORA are written faster and without a copy of every layer.** A layer is read straight from its tiles and
+  packed by the background workers; a 6000 × 4000 document with three layers takes 0.8 s instead of 1.1 s, and the
+  window stays free.
+- **Autosave of a large painted layer: 0.8 s instead of 1.2 s, and the window no longer stutters for it** (6 ms instead
+  of 190 ms on a full 15000 × 10000 layer). Layers and masks are compressed from their tiles by the background workers.
+- **Vignette, Normalise, the film pack's Frame, Light leak and the film look's halation sit where they belong when you
+  zoom in.** These filters belong to the whole picture, but they were worked out on whatever part of it the screen
+  showed: zoomed in, the vignette darkened the corners of the view, the frame ran around the view, and the halation
+  glow was as wide as if the view were the picture. They are now placed in the whole picture, so the screen shows what
+  the saved file holds. Normalise takes its colour statistics from the whole picture as well; its result can differ by
+  a level or two from earlier versions.
+- **A model run on a large picture no longer flattens all of it.** Only the box that goes to the model is put together,
+  and the selection is read around its own pixels instead of across the whole picture (on a 15000 × 10000 picture that
+  was 600 MB read and another 600 MB of working memory per run).
 - **The picture's detail levels come back faster after a change of a whole layer.** After a flip, a turn or an undo of a
   whole layer the screen shows a coarse picture until the smaller copies of the layer are rebuilt. They are now built
   by up to eight background workers at once, which read the layer's pixels where they lie in memory instead of getting
   a copy: on a 15000 × 10000 picture the screen is exact again after about 0.15 s instead of 0.35 s.
+- Plugins: a filter can be placed in the whole picture (`info.full`, `info.origin`, `u_pictureSize`, `u_pictureOrigin`,
+  `pictureUv()`), ask for the whole picture's colour statistics (`wholeStats`) and size its `reach` by the picture
+  (`docs/PLUGINS.md`).
 
 ## 0.1.16 — 2026-09-17
 

@@ -1344,6 +1344,30 @@ Gates: `node tools/px_test.js` (every Rust kernel of both builds against its twi
 run the twin now (the same f32 values, `tools/px_test.js`): a 6,032 × 4,032 band, the grow job's at 15k, takes 255 to 304
 ms against 538 to 575 in Node.
 
+## 13. Phase E: files from rows, documents above the canvas limit (2026-09-17)
+
+`docs/PLAN_BCE.md` §3 ("E1 as built", "E2 to E5 as built") has what was built and why it is not the plan's worker
+compositor. The numbers, this machine (8 pool workers), the user's ComfyUI holding the card throughout:
+
+| | before E | E |
+|---|---|---|
+| mips settled after a whole change of a 15k layer, fit / 1:1 [longest block] | 394 / 320 ms | 137 / 127 ms [51 / 45] |
+| 2,352 mip chains through the pool: by arena slot / by copy | | 59 ms / 123 + 78 ms |
+| a full 15k paint layer as a PNG (autosave, upload) [longest block] | 1.2 s [186 ms] | 0.78 s [6 ms] |
+| 15k composite as a PNG, 3 paint layers + levels | 3.4 s [2.4 s] | 6.2 s [0.7 s], 11 MB against 37 MB |
+| the same with the film look | 8.2 s [3.1 s] | 9.5 s [1.2 s] |
+| 6000 × 4000 PSD, 3 layers | 1.07 s, blocked | 0.76 s |
+| deflate of a filtered 4 MB band, one thread: miniz_oxide level 1 / 2 / 3 / 6 (ratio) | | 55 / 47 / 88 / 308 ms (0.416 / 0.349 / 0.353 / 0.327) |
+| 30000 × 20000: open from a 1.1 GB PNG / PNG export / PSD export (3.7 GB) | refused | 9.6 s / 10.5 s / 13.7 s |
+| … grow 16 / invert / invert back (blocked) | | 48 ms / 0.53 s / 1.2 s |
+
+Where a band's time goes (15000 × 256 rows, `tools/export_test.py --perf`): the region pass builds a region canvas per
+layer from its tiles (`putImageData`, about 40 ms a layer for the two bands it covers), the draw into the CPU canvas
+5 ms, the read 10 to 25 ms; 130 ms a band on average with four layers, 5.2 of the 6.2 s. The pool is not the limit: eight
+workers deflate 600 MB in about a second. `perf_test.py`'s other rows are within their noise of the run before E (the
+wand's whole-image band read 2.1 to 7.0 s in three runs of one build while ComfyUI ran a job, and 3.5 s on the commit
+before in the same minute).
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first

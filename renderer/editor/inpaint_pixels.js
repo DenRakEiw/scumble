@@ -64,6 +64,9 @@ export function pixelsOptions() {
 
 /** A canvas of w x h (at least 1 x 1), as both backends make them. */
 export function makeCanvas(w, h) {
+    // Chromium makes a canvas above its limits (268 MP, 65,535 px a side) without complaint and draws nothing into it.
+    // Since E5 a document can be larger than that, and a picture of nothing must not be saved, uploaded or baked in.
+    if (w * h > 268435456 || w > 65535 || h > 65535) throw new Error(`Inpaint Canvas: ${w} × ${h} px is larger than any canvas (268 MP, 65,535 px a side); this step needs one canvas of that size and cannot run on a document this large`);
     const c = document.createElement("canvas");
     c.width = Math.max(1, w | 0);
     c.height = Math.max(1, h | 0);

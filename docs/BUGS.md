@@ -19,6 +19,34 @@ Nothing at the moment.
 
 ## Open
 
+### What phase E left open on large documents
+
+**Written** 2026-09-17 with phase E (`docs/PLAN_BCE.md` §3, the "as built" blocks). Not reports: gates of the plan that were
+measured and not met, and what still needs a canvas of the picture. Each has a number to beat.
+
+- **An export in bands is slower in wall time than the whole flatten was, while the window stays usable.** 15000 × 10000,
+  three full paint layers and a levels layer: 6.2 s in bands (longest block 0.7 s, the first band) against 3.4 s through
+  one canvas (2.4 s blocked in one piece). With the film look on top 9.5 s against 8.2 s. The time is the region pass at
+  full resolution: about 130 ms a band, most of it `putImageData` of every layer's tiles into a region canvas
+  (`tools/export_test.py --perf 15000x10000`). The plan's gate was 3 s and 50 ms. The way down is the one the plan had:
+  composite plain stacks in the pool's workers from the arena (`composite_tile`), and keep the region pass for bands
+  with a filter, a colour match or a blend mode.
+- **The film look's halation on a document above the canvas limit is very slow to export**: 67 s for 20000 × 14000 with
+  blocks of 7.6 s a band. Its blur is 1.2 % of the long side (240 px there), so a band carries 725 rows of margin on
+  either side and the pass is 60 MP, above what the WebGL filters render in one piece.
+- **Inverting the selection of a very large document blocks the window**: 0.5 s, and 1.2 s back, at 30000 × 20000, and
+  the inverted mask is 2.4 GB of tiles (masks are RGBA tiles; one-channel masks were C5's plan and are not built).
+- **The mip refresh after a whole change still blocks 45 to 90 ms** at 15k (the gate was 5 ms): the frame the landings
+  cause builds the atlas slots on the main thread (`docs/PLAN_BCE.md` §3 "E1 as built").
+- **Above 268 MP only the full-size PNG, PSD and ORA are written.** JPEG, WebP, the Size row and the frame need one canvas
+  and are refused with a message; so are the canvas-sized edits (resize, extend, crop to selection, merge into the base
+  through a canvas) wherever they still build a canvas of the picture. A PSD stops at 30,000 px a side and 4 GB a section
+  (a 30000 × 20000 document with one paint layer was 3.7 GB), an ORA at 4 GB (no zip64).
+- **A colour-matched layer keeps the whole flatten for exports up to 268 MP** (the user's open decision (b) of C6 (c) 7c);
+  above it the bands use the statistics the screen uses, the only ones there are.
+- **Seen once, not reproduced**: `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed with
+  `requested: 0` in one of some twenty runs since the mip chains go through the pool.
+
 ### A headless MCP instance keeps Scumble from starting
 
 **Reported** 2026-09-16 ("wieso kann ich die app nicht starten?"), during a Claude Code session in `F:\canvas`.

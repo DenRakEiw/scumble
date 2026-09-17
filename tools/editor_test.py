@@ -1516,22 +1516,28 @@ if (ed.tileMode) {
     if (rep.undo.undo.rectBytes !== wantRect || wantRect === rs.px.tileList().length * 262144) fails.push("the rect step's bytes count tiles the layer holds: " + JSON.stringify(out.report));
 }
 
-// (7) above 268 MP on tiles, and a selection encode without its canvas
+// (7) above what a document on tiles can hold (E5 lifted the canvas limit of 268 MP: tools/huge_test.py; what is left is a
+// side a band's canvas can have and a gigapixel), and a selection encode without its pixels
 if (ed.tileMode) {
-    let refused = null;
-    try { await ed.setBase({ filename: "editor_test_huge.png", subfolder: "", type: "input" }, { naturalWidth: 20000, naturalHeight: 14000 }); } catch (e) { refused = e.message; }
-    out.huge = { refused, size: [ed.width, ed.height] };
-    if (!refused || !/268 MP/.test(refused) || ed.width !== 2400) fails.push("an image above 268 MP was taken on tiles: " + JSON.stringify(out.huge));
+    out.huge = [];
+    for (const [w, h] of [[70000, 1000], [40000, 30000]]) {
+        let refused = null;
+        try { await ed.setBase({ filename: "editor_test_huge.png", subfolder: "", type: "input" }, { naturalWidth: w, naturalHeight: h }); } catch (e) { refused = e.message; }
+        out.huge.push({ refused, size: [ed.width, ed.height] });
+        if (!refused || !/above what a document can hold/.test(refused) || ed.width !== 2400) fails.push("an image of " + w + " x " + h + " was taken on tiles: " + JSON.stringify(out.huge));
+    }
 }
 await run("new_canvas", { width: 5000, height: 4000, doc: d.id });   // above SYNC_ENCODE_PX: the background encode
 await run("select_rect", { x: 100, y: 100, w: 300, h: 200, doc: d.id });
 {
     for (let i = 0; i < 100 && ed._selEncoding; i++) await wait(50);   // an autosave's encode still on its way
     const sel = ed.sel;
+    // on tiles the PNG is read from the tiles (E5), on canvases from the canvas
     sel.toCanvas = () => { throw new Error("editor_test: no canvas"); };
+    sel.readRect = () => { throw new Error("editor_test: no pixels"); };
     ed.selectionEncoded = false; ed.selectionDataUrl = null;
     let threw = null;
-    try { ed.getValue(); } catch (e) { threw = e.message; } finally { delete sel.toCanvas; }
+    try { ed.getValue(); } catch (e) { threw = e.message; } finally { delete sel.toCanvas; delete sel.readRect; }
     out.encode = { threw, stuck: !!ed._selEncoding };
     ed.getValue();
     for (let i = 0; i < 100 && !ed.selectionDataUrl; i++) await wait(50);
@@ -1797,7 +1803,10 @@ try {
     const s2 = await saved();
     if (!s2 || !s2.selection) fails.push("the saved document has no selection");
     else {
-        out.sel = { inNew: await pixelOf(s2.selection, 2100, 2100), inOld: await pixelOf(s2.selection, 50, 50) };
+        // E5: on tiles the PNG holds the box the selection covers, and `selectionBox` says where it goes
+        const sb = s2.selectionBox || [0, 0, 5000, 4000];
+        const at = async (x, y) => (x >= sb[0] && y >= sb[1] && x < sb[0] + sb[2] && y < sb[1] + sb[3] ? pixelOf(s2.selection, x - sb[0], y - sb[1]) : [0, 0, 0, 0]);
+        out.sel = { inNew: await at(2100, 2100), inOld: await at(50, 50), box: s2.selectionBox || null };
         if (!(out.sel.inNew[3] > 0) || out.sel.inOld[3] > 0) fails.push("the saved selection is not the one made just before the restart: " + JSON.stringify(out.sel));
     }
 } finally {
