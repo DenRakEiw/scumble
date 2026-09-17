@@ -38,6 +38,8 @@ if "--json" in ARGS:
     del ARGS[i:i + 2]
 SIZE = next((a for a in ARGS if "x" in a.lower() and a[0].isdigit()), "15000x10000")
 ONLY = [a for a in ARGS if not a[0].isdigit() and not a.startswith("-")]
+# rows that change the document (B item 7): run only when named, after the rows they need
+OPT_IN = ("blend_export_png", "blend_export_psd", "blend_wand", "filter_export_png", "filter_export_psd", "filter_wand")
 
 PROBES = r"""
 (() => {
@@ -349,6 +351,42 @@ return row(() => saveTo("png"));
     ("export_psd", True, r"""
 return row(() => saveTo("psd"));
 """),
+    ("blend_export_png", True, r"""
+// B item 7: the paint layer in a blend mode (multiply), which `stackPlan` used to turn away
+const paint = ed.layers.find((l) => l.kind === "paint");
+if (!paint) return { skipped: "no paint layer" };
+await run("select_none", { doc: window.__n1doc });
+await run("set_layer", { doc: window.__n1doc, layer: paint.id, blend: "multiply" });
+ed.renderLayers(); ed.draw();
+return row(() => saveTo("png"));
+"""),
+    ("blend_export_psd", True, r"""
+return row(() => saveTo("psd"));
+"""),
+    ("blend_wand", True, r"""
+ed.clearUndo(); await run("select_none", { doc: window.__n1doc });
+const r = await row(async () => { await ed.wandSelect(2500, 2500, "replace"); return { bounds: ed.getBounds(), status: ed.status }; });
+await run("select_none", { doc: window.__n1doc });
+const paint = ed.layers.find((l) => l.kind === "paint");
+if (paint) await run("set_layer", { doc: window.__n1doc, layer: paint.id, blend: "normal" });
+return r;
+"""),
+    ("filter_export_png", True, r"""
+// B item 7: a levels layer over the stack
+await run("select_none", { doc: window.__n1doc });
+if (!ed.layers.some((l) => l.kind === "filter")) await run("add_filter", { doc: window.__n1doc, type: "levels", params: { gamma: 1.2 } });
+ed.renderLayers(); ed.draw();
+return row(() => saveTo("png"));
+"""),
+    ("filter_export_psd", True, r"""
+return row(() => saveTo("psd"));
+"""),
+    ("filter_wand", True, r"""
+ed.clearUndo(); await run("select_none", { doc: window.__n1doc });
+const r = await row(async () => { await ed.wandSelect(2500, 2500, "replace"); return { bounds: ed.getBounds(), status: ed.status }; });
+await run("select_none", { doc: window.__n1doc });
+return r;
+"""),
     ("close", False, r"""
 const id = window.__n1doc;
 window.__n1doc = null; window.__n1blob = null;
@@ -434,6 +472,8 @@ async def run_all(c):
     results = {"size": SIZE, "profiled": PROFILE, "rows": {}}
     for name, profiled, body in ROWS:
         if ONLY and name not in ONLY and name not in ("build_the_file", "open_the_file", "close"):
+            continue
+        if name in OPT_IN and name not in ONLY:
             continue
         expr = PRE.replace("__W__", w).replace("__H__", h).replace("__BODY__", body)
         prof = None

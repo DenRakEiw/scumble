@@ -17,7 +17,7 @@ import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromC
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
-import { setKernels, kernelsMode } from "./px/kernels.js";
+import { setKernels, kernelsMode, OPS } from "./px/kernels.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
@@ -5061,11 +5061,11 @@ class InpaintEditor {
 
     /**
      * The full-resolution composite as a plain stack the pool's workers can composite from the arena themselves
-     * (docs/PLAN_BCE.md §3b, B item 1): `[{ px, mask, x, y, alpha }]`, the base first, or null when any layer the
-     * composite shows needs more than source-over of its tiles at an opacity through a mask on its own grid (a filter
-     * layer, a blend mode, a colour match, a transform in progress, a live stroke, a scaled or fractional layer). The
-     * same layers in the same order as `drawLayersInto` draws them, and the same exclusions as `boxReach`: this is a
-     * third walk of the stack, so it stays next to the second.
+     * (docs/PLAN_BCE.md §3b, B item 1): `[{ px, mask, x, y, alpha, op }]`, the base first, or null when any layer the
+     * composite shows needs more than its tiles at an opacity through a mask on its own grid, source-over or in its
+     * blend mode (`op`, the kernel's number: B item 7): a filter layer, a colour match, a transform in progress, a live
+     * stroke, a scaled or fractional layer. The same layers in the same order as `drawLayersInto` draws them, and the
+     * same exclusions as `boxReach`: this is a third walk of the stack, so it stays next to the second.
      */
     stackPlan({ forRun = true, upTo = null } = {}) {
         if (!this.tileMode || !this.base || !partsUsable() || !arenaEnabled() || InpaintEditor.bands === false || InpaintEditor.stacks === false) return null;
@@ -5079,14 +5079,15 @@ class InpaintEditor {
             if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
             if (l.kind === "filter") return null;
             if (forRun && (this.isControl(l) || this.isReference(l))) continue;
-            if (l.blend && l.blend !== "normal") return null;
+            const op = l.blend && l.blend !== "normal" ? OPS[l.blend] : 0;
+            if (!(op >= 0) || (op && InpaintEditor.stackBlends === false)) return null;
             if (this.matchActive(l) || (this.pending && this.pending.layer === l) || this.liveStrokeOn(l)) return null;
             const px = l.px;
             if (!isTilePixels(px) || px.width !== l.w || px.height !== l.h || l.x !== Math.round(l.x) || l.y !== Math.round(l.y)) return null;
             const mask = l.maskPx ? this.tileMaskOf(l) : null;
             if (l.maskPx && !mask) return null;
             const alpha = Math.round(Math.max(0, Math.min(1, l.opacity ?? 1)) * 255);
-            out.push({ px, mask, x: l.x, y: l.y, alpha });
+            out.push({ px, mask, x: l.x, y: l.y, alpha, op });
         }
         return out;
     }
@@ -5105,7 +5106,7 @@ class InpaintEditor {
     holdStack(plan) {
         if (!plan) return null;
         for (const s of plan) if (s && (!stackInArena(s.px) || (s.mask && !stackInArena(s.mask)))) return null;
-        const stores = plan.map((s) => s && ({ snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha }));
+        const stores = plan.map((s) => s && ({ snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0 }));
         return { stores, release() { for (const s of stores) if (s) { s.snap.release(); if (s.mask) s.mask.release(); } } };
     }
 

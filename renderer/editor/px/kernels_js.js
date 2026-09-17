@@ -18,6 +18,15 @@ export const OPS = Object.freeze({
     "source-atop": 2,
     "destination-in": 3,
     copy: 4,
+    // the blend modes (a layer's `blend`), source-over with B(backdrop, source) where both cover
+    multiply: 5,
+    screen: 6,
+    overlay: 7,
+    darken: 8,
+    lighten: 9,
+    "soft-light": 10,
+    "hard-light": 11,
+    difference: 12,
 });
 
 // ---- element kinds and byte order --------------------------------------------------------------
@@ -339,7 +348,20 @@ function similarAt(d, i, r0, g0, b0, a0, tol) {
  * Every channel, alpha included, follows the same formula when the source's alpha byte is
  * taken as 255 for "sp", so a SIMD port can treat all sixteen bytes of four pixels alike.
  * The operator is chosen once per layer, not per pixel, and the common case (no mask, full
- * opacity) has loops of its own. The nine blend modes come in C6 (docs/PLAN_BCE.md §5).
+ * opacity) has loops of its own.
+ *
+ * The eight blend modes (ops 5 to 12, docs/PLAN_BCE.md §3b B item 7) are the W3C formula in the same maths:
+ *
+ *   cb = the backdrop's straight colour: dp unpremultiplied as at the end (dp itself where da is 255)
+ *   r  = mul255(sp, 255 − da) + mul255(dp, inv) + mul255(mul255(sa, da), B(cb, s.c)), at most ra
+ *   ra = sa + mul255(da, inv)
+ *     multiply    B = mul255(b, s)
+ *     screen      B = 255 − mul255(255 − b, 255 − s)
+ *     hard-light  B = s ≤ 127 ? mul255(b, 2s) : 255 − mul255(255 − b, 510 − 2s)
+ *     overlay     B = hard-light with b and s swapped
+ *     darken, lighten, difference   min, max, |b − s|
+ *     soft-light  B = s ≤ 127 ? b − mul255(mul255(255 − 2s, b), 255 − b)
+ *                             : b + floor(((2s − 255) · (SOFT_D[b] − 257·b) + 32767) / 65535)
  */
 export function compositeTile(dst, srcs, ops, alphas, masks = null) {
     const d = bytesOf(dst);
@@ -361,6 +383,7 @@ export function compositeTile(dst, srcs, ops, alphas, masks = null) {
         else if (op === 1) erase(d, src, o, mask, px);
         else if (op === 2) atop(d, src, o, mask, px);
         else if (op === 3) keepIn(d, src, o, mask, px);
+        else if (op >= 5 && op <= 12) blendOp(d, src, o, mask, px, op);
         else copyOp(d, src, o, mask, px);
     }
     for (let i = 0, n = px * 4; i < n; i += 4) {
@@ -501,6 +524,89 @@ function copyOp(d, s, o, mask, px) {
         t = s[i + 1] * sa + 128; const g = (t + (t >> 8)) >> 8;
         t = s[i + 2] * sa + 128; const b = (t + (t >> 8)) >> 8;
         lerpStore(d, i, r, g, b, sa, m);
+    }
+}
+
+/** round(65535 · d(b / 255)) of soft-light: d = ((16b − 12)b + 4)b up to a quarter (b ≤ 63), else the square root. The crate holds the same numbers. */
+const SOFT_D = new Uint16Array([
+    0, 1016, 2008, 2977, 3923, 4846, 5746, 6625, 7482, 8318, 9134, 9929, 10704, 11459, 12195, 12912,
+    13611, 14291, 14954, 15600, 16228, 16840, 17436, 18016, 18580, 19129, 19664, 20184, 20690, 21183, 21663, 22129,
+    22584, 23026, 23457, 23876, 24284, 24682, 25070, 25448, 25817, 26176, 26527, 26870, 27205, 27532, 27852, 28166,
+    28473, 28774, 29069, 29360, 29645, 29926, 30203, 30476, 30746, 31013, 31278, 31540, 31800, 32059, 32317, 32575,
+    32832, 33087, 33341, 33592, 33842, 34090, 34336, 34581, 34823, 35064, 35304, 35541, 35778, 36012, 36245, 36477,
+    36707, 36936, 37163, 37389, 37613, 37837, 38059, 38279, 38499, 38717, 38934, 39149, 39364, 39577, 39789, 40000,
+    40210, 40419, 40627, 40834, 41040, 41244, 41448, 41651, 41852, 42053, 42253, 42452, 42650, 42847, 43043, 43238,
+    43432, 43626, 43818, 44010, 44201, 44391, 44580, 44769, 44957, 45144, 45330, 45515, 45700, 45884, 46067, 46249,
+    46431, 46612, 46792, 46972, 47151, 47329, 47507, 47684, 47860, 48036, 48211, 48385, 48559, 48732, 48904, 49076,
+    49248, 49418, 49588, 49758, 49927, 50095, 50263, 50430, 50597, 50763, 50929, 51094, 51258, 51422, 51586, 51749,
+    51911, 52073, 52235, 52396, 52556, 52716, 52876, 53035, 53193, 53351, 53509, 53666, 53823, 53979, 54135, 54290,
+    54445, 54600, 54754, 54907, 55060, 55213, 55365, 55517, 55669, 55820, 55971, 56121, 56271, 56420, 56569, 56718,
+    56866, 57014, 57162, 57309, 57455, 57602, 57748, 57893, 58039, 58184, 58328, 58472, 58616, 58760, 58903, 59046,
+    59188, 59330, 59472, 59613, 59755, 59895, 60036, 60176, 60316, 60455, 60594, 60733, 60872, 61010, 61148, 61285,
+    61422, 61559, 61696, 61832, 61968, 62104, 62240, 62375, 62510, 62644, 62779, 62913, 63046, 63180, 63313, 63446,
+    63578, 63711, 63843, 63974, 64106, 64237, 64368, 64499, 64629, 64759, 64889, 65019, 65148, 65277, 65406, 65535,
+]);
+
+function hardLight(b, s) {
+    if (s <= 127) { const t = b * 2 * s + 128; return (t + (t >> 8)) >> 8; }
+    const t = (255 - b) * (510 - 2 * s) + 128;
+    return 255 - ((t + (t >> 8)) >> 8);
+}
+
+/** B(cb, cs) of a blend mode, both straight 0..255. */
+function blendOf(op, b, s) {
+    switch (op) {
+        case 5: { const t = b * s + 128; return (t + (t >> 8)) >> 8; }
+        case 6: { const t = (255 - b) * (255 - s) + 128; return 255 - ((t + (t >> 8)) >> 8); }
+        case 7: return hardLight(s, b);
+        case 8: return b < s ? b : s;
+        case 9: return b > s ? b : s;
+        case 10: {
+            if (s <= 127) {
+                let t = (255 - 2 * s) * b + 128; t = ((t + (t >> 8)) >> 8) * (255 - b) + 128;
+                return b - ((t + (t >> 8)) >> 8);
+            }
+            return b + Math.floor(((2 * s - 255) * (SOFT_D[b] - b * 257) + 32767) / 65535);
+        }
+        case 11: return hardLight(b, s);
+        default: return b > s ? b - s : s - b;
+    }
+}
+
+function blendOp(d, s, o, mask, px, op) {
+    for (let p = 0, i = 0; p < px; p++, i += 4) {
+        const m = mask ? mask[p] : 255;
+        if (m === 0) continue;
+        const sa = effectiveAlpha(s[i + 3], o);
+        if (sa === 0) continue;
+        const inv = 255 - sa, da = d[i + 3];
+        if (da === 255) {
+            let t = d[i] * inv + 128, u = sa * blendOf(op, d[i], s[i]) + 128;
+            const r = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+            t = d[i + 1] * inv + 128; u = sa * blendOf(op, d[i + 1], s[i + 1]) + 128;
+            const g = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+            t = d[i + 2] * inv + 128; u = sa * blendOf(op, d[i + 2], s[i + 2]) + 128;
+            const b = ((t + (t >> 8)) >> 8) + ((u + (u >> 8)) >> 8);
+            lerpStore(d, i, r, g, b, 255, m);
+            continue;
+        }
+        let t = da * inv + 128;
+        const ra = sa + ((t + (t >> 8)) >> 8);
+        t = sa * da + 128;
+        const both = (t + (t >> 8)) >> 8, only = 255 - da, h = da >> 1;
+        let r = 0, g = 0, b = 0;
+        for (let c = 0; c < 3; c++) {
+            const dp = d[i + c], sc = s[i + c];
+            let cb = 0;
+            if (da !== 0) { cb = ((dp * 255 + h) / da) | 0; if (cb > 255) cb = 255; }
+            t = sc * sa + 128; t = ((t + (t >> 8)) >> 8) * only + 128;
+            let v = (t + (t >> 8)) >> 8;
+            t = dp * inv + 128; v += (t + (t >> 8)) >> 8;
+            t = both * blendOf(op, cb, sc) + 128; v += (t + (t >> 8)) >> 8;
+            if (v > ra) v = ra;
+            if (c === 0) r = v; else if (c === 1) g = v; else b = v;
+        }
+        lerpStore(d, i, r, g, b, ra, m);
     }
 }
 

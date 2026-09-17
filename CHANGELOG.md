@@ -5,6 +5,12 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.18 — unreleased
 
+- **Documents with blend modes save and select as fast as plain ones.** A layer set to multiply, screen, overlay,
+  darken, lighten, soft light, hard light or difference no longer sends the whole document the slow way: the background
+  workers now know the eight blend modes. A 15000 × 10000 picture with a full multiply layer saves as PNG in 1.8
+  seconds instead of 3.4 and as PSD in 1.2 instead of 3.8, and a magic wand click across it takes 1.1 seconds instead
+  of 3.9, with the window standing still for 0.1 seconds instead of 1.2. The pixels can differ from the old way by one
+  or two levels where layers are partly transparent, in rare places by three with overlay, soft light and hard light.
 - **Opening a large PNG no longer freezes the window.** A PNG of 32 megapixels and more that needs no colour
   management (8 bits, no colour profile, no gamma entry) is now read by a background worker straight into the tile
   engine, the way pictures above 268 MP already were. A 15000 × 10000 file opens in 2.7 seconds instead of 3.2, and

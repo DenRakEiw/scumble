@@ -202,8 +202,8 @@ function storeRows(store, X0, W, Y0, n, out, alphaOnly = false) {
 
 /**
  * Rows of a plain stack composited here, from the tiles where they lie (docs/PLAN_BCE.md §3b, B item 1): `stack` is
- * `{ base, layers: [{ x, y, w, h, tiles, alpha, mask }] }`, every store as `storeRows` takes it, a layer drawn
- * source-over at `alpha` (0..255) through its mask's alpha (a store on the layer's own grid; where the mask has no
+ * `{ base, layers: [{ x, y, w, h, tiles, alpha, op, mask }] }`, every store as `storeRows` takes it, a layer drawn
+ * source-over or in its blend mode (`op`, the kernel's number; B item 7) at `alpha` (0..255) through its mask's alpha (a store on the layer's own grid; where the mask has no
  * tile the layer shows nothing). The rows `y` to `y + rows`, or with `above` the one row over them (null at the top),
  * `w` pixels from the image's column `x0`. `into`: a cleared buffer of that size to composite in (a part of a shared one).
  * `base` may be null: nothing below the layers (the wand's and the bucket's "sample the layer").
@@ -214,15 +214,15 @@ function rowsOfStack(msg, above = false, into = null) {
     const W = msg.w, X0 = msg.x0 | 0, st = msg.stack;
     const dst = into || new Uint8Array(W * n * 4);
     if (st.base) storeRows(st.base, X0, W, Y0, n, dst);
-    const srcs = [], alphas = [], masks = [];
+    const srcs = [], alphas = [], masks = [], ops = [];
     for (const l of st.layers) {
         const src = new Uint8Array(W * n * 4);
         if (!storeRows(l, X0, W, Y0, n, src)) continue;
         let mask = null;
         if (l.mask) { mask = new Uint8Array(W * n); storeRows({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, X0, W, Y0, n, mask, true); }
-        srcs.push(src); alphas.push(l.alpha); masks.push(mask);
+        srcs.push(src); alphas.push(l.alpha); masks.push(mask); ops.push(l.op | 0);
     }
-    if (srcs.length) compositeTile(dst, srcs, srcs.map(() => 0), alphas, masks);
+    if (srcs.length) compositeTile(dst, srcs, ops, alphas, masks);
     return dst;
 }
 

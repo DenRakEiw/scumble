@@ -71,8 +71,8 @@ export function bandRows(width, height, read, rows = TILE) {
 
 /**
  * A plain stack as a row source (docs/PLAN_BCE.md §3b, B item 1): `stores[0]` is the base, the others the layers from
- * the bottom, each `{ snap, mask, x, y, alpha }` (`snap` and `mask` clones of tile pixels the caller releases, `mask`
- * on the layer's grid or null, `alpha` 0..255). A part names the tiles its rows touch; the worker composites them
+ * the bottom, each `{ snap, mask, x, y, alpha, op }` (`snap` and `mask` clones of tile pixels the caller releases,
+ * `mask` on the layer's grid or null, `alpha` 0..255, `op` 0 for source-over or the kernel's number of a blend mode). A part names the tiles its rows touch; the worker composites them
  * (inpaint_worker.js `rowsOfStack`). Every tile must be in the arena: `stackInArena` says so beforehand.
  */
 export function stackRows(width, height, stores) {
@@ -115,7 +115,7 @@ export function stackArgs(stores) {
         for (const s of over) {
             const tiles = rowsOf(s.snap, s.y, a, b);
             if (!tiles || !(s.alpha > 0)) continue;
-            layers.push({ x: s.x, y: s.y, w: s.snap.width, h: s.snap.height, alpha: s.alpha, tiles, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null });
+            layers.push({ x: s.x, y: s.y, w: s.snap.width, h: s.snap.height, alpha: s.alpha, op: s.op | 0, tiles, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null });
         }
         return { base: base ? { x: 0, y: 0, w: base.snap.width, h: base.snap.height, tiles: rowsOf(base.snap, 0, a, b) || {} } : null, layers };
     };

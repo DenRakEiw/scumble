@@ -548,16 +548,64 @@ if (db.bytes < 0 || db.worst > 2) throw new Error("the stack differs from the ba
 // a PSD's merged picture comes the same way, and the file is whole
 const psd = await ed.exportLayeredBands("psd");
 if (!psd || psd.layers !== 5) throw new Error("the PSD of the plain stack: " + JSON.stringify(psd && { layers: psd.layers }));
-// what the stack cannot draw falls back: a blend mode, a filter layer
-ed.layers[0].blend = "multiply";
+// what the stack cannot draw falls back: a filter layer, a blend mode the kernel does not know
+ed.layers[0].blend = "no-such-mode";
 const p2 = ed.stackPlan({ forRun: true });
 ed.layers[0].blend = "normal";
 const fx = ed.addFilterLayer("levels");
 const p3 = ed.stackPlan({ forRun: true });
 ed.removeLayer(fx.id);
-if (p2 || p3) throw new Error("a blend mode or a filter layer still gave a stack plan");
-await run("close_document", { doc: d.id, force: true });
+if (p2 || p3) throw new Error("an unknown blend mode or a filter layer still gave a stack plan");
+window.__exStack = d.id;
 return { flatten: dd, twos, bands: db, fraction: +(dd.bytes / a.data.length).toFixed(5), psdMB: +(psd.blob.size / 1048576).toFixed(1) };
+"""),
+    ("blend_modes_are_composited_by_the_workers", """
+// B item 7, part 1: the eight blend modes in `composite_tile`. The same document, every layer in the mode, against the
+// flatten (the compositor's shader in floats, rounded once per layer) and against the bands of the region pass.
+const ed = ednow(window.__exStack);
+host.shell.activate(ed);
+const E = Editor(ed);
+const W = ed.width;
+const out = {};
+let worstOf = 0;
+for (const mode of ["multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "difference"]) {
+    for (const l of ed.layers) l.blend = mode;
+    ed.renderLayers();
+    const plan = ed.stackPlan({ forRun: true });
+    if (!plan || plan.length !== 5 || plan.slice(1).some((s) => !(s.op >= 5))) throw new Error(mode + ": the stack plan is " + JSON.stringify(plan && plan.map((s) => s.op)));
+    const r = await ed.encodeComposite({ forRun: true }, { hash: false });
+    if (!r || r.stack !== 4) throw new Error(mode + ": the composite was not written from the stack");
+    const flat = ed.flattenToCanvas({ forRun: true });
+    const old = await E.parts.encodeCanvas(flat, { hash: false });
+    flat.width = 1; flat.height = 1;
+    const a = await decode(r.blob), b = await decode(old.blob);
+    let worst = 0, over2 = 0, sum = 0;
+    for (let i = 0; i < a.data.length; i++) { const e = Math.abs(a.data[i] - b.data[i]); if (e > worst) worst = e; if (e > 2) over2++; sum += e; }
+    out[mode] = { worst, over2, mean: +(sum / a.data.length).toFixed(4) };
+    worstOf = Math.max(worstOf, worst);
+    // and the mode is really drawn: the picture is not the one of normal layers
+    if (mode === "multiply") {
+        for (const l of ed.layers) l.blend = "normal";
+        const n = await decode((await ed.encodeComposite({ forRun: true }, { hash: false })).blob);
+        let differs = 0;
+        for (let i = 0; i < a.data.length; i += 4) if (Math.abs(a.data[i] - n.data[i]) > 8) differs++;
+        if (differs < a.data.length / 40) throw new Error("multiply gave the picture of normal layers");
+    }
+}
+for (const l of ed.layers) l.blend = "normal";
+// four layers over each other in one mode, each rounded to 8 bits on both sides. Measured: two levels at most in five modes; three levels on
+// 66 to 382 of 25 million bytes in overlay, soft-light and hard-light, whose B has a slope of 2 to 4 (an error below it is doubled)
+const bad = Object.entries(out).filter(([, v]) => v.worst > 3 || v.over2 > W * ed.height * 4 / 10000);
+if (bad.length) throw new Error("a blend mode composited by the workers differs from the flatten: " + JSON.stringify(out));
+// with the blends switched off the plan turns the document away again (the A/B switch of the benchmark)
+ed.layers[0].blend = "screen";
+E.stackBlends = false;
+let off;
+try { off = ed.stackPlan({ forRun: true }); } finally { E.stackBlends = true; ed.layers[0].blend = "normal"; }
+if (off) throw new Error("stackBlends = false still gave a plan");
+await run("close_document", { doc: window.__exStack, force: true });
+window.__exStack = null;
+return out;
 """),
     ("close", """
 const id = window.__ex;

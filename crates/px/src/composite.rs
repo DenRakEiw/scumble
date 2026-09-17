@@ -18,12 +18,57 @@
 //! Every channel, alpha included, follows the same formula when the source's alpha byte is
 //! taken as 255 for "sp", which is what lets the SIMD path treat the 16 bytes of four pixels
 //! alike. Canvas 2D keeps premultiplied 8-bit pixels too, so the precision is the same.
+//!
+//! The eight blend modes (B item 7, ops 5 to 12) are the W3C compositing formula in the same maths:
+//!
+//!   cb = the backdrop's straight colour: dp unpremultiplied as at the end (dp itself where da is 255)
+//!   r  = mul255(sp, 255 − da) + mul255(dp, inv) + mul255(mul255(sa, da), B(cb, s.c)), at most ra
+//!   ra = sa + mul255(da, inv)
+//!     multiply    B = mul255(b, s)
+//!     screen      B = 255 − mul255(255 − b, 255 − s)
+//!     hard-light  B = s ≤ 127 ? mul255(b, 2s) : 255 − mul255(255 − b, 510 − 2s)
+//!     overlay     B = hard-light with b and s swapped
+//!     darken, lighten, difference   min, max, |b − s|
+//!     soft-light  B = s ≤ 127 ? b − mul255(mul255(255 − 2s, b), 255 − b)
+//!                             : b + ((2s − 255) · (D[b] − 257·b) + 32767) / 65535
+//!                 D[b] = round(65535 · d(b / 255)), d as the specification has it (a table, so that no
+//!                 square root is taken twice in two languages)
+//!   Over an opaque backdrop that is r = mul255(dp, inv) + mul255(sa, B), which the SIMD path takes
+//!   for four opaque pixels at a time.
 
 pub const SOURCE_OVER: u8 = 0;
 pub const DESTINATION_OUT: u8 = 1;
 pub const SOURCE_ATOP: u8 = 2;
 pub const DESTINATION_IN: u8 = 3;
 pub const COPY: u8 = 4;
+pub const MULTIPLY: u8 = 5;
+pub const SCREEN: u8 = 6;
+pub const OVERLAY: u8 = 7;
+pub const DARKEN: u8 = 8;
+pub const LIGHTEN: u8 = 9;
+pub const SOFT_LIGHT: u8 = 10;
+pub const HARD_LIGHT: u8 = 11;
+pub const DIFFERENCE: u8 = 12;
+
+/// round(65535 · d(b / 255)) of soft-light: d = ((16b − 12)b + 4)b up to a quarter (b ≤ 63), else the square root.
+static SOFT_D: [u16; 256] = [
+    0, 1016, 2008, 2977, 3923, 4846, 5746, 6625, 7482, 8318, 9134, 9929, 10704, 11459, 12195, 12912,
+    13611, 14291, 14954, 15600, 16228, 16840, 17436, 18016, 18580, 19129, 19664, 20184, 20690, 21183, 21663, 22129,
+    22584, 23026, 23457, 23876, 24284, 24682, 25070, 25448, 25817, 26176, 26527, 26870, 27205, 27532, 27852, 28166,
+    28473, 28774, 29069, 29360, 29645, 29926, 30203, 30476, 30746, 31013, 31278, 31540, 31800, 32059, 32317, 32575,
+    32832, 33087, 33341, 33592, 33842, 34090, 34336, 34581, 34823, 35064, 35304, 35541, 35778, 36012, 36245, 36477,
+    36707, 36936, 37163, 37389, 37613, 37837, 38059, 38279, 38499, 38717, 38934, 39149, 39364, 39577, 39789, 40000,
+    40210, 40419, 40627, 40834, 41040, 41244, 41448, 41651, 41852, 42053, 42253, 42452, 42650, 42847, 43043, 43238,
+    43432, 43626, 43818, 44010, 44201, 44391, 44580, 44769, 44957, 45144, 45330, 45515, 45700, 45884, 46067, 46249,
+    46431, 46612, 46792, 46972, 47151, 47329, 47507, 47684, 47860, 48036, 48211, 48385, 48559, 48732, 48904, 49076,
+    49248, 49418, 49588, 49758, 49927, 50095, 50263, 50430, 50597, 50763, 50929, 51094, 51258, 51422, 51586, 51749,
+    51911, 52073, 52235, 52396, 52556, 52716, 52876, 53035, 53193, 53351, 53509, 53666, 53823, 53979, 54135, 54290,
+    54445, 54600, 54754, 54907, 55060, 55213, 55365, 55517, 55669, 55820, 55971, 56121, 56271, 56420, 56569, 56718,
+    56866, 57014, 57162, 57309, 57455, 57602, 57748, 57893, 58039, 58184, 58328, 58472, 58616, 58760, 58903, 59046,
+    59188, 59330, 59472, 59613, 59755, 59895, 60036, 60176, 60316, 60455, 60594, 60733, 60872, 61010, 61148, 61285,
+    61422, 61559, 61696, 61832, 61968, 62104, 62240, 62375, 62510, 62644, 62779, 62913, 63046, 63180, 63313, 63446,
+    63578, 63711, 63843, 63974, 64106, 64237, 64368, 64499, 64629, 64759, 64889, 65019, 65148, 65277, 65406, 65535,
+];
 
 #[inline(always)]
 fn mul255(x: u32, y: u32) -> u32 {
@@ -58,8 +103,111 @@ pub fn apply(dst: &mut [u8], layer: &Layer) {
     let dst = &mut dst[..px * 4];
     let src = &layer.src[..px * 4];
     let mask = layer.mask.map(|m| &m[..px]);
+    if layer.op >= MULTIPLY && layer.op <= DIFFERENCE {
+        let start = simd::blend(dst, src, layer.op, layer.alpha, mask);
+        blend_from(dst, src, layer.op, layer.alpha as u32, mask, start);
+        return;
+    }
     let start = simd::layer(dst, src, layer.op, layer.alpha, mask);
     scalar_layer(dst, src, layer.op, layer.alpha as u32, mask, start);
+}
+
+#[inline(always)]
+fn hard_light(b: u32, s: u32) -> u32 {
+    if s <= 127 {
+        mul255(b, 2 * s)
+    } else {
+        255 - mul255(255 - b, 510 - 2 * s)
+    }
+}
+
+/// B(cb, cs) of the blend mode `OP`, both straight 0..255.
+#[inline(always)]
+fn blend_of<const OP: u8>(b: u32, s: u32) -> u32 {
+    match OP {
+        MULTIPLY => mul255(b, s),
+        SCREEN => 255 - mul255(255 - b, 255 - s),
+        OVERLAY => hard_light(s, b),
+        DARKEN => b.min(s),
+        LIGHTEN => b.max(s),
+        SOFT_LIGHT => {
+            if s <= 127 {
+                b - mul255(mul255(255 - 2 * s, b), 255 - b)
+            } else {
+                b + ((2 * s - 255) * (SOFT_D[b as usize] as u32 - b * 257) + 32767) / 65535
+            }
+        }
+        HARD_LIGHT => hard_light(b, s),
+        _ => b.max(s) - b.min(s),
+    }
+}
+
+/// The pixels from `start` on in the blend mode `op`.
+fn blend_from(dst: &mut [u8], src: &[u8], op: u8, o: u32, mask: Option<&[u8]>, start: usize) {
+    match op {
+        MULTIPLY => scalar_blend::<MULTIPLY>(dst, src, o, mask, start),
+        SCREEN => scalar_blend::<SCREEN>(dst, src, o, mask, start),
+        OVERLAY => scalar_blend::<OVERLAY>(dst, src, o, mask, start),
+        DARKEN => scalar_blend::<DARKEN>(dst, src, o, mask, start),
+        LIGHTEN => scalar_blend::<LIGHTEN>(dst, src, o, mask, start),
+        SOFT_LIGHT => scalar_blend::<SOFT_LIGHT>(dst, src, o, mask, start),
+        HARD_LIGHT => scalar_blend::<HARD_LIGHT>(dst, src, o, mask, start),
+        _ => scalar_blend::<DIFFERENCE>(dst, src, o, mask, start),
+    }
+}
+
+#[inline(always)]
+fn scalar_blend<const OP: u8>(dst: &mut [u8], src: &[u8], o: u32, mask: Option<&[u8]>, start: usize) {
+    let px = dst.len() / 4;
+    for i in start..px {
+        let m = match mask {
+            Some(m) => m[i] as u32,
+            None => 255,
+        };
+        if m == 0 {
+            continue;
+        }
+        let s = &src[i * 4..i * 4 + 4];
+        let d = &mut dst[i * 4..i * 4 + 4];
+        let mut sa = s[3] as u32;
+        if o != 255 {
+            sa = mul255(sa, o);
+        }
+        if sa == 0 {
+            continue;
+        }
+        let inv = 255 - sa;
+        let da = d[3] as u32;
+        let mut r = [0u32; 4];
+        if da == 255 {
+            for c in 0..3 {
+                r[c] = mul255(d[c] as u32, inv) + mul255(sa, blend_of::<OP>(d[c] as u32, s[c] as u32));
+            }
+            r[3] = 255;
+        } else {
+            let ra = sa + mul255(da, inv);
+            let both = mul255(sa, da);
+            let only = 255 - da;
+            let h = da >> 1;
+            for c in 0..3 {
+                let dp = d[c] as u32;
+                let cb = if da == 0 { 0 } else { ((dp * 255 + h) / da).min(255) };
+                let sp = mul255(s[c] as u32, sa);
+                r[c] = (mul255(sp, only) + mul255(dp, inv) + mul255(both, blend_of::<OP>(cb, s[c] as u32))).min(ra);
+            }
+            r[3] = ra;
+        }
+        if m != 255 {
+            let im = 255 - m;
+            for c in 0..4 {
+                r[c] = mul255(r[c], m) + mul255(d[c] as u32, im);
+            }
+        }
+        d[0] = r[0] as u8;
+        d[1] = r[1] as u8;
+        d[2] = r[2] as u8;
+        d[3] = r[3] as u8;
+    }
 }
 
 pub fn end(dst: &mut [u8]) {
@@ -178,6 +326,10 @@ mod simd {
         let _ = SOURCE_OVER;
         0
     }
+    #[inline(always)]
+    pub fn blend(_: &mut [u8], _: &[u8], _: u8, _: u8, _: Option<&[u8]>) -> usize {
+        0
+    }
 }
 
 #[cfg(target_feature = "simd128")]
@@ -243,6 +395,83 @@ mod simd {
                     let out = v128_or(v128_or(r, u32x4_shl(g, 8)), v128_or(u32x4_shl(b, 16), u32x4_shl(a, 24)));
                     v128_store(p.add(i) as *mut v128, out);
                 }
+                i += 16;
+            }
+        }
+        n / 4
+    }
+
+    /// hard-light per byte: s ≤ 127 ? mul255(b, 2s) : 255 − mul255(255 − b, 510 − 2s). 2s wraps where it is not
+    /// used, and 510 − 2s is 254 − (2s mod 256) where it is.
+    #[inline(always)]
+    unsafe fn hard_light(b: v128, s: v128) -> v128 {
+        let full = u8x16_splat(255);
+        let s2 = u8x16_add(s, s);
+        let lo = mul255(b, s2);
+        let hi = v128_xor(mul255(v128_xor(b, full), u8x16_sub(u8x16_splat(254), s2)), full);
+        v128_bitselect(hi, lo, u8x16_gt(s, u8x16_splat(127)))
+    }
+
+    /// One source in a blend mode, four pixels at a time where all four backdrop pixels are opaque (the
+    /// others, and all of soft-light with its table, go the scalar way). Returns the pixels done.
+    pub fn blend(dst: &mut [u8], src: &[u8], op: u8, o: u8, mask: Option<&[u8]>) -> usize {
+        if op == SOFT_LIGHT {
+            return 0;
+        }
+        let n = (dst.len() / 16) * 16;
+        unsafe {
+            let pd = dst.as_mut_ptr();
+            let ps = src.as_ptr();
+            let amask = u32x4_splat(0xFF00_0000);
+            let full = u8x16_splat(255);
+            let ov = u8x16_splat(o);
+            let mut i = 0;
+            while i < n {
+                let mv = match mask {
+                    Some(m) => {
+                        let w = (m.as_ptr().add(i / 4) as *const u32).read_unaligned();
+                        let mv = u32x4_splat(w);
+                        let mv = u8x16_shuffle::<0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3>(mv, mv);
+                        if !v128_any_true(mv) {
+                            i += 16;
+                            continue;
+                        }
+                        Some(mv)
+                    }
+                    None => None,
+                };
+                let s = v128_load(ps.add(i) as *const v128);
+                let mut sa = alphas(s);
+                if o != 255 {
+                    sa = mul255(sa, ov);
+                }
+                if !v128_any_true(sa) {
+                    i += 16;
+                    continue;
+                }
+                let d = v128_load(pd.add(i) as *const v128);
+                if !u8x16_all_true(u8x16_eq(alphas(d), full)) {
+                    let m4 = mask.map(|m| &m[i / 4..i / 4 + 4]);
+                    blend_from(&mut dst[i..i + 16], &src[i..i + 16], op, o as u32, m4, 0);
+                    i += 16;
+                    continue;
+                }
+                let b = match op {
+                    MULTIPLY => mul255(d, s),
+                    SCREEN => v128_xor(mul255(v128_xor(d, full), v128_xor(s, full)), full),
+                    OVERLAY => hard_light(s, d),
+                    DARKEN => u8x16_min(d, s),
+                    LIGHTEN => u8x16_max(d, s),
+                    HARD_LIGHT => hard_light(d, s),
+                    _ => u8x16_sub(u8x16_max(d, s), u8x16_min(d, s)),
+                };
+                // the alpha bytes: 255 · inv + sa · 255 is 255 again
+                let r = u8x16_add(mul255(d, v128_xor(sa, full)), mul255(sa, v128_or(b, amask)));
+                let r = match mv {
+                    Some(mv) if !u8x16_all_true(u8x16_eq(mv, full)) => u8x16_add(mul255(r, mv), mul255(d, v128_xor(mv, full))),
+                    _ => r,
+                };
+                v128_store(pd.add(i) as *mut v128, r);
                 i += 16;
             }
         }

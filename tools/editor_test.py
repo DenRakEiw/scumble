@@ -5673,6 +5673,25 @@ try {
 if (!seen.includes("tiles") || !seen.includes("bitmap") || seen.includes("none")) throw new Error("the floods over tiles answered " + JSON.stringify(seen));
 for (const k of Object.keys(canvases)) if (JSON.stringify(over[k]) !== JSON.stringify(canvases[k])) throw new Error(k + ": over tiles " + JSON.stringify(over[k]) + ", over canvases " + JSON.stringify(canvases[k]));
 if (!over.replace[1] || !over.layer[1]) throw new Error("nothing was selected: " + JSON.stringify(over));
+// B item 7: the patch in a blend mode (flat opaque colours, so the two composites are far inside the tolerance of each
+// other): the flood still runs over tiles, and gives the canvases' selection and fill
+const patchLayer = ed.layers.find((l) => l.name === "Patch");
+patchLayer.blend = "multiply";
+ed.renderLayers(); ed.draw();
+if (!ed.floodStack("image")) throw new Error("no flood stack with a layer in multiply");
+let overB, canvasesB;
+const n0 = seen.length;
+ed.floodOverTiles = async (...a) => { const r = await oOver(...a); seen.push(r ? (r.tiles ? "tiles" : "bitmap") : "none"); return r; };
+try {
+    overB = await script();
+    const n = seen.length;
+    if (n === n0 || seen.slice(n0).includes("none")) throw new Error("with a blend mode the floods over tiles answered " + JSON.stringify(seen.slice(n0)));
+    E.stacks = false;
+    canvasesB = await script();
+    if (seen.length !== n) throw new Error("with stacks off the flood still ran over tiles");
+} finally { E.stacks = true; delete ed.floodOverTiles; patchLayer.blend = "normal"; }
+for (const k of Object.keys(canvasesB)) if (JSON.stringify(overB[k]) !== JSON.stringify(canvasesB[k])) throw new Error(k + " (multiply): over tiles " + JSON.stringify(overB[k]) + ", over canvases " + JSON.stringify(canvasesB[k]));
+if (JSON.stringify(overB.replace) === JSON.stringify(over.replace)) throw new Error("multiply selected what normal selected: the mode was not drawn under the wand");
 // the steps after this one expect the small document they had before it
 ed.clearUndo();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });

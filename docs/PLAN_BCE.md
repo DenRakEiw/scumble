@@ -4294,6 +4294,48 @@ canvases for the wand. In this order, each with its row and its gate:
 3. **A colour-matched layer**: its statistics from tiles, the match applied in the worker. Tied to the user's open
    decision (b) of C6 (c) 7c; ask before building it.
 
+#### B item 7, part 1 as built (2026-09-18): the blend modes in `composite_tile`
+
+- **The kernel** (ABI 9, `crates/px/src/composite.rs`, twin `blendOp` in `kernels_js.js`): ops 5 to 12 are multiply,
+  screen, overlay, darken, lighten, soft-light, hard-light and difference (`OPS` carries the names a layer's `blend`
+  has). The W3C formula in the kernel's premultiplied 8-bit integers: `r = mul255(sp, 255 − da) + mul255(dp, inv) +
+  mul255(mul255(sa, da), B(cb, cs))`, never more than the alpha, `cb` the backdrop unpremultiplied as at the end; over
+  an opaque backdrop that is `mul255(dp, inv) + mul255(sa, B)`. Soft-light's square root is a table of 256 16-bit
+  values (`SOFT_D`, the same numbers in the crate and the twin), so no root is taken twice in two languages. The SIMD
+  build takes four pixels at a time where all four backdrop pixels are opaque (seven modes; soft-light and every other
+  block go the scalar way). A megapixel over an opaque tile in Node: multiply 2.2 ms against the twin's 22, overlay 2.7
+  against 31, soft-light 12.9 against 32 (the scalar build 7.5 / 12.6 / 13.8).
+- **`stackPlan`** no longer turns a blend mode away: an entry carries `op` (0, or the kernel's number), `holdStack`,
+  `stackArgs` and `rowsOfStack` pass it on, and the worker hands `composite_tile` the ops instead of zeros. So the PNG
+  export, the run's base upload, the merged picture of PSD and ORA, and the wand and the bucket take the worker path for
+  such a document. `InpaintEditor.stackBlends = false` turns blend modes away again (the A/B switch).
+
+| 15,000 × 10,000, base and a full paint layer in multiply (`native_test.py`, rows `blend_*`) | before | now |
+|---|---|---|
+| export PNG: wall / longest block | 3,416 / 157 ms | **1,786 / 36 ms** |
+| export PSD | 3,756 / 164 ms | **1,187 / 70 ms** |
+| wand across the picture | 3,937 / 1,206 ms | **1,088 / 112 ms** |
+
+**Against the flatten** (`export_test.py` `blend_modes_are_composited_by_the_workers`: the four layers of the plain-stack
+step, all in one mode, mode by mode): two levels at most in multiply, screen, darken, lighten and difference; three
+levels on 66 to 382 of 25 million bytes in overlay, soft-light and hard-light, whose B has a slope of 2 to 4, so a
+one-level difference below it is doubled. Mean 0.04 to 0.13 levels. The gate is three levels, and more than two on at
+most 0.01 % of the bytes. `px_test.js` holds the twin to a plain reference and to both Rust builds bit for bit (every
+mode, opaque and translucent backdrops, opacity, masks, tails) and to the specification's floats (1.5 levels over an
+opaque tile). **The wand's region can end elsewhere than over the canvases.** Measured on a 15,000 x 10,000 gradient with
+the benchmark's paint layer (35 % yellow) in multiply, both composites in one state (`E.stacks` off and on): one level
+apart on 20 % of the bytes, never two, mean +0.009; the wand from the same click selects 40.5 million pixels over
+tiles and 41.7 over canvases, its far edge 255 px nearer (11,364 against 11,619), which is one level of that gradient
+under the multiply: the region ends where a pixel sits on the tolerance. At 6,000 x 4,000 the same document gives the
+same selection both ways, and in normal mode the two composites are the same bytes. (The integer maths rounds B, the
+two products and the sum; the shader rounds once. Exact 16-bit products, rounded once, would be the way to close it;
+not built and not measured.) With flat colours the selection and the fill are the same bytes
+(`editor_test.py` `the_flood_over_tiles_is_the_flood_over_canvases`, now with the patch in multiply too).
+Three mutations turned a gate red: the twin's overlay with its arguments swapped and the SIMD screen without its
+complement (`px_test.js`), the worker dropping the ops (the export step and the editor step). Gates, offline: tiles
+`pixels editor composite commands film export log mcp pxjobs nodecopy`, canvas `pixels editor composite commands film`,
+ALL PASS.
+
 **Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
 order: 4, 1, 2, 3, 5, 6.
 

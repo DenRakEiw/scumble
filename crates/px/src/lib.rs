@@ -38,7 +38,7 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature; `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    8
+    9
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -220,7 +220,8 @@ pub unsafe extern "C" fn flood_shape(
 /// `n` sources over the tile `dst` (`px` pixels of RGBA8, straight alpha, in place).
 /// `srcs` and `masks` are arrays of n u32 pointers (a mask pointer may be 0), `ops` and
 /// `alphas` arrays of n bytes (0 source-over, 1 destination-out, 2 source-atop,
-/// 3 destination-in, 4 copy; opacity 0..255).
+/// 3 destination-in, 4 copy, 5 to 12 the blend modes multiply, screen, overlay, darken,
+/// lighten, soft-light, hard-light, difference; opacity 0..255).
 #[no_mangle]
 pub unsafe extern "C" fn composite_tile(dst: *mut u8, px: usize, n: usize, srcs: *const u32, ops: *const u8, alphas: *const u8, masks: *const u32) {
     let srcs = slice::from_raw_parts(srcs, n);
