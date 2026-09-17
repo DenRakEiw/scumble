@@ -236,7 +236,7 @@ BODY = """
         }
     }
     window.__pxjobs = "done";
-    E.kernels = "js";
+    E.kernels = "rust";   // the default since phase R; "js" here left every later gate of the instance on the twins
     shell.closeDocument(ed, { force: true });
     return JSON.stringify({ size: `${W}x${H}`, rows, focused: document.hasFocus(), visibility: document.visibilityState, cores: navigator.hardwareConcurrency });
 })()

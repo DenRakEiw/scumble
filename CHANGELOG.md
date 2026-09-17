@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.17 — unreleased
+## 0.1.17 — 2026-09-17
 
 - **Pictures larger than 268 megapixels open.** Chromium cannot hold a canvas above 268 MP, and until now neither could
   Scumble. A PNG of that size is now read piece by piece straight into the tile engine: a 30000 × 20000 file (600 MP,

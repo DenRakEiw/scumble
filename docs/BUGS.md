@@ -32,7 +32,7 @@ measured and not met, and what still needs a canvas of the picture. Each has a n
   composite plain stacks in the pool's workers from the arena (`composite_tile`), and keep the region pass for bands
   with a filter, a colour match or a blend mode.
 - **The film look's halation on a document above the canvas limit is very slow to export**: 67 s for 20000 × 14000 with
-  blocks of 7.6 s a band. Its blur is 1.2 % of the long side (240 px there), so a band carries 725 rows of margin on
+  blocks of 7.6 s a band, 146 s with blocks of 16 s at 30000 × 20000. Its blur is 1.2 % of the long side (240 px there), so a band carries 725 rows of margin on
   either side and the pass is 60 MP, above what the WebGL filters render in one piece.
 - **Inverting the selection of a very large document blocks the window**: 0.5 s, and 1.2 s back, at 30000 × 20000, and
   the inverted mask is 2.4 GB of tiles (masks are RGBA tiles; one-channel masks were C5's plan and are not built).
