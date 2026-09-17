@@ -78,10 +78,16 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-16) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
-## Where things stand (2026-09-17)
+## Where things stand (2026-09-18)
 
-**Releases.** **0.1.17 is published** (Latest since 2026-09-17; `latest.yml` on the feed says 0.1.17). It carries phase E
-(E1 to E5). `package.json` is **0.1.18** with an empty section in `CHANGELOG.md`. Exe gates for 0.1.17, all `--offline`:
+**Releases.** **0.1.18 is tagged (`v0.1.18`, 2026-09-18) and CI makes its draft; publishing the draft is the user's.** It
+carries B items 1 to 5 and item 7 parts 1 and 2. Exe gates for 0.1.18, all `--offline`: `rel18-exe` (log pixels editor
+composite brush film export toapis mcp pxjobs), `rel18-exe-canvas` (tiles off: pixels editor composite film export) and
+`rel18-exe-huge` (`huge:30000x20000`) ALL PASS, three of them on a rerun, each a known flake (the settled-read step and
+the 1200 x 794 composite canvas together in the first seconds of one exe instance; the live stroke step on the canvas
+backend). **`smoke` was not run** (the user's ComfyUI). After the draft is published: `package.json` to 0.1.19 and an empty
+section in `CHANGELOG.md`. **0.1.17 is published** (Latest since 2026-09-17; `latest.yml` on the feed says 0.1.17). It carries phase E
+(E1 to E5). Exe gates for 0.1.17, all `--offline`:
 `rel17-exe` (log pixels editor composite brush film export toapis mcp pxjobs), `rel17-exe-huge` (`huge:30000x20000`) and
 `rel17-exe-canvas` (tiles off: pixels editor composite film export) ALL PASS; CI's `build_px.py --check` passed with the
 crate's new dependency (miniz_oxide). **`smoke` was not run** (the user's ComfyUI was busy); instead Pillow 12.2 from the
@@ -168,13 +174,26 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    browser's inflater, not by JS as N1 said. **Item 6 (one-channel masks) is set aside by the user
    (2026-09-17): it is the 30k item, the user works up to 15k. Next instead, agreed the same day: B item 7, the worker
    path for the stacks it turns away today, in this order: blend modes in `composite_tile`, filter layers over
-   worker-composited bands, a colour-matched layer** (`docs/PLAN_BCE.md` §3b "B item 7"). Such a document still saves the
-   old way (6.2 s at 15k with a levels layer against 1.8 s). **The user's standing instruction (2026-09-17, late): build
-   everything up to release 0.1.18 without asking again**: B item 7 parts 1 and 2 (part 3, the colour match, only as far
-   as it does not take the open 7c (b) decision), then the release steps (installer, the exe gates on both backends and
-   `huge`, all `--offline`; the `v0.1.18` tag so CI makes the **draft**). Publishing the draft stays the user's. No
-   `smoke` and nothing that reaches the user's ComfyUI until the user says it is free. Nothing of item 7 is in the code
-   yet. Each item is measured
+   worker-composited bands, a colour-matched layer** (`docs/PLAN_BCE.md` §3b "B item 7"). **Parts 1 and 2 are built**
+   (2026-09-18, the night before the release, on the user's standing instruction to build up to 0.1.18 without asking
+   again; same section, "B item 7, part 1 / part 2 as built"). Part 1: the eight blend modes in `composite_tile` (ABI 9),
+   **rounded once per channel** (exact 16-bit products; within half a level of the exact value, where three rounded
+   products were 1.45 off and moved the wand's edge): 15k with a multiply layer PNG 3.4 s to 1.6 s, PSD 3.8 s to 1.1 s,
+   the wand 3.9 s to 1.1 s with the same pixels selected. Part 2: **a stack with filter layers anywhere in it is a
+   program** (`stackPlan({ filters: true })`, `holdStack`, `programStart` / `programFinish`, `bandSource`): the pool
+   composites a band with the filters' reach into a `SharedArrayBuffer`, the bytes go to the GPU as a texture
+   (`surfaceFromBytes`), the filters run as in a pass at full resolution, the rows come back once (`readSurfaceBytes`),
+   layers above a filter and a filter at an opacity, in a blend mode or through a mask are composited over the result by
+   the pool again (a stack layer may be bytes, `sab`); the next band is composited while this one is filtered. Three
+   paint layers and a levels layer at 15k: 6.2 s to 1.4 s; with the film look 9.1 s to 5.0 s (block 1.2 s to 0.13 s); the
+   wand on a filtered document 3.3 s to 1.5 s. The region pass is the fallback (`NO_PROGRAM`) and keeps its own gate
+   (`InpaintEditor.stackFilters = false`, `stackBlends = false` are the A/B switches). Against the flatten: one level on
+   1.1 % of the bytes below a filter, a filter never more than one level above what the pass shows. **Part 3 (the colour
+   match) is not built and nothing of it is in the code**: a matched layer on the worker path needs its statistics from
+   tiles instead of from the whole flatten, which moves an export by a few levels, and that is the user's open decision
+   (b) of 7c. A document with a colour-matched layer, a scaled or a fractional layer still saves the old way. Not done
+   in part 2: the longest block (0.15 s against the plan's 0.05), an asynchronous read, a mask folded into the alpha
+   (a filter at an opacity through a mask is a level off on 18 % of the bytes). Each item is measured
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
    the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
 
@@ -229,6 +248,9 @@ Known flakes; **re-run before believing any of these**:
   (`--tiles off`, 2026-09-17, B item 2) and passed on the rerun each time; the code under it had not changed.
 - `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed once with `requested: 0` in some twenty
   runs since the mip chains go through the pool; not reproduced.
+- The first exe instance of the 0.1.18 gates failed `a_settled_read_builds_its_levels_in_the_worker_not_here`
+  (`requested: 0`, 11 s into the editor gate) and `composite_test.py`'s view (a 1200 × 794 canvas) in the same run; both
+  passed on a fresh instance. Two known flakes at once, in the first seconds of an instance: not looked into.
 - `perf_test.py`'s magic wand row (whole-image band) read 2.1, 4.0 and 7.0 s in three runs of the same code while ComfyUI
   ran a job; an A/B against the commit before in the same minute read 3.5 s. It is the card, not the code.
 - The `commands` primed-cells checks wait up to 3 s for the film panel's own settled flatten; a failure "primed cells were
@@ -254,6 +276,8 @@ Known flakes; **re-run before believing any of these**:
 - `requestAnimationFrame` does not fire in a hidden window (`drawSoon()` is rAF-based), and `img.decode()` never resolves
   there; scripted waits use `setTimeout`, image loads wait for `onload`.
 - On a `<dialog>` closed by a real Escape Chromium fires `cancel`, not always `close`.
+- `texSubImage2D` and `readPixels` take a view on a `SharedArrayBuffer` here (Electron's Chromium): no copy between the
+  workers' buffer and the GPU (B item 7 part 2). 572 MB go up in 0.1 s and come back in 0.2 s, on the main thread.
 
 **Electron and Windows**
 - In the main process `process.stdin` never emits `data` from a pipe (read fd 0 with `fs.createReadStream`); Electron prints
@@ -296,6 +320,11 @@ Known flakes; **re-run before believing any of these**:
   (`/free` on an empty queue) if possible.
 - The layers reach the local store through `ed.syncLayers()`; a test that reloads right after a change calls it first.
 - `editor_test.py`'s `window.__t` is 600 × 300 by the time later steps run; call `new_canvas` first.
+- A test that sets `layer.blend` or `layer.visible` by hand leaves the composite version where it was, and the wand's
+  coarse pass answers from before the change; go through `set_layer` (it calls `touch`).
+- Three 8-bit roundings in a blend formula are up to 1.45 levels off and a level from the shader on 29 % of the bytes of
+  a half-transparent layer; one rounding of exact products is within 0.5. Measure a kernel against exact floats
+  before blaming the other path.
 
 **Tile engine code**
 - A tile's bytes are a view into a SharedArrayBuffer in the app: no `ImageData`, `Blob` or `crypto.subtle` over them

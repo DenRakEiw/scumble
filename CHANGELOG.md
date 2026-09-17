@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.18 — unreleased
+## 0.1.18 — 2026-09-18
 
 - **Documents with filter layers save about twice as fast, and the magic wand on them no longer freezes the window.**
   When a document holds filter layers between ordinary layers, the background workers now put the layers together, the
@@ -31,8 +31,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   selection by 16 px on a 15000 × 10000 picture takes 0.5 seconds instead of 0.7, shrinking 0.3 instead of 0.6, and
   the window stands still for 0.09 and 0.02 seconds instead of 0.2. Grow and shrink give exactly the same selection as
   before; a feathered edge can differ by a few levels of softness, because the browser's blur is not the same twice.
-- **The magic wand and the bucket are about three times as fast on large pictures.** On a document of ordinary layers
-  (no filter layer, blend mode or colour match) the background workers now put the picture under the wand together
+- **The magic wand and the bucket are about three times as fast on large pictures.** On a document without a
+  colour-matched layer the background workers now put the picture under the wand together
   from the layers' tiles and search it there, and the wand's selection comes back as finished pieces instead of a
   picture that has to be drawn into the selection. A wand click that selects 58 million pixels of a 15000 × 10000
   picture takes 1.4 seconds instead of 4.2, and the window stands still for 0.2 seconds instead of 1.6. The selection
@@ -41,8 +41,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   mode, any opacity, with or without a transparency mask; no filter layer, no colour match), the background workers now
   put the picture together themselves, straight from the layers' tiles, while they compress it. A 15000 × 10000
   picture with a full paint layer saves as PNG in 1.7 seconds instead of 3.5 and as PSD in 1.3 instead of 3.9, and the
-  window stays free the whole time. Documents with a filter layer, a blend mode or a colour-matched layer are saved as
-  before. The pixels can differ from the old way by one level in places where layers are partly transparent (the
+  window stays free the whole time. (Blend modes and filter layers follow in the two entries at the top; a document
+  with a colour-matched layer is saved as before.) The pixels can differ from the old way by one level in places where layers are partly transparent (the
   browser's own canvases differ from each other by more).
 - **A run through an API provider starts and lands faster.** Before the picture goes out and when the result comes
   back, Scumble works out the soft masks that blend the result into the image. On a 1024 px selection that froze the
