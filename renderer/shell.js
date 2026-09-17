@@ -33,6 +33,10 @@ if (window.scumble && window.scumble.pixels) {
     window.addEventListener("unhandledrejection", (e) => send("error", "unhandled: " + ((e.reason && (e.reason.message || e.reason)) || e), e.reason && e.reason.stack));
 })();
 
+// docs/PLAN_BCE.md §E1: the scheme's COOP / COEP headers make the window cross-origin isolated, which the tile arena's
+// SharedArrayBuffer needs; without it the worker pool copies tiles, which works but costs the copies
+try { window.scumble.log.add({ level: crossOriginIsolated ? "info" : "warn", source: "renderer", message: `cross-origin isolated: ${crossOriginIsolated}` }); } catch (_) { /* preload missing */ }
+
 const ui = {
     recipe: $("shell-recipe"), recipeNote: $("shell-recipe-note"), url: $("shell-url"), connect: $("shell-connect"),
     dot: $("shell-dot"), statusText: $("shell-status-text"), progress: $("shell-progress"), progressBar: $("shell-progress-bar"), progressText: $("shell-progress-text"),

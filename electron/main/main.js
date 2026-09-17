@@ -117,24 +117,40 @@ async function serveFile(pathname, search = "") {
     }
 }
 
+/**
+ * Every scumble://app response makes the window cross-origin isolated (docs/PLAN_BCE.md §E1): COOP same-origin and COEP
+ * require-corp, which `SharedArrayBuffer` needs (the tile arena the worker pool reads without a copy). Everything the
+ * window loads is same-origin already (the files, the mirror, the ComfyUI proxy, plugins, blob: and data: URLs); a
+ * resource from anywhere else would be refused, and belongs in the mirror.
+ */
+function isolated(res) {
+    const headers = new Headers(res.headers);
+    headers.set("Cross-Origin-Opener-Policy", "same-origin");
+    headers.set("Cross-Origin-Embedder-Policy", "require-corp");
+    headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
 function installProtocol() {
-    protocol.handle(SCHEME, async (request) => {
-        const url = new URL(request.url);
-        if (url.host !== "app") return new Response("unknown host", { status: 404 });
-        if (url.pathname.startsWith("/comfy/")) {
-            const rel = url.pathname.slice("/comfy".length);
-            try {
-                if (rel === "/upload/image" && request.method === "POST") return await mirror.handleUpload(request);
-                if (rel === "/inpaint_canvas/upload" && request.method === "POST") return await mirror.handleRawUpload(request, url.search);
-                if (rel === "/view" && (request.method === "GET" || request.method === "HEAD")) return await mirror.handleView(url.search);
-            } catch (err) {
-                console.error("mirror", rel, err);
-                return new Response("file mirror error: " + (err.message || err), { status: 500 });
-            }
-            return comfy.proxy(request, rel + url.search);
+    protocol.handle(SCHEME, async (request) => isolated(await serveScheme(request)));
+}
+
+async function serveScheme(request) {
+    const url = new URL(request.url);
+    if (url.host !== "app") return new Response("unknown host", { status: 404 });
+    if (url.pathname.startsWith("/comfy/")) {
+        const rel = url.pathname.slice("/comfy".length);
+        try {
+            if (rel === "/upload/image" && request.method === "POST") return await mirror.handleUpload(request);
+            if (rel === "/inpaint_canvas/upload" && request.method === "POST") return await mirror.handleRawUpload(request, url.search);
+            if (rel === "/view" && (request.method === "GET" || request.method === "HEAD")) return await mirror.handleView(url.search);
+        } catch (err) {
+            console.error("mirror", rel, err);
+            return new Response("file mirror error: " + (err.message || err), { status: 500 });
         }
-        return serveFile(url.pathname, url.search);
-    });
+        return comfy.proxy(request, rel + url.search);
+    }
+    return serveFile(url.pathname, url.search);
 }
 
 // ---- window ---------------------------------------------------------------------------

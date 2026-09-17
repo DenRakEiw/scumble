@@ -33,6 +33,9 @@ STEPS = [
     ("renderer_and_main_entries", """
 const before = await window.scumble.log.list({});
 if (!before.some((e) => /log started/.test(e.message) && e.source === "main")) throw new Error("no 'log started' line from the main process");
+// the scheme's COOP / COEP headers (docs/PLAN_BCE.md §E1): the window is cross-origin isolated and says so in the log
+if (!crossOriginIsolated) throw new Error("the window is not cross-origin isolated");
+if (!before.some((e) => e.message === "cross-origin isolated: true" && e.source === "renderer")) throw new Error("no 'cross-origin isolated: true' line from the renderer");
 console.error("%(mark)s renderer error", { some: "detail" });
 // a provider run that fails in the main process before any network call: no key stored
 let err = null;
