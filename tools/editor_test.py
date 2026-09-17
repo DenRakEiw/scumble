@@ -5678,6 +5678,83 @@ ed.clearUndo();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });
 return { over, floods: seen.length };
 """),
+    ("grow_shrink_and_feather_over_tiles_are_the_canvases", """
+// B item 3 (docs/PLAN_BCE.md 3b): grow, shrink and feather read the selection's box from its tiles in a worker of the
+// pool and send back the tiles that changed. Grow and shrink: the same mask as through the canvases
+// (`InpaintEditor.stacks = false`), byte for byte, soft edges and partial alpha included. Feather is the browser's blur
+// either way, of a box on the tile grid here and of a tight one there: a few levels of alpha apart (at most 8 allowed).
+if (!ednow(window.__t).tileMode) return { skipped: "the canvas backend has no mask tiles" };
+await run("new_canvas", { width: 2900, height: 2100, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const E = ed.constructor, W = ed.width, H = ed.height;
+const build = () => {
+    ed.clearUndo();
+    ed.sel.clear();
+    ed.sel.fill([300, 260, 1500, 1100], "#ff0000");
+    ed.sel.drawInto([1500, 900, 2700, 1900], (x) => {
+        const g = x.createRadialGradient(2100, 1400, 40, 2100, 1400, 520);
+        g.addColorStop(0, "rgba(255,0,0,1)"); g.addColorStop(1, "rgba(255,0,0,0)");
+        x.fillStyle = g; x.fillRect(1500, 900, 1200, 1000);
+    });
+    ed.sel.fill([W - 40, H - 30, W, H], "#ff0000");   // at the picture's corner: the box ends with the image
+    ed.markSelectionChanged();
+    ed.getBounds();
+};
+const read = () => ed.sel.readRect(0, 0, W, H).data;
+const seen = [];
+const oOver = ed.selectionOverTiles.bind(ed);
+ed.selectionOverTiles = async (...a) => { const r = await oOver(...a); seen.push(r ? r.tiles : -1); return r; };
+const script = async () => {
+    const out = {};
+    build();
+    await ed.growSelection(16); out.grow = [read(), ed.getBounds()];
+    await ed.growSelection(-9); out.shrink = [read(), ed.getBounds()];
+    await ed.undoStep(); out.undo = [read(), ed.getBounds()];
+    await ed.featherSelection(12); out.feather = [read(), ed.getBounds()];
+    return out;
+};
+let over, canvases;
+try {
+    over = await script();
+    const n = seen.length;
+    if (n !== 3 || seen.some((t) => !(t > 0))) throw new Error("the jobs over tiles answered " + JSON.stringify(seen));
+    E.stacks = false;
+    canvases = await script();
+    if (seen.some((t, i) => i >= n && t !== -1)) throw new Error("with stacks off a job still ran over tiles: " + JSON.stringify(seen));
+} finally { E.stacks = true; delete ed.selectionOverTiles; }
+const cmp = (a, b) => { let n = 0, worst = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d) { n++; if (d > worst) worst = d; } } return { bytes: n, worst }; };
+const out = {};
+for (const k of ["grow", "shrink", "undo", "feather"]) {
+    const d = cmp(over[k][0], canvases[k][0]);
+    out[k] = { ...d, bounds: over[k][1] };
+    if (k !== "feather" && JSON.stringify(over[k][1]) !== JSON.stringify(canvases[k][1])) throw new Error(k + ": bounds " + JSON.stringify(over[k][1]) + " over tiles, " + JSON.stringify(canvases[k][1]) + " over canvases");
+    if (k === "feather") {
+        // the mask is the alpha; the colour under an alpha of a few levels is whatever a canvas un-premultiplies it to
+        const A = over[k][0], B = canvases[k][0];
+        let alphaWorst = 0, alphaBytes = 0, colourWorst = 0;
+        for (let i = 0; i < A.length; i += 4) {
+            const da = Math.abs(A[i + 3] - B[i + 3]);
+            if (da) { alphaBytes++; if (da > alphaWorst) alphaWorst = da; }
+            if (A[i + 3] >= 32 && B[i + 3] >= 32) for (let c = 0; c < 3; c++) colourWorst = Math.max(colourWorst, Math.abs(A[i + c] - B[i + c]));
+        }
+        out[k] = { ...out[k], alphaWorst, alphaBytes, colourWorst };
+        // measured: up to 5 levels of alpha on 0.8 % of the pixels between the two (7 with a CPU canvas in the worker): the
+        // blur is Skia's on the GPU, and the box it blurs is on the tile grid here and tight around the selection there
+        if (alphaWorst > 8 || colourWorst > 8) throw new Error("feather over tiles differs from the canvases: " + JSON.stringify(out[k]));
+    } else if (d.bytes) throw new Error(k + " over tiles differs from the canvases: " + JSON.stringify(d));
+}
+// an unchanged tile is not written: growing a large rectangle leaves its inner tiles alone
+ed.clearUndo(); ed.sel.clear(); ed.sel.fill([0, 0, 2048, 2048], "#ff0000"); ed.markSelectionChanged(); ed.getBounds();
+seen.length = 0;
+ed.selectionOverTiles = async (...a) => { const r = await oOver(...a); seen.push(r ? r.tiles : -1); return r; };
+try { await ed.growSelection(8); } finally { delete ed.selectionOverTiles; }
+out.changedTiles = seen[0];
+if (!(seen[0] > 0 && seen[0] <= 20)) throw new Error("growing a 2048 px square by 8 wrote " + seen[0] + " tiles (its edge is 17 tiles)");
+ed.clearUndo(); ed.clearSelection();
+await run("new_canvas", { width: 600, height: 300, doc: window.__t });
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

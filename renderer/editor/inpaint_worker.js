@@ -358,6 +358,67 @@ async function selection(msg) {
 }
 
 /**
+ * grow / shrink / feather on the selection's own tiles (docs/PLAN_BCE.md 3b, B item 3): `sel` is the mask as a store
+ * (`storeRows`), the box `w` x `h` at (`x0`, `y0`) lies on the tile grid. The box is read from the tiles where they lie,
+ * worked on, and cut into tiles again; only the tiles whose pixels changed go back, `{ tx, ty, data }` or
+ * `{ tx, ty, empty: true }` for one that holds nothing any more. No canvas for grow and shrink; feather's blur is the
+ * browser's, so it keeps one canvas here, but none on the main thread.
+ */
+async function selectionOverTiles(msg) {
+    const t0 = now();
+    const W = msg.w, H = msg.h, X0 = msg.x0 | 0, Y0 = msg.y0 | 0;
+    let data = new Uint8ClampedArray(W * H * 4);
+    storeRows(msg.sel, X0, W, Y0, H, data);
+    const ms = { op: "selection", kind: msg.kind, kernels: kernelsInUse(), pixels: W * H, tiles: true, read: now() - t0 };
+    let bounds;
+    if (msg.kind === "grow") {
+        bounds = growMaskBounds(data, W, H, msg.n, { ms });
+    } else if (msg.kind === "feather") {
+        const c = new OffscreenCanvas(W, H);
+        c.getContext("2d").putImageData(new ImageData(data, W, H), 0, 0);
+        // canvases of the default kind, as the job over a bitmap makes them: a CPU canvas blurs up to 7 levels differently
+        const out = new OffscreenCanvas(W, H), octx = out.getContext("2d");
+        octx.filter = `blur(${msg.radius}px)`;
+        octx.drawImage(c, 0, 0);
+        octx.filter = "none";
+        data = octx.getImageData(0, 0, W, H).data;
+        const tb = now();
+        bounds = maskBounds(data, W, H);
+        ms.resultBounds = now() - tb;
+    } else throw new Error("unknown selection job " + msg.kind);
+    const tc = now();
+    const tiles = [], transfer = [];
+    const d32 = new Uint32Array(data.buffer, data.byteOffset, W * H);
+    const sx = msg.sel.x | 0, sy = msg.sel.y | 0;
+    for (let ty = 0; ty * TILE < H; ty++) for (let tx = 0; tx * TILE < W; tx++) {
+        const x0 = tx * TILE, y0 = ty * TILE, bw = Math.min(TILE, W - x0), bh = Math.min(TILE, H - y0);
+        const row = msg.sel.tiles[(Y0 + y0 - sy) >> 8];
+        const name = row ? row[(X0 + x0 - sx) >> 8] : null;
+        const ob = name ? tileBytes(name).bytes : null;
+        const old = ob ? new Uint32Array(ob.buffer, ob.byteOffset, TILE * TILE) : null;
+        // whole pixels as words (little endian: the alpha is the top byte)
+        let any = false, changed = false;
+        for (let yy = 0; yy < bh && !(any && changed); yy++) {
+            const o = (y0 + yy) * W + x0, so = yy * TILE;
+            for (let i = 0; i < bw; i++) {
+                const v = d32[o + i];
+                if (v >>> 24) any = true;
+                if (v !== (old ? old[so + i] : 0)) changed = true;
+            }
+        }
+        if (!changed) continue;
+        if (!any) { tiles.push({ tx, ty, empty: true }); continue; }
+        const out = new Uint8ClampedArray(TILE * TILE * 4);
+        for (let yy = 0; yy < bh; yy++) { const o = ((y0 + yy) * W + x0) * 4; out.set(data.subarray(o, o + bw * 4), yy * TILE * 4); }
+        tiles.push({ tx, ty, data: out.buffer });
+        transfer.push(out.buffer);
+    }
+    ms.cut = now() - tc;
+    ms.total = now() - t0;
+    return { tiles, bounds, transfer, timing: ms };
+}
+
+/**
  * The magic wand's and the bucket's region, as a shape in the requested colour. The bitmap
  * may be a box cut out of the image: `touches` says on which of its edges the region
  * arrives, so the editor can widen the box and ask again.
@@ -470,7 +531,7 @@ async function run(msg) {
     setKernels(msg.kernels);
     await kernelsReady();
     if (msg.op === "png") return png(msg.bitmap, !!msg.hash);
-    if (msg.op === "selection") return selection(msg);
+    if (msg.op === "selection") return msg.sel ? selectionOverTiles(msg) : selection(msg);
     if (msg.op === "flood") return flood(msg);
     if (msg.op === "mips") return mips(msg);
     if (msg.op === "band") return band(msg);

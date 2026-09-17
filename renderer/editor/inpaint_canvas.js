@@ -4753,6 +4753,7 @@ class InpaintEditor {
      * not. Null means there was no worker or it failed and the caller does the work itself.
      */
     async selectionInWorker(kind, args, { halo = 0, whole = false } = {}) {
+        if (!whole && this.sel) { const t = await this.selectionOverTiles(kind, args, halo); if (t) return t; }
         if (!this.sel || !editorWorker()) return null;
         const W = this.width, H = this.height;
         const b = whole ? null : this.getBounds();
@@ -4779,6 +4780,42 @@ class InpaintEditor {
         } catch (err) {
             console.warn(`Inpaint Canvas: ${kind} in the worker failed, using the main thread:`, (err && err.message) || err);
             return null;
+        }
+    }
+
+    /**
+     * grow, shrink and feather on the mask's own tiles (B item 3): a worker of the pool reads the selection's box (on
+     * the tile grid) from the arena, works on it and sends back the tiles that changed, which are written here. No
+     * canvas of the box, no bitmap, no scratch. `{ bounds, box }` like `selectionInWorker`, or null when it cannot be
+     * done this way (the canvas backend, no pool, a tile outside the arena, a failed job) and the caller goes on.
+     */
+    async selectionOverTiles(kind, args, halo) {
+        if (InpaintEditor.stacks === false || !this.tileMode || !isTilePixels(this.sel) || !arenaEnabled() || editorPool().off) return null;
+        const W = this.width, H = this.height;
+        const b = this.getBounds();
+        if (!b) return null;
+        const T = TILE_SIZE;
+        const box = [Math.max(0, b[0] - halo) & ~(T - 1), Math.max(0, b[1] - halo) & ~(T - 1), Math.min(W, Math.ceil((b[2] + halo) / T) * T), Math.min(H, Math.ceil((b[3] + halo) / T) * T)];
+        const w = box[2] - box[0], h = box[3] - box[1];
+        if (!(w > 0 && h > 0) || w * h * 4 > 0x7fffffff || !stackInArena(this.sel)) return null;
+        const snap = this.sel.clone();
+        try {
+            const r = await editorPool().run("selection", { kind, ...args, sel: storeArgs(snap, 0, 0, box[1], box[3]), x0: box[0], y0: box[1], w, h }, [], { priority: INTERACTIVE, timeout: 300000 });
+            for (const t of r.tiles) {
+                const X = box[0] + t.tx * T, Y = box[1] + t.ty * T, tw = Math.min(T, W - X), th = Math.min(T, H - Y);
+                if (t.empty) { this.sel.clear([X, Y, X + tw, Y + th]); continue; }
+                let data = new Uint8ClampedArray(t.data);
+                if (tw < T || th < T) { const cut = new Uint8ClampedArray(tw * th * 4); for (let yy = 0; yy < th; yy++) cut.set(data.subarray(yy * T * 4, yy * T * 4 + tw * 4), yy * tw * 4); data = cut; }
+                this.sel.writeRect({ data, width: tw, height: th }, X, Y);
+            }
+            let bounds = r.bounds;
+            if (bounds) bounds = [bounds[0] + box[0], bounds[1] + box[1], bounds[2] + box[0], bounds[3] + box[1]];
+            return { bounds, box, tiles: r.tiles.length };
+        } catch (err) {
+            console.warn(`Inpaint Canvas: ${kind} over tiles failed, using the canvases:`, (err && err.message) || err);
+            return null;
+        } finally {
+            snap.release();
         }
     }
 

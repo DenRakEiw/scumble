@@ -5,6 +5,11 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.18 — unreleased
 
+- **Grow, shrink and feather of a large selection are faster and hardly hold the window.** A background worker now
+  reads the selection straight from its tiles and sends back only the pieces that changed. Growing a 6000 × 4000
+  selection by 16 px on a 15000 × 10000 picture takes 0.5 seconds instead of 0.7, shrinking 0.3 instead of 0.6, and
+  the window stands still for 0.09 and 0.02 seconds instead of 0.2. Grow and shrink give exactly the same selection as
+  before; a feathered edge can differ by a few levels of softness, because the browser's blur is not the same twice.
 - **The magic wand and the bucket are about three times as fast on large pictures.** On a document of ordinary layers
   (no filter layer, blend mode or colour match) the background workers now put the picture under the wand together
   from the layers' tiles and search it there, and the wand's selection comes back as finished pieces instead of a

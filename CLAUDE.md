@@ -158,8 +158,11 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    wand and the bucket on a plain stack flood a `SharedArrayBuffer` the pool composited from the tiles (`floodStack`,
    `floodOverTiles`, worker `stack_into` and `flood` with `sab`), and the wand's answer comes back as selection tiles
    (`applyTilesToSelection`); 15k wand 4.2 s to 1.4 s, the block 1.6 s to 0.18 s, the same selection bytes
-   (`editor_test.py` `the_flood_over_tiles_is_the_flood_over_canvases`). **Next: item 3** (selection jobs on mask
-   tiles), then 5 (the PNG reader in Rust), 6 (one-channel masks). Each item is measured
+   (`editor_test.py` `the_flood_over_tiles_is_the_flood_over_canvases`). **B item 3 is built** ("B item 3 as built"): grow,
+   shrink and feather read the selection's box from its tiles in a pool worker and send back the tiles that changed
+   (`selectionOverTiles`); 15k grow 0.72 s to 0.51 s, shrink 0.60 s to 0.32 s, the blocks 0.2 s to 0.09 / 0.02 s; grow
+   and shrink the same bytes, feather within 5 levels of alpha (the GPU blur). Invert stays on the main thread (0.2 s).
+   **Next: item 5** (the PNG reader in Rust), then 6 (one-channel masks). Each item is measured
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
    the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
 

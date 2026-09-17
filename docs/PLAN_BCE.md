@@ -4222,6 +4222,31 @@ Where layers are partly transparent the composite under the wand can be a level 
 region's edge can move where a pixel sits exactly on the tolerance; `px_jobs.py --check` (a 35 % paint layer) still
 gives the same selections.
 
+#### B item 3 as built (2026-09-17): grow, shrink and feather on the mask's tiles
+
+`selectionInWorker` first tries `selectionOverTiles`: the selection's box with its halo, put on the tile grid, goes to a
+worker of the pool as a store (`storeArgs`; the mask is held as a clone); the worker reads the box from the arena
+(`storeRows`), runs the job (`grow_mask`, or the browser's blur on an OffscreenCanvas for feather) and cuts the result
+into tiles, comparing each as words with the tile it came from: **only tiles whose pixels changed go back**, an emptied
+one as `{ empty }`. The main thread writes them (`writeRect`, `clear`). No canvas of the box, no bitmap, no scratch,
+and no `blockEqual` over the whole box here.
+
+| 15,000 × 10,000, a 6,000 × 4,000 selection (`native_test.py`) | before | now |
+|---|---|---|
+| grow +16: wall / longest block | 722 / 206 ms | **511 / 90 ms** |
+| shrink −16 | 603 / 201 ms | **318 / 23 ms** |
+| the job: read / kernel / cut | 155 / 315 ms, + 160 ms of canvases | 42 / 342 / 69 ms |
+
+The EDT is now two thirds of a grow. **Invert stays where it is** (`sel.invert()` on the main thread, 0.2 s at 15k): its
+result is every tile of the picture, and bringing 600 MB of tiles back from a worker costs more than the loop; it gets
+four times cheaper with one-channel masks (item 6), or when workers may write tiles the main thread allocated for them.
+**Gate**: `editor_test.py` `grow_shrink_and_feather_over_tiles_are_the_canvases`: grow, shrink and undo the same bytes and
+bounds as with `InpaintEditor.stacks = false` (a hard rectangle, a soft radial blob, a block in the picture's corner);
+growing a 2,048 px square writes its 17 edge tiles, not 81. **Feather is not the same bytes**: alpha up to 5 levels apart
+on 0.8 % of the pixels (7 with a CPU canvas in the worker), colour equal wherever alpha is 32 and more. The blur is
+Skia's on the GPU in both; the box it blurs lies on the tile grid here and tight around the selection there (that this
+is the cause is not measured). The gate allows 8 levels. Three mutations (every tile sent back, the bounds left in the box's coordinates, an emptied tile not cleared) turned the editor gate red; gates on both backends, offline, ALL PASS.
+
 **Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
 order: 4, 1, 2, 3, 5, 6.
 
