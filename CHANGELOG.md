@@ -5,6 +5,11 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.17 — unreleased
 
+- **The picture's detail levels come back faster after a change of a whole layer.** After a flip, a turn or an undo of a
+  whole layer the screen shows a coarse picture until the smaller copies of the layer are rebuilt. They are now built
+  by up to eight background workers at once, which read the layer's pixels where they lie in memory instead of getting
+  a copy: on a 15000 × 10000 picture the screen is exact again after about 0.15 s instead of 0.35 s.
+
 ## 0.1.16 — 2026-09-17
 
 - **Grow, shrink, the magic wand and the picture's detail levels run as compiled code (Rust).** The pixel work behind

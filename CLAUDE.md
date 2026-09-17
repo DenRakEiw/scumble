@@ -86,12 +86,13 @@ empty section in `CHANGELOG.md`. Exe gates for 0.1.16: `rel16-exe` (log pixels e
 `rel16-exe-canvas` ALL PASS, `px_jobs.py --check` against the exe PASS; `smoke` and `commands` not run (the user's ComfyUI
 was busy). Check `gh release list` before believing any release state written down anywhere.
 
-**Phase E is started on the branch `phase-e`** (not merged): E1a (COOP / COEP, the window is cross-origin isolated,
-`log_test.py` asserts it) is committed with its gates; `renderer/editor/inpaint_arena.js` (the SharedArrayBuffer tile
-arena, slots freed through a FinalizationRegistry) is a draft committed there and **not wired in yet**. Next: wire the
-arena into `newTile` (`inpaint_tiles.js`: `u32Of` must use the view's offset, `imageDataOf` needs a copy for a shared
-view, check `texSubImage2D` with a shared view), then E1's pool (`inpaint_pool.js`) with the chain transport naming
-(chunk, slot). Merge `main` into `phase-e` first (0.1.17 bump).
+**Phase E is on the branch `phase-e`** (not merged). **E1 is built** (2026-09-17, `docs/PLAN_BCE.md` §3 "E1 as built"):
+the window is cross-origin isolated, every tile's bytes are a slot of the SharedArrayBuffer arena
+(`renderer/editor/inpaint_arena.js`, slots back through a FinalizationRegistry), and the mip chains go through the worker
+pool (`renderer/editor/inpaint_pool.js`, up to 8 workers started on demand, priorities, `cancel(group)`), tiles named by
+(chunk, slot). Measured at 15k: mips settled 138 to 169 ms (was 320 to 394); **the gate's 5 ms blocked is not met** (86 to
+92 ms, the landings' frame: atlas slots built on the main thread, as before E1). **Next: E2** (`inpaint_bands.js`,
+`compositeBand` on `composite_tile`, `PngStreamWriter`), whose `smoke` gate needs the user's ComfyUI.
 
 **Built.** C6 (c) slices 3 to 7a, each with its gates, mutations and measurements in `docs/PLAN_BCE.md` §C6 ("C6 (c3) and
 slice 4 as built", "slice 5 / 6 / 7a as built"). The tile engine is on by default in the installed app since 0.1.13, with a

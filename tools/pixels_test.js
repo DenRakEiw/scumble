@@ -1280,6 +1280,122 @@ function pixelsCases(P, T) {
             return { ok: true, tiles: list.length, edges };
         })],
 
+        // E1: the worker pool and the tile arena. The chains of 2,352 tiles (12544 x 12288, a 15k layer's count) through
+        // the pool, named by arena slot (read where they lie) and as copies, byte for byte the same and the kernel's;
+        // then the queue: priorities, order of `map`, cancellation by group.
+        ["pool_chains_by_slot_and_by_copy", async () => {
+            const A = await import("./editor/inpaint_arena.js");
+            const Pool = await import("./editor/inpaint_pool.js");
+            const K = await import("./editor/px/kernels_js.js");
+            const isolated = typeof crossOriginIsolated !== "undefined" && crossOriginIsolated === true;
+            if (isolated !== A.arenaEnabled()) throw new Error(`crossOriginIsolated is ${isolated} but the arena is ${A.arenaEnabled() ? "on" : "off"}`);
+            const make = (size) => new Pool.WorkerPool({ size, create: () => new Worker(new URL("./editor/inpaint_worker.js", location.href), { type: "module" }) });
+            const W = 12544, H = 12288, n = K.mipChainBytes(256, 5);
+            const before = A.arenaStats();
+            let p = T.TileLayerPixels.empty(W, H);
+            let seed = 12345;
+            for (let ty = 0; ty < H >> 8; ty++) for (let tx = 0; tx < W >> 8; tx++) {
+                const t = p.writable(tx, ty);
+                const w32 = new Uint32Array(t.data.buffer, t.data.byteOffset, 65536);
+                // premultiplied words (alpha in the top byte, every colour byte at most alpha) in one row of four: the
+                // fill is not what is measured
+                for (let i = 0; i < 65536; i++) {
+                    if ((i & 255) === 0 && ((i >> 8) & 3)) { i += 255; continue; }
+                    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+                    const a = seed >>> 24, m = a + 1;
+                    w32[i] = ((a << 24) | ((seed & 0xFF) % m) | ((((seed >> 8) & 0xFF) % m) << 8) | ((((seed >> 16) & 0xFF) % m) << 16)) >>> 0;
+                }
+            }
+            const list = p.tileList();
+            if (list.length !== 2352) throw new Error(`${list.length} tiles`);
+            const shared = list.filter((t) => A.isShared(t.data)).length;
+            if (isolated && shared !== list.length) throw new Error(`${shared} of ${list.length} tiles are in the arena`);
+            if (isolated && list.some((t) => t.arenaSlot < 0 || t.data.byteOffset !== t.arenaSlot * A.SLOT_BYTES)) throw new Error("a tile's slot is not where its bytes are");
+            const mid = A.arenaStats();
+            if (isolated && mid.slots - before.slots !== list.length) throw new Error(`the arena counts ${mid.slots - before.slots} new slots for ${list.length} tiles`);
+            const BATCH = 128;
+            const batches = (fn) => { const out = []; for (let i = 0; i < list.length; i += BATCH) out.push(list.slice(i, i + BATCH).map(fn)); return out; };
+            const pool = make(Pool.poolSize());
+            const out = { isolated, workers: 0, tiles: list.length };
+            try {
+                // warm: every worker started, its kernels loaded
+                await pool.map(Array.from({ length: pool.size * 2 }, () => ({ op: "mips", args: { tiles: Array.from({ length: 64 }, () => ({ data: new ArrayBuffer(262144), vw: 256, vh: 256 })) } })));
+                const run = async (jobs) => {
+                    let blocked = 0, last = performance.now(), on = true;
+                    const beat = () => { const now = performance.now(); blocked = Math.max(blocked, now - last); last = now; if (on) setTimeout(beat, 0); };
+                    setTimeout(beat, 0);
+                    const t0 = performance.now();
+                    const replies = await pool.map(jobs, { priority: Pool.INTERACTIVE });
+                    on = false;
+                    return { ms: performance.now() - t0, blocked, chains: replies.flatMap((r) => r.chains) };
+                };
+                let bySlot = null;
+                if (isolated) {
+                    bySlot = await run(batches((t) => ({ chunk: t.arenaChunk, slot: t.arenaSlot, vw: 256, vh: 256 })).map((tiles) => ({ op: "mips", args: { tiles } })));
+                    out.slotMs = Math.round(bySlot.ms); out.slotBlocked = Math.round(bySlot.blocked * 10) / 10;
+                }
+                const t1 = performance.now();
+                const copyJobs = batches((t) => { const b = new ArrayBuffer(262144); new Uint8Array(b).set(t.data); return { data: b, vw: 256, vh: 256 }; })
+                    .map((tiles) => ({ op: "mips", args: { tiles }, transfer: tiles.map((x) => x.data) }));
+                out.copyPrepareMs = Math.round(performance.now() - t1);
+                const byCopy = await run(copyJobs);
+                out.copyMs = Math.round(byCopy.ms);
+                out.workers = pool.stats().workers;
+                if (byCopy.chains.length !== list.length) throw new Error(`${byCopy.chains.length} chains by copy`);
+                if (bySlot) {
+                    if (bySlot.chains.length !== list.length) throw new Error(`${bySlot.chains.length} chains by slot`);
+                    for (let i = 0; i < list.length; i++) {
+                        const a = new Uint8Array(bySlot.chains[i]), b = new Uint8Array(byCopy.chains[i]);
+                        if (a.length !== n || b.length !== n) throw new Error(`tile ${i}: chains of ${a.length} and ${b.length} bytes`);
+                        for (let j = 0; j < n; j++) if (a[j] !== b[j]) throw new Error(`tile ${i}: the chain by slot differs from the one by copy at byte ${j}`);
+                    }
+                }
+                for (let i = 0; i < list.length; i += 97) {
+                    const want = K.mipChain(list[i].data, 256, 5, new Uint8Array(n)), got = new Uint8Array(byCopy.chains[i]);
+                    for (let j = 0; j < n; j++) if (got[j] !== want[j]) throw new Error(`tile ${i}: the pool's chain differs from the kernel's at byte ${j}`);
+                }
+                // an edge tile by slot: the worker extends a copy, never the document's bytes (with either kernels)
+                if (isolated) {
+                    for (const kernels of ["rust", "js"]) {
+                        const t = list[5], keep = t.data.slice();
+                        const r = await pool.run("mips", { kernels, tiles: [{ chunk: t.arenaChunk, slot: t.arenaSlot, vw: 100, vh: 90 }] });
+                        for (let j = 0; j < keep.length; j++) if (t.data[j] !== keep[j]) throw new Error(`the worker (${kernels}) wrote into a tile of the arena, at byte ${j}`);
+                        const own = new Uint8Array(keep); K.clampExtend(own, 256, 100, 90);
+                        const want = K.mipChain(own, 256, 5, new Uint8Array(n)), got = new Uint8Array(r.exts[0]);
+                        for (let j = 0; j < n; j++) if (got[j] !== want[j]) throw new Error(`the edge chain by slot (${kernels}) differs at byte ${j}`);
+                    }
+                }
+            } finally { pool.terminate(); }
+            // the queue, on a pool of one worker: what waits is served by priority, `map` answers in order, a group is cancelled
+            const one = make(1);
+            try {
+                const job = () => ({ tiles: [{ data: new ArrayBuffer(262144), vw: 256, vh: 256 }] });
+                const order = [];
+                const first = one.run("mips", job()).then(() => order.push("first"));
+                const late = one.run("mips", job(), [], { priority: Pool.EXPORT }).then(() => order.push("export"));
+                const gone = one.run("mips", job(), [], { priority: Pool.EXPORT, group: "g" }).then(() => order.push("cancelled ran"), (e) => order.push(e.cancelled ? "cancelled" : "failed " + e.message));
+                const normal = one.run("mips", job()).then(() => order.push("normal"));
+                const now = one.run("mips", job(), [], { priority: Pool.INTERACTIVE }).then(() => order.push("interactive"));
+                if (one.cancel("g") !== 1) throw new Error("cancel did not find the group's job");
+                await Promise.all([first, late, gone, normal, now]);
+                if (order.join() !== "cancelled,first,interactive,normal,export") throw new Error("the queue answered in the order " + order.join());
+                const bad = await one.run("no such job").then(() => null, (e) => e);
+                if (!bad || !/unknown job/.test(bad.message)) throw new Error("a failing job did not reject with the worker's error");
+                const mapped = await one.map([1, 2, 3].map((k) => ({ op: "mips", args: { tiles: Array.from({ length: k }, () => job().tiles[0]) } })));
+                if (mapped.map((r) => r.chains.length).join() !== "1,2,3") throw new Error("map did not answer in the order of its jobs");
+                if (one.stats().workers !== 1) throw new Error("a pool of one started " + one.stats().workers);
+            } finally { one.terminate(); }
+            // the slots come back once the tiles are collected (only where the page has gc())
+            p = null; list.length = 0;
+            if (isolated && typeof gc === "function") {
+                for (let i = 0; i < 40 && A.arenaStats().slots > before.slots; i++) { gc(); await new Promise((r) => setTimeout(r, 50)); }
+                out.slotsLeft = A.arenaStats().slots - before.slots;
+                if (out.slotsLeft > 0) throw new Error(`${out.slotsLeft} slots were not given back after the tiles were collected`);
+            }
+            out.arena = A.arenaStats();
+            return { ok: true, ...out };
+        }],
+
         // C6 (b): display readers against a scheduler whose worker answers when the test says so.
         ["tiles_display_chains_through_a_scheduler", both(async ({ B, Layer, pair }) => {
             if (!B.tiles) return { ok: true, tilesOnly: true };

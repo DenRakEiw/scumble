@@ -36,6 +36,7 @@
 
 import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN, reentrantPixels } from "./inpaint_pixels.js";
 import { mipChain, mipChainBytes, clampExtend } from "./px/kernels.js";
+import { allocTileBytes, isShared } from "./inpaint_arena.js";
 
 export const TILE_SIZE = 256;
 const TILE_BYTES = TILE_SIZE * TILE_SIZE * 4;
@@ -87,8 +88,8 @@ let tileSeq = 0;                   // tile versions are unique across all tiles
 let pixelSeq = 0;
 
 function newTile() {
-    return {
-        data: new Uint8ClampedArray(TILE_BYTES),   // its own ArrayBuffer: starts on a page (§B3, 4K aliasing)
+    const t = {
+        data: null,                                // allocTileBytes below: an arena slot, or its own ArrayBuffer
         version: ++tileSeq,
         // the mip chain (plainChain): exact while mipsVersion is the version; otherwise, when there is one, the
         // picture the tile had, shown while the exact one is built in the worker (C6 b). `mipsOwn`: the buffer is
@@ -100,7 +101,11 @@ function newTile() {
         edge: null, edgeVersion: -1, edgeW: 0, edgeH: 0,
         frozen: 0,                                 // how many other pixels objects hold this tile
         _img: null, _u32: null,
+        arenaChunk: -1, arenaSlot: -1,             // where `data` lives when the arena holds it (inpaint_arena.js)
     };
+    // either way the bytes start on a page (§B3, 4K aliasing)
+    t.data = allocTileBytes(t);
+    return t;
 }
 
 // ---- mip chains, on the main thread or in the worker (docs/PLAN_BCE.md §C6 b) -------------------------
@@ -206,8 +211,14 @@ export const CHAIN_SYNC_BUDGET = 16;
  * display readers (`display` true) ever see such a picture: `mips()`, `tileWithGutter()` and `regionCanvas()`
  * without it stay exact.
  *
- * `transport(tiles)` takes [{ data: ArrayBuffer, vw, vh }] (the buffers transferred) and resolves to
- * { chains: [ArrayBuffer], exts: [ArrayBuffer | null], datas: [ArrayBuffer] }.
+ * `transport(tiles)` takes [{ data: ArrayBuffer, vw, vh }] (a copy of the tile, the buffers transferred) or, for a
+ * tile in the arena (inpaint_arena.js, §E1), [{ chunk, slot, vw, vh }] (read by the worker where it lies), and resolves
+ * to { chains: [ArrayBuffer], exts: [ArrayBuffer | null], datas: [ArrayBuffer | null] }. `transport.flights`, when set,
+ * is how many batches it takes at once (the pool's workers); only a transport with `arena` set is given tiles by slot.
+ *
+ * A tile in the arena may be written while a worker reads it: every write goes through `writable()`, which moves the
+ * tile's version first, and `_land` drops an answer whose tile has moved on, so a torn chain is never installed. The
+ * batch holds its tile objects until it lands, which is what keeps their slots from being handed out again.
  */
 export class ChainScheduler {
     constructor(transport = null, { budget = CHAIN_SYNC_BUDGET, batch = CHAIN_BATCH, flights = CHAIN_FLIGHTS } = {}) {
@@ -281,7 +292,9 @@ export class ChainScheduler {
     _flush() {
         while (this.transport && this.flight < this.flights && this.queue.size) {
             const batch = [];
-            const size = Math.min(this.batch, this.pool.length + CHAIN_BATCH_NEW);
+            // only a tile that has to be copied counts against the smaller first batches; one in the arena costs nothing here
+            let copies = this.pool.length + CHAIN_BATCH_NEW;
+            const byName = !!this.transport.arena;   // the transport's workers hold the arena's chunks
             // newest first (see `request`): the Map keeps the order entries were last asked for in
             const entries = Array.from(this.queue.values());
             for (let j = entries.length - 1; j >= 0; j--) {
@@ -290,10 +303,12 @@ export class ChainScheduler {
                 // written since it was asked for: the write's reader asks again for the new version
                 if (t.version !== e.version) { if (t.wantEntry === e) { t.wantV = -1; t.wantEntry = null; } CHAIN_STATS.dropped++; this._notify(e, false); continue; }
                 batch.push(e);
-                if (batch.length >= size) break;
+                if (!byName || t.arenaSlot < 0) copies--;
+                if (batch.length >= this.batch || copies <= 0) break;
             }
             if (!batch.length) break;
             const tiles = batch.map((e) => {
+                if (byName && e.t.arenaSlot >= 0) return { chunk: e.t.arenaChunk, slot: e.t.arenaSlot, vw: e.vw, vh: e.vh };
                 const buf = this.pool.pop() || new ArrayBuffer(TILE_BYTES);
                 new Uint8Array(buf).set(e.t.data);
                 return { data: buf, vw: e.vw, vh: e.vh };
@@ -421,6 +436,7 @@ const CHAINS = new ChainScheduler();
 /** The transport of the default scheduler (the editor gives it its mips worker); null builds everything here. */
 export function setChainTransport(transport) {
     CHAINS.transport = transport || null;
+    CHAINS.flights = Math.max(1, (transport && transport.flights) | 0) || CHAIN_FLIGHTS;
     CHAINS.failure = null;
 }
 
@@ -434,8 +450,19 @@ export function chainStats(reset = false) {
     return out;
 }
 
-const u32Of = (t) => t._u32 || (t._u32 = new Uint32Array(t.data.buffer));
-const imageDataOf = (t) => t._img || (t._img = new ImageData(t.data, TILE_SIZE, TILE_SIZE));
+const u32Of = (t) => t._u32 || (t._u32 = new Uint32Array(t.data.buffer, t.data.byteOffset, TILE_SIZE * TILE_SIZE));
+/**
+ * A tile as an ImageData, for a `putImageData` right away. An `ImageData` cannot sit on shared memory, so a tile in
+ * the arena is copied into one scratch (256 KB); the answer is only good until the next call.
+ */
+let SHARED_IMAGE = null;
+const imageDataOf = (t) => {
+    if (t._img) return t._img;
+    if (!isShared(t.data)) return (t._img = new ImageData(t.data, TILE_SIZE, TILE_SIZE));
+    if (!SHARED_IMAGE) SHARED_IMAGE = new ImageData(TILE_SIZE, TILE_SIZE);
+    SHARED_IMAGE.data.set(t.data);
+    return SHARED_IMAGE;
+};
 let ZERO_IMAGE = null;
 const zeroImage = () => ZERO_IMAGE || (ZERO_IMAGE = new ImageData(TILE_SIZE, TILE_SIZE));
 

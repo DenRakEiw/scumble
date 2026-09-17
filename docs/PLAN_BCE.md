@@ -3746,6 +3746,63 @@ Gate: `crossOriginIsolated` true in the app (logged, asserted by `log_test.py`);
 step in `pixels_test.js`: 2,352 tiles' mip chains through the pool on the SAB path and on
 the copy path, identical results; mip refresh of a 15k layer ≤ 150 ms wall, ≤ 5 ms blocked.
 
+#### E1 as built (2026-09-17): the arena under every tile, the pool under the mip chains
+
+- **E1a**: every `scumble://app/` response carries COOP / COEP, the window is cross-origin isolated, `log_test.py` asserts
+  it.
+- **The arena** (`renderer/editor/inpaint_arena.js`): `newTile` takes its bytes from `allocTileBytes`. In the app that is a
+  256 KB slot of a 64 MB `SharedArrayBuffer` chunk; in the node's tab (not isolated) an `ArrayBuffer` of the tile's own, as
+  before. **One slot size**: masks are RGBA tiles until C5's one-channel masks exist, so the plan's 64 KB mask slots are not
+  built. A slot goes back through a `FinalizationRegistry` on the tile object, not through a refcount per job: tiles are
+  shared between pixels objects and undo steps and nobody frees one by hand, and a job that names a slot holds the tile
+  object until its answer is in (the scheduler's batch does), which is the same guarantee. A chunk nobody uses is dropped
+  (the workers are told), except the last one. When a chunk cannot be allocated the tile gets its own buffer (`refused` in
+  `arenaStats()`). What changed for a shared view: `u32Of` uses the view's offset; `imageDataOf` copies the tile into one
+  scratch `ImageData` (an `ImageData` cannot sit on shared memory), good until the next call, which its three callers
+  (`putImageData` at once) satisfy. `texSubImage2D` never sees a tile's own bytes (the atlas uploads slot buffers with
+  gutters), and the kernels copy into wasm memory (`set` takes a shared view).
+- **The pool** (`renderer/editor/inpaint_pool.js`): up to `clamp(hardwareConcurrency - 2, 1, 8)` workers of
+  `inpaint_worker.js`, **started when a job finds every running one busy**, not ahead of need (a small document in a
+  ComfyUI tab keeps one); three priorities (`INTERACTIVE`, `NORMAL`, `EXPORT`), `run`, `map` (answers in order),
+  `cancel(group)` (queued jobs rejected with a `CancelledError`, a running one's answer dropped), a timeout per job, a worker
+  that fails is dropped with its job. Every worker gets the arena's chunks before its first job and each change after it
+  (`{ op: "arena", added, dropped }`, no reply).
+- **The chain transport**: the editor's `mipsTransport` goes through the pool at `INTERACTIVE` and says `arena` and
+  `flights` (the pool's size); `ChainScheduler` then names a tile in the arena as `{ chunk, slot, vw, vh }` instead of copying
+  it, and only copied tiles count against the small first batches. A transport without `arena` (the tests' own, the one mips
+  worker behind `InpaintEditor.mipsOnPool = false` or `mipsOnSharedWorker`) gets copies as before. **A worker may read a tile
+  the main thread writes meanwhile**: every write goes through `writable()`, which moves the version first, and `_land` drops
+  an answer whose tile moved on, so a torn chain is never installed. The worker never writes a shared tile: the JS twin's
+  edge chain extends a copy (`clampExtend` used to run in place on the job's buffer).
+- The flood, the selection jobs, PNG encoding and the PSD / ORA writers stay on the one editor worker (the writers are
+  stateful); they move in E2 / E4.
+
+**Gates.** `pixels_test.js` `pool_chains_by_slot_and_by_copy`: 2,352 tiles (12544 × 12288) through 8 workers by slot and by
+copy, byte for byte the same and the kernel's on a sample; an edge tile by slot with both kernels, the document's bytes
+untouched; the queue's order (`cancelled, first, interactive, normal, export`), a failing job, `map`'s order, a pool of one
+starts one worker. `editor_test.py` `arena_slots_come_back_when_tiles_are_collected`: 600 tiles, collected, every slot
+back and no chunk kept. `a_whole_change_builds_its_mips...` no longer expects copy buffers in the scheduler's pool when
+the transport takes slots. Run on `--tiles on`: pixels editor composite commands brush film log PASS; `--tiles off`: pixels
+editor composite brush PASS; `nodecopy` PASS (the copy path, the two new files in the node build).
+
+**Measured** (15000 × 10000, this machine, 8 workers, the user's ComfyUI holding the card):
+
+| | before E1 (phase R, one mips worker) | E1 |
+|---|---|---|
+| 2,352 chains through the pool, by slot: wall [blocked] | | 59 ms [5.5] |
+| the same by copy: copies made here + wall | | 123 ms + 78 ms |
+| `perf_test.py` mips settled after a whole change, fit: wall [longest block] | 394 ms | 169 ms [92] |
+| the same at 1:1 | 320 ms | 138 ms [86] |
+
+**The gate's two numbers**: the chains themselves are in budget (59 ms, 5.5 ms blocked). The document's refresh is **at the
+edge of the 150 ms (138 to 169) and not within the 5 ms blocked**: the 86 to 92 ms block is the frame the landings cause
+(the atlas slots with their gutters built and uploaded on the main thread, the thumbnails), which was 94 to 132 ms before
+E1 too; with eight workers the landings arrive together, so it is one block instead of several. Building the slots in the
+worker (it has the tile by slot now) is the way down and is not built.
+
+**Seen once, not reproduced**: `a_settled_read_builds_its_levels_in_the_worker_not_here` failed with `requested: 0` in one of
+five editor runs on E1 (`--tiles on`); the four others passed. Re-run before believing it.
+
 ### E2. Composite per band and the streamed PNG (4 days)
 
 - `renderer/editor/inpaint_bands.js`: `compositeBand(doc, y0, y1, opts)` in a worker: for

@@ -22,6 +22,7 @@ import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, 
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
+import { WorkerPool, poolSize, INTERACTIVE } from "./inpaint_pool.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, setChainTransport, chainScheduler } from "./inpaint_tiles.js";
 
 /**
@@ -260,8 +261,27 @@ function mipsWorker() {
     return MIPS_WORKER;
 }
 
-/** The tile store's chain transport: a batch of tile bytes to the mips worker, their chains back (both transferred). */
+// The worker pool (docs/PLAN_BCE.md §E1, inpaint_pool.js): the same module in up to eight workers, started as jobs need
+// them. The mip chains go through it; `InpaintEditor.mipsOnPool = false` sends them to the one mips worker as before E1.
+let POOL = null;
+
+function editorPool() {
+    if (!POOL) POOL = new WorkerPool({
+        create: () => new Worker(new URL("./inpaint_worker.js", import.meta.url), { type: "module" }),
+        defaults: () => ({ kernels: kernelsMode() }),
+        onTiming: keepTiming,
+        timeout: WORKER_TIMEOUT,
+    });
+    return POOL;
+}
+
+/**
+ * The tile store's chain transport: a batch of tiles to a worker, their chains back. A tile in the arena is named by
+ * its slot and read where it lies; any other is a copy, transferred both ways.
+ */
 function mipsTransport(tiles) {
+    const transfer = tiles.filter((t) => t.data).map((t) => t.data);
+    if (mipsOnPool()) return editorPool().run("mips", { tiles }, transfer, { priority: INTERACTIVE });
     const w = InpaintEditor.mipsOnSharedWorker ? editorWorker() : mipsWorker();
     if (!w) return Promise.reject(new Error("no mips worker"));
     const id = ++workerSeq;
@@ -270,7 +290,7 @@ function mipsTransport(tiles) {
         const timer = setTimeout(() => { if (jobs.delete(id)) reject(new Error("mips job timed out")); }, WORKER_TIMEOUT);
         jobs.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
         try {
-            w.postMessage({ id, op: "mips", kernels: kernelsMode(), tiles }, tiles.map((t) => t.data));
+            w.postMessage({ id, op: "mips", kernels: kernelsMode(), tiles }, transfer);
         } catch (err) {
             clearTimeout(timer);
             jobs.delete(id);
@@ -279,6 +299,10 @@ function mipsTransport(tiles) {
     });
 }
 
+const mipsOnPool = () => InpaintEditor.mipsOnPool !== false && !InpaintEditor.mipsOnSharedWorker && !editorPool().off;
+mipsTransport.flights = poolSize();
+// tiles by slot only while the pool takes them: its workers are the ones that hold the arena's chunks
+Object.defineProperty(mipsTransport, "arena", { get: mipsOnPool });
 if (typeof Worker === "function") setChainTransport(mipsTransport);
 
 /**

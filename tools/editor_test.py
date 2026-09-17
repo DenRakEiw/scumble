@@ -1577,6 +1577,50 @@ async def screen_step(c):
     return res
 
 
+ARENA_ALLOC = """
+const A = await import("./editor/inpaint_arena.js");
+const T = await import("./editor/inpaint_tiles.js");
+if (!A.arenaEnabled()) return { enabled: false };
+const before = A.arenaStats();
+// 600 tiles: more than two chunks of 256 slots, so a chunk of their own is filled and has to be dropped again
+let p = T.TileLayerPixels.empty(256 * 30, 256 * 20);
+for (let ty = 0; ty < 20; ty++) for (let tx = 0; tx < 30; tx++) p.writable(tx, ty).data[3] = 255;
+const mid = A.arenaStats();
+p = null;
+window.__arenaBefore = before;
+return { enabled: true, before, mid };
+"""
+
+ARENA_AFTER = """
+const A = await import("./editor/inpaint_arena.js");
+const before = window.__arenaBefore; window.__arenaBefore = null;
+return { before, after: A.arenaStats() };
+"""
+
+
+async def arena_step(c):
+    """E1: a tile's arena slot goes back when the tile is collected, and a chunk nobody uses is dropped."""
+    out = await c.eval(PRE % ARENA_ALLOC, timeout=60)
+    if not out.get("enabled"):
+        return {"arena": False}
+    if out["mid"]["slots"] - out["before"]["slots"] != 600:
+        raise Exception("600 tiles took %d arena slots" % (out["mid"]["slots"] - out["before"]["slots"]))
+    res = None
+    for _ in range(12):
+        await c.call("HeapProfiler.collectGarbage")
+        await asyncio.sleep(0.3)
+        res = await c.eval("(async () => { const A = await import('./editor/inpaint_arena.js'); return A.arenaStats(); })()")
+        if res["slots"] <= out["before"]["slots"]:
+            break
+    await c.eval("(() => { window.__arenaBefore = null; })()")
+    left = res["slots"] - out["before"]["slots"]
+    if left > 0:
+        raise Exception("%d arena slots were not given back after their tiles were collected" % left)
+    if res["chunks"] > out["before"]["chunks"]:
+        raise Exception("the chunks the tiles filled were kept: %d before, %d after" % (out["before"]["chunks"], res["chunks"]))
+    return {"arena": True, "slots": [out["before"]["slots"], out["mid"]["slots"], res["slots"]], "chunks": [out["before"]["chunks"], out["mid"]["chunks"], res["chunks"]], "dropped": res["droppedChunks"] - out["before"]["droppedChunks"]}
+
+
 async def backend_step(c):
     exp = expected_tiles()
     return await c.eval(PRE % BACKEND_STEP.replace("__EXPECT__", "null" if exp is None else ("true" if exp else "false")), timeout=180)
@@ -5040,7 +5084,9 @@ for (const path of ["gpu", "2d"]) {
     row.pool = T.chainScheduler().pool.length;
     ed.releaseCaches();
     const poolKept = T.chainScheduler().pool.length;
-    if (async_() && !row.pool) fails.push(path + ": the landings left no buffers in the mips scheduler's pool to release");
+    // tiles in the arena (E1) are named by slot and never copied, so nothing comes back to keep
+    const copied = !T.chainScheduler().transport || !T.chainScheduler().transport.arena;
+    if (async_() && copied && !row.pool) fails.push(path + ": the landings left no buffers in the mips scheduler's pool to release");
     if (async_() && poolKept) fails.push(path + ": releaseCaches kept " + poolKept + " buffers of the mips scheduler's pool");
     row.fill = await exactScreen("after the second write", path);
     row.audited3 = audit(path + " after the second write");
@@ -5537,6 +5583,7 @@ return { tiles: out.tiles, level: out.level, rows: out.rows.map((r) => r.path + 
     ("the_screen_draws_no_cpu_mirror_and_stale_textures_leave", lambda c: screen_step(c)),
     ("c2_final_review_drag_undo_steps_writes_mirrors_report_limits", lambda c: final_step(c)),
     ("closed_tabs_are_collected", lambda c: closed_tabs_are_collected(c)),
+    ("arena_slots_come_back_when_tiles_are_collected", lambda c: arena_step(c)),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

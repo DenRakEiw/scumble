@@ -29,7 +29,7 @@ const chunks = [];    // index -> { sab, free: [slot], used } or null once dropp
 const listeners = new Set();
 let registry = null;
 
-const STATS = { slots: 0, chunks: 0, allocated: 0, freed: 0, droppedChunks: 0 };
+const STATS = { slots: 0, chunks: 0, allocated: 0, freed: 0, droppedChunks: 0, refused: 0 };
 
 /** Use the arena (default: when the page may share memory). A test switches it before any tile exists. */
 export function setArenaEnabled(on) {
@@ -78,7 +78,10 @@ export function allocTileBytes(owner) {
     if (!registry) registry = new FinalizationRegistry(release);
     let index = -1;
     for (let i = 0; i < chunks.length; i++) if (chunks[i] && chunks[i].free.length) { index = i; break; }
-    if (index < 0) index = newChunk();
+    if (index < 0) {
+        // no room for another 64 MB in one piece: this tile gets a buffer of its own, as without the arena
+        try { index = newChunk(); } catch (_) { STATS.refused++; return new Uint8ClampedArray(SLOT_BYTES); }
+    }
     const c = chunks[index];
     const slot = c.free.pop();
     c.used++;

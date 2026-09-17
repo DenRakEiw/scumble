@@ -34,8 +34,26 @@ import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
 import { mipChain, mipChainBytes, clampExtend, compositeTile, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge } from "./px/kernels.js";
 
-const TILE = 256, LEVELS = 5;
+const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
 const now = () => performance.now();
+
+// The tile arena's chunks (inpaint_arena.js, docs/PLAN_BCE.md §E1): index -> SharedArrayBuffer, sent by the pool before
+// the first job and on every change. A job names a tile in the arena as { chunk, slot } and it is read where it lies;
+// any other tile comes as { data: ArrayBuffer }, a copy, transferred.
+const ARENA = new Map();
+
+function arenaMessage(msg) {
+    for (const [index, sab] of msg.added || []) ARENA.set(index, sab);
+    for (const index of msg.dropped || []) ARENA.delete(index);
+}
+
+/** The bytes of a job's tile. `shared`: they are the document's own, never to be written. */
+function tileBytes(t) {
+    if (t.data) return { bytes: new Uint8Array(t.data, 0, TILE_BYTES), shared: false };
+    const sab = ARENA.get(t.chunk);
+    if (!sab) throw new Error("unknown arena chunk " + t.chunk);
+    return { bytes: new Uint8Array(sab, t.slot * TILE_BYTES, TILE_BYTES), shared: true };
+}
 
 /**
  * The mip chains of a batch of tiles (docs/PLAN_BCE.md §C6 b): each tile's bytes (a copy, transferred) give
@@ -55,20 +73,22 @@ function mipsJs(msg) {
     const n = mipChainBytes(TILE, LEVELS);
     const chains = [], exts = [], datas = [], transfer = [];
     for (const t of msg.tiles) {
-        const bytes = new Uint8Array(t.data);
+        const { bytes, shared } = tileBytes(t);
         const chain = mipChain(bytes, TILE, LEVELS, new Uint8Array(n));
         chains.push(chain.buffer);
         transfer.push(chain.buffer);
         if (t.vw < TILE || t.vh < TILE) {
-            clampExtend(bytes, TILE, t.vw, t.vh);
-            const ext = mipChain(bytes, TILE, LEVELS, new Uint8Array(n));
+            // extended in place in the job's copy; a tile in the arena is the document's, so in a copy of it
+            const own = shared ? bytes.slice() : bytes;
+            clampExtend(own, TILE, t.vw, t.vh);
+            const ext = mipChain(own, TILE, LEVELS, new Uint8Array(n));
             exts.push(ext.buffer);
             transfer.push(ext.buffer);
         } else {
             exts.push(null);
         }
-        datas.push(t.data);
-        transfer.push(t.data);
+        datas.push(t.data || null);
+        if (t.data) transfer.push(t.data);
     }
     return { chains, exts, datas, transfer };
 }
@@ -80,7 +100,7 @@ function mipsRust(p, msg) {
     try {
         const pin = a.take(TILE * TILE * 4), pout = a.take(n);
         for (const t of msg.tiles) {
-            p.u8().set(new Uint8Array(t.data, 0, TILE * TILE * 4), pin);
+            p.u8().set(tileBytes(t).bytes, pin);
             p.exports.mip_chain(pin, TILE, LEVELS, pout);
             const chain = p.u8().slice(pout, pout + n);
             chains.push(chain.buffer);
@@ -94,8 +114,8 @@ function mipsRust(p, msg) {
             } else {
                 exts.push(null);
             }
-            datas.push(t.data);
-            transfer.push(t.data);
+            datas.push(t.data || null);
+            if (t.data) transfer.push(t.data);
         }
     } finally { a.reset(); }
     return { chains, exts, datas, transfer };
@@ -269,6 +289,7 @@ async function run(msg) {
 const inWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
 if (inWorker) self.onmessage = async (e) => {
     const msg = e.data || {};
+    if (msg.op === "arena") { arenaMessage(msg); return; }
     try {
         const result = await run(msg);
         // an ImageBitmap in the reply is transferred, never copied, and so are the buffers a job names in `transfer`
