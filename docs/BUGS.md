@@ -19,6 +19,26 @@ Nothing at the moment.
 
 ## Open
 
+### What phase N1 found on the way
+
+**Written** 2026-09-17 with the measurement of phase N (`docs/PERFORMANCE.md` §14, `tools/native_test.py`,
+`tools/native_limits.py`). Seen while measuring, not reports; none is fixed.
+
+- **A provider run's crop blocks the window for 2.5 s, whatever the document's size.** A 1,024 px selection, a 1,492 px
+  patch: `stitch.js` `dilate` takes 1.9 s (a max filter that walks the whole radius for every pixel, twice), `boxCol` /
+  `boxRow` 0.35 s, all on the main thread in one piece. `native_test.py provider_crop` is the row. The number to beat:
+  under 0.2 s.
+- **The whole-picture wand on a document above the canvas limit works for 4.6 s and then refuses** ("larger than any
+  canvas", 30000 × 20000, `native_test.py 30000x20000 wand_whole_picture`). Why it gets
+  that far before it refuses is not read yet. Either it says so at once, or it floods over tiles.
+- **At the renderer's 15.5 GB of typed arrays the editor throws instead of saying no**: the 19th full 15k layer ends in an
+  uncaught `RangeError: Array buffer allocation failed` out of `allocTileBytes` / `TileLayerPixels.writable`
+  (`native_limits.py layers 15000x10000 22`). The arena counts a refused chunk and then falls back to a plain array, which
+  fails the same way. Not measured: what a stroke or a paste does to the document when it hits that in the middle.
+- **Opening a 150 MP PNG blocks the window for 2.1 s**: the picture is decoded into an image and read in 13
+  `getImageData` calls of 44 MB (1.7 of the 3.2 s). The stream reader a 600 MP file goes through never blocks longer
+  than 0.16 s, but inflates in JS at half the decoder's speed.
+
 ### What phase E left open on large documents
 
 **Written** 2026-09-17 with phase E (`docs/PLAN_BCE.md` §3, the "as built" blocks). Not reports: gates of the plan that were

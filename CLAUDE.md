@@ -141,9 +141,18 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    the binaries (commit them; `build.yml` checks them), `node tools/px_test.js` and `python tools/px_jobs.py --check` are the
    gates.
 9. **Phase E is built** (2026-09-17, see above). Its open ends are in `docs/BUGS.md` ("What phase E left open").
-10. **Phase N after E** (the user's wish, 2026-09-17, `docs/PLAN_BCE.md` §3b): measure what the browser still costs (pixel
-   readbacks such as the wand's 0.7 s `getImageData`, Chromium's memory limits, copies), cost the options up to a native
-   Rust editor (4 to 8 months), and let the user decide. N builds nothing.
+10. **Phase N is measured and decided** (2026-09-17, `docs/PLAN_BCE.md` §3b "N1 as measured, N2 costed, N3's
+   recommendation", `docs/PERFORMANCE.md` §14; `tools/native_test.py` and `tools/native_limits.py` are the tools, run on a
+   fresh `--no-comfy` instance). At 15k the browser's share of the wall is a half to 85 % on five rows (open, grow /
+   shrink, the wand, PNG and PSD export) and nothing on pan, zoom and stroke frames; all of it is the editor moving tiles
+   through canvases, which workers over the arena can do without (option B, about 3 weeks, six items in order). Typed
+   arrays end at **15.5 GB** in the renderer (18 full 15k layers), not 8. **The user's decision (2026-09-17): stay on
+   Electron and build B; no native tile store, no native editor. The user works up to about 15k**, so B's item 6
+   (one-channel masks) goes last and 30k is not the size to tune for. **Next: B in the plan's order, starting with
+   item 4** (`stitch.js` `dilate` and the box blurs, the cheapest second), then 1 (exports composited in the pool), 2
+   (wand and bucket over tiles), 3 (selection jobs on mask tiles), 5 (the PNG reader in Rust). Each item is measured
+   against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
+   the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
 
 **Decision (b) of 7c is still the user's** (exports and runs on the shared statistics entry; the numbers are in
 `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). Recommended to them on 2026-09-17: **keep the full-resolution statistics

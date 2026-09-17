@@ -1368,6 +1368,86 @@ workers deflate 600 MB in about a second. `perf_test.py`'s other rows are within
 wand's whole-image band read 2.1 to 7.0 s in three runs of one build while ComfyUI ran a job, and 3.5 s on the commit
 before in the same minute).
 
+## 14. Phase N1: what the browser still costs (2026-09-17)
+
+`docs/PLAN_BCE.md` §3b. Nothing was built; two measuring tools were: `tools/native_test.py` (the rows, split) and
+`tools/native_limits.py` (the memory limits). Each run on a fresh offline instance with its own profile, tiles on, Rust
+kernels, Ryzen 9 7900X3D, 95 GB of RAM, RTX 5090 (ComfyUI idle, holding 17 GB of the card), the window not in front.
+
+**How a row is split.** The main thread from a CPU profile of the row (CDP `Profiler`, 0.5 ms samples; V8 names the
+browser's natives, so `getImageData` is a frame of its own): *browser 2D* is time inside Canvas 2D, ImageBitmap and Blob
+natives; *copies* is the self time of the functions that only move tile bytes into and out of an `ImageData`
+(`regionCanvas`, `imageDataOf`, `_putBlock`, `releaseScratch`, `readBand`); *GPU* is time inside WebGL calls, `getError`
+among them, which is where the thread waits for the GPU process; *pixel JS* is pixel loops in JS on the main thread;
+*idle* is waiting for workers, the decoder or the GPU process. Workers from the `timing` parts of their jobs, summed over
+the workers (CPU time, not wall): pixel work against reads and writes of canvases inside the worker. Wrappers around the
+same calls count the bytes. The profiler costs nothing measurable (a run without it: every row within 5 %, bar the noise
+of the exports). Milliseconds.
+
+### 15,000 × 10,000 (150 MP; a base from a 276 MB PNG, one full paint layer)
+
+| row | wall | longest block | main: browser 2D | main: copies for it | main: GPU | main: pixel JS | main: rest | main idle | worker: pixel work | worker: canvas I/O | browser share of the wall |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| open the PNG (image element, then 13 reads) | 3,158 | 2,102 | 1,737 | 139 | 86 | 0 | 516 | 958 | 541 (mips) | 0 | **59 %** (+ the decode, in idle) |
+| pan / zoom, 160 frames | 315 | | 13 | 3 | 65 | 0 | 304 | | | | none: 0.1 to 0.5 ms a frame, 11 ms when every frame brings new tiles |
+| a stroke of 60 dabs and its release | 279 | | 240 | 21 | 1 | 0 | 44 | | | | 94 % of little: 1.6 ms a frame, release 77 ms |
+| grow +16 (24 MP box) | 722 | 206 | 162 | 38 | 31 | 69 | 57 | 516 | 315 | 160 | **50 %** |
+| shrink −16 | 603 | 201 | 157 | 33 | 12 | 41 | 52 | 410 | 190 | 162 | **58 %** |
+| invert | 204 | 204 | 4 | 0 | 0 | 169 | 49 | | | | 2 % (the loop is JS on the main thread) |
+| wand, a band across the picture (58 MP selected) | 4,218 | 1,626 | 2,029 | 273 | 1,114 | 96 | 116 | 740 | 531 | 1,274 | **about 85 %** (pixel work 627 of 4,218) |
+| wand, one disc | 133 | 61 | 35 | 55 | 0 | 6 | 24 | | 6 | 33 | about 90 % of little |
+| a provider run's crop and stitch (1024 px selection) | 2,485 | 2,485 | 57 | 4 | 0 | 2,430 | 27 | | | | 2 % (`dilate` in `stitch.js`: 1,901) |
+| export PNG (235 MB) | 3,510 | 191 | 1,758 | 1,014 | 9 | 0 | 530 | 319 | 9,641 (8 workers) | 0 | **79 %** |
+| export PSD (925 MB) | 3,861 | 147 | 1,599 | 875 | 0 | 0 | 897 | 609 | 12,580 | 0 | **64 %** |
+
+Bytes that crossed, from the wrappers: the wand reads 572 MB out of canvases on the main thread (12 `getImageData`) and
+the same picture again in the worker, makes two ImageBitmaps of 583 MB, and writes 1,236 MB back in 4,666
+`putImageData`; an export writes 1.8 GB of tiles into region canvases (`putImageData`), draws 4 GB of sources and reads
+572 MB back; opening reads 572 MB in 13 pieces; grow reads 93 MB twice and writes 203 MB in 854 pieces. Messages to workers
+carry no pixels any more (E1's arena): 0.0 MB cloned on every row.
+
+### 30,000 × 20,000 (600 MP, above every canvas; a 1.1 GB PNG, a sparse paint layer)
+
+| row | wall | longest block | main: browser 2D + copies | main: GPU | main: pixel JS | worker: pixel work | worker: canvas I/O | browser share |
+|---|---|---|---|---|---|---|---|---|
+| open through the stream reader | 9,640 | 159 | 610 | 102 | 329 | 7,397 (`png_read`, JS inflate, one worker) + 1,584 mips | 0 | 6 %: this row is pixel work |
+| pan / zoom | 211 | | 14 | 67 | | | | none: 0.06 to 0.4 ms a frame |
+| stroke and release | 490 | | 463 | | | | | 2.3 ms a frame, release 133 ms |
+| grow +16 (96 MP box) | 3,556 | 953 | 933 | 334 | 192 | 1,735 | 739 | **47 %** |
+| shrink −16 | 2,886 | 920 | 896 | 446 | 121 | 998 | 835 | **60 %** |
+| invert | 689 | 689 | 5 | | 596 | | | 1 % |
+| wand across the picture | 4,647, then **refused** | 2,019 | 1,628 | 1,776 | 135 | 763 | 2,370 | works 4.6 s before it says the document is larger than any canvas |
+| provider crop and stitch | 2,525 | 2,525 | 83 | | 2,454 | | | 3 % |
+| export PNG (1.1 GB) | 11,765 | 306 | 7,131 | 16 | 4 | 64,500 (8 workers) | 0 | **61 %** |
+| export PSD (3.7 GB) | 12,071 | 409 | 7,462 | 0 | 0 | 19,923 | 0 | **62 %** |
+
+### The memory limits, measured
+
+| | |
+|---|---|
+| typed arrays in the renderer (64 MB buffers, every page touched), `ArrayBuffer` and `SharedArrayBuffer` alike | **15.5 GB**, then `RangeError: Array buffer allocation failed`; the renderer lives. Not the 8 GB read in an issue |
+| one `WebAssembly.Memory` | 4 GB (grown to 3.75 GB in 256 MB steps without a refusal) |
+| a full 15k paint layer | +0.82 GB of renderer (0.56 GB of arena tiles, the rest its mip chains), +30 to 90 MB of GPU process |
+| full 15k layers in one document until it ends | **18 layers over the base** (16.0 GB of renderer, 11 GB of arena, GPU process 1.16 GB, pan at 1:1 still 0.2 ms); the 19th throws the `RangeError` out of `TileLayerPixels.writable`, uncaught |
+| four 15k documents, each a base and a full paint layer | 6.8 GB of renderer, 1.0 GB of GPU process, pan 0.1 ms: far from the limit |
+| 30k | a full layer is 3.3 GB with its chains: a base and **three** full layers, or fewer with a whole-picture selection (2.4 GB as RGBA tiles) |
+| GPU process per open 15k document without a filter layer | +0.25 GB (§C7 read +0.6 to +1.4 GB with the film look's surfaces) |
+
+### What the numbers say
+
+- **The browser's share is large on five rows** (open, grow / shrink, the wand, both exports: a half to 85 % of the
+  wall), and nothing on the rows drawn every frame (pan, zoom, a stroke's frames).
+- **Every one of those costs is the editor using a canvas as its pixel path, not Chromium being in the way.** The export
+  builds region canvases from tiles and reads them back; the wand composites to a canvas, reads it, ships a bitmap, reads
+  it again in the worker and draws the shape through another canvas; grow reads its mask out of a canvas twice; opening
+  decodes into an image and reads it in bands. Since E1 the tiles lie in shared memory that every worker can read, and
+  since R the kernels are Rust: all five rows can run over tile memory without a canvas, inside Electron.
+- **Two rows are slow for reasons no shell changes**: `stitch.js` `dilate` is a max filter of O(w · h · radius) in JS
+  (1.9 of the crop's 2.5 s on a 1,492 px patch), and the stream reader inflates in JS on one worker (12 ms a megapixel
+  against about 6 for Chromium's own decoder).
+- **Memory is not where it was feared**: 15.5 GB of typed arrays, 18 full 15k layers. A 30k document with more than three
+  full layers is the one case that needs tiles outside the renderer (option C).
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first

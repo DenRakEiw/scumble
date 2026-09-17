@@ -4080,6 +4080,65 @@ A recommendation written into this section with N1's table, by these questions:
 Gate: the table in `docs/PERFORMANCE.md` (a new section), the recommendation here, the user's decision recorded in
 `CLAUDE.md`.
 
+#### N1 as measured, N2 costed, N3's recommendation (2026-09-17)
+
+The tables are in `docs/PERFORMANCE.md` §14; the tools are `tools/native_test.py` (rows, split by a CPU profile of the
+main thread, wrappers around the browser's calls and the workers' `timing` parts) and `tools/native_limits.py` (memory).
+
+**N3's first question: after E, what share of the wall is browser boundaries?** Large on five rows at 15k: opening a PNG
+59 %, grow / shrink 50 to 58 %, the whole-picture wand about 85 % (pixel work 0.6 of 4.2 s), PNG export 79 %, PSD export
+64 %. Nothing on pan, zoom and a stroke's frames (0.1 to 2 ms). By the letter of §N3 ("under a third on every row") that
+is not "A plus B" yet. **But the share is not the browser's price, it is this editor's path**: every one of those
+milliseconds is the editor putting tiles into a canvas and reading them out again (`putImageData` of tiles into region
+canvases, `getImageData` of composites, ImageBitmaps to the worker, a second read there). E did not take them away as
+§3b expected, because E's bands are a region pass through a canvas and the wand, grow and the open path were not touched.
+Since E1 the tiles are in shared memory and since R the kernels are Rust, so the same rows can run over tile memory in the
+workers without a canvas. That is option B, and it removes what option D would remove on these rows.
+
+**N3's second question: does a real document hit a memory limit?** No. Typed arrays end at 15.5 GB in the renderer (not
+8), which is a base and 18 full paint layers at 15k, or four 15k documents with room for fourteen more layers. The one
+case that does is 30k with more than three full layers (3.3 GB each). C would fix that and nothing else; it waits until
+the user works at that size.
+
+**N2, costed after the measurement.**
+
+| option | removes, measured | costs | verdict |
+|---|---|---|---|
+| A. Stay | nothing | nothing | the five rows stay where they are |
+| **B. The pixel paths over tile memory** | the browser's share of all five rows (list below) | **about 3 weeks** | **recommended** |
+| C. Native tile store | the 15.5 GB cap | 2 to 4 weeks | not now: no document of the user's reaches the cap |
+| D. Native editor | the same five rows as B, the cap, Canvas 2D rasterising (a stroke's frame is 1.6 ms today), WebGL's 33 MP buffer | 4 to 8 months, the plugin API, the node, the look of brushes and text | **not recommended**: B buys the measured part for a tenth of the time |
+
+**B, as a list, in the order of what it buys** (each with its gate: the row in `native_test.py`, bytes equal to the path
+it replaces):
+
+1. **Exports: plain stacks composited in the pool from the arena** (`composite_tile`, 27 ms a tile row of four layers in
+   R's table), the region pass kept for bands with a filter, a colour match or a blend mode. 15k PNG: 3.5 s, of which
+   2.8 s are canvases; the deflate behind it is 9.6 s of CPU over eight workers, so about 1.5 s is the floor. This is also
+   `docs/BUGS.md`'s "an export in bands is slower than the whole flatten". 3 to 4 days.
+2. **The wand and the bucket over tiles in the worker**: the band composite from the arena, `flood_shape` on it, the
+   shape written into mask tiles. 4.2 s today, 0.6 s of it pixel work; about 1.5 s expected (the composite of 150 MP is
+   the new cost). It also ends the refusal at 30k after 4.6 s of work. 3 days.
+3. **Grow, shrink, feather and invert on mask tiles from the arena** (no canvas on either side), invert in Rust in a
+   worker. Grow 0.72 s, of which 0.32 s is the kernel. 2 to 3 days.
+4. **`stitch.js`: `dilate` and the box blurs** as a running max / the EDT kernel that exists. 2.5 s of a provider run's
+   crop, to well under 0.2 s. 1 day. The cheapest second on the list, and it blocks the window in one piece today.
+5. **Opening a PNG**: the stream reader's inflate and unfilter in Rust (`png_read` is JS: 12 ms a megapixel), then decide
+   by measurement whether every PNG goes through it (Chromium's decoder plus the reads is 21 ms a megapixel today).
+   JPEG and WebP keep the browser's decoder. 2 days.
+6. **One-channel masks** (C5's plan, not built): a whole-picture selection at 30k is 2.4 GB as RGBA tiles, and invert
+   blocks 0.7 s there. 3 to 4 days.
+
+**What B leaves to the browser, measured**: a stroke's Canvas 2D rasterising (1.6 ms a frame, release 77 ms), text and
+shapes, the WebGL filters and their readback in exports with a filter layer, tile uploads on a far pan (11 ms a frame),
+the 15.5 GB cap, wasm32's 4 GB per instance.
+
+**Recommendation: A plus B, no C now, no D.** D gets its own plan only if, after B, a row people feel is still mostly
+browser, or the user's documents reach the cap and C cannot hold them.
+
+**Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
+order: 4, 1, 2, 3, 5, 6.
+
 ---
 
 ## 4. Decisions in one table (for the session that builds it)
