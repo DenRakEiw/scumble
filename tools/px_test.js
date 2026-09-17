@@ -403,6 +403,34 @@ async function pngPartCases(px, label) {
     check(`${label} pngPart of noise inflates back`, !!nout && nout.length === np.raw);
 }
 
+// E4: a PSD's channel rows. The twin and the Rust kernel give the bytes of inpaint_export.js `packBits`, row by row.
+async function psdCases(ref, label, js) {
+    const ex = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_export.js")).href);
+    let ok = true, okTwin = true, detail = "";
+    for (const [w, rows, seed] of [[1, 1, 1], [2, 3, 2], [129, 4, 3], [700, 9, 4], [4096, 3, 5]]) {
+        const src = randomRGBA(w, rows, seed);
+        // runs of every length up to past 128, singles between runs of two, and long literals
+        for (let x = 0, run = 1; x + run < w; x += run + 1, run = (run % 140) + 1) src.fill(seed * 7, (x * 4), (x + run) * 4);
+        if (rows > 1) for (let x = 0; x + 3 <= w; x += 3) { const o = (w + x) * 4; src.fill(x & 255, o + 4, o + 12); }
+        const a = js.psdPackRows(src, w, rows), b = ref.psdPackRows(src, w, rows);
+        for (let ch = 0; ch < 4; ch++) {
+            const want = [], lens = new Uint8Array(rows * 2);
+            for (let y = 0; y < rows; y++) {
+                const row = new Uint8Array(w);
+                for (let x = 0; x < w; x++) row[x] = src[(y * w + x) * 4 + ch];
+                const p = ex.packBits(row);
+                lens[y * 2] = p.length >> 8; lens[y * 2 + 1] = p.length & 255;
+                want.push(...p);
+            }
+            const wantBytes = Uint8Array.from(want);
+            if (!eqBytes(a[ch].data, wantBytes) || !eqBytes(a[ch].lens, lens)) { okTwin = false; detail = `${w}x${rows} channel ${ch}`; }
+            if (!eqBytes(b[ch].data, a[ch].data) || !eqBytes(b[ch].lens, a[ch].lens)) { ok = false; detail = `${w}x${rows} channel ${ch} ${firstDiff(b[ch].data, a[ch].data)}`; }
+        }
+    }
+    check(`js psdPackRows gives the bytes of the PSD writer's packBits`, okTwin, detail);
+    check(`js psdPackRows equals the ${label}`, ok, detail);
+}
+
 function unfilter(f, w, rows, prev) {
     const n = w * 4, out = new Uint8Array(rows * n);
     for (let y = 0; y < rows; y++) {
@@ -518,6 +546,7 @@ async function main() {
         await compositeCases(px, label, js);
         await pngCases(px, label, js);
         await pngPartCases(px, label);
+        await psdCases(px, label, js);
         await memoryCases(px, label);
     }
     console.log(failures ? `FAIL (${failures})` : "PASS");

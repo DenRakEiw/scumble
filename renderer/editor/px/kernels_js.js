@@ -558,6 +558,47 @@ function paeth(a, b, c) {
     return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
 }
 
+// ---- PSD rows ----------------------------------------------------------------------------------
+
+/** PackBits (the RLE of TIFF and PSD) of `n` bytes of `src` from `at`, every `step`-th byte; appended to `out` (an array). */
+function packBitsInto(src, at, step, n, out) {
+    let i = 0;
+    while (i < n) {
+        const v = src[at + i * step];
+        let j = i;
+        while (j + 1 < n && src[at + (j + 1) * step] === v && j - i < 126) j++;
+        const run = j - i + 1;
+        if (run >= 2) { out.push(257 - run, v); i = j + 1; continue; }
+        let k = i;
+        while (k < n && k - i < 128) { if (k + 1 < n && src[at + (k + 1) * step] === src[at + k * step]) break; k++; }
+        if (k === i) k = i + 1;
+        out.push(k - i - 1);
+        for (let m = i; m < k; m++) out.push(src[at + m * step]);
+        i = k;
+    }
+}
+
+/**
+ * PackBits of the four channels of `rows` rows of RGBA8 (`w` wide) for a PSD: `[{ lens, data }]` for R, G, B, A, with
+ * `lens` each row's packed length as big-endian u16 and `data` the packed rows one after the other. The runs are the
+ * ones inpaint_export.js `packBits` finds.
+ */
+export function psdPackRows(rgba, w, rows) {
+    rgba = bytesOf(rgba);
+    const out = [];
+    for (let ch = 0; ch < 4; ch++) {
+        const lens = new Uint8Array(rows * 2), bytes = [];
+        for (let y = 0; y < rows; y++) {
+            const before = bytes.length;
+            packBitsInto(rgba, y * w * 4 + ch, 4, w, bytes);
+            const n = bytes.length - before;
+            lens[y * 2] = n >> 8; lens[y * 2 + 1] = n & 255;
+        }
+        out.push({ lens, data: Uint8Array.from(bytes) });
+    }
+    return out;
+}
+
 /** A zlib stream through the browser's native `CompressionStream("deflate")`. */
 export async function deflate(bytes) {
     const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));

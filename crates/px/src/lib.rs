@@ -24,6 +24,7 @@ mod flood;
 mod jobs;
 mod mip;
 mod png;
+mod psd;
 
 /// dlmalloc hands out a page start plus its 8-byte header, while a JS ArrayBuffer of tile
 /// size starts on a page. A copy between the two then has its destination 8 bytes past the
@@ -36,7 +37,7 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature; `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    5
+    6
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -227,4 +228,19 @@ pub unsafe extern "C" fn deflate_part(src: *const u8, len: usize, level: i32, la
 #[no_mangle]
 pub unsafe extern "C" fn adler32(src: *const u8, len: usize, start: u32) -> u32 {
     png::adler32(slice::from_raw_parts(src, len), start)
+}
+
+// ---- PSD --------------------------------------------------------------------------------
+
+/// Bytes `psd_pack_rows` needs in `out` for `rows` rows of `w` pixels.
+#[no_mangle]
+pub extern "C" fn psd_pack_rows_cap(w: usize, rows: usize) -> usize {
+    psd::pack_rows_cap(w, rows)
+}
+
+/// PackBits of channel `channel` (0 to 3) of `rows` rows of RGBA8 (`w` wide): the packed rows into `out` (`cap` bytes),
+/// each row's packed length as a big-endian u16 into `lens` (2 × rows bytes). Returns the bytes written, or -1.
+#[no_mangle]
+pub unsafe extern "C" fn psd_pack_rows(rgba: *const u8, w: usize, rows: usize, channel: usize, out: *mut u8, cap: usize, lens: *mut u8) -> isize {
+    psd::pack_rows(slice::from_raw_parts(rgba, w * 4 * rows), w, rows, channel & 3, slice::from_raw_parts_mut(out, cap), slice::from_raw_parts_mut(lens, rows * 2))
 }

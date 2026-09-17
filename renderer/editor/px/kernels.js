@@ -75,6 +75,11 @@ export function compositeTile(dst, srcs, ops, alphas, masks = null) {
     return p ? p.compositeTile(dst, srcs, ops, alphas, masks) : J.compositeTile(dst, srcs, ops, alphas, masks);
 }
 
+export function psdPackRows(rgba, w, rows) {
+    const p = rustPx();
+    return p ? p.psdPackRows(rgba, w, rows) : J.psdPackRows(rgba, w, rows);
+}
+
 export function pngFilterRows(rgba, w, rows, prev = null, out = null) {
     const p = rustPx();
     return p ? p.pngFilterRows(rgba, w, rows, prev, out) : J.pngFilterRows(rgba, w, rows, prev, out || undefined);

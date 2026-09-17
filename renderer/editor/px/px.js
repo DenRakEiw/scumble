@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 5;
+export const PX_ABI = 6;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -237,6 +237,26 @@ export class Px {
             const pr = this._in(a, rgba, rows * 4 * w), pp = prev ? this._in(a, prev, 4 * w) : 0, po = a.take(n);
             this.exports.png_filter_rows(pr, w, rows, pp, po);
             return this._out(Uint8Array, po, n, out);
+        } finally { a.reset(); }
+    }
+
+    /**
+     * PackBits of the four channels of `rows` rows of RGBA8 for a PSD (docs/PLAN_BCE.md §E4), the bytes of
+     * inpaint_export.js `packBits`: `[{ lens, data }]` for R, G, B, A, `lens` each row's packed length as big-endian
+     * u16 (the table a PSD puts in front of a channel), `data` the packed rows one after the other. Copies.
+     */
+    psdPackRows(rgba, w, rows) {
+        const a = this.job;
+        try {
+            const pr = this._in(a, rgba, rows * 4 * w);
+            const cap = this.exports.psd_pack_rows_cap(w, rows), po = a.take(cap), pl = a.take(rows * 2);
+            const out = [];
+            for (let ch = 0; ch < 4; ch++) {
+                const n = this.exports.psd_pack_rows(pr, w, rows, ch, po, cap, pl);
+                if (n < 0) throw new Error("px: psd_pack_rows ran out of room");
+                out.push({ lens: this.u8().slice(pl, pl + rows * 2), data: this.u8().slice(po, po + n) });
+            }
+            return out;
         } finally { a.reset(); }
     }
 

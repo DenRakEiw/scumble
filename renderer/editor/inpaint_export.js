@@ -33,7 +33,7 @@ class ByteWriter {
 }
 
 /** PackBits (RLE) of one row. */
-function packBits(row) {
+export function packBits(row) {
     const out = [];
     const n = row.length;
     let i = 0;

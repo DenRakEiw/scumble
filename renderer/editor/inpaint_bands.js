@@ -1,0 +1,272 @@
+/**
+ * Files written from rows, never from a whole picture (docs/PLAN_BCE.md §E2 and §E4).
+ *
+ * A **row source** hands out a picture a few rows at a time, in order: `{ width, height, align, part(y, n, needPrev) }`.
+ * `part` resolves to `{ args, transfer }`, the rows as a worker job takes them (inpaint_worker.js `png_part`,
+ * `psd_part`): `{ tiles, prevTiles, r0 }` for tile pixels in the arena, read by the worker where they lie, or
+ * `{ rgba, prev }` as bytes. A part never crosses a multiple of `align` rows (a tile row, a composited band).
+ *
+ *   tileRows(snap, byName)             tile pixels; `snap` is a clone the caller releases when the file is written
+ *   bandRows(width, height, read, n)   a picture that is composited in bands: `read(y0, y1)` gives RGBA8 of its own
+ *
+ * The **writers** cut a source into parts of about 8 MB, keep a bounded number of them in the workers and join the
+ * answers: `writePng` (one zlib stream from parts deflated in parallel, inpaint_png.js), `PsdBandWriter` (PackBits per
+ * channel, the row length tables joined), `OraBandWriter` (a stored zip of PNGs made by `writePng`). `run(op, args,
+ * transfer)` is the pool. Nothing here touches a canvas; the editor makes the sources.
+ */
+import { PngStreamWriter, partRows } from "./inpaint_png.js";
+
+const TILE = 256;
+
+/** Tile pixels as a row source. `byName`: the workers hold the arena, so tiles go by slot. */
+export function tileRows(snap, byName) {
+    const width = snap.width, height = snap.height;
+    const names = new Map();
+    const row = (ty) => {
+        if (!byName || ty < 0) return null;
+        if (!names.has(ty)) { names.set(ty, snap.tileRowNames(ty)); if (names.size > 3) names.delete(names.keys().next().value); }
+        return names.get(ty);
+    };
+    return {
+        width, height, align: TILE,
+        async part(y, n, needPrev) {
+            const ty = Math.floor(y / TILE), r0 = y - ty * TILE;
+            const tiles = row(ty);
+            const above = needPrev && r0 === 0 && ty > 0 ? row(ty - 1) : null;
+            if (tiles && (!needPrev || r0 > 0 || ty === 0 || above)) return { args: { tiles, prevTiles: above, r0 }, transfer: [] };
+            const rgba = snap.readRect(0, y, width, n).data.buffer;
+            const prev = needPrev && y > 0 ? snap.readRect(0, y - 1, width, 1).data.buffer : null;
+            return { args: { rgba, prev }, transfer: prev ? [rgba, prev] : [rgba] };
+        },
+    };
+}
+
+/**
+ * A picture composited in bands of `rows` as a row source. `read(y0, y1)` gives (or resolves to) the RGBA8 of those
+ * rows as a typed array of its own; bands are read one after the other, each once, when its first part is asked for.
+ */
+export function bandRows(width, height, read, rows = TILE) {
+    const stride = width * 4;
+    let band = null, by0 = 0, by1 = 0, above = null;   // the band in hand, and the last row of the one before it
+    return {
+        width, height, align: rows,
+        async part(y, n, needPrev) {
+            if (y >= by1) {
+                if (band) above = band.slice(band.length - stride);
+                by0 = by1; by1 = Math.min(height, by0 + rows);
+                if (y !== by0) throw new Error(`rows asked for out of order: ${y}, the next band starts at ${by0}`);
+                band = await read(by0, by1);
+                if (band.length !== (by1 - by0) * stride) throw new Error(`a band of ${band.length} bytes for ${by1 - by0} rows of ${width}`);
+            }
+            if (y < by0 || y + n > by1) throw new Error(`rows ${y} to ${y + n} are not in the band ${by0} to ${by1}`);
+            const r = y - by0;
+            const rgba = band.slice(r * stride, (r + n) * stride).buffer;
+            let prev = null;
+            if (needPrev) prev = r > 0 ? band.slice((r - 1) * stride, r * stride).buffer : above ? above.slice().buffer : null;
+            return { args: { rgba, prev }, transfer: prev ? [rgba, prev] : [rgba] };
+        },
+    };
+}
+
+/** Walk a source in parts: `each(y, n)` for every part, in order, none crossing `source.align`. */
+async function forParts(source, each) {
+    const per = partRows(source.width, source.align);
+    for (let y = 0; y < source.height;) {
+        const n = Math.min(per, source.height - y, source.align - (y % source.align));
+        await each(y, n);
+        y += n;
+    }
+}
+
+/** A PNG of a row source: a Blob. `texts`: tEXt chunks; `progress(fraction)` as the rows go out. */
+export async function writePng(source, run, { texts = null, flights = 8, progress = null, pause = null } = {}) {
+    const writer = new PngStreamWriter(source.width, source.height, { texts, flights, run: (args, transfer) => run("png_part", args, transfer) });
+    await forParts(source, async (y, n) => {
+        await writer.room();
+        const { args, transfer } = await source.part(y, n, true);
+        writer.add(n, args, transfer);
+        if (progress) progress((y + n) / source.height);
+        if (pause && args.rgba) await pause();
+    });
+    return writer.finish();
+}
+
+/** Parts of other kinds in the workers, a bounded number at once, answers in order. */
+class Flights {
+    constructor(most) { this.most = Math.max(1, most | 0); this.inFlight = new Set(); this.all = []; this.failed = null; }
+    async room() {
+        while (this.inFlight.size >= this.most) await Promise.race(this.inFlight);
+        if (this.failed) throw this.failed;
+    }
+    add(promise) {
+        const t = Promise.resolve(promise).then((r) => { this.inFlight.delete(t); return r; }, (err) => { this.inFlight.delete(t); if (!this.failed) this.failed = err; throw err; });
+        t.catch(() => {});
+        this.inFlight.add(t);
+        this.all.push(t);
+    }
+    done() { return Promise.all(this.all); }
+}
+
+/** The PackBits channels of a row source: `[R, G, B, A]`, each `{ lens: [Uint8Array], data: [Uint8Array], total }`. */
+async function packChannels(source, run, { flights = 8, progress = null, pause = null } = {}) {
+    const f = new Flights(flights);
+    await forParts(source, async (y, n) => {
+        await f.room();
+        const { args, transfer } = await source.part(y, n, false);
+        delete args.prev; delete args.prevTiles;
+        f.add(run("psd_part", { w: source.width, rows: n, ...args }, transfer.filter((b) => b === args.rgba)));
+        if (progress) progress((y + n) / source.height);
+        if (pause && args.rgba) await pause();
+    });
+    const replies = await f.done();
+    const out = [0, 1, 2, 3].map(() => ({ lens: [], data: [], total: 0 }));
+    for (const r of replies) r.channels.forEach((c, i) => { const d = new Uint8Array(c.data); out[i].lens.push(new Uint8Array(c.lens)); out[i].data.push(d); out[i].total += d.length; });
+    return out;
+}
+
+const PSD_BLEND = { normal: "norm", multiply: "mul ", screen: "scrn", overlay: "over", darken: "dark", lighten: "lite", "soft-light": "sLit", "hard-light": "hLit", difference: "diff" };
+const ORA_BLEND = { normal: "svg:src-over", multiply: "svg:multiply", screen: "svg:screen", overlay: "svg:overlay", darken: "svg:darken", lighten: "svg:lighten", "soft-light": "svg:soft-light", "hard-light": "svg:hard-light", difference: "svg:difference" };
+
+class Bytes {
+    constructor() { this.parts = []; this.size = 0; }
+    push(u8) { this.parts.push(u8); this.size += u8.length; }
+    u8(v) { this.push(Uint8Array.of(v & 255)); }
+    u16(v) { this.push(Uint8Array.of((v >> 8) & 255, v & 255)); }
+    i16(v) { this.u16(v < 0 ? v + 0x10000 : v); }
+    u32(v) { if (!(v >= 0 && v <= 0xFFFFFFFF)) throw new Error("a PSD section above 4 GB: this document needs PSB, which is not written"); this.push(Uint8Array.of((v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255)); }
+    i32(v) { this.u32(v < 0 ? v + 0x100000000 : v); }
+    ascii(s) { this.push(new TextEncoder().encode(s)); }
+}
+
+function pascal(name, pad) {
+    const bytes = new TextEncoder().encode(String(name || "Layer").replace(/[^\x20-\x7e]/g, "_").slice(0, 255));
+    const out = new Uint8Array(Math.ceil((1 + bytes.length) / pad) * pad);
+    out[0] = bytes.length;
+    out.set(bytes, 1);
+    return out;
+}
+
+/**
+ * The PSD of inpaint_export.js `PsdWriter`, byte for byte, from row sources: a layer is packed as soon as it is handed
+ * over and kept packed (a 15000 x 10000 layer's four channels are a fraction of its 600 MB), the file is a Blob of the
+ * pieces. PSD (not PSB): 30,000 px a side and 4 GB a section at most.
+ */
+export class PsdBandWriter {
+    constructor({ width, height, run, flights = 8, pause = null }) {
+        if (width > 30000 || height > 30000) throw new Error(`a PSD holds at most 30,000 px a side (${width} × ${height})`);
+        this.width = width; this.height = height;
+        this.run = run; this.flights = flights; this.pause = pause;
+        this.records = new Bytes();
+        this.channelData = new Bytes();
+        this.count = 0;
+    }
+
+    /** One layer, bottom first: `L` = { name, x, y, opacity, visible, blend }, `source` its pixels. */
+    async layer(L, source, progress = null) {
+        const lw = source.width, lh = source.height;
+        const [r, g, b, a] = await packChannels(source, this.run, { flights: this.flights, progress, pause: this.pause });
+        const packed = [[-1, a], [0, r], [1, g], [2, b]];
+        const rec = this.records;
+        rec.i32(L.y); rec.i32(L.x); rec.i32(L.y + lh); rec.i32(L.x + lw);
+        rec.u16(4);
+        for (const [id, pk] of packed) { rec.i16(id); rec.u32(2 + 2 * lh + pk.total); }
+        rec.ascii("8BIM");
+        rec.ascii(PSD_BLEND[L.blend] || "norm");
+        rec.u8(Math.round(Math.max(0, Math.min(1, L.opacity ?? 1)) * 255));
+        rec.u8(0);
+        rec.u8(L.visible === false ? 2 : 0);
+        rec.u8(0);
+        const name = pascal(L.name, 4);
+        rec.u32(4 + 4 + name.length);
+        rec.u32(0); rec.u32(0);
+        rec.push(name);
+        for (const [, pk] of packed) {
+            this.channelData.u16(1);
+            for (const l of pk.lens) this.channelData.push(l);
+            for (const d of pk.data) this.channelData.push(d);
+        }
+        this.count++;
+    }
+
+    /** The flattened picture closes the file. */
+    async finish(composite, progress = null) {
+        const [cr, cg, cb] = await packChannels(composite, this.run, { flights: this.flights, progress, pause: this.pause });
+        const w = new Bytes();
+        w.ascii("8BPS"); w.u16(1); w.push(new Uint8Array(6)); w.u16(3); w.u32(this.height); w.u32(this.width); w.u16(8); w.u16(3);
+        w.u32(0);   // colour mode data
+        w.u32(0);   // image resources
+        let layerInfoLen = 2 + this.records.size + this.channelData.size;
+        const pad = layerInfoLen % 2;
+        layerInfoLen += pad;
+        w.u32(4 + layerInfoLen + 4);
+        w.u32(layerInfoLen);
+        w.i16(this.count);
+        for (const p of this.records.parts) w.push(p);
+        for (const p of this.channelData.parts) w.push(p);
+        if (pad) w.u8(0);
+        w.u32(0);   // global layer mask info
+        // merged image: RGB, PackBits, all row lengths first
+        w.u16(1);
+        for (const pk of [cr, cg, cb]) for (const l of pk.lens) w.push(l);
+        for (const pk of [cr, cg, cb]) for (const d of pk.data) w.push(d);
+        return new Blob(w.parts, { type: "image/vnd.adobe.photoshop" });
+    }
+}
+
+const le16 = (v) => Uint8Array.of(v & 255, (v >> 8) & 255);
+const le32 = (v) => Uint8Array.of(v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255);
+const xmlEsc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/**
+ * The OpenRaster file of inpaint_export.js `OraWriter` from row sources: every layer a PNG made by `writePng`, the zip
+ * (stored entries) a Blob of the pieces, each entry's CRC-32 from a worker. Zip, not zip64: 4 GB at most.
+ */
+export class OraBandWriter {
+    constructor({ width, height, run, flights = 8, pause = null }) {
+        this.width = width; this.height = height;
+        this.run = run; this.flights = flights; this.pause = pause;
+        this.entries = [];   // { name, blob, crc, size }
+        this.stackLines = [];
+        this.count = 0;
+        this._add("mimetype", new Blob([new TextEncoder().encode("image/openraster")]));
+    }
+
+    _add(name, blob) {
+        const e = { name, blob, crc: 0, size: blob.size };
+        e.ready = Promise.resolve(this.run("crc", { blob }, [])).then((r) => { e.crc = r.crc >>> 0; });
+        e.ready.catch(() => {});
+        this.entries.push(e);
+    }
+
+    async layer(L, source, progress = null) {
+        const file = `data/layer${this.count}.png`;
+        this._add(file, await writePng(source, this.run, { flights: this.flights, progress, pause: this.pause }));
+        // ORA lists layers top first, they arrive bottom first
+        this.stackLines.unshift(`    <layer name="${xmlEsc(L.name || "Layer")}" src="${file}" x="${L.x}" y="${L.y}" opacity="${(L.opacity ?? 1).toFixed(3)}" visibility="${L.visible === false ? "hidden" : "visible"}" composite-op="${ORA_BLEND[L.blend] || "svg:src-over"}" />`);
+        this.count++;
+    }
+
+    /** `composite`: the merged picture's row source; `thumbnail`: a PNG Blob of at most 256 px. */
+    async finish(composite, thumbnail, progress = null) {
+        const stack = `<?xml version="1.0" encoding="UTF-8"?>\n<image version="0.0.3" w="${this.width}" h="${this.height}" xres="72" yres="72">\n  <stack>\n${this.stackLines.join("\n")}\n  </stack>\n</image>\n`;
+        this._add("stack.xml", new Blob([new TextEncoder().encode(stack)]));
+        this._add("mergedimage.png", await writePng(composite, this.run, { flights: this.flights, progress, pause: this.pause }));
+        if (thumbnail) this._add("Thumbnails/thumbnail.png", thumbnail);
+        await Promise.all(this.entries.map((e) => e.ready));
+        const pieces = [], central = [];
+        let offset = 0, cdSize = 0;
+        const put = (list, u8) => { list.push(u8); return u8.length; };
+        for (const e of this.entries) {
+            const name = new TextEncoder().encode(e.name);
+            if (e.size > 0xFFFFFFFF || offset > 0xFFFFFFFF) throw new Error("an OpenRaster file above 4 GB is not written (zip64)");
+            const at = offset;
+            for (const u of [le32(0x04034b50), le16(20), le16(0x0800), le16(0), le16(0), le16(0x21), le32(e.crc), le32(e.size), le32(e.size), le16(name.length), le16(0), name]) offset += put(pieces, u);
+            pieces.push(e.blob); offset += e.size;
+            for (const u of [le32(0x02014b50), le16(20), le16(20), le16(0x0800), le16(0), le16(0), le16(0x21), le32(e.crc), le32(e.size), le32(e.size), le16(name.length), le16(0), le16(0), le16(0), le16(0), le32(0), le32(at), name]) cdSize += put(central, u);
+        }
+        if (offset > 0xFFFFFFFF) throw new Error("an OpenRaster file above 4 GB is not written (zip64)");
+        const n = this.entries.length;
+        const end = [le32(0x06054b50), le16(0), le16(0), le16(n), le16(n), le32(cdSize), le32(offset), le16(0)];
+        return new Blob([...pieces, ...central, ...end], { type: "image/openraster" });
+    }
+}

@@ -316,6 +316,146 @@ if (a.prep.crop.width === bw && a.prep.crop.height === bh) {
 await run("select_none", { doc: window.__ex });
 return { bbox: a.prep.info.bbox, window: [a.prep.sel.ox, a.prep.sel.oy, a.prep.sel.w, a.prep.sel.h], ...out };
 """),
+    ("layered_files_from_rows", """
+// E4: PSD and ORA written from the layers' tiles and the composite's bands, against the canvas writers
+// (inpaint_export.js): the same structure, the same layer records, the same pixels.
+const ed = ednow(window.__ex);
+const E = Editor(ed);
+const X = await import("./editor/inpaint_export.js");
+const u32 = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+const u16 = (b, o) => (b[o] << 8) | b[o + 1];
+const i32 = (b, o) => u32(b, o) | 0;
+const unpack = (b, o, lens, w) => {   // PackBits rows -> one plane
+    const out = new Uint8Array(lens.length * w);
+    lens.forEach((len, y) => {
+        let p = o, q = y * w;
+        const end = o + len;
+        while (p < end) { const n = b[p++]; if (n < 128) { for (let k = 0; k <= n; k++) out[q++] = b[p++]; } else if (n > 128) { const v = b[p++]; for (let k = 0; k < 257 - n; k++) out[q++] = v; } }
+        if (q !== (y + 1) * w) throw new Error("a PackBits row of " + (q - y * w) + " pixels for " + w);
+        o = end;
+    });
+    return { plane: out, end: o };
+};
+const parsePsd = (b) => {
+    if (String.fromCharCode(b[0], b[1], b[2], b[3]) !== "8BPS") throw new Error("not a PSD");
+    const H = u32(b, 14), W = u32(b, 18);
+    let o = 26;
+    o += 4 + u32(b, o);            // colour mode data
+    o += 4 + u32(b, o);            // image resources
+    const lmEnd = o + 4 + u32(b, o);
+    o += 4;
+    o += 4;                        // layer info length
+    const count = u16(b, o); o += 2;
+    const layers = [];
+    for (let i = 0; i < count; i++) {
+        const top = i32(b, o), left = i32(b, o + 4), bottom = i32(b, o + 8), right = i32(b, o + 12); o += 16;
+        const nch = u16(b, o); o += 2;
+        const channels = [];
+        for (let c = 0; c < nch; c++) { channels.push([(u16(b, o) << 16) >> 16, u32(b, o + 2)]); o += 6; }
+        const blend = String.fromCharCode(b[o + 4], b[o + 5], b[o + 6], b[o + 7]), opacity = b[o + 8], flags = b[o + 10]; o += 12;
+        const extra = u32(b, o); o += 4;
+        const nameLen = b[o + 8];
+        const name = String.fromCharCode(...b.subarray(o + 9, o + 9 + nameLen));
+        o += extra;
+        layers.push({ rect: [left, top, right, bottom], channels, blend, opacity, flags, name });
+    }
+    for (const L of layers) {
+        const w = L.rect[2] - L.rect[0], h = L.rect[3] - L.rect[1];
+        L.planes = {};
+        for (const [id, len] of L.channels) {
+            if (u16(b, o) !== 1) throw new Error("a channel that is not PackBits");
+            const lens = []; for (let y = 0; y < h; y++) lens.push(u16(b, o + 2 + y * 2));
+            const r = unpack(b, o + 2 + 2 * h, lens, w);
+            if (r.end !== o + len) throw new Error(`layer ${L.name} channel ${id}: the record says ${len} bytes, the rows are ${r.end - o}`);
+            L.planes[id] = r.plane;
+            o = r.end;
+        }
+    }
+    o = lmEnd;
+    if (u16(b, o) !== 1) throw new Error("the merged image is not PackBits");
+    const lens = []; for (let y = 0; y < 3 * H; y++) lens.push(u16(b, o + 2 + y * 2));
+    const merged = unpack(b, o + 2 + 6 * H, lens, W);
+    if (merged.end !== b.length) throw new Error("bytes left after the merged image: " + (b.length - merged.end));
+    return { W, H, layers, merged: merged.plane };
+};
+const worstOf = (a, b) => { if (a.length !== b.length) return Infinity; let w = 0, n = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d) { n++; if (d > w) w = d; } } return [w, n]; };
+const out = {};
+// -- PSD --
+let t0 = performance.now();
+const mine = await ed.exportLayeredBands("psd");
+if (!mine) throw new Error("exportLayeredBands gave nothing");
+out.psdMs = Math.round(performance.now() - t0);
+t0 = performance.now();
+const { layers } = ed.exportLayerStack();
+const flat = ed.flattenToCanvas({ forRun: true });
+const oldBlob = X.buildPsd({ width: ed.width, height: ed.height, layers, composite: flat });
+out.psdOldMs = Math.round(performance.now() - t0);
+const a = parsePsd(new Uint8Array(await mine.blob.arrayBuffer())), b = parsePsd(new Uint8Array(await oldBlob.arrayBuffer()));
+if (a.W !== b.W || a.H !== b.H || a.layers.length !== b.layers.length) throw new Error("the PSDs differ in size or layer count");
+out.psd = [];
+a.layers.forEach((L, i) => {
+    const M = b.layers[i];
+    for (const k of ["rect", "blend", "opacity", "flags", "name"]) if (JSON.stringify(L[k]) !== JSON.stringify(M[k])) throw new Error(`layer ${i} ${k}: ${JSON.stringify(L[k])} against ${JSON.stringify(M[k])}`);
+    const row = { name: L.name };
+    for (const id of [-1, 0, 1, 2]) {
+        const [worst, n] = worstOf(L.planes[id], M.planes[id]);
+        row[id] = [worst, n];
+        // the canvas writers read a GPU canvas, whose first read un-premultiplies a few hundred (value, alpha) pairs one
+        // level differently from the tiles' own bytes (inpaint_tiles.js, roundTripTable); alpha itself is exact
+        if (worst > (id === -1 ? 0 : 1)) throw new Error(`layer ${L.name} channel ${id} is ${worst} levels off the canvas writer's on ${n} bytes`);
+    }
+    out.psd.push(row);
+});
+const [mw, mn] = worstOf(a.merged, b.merged);
+out.psdMerged = [mw, mn];
+if (mw > 1) throw new Error("the PSD's merged image is " + mw + " levels off on " + mn + " bytes");
+// -- ORA --
+t0 = performance.now();
+const ora = await ed.exportLayeredBands("ora");
+out.oraMs = Math.round(performance.now() - t0);
+const z = new Uint8Array(await ora.blob.arrayBuffer());
+const le32 = (o) => (z[o] | (z[o + 1] << 8) | (z[o + 2] << 16) | (z[o + 3] << 24)) >>> 0, le16 = (o) => z[o] | (z[o + 1] << 8);
+let eo = z.length - 22;
+if (le32(eo) !== 0x06054b50) throw new Error("no end of central directory");
+const n = le16(eo + 10);
+let co = le32(eo + 16);
+const files = {};
+for (let i = 0; i < n; i++) {
+    if (le32(co) !== 0x02014b50) throw new Error("central entry " + i);
+    const crc = le32(co + 16), size = le32(co + 20), nl = le16(co + 28), lo = le32(co + 42);
+    const name = new TextDecoder().decode(z.subarray(co + 46, co + 46 + nl));
+    if (le32(lo) !== 0x04034b50) throw new Error("local header of " + name);
+    const data = z.subarray(lo + 30 + le16(lo + 26) + le16(lo + 28), lo + 30 + le16(lo + 26) + le16(lo + 28) + size);
+    if (PNG.crc32(data) !== crc) throw new Error("the CRC of " + name + " is wrong");
+    files[name] = data;
+    co += 46 + nl;
+}
+if (new TextDecoder().decode(files.mimetype) !== "image/openraster" || Object.keys(files)[0] !== "mimetype") throw new Error("mimetype is not the first entry");
+const xml = new TextDecoder().decode(files["stack.xml"]);
+const srcs = Array.from(xml.matchAll(/src="([^"]+)"/g)).map((m) => m[1]);
+if (srcs.length !== a.layers.length) throw new Error("stack.xml names " + srcs.length + " layers");
+out.ora = [];
+for (let i = 0; i < srcs.length; i++) {
+    const L = a.layers[a.layers.length - 1 - i];   // top first
+    const img = await decode(new Blob([files[srcs[i]]]));
+    const w = L.rect[2] - L.rect[0];
+    if (img.width !== w || img.height !== L.rect[3] - L.rect[1]) throw new Error(srcs[i] + " is " + img.width + " x " + img.height);
+    let worst = 0;
+    for (let p = 0; p < img.width * img.height; p++) for (const [id, c] of [[0, 0], [1, 1], [2, 2], [-1, 3]]) { const d = Math.abs(img.data[p * 4 + c] - L.planes[id][p]); if (d > worst) worst = d; }
+    out.ora.push([srcs[i], worst]);
+    if (worst) throw new Error(srcs[i] + " differs from the PSD's layer " + L.name + " by " + worst);
+}
+const merged = await decode(new Blob([files["mergedimage.png"]]));
+let mworst = 0;
+for (let p = 0; p < merged.width * merged.height; p++) for (let c = 0; c < 3; c++) { const d = Math.abs(merged.data[p * 4 + c] - a.merged[c * ed.width * ed.height + p]); if (d > mworst) mworst = d; }
+if (mworst) throw new Error("mergedimage.png differs from the PSD's merged image by " + mworst);
+if (!files["Thumbnails/thumbnail.png"]) throw new Error("no thumbnail");
+const th = await decode(new Blob([files["Thumbnails/thumbnail.png"]]));
+out.thumbnail = [th.width, th.height];
+for (const L of layers) { L.canvas.width = 1; L.canvas.height = 1; }
+flat.width = 1; flat.height = 1;
+return out;
+"""),
     ("export_png_through_the_editor", """
 const ed = ednow(window.__ex);
 let saved = null;
