@@ -19,22 +19,25 @@
 //! taken as 255 for "sp", which is what lets the SIMD path treat the 16 bytes of four pixels
 //! alike. Canvas 2D keeps premultiplied 8-bit pixels too, so the precision is the same.
 //!
-//! The eight blend modes (B item 7, ops 5 to 12) are the W3C compositing formula in the same maths:
+//! The eight blend modes (B item 7, ops 5 to 12) are the W3C compositing formula, rounded ONCE per channel: with three
+//! rounded products the result was up to 1.45 levels from the exact value and a level from the compositor's shader on
+//! 29 % of the bytes of a half-transparent layer; rounded once it is within half a level (12 % from the shader, which
+//! reads its source back from a premultiplied 8-bit texture).
 //!
-//!   cb = the backdrop's straight colour: dp unpremultiplied as at the end (dp itself where da is 255)
-//!   r  = mul255(sp, 255 − da) + mul255(dp, inv) + mul255(mul255(sa, da), B(cb, s.c)), at most ra
-//!   ra = sa + mul255(da, inv)
-//!     multiply    B = mul255(b, s)
-//!     screen      B = 255 − mul255(255 − b, 255 − s)
-//!     hard-light  B = s ≤ 127 ? mul255(b, 2s) : 255 − mul255(255 − b, 510 − 2s)
-//!     overlay     B = hard-light with b and s swapped
-//!     darken, lighten, difference   min, max, |b − s|
-//!     soft-light  B = s ≤ 127 ? b − mul255(mul255(255 − 2s, b), 255 − b)
-//!                             : b + ((2s − 255) · (D[b] − 257·b) + 32767) / 65535
-//!                 D[b] = round(65535 · d(b / 255)), d as the specification has it (a table, so that no
-//!                 square root is taken twice in two languages)
-//!   Over an opaque backdrop that is r = mul255(dp, inv) + mul255(sa, B), which the SIMD path takes
-//!   for four opaque pixels at a time.
+//!   B16(cb, cs) = 255 · B, exact integers:
+//!     multiply    b·s                          screen      65025 − (255 − b)(255 − s)
+//!     hard-light  s ≤ 127 ? 2·b·s : 65025 − (255 − b)(510 − 2s)        overlay: b and s swapped
+//!     darken, lighten, difference   255 · min, max, |b − s|
+//!     soft-light  s ≤ 127 ? 255·b − ((255 − 2s)·b·(255 − b) + 127) / 255
+//!                         : 255·b + ((2s − 255)·(D[b] − 257·b) + 128) / 257
+//!                 D[b] = round(65535 · d(b / 255)), d as the specification has it (a table, so that no square
+//!                 root is taken twice in two languages)
+//!   over an opaque backdrop:  r = (dp·inv·255 + sa·B16 + 32512) / 65025
+//!   else, with cb = dp unpremultiplied as at the end and ra = sa + mul255(da, inv):
+//!     r = min(ra, (s.c·sa·(255 − da)·255 + dp·inv·65025 + sa·da·B16 + 8290687) / 16581375)
+//!   which is the first line where da is 255. Everything fits 32 bits (255⁴ + 255³/2 < 2³²). The SIMD path takes four
+//!   pixels at a time where all four backdrop pixels are opaque, in 32-bit lanes, and divides through floats with the
+//!   remainder put right (the sums stay below 2²⁴, so the conversion is exact).
 
 pub const SOURCE_OVER: u8 = 0;
 pub const DESTINATION_OUT: u8 = 1;
@@ -115,30 +118,30 @@ pub fn apply(dst: &mut [u8], layer: &Layer) {
 #[inline(always)]
 fn hard_light(b: u32, s: u32) -> u32 {
     if s <= 127 {
-        mul255(b, 2 * s)
+        2 * b * s
     } else {
-        255 - mul255(255 - b, 510 - 2 * s)
+        65025 - (255 - b) * (510 - 2 * s)
     }
 }
 
-/// B(cb, cs) of the blend mode `OP`, both straight 0..255.
+/// 255 · B(cb, cs) of the blend mode `OP`, both straight 0..255: 0..65025.
 #[inline(always)]
 fn blend_of<const OP: u8>(b: u32, s: u32) -> u32 {
     match OP {
-        MULTIPLY => mul255(b, s),
-        SCREEN => 255 - mul255(255 - b, 255 - s),
+        MULTIPLY => b * s,
+        SCREEN => 65025 - (255 - b) * (255 - s),
         OVERLAY => hard_light(s, b),
-        DARKEN => b.min(s),
-        LIGHTEN => b.max(s),
+        DARKEN => 255 * b.min(s),
+        LIGHTEN => 255 * b.max(s),
         SOFT_LIGHT => {
             if s <= 127 {
-                b - mul255(mul255(255 - 2 * s, b), 255 - b)
+                255 * b - ((255 - 2 * s) * b * (255 - b) + 127) / 255
             } else {
-                b + ((2 * s - 255) * (SOFT_D[b as usize] as u32 - b * 257) + 32767) / 65535
+                255 * b + ((2 * s - 255) * (SOFT_D[b as usize] as u32 - b * 257) + 128) / 257
             }
         }
         HARD_LIGHT => hard_light(b, s),
-        _ => b.max(s) - b.min(s),
+        _ => 255 * (b.max(s) - b.min(s)),
     }
 }
 
@@ -181,19 +184,19 @@ fn scalar_blend<const OP: u8>(dst: &mut [u8], src: &[u8], o: u32, mask: Option<&
         let mut r = [0u32; 4];
         if da == 255 {
             for c in 0..3 {
-                r[c] = mul255(d[c] as u32, inv) + mul255(sa, blend_of::<OP>(d[c] as u32, s[c] as u32));
+                r[c] = (d[c] as u32 * inv * 255 + sa * blend_of::<OP>(d[c] as u32, s[c] as u32) + 32512) / 65025;
             }
             r[3] = 255;
         } else {
             let ra = sa + mul255(da, inv);
-            let both = mul255(sa, da);
-            let only = 255 - da;
+            let both = sa * da;
+            let only = sa * (255 - da) * 255;
             let h = da >> 1;
             for c in 0..3 {
                 let dp = d[c] as u32;
                 let cb = if da == 0 { 0 } else { ((dp * 255 + h) / da).min(255) };
-                let sp = mul255(s[c] as u32, sa);
-                r[c] = (mul255(sp, only) + mul255(dp, inv) + mul255(both, blend_of::<OP>(cb, s[c] as u32))).min(ra);
+                let x = s[c] as u32 * only + dp * inv * 65025 + both * blend_of::<OP>(cb, s[c] as u32) + 8290687;
+                r[c] = (x / 16581375).min(ra);
             }
             r[3] = ra;
         }
@@ -401,15 +404,37 @@ mod simd {
         n / 4
     }
 
-    /// hard-light per byte: s ≤ 127 ? mul255(b, 2s) : 255 − mul255(255 − b, 510 − 2s). 2s wraps where it is not
-    /// used, and 510 − 2s is 254 − (2s mod 256) where it is.
+    /// 255 · hard-light in 32-bit lanes: s ≤ 127 ? 2·b·s : 65025 − (255 − b)(510 − 2s).
     #[inline(always)]
     unsafe fn hard_light(b: v128, s: v128) -> v128 {
-        let full = u8x16_splat(255);
-        let s2 = u8x16_add(s, s);
-        let lo = mul255(b, s2);
-        let hi = v128_xor(mul255(v128_xor(b, full), u8x16_sub(u8x16_splat(254), s2)), full);
-        v128_bitselect(hi, lo, u8x16_gt(s, u8x16_splat(127)))
+        let c255 = u32x4_splat(255);
+        let lo = u32x4_shl(u32x4_mul(b, s), 1);
+        let hi = u32x4_sub(u32x4_splat(65025), u32x4_mul(u32x4_sub(c255, b), u32x4_sub(u32x4_splat(510), u32x4_shl(s, 1))));
+        v128_bitselect(hi, lo, u32x4_gt(s, u32x4_splat(127)))
+    }
+
+    /// One pixel (its four channels as 32-bit lanes) in a blend mode over an opaque backdrop:
+    /// (d·inv·255 + sa·B16 + 32512) / 65025. The sum is below 2²⁴, so the float holds it exactly; the quotient
+    /// of the float division is put right by its remainder.
+    #[inline(always)]
+    unsafe fn blend_pixel(d: v128, s: v128, sa: v128, op: u8) -> v128 {
+        let c255 = u32x4_splat(255);
+        let b16 = match op {
+            MULTIPLY => u32x4_mul(d, s),
+            SCREEN => u32x4_sub(u32x4_splat(65025), u32x4_mul(u32x4_sub(c255, d), u32x4_sub(c255, s))),
+            OVERLAY => hard_light(s, d),
+            DARKEN => u32x4_mul(u32x4_min(d, s), c255),
+            LIGHTEN => u32x4_mul(u32x4_max(d, s), c255),
+            HARD_LIGHT => hard_light(d, s),
+            _ => u32x4_mul(u32x4_sub(u32x4_max(d, s), u32x4_min(d, s)), c255),
+        };
+        let inv = u32x4_sub(c255, sa);
+        let x = u32x4_add(u32x4_add(u32x4_mul(u32x4_mul(d, inv), c255), u32x4_mul(sa, b16)), u32x4_splat(32512));
+        let q = u32x4_trunc_sat_f32x4(f32x4_mul(f32x4_convert_u32x4(x), f32x4_splat(1.0 / 65025.0)));
+        let r = i32x4_sub(x, i32x4_mul(q, i32x4_splat(65025)));
+        // r < 0: one too many (the mask is −1); r ≥ 65025: one too few
+        let q = i32x4_add(q, i32x4_lt(r, i32x4_splat(0)));
+        i32x4_sub(q, i32x4_gt(r, i32x4_splat(65024)))
     }
 
     /// One source in a blend mode, four pixels at a time where all four backdrop pixels are opaque (the
@@ -456,17 +481,16 @@ mod simd {
                     i += 16;
                     continue;
                 }
-                let b = match op {
-                    MULTIPLY => mul255(d, s),
-                    SCREEN => v128_xor(mul255(v128_xor(d, full), v128_xor(s, full)), full),
-                    OVERLAY => hard_light(s, d),
-                    DARKEN => u8x16_min(d, s),
-                    LIGHTEN => u8x16_max(d, s),
-                    HARD_LIGHT => hard_light(d, s),
-                    _ => u8x16_sub(u8x16_max(d, s), u8x16_min(d, s)),
-                };
-                // the alpha bytes: 255 · inv + sa · 255 is 255 again
-                let r = u8x16_add(mul255(d, v128_xor(sa, full)), mul255(sa, v128_or(b, amask)));
+                // the sixteen bytes as four pixels of four 32-bit lanes; the alpha lane is set to 255 afterwards
+                let (dl, dh) = (u16x8_extend_low_u8x16(d), u16x8_extend_high_u8x16(d));
+                let (sl, sh) = (u16x8_extend_low_u8x16(s), u16x8_extend_high_u8x16(s));
+                let (al, ah) = (u16x8_extend_low_u8x16(sa), u16x8_extend_high_u8x16(sa));
+                let p0 = blend_pixel(u32x4_extend_low_u16x8(dl), u32x4_extend_low_u16x8(sl), u32x4_extend_low_u16x8(al), op);
+                let p1 = blend_pixel(u32x4_extend_high_u16x8(dl), u32x4_extend_high_u16x8(sl), u32x4_extend_high_u16x8(al), op);
+                let p2 = blend_pixel(u32x4_extend_low_u16x8(dh), u32x4_extend_low_u16x8(sh), u32x4_extend_low_u16x8(ah), op);
+                let p3 = blend_pixel(u32x4_extend_high_u16x8(dh), u32x4_extend_high_u16x8(sh), u32x4_extend_high_u16x8(ah), op);
+                let r = u8x16_narrow_i16x8(i16x8_narrow_i32x4(p0, p1), i16x8_narrow_i32x4(p2, p3));
+                let r = v128_or(r, amask);
                 let r = match mv {
                     Some(mv) if !u8x16_all_true(u8x16_eq(mv, full)) => u8x16_add(mul255(r, mv), mul255(d, v128_xor(mv, full))),
                     _ => r,

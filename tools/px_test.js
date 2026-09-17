@@ -424,7 +424,7 @@ async function compositeCases(ref, label, js) {
     check(`js source-over over an opaque tile within 1.5 levels of float maths`, worst <= 1.5, `worst ${worst.toFixed(2)}`);
 
     // the blend modes against the specification in floats: co = cs·as·(1 − ab) + cb·ab·(1 − as) + as·ab·B(cb, cs)
-    let worstB = 0, worstRatioB = 0, seenB = 0, worstMode = "";
+    let worstB = 0, worstFull = 0, worstRatioB = 0, seenB = 0, worstMode = "";
     for (let op = 5; op <= 12; op++) {
         for (const o of [255, 140]) {
             const dst = pixelRow(8192, 11 + op + o, { opaque: true }), src = pixelRow(8192, 12 + op + o);
@@ -435,6 +435,7 @@ async function compositeCases(ref, label, js) {
                     const want = 255 * (dst[i + c] / 255 * (1 - sa) + sa * blendFloat(op, dst[i + c] / 255, src[i + c] / 255));
                     const e = Math.abs(want - out[i + c]);
                     if (e > worstB) { worstB = e; worstMode = BLEND_NAMES[op - 5]; }
+                    if (o === 255 && e > worstFull) worstFull = e;
                 }
             }
             const dst2 = pixelRow(8192, 13 + op + o), out2 = js.compositeTile(dst2.slice(), [src], [op], [o], null);
@@ -451,7 +452,8 @@ async function compositeCases(ref, label, js) {
             }
         }
     }
-    check(`js blend modes over an opaque tile within 1.5 levels of the specification's floats`, worstB <= 1.5, `worst ${worstB.toFixed(2)} (${worstMode})`);
+    // rounded once: half a level at full opacity; at an opacity the effective alpha is rounded to 8 bits first, which is up to half a level more
+    check(`js blend modes over an opaque tile within one level of the specification's floats (half a level at full opacity)`, worstB <= 1 && worstFull <= 0.51, `worst ${worstB.toFixed(2)} (${worstMode}), at full opacity ${worstFull.toFixed(3)}`);
     check(`js blend modes over translucent pixels within 2.5·255/alpha + 2.5·255/backdrop alpha + 0.6 levels`, worstRatioB <= 1 && seenB > 1000, `worst at ${(worstRatioB * 100).toFixed(0)} % of the bound over ${seenB} pixels`);
     if (/rust/.test(label)) {
         const N = 1 << 20, dstT = pixelRow(N, 5, { opaque: true }), srcT = pixelRow(N, 6), parts = [];
@@ -576,17 +578,17 @@ const mul255 = (x, y) => { const t = x * y + 128; return (t + (t >> 8)) >> 8; };
 
 // soft-light's d(b), in 16 bits: the table the kernels carry, made here from the specification
 const SOFT_D_REF = Array.from({ length: 256 }, (_, b8) => { const b = b8 / 255; return Math.floor((b8 <= 63 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b)) * 65535 + 0.5); });
-const hardLightRef = (b, s) => (s <= 127 ? mul255(b, 2 * s) : 255 - mul255(255 - b, 510 - 2 * s));
-/** B(cb, cs) of the ops 5 to 12 in the kernels' integers. */
+const hardLightRef = (b, s) => (s <= 127 ? 2 * b * s : 65025 - (255 - b) * (510 - 2 * s));
+/** 255 · B(cb, cs) of the ops 5 to 12 in the kernels' integers (0..65025). */
 const blendRef = (op, b, s) => [
-    () => mul255(b, s),
-    () => 255 - mul255(255 - b, 255 - s),
+    () => b * s,
+    () => 65025 - (255 - b) * (255 - s),
     () => hardLightRef(s, b),
-    () => Math.min(b, s),
-    () => Math.max(b, s),
-    () => (s <= 127 ? b - mul255(mul255(255 - 2 * s, b), 255 - b) : b + Math.floor(((2 * s - 255) * (SOFT_D_REF[b] - b * 257) + 32767) / 65535)),
+    () => 255 * Math.min(b, s),
+    () => 255 * Math.max(b, s),
+    () => (s <= 127 ? 255 * b - Math.floor(((255 - 2 * s) * b * (255 - b) + 127) / 255) : 255 * b + Math.floor(((2 * s - 255) * (SOFT_D_REF[b] - b * 257) + 128) / 257)),
     () => hardLightRef(b, s),
-    () => Math.abs(b - s),
+    () => 255 * Math.abs(b - s),
 ][op - 5]();
 /** The same in the specification's floats (W3C Compositing and Blending Level 1), 0..1. */
 const blendFloat = (op, b, s) => {
@@ -624,10 +626,11 @@ const reference = {
                 const sa = mul255(s[i + 3], alphas[l]), inv = 255 - sa, d = [dst[i], dst[i + 1], dst[i + 2], dst[i + 3]], da = d[3];
                 const sp = [mul255(s[i], sa), mul255(s[i + 1], sa), mul255(s[i + 2], sa), sa];
                 const ra = sa + mul255(da, inv);
-                const blended = (c) => {   // the blend modes: what is under both by B(cb, cs), never more than the alpha
+                const blended = (c) => {   // the blend modes: the W3C sum over 255³, rounded once, never more than the alpha
                     if (c === 3) return ra;
                     const cb = da === 0 ? 0 : Math.min(255, Math.floor((d[c] * 255 + (da >> 1)) / da));
-                    return Math.min(ra, mul255(sp[c], 255 - da) + mul255(d[c], inv) + mul255(mul255(sa, da), blendRef(ops[l], cb, s[i + c])));
+                    const x = BigInt(s[i + c]) * BigInt(sa) * BigInt(255 - da) * 255n + BigInt(d[c]) * BigInt(inv) * 65025n + BigInt(sa) * BigInt(da) * BigInt(blendRef(ops[l], cb, s[i + c]));
+                    return Math.min(ra, Number((x + 8290687n) / 16581375n));
                 };
                 const r = [0, 1, 2, 3].map((c) => ops[l] >= 5 ? blended(c) : [
                     sp[c] + mul255(d[c], inv),                  // source-over

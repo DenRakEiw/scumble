@@ -5692,6 +5692,28 @@ try {
 } finally { E.stacks = true; delete ed.floodOverTiles; patchLayer.blend = "normal"; }
 for (const k of Object.keys(canvasesB)) if (JSON.stringify(overB[k]) !== JSON.stringify(canvasesB[k])) throw new Error(k + " (multiply): over tiles " + JSON.stringify(overB[k]) + ", over canvases " + JSON.stringify(canvasesB[k]));
 if (JSON.stringify(overB.replace) === JSON.stringify(over.replace)) throw new Error("multiply selected what normal selected: the mode was not drawn under the wand");
+// B item 7 part 2: a filter layer between the layers (invert, which moves every flat colour far and exactly): the pool
+// composites below it, the GPU filters the bytes, the masked layer goes over the result, and the flood runs on that
+const masked = ed.layers.find((l) => l.id === window.__ftMasked);
+const fx = ed.addFilterLayer("invert");
+await run("move_layer", { doc: window.__t, layer: fx.id, delta: -1 });
+if (ed.layers.indexOf(fx) !== ed.layers.indexOf(masked) - 1) throw new Error("the filter layer is not below the masked layer: " + ed.layers.map((l) => l.name));
+ed.renderLayers(); ed.draw();
+const fplan = ed.floodStack("image");
+if (!fplan || !fplan.some((s) => s && s.filter) || fplan[fplan.length - 1].filter) throw new Error("no flood stack with a filter layer below a layer: " + JSON.stringify(fplan && fplan.map((s) => (s && s.filter ? "f" : "l"))));
+let overF, canvasesF;
+const n1 = seen.length;
+ed.floodOverTiles = async (...a) => { const r = await oOver(...a); seen.push(r ? (r.tiles ? "tiles" : "bitmap") : "none"); return r; };
+try {
+    overF = await script();
+    const n = seen.length;
+    if (n === n1 || seen.slice(n1).includes("none")) throw new Error("with a filter layer the floods over tiles answered " + JSON.stringify(seen.slice(n1)));
+    E.stacks = false;
+    canvasesF = await script();
+    if (seen.length !== n) throw new Error("with stacks off the flood still ran over tiles");
+} finally { E.stacks = true; delete ed.floodOverTiles; ed.removeLayer(fx.id); }
+for (const k of Object.keys(canvasesF)) if (JSON.stringify(overF[k]) !== JSON.stringify(canvasesF[k])) throw new Error(k + " (a filter layer): over tiles " + JSON.stringify(overF[k]) + ", over canvases " + JSON.stringify(canvasesF[k]));
+if (!overF.replace[1] || !overF.masked[1]) throw new Error("nothing was selected under the filter: " + JSON.stringify(overF));
 // the steps after this one expect the small document they had before it
 ed.clearUndo();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });

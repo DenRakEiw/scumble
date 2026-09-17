@@ -186,14 +186,28 @@ const oldMs = Math.round(performance.now() - t1);
 flat.width = 1; flat.height = 1;
 const a = await decode(r.blob), b = await decode(old.blob);
 const d = diff(a.data, b.data, ed.width);
-const seams = d.bytes ? seamRows(a.data, b.data, ed.width, ed.height) : null;
 window.__exRef = a.data;
-// Measured: 862 of 96,000,000 bytes one level apart, on the multiplied layer's soft rectangles, none of them on a band
-// seam more often than chance: the whole flatten blends on one GPU canvas of 24 MP, a band on one of 1.5 MP, and Skia
-// rounds the two differently (CLAUDE.md, traps). More than one level, or more than 0.01 % of the bytes, is a bug.
-if (d.worst > 1 || d.bytes > a.data.length / 10000) throw new Error("the composite in bands differs from the flatten: " + JSON.stringify({ d, seams }));
+// B item 7 part 2: a levels layer over a multiplied and a masked layer is a stack program: the workers composite the
+// bands, the GPU filters their bytes. The multiplied layer's soft rectangles are then the kernel's, rounded once, where
+// the compositor's shader reads its source back from a premultiplied texture: one level apart on 1.1 % of the bytes
+// (measured; 4.9 % before the kernel rounded once), and the levels layer at its defaults passes that on. More than one
+// level, or more than 2 % of the bytes, is a bug.
+if (!(r.program > 0)) throw new Error("the bands did not come from the stack program: " + JSON.stringify({ program: r.program }));
+if (d.worst > 1 || d.bytes > a.data.length / 50) throw new Error("the composite of the stack program differs from the flatten: " + JSON.stringify({ d }));
+// the region pass, which the program replaced and falls back to, against the same flatten. Measured: 862 of 96,000,000
+// bytes one level apart, on the multiplied layer's soft rectangles, none of them on a band seam more often than chance:
+// the whole flatten blends on one GPU canvas of 24 MP, a band on one of 1.5 MP, and Skia rounds the two differently
+// (CLAUDE.md, traps). More than one level, or more than 0.01 % of the bytes, is a bug.
+E.stackFilters = false;
+let viaPass;
+try { viaPass = await ed.encodeComposite({ forRun: true }, {}); } finally { E.stackFilters = true; }
+if (!viaPass || viaPass.program) throw new Error("with stackFilters off the bands still came from the program");
+const p = await decode(viaPass.blob);
+const dp = diff(p.data, b.data, ed.width);
+const seams = dp.bytes ? seamRows(p.data, b.data, ed.width, ed.height) : null;
+if (dp.worst > 1 || dp.bytes > p.data.length / 10000) throw new Error("the composite in bands differs from the flatten: " + JSON.stringify({ dp, seams }));
 if (seams && seams.rows > 8 && seams.nearSeams > seams.rows / 4) throw new Error("the differences sit on the band seams: " + JSON.stringify(seams));
-return { diff: d, seams, reach: plan.reach, ms, blocked: Math.round(held), oldMs, MB: +(r.blob.size / 1048576).toFixed(1), oldMB: +(old.blob.size / 1048576).toFixed(1) };
+return { program: r.program, timing: r.programTiming, diff: d, share: +(d.bytes / a.data.length).toFixed(5), pass: dp, seams, reach: plan.reach, ms, blocked: Math.round(held), oldMs, MB: +(r.blob.size / 1048576).toFixed(1), oldMB: +(old.blob.size / 1048576).toFixed(1) };
 """),
     ("a_blur_in_the_stack_shows_no_seam", """
 const ed = ednow(window.__ex);
@@ -245,17 +259,30 @@ for (const [id, params, tolerance] of cases) {
     ed.markFilterChanged(fx);
     const plan = ed.bandPlan({ forRun: true });
     if (!plan) { ed.removeLayer(fx.id); throw new Error(id + ": no band plan"); }
-    const r = await ed.encodeComposite({ forRun: true }, {});
+    // the bands of the region pass (what E3 built, and what the stack program falls back to) ...
+    E.stackFilters = false;
+    let r;
+    try { r = await ed.encodeComposite({ forRun: true }, {}); } finally { E.stackFilters = true; }
+    if (r.program) { ed.removeLayer(fx.id); throw new Error(id + ": with stackFilters off the bands came from the program"); }
+    // ... and the bands of the stack program (B item 7 part 2): two filter layers over the workers' composite
+    const rp = await ed.encodeComposite({ forRun: true }, {});
     const flat = ed.flattenToCanvas({ forRun: true });
     const old = await E.parts.encodeCanvas(flat, {});
     flat.width = 1; flat.height = 1;
-    const a = await decode(r.blob), b = await decode(old.blob);
-    const d = diff(a.data, b.data, ed.width);
+    const a = await decode(r.blob), b = await decode(old.blob), ap = await decode(rp.blob);
+    const d = diff(a.data, b.data, ed.width), dn = diff(ap.data, b.data, ed.width);
     const seams = d.bytes ? seamRows(a.data, b.data, ed.width, ed.height) : null;
+    const seamsP = dn.bytes ? seamRows(ap.data, b.data, ed.width, ed.height) : null;
     ed.removeLayer(fx.id);
-    out[id] = [plan.reach, d.bytes, d.worst];
+    out[id] = [plan.reach, d.bytes, d.worst, rp.program || 0, dn.bytes, dn.worst];
     const allowed = tolerance != null ? tolerance : plan.reach > 0 ? 3 : 2;   // a blur of a smaller canvas: up to 3 levels (C6 c1); a contrast curve doubles the one level of the composite below
     if (d.worst > allowed) throw new Error(id + " in bands is " + d.worst + " levels off the whole flatten: " + JSON.stringify({ d, seams, plan }));
+    // The program's composite below the filters is a level from the flatten's on 1 % of the bytes (the step before), and
+    // the filter rounds once more, so a level above the pass's tolerance; a filter that steepens the picture doubles it
+    if (!(rp.program > 0)) throw new Error(id + ": the bands did not come from the stack program");
+    const allowedP = allowed + 1;   // measured over all 23 filters: never more than a level above what the pass itself shows
+    if (dn.worst > allowedP) throw new Error(id + " over the stack program is " + dn.worst + " levels off the whole flatten: " + JSON.stringify({ dn, seamsP, plan }));
+    if (seamsP && seamsP.rows > 64 && seamsP.nearSeams === seamsP.rows) throw new Error(id + ": the program's differences sit on the band seams only: " + JSON.stringify(seamsP));
     // does the filter do anything at all here? (a filter that is skipped would pass everything above)
     if (special[id]) {
         const plain = window.__exRef;
@@ -605,6 +632,103 @@ try { off = ed.stackPlan({ forRun: true }); } finally { E.stackBlends = true; ed
 if (off) throw new Error("stackBlends = false still gave a plan");
 await run("close_document", { doc: window.__exStack, force: true });
 window.__exStack = null;
+return out;
+"""),
+    ("a_stack_program_runs_filters_between_the_layers", """
+// B item 7 part 2 (docs/PLAN_BCE.md 3b): filter layers in an otherwise plain stack. The workers composite what is below
+// a filter into a shared buffer, the GPU filters those bytes, and what is above goes over the result in the workers
+// again. Here: a soft layer, a levels layer, a masked layer above it, a blur at 70 % in screen through a mask of its
+// own (so its result is composited over its input by the workers), a multiplied layer over the corner, grain on top.
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const E = Editor(ed);
+const W = 3100, H = 2050;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const paint = (c, hue) => { const x = c.getContext("2d"); const g = x.createLinearGradient(0, 0, c.width, c.height); g.addColorStop(0, `hsl(${hue},70%,45%)`); g.addColorStop(1, `hsl(${(hue + 120) % 360},80%,30%)`); x.fillStyle = g; x.fillRect(0, 0, c.width, c.height); return c; };
+const base = paint(mk(W, H), 200);
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "export_program.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const L = ed.pixels.Layer, M = ed.pixels.Mask;
+{
+    const c = mk(W, H), x = c.getContext("2d");
+    for (let k = 0; k < 30; k++) { x.fillStyle = `hsla(${k * 47},75%,55%,${0.15 + (k % 6) * 0.15})`; x.fillRect((k * 811) % W, (k * 457) % H, W / 7, H / 7); }
+    ed.addLayer({ name: "Soft", kind: "paint", px: L.fromCanvas(c), x: 0, y: 0, w: W, h: H, dirty: true }).opacity = 0.6;
+}
+const levels = ed.addFilterLayer("levels");
+levels.params.gamma = 1.3; ed.markFilterChanged(levels);
+{
+    const w = 1111, h = 777;
+    const m = mk(w, h), mx = m.getContext("2d");
+    const g = mx.createRadialGradient(w / 2, h / 2, 20, w / 2, h / 2, w / 2);
+    g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    mx.fillStyle = g; mx.fillRect(0, 0, w, h);
+    const l = ed.addLayer({ name: "Masked", kind: "result", px: L.fromCanvas(paint(mk(w, h), 20)), x: 701, y: 333, w, h, dirty: true });
+    l.maskPx = M.fromCanvas(m); l.maskDirty = true;
+}
+const blur = ed.addFilterLayer("blur");
+blur.params.radius = 5; blur.opacity = 0.7; blur.blend = "screen";
+{
+    const m = mk(W, H), mx = m.getContext("2d");
+    const g = mx.createRadialGradient(W * 0.4, H * 0.5, 100, W * 0.4, H * 0.5, W * 0.45);
+    g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    mx.fillStyle = g; mx.fillRect(0, 0, W, H);
+    blur.maskPx = M.fromCanvas(m); blur.maskDirty = true;
+}
+ed.markFilterChanged(blur);
+{
+    const w = 900, h = 600, c = mk(w, h), x = c.getContext("2d");
+    x.fillStyle = "#30e080"; x.beginPath(); x.arc(450, 300, 280, 0, Math.PI * 2); x.fill();
+    const l = ed.addLayer({ name: "Over the corner", kind: "paint", px: L.fromCanvas(c), x: W - 500, y: H - 310, w, h, dirty: true });
+    l.opacity = 0.85; l.blend = "multiply";
+}
+const grain = ed.addFilterLayer("grain");
+ed.renderLayers(); ed.fitView(); ed.draw();
+await ed.mipsSettled();
+const plan = ed.stackPlan({ forRun: true, filters: true });
+const kinds = plan && plan.map((s) => (s.filter ? "f" : "l")).join("");
+if (kinds !== "llflflf") throw new Error("the stack plan with filters is " + JSON.stringify(kinds));
+if (ed.stackPlan({ forRun: true })) throw new Error("without `filters` a filter layer still gave a plan");
+const reach = plan.reduce((n, s) => n + (s.reach || 0), 0);
+if (!(reach >= 15)) throw new Error("the blur's reach is not in the plan: " + reach);
+const r = await ed.encodeComposite({ forRun: true }, {});
+if (!r || !(r.program > 0)) throw new Error("the composite did not come from the stack program: " + JSON.stringify(r && { program: r.program }));
+E.stackFilters = false;
+let viaPass;
+try { viaPass = await ed.encodeComposite({ forRun: true }, {}); } finally { E.stackFilters = true; }
+if (!viaPass || viaPass.program) throw new Error("with stackFilters off the bands still came from the program");
+const flat = ed.flattenToCanvas({ forRun: true });
+const old = await E.parts.encodeCanvas(flat, {});
+flat.width = 1; flat.height = 1;
+const a = await decode(r.blob), p = await decode(viaPass.blob), b = await decode(old.blob);
+const stats = (x, y) => { let worst = 0, over2 = 0, sum = 0; for (let i = 0; i < x.length; i++) { const e = Math.abs(x[i] - y[i]); if (e > worst) worst = e; if (e > 2) over2++; sum += e; } return { worst, over2, mean: +(sum / x.length).toFixed(4) }; };
+const out = { program: r.program, reach, againstFlatten: stats(a.data, b.data), againstPass: stats(a.data, p.data), passAgainstFlatten: stats(p.data, b.data), seams: seamRows(a.data, b.data, W, H) };
+// every layer of the program is in the picture: without the mask of the blur, the multiplied corner or the grain it is another one
+const probe = async (layer, change, undo, what) => {
+    await run("set_layer", { doc: d.id, layer: layer.id, ...change });
+    const q = await decode((await ed.encodeComposite({ forRun: true }, {})).blob);
+    await run("set_layer", { doc: d.id, layer: layer.id, ...undo });
+    let moved = 0;
+    for (let i = 0; i < q.data.length; i += 4) if (Math.abs(q.data[i] - a.data[i]) > 3 || Math.abs(q.data[i + 1] - a.data[i + 1]) > 3) moved++;
+    out[what] = moved;
+    if (moved < 2000) throw new Error(what + " is not in the program's picture: " + moved + " pixels moved");
+};
+const cornerLayer = ed.layers.find((l) => l.name === "Over the corner");
+await probe(cornerLayer, { visible: false }, { visible: true }, "theLayerAboveTheFilters");
+await probe(blur, { opacity: 0.05 }, { opacity: 0.7 }, "theBlurAtItsOpacity");
+await probe(grain, { visible: false }, { visible: true }, "theGrainOnTop");
+// Measured against the flatten: 4 levels at most, more than 2 on 1,872 of 25 million bytes, mean 0.24; the region pass
+// is within 2 (mean 0.004). Taken apart (one variant at a time): the layers and the plain filters leave 4 % of the bytes
+// a level apart (the kernel's soft alpha, B item 1), a blur 3 levels as in every band (Skia's blur of another canvas),
+// and the blur at 70 % through its mask 18 %: the kernel rounds the blend and then the mask's coverage, the canvas
+// multiplies the two alphas first. More than 4 levels, or more than 2 on 0.02 % of the bytes, is a bug.
+if (out.againstFlatten.worst > 4 || out.againstFlatten.over2 > a.data.length / 5000 || out.againstFlatten.mean > 0.3) throw new Error("the stack program differs from the flatten: " + JSON.stringify(out));
+if (out.seams.rows > 64 && out.seams.nearSeams === out.seams.rows) throw new Error("the program's differences sit on the band seams only: " + JSON.stringify(out.seams));
+// a PSD's merged picture comes the same way, and a flatten writes its new base from the program's bands
+const psd = await ed.exportLayeredBands("psd");
+if (!psd) throw new Error("no PSD of the document with filters");
+await run("close_document", { doc: d.id, force: true });
 return out;
 """),
     ("close", """

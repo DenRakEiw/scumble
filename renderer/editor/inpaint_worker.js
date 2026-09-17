@@ -206,7 +206,10 @@ function storeRows(store, X0, W, Y0, n, out, alphaOnly = false) {
  * source-over or in its blend mode (`op`, the kernel's number; B item 7) at `alpha` (0..255) through its mask's alpha (a store on the layer's own grid; where the mask has no
  * tile the layer shows nothing). The rows `y` to `y + rows`, or with `above` the one row over them (null at the top),
  * `w` pixels from the image's column `x0`. `into`: a cleared buffer of that size to composite in (a part of a shared one).
- * `base` may be null: nothing below the layers (the wand's and the bucket's "sample the layer").
+ * `base` may be null: nothing below the layers (the wand's and the bucket's "sample the layer"), or, with `into`, what
+ * the buffer already holds (B item 7 part 2: the layers above a filter layer go over the filtered band). A layer with
+ * `sab` instead of tiles is a buffer of the same box as `into` (`msg.y0` its first row): a filter layer's result, which
+ * goes over the band it was made from at the layer's opacity, in its blend mode, through its mask.
  */
 function rowsOfStack(msg, above = false, into = null) {
     let Y0 = msg.y | 0, n = msg.rows;
@@ -216,8 +219,12 @@ function rowsOfStack(msg, above = false, into = null) {
     if (st.base) storeRows(st.base, X0, W, Y0, n, dst);
     const srcs = [], alphas = [], masks = [], ops = [];
     for (const l of st.layers) {
-        const src = new Uint8Array(W * n * 4);
-        if (!storeRows(l, X0, W, Y0, n, src)) continue;
+        let src;
+        if (l.sab) src = new Uint8Array(l.sab, (Y0 - (msg.y0 | 0)) * W * 4, W * n * 4);
+        else {
+            src = new Uint8Array(W * n * 4);
+            if (!storeRows(l, X0, W, Y0, n, src)) continue;
+        }
         let mask = null;
         if (l.mask) { mask = new Uint8Array(W * n); storeRows({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, X0, W, Y0, n, mask, true); }
         srcs.push(src); alphas.push(l.alpha); masks.push(mask); ops.push(l.op | 0);
@@ -228,12 +235,15 @@ function rowsOfStack(msg, above = false, into = null) {
 
 /**
  * Rows of a stack composited into a shared buffer (B item 2: the picture a flood reads, put together by the pool):
- * `sab` holds `w` x `h` RGBA8 of the box at (`x0`, `y0`) of the image, zeroed; this job fills the rows `y` to `y + rows`.
+ * `sab` holds `w` x `h` RGBA8 of the box at (`x0`, `y0`) of the image, zeroed (or `clear` asks this job to zero its
+ * rows first); this job fills the rows `y` to `y + rows`.
  */
 async function stackInto(msg) {
     const t0 = now();
     const at = ((msg.y | 0) - (msg.y0 | 0)) * msg.w * 4;
-    rowsOfStack(msg, false, new Uint8Array(msg.sab, at, msg.w * msg.rows * 4));
+    const into = new Uint8Array(msg.sab, at, msg.w * msg.rows * 4);
+    if (msg.clear) into.fill(0);   // a buffer that is used band after band (B item 7 part 2): cleared here, not on the main thread
+    rowsOfStack(msg, false, into);
     return { timing: { op: "stack_into", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0 } };
 }
 

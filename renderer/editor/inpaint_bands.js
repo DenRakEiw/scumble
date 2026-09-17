@@ -113,6 +113,10 @@ export function stackArgs(stores) {
         const [base, ...over] = stores;
         const layers = [];
         for (const s of over) {
+            if (s.sab) {   // a filtered band over the band it was made from (B item 7 part 2): bytes of the job's own box
+                layers.push({ x: s.x, y: s.y, w: s.w, h: s.h, alpha: s.alpha, op: s.op | 0, sab: s.sab, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null });
+                continue;
+            }
             const tiles = rowsOf(s.snap, s.y, a, b);
             if (!tiles || !(s.alpha > 0)) continue;
             layers.push({ x: s.x, y: s.y, w: s.snap.width, h: s.snap.height, alpha: s.alpha, op: s.op | 0, tiles, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null });

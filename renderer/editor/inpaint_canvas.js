@@ -14,7 +14,7 @@
 
 import { api, host } from "./host.js";
 import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromCube, lutToCanvas, lutFromImage, plateStats, colourStats } from "./inpaint_filters.js";
-import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo } from "./inpaint_filters_gl.js";
+import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
 import { setKernels, kernelsMode, OPS } from "./px/kernels.js";
@@ -411,6 +411,8 @@ async function uploadCanvas(canvas, prefix) {
 
 let PARTS_OFF = false;
 let partsSeq = 0;
+/** "Not this way" from `programBand`: no GPU path for the filters of a band (the caller takes the region pass). */
+const NO_PROGRAM = "no stack program here";
 
 function partsUsable() {
     return !PARTS_OFF && InpaintEditor.pngParts !== false && kernelsMode() === "rust" && typeof Worker === "function" && !editorPool().off;
@@ -4903,7 +4905,7 @@ class InpaintEditor {
      */
     async floodRegion(x, y, o) {
         // B item 2: a plain stack is composited by the pool from its tiles and flooded there; held as it is now
-        const held = this.holdStack(this.floodStack(o.sample));
+        const held = this.holdStack(this.floodStack(o.sample), { forRun: false });
         try { return await this.floodRegionOf(held, x, y, o); } finally { if (held) held.release(); }
     }
 
@@ -5066,8 +5068,14 @@ class InpaintEditor {
      * blend mode (`op`, the kernel's number: B item 7): a filter layer, a colour match, a transform in progress, a live
      * stroke, a scaled or fractional layer. The same layers in the same order as `drawLayersInto` draws them, and the
      * same exclusions as `boxReach`: this is a third walk of the stack, so it stays next to the second.
+     *
+     * `filters` (B item 7 part 2): a filter layer is an entry too, `{ filter, reach, mask, alpha, op }`, instead of the
+     * end of the plan: the workers composite what is below it, the filter runs on the GPU over those bytes
+     * (`programBand`), and what is above goes over the result in the workers again. Null then for a filter that names no
+     * reach, a mask that is not the picture's tiles, and, as `applyFilterLayer` shows the layers unfiltered during a
+     * gesture below a filter, for any gesture outside a run.
      */
-    stackPlan({ forRun = true, upTo = null } = {}) {
+    stackPlan({ forRun = true, upTo = null, filters = false } = {}) {
         if (!this.tileMode || !this.base || !partsUsable() || !arenaEnabled() || InpaintEditor.bands === false || InpaintEditor.stacks === false) return null;
         const bs = this.basePx;
         if (!bs || !isTilePixels(bs) || bs.width !== this.width || bs.height !== this.height) return null;
@@ -5077,7 +5085,22 @@ class InpaintEditor {
             const l = this.layers[i];
             if (this.compareShow && l.kind === "result" && l.id !== this.compareShow) continue;
             if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
-            if (l.kind === "filter") return null;
+            if (l.kind === "filter") {
+                if (!filters || InpaintEditor.stackFilters === false) return null;
+                if (!forRun && ((this.pointer && this.pointer.layer) || this.pending)) return null;
+                const def = FILTERS[l.filter];
+                if (!def) continue;   // applyFilter hands the picture on
+                let r = def.reach;
+                if (typeof r === "function") { try { r = r(l.params || {}, { width: this.width, height: this.height }); } catch (_) { r = undefined; } }
+                if (!(r >= 0) || !Number.isFinite(r)) return null;
+                const fop = l.blend && l.blend !== "normal" ? OPS[l.blend] : 0;
+                if (!(fop >= 0)) return null;
+                const fm = l.maskPx || null;
+                if (fm && (!isTilePixels(fm) || fm.width !== this.width || fm.height !== this.height || (this.pointer && this.pointer.layer === l))) return null;
+                const falpha = Math.round(Math.max(0, Math.min(1, l.opacity ?? 1)) * 255);
+                if (falpha > 0) out.push({ filter: l, reach: Math.ceil(r), mask: fm, alpha: falpha, op: fop });
+                continue;
+            }
             if (forRun && (this.isControl(l) || this.isReference(l))) continue;
             const op = l.blend && l.blend !== "normal" ? OPS[l.blend] : 0;
             if (!(op >= 0) || (op && InpaintEditor.stackBlends === false)) return null;
@@ -5102,12 +5125,176 @@ class InpaintEditor {
         return { source: stackRows(this.width, this.height, held.stores), layers: held.stores.length - 1, release: held.release };
     }
 
-    /** A stack plan (its first entry, the base, may be null) held as clones the workers read by slot: `{ stores, release() }`, or null when a tile is outside the arena. */
-    holdStack(plan) {
+    /**
+     * A stack plan (its first entry, the base, may be null) held as clones the workers read by slot: `{ stores, release() }`,
+     * or null when a tile is outside the arena. A plan with filter layers (`stackPlan`'s `filters`) is held as a program
+     * instead: `{ steps, reach, forRun, release() }`, the steps in turn `{ stores, args }` (a run of layers: `stores[0]` the
+     * base, or null above a filter) and `{ filter, plain, mask, alpha, op }`, `reach` the sum of the filters' (`programBand`).
+     */
+    holdStack(plan, { forRun = true } = {}) {
         if (!plan) return null;
-        for (const s of plan) if (s && (!stackInArena(s.px) || (s.mask && !stackInArena(s.mask)))) return null;
-        const stores = plan.map((s) => s && ({ snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0 }));
-        return { stores, release() { for (const s of stores) if (s) { s.snap.release(); if (s.mask) s.mask.release(); } } };
+        for (const s of plan) if (s && ((s.px && !stackInArena(s.px)) || (s.mask && !stackInArena(s.mask)))) return null;
+        const hold = (s) => s && ({ snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0 });
+        if (!plan.some((s) => s && s.filter)) {
+            const stores = plan.map(hold);
+            return { stores, release() { for (const s of stores) if (s) { s.snap.release(); if (s.mask) s.mask.release(); } } };
+        }
+        const steps = [], clones = [];
+        let run = null, reach = 0;
+        plan.forEach((s, i) => {
+            if (s && s.filter) {
+                const mask = s.mask ? s.mask.clone() : null;
+                if (mask) clones.push(mask);
+                steps.push({ filter: s.filter, plain: !mask && s.alpha === 255 && !s.op, mask, alpha: s.alpha, op: s.op | 0 });
+                reach += s.reach;
+                run = null;
+                return;
+            }
+            const h = hold(s);
+            if (h) { clones.push(h.snap); if (h.mask) clones.push(h.mask); }
+            if (!run) { run = { stores: i === 0 ? [] : [null] }; steps.push(run); }
+            run.stores.push(h);
+        });
+        for (const st of steps) if (st.stores) st.args = stackArgs(st.stores);
+        return { steps, reach, forRun: !!forRun, free: [], b: null, timing: { bands: 0, pool: 0, upload: 0, filter: 0, read: 0 }, out: null, release() { for (const c of clones) c.release(); this.free = null; this.b = null; this.out = null; glReleaseLargeSurfaces(); } };
+    }
+
+    /** The rows of a band of a held program (`holdStack`), so that a band with its margins stays a texture of 24 MP: whole tiles, 256 to 2,048. Zero when the GPU cannot take the picture's width. */
+    programRows(prog, width) {
+        const max = glMaxSide(), pw = Math.min(this.width, width + 2 * prog.reach);
+        if (!max || pw > max) return 0;
+        const rows = Math.floor((24e6 / pw - 2 * prog.reach) / TILE_SIZE) * TILE_SIZE;
+        return Math.max(TILE_SIZE, Math.min(2048, rows, Math.floor((max - 2 * prog.reach) / TILE_SIZE) * TILE_SIZE));
+    }
+
+    /** One filter layer over `input` (a surface or a canvas of a band whose corner is `origin` in the picture), as `filteredCanvas` runs it in a pass at full resolution; the input again when the filter gave nothing. */
+    bandFilter(layer, input, origin, forRun) {
+        const def = FILTERS[layer.filter];
+        const stats = def && def.wholeStats ? this.belowStats(layer, forRun) : null;
+        if (!layer._fxCacheSample) layer._fxCacheSample = {};
+        let out = null;
+        beginScope();
+        try { out = applyFilter(layer.filter, input, layer.params, { scale: 1, origin, full: [this.width, this.height], stats, seed: layer.id, lut: layer._lutData, plate: layer._plateImg || null, plateKey: layer.plate && layer.plate.ref && layer.plate.ref.filename, plateMean: layer.plate && layer.plate.mean, plateStd: layer.plate && layer.plate.std, cache: layer._fxCacheSample, chain: "bands" }); }
+        catch (err) { console.error(err); }
+        out = endScope(out);
+        return out || input;
+    }
+
+    /**
+     * The pixels of `box` ([x0, y0, x1, y1], inside the image) of a held program (B item 7 part 2) as RGBA8, into `into` or
+     * into the program's own array (good until the next band is read): the box with the filters' reach around it is composited by the pool into a shared buffer
+     * (`stack_into`, a tile row a job), goes to the GPU as a texture, through the filter layers one after the other, and
+     * comes back once (`readPixels`); layers above a filter, and a filter at an opacity, in a blend mode or through a
+     * mask, are composited over what came back by the pool again. No canvas on the way unless a filter makes one (a
+     * blur goes through `ctx.filter`). Throws NO_PROGRAM when the GPU path is not there: the caller takes the old way.
+     * `programStart` is the part that needs no GPU (the layers below the first filter), so a reader of band after band
+     * (`programReader`) has the pool composite the next band while this thread filters and reads this one.
+     */
+    async programBand(prog, box, into = null, opts = {}) {
+        return this.programFinish(prog, this.programStart(prog, box, opts), into, opts);
+    }
+
+    /** `{ read(box, into, next) }`: `programBand`, with the band `next` started before this one goes to the GPU. */
+    programReader(prog, opts = {}) {
+        let ahead = null;
+        const same = (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
+        return {
+            read: async (box, into = null, next = null) => {
+                const cur = ahead && same(ahead.box, box) ? ahead : this.programStart(prog, box, opts);
+                ahead = next ? this.programStart(prog, next, opts) : null;
+                return this.programFinish(prog, cur, into, opts);
+            },
+        };
+    }
+
+    programStart(prog, box, { priority = EXPORT, group = null } = {}) {
+        const W = this.width, H = this.height, R = prog.reach;
+        const [bx, by, bx1, by1] = box, w = bx1 - bx, h = by1 - by;
+        const kl = Math.min(R, bx), kt = Math.min(R, by), kr = Math.min(R, W - bx1), kb = Math.min(R, H - by1);
+        const px0 = bx - kl, py0 = by - kt, pw = w + kl + kr, ph = h + kt + kb, bytes = pw * ph * 4;
+        if (!prog.free) prog.free = [];
+        const at = prog.free.findIndex((s) => s.byteLength >= bytes);
+        // a buffer that comes back from a band before is cleared by the jobs that fill it, row by row, in the pool
+        const used = at >= 0;
+        const sab = used ? prog.free.splice(at, 1)[0] : new SharedArrayBuffer(bytes);
+        const pool = editorPool();
+        const composite = async (args, clear = false) => {
+            const jobs = [];
+            for (let yy = py0; yy < py0 + ph;) {
+                const n = Math.min(TILE_SIZE - (yy % TILE_SIZE), py0 + ph - yy);
+                const stack = args(yy, yy + n);
+                if (clear || stack.base || stack.layers.length) jobs.push(pool.run("stack_into", { sab, w: pw, x0: px0, y0: py0, y: yy, rows: n, stack, clear }, [], { priority, group }));
+                yy += n;
+            }
+            await Promise.all(jobs);
+        };
+        const lead = prog.steps[0].stores ? 1 : 0;
+        if (!lead && used) new Uint8Array(sab, 0, bytes).fill(0);
+        const first = lead ? composite(prog.steps[0].args, used) : Promise.resolve();
+        first.catch(() => 0);   // the failure is seen where the band is finished
+        return { box, sab, bytes, w, h, kl, kt, px0, py0, pw, ph, lead, first, composite };
+    }
+
+    async programFinish(prog, s, into = null) {
+        const W = this.width, H = this.height;
+        const { sab, bytes, w, h, kl, kt, px0, py0, pw, ph } = s;
+        const A = new Uint8Array(sab, 0, bytes);
+        const free = (v) => { if (isGLSurface(v)) releaseSurface(v); };
+        const read = (v, x, y, rw, rh, out) => {
+            if (isGLSurface(v)) { if (!readSurfaceBytes(v, x, y, rw, rh, out)) throw new Error(NO_PROGRAM); return; }
+            const c = document.createElement("canvas");
+            c.width = rw; c.height = rh;
+            const cx = c.getContext("2d", { willReadFrequently: true });
+            try { cx.globalCompositeOperation = "copy"; cx.drawImage(v, -x, -y); out.set(cx.getImageData(0, 0, rw, rh).data); } finally { c.width = 1; c.height = 1; }
+        };
+        let gpu = null;   // the picture so far while it is with the filters (a surface, or a filter's canvas); else it is in A
+        // where a band's time goes, summed over the bands (ms): waiting for the pool, the upload and the filters' calls, the reads
+        const T = prog.timing, now = () => performance.now();
+        const timed = (key, fn) => { const t0 = now(); try { return fn(); } finally { T[key] += now() - t0; } };
+        const readT = (...a) => timed("read", () => read(...a));
+        T.bands++;
+        try {
+            let t0 = now();
+            await s.first;
+            T.pool += now() - t0;
+            for (const st of prog.steps.slice(s.lead)) {
+                if (st.stores) {
+                    if (gpu) { readT(gpu, 0, 0, pw, ph, A); free(gpu); gpu = null; }
+                    t0 = now();
+                    await s.composite(st.args);
+                    T.pool += now() - t0;
+                    continue;
+                }
+                const below = !gpu;   // what the filter reads is still in A
+                const input = gpu || timed("upload", () => surfaceFromBytes(A, pw, ph));
+                if (!input) throw new Error(NO_PROGRAM);
+                gpu = input;
+                const out = timed("filter", () => this.bandFilter(st.filter, input, [px0, py0], prog.forRun));
+                if (st.plain) { if (out !== input) free(input); gpu = out; continue; }
+                // at an opacity, in a blend mode or through a mask: the filtered band over the band it was made from
+                if (!prog.b || prog.b.byteLength < bytes) prog.b = new SharedArrayBuffer(bytes);
+                if (!below) readT(input, 0, 0, pw, ph, A);
+                readT(out, 0, 0, pw, ph, new Uint8Array(prog.b, 0, bytes));
+                if (out !== input) free(out);
+                free(input); gpu = null;
+                t0 = now();
+                await s.composite(stackArgs([null, { sab: prog.b, mask: st.mask, x: 0, y: 0, w: W, h: H, alpha: st.alpha, op: st.op }]));
+                T.pool += now() - t0;
+            }
+            // without `into` the bytes are the program's own, good until the next band is read (`bandRows` has copied its parts by then)
+            if (!into && (!prog.out || prog.out.length < w * h * 4)) prog.out = new Uint8Array(w * h * 4);
+            const dst = into || prog.out.subarray(0, w * h * 4);
+            if (gpu) readT(gpu, kl, kt, w, h, dst);
+            else timed("read", () => {
+                if (w === pw) dst.set(A.subarray(kt * pw * 4, (kt + h) * pw * 4));
+                else for (let y = 0; y < h; y++) dst.set(A.subarray(((kt + y) * pw + kl) * 4, ((kt + y) * pw + kl + w) * 4), y * w * 4);
+            });
+            // the program's own bytes go out as `getImageData` gives them (a flatten writes them into tiles as ImageData)
+            return into ? dst : new Uint8ClampedArray(dst.buffer, dst.byteOffset, dst.length);
+        } finally {
+            free(gpu);
+            if (prog.free && prog.free.length < 2) prog.free.push(sab);
+        }
     }
 
     /**
@@ -5124,7 +5311,7 @@ class InpaintEditor {
                 return plain ? [null, { px: l.px, mask: l.maskPx ? this.tileMaskOf(l) : null, x: l.x, y: l.y, alpha: 255 }] : null;
             }
         }
-        return this.stackPlan({ forRun: false });
+        return this.stackPlan({ forRun: false, filters: true });
     }
 
     /**
@@ -5140,14 +5327,25 @@ class InpaintEditor {
         let selSnap = null;
         try {
             const sab = new SharedArrayBuffer(w * h * 4);
-            const args = stackArgs(held.stores);
-            const jobs = [];
-            for (let yy = by; yy < by1;) {
-                const n = Math.min(TILE_SIZE - (yy % TILE_SIZE), by1 - yy);
-                jobs.push(pool.run("stack_into", { sab, w, x0: bx, y0: by, y: yy, rows: n, stack: args(yy, yy + n) }, [], { priority: INTERACTIVE, group }));
-                yy += n;
+            if (held.steps) {
+                // B item 7 part 2: filter layers in the stack: band by band through the GPU, each band's rows into the buffer
+                const rows = this.programRows(held, w);
+                if (!rows) return null;
+                const reader = this.programReader(held, { priority: INTERACTIVE, group });
+                for (let yy = by; yy < by1; yy += rows) {
+                    const y1 = Math.min(by1, yy + rows);
+                    await reader.read([bx, yy, bx1, y1], new Uint8Array(sab, (yy - by) * w * 4, (y1 - yy) * w * 4), y1 < by1 ? [bx, y1, bx1, Math.min(by1, y1 + rows)] : null);
+                }
+            } else {
+                const args = stackArgs(held.stores);
+                const jobs = [];
+                for (let yy = by; yy < by1;) {
+                    const n = Math.min(TILE_SIZE - (yy % TILE_SIZE), by1 - yy);
+                    jobs.push(pool.run("stack_into", { sab, w, x0: bx, y0: by, y: yy, rows: n, stack: args(yy, yy + n) }, [], { priority: INTERACTIVE, group }));
+                    yy += n;
+                }
+                await Promise.all(jobs);
             }
-            await Promise.all(jobs);
             let sel = null;
             if (o.clip && this.getBounds()) {
                 if (!stackInArena(this.sel)) return null;
@@ -5158,7 +5356,7 @@ class InpaintEditor {
             return { shape: r.bitmap || null, tiles: r.tiles || null, count: r.count, bounds: r.bounds, touches: r.touches, close: !!r.bitmap };
         } catch (err) {
             pool.cancel(group);
-            if (!partsFailed(err)) console.warn("Inpaint Canvas: the region over tiles failed, using the canvases:", (err && err.message) || err);
+            if (!partsFailed(err) && !String(err && err.message).includes(NO_PROGRAM)) console.warn("Inpaint Canvas: the region over tiles failed, using the canvases:", (err && err.message) || err);
             return null;
         } finally {
             if (selSnap) selSnap.release();
@@ -8978,10 +9176,12 @@ class InpaintEditor {
             let composite;
             if (stackOf) composite = stackOf.source;
             else if (plan) {
+                const bands = this.bandSource({ forRun: true }, plan);   // B item 7 part 2: filter layers over worker-composited bands
+                held.push(bands);
                 composite = bandRows(W, H, (y0, y1) => {
                     if (this.compositeVersion !== version) throw new Error("the picture changed while it was written; try again");
-                    return this.readBand(y0, y1, { forRun: true }, plan.reach);
-                }, plan.rows);
+                    return bands.read(y0, y1);
+                }, bands.rows);
             } else {
                 flat = this.flattenToCanvas({ forRun: true });
                 composite = canvasRows(flat);
@@ -11088,21 +11288,63 @@ class InpaintEditor {
         for (let round = 0; ; round++) {
             const version = this.compositeVersion;
             const changed = () => this.compositeVersion !== version;
+            // B item 7 part 2: with filter layers in an otherwise plain stack the workers composite the bands and the GPU
+            // filters their bytes (`programBand`); `bandSource` falls back to the region pass band by band
+            const bands = this.bandSource(opts, plan);
             try {
-                const r = await encodeBands(this.width, this.height, (y0, y1) => {
+                const r = await encodeBands(this.width, this.height, async (y0, y1) => {
                     if (changed()) throw new Error("the picture changed");
-                    const data = this.readBand(y0, y1, opts, plan.reach);
+                    const data = await bands.read(y0, y1);
                     if (each) each(data, y0, y1);
                     return data;
-                }, { hash, texts, progress, rows: plan.rows });
+                }, { hash, texts, progress, rows: bands.rows });
                 if (!r) return null;
                 if (changed()) throw new Error("the picture changed");
-                return { ...r, width: this.width, height: this.height };
+                return { ...r, width: this.width, height: this.height, program: bands.program(), programTiming: bands.timing() };
             } catch (err) {
                 if (!/the picture changed/.test(String(err && err.message))) throw err;
                 if (round >= 1) throw new Error("the picture changed while it was written; try again");
+            } finally {
+                bands.release();
             }
         }
+    }
+
+    /**
+     * How the bands of the composite are read (`bandPlan` said they can be): `{ rows, read(y0, y1), program(), release() }`.
+     * A stack with filter layers that `stackPlan` takes is held as a program and read through `programBand`; everything
+     * else, and every band after the GPU path failed, is the region pass (`readBand`). `program()` says how many bands
+     * came the new way.
+     */
+    bandSource(opts, plan) {
+        const o = { forRun: !!opts.forRun, upTo: opts.upTo == null ? null : opts.upTo };
+        let prog = this.huge ? null : this.holdStack(this.stackPlan({ ...o, filters: true }), o);
+        if (prog && !prog.steps) { prog.release(); prog = null; }
+        const rows = prog ? this.programRows(prog, this.width) : 0;
+        if (prog && !rows) { prog.release(); prog = null; }
+        let done = 0;
+        const reader = prog ? this.programReader(prog) : null, timing = prog ? prog.timing : null;
+        return {
+            rows: prog ? rows : plan.rows,
+            read: async (y0, y1) => {
+                if (prog) {
+                    try {
+                        const data = await reader.read([0, y0, this.width, y1], null, y1 < this.height ? [0, y1, this.width, Math.min(this.height, y1 + rows)] : null);
+                        done++;
+                        return data;
+                    }
+                    catch (err) {
+                        if (!String(err && err.message).includes(NO_PROGRAM)) throw err;
+                        prog.release(); prog = null;
+                    }
+                }
+                // a band of the program's height fits a canvas whenever one of the plan's does: the rows are at most the plan's cap
+                return this.readBand(y0, y1, opts, plan.reach);
+            },
+            program: () => done,
+            timing: () => (timing ? Object.fromEntries(Object.entries(timing).map(([k, v]) => [k, Math.round(v)])) : null),
+            release: () => { if (prog) { prog.release(); prog = null; } },
+        };
     }
 
     /** Upload the composite as a PNG named by its hash: in bands when it can be read that way (E2), else from a canvas. */

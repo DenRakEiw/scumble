@@ -462,7 +462,77 @@ function bindSource(g, src) {
 
 /** Should this pass write into a surface? */
 function wantSurface(g, info, W, H) {
-    return !!(info && info.chain) && W * H <= CHAIN_MAX_PIXELS && W <= g.max && H <= g.max;
+    // `chain: "bands"` (B item 7): a band of an export comes as bytes and leaves as bytes, so a surface is the way out
+    // whatever its size; the cap is the screen's (above it the pool no longer holds a frame's surfaces)
+    return !!(info && info.chain) && (info.chain === "bands" || W * H <= CHAIN_MAX_PIXELS) && W <= g.max && H <= g.max;
+}
+
+/**
+ * RGBA8 bytes (straight alpha, the first row the picture's top, `w` x `h`) as a surface the caller owns and gives back
+ * with releaseSurface() (docs/PLAN_BCE.md §3b, B item 7): what the pool's workers composited goes to the filters
+ * without a canvas. The bytes may lie in a SharedArrayBuffer. Null without a GPU path or above its texture size.
+ */
+export function surfaceFromBytes(bytes, w, h) {
+    const g = context();
+    if (!g || !(w > 0 && h > 0) || w > g.max || h > g.max || bytes.length < w * h * 4) return null;
+    const { gl } = g;
+    const s = acquireSurface(g, w, h);
+    if (!s) return null;
+    try {
+        gl.activeTexture(gl.TEXTURE7);
+        gl.bindTexture(gl.TEXTURE_2D, s.tex);
+        // Chromium applies both switches to typed-array uploads too (CLAUDE.md, traps)
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+        STATS.uploads++;
+        const err = gl.getError();
+        if (err !== gl.NO_ERROR) throw new Error("GL error " + err);
+        return s;
+    } catch (err) {
+        console.warn("WebGL2 filter surface from bytes failed:", err.message || err);
+        releaseSurface(s);
+        return null;
+    }
+}
+
+/** The rectangle (x, y, w, h) of a surface as RGBA8 bytes into `out` (it may lie in a SharedArrayBuffer), top row first. False when it cannot be read. */
+export function readSurfaceBytes(s, x, y, w, h, out) {
+    const g = context();
+    if (!g || !isGLSurface(s) || s.gen !== g.gen || out.length < w * h * 4) return false;
+    const { gl } = g;
+    try {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, s.fbo);
+        gl.pixelStorei(gl.PACK_ALIGNMENT, 4);
+        gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);   // a surface holds the picture top down
+        STATS.readbacks++;
+        const err = gl.getError();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        if (err !== gl.NO_ERROR) { console.warn("WebGL2 surface read error", err); return false; }
+        return true;
+    } catch (err) {
+        console.warn("WebGL2 surface read failed:", err.message || err);
+        try { gl.bindFramebuffer(gl.FRAMEBUFFER, null); } catch (_) { /* ignore */ }
+        return false;
+    }
+}
+
+/** The largest side a surface may have here, 0 without a GPU path. */
+export function glMaxSide() {
+    const g = context();
+    return g ? g.max : 0;
+}
+
+/** Idle surfaces above the screen's cap leave the pool: only a band of an export makes them, and one is 60 to 100 MB. */
+export function glReleaseLargeSurfaces() {
+    let freed = 0;
+    for (const [key, list] of POOL) {
+        if (!list.length || list[0].width * list[0].height <= CHAIN_MAX_PIXELS) continue;
+        while (list.length) { const s = list.pop(); poolBytes -= s.bytes; freed += s.bytes; destroySurface(s); }
+        POOL.delete(key);
+    }
+    return freed;
 }
 
 /** Draw the current program into a pooled surface (its first row is the image's top). */

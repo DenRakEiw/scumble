@@ -44,8 +44,11 @@ Nothing at the moment.
 **Written** 2026-09-17 with phase E (`docs/PLAN_BCE.md` §3, the "as built" blocks). Not reports: gates of the plan that were
 measured and not met, and what still needs a canvas of the picture. Each has a number to beat.
 
-- **(Since B item 1 only for documents with a filter layer, a blend mode or a colour match; a plain stack is composited
-  by the workers and saves in 1.7 s, `docs/PLAN_BCE.md` §3b "B item 1 as built".)** An export in bands is slower in wall
+- **(Since B item 7, 2026-09-18, only for a document with a colour-matched layer, a scaled or fractional layer, or a
+  filter mask that is not tiles: a plain stack, blend modes and filter layers are composited by the workers, the
+  filters run over their bytes, and the case below saves in 1.4 s with a block of 0.17 s, with the film look 5.0 s
+  against 9.1 s; `docs/PLAN_BCE.md` §3b "B item 7, part 2 as built". The block is still above the plan's 50 ms.)**
+  An export in bands is slower in wall
   time than the whole flatten was, while the window stays usable. 15000 × 10000,
   three full paint layers and a levels layer: 6.2 s in bands (longest block 0.7 s, the first band) against 3.4 s through
   one canvas (2.4 s blocked in one piece). With the film look on top 9.5 s against 8.2 s. The time is the region pass at

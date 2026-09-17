@@ -4298,13 +4298,20 @@ canvases for the wand. In this order, each with its row and its gate:
 
 - **The kernel** (ABI 9, `crates/px/src/composite.rs`, twin `blendOp` in `kernels_js.js`): ops 5 to 12 are multiply,
   screen, overlay, darken, lighten, soft-light, hard-light and difference (`OPS` carries the names a layer's `blend`
-  has). The W3C formula in the kernel's premultiplied 8-bit integers: `r = mul255(sp, 255 − da) + mul255(dp, inv) +
-  mul255(mul255(sa, da), B(cb, cs))`, never more than the alpha, `cb` the backdrop unpremultiplied as at the end; over
-  an opaque backdrop that is `mul255(dp, inv) + mul255(sa, B)`. Soft-light's square root is a table of 256 16-bit
-  values (`SOFT_D`, the same numbers in the crate and the twin), so no root is taken twice in two languages. The SIMD
-  build takes four pixels at a time where all four backdrop pixels are opaque (seven modes; soft-light and every other
-  block go the scalar way). A megapixel over an opaque tile in Node: multiply 2.2 ms against the twin's 22, overlay 2.7
-  against 31, soft-light 12.9 against 32 (the scalar build 7.5 / 12.6 / 13.8).
+  has). The W3C formula, **rounded once per channel**: `B16 = 255 · B(cb, cs)` is an exact integer for seven modes
+  (soft-light's square root is a table of 256 16-bit values, `SOFT_D`, the same numbers in the crate and the twin), over
+  an opaque backdrop `r = (dp·inv·255 + sa·B16 + 32512) / 65025`, else the three terms over 255³ with `cb` the backdrop
+  unpremultiplied as at the end, never more than the alpha; everything fits 32 bits. The SIMD build takes four pixels at
+  a time where all four backdrop pixels are opaque, in 32-bit lanes, and divides through floats with the remainder put
+  right (seven modes; soft-light and every other block go the scalar way). A megapixel over an opaque tile in Node:
+  multiply 5.3 ms against the twin's 23, overlay 8.0 against 32, soft-light 12.2 against 32 (the scalar build 6.4 / 12.3
+  / 13.1).
+- **Why once.** The first version rounded B, the two products and the sum (`mul255(dp, inv) + mul255(sa, mul255(b,
+  s))`, 2.2 ms a megapixel). Measured against exact floats on random colours under a layer of stepped alpha
+  (2,048 × 1,536, both composites in one state): that kernel mean 0.35 levels and up to 1.45 off, the compositor's
+  shader 0.26 and 0.99, the two a level apart on 28.6 % of the bytes. Rounded once: **mean 0.247, never more than 0.5**,
+  and 6.5 to 7.6 % apart from the shader, which is now the less exact of the two (it reads its source back from a
+  premultiplied 8-bit texture). In normal mode the two are the same bytes, as before.
 - **`stackPlan`** no longer turns a blend mode away: an entry carries `op` (0, or the kernel's number), `holdStack`,
   `stackArgs` and `rowsOfStack` pass it on, and the worker hands `composite_tile` the ops instead of zeros. So the PNG
   export, the run's base upload, the merged picture of PSD and ORA, and the wand and the bucket take the worker path for
@@ -4312,29 +4319,91 @@ canvases for the wand. In this order, each with its row and its gate:
 
 | 15,000 × 10,000, base and a full paint layer in multiply (`native_test.py`, rows `blend_*`) | before | now |
 |---|---|---|
-| export PNG: wall / longest block | 3,416 / 157 ms | **1,786 / 36 ms** |
-| export PSD | 3,756 / 164 ms | **1,187 / 70 ms** |
-| wand across the picture | 3,937 / 1,206 ms | **1,088 / 112 ms** |
+| export PNG: wall / longest block | 3,416 / 157 ms | **1,649 / 38 ms** |
+| export PSD | 3,756 / 164 ms | **1,115 / 65 ms** |
+| wand across the picture (38,535,687 px, the same count and bounds) | 3,937 / 1,206 ms | **1,108 / 97 ms** |
 
 **Against the flatten** (`export_test.py` `blend_modes_are_composited_by_the_workers`: the four layers of the plain-stack
-step, all in one mode, mode by mode): two levels at most in multiply, screen, darken, lighten and difference; three
-levels on 66 to 382 of 25 million bytes in overlay, soft-light and hard-light, whose B has a slope of 2 to 4, so a
-one-level difference below it is doubled. Mean 0.04 to 0.13 levels. The gate is three levels, and more than two on at
-most 0.01 % of the bytes. `px_test.js` holds the twin to a plain reference and to both Rust builds bit for bit (every
-mode, opaque and translucent backdrops, opacity, masks, tails) and to the specification's floats (1.5 levels over an
-opaque tile). **The wand's region can end elsewhere than over the canvases.** Measured on a 15,000 x 10,000 gradient with
-the benchmark's paint layer (35 % yellow) in multiply, both composites in one state (`E.stacks` off and on): one level
-apart on 20 % of the bytes, never two, mean +0.009; the wand from the same click selects 40.5 million pixels over
-tiles and 41.7 over canvases, its far edge 255 px nearer (11,364 against 11,619), which is one level of that gradient
-under the multiply: the region ends where a pixel sits on the tolerance. At 6,000 x 4,000 the same document gives the
-same selection both ways, and in normal mode the two composites are the same bytes. (The integer maths rounds B, the
-two products and the sum; the shader rounds once. Exact 16-bit products, rounded once, would be the way to close it;
-not built and not measured.) With flat colours the selection and the fill are the same bytes
-(`editor_test.py` `the_flood_over_tiles_is_the_flood_over_canvases`, now with the patch in multiply too).
-Three mutations turned a gate red: the twin's overlay with its arguments swapped and the SIMD screen without its
-complement (`px_test.js`), the worker dropping the ops (the export step and the editor step). Gates, offline: tiles
-`pixels editor composite commands film export log mcp pxjobs nodecopy`, canvas `pixels editor composite commands film`,
-ALL PASS.
+step, all in one mode, mode by mode): one level in darken, two in multiply, screen, lighten, soft-light and difference,
+three on 86 to 135 of 25 million bytes in overlay and hard-light, whose B has a slope of 2, so a one-level difference
+below it is doubled. Mean 0.01 to 0.09 levels. The gate is three levels, and more than two on at most 0.01 % of the
+bytes. `px_test.js` holds the twin to a plain reference (BigInt, nothing clever) and to both Rust builds bit for bit
+(every mode, opaque and translucent backdrops, opacity, masks, tails) and to the specification's floats (half a level
+at full opacity, one level at an opacity, whose effective alpha is rounded to 8 bits first). With the first kernel the
+wand's region on the benchmark's gradient ended a level's width elsewhere than over the canvases (40.5 against 41.7
+million pixels in one state); rounded once it is the same count and the same bounds. With flat colours the selection
+and the fill are the same bytes (`editor_test.py` `the_flood_over_tiles_is_the_flood_over_canvases`, now with the patch
+in multiply too). Three mutations turned a gate red: the twin's overlay with its arguments swapped and the SIMD screen
+without its complement (`px_test.js`), the worker dropping the ops (the export step and the editor step).
+
+#### B item 7, part 2 as built (2026-09-18): filter layers between worker-composited layers
+
+Not only "the stack below a filter": **a stack with filter layers anywhere in it is held as a program** and run band by
+band, so layers above a filter, several filters, and a filter at an opacity, in a blend mode or through a mask all take
+the new path.
+
+- **`stackPlan({ filters: true })`** (still the one walk): a filter layer is an entry `{ filter, reach, mask, alpha, op }`
+  instead of the end of the plan. Null as before for a colour match, a scaled layer and so on, and for a filter that
+  names no reach, a filter mask that is not tiles of the picture's size, and any gesture outside a run
+  (`applyFilterLayer` shows the layers unfiltered then). **`holdStack`** turns such a plan into `{ steps, reach }`: runs
+  of layers (`{ stores, args }`, the first with the base, the later ones over what is there) and filters
+  (`{ filter, plain, mask, alpha, op }`), `reach` the sum of the filters'.
+- **`programStart` / `programFinish`** (`programBand`, `programReader`): the band with the reach around it (on all four
+  sides for a box) is composited by the pool into a `SharedArrayBuffer` (`stack_into`, a tile row a job, the job clears
+  its rows when the buffer is reused); the bytes go to the GPU as a texture (`surfaceFromBytes`: `texSubImage2D`
+  straight from the shared buffer, both unpack switches set); each filter runs as `filteredCanvas` runs it in a pass at
+  full resolution (`bandFilter`: `origin`, `full`, `stats`, the sample caches, `chain: "bands"`, which lifts the
+  10 MP cap of the screen's chain); plain filters chain on the GPU; the rows come back once
+  (`readSurfaceBytes`: `readPixels` from the surface's framebuffer, the margin skipped, into the caller's buffer). A
+  run of layers above a filter is one more round of `stack_into` with no base over what came back. A filter that is
+  not plain is read back whole into a second buffer and goes over the band it was made from **in the workers**: a
+  layer of the stack may be bytes (`sab`), composited by `composite_tile` at the filter's opacity, in its blend mode,
+  through its mask's tiles. A filter that answers with a canvas (a blur goes through `ctx.filter`) is read through a
+  CPU canvas. **The next band's layers are composited while this thread filters and reads this one**
+  (`programReader`, two buffers in turn). Bands are whole tiles, 256 to 2,048 rows, so that a band with its margins
+  stays a texture of 24 MP (1,536 rows at 15k without a reach); `glReleaseLargeSurfaces` drops those surfaces from
+  the pool afterwards. No GPU path, or a picture wider than a texture: `NO_PROGRAM`, and the band (and every band
+  after it) is the region pass as before.
+- **Callers**: `encodeComposite` and the merged picture of PSD and ORA through `bandSource` (`each` works too, so a
+  flatten writes its new base from the program's bands; the answer carries `program`, the bands that came this way,
+  and `programTiming`), and `floodOverTiles` for the wand and the bucket (`floodStack` asks for `filters`).
+  `InpaintEditor.stackFilters = false` is the A/B switch.
+
+| 15,000 × 10,000 (`native_test.py`, rows `filter_*`: base, a full paint layer, a levels layer) | before | now |
+|---|---|---|
+| export PNG: wall / longest block | 3,253 / 131 ms | **1,806 / 143 ms** |
+| export PSD | 3,636 / 147 ms | **1,607 / 73 ms** |
+| wand across the picture (65,851,358 px, the same count and bounds) | 3,346 / 1,232 ms | **1,540 / 162 ms** |
+| main thread inside the browser's calls, PNG | 1,430 ms (`getImageData` 514, `putImageData` 448, `drawImage` 253, `getError` 155) | 300 ms (`readPixels` 188, `texSubImage2D` 99) |
+| three full paint layers and a levels layer, PNG (`export_test.py --perf`, the row of `docs/BUGS.md`) | 6.2 s, block 0.7 s | **1.4 s, block 0.17 s** (one canvas: 3.9 s, 2.2 s blocked) |
+| the same with the film look (halation) on top, A/B in fresh instances | 9,074 / 1,151 ms | **4,977 / 134 ms** |
+
+A band's time on this thread at 15k (seven bands, flat colours so the deflate does not hide it): waiting for the pool
+50 to 160 ms in all, uploads 100 ms, the filter's calls 5 ms, reads 160 to 250 ms. Before the jobs cleared their rows
+and the output array was reused, clearing and allocating 92 MB a band were another 230 ms.
+
+**Against the flatten.** The layers below a filter are now the kernel's composite, not the canvases': a level apart on
+1.1 % of the bytes of the gate's document (a multiplied layer of soft rectangles; 4.9 % before the kernel rounded once),
+and a filter passes that on and rounds once more. `export_test.py`: `composite_in_bands_equals_the_flatten` holds the
+program to one level on at most 2 % and **the region pass to what it was held to** (862 of 96 million bytes, with
+`stackFilters` off); `filters_of_the_whole_picture_in_bands` runs all 23 filters both ways, the pass at its old
+tolerance, the program never more than one level above it (measured: equal for 15 filters, one level more for 8;
+sharpen, the film look, tonal contrast and cross process reach 3); `a_stack_program_runs_filters_between_the_layers` is the structure (a soft
+layer, levels, a masked layer, a blur at 70 % in screen through its own mask, a multiplied layer over the corner,
+grain): 4 levels at most, more than 2 on 1,830 of 25 million bytes, mean 0.24, and each of the three parts is shown to
+be in the picture. Taken apart, the mean is the blur at 70 % through its mask (18 % of the bytes a level apart; at 100 %
+through the mask 3.8 %, at 70 % without it 5.2 %): the kernel rounds the blend and then the mask's coverage, the canvas
+multiplies the two alphas first. Folding the mask into a 16-bit alpha would close it; **not built**. The wand and the
+bucket: `editor_test.py` `the_flood_over_tiles_is_the_flood_over_canvases` with an invert layer between the layers, the
+same selection and fill bytes. Four mutations turned the export gate red: the margin rows not skipped in the read, the
+filtered band read from its first row in the worker, the filter's mask dropped from the plan, the band's origin not
+told to the filter. Gates, offline: tiles `pixels editor composite commands film export log mcp pxjobs nodecopy brush
+shape`, canvas `pixels editor composite commands film brush`, `build_px.py --check`, ALL PASS.
+
+**Not done**: the longest block (143 to 165 ms, above the plan's 50; which call it is was not looked into), an
+asynchronous read (a pixel buffer and a fence would take the 160 to 250 ms of reads off this thread), the coarse
+pass of the wand (still a canvas of 2,048 px), a document wider than a texture (16,384 px here: the region pass), and
+part 3.
 
 **Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
 order: 4, 1, 2, 3, 5, 6.

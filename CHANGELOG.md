@@ -5,12 +5,22 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.18 — unreleased
 
+- **Documents with filter layers save about twice as fast, and the magic wand on them no longer freezes the window.**
+  When a document holds filter layers between ordinary layers, the background workers now put the layers together, the
+  graphics card runs the filters on exactly those pixels, and the result comes back once, instead of every band of the
+  picture being drawn through the browser's canvases. A 15000 × 10000 picture with three full paint layers and a levels
+  layer saves as PNG in 1.4 seconds instead of 6.2; with the film look on top in 5.0 instead of 9.1, and the window
+  stands still for 0.13 seconds instead of 1.2. A magic wand click across such a picture takes 1.5 seconds instead of
+  3.3, the window standing still for 0.16 seconds instead of 1.2. Layers above a filter, several filters, and a filter
+  with an opacity, a blend mode or a mask are all covered; a document with a colour-matched or a scaled layer is saved
+  as before. The pixels can differ from the old way by one level in places, a filter that sharpens by one more.
 - **Documents with blend modes save and select as fast as plain ones.** A layer set to multiply, screen, overlay,
   darken, lighten, soft light, hard light or difference no longer sends the whole document the slow way: the background
-  workers now know the eight blend modes. A 15000 × 10000 picture with a full multiply layer saves as PNG in 1.8
-  seconds instead of 3.4 and as PSD in 1.2 instead of 3.8, and a magic wand click across it takes 1.1 seconds instead
-  of 3.9, with the window standing still for 0.1 seconds instead of 1.2. The pixels can differ from the old way by one
-  or two levels where layers are partly transparent, in rare places by three with overlay, soft light and hard light.
+  workers now know the eight blend modes, and compute them more exactly than before (never more than half a level from
+  the exact value). A 15000 × 10000 picture with a full multiply layer saves as PNG in 1.6 seconds instead of 3.4 and
+  as PSD in 1.1 instead of 3.8, and a magic wand click across it takes 1.1 seconds instead of 3.9, with the window
+  standing still for 0.1 seconds instead of 1.2. The wand selects the same pixels as before; a saved picture can
+  differ from the old way by one level where a blended layer is partly transparent.
 - **Opening a large PNG no longer freezes the window.** A PNG of 32 megapixels and more that needs no colour
   management (8 bits, no colour profile, no gamma entry) is now read by a background worker straight into the tile
   engine, the way pictures above 268 MP already were. A 15000 × 10000 file opens in 2.7 seconds instead of 3.2, and
