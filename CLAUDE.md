@@ -80,7 +80,9 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-18)
 
-**Releases.** **0.1.18 is tagged (`v0.1.18`, 2026-09-18) and CI makes its draft; publishing the draft is the user's.** It
+**Releases.** **0.1.18 is tagged (`v0.1.18`, 2026-09-18) and its draft is built (installer, blockmap, `latest.yml`);
+publishing the draft is the user's.** `package.json` is 0.1.19 and `CHANGELOG.md` has the 0.1.19 section already
+(opened on 2026-09-18 with B item 7 part 3, item 10 below, because the tag is cut and new commits belong to 0.1.19). It
 carries B items 1 to 5 and item 7 parts 1 and 2. Exe gates for 0.1.18, all `--offline`: `rel18-exe` (log pixels editor
 composite brush film export toapis mcp pxjobs), `rel18-exe-canvas` (tiles off: pixels editor composite film export) and
 `rel18-exe-huge` (`huge:30000x20000`) ALL PASS, three of them on a rerun, each a known flake (the settled-read step and
@@ -188,10 +190,17 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    paint layers and a levels layer at 15k: 6.2 s to 1.4 s; with the film look 9.1 s to 5.0 s (block 1.2 s to 0.13 s); the
    wand on a filtered document 3.3 s to 1.5 s. The region pass is the fallback (`NO_PROGRAM`) and keeps its own gate
    (`InpaintEditor.stackFilters = false`, `stackBlends = false` are the A/B switches). Against the flatten: one level on
-   1.1 % of the bytes below a filter, a filter never more than one level above what the pass shows. **Part 3 (the colour
-   match) is not built and nothing of it is in the code**: a matched layer on the worker path needs its statistics from
-   tiles instead of from the whole flatten, which moves an export by a few levels. That was the user's decision (b) of
-   7c, **made on 2026-09-18: they may move (point samples); part 3 is next after the release**, see below. A document with a colour-matched layer, a scaled or a fractional layer still saves the old way. Not done
+   1.1 % of the bytes below a filter, a filter never more than one level above what the pass shows. **Part 3 is built**
+   (2026-09-18, after the 0.1.18 tag, for 0.1.19; same section, "B item 7, part 3 as built"): a colour-matched layer
+   is an entry of `stackPlan` (`match: layer`); `holdStack` is async and takes its statistics from **point samples of
+   the tiles** (`stackMatches` / `stackMatchOf`, worker job `stack_points`, the grid of `matchGeometry`, the unchanged
+   `statsOfMatch`; kept in `_mstatsStack[Run]`), and the worker matches the rows before `composite_tile`
+   (`match_pixels`, ABI 10, `crates/px/src/cmatch.rs`, bit for bit with its twin). 15k with a 5,000 × 3,500 matched
+   layer: PNG 6.4 s to 1.8 s (block 1.45 s to 84 ms), PSD 1.8 to 1.0 s, wand 2.5 to 0.9 s. Against the whole
+   flatten's statistics on four of the user's photos: mean 0.1 to 2.0 levels, max 7 (the textured landscape); with
+   the same statistics the two paths are within 2 levels. Turned away still (the whole flatten as before): a matched
+   layer above a filter layer, `readBox` (a provider run's crop), the flatten into the base of a plain matched stack;
+   `InpaintEditor.stackMatch = false` is the A/B switch. A scaled or a fractional layer still saves the old way. Not done
    in part 2: the longest block (0.15 s against the plan's 0.05), an asynchronous read, a mask folded into the alpha
    (a filter at an opacity through a mask is a level off on 18 % of the bytes). Each item is measured
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
@@ -209,11 +218,9 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
 **Decision (b) of 7c is made (the user, 2026-09-18): exports and runs of a colour-matched layer may move.** They may
 take their statistics from tiles instead of from the whole flatten, with **point samples** (measured mean 0.56, max 8
 to 9 levels against the full-resolution statistics; not box means, which were 5.45 / p99 12 on a textured photo;
-`docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). This unblocks **B item 7 part 3**: a colour-matched layer on the
-worker path (its statistics from tiles, the match applied in the worker, `stackPlan` no longer turning it away), so the
-user's usual document (a result layer with a match, often a film look) saves and selects the fast way. Nothing of part 3
-is in the code yet. Build it after 0.1.18 is published, measure the export against the whole flatten's statistics
-before and after, and say in the CHANGELOG that a matched layer's export can move by a few levels.
+`docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). **B item 7 part 3 is built on it** (2026-09-18, item 10 above;
+CHANGELOG 0.1.19 says a matched layer's export can move by a few levels). **Next: the split of `inpaint_canvas.js`**
+(item 11), once 0.1.18 is published and 0.1.19's state is committed, or whatever the user names first.
 
 **Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`
 are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,

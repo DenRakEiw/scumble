@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 9;
+export const PX_ABI = 10;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -162,6 +162,18 @@ export class Px {
                 prev.set(this.view(Uint8Array, pp, rowBytes));
             }
             return done;
+        } finally { a.reset(); }
+    }
+
+    /** The colour match of `params` (meanS[3], meanT[3], scale[3], k) over straight RGBA8, in place (B item 7 part 3). */
+    matchPixels(rgba, params) {
+        const a = this.job, px = rgba.byteLength >> 2;
+        try {
+            const pd = this._in(a, rgba, px * 4), pp = a.take(40);
+            const f = this.view(Float32Array, pp, 10);
+            for (let i = 0; i < 10; i++) f[i] = params[i];
+            this.exports.match_pixels(pd, px, pp);
+            return this._out(Uint8Array, pd, px * 4, rgba);
         } finally { a.reset(); }
     }
 

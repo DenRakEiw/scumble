@@ -4905,7 +4905,7 @@ class InpaintEditor {
      */
     async floodRegion(x, y, o) {
         // B item 2: a plain stack is composited by the pool from its tiles and flooded there; held as it is now
-        const held = this.holdStack(this.floodStack(o.sample), { forRun: false });
+        const held = await this.holdStack(this.floodStack(o.sample), { forRun: false, priority: INTERACTIVE });
         try { return await this.floodRegionOf(held, x, y, o); } finally { if (held) held.release(); }
     }
 
@@ -5065,7 +5065,7 @@ class InpaintEditor {
      * The full-resolution composite as a plain stack the pool's workers can composite from the arena themselves
      * (docs/PLAN_BCE.md §3b, B item 1): `[{ px, mask, x, y, alpha, op }]`, the base first, or null when any layer the
      * composite shows needs more than its tiles at an opacity through a mask on its own grid, source-over or in its
-     * blend mode (`op`, the kernel's number: B item 7): a filter layer, a colour match, a transform in progress, a live
+     * blend mode (`op`, the kernel's number: B item 7): a filter layer, a transform in progress, a live
      * stroke, a scaled or fractional layer. The same layers in the same order as `drawLayersInto` draws them, and the
      * same exclusions as `boxReach`: this is a third walk of the stack, so it stays next to the second.
      *
@@ -5074,6 +5074,11 @@ class InpaintEditor {
      * (`programBand`), and what is above goes over the result in the workers again. Null then for a filter that names no
      * reach, a mask that is not the picture's tiles, and, as `applyFilterLayer` shows the layers unfiltered during a
      * gesture below a filter, for any gesture outside a run.
+     *
+     * A colour-matched layer (B item 7 part 3) is an entry with `match: layer`: `holdStack` takes its statistics from
+     * point samples of the tiles (`stackMatches`) and the worker matches the layer's rows before it composites them.
+     * Null for a matched layer above a filter layer (its statistics would need the filtered picture at the sample
+     * points; the region pass keeps that case) and with `InpaintEditor.stackMatch === false`, the A/B switch.
      */
     stackPlan({ forRun = true, upTo = null, filters = false } = {}) {
         if (!this.tileMode || !this.base || !partsUsable() || !arenaEnabled() || InpaintEditor.bands === false || InpaintEditor.stacks === false) return null;
@@ -5081,6 +5086,7 @@ class InpaintEditor {
         if (!bs || !isTilePixels(bs) || bs.width !== this.width || bs.height !== this.height) return null;
         const out = [{ px: bs, mask: null, x: 0, y: 0, alpha: 255 }];
         const end = upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
+        let sawFilter = false;
         for (let i = 0; i < end; i++) {
             const l = this.layers[i];
             if (this.compareShow && l.kind === "result" && l.id !== this.compareShow) continue;
@@ -5098,19 +5104,21 @@ class InpaintEditor {
                 const fm = l.maskPx || null;
                 if (fm && (!isTilePixels(fm) || fm.width !== this.width || fm.height !== this.height || (this.pointer && this.pointer.layer === l))) return null;
                 const falpha = Math.round(Math.max(0, Math.min(1, l.opacity ?? 1)) * 255);
-                if (falpha > 0) out.push({ filter: l, reach: Math.ceil(r), mask: fm, alpha: falpha, op: fop });
+                if (falpha > 0) { out.push({ filter: l, reach: Math.ceil(r), mask: fm, alpha: falpha, op: fop }); sawFilter = true; }
                 continue;
             }
             if (forRun && (this.isControl(l) || this.isReference(l))) continue;
             const op = l.blend && l.blend !== "normal" ? OPS[l.blend] : 0;
             if (!(op >= 0) || (op && InpaintEditor.stackBlends === false)) return null;
-            if (this.matchActive(l) || (this.pending && this.pending.layer === l) || this.liveStrokeOn(l)) return null;
+            const matched = this.matchActive(l);
+            if (matched && (InpaintEditor.stackMatch === false || sawFilter)) return null;
+            if ((this.pending && this.pending.layer === l) || this.liveStrokeOn(l)) return null;
             const px = l.px;
             if (!isTilePixels(px) || px.width !== l.w || px.height !== l.h || l.x !== Math.round(l.x) || l.y !== Math.round(l.y)) return null;
             const mask = l.maskPx ? this.tileMaskOf(l) : null;
             if (l.maskPx && !mask) return null;
             const alpha = Math.round(Math.max(0, Math.min(1, l.opacity ?? 1)) * 255);
-            out.push({ px, mask, x: l.x, y: l.y, alpha, op });
+            out.push({ px, mask, x: l.x, y: l.y, alpha, op, match: matched ? l : null });
         }
         return out;
     }
@@ -5119,8 +5127,8 @@ class InpaintEditor {
      * `stackPlan` as a row source: `{ source, release() }`, or null. The pixels are held as copy-on-write clones from
      * now on, so the file is the picture of this moment whatever is painted while the workers read it.
      */
-    stackSource(opts = { forRun: true }) {
-        const held = this.holdStack(this.stackPlan(opts));
+    async stackSource(opts = { forRun: true }) {
+        const held = await this.holdStack(this.stackPlan(opts), { forRun: opts.forRun !== false });
         if (!held) return null;
         return { source: stackRows(this.width, this.height, held.stores), layers: held.stores.length - 1, release: held.release };
     }
@@ -5130,11 +5138,21 @@ class InpaintEditor {
      * or null when a tile is outside the arena. A plan with filter layers (`stackPlan`'s `filters`) is held as a program
      * instead: `{ steps, reach, forRun, release() }`, the steps in turn `{ stores, args }` (a run of layers: `stores[0]` the
      * base, or null above a filter) and `{ filter, plain, mask, alpha, op }`, `reach` the sum of the filters' (`programBand`).
+     * The clones are taken at once; then the colour-match statistics of the plan's matched layers are read from them
+     * (`stackMatches`, a pool job each), so the held stack is the picture of this moment, match included.
      */
-    holdStack(plan, { forRun = true } = {}) {
+    async holdStack(plan, { forRun = true, priority = EXPORT, group = null } = {}) {
+        const held = this.holdStackNow(plan, { forRun });
+        if (!held) return null;
+        try { await this.stackMatches(held, { forRun, priority, group }); }
+        catch (err) { held.release(); throw err; }
+        return held;
+    }
+
+    holdStackNow(plan, { forRun = true } = {}) {
         if (!plan) return null;
         for (const s of plan) if (s && ((s.px && !stackInArena(s.px)) || (s.mask && !stackInArena(s.mask)))) return null;
-        const hold = (s) => s && ({ snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0 });
+        const hold = (s) => s && ({ snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0, layer: s.match || null, match: null });
         if (!plan.some((s) => s && s.filter)) {
             const stores = plan.map(hold);
             return { stores, release() { for (const s of stores) if (s) { s.snap.release(); if (s.mask) s.mask.release(); } } };
@@ -5157,6 +5175,58 @@ class InpaintEditor {
         });
         for (const st of steps) if (st.stores) st.args = stackArgs(st.stores);
         return { steps, reach, forRun: !!forRun, free: [], b: null, timing: { bands: 0, pool: 0, upload: 0, filter: 0, read: 0 }, out: null, release() { for (const c of clones) c.release(); this.free = null; this.b = null; this.out = null; glReleaseLargeSurfaces(); } };
+    }
+
+    /**
+     * The colour match of every matched layer of a held stack (B item 7 part 3): each store that came from a matched
+     * layer (`layer`) gets `match`, the ten floats the worker's `matchPixels` takes (meanS, meanT, scale, k), or null
+     * when there are no statistics (the layer is composited unmatched then, as the flatten draws it). In stack order,
+     * so a matched layer below is matched in the backdrop of the one above. Matched layers are only in the first run
+     * of a program (`stackPlan` turns a match above a filter away).
+     */
+    async stackMatches(held, { forRun = true, priority = EXPORT, group = null } = {}) {
+        const stores = held.steps ? held.steps[0].stores : held.stores;
+        for (let i = 1; i < stores.length; i++) {
+            const s = stores[i];
+            if (!s || !s.layer) continue;
+            s.match = await this.stackMatchOf(s, stores.slice(0, i), { forRun, priority, group });
+        }
+    }
+
+    /**
+     * The statistics of a matched layer for the worker path, from point samples of the tiles (the user's decision (b)
+     * of C6 (c) 7c, 2026-09-18): the layer's own pixels through its mask and the composite of the held stores `below`
+     * it, both at `matchGeometry`'s grid (256 px on the layer's long side with its padding, a sample at each picture
+     * pixel's centre, nearest), gathered and composited by a pool worker (`stack_points`), the statistics by the
+     * unchanged `statsOfMatch`. Measured against the whole flatten's statistics on eight photos: mean 0.56, at most
+     * 8 to 9 levels in the matched layer (box means of the mip levels were 5.45 mean on a textured photo, and are not
+     * used here). Kept per layer per change in `_mstatsStack` / `_mstatsStackRun`, forwarded like the sampled
+     * entries; the strength is read at use time, so a tick keeps the entry.
+     */
+    async stackMatchOf(store, below, { forRun = true, priority = EXPORT, group = null } = {}) {
+        const layer = store.layer, m = layer.match || {};
+        const k = Math.min(1, Math.max(0, (m.strength || 0) / 100));
+        const key = JSON.stringify([m.source, layer.x, layer.y, layer.w, layer.h]);
+        const slot = forRun ? "_mstatsStackRun" : "_mstatsStack";
+        const c = layer[slot];
+        let stats;
+        if (c && c.version === this.compositeVersion && c.key === key) stats = c.stats;
+        else {
+            const version = this.compositeVersion;
+            const g = this.matchGeometry(layer);
+            const grid = { x0: layer.x + (0.5 - g.pad) / g.fx, y0: layer.y + (0.5 - g.pad) / g.fy, dx: 1 / g.fx, dy: 1 / g.fy, nx: g.pw, ny: g.ph };
+            const a = Math.max(0, Math.floor(grid.y0)), b = Math.min(this.height, Math.floor(grid.y0 + (g.ph - 1) * grid.dy) + 1);
+            const own = stackArgs([null, { snap: store.snap, mask: store.mask, x: store.x, y: store.y, alpha: 255, op: 0 }])(a, b).layers[0] || null;
+            const r = await editorPool().run("stack_points", { grid, stack: stackArgs(below)(a, b), layer: own }, [], { priority, group });
+            const ld = new Uint8ClampedArray(r.lay), bd = new Uint8ClampedArray(r.bel);
+            const lay = makeCanvas(g.pw, g.ph);
+            lay.getContext("2d", { willReadFrequently: true }).putImageData(new ImageData(ld, g.pw, g.ph), 0, 0);
+            stats = this.statsOfMatch(layer, lay, ld, bd, g.pad);
+            layer[slot] = { version, key, stats };
+        }
+        if (!stats || !(k > 0)) return null;
+        const p = [...stats.meanS, ...stats.meanT, ...stats.scale, k];
+        return p.every(Number.isFinite) ? p : null;
     }
 
     /** The rows of a band of a held program (`holdStack`), so that a band with its margins stays a texture of 24 MP: whole tiles, 256 to 2,048. Zero when the GPU cannot take the picture's width. */
@@ -8018,6 +8088,7 @@ class InpaintEditor {
         layer._mcacheView = null; layer._mcacheSample = null;
         layer._mstats = null;
         layer._mstatsSample = null; layer._mstatsSampleRun = null;
+        layer._mstatsStack = null; layer._mstatsStackRun = null;
         layer.exportRef = null;
         // `rect` (in the layer pixels' own coordinates) keeps the cached levels and refreshes them there
         if (rect) this.touchSourceRect(layer.px, rect[0], rect[1], rect[2], rect[3]);
@@ -8061,7 +8132,7 @@ class InpaintEditor {
                 keep = b[2] <= l.x - pad || b[0] >= l.x + l.w + pad || b[3] <= l.y - pad || b[1] >= l.y + l.h + pad;
             }
             if (!keep) continue;
-            for (const slot of ["_mstats", "_mstatsSample", "_mstatsSampleRun"]) if (l[slot] && l[slot].version === v0) l[slot].version = v1;
+            for (const slot of ["_mstats", "_mstatsSample", "_mstatsSampleRun", "_mstatsStack", "_mstatsStackRun"]) if (l[slot] && l[slot].version === v0) l[slot].version = v1;
         }
     }
 
@@ -9162,7 +9233,7 @@ class InpaintEditor {
             const writer = fmt === "psd" ? new PsdBandWriter(opts) : new OraBandWriter(opts);
             const { stack, skipped } = this.exportLayerSources(held);
             // B item 1: the merged picture of a plain stack is composited by the workers, from clones taken now with the layers'
-            const stackOf = this.stackSource({ forRun: true });
+            const stackOf = await this.stackSource({ forRun: true });
             if (stackOf) held.push({ release: () => stackOf.release() });
             const steps = stack.length + 1;
             let done = 0;
@@ -9173,11 +9244,11 @@ class InpaintEditor {
                 done++;
             }
             const plan = stackOf ? null : this.bandPlan({ forRun: true });
+            const bands = plan ? await this.bandSource({ forRun: true }, plan) : null;   // B item 7 part 2: filter layers over worker-composited bands
+            if (bands) held.push(bands);
             let composite;
             if (stackOf) composite = stackOf.source;
-            else if (plan) {
-                const bands = this.bandSource({ forRun: true }, plan);   // B item 7 part 2: filter layers over worker-composited bands
-                held.push(bands);
+            else if (bands) {
                 composite = bandRows(W, H, (y0, y1) => {
                     if (this.compositeVersion !== version) throw new Error("the picture changed while it was written; try again");
                     return bands.read(y0, y1);
@@ -9197,7 +9268,7 @@ class InpaintEditor {
             return { blob, layers: stack.length, skipped };
         } catch (err) {
             editorPool().cancel(group);
-            if (partsFailed(err)) return null;
+            if (partsFailed(err) || String(err && err.message).includes(NO_PROGRAM)) return null;   // the canvas writers take it
             throw err;
         } finally {
             for (const px of held) px.release();
@@ -10920,7 +10991,7 @@ class InpaintEditor {
         this.uploaded.controlHash = null;
         // C6 (c) 7c: the layer's own shared statistics do not depend on its match settings (their key holds the source),
         // only on its pixels and what is below it: a strength tick keeps them, and only the layers above match again
-        for (const slot of ["_mstatsSample", "_mstatsSampleRun"]) if (layer[slot] && layer[slot].version === v0) layer[slot].version = this.compositeVersion;
+        for (const slot of ["_mstatsSample", "_mstatsSampleRun", "_mstatsStack", "_mstatsStackRun"]) if (layer[slot] && layer[slot].version === v0) layer[slot].version = this.compositeVersion;
     }
 
     /**
@@ -11177,11 +11248,7 @@ class InpaintEditor {
      * shows; any other from the display pyramid of its canvas.
      */
     matchLayerPicture(layer, display) {
-        const s = Math.min(1, 256 / Math.max(layer.w, layer.h));
-        const sw = Math.max(2, Math.round(layer.w * s)), sh = Math.max(2, Math.round(layer.h * s));
-        const pad = Math.max(4, Math.round(Math.max(sw, sh) * 0.08));
-        const pw = sw + 2 * pad, ph = sh + 2 * pad;
-        const fx = sw / layer.w, fy = sh / layer.h;
+        const { pad, pw, ph, fx, fy } = this.matchGeometry(layer);
         const box = [layer.x - pad / fx, layer.y - pad / fy, layer.x + layer.w + pad / fx, layer.y + layer.h + pad / fy];
         const lay = makeCanvas(pw, ph);
         const lctx = lay.getContext("2d", { willReadFrequently: true });
@@ -11202,6 +11269,14 @@ class InpaintEditor {
         lctx.setTransform(1, 0, 0, 1, 0, 0);
         const ld = lctx.getImageData(0, 0, pw, ph).data;
         return { lay, ld, pad, pw, ph, fx, fy, box };
+    }
+
+    /** The colour-match statistics' picture of a layer: 256 px on its long side (`sw` x `sh`, scale `fx`, `fy`), `pad` around it, `pw` x `ph` in all. */
+    matchGeometry(layer) {
+        const s = Math.min(1, 256 / Math.max(layer.w, layer.h));
+        const sw = Math.max(2, Math.round(layer.w * s)), sh = Math.max(2, Math.round(layer.h * s));
+        const pad = Math.max(4, Math.round(Math.max(sw, sh) * 0.08));
+        return { s, sw, sh, pad, pw: sw + 2 * pad, ph: sh + 2 * pad, fx: sw / layer.w, fy: sh / layer.h };
     }
 
     flattenToCanvas(opts = {}) {
@@ -11230,6 +11305,10 @@ class InpaintEditor {
         const o = { forRun: !!opts.forRun, upTo: opts.upTo == null ? null : opts.upTo };
         let reach = this.boxReach([0, 0, this.width, this.height], o), inexact = false;
         if (!Number.isFinite(reach)) {
+            // B item 7 part 3: a colour-matched layer is the one reason left for no margin that the stack path takes (its
+            // statistics from point samples of the tiles); the bands are then the program's, or nothing (`stackOnly`: no
+            // region pass falls in for them, the caller keeps its whole flatten)
+            if (!this.huge && InpaintEditor.stacks !== false && this.stackPlan({ ...o, filters: true })) return { reach: 0, rows: 0, inexact: true, stackOnly: true };
             // E5: above the canvas limit there is no whole flatten to take instead. The bands are then what a region pass
             // at full resolution draws: a colour-matched layer with the statistics the screen uses (`sampledMatchStats`,
             // at most a few levels from the whole flatten's, docs/PLAN_BCE.md §C6 c 7c), a scaled layer resampled per band
@@ -11276,7 +11355,7 @@ class InpaintEditor {
      */
     async encodeComposite(opts = { forRun: true }, { hash = false, texts = null, each = null, progress = null } = {}) {
         // B item 1: a plain stack is composited by the workers that pack it, from the tiles; `each` wants the rows here
-        const stack = each ? null : this.stackSource(opts);
+        const stack = each ? null : await this.stackSource(opts);
         if (stack) {
             try {
                 const r = await encodeRows(stack.source, { hash, texts, progress });
@@ -11290,7 +11369,8 @@ class InpaintEditor {
             const changed = () => this.compositeVersion !== version;
             // B item 7 part 2: with filter layers in an otherwise plain stack the workers composite the bands and the GPU
             // filters their bytes (`programBand`); `bandSource` falls back to the region pass band by band
-            const bands = this.bandSource(opts, plan);
+            const bands = await this.bandSource(opts, plan);
+            if (!bands) return null;
             try {
                 const r = await encodeBands(this.width, this.height, async (y0, y1) => {
                     if (changed()) throw new Error("the picture changed");
@@ -11302,6 +11382,7 @@ class InpaintEditor {
                 if (changed()) throw new Error("the picture changed");
                 return { ...r, width: this.width, height: this.height, program: bands.program(), programTiming: bands.timing() };
             } catch (err) {
+                if (String(err && err.message).includes(NO_PROGRAM)) return null;   // a matched stack without its program: the caller flattens whole
                 if (!/the picture changed/.test(String(err && err.message))) throw err;
                 if (round >= 1) throw new Error("the picture changed while it was written; try again");
             } finally {
@@ -11314,14 +11395,16 @@ class InpaintEditor {
      * How the bands of the composite are read (`bandPlan` said they can be): `{ rows, read(y0, y1), program(), release() }`.
      * A stack with filter layers that `stackPlan` takes is held as a program and read through `programBand`; everything
      * else, and every band after the GPU path failed, is the region pass (`readBand`). `program()` says how many bands
-     * came the new way.
+     * came the new way. With the plan's `stackOnly` (a colour-matched layer, B item 7 part 3) there is no region pass
+     * to fall back on: null when no program can be held, and a failed band throws NO_PROGRAM to the caller.
      */
-    bandSource(opts, plan) {
+    async bandSource(opts, plan) {
         const o = { forRun: !!opts.forRun, upTo: opts.upTo == null ? null : opts.upTo };
-        let prog = this.huge ? null : this.holdStack(this.stackPlan({ ...o, filters: true }), o);
+        let prog = this.huge ? null : await this.holdStack(this.stackPlan({ ...o, filters: true }), o);
         if (prog && !prog.steps) { prog.release(); prog = null; }
         const rows = prog ? this.programRows(prog, this.width) : 0;
         if (prog && !rows) { prog.release(); prog = null; }
+        if (!prog && plan.stackOnly) return null;
         let done = 0;
         const reader = prog ? this.programReader(prog) : null, timing = prog ? prog.timing : null;
         return {
@@ -11336,6 +11419,7 @@ class InpaintEditor {
                     catch (err) {
                         if (!String(err && err.message).includes(NO_PROGRAM)) throw err;
                         prog.release(); prog = null;
+                        if (plan.stackOnly) throw err;
                     }
                 }
                 // a band of the program's height fits a canvas whenever one of the plan's does: the rows are at most the plan's cap
@@ -12181,6 +12265,8 @@ class InpaintEditor {
             l._mstats = null;
             l._mstatsSample = null;
             l._mstatsSampleRun = null;
+            l._mstatsStack = null;
+            l._mstatsStackRun = null;
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }

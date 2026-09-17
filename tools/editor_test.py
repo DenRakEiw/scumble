@@ -2993,12 +2993,16 @@ const wandBounds = async (dropBetween) => {
     return { bounds: ed.getBounds(), passes: n };
 };
 try {
+    // B item 7 part 3: the wand on a matched document goes over tiles now (no sampled pass, no `floodShape`); this step is
+    // about the canvases' sampled passes sharing the statistics, so it runs them
+    ed.constructor.stacks = false;
     const plain = await wandBounds(false);
     const dropped = await wandBounds(true);
     out.wand = { plain, dropped };
     if (plain.passes < 2) throw new Error("the wand ran no fine pass on this document: " + JSON.stringify(out.wand));
     if (JSON.stringify(plain.bounds) !== JSON.stringify(dropped.bounds)) throw new Error("a statistics drop between the wand's passes changed its selection: " + JSON.stringify(out.wand));
 } finally {
+    ed.constructor.stacks = true;
     await run("select_none", { doc: window.__t });
 }
 } finally {
@@ -5599,6 +5603,76 @@ return { tiles: out.tiles, level: out.level, rows: out.rows.map((r) => r.path + 
     ("c2_final_review_drag_undo_steps_writes_mirrors_report_limits", lambda c: final_step(c)),
     ("closed_tabs_are_collected", lambda c: closed_tabs_are_collected(c)),
     ("arena_slots_come_back_when_tiles_are_collected", lambda c: arena_step(c)),
+    ("the_wand_over_tiles_matches_a_colour_matched_layer", """
+// B item 7 part 3 (docs/PLAN_BCE.md 3b): a colour-matched layer under the wand. The pool composites it from its tiles
+// with the match applied in the worker, its statistics point samples of the tiles (`stackMatches`); over the canvases
+// the sampled pass matches it with `sampledMatchStats` (box means of the mip levels). Flat colours: both statistics are
+// the same means to a level, so the wand at tolerance 32 selects the same region either way, and the region proves the
+// match: a grey square on a red field matched to its surroundings turns red and joins the field.
+if (!ednow(window.__t).tileMode) return { skipped: "the canvas backend has no tiles to flood over" };
+await run("new_canvas", { width: 2100, height: 1500, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const E = ed.constructor, W = ed.width, H = ed.height;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const base = mk(W, H), bx = base.getContext("2d");
+bx.fillStyle = "#d8d8d8"; bx.fillRect(0, 0, W, H);
+bx.fillStyle = "#c02020"; bx.fillRect(200, 200, 1300, 1000);
+Object.defineProperty(base, "naturalWidth", { value: W });
+Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "flood_match.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const L = ed.pixels.Layer;
+const c = mk(600, 400); c.getContext("2d").fillStyle = "#808080"; c.getContext("2d").fillRect(0, 0, 600, 400);
+const grey = ed.addLayer({ name: "Grey", kind: "result", px: L.fromCanvas(c), x: 500, y: 450, w: 600, h: 400, dirty: true });
+ed.renderLayers(); ed.draw();
+await ed.mipsSettled();
+const hex = async (u8) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", u8))).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+const wand = async () => {
+    ed.clearUndo(); ed.clearSelection();
+    ed.fillOpts = { tolerance: 32, contiguous: true, sample: "image" };
+    await ed.wandSelect(800, 650, "replace");
+    const d = ed.sel.readRect(0, 0, W, H).data;
+    let count = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i]) count++;
+    return { hash: await hex(d), bounds: ed.getBounds(), count };
+};
+const seen = [];
+const oOver = ed.floodOverTiles.bind(ed);
+ed.floodOverTiles = async (...a) => { const r = await oOver(...a); seen.push(r ? (r.tiles ? "tiles" : "bitmap") : "none"); return r; };
+let unmatched, over, canvases;
+try {
+    unmatched = await wand();
+    grey.match = { strength: 100, source: "surroundings" };
+    ed.markMatchChanged(grey);
+    ed.renderLayers(); ed.draw();
+    const plan = ed.floodStack("image");
+    if (!plan || !plan.some((s) => s && s.match === grey)) throw new Error("no flood stack carrying the matched layer");
+    over = await wand();
+    if (!seen.includes("tiles") || seen.includes("none")) throw new Error("the floods over tiles answered " + JSON.stringify(seen));
+    E.stacks = false;
+    const n = seen.length;
+    canvases = await wand();
+    if (seen.length !== n) throw new Error("with stacks off the flood still ran over tiles");
+} finally { E.stacks = true; delete ed.floodOverTiles; }
+// the grey square alone before the match, the whole red field with it: the match was applied under the wand
+if (!(unmatched.count > 200000 && unmatched.count < 260000)) throw new Error("the unmatched wand did not select the grey square alone: " + JSON.stringify(unmatched));
+if (!(over.count > 1200000)) throw new Error("the matched square did not join the red field under the wand over tiles: " + JSON.stringify(over));
+if (over.hash !== canvases.hash || JSON.stringify(over.bounds) !== JSON.stringify(canvases.bounds)) throw new Error("over tiles " + JSON.stringify(over) + ", over canvases " + JSON.stringify(canvases));
+// the entry is kept per change: a second click makes no new statistics; a change below the layer drops it
+const entry = grey._mstatsStack;
+if (!entry || !entry.stats) throw new Error("no stack statistics entry after the wand: " + JSON.stringify(entry));
+await wand();
+if (grey._mstatsStack !== entry) throw new Error("a second click made the statistics again");
+ed.markLayerChanged(grey, null);   // the layer's own change drops its entry
+if (grey._mstatsStack) throw new Error("the entry survived a change of the layer");
+// the A/B switch turns the document away
+E.stackMatch = false;
+let off;
+try { off = ed.floodStack("image"); } finally { E.stackMatch = true; }
+if (off) throw new Error("stackMatch = false still gave a flood stack");
+ed.clearSelection();
+return { unmatched: unmatched.count, matched: over.count, bounds: over.bounds, seen };
+"""),
     ("the_flood_over_tiles_is_the_flood_over_canvases", """
 // B item 2 (docs/PLAN_BCE.md 3b): on a plain stack the pool composites the wand's and the bucket's picture from the tiles
 // and floods it there, and the wand's answer comes back as tiles of the selection. The same selection and the same fill

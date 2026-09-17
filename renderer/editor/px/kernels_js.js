@@ -599,6 +599,34 @@ function blendOp(d, s, o, mask, px, op) {
     }
 }
 
+// ---- colour match (B item 7 part 3) -----------------------------------------------------------
+
+/**
+ * The colour match of a layer over straight RGBA8, in place: per channel `m = (v - meanT) * scale + meanS`,
+ * `r = v + (m - v) * k`, clamped to 0..255 and rounded as `floor(r + 0.5)`, every operation in f32 (`Math.fround`),
+ * which is what the Rust kernel computes, scalar and SIMD alike, so the three give the same bytes. Alpha and
+ * fully transparent pixels are untouched. `params`: meanS[3], meanT[3], scale[3], k.
+ */
+export function matchPixels(rgba, params) {
+    const d = bytesOf(rgba), f = Math.fround;
+    const ms0 = f(params[0]), ms1 = f(params[1]), ms2 = f(params[2]);
+    const mt0 = f(params[3]), mt1 = f(params[4]), mt2 = f(params[5]);
+    const sc0 = f(params[6]), sc1 = f(params[7]), sc2 = f(params[8]), k = f(params[9]);
+    const one = (v, mt, sc, ms) => {
+        const m = f(f(f(v - mt) * sc) + ms);
+        let r = f(v + f(f(m - v) * k));
+        r = r < 0 ? 0 : r > 255 ? 255 : r;
+        return Math.floor(f(r + 0.5));
+    };
+    for (let i = 0, n = (d.length >> 2) << 2; i < n; i += 4) {
+        if (d[i + 3] === 0) continue;
+        d[i] = one(d[i], mt0, sc0, ms0);
+        d[i + 1] = one(d[i + 1], mt1, sc1, ms1);
+        d[i + 2] = one(d[i + 2], mt2, sc2, ms2);
+    }
+    return rgba;
+}
+
 // ---- PNG rows ----------------------------------------------------------------------------------
 
 /**

@@ -4293,7 +4293,8 @@ canvases for the wand. In this order, each with its row and its gate:
    filter on the GPU as today, the rows read back once; no region canvases.
 3. **A colour-matched layer**: its statistics from tiles, the match applied in the worker. Tied to the user's
    decision (b) of C6 (c) 7c, **made on 2026-09-18: exports and runs may take the statistics from tiles (point
-   samples, mean 0.56 / max 8 to 9 levels from the full-resolution ones), so part 3 can be built.** Not built yet.
+   samples, mean 0.56 / max 8 to 9 levels from the full-resolution ones), so part 3 can be built.** Built the same
+   day, below.
 
 #### B item 7, part 1 as built (2026-09-18): the blend modes in `composite_tile`
 
@@ -4405,6 +4406,102 @@ shape`, canvas `pixels editor composite commands film brush`, `build_px.py --che
 asynchronous read (a pixel buffer and a fence would take the 160 to 250 ms of reads off this thread), the coarse
 pass of the wand (still a canvas of 2,048 px), a document wider than a texture (16,384 px here: the region pass), and
 part 3.
+
+#### B item 7, part 3 as built (2026-09-18): a colour-matched layer on the worker path
+
+The user's decision (b) of C6 (c) 7c (2026-09-18): exports and runs of a colour-matched layer may take their statistics
+from tiles, with point samples. So a matched layer is no longer the end of `stackPlan`; the export, the run's base
+upload, the merged picture of PSD and ORA, and the wand and the bucket take the worker path for the user's usual
+document (a result layer with a match, often a film look above it).
+
+- **The kernel** `match_pixels` (ABI 10, `crates/px/src/cmatch.rs`; twin `matchPixels` in `kernels_js.js`, wrapper in
+  `px.js`, export in `kernels.js`): per channel `m = (v − meanT) · scale + meanS`, `r = v + (m − v) · k`, clamped to
+  0..255 and rounded as `floor(r + 0.5)` (not `round`: `f32x4.nearest` rounds half to even), every operation in f32 in
+  the same order, the twin with `Math.fround` after each, so the twin and the scalar and the SIMD build give the same
+  bytes; alpha and a pixel of alpha 0 untouched (`matchCanvas` leaves fully transparent pixels alone). The SIMD build
+  takes a pixel as four f32 lanes with the identity's parameters in the alpha lane and selects the untouched pixels by
+  alpha. `px_test.js`: bit for bit against both builds (random pixels and statistics, sizes with tails, k 0 to 1, the
+  extremes of the statistics), within a level of `matchCanvas`' doubles (a tie or an f32 rounding; never more on
+  225,789 bytes), k = 0 and equal means with scale 1 the identity. A megapixel: 4.4 ms SIMD, 17.5 scalar, 27 the twin.
+- **The worker** (`rowsOfStack`): a layer of the stack carries `match`, the ten floats (`stackArgs` passes it on); the
+  rows are matched on the worker's own copy, right after `storeRows`, before `composite_tile`. That is the PNG parts,
+  the PSD's channels, the `stack_into` bands of a program and of the floods.
+- **The statistics** (`stackMatchOf`, pool job `stack_points`): the grid is `matchGeometry`'s (256 px on the layer's
+  long side, 8 % of padding, shared with `matchLayerPicture` now), a sample at every picture pixel's centre, nearest
+  (`floor(layer.x + (i − pad + 0.5) / fx)`). The worker gathers the samples of every held store of the stack below
+  the layer (`gatherStore`: tiles by slot, masks as alpha), composites them with `composite_tile` (ops, opacities,
+  masks, and the match of a matched layer below, resolved before), and the layer's own samples with its mask folded
+  into the alpha; the composite is pointwise, so the composite of the samples is the samples of the composite. The
+  main thread puts the layer's samples into a canvas (`statsOfMatch` blurs its alpha for the ring through `ctx.filter`)
+  and runs the unchanged `statsOfMatch`. Kept per layer per change in `_mstatsStack` / `_mstatsStackRun`, forwarded
+  by `bumpComposite` and kept by `markMatchChanged` like the sampled entries (the strength is read at use time), dropped
+  by `markLayerChanged` and `releaseCaches`. A stale version during the job stamps the entry with the version it was
+  made from. No statistics (fewer than 64 pixels on a side): the layer is composited unmatched, as the flatten draws it.
+- **The plan and the hold**: `stackPlan` carries `match: layer` on a matched entry; null for a matched layer above a
+  filter layer (its backdrop at the sample points would be the filtered picture; the whole flatten keeps that case)
+  and with `InpaintEditor.stackMatch === false`, the A/B switch. `holdStack` is async: the clones at once
+  (`holdStackNow`, the snapshot moment), then `stackMatches` in stack order, so a lower matched layer's parameters are
+  in the backdrop job of the one above; `stackSource` and `bandSource` are async with it, `floodRegion` awaits it
+  (`INTERACTIVE`). `bandPlan` answers `{ stackOnly: true }` for a matched document the stack takes (the one reason
+  left for an infinite reach); `bandSource` gives null without a program and throws NO_PROGRAM when a band's GPU path
+  fails, and `encodeComposite` and `exportLayeredBands` answer null then, so the callers take the whole flatten and the
+  canvas writers as before.
+
+| 15,000 × 10,000 (`native_test.py`, rows `match_*`: base, a 5,000 × 3,500 result layer at (5000, 3000) with a soft edge, matched 80 % to its surroundings) | before | now |
+|---|---|---|
+| export PNG: wall / longest block | 6,369 / 1,449 ms | **1,782 / 84 ms** |
+| export PSD | 1,815 / 501 ms | **1,025 / 73 ms** |
+| wand across the picture | 2,488 / 1,114 ms | **897 / 100 ms** |
+
+Before, the PNG went through `host.exportCanvas` (the whole flatten and the canvas's own encoder), the PSD's merged
+picture through the flatten and `canvasRows`, the wand through the canvases.
+
+**Against the whole flatten's statistics** (four of the 7c photos, read locally; in each a result layer cut from
+another part, 30 % of each side, a colour cast, a soft round edge, matched at 100 %, two cuts × surroundings and
+underneath; the matched layer's pixels of alpha ≥ 128, levels per channel, the worker path against
+`flattenToCanvas`):
+
+| photo | size | mean (four cases) | p99 | max |
+|---|---|---|---|---|
+| the wide landscape (`1 2.jpg`) | 6036 × 3018 | 0.47 to **2.02** | 2 to 6 | 3 to **7** |
+| `3.jpg` | 2048 × 2048 | 0.20 to 0.59 | 1 to 3 | 2 to 4 |
+| `54566cffh.jpg` | 2999 × 2999 | 0.08 to 0.46 | 1 to 2 | 2 to 4 |
+| `180sz.jpg` | 4054 × 2280 | 0.38 to 0.82 | 1 to 3 | 2 to 4 |
+
+The means agree to a level, the scale by up to 0.07 (1.68 / 1.82 / 2.00 against 1.61 / 1.73 / 1.94 on the textured
+photo: point samples keep the texture, the flatten drawn small keeps a little less of it). Within what 7c predicted for
+point samples (mean 0.56, max 8 to 9 over 32 cases). `export_test.py` `a_matched_layer_is_composited_by_the_workers`
+on the 6,000 × 4,000 setup document (the masked result layer under the levels layer, the multiply layer below): mean
+0.28, p99 1, max 2 for surroundings at 60 % and underneath at 100 %, and **with the flatten's own statistics handed to
+the worker path mean 0.25, max 2** (the kernels' rounding and the filter's, the bound is 3), so the few levels are the
+statistics, not the kernel; the layer is matched in the workers' picture (moved by more than 8 levels on 76 to 81 % of
+its box); a second matched layer above the first (plan `llmmf`, both within the same bounds); the plain stack with the
+filter hidden (`r.stack`, and the PSD's merged picture); the filter moved below the matched layer turns the plan, the
+band plan and `encodeComposite` away; `stackMatch = false` turns it away. `editor_test.py`
+`the_wand_over_tiles_matches_a_colour_matched_layer`: a grey square on a red field matched to its surroundings turns
+red and joins the field under the wand (240,000 px unmatched, 1,300,000 matched), the same selection bytes and bounds
+over tiles and over the canvases (flat colours: the two statistics agree to a level), one statistics entry across two
+clicks, dropped by a change of the layer, `stackMatch = false` turns the flood stack away. `px_jobs.py --check`,
+`stitch_test.js`, `build_px.py --check` PASS. The 7a step `sampled_passes_share_the_colour_match_statistics` runs its
+wand with `stacks = false` now: on a matched document the wand goes over tiles and makes no sampled fine pass, and
+that step is about the canvases' sampled passes.
+
+**Five mutations, each red on a fresh instance** (port 9556, beside the gates): the worker never applies the match
+(`rowsOfStack` without `matchPixels`) → the export step "not matched in the workers' picture (moved on 0 of its box)"
+and the wand step "the matched square did not join the red field"; the strength ignored (k always 1) → "with the
+flatten's statistics the worker path is 48 levels off"; the mask not folded into the layer's samples → underneath
+"moved too far: mean 1.77, p99 11, max 26"; the grid without its padding offset (the ring sampled inside the layer) →
+the single layer stayed inside the bounds on this smooth document (mean 0.86, max 9), the second matched layer did
+not ("second mean 3.7, max 9"); a lower matched layer's parameters left out of the backdrop samples of the one above →
+"second mean 34, max 64". Gates, offline: tiles `pixels editor composite commands film export log mcp pxjobs nodecopy
+brush shape` (`b7p3-tiles`, the editor gate again as `b7p3-tiles-editor` after the 7a step's change), canvas `pixels
+editor composite commands film brush` (`b7p3-canvas`): ALL PASS.
+
+**Not done**: `readBox` (a provider run's crop, a plugin's exact box) stays synchronous on the whole flatten
+(`compositeCanvas`, its statistics the flatten's); the flatten into the base (`encodeComposite` with `each`) of a plain
+matched stack keeps the whole flatten (the stack's rows never come back to this thread; with a filter layer it goes
+through the program); a matched layer above a filter layer; the screen's statistics are 7c's (box means of the levels)
+and unchanged; the gather is plain JS (65 k samples a layer, a few ms).
 
 **Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
 order: 4, 1, 2, 3, 5, 6.

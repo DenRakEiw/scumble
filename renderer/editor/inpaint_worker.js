@@ -39,7 +39,7 @@
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
 import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge } from "./px/kernels.js";
 
 const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
 const now = () => performance.now();
@@ -209,7 +209,9 @@ function storeRows(store, X0, W, Y0, n, out, alphaOnly = false) {
  * `base` may be null: nothing below the layers (the wand's and the bucket's "sample the layer"), or, with `into`, what
  * the buffer already holds (B item 7 part 2: the layers above a filter layer go over the filtered band). A layer with
  * `sab` instead of tiles is a buffer of the same box as `into` (`msg.y0` its first row): a filter layer's result, which
- * goes over the band it was made from at the layer's opacity, in its blend mode, through its mask.
+ * goes over the band it was made from at the layer's opacity, in its blend mode, through its mask. A layer with
+ * `match` (the ten floats of a colour match, B item 7 part 3) is matched here, on its copy of the rows, before it
+ * is composited.
  */
 function rowsOfStack(msg, above = false, into = null) {
     let Y0 = msg.y | 0, n = msg.rows;
@@ -224,6 +226,7 @@ function rowsOfStack(msg, above = false, into = null) {
         else {
             src = new Uint8Array(W * n * 4);
             if (!storeRows(l, X0, W, Y0, n, src)) continue;
+            if (l.match) matchPixels(src, l.match);
         }
         let mask = null;
         if (l.mask) { mask = new Uint8Array(W * n); storeRows({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, X0, W, Y0, n, mask, true); }
@@ -245,6 +248,71 @@ async function stackInto(msg) {
     if (msg.clear) into.fill(0);   // a buffer that is used band after band (B item 7 part 2): cleared here, not on the main thread
     rowsOfStack(msg, false, into);
     return { timing: { op: "stack_into", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0 } };
+}
+
+/**
+ * The samples of one store at the image pixels `xs` x `ys` (a grid), into `out`: RGBA8, or with `alphaOnly` one byte a
+ * pixel. A sample outside the store, or on a tile it does not have, stays as it is. False when nothing was read.
+ */
+function gatherStore(store, xs, ys, out, alphaOnly = false) {
+    const sx = store.x | 0, sy = store.y | 0, nx = xs.length, ny = ys.length;
+    let any = false;
+    for (let j = 0; j < ny; j++) {
+        const Y = ys[j] - sy;
+        if (Y < 0 || Y >= store.h) continue;
+        const names = store.tiles[Y >> 8];
+        if (!names) continue;
+        const ro = (Y & (TILE - 1)) * TILE;
+        let last = null, bytes = null;
+        for (let i = 0; i < nx; i++) {
+            const X = xs[i] - sx;
+            if (X < 0 || X >= store.w) continue;
+            const t = names[X >> 8];
+            if (!t) continue;
+            if (t !== last) { bytes = tileBytes(t).bytes; last = t; }
+            const so = (ro + (X & (TILE - 1))) * 4, o = j * nx + i;
+            any = true;
+            if (alphaOnly) out[o] = bytes[so + 3];
+            else { out[o * 4] = bytes[so]; out[o * 4 + 1] = bytes[so + 1]; out[o * 4 + 2] = bytes[so + 2]; out[o * 4 + 3] = bytes[so + 3]; }
+        }
+    }
+    return any;
+}
+
+/**
+ * Point samples of a stack for a layer's colour-match statistics (B item 7 part 3): `grid` { x0, y0, dx, dy, nx, ny }
+ * names the image pixels (floor(x0 + i·dx), floor(y0 + j·dy)); `stack` is `rowsOfStack`'s, the layers below the
+ * matched one with their own `match` where they have one; `layer` the matched layer's store with its `mask`, or
+ * null. Answers `{ bel, lay }`, nx × ny RGBA8 each, transferred: the composite below at the samples, and the layer's
+ * own samples with its mask folded into the alpha. A sample outside the image or a store is transparent. The
+ * composite is pointwise, so the composite of the samples is the samples of the composite.
+ */
+async function stackPoints(msg) {
+    const t0 = now();
+    const { x0, y0, dx, dy, nx, ny } = msg.grid, n = nx * ny;
+    const xs = new Int32Array(nx), ys = new Int32Array(ny);
+    for (let i = 0; i < nx; i++) xs[i] = Math.floor(x0 + i * dx);
+    for (let j = 0; j < ny; j++) ys[j] = Math.floor(y0 + j * dy);
+    const st = msg.stack, bel = new Uint8Array(n * 4);
+    if (st.base) gatherStore(st.base, xs, ys, bel);
+    const srcs = [], alphas = [], masks = [], ops = [];
+    for (const l of st.layers) {
+        if (l.sab) continue;   // a filtered band cannot be sampled (a matched layer above a filter takes the region pass)
+        const src = new Uint8Array(n * 4);
+        if (!gatherStore(l, xs, ys, src)) continue;
+        if (l.match) matchPixels(src, l.match);
+        let mask = null;
+        if (l.mask) { mask = new Uint8Array(n); gatherStore({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, xs, ys, mask, true); }
+        srcs.push(src); alphas.push(l.alpha); masks.push(mask); ops.push(l.op | 0);
+    }
+    if (srcs.length) compositeTile(bel, srcs, ops, alphas, masks);
+    const lay = new Uint8Array(n * 4);
+    if (msg.layer && gatherStore(msg.layer, xs, ys, lay) && msg.layer.mask) {
+        const m = new Uint8Array(n);
+        gatherStore({ x: msg.layer.x, y: msg.layer.y, w: msg.layer.w, h: msg.layer.h, tiles: msg.layer.mask }, xs, ys, m, true);
+        for (let i = 0; i < n; i++) { const t = lay[i * 4 + 3] * m[i] + 128; lay[i * 4 + 3] = (t + (t >> 8)) >> 8; }
+    }
+    return { bel: bel.buffer, lay: lay.buffer, transfer: [bel.buffer, lay.buffer], timing: { op: "stack_points", kernels: kernelsInUse(), pixels: n, kernel: now() - t0 } };
 }
 
 /** The rows of a part job, whichever way they come: bytes, a stack to composite, or one store's tiles. */
@@ -547,6 +615,7 @@ async function run(msg) {
     if (msg.op === "band") return band(msg);
     if (msg.op === "png_part") return pngPart(msg);
     if (msg.op === "stack_into") return stackInto(msg);
+    if (msg.op === "stack_points") return stackPoints(msg);
     if (msg.op === "hash") return hashJob(msg);
     if (msg.op === "psd_part") return psdPart(msg);
     if (msg.op === "png_read") return pngRead(msg);

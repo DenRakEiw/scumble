@@ -39,7 +39,7 @@ if "--json" in ARGS:
 SIZE = next((a for a in ARGS if "x" in a.lower() and a[0].isdigit()), "15000x10000")
 ONLY = [a for a in ARGS if not a[0].isdigit() and not a.startswith("-")]
 # rows that change the document (B item 7): run only when named, after the rows they need
-OPT_IN = ("blend_export_png", "blend_export_psd", "blend_wand", "filter_export_png", "filter_export_psd", "filter_wand")
+OPT_IN = ("blend_export_png", "blend_export_psd", "blend_wand", "filter_export_png", "filter_export_psd", "filter_wand", "match_export_png", "match_export_psd", "match_wand")
 
 PROBES = r"""
 (() => {
@@ -385,6 +385,39 @@ return row(() => saveTo("psd"));
 ed.clearUndo(); await run("select_none", { doc: window.__n1doc });
 const r = await row(async () => { await ed.wandSelect(2500, 2500, "replace"); return { bounds: ed.getBounds(), status: ed.status }; });
 await run("select_none", { doc: window.__n1doc });
+return r;
+"""),
+    ("match_export_png", True, r"""
+// B item 7 part 3: the user's usual document: a result layer of 5000 x 3500 at (5000, 3000) with a soft edge, matched
+// 80 % to its surroundings. Added here and removed by `match_wand`.
+await run("select_none", { doc: window.__n1doc });
+if (!ed.layers.some((l) => l.name === "Matched")) {
+    const w = 5000, h = 3500, c = document.createElement("canvas"); c.width = w; c.height = h;
+    const x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, "hsl(20,70%,55%)"); g.addColorStop(1, "hsl(60,60%,35%)");
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
+    for (let k = 0; k < 40; k++) { x.fillStyle = `hsl(${(k * 41) % 360},60%,50%)`; x.fillRect((k * 613) % w, (k * 389) % h, w / 20, h / 20); }
+    x.globalCompositeOperation = "destination-in";
+    const rg = x.createRadialGradient(w / 2, h / 2, w * 0.3, w / 2, h / 2, w * 0.5); rg.addColorStop(0, "rgba(0,0,0,1)"); rg.addColorStop(1, "rgba(0,0,0,0)");
+    x.fillStyle = rg; x.fillRect(0, 0, w, h);
+    const l = ed.addLayer({ name: "Matched", kind: "result", px: ed.pixels.Layer.fromCanvas(c), x: 5000, y: 3000, w, h, dirty: true });
+    c.width = 1;
+    l.match = { strength: 80, source: "surroundings" };
+    ed.markMatchChanged(l);
+    ed.renderLayers(); ed.draw();
+    await ed.mipsSettled();
+}
+return row(() => saveTo("png"));
+"""),
+    ("match_export_psd", True, r"""
+return row(() => saveTo("psd"));
+"""),
+    ("match_wand", True, r"""
+ed.clearUndo(); await run("select_none", { doc: window.__n1doc });
+const r = await row(async () => { await ed.wandSelect(2500, 2500, "replace"); return { bounds: ed.getBounds(), status: ed.status }; });
+await run("select_none", { doc: window.__n1doc });
+const m = ed.layers.find((l) => l.name === "Matched");
+if (m) { ed.removeLayer(m.id); ed.renderLayers(); ed.draw(); }
 return r;
 """),
     ("close", False, r"""

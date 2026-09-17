@@ -293,16 +293,124 @@ for (const [id, params, tolerance] of cases) {
 }
 return out;
 """),
-    ("a_matched_layer_keeps_the_whole_flatten", """
+    ("a_matched_layer_is_composited_by_the_workers", """
+// B item 7 part 3 (docs/PLAN_BCE.md 3b): a colour-matched layer takes the worker path. Its statistics are point samples
+// of the tiles (the layer through its mask, and the composite below it, at 256 px) in place of the whole flatten drawn
+// small (the user's decision (b) of C6 (c) 7c), and the match runs in the worker before the layer is composited. Against
+// the whole flatten (its own statistics) the matched layer moves by a few levels; with the flatten's statistics handed to
+// the worker path, the two are within the kernels' rounding. The setup document: the masked result layer under a levels
+// layer (the program), the multiply layer below it.
 const ed = ednow(window.__ex);
+host.shell.activate(ed);
+const E = Editor(ed);
+const W = ed.width, H = ed.height;
 const l = ed.layers.find((x) => x.id === window.__exMasked);
-l.match = { strength: 60, source: "surroundings" };
-ed.markMatchChanged(l);
-const plan = ed.bandPlan({ forRun: true });
+const fx = ed.layers.find((x) => x.kind === "filter");
+const box = [l.x, l.y, l.x + l.w, l.y + l.h];
+const inBox = (a, b) => {   // the differences on the matched layer's box: mean, p99, max, and the share over 4 levels
+    const hist = new Uint32Array(256);
+    let n = 0, sum = 0, max = 0;
+    for (let y = box[1]; y < box[3]; y++) for (let x = box[0]; x < box[2]; x++) {
+        const i = (y * W + x) * 4;
+        for (let c = 0; c < 3; c++) { const e = Math.abs(a[i + c] - b[i + c]); hist[e]++; sum += e; n++; if (e > max) max = e; }
+    }
+    let acc = 0, p99 = 0;
+    for (let e = 0; e < 256; e++) { acc += hist[e]; if (acc >= n * 0.99) { p99 = e; break; } }
+    let over4 = 0;
+    for (let e = 5; e < 256; e++) over4 += hist[e];
+    return { mean: +(sum / n).toFixed(3), p99, max, over4: +(over4 / n).toFixed(5) };
+};
+const outside = (a, b) => { let worst = 0; for (let y = 0; y < H; y += 7) for (let x = 0; x < W; x += 5) { if (x >= box[0] && x < box[2] && y >= box[1] && y < box[3]) continue; const i = (y * W + x) * 4; for (let c = 0; c < 4; c++) worst = Math.max(worst, Math.abs(a[i + c] - b[i + c])); } return worst; };
+const flatten = async () => { const flat = ed.flattenToCanvas({ forRun: true }); const old = await E.parts.encodeCanvas(flat, { hash: false }); flat.width = 1; flat.height = 1; return (await decode(old.blob)).data; };
+const out = {};
+// unmatched, to prove the match is in the picture
+const plain = (await decode((await ed.encodeComposite({ forRun: true }, { hash: false })).blob)).data;
+for (const [source, strength] of [["surroundings", 60], ["underneath", 100]]) {
+    l.match = { strength, source };
+    ed.markMatchChanged(l);
+    const plan = ed.stackPlan({ forRun: true, filters: true });
+    if (!plan || !plan.some((s) => s && s.match === l)) throw new Error(source + ": the stack plan does not carry the matched layer: " + JSON.stringify(plan && plan.map((s) => (s && s.filter ? "f" : s && s.match ? "m" : "l"))));
+    const bp = ed.bandPlan({ forRun: true });
+    if (!bp || !bp.stackOnly) throw new Error(source + ": the band plan of a matched document is " + JSON.stringify(bp));
+    const r = await ed.encodeComposite({ forRun: true }, { hash: false });
+    if (!r || !r.program) throw new Error(source + ": the composite did not come through the program: " + JSON.stringify(r && { stack: r.stack, program: r.program }));
+    const a = (await decode(r.blob)).data;
+    const b = await flatten();
+    const d = inBox(a, b);
+    d.outside = outside(a, b);
+    // the layer is matched: far from the unmatched picture on a good part of its box
+    let moved = 0, seen = 0;
+    for (let y = box[1]; y < box[3]; y += 3) for (let x = box[0]; x < box[2]; x += 3) { const i = (y * W + x) * 4; seen++; if (Math.abs(a[i] - plain[i]) > 8 || Math.abs(a[i + 1] - plain[i + 1]) > 8 || Math.abs(a[i + 2] - plain[i + 2]) > 8) moved++; }
+    d.moved = +(moved / seen).toFixed(3);
+    if (d.moved < 0.2) throw new Error(source + ": the matched layer is not matched in the workers' picture (moved on " + d.moved + " of its box)");
+    // the whole flatten's statistics through the worker path: the same picture but for the kernels' rounding
+    const st = l._mstats;
+    if (!st || !st.stats) throw new Error(source + ": the flatten left no statistics");
+    l._mstatsStackRun = { version: ed.compositeVersion, key: JSON.stringify([source, l.x, l.y, l.w, l.h]), stats: st.stats };
+    const same = (await decode((await ed.encodeComposite({ forRun: true }, { hash: false })).blob)).data;
+    l._mstatsStackRun = null;
+    d.sameStats = inBox(same, b);
+    if (d.sameStats.max > 3) throw new Error(source + ": with the flatten's statistics the worker path is " + d.sameStats.max + " levels off the flatten: " + JSON.stringify(d.sameStats));
+    out[source] = d;
+    // point samples against the flatten's statistics: a few levels on a smooth picture (the photos measured mean 0.56, max 9)
+    if (d.mean > 2 || d.p99 > 8 || d.max > 16 || d.outside > 2) throw new Error(source + ": the matched layer moved too far from the whole flatten: " + JSON.stringify(d));
+}
+// a second matched layer above the first: matched in the first one's matched backdrop, in order
+{
+    const c = document.createElement("canvas"); c.width = 900; c.height = 600;
+    const x = c.getContext("2d"); x.fillStyle = "hsl(120,60%,50%)"; x.fillRect(0, 0, 900, 600);
+    for (let k = 0; k < 12; k++) { x.fillStyle = `hsla(${k * 31},70%,60%,0.6)`; x.fillRect((k * 211) % 900, (k * 137) % 600, 120, 90); }
+    const l2 = ed.addLayer({ name: "Second", kind: "result", px: ed.pixels.Layer.fromCanvas(c), x: 2200, y: 1500, w: 900, h: 600, dirty: true });
+    await run("move_layer", { doc: window.__ex, layer: l2.id, delta: -1 });   // below the filter layer
+    l2.match = { strength: 100, source: "surroundings" };
+    ed.markMatchChanged(l2);
+    ed.renderLayers();
+    await ed.mipsSettled();
+    const plan = ed.stackPlan({ forRun: true, filters: true });
+    const marks = plan ? plan.map((s) => (s && s.filter ? "f" : s && s.match ? "m" : "l")).join("") : null;
+    if (marks !== "llmmf") throw new Error("the plan with two matched layers is " + marks);
+    const r = await ed.encodeComposite({ forRun: true }, { hash: false });
+    if (!r || !r.program) throw new Error("two matched layers: the composite did not come through the program");
+    const a = (await decode(r.blob)).data, b = await flatten();
+    const d2 = inBox(a, b);
+    let n = 0, sum = 0, max = 0;
+    for (let y = 1500; y < 2100; y++) for (let x = 2200; x < 3100; x++) { const i = (y * W + x) * 4; for (let c = 0; c < 3; c++) { const e = Math.abs(a[i + c] - b[i + c]); sum += e; n++; if (e > max) max = e; } }
+    out.second = { first: d2, second: { mean: +(sum / n).toFixed(3), max } };
+    if (d2.max > 16 || max > 16 || sum / n > 2) throw new Error("two matched layers moved too far from the whole flatten: " + JSON.stringify(out.second));
+    ed.removeLayer(l2.id);
+}
+// without the filter layer: the plain stack, composited row by row by the workers that pack them
+fx.visible = false;
+ed.renderLayers();
+{
+    const r = await ed.encodeComposite({ forRun: true }, { hash: false });
+    if (!r || !(r.stack >= 2)) throw new Error("without the filter the matched document was not written from the stack: " + JSON.stringify(r && { stack: r.stack, program: r.program }));
+    const a = (await decode(r.blob)).data, b = await flatten();
+    out.plainStack = inBox(a, b);
+    if (out.plainStack.max > 16 || out.plainStack.mean > 2) throw new Error("the plain matched stack moved too far from the whole flatten: " + JSON.stringify(out.plainStack));
+    // and the PSD's merged picture comes the same way
+    const psd = await ed.exportLayeredBands("psd");
+    if (!psd || psd.layers !== 3) throw new Error("the PSD of the matched stack: " + JSON.stringify(psd && { layers: psd.layers }));
+    out.psdMB = +(psd.blob.size / 1048576).toFixed(1);
+}
+fx.visible = true;
+ed.renderLayers();
+// the filter below the matched layer: turned away (its statistics would need the filtered picture), the whole flatten as before
+await run("move_layer", { doc: window.__ex, layer: fx.id, delta: -1 });
+if (ed.layers.indexOf(fx) !== ed.layers.indexOf(l) - 1) throw new Error("the filter did not move below the matched layer: " + ed.layers.map((x) => x.name));
+const below = ed.stackPlan({ forRun: true, filters: true }), bpBelow = ed.bandPlan({ forRun: true });
+const rBelow = await ed.encodeComposite({ forRun: true }, { hash: false });
+await run("move_layer", { doc: window.__ex, layer: fx.id, delta: 1 });
+if (below || bpBelow || rBelow) throw new Error("a matched layer above a filter still took the worker path: " + JSON.stringify({ plan: !!below, bandPlan: bpBelow, encoded: !!rBelow }));
+// the A/B switch
+E.stackMatch = false;
+let off;
+try { off = ed.stackPlan({ forRun: true, filters: true }); } finally { E.stackMatch = true; }
+if (off) throw new Error("stackMatch = false still gave a plan");
 l.match = { strength: 0, source: "surroundings" };
 ed.markMatchChanged(l);
-if (plan) throw new Error("a colour-matched layer got a band plan: its statistics are the whole flatten's");
-return { plan };
+if (ed.layers.indexOf(fx) !== ed.layers.length - 1) throw new Error("the filter layer is not back on top: " + ed.layers.map((x) => x.name));
+return out;
 """),
     ("a_run_reads_its_box_and_a_window_of_the_selection", """
 // E2: a provider run composites its crop box only and reads the selection in a window around its bounds (the image is

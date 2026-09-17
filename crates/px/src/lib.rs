@@ -18,6 +18,7 @@
 use core::slice;
 use std::alloc::{alloc, dealloc, Layout};
 
+mod cmatch;
 mod composite;
 mod edt;
 mod flood;
@@ -38,7 +39,7 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature; `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    9
+    10
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -236,6 +237,13 @@ pub unsafe extern "C" fn composite_tile(dst: *mut u8, px: usize, n: usize, srcs:
         composite::apply(dst, &layer);
     }
     composite::end(dst);
+}
+
+/// The colour match of a layer over `px` pixels of straight RGBA8, in place (B item 7 part 3): `params` are
+/// meanS[3], meanT[3], scale[3], k as f32. Alpha and fully transparent pixels are untouched.
+#[no_mangle]
+pub unsafe extern "C" fn match_pixels(rgba: *mut u8, px: usize, params: *const f32) {
+    cmatch::match_pixels(slice::from_raw_parts_mut(rgba, px * 4), slice::from_raw_parts(params, 10));
 }
 
 // ---- PNG --------------------------------------------------------------------------------

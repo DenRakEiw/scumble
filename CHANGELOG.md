@@ -3,6 +3,20 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.19 — unreleased
+
+- **Documents with a colour-matched layer save and select as fast as plain ones.** A layer whose colours are matched to
+  its surroundings (or to what is underneath it) no longer sends the whole document the slow way: the background
+  workers now read the match's statistics from the picture's tiles and apply the match themselves while they put the
+  layers together. A 15000 × 10000 picture with a 5000 × 3500 matched result layer saves as PNG in 1.8 seconds instead
+  of 6.4, with the window standing still for 0.08 seconds instead of 1.4; as PSD in 1.0 instead of 1.8; and a magic
+  wand click across it takes 0.9 seconds instead of 2.5, the window standing still for 0.1 seconds instead of 1.1. A
+  matched layer with a film look or another filter layer above it takes the fast way too; one with a filter layer
+  below it is saved as before. **A matched layer's colours in a saved or uploaded picture can move by a few levels**
+  against the previous versions: the statistics are now taken from samples of the picture instead of the whole
+  picture drawn small. Measured on four photos with a cut-out result layer matched at full strength: on average 0.1 to
+  2 levels, at most 7 on a textured landscape; on smooth pictures 1 to 2. What the screen shows is unchanged.
+
 ## 0.1.18 — 2026-09-18
 
 - **Documents with filter layers save about twice as fast, and the magic wand on them no longer freezes the window.**

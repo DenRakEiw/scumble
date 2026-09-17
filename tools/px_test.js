@@ -467,6 +467,94 @@ async function compositeCases(ref, label, js) {
         `worst at ${(worstRatio * 100).toFixed(0)} % of the bound over ${seen} translucent pixels, alpha off by ${alphaOff.toFixed(2)}`);
 }
 
+// ---- the colour match (B item 7 part 3) ----------------------------------------------------------
+
+/** meanS, meanT, scale, k as a run's statistics have them: means 0..255, scale 0.5..2, k 0..1. */
+function matchParams(seed) {
+    const r = rng(seed);
+    const p = new Float32Array(10);
+    for (let i = 0; i < 6; i++) p[i] = r() * 255;
+    for (let i = 6; i < 9; i++) p[i] = 0.5 + r() * 1.5;
+    p[9] = [0, 1, 0.5, 0.25, 0.8, r()][seed % 6];
+    return p;
+}
+
+/** matchCanvas' formula in doubles, with Uint8ClampedArray's rounding (half to even), on a copy. */
+function matchDoubles(rgba, p) {
+    const out = new Uint8ClampedArray(rgba.length);
+    for (let i = 0; i < rgba.length; i += 4) {
+        out[i + 3] = rgba[i + 3];
+        for (let c = 0; c < 3; c++) {
+            if (!rgba[i + 3]) { out[i + c] = rgba[i + c]; continue; }
+            const v = rgba[i + c], m = (v - p[3 + c]) * p[6 + c] + p[c];
+            out[i + c] = Math.max(0, Math.min(255, v + (m - v) * p[9]));
+        }
+    }
+    return new Uint8Array(out.buffer);
+}
+
+/** The twin against doubles (within a level), the identities, and what it must leave alone. */
+async function matchTwinCases(js) {
+    let worst = 0, over = 0, alphaMoved = 0, clearMoved = 0, n = 0;
+    for (let seed = 0; seed < 24; seed++) {
+        const p = matchParams(seed), src = pixelRow(4099 + seed, 500 + seed);
+        const a = js.matchPixels(src.slice(), p), b = matchDoubles(src, p);
+        for (let i = 0; i < a.length; i++) {
+            const e = Math.abs(a[i] - b[i]);
+            if ((i & 3) === 3) { if (a[i] !== src[i]) alphaMoved++; continue; }
+            if (!src[(i | 3)]) { if (a[i] !== src[i]) clearMoved++; continue; }
+            n++;
+            if (e > worst) worst = e;
+            if (e > 1) over++;
+        }
+    }
+    check(`js matchPixels within a level of matchCanvas' doubles`, worst <= 1 && over === 0 && n > 50000, `worst ${worst}, over ${over} of ${n}`);
+    check(`js matchPixels leaves alpha and fully transparent pixels alone`, alphaMoved === 0 && clearMoved === 0, `alpha moved ${alphaMoved}, transparent moved ${clearMoved}`);
+    const src = pixelRow(2048, 9), p0 = matchParams(3);
+    p0[9] = 0;
+    check(`js matchPixels at k = 0 is the identity`, eqBytes(js.matchPixels(src.slice(), p0), src));
+    const p1 = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
+    check(`js matchPixels with meanS = meanT and scale 1 is the identity`, eqBytes(js.matchPixels(src.slice(), p1), src));
+    const p2 = new Float32Array([250, 250, 250, 5, 5, 5, 2, 2, 2, 1]);
+    const hi = js.matchPixels(src.slice(), p2);
+    let clamped = true;
+    for (let i = 0; i < hi.length; i += 4) if (src[i + 3] && src[i] > 60 && hi[i] !== 255) clamped = false;
+    check(`js matchPixels clamps at 255`, clamped);
+    // the same bytes from a Uint8ClampedArray
+    const clamp = (u) => new Uint8ClampedArray(u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength));
+    const p5 = matchParams(5);
+    const viaBytes = js.matchPixels(src.slice(), p5), viaClamped = js.matchPixels(clamp(src), p5);
+    check(`js matchPixels gives the same bytes for Uint8ClampedArray input`, eqBytes(viaBytes, new Uint8Array(viaClamped.buffer)));
+}
+
+/** The twin against a Rust build, bit for bit: random pixels and parameters, sizes with tails, every k. */
+async function matchCases(px, label, js) {
+    let ok = true, detail = "";
+    for (const pixels of [65536, 1, 3, 4, 5, 16, 1000, 1003, 4099]) {
+        for (let trial = 0; trial < 12; trial++) {
+            const p = matchParams(trial + pixels);
+            const src = pixelRow(pixels, 700 + trial + pixels, { opaque: trial % 4 === 0 });
+            if (trial % 5 === 1) for (let i = 3; i < src.length; i += 16) src[i] = 0;   // transparent pixels among the rest
+            const a = js.matchPixels(src.slice(), p), b = px.matchPixels(src.slice(), p);
+            if (!eqBytes(a, b)) { ok = false; detail = `${pixels}px trial ${trial} k ${p[9]} ${firstDiff(a, b)}`; }
+        }
+    }
+    check(`js matchPixels equals the ${label} (random pixels and statistics, tails, k 0 to 1)`, ok, detail);
+    // the extremes: scale 2 and 0.5, means at the ends, k 1
+    let okX = true, detailX = "";
+    for (const p of [[255, 255, 255, 0, 0, 0, 2, 2, 2, 1], [0, 0, 0, 255, 255, 255, 0.5, 0.5, 0.5, 1], [128, 64, 32, 32, 64, 128, 1.999, 0.501, 1, 0.999], [127.5, 127.5, 127.5, 127.5, 127.5, 127.5, 1, 1, 1, 0.5]]) {
+        const pf = new Float32Array(p), src = pixelRow(8192, 77);
+        const a = js.matchPixels(src.slice(), pf), b = px.matchPixels(src.slice(), pf);
+        if (!eqBytes(a, b)) { okX = false; detailX = `${p} ${firstDiff(a, b)}`; }
+    }
+    check(`js matchPixels equals the ${label} at the extremes of the statistics`, okX, detailX);
+    if (/rust/.test(label)) {
+        const N = 1 << 20, srcT = pixelRow(N, 5, { opaque: true }), p = matchParams(2);
+        const best = (k) => { let b = Infinity; for (let i = 0; i < 5; i++) { const w = srcT.slice(), t0 = performance.now(); k.matchPixels(w, p); b = Math.min(b, performance.now() - t0); } return b; };
+        console.log(`       a megapixel matched: ${label} ${best(px).toFixed(1)} ms, twin ${best(js).toFixed(1)}`);
+    }
+}
+
 async function pngCases(ref, label, js) {
     const zlib = require("node:zlib");
     let ok = true, okRound = true, detail = "";
@@ -684,6 +772,7 @@ async function main() {
     await edtCases(ref, label, js, raster);
     await floodCases(ref, label, js, raster);
     await compositeCases(ref, label, js);
+    await matchTwinCases(js);
     await pngCases(ref, label, js);
     for (const [name, file] of [["simd", "px.wasm"], ["scalar", "px_scalar.wasm"]]) {
         const px = await loadPx(fs.readFileSync(path.join(PX_DIR, file)));
@@ -696,6 +785,7 @@ async function main() {
         await maskCases(px, label, js);
         await pngReadCases(px, label, js);
         await compositeCases(px, label, js);
+        await matchCases(px, label, js);
         await pngCases(px, label, js);
         await pngPartCases(px, label);
         await psdCases(px, label, js);

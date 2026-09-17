@@ -44,8 +44,9 @@ Nothing at the moment.
 **Written** 2026-09-17 with phase E (`docs/PLAN_BCE.md` §3, the "as built" blocks). Not reports: gates of the plan that were
 measured and not met, and what still needs a canvas of the picture. Each has a number to beat.
 
-- **(Since B item 7, 2026-09-18, only for a document with a colour-matched layer, a scaled or fractional layer, or a
-  filter mask that is not tiles: a plain stack, blend modes and filter layers are composited by the workers, the
+- **(Since B item 7, 2026-09-18, only for a document with a colour-matched layer above a filter layer, a scaled or
+  fractional layer, or a filter mask that is not tiles: a plain stack, blend modes, filter layers and colour-matched
+  layers (part 3, the statistics from point samples of the tiles) are composited by the workers, the
   filters run over their bytes, and the case below saves in 1.4 s with a block of 0.17 s, with the film look 5.0 s
   against 9.1 s; `docs/PLAN_BCE.md` §3b "B item 7, part 2 as built". The block is still above the plan's 50 ms.)**
   An export in bands is slower in wall
@@ -67,8 +68,10 @@ measured and not met, and what still needs a canvas of the picture. Each has a n
   and are refused with a message; so are the canvas-sized edits (resize, extend, crop to selection, merge into the base
   through a canvas) wherever they still build a canvas of the picture. A PSD stops at 30,000 px a side and 4 GB a section
   (a 30000 × 20000 document with one paint layer was 3.7 GB), an ORA at 4 GB (no zip64).
-- **A colour-matched layer keeps the whole flatten for exports up to 268 MP** (the user's open decision (b) of C6 (c) 7c);
-  above it the bands use the statistics the screen uses, the only ones there are.
+- **A colour-matched layer above a filter layer keeps the whole flatten for exports up to 268 MP**, and so does a
+  provider run's crop (`readBox`) and the flatten into the base of a plain matched stack. Since B item 7 part 3
+  (2026-09-18, decision (b) of C6 (c) 7c made) every other matched document takes the worker path, its statistics
+  point samples of the tiles. Above 268 MP the bands use the statistics the screen uses, the only ones there are.
 - **Seen once, not reproduced**: `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed with
   `requested: 0` in one of some twenty runs since the mip chains go through the pool.
 

@@ -96,6 +96,11 @@ export function compositeTile(dst, srcs, ops, alphas, masks = null) {
     return p ? p.compositeTile(dst, srcs, ops, alphas, masks) : J.compositeTile(dst, srcs, ops, alphas, masks);
 }
 
+export function matchPixels(rgba, params) {
+    const p = rustPx();
+    return p ? p.matchPixels(rgba, params) : J.matchPixels(rgba, params);
+}
+
 export function psdPackRows(rgba, w, rows) {
     const p = rustPx();
     return p ? p.psdPackRows(rgba, w, rows) : J.psdPackRows(rgba, w, rows);

@@ -1469,7 +1469,12 @@ instance, the same machine and document as the tables above, wall / longest bloc
 
 What these rows still hold of the browser: the coarse pass of the wand (a 2,048 px canvas), the stitch's canvases (0.26
 s), Canvas 2D for a stroke, and everything on a document with a filter layer, a blend mode or a colour match, which
-keeps the region pass for exports and the canvases for the wand.
+keeps the region pass for exports and the canvases for the wand. B item 7 (2026-09-18, `docs/PLAN_BCE.md` §3b) took
+the last three to the workers as well: blend modes in `composite_tile`, filter layers as a stack program (the workers
+composite a band, the GPU filters its bytes), a colour-matched layer with its statistics from point samples of the
+tiles and the match in the worker (15k with a 5,000 × 3,500 matched layer: PNG 6.4 s to 1.8 s, the block 1.45 s to
+84 ms; the wand 2.5 s to 0.9 s). What is left: a matched layer above a filter, a provider run's crop (`readBox`),
+and the coarse pass.
 
 ## 8. What goes where
 
