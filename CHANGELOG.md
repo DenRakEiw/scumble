@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.19 — unreleased
+## 0.1.19 — 2026-09-18
 
 - **Documents with a colour-matched layer save and select as fast as plain ones.** A layer whose colours are matched to
   its surroundings (or to what is underneath it) no longer sends the whole document the slow way: the background

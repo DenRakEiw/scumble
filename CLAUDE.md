@@ -80,7 +80,12 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-18)
 
-**Releases.** **0.1.18 is published** (Latest since 2026-09-18, published by the user's word at the end of the part 3
+**Releases.** **0.1.19 is tagged** (`v0.1.19`, 2026-09-18, on the user's go, no `smoke`: CI builds the installer and
+publishes a **draft**; the user publishes it to make it visible to the app; exe gates, all `--offline` against `dist/win-unpacked/Scumble.exe`: `rel19-exe` (tiles, the full list with pxjobs) ALL
+PASS, `rel19-exe-huge` (`huge:30000x20000`) PASS, `rel19-exe-canvas` (tiles off: pixels editor composite film export)
+ALL PASS on the rerun `rel19-exe-canvas-b` of editor and film, whose first run failed on the live stroke's pointer
+message and the film panel's thumbnails (0 of 5 rendered) while the user was at the machine; no `smoke`, on the user's
+word). **0.1.18 is published** (Latest since 2026-09-18, published by the user's word at the end of the part 3
 session; `latest.yml` on the feed says 0.1.18, the release body is the CHANGELOG section). **`package.json` is 0.1.19
 and `CHANGELOG.md` has the 0.1.19 section**, with B item 7 part 3 (item 10 below; committed, pushed, CI green on
 2026-09-18) and the `set_layer match_source` fix. 0.1.18 carries B items 1 to 5 and item 7 parts 1 and 2. Exe gates for 0.1.18, all `--offline`: `rel18-exe` (log pixels editor
