@@ -80,8 +80,8 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-18)
 
-**Releases.** **0.1.19 is tagged** (`v0.1.19`, 2026-09-18, on the user's go, no `smoke`: CI builds the installer and
-publishes a **draft**; the user publishes it to make it visible to the app; exe gates, all `--offline` against `dist/win-unpacked/Scumble.exe`: `rel19-exe` (tiles, the full list with pxjobs) ALL
+**Releases.** **0.1.19 is published** (Latest since 2026-09-18, `v0.1.19`, the CI draft published from this session on the user's
+word; `latest.yml` on the feed says 0.1.19, the release body is the CHANGELOG section; no `smoke`; exe gates, all `--offline` against `dist/win-unpacked/Scumble.exe`: `rel19-exe` (tiles, the full list with pxjobs) ALL
 PASS, `rel19-exe-huge` (`huge:30000x20000`) PASS, `rel19-exe-canvas` (tiles off: pixels editor composite film export)
 ALL PASS on the rerun `rel19-exe-canvas-b` of editor and film, whose first run failed on the live stroke's pointer
 message and the film panel's thumbnails (0 of 5 rendered) while the user was at the machine; no `smoke`, on the user's
