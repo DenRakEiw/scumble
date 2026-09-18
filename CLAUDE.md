@@ -270,14 +270,39 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    it was, no tidying: the section title in `inpaint_jobs.js` still reads "PNG encoding, upload hashes and the layered
    export writers" and names `js/inpaint_worker.js`; the class file's header comment (lines 1 to 13) is untouched.
 
+12. **OpenRouter as a provider (asked for by the user on 2026-09-18, not built yet: about a day).** OpenRouter
+   (`https://openrouter.ai/api/v1`) is an OpenAI-compatible aggregator with one key for most hosted models. Two uses in
+   Scumble, both to be written from the docs and verified only with a real key, like every other adapter:
+   (a) **prompt upsampling**: a backend beside the API ones and `settings.llm.compat`, the chat completions endpoint
+   with a Bearer key from the credential store (`keys.js`), the model chosen by its id (`openai/...`, `google/...`,
+   `anthropic/...`), the optional `HTTP-Referer` / `X-Title` headers; (b) **image edit and "Generate new"**: an adapter
+   in `electron/main/providers/` next to the OpenAI and Gemini ones, through chat completions with
+   `modalities: ["image", "text"]`, the input picture as an `image_url` data URL, the answer read from
+   `message.images[0].image_url.url` (a data URL); one variant per image-capable model id with its `limits`, no mask
+   parameter on that API (Scumble's own composite mask and stitch apply, as for Gemini). Settings › API keys gets an
+   OpenRouter row, recipes an `openrouter` provider variant, `docs/RECIPES.md` the format, and a plain-Node test of
+   the request shape (as `transparent_test.py` does for OpenAI) plus the loopback stand-in in the gates. **To verify
+   against the live API before anything ships:** which image models OpenRouter serves at the time (Gemini image,
+   gpt-image, Flux), whether an input picture reaches them as an edit, the size and count limits, and the shape of an
+   image answer; the docs may have moved since this was written.
+
 **Decision (b) of 7c is made (the user, 2026-09-18): exports and runs of a colour-matched layer may move.** They may
 take their statistics from tiles instead of from the whole flatten, with **point samples** (measured mean 0.56, max 8
 to 9 levels against the full-resolution statistics; not box means, which were 5.45 / p99 12 on a textured photo;
 `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). **B item 7 part 3 is built on it** (2026-09-18, item 10 above;
 CHANGELOG 0.1.19 says a matched layer's export can move by a few levels). **Stage 1 of the split of
-`inpaint_canvas.js` is built** (item 11, 2026-09-18). **Next: the user's two decisions on the split** (the six leaf
-modules of the judges' favourite, and stage 2), and a release of 0.1.19 when the user says so (its CHANGELOG section
-is written). Nothing else stands before it, unless the user names something else first.
+`inpaint_canvas.js` is built** (item 11, 2026-09-18) and **0.1.19 is published**. **Decided by the user on 2026-09-18,
+on that session's recommendation:** (1) **no stage 2 for now, and no six leaf modules**: hanging methods into the class
+is an eager access to it (it would have to stand in `inpaint_canvas.js` below the `class` statement for ComfyUI's
+import order), and twelve sites in four subjects read switches on the class name, so a subject is split out only when
+that subject is reworked anyway, as the prelude of that work; (2) **the object tool's change A is parked**: if the coarse
+outlines at 15k turn out to matter, compute the image-size label map only in the hovered object's box, on demand,
+never for the whole picture; (3) **B item 6 stays on ice** (it saves memory, not time; 97 GB of RAM and the 15.5 GB cap
+are not the limit at 15k). **Next, in this order:** `smoke` and the node in a real ComfyUI tab and in Firefox as soon
+as the user says ComfyUI is free (nothing since phase E has met a real server); then the four daily-use bugs of
+`docs/BUGS.md` (the provider crop's 0.6 s block, large JPEG / WebP / profiled PNG opening, erasing switching the active
+layer to the base, the erase stroke's release stutter); then **OpenRouter (item 12)**; then SignPath. Nothing else
+stands before it, unless the user names something else first.
 
 **Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`
 are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,
