@@ -269,6 +269,19 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    scored lowest. Whether the six leaf modules follow, and whether stage 2 comes at all, is the user's call. Kept as
    it was, no tidying: the section title in `inpaint_jobs.js` still reads "PNG encoding, upload hashes and the layered
    export writers" and names `js/inpaint_worker.js`; the class file's header comment (lines 1 to 13) is untouched.
+   **The class, measured (2026-09-18, `classmap.js` in that session's scratchpad, espree over the class body):** 11,385
+   lines (1194 to 12578), 413 methods with 9,879 lines in them, 264 methods of 20 lines or fewer, 118 of 21 to 50, 21
+   of 51 to 100, 10 above 100; 269 `this.*` fields assigned; 33 section banners. So it is not tangled logic but a
+   god class: the coupling is the 269 fields every method reaches through `this`, and files hung into the class would
+   share them just the same (navigation, not decoupling). The three real blocks: `buildModal` (686 lines, the whole
+   UI), `drawSceneOverlays` (246), `onPointerDown` / `onPointerMove` / `onPointerUp` (206 / 139 / 115, the dispatch by
+   tool). **Decided by the user on 2026-09-18: the next split step is `buildModal` alone**, into a module of its own
+   with one build function per panel (toolbar, layers, settings, filters), pure construction and no state, the
+   editor / composite / commands gates checking the surface; about half a day, 6 % of the class and its least
+   readable place. Not the whole class, not the pointer handlers (the heart of the live-stroke gates; by tool only when
+   a tool is reworked), not the 269 fields into state objects (weeks, and behaviour can move quietly). It comes in a
+   session of its own after `smoke` and the node test, under the same rule as stage 1: moves, the byte-for-byte proof,
+   both backends, `nodecopy`.
 
 12. **OpenRouter as a provider (asked for by the user on 2026-09-18, not built yet: about a day).** OpenRouter
    (`https://openrouter.ai/api/v1`) is an OpenAI-compatible aggregator with one key for most hosted models. Two uses in
