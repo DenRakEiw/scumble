@@ -80,15 +80,14 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-18)
 
-**Releases.** **0.1.18 is tagged (`v0.1.18`, 2026-09-18) and its draft is built (installer, blockmap, `latest.yml`);
-publishing the draft is the user's.** `package.json` is 0.1.19 and `CHANGELOG.md` has the 0.1.19 section already
-(opened on 2026-09-18 with B item 7 part 3, item 10 below, because the tag is cut and new commits belong to 0.1.19). It
-carries B items 1 to 5 and item 7 parts 1 and 2. Exe gates for 0.1.18, all `--offline`: `rel18-exe` (log pixels editor
+**Releases.** **0.1.18 is published** (Latest since 2026-09-18, published by the user's word at the end of the part 3
+session; `latest.yml` on the feed says 0.1.18, the release body is the CHANGELOG section). **`package.json` is 0.1.19
+and `CHANGELOG.md` has the 0.1.19 section**, with B item 7 part 3 (item 10 below; committed, pushed, CI green on
+2026-09-18) and the `set_layer match_source` fix. 0.1.18 carries B items 1 to 5 and item 7 parts 1 and 2. Exe gates for 0.1.18, all `--offline`: `rel18-exe` (log pixels editor
 composite brush film export toapis mcp pxjobs), `rel18-exe-canvas` (tiles off: pixels editor composite film export) and
 `rel18-exe-huge` (`huge:30000x20000`) ALL PASS, three of them on a rerun, each a known flake (the settled-read step and
 the 1200 x 794 composite canvas together in the first seconds of one exe instance; the live stroke step on the canvas
-backend). **`smoke` was not run** (the user's ComfyUI). After the draft is published: `package.json` to 0.1.19 and an empty
-section in `CHANGELOG.md`. **0.1.17 is published** (Latest since 2026-09-17; `latest.yml` on the feed says 0.1.17). It carries phase E
+backend). **`smoke` was not run** (the user's ComfyUI). **0.1.17** (published 2026-09-17) carries phase E
 (E1 to E5). Exe gates for 0.1.17, all `--offline`:
 `rel17-exe` (log pixels editor composite brush film export toapis mcp pxjobs), `rel17-exe-huge` (`huge:30000x20000`) and
 `rel17-exe-canvas` (tiles off: pixels editor composite film export) ALL PASS; CI's `build_px.py --check` passed with the
@@ -223,7 +222,8 @@ take their statistics from tiles instead of from the whole flatten, with **point
 to 9 levels against the full-resolution statistics; not box means, which were 5.45 / p99 12 on a textured photo;
 `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). **B item 7 part 3 is built on it** (2026-09-18, item 10 above;
 CHANGELOG 0.1.19 says a matched layer's export can move by a few levels). **Next: the split of `inpaint_canvas.js`**
-(item 11), once 0.1.18 is published and 0.1.19's state is committed, or whatever the user names first.
+(item 11): 0.1.18 is published and 0.1.19's state is committed and pushed, so nothing stands before it, unless the
+user names something else first.
 
 **Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`
 are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,
