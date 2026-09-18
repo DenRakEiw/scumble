@@ -15,7 +15,7 @@ python tools/node_test.py             # the node's flavour in a hidden Electron 
 
 | File | Owner | In the node |
 |---|---|---|
-| `renderer/editor/inpaint_canvas.js`, `inpaint_filters.js`, `inpaint_filters_gl.js`, `inpaint_curves.js`, `inpaint_text.js`, `inpaint_raster.js`, `inpaint_export.js`, `inpaint_worker.js`, `inpaint_compositor.js`, `inpaint_brushes.js`, `inpaint_pixels.js`, `inpaint_tiles.js`, `px/kernels_js.js`, `fonts/` | this repo | generated into `js/` with a first line naming the source (`px/` as a subfolder: the tile store imports the kernels, C2) |
+| `renderer/editor/inpaint_canvas.js`, `inpaint_jobs.js`, `inpaint_encode.js`, `inpaint_upload.js`, `inpaint_filters.js`, `inpaint_filters_gl.js`, `inpaint_curves.js`, `inpaint_text.js`, `inpaint_raster.js`, `inpaint_export.js`, `inpaint_worker.js`, `inpaint_compositor.js`, `inpaint_brushes.js`, `inpaint_pixels.js`, `inpaint_tiles.js`, `inpaint_arena.js`, `inpaint_pool.js`, `inpaint_png.js`, `inpaint_bands.js`, `px/kernels_js.js`, `px/kernels.js`, `px/px.js`, `px/px.wasm`, `fonts/` | this repo | generated into `js/` with a first line naming the source (`px/` as a subfolder: the tile store imports the kernels, C2) |
 | `renderer/editor/host.js` | this repo | not copied: the node has its own `js/host.js` |
 | `renderer/editor/stitch.js` | this repo | not copied (app-only) |
 | `js/host.js` | node repo | what the editor asks ComfyUI: `app`, `api`, the litegraph node |
@@ -75,6 +75,16 @@ on the build.
   error posted to the page, forever (56,476 message events in 500 ms after one foreign
   message). The handler is installed only inside a worker now; `node_test.py` asserts it.
   Rule: no module in `renderer/editor/` may have page-level side effects at import.
+  The three modules of the split's stage 1 (2026-09-18: `inpaint_jobs.js`, `inpaint_encode.js`,
+  `inpaint_upload.js`, the head of `inpaint_canvas.js` moved out as it was) keep to it, with one
+  thing to know: `inpaint_jobs.js` registers the tile store's chain transport when it evaluates
+  (`setChainTransport(mipsTransport)`, three statements that used to run at the same place in
+  `inpaint_canvas.js`), and `inpaint_jobs.js` and `inpaint_encode.js` import `InpaintEditor` back
+  from `inpaint_canvas.js` for the switches on the class (`mipsOnPool`, `mipsOnSharedWorker`,
+  `pngParts`), read inside functions only. So each of the three may be the first module ComfyUI
+  imports: nothing in the cycle touches another module's binding while it is evaluated (checked
+  with a scope walk and a Node run of all four entry orders; `node_test.py` loads
+  `inpaint_canvas.js` first and does not show the other orders).
 - `node --check file.js` exits 0 on a broken ES module (Node 24 retries a file with import
   syntax as ESM without parsing it), so the first parse check checked nothing.
   `build_node.py` parses with `--input-type=module` and self-tests on a broken module.

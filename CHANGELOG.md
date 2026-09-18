@@ -21,6 +21,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   by the same few levels.
 - **`set_layer` with `match_source` "below" now matches against the pixels underneath the layer.** The value was
   stored as it came and read as "surroundings", so an agent could not ask for the other source.
+- Under the hood: the editor's worker plumbing, PNG encoders and uploads live in three files of their own
+  (`inpaint_jobs.js`, `inpaint_encode.js`, `inpaint_upload.js`), moved out of `inpaint_canvas.js` as they were.
+  Nothing changes for the user; the ComfyUI node is built from the same files.
 
 ## 0.1.18 — 2026-09-18
 

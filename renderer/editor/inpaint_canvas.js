@@ -19,14 +19,16 @@ import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, re
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
 import { setKernels, kernelsMode, OPS } from "./px/kernels.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
-import { buildPsd, buildOra } from "./inpaint_export.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
-import { WorkerPool, poolSize, INTERACTIVE, EXPORT } from "./inpaint_pool.js";
-import { NO_PARTS, pngHeader } from "./inpaint_png.js";
-import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, writePng, PsdBandWriter, OraBandWriter } from "./inpaint_bands.js";
+import { INTERACTIVE, EXPORT } from "./inpaint_pool.js";
+import { pngHeader } from "./inpaint_png.js";
+import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter } from "./inpaint_bands.js";
 import { arenaEnabled } from "./inpaint_arena.js";
-import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, setChainTransport, chainScheduler } from "./inpaint_tiles.js";
+import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
+import { JOB_TIMINGS, editorWorker, workerCall, editorPool, buildLayered } from "./inpaint_jobs.js";
+import { encodeCanvas, canvasToBlob, partsUsable, partsRun, partsFlights, bandPause, partsFailed, nextPartsSeq, encodeTilePixels, encodeBands, encodeRows } from "./inpaint_encode.js";
+import { SUBFOLDER, uploadBlob, uploadCanvas, uploadPixels } from "./inpaint_upload.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -51,7 +53,6 @@ function hostText(key, fallback) {
 
 const NODE_CLASS = "InpaintCanvas";
 const STITCH_CLASS = "InpaintCanvasStitch";
-const SUBFOLDER = "inpaint_canvas";
 const MAX_UNDO = 30;
 const MAX_UNDO_BYTES = 384 * 1024 * 1024;   // rect undo copies: older steps are dropped past this
 const PYRAMID_MIN_PX = 1 << 20;             // sources below 1 MP are drawn straight, no levels
@@ -61,7 +62,6 @@ const FLOOD_WHOLE_SHARE = 0.4;              // a region box above this share of 
 const SNAP_CANVAS_PX = 16 * 1024 * 1024;   // a selection undo step up to this many pixels is a pixels copy, above it a PNG
 const SEL_BOX_MAX_PX = 64 * 1024 * 1024;    // the selection's PNG holds its box up to this size, above it the whole mask (written in parts)
 const SYNC_ENCODE_PX = 16 * 1024 * 1024;    // above this the selection PNG for getValue is encoded off the main thread
-const WORKER_TIMEOUT = 180000;              // a worker job that never answers falls back to the main thread
 const HANDLE_PX = 9;
 const RULER_PX = 18;
 const CURSOR_CLASSES = ["ipc-scale", "ipc-scale-ne", "ipc-scale-x", "ipc-scale-y", "ipc-rotate"];
@@ -157,327 +157,8 @@ async function rasterizeSvg(file, { width, height }) {
     }
 }
 
-// ---- the worker: PNG encoding, upload hashes and the layered export writers ----------
-// canvas.toBlob keeps the main thread busy for 755 ms on a 96 MP canvas (measured), and
-// the PSD writer for 3 s. Both move into js/inpaint_worker.js; the editor only pays for
-// createImageBitmap (25 ms) and the transfer. Without a worker (old browser, blocked
-// module worker) everything falls back to the main thread, so nothing depends on it.
-
-let WORKER = null;
-let WORKER_OFF = false;
-let workerSeq = 0;
-const workerJobs = new Map();
-
-// The pixel kernels are Rust (px/kernels.js) in the window and in both workers; `InpaintEditor.kernels = "js"` forces the
-// JS twins everywhere, for the benchmark (tools/px_jobs.py). The worker jobs with a kernel reply with the milliseconds of
-// their parts, kept here (`InpaintEditor.jobTimings(true)` reads and clears them).
-const JOB_TIMINGS = [];
-function keepTiming(msg) {
-    if (!msg.timing) return;
-    JOB_TIMINGS.push(msg.timing);
-    if (JOB_TIMINGS.length > 5000) JOB_TIMINGS.splice(0, JOB_TIMINGS.length - 5000);
-}
-
-function editorWorker() {
-    if (WORKER_OFF) return null;
-    if (WORKER) return WORKER;
-    try {
-        WORKER = new Worker(new URL("./inpaint_worker.js", import.meta.url), { type: "module" });
-        WORKER.onmessage = (e) => {
-            const msg = e.data || {};
-            keepTiming(msg);
-            const job = workerJobs.get(msg.id);
-            if (!job) return;
-            workerJobs.delete(msg.id);
-            if (msg.ok) job.resolve(msg); else job.reject(new Error(msg.error || "worker job failed"));
-        };
-        WORKER.onerror = (err) => {
-            console.warn("Inpaint Canvas: worker unavailable, doing this on the main thread:", (err && err.message) || err);
-            WORKER_OFF = true;
-            WORKER = null;
-            for (const job of workerJobs.values()) job.reject(new Error("worker gone"));
-            workerJobs.clear();
-        };
-    } catch (err) {
-        console.warn("Inpaint Canvas: no worker:", (err && err.message) || err);
-        WORKER_OFF = true;
-        WORKER = null;
-    }
-    return WORKER;
-}
-
-function workerCall(op, args = {}, transfer = []) {
-    const w = editorWorker();
-    if (!w) return Promise.reject(new Error("no worker"));
-    const id = ++workerSeq;
-    return new Promise((resolve, reject) => {
-        // a worker that never answers must not hang an upload or an export for good: the
-        // job is dropped and the caller falls back to the main thread
-        const timer = setTimeout(() => {
-            if (!workerJobs.delete(id)) return;
-            reject(new Error(`worker job ${op} timed out`));
-        }, WORKER_TIMEOUT);
-        workerJobs.set(id, {
-            resolve: (v) => { clearTimeout(timer); resolve(v); },
-            reject: (e) => { clearTimeout(timer); reject(e); },
-        });
-        try {
-            w.postMessage({ id, op, kernels: kernelsMode(), ...args }, transfer);
-        } catch (err) {
-            clearTimeout(timer);
-            workerJobs.delete(id);
-            reject(err);
-        }
-    });
-}
-
-// The mips worker (docs/PLAN_BCE.md §C6 b): the same module in a worker of its own, which builds the mip chains a
-// whole change of a layer or a mask asks for (2,360 at 15000 x 10000, about 300 ms). Its own, because the shared
-// worker runs a magic wand's flood for seconds, and the screen would show a coarse picture for all of them. Without
-// it (no module worker, or one that failed) the tile store builds every chain where it is read, as before.
-let MIPS_WORKER = null;
-let MIPS_OFF = false;
-const mipsJobs = new Map();
-
-function mipsWorker() {
-    if (MIPS_OFF) return null;
-    if (MIPS_WORKER) return MIPS_WORKER;
-    try {
-        MIPS_WORKER = new Worker(new URL("./inpaint_worker.js", import.meta.url), { type: "module" });
-        MIPS_WORKER.onmessage = (e) => {
-            const msg = e.data || {};
-            keepTiming(msg);
-            const job = mipsJobs.get(msg.id);
-            if (!job) return;
-            mipsJobs.delete(msg.id);
-            if (msg.ok) job.resolve(msg); else job.reject(new Error(msg.error || "mips job failed"));
-        };
-        MIPS_WORKER.onerror = (err) => {
-            MIPS_OFF = true;
-            MIPS_WORKER = null;
-            for (const job of mipsJobs.values()) job.reject(new Error("mips worker gone: " + ((err && err.message) || err)));
-            mipsJobs.clear();
-        };
-    } catch (err) {
-        MIPS_OFF = true;
-        MIPS_WORKER = null;
-    }
-    return MIPS_WORKER;
-}
-
-// The worker pool (docs/PLAN_BCE.md §E1, inpaint_pool.js): the same module in up to eight workers, started as jobs need
-// them. The mip chains go through it; `InpaintEditor.mipsOnPool = false` sends them to the one mips worker as before E1.
-let POOL = null;
-
-function editorPool() {
-    if (!POOL) POOL = new WorkerPool({
-        create: () => new Worker(new URL("./inpaint_worker.js", import.meta.url), { type: "module" }),
-        defaults: () => ({ kernels: kernelsMode() }),
-        onTiming: keepTiming,
-        timeout: WORKER_TIMEOUT,
-    });
-    return POOL;
-}
-
-/**
- * The tile store's chain transport: a batch of tiles to a worker, their chains back. A tile in the arena is named by
- * its slot and read where it lies; any other is a copy, transferred both ways.
- */
-function mipsTransport(tiles) {
-    const transfer = tiles.filter((t) => t.data).map((t) => t.data);
-    if (mipsOnPool()) return editorPool().run("mips", { tiles }, transfer, { priority: INTERACTIVE });
-    const w = InpaintEditor.mipsOnSharedWorker ? editorWorker() : mipsWorker();
-    if (!w) return Promise.reject(new Error("no mips worker"));
-    const id = ++workerSeq;
-    const jobs = InpaintEditor.mipsOnSharedWorker ? workerJobs : mipsJobs;
-    return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { if (jobs.delete(id)) reject(new Error("mips job timed out")); }, WORKER_TIMEOUT);
-        jobs.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
-        try {
-            w.postMessage({ id, op: "mips", kernels: kernelsMode(), tiles }, transfer);
-        } catch (err) {
-            clearTimeout(timer);
-            jobs.delete(id);
-            reject(err);
-        }
-    });
-}
-
-const mipsOnPool = () => InpaintEditor.mipsOnPool !== false && !InpaintEditor.mipsOnSharedWorker && !editorPool().off;
-mipsTransport.flights = poolSize();
-// tiles by slot only while the pool takes them: its workers are the ones that hold the arena's chunks
-Object.defineProperty(mipsTransport, "arena", { get: mipsOnPool });
-if (typeof Worker === "function") setChainTransport(mipsTransport);
-
-/**
- * PNG of a canvas, plus the upload hash when asked for; encoded in the worker if there is one.
- * `snapshot`: the caller writes into the canvas right after handing it over (an undo step of the
- * pixels before an edit). The worker gets a bitmap taken at the call, but the main-thread fallback
- * after a failed worker job would encode the canvas as it is by then, after the edit, so such a
- * call fails instead: an undo step that says it is lost, not one that restores the edit.
- */
-async function encodeCanvas(canvas, { hash = false, snapshot = false } = {}) {
-    if (editorWorker()) {
-        let failure = "no image in the answer";
-        try {
-            const bitmap = await createImageBitmap(canvas);
-            const r = await workerCall("png", { bitmap, hash }, [bitmap]);
-            if (r.blob) return { blob: r.blob, hash: r.hash };
-        } catch (err) {
-            failure = (err && err.message) || String(err);
-        }
-        if (snapshot) throw new Error("the pixels could not be encoded in the worker (" + failure + ")");
-        console.warn("Inpaint Canvas: encoding in the worker failed, using the main thread:", failure);
-    }
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-    return { blob, hash: hash ? await hashBlob(blob) : null };
-}
-
-/**
- * A layered PSD or ORA file. The worker takes the layers one at a time, so only one
- * layer's pixels are in flight; without a worker the writers run on the main thread.
- */
-async function buildLayered(format, { width, height, layers, composite }) {
-    if (editorWorker()) {
-        const job = "x" + (++workerSeq);
-        try {
-            await workerCall("export_begin", { job, format, width, height });
-            for (const L of layers) {
-                const bitmap = await createImageBitmap(L.canvas);
-                const meta = { name: L.name, x: L.x, y: L.y, opacity: L.opacity, visible: L.visible, blend: L.blend };
-                await workerCall("export_layer", { job, meta, bitmap }, [bitmap]);
-            }
-            const bitmap = await createImageBitmap(composite);
-            const r = await workerCall("export_finish", { job, bitmap }, [bitmap]);
-            if (r.blob) return r.blob;
-        } catch (err) {
-            console.warn("Inpaint Canvas: export in the worker failed, using the main thread:", (err && err.message) || err);
-            workerCall("export_cancel", { job }).catch(() => {});
-        }
-    }
-    return format === "psd" ? buildPsd({ width, height, layers, composite }) : buildOra({ width, height, layers, composite });
-}
-
-function canvasToBlob(canvas, opts) {
-    return encodeCanvas(canvas, opts).then((r) => r.blob);
-}
-
-async function hashBlob(blob) {
-    const buf = await blob.arrayBuffer();
-    const digest = await crypto.subtle.digest("SHA-1", buf);
-    return Array.from(new Uint8Array(digest)).slice(0, 6).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-// ComfyUI's /upload/image stops at --max-upload-size (100 MB by default). Files above this
-// go through the node's own streaming route, which has no such limit; a 413 from ComfyUI
-// falls back to it as well.
-const LARGE_UPLOAD = 64 * 1024 * 1024;
-
-async function uploadBlob(blob, filename, { overwrite = true, type = "input", subfolder = SUBFOLDER } = {}) {
-    if (blob.size < LARGE_UPLOAD) {
-        const form = new FormData();
-        form.append("image", new File([blob], filename, { type: "image/png" }));
-        form.append("subfolder", subfolder);
-        form.append("type", type);
-        if (overwrite) form.append("overwrite", "true");
-        const resp = await api.fetchApi("/upload/image", { method: "POST", body: form });
-        if (resp.status === 200) {
-            const data = await resp.json();
-            return { filename: data.name, subfolder: data.subfolder || subfolder, type: data.type || type };
-        }
-        if (resp.status !== 413) throw new Error("Inpaint Canvas: upload failed (" + resp.status + ")");
-    }
-    const q = new URLSearchParams({ filename, subfolder, type, overwrite: overwrite ? "true" : "false" });
-    const resp = await api.fetchApi("/inpaint_canvas/upload?" + q, { method: "POST", body: blob, headers: { "Content-Type": "application/octet-stream" } });
-    if (resp.status === 404) throw new Error(`Inpaint Canvas: ${Math.round(blob.size / 1048576)} MB is over ComfyUI's upload limit and the node's own upload route is missing: restart ComfyUI after updating the node (or start it with --max-upload-size 1000).`);
-    if (resp.status !== 200) {
-        let msg = "";
-        try { msg = (await resp.json()).error || ""; } catch (_) { /* ignore */ }
-        throw new Error("Inpaint Canvas: upload failed (" + resp.status + (msg ? ", " + msg : "") + ")");
-    }
-    const data = await resp.json();
-    return { filename: data.name, subfolder: data.subfolder || subfolder, type: data.type || type };
-}
-
-async function uploadCanvas(canvas, prefix) {
-    const { blob, hash } = await encodeCanvas(canvas, { hash: true });
-    return { ref: await uploadBlob(blob, `${prefix}_${hash}.png`), hash };
-}
-
-// ---- PNGs written in parts by the pool (docs/PLAN_BCE.md §E2, inpaint_png.js) ------------------------------
-// A picture is cut into parts of whole rows, each filtered and deflated by a pool worker, and the file is joined
-// from them: no canvas of the picture, no bitmap of it, no RGBA buffer of it. `PARTS_OFF` once the workers have no
-// Rust kernels (or there are no workers): every caller then keeps its canvas path.
-
-let PARTS_OFF = false;
-let partsSeq = 0;
 /** "Not this way" from `programBand`: no GPU path for the filters of a band (the caller takes the region pass). */
 const NO_PROGRAM = "no stack program here";
-
-function partsUsable() {
-    return !PARTS_OFF && InpaintEditor.pngParts !== false && kernelsMode() === "rust" && typeof Worker === "function" && !editorPool().off;
-}
-
-/** The pool as the band writers take it (inpaint_bands.js): jobs of one file share a group, so a failure cancels the rest. */
-const partsRun = (group) => (op, args, transfer) => editorPool().run(op, args, transfer, { priority: EXPORT, group });
-const partsFlights = () => editorPool().size * 2;
-/** Between two bands composited on this thread: a task's pause, so the window answers while a file is written. */
-const bandPause = () => new Promise((r) => setTimeout(r, 0));
-
-/** A failure that means "not this way" (no kernels, no pool), against one that is the caller's to see. */
-function partsFailed(err) {
-    const msg = String((err && err.message) || err);
-    if (msg.includes(NO_PARTS) || msg.includes("no worker pool")) { PARTS_OFF = true; return true; }
-    return false;
-}
-
-async function hashInPool(blob) {
-    try { return (await editorPool().run("hash", { blob }, [], { priority: EXPORT })).hash; } catch (_) { return hashBlob(blob); }
-}
-
-/**
- * PNG of tile pixels straight from their tiles: `{ blob, hash }`, or null when parts cannot be used (the caller
- * encodes a canvas). The pixels are held as a copy-on-write clone while the workers read them, so a stroke meanwhile
- * writes into tiles of its own and the file is the picture of the moment of the call.
- */
-async function encodeTilePixels(px, { hash = false, texts = null } = {}) {
-    if (!partsUsable() || !isTilePixels(px)) return null;
-    const snap = px.clone();
-    const group = "png" + (++partsSeq);
-    try {
-        const blob = await writePng(tileRows(snap, arenaEnabled()), partsRun(group), { texts, flights: partsFlights() });
-        return { blob, hash: hash ? await hashInPool(blob) : null };
-    } catch (err) {
-        editorPool().cancel(group);
-        if (partsFailed(err)) return null;
-        throw err;
-    } finally {
-        snap.release();
-    }
-}
-
-/**
- * PNG of a picture that arrives in bands: `band(y0, y1)` gives (or resolves to) the RGBA8 of those rows as a typed
- * array of its own. `{ blob, hash }`, or null when parts cannot be used. Bands are asked for one after the other, each
- * only when the workers have room, with a task's pause between them.
- */
-async function encodeBands(width, height, band, { hash = false, texts = null, rows = TILE_SIZE, progress = null } = {}) {
-    return encodeRows(bandRows(width, height, band, rows), { hash, texts, progress });
-}
-
-/** PNG of any row source (inpaint_bands.js): `{ blob, hash }`, or null when parts cannot be used. */
-async function encodeRows(source, { hash = false, texts = null, progress = null } = {}) {
-    if (!partsUsable()) return null;
-    const group = "png" + (++partsSeq);
-    try {
-        const blob = await writePng(source, partsRun(group), { texts, flights: partsFlights(), progress, pause: bandPause });
-        return { blob, hash: hash ? await hashInPool(blob) : null };
-    } catch (err) {
-        editorPool().cancel(group);
-        if (partsFailed(err)) return null;
-        throw err;
-    }
-}
 
 /**
  * A canvas as a row source (inpaint_bands.js). Up to 64 MP it is read once; above, band by band through a CPU canvas
@@ -550,18 +231,6 @@ async function pixelsFromPngStream(blob, Cls, progress = null) {
     });
     if (!px) throw new Error("the PNG gave no pixels");
     return px;
-}
-
-/** Upload pixels as a PNG named by its hash: from their tiles when they are on tiles, else from their canvas. */
-async function uploadPixels(px, prefix) {
-    const r = await encodeTilePixels(px, { hash: true });
-    if (r) return { ref: await uploadBlob(r.blob, `${prefix}_${r.hash}.png`), hash: r.hash };
-    const c = px.toCanvas();
-    try {
-        return await uploadCanvas(c, prefix);
-    } finally {
-        if (isTilePixels(px)) { c.width = 1; c.height = 1; }
-    }
 }
 
 const CRC_TABLE = (() => {
@@ -5411,7 +5080,7 @@ class InpaintEditor {
     async floodOverTiles(held, box, x, y, o) {
         const [bx, by, bx1, by1] = box, w = bx1 - bx, h = by1 - by;
         if (!(w > 0 && h > 0) || w * h * 4 > 0x7fffffff) return null;
-        const pool = editorPool(), group = "flood" + (++partsSeq);
+        const pool = editorPool(), group = "flood" + nextPartsSeq();
         let selSnap = null;
         try {
             const sab = new SharedArrayBuffer(w * h * 4);
@@ -9242,7 +8911,7 @@ class InpaintEditor {
      */
     async exportLayeredBands(fmt, progress = null) {
         if (!this.tileMode || !partsUsable() || InpaintEditor.bands === false) return null;
-        const group = "layered" + (++partsSeq);
+        const group = "layered" + nextPartsSeq();
         const W = this.width, H = this.height;
         const version = this.compositeVersion;
         const held = [];

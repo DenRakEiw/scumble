@@ -208,22 +208,66 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
    the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
 
-11. **After release 0.1.18, agreed with the user on 2026-09-17: split `renderer/editor/inpaint_canvas.js`** (over 12,000
-   lines, one class). Only that file; the others (1,000 to 2,200 lines, one subject each) stay. **Moves only: no
-   behaviour change, no renaming, no tidying on the way.** Stage 1 (half a day): the loose functions at the top of the
-   file into modules of their own (the worker and pool plumbing, the PNG encoders, upload and hashing). Then decide with
-   the user whether stage 2 pays: the class's methods by subject into files that are hung into the class (selection,
-   wand and bucket, export, undo, colour match, tools and UI). After each stage every gate on both backends and
-   `build_node.py --check` (the node is built from the same files), and the docs' references to moved functions
-   follow. Not before the release, and never mixed with feature work: a published state to compare against comes first.
+11. **Split of `renderer/editor/inpaint_canvas.js`, agreed with the user on 2026-09-17** (over 12,000 lines, one class;
+   only that file; **moves only: no behaviour change, no renaming, no tidying on the way**; stage 1 the loose functions at
+   the top of the file into modules of their own, then decide with the user whether stage 2 pays: the class's methods
+   by subject into files that are hung into the class). **Stage 1 is built** (2026-09-18, after the 0.1.19 state was
+   pushed; the design came from a panel the user's second account had started and its usage limit cut short; that
+   account's workflow journal and scratchpad were read, nothing re-run that had finished): the
+   three groups the agreement names went into three modules, moved byte for byte by line ranges (an independent proof,
+   `verify_moves.js` in that session's scratchpad: 40 top-level statements moved, 84 stayed, every one of the 1,176
+   comments once). `inpaint_jobs.js` (the worker and pool plumbing: the shared worker and `workerCall`, the mips worker,
+   the pool, the tile store's chain transport with its three import-time statements, `buildLayered`, `JOB_TIMINGS`;
+   21 names, old lines 64, 160 to 310, 336 to 359), `inpaint_encode.js` (the PNG encoders and the two hash functions:
+   `encodeCanvas`, `canvasToBlob`, `encodeTilePixels`, `encodeBands`, `encodeRows`, `partsUsable` and the parts state;
+   14 names, old lines 312 to 334, 361 to 369, 407 to 413, 417 to 480) and `inpaint_upload.js` (`SUBFOLDER`,
+   `LARGE_UPLOAD`, `uploadBlob`, `uploadCanvas`, `uploadPixels`; old lines 54, 371 to 405, 555 to 565). **The one
+   glue:** `nextPartsSeq()` in `inpaint_encode.js`, because the class incremented `partsSeq` at two sites and an
+   imported binding is read-only (those two class lines are the only statement whose text changed). `inpaint_jobs.js`
+   and `inpaint_encode.js` import `InpaintEditor` back from `inpaint_canvas.js` for the switches on the class
+   (`mipsOnPool`, `mipsOnSharedWorker`, `pngParts`), read inside functions only: no module of the cycle touches another
+   one's binding while it is evaluated (a scope walk, `toplevel.js`), all four entry orders give the same answers in
+   Node (a Chromium page that imports each new module first was not run; ComfyUI imports every file of the node in its
+   own order), and `setChainTransport(mipsTransport)` now runs when `inpaint_jobs.js` evaluates (before the class when the
+   app enters through `inpaint_canvas.js`, after it when a new module is the entry; nothing reads the scheduler while
+   the class file evaluates, its only static initialiser is a number). `inpaint_canvas.js` exports its 22 names as
+   before (`uploadBlob` and `uploadCanvas` re-exported as imported bindings; the node's `host.js` and `inpaint_node.js`
+   keep working). `tools/build_node.py` FILES and the file table of `docs/BUILD_NODE.md` carry the three names (the
+   table also got the six older modules it lacked); ESLint with no-undef / no-import-assign / no-const-assign /
+   no-unused-vars over the four files: 0 errors and the original's 3 warnings (a later `++partsSeq` in the class would
+   pass `node --check` and throw at run time; only that lint sees it, the config is in the session's scratchpad, not
+   in the repo). **Still to check by hand** on a fresh tiles instance, no gate sets them: `mipsOnPool = false` and
+   `mipsOnSharedWorker = true` (a whole change must settle with `chainScheduler().failure` null), `pngParts = false`
+   (`parts.usable()` false, an upload goes the canvas way); `switch_check.py` in the session's scratchpad does it. **Gates:** tiles, `--offline`, `split1-tiles` (pixels editor composite commands shape brush film glb ailabel size transparent generate log
+   mcp nodecopy toapis llm export pxjobs): all PASS but `editor`, whose four full runs on the split tree failed at four
+   different timing-bound steps (the live stroke with its pointer message while the browser pane was in use;
+   `closed_tabs_are_collected` twice with the last two tabs alive, a step that passed 3 of 3 alone on both trees and in
+   the unchanged tree's full run; `helper_inputs_read_levels_and_upload_nothing` with one upload counted), every step
+   of the gate green on the split tree at least once (steps 60 to 65 in a run of their own). **Not yet run at this
+   checkpoint: the canvas backend (`--tiles off`) and the switch checks; a fifth editor run was in progress.** **Open for the user, the scope:** the design panel (three
+   partitions, three judges, four hazard hunts with two refuters per finding; all three partitions mechanically
+   equal: same glue, same cycle, all checks green) read the agreement's parenthesis as the whole list (this build,
+   "narrow"). The judges' 2:1 favourite is "whole-head": every loose function of the head, into six more leaf modules
+   with no new cycle, each rejectable on its own: `inpaint_dom.js` (makeCanvas, el, numberInput, selectInput, icon,
+   iconButton, miniButton, STYLE, injectStyle), `inpaint_images.js` (viewUrl, loadImageEl, snapImage, needImage, the
+   SVG helpers), `inpaint_stroke.js` (StrokeBuffer, STROKE_BAND), `inpaint_geometry.js` (clampRect, tileDiffBox,
+   homography, drawMesh, autoSelectionParams, ensureMinSpan), `inpaint_backends.js` (the segment / upsample / cutout /
+   object backend tables and their functions), `inpaint_hosts.js` (editorTileMode, hostText, isSettingOutput,
+   settingIndex, linkOf); with it `inpaint_encode.js` would also take canvasRows, hugePngSize, pngIsPlainSrgb,
+   pixelsFromPngStream, CRC_TABLE, crc32, asciiJson and pngWithText, and `inpaint_upload.js` UploadCache. The third
+   reading ("stage2-ready": the constants out too, into an `inpaint_common.js`) pre-empts the stage 2 decision and was
+   scored lowest. Whether the six leaf modules follow, and whether stage 2 comes at all, is the user's call. Kept as
+   it was, no tidying: the section title in `inpaint_jobs.js` still reads "PNG encoding, upload hashes and the layered
+   export writers" and names `js/inpaint_worker.js`; the class file's header comment (lines 1 to 13) is untouched.
 
 **Decision (b) of 7c is made (the user, 2026-09-18): exports and runs of a colour-matched layer may move.** They may
 take their statistics from tiles instead of from the whole flatten, with **point samples** (measured mean 0.56, max 8
 to 9 levels against the full-resolution statistics; not box means, which were 5.45 / p99 12 on a textured photo;
 `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). **B item 7 part 3 is built on it** (2026-09-18, item 10 above;
-CHANGELOG 0.1.19 says a matched layer's export can move by a few levels). **Next: the split of `inpaint_canvas.js`**
-(item 11): 0.1.18 is published and 0.1.19's state is committed and pushed, so nothing stands before it, unless the
-user names something else first.
+CHANGELOG 0.1.19 says a matched layer's export can move by a few levels). **Stage 1 of the split of
+`inpaint_canvas.js` is built** (item 11, 2026-09-18). **Next: the user's two decisions on the split** (the six leaf
+modules of the judges' favourite, and stage 2), and a release of 0.1.19 when the user says so (its CHANGELOG section
+is written). Nothing else stands before it, unless the user names something else first.
 
 **Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`
 are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,
@@ -269,6 +313,11 @@ Known flakes; **re-run before believing any of these**:
   ran a job; an A/B against the commit before in the same minute read 3.5 s. It is the card, not the code.
 - The `commands` primed-cells checks wait up to 3 s for the film panel's own settled flatten; a failure "primed cells were
   left behind" seen once without a mutation was that race.
+- The editor gate run alone on tiles takes about 370 s (120 s inside a full run). On 2026-09-18 (the split, stage 1)
+  four runs alone failed at four different timing-bound steps (the live stroke with the pointer message,
+  `closed_tabs_are_collected` twice with the last two tabs alive, `helper_inputs_read_levels_and_upload_nothing` with
+  one upload counted), while the unchanged tree passed once and `closed_tabs_are_collected` alone passed 3 of 3 on
+  both trees; not looked into further.
 
 ## Traps worth keeping
 
