@@ -12,10 +12,15 @@ the section for its version; `docs/` and the commit history hold the technical d
   of 6.4, with the window standing still for 0.08 seconds instead of 1.4; as PSD in 1.0 instead of 1.8; and a magic
   wand click across it takes 0.9 seconds instead of 2.5, the window standing still for 0.1 seconds instead of 1.1. A
   matched layer with a film look or another filter layer above it takes the fast way too; one with a filter layer
-  below it is saved as before. **A matched layer's colours in a saved or uploaded picture can move by a few levels**
-  against the previous versions: the statistics are now taken from samples of the picture instead of the whole
-  picture drawn small. Measured on four photos with a cut-out result layer matched at full strength: on average 0.1 to
-  2 levels, at most 7 on a textured landscape; on smooth pictures 1 to 2. What the screen shows is unchanged.
+  below it is saved as before. **A matched layer's colours can move by a few levels** against the previous versions
+  in a PNG, PSD or ORA export, in the picture a local ComfyUI run starts from, and under the magic wand and the
+  bucket: their statistics are now taken from samples of the picture instead of the whole picture drawn small.
+  Measured on four photos with a cut-out result layer matched at full strength: on average 0.1 to 2 levels, at most
+  7 on a textured landscape; on smooth pictures 1 to 2. A JPEG or WebP export, the picture an API provider is sent,
+  a merge into the base and what the screen shows are unchanged, so those can differ from a PNG of the same document
+  by the same few levels.
+- **`set_layer` with `match_source` "below" now matches against the pixels underneath the layer.** The value was
+  stored as it came and read as "surroundings", so an agent could not ask for the other source.
 
 ## 0.1.18 — 2026-09-18
 

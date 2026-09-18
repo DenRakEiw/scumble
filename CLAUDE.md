@@ -199,8 +199,11 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    layer: PNG 6.4 s to 1.8 s (block 1.45 s to 84 ms), PSD 1.8 to 1.0 s, wand 2.5 to 0.9 s. Against the whole
    flatten's statistics on four of the user's photos: mean 0.1 to 2.0 levels, max 7 (the textured landscape); with
    the same statistics the two paths are within 2 levels. Turned away still (the whole flatten as before): a matched
-   layer above a filter layer, `readBox` (a provider run's crop), the flatten into the base of a plain matched stack;
-   `InpaintEditor.stackMatch = false` is the A/B switch. A scaled or a fractional layer still saves the old way. Not done
+   layer above a filter layer, `readBox` (a provider run's crop), JPEG and WebP, the flatten into the base of a plain
+   matched stack; `InpaintEditor.stackMatch = false` is the A/B switch. A design review (three lenses, 12 confirmed
+   objections) made the grid integers, stamped the statistics with the clones' version, took the layer's own samples
+   over the picture's edge, and gave the job a byte-exact gate (`stack_points_gathers_the_samples_it_names`); the
+   same section, "After the design review". A scaled or a fractional layer still saves the old way. Not done
    in part 2: the longest block (0.15 s against the plan's 0.05), an asynchronous read, a mask folded into the alpha
    (a filter at an opacity through a mask is a level off on 18 % of the bytes). Each item is measured
    against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on

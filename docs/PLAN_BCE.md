@@ -4497,11 +4497,44 @@ not ("second mean 3.7, max 9"); a lower matched layer's parameters left out of t
 brush shape` (`b7p3-tiles`, the editor gate again as `b7p3-tiles-editor` after the 7a step's change), canvas `pixels
 editor composite commands film brush` (`b7p3-canvas`): ALL PASS.
 
+**After the design review** (three lenses, 31 objections, 12 confirmed against the code, each fixed or written down):
+- The grid is integers (`stackSamples`: `layer.x + floor(((2 (i − pad) + 1) w) / (2 sw))`, exact; a centre on a
+  pixel boundary takes the right or lower pixel). The float grid took either neighbour by the last ulp of `1 / fx`
+  for layers whose side is a multiple of 512 (25088, 47616, ... px: a few hundred samples each way).
+- The layer's own samples are taken wherever the layer is, over the picture's edge too (`matchStats` draws the whole
+  layer picture; the first version clamped its rows to the image); the stores below are sampled inside the image
+  only, as the flatten shows them (`stack_points` takes `image`).
+- The statistics are stamped with the clones' version, taken in `holdStack` before the clones and passed down: the
+  second matched layer's job runs after the first one's `await`, and a change in that window stamped v1 on
+  statistics of the v0 clones, which the retry of `encodeComposite` and the next wand click then took as current.
+- `bumpComposite`: a change inside a matched layer is its whole rectangle (its own statistics move with any of its
+  pixels, and its match with them), so the entries of matched layers above it are dropped (inherited: `_mstats` had
+  the same hole).
+- A failed statistics job releases the clones and answers null when the pool is gone (`partsFailed`): not this way,
+  the caller's whole flatten; any other failure is the caller's to see.
+- `set_layer` with `match_source` "below" stored the word and `statsOfMatch` read it as surroundings (the editor's
+  word is "underneath"); the command maps it now (`commands_test.py` checks the summary says underneath).
+- Gates: `export_test.py` `stack_points_gathers_the_samples_it_names` holds the job byte for byte against the tiles
+  read on the main thread (the integer grid, a striped layer through a half-transparent striped mask hanging over
+  the bottom edge, a lower matched layer in multiply at 70 % in the backdrop with its match, the same kernels in the
+  same order); the matched-layer step's second layer hangs over the right and bottom edges, and a provider run's
+  crop (`prepareCrop`, the whole flatten's statistics) stays within the statistics bound of the export's box.
+- Written down, not changed: the wand and the bucket flood the point-sample picture while the screen shows 7c's box
+  means, so on a textured matched layer the flooded colours are a few levels from the screen's and a tolerance edge
+  can move a hair (the coarse pass reads the screen's statistics, the fine floods the samples; one click is
+  consistent within itself); over a transparent base the straight bytes of nearly transparent matched pixels differ
+  between the two paths (the flatten matched a premultiplied canvas, up to 255/(2a) off at alpha a; the worker
+  matches the exact tile bytes), premultiplied within 2 levels: the measurement above is over an opaque backdrop.
+- Gates after it, offline: tiles `export editor commands pxjobs nodecopy` (`b7p3r-tiles`; the export gate again as
+  `b7p3r-tiles-export` after its crop check was changed to `readBox`), canvas `editor commands` (`b7p3r-canvas`):
+  ALL PASS. The second matched layer over the edges: mean 0.09, max 1 against the flatten; the crop: mean 0.32, max 2.
+
 **Not done**: `readBox` (a provider run's crop, a plugin's exact box) stays synchronous on the whole flatten
-(`compositeCanvas`, its statistics the flatten's); the flatten into the base (`encodeComposite` with `each`) of a plain
-matched stack keeps the whole flatten (the stack's rows never come back to this thread; with a filter layer it goes
-through the program); a matched layer above a filter layer; the screen's statistics are 7c's (box means of the levels)
-and unchanged; the gather is plain JS (65 k samples a layer, a few ms).
+(`compositeCanvas`, its statistics the flatten's), and so do the JPEG and WebP exports (`host.exportCanvas`); the
+flatten into the base (`encodeComposite` with `each`) of a plain matched stack keeps the whole flatten (the stack's
+rows never come back to this thread; with a filter layer it goes through the program); a matched layer above a
+filter layer; the screen's statistics are 7c's (box means of the levels) and unchanged; the gather is plain JS
+(65 k samples a layer, a few ms).
 
 **Decided by the user on 2026-09-17: A plus B, no C, no D.** The user works up to about 15k, so item 6 goes last. Build
 order: 4, 1, 2, 3, 5, 6.

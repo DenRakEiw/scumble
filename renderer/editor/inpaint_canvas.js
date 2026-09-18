@@ -5142,10 +5142,11 @@ class InpaintEditor {
      * (`stackMatches`, a pool job each), so the held stack is the picture of this moment, match included.
      */
     async holdStack(plan, { forRun = true, priority = EXPORT, group = null } = {}) {
+        const version = this.compositeVersion;   // the clones' version: their statistics are stamped with it, whatever moves while the jobs run
         const held = this.holdStackNow(plan, { forRun });
         if (!held) return null;
-        try { await this.stackMatches(held, { forRun, priority, group }); }
-        catch (err) { held.release(); throw err; }
+        try { await this.stackMatches(held, { forRun, priority, group, version }); }
+        catch (err) { held.release(); if (partsFailed(err)) return null; throw err; }
         return held;
     }
 
@@ -5184,12 +5185,12 @@ class InpaintEditor {
      * so a matched layer below is matched in the backdrop of the one above. Matched layers are only in the first run
      * of a program (`stackPlan` turns a match above a filter away).
      */
-    async stackMatches(held, { forRun = true, priority = EXPORT, group = null } = {}) {
+    async stackMatches(held, { forRun = true, priority = EXPORT, group = null, version = this.compositeVersion } = {}) {
         const stores = held.steps ? held.steps[0].stores : held.stores;
         for (let i = 1; i < stores.length; i++) {
             const s = stores[i];
             if (!s || !s.layer) continue;
-            s.match = await this.stackMatchOf(s, stores.slice(0, i), { forRun, priority, group });
+            s.match = await this.stackMatchOf(s, stores.slice(0, i), { forRun, priority, group, version });
         }
     }
 
@@ -5200,25 +5201,20 @@ class InpaintEditor {
      * pixel's centre, nearest), gathered and composited by a pool worker (`stack_points`), the statistics by the
      * unchanged `statsOfMatch`. Measured against the whole flatten's statistics on eight photos: mean 0.56, at most
      * 8 to 9 levels in the matched layer (box means of the mip levels were 5.45 mean on a textured photo, and are not
-     * used here). Kept per layer per change in `_mstatsStack` / `_mstatsStackRun`, forwarded like the sampled
-     * entries; the strength is read at use time, so a tick keeps the entry.
+     * used here). Kept per layer per change in `_mstatsStack` / `_mstatsStackRun` under the clones' `version` (a
+     * change while the jobs run must not stamp them with the picture after it), forwarded like the sampled entries;
+     * the strength is read at use time, so a tick keeps the entry.
      */
-    async stackMatchOf(store, below, { forRun = true, priority = EXPORT, group = null } = {}) {
+    async stackMatchOf(store, below, { forRun = true, priority = EXPORT, group = null, version = this.compositeVersion } = {}) {
         const layer = store.layer, m = layer.match || {};
         const k = Math.min(1, Math.max(0, (m.strength || 0) / 100));
         const key = JSON.stringify([m.source, layer.x, layer.y, layer.w, layer.h]);
         const slot = forRun ? "_mstatsStackRun" : "_mstatsStack";
         const c = layer[slot];
         let stats;
-        if (c && c.version === this.compositeVersion && c.key === key) stats = c.stats;
+        if (c && c.version === version && c.key === key) stats = c.stats;
         else {
-            const version = this.compositeVersion;
-            const g = this.matchGeometry(layer);
-            const grid = { x0: layer.x + (0.5 - g.pad) / g.fx, y0: layer.y + (0.5 - g.pad) / g.fy, dx: 1 / g.fx, dy: 1 / g.fy, nx: g.pw, ny: g.ph };
-            const a = Math.max(0, Math.floor(grid.y0)), b = Math.min(this.height, Math.floor(grid.y0 + (g.ph - 1) * grid.dy) + 1);
-            const own = stackArgs([null, { snap: store.snap, mask: store.mask, x: store.x, y: store.y, alpha: 255, op: 0 }])(a, b).layers[0] || null;
-            const r = await editorPool().run("stack_points", { grid, stack: stackArgs(below)(a, b), layer: own }, [], { priority, group });
-            const ld = new Uint8ClampedArray(r.lay), bd = new Uint8ClampedArray(r.bel);
+            const { g, ld, bd } = await this.stackSamples(store, below, { priority, group });
             const lay = makeCanvas(g.pw, g.ph);
             lay.getContext("2d", { willReadFrequently: true }).putImageData(new ImageData(ld, g.pw, g.ph), 0, 0);
             stats = this.statsOfMatch(layer, lay, ld, bd, g.pad);
@@ -5227,6 +5223,28 @@ class InpaintEditor {
         if (!stats || !(k > 0)) return null;
         const p = [...stats.meanS, ...stats.meanT, ...stats.scale, k];
         return p.every(Number.isFinite) ? p : null;
+    }
+
+    /**
+     * The point samples a matched layer's statistics are made from (`stackMatchOf`): `{ g, xs, ys, ld, bd }`, the
+     * geometry (`matchGeometry`), the image pixels of the grid, the layer's own samples through its mask (`ld`) and the
+     * composite of the held stores `below` at the same pixels (`bd`), `g.pw` × `g.ph` RGBA8 each. The grid is exact
+     * integers: sample i is the centre of picture pixel i, `layer.x + floor(((2 (i − pad) + 1) w) / (2 sw))`, nearest,
+     * a centre on a pixel boundary taking the right or lower pixel (a float grid took either neighbour by its last ulp
+     * for layers whose side is a multiple of 512). The layer's own rows are not clamped to the image (`matchStats`
+     * draws the whole layer picture); the stores below are sampled inside the image only, as the flatten shows them.
+     */
+    async stackSamples(store, below, { priority = EXPORT, group = null } = {}) {
+        const layer = store.layer;
+        const g = this.matchGeometry(layer);
+        const xs = new Int32Array(g.pw), ys = new Int32Array(g.ph);
+        for (let i = 0; i < g.pw; i++) xs[i] = layer.x + Math.floor(((2 * (i - g.pad) + 1) * layer.w) / (2 * g.sw));
+        for (let j = 0; j < g.ph; j++) ys[j] = layer.y + Math.floor(((2 * (j - g.pad) + 1) * layer.h) / (2 * g.sh));
+        const a = ys[0], b = ys[g.ph - 1] + 1;
+        const own = stackArgs([null, { snap: store.snap, mask: store.mask, x: store.x, y: store.y, alpha: 255, op: 0 }])(a, b).layers[0] || null;
+        const stack = stackArgs(below)(Math.max(0, a), Math.min(this.height, b));
+        const r = await editorPool().run("stack_points", { xs: xs.buffer, ys: ys.buffer, image: [this.width, this.height], stack, layer: own }, [], { priority, group });
+        return { g, xs, ys, ld: new Uint8ClampedArray(r.lay), bd: new Uint8ClampedArray(r.bel) };
     }
 
     /** The rows of a band of a held program (`holdStack`), so that a band with its margins stays a texture of 24 MP: whole tiles, 256 to 2,048. Zero when the GPU cannot take the picture's width. */
@@ -8122,7 +8140,8 @@ class InpaintEditor {
         const v1 = this.compositeVersion;
         if (v1 === v0) return;
         const i = this.layers.indexOf(layer);
-        const b = box || [layer.x, layer.y, layer.x + layer.w, layer.y + layer.h];
+        // a matched layer's own statistics move with any change of its pixels, and its match with them: its whole rectangle is the change
+        const b = box && !this.matchActive(layer) ? box : [layer.x, layer.y, layer.x + layer.w, layer.y + layer.h];
         for (let j = 0; j < this.layers.length; j++) {
             const l = this.layers[j];
             if (l === layer || !this.matchActive(l)) continue;

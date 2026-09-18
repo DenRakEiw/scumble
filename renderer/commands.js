@@ -609,7 +609,8 @@ const COMMANDS = {
                 if (l.kind === "filter") throw new Error("filter layers have no colour match");
                 l.match = l.match || { strength: 0, source: "surroundings" };
                 if (a.match != null) { const m = +a.match; l.match.strength = Math.min(100, Math.max(0, Math.round(m > 0 && m < 1 ? m * 100 : m))); }
-                if (a.match_source != null) { if (!["surroundings", "below"].includes(a.match_source)) throw new Error("match_source must be surroundings or below"); l.match.source = a.match_source; }
+                // the editor calls the pixels under the layer "underneath"; "below" was stored as it came and read as surroundings
+                if (a.match_source != null) { if (!["surroundings", "below", "underneath"].includes(a.match_source)) throw new Error("match_source must be surroundings or below"); l.match.source = a.match_source === "surroundings" ? "surroundings" : "underneath"; }
                 ed.markMatchChanged(l);
             }
             const geo = ["x", "y", "w", "h"].some((k) => a[k] != null) || a.width != null || a.height != null;

@@ -323,6 +323,7 @@ const inBox = (a, b) => {   // the differences on the matched layer's box: mean,
 const outside = (a, b) => { let worst = 0; for (let y = 0; y < H; y += 7) for (let x = 0; x < W; x += 5) { if (x >= box[0] && x < box[2] && y >= box[1] && y < box[3]) continue; const i = (y * W + x) * 4; for (let c = 0; c < 4; c++) worst = Math.max(worst, Math.abs(a[i + c] - b[i + c])); } return worst; };
 const flatten = async () => { const flat = ed.flattenToCanvas({ forRun: true }); const old = await E.parts.encodeCanvas(flat, { hash: false }); flat.width = 1; flat.height = 1; return (await decode(old.blob)).data; };
 const out = {};
+try {
 // unmatched, to prove the match is in the picture
 const plain = (await decode((await ed.encodeComposite({ forRun: true }, { hash: false })).blob)).data;
 for (const [source, strength] of [["surroundings", 60], ["underneath", 100]]) {
@@ -351,6 +352,17 @@ for (const [source, strength] of [["surroundings", 60], ["underneath", 100]]) {
     l._mstatsStackRun = null;
     d.sameStats = inBox(same, b);
     if (d.sameStats.max > 3) throw new Error(source + ": with the flatten's statistics the worker path is " + d.sameStats.max + " levels off the flatten: " + JSON.stringify(d.sameStats));
+    if (source === "surroundings") {
+        // a provider run's crop reads its box through `readBox` (the whole flatten's statistics): within the statistics bound of the export's box
+        const [cx0, cy0, cw, ch] = [2000, 1400, 800, 600];
+        const rb = ed.readBox([cx0, cy0, cx0 + cw, cy0 + ch], { forRun: true });
+        if (rb.width !== cw || rb.height !== ch) throw new Error("readBox gave " + rb.width + " x " + rb.height);
+        const crop = rb.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, cw, ch).data;
+        let cn = 0, csum = 0, cmax = 0;
+        for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const i = (y * cw + x) * 4, j = ((cy0 + y) * W + cx0 + x) * 4; for (let c = 0; c < 3; c++) { const e = Math.abs(crop[i + c] - a[j + c]); csum += e; cn++; if (e > cmax) cmax = e; } }
+        d.crop = { mean: +(csum / cn).toFixed(3), max: cmax };
+        if (cmax > 16 || csum / cn > 2) throw new Error("a run's crop of the matched document is far from the export: " + JSON.stringify(d.crop));
+    }
     out[source] = d;
     // point samples against the flatten's statistics: a few levels on a smooth picture (the photos measured mean 0.56, max 9)
     if (d.mean > 2 || d.p99 > 8 || d.max > 16 || d.outside > 2) throw new Error(source + ": the matched layer moved too far from the whole flatten: " + JSON.stringify(d));
@@ -360,7 +372,8 @@ for (const [source, strength] of [["surroundings", 60], ["underneath", 100]]) {
     const c = document.createElement("canvas"); c.width = 900; c.height = 600;
     const x = c.getContext("2d"); x.fillStyle = "hsl(120,60%,50%)"; x.fillRect(0, 0, 900, 600);
     for (let k = 0; k < 12; k++) { x.fillStyle = `hsla(${k * 31},70%,60%,0.6)`; x.fillRect((k * 211) % 900, (k * 137) % 600, 120, 90); }
-    const l2 = ed.addLayer({ name: "Second", kind: "result", px: ed.pixels.Layer.fromCanvas(c), x: 2200, y: 1500, w: 900, h: 600, dirty: true });
+    // over the picture's right and bottom edges: its own samples outside the picture count, as the flatten's do
+    const l2 = ed.addLayer({ name: "Second", kind: "result", px: ed.pixels.Layer.fromCanvas(c), x: 5400, y: 3700, w: 900, h: 600, dirty: true });
     await run("move_layer", { doc: window.__ex, layer: l2.id, delta: -1 });   // below the filter layer
     l2.match = { strength: 100, source: "surroundings" };
     ed.markMatchChanged(l2);
@@ -374,7 +387,7 @@ for (const [source, strength] of [["surroundings", 60], ["underneath", 100]]) {
     const a = (await decode(r.blob)).data, b = await flatten();
     const d2 = inBox(a, b);
     let n = 0, sum = 0, max = 0;
-    for (let y = 1500; y < 2100; y++) for (let x = 2200; x < 3100; x++) { const i = (y * W + x) * 4; for (let c = 0; c < 3; c++) { const e = Math.abs(a[i + c] - b[i + c]); sum += e; n++; if (e > max) max = e; } }
+    for (let y = 3700; y < H; y++) for (let x = 5400; x < W; x++) { const i = (y * W + x) * 4; for (let c = 0; c < 3; c++) { const e = Math.abs(a[i + c] - b[i + c]); sum += e; n++; if (e > max) max = e; } }
     out.second = { first: d2, second: { mean: +(sum / n).toFixed(3), max } };
     if (d2.max > 16 || max > 16 || sum / n > 2) throw new Error("two matched layers moved too far from the whole flatten: " + JSON.stringify(out.second));
     ed.removeLayer(l2.id);
@@ -407,9 +420,94 @@ E.stackMatch = false;
 let off;
 try { off = ed.stackPlan({ forRun: true, filters: true }); } finally { E.stackMatch = true; }
 if (off) throw new Error("stackMatch = false still gave a plan");
-l.match = { strength: 0, source: "surroundings" };
-ed.markMatchChanged(l);
+} finally {
+    // the steps after this one expect the document as it was: unmatched, the filter on top, nothing selected
+    l.match = { strength: 0, source: "surroundings" };
+    ed.markMatchChanged(l);
+    fx.visible = true;
+    if (ed.layers.indexOf(fx) !== ed.layers.length - 1) await run("move_layer", { doc: window.__ex, layer: fx.id, to: "top" });
+    for (const x of ed.layers.filter((y) => y.name === "Second")) ed.removeLayer(x.id);
+    ed.renderLayers();
+    await run("select_none", { doc: window.__ex });
+}
 if (ed.layers.indexOf(fx) !== ed.layers.length - 1) throw new Error("the filter layer is not back on top: " + ed.layers.map((x) => x.name));
+return out;
+"""),
+    ("stack_points_gathers_the_samples_it_names", """
+// B item 7 part 3: the samples a matched layer's statistics are made from (`stackSamples`, worker job `stack_points`),
+// byte for byte against the tiles read here: the integer grid, the layer's own samples through its mask (hanging over
+// the picture's bottom edge: those count, as the flatten's statistics count the whole layer), and the composite below
+// with a lower matched layer's match in it, in multiply at 70 % (the same kernels on this thread, in the same order).
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const K = await import("./editor/px/kernels.js");
+const W = 1400, H = 700;
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const base = mk(W, H), bx = base.getContext("2d");
+const g = bx.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#c04020"); g.addColorStop(1, "#2040c0"); bx.fillStyle = g; bx.fillRect(0, 0, W, H);
+Object.defineProperty(base, "naturalWidth", { value: W }); Object.defineProperty(base, "naturalHeight", { value: H });
+await ed.setBase({ filename: "stack_points.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+const L = ed.pixels.Layer, M = ed.pixels.Mask;
+const lc = mk(700, 400), lx = lc.getContext("2d");
+for (let y = 0; y < 400; y++) { lx.fillStyle = `rgba(${(y * 7) % 256},${(y * 3) % 256},${200 - (y % 100)},${0.3 + (y % 5) * 0.14})`; lx.fillRect(0, y, 700, 1); }
+const lower = ed.addLayer({ name: "Lower", kind: "result", px: L.fromCanvas(lc), x: 300, y: 150, w: 700, h: 400, dirty: true });
+lower.blend = "multiply"; lower.opacity = 0.7; lower.match = { strength: 100, source: "surroundings" };
+const uc = mk(1000, 300), ux = uc.getContext("2d");
+for (let x = 0; x < 1000; x++) { ux.fillStyle = `rgb(${(x * 13) % 256},${(x * 29) % 256},${(x * 7) % 256})`; ux.fillRect(x, 0, 1, 300); }
+ux.clearRect(0, 100, 1000, 20);
+const mc = mk(1000, 300), mx = mc.getContext("2d");
+for (let y = 0; y < 300; y += 2) { mx.fillStyle = `rgba(255,255,255,${(y % 3) === 0 ? 1 : 0.5})`; mx.fillRect(0, y, 1000, 1); }
+const upper = ed.addLayer({ name: "Upper", kind: "result", px: L.fromCanvas(uc), x: 200, y: 500, w: 1000, h: 300, dirty: true });
+upper.maskPx = M.fromCanvas(mc); upper.maskDirty = true;
+upper.match = { strength: 100, source: "underneath" };
+ed.renderLayers(); ed.draw();
+await ed.mipsSettled();
+const plan = ed.stackPlan({ forRun: true });
+if (!plan || plan.length !== 3 || plan[1].match !== lower || plan[2].match !== upper) throw new Error("the plan is " + JSON.stringify(plan && plan.map((s) => (s.match ? "m" : "l"))));
+const held = await ed.holdStack(plan, { forRun: true });
+let out;
+try {
+    if (!held.stores[1].match || !held.stores[2].match) throw new Error("a matched layer got no parameters: " + JSON.stringify([!!held.stores[1].match, !!held.stores[2].match]));
+    const s = await ed.stackSamples(held.stores[2], held.stores.slice(0, 2), {});
+    const { g: geo, xs, ys, ld, bd } = s;
+    let gridOk = xs.length === geo.pw && ys.length === geo.ph;
+    for (let i = 0; i < geo.pw && gridOk; i++) if (xs[i] !== upper.x + Math.floor(((2 * (i - geo.pad) + 1) * upper.w) / (2 * geo.sw))) gridOk = false;
+    for (let j = 0; j < geo.ph && gridOk; j++) if (ys[j] !== upper.y + Math.floor(((2 * (j - geo.pad) + 1) * upper.h) / (2 * geo.sh))) gridOk = false;
+    if (!gridOk) throw new Error("the grid is not the integer grid: " + JSON.stringify({ pw: geo.pw, ph: geo.ph, pad: geo.pad, x0: xs[0], y0: ys[0] }));
+    const n = geo.pw * geo.ph;
+    const at = (x0, y0, w, h, X, Y) => { const i = X - x0, j = Y - y0; return i >= 0 && j >= 0 && i < w && j < h ? (j * w + i) * 4 : -1; };
+    const baseD = ed.basePx.readRect(0, 0, W, H).data, lowD = lower.px.readRect(0, 0, 700, 400).data, upD = upper.px.readRect(0, 0, 1000, 300).data, mD = upper.maskPx.readRect(0, 0, 1000, 300).data;
+    const bel = new Uint8Array(n * 4), low = new Uint8Array(n * 4), lay = new Uint8Array(n * 4);
+    let outside = 0, masked = 0;
+    for (let j = 0; j < geo.ph; j++) for (let i = 0; i < geo.pw; i++) {
+        const X = xs[i], Y = ys[j], o = (j * geo.pw + i) * 4;
+        const inImage = X >= 0 && Y >= 0 && X < W && Y < H;
+        let k = inImage ? at(0, 0, W, H, X, Y) : -1;
+        if (k >= 0) { bel[o] = baseD[k]; bel[o + 1] = baseD[k + 1]; bel[o + 2] = baseD[k + 2]; bel[o + 3] = baseD[k + 3]; }
+        k = inImage ? at(300, 150, 700, 400, X, Y) : -1;
+        if (k >= 0) { low[o] = lowD[k]; low[o + 1] = lowD[k + 1]; low[o + 2] = lowD[k + 2]; low[o + 3] = lowD[k + 3]; }
+        k = at(200, 500, 1000, 300, X, Y);
+        if (k >= 0) { lay[o] = upD[k]; lay[o + 1] = upD[k + 1]; lay[o + 2] = upD[k + 2]; const t = upD[k + 3] * mD[k + 3] + 128; lay[o + 3] = (t + (t >> 8)) >> 8; if (Y >= H && lay[o + 3]) outside++; if (mD[k + 3] && mD[k + 3] < 255) masked++; }
+    }
+    const lowPlain = low.slice();
+    K.matchPixels(low, held.stores[1].match);
+    K.compositeTile(bel, [low], [K.OPS.multiply], [Math.round(0.7 * 255)], [null]);
+    const eq = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return i; return -1; };
+    const dl = eq(lay, ld), db = eq(bel, bd);
+    if (!(outside > 100) || !(masked > 100)) throw new Error("the layer's samples below the picture's edge or through the half mask were not seen: " + JSON.stringify({ outside, masked }));
+    if (dl >= 0) throw new Error("the layer's samples differ from the tiles at byte " + dl + ": " + [lay[dl], ld[dl]]);
+    if (db >= 0) throw new Error("the composite below differs from the tiles at byte " + db + ": " + [bel[db], bd[db]]);
+    // the lower layer's match is in the backdrop: composited unmatched, many bytes differ
+    const belPlain = new Uint8Array(n * 4);
+    for (let j = 0; j < geo.ph; j++) for (let i = 0; i < geo.pw; i++) { const X = xs[i], Y = ys[j], o = (j * geo.pw + i) * 4; const k = X >= 0 && Y >= 0 && X < W && Y < H ? (Y * W + X) * 4 : -1; if (k >= 0) { belPlain[o] = baseD[k]; belPlain[o + 1] = baseD[k + 1]; belPlain[o + 2] = baseD[k + 2]; belPlain[o + 3] = baseD[k + 3]; } }
+    K.compositeTile(belPlain, [lowPlain], [K.OPS.multiply], [Math.round(0.7 * 255)], [null]);
+    let differ = 0;
+    for (let i = 0; i < n * 4; i++) if (Math.abs(belPlain[i] - bd[i]) > 2) differ++;
+    if (differ < n / 20) throw new Error("the lower layer's match is not in the backdrop samples (" + differ + " bytes differ from the unmatched composite)");
+    out = { grid: [geo.pw, geo.ph], pad: geo.pad, outside, masked, lowerMatchDiffers: differ };
+} finally { held.release(); }
+await run("close_document", { doc: d.id, force: true });
 return out;
 """),
     ("a_run_reads_its_box_and_a_window_of_the_selection", """

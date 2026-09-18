@@ -252,14 +252,16 @@ async function stackInto(msg) {
 
 /**
  * The samples of one store at the image pixels `xs` x `ys` (a grid), into `out`: RGBA8, or with `alphaOnly` one byte a
- * pixel. A sample outside the store, or on a tile it does not have, stays as it is. False when nothing was read.
+ * pixel. A sample outside the store, on a tile it does not have, or (with `clip`, the image's size) outside the image,
+ * stays as it is. False when nothing was read.
  */
-function gatherStore(store, xs, ys, out, alphaOnly = false) {
+function gatherStore(store, xs, ys, out, alphaOnly = false, clip = null) {
     const sx = store.x | 0, sy = store.y | 0, nx = xs.length, ny = ys.length;
     let any = false;
     for (let j = 0; j < ny; j++) {
         const Y = ys[j] - sy;
         if (Y < 0 || Y >= store.h) continue;
+        if (clip && (ys[j] < 0 || ys[j] >= clip.h)) continue;
         const names = store.tiles[Y >> 8];
         if (!names) continue;
         const ro = (Y & (TILE - 1)) * TILE;
@@ -267,6 +269,7 @@ function gatherStore(store, xs, ys, out, alphaOnly = false) {
         for (let i = 0; i < nx; i++) {
             const X = xs[i] - sx;
             if (X < 0 || X >= store.w) continue;
+            if (clip && (xs[i] < 0 || xs[i] >= clip.w)) continue;
             const t = names[X >> 8];
             if (!t) continue;
             if (t !== last) { bytes = tileBytes(t).bytes; last = t; }
@@ -280,29 +283,28 @@ function gatherStore(store, xs, ys, out, alphaOnly = false) {
 }
 
 /**
- * Point samples of a stack for a layer's colour-match statistics (B item 7 part 3): `grid` { x0, y0, dx, dy, nx, ny }
- * names the image pixels (floor(x0 + i·dx), floor(y0 + j·dy)); `stack` is `rowsOfStack`'s, the layers below the
- * matched one with their own `match` where they have one; `layer` the matched layer's store with its `mask`, or
- * null. Answers `{ bel, lay }`, nx × ny RGBA8 each, transferred: the composite below at the samples, and the layer's
- * own samples with its mask folded into the alpha. A sample outside the image or a store is transparent. The
- * composite is pointwise, so the composite of the samples is the samples of the composite.
+ * Point samples of a stack for a layer's colour-match statistics (B item 7 part 3): `xs` and `ys` (Int32 buffers)
+ * name the image pixels of the grid; `stack` is `rowsOfStack`'s, the layers below the matched one with their own
+ * `match` where they have one, sampled inside the image only (`image`: its size; the flatten shows nothing outside
+ * it); `layer` the matched layer's store with its `mask`, or null, sampled wherever it is (the flatten's statistics
+ * take the whole layer picture). Answers `{ bel, lay }`, nx × ny RGBA8 each, transferred: the composite below at the
+ * samples, and the layer's own samples with its mask folded into the alpha. A sample outside a store is transparent.
+ * The composite is pointwise, so the composite of the samples is the samples of the composite.
  */
 async function stackPoints(msg) {
     const t0 = now();
-    const { x0, y0, dx, dy, nx, ny } = msg.grid, n = nx * ny;
-    const xs = new Int32Array(nx), ys = new Int32Array(ny);
-    for (let i = 0; i < nx; i++) xs[i] = Math.floor(x0 + i * dx);
-    for (let j = 0; j < ny; j++) ys[j] = Math.floor(y0 + j * dy);
+    const xs = new Int32Array(msg.xs), ys = new Int32Array(msg.ys), nx = xs.length, ny = ys.length, n = nx * ny;
+    const clip = msg.image ? { w: msg.image[0], h: msg.image[1] } : null;
     const st = msg.stack, bel = new Uint8Array(n * 4);
-    if (st.base) gatherStore(st.base, xs, ys, bel);
+    if (st.base) gatherStore(st.base, xs, ys, bel, false, clip);
     const srcs = [], alphas = [], masks = [], ops = [];
     for (const l of st.layers) {
         if (l.sab) continue;   // a filtered band cannot be sampled (a matched layer above a filter takes the region pass)
         const src = new Uint8Array(n * 4);
-        if (!gatherStore(l, xs, ys, src)) continue;
+        if (!gatherStore(l, xs, ys, src, false, clip)) continue;
         if (l.match) matchPixels(src, l.match);
         let mask = null;
-        if (l.mask) { mask = new Uint8Array(n); gatherStore({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, xs, ys, mask, true); }
+        if (l.mask) { mask = new Uint8Array(n); gatherStore({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, xs, ys, mask, true, clip); }
         srcs.push(src); alphas.push(l.alpha); masks.push(mask); ops.push(l.op | 0);
     }
     if (srcs.length) compositeTile(bel, srcs, ops, alphas, masks);

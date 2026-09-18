@@ -123,6 +123,10 @@ const t2 = await c("set_text", { layer: "Title", text: "Plugins", bold: true });
 if (t2.text.content !== "Plugins") throw new Error("set_text");
 const moved = await c("set_layer", { layer: "Title", x: 60, y: 70, opacity: 0.8 });
 if (moved.x !== 60 || moved.opacity !== 0.8) throw new Error("set_layer: " + JSON.stringify(moved));
+// match_source "below" is the editor's "underneath" (it was stored as it came and read as surroundings)
+const matched = await c("set_layer", { layer: "Title", match: 50, match_source: "below" });
+if (!matched.match || matched.match.strength !== 50 || matched.match.source !== "underneath") throw new Error("set_layer match_source below: " + JSON.stringify(matched.match));
+await c("set_layer", { layer: "Title", match: 0, match_source: "surroundings" });
 const dup = await c("duplicate_layer", { layer: "Title" });
 const mv = await c("move_layer", { layer: dup.id, to: "bottom" });
 if (mv.index !== 0) throw new Error("move_layer: " + JSON.stringify(mv));

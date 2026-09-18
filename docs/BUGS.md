@@ -72,6 +72,9 @@ measured and not met, and what still needs a canvas of the picture. Each has a n
   provider run's crop (`readBox`) and the flatten into the base of a plain matched stack. Since B item 7 part 3
   (2026-09-18, decision (b) of C6 (c) 7c made) every other matched document takes the worker path, its statistics
   point samples of the tiles. Above 268 MP the bands use the statistics the screen uses, the only ones there are.
+  So do the JPEG and WebP exports (`host.exportCanvas`). The screen keeps 7c's box means: on a textured matched
+  layer a PNG differs from a JPEG of the same document, and the wand's edge from what the screen shows, by the few
+  levels the two statistics are apart (`docs/PLAN_BCE.md` §3b "B item 7, part 3 as built", the photo table).
 - **Seen once, not reproduced**: `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed with
   `requested: 0` in one of some twenty runs since the mip chains go through the pool.
 
