@@ -236,15 +236,20 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    table also got the six older modules it lacked); ESLint with no-undef / no-import-assign / no-const-assign /
    no-unused-vars over the four files: 0 errors and the original's 3 warnings (a later `++partsSeq` in the class would
    pass `node --check` and throw at run time; only that lint sees it, the config is in the session's scratchpad, not
-   in the repo). **Still to check by hand** on a fresh tiles instance, no gate sets them: `mipsOnPool = false` and
-   `mipsOnSharedWorker = true` (a whole change must settle with `chainScheduler().failure` null), `pngParts = false`
-   (`parts.usable()` false, an upload goes the canvas way); `switch_check.py` in the session's scratchpad does it. **Gates:** tiles, `--offline`, `split1-tiles` (pixels editor composite commands shape brush film glb ailabel size transparent generate log
+   in the repo). The three switches no gate sets were checked by hand on a fresh tiles instance (`switch_check.py` in the
+   session's scratchpad): the transport is `mipsTransport` with `flights` = `poolSize()` (8) and `arena` true;
+   `mipsOnPool = false` and `mipsOnSharedWorker = true` each settle a whole change with `chainScheduler().failure`
+   null and `arena` false / back to true; `pngParts = false` makes `parts.usable()` false and an upload of a layer
+   still lands in the mirror (the canvas way), true again afterwards. **Gates:** tiles, `--offline`, `split1-tiles` (pixels editor composite commands shape brush film glb ailabel size transparent generate log
    mcp nodecopy toapis llm export pxjobs): all PASS but `editor`, whose four full runs on the split tree failed at four
    different timing-bound steps (the live stroke with its pointer message while the browser pane was in use;
    `closed_tabs_are_collected` twice with the last two tabs alive, a step that passed 3 of 3 alone on both trees and in
    the unchanged tree's full run; `helper_inputs_read_levels_and_upload_nothing` with one upload counted), every step
-   of the gate green on the split tree at least once (steps 60 to 65 in a run of their own). **Not yet run at this
-   checkpoint: the canvas backend (`--tiles off`) and the switch checks; a fifth editor run was in progress.** **Open for the user, the scope:** the design panel (three
+   of the gate green on the split tree at least once (steps 60 to 65 in a run of their own); **the fifth run,
+   `split1-tiles-editor5`, PASS in full** (65 steps, 120 s). Canvas backend, `--offline --tiles off`, `split1-canvas`
+   (the same list without pxjobs, which needs tiles): ALL PASS (19 gates, the editor gate in full at the first try). The checkpoint commit before this one
+   (`1d5ce8e`) was made on the user's word while the gates ran; its message says a Chromium page check was run, which
+   it was not (only the Node runs; this paragraph is right). **Open for the user, the scope:** the design panel (three
    partitions, three judges, four hazard hunts with two refuters per finding; all three partitions mechanically
    equal: same glue, same cycle, all checks green) read the agreement's parenthesis as the whole list (this build,
    "narrow"). The judges' 2:1 favourite is "whole-head": every loose function of the head, into six more leaf modules
