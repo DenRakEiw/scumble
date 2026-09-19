@@ -184,6 +184,31 @@ LUT filter layer). Film names may be used referentially with the disclaimer (see
 windowless mode, docs. Landed 2026-09-09 (`docs/MCP.md`): `Scumble --mcp` drives the running
 instance over a local socket or starts the app headless, `--headless`, `--cmd`.
 
+**Phase 4d, the assistant (a little under five weeks for its one release, about five with
+the two optional steps), planned 2026-09-18, revised 2026-09-19, not built**
+(`docs/PLAN_ASSISTANT.md`, its steps A0 to A9, with A10 and A11 optional)**:** a collapsible
+chat column beside the canvas. The user writes in it, and a language model acts on the open
+documents through the same MCP tools that `Scumble --mcp` gives external agents (phase 4c),
+less six it has no use for. The MCP server stays primarily for external agents and changes
+nothing for the assistant's sake. The loop runs in the main process with the user's own key
+and streams every answer, on four API families: Anthropic Messages, OpenAI Responses,
+Gemini, and Chat Completions for OpenRouter, DeepSeek, Kimi, GLM, ToAPIs, WaveSpeed and
+local servers; the app stays no model host (§1). The user picks a provider that is ready
+(its key stored; a local server needs only its URL) and one of a curated list of vision
+models. Each provider's notice says where the pictures go as far as its own terms say, and
+says so where they name no region; through OpenRouter no host in China is used, and none
+that trains on the data. The assistant reaches the editor only through an in-process MCP
+client against the app's own server. A policy table asks before every paid or ComfyUI run,
+before anything that discards work, before reading or writing a file, and before global
+settings; its leading use is inpainting regions on layers of their own and colour-matching
+them. Chats are saved on disk, and Settings has a reset that deletes them with everything
+else the assistant stored but the keys. Every step is one step on the undo stack (where a
+command records none, such as an added layer or a colour match, the shell pushes the
+editor's own step kind before the assistant's call), and "Undo this turn" takes a whole turn
+back on tiles, the one part that touches `renderer/editor/`; the panel lives in the shell. A
+go/no-go check with real keys on several models comes before the UI. It comes last in the
+work order and ships as a release of its own.
+
 **Phase 5, release (1 week):** auto-update through GitHub Releases (landed 2026-09-09:
 `electron/main/updater.js`, Settings > Updates, Help > Check for updates, the build
 workflow `.github/workflows/build.yml` publishes a draft release on a `v*` tag), licence

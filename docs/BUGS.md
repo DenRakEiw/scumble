@@ -19,6 +19,41 @@ Nothing at the moment.
 
 ## Open
 
+### What planning the assistant found on the way
+
+**Written** 2026-09-19 while planning the in-app assistant (`docs/PLAN_ASSISTANT.md`). Found by reading
+the code and checked line by line, not reported and not run; none is fixed. The user decided on 2026-09-19
+that the assistant changes nothing external agents see ("nein, soll primär für externe agenten sein, in app
+agent ist nur add on"), so the assistant's plan does not fix them; each is its own item when the user says so.
+
+- **`flip_layer` axis x flips vertically.** The command passes `"x"` / `"y"` (`renderer/commands.js:652`),
+  `flipLayer` mirrors horizontally only for `"h"` and vertically for anything else
+  (`renderer/editor/inpaint_canvas.js:3496`, `:3502`), so both axes flip vertically, against the command's
+  own description ("horizontally (axis x)"). The toolbar buttons pass `"h"` / `"v"` (`:2193-2194`) and work.
+  The fix is one line in `commands.js` (outside the node build); external agents that compensated would get
+  the other flip.
+- **`remove_layer` reports success on a locked layer.** `removeLayer` only sets the status line for a locked
+  layer and returns (`inpaint_canvas.js:9479`); the command returns `{removed: id}` regardless
+  (`commands.js:636`). The built-in plugins call the same command (ailabel's Add / Remove label,
+  `plugins/ailabel/main.js:101`, `:111`; glb's Edit dropping a depth layer, `plugins/glb/main.js:117`).
+  `flip_layer` and `center_layer` are silent no-ops on locked or filter layers in the same way.
+- **The compat key goes to any URL `llm:models` is given.** `compatModels(url)` sends `keys.get("compat")`
+  as a Bearer token to whatever base it is called with (`electron/main/llm.js:73-78`, IPC `llm:models` at
+  `electron/main/main.js:459`); the renderer, a plugin included, can call it with any URL. The key is meant
+  for the saved `settings.llm.compat.url` only.
+- **The MCP annotations are incomplete.** `READ_ONLY` (`electron/main/mcp/server.js:31`) is tested against
+  dotted command names and misses `read_log`, `film.looks`, `glb.info`, `ailabel.info` and
+  `sample.mean_color`; its `describe` alternative matches no command. `destructiveHint` (`:63`) misses
+  `generate_new`, `flatten`, `merge_down`, `extend_canvas`, `export*` (silent overwrite), `undo`, `redo`,
+  `select_recipe`, `set_node_params` and `ailabel.add`, and marks `new_document`, which destroys nothing.
+  External MCP clients that gate on these hints get the wrong picture.
+- **Ctrl+Enter starts a second provider run while one is running.** `generate()` disables the button for the
+  length of `host.queueGenerate` (`inpaint_canvas.js:12043`, `:12054`), but the shortcut calls `generate()`
+  directly (`:2788`) and nothing checks `providerPending`; `runProvider` then replaces the token
+  (`renderer/editor/host.js:858`). **Not known:** whether the first run's result still lands, and whether a
+  second run is ever wanted (local runs queue on ComfyUI on purpose). An editor change, so it ships to the
+  node.
+
 ### What phase N1 found on the way
 
 **Written** 2026-09-17 with the measurement of phase N (`docs/PERFORMANCE.md` §14, `tools/native_test.py`,

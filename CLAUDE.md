@@ -298,6 +298,58 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    against the live API before anything ships:** which image models OpenRouter serves at the time (Gemini image,
    gpt-image, Flux), whether an input picture reaches them as an edit, the size and count limits, and the shape of an
    image answer; the docs may have moved since this was written.
+13. **The assistant, a chat agent that drives Scumble over MCP (asked for by the user on 2026-09-18, planned that day
+   and revised on 2026-09-19 after the user's answers; not built: about twenty-three and a half working days for its
+   one release, twenty-four and a half with the two optional steps).** The plan is `docs/PLAN_ASSISTANT.md`; every
+   point of its §8 is decided (2026-09-19). It comes last in the order below, after SignPath, and ships as a release
+   of its own. The MCP server stays primarily for external agents: the assistant changes no command, parameter,
+   annotation or `INSTRUCTIONS` line (splitting `createServer` out of `serve()` is internal, its tool list proven
+   byte-equal), and the four defects its planning found (`remove_layer` on a locked layer, `flip_layer`'s axis, the
+   `llm:models` compat key, the annotations) are filed in `docs/BUGS.md`, not fixed by it. A collapsible chat column
+   right of `#editor-host` (`<dialog id="assistant">` shown with `show()`, open state remembered; shell only); the
+   loop in main (`electron/main/assistant/`) with raw `fetch`, every call streamed, four adapters: Anthropic Messages,
+   OpenAI Responses (`store:false`), Gemini `generateContent`, and Chat Completions for OpenRouter (item 12's key
+   row), DeepSeek, Moonshot (Kimi) and Z.ai (GLM) (three new key rows), ToAPIs, WaveSpeed and the local compat
+   endpoint. A picker grouped by provider, only ready providers selectable (a stored key; for the local server, which
+   needs none, a saved URL), curated vision models (Claude Sonnet 5, the default, and Opus 5; GPT-5.6 Terra, Sol and
+   Luna; Gemini 3.8 Flash, 3.1 Pro preview and 3.5 Flash-Lite; DeepSeek V4.1 Flash; Kimi K3 and K2.6; GLM-5.3-Flash
+   and FlashX) plus a free OpenRouter id checked against its live list; a privacy notice per provider saying where the
+   pictures go as far as its own terms say (the US, Singapore or the PRC, "any region" for Anthropic's inference and
+   for Google, "not stated" for OpenAI's default region, Z.ai's GLM-5.3-Flash cluster and, until their terms are read,
+   ToAPIs and WaveSpeed). Through OpenRouter the pictures go on to a host it picks: Scumble sends
+   `data_collection: "deny"` (hosts that train are excluded, hosts that keep the data are not) and `provider.ignore`
+   with every host OpenRouter lists in China, because on 2026-09-19 StreamLake, Baidu and Alibaba served the curated
+   GLM, Kimi and DeepSeek models. It reaches the editor only through an in-process MCP `Client` over
+   `InMemoryTransport` and sees the 72 tools minus an exclusion set of six (`list_commands`, `run_action`,
+   `set_status` and the three `ailabel_*`), so 66, and 65 for a model without vision; its requests carry `meta` and
+   wait up to 20 s for the user's stroke, transform, text edit or question. The policy, decided by the planner for the
+   user: everything that can cost money or queue on ComfyUI asks (`generate`, `generate_new`, `select_by_text`,
+   `cutout_layer`, `upsample_prompt`), and so do the calls that clear undo, `flatten`, `extend_canvas`, unlocking a
+   layer or moving or retexting a locked one, `undo` / `redo`, file reads, exports with a path and global settings;
+   removing, merging and the edits the commands record no undo step for run without asking only on the chat's own
+   layers; exports without a path or with a wrong extension are refused. Its leading use is the user's own: inpaint
+   regions, each on its own result layer, and colour-match them (`generate` asks, `set_layer` `match` on the chat's
+   own result runs). Chats are saved under `<userData>/assistant/` (20 kept), and Settings › Assistant has a reset
+   that deletes all assistant data, its lines in the app log included, but the keys. Undo: every step on the normal
+   stack, on both backends; where a command records none (an added layer, `generate`'s result included, `set_layer`'s
+   colour match and other non-geometry fields, `set_filter`'s params, `set_text`) the shell pushes the editor's own
+   step kind before the assistant's call (`meta.undo`; no command and no editor change); plus "Undo this turn" on
+   tiles (a turn snapshot in `inpaint_canvas.js`, hence `build_node.py --check` and `nodecopy`; refused on the canvas
+   backend). Steps (PLAN_ASSISTANT's A0 to A9): A0 the server split; A1 the loop, the policy, the registry and
+   Anthropic in plain Node; A2 Chat Completions with its seven providers; A3 OpenAI Responses and Gemini; A4 in the
+   app with the key rows and the first gate; a checkpoint with the user's keys on several models across providers,
+   before any UI (a ceiling of about $10, set by the user); A5 the panel; A6 chats on disk and the reset; A7 per-step
+   undo and turn undo; A8 the whole `assistant` gate (76 steps, twenty-one mutations, `tools/assistant_mock.py` for
+   all four families) and the docs; A9 a live check on the packaged app and the release. Optional, only on the user's
+   word: A10 a budget, "allow for this chat" and a basic tool set; A11 the assistant's own undo steps. **To verify
+   against the live APIs before it ships** (§7): per family the reasoning replay (signatures, encrypted items, thought
+   signatures, `reasoning_content` on every assistant message), a JPEG in a tool result where the family takes one
+   (Moonshot's `tool` message included: its schema allows one, its only example is a video) and in a follow-up user
+   message elsewhere, pruning, the streamed rebuild, cache reads, the tool list's real token count and the error
+   shapes; Gemini's request limit (its docs say 20 MB and 100 MB; the cap is 18 MB until then); that OpenRouter still
+   routes each model with `data_collection: "deny"` and the hosts in China ignored, and whether it does with
+   `zdr: true` (then the user decides); that ToAPIs and WaveSpeed pass tools at all, and where they are and what they
+   keep. No OpenRouter attribution headers go out before the trademark check (they make a public app page).
 
 **Decision (b) of 7c is made (the user, 2026-09-18): exports and runs of a colour-matched layer may move.** They may
 take their statistics from tiles instead of from the whole flatten, with **point samples** (measured mean 0.56, max 8
@@ -315,7 +367,9 @@ are not the limit at 15k). **Next, in this order:** `smoke` and the node in a re
 as the user says ComfyUI is free (nothing since phase E has met a real server); then the four daily-use bugs of
 `docs/BUGS.md` (the provider crop's 0.6 s block, large JPEG / WebP / profiled PNG opening, erasing switching the active
 layer to the base, the erase stroke's release stutter); then **OpenRouter (item 12)**; then SignPath. Nothing else
-stands before it, unless the user names something else first.
+stands before it, unless the user names something else first. After SignPath, last, comes the assistant (item 13,
+`docs/PLAN_ASSISTANT.md`), as a release of its own (the user, 2026-09-19: "agent als letztes, wird ein seperates
+release"); the `buildModal` split (item 11) also comes before it.
 
 **Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`
 are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,
