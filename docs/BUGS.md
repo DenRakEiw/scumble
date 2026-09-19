@@ -177,9 +177,8 @@ k squared comparisons a pixel on the CPU: 35 s a megapixel at k = 137 (the Comfy
 min at 24 MP and 90 min at 15000 x 10000. The run's own crop (`_denoise_mask` on the crop) costs about a minute the same
 way (the 55 s between "got prompt" and the model load).
 
-**The fix is committed in the node repo, not pushed and not live yet** (`fba1fd8` on master of
-ComfyUI-InpaintCanvas, on the user's word of 2026-09-19; the node folder is the user's live ComfyUI and its Python only
-loads after a restart): `_dilate_mask` as two separable `max_pool2d` passes (the same values: a square max is the max of the row
+**The fix is committed and pushed in the node repo, not live yet** (`fba1fd8` on master of ComfyUI-InpaintCanvas, on
+the user's word of 2026-09-19; the node folder is the user's live ComfyUI and its Python only loads after a restart): `_dilate_mask` as two separable `max_pool2d` passes (the same values: a square max is the max of the row
 maxima), and the stitch's masks on a window around the region with the margin the app's `finishResult` uses. The
 patch and its tests are in the session's scratchpad (`node_fix_patch.py`, `node_mask_test.py`,
 `node_stitch_e2e.py`): the node's own `InpaintCanvasStitch.stitch`, today's `nodes.py` against the patched copy with
@@ -187,7 +186,7 @@ ComfyUI stubbed out, gives the same returned image and the same patch PNG, byte 
 match and alignment (71.5 s to 1.96 s at 2500 x 1800), with `paste` "crop" (43.1 to 0.61 s) and a plain feather; the
 masks alone at 6000 x 4000 889.5 s to 4.4 s, equal on eight cases; run again against the committed file, the same.
 **Next:** a ComfyUI restart when it suits the user, then one local run on a large document; the entry leaves this file
-when that run is fast and the node is pushed with a node release.
+when that run is fast (a node release with a `pyproject.toml` version takes it to the registry).
 
 ### A headless MCP instance keeps Scumble from starting
 

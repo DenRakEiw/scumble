@@ -80,9 +80,10 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-19)
 
-**0.1.20 is prepared, not published** (2026-09-19, on the user's word "release vorbereiten, dann push auf github"):
-`package.json` 0.1.20, `CHANGELOG.md` "0.1.20 — 2026-09-19", `npm run dist` built `Scumble Setup 0.1.20.exe`, the tag
-`v0.1.20` pushed, CI's draft release waits for the user's word to publish (check `gh release list` first). Exe gates,
+**0.1.20 is published** (Latest since 2026-09-19, on the user's word; `latest.yml` on the feed says 0.1.20, the release
+body is the CHANGELOG section): `package.json` 0.1.20, `CHANGELOG.md` "0.1.20 — 2026-09-19", `npm run dist` built
+`Scumble Setup 0.1.20.exe`, the tag `v0.1.20`, CI's draft published (check `gh release list` before believing any
+release state written down anywhere). Exe gates,
 all `--offline` against `dist/win-unpacked/Scumble.exe`, each on its own profile: `rel20-exe` (tiles: log pixels editor
 composite commands shape brush film glb ailabel size transparent generate mcp toapis llm export pxjobs), `rel20-exe-canvas`
 (tiles off: pixels editor composite commands shape brush film size transparent generate) and `rel20-exe-huge`
@@ -105,8 +106,8 @@ local run on a 6000 x 4000 document with a soft, a matched and a levels layer: t
 filter program and reached the node byte for byte (its hash recomputed), the result landed at the crop box. **Found
 there:** the node's own stitch spent 15 of the run's 19 minutes on one CPU core (a square `max_pool2d` over the whole
 picture's mask); a byte-equal fix (separable dilation, masks on a window) is prepared and tested in that session's
-scratchpad and, on the user's word, **committed in the node repo (`fba1fd8`, not pushed); it goes live with the next
-ComfyUI restart, which the user does** (`docs/BUGS.md` "A local run on a large document spends minutes in the node's
+scratchpad and, on the user's word, **committed and pushed in the node repo (`fba1fd8` on master); it goes live in the
+user's ComfyUI with its next restart, which the user does** (`docs/BUGS.md` "A local run on a large document spends minutes in the node's
 stitch"). Not done: the node in a real ComfyUI tab and in
 Firefox (the node repo is behind; building the editor into it is a node release).
 
@@ -157,9 +158,10 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
   `electron.exe ... --mcp` processes fixes it; the missing hand-over is not measured.
 - **§C7's memory gate is not met** (at most 300 MB of GPU process per document); the default went on anyway, on the user's
   decision.
-- **The node repo is behind** (master 647db5d, before C3, plus two local, unpushed commits: 1f37ad0, `exportIsPlain` in
-  the node's own `js/host.js`, which the editor asks for since E2 and `build_node.py --check` insists on; fba1fd8 (2026-09-19),
-  the stitch's masks on a window and a separable dilation, live after a ComfyUI restart). `nodecopy` builds and tests it in a scratch copy; build it into
+- **The node repo is behind** (its `js/` is built from 7f01699, before C3; master is fba1fd8 since 2026-09-19, pushed:
+  1f37ad0, `exportIsPlain` in the node's own `js/host.js`, which the editor asks for since E2 and `build_node.py --check`
+  insists on, and fba1fd8, the stitch's masks on a window and a separable dilation, live in the user's ComfyUI after a
+  restart; `pyproject.toml` unchanged, so no registry publish ran). `nodecopy` builds and tests it in a scratch copy; build it into
   the real repo only when a node version is meant to ship.
 
 **What comes next, in order** (`dist/c6map/c/` holds the maps; they are older than the code):
