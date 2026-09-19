@@ -35,7 +35,7 @@
  */
 
 import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN, reentrantPixels } from "./inpaint_pixels.js";
-import { mipChain, mipChainBytes, clampExtend } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile } from "./px/kernels.js";
 import { allocTileBytes, isShared } from "./inpaint_arena.js";
 
 export const TILE_SIZE = 256;
@@ -81,6 +81,7 @@ const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 const ALPHA = 0x1000000;           // a word >= this has a non-zero alpha byte (little-endian)
 
 let tileSeq = 0;                   // tile versions are unique across all tiles
+let STROKE_SCRATCH = null;         // compositeStroke's tile, kept
 // Pixels versions are unique across all pixels objects (docs/PLAN_BCE.md §C6 a). A cache that keys on
 // `version` then cannot mistake one object for another: a new mask started at 0 and was 1 after its first
 // touch, exactly what the mask it replaced had, and the atlas's instances and the region view kept
@@ -1355,6 +1356,55 @@ const tiled = (Base) => class extends Base {
                 if (zero && tileEmpty(t)) this._dropTile(key);
             }
         }
+    }
+
+    /**
+     * A stroke store's tiles (`stroke`: pixels of the same size, so the same grid) composited into these pixels in place,
+     * a tile at a time through the compositing kernel (`compositeTile`): `op` an OPS number (source-over,
+     * destination-out, source-atop), `alpha` the opacity 0..255, `coverage(tx, ty)` what of the tile may change: true
+     * for all of it, null for none, or 65,536 bytes of coverage (the selection's clip, the stroke's box). A stroke's
+     * release through canvases held the window up to 0.3 s at 15000 x 10000 (docs/BUGS.md). Only the pixels the stroke
+     * reaches are written, so the kernel's premultiplied round trip never touches the others; an unchanged tile is left
+     * alone and one an erase empties is dropped. Returns the number of tiles written.
+     */
+    compositeStroke(stroke, op, alpha, coverage = null) {
+        this._guard();
+        const scratch = STROKE_SCRATCH || (STROKE_SCRATCH = new Uint8Array(TILE_BYTES));
+        const w32 = new Uint32Array(scratch.buffer, 0, TILE_SIZE * TILE_SIZE);
+        let written = 0;
+        for (const key of stroke.tileKeys()) {
+            const tx = key & 0xFFFF, ty = key >>> 16;
+            const s = stroke.tileAt(tx, ty);
+            const old = this._tiles.get(key) || null;
+            if (!s || (!old && op !== 0)) continue;   // an erase or an atop over nothing leaves nothing
+            let cov = coverage ? coverage(tx, ty) : true;
+            if (!cov) continue;
+            if (cov === true) cov = null;
+            if (old) scratch.set(old.data); else scratch.fill(0);
+            compositeTile(scratch, [s.data], [op], [alpha], [cov]);
+            const s32 = u32Of(s), o32 = old ? u32Of(old) : null;
+            let changed = false;
+            for (let i = 0; i < w32.length; i++) {
+                if (s32[i] < ALPHA || (cov && !cov[i])) w32[i] = o32 ? o32[i] : 0;
+                else if (!changed && w32[i] !== (o32 ? o32[i] : 0)) changed = true;
+            }
+            if (!changed) continue;
+            const t = this.writable(tx, ty);
+            t.data.set(scratch);
+            if (tileEmpty(t)) this._dropTile(key);
+            written++;
+        }
+        return written;
+    }
+
+    /**
+     * `rows` rows of RGBA read from a canvas (`getImageData`: the round trip is in them already), `width` wide, at
+     * (x, y), replacing what was there: `writeRect`'s copy without its normalizing pass, as `_strips` puts its reads.
+     */
+    putCanvasRows(data, width, x, y, rows) {
+        this._guard();
+        const r = pixelRect([x, y, x + width, y + rows], this._w, this._h);
+        if (r) this._putBlock(data, width, r[0] - x, r[1] - y, r[0], r[1], r[2] - r[0], r[3] - r[1], false);
     }
 
     writeRect(data, x, y, op = "copy", alpha = 1) {

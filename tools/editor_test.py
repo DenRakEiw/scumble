@@ -1629,6 +1629,154 @@ async def arena_step(c):
     return {"arena": True, "slots": [out["before"]["slots"], out["mid"]["slots"], res["slots"]], "chunks": [out["before"]["chunks"], out["mid"]["chunks"], res["chunks"]], "dropped": res["droppedChunks"] - out["before"]["droppedChunks"]}
 
 
+def image_fixtures():
+    """Files the browser decodes with colour management, EXIF orientation, alpha or 16 bits (Pillow), in a temp folder."""
+    import struct
+    import tempfile
+    import zlib
+    from PIL import Image
+    d = tempfile.mkdtemp(prefix="scumble_open_")
+    w, h = 1500, 1100
+    im = Image.new("RGB", (w, h))
+    px = im.load()
+    for y in range(0, h, 2):
+        for x in range(0, w, 2):
+            v = ((x * 7 + y * 13) ^ (x * y)) & 255
+            col = ((x * 255) // w, (y * 255) // h, v)
+            px[x, y] = col; px[min(w - 1, x + 1), y] = col; px[x, min(h - 1, y + 1)] = col; px[min(w - 1, x + 1), min(h - 1, y + 1)] = col
+    icc = None
+    for name in ("AdobeRGB1998.icc", "ProPhoto.icm"):
+        p = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "System32", "spool", "drivers", "color", name)
+        if os.path.exists(p):
+            icc = open(p, "rb").read()
+            break
+    ex = Image.Exif()
+    ex[0x0112] = 6
+    files = {"plain.jpg": None, "rot6.jpg": None, "alpha.webp": None, "deep.png": None}
+    im.save(os.path.join(d, "plain.jpg"), quality=90)
+    im.save(os.path.join(d, "rot6.jpg"), quality=90, exif=ex.tobytes())
+    if icc:
+        im.save(os.path.join(d, "profiled.jpg"), quality=90, icc_profile=icc)
+        im.save(os.path.join(d, "profiled.png"), icc_profile=icc)
+        files["profiled.jpg"] = files["profiled.png"] = None
+    a = Image.new("L", (w, h))
+    ap = a.load()
+    for y in range(h):
+        for x in range(w):
+            ap[x, y] = max(0, min(255, 300 - (abs(x - w // 2) + abs(y - h // 2)) // 3))
+    rgba = im.copy()
+    rgba.putalpha(a)
+    rgba.save(os.path.join(d, "alpha.webp"), quality=80)
+    # a 16-bit RGBA PNG, written by hand (Pillow writes no 16-bit colour)
+    raw = bytearray()
+    for y in range(h):
+        raw.append(0)
+        for x in range(w):
+            r, g, b = px[x, y]
+            raw += struct.pack(">HHHH", r * 257 + (x & 255), g * 257, b * 257 + (y & 255), 65535 if (x // 50 + y // 50) % 3 else 30000)
+    def chunk(t, body):
+        return struct.pack(">I", len(body)) + t + body + struct.pack(">I", zlib.crc32(t + body) & 0xFFFFFFFF)
+    with open(os.path.join(d, "deep.png"), "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 16, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(bytes(raw), 1)) + chunk(b"IEND", b""))
+    return d, sorted(files)
+
+
+LARGE_IMAGES = r"""
+// docs/BUGS.md "opening a large JPEG, WebP or a PNG with a colour profile": on tiles such a file of
+// `InpaintEditor.imageWorkerFrom` pixels and more is decoded in a pool worker (`image_read`) and read back band by band,
+// never through an <img> and a dozen reads in the window. The same pixels as the <img> way, for the base, an image layer
+// and a restore; a profiled file really is colour managed (its bytes differ from a decode that drops the profile).
+if (!ednow(window.__t).tileMode) return { skipped: "the worker decodes into tiles" };
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const E = ed.constructor;
+const DIR = __DIR__, NAMES = __NAMES__;
+const hex = async (u8) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", u8))).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+const whole = (px) => px.readRect(0, 0, px.width, px.height).data;
+const fileOf = async (name) => {
+    const r = await window.scumble.file.read(DIR + "/" + name);
+    const type = /\.jpe?g$/i.test(name) ? "image/jpeg" : /\.webp$/i.test(name) ? "image/webp" : "image/png";
+    return new File([r.data], name, { type });
+};
+const pool = E.parts.pool(), oRun = pool.run.bind(pool);
+const ops = [], failed = [];
+// a job that fails falls back to the <img> (the same bytes): count the answers, not the calls
+pool.run = (op, ...a) => { const p = oRun(op, ...a); ops.push(op); if (op === "image_read") p.catch((err) => failed.push(String((err && err.message) || err))); return p; };
+const was = E.imageWorkerFrom, wasPng = E.pngStreamFrom;
+const out = {};
+try {
+    for (const name of NAMES) {
+        const file = await fileOf(name);
+        const route = await E.parts.imageRoute(file);
+        if (!route || !(route.width * route.height >= 1000000)) throw new Error(name + ": no size from the header: " + JSON.stringify(route));
+        E.imageWorkerFrom = 1000000;
+        ops.length = 0;
+        await ed.loadFile(file);
+        const read = ops.filter((o) => o === "image_read").length;
+        if (read !== 1 || failed.length) throw new Error(name + ": " + read + " image_read jobs (" + ops.join(",") + "), failed: " + failed.join("; ") + ", " + ed.status);
+        const size = [ed.width, ed.height];
+        const worker = await hex(whole(ed.basePx));
+        E.imageWorkerFrom = 0;
+        ops.length = 0;
+        await ed.loadFile(await fileOf(name));
+        if (ops.includes("image_read")) throw new Error(name + ": with the threshold off the file still went to the worker");
+        if (ed.width !== size[0] || ed.height !== size[1]) throw new Error(name + ": " + size + " in the worker, " + [ed.width, ed.height] + " through the image");
+        const image = await hex(whole(ed.basePx));
+        if (worker !== image) throw new Error(name + ": the worker and the image give different pixels");
+        out[name] = { size, same: true };
+    }
+    if (out["rot6.jpg"] && !(out["rot6.jpg"].size[0] === 1100 && out["rot6.jpg"].size[1] === 1500)) throw new Error("the EXIF orientation was not applied: " + out["rot6.jpg"].size);
+    // colour management is exercised: the profile moves the pixels against a decode that drops it
+    if (NAMES.includes("profiled.jpg")) {
+        const f = await fileOf("profiled.jpg");
+        const bmp = await createImageBitmap(f, { colorSpaceConversion: "none" });
+        const c = new OffscreenCanvas(bmp.width, bmp.height); const x = c.getContext("2d", { willReadFrequently: true });
+        x.drawImage(bmp, 0, 0); bmp.close();
+        E.imageWorkerFrom = 1000000;
+        await ed.loadFile(f);
+        if ((await hex(x.getImageData(0, 0, c.width, c.height).data)) === (await hex(whole(ed.basePx)))) throw new Error("the profiled JPEG decodes to the same bytes with its profile dropped: not colour managed");
+        out.profiled = "managed";
+    }
+    // an image layer and a restore take the same way, with the same pixels
+    E.imageWorkerFrom = 1000000;
+    const name = NAMES.includes("profiled.jpg") ? "profiled.jpg" : "plain.jpg";
+    await ed.loadFile(await fileOf(name));
+    const base = await hex(whole(ed.basePx));
+    ops.length = 0;
+    await ed.addImageLayers([await fileOf(name)], "none", { place: "at", at: [0, 0] });
+    const layer = ed.layers[ed.layers.length - 1];
+    if (!layer || ops.filter((o) => o === "image_read").length !== 1 || failed.length) throw new Error("the image layer was not decoded in the worker: " + ops.join(",") + " " + failed.join("; "));
+    if ((await hex(whole(layer.px))) !== base) throw new Error("the image layer's pixels differ from the base's of the same file");
+    ed.syncLayers && (await ed.syncLayers());
+    const value = ed.getValue();
+    const d2 = await run("new_document");
+    const ed2 = ednow(d2.id);
+    ops.length = 0;
+    try {
+        await ed2.setValue(value);
+        if (ed2.width !== ed.width || ops.filter((o) => o === "image_read").length < 2 || failed.length) throw new Error("the restore did not decode base and layer in the worker: " + ops.join(","));
+        if ((await hex(whole(ed2.basePx))) !== base) throw new Error("the restored base differs");
+        const l2 = ed2.layers.find((l) => l.kind === "image");
+        if (!l2 || (await hex(whole(l2.px))) !== base) throw new Error("the restored image layer differs");
+    } finally { await run("close_document", { doc: d2.id, force: true }); }
+    out.layerAndRestore = true;
+} finally { pool.run = oRun; E.imageWorkerFrom = was; E.pngStreamFrom = wasPng; }
+ed.clearUndo();
+await run("new_canvas", { width: 600, height: 300, doc: window.__t });
+return out;
+"""
+
+
+async def large_images_step(c):
+    d, names = image_fixtures()
+    try:
+        body = LARGE_IMAGES.replace("__DIR__", json.dumps(d.replace("\\", "/"))).replace("__NAMES__", json.dumps(names))
+        return await c.eval(PRE % body, timeout=300)
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+
+
 async def backend_step(c):
     exp = expected_tiles()
     return await c.eval(PRE % BACKEND_STEP.replace("__EXPECT__", "null" if exp is None else ("true" if exp else "false")), timeout=180)
@@ -5923,6 +6071,105 @@ ed.clearUndo();
 await run("new_canvas", { width: 600, height: 300, doc: window.__t });
 return out;
 """),
+    ("a_stroke_commits_through_the_kernel_on_tiles", """
+// docs/BUGS.md "Releasing an erase stroke is its own stutter": on tiles a stroke is committed a tile at a time through
+// the compositing kernel (`commitStrokeTiles` -> `compositeStroke`), not band by band through canvases (0.29 s of
+// blocked window for a long erase at 15000 x 10000). The same stroke on two layers with the same pixels, once each way:
+// painting at an opacity, erasing, painting with the alpha locked, and both clipped to a selection. Pixels the stroke
+// does not reach are the same bytes; the rest within two levels of colour premultiplied by alpha; undo gives the layer
+// back byte for byte.
+if (!ednow(window.__t).tileMode) return { skipped: "the kernel commit is the tile engine's" };
+await run("new_canvas", { width: 3000, height: 2000, doc: window.__t });
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const E = ed.constructor, W = ed.width, H = ed.height;
+const fill = (l) => l.px.drawInto(null, (x) => {
+    x.fillStyle = "#3060c0"; x.fillRect(100, 100, 1500, 1100);
+    x.fillStyle = "rgba(200,90,40,0.55)"; x.fillRect(900, 600, 1600, 1100);
+    const g = x.createRadialGradient(2200, 500, 50, 2200, 500, 500); g.addColorStop(0, "rgba(40,200,90,0.9)"); g.addColorStop(1, "rgba(40,200,90,0)");
+    x.fillStyle = g; x.fillRect(1700, 0, 1000, 1000);
+});
+const path = []; for (let i = 0; i <= 30; i++) path.push([250 + i * 80, 500 + Math.round(Math.sin(i / 4) * 400)]);
+const bytes = (l) => l.px.readRect(0, 0, l.px.width, l.px.height).data;
+const cases = [
+    { name: "paint", erase: false, opacity: 0.6, clip: false, lock: false },
+    { name: "erase", erase: true, opacity: 1, clip: false, lock: false },
+    { name: "erase at an opacity", erase: true, opacity: 0.45, clip: false, lock: false },
+    { name: "paint, alpha locked", erase: false, opacity: 0.8, clip: false, lock: true },
+    { name: "paint, clipped", erase: false, opacity: 0.7, clip: true, lock: false },
+    { name: "erase, clipped", erase: true, opacity: 1, clip: true, lock: false },
+];
+const out = {};
+const pool = [];
+let calls = 0;
+const was = E.strokeTiles;
+try {
+    for (const c of cases) {
+        ed.sel.clear();
+        if (c.clip) { ed.sel.drawInto(null, (s) => { s.fillStyle = "#ff0000"; s.fillRect(700, 250, 1300, 700); s.fillStyle = "rgba(255,0,0,0.5)"; s.fillRect(1900, 250, 500, 700); }); }
+        ed.markSelectionChanged();
+        ed.getBounds();
+        const pair = [];
+        for (const kernel of [true, false]) {
+            const l = ed.addPaintLayer();
+            fill(l);
+            // a clipped layer off the origin: the selection under a tile is read where the layer lies
+            if (c.clip) { l.x = 137; l.y = 61; ed.renderLayers(); }
+            l.alphaLock = c.lock;
+            ed.activeLayerId = l.id;
+            ed.brushSize = 110; ed.hardness = 0.35; ed.eraseHardness = 0.35; ed.brushOpacity = c.opacity; ed.color = "#f0e020";
+            const before = bytes(l).slice();
+            E.strokeTiles = kernel;
+            const p = { kind: "layerpaint", layer: l, stroke: ed.newStrokeBuffer(l.px), clip: c.clip ? ed.strokeClip(l, l.px) : null, erase: c.erase, last: path[0], pressure: 1, bounds: null };
+            ed.pointer = p;
+            ed.layerDab(p, path[0][0], path[0][1], path[0][0], path[0][1]);
+            for (let i = 1; i < path.length; i++) ed.layerDab(p, path[i - 1][0], path[i - 1][1], path[i][0], path[i][1]);
+            const oc = l.px.compositeStroke;
+            l.px.compositeStroke = function (...a) { calls++; return oc.apply(this, a); };
+            let n0 = calls;
+            try { ed.commitStroke(p); } finally { delete l.px.compositeStroke; }
+            ed.pointer = null;
+            if (kernel && calls === n0) throw new Error(c.name + ": the commit did not go through the kernel");
+            if (!kernel && calls !== n0) throw new Error(c.name + ": with the switch off the commit still went through the kernel");
+            pair.push({ l, before, after: bytes(l).slice(), stroke: p.stroke });
+        }
+        const [k, b] = pair;
+        let differ = 0, worst = 0, untouchedDiffer = 0, changed = 0;
+        const reach = k.stroke.px;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 4;
+                const t = reach.tileAt(x >> 8, y >> 8);
+                const inStroke = t && t.data[((y & 255) * 256 + (x & 255)) * 4 + 3] > 0;
+                const ka = k.after[i + 3], ba = b.after[i + 3];
+                let d = Math.abs(ka - ba);
+                for (let q = 0; q < 3; q++) d = Math.max(d, Math.abs(Math.round(k.after[i + q] * ka / 255) - Math.round(b.after[i + q] * ba / 255)));
+                if (!inStroke) {
+                    for (let q = 0; q < 4; q++) if (k.after[i + q] !== k.before[i + q]) { untouchedDiffer++; break; }
+                    continue;
+                }
+                if (k.after[i + 3] !== k.before[i + 3] || k.after[i] !== k.before[i]) changed++;
+                if (d) { differ++; if (d > worst) worst = d; }
+            }
+        }
+        if (untouchedDiffer) throw new Error(c.name + ": the kernel commit changed " + untouchedDiffer + " pixels the stroke does not reach");
+        if (!(changed > 1000)) throw new Error(c.name + ": the stroke changed only " + changed + " pixels");
+        if (worst > 2) throw new Error(c.name + ": the kernel commit is " + worst + " levels off the bands' on " + differ + " pixels");
+        // undo (the bands' stroke, then the kernel's) gives both layers back as they were, byte for byte
+        await ed.undoStep(); await ed.undoStep();
+        for (const [what, q] of [["the kernel's", k], ["the bands'", b]]) {
+            const back = bytes(q.l);
+            for (let i = 0; i < back.length; i++) if (back[i] !== q.before[i]) throw new Error(c.name + ": undo of " + what + " stroke left byte " + i + " at " + back[i] + ", was " + q.before[i]);
+        }
+        out[c.name] = { changed, differ, worst };
+        ed.removeLayer(k.l.id); ed.removeLayer(b.l.id);
+    }
+} finally { E.strokeTiles = was; ed.pointer = null; }
+ed.clearUndo(); ed.sel.clear(); ed.markSelectionChanged();
+await run("new_canvas", { width: 600, height: 300, doc: window.__t });
+return out;
+"""),
+    ("large_image_files_open_in_a_worker", lambda c: large_images_step(c)),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

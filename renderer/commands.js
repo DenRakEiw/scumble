@@ -326,8 +326,7 @@ const COMMANDS = {
             } else {
                 if (!a.filename) throw new Error("pass path or filename");
                 const ref = { filename: a.filename, subfolder: a.subfolder || "", type: a.type || "input" };
-                const img = await loadImageEl(viewUrl(ref));
-                await ed.setBase(ref, img, { keepLayers: false });
+                await ed.setBaseFromRef(ref);
             }
             ed.history = []; ed.renderHistory && ed.renderHistory();
             return { width: ed.width, height: ed.height, base: ed.base.ref };

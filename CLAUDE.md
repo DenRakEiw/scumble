@@ -78,7 +78,28 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-16) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
-## Where things stand (2026-09-18)
+## Where things stand (2026-09-19)
+
+**2026-09-19, the session after 0.1.19 (not released; `CHANGELOG.md` has a "0.1.20 — not released yet" section: give
+it the date when it is released, `package.json` is still 0.1.19).** Three of the four daily-use bugs are fixed, each
+with a gate step, mutations and both backends' gates ALL PASS (`docs/BUGS.md` "Fixed, waiting for its release"):
+large JPEG / WebP / profiled PNG files open through a pool worker (`image_read`; the block at 15k 0.95 to 4.4 s down to
+34 to 98 ms, the same bytes), a provider run's crop and stitch run in a stitch worker of their own with the box from the
+tile workers (`prepareCropAsync` / `finishResultAsync`, `readBoxBytes`, `stitch_worker.js`; 0.67 / 1.47 / 6.28 s blocked
+on a plain / matched / matched-and-filmed 15k document down to 24 / 22 / 51 ms), and on tiles a stroke is committed a
+tile at a time through the compositing kernel (`commitStrokeTiles`, `compositeStroke`; the release 70 to 288 ms down
+to 34 to 66 ms, `tools/release_test.py` is the new measurement with real mouse events). The fourth ("erasing switches
+the active layer to the base") waits for the user's answer to a sharper question (`docs/BUGS.md`): the session's
+recordings point at the display bug fixed in 0.1.8. **`smoke` ran** (the user freed ComfyUI for an hour): on the dev
+tree with the three fixes in, tiles and canvas backend with `--no-helpers`, and once in full with every helper (SAM3,
+RMBG, Qwen-VL, SAM2 on the server; the in-app SAM2 / RMBG were skipped: no model in a fresh profile), ALL PASS; and a
+local run on a 6000 x 4000 document with a soft, a matched and a levels layer: the base went up in bands through the
+filter program and reached the node byte for byte (its hash recomputed), the result landed at the crop box. **Found
+there:** the node's own stitch spent 15 of the run's 19 minutes on one CPU core (a square `max_pool2d` over the whole
+picture's mask); a byte-equal fix (separable dilation, masks on a window) is prepared and tested in that session's
+scratchpad, **not applied: it needs the user's word, a commit in the node repo and a ComfyUI restart** (`docs/BUGS.md`
+"A local run on a large document spends minutes in the node's stitch"). Not done: the node in a real ComfyUI tab and in
+Firefox (the node repo is behind; building the editor into it is a node release).
 
 **Releases.** **0.1.19 is published** (Latest since 2026-09-18, `v0.1.19`, the CI draft published from this session on the user's
 word; `latest.yml` on the feed says 0.1.19, the release body is the CHANGELOG section; no `smoke`; exe gates, all `--offline` against `dist/win-unpacked/Scumble.exe`: `rel19-exe` (tiles, the full list with pxjobs) ALL
@@ -111,17 +132,17 @@ and the PNG / PSD / ORA writers. Filters of the whole picture take `info.full` /
 may be larger than any canvas (268 MP): up to 65,535 px a side and a gigapixel, PNG only, opened through the stream reader;
 `tools/huge_test.py` is its gate (30000 × 20000: open 9.6 s, PNG 10.5 s, PSD 13.7 s). **Not met and written down in
 `docs/BUGS.md`**: an export in bands is slower in wall time than the whole flatten was (6.2 s against 3.4 s at 15k, the
-window stays usable), the halation on huge documents, invert at 30k, the 5 ms of the mip refresh. **`smoke` has not run on
-any of it** (the user's ComfyUI was busy): the node's base upload in bands and a real run on the new crop path have not met
-a real server.
+window stays usable), the halation on huge documents, invert at 30k, the 5 ms of the mip refresh. **`smoke` ran on it on
+2026-09-19** (see the top of this section): the base upload in bands and a real run met the user's server, PASS.
 
 **Built.** C6 (c) slices 3 to 7a, each with its gates, mutations and measurements in `docs/PLAN_BCE.md` §C6 ("C6 (c3) and
 slice 4 as built", "slice 5 / 6 / 7a as built"). The tile engine is on by default in the installed app since 0.1.13, with a
 switch in Settings › Rendering; the canvas backend is the escape hatch.
 
 **Constraints right now.**
-- **The user needs their ComfyUI instance** (2026-09-16): no `smoke`, and no gate that forwards to it (`commands`'
-  `large_upload_route` uploads through the mirror to a connected ComfyUI), until the user says it is free.
+- **The user needs their ComfyUI instance** (2026-09-16; freed for one hour on 2026-09-19, when `smoke` ran): no `smoke`,
+  and no gate that forwards to it (`commands`' `large_upload_route` uploads through the mirror to a connected ComfyUI),
+  until the user says it is free.
 - **A headless MCP instance can block the app from starting** (`docs/BUGS.md`): this repo's `.mcp.json` starts the dev app
   with `--mcp`, which holds the default profile's single-instance lock, and Scumble then shows no window. Stopping the
   `electron.exe ... --mcp` processes fixes it; the missing hand-over is not measured.
@@ -298,11 +319,26 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    against the live API before anything ships:** which image models OpenRouter serves at the time (Gemini image,
    gpt-image, Flux), whether an input picture reaches them as an edit, the size and count limits, and the shape of an
    image answer; the docs may have moved since this was written.
+12b. **BytePlus ModelArk as a direct Seedream provider (asked for by the user on 2026-09-19, not built yet: about a
+   day, beside or right after item 12).** Seedream runs today through fal, ToAPIs, WaveSpeed and the ComfyUI API node
+   (`ByteDanceSeedreamNodeV3`); ModelArk is ByteDance's own API for it. What was found on 2026-09-19 (the docs,
+   `https://docs.byteplus.com/en/docs/ModelArk/1541523`, are rendered by script and could not be read field by field):
+   `POST https://ark.ap-southeast.bytepluses.com/api/v3/images/generations` (Singapore; also `ark.eu-west.bytepluses.com`),
+   an API key from the ModelArk console, model ids such as `seedream-5-0-pro`, `seedream-5-0-lite`, `seedream-4-5`,
+   `seedream-4-0`, a request of `model`, `prompt` (at most 300 tokens) and optional `image` (a URL or base64, one or
+   several: single- and multi-image edit and fusion). An adapter in `electron/main/providers/` next to `toapis.js`,
+   a key row in Settings › API keys (credential store), an `ark` provider variant in the recipes with its `limits`
+   (Seedream's 3:1 `ratio` as on ToAPIs), no mask (Scumble's own composite mask and stitch, as for Gemini), "Generate new"
+   through the same endpoint without an image, `docs/RECIPES.md` and a plain-Node test of the request shape plus the
+   loopback stand-in. **To verify with a real key before anything ships:** the exact field names (`size` format and
+   limits, `seed`, `response_format` `url` / `b64_json`, `watermark`, multi-image fields), the answer's shape, whether an
+   input picture is edited or only referenced, the size and count limits, and which region the user's key serves (the
+   privacy note: ByteDance, Singapore or the EU endpoint).
 13. **The assistant, a chat agent that drives Scumble over MCP (asked for by the user on 2026-09-18, planned that day
    and revised on 2026-09-19 after the user's answers; not built: about twenty-three and a half working days for its
    one release, twenty-four and a half with the two optional steps).** The plan is `docs/PLAN_ASSISTANT.md`; every
-   point of its §8 is decided (2026-09-19). It comes last in the order below, after SignPath, and ships as a release
-   of its own. The MCP server stays primarily for external agents: the assistant changes no command, parameter,
+   point of its §8 is decided (2026-09-19). It comes last in the order below but before SignPath (the user,
+   2026-09-19: "assistant kommt vor codesignierung"), and ships as a release of its own. The MCP server stays primarily for external agents: the assistant changes no command, parameter,
    annotation or `INSTRUCTIONS` line (splitting `createServer` out of `serve()` is internal, its tool list proven
    byte-equal), and the four defects its planning found (`remove_layer` on a locked layer, `flip_layer`'s axis, the
    `llm:models` compat key, the annotations) are filed in `docs/BUGS.md`, not fixed by it. A collapsible chat column
@@ -363,20 +399,22 @@ import order), and twelve sites in four subjects read switches on the class name
 that subject is reworked anyway, as the prelude of that work; (2) **the object tool's change A is parked**: if the coarse
 outlines at 15k turn out to matter, compute the image-size label map only in the hovered object's box, on demand,
 never for the whole picture; (3) **B item 6 stays on ice** (it saves memory, not time; 97 GB of RAM and the 15.5 GB cap
-are not the limit at 15k). **Next, in this order:** `smoke` and the node in a real ComfyUI tab and in Firefox as soon
-as the user says ComfyUI is free (nothing since phase E has met a real server); then the four daily-use bugs of
-`docs/BUGS.md` (the provider crop's 0.6 s block, large JPEG / WebP / profiled PNG opening, erasing switching the active
-layer to the base, the erase stroke's release stutter); then **OpenRouter (item 12)**; then SignPath. Nothing else
-stands before it, unless the user names something else first. After SignPath, last, comes the assistant (item 13,
+are not the limit at 15k). **Next, in this order:** the node's stitch fix into the node repo once the user agrees (and a
+ComfyUI restart, then a local run on a large document); the node in a real ComfyUI tab and in Firefox when a node
+version is meant to ship; the fourth daily-use bug once the user answers (the three others are fixed on 2026-09-19);
+then **OpenRouter (item 12)** and **ModelArk (item 12b)**; then the assistant (item 13,
 `docs/PLAN_ASSISTANT.md`), as a release of its own (the user, 2026-09-19: "agent als letztes, wird ein seperates
-release"); the `buildModal` split (item 11) also comes before it.
+release", and the same day: "assistant kommt vor codesignierung"); the `buildModal` split (item 11) also comes
+before it; then SignPath, last. Nothing else stands before them, unless the user names something else first.
 
 **Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`
 are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,
 gate profiles, `dist/ab`, `composite`, `smoke`). `tools/run_gates.sh` recreates the profiles it needs.
 
 **Still unverified or open:** the ToAPIs adapter has never run against the live API (`docs/RECIPES.md` "Only a real key can verify"); a real SAM2 / RMBG
-model has not run on the slice 6 code; the user has not reported back on their own 15k file.
+model has not run in the app on the slice 6 code (the full `smoke` of 2026-09-19 ran the server's helpers only; a profile
+with the models downloaded or the ComfyUI `models/` folder linked would run them); the user has not reported back on
+their own 15k file.
 
 ## Gate runner and flakes
 

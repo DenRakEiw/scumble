@@ -201,14 +201,14 @@ async function hugePngSize(blob) {
     return (await pngIsPlainSrgb(blob)) ? { width: h.width, height: h.height } : null;
 }
 
-/** The chunks before the first IDAT hold no iCCP, gAMA or cHRM (an sRGB chunk is what the reader assumes anyway). */
+/** The chunks before the first IDAT hold no iCCP, gAMA, cHRM or cICP (an sRGB chunk is what the reader assumes anyway). */
 async function pngIsPlainSrgb(blob) {
     for (let at = 8, n = 0; at + 8 <= blob.size && n < 64; n++) {
         const head = new Uint8Array(await blob.slice(at, at + 8).arrayBuffer());
         const len = ((head[0] << 24) | (head[1] << 16) | (head[2] << 8) | head[3]) >>> 0;
         const type = String.fromCharCode(head[4], head[5], head[6], head[7]);
         if (type === "IDAT") return true;
-        if (type === "iCCP" || type === "gAMA" || type === "cHRM" || type === "IEND") return false;
+        if (type === "iCCP" || type === "gAMA" || type === "cHRM" || type === "cICP" || type === "IEND") return false;
         at += 12 + len;
     }
     return false;
@@ -221,15 +221,112 @@ async function pngIsPlainSrgb(blob) {
  */
 async function pixelsFromPngStream(blob, Cls, progress = null) {
     let px = null, W = 0, H = 0;
-    await editorPool().run("png_read", { blob }, [], {
-        timeout: 600000,
-        onProgress: (m) => {
-            if (m.header) { W = m.header.width; H = m.header.height; px = Cls.empty(W, H); return; }
-            px.writeRect({ data: new Uint8ClampedArray(m.rgba), width: W, height: m.rows }, 0, m.y0);
-            if (progress) progress((m.y0 + m.rows) / H);
-        },
-    });
+    try {
+        await editorPool().run("png_read", { blob }, [], {
+            timeout: 600000,
+            onProgress: (m) => {
+                if (m.header) { W = m.header.width; H = m.header.height; px = Cls.empty(W, H); return; }
+                px.writeRect({ data: new Uint8ClampedArray(m.rgba), width: W, height: m.rows }, 0, m.y0);
+                if (progress) progress((m.y0 + m.rows) / H);
+            },
+        });
+    } catch (err) {
+        if (px) px.release();
+        throw err;
+    }
     if (!px) throw new Error("the PNG gave no pixels");
+    return px;
+}
+
+/**
+ * `{ width, height, type }` of an image file from its first bytes (PNG, JPEG, WebP), or null. The size is the stored
+ * one: an EXIF orientation may swap the sides, never the pixel count.
+ */
+async function imageFileSize(blob) {
+    const head = new Uint8Array(await blob.slice(0, 64).arrayBuffer());
+    const png = pngHeader(head);
+    if (png) return { width: png.width, height: png.height, type: "png" };
+    if (head.length >= 30 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50) {
+        const kind = String.fromCharCode(head[12], head[13], head[14], head[15]);
+        if (kind === "VP8X") return { width: 1 + (head[24] | (head[25] << 8) | (head[26] << 16)), height: 1 + (head[27] | (head[28] << 8) | (head[29] << 16)), type: "webp" };
+        if (kind === "VP8 ") return { width: (head[26] | (head[27] << 8)) & 0x3FFF, height: (head[28] | (head[29] << 8)) & 0x3FFF, type: "webp" };
+        if (kind === "VP8L") {
+            const b = head[21] | (head[22] << 8) | (head[23] << 16) | (head[24] << 24);
+            return { width: 1 + (b & 0x3FFF), height: 1 + ((b >>> 14) & 0x3FFF), type: "webp" };
+        }
+        return null;
+    }
+    if (head[0] !== 0xFF || head[1] !== 0xD8) return null;
+    // JPEG: the markers up to the first start of frame (SOF0 to SOF15 but DHT, JPG and DAC)
+    for (let at = 2, n = 0; at + 4 <= blob.size && n < 256; n++) {
+        const m = new Uint8Array(await blob.slice(at, at + 10).arrayBuffer());
+        if (m[0] !== 0xFF) return null;
+        const marker = m[1];
+        if (marker === 0xFF) { at++; continue; }
+        if (marker === 0xD8 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)) { at += 2; continue; }
+        const len = (m[2] << 8) | m[3];
+        if (marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC) {
+            return m.length >= 9 ? { width: (m[7] << 8) | m[8], height: (m[5] << 8) | m[6], type: "jpeg" } : null;
+        }
+        if (marker === 0xDA || marker === 0xD9) return null;
+        at += 2 + len;
+    }
+    return null;
+}
+
+/**
+ * The pixels of a large image file decoded off the window (docs/BUGS.md: opening a large JPEG, WebP or a PNG with a
+ * colour profile blocked the window for 1 to 4 s at 150 MP), or null for the <img> way: below
+ * `InpaintEditor.imageWorkerFrom`, without the pool, and for what neither reader takes. A plain PNG goes through the
+ * stream reader (B item 5), everything else the browser decodes in a pool worker (`image_read`). A failed job gives
+ * null too, so the caller's <img> says what the browser makes of the file.
+ */
+async function pixelsOffThread(blob, Cls, progress = null) {
+    const png = await hugePngSize(blob);
+    if (png) {
+        try {
+            return await pixelsFromPngStream(blob, Cls, progress);
+        } catch (err) {
+            if (png.width * png.height > CANVAS_MAX_PIXELS) throw err;   // no <img> holds it
+            console.warn("Inpaint Canvas: the PNG could not be read as a stream, using an <img>:", (err && err.message) || err);
+            return null;
+        }
+    }
+    const from = InpaintEditor.imageWorkerFrom;
+    if (!(from > 0) || !partsUsable()) return null;
+    const size = await imageFileSize(blob);
+    if (!size || size.width * size.height < from) return null;
+    try {
+        return await pixelsFromImageFile(blob, Cls, progress);
+    } catch (err) {
+        console.warn("Inpaint Canvas: the image could not be decoded in a worker, using an <img>:", (err && err.message) || err);
+        return null;
+    }
+}
+
+/** An <img> of a file already in hand (the fallback after `pixelsOffThread`), without reading it a second time. */
+async function imageOfBlob(blob) {
+    const url = URL.createObjectURL(blob);
+    try { return await loadImageEl(url); } finally { URL.revokeObjectURL(url); }
+}
+
+/** An image file decoded by a pool worker (`image_read`) into tile pixels, band by band as it comes. */
+async function pixelsFromImageFile(blob, Cls, progress = null) {
+    let px = null, W = 0, H = 0;
+    try {
+        await editorPool().run("image_read", { blob }, [], {
+            timeout: 600000,
+            onProgress: (m) => {
+                if (m.header) { W = m.header.width; H = m.header.height; px = Cls.empty(W, H); return; }
+                px.putCanvasRows(new Uint8ClampedArray(m.rgba), W, 0, m.y0, m.rows);
+                if (progress) progress((m.y0 + m.rows) / H);
+            },
+        });
+    } catch (err) {
+        if (px) px.release();
+        throw err;
+    }
+    if (!px) throw new Error("the image gave no pixels");
     return px;
 }
 
@@ -5084,25 +5181,7 @@ class InpaintEditor {
         let selSnap = null;
         try {
             const sab = new SharedArrayBuffer(w * h * 4);
-            if (held.steps) {
-                // B item 7 part 2: filter layers in the stack: band by band through the GPU, each band's rows into the buffer
-                const rows = this.programRows(held, w);
-                if (!rows) return null;
-                const reader = this.programReader(held, { priority: INTERACTIVE, group });
-                for (let yy = by; yy < by1; yy += rows) {
-                    const y1 = Math.min(by1, yy + rows);
-                    await reader.read([bx, yy, bx1, y1], new Uint8Array(sab, (yy - by) * w * 4, (y1 - yy) * w * 4), y1 < by1 ? [bx, y1, bx1, Math.min(by1, y1 + rows)] : null);
-                }
-            } else {
-                const args = stackArgs(held.stores);
-                const jobs = [];
-                for (let yy = by; yy < by1;) {
-                    const n = Math.min(TILE_SIZE - (yy % TILE_SIZE), by1 - yy);
-                    jobs.push(pool.run("stack_into", { sab, w, x0: bx, y0: by, y: yy, rows: n, stack: args(yy, yy + n) }, [], { priority: INTERACTIVE, group }));
-                    yy += n;
-                }
-                await Promise.all(jobs);
-            }
+            if (!(await this.fillBoxFromStack(held, box, sab, { priority: INTERACTIVE, group }))) return null;
             let sel = null;
             if (o.clip && this.getBounds()) {
                 if (!stackInArena(this.sel)) return null;
@@ -5118,6 +5197,78 @@ class InpaintEditor {
         } finally {
             if (selSnap) selSnap.release();
         }
+    }
+
+    /**
+     * The box ([x0, y0, x1, y1], inside the image) of a held stack composited into `sab` (RGBA, the box's width, as
+     * `getImageData` gives it): the pool fills it from the tiles, a tile row a job; a stack with filter layers goes band
+     * by band through the GPU (B item 7 part 2). False when the program cannot take a band of that width.
+     */
+    async fillBoxFromStack(held, box, sab, { priority = INTERACTIVE, group = null } = {}) {
+        const [bx, by, bx1, by1] = box, w = bx1 - bx;
+        if (held.steps) {
+            // B item 7 part 2: filter layers in the stack: band by band through the GPU, each band's rows into the buffer
+            const rows = this.programRows(held, w);
+            if (!rows) return false;
+            const reader = this.programReader(held, { priority, group });
+            for (let yy = by; yy < by1; yy += rows) {
+                const y1 = Math.min(by1, yy + rows);
+                await reader.read([bx, yy, bx1, y1], new Uint8Array(sab, (yy - by) * w * 4, (y1 - yy) * w * 4), y1 < by1 ? [bx, y1, bx1, Math.min(by1, y1 + rows)] : null);
+            }
+            return true;
+        }
+        const pool = editorPool(), args = stackArgs(held.stores);
+        const jobs = [];
+        for (let yy = by; yy < by1;) {
+            const n = Math.min(TILE_SIZE - (yy % TILE_SIZE), by1 - yy);
+            jobs.push(pool.run("stack_into", { sab, w, x0: bx, y0: by, y: yy, rows: n, stack: args(yy, yy + n) }, [], { priority, group }));
+            yy += n;
+        }
+        await Promise.all(jobs);
+        return true;
+    }
+
+    /**
+     * The stack a run composites its box from, held now (`holdStack`: copy-on-write clones taken before this returns its
+     * promise, so the picture is the one of this moment whatever the window does while the crop is planned), for
+     * `readBoxBytes`' `held`; the caller releases it. Resolves to null when the stack cannot be held.
+     */
+    holdRunStack({ forRun = true, priority = INTERACTIVE } = {}) {
+        if (!this.tileMode || this.huge || InpaintEditor.boxOverTiles === false) return Promise.resolve(null);
+        return this.holdStack(this.stackPlan({ forRun, filters: true }), { forRun, priority }).catch(() => null);
+    }
+
+    /**
+     * The box ([x0, y0, x1, y1]) of the full-resolution composite a run sees as RGBA bytes, `{ data, width, height, how }`,
+     * without holding the window where it can be (docs/BUGS.md, a provider run's crop): the stack the tile workers
+     * composite (`stackPlan`: a colour-matched layer with its statistics from point samples of the tiles, filter layers
+     * over worker-composited bands; `how` "stack" or "program"), else `readBox` or the canvas backend's flatten, read
+     * once ("canvas"). `data` may be a view on a SharedArrayBuffer (no ImageData over it; the stitch worker copies it).
+     */
+    async readBoxBytes(box, { forRun = true, priority = INTERACTIVE, held: given = undefined } = {}) {
+        const [bx, by, bx1, by1] = box, w = bx1 - bx, h = by1 - by;
+        if (!(w > 0 && h > 0)) throw new Error("an empty box");
+        if (this.tileMode && !this.huge && w * h * 4 <= 0x7fffffff && InpaintEditor.boxOverTiles !== false) {
+            // `held`: the stack taken earlier by `holdRunStack` (the caller releases it); else held here, now
+            const held = given !== undefined ? await given : await this.holdStack(this.stackPlan({ forRun, filters: true }), { forRun, priority });
+            if (held) {
+                const group = "box" + nextPartsSeq();
+                try {
+                    const sab = new SharedArrayBuffer(w * h * 4);
+                    if (await this.fillBoxFromStack(held, box, sab, { priority, group })) return { data: new Uint8ClampedArray(sab), width: w, height: h, how: held.steps ? "program" : "stack" };
+                } catch (err) {
+                    editorPool().cancel(group);
+                    if (!partsFailed(err) && !String(err && err.message).includes(NO_PROGRAM)) console.warn("Inpaint Canvas: the box over tiles failed, using the canvases:", (err && err.message) || err);
+                } finally {
+                    if (given === undefined) held.release();
+                }
+            }
+        }
+        const c = makeCanvas(w, h);
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        if (this.tileMode) ctx.drawImage(this.readBox(box, { forRun }), 0, 0);
+        else ctx.drawImage(this.flattenToCanvas({ forRun }), bx, by, w, h, 0, 0, w, h);
+        try { return { data: ctx.getImageData(0, 0, w, h).data, width: w, height: h, how: "canvas" }; } finally { c.width = 1; c.height = 1; }
     }
 
     /**
@@ -6114,6 +6265,7 @@ class InpaintEditor {
         if (!p.stroke || p.stroke.empty) return;
         const opacity = this.brushOpacity;
         const op = p.erase ? "destination-out" : (p.kind === "layerpaint" && p.layer.alphaLock ? "source-atop" : "source-over");
+        if (this.commitStrokeTiles(p, target, op, opacity)) return;
         for (const [bx, by, bw, bh] of this.strokeBands(p, target)) {
             const patch = this.strokePatch(p, target, bx, by, bw, bh);
             if (!patch) continue;
@@ -6124,6 +6276,50 @@ class InpaintEditor {
                 ctx.drawImage(patch, bx, by);
             });
         }
+    }
+
+    /**
+     * The commit on tiles: the stroke store's tiles into the target's through the compositing kernel, a tile at a time
+     * (`compositeStroke`), not band by band through canvases (docs/BUGS.md: releasing a long erase held the window
+     * 0.3 s at 15000 x 10000). The stroke's box, and with a clip the selection under each tile, are the kernel's
+     * coverage; a clip on a scaled or fractional layer, and the canvas backend, keep the bands. False when it did not run.
+     */
+    commitStrokeTiles(p, target, op, opacity) {
+        const sb = p.stroke, sp = sb && sb.px;
+        if (!sp || !isTilePixels(target) || typeof target.compositeStroke !== "function" || InpaintEditor.strokeTiles === false) return false;
+        if (sp.width !== target.width || sp.height !== target.height) return false;
+        const l = p.layer;
+        const sel = p.clip ? this.sel : null;
+        if (sel && (!isTilePixels(sel) || target.width !== l.w || target.height !== l.h || l.x !== Math.round(l.x) || l.y !== Math.round(l.y))) return false;
+        // the box the bands would walk (`strokeBands`): the buffer's extent within the gesture's rectangle
+        const r = this.strokeRect(p, target);
+        const x0 = Math.max(sb.x, r ? Math.floor(r[0]) : sb.x), y0 = Math.max(sb.y, r ? Math.floor(r[1]) : sb.y);
+        const x1 = Math.min(sb.x + sb.w, r ? Math.ceil(r[2]) : sb.x + sb.w), y1 = Math.min(sb.y + sb.h, r ? Math.ceil(r[3]) : sb.y + sb.h);
+        if (x1 <= x0 || y1 <= y0) return true;
+        const T = TILE_SIZE;
+        const coverage = (tx, ty) => {
+            const X = tx * T, Y = ty * T;
+            const cx0 = Math.max(x0, X), cy0 = Math.max(y0, Y), cx1 = Math.min(x1, X + T), cy1 = Math.min(y1, Y + T);
+            if (cx1 <= cx0 || cy1 <= cy0) return null;
+            if (!sel && cx0 === X && cy0 === Y && cx1 === X + T && cy1 === Y + T) return true;
+            const m = new Uint8Array(T * T);
+            if (sel) {
+                // the selection under this tile of the layer (unscaled, on whole pixels): its alpha is the clip
+                const a = sel.readRect(l.x + cx0, l.y + cy0, cx1 - cx0, cy1 - cy0).data;
+                let any = false;
+                for (let yy = cy0; yy < cy1; yy++) {
+                    for (let xx = cx0, j = ((yy - cy0) * (cx1 - cx0)) * 4 + 3; xx < cx1; xx++, j += 4) {
+                        const v = a[j];
+                        if (v) { m[(yy - Y) * T + (xx - X)] = v; any = true; }
+                    }
+                }
+                return any ? m : null;
+            }
+            for (let yy = cy0; yy < cy1; yy++) m.fill(255, (yy - Y) * T + (cx0 - X), (yy - Y) * T + (cx1 - X));
+            return m;
+        };
+        target.compositeStroke(sp, OPS[op], Math.round(Math.max(0, Math.min(1, opacity)) * 255), coverage);
+        return true;
     }
 
     /**
@@ -8337,14 +8533,16 @@ class InpaintEditor {
                 const ext = ((file.name || "").match(/\.[a-z0-9]+$/i) || [".png"])[0];
                 const stem = (file.name || "image").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
                 const ref = await uploadBlob(file, stem + ext, { overwrite: false });
-                const img = await loadImageEl(viewUrl(ref));
+                // a large file is decoded in a pool worker (`pixelsOffThread`), a small one through an <img>
+                const px = (this.tileMode ? await pixelsOffThread(file, this.pixels.Layer) : null) || this.pixels.Layer.fromImage(await loadImageEl(viewUrl(ref)));
+                const nw = px.width, nh = px.height;
                 // Shown at a third of the canvas, cascaded from the top left; the file itself stays the reference.
-                const s = Math.min(1, (Math.max(this.width, this.height) / 3) / Math.max(img.naturalWidth, img.naturalHeight));
-                const w = Math.max(1, Math.round(img.naturalWidth * s)), h = Math.max(1, Math.round(img.naturalHeight * s));
+                const s = Math.min(1, (Math.max(this.width, this.height) / 3) / Math.max(nw, nh));
+                const w = Math.max(1, Math.round(nw * s)), h = Math.max(1, Math.round(nh * s));
                 const off = place === "cascade" ? 16 + (n % 8) * 24 : 0;
                 // origin: native size; fit: native size unless larger than the canvas; cascade: a third of the canvas (references)
-                const fs = place === "fit" || place === "at" ? Math.min(1, this.width / img.naturalWidth, this.height / img.naturalHeight) : 1;
-                const lw = place === "cascade" ? w : Math.max(1, Math.round(img.naturalWidth * fs)), lh = place === "cascade" ? h : Math.max(1, Math.round(img.naturalHeight * fs));
+                const fs = place === "fit" || place === "at" ? Math.min(1, this.width / nw, this.height / nh) : 1;
+                const lw = place === "cascade" ? w : Math.max(1, Math.round(nw * fs)), lh = place === "cascade" ? h : Math.max(1, Math.round(nh * fs));
                 let lx = off, ly = off;
                 if (place === "at" && at) {
                     // centred on the drop point, nudged back so the layer stays inside the canvas; several files cascade from there
@@ -8352,7 +8550,7 @@ class InpaintEditor {
                     ly = Math.round(Math.min(Math.max(0, at[1] - lh / 2), Math.max(0, this.height - lh)));
                     at = [at[0] + 24, at[1] + 24];
                 }
-                last = this.addLayer({ name: (file.name || "image").replace(/\.[a-z0-9]+$/i, ""), kind: "image", role, ref, px: this.pixels.Layer.fromImage(img), x: lx, y: ly, w: lw, h: lh, dirty: false });
+                last = this.addLayer({ name: (file.name || "image").replace(/\.[a-z0-9]+$/i, ""), kind: "image", role, ref, px, x: lx, y: ly, w: lw, h: lh, dirty: false });
                 n++;
             } catch (err) {
                 console.error(err);
@@ -8816,11 +9014,14 @@ class InpaintEditor {
 
     /** The PNG writers of E2 and the pool, for tests and benchmarks (tools/export_test.py). */
     static get parts() {
-        return { usable: partsUsable, encodeTilePixels, encodeBands, encodeCanvas, uploadPixels, buildLayered, pool: editorPool, pngRoute: hugePngSize };
+        return { usable: partsUsable, encodeTilePixels, encodeBands, encodeCanvas, uploadPixels, buildLayered, pool: editorPool, pngRoute: hugePngSize, imageRoute: imageFileSize, offThread: pixelsOffThread };
     }
 
     /** PNG files of at least this many pixels are opened through the stream reader when they need no colour management (0: only above the canvas limit). */
     static pngStreamFrom = 32 * 1024 * 1024;
+
+    /** Image files (JPEG, WebP, a PNG the stream reader does not take) of at least this many pixels are decoded in a pool worker on tiles (0: never). */
+    static imageWorkerFrom = 32 * 1024 * 1024;
 
     static jobTimings(reset = false) {
         const out = JOB_TIMINGS.slice();
@@ -9302,6 +9503,19 @@ class InpaintEditor {
 
     // ---- layers: management ------------------------------------------------
 
+    /** A new base from a file in the mirror (`ref`), all else dropped: a large one decoded off the window on tiles. */
+    async setBaseFromRef(ref) {
+        if (this.tileMode) {
+            const blob = await (await fetch(viewUrl(ref))).blob();
+            const big = (await hugePngSize(blob)) || (await imageFileSize(blob));
+            if (big) this.checkBaseSize(big.width, big.height);
+            const px = big ? await pixelsOffThread(blob, this.pixels.Layer) : null;
+            if (px) return this.setBasePixels(ref, px, { keepLayers: false });
+            return this.setBase(ref, await imageOfBlob(blob), { keepLayers: false });
+        }
+        return this.setBase(ref, await loadImageEl(viewUrl(ref)), { keepLayers: false });
+    }
+
     /** A new base from an <img> (or a canvas with `naturalWidth` / `naturalHeight`): its pixels are made here, the image is not kept. */
     async setBase(ref, img, opts = {}) {
         const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
@@ -9364,6 +9578,10 @@ class InpaintEditor {
 
     async loadFile(file, { size = null, ask = true } = {}) {
         if (!file) return;
+        // an open that is still decoding (a large file in a worker takes seconds, the window stays usable) must not land
+        // over a later one: the last file asked for is the base
+        const token = (this._openToken = (this._openToken || 0) + 1);
+        const later = () => this._openToken !== token;
         try {
             if (isSvgFile(file)) {
                 const target = await this.svgTarget(file, { size, ask });
@@ -9375,16 +9593,19 @@ class InpaintEditor {
             const ext = ((file.name || "").match(/\.[a-z0-9]+$/i) || [".png"])[0];
             const stem = (file.name || "pasted").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
             const ref = await uploadBlob(file, stem + ext, { overwrite: false });
-            // E5: a PNG larger than any canvas is decoded as a stream into tiles (the browser's decoder has nowhere to put it)
-            const big = this.tileMode ? await hugePngSize(file) : null;
-            if (big) {
-                this.checkBaseSize(big.width, big.height);
-                this.setStatus(`Reading ${big.width} × ${big.height} px ...`);
-                const px = await pixelsFromPngStream(file, this.pixels.Layer, (f) => this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`));
+            // E5: a PNG larger than any canvas is decoded as a stream into tiles (the browser's decoder has nowhere to put
+            // it); any other large file is decoded in a pool worker, so the window never holds the whole picture
+            const big = this.tileMode ? (await hugePngSize(file)) || (await imageFileSize(file)) : null;
+            if (big) this.checkBaseSize(big.width, big.height);
+            if (later()) return;
+            const px = big ? await pixelsOffThread(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${big.width} × ${big.height} px ... ${Math.round(f * 100)} %`); }) : null;
+            if (later()) { if (px) px.release(); return; }
+            if (px) {
                 await this.setBasePixels(ref, px, { keepLayers: false });
                 return;
             }
             const img = await loadImageEl(viewUrl(ref));
+            if (later()) return;
             await this.setBase(ref, img, { keepLayers: false });
         } catch (err) {
             console.error(err);
@@ -12175,18 +12396,22 @@ class InpaintEditor {
         this._loading = true;
         try {
             // E5: the files of a document larger than any canvas are PNGs the browser's decoder has nowhere to put; they
-            // are fetched and decoded as a stream into tiles. Every other document loads as it always did.
-            const hugeDoc = this.tileMode && (+state.width || 0) * (+state.height || 0) > CANVAS_MAX_PIXELS;
+            // are fetched and decoded as a stream into tiles. On tiles every other large file (the base the user opened,
+            // a full-size layer) is decoded off the window too (`pixelsOffThread`); small ones load as they always did.
+            // A file is fetched once: its pixels come from a reader (`{ px }`), or it is handed back (`{ blob }`) for the
+            // <img>; on the canvas backend nothing is fetched here.
             const streamed = async (ref, Cls) => {
-                if (!hugeDoc) return null;
+                if (!this.tileMode) return null;
                 const blob = await (await fetch(viewUrl(ref))).blob();
-                return (await hugePngSize(blob)) ? pixelsFromPngStream(blob, Cls) : null;
+                const px = await pixelsOffThread(blob, Cls);
+                return px ? { px } : { blob };
             };
-            const basePx = await streamed(state.base, this.pixels.Layer);
-            if (stale()) { if (basePx) basePx.release(); return; }
-            if (basePx) await this.setBasePixels(state.base, basePx, { keepLayers: false });
+            const imageOf = async (got, ref) => (got && got.blob ? imageOfBlob(got.blob) : loadImageEl(viewUrl(ref)));
+            const baseGot = await streamed(state.base, this.pixels.Layer);
+            if (stale()) { if (baseGot && baseGot.px) baseGot.px.release(); return; }
+            if (baseGot && baseGot.px) await this.setBasePixels(state.base, baseGot.px, { keepLayers: false });
             else {
-                const img = await loadImageEl(viewUrl(state.base));
+                const img = await imageOf(baseGot, state.base);
                 if (stale()) return;
                 await this.setBase(state.base, img, { keepLayers: false });
             }
@@ -12249,10 +12474,11 @@ class InpaintEditor {
                 }
                 if (!l.ref) continue;
                 try {
-                    let pixels = await streamed(l.ref, this.pixels.Layer);
-                    if (stale()) return;
+                    const got = await streamed(l.ref, this.pixels.Layer);
+                    if (stale()) { if (got && got.px) got.px.release(); return; }
+                    let pixels = got && got.px;
                     if (!pixels) {
-                        const limg = await loadImageEl(viewUrl(l.ref));
+                        const limg = await imageOf(got, l.ref);
                         if (stale()) return;
                         pixels = this.pixels.Layer.fromImage(limg);
                     }

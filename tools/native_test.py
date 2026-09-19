@@ -39,7 +39,7 @@ if "--json" in ARGS:
 SIZE = next((a for a in ARGS if "x" in a.lower() and a[0].isdigit()), "15000x10000")
 ONLY = [a for a in ARGS if not a[0].isdigit() and not a.startswith("-")]
 # rows that change the document (B item 7): run only when named, after the rows they need
-OPT_IN = ("blend_export_png", "blend_export_psd", "blend_wand", "filter_export_png", "filter_export_psd", "filter_wand", "match_export_png", "match_export_psd", "match_wand")
+OPT_IN = ("match_provider_crop", "film_provider_crop", "blend_export_png", "blend_export_psd", "blend_wand", "filter_export_png", "filter_export_psd", "filter_wand", "match_export_png", "match_export_psd", "match_wand")
 
 PROBES = r"""
 (() => {
@@ -335,13 +335,70 @@ const S = await import("./editor/stitch.js");
 const cx = Math.round(W / 2), cy = Math.round(H / 2);
 ed.clearUndo();
 await run("select_rect", { doc: window.__n1doc, x: cx - 512, y: cy - 512, w: 1024, h: 1024 });
-const answer = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; const x = c.getContext("2d"); x.fillStyle = "#20c060"; x.fillRect(0, 0, w, h); return c; };
+// the provider's answer as file bytes, made before the row (a 1024 px square: what the row's crop is emitted at)
+const answer = await (async () => { const c = document.createElement("canvas"); c.width = 1024; c.height = 1024; const x = c.getContext("2d"); x.fillStyle = "#20c060"; x.fillRect(0, 0, 1024, 1024); const b = await new Promise((r) => c.toBlob(r, "image/png")); return new Uint8Array(await b.arrayBuffer()); })();
 return row(async () => {
     const t0 = performance.now();
-    const prep = S.prepareCrop(ed, host.nodeParams, host.cropLimits());
+    // a provider run's two steps as `host.runProvider` takes them (the stitch worker, the box from the tile workers)
+    const prep = await S.prepareCropAsync(ed, host.nodeParams, host.cropLimits());
     const prepMs = +(performance.now() - t0).toFixed(1);
-    const fin = S.finishResult(ed, prep.info, prep.sel, answer(prep.info.emitted[0], prep.info.emitted[1]));
-    return { prepMs, bbox: prep.info.bbox, emitted: prep.info.emitted, window: [prep.sel.w, prep.sel.h], patch: [fin.patch.width, fin.patch.height] };
+    const fin = await S.finishResultAsync(ed, prep.info, prep.sel, answer, "image/png");
+    const bmp = await createImageBitmap(fin.blob);
+    fin.patch = { width: bmp.width, height: bmp.height }; bmp.close();
+    return { prepMs, bbox: prep.info.bbox, emitted: prep.info.emitted, window: [prep.sel.w, prep.sel.h], patch: [fin.patch.width, fin.patch.height], how: [prep.how, fin.how] };
+});
+"""),
+    ("match_provider_crop", True, r"""
+// the provider crop on the user's usual document: a result layer of 5000 x 3500 at (5000, 3000), matched 80 % to its
+// surroundings, under the selection (`readBox` takes the whole flatten for a matched stack, docs/BUGS.md). Kept for
+// `film_provider_crop`; removed by `close`.
+const S = await import("./editor/stitch.js");
+if (!ed.layers.some((l) => l.name === "Matched")) {
+    const w = 5000, h = 3500, c = document.createElement("canvas"); c.width = w; c.height = h;
+    const x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, "hsl(20,70%,55%)"); g.addColorStop(1, "hsl(60,60%,35%)");
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
+    for (let k = 0; k < 40; k++) { x.fillStyle = `hsl(${(k * 41) % 360},60%,50%)`; x.fillRect((k * 613) % w, (k * 389) % h, w / 20, h / 20); }
+    const l = ed.addLayer({ name: "Matched", kind: "result", px: ed.pixels.Layer.fromCanvas(c), x: 5000, y: 3000, w, h, dirty: true });
+    c.width = 1;
+    l.match = { strength: 80, source: "surroundings" };
+    ed.markMatchChanged(l);
+    ed.renderLayers(); ed.draw();
+    await ed.mipsSettled();
+}
+const cx = Math.round(W / 2), cy = Math.round(H / 2);
+ed.clearUndo();
+await run("select_rect", { doc: window.__n1doc, x: cx - 512, y: cy - 512, w: 1024, h: 1024 });
+// the provider's answer as file bytes, made before the row (a 1024 px square: what the row's crop is emitted at)
+const answer = await (async () => { const c = document.createElement("canvas"); c.width = 1024; c.height = 1024; const x = c.getContext("2d"); x.fillStyle = "#20c060"; x.fillRect(0, 0, 1024, 1024); const b = await new Promise((r) => c.toBlob(r, "image/png")); return new Uint8Array(await b.arrayBuffer()); })();
+return row(async () => {
+    const t0 = performance.now();
+    // a provider run's two steps as `host.runProvider` takes them (the stitch worker, the box from the tile workers)
+    const prep = await S.prepareCropAsync(ed, host.nodeParams, host.cropLimits());
+    const prepMs = +(performance.now() - t0).toFixed(1);
+    const fin = await S.finishResultAsync(ed, prep.info, prep.sel, answer, "image/png");
+    const bmp = await createImageBitmap(fin.blob);
+    fin.patch = { width: bmp.width, height: bmp.height }; bmp.close();
+    return { prepMs, bbox: prep.info.bbox, emitted: prep.info.emitted, patch: [fin.patch.width, fin.patch.height], how: [prep.how, fin.how] };
+});
+"""),
+    ("film_provider_crop", True, r"""
+// the same with a film look over the stack
+const S = await import("./editor/stitch.js");
+if (!ed.layers.some((l) => l.kind === "filter")) await run("add_filter", { doc: window.__n1doc, type: "film.look", params: { preset: "portra400" } });
+ed.renderLayers(); ed.draw();
+await ed.mipsSettled();
+// the provider's answer as file bytes, made before the row (a 1024 px square: what the row's crop is emitted at)
+const answer = await (async () => { const c = document.createElement("canvas"); c.width = 1024; c.height = 1024; const x = c.getContext("2d"); x.fillStyle = "#20c060"; x.fillRect(0, 0, 1024, 1024); const b = await new Promise((r) => c.toBlob(r, "image/png")); return new Uint8Array(await b.arrayBuffer()); })();
+return row(async () => {
+    const t0 = performance.now();
+    // a provider run's two steps as `host.runProvider` takes them (the stitch worker, the box from the tile workers)
+    const prep = await S.prepareCropAsync(ed, host.nodeParams, host.cropLimits());
+    const prepMs = +(performance.now() - t0).toFixed(1);
+    const fin = await S.finishResultAsync(ed, prep.info, prep.sel, answer, "image/png");
+    const bmp = await createImageBitmap(fin.blob);
+    fin.patch = { width: bmp.width, height: bmp.height }; bmp.close();
+    return { prepMs, bbox: prep.info.bbox, emitted: prep.info.emitted, patch: [fin.patch.width, fin.patch.height], how: [prep.how, fin.how] };
 });
 """),
     ("export_png", True, r"""

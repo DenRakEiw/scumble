@@ -13,7 +13,62 @@ the ones that were performance work.
 
 An entry here leaves the file when the release named in it is published.
 
-Nothing at the moment.
+- **Opening a large JPEG, WebP or a PNG with a colour profile blocked the window** (fixed 2026-09-19, for 0.1.20; it
+  was under "What phase N1 found on the way"). On tiles such a file of `InpaintEditor.imageWorkerFrom` pixels and more
+  (32 MP; 0 turns it off) is decoded in a pool worker (`image_read`: `createImageBitmap` with the `<img>`'s settings,
+  drawn in bands of 256 rows into a CPU OffscreenCanvas and read there) and put into tiles without the round trip
+  (`putCanvasRows`); a plain PNG keeps the stream reader. It covers opening a file, an image layer (drop, paste, the
+  file inputs, `add_image_layer`), the restore at start (every file on tiles by its own size, fetched once: a small one
+  goes to the `<img>` from the bytes already fetched) and `load_image` by file name (`setBaseFromRef`). A failed read
+  falls back to the `<img>` (but for a PNG above the canvas limit, which only the stream reader holds); an open still
+  decoding never lands over a later one; a PNG with a `cICP` chunk keeps the browser's decoder too, as `iCCP`, `gAMA`
+  and `cHRM` did. The same bytes as the `<img>` way. 15000 x 10000, the window
+  blocked before / after (`dist/daily/open_bench.py`): JPEG 950 / 98 ms, JPEG with an Adobe RGB profile 3,692 / 34 ms,
+  JPEG with EXIF orientation 6 1,872 / 62 ms, WebP with alpha 1,656 / 38 ms, PNG with an Adobe RGB profile 4,437 /
+  45 ms; wall 1.04 to 0.78 s, 3.78 to 1.08 s, 5.84 to 2.68 s. Gate: `editor_test.py`
+  `large_image_files_open_in_a_worker` (six Pillow files: plain, profiled and rotated JPEG, alpha WebP, profiled and
+  16-bit PNG; the worker's bytes against the `<img>`'s, the EXIF size, the profile really applied, an image layer and
+  a restore through the worker). Mutations caught: the profile dropped, `premultiplyAlpha: "none"`, a band a row off,
+  the restore not routed, `imageOrientation: "flipY"`; `"none"` is equivalent (Chromium 152 treats it as
+  `"from-image"`). Canvas backend unchanged.
+- **A provider run's crop and stitch held the window** (fixed 2026-09-19, for 0.1.20). The row in the list said
+  0.6 s; on the user's usual document it was far worse, because `readBox` took the whole flatten for a colour-matched
+  layer: 15000 x 10000, a 1,024 px selection (`native_test.py provider_crop`, `match_provider_crop`,
+  `film_provider_crop`), the longest block before / after: plain stack 665 / 24 ms, with a 5,000 x 3,500 matched
+  layer 1,469 / 22 ms, with a film look over it 6,283 / 51 ms; wall about 0.6 s, in workers. `host.runProvider` now
+  calls `prepareCropAsync` / `finishResultAsync` (stitch.js): the selection's window is read here and planned, the
+  crop box is composited by the tile workers (`readBoxBytes`: the stack or the filter program of B items 1 and 7, the
+  matched layer's statistics from point samples as decision (b) of 7c allows for runs; `readBox` and the canvas
+  backend's flatten are the fallback), and the crop, the masks, the resizes, the answer's decode, the colour match and
+  every PNG are made in a stitch worker of its own (`stitch_worker.js`, app only), the same steps as the synchronous
+  pair (`planCrop`, `cropPixels`, `finishPixels`). The run is one moment as before: the selection's window, the stack
+  the box is composited from (`holdRunStack`, copy-on-write clones), the reference layers, the recipe's parameters, the
+  prompt and the seed are all taken at the click, before the first await. The synchronous `prepareCrop` / `finishResult` stay (the fallback
+  and what the size tests read); `setStitchInWorker(false)` and `InpaintEditor.boxOverTiles = false` are the A/B
+  switches. Gate: `export_test.py` `a_run_off_the_window_sends_what_the_window_sent`: info, masks and the plain
+  stack's crop and patch files byte for byte against the synchronous pair; over a soft layer and a levels layer within
+  B item 1's two levels on 0.1 % of the bytes, with a matched layer within decision (b)'s levels (colour premultiplied
+  by alpha: a level where alpha is 8 is 31 levels of straight colour nobody sees). Mutations caught: the box a row
+  off, the stitch without its region, the mask not resized, a program band shifted; the limits dropped in the shared
+  settings is equivalent there (`size_test` holds it). `smoke` ran the new path against the loopback provider
+  (2026-09-19, PASS on both backends). An adversarial review (four lenses, two refuters a finding: 15 findings, 7
+  upheld, all fixed with the other 8) gave the one-moment snapshot, the parameters at the click, the `<img>` fallback of
+  the stream reader, `cICP`, the restore by file size and the transfers instead of copies.
+- **Releasing a stroke held the window** (fixed on tiles 2026-09-19, for 0.1.20; the bullet "Releasing an erase stroke
+  is its own stutter" below). The commit wrote band after band through canvases (the stroke's part materialised, the
+  layer's tiles put into a scratch, drawn, read back): on tiles a stroke is now composited a tile at a time through
+  the compositing kernel (`commitStrokeTiles`, `compositeStroke`: the stroke's box and, with a clip, the selection
+  under each tile as the kernel's coverage; only the pixels the stroke reaches are written). A scaled or fractional
+  layer with a clip and the canvas backend keep the bands; `InpaintEditor.strokeTiles = false` is the A/B switch.
+  `tools/release_test.py` (real mouse events, 15000 x 10000 with a matched result layer and a film look, until the
+  picture settled), the longest block after the release before / after: an erase on the matched layer at fit 70 /
+  34 ms (the commit 51 / 17), a stroke of paint there 88 / 36 ms (67 / 19), a long diagonal erase across a full-size
+  layer 288 / 66 ms (271 / 48); at 1:1 31 / 38 ms (the commit 4 ms either way, the frame's film look the rest). Gate:
+  `editor_test.py` `a_stroke_commits_through_the_kernel_on_tiles` (paint at an opacity, erase, erase at an opacity,
+  the alpha locked, paint and erase clipped on a layer off the origin: pixels the stroke does not reach the same bytes,
+  the rest within two levels premultiplied of the bands', undo byte for byte; an erase at full opacity is the same
+  bytes). Mutations caught: the clip ignored, the opacity ignored, the alpha lock as source-over, untouched pixels
+  not restored, the clip a few pixels off, the clip without the layer's offset.
 
 ---
 
@@ -59,10 +114,6 @@ agent ist nur add on"), so the assistant's plan does not fix them; each is its o
 **Written** 2026-09-17 with the measurement of phase N (`docs/PERFORMANCE.md` §14, `tools/native_test.py`,
 `tools/native_limits.py`). Seen while measuring, not reports; none is fixed.
 
-- **A provider run's crop still blocks the window for 0.6 s** (2.5 s before B item 4, `docs/PLAN_BCE.md` §3b "B item 4
-  as built"): a 1,024 px selection, a 1,492 px patch, the mask kernels 0.2 s, per-pixel JS in `stitch.js` 0.2 s, Canvas 2D
-  0.26 s, all on the main thread in one piece. `native_test.py provider_crop` is the row. The number to beat: under
-  0.2 s, or no block at all (the stitch in a worker).
 - **The whole-picture wand on a document above the canvas limit works for 4.6 s and then refuses** ("larger than any
   canvas", 30000 × 20000, `native_test.py 30000x20000 wand_whole_picture`). Why it gets
   that far before it refuses is not read yet. Either it says so at once, or it floods over tiles.
@@ -70,9 +121,8 @@ agent ist nur add on"), so the assistant's plan does not fix them; each is its o
   uncaught `RangeError: Array buffer allocation failed` out of `allocTileBytes` / `TileLayerPixels.writable`
   (`native_limits.py layers 15000x10000 22`). The arena counts a refused chunk and then falls back to a plain array, which
   fails the same way. Not measured: what a stroke or a paste does to the document when it hits that in the middle.
-- **Opening a large JPEG, WebP or a PNG with a colour profile still blocks the window** (2.1 s at 150 MP): the picture is
-  decoded into an image and read in 13 `getImageData` calls. A plain 8-bit PNG of 32 MP and more goes through the stream
-  reader since B item 5 and blocks 0.12 s (`docs/PLAN_BCE.md` §3b).
+- (The provider crop's block and the opening of a large JPEG, WebP or profiled PNG are fixed: "Fixed, waiting for its
+  release" above.)
 
 ### What phase E left open on large documents
 
@@ -112,6 +162,30 @@ measured and not met, and what still needs a canvas of the picture. Each has a n
   levels the two statistics are apart (`docs/PLAN_BCE.md` §3b "B item 7, part 3 as built", the photo table).
 - **Seen once, not reproduced**: `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed with
   `requested: 0` in one of some twenty runs since the mip chains go through the pool.
+
+### A local run on a large document spends minutes in the node's stitch
+
+**Found** 2026-09-19 by the first `smoke` against a real server since phase E: a local Flux.2 Klein run on a 6000 x
+4000 document (a soft paint layer, a matched result layer, a levels layer; a 1000 x 800 selection) took 19 min 27 s,
+of which 15 min were the node's stitch after the VAE decode, one CPU core busy, the GPU idle. The app's side was
+right: the base went up in bands through the filter program (`n2_base_4682dc8486bc.png`, the hash of the composite
+recomputed afterwards, the same 27,198,764 bytes) and the result landed at the crop box.
+
+**Why:** ComfyUI-InpaintCanvas `nodes.py` builds the stitch's masks over the **whole picture** (`_composite_mask` on
+the full-size selection) and dilates with a square `max_pool2d` of k = 2 x grow + 1 (137 for a 1000 x 800 selection),
+k squared comparisons a pixel on the CPU: 35 s a megapixel at k = 137 (the ComfyUI's torch, one thread), so about 14
+min at 24 MP and 90 min at 15000 x 10000. The run's own crop (`_denoise_mask` on the crop) costs about a minute the same
+way (the 55 s between "got prompt" and the model load).
+
+**The fix is prepared, not applied** (the node folder is the user's live ComfyUI; its Python only loads after a
+restart): `_dilate_mask` as two separable `max_pool2d` passes (the same values: a square max is the max of the row
+maxima), and the stitch's masks on a window around the region with the margin the app's `finishResult` uses. The
+patch and its tests are in the session's scratchpad (`node_fix_patch.py`, `node_mask_test.py`,
+`node_stitch_e2e.py`): the node's own `InpaintCanvasStitch.stitch`, today's `nodes.py` against the patched copy with
+ComfyUI stubbed out, gives the same returned image and the same patch PNG, byte for byte, with auto feather, colour
+match and alignment (71.5 s to 1.96 s at 2500 x 1800), with `paste` "crop" (43.1 to 0.61 s) and a plain feather; the
+masks alone at 6000 x 4000 889.5 s to 4.4 s, equal on eight cases. **Needs the user:** the commit in the node repo and
+a ComfyUI restart when it suits, then one local run on a large document.
 
 ### A headless MCP instance keeps Scumble from starting
 
@@ -166,6 +240,18 @@ on that same Ctrl+click path.
 **Ask the user**: does the status line say *"Base selected."* when it happens? That one answer
 separates the auto-select path from everything else. The question was put on 2026-09-11 and is
 still unanswered.
+
+**Read again 2026-09-19** (a map of every write of `activeLayerId`; no code changed). The two screen recordings of the
+report's session (`C:\Users\schoeneberg\Videos\2026-09-11 22-19-50.mp4` and `22-24-49.mp4`) show the result row
+highlighted throughout and the status line unchanged ("Result 3 restored.", "Result 5 added ...") while the layer
+loses pieces or vanishes: no "Base selected." and no "The base layer cannot be erased" (which the next press would
+say if the base were active). That is the display bug fixed in 0.1.8, and the likeliest reading. Other paths that do
+make the base active, none of them with the button merely held: Ctrl held at a press (auto-select picks the base on
+a just-erased spot), undo past a result's addition (0.1.7 allowed an undo during a held stroke; today it is refused),
+Delete / Backspace or Ctrl+X with nothing selected (removes the active layer), Ctrl+E on the bottom layer. The sharper
+question: *when it happens, is the result layer still in the list, and which row is highlighted, the result or
+"Base"? And what does the status line say?* Row still there and highlighted: the display bug; "Base" highlighted:
+auto-select; the row gone: the status line names Delete, Cut or merge.
 
 ### Selection undo and bounds lose isolated pixels above 1 MP (canvas backend)
 
@@ -237,7 +323,8 @@ their own 15k file (what to ask for: the 2026-09-15 update above).
   canvas: 150 million pixels per step. Phase 1 made *brush* undo a copy of the touched
   rectangle only, but the selection steps were not part of that. On a document this size
   that alone can be the stutter.
-- **Releasing an erase stroke is its own stutter** (reported separately in the same session:
+- **Releasing an erase stroke is its own stutter** (fixed on tiles 2026-09-19: "Fixed, waiting for its release"
+  above; the text below is the record) (reported separately in the same session:
   the stroke itself follows, the hitch comes on mouse up). The `layerpaint` pointer-up runs
   `strokeRect`, `commitStroke` and `markLayerChanged(layer, box)`, which refreshes the display
   pyramid over the touched rectangle and re-uploads the layer's texture. With a big eraser

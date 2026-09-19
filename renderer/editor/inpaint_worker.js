@@ -24,6 +24,8 @@
  *   psd_part        one part of a PSD's channel data: rows (bytes or tiles) as PackBits per channel.
  *   crc             CRC-32 and size of a blob (a zip entry of an ORA file).
  *   png_read        a PNG file decoded as a stream, its rows back band by band (`progress` messages).
+ *   image_read      any image file the browser decodes (JPEG, WebP, a PNG with a colour profile), decoded here and
+ *                   read back band by band like png_read: the window never decodes or reads it.
  *   band            a row of tiles composited, layer over layer (`compositeTile`): no caller in
  *                   the editor yet; phase R measures the kernel phase E's band export will run.
  *
@@ -375,6 +377,40 @@ async function pngRead(msg) {
     return { width: info.width, height: info.height, texts: info.texts, header, timing: { op: "png_read", kernels: kernelsInUse(), pixels: info.width * info.height, kernel: now() - t0, unfilter: info.spent.unfilter, deliver: info.spent.deliver } };
 }
 
+/**
+ * An image file decoded by the browser in this worker and read back band by band, like `png_read` (`progress` messages
+ * `{ header }`, then `{ rgba, y0, rows }` transferred). The window's way was an <img> drawn in strips into a CPU scratch
+ * and read there: 1 to 4 s of blocked window for a 15000 x 10000 JPEG, WebP or PNG with a colour profile. The same
+ * decoder settings an <img> gets (the colour profile applied, EXIF orientation, premultiplied) and the same kind of
+ * canvas (a CPU one: `willReadFrequently`), drawn unscaled at whole-pixel offsets, so the bytes are the <img> way's.
+ */
+async function imageRead(msg) {
+    const t0 = now();
+    const bmp = await createImageBitmap(msg.blob, { imageOrientation: "from-image", premultiplyAlpha: "default", colorSpaceConversion: "default" });
+    const W = bmp.width, H = bmp.height, decode = now() - t0;
+    let draw = 0, read = 0;
+    try {
+        self.postMessage({ id: msg.id, progress: true, header: { width: W, height: H } });
+        const rows = Math.max(1, msg.rowsPerBand || TILE);
+        const c = new OffscreenCanvas(W, Math.min(rows, H));
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        for (let y0 = 0; y0 < H; y0 += rows) {
+            const n = Math.min(rows, H - y0);
+            const a = now();
+            ctx.clearRect(0, 0, W, c.height);
+            ctx.drawImage(bmp, 0, -y0, W, H);
+            const b = now();
+            const img = ctx.getImageData(0, 0, W, n);
+            read += now() - b; draw += b - a;
+            self.postMessage({ id: msg.id, progress: true, rgba: img.data.buffer, y0, rows: n }, [img.data.buffer]);
+        }
+        c.width = 1; c.height = 1;
+    } finally {
+        bmp.close();
+    }
+    return { width: W, height: H, timing: { op: "image_read", pixels: W * H, kernel: now() - t0, decode, draw, read } };
+}
+
 /** The short SHA-1 of a blob (the name of an uploaded file). */
 async function hashJob(msg) {
     return { hash: await hashOf(msg.blob) };
@@ -621,6 +657,7 @@ async function run(msg) {
     if (msg.op === "hash") return hashJob(msg);
     if (msg.op === "psd_part") return psdPart(msg);
     if (msg.op === "png_read") return pngRead(msg);
+    if (msg.op === "image_read") return imageRead(msg);
     if (msg.op === "crc") return crcJob(msg);
     if (msg.op === "export_begin") {
         const opts = { width: msg.width, height: msg.height };

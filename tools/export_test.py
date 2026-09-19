@@ -549,6 +549,110 @@ if (a.prep.crop.width === bw && a.prep.crop.height === bh) {
 await run("select_none", { doc: window.__ex });
 return { bbox: a.prep.info.bbox, window: [a.prep.sel.ox, a.prep.sel.oy, a.prep.sel.w, a.prep.sel.h], ...out };
 """),
+    ("a_run_off_the_window_sends_what_the_window_sent", """
+// docs/BUGS.md (a provider run's crop blocked the window: 0.6 s, 1.5 s with a colour-matched layer, 6.3 s with a film look
+// over it): `host.runProvider` crops and stitches through `prepareCropAsync` / `finishResultAsync`, the box of the
+// composite from the tile workers (`readBoxBytes`), the pixels in the stitch worker. What it sends and stores is what the
+// synchronous pair on the window makes: the same info and masks, byte for byte, and the same crop and patch file, byte
+// for byte on a plain stack and with the colour match on. Over a soft layer and a levels layer (the stack as a program)
+// the tile workers' composite is within what B item 1 allows against the region pass (two levels on at most 0.1 % of
+// the bytes, docs/PLAN_BCE.md 3b); with a colour-matched layer too (and with a fill mode and the original as a
+// reference) the match's statistics are point samples of the tiles, not the whole flatten's (decision (b) of 7c, B item
+// 7 part 3: a mean of 0.1 to 2 levels, at most 7, on the user's photos): a mean of at most 2 and at most 8 levels.
+const S = await import("./editor/stitch.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell && host.shell.activate && host.shell.activate(ed);
+await wait(200);
+ed.resizeCanvas && ed.resizeCanvas();
+{
+    const W = 6000, H = 4000, c = document.createElement("canvas"); c.width = W; c.height = H;
+    const x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#406080"); g.addColorStop(0.5, "#c0a060"); g.addColorStop(1, "#305020");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (let k = 0; k < 400; k++) { x.fillStyle = `hsl(${(k * 47) % 360},55%,${35 + (k % 5) * 8}%)`; x.fillRect((k * 7919) % W, (k * 104729) % H, 90 + (k % 7) * 40, 60 + (k % 5) * 30); }
+    await ed.setBaseFromCanvas(c);
+    c.width = 1;
+}
+const decodePng = async (bytes) => {
+    const bmp = await createImageBitmap(new Blob([bytes], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+    const c = new OffscreenCanvas(bmp.width, bmp.height), x = c.getContext("2d", { willReadFrequently: true });
+    x.drawImage(bmp, 0, 0); bmp.close();
+    return { w: c.width, h: c.height, d: x.getImageData(0, 0, c.width, c.height).data };
+};
+const pngOf = async (c) => new Uint8Array(await (await new Promise((r) => c.toBlob(r, "image/png"))).arrayBuffer());
+// null when `a` and `b` agree as `mode` asks: "exact" every byte, "b1" at most two levels apart on at most 0.1 % of
+// the bytes, "b7" a mean of at most 2 levels and none more than 8. The tolerant modes compare colour premultiplied by
+// alpha, as the picture composites it: a level apart where alpha is 8 is 31 levels of straight colour nobody sees.
+const sameBytes = (a, b, mode) => {
+    if (a.w !== b.w || a.h !== b.h) return "size " + [a.w, a.h] + " against " + [b.w, b.h];
+    let n = 0, worst = 0, first = -1, sum = 0;
+    const at = mode === "exact" ? (d, i) => d[i] : (d, i) => ((i & 3) === 3 ? d[i] : Math.round(d[i] * d[i | 3] / 255));
+    for (let i = 0; i < a.d.length; i++) { const v = Math.abs(at(a.d, i) - at(b.d, i)); if (v) { n++; sum += v; if (v > worst) worst = v; if (first < 0) first = i; } }
+    const mean = sum / a.d.length;
+    if (!n || (mode === "b1" && worst <= 2 && n <= a.d.length / 1000) || (mode === "b7" && worst <= 8 && mean <= 2)) return null;
+    return n + " bytes differ, up to " + worst + " levels, a mean of " + mean.toFixed(3) + " (the first at " + first + ": " + a.d[first] + " against " + b.d[first] + ")";
+};
+const answer = async (w, h) => {
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const x = c.getContext("2d"); const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, "#d04010"); g.addColorStop(1, "#1060d0");
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
+    for (let k = 0; k < 30; k++) { x.fillStyle = `hsl(${k * 37},70%,50%)`; x.fillRect((k * 97) % w, (k * 61) % h, w / 9, h / 9); }
+    return pngOf(c);
+};
+const out = [];
+const one = async (label, setup, how, mode) => {
+    await setup();
+    const prep = S.prepareCrop(ed, host.nodeParams, host.cropLimits());
+    const ans = await answer(prep.info.emitted[0], prep.info.emitted[1]);
+    const fin = S.finishResult(ed, prep.info, prep.sel, await S.bytesToImage(ans, "image/png"));
+    const a = await S.prepareCropAsync(ed, host.nodeParams, host.cropLimits());
+    const f = await S.finishResultAsync(ed, a.info, a.sel, ans, "image/png");
+    if (a.how !== how) throw new Error(label + ": the box came the " + a.how + " way, not the " + how + " way");
+    // a failed job falls back to the window with the same bytes: the stitch must have run in the worker
+    if (f.how !== (S.finishNeedsRegion(a.info) ? how : "none")) throw new Error(label + ": the stitch ran the " + f.how + " way");
+    if (JSON.stringify(a.info) !== JSON.stringify(prep.info)) throw new Error(label + ": the info differs: " + JSON.stringify(a.info) + " against " + JSON.stringify(prep.info));
+    if (a.width !== prep.crop.width || a.height !== prep.crop.height) throw new Error(label + ": the emitted size differs");
+    if (a.references.length !== prep.references.length) throw new Error(label + ": " + a.references.length + " references against " + prep.references.length);
+    const pairs = [["crop", prep.crop, a.image], ["mask", prep.mask, a.mask], ["maskAlpha", prep.maskAlpha, a.maskAlpha], ...prep.references.map((c, i) => ["reference " + i, c, a.references[i]]), ["patch", fin.patch, new Uint8Array(await f.blob.arrayBuffer())]];
+    for (const [what, sync, bytes] of pairs) {
+        const bad = sameBytes(await decodePng(await pngOf(sync)), await decodePng(bytes), what === "mask" || what === "maskAlpha" ? "exact" : mode);
+        if (bad) throw new Error(label + ": the " + what + " off the window differs from the window's: " + bad);
+    }
+    if (f.cutout !== S.transparentPixels(fin.patch)) throw new Error(label + ": the cut-out flag differs");
+    out.push({ label, how: [a.how, f.how], bbox: a.info.bbox, emitted: a.info.emitted, references: a.references.length });
+};
+try {
+    await one("plain", async () => { await run("select_rect", { doc: d.id, x: 2400, y: 1600, width: 1000, height: 800 }); await run("select_feather", { doc: d.id, radius: 12 }); ed.cropSettings.colorMatch = false; }, "stack", "exact");
+    await one("colour match", async () => { ed.cropSettings.colorMatch = true; }, "stack", "exact");
+    await one("soft and levels layers", async () => {
+        const pc = document.createElement("canvas"); pc.width = 2400; pc.height = 1800;
+        const x = pc.getContext("2d"); const rg = x.createRadialGradient(1200, 900, 100, 1200, 900, 1100); rg.addColorStop(0, "rgba(255,200,40,0.6)"); rg.addColorStop(1, "rgba(255,200,40,0)");
+        x.fillStyle = rg; x.fillRect(0, 0, 2400, 1800);
+        ed.addLayer({ name: "Soft", kind: "paint", px: ed.pixels.Layer.fromCanvas(pc), x: 1500, y: 900, w: 2400, h: 1800, dirty: true });
+        await run("add_filter", { doc: d.id, type: "levels", params: { gamma: 1.15 } });
+        ed.renderLayers(); ed.draw(); await ed.mipsSettled();
+    }, "program", "b1");
+    await one("and a colour-matched layer below the levels", async () => {
+        const mc = document.createElement("canvas"); mc.width = 1600; mc.height = 1200;
+        const mx = mc.getContext("2d"); mx.fillStyle = "#3080c0"; mx.fillRect(0, 0, 1600, 1200); mx.fillStyle = "#c04030"; mx.fillRect(400, 300, 800, 600);
+        const ml = ed.addLayer({ name: "Matched", kind: "result", px: ed.pixels.Layer.fromCanvas(mc), x: 2600, y: 1800, w: 1600, h: 1200, dirty: true });
+        ml.match = { strength: 80, source: "surroundings" }; ed.markMatchChanged(ml);
+        // below the levels layer: a matched layer above a filter keeps the whole flatten
+        await run("move_layer", { doc: d.id, layer: ml.id, to: "down" });
+        if (ed.layers[ed.layers.length - 1].kind !== "filter") throw new Error("the levels layer is not on top: " + ed.layers.map((l) => l.name));
+        ed.renderLayers(); ed.draw(); await ed.mipsSettled();
+    }, "program", "b7");
+    await one("neutral fill with the original", async () => { ed.cropSettings.fill = "neutral"; ed.cropSettings.withOriginal = true; }, "program", "b7");
+    // the switch puts the run back on the window
+    const was = S.setStitchInWorker(false);
+    try { const w = await S.prepareCropAsync(ed, host.nodeParams, host.cropLimits()); if (w.how !== "window") throw new Error("with the switch off the crop still left the window: " + w.how); }
+    finally { S.setStitchInWorker(was); }
+} finally {
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("layered_files_from_rows", """
 // E4: PSD and ORA written from the layers' tiles and the composite's bands, against the canvas writers
 // (inpaint_export.js): the same structure, the same layer records, the same pixels.

@@ -5,18 +5,26 @@
 //   prepareCrop(editor, params)  -> { crop, mask, maskAlpha, references, info }
 //   finishResult(editor, info, resultImage) -> { patch (RGBA canvas), x, y, w, h, align }
 //
+// A run goes through `prepareCropAsync` / `finishResultAsync`: the same steps, the pixels in a worker of their own
+// (stitch_worker.js) and the composite of the box from the tile workers (`readBoxBytes`), so the window is not held for
+// the crop and the stitch (docs/BUGS.md: 0.6 s at 15000 x 10000, 1.5 s with a colour-matched layer and 6.3 s with a
+// film look over it, through the whole flatten). The synchronous pair stays: it is the fallback and what tests read.
+//
 // Differences from the node: resizing is the browser's bilinear/bicubic instead of
 // Lanczos, the gaussian blur is a triple box blur, the "border" fill mode has no
 // Navier-Stokes inpainting (it behaves like "blur"), and the ECC alignment of the
 // result to its surroundings is not implemented (reported as not aligned).
 
-import { dilateMask, boxBlurs } from "./px/kernels.js";
+import { dilateMask, boxBlurs, kernelsMode } from "./px/kernels.js";
 
 const MIN_AUTO_CROP = 512;
 
+/** A 2D canvas: a <canvas> in the window, an OffscreenCanvas in a worker (stitch_worker.js runs this module too). */
 function makeCanvas(w, h) {
+    w = Math.max(1, w | 0); h = Math.max(1, h | 0);
+    if (typeof document === "undefined") return new OffscreenCanvas(w, h);
     const c = document.createElement("canvas");
-    c.width = Math.max(1, w | 0); c.height = Math.max(1, h | 0);
+    c.width = w; c.height = h;
     return c;
 }
 
@@ -153,11 +161,11 @@ export function setSelectionWindowPixels(n) {
 }
 
 /**
- * The selection as a 0..1 mask for a run: of the whole image, or (E2) on a large image of a window around the
- * selection's bounds, `{ data, w, h, ox, oy, fullW, fullH }`. A whole mask of a 15000 x 10000 image is a 600 MB
- * read and 600 MB of floats, and no ImageData holds one of 30000 x 20000.
+ * The box of the selection a run reads, `[x0, y0, x1, y1]`: the whole image, or (E2) on a large image a window around
+ * the selection's bounds. A whole mask of a 15000 x 10000 image is a 600 MB read and 600 MB of floats, and no ImageData
+ * holds one of 30000 x 20000.
  */
-function selectionWindow(editor) {
+function selectionWindowBox(editor) {
     const W = editor.width, H = editor.height;
     // on tiles the box of the mask's pixels that are not zero, soft tails and all; else the bounds of the selected
     // pixels (alpha of a half and more) with a margin for the tails
@@ -166,16 +174,26 @@ function selectionWindow(editor) {
         const ext = editor.tileMode && typeof editor.sel.bounds === "function" ? editor.sel.bounds() : null;
         if (ext) { b = ext; margin = 0; } else if (typeof editor.getBounds === "function") b = editor.getBounds();
     }
-    if (!b) {
-        const m = maskFromAlpha(editor.sel.readRect(0, 0, W, H));
-        m.ox = 0; m.oy = 0; m.fullW = W; m.fullH = H;
-        return m;
-    }
-    const x0 = Math.max(0, b[0] - margin), y0 = Math.max(0, b[1] - margin);
-    const x1 = Math.min(W, b[2] + margin), y1 = Math.min(H, b[3] + margin);
-    const m = maskFromAlpha(editor.sel.readRect(x0, y0, x1 - x0, y1 - y0));
-    m.ox = x0; m.oy = y0; m.fullW = W; m.fullH = H;
+    if (!b) return [0, 0, W, H];
+    return [Math.max(0, b[0] - margin), Math.max(0, b[1] - margin), Math.min(W, b[2] + margin), Math.min(H, b[3] + margin)];
+}
+
+/** The selection's window as ImageData and where it lies: `{ img, ox, oy, fullW, fullH }`. */
+function selectionWindowPixels(editor) {
+    const [x0, y0, x1, y1] = selectionWindowBox(editor);
+    return { img: editor.sel.readRect(x0, y0, x1 - x0, y1 - y0), ox: x0, oy: y0, fullW: editor.width, fullH: editor.height };
+}
+
+/** A window read (`selectionWindowPixels`) as the 0..1 mask a run works with, `{ data, w, h, ox, oy, fullW, fullH }`. */
+function windowMask(win) {
+    const m = maskFromAlpha(win.img);
+    m.ox = win.ox; m.oy = win.oy; m.fullW = win.fullW; m.fullH = win.fullH;
     return m;
+}
+
+/** The selection as a 0..1 mask for a run: of the whole image, or (E2) on a large image of a window around it. */
+function selectionWindow(editor) {
+    return windowMask(selectionWindowPixels(editor));
 }
 
 function resizeMask(m, w, h) {
@@ -309,20 +327,32 @@ function emitTarget(limits, fixedSize, cw, ch) {
     return Math.min(limits.max, Math.max(limits.min, Math.round(want)));
 }
 
-/**
- * The crop the model gets, exactly like the node's `run`: selection bbox plus context,
- * fill mode, scaling to target_size (both sides rounded to the multiple), the denoise
- * mask at the emitted size, references. `params` = { padding, target_size, feather,
- * multiple_of } (the app's node params).
- */
-export function prepareCrop(editor, params, limits) {
-    const width = editor.width, height = editor.height;
+/** What `planCrop` reads of the editor and the recipe: numbers and strings only, so a worker can have them too. */
+function cropSettingsOf(editor, params, limits) {
     const gen = editor.genSettings || {};
+    return {
+        width: editor.width, height: editor.height,
+        gen: { mode: gen.mode, denoise: gen.denoise, refine: gen.refine },
+        crop: { ...(editor.cropSettings || {}) },
+        params: { padding: params.padding, target_size: params.target_size, feather: params.feather, multiple_of: params.multiple_of },
+        limits: limits ? { ...limits } : null,
+        base: editor.base && editor.base.ref ? { ...editor.base.ref } : null,
+    };
+}
+
+/**
+ * The geometry of a crop, exactly like the node's `run`: selection bbox plus context, the
+ * mask parameters, and the size it is emitted at (both sides rounded to the multiple).
+ * `s` is `cropSettingsOf`, `sel` the selection's window mask. Pure: no editor, no canvas.
+ */
+export function planCrop(s, sel) {
+    const { width, height, params, limits } = s;
+    const gen = s.gen || {};
     const mode = gen.mode === "local" ? "local" : "api";
     const denoise = Math.min(1, Math.max(0, +gen.denoise || 0));
     const refine = !!gen.refine && mode === "local";
     const strength = mode === "local" ? denoise : 1;
-    const cs = editor.cropSettings || {};
+    const cs = s.crop || {};
     const autoContext = cs.context === "auto";
     const autoFeather = cs.feather === "auto";
     let fillMode = cs.fill || "none";
@@ -330,7 +360,6 @@ export function prepareCrop(editor, params, limits) {
     const m = Math.max(1, Math.round((limits && limits.step) || +params.multiple_of || 64));
     const fixedSize = Math.max(0, Math.round(+params.target_size || 0));
 
-    const sel = selectionWindow(editor);
     const bb0 = selectionBbox(sel, 0);
     const hasSelection = bb0.has;
     let { pad, grow, feather, blend } = autoSelectionParams(bb0.x1 - bb0.x0, bb0.y1 - bb0.y0, strength);
@@ -365,21 +394,6 @@ export function prepareCrop(editor, params, limits) {
     const cw = x1 - x0, ch = y1 - y0;
     const targetSize = emitTarget(limits, fixedSize, cw, ch);
 
-    // E2: the crop box composited on its own (`readBox`: a region pass at full resolution, or the box cut out of the
-    // whole flatten when no margin gives those pixels), never the whole image for a box of it
-    let crop = makeCanvas(cw, ch);
-    crop.getContext("2d").drawImage(regionOf(editor, x0, y0, cw, ch), 0, 0);
-    const cropOrig = makeCanvas(cw, ch);
-    cropOrig.getContext("2d").drawImage(crop, 0, 0);
-    const selCrop = cropMask(sel, x0, y0, cw, ch);
-    let denoise_mask = autoFeather && hasSelection ? denoiseMask(selCrop, growUsed, featherUsed) : selCrop;
-    const references = [];
-    if (hasSelection && fillMode !== "none") {
-        const fillPx = Math.max(growUsed - Math.floor(featherUsed / 2), 0);
-        crop = fillMasked(crop, dilate(selCrop, fillPx), fillMode);
-        if (withOriginal) references.push(cropOrig);
-    }
-
     let ew = cw, eh = ch;
     if (targetSize > 0) {
         const scale = targetSize / Math.max(cw, ch);
@@ -402,20 +416,62 @@ export function prepareCrop(editor, params, limits) {
             if (ew > eh * limits.ratio) eh = Math.min(limits.max, Math.ceil(ew / limits.ratio / m) * m);
             else if (eh > ew * limits.ratio) ew = Math.min(limits.max, Math.ceil(eh / limits.ratio / m) * m);
         }
-        crop = drawResized(crop, ew, eh);
-        denoise_mask = resizeMask(denoise_mask, ew, eh);
-        for (let i = 0; i < references.length; i++) references[i] = drawResized(references[i], ew, eh);
     }
-    for (const l of editor.referenceLayers()) references.push(editor.layerPixels(l));
 
     const info = {
-        base: editor.base && editor.base.ref, bbox: [x0, y0, cw, ch], emitted: [ew, eh],
+        base: s.base, bbox: [x0, y0, cw, ch], emitted: [ew, eh],
         align: cs.align !== false, paste: cs.paste === "crop" ? "crop" : "selection",
         feather: featherUsed, grow: growUsed, blend: blendUsed,
         auto_feather: !!((autoFeather || refine) && hasSelection), color_match: !!cs.colorMatch,
         width, height, has_selection: hasSelection,
     };
-    return { crop, mask: maskToCanvas(denoise_mask, { luminance: true }), maskAlpha: alphaMask(denoise_mask), references, info, sel };
+    return { x0, y0, cw, ch, ew, eh, resize: targetSize > 0, growUsed, featherUsed, fillMode, withOriginal, autoFeather, hasSelection, info };
+}
+
+/**
+ * The pixels of a planned crop: the crop box of the composite (`region`, anything `drawImage` takes, at the box's size)
+ * with the fill mode, scaled to the emitted size, the denoise mask at that size, the original as a reference when the
+ * fill asks for one. Canvases of the thread it runs in.
+ */
+export function cropPixels(p, sel, region, { own = false } = {}) {
+    const { x0, y0, cw, ch, ew, eh } = p;
+    // `own`: the region is a canvas made for this crop (the stitch worker's) and becomes the crop itself
+    let crop = own ? region : makeCanvas(cw, ch);
+    if (!own) crop.getContext("2d").drawImage(region, 0, 0);
+    const selCrop = cropMask(sel, x0, y0, cw, ch);
+    let denoise_mask = p.autoFeather && p.hasSelection ? denoiseMask(selCrop, p.growUsed, p.featherUsed) : selCrop;
+    const references = [];
+    if (p.hasSelection && p.fillMode !== "none") {
+        if (p.withOriginal) {
+            const cropOrig = makeCanvas(cw, ch);
+            cropOrig.getContext("2d").drawImage(crop, 0, 0);
+            references.push(cropOrig);
+        }
+        const fillPx = Math.max(p.growUsed - Math.floor(p.featherUsed / 2), 0);
+        crop = fillMasked(crop, dilate(selCrop, fillPx), p.fillMode);
+    }
+    if (p.resize) {
+        crop = drawResized(crop, ew, eh);
+        denoise_mask = resizeMask(denoise_mask, ew, eh);
+        for (let i = 0; i < references.length; i++) references[i] = drawResized(references[i], ew, eh);
+    }
+    return { crop, mask: maskToCanvas(denoise_mask, { luminance: true }), maskAlpha: alphaMask(denoise_mask), references };
+}
+
+/**
+ * The crop the model gets, exactly like the node's `run`: selection bbox plus context,
+ * fill mode, scaling to target_size (both sides rounded to the multiple), the denoise
+ * mask at the emitted size, references. `params` = { padding, target_size, feather,
+ * multiple_of } (the app's node params).
+ */
+export function prepareCrop(editor, params, limits) {
+    const sel = selectionWindow(editor);
+    const p = planCrop(cropSettingsOf(editor, params, limits), sel);
+    // E2: the crop box composited on its own (`readBox`: a region pass at full resolution, or the box cut out of the
+    // whole flatten when no margin gives those pixels), never the whole image for a box of it
+    const { crop, mask, maskAlpha, references } = cropPixels(p, sel, regionOf(editor, p.x0, p.y0, p.cw, p.ch));
+    for (const l of editor.referenceLayers()) references.push(editor.layerPixels(l));
+    return { crop, mask, maskAlpha, references, info: p.info, sel };
 }
 
 /** RGBA mask with alpha 0 where the model should repaint (OpenAI's convention). */
@@ -458,19 +514,21 @@ function colorMatch(patch, region, weight) {
     return out;
 }
 
+/** Does the stitch read the composite of the region? Only for the colour match of an answer that is not a cut-out. */
+export function finishNeedsRegion(info) {
+    return !!(info.color_match && !info.keepAlpha);
+}
+
 /**
  * The model's answer back into the canvas: resize to the region (stretch when the
  * aspect matches the emitted size, else center-crop), the composite mask (selection
  * with soft edge, or the whole rectangle), colour match, and the RGBA patch the editor
- * adds as a result layer. `sel` is the full-size selection mask from prepareCrop.
+ * adds as a result layer. `sel` is the full-size selection mask from prepareCrop; `region`
+ * a 2D canvas of the box's composite when `finishNeedsRegion(info)`, else null.
+ * `info.keepAlpha` (set by the caller for a run that asked the model for a transparent
+ * background) keeps the answer's own alpha channel instead of replacing it with the composite mask.
  */
-/**
- * The provider's answer stitched into an RGBA patch for the region `info.bbox`. `info` is
- * what prepareCrop returned; `info.keepAlpha` (set by the caller for a run that asked the
- * model for a transparent background) keeps the answer's own alpha channel instead of
- * replacing it with the composite mask.
- */
-export function finishResult(editor, info, sel, resultImage) {
+export function finishPixels(info, sel, resultImage, region) {
     const [x, y, w, h] = info.bbox;
     const width = info.width, height = info.height;
     const feather = info.feather | 0;
@@ -499,13 +557,11 @@ export function finishResult(editor, info, sel, resultImage) {
     }
     const blend = cropMask(full, x - wx0, y - wy0, w, h);
 
-    const region = makeCanvas(w, h);
-    region.getContext("2d").drawImage(regionOf(editor, x, y, w, h), 0, 0);
     const align = { aligned: false, reason: "not available in the app" };
     // A cut-out (the model was asked for a transparent background) is never colour matched:
     // the statistics would read the transparent pixels' black, and the asset was never meant
     // to sit on the backdrop the region shows.
-    if (info.color_match && !info.keepAlpha) {
+    if (finishNeedsRegion(info)) {
         const keep = maskOf(w, h);
         for (let i = 0; i < keep.data.length; i++) keep.data[i] = 1 - blend.data[i];
         patch = colorMatch(patch, region, keep);
@@ -522,6 +578,24 @@ export function finishResult(editor, info, sel, resultImage) {
     const out = makeCanvas(w, h);
     out.getContext("2d").putImageData(pd, 0, 0);
     return { patch: out, x, y, w, h, align };
+}
+
+/** The box of the composite a run sees as a 2D canvas of the box (a copy: `readBox` may hand out a GL pass canvas). */
+function regionCanvas(editor, x, y, w, h) {
+    const region = makeCanvas(w, h);
+    region.getContext("2d").drawImage(regionOf(editor, x, y, w, h), 0, 0);
+    return region;
+}
+
+/**
+ * The provider's answer stitched into an RGBA patch for the region `info.bbox`. `info` is
+ * what prepareCrop returned; `info.keepAlpha` (set by the caller for a run that asked the
+ * model for a transparent background) keeps the answer's own alpha channel instead of
+ * replacing it with the composite mask.
+ */
+export function finishResult(editor, info, sel, resultImage) {
+    const [x, y, w, h] = info.bbox;
+    return finishPixels(info, sel, resultImage, finishNeedsRegion(info) ? regionCanvas(editor, x, y, w, h) : null);
 }
 
 /**
@@ -541,9 +615,9 @@ export function transparentPixels(canvas, threshold = 250) {
     return false;
 }
 
-/** PNG bytes of a canvas. */
+/** PNG bytes of a canvas (a <canvas> or an OffscreenCanvas). */
 export async function canvasBytes(canvas) {
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    const blob = typeof canvas.convertToBlob === "function" ? await canvas.convertToBlob({ type: "image/png" }) : await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
     return new Uint8Array(await blob.arrayBuffer());
 }
 
@@ -555,4 +629,171 @@ export function bytesToImage(bytes, mime = "image/png") {
         img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("the provider's image could not be decoded")); };
         img.src = url;
     });
+}
+
+// ---- a run off the window ---------------------------------------------------------------------
+
+/** Tests and A/B: false runs a provider run's crop and stitch on the window, as before (the synchronous pair). */
+let STITCH_IN_WORKER = true;
+export function setStitchInWorker(on) {
+    const was = STITCH_IN_WORKER;
+    STITCH_IN_WORKER = !!on;
+    return was;
+}
+
+let WORKER = null, NEXT = 1;
+const CALLS = new Map();
+
+/** The stitch worker (stitch_worker.js), started on first use; null where there is none. */
+function stitchWorker() {
+    if (WORKER) return WORKER;
+    if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined") return null;
+    WORKER = new Worker(new URL("./stitch_worker.js", import.meta.url), { type: "module" });
+    WORKER.onmessage = (e) => {
+        const m = e.data || {};
+        const c = CALLS.get(m.id);
+        if (!c) return;
+        CALLS.delete(m.id);
+        if (m.ok) c.resolve(m); else c.reject(new Error(m.error || "the stitch worker failed"));
+    };
+    WORKER.onerror = (e) => {
+        const err = new Error("the stitch worker failed: " + ((e && e.message) || "an error"));
+        for (const c of CALLS.values()) c.reject(err);
+        CALLS.clear();
+        try { WORKER.terminate(); } catch (_) { /* ignore */ }
+        WORKER = null;
+    };
+    return WORKER;
+}
+
+function stitchCall(op, args, transfer = []) {
+    const w = stitchWorker();
+    if (!w) return Promise.reject(new Error("no stitch worker here"));
+    const id = NEXT++;
+    return new Promise((resolve, reject) => {
+        CALLS.set(id, { resolve, reject });
+        w.postMessage({ id, op, kernels: kernelsMode(), ...args }, transfer);
+    });
+}
+
+/** A plain buffer of `data` to move to the stitch worker instead of copying it (a SharedArrayBuffer is shared anyway). */
+function transferable(data) {
+    return data && data.buffer instanceof ArrayBuffer ? [data.buffer] : [];
+}
+
+/**
+ * The box of the composite a run sees as RGBA bytes `{ data, width, height, how }`: the editor's own reader when it has
+ * one, from the stack `held` earlier when given.
+ */
+async function regionBytes(editor, x, y, w, h, held = undefined) {
+    if (typeof editor.readBoxBytes === "function") return editor.readBoxBytes([x, y, x + w, y + h], { forRun: true, held });
+    const c = regionCanvas(editor, x, y, w, h);
+    return { data: c.getContext("2d").getImageData(0, 0, w, h).data, width: w, height: h, how: "canvas" };
+}
+
+/**
+ * `prepareCrop` for a run, without holding the window: the selection's window is read here and planned in the stitch
+ * worker, the crop box is composited by the tile workers (`editor.readBoxBytes`), and the worker makes the crop, the
+ * masks and their PNGs. `{ image, mask, maskAlpha, references, width, height, info, sel, how }`: PNG bytes, the emitted
+ * size, `info` as `prepareCrop` gives it, `sel` for `finishResultAsync`, `how` the region's way (or "window" when it
+ * ran as before). Falls back to `prepareCrop` on the window when the worker is not there or fails.
+ */
+export async function prepareCropAsync(editor, params, limits) {
+    const settings = cropSettingsOf(editor, params, limits);
+    if (STITCH_IN_WORKER && stitchWorker()) {
+        // one moment, as the synchronous crop had it: the selection's window, the stack the box is composited from (its
+        // clones are taken before `holdRunStack` returns) and the reference layers are read here, before any await
+        let held = null, holding = null;
+        try {
+            const win = selectionWindowPixels(editor);
+            holding = typeof editor.holdRunStack === "function" ? editor.holdRunStack({ forRun: true }) : null;
+            const refs = editor.referenceLayers().map((l) => editor.layerPixels(l));
+            const planned = await stitchCall("plan", { settings, sel: { data: win.img.data, width: win.img.width, height: win.img.height, ox: win.ox, oy: win.oy, fullW: win.fullW, fullH: win.fullH } }, [win.img.data.buffer]);
+            held = holding ? await holding : null;
+            const p = planned.plan;
+            const region = await regionBytes(editor, p.x0, p.y0, p.cw, p.ch, holding ? held : undefined);
+            const made = await stitchCall("crop", { plan: p, sel: planned.sel, region: { data: region.data, width: region.width, height: region.height } }, [planned.sel.data.buffer, ...transferable(region.data)]);
+            const references = made.references.slice();
+            for (const c of refs) references.push(await canvasBytes(c));
+            return { image: made.image, mask: made.mask, maskAlpha: made.maskAlpha, references, width: p.ew, height: p.eh, info: p.info, sel: made.sel, how: region.how };
+        } catch (err) {
+            console.warn("Scumble: the crop in the stitch worker failed, cropping on the window:", (err && err.message) || err);
+        } finally {
+            // a stack still on its way when the crop failed is let go when it arrives
+            if (held) held.release();
+            else if (holding) holding.then((h) => { if (h) h.release(); }, () => {});
+        }
+    }
+    const prep = prepareCrop(editor, params, limits);
+    const [image, mask, maskAlpha, ...references] = await Promise.all([canvasBytes(prep.crop), canvasBytes(prep.mask), canvasBytes(prep.maskAlpha), ...prep.references.map((c) => canvasBytes(c))]);
+    return { image, mask, maskAlpha, references, width: prep.crop.width, height: prep.crop.height, info: prep.info, sel: prep.sel, how: "window" };
+}
+
+/**
+ * `finishResult` for a run, without holding the window: the answer (`bytes`, `mime`) is decoded and stitched in the
+ * stitch worker; the region's composite, read only for a colour match, comes from the tile workers.
+ * `{ blob, cutout, x, y, w, h, align, how }`: the patch as a PNG, whether it carries real transparency
+ * (`transparentPixels`). Falls back to `finishResult` on the window.
+ */
+export async function finishResultAsync(editor, info, selIn, bytes, mime = "image/png") {
+    let sel = selIn;
+    const [x, y, w, h] = info.bbox;
+    if (STITCH_IN_WORKER && stitchWorker()) {
+        try {
+            const region = finishNeedsRegion(info) ? await regionBytes(editor, x, y, w, h) : null;
+            const answer = bytes instanceof Uint8Array ? bytes.slice() : new Uint8Array(bytes);
+            // the window mask goes to the worker and comes back with the answer (no copy of a large selection here)
+            const r = await stitchCall("finish", { info, sel, answer, mime, region: region ? { data: region.data, width: region.width, height: region.height } : null }, [answer.buffer, sel.data.buffer, ...(region ? transferable(region.data) : [])]);
+            if (r.sel) sel.data = r.sel.data;
+            return { blob: new Blob([r.png], { type: "image/png" }), cutout: r.cutout, x, y, w, h, align: r.align, how: region ? region.how : "none" };
+        } catch (err) {
+            console.warn("Scumble: the stitch in the stitch worker failed, stitching on the window:", (err && err.message) || err);
+        }
+        // the mask went to the worker that failed: the selection's window as it is now
+        if (!sel.data || sel.data.length !== sel.w * sel.h) sel = selectionWindow(editor);
+    }
+    const img = await bytesToImage(bytes, mime);
+    const fin = finishResult(editor, info, sel, img);
+    const blob = await new Promise((resolve) => fin.patch.toBlob(resolve, "image/png"));
+    return { blob, cutout: transparentPixels(fin.patch), x, y, w, h, align: fin.align, how: "window" };
+}
+
+/** The stitch worker's side (stitch_worker.js): the jobs, over this module's own steps. */
+export async function stitchJob(msg) {
+    const bytesOf = async (c) => canvasBytes(c);
+    const canvasFrom = (r) => {
+        const c = makeCanvas(r.width, r.height), ctx = c.getContext("2d");
+        const shared = typeof SharedArrayBuffer !== "undefined" && r.data.buffer instanceof SharedArrayBuffer;
+        if (!shared && r.data instanceof Uint8ClampedArray) { ctx.putImageData(new ImageData(r.data, r.width, r.height), 0, 0); return c; }
+        // a view on a SharedArrayBuffer (the tile workers' box) makes no ImageData: copied a band of rows at a time
+        const rows = Math.max(1, Math.floor((4 << 20) / (r.width * 4)));
+        for (let y = 0; y < r.height; y += rows) {
+            const n = Math.min(rows, r.height - y);
+            ctx.putImageData(new ImageData(new Uint8ClampedArray(r.data.subarray(y * r.width * 4, (y + n) * r.width * 4)), r.width, n), 0, y);
+        }
+        return c;
+    };
+    const selOf = (s) => ({ data: s.data, w: s.w, h: s.h, ox: s.ox, oy: s.oy, fullW: s.fullW, fullH: s.fullH });
+    if (msg.op === "plan") {
+        const s = msg.sel;
+        const sel = windowMask({ img: { data: s.data, width: s.width, height: s.height }, ox: s.ox, oy: s.oy, fullW: s.fullW, fullH: s.fullH });
+        const plan = planCrop(msg.settings, sel);
+        return { plan, sel: selOf(sel), transfer: [sel.data.buffer] };
+    }
+    if (msg.op === "crop") {
+        const sel = selOf(msg.sel);
+        const out = cropPixels(msg.plan, sel, canvasFrom(msg.region), { own: true });
+        const [image, mask, maskAlpha, ...references] = await Promise.all([bytesOf(out.crop), bytesOf(out.mask), bytesOf(out.maskAlpha), ...out.references.map(bytesOf)]);
+        return { image, mask, maskAlpha, references, sel, transfer: [image.buffer, mask.buffer, maskAlpha.buffer, ...references.map((r) => r.buffer), sel.data.buffer] };
+    }
+    if (msg.op === "finish") {
+        const bmp = await createImageBitmap(new Blob([msg.answer], { type: msg.mime || "image/png" }));
+        try {
+            const fin = finishPixels(msg.info, selOf(msg.sel), bmp, msg.region ? canvasFrom(msg.region) : null);
+            const png = await bytesOf(fin.patch);
+            const sel = selOf(msg.sel);
+            return { png, cutout: transparentPixels(fin.patch), align: fin.align, sel, transfer: [png.buffer, sel.data.buffer] };
+        } finally { bmp.close(); }
+    }
+    throw new Error("unknown stitch job " + msg.op);
 }

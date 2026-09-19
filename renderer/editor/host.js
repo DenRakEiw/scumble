@@ -13,7 +13,7 @@
 //           that asked: results by prompt id, helper masks / texts by the canvas_node id
 //           the helper prompt carried (= editor.node.id).
 
-import { prepareCrop, finishResult, canvasBytes, bytesToImage, transparentPixels } from "./stitch.js";
+import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels } from "./stitch.js";
 import { glReleasePool } from "./inpaint_filters_gl.js";
 
 const PROXY = "/comfy";
@@ -860,18 +860,21 @@ export const host = {
         this.notifyProviderRuns();
         let res, info, sel, x, y, w, h, params = {};
         try {
-            const prep = prepareCrop(editor, this.nodeParams, this.cropLimits());
-            const { crop, mask, maskAlpha, references } = prep;
+            // what the request says is read at the click, as the crop is: the window stays usable while it is made
+            params = this.providerParams(editor, opts.background ? { background: opts.background } : null);
+            const keepAlpha = this.wantsTransparent(params);
+            const prompt = editor.promptText || "", negative = editor.negativeText || "", seed = editor.genSettings.seed;
+            // the crop and its masks off the window: the box from the tile workers, the pixels in the stitch worker
+            const prep = await prepareCropAsync(editor, this.nodeParams, this.cropLimits());
+            const references = prep.references;
             info = prep.info; sel = prep.sel;
             [x, y, w, h] = info.bbox;
-            params = this.providerParams(editor, opts.background ? { background: opts.background } : null);
-            info.keepAlpha = this.wantsTransparent(params);
+            info.keepAlpha = keepAlpha;
         editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label}${info.keepAlpha ? ", transparent background" : ""} ...`);
-            const [image, maskBytes, maskAlphaBytes, ...refBytes] = await Promise.all([canvasBytes(crop), canvasBytes(mask), canvasBytes(maskAlpha), ...references.map((c) => canvasBytes(c))]);
             const request = {
                 provider: r.provider, model: r.model, kind: r.input === "edit" ? "edit" : "fill", fields: r.fields || null, options: r.options || null,
-                prompt: editor.promptText || "", negative: editor.negativeText || "", seed: editor.genSettings.seed,
-                image, mask: maskBytes, maskAlpha: maskAlphaBytes, width: crop.width, height: crop.height, references: refBytes,
+                prompt, negative, seed,
+                image: prep.image, mask: prep.mask, maskAlpha: prep.maskAlpha, width: prep.width, height: prep.height, references,
                 params,
             };
             res = await window.scumble.providers.edit(request);
@@ -880,13 +883,13 @@ export const host = {
             this._providerRuns.delete(token);
             this.notifyProviderRuns();
         }
-        const img = await bytesToImage(res.bytes, res.mime);
-        const { patch, align } = finishResult(editor, info, sel, img);
-        const blob = await new Promise((resolve) => patch.toBlob(resolve, "image/png"));
+        // the answer decoded and stitched in the stitch worker, the region (for a colour match) from the tile workers
+        const fin = await finishResultAsync(editor, info, sel, res.bytes, res.mime);
+        const { blob, align } = fin;
         const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
         const ref = await this.uploadResult(blob, `n${editor.node.id}_result_${stamp}.png`);
         editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
-        const cutout = info.keepAlpha ? transparentPixels(patch) : false;
+        const cutout = info.keepAlpha ? fin.cutout : false;
         await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider }]);
         // addResults writes its own line, so the cut-out note goes on afterwards
         if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`);

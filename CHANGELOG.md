@@ -3,6 +3,25 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.20 — not released yet
+
+- **Large JPEG, WebP and colour-profiled PNG files open without freezing the window.** Opening a 15000 × 10000 picture
+  used to hold the window for one to four and a half seconds while the browser decoded and read it; the picture is now
+  decoded by a background worker and the window stands still for well under a tenth of a second: a JPEG 0.1 s instead
+  of 1.0, a JPEG with an Adobe RGB profile 0.03 s instead of 3.7 (and it is ready after 1.1 s instead of 3.8), a WebP
+  0.04 s instead of 1.7, a PNG with a colour profile 0.05 s instead of 4.4. The same happens when such a file is added
+  as an image layer and when Scumble reopens your documents at start. The pixels are exactly the ones you got before:
+  colour profile, EXIF rotation and transparency are applied the same way.
+- **An API run no longer freezes the window while it cuts the crop and stitches the answer back.** On a 15000 × 10000
+  document with a colour-matched result layer and a film look, preparing the crop held the window for 6.3 seconds (1.5
+  without the film look); now for 0.05. The crop, its masks and the stitched result are made in the background, from
+  the same picture: the files sent to the provider and the result layer are the same bytes as before on a plain
+  document; with a colour-matched layer the crop can move by the few levels the saved files already moved by in 0.1.19.
+- **Letting go of the brush or the eraser is smoother on large documents.** The stroke is written into the layer tile
+  by tile instead of through large temporary pictures: a long erase across a 15000 × 10000 layer held the window for
+  0.29 seconds on release, now 0.07; a stroke on a colour-matched result layer under a film look 0.07 to 0.09 seconds,
+  now 0.035. Soft or semi-transparent paint can differ from before by one level, which cannot be seen.
+
 ## 0.1.19 — 2026-09-18
 
 - **Documents with a colour-matched layer save and select as fast as plain ones.** A layer whose colours are matched to
