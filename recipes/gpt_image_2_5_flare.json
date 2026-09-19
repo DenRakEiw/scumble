@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "GPT Image 2.5 Flare",
   "family": "OpenAI",
-  "description": "OpenAI's fast image model (September 2026): custom sizes in multiples of 16 up to 3840 px an edge, quality up to max. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "OpenAI's fast image model (September 2026): custom sizes in multiples of 16 up to 3840 px an edge, quality up to max. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "openai",
   "providers": {
     "toapis": {
@@ -341,6 +341,76 @@
         }
       ],
       "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Mask inpainting through the node's mask input at the crop's size (multiples of 16)."
+    },
+    "openrouter": {
+      "model": "openai/gpt-image-2.5-flare",
+      "input": "fill",
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "quality",
+          "background",
+          "n"
+        ],
+        "ratios": [
+          "1:1",
+          "3:2",
+          "2:3",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "21:9"
+        ],
+        "max_images": 16
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 2048,
+        "step": 16,
+        "pixels": 0,
+        "minPixels": 0
+      },
+      "text": {
+        "sizes": [
+          1536
+        ]
+      },
+      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. The pictures go inline in the request to OpenRouter, which passes them to OpenAI. No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. There is no size parameter: the host picks the output size (OpenRouter's one example is GPT Image 2 at 16:9 and high quality: 1536 x 864; no size is stated for other models or qualities)."
     }
   },
   "limits": {

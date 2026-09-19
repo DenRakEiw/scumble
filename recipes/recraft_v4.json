@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Recraft V4",
   "family": "Recraft",
-  "description": "Recraft's design model: text rendering, brand colours, vectors. Text to image only on fal, so it works in \"Generate new\", not in Generate. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet.",
+  "description": "Recraft's design model: text rendering, brand colours, vectors. Text to image only on fal, so it works in \"Generate new\", not in Generate. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on OpenRouter.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -18,6 +18,31 @@
       },
       "settings": [],
       "note": "Text to image only, and the endpoint takes neither a seed nor an output format: both are left out of the request. fal-ai/recraft/v4/pro/text-to-image is the pro tier of the same model."
+    },
+    "openrouter": {
+      "model": "recraft/recraft-v4",
+      "edit": false,
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "n"
+        ],
+        "ratios": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16"
+        ],
+        "max_images": 1
+      },
+      "settings": [],
+      "text": {
+        "sizes": [
+          1024
+        ]
+      },
+      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. Only the prompt goes to OpenRouter, which passes it to Recraft. OpenRouter lists one input picture for this model but does not say whether it is edited or only used as a style reference, so this variant makes images from the prompt alone: it works in \"Generate new\", not in Generate; the dialog's aspect is sent as the closest preset. No seed and no size: the host picks the output size from the aspect. recraft/recraft-v4-pro is the pro tier of the same model."
     }
   }
 }

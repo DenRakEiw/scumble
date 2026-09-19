@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Nano Banana Pro (Gemini 3 Pro Image)",
   "family": "Google",
-  "description": "Google's premium image model for complex edits, 1K to 4K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Google's premium image model for complex edits, 1K to 4K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {
     "toapis": {
@@ -285,6 +285,66 @@
         }
       ],
       "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). One image input: the references are not sent. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "openrouter": {
+      "model": "google/gemini-3-pro-image",
+      "input": "fill",
+      "options": {
+        "accepts": [
+          "resolution",
+          "aspect_ratio",
+          "n"
+        ],
+        "ratios": [
+          "1:1",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "21:9"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048,
+          "4K": 4096
+        },
+        "max_images": 14,
+        "only_for": {
+          "4K": [
+            "google-ai-studio"
+          ]
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024,
+          2048,
+          4096
+        ]
+      },
+      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. The pictures go inline in the request to OpenRouter, which passes them to Google (AI Studio, which keeps data 55 days, or Vertex AI, which keeps none; OpenRouter picks). No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. Resolution auto takes the smallest tier that covers the crop. 4K goes only to Google AI Studio (which keeps data 55 days): Vertex AI stops at 2K."
     }
   }
 }

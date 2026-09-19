@@ -49,10 +49,19 @@ In detail, Scumble talks to these systems, and to nothing else:
 - **Your ComfyUI server**, at the address you enter in Settings › ComfyUI, when you run a
   local recipe, a helper node, or test the connection.
 - **An API provider** (ToAPIs, Google, OpenAI, Black Forest Labs, fal.ai, Replicate, WaveSpeedAI,
-  Comfy Cloud, Anthropic), only when you run a recipe or a prompt upsampling that names it,
-  with the key you stored. Keys are kept in the operating system's credential store
-  (Electron `safeStorage`, DPAPI on Windows) and never leave the machine except in the
-  request to that provider.
+  Comfy Cloud, OpenRouter, BytePlus ModelArk, Anthropic), only when you run a recipe or a prompt upsampling that names it,
+  or click *check balance* next to its key, with the key you stored. Keys are kept in the operating
+  system's credential store (Electron `safeStorage`, DPAPI on Windows) and never leave the machine
+  except in the request to that provider. OpenRouter (`openrouter.ai`) passes a request on to a host
+  that serves the model, and Scumble asks it to leave out every host it lists in China; for that list
+  Scumble reads OpenRouter's public host list (`GET /api/v1/providers`, without the key) at the first
+  OpenRouter image run or upsampling of a session. No request to OpenRouter carries an attribution
+  header ([RECIPES.md, "OpenRouter"](RECIPES.md#openrouter-openrouter)). BytePlus ModelArk is reached
+  at one of two regional hosts: `ark.ap-southeast.bytepluses.com` (Johor, Malaysia) or
+  `ark.eu-west.bytepluses.com` (Dublin, Ireland). Seedream 5.0 pro always goes to Johor, and 5.0 lite
+  goes to the host its *Region* row names. BytePlus may route a request to its other region. Only if
+  an answer carries a download link instead of the image, Scumble fetches that link, without the key
+  ([RECIPES.md, "BytePlus ModelArk"](RECIPES.md#byteplus-modelark-ark)).
 - **Hugging Face**, when you click *Download* for a helper model in Settings › Helpers.
 - **GitHub Releases**, for the update check: the packaged app checks for a new version once,
   8 seconds after start, and downloads it in the background when one exists. This check can

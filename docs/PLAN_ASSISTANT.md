@@ -266,9 +266,9 @@ come.
 - The renderer sees only whether a key is set and its last four characters (`:1-5`,
   `:77-81`; `preload.js:76-80`).
 - The key rows `toapis`, `fal`, `bfl`, `openai`, `gemini`, `replicate`, `wavespeed`,
-  `comfycloud` and `anthropic` are in Settings › API providers, in that order, with
-  `compat` in its own section (`providers/index.js:24-36`). `openrouter` comes with item 12,
-  before this plan; `deepseek`, `moonshot` and `zai` are new (A4).
+  `comfycloud`, `openrouter` (item 12, built 2026-09-19) and `anthropic` are in Settings › API
+  providers, in that order, with `compat` in its own section (`providers/index.js:24-37`);
+  `deepseek`, `moonshot` and `zai` are new (A4).
 - `providers/anthropic.js:9-11` and `providers/compat.js:11-13` are key rows only: their
   `edit()` throws a readable error. `providers/index.js:81` calls `p.edit()` unguarded for
   a request that names the provider, so a key-only module keeps that stub.
@@ -1182,7 +1182,7 @@ path rule are gated before the checkpoint drives any write.
   - `balance()` for DeepSeek (`GET /user/balance`, `balance_infos[].total_balance`) and
     Moonshot (`GET /v1/users/me/balance`, `available_balance`); Z.ai documents none. The
     row then shows "check balance" (`shell.js:518-536`).
-  - Three lines in `PROVIDERS` (`index.js:24-36`) after `anthropic`. ToAPIs stays first, as
+  - Three lines in `PROVIDERS` (`index.js:24-37`) after `anthropic`. ToAPIs stays first, as
     `toapis_test.py:66-68` and `:84-87` check `list[0]` and `rows[0]`. `describeAll()`
     shows them in Settings › API providers with no other change (`renderProviders()`,
     `shell.js:483-541`), and `keys.set` has no allowlist (`keys.js:54-61`).

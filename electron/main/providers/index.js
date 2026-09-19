@@ -6,7 +6,7 @@
 //              prompt, negative, seed, image (PNG bytes of the crop), mask (PNG, white =
 //              repaint), width, height (of the crop), references: [PNG bytes], params }
 //   ctx:     { key, fetch, log, base, toJpeg, opaque }   base: the adapter's own allowlisted host from
-//            settings (ToAPIs; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
+//            settings (ToAPIs, OpenRouter; ModelArk's loopback mock; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
 //            nativeImage, opaque(png): whether it has no transparent pixel
 //
 // The crop and the stitch happen in the renderer (renderer/editor/stitch.js); the
@@ -30,6 +30,8 @@ const PROVIDERS = {
     replicate: require("./replicate"),
     wavespeed: require("./wavespeed"),
     comfycloud: require("./comfycloud"),
+    openrouter: require("./openrouter"),
+    ark: require("./ark"),
     anthropic: require("./anthropic"),   // key row only: prompt upsampling (llm.js)
     compat: require("./compat"),         // key row only: the OpenAI-compatible endpoint (llm.js)
     loopback: require("./loopback"),

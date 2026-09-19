@@ -3,6 +3,60 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.21 — unreleased
+
+- **OpenRouter as a provider.** One key from [openrouter.ai](https://openrouter.ai) runs GPT Image 2 and 2.5
+  (Flare, Sunburst), Nano Banana 2, 2 Lite and Pro, FLUX.2 max, pro and flex, Seedream 5 lite and pro and Grok Imagine
+  2.0, and, in *Generate a new image*, Krea 2 and Recraft V4. OpenRouter is listed after Comfy Cloud under *Settings ›
+  API providers* and last in each of these models' provider choice; nothing moves to it by itself, every model keeps
+  running where it ran until you pick OpenRouter for it (in *Settings › Recipes*, in *Generate a new image* or with
+  `select_recipe(id, "openrouter")`).
+  - **Not tried against the real service yet.** It is built from OpenRouter's documentation and its public model list
+    of 2026-09-19; if a run fails, *Help › Console › Copy all* has OpenRouter's own message.
+  - **What leaves your machine:** the crop and your reference layers go to OpenRouter inside the request, and for GPT
+    Image and Nano Banana the selection's mask as a second picture (OpenRouter has no mask input, so the prompt tells the
+    model what the mask means). OpenRouter passes them to the model's host. Scumble asks it to leave out every host it
+    lists in China, and sends nothing that would put Scumble on OpenRouter's public app pages. Qwen Image 3 is not
+    offered through OpenRouter, because its only host there lists a datacentre in China.
+  - FLUX.2, Seedream and Grok edit the whole crop, and Scumble keeps only the selected part of the answer, as with the
+    other providers without a mask; say "fill the green area" with *Fill* set to green for area-directed edits.
+  - *Resolution* on *auto* picks the smallest size tier that still covers your crop. OpenRouter takes no pixel size, so
+    an answer of another shape than the crop is centre-cropped into place.
+  - If the pictures of one run come to more than 18 MB, the crop and the references without transparency are sent as
+    JPEG; if that is still too much, the run is refused before anything is sent, with a note to set *Highres fix*
+    lower, turn *Original* off or use fewer reference layers.
+  - *check balance* next to the stored key shows what the key may still spend when you gave it a limit on OpenRouter,
+    and what it has used when you did not; the account's credits are shown only on openrouter.ai.
+  - *Resolution* 4K on Nano Banana Pro goes only to Google AI Studio, the one host of that model that offers it there.
+  - A run OpenRouter turns away for a moment (too many requests, an overloaded host) is sent once more after the wait
+    it asks for; if it asks for more than a minute, the message says when to try again instead.
+- **BytePlus ModelArk for Seedream.** Seedream 5 pro and lite now also run on ByteDance's own API, BytePlus ModelArk,
+  with a key from its console. It is listed after OpenRouter under *Settings › API providers* and right after ToAPIs
+  in the two Seedream models' provider choice; fal stays their default, nothing moves by itself.
+  - **Not tried against the real service yet.** Built from BytePlus' API reference; in the ModelArk console the model
+    has to be activated first, and a key works only in the region it was made in.
+  - **What leaves your machine:** the crop and your reference layers go to BytePlus inside the request: to Johor,
+    Malaysia, or, for Seedream 5 lite with *Region* set to eu-west, to Dublin (BytePlus may route a request to its
+    other region, names data centres in Malaysia, Indonesia and the EU/EEA for its processing, and keeps what its
+    content filter flags for 180 days in Malaysia). The answer comes back in the same request, without the
+    "AI-generated" watermark ModelArk adds unless told not to. BytePlus' list of the countries it serves (21 April
+    2026) has Germany and the rest of the EU, but not the United States.
+  - The answer has your crop's own shape, at a size inside the model's range: Seedream 5 pro 0.9 to 4.6 megapixels
+    (up to 2.6 MP costs $0.045, above that $0.09, and every picture after the first adds $0.003; with *Highres fix* on
+    *Maximum* a crop goes out at up to 4.6 MP), Seedream 5 lite 3.7 to 16.8 megapixels ($0.035). *Generate a new
+    image* gets exactly the aspect you pick.
+  - No mask input: the model edits the whole crop and Scumble keeps only the selected part; say "fill the green area"
+    with *Fill* set to green for area-directed edits.
+  - A picture steeper than 16:1, larger than 36 megapixels, or over 30 MB with transparency is refused before anything
+    is sent; one over 30 MB without transparency is sent as JPEG.
+- **Prompt upsampling on the OpenRouter key:** with an OpenRouter key stored, Gemini 3.8 Flash, GPT-5.6 Luna, Claude
+  Haiku 4.5 and Mistral Small 4 join the upsample list after the other API models. OpenRouter is asked to use only
+  hosts that do not train on your text and picture, and none in China.
+- **Upsampling errors never show your key**, on any provider, even if a server repeats it in its answer; a model that
+  declines to rewrite the prompt now says why instead of "content_filter", and an answer that breaks off with an error
+  partway through is no longer taken as the prompt.
+- The descriptions of the MCP commands `select_recipe` and `upsample_prompt` name OpenRouter (and ToAPIs).
+
 ## 0.1.20 — 2026-09-19
 
 - **Large JPEG, WebP and colour-profiled PNG files open without freezing the window.** Opening a 15000 × 10000 picture

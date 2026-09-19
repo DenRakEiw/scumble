@@ -516,7 +516,7 @@ async function renderProviders() {
             state.appendChild(a);
         }
         if (p.balance && k.set) {
-            // a free query of what the key has left (ToAPIs: GET /v1/balance); it also shows the key works
+            // a query of what the key has left (ToAPIs: GET /v1/balance, free; OpenRouter: GET /api/v1/key); it also shows the key works
             state.append(" · ");
             const b = document.createElement("a");
             b.href = "#"; b.textContent = "check balance"; b.className = "shell-balance";
@@ -527,7 +527,8 @@ async function renderProviders() {
                 out.textContent = " checking ...";
                 try {
                     const r = await window.scumble.providers.balance(p.id);
-                    out.textContent = r.unlimited ? " unlimited" : (r.usd != null ? ` $${r.usd.toFixed(2)} left` : " no balance in the answer");
+                    // `note` says what the number is where it is not the account's balance (OpenRouter: the key's own limit)
+                    out.textContent = r.unlimited ? " unlimited" : (r.usd != null ? ` $${r.usd.toFixed(2)} left${r.note ? ` (${r.note})` : ""}` : (r.note ? ` ${r.note}` : " no balance in the answer"));
                 } catch (err) {
                     out.textContent = " " + String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, "");
                 }

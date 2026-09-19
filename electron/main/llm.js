@@ -7,6 +7,9 @@
 // the list through settings.llm.compat = { url, model } and needs no key. ToAPIs' Chat
 // Completions are OpenAI-compatible too, so its rows go through the same client on the ToAPIs
 // image key, at the host providers/toapis.js allows (settings.toapis.base, else toapis.com).
+// OpenRouter's rows take the same client on the OpenRouter key, with its reasoning switch per row
+// and a routing object that leaves out hosts that train on the data and hosts in China
+// (providers/openrouter.js has the host rule, the key rule and the list).
 //
 //   list()            -> [{ id, provider, model, label, key: bool }]
 //   ask({ id, instruction, image, maxTokens }) -> { text, seconds, model, note }
@@ -19,6 +22,7 @@ const keys = require("./keys");
 const settings = require("./settings");
 const { b64, dataUri, readError } = require("./providers/util");
 const toapis = require("./providers/toapis");
+const openrouter = require("./providers/openrouter");
 
 // ToAPIs first, as in every provider list. Prices from its catalogue on 2026-09-15 (per million tokens
 // in / out): Gemini 3.8 Flash and Claude Haiku 4.5 $0.30 / $1.50, GPT-5.6 Terra $0.40 / $2.40, about a
@@ -33,9 +37,17 @@ const MODELS = [
     { provider: "gemini", model: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash Lite (Google key)" },
     { provider: "anthropic", model: "claude-opus-5", label: "Claude Opus 5 (Anthropic key)" },
     { provider: "anthropic", model: "claude-haiku-4-5", label: "Claude Haiku 4.5 (Anthropic key)" },
+    // OpenRouter, from GET /api/v1/models on 2026-09-19 (per million tokens in / out): Gemini 3.8 Flash $0.75 / $3.75,
+    // GPT-5.6 Luna $0.20 / $1.20, Claude Haiku 4.5 $1 / $5, Mistral Small 4 $0.15 / $0.60 (Mistral's own hosts in
+    // France). `reasoning` is OpenRouter's switch: the lowest effort each model takes, and never returned; Haiku and
+    // Mistral Small think only when asked. Gemini 3.8 Flash reasons always, so "none" would be refused.
+    { provider: "openrouter", model: "google/gemini-3.8-flash", label: "Gemini 3.8 Flash (OpenRouter key)", reasoning: { effort: "low", exclude: true } },
+    { provider: "openrouter", model: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna (OpenRouter key)", reasoning: { effort: "low", exclude: true } },
+    { provider: "openrouter", model: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5 (OpenRouter key)" },
+    { provider: "openrouter", model: "mistralai/mistral-small-2603", label: "Mistral Small 4 (OpenRouter key)" },
 ];
 
-const PROVIDER_LABEL = { toapis: "ToAPIs", openai: "OpenAI", gemini: "Google Gemini", anthropic: "Anthropic", compat: "OpenAI-compatible endpoint" };
+const PROVIDER_LABEL = { toapis: "ToAPIs", openai: "OpenAI", gemini: "Google Gemini", anthropic: "Anthropic", openrouter: "OpenRouter", compat: "OpenAI-compatible endpoint" };
 
 /** settings.llm.compat = { url, model }: an Ollama / LM Studio / any /v1/chat/completions server. */
 function compatConfig() {
@@ -61,7 +73,7 @@ function compatUnreachable(err, base, label) {
 }
 
 function list() {
-    const out = MODELS.map((m) => ({ id: `${m.provider}:${m.model}`, ...m, key: !!keys.describe(m.provider).set }));
+    const out = MODELS.map((m) => ({ id: `${m.provider}:${m.model}`, provider: m.provider, model: m.model, label: m.label, key: !!keys.describe(m.provider).set }));
     const c = compatConfig();
     // `key` is what the editor filters on (host.upsampleBackends), so a keyless local
     // server counts as "set" as soon as it has a URL and a model.
@@ -83,6 +95,16 @@ async function compatModels(url) {
     const out = await r.json();
     const rows = Array.isArray(out) ? out : (out.data || out.models || []);
     return rows.map((m) => (typeof m === "string" ? m : m.id || m.name)).filter(Boolean);
+}
+
+/**
+ * An error text with the key taken out, whatever the server echoed. Only a key of 12 characters or more: a local
+ * server's placeholder key ("ollama", "lm-studio") is no secret, and taking it out would garble that server's own
+ * words ("ollama pull llava").
+ */
+function scrubKey(text, key) {
+    const s = String(text == null ? "" : text);
+    return key && key.length >= 12 ? s.split(key).join("[key]") : s;
 }
 
 function toBuffer(v) {
@@ -172,9 +194,11 @@ async function askAnthropic({ model, key, instruction, image, maxTokens }) {
  * `strict` (ToAPIs, whose rows are all vision models): the retry without the image only for a
  * 400 / 413 / 415 / 422 that names the image, never for a refused key, an empty balance, a rate
  * limit or a server error, which a second request cannot fix; `explain(status, message)` puts
- * plain words in front of the server's message.
+ * plain words in front of the server's message and gets the error's metadata when `readFailure(r)`
+ * ({ message, meta }) reads it (OpenRouter). `extra` goes into the body as it is (OpenRouter: reasoning
+ * and provider). The key is taken out of a failed answer's text, whatever the server echoed.
  */
-async function askCompatible({ model, key, instruction, image, maxTokens, url, label, strict, explain }) {
+async function askCompatible({ model, key, instruction, image, maxTokens, url, label, strict, explain, extra, readFailure }) {
     const base = compatBase(url);
     const endpoint = base + "/chat/completions";
     const headers = { "Content-Type": "application/json", ...(key ? { Authorization: "Bearer " + key } : {}) };
@@ -183,7 +207,7 @@ async function askCompatible({ model, key, instruction, image, maxTokens, url, l
         const content = withImage
             ? [{ type: "text", text: instruction }, { type: "image_url", image_url: { url: dataUri(image) } }]
             : instruction;                                   // a plain string is what every server understands
-        const body = { model, messages: [{ role: "user", content }], max_tokens: maxTokens, stream: false };
+        const body = { model, messages: [{ role: "user", content }], max_tokens: maxTokens, stream: false, ...(extra || {}) };
         let r;
         try {
             r = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
@@ -191,8 +215,9 @@ async function askCompatible({ model, key, instruction, image, maxTokens, url, l
             throw new Error(compatUnreachable(err, base, label));
         }
         if (!r.ok) {
-            const raw = await readError(r);
-            const e = new Error(`${model} at ${compatHost(url)}: ${explain ? explain(r.status, raw) : raw}`);
+            const f = readFailure ? await readFailure(r) : { message: await readError(r), meta: {} };
+            const raw = scrubKey(f.message, key);
+            const e = new Error(`${model} at ${compatHost(url)}: ${explain ? explain(r.status, raw, f.meta) : raw}`);
             e.status = r.status;
             e.raw = raw;
             throw e;
@@ -216,7 +241,18 @@ async function askCompatible({ model, key, instruction, image, maxTokens, url, l
         out = await once(false);
     }
 
-    const msg = (out.choices && out.choices[0] && out.choices[0].message) || {};
+    const choice = (out.choices && out.choices[0]) || {};
+    // an error after the answer began comes as HTTP 200 (OpenRouter): what came before it is not the prompt
+    if (choice.finish_reason === "error" || choice.error) {
+        const e = choice.error || {};
+        throw new Error(`${model} at ${compatHost(url)}: ${e.message || "the model failed while answering"}`);
+    }
+    const msg = choice.message || {};
+    // a refusal comes as HTTP 200 with finish_reason "content_filter" and the reason in message.refusal (OpenRouter's
+    // contract; OpenAI's content_filter also means the text was cut): whatever content came is not the prompt
+    if (choice.finish_reason === "content_filter" || msg.refusal) {
+        throw new Error(`${model} at ${compatHost(url)}: refused${msg.refusal ? `: ${msg.refusal}` : " by a content filter (content_filter)"}`);
+    }
     let text = msg.content;                                  // reasoning_content, when there is one, is not the answer
     if (Array.isArray(text)) text = text.filter((p) => p && (p.type === "text" || p.text)).map((p) => p.text || "").join("\n");
     text = String(text || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();   // Qwen3 / DeepSeek think inside the content
@@ -232,7 +268,21 @@ async function askToAPIs(a) {
     return await askCompatible({ ...a, url: toapis.baseUrl(settings.get()) + "/v1", label: "ToAPIs", strict: true, explain: toapis.explain });
 }
 
-const ADAPTERS = { toapis: askToAPIs, openai: askOpenAI, gemini: askGemini, anthropic: askAnthropic };
+/**
+ * OpenRouter's /api/v1/chat/completions: the OpenAI-compatible client with the OpenRouter key, the row's
+ * reasoning switch, and a routing object that keeps to hosts that do not train on the data
+ * (data_collection "deny") and leaves out the hosts in China. No attribution header goes out.
+ */
+async function askOpenRouter(a) {
+    const base = openrouter.baseUrl(settings.get());
+    openrouter.checkKey(base, a.key);
+    const ignore = await openrouter.chinaHosts({ fetch, base, log: (m) => console.log("[llm] openrouter:", m) });
+    const extra = { provider: { data_collection: "deny", ignore } };
+    if (a.row && a.row.reasoning) extra.reasoning = { ...a.row.reasoning };
+    return await askCompatible({ ...a, url: base + "/api/v1", label: "OpenRouter", strict: true, explain: openrouter.explain, readFailure: openrouter.readFailure, extra });
+}
+
+const ADAPTERS = { toapis: askToAPIs, openai: askOpenAI, gemini: askGemini, anthropic: askAnthropic, openrouter: askOpenRouter };
 
 // ---- entry ----------------------------------------------------------------------------
 
@@ -250,7 +300,13 @@ async function ask(req) {
         const c = compatConfig();
         model = id.slice("compat:".length) || c.model;
         if (!c.url) throw new Error("No endpoint URL. Set one under Settings › Local / OpenAI-compatible endpoint.");
-        const res = await askCompatible({ model, key: keys.get("compat"), instruction, image, maxTokens, url: c.url });
+        const key = keys.get("compat");
+        let res;
+        try {
+            res = await askCompatible({ model, key, instruction, image, maxTokens, url: c.url });
+        } catch (err) {
+            throw new Error(scrubKey(err && err.message || err, key));
+        }
         text = res.text;
         if (res.textOnly) note = "text only";
     } else {
@@ -259,8 +315,14 @@ async function ask(req) {
         const key = keys.get(m.provider);
         if (!key) throw new Error(`No API key for ${PROVIDER_LABEL[m.provider]}. Add it under Settings › API providers.`);
         model = m.model;
-        const res = await ADAPTERS[m.provider]({ model: m.model, key, instruction, image, maxTokens });
-        // the OpenAI-compatible client (ToAPIs) says whether the answer came without the image
+        let res;
+        try {
+            res = await ADAPTERS[m.provider]({ model: m.model, key, instruction, image, maxTokens, row: m });
+        } catch (err) {
+            // every provider's error text, a failed status or an error inside an HTTP 200, without the key
+            throw new Error(scrubKey(err && err.message || err, key));
+        }
+        // the OpenAI-compatible client (ToAPIs, OpenRouter) says whether the answer came without the image
         text = typeof res === "string" ? res : res.text;
         if (res && res.textOnly) note = "text only";
     }

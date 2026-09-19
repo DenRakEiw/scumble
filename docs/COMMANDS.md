@@ -74,7 +74,7 @@ The recipes (ComfyUI workflows and API providers) and which one is selected.
 
 ### `select_recipe` *(app)*
 
-Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud; list_recipes has each recipe's own), else the remembered or default one.
+Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark; list_recipes has each recipe's own), else the remembered or default one.
 
 | param | type | description |
 |---|---|---|
@@ -335,7 +335,7 @@ Values for the recipe's Settings panel (the editable inputs of the workflow, or 
 
 ### `upsample_prompt` *(image)*
 
-Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, an API key for OpenAI / Google / Anthropic, or a local OpenAI-compatible server).
+Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, an API key for ToAPIs / OpenAI / Google / Anthropic / OpenRouter, or a local OpenAI-compatible server).
 
 | param | type | description |
 |---|---|---|

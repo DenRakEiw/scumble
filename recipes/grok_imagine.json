@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Grok Imagine 2.0",
   "family": "xAI",
-  "description": "xAI's image model. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet.",
+  "description": "xAI's image model. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on OpenRouter.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -46,6 +46,76 @@
         }
       ],
       "note": "At most three images go in (crop plus two references). The output size is Resolution, not the crop; aspect_ratio stays auto, which keeps the crop's shape. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "openrouter": {
+      "model": "x-ai/grok-imagine-image-2.0",
+      "input": "edit",
+      "options": {
+        "accepts": [
+          "resolution",
+          "aspect_ratio",
+          "quality",
+          "n"
+        ],
+        "ratios": [
+          "1:1",
+          "3:4",
+          "4:3",
+          "9:16",
+          "16:9",
+          "2:3",
+          "3:2",
+          "9:19.5",
+          "19.5:9",
+          "9:20",
+          "20:9",
+          "1:2",
+          "2:1"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048
+        },
+        "max_images": 3
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "low",
+              "medium"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024,
+          2048
+        ]
+      },
+      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. The pictures go inline in the request to OpenRouter, which passes them to xAI. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. At most three pictures go in (the crop plus two). Resolution auto takes the smallest tier that covers the crop."
     }
   }
 }

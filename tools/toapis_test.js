@@ -408,6 +408,8 @@ async function main() {
         check("a 400 about the image is asked again without it, and the answer says text only", d.calls.length === 2 && d.calls[0].image && !d.calls[1].image && d.res && d.res.text === "a rewritten prompt" && d.res.note === "text only", JSON.stringify(d));
         const e = await scenario([[200]]);
         check("a plain answer keeps the image and has no note", e.calls.length === 1 && e.calls[0].image && e.res && e.res.note === "", JSON.stringify(e));
+        const f = await scenario([[401, "Invalid token " + KEY]]);
+        check("a 401 that echoes the key: one call, key refused, the key taken out", f.calls.length === 1 && !!f.err && /key refused/.test(f.err) && !f.err.includes(KEY), String(f.err));
         check("the key never appears in an upsampling error", ![a, b, c].some((x) => String(x.err).includes(KEY)), "");
     });
 

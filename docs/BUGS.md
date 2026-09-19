@@ -109,6 +109,23 @@ agent ist nur add on"), so the assistant's plan does not fix them; each is its o
   second run is ever wanted (local runs queue on ComfyUI on purpose). An editor change, so it ships to the
   node.
 
+### What OpenRouter (item 12) found on the way
+
+**Written** 2026-09-19 while adding OpenRouter (`docs/RECIPES.md` "OpenRouter"). Found by reading the code and the
+recipe files, checked, not reported by the user and not fixed: neither is part of item 12.
+
+- **FLUX.2 [flex] on fal has two settings rows at index 1.** `recipes/flux2_flex.json`, the `fal` variant:
+  `num_inference_steps` and `safety_tolerance` both carry `"index": 1` (index 2 is `guidance_scale`). Both keys read
+  `editor.settings["1"]` (`renderer/editor/host.js` `providerParams`), so one slot drives both parameters: the steps
+  value goes out as the safety tolerance too, or the other way round, whichever row the Settings panel shows. The fix
+  is `"index": 3` on the `safety_tolerance` row (the other FLUX.2 fal variants have one row only).
+- **A model recipe with a `providers` map cannot be imported.** `importFile` (`electron/main/recipes.js`) takes a
+  provider recipe only in the old one-provider shape (`kind: "provider"` with a top-level `provider`); a file in the
+  shape every shipped provider recipe has (`providers: { ... }`, `default`) is refused with "This file is neither a
+  ComfyUI workflow, an API-format prompt nor a Scumble recipe." So a user cannot copy a shipped recipe, add a variant
+  (an OpenRouter model id the app does not ship, for one) and import it. A copy placed in
+  `%APPDATA%/Scumble/recipes/` by hand is read, and shadows the shipped recipe of the same id.
+
 ### What phase N1 found on the way
 
 **Written** 2026-09-17 with the measurement of phase N (`docs/PERFORMANCE.md` §14, `tools/native_test.py`,

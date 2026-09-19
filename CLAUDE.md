@@ -80,6 +80,56 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-19)
 
+**2026-09-19, evening: OpenRouter (item 12) is built, for 0.1.21** (`package.json` 0.1.21, `CHANGELOG.md` "0.1.21 —
+unreleased"; `docs/RECIPES.md` "OpenRouter", `docs/HELPERS.md` "Through the OpenRouter key"). **Not the item's plan:**
+the image adapter (`electron/main/providers/openrouter.js`) uses OpenRouter's unified Image API, `POST /api/v1/images`
+(`input_references` as data URLs, `b64_json` back, `usage.cost`), because the current docs describe only that route
+for images; the chat `modalities` route has no guide any more. Only the parameters each model's endpoints list in
+`GET /api/v1/images/models` go out (`options.accepts`), no pixel size (no model lists `size`), an edit sends no
+`aspect_ratio`, *Resolution* auto takes the smallest tier covering the crop; no mask field exists, so GPT Image and Nano
+Banana get the mask as a second picture (as the Gemini adapter), FLUX.2 / Seedream / Grok an instruction edit, Krea 2
+and Recraft V4 are text only. `openrouter` is a variant in 14 recipes, **last** in each (no default changed), the key
+row after Comfy Cloud, `TEXT_PROVIDERS` has it. Four upsampling rows (Gemini 3.8 Flash, GPT-5.6 Luna, Claude Haiku 4.5,
+Mistral Small 4) with a per-row `reasoning` switch and `provider: { data_collection: "deny", ignore }`. **Privacy:** no
+attribution header on any request (the trademark check); every image and chat request carries `provider.ignore` with the
+hosts OpenRouter lists in China (`GET /api/v1/providers`, once per session, a dated fallback list), so **Qwen Image 3 is
+not offered** (its only host, Alibaba, has a CN datacentre); Nano Banana Pro's 4K goes only to Google AI Studio
+(`options.only_for` -> `provider.only`). Host rule: `settings.openrouter.base` is openrouter.ai or a loopback mock only,
+a `test-` key goes only to the mock and a real key never there. *check balance* reads `GET /api/v1/key` (the key's own
+limit, the period's use; the account's credits need a management key). Retries: 429, 529, an overloaded 503 and the
+in-flight 402 once, never before `Retry-After`, not at all past 60 s ("try again in N s"). **On the way, for every
+provider:** `llm.ask()` takes the key out of every upsampling error (it was left in on the direct OpenAI / Gemini /
+Anthropic adapters and in ToAPIs' errors), and the OpenAI-compatible client throws on a refusal (`content_filter` /
+`message.refusal`) and on `finish_reason: "error"` instead of returning partial text. **Tests:** `node
+tools/openrouter_test.js` (12 sections, 168 checks), gate `openrouter` (`tools/openrouter_test.py` against
+`tools/openrouter_mock.py`); a final mutation round of 95 mutations (the scratchpad's `or_mutate3.js`) turned a test red
+for every one. Gates `--offline` on both backends: `openrouter toapis llm generate size transparent mcp log` ALL PASS
+(after the last code change `openrouter toapis llm mcp` again). Two reviews (four lenses, then three, two refuters per
+finding) found 13 and 8 defects, all fixed or written down. **Not run against the live API**: the user's key decides
+what `docs/RECIPES.md` "Only a real key can verify" lists. Found on the way and filed, not fixed (`docs/BUGS.md` "What
+OpenRouter (item 12) found on the way"): FLUX.2 [flex] on fal has two settings rows at index 1; a model recipe with a
+`providers` map cannot be imported.
+
+**2026-09-19, later the same evening: BytePlus ModelArk (item 12b) is built, for 0.1.21 too** (`docs/RECIPES.md`
+"BytePlus ModelArk", CHANGELOG 0.1.21). `electron/main/providers/ark.js`: `POST <host>/api/v3/images/generations`,
+synchronous, `image` as lowercase data URLs, **`size` always `WxH`** (the crop's own shape inside the model's
+method-2 pixel range; a text run exactly the dialog's aspect), **`watermark: false`** (the default is true),
+`response_format: "b64_json"`, `output_format: "png"`; no mask (instruction edit), no seed, no `n`. An `ark` variant
+right after `toapis` in `seedream_5_pro` (`dola-seedream-5-0-pro-260628`, 0.92 to 4.6 MP, 10 pictures, Johor only)
+and `seedream_5_lite` (`seedream-5-0-260128`, 3.7 to 16.8 MP, 14 pictures, a *Region* row ap-southeast Johor /
+eu-west Dublin, `limits.max` 7680 so a 16:1 crop reaches the floor); **fal stays the default** of both. The host
+comes only from the region (two fixed hosts, own-property lookup), `settings.ark.base` is a loopback mock only,
+with the same `test-` key rule as OpenRouter. Pictures checked before sending (16:1, > 14 px, 36 MP, 30 MB with a
+JPEG fallback for opaque ones); retries only for `ModelAccountIpmRateLimitExceeded` / `ServerOverloaded`, never
+before `Retry-After`, not past 60 s. **Not run against the live API**; a model must be activated in the console, a key
+works only in its region, some accounts need an endpoint id (not supported). **BytePlus' country list (21 April
+2026) has Germany and the EU but not the United States** (the user said "bin eu / usa"). Tests: `node
+tools/ark_test.js` (161 checks), gate `ark` (`tools/ark_test.py`, `tools/ark_mock.py`); a mutation round of 117
+(the scratchpad's `ark_mutate.js`) all red. One review round (three lenses, two refuters each): 10 findings, the 7
+that held fixed (the 401 / `InvalidAccountStatus` / `QuotaExceeded` words, the exact text-run aspect, the pro note's
+Dublin sentence and input fee, the privacy wording with Indonesia, lite's 16:1 floor, `select_recipe`'s list).
+Gates `--offline` on both backends: `ark openrouter toapis llm generate size transparent mcp log` ALL PASS.
+
 **0.1.20 is published** (Latest since 2026-09-19, on the user's word; `latest.yml` on the feed says 0.1.20, the release
 body is the CHANGELOG section): `package.json` 0.1.20, `CHANGELOG.md` "0.1.20 — 2026-09-19", `npm run dist` built
 `Scumble Setup 0.1.20.exe`, the tag `v0.1.20`, CI's draft published (check `gh release list` before believing any
@@ -316,7 +366,8 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    session of its own after `smoke` and the node test, under the same rule as stage 1: moves, the byte-for-byte proof,
    both backends, `nodecopy`.
 
-12. **OpenRouter as a provider (asked for by the user on 2026-09-18, not built yet: about a day).** OpenRouter
+12. **OpenRouter as a provider: BUILT on 2026-09-19 (see the top of this section; the plan below is what was asked,
+   not what was built: the image route is `/api/v1/images`, and no `HTTP-Referer` / `X-Title` goes out).** OpenRouter
    (`https://openrouter.ai/api/v1`) is an OpenAI-compatible aggregator with one key for most hosted models. Two uses in
    Scumble, both to be written from the docs and verified only with a real key, like every other adapter:
    (a) **prompt upsampling**: a backend beside the API ones and `settings.llm.compat`, the chat completions endpoint
@@ -331,8 +382,8 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    against the live API before anything ships:** which image models OpenRouter serves at the time (Gemini image,
    gpt-image, Flux), whether an input picture reaches them as an edit, the size and count limits, and the shape of an
    image answer; the docs may have moved since this was written.
-12b. **BytePlus ModelArk as a direct Seedream provider (asked for by the user on 2026-09-19, not built yet: about a
-   day, beside or right after item 12).** Seedream runs today through fal, ToAPIs, WaveSpeed and the ComfyUI API node
+12b. **BytePlus ModelArk as a direct Seedream provider: BUILT on 2026-09-19 (see the top of this section; the plan
+   below is what was asked, the research paragraph after it corrects it).** Seedream runs today through fal, ToAPIs, WaveSpeed and the ComfyUI API node
    (`ByteDanceSeedreamNodeV3`); ModelArk is ByteDance's own API for it. What was found on 2026-09-19 (the docs,
    `https://docs.byteplus.com/en/docs/ModelArk/1541523`, are rendered by script and could not be read field by field):
    `POST https://ark.ap-southeast.bytepluses.com/api/v3/images/generations` (Singapore; also `ark.eu-west.bytepluses.com`),
@@ -346,6 +397,19 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    limits, `seed`, `response_format` `url` / `b64_json`, `watermark`, multi-image fields), the answer's shape, whether an
    input picture is edited or only referenced, the size and count limits, and which region the user's key serves (the
    privacy note: ByteDance, Singapore or the EU endpoint).
+   **Researched on 2026-09-19 (the field-level docs are in the served HTML, `window._ROUTER_DATA...MDContent`; the
+   session scratchpad's `rep_modelark.md` and `ark/` hold them), correcting the lines above:** the AP region is
+   **Johor, Malaysia** (`ark.ap-southeast.bytepluses.com/api/v3`), the EU one Dublin (`ark.eu-west...`), keys are bound
+   to a region and requests "may be routed" across regions; model ids carry a date: `dola-seedream-5-0-pro-260628`,
+   `seedream-5-0-260128` (also `seedream-5-0-lite-260128`), `seedream-4-5-251128`, `seedream-4-0-250828`, and a model
+   must be activated first (404 `ModelNotOpen`; some accounts need an endpoint id); the prompt's 300 is a recommendation;
+   `image` is a URL or a `data:image/<fmt>;base64,` string or an array (pro 10, the others 14; each [1/16, 16], at most
+   30 MB and 36 MP), **`watermark` defaults to true (send `false`)**, `response_format` `url` (24 h) or `b64_json`,
+   `size` a tier (pro 1K / 1.5K / 2K, lite 2K / 3K / 4K) or `WxH` by area (pro 921,600 to 4,624,220 px, lite 3,686,400 to
+   16,777,216), ratio [1/16, 16] (not ToAPIs' 3:1), `output_format` png only on 5.0 pro / lite, no mask, no `n`, `seed`
+   not in the reference (the SDK sends it); errors `{ error: { code, message, param, type } }`; prices per image (pro
+   $0.045 up to 2.61 MP, $0.09 above; lite $0.035); data centres in Malaysia, Indonesia and the EU, no training without
+   authorisation, filtered content kept 180 days.
 13. **The assistant, a chat agent that drives Scumble over MCP (asked for by the user on 2026-09-18, planned that day
    and revised on 2026-09-19 after the user's answers; not built: about twenty-three and a half working days for its
    one release, twenty-four and a half with the two optional steps).** The plan is `docs/PLAN_ASSISTANT.md`; every
@@ -413,7 +477,7 @@ outlines at 15k turn out to matter, compute the image-size label map only in the
 never for the whole picture; (3) **B item 6 stays on ice** (it saves memory, not time; 97 GB of RAM and the 15.5 GB cap
 are not the limit at 15k). **Next, in this order:** after the user's ComfyUI restart, one local run on a large document
 with the node's stitch fix (`fba1fd8`); the node in a real ComfyUI tab and in Firefox when a node version is meant to
-ship; then **OpenRouter (item 12)** and **ModelArk (item 12b)**; then the assistant (item 13,
+ship; then ~~OpenRouter (item 12)~~ and ~~ModelArk (item 12b)~~ (both built 2026-09-19, for 0.1.21); then the assistant (item 13,
 `docs/PLAN_ASSISTANT.md`), as a release of its own (the user, 2026-09-19: "agent als letztes, wird ein seperates
 release", and the same day: "assistant kommt vor codesignierung"); the `buildModal` split (item 11) also comes
 before it; then SignPath, last. Nothing else stands before them, unless the user names something else first.
@@ -422,7 +486,7 @@ before it; then SignPath, last. Nothing else stands before them, unless the user
 are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,
 gate profiles, `dist/ab`, `composite`, `smoke`). `tools/run_gates.sh` recreates the profiles it needs.
 
-**Still unverified or open:** the ToAPIs adapter has never run against the live API (`docs/RECIPES.md` "Only a real key can verify"); a real SAM2 / RMBG
+**Still unverified or open:** the ToAPIs, OpenRouter and ModelArk adapters have never run against the live API (`docs/RECIPES.md` "Only a real key can verify", in each section); a real SAM2 / RMBG
 model has not run in the app on the slice 6 code (the full `smoke` of 2026-09-19 ran the server's helpers only; a profile
 with the models downloaded or the ComfyUI `models/` folder linked would run them); the user has not reported back on
 their own 15k file.
@@ -433,7 +497,7 @@ their own 15k file.
 port 9555 with its own profile (with `test_base.png`), runs each gate with a timeout, and writes logs and `summary.txt` under
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
-mcp nodecopy toapis llm export pxjobs`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+mcp nodecopy toapis openrouter ark llm export pxjobs`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
 forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and

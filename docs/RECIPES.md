@@ -78,10 +78,12 @@ A provider recipe is **one model** with one variant per provider that hosts it; 
 picks the provider in Settings › Recipes (a select per row, remembered in
 `settings.recipeProviders`) or through `select_recipe(id, provider)`. The home provider
 (`default`) is the model's own API: Google for the Nano Banana family, OpenAI for GPT
-Image, Black Forest Labs for FLUX; ToAPIs, fal.ai, Replicate, WaveSpeedAI and Comfy Cloud carry
-most models as well. The order of a recipe's `providers` is the order of its provider select,
-of Generate new and of `list_recipes`; ToAPIs comes first wherever it serves the model (see
-"ToAPIs" below), and `default` stays the home provider.
+Image, Black Forest Labs for FLUX; ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud and
+OpenRouter carry most models as well. Seedream is the exception: its own API, BytePlus ModelArk, came
+later, and the two Seedream recipes keep fal as their `default` (see "BytePlus ModelArk" below). The order
+of a recipe's `providers` is the order of its provider select, of Generate new and of `list_recipes`;
+ToAPIs comes first wherever it serves the model (see "ToAPIs" below), ModelArk right after it in the two
+Seedream recipes, OpenRouter last (see "OpenRouter" below), and `default` stays the home provider.
 
 ```
 {
@@ -92,7 +94,9 @@ of Generate new and of `list_recipes`; ToAPIs comes first wherever it serves the
     "fal":        { "model": "fal-ai/flux-2-max/edit", "input": "edit", "settings": [ ... ] },
     "replicate":  { "model": "black-forest-labs/flux-2-max", "input": "edit", "fields": { "images": "input_images" }, "fixed": { "output_format": "png" } },
     "wavespeed":  { "model": "wavespeed-ai/flux-2-max/edit", "input": "edit" },
-    "comfycloud": { "model": "Flux.2 [max]", "input": "edit", "options": { "node": "Flux2ImageNode" } }
+    "comfycloud": { "model": "Flux.2 [max]", "input": "edit", "options": { "node": "Flux2ImageNode" } },
+    "openrouter": { "model": "black-forest-labs/flux.2-max", "input": "edit", "fixed": { "output_format": "png" },
+                    "options": { "accepts": ["aspect_ratio", "output_format", "seed", "n"], "ratios": [ ... ], "max_images": 8 } }
   }
 }
 ```
@@ -104,7 +108,9 @@ the parameter the adapter sends), `fixed` (parameters sent as they are), `fields
 an image-to-image endpoint that has no mask, such as Ideogram 4), `options` (adapter
 switches: fal `sizing: "none"` for endpoints without a free `image_size`, fal
 `omit: ["output_format", ...]` for an endpoint that refuses the fields the other models
-take; ToAPIs' channels, sizes and tiers, below), `limits` (the size ceiling, below), `edit: false` (the variant makes images from
+take; ToAPIs' channels, sizes and tiers, below; OpenRouter's accepted parameters, presets, tiers and
+picture limits, below; ModelArk's pixel range, picture count, PNG switch and regions, below),
+`limits` (the size ceiling, below), `edit: false` (the variant makes images from
 the prompt alone and the Generate button says so), `note` (shown as the tooltip). `family`
 groups the top-bar list. A recipe with a top-level `provider` instead of `providers` (the
 old shape, the smoke test's loopback) is read as a one-provider recipe.
@@ -123,7 +129,8 @@ recipe (for every variant) or on a single variant:
 side the endpoint accepts, `pixels` an area cap and `minPixels` an area *floor* (0 = none
 for both), and `ratio` the steepest crop the model takes (3 = at most 3:1, 0 = any): a crop
 steeper than that gets more context on its short side, so a thin selection is not refused
-(Seedream on ToAPIs, whose pages say [1/3, 3]). Without either, the conservative
+(Seedream on ToAPIs, whose pages say [1/3, 3]; Seedream on ModelArk and OpenRouter 16, ModelArk's
+[1/16, 16]). Without either, the conservative
 `{ min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0 }` applies - raise one with a
 source, not with a guess. Today: **FLUX.2 and FLUX.1 Fill 1440** (2048 answers with an
 error), **GPT Image 2.5 Flare and Sunburst 3840 with an 8,294,400 px budget and a 655,360 px
@@ -131,8 +138,11 @@ floor** (the model's own size rules: both edges a multiple of 16, at most 3840 a
 ratio no steeper than 3:1), **GPT Image 2 2048 with the same budget** (the size rules of the
 OpenAI partner node), **Seedream 5 on fal 4096 with a 4 MP budget for pro and a 16 MP one
 for lite** (its `image_size` is a free size with an area range, not a side limit),
-**Seedream on Comfy Cloud 2496 / 4992** (what the partner node fits it into), everything
-else the conservative default.
+**Seedream on Comfy Cloud 2496 / 4992** (what the partner node fits it into), **Seedream on
+ModelArk 4096 in 16 px steps with the model's own pixel range as budget and floor** (pro 921,600 to
+4,624,220 px, lite 3,686,400 to 16,777,216; see "BytePlus ModelArk" below), **the OpenRouter
+variants of the three GPT recipes 2048 with neither budget nor floor** (OpenRouter takes no pixel
+size; see "OpenRouter" below), everything else the conservative default.
 
 fal answers two URLs without a key, and they are the fastest way to a real number:
 `https://fal.ai/api/models?keywords=<x>` lists endpoint ids, and
@@ -178,8 +188,14 @@ part for you and is offered for the OpenAI recipes.
 
 The ToAPIs variants of the three GPT recipes carry the row too (on GPT Image 2's standard channel and
 on every GPT Image 2.5 channel only `transparent` is sent, as their pages ask); none of that has run
-live. Other providers are not wired for it: fal, WaveSpeed and Comfy Cloud may or may not pass
-`background` through to the same models, and none of that is verified. Add the row to a
+live. On OpenRouter only the two GPT Image 2.5 variants (Flare, Sunburst) carry it, because
+`GET /api/v1/images/models` lists `auto`, `transparent` and `opaque` for them and only `auto` and
+`opaque` for GPT Image 2 (2026-09-19); GPT Image 2 on OpenRouter therefore has neither the row nor
+the Generate-new checkbox. OpenRouter lists no `output_format` for the OpenAI models, so the format
+of a transparent answer is the host's default (not verified). Other providers are not wired for it: fal, WaveSpeed and Comfy Cloud may or may not pass
+`background` through to the same models, and none of that is verified. ModelArk documents a
+`background` for Seedream 5.0 pro, but "only for image-to-image generation with exactly one input image
+that has an alpha channel", which an inpaint crop is not; its variant does not carry the row. Add the row to a
 variant when you have a source. `tools/transparent_test.py` is the gate.
 
 ### Generating without an image (`text`)
@@ -190,10 +206,13 @@ the editing one with a trailing `/edit`, `/inpaint` or `/fill` removed (fal and 
 put the editing model under such a path, the others use the same id without the image
 field). A variant overrides it with `"text": { "model": "...", "sizes": [...], "fixed": {} }`
 or switches it off with `"text": false`. Providers that can do it at all: ToAPIs, OpenAI, Gemini,
-BFL, fal, Replicate, WaveSpeed. Comfy Cloud builds a graph around a partner node and has
-none. The other way round exists too: a variant with `"edit": false` has **only** the text
-shape (Krea 2, Recraft V4 and Z-Image base are text-to-image endpoints), and the Generate
-button answers that the recipe belongs in "Generate new".
+BFL, fal, Replicate, WaveSpeed, OpenRouter, ModelArk (`TEXT_PROVIDERS`; OpenRouter uses the same model id and
+leaves out `input_references`, ModelArk the same id without `image`). Comfy Cloud builds a graph around a
+partner node and has none. The other way round exists too: a variant with `"edit": false` has **only** the text
+shape (Krea 2, Recraft V4 and Z-Image base are text-to-image endpoints on fal; the OpenRouter variants of Krea 2
+and Recraft V4 are text-only by choice, since OpenRouter lists one input picture for each but not whether it is edited
+or used as a style reference, see "OpenRouter" below), and the Generate button answers that the recipe belongs in
+"Generate new".
 
 The run goes through `host.runGenerate()` with `kind: "text"`: no crop, no mask, no
 references, only prompt, size, aspect and seed. The adapter's `generate()` picks the right
@@ -226,8 +245,15 @@ the adapter builds a workflow from LoadImage, one Partner Node named in `options
 `ByteDanceSeedreamNodeV3`, `Flux2ImageNode`, `FluxProFillNode`, `QwenImageEditApi`) and
 SaveImage, submits it to `/api/prompt`, polls `/api/job/<id>/status`, reads the image from
 `/api/history/<id>` and `/api/view`; settings keys are the node's full input keys, dotted
-for the model combos such as `model.quality`; needs a paid plan). Every adapter is written from the provider's documentation and
-has not run against the live API yet; the recipe descriptions say so.
+for the model combos such as `model.quality`; needs a paid plan), **openrouter** (`POST
+/api/v1/images`, one synchronous request with the pictures inline as data URLs and the image back
+as base64; no mask input, so a `fill` variant sends the mask as a second picture as the Gemini
+adapter does; only the parameters `options.accepts` names; tiers and aspect presets from
+`options`; `provider.ignore` with the hosts in China; see "OpenRouter" below), **ark** (BytePlus ModelArk,
+ByteDance's own API for Seedream: `POST /api/v3/images/generations` on the host of the *Region* row, one
+synchronous request with the pictures inline as data URLs and the image back as base64; always a pixel `size`
+in the crop's shape, `watermark: false`; no mask input; see "BytePlus ModelArk" below). Every adapter is written
+from the provider's documentation and has not run against the live API yet; the recipe descriptions say so.
 The key of the provider comes from the credential store (Settings › API providers).
 
 What a provider run does: `prepareCrop` builds the crop like the node (selection bbox
@@ -397,3 +423,773 @@ allowlist, the mask on every channel, and ToAPIs last in `PROVIDERS`.
   checked; the upsample rows retried any 4xx without the crop and lost the "text only" note; the 10 MB
   guard counted MiB (`node tools/toapis_test.js` sections 3, 1, 5, 5b and 8,
   `a_thin_selection_on_seedream_gets_context_up_to_3_to_1`).
+
+### OpenRouter (`openrouter`)
+
+[OpenRouter](https://openrouter.ai) is an aggregator: one key for most hosted models, each request routed to
+a host that serves the model. Scumble uses its unified Image API for 14 recipes (GPT Image 2 and 2.5 Flare /
+Sunburst, Nano Banana 2 / 2 Lite / Pro, FLUX.2 max / pro / flex, Seedream 5 lite and pro, Grok Imagine 2.0,
+and in Generate new only Krea 2 and Recraft V4) and its Chat Completions for prompt upsampling (docs/HELPERS.md
+"Through the OpenRouter key"). The adapter `electron/main/providers/openrouter.js` is written from OpenRouter's
+docs (the `.md` twins of `openrouter.ai/docs/...`, `openapi.json`, the per-model guides at
+`openrouter.ai/<id>/llms.txt`) and its public lists (`GET /api/v1/images/models`, `.../<id>/endpoints`,
+`GET /api/v1/providers`), all read on 2026-09-19, and **has not run against the live API**; every OpenRouter
+variant's note says so and names the company the pictures go on to.
+
+**Where it shows up.** The key row comes after Comfy Cloud in Settings › API providers (`PROVIDERS` in
+`providers/index.js`, before Anthropic's key-only row), with the hint `sk-or-v1-...`, *get a key*
+(`openrouter.ai/settings/keys`, no referral code) and, with a key stored, *check balance*. In the 14 recipe
+files `openrouter` is the **last** key of `providers`, so it is last in each recipe's provider select, in
+Generate new and in `list_recipes`; ToAPIs stays first. **No recipe's `default` changed and nothing switches
+to OpenRouter on its own**: a recipe runs there when you pick it in the recipe's select, in Generate new or
+with `select_recipe(id, "openrouter")`. `openrouter` is in `TEXT_PROVIDERS`, and a text run uses the edit
+variant's model id (the Image API takes `input_references` as optional). The descriptions of the 14 recipes
+say "Also on OpenRouter."
+
+*check balance* asks `GET /api/v1/key` with the key (15 s timeout). That answer describes the key's own
+spending limit (`limit`, `limit_remaining`, `limit_reset`) and what the key has used, **not the account's
+credits**, which only `GET /api/v1/credits` reports and which needs a management key (and "Management keys
+cannot be used to make API calls to OpenRouter's completion endpoints"). So a key with a limit reads "$12.50
+left (of this key's $20.00 limit, $7.50 used; the account's credits are on openrouter.ai/credits)", a key
+without one "no spending limit on this key, $7.50 used in all; ...". A limit that resets daily, weekly or
+monthly names its period and what was used in it (`usage_daily` / `_weekly` / `_monthly`, plus the BYOK
+spending of the period when the key counts it, `include_byok_in_limit`): "of this key's $100.00 monthly limit,
+$25.50 used this month", never the all-time `usage` beside it; a reset the adapter does not know gets no
+"used" figure. Whether the call is free is not stated.
+
+**The protocol.** One synchronous request per image; nothing is uploaded anywhere else and nothing is polled:
+
+1. `POST /api/v1/images` with `Authorization: Bearer <key>` and the JSON body `{ model, prompt,
+   input_references, resolution, aspect_ratio, quality, background, output_format, seed, n: 1, provider:
+   { ignore } }`, of which only the fields the model takes go out (below). The pictures go inline as data
+   URLs, `{ type: "image_url", image_url: { url: "data:image/png;base64,..." } }`, in this order: the crop,
+   the mask (fill only), then the references (*Original* first, then the reference layers). An edit's
+   prompt starts with what the pictures are ("Edit the first image and keep its size and framing.", or the
+   mask sentence below) and ends with "The remaining image is reference material." ("images are" for
+   more) when there are references; a text run sends the prompt as it is and no `input_references`.
+2. The answer is `{ created, data: [{ b64_json, media_type }], usage: { cost, ... } }`: the first `data`
+   entry with `b64_json` is the image (PNG unless `media_type` says otherwise). The run's `info` (model,
+   `resolution`, `aspect_ratio`, each picture and whether it went as PNG or JPEG, and `usage.cost` in USD)
+   goes to the log. An `error` object inside an HTTP 200 fails the run like an error status.
+
+Billing is **all or nothing** (the image guide, "Billing and Cancellation"): "When a generation does not
+complete, the request returns a `502 Bad Gateway` rather than a partial result, and no charge is recorded."
+Streaming exists for OpenAI's models only and is not used.
+
+**Fill and edit.** The Image API has **no mask field**: neither the request schema nor any model's
+`supported_parameters` lists one, and OpenAI's passthrough allowlist (`provider.options`) is `moderation`
+alone. So the variants split three ways:
+
+- **GPT Image 2 / 2.5 and Nano Banana** (`input: "fill"`): the mask (`req.mask`, white = repaint) goes along
+  as the **second picture**, and the prompt begins "Edit the first image. The second image is a mask: change
+  only the white area of the mask, keep everything else exactly as it is, and keep the image size and
+  framing.", as the Gemini adapter does. Both families read several pictures and take instructions about
+  them; whether they keep to the mask is not verified, and the stitch keeps only the selection either way.
+  The mask is never re-encoded.
+- **FLUX.2, Seedream 5 and Grok Imagine** (`input: "edit"`): an instruction edit of the crop plus the
+  references, no mask, as on every other provider of these models; the stitch keeps the selection. For
+  area-directed edits set Fill to green and Original on, and say "fill the green area".
+- **Krea 2 and Recraft V4** (`edit: false`): text to image, in Generate new only. Each lists one
+  `input_references` slot, and neither page says whether that picture is edited or used as a style
+  reference, so the variants offer no edit.
+
+**Sizes.** No model lists `size`, so **no pixel size goes out** ("An absent key means the parameter is
+unsupported by that endpoint", the image guide):
+
+- `resolution`, where the model lists it (Nano Banana, Seedream, Grok, Krea): the *Resolution* row's value,
+  or on **auto** (the rows' default) the smallest tier of `options.tiers` whose base (512, 1024, 2048,
+  4096) covers the long side of the emitted crop, or of the asked size for a text run, else the largest.
+  With Highres fix on *Maximum* the crop goes out at 2048 (these variants carry the conservative default
+  limits), so auto picks 2K wherever the model has it, the 2K of the note at the top of this file; a lower
+  Highres fix picks a lower tier. Nano Banana 2 Lite and Krea 2 have 1K only, which is always sent. A
+  tier's pixel size is "derived per-provider" and stated for no model.
+- `aspect_ratio`: **an edit sends none**, so the host keeps the crop's shape as its own edit endpoint does
+  (not verified; `auto` is not in Gemini's or Krea's list, so leaving the field out is the one form every
+  model takes). A **text run** sends the Generate-new aspect when it is one of the model's presets
+  (`options.ratios`), else the closest preset.
+- GPT Image and FLUX.2 list no `resolution`: the host picks the output size itself. OpenRouter's one
+  example is a text request to GPT Image 2 at 16:9 and high quality: "`1536×864` PNG"; what an edit
+  without an aspect comes back at is not stated.
+- An answer of another shape than the crop is centre-cropped by `finishResult` (stretched when its aspect
+  is within 0.01 of the crop's), as with WaveSpeed.
+
+The crop goes out under the conservative default limits (2048, 16 px steps) except for FLUX (the recipe's
+1440 / 32) and the three GPT variants, which set `{ max: 2048, step: 16, pixels: 0, minPixels: 0 }`: no area
+budget and no floor, since OpenRouter takes no pixel size. Seedream's `limits.ratio: 16` widens a crop
+thinner than 16:1, the input range ByteDance's ModelArk documents ("Aspect ratio (width / height): [1/16,
+16]", its Image generation API page, 2026-09-10; OpenRouter's Seed host links BytePlus' terms, and nothing
+says the range holds through OpenRouter), not ToAPIs' 3:1. The resolution rows default to *auto*, as on
+ToAPIs, not to a fixed 2K.
+
+**Options.** A variant's `options` describe the model:
+
+- `accepts`: which of the parameters the model's endpoints list in `GET /api/v1/images/models`
+  (`supported_parameters`, read 2026-09-19) the adapter may send; **nothing else is sent**, because the
+  per-model guides say "an unlisted value is rejected, and a listed one can still be refused by whichever
+  provider serves the call". So `seed` goes to FLUX.2, Seedream and Krea only, `n: 1` to every model but
+  Krea (which lists no `n`), `output_format` to FLUX.2 only (fixed `png`), `quality` to GPT and Grok,
+  `background` to GPT Image 2.5 only; `output_compression`, which the OpenAI models list, is in no
+  variant's `accepts`, and neither is GPT Image 2's `background` (only `auto` / `opaque`);
+- `ratios`: the model's `aspect_ratio` presets without `auto` (text runs only);
+- `tiers`: `{ "1K": 1024, ... }`, the model's `resolution` values with the long side each stands for;
+- `max_images`: the model's `input_references` maximum, or the host's own documented limit where it is lower
+  (Seedream 5.0 pro: 10, which ModelArk documents, against OpenRouter's 14); a run with more pictures (crop,
+  mask, *Original* and reference layers together) is refused **before any request**, with the count and "turn
+  Original off or hide reference layers";
+- `max_ratio`: the steepest picture the model takes (Seedream: 16, ModelArk's documented range); a steeper
+  crop or reference is refused before any request;
+- `only_for`: `{ <resolution>: [host slugs] }`, a tier only some of the model's hosts serve, sent with
+  `provider.only` set to them. Nano Banana Pro's 4K: of its two endpoints only Google AI Studio lists 4K
+  (Vertex AI stops at 2K), so a 4K run, picked in the row or chosen by *auto* for a 4096 Generate new, goes
+  to AI Studio alone (which keeps prompts 55 days). A base slug matches every endpoint of that host ("it
+  matches **all** endpoints for that provider, including any variants or regions", the provider-selection
+  page).
+
+Settings rows pass through by key when `accepts` names the key (`resolution`, `aspect_ratio`, `quality`,
+`background`, `output_format`, `output_compression`); `auto`, empty values and `random_seed` are not sent,
+and `fixed` passes the same way. `background: "transparent"` with a JPEG `output_format` goes as PNG; no
+variant sends both today.
+
+**The 18 MB inline budget.** OpenRouter states no body limit: `POST /images` "now returns `413`" (changelog,
+2026-07-07) without a number, and probes without a key on 2026-09-19 got 4, 12 and 30 MB bodies through to
+the key check. The adapter holds the base64 of one request's pictures to **18,000,000 bytes**, under the
+tightest upstream limit it knows of (Gemini: 20 MB for a request with inline images). Over it, the opaque
+pictures (the crop and references without a transparent pixel, `ctx.opaque`) are re-encoded as JPEG at
+quality 92 (`ctx.toJpeg`, Electron's `nativeImage`), largest first, until the total fits; a JPEG that comes
+out larger is not used, and neither the mask nor a picture with transparency is ever re-encoded. Still over
+it, the run is refused before any request with "Set Highres fix lower, turn Original off, or use fewer or
+smaller reference layers". For scale (the ToAPIs measurements above): a 2048² PNG crop of a photograph is
+5.9 to 9.5 MB, 7.9 to 12.7 MB as base64, so a crop with its *Original* copy can pass 18 MB on its own.
+
+**Errors** are read in both shapes OpenRouter answers with: the documented `{ error: { code, message,
+metadata } }` and the schema check's `{ success: false, error: { name: "ZodError", message: "<JSON list of
+issues>" } }` (seen on 2026-09-19 for a bad body without a key; the issues are joined as `path: message`).
+Plain words go in front of the server's message: 400 "request refused", 401 "key refused", 402 "credits too
+low, top up at openrouter.ai/credits" (with `metadata.limit_source: "openrouter_key_limit"`: "this key's
+spending limit is reached (raise it at openrouter.ai/settings/keys, or wait for it to reset)"; with
+`"openrouter_in_flight_budget"`, which the limits page says is "not your balance": "recent paid requests are
+still settling on this account; wait a moment and try again (more credits raise this budget)"), 403 "refused
+(the content policy, a guardrail or the key's permissions)", the errors page's three causes of a 403, and
+"refused by the content policy" with the moderation `reasons` when there are any or when `error_type` is
+`content_policy_violation` or `refusal`, 404 "no host serves this model with these settings", 408 and 524
+"timed out", 413 "request too large (set Highres fix lower or use fewer reference layers)", 429 "rate
+limited", 502 "the model's host failed; nothing was charged", 503 "no host is available right now, or none
+meets the routing rules (Scumble leaves out hosts in China)" (the errors page uses 503 both for "no available
+model provider that meets your routing requirements" and, typed `provider_overloaded`, for "The upstream
+provider is temporarily overloaded"; the latter reads "the model's hosts are overloaded; try again
+shortly"), 529 "the host is overloaded". The key is taken out of every message; the error reaches the status
+line and the log (`source: "openrouter"`).
+
+**Sent once more**, one retry and **never before the time the server set** (the errors page: "honor it
+before retrying"): a **429**, a **529**, a **503 with `Retry-After`** (an overloaded host), and a **402**
+whose `metadata.limit_source` is `openrouter_in_flight_budget` and that carries a `Retry-After` (the errors
+page: "A 402 … without the header is not a wait-and-retry case"). The wait is the header's, 5 s for a 429 or
+529 without one; a header over **60 s** (the errors page's own example is 60) is not waited for: the run fails
+at once and its message ends "try again in N s". There is no third request: a second refusal that names a
+wait (any wait) ends the run with the same "try again in N s". The in-flight 402 is refused "before it reaches a provider"
+(the limits page), so nothing was generated or charged; the adapter reads a 429, a 529 and an overloaded 503
+the same way, which OpenRouter does not state. Nothing else is retried, and **never a network error**: an
+answer lost on the way may be a paid image, and a second request a second one.
+
+**The host** is `https://openrouter.ai` unless `settings.openrouter.base` is `https://openrouter.ai` or
+`http://127.0.0.1:<port>` (the test mock); anything else is ignored: a path (`/api/v1` included), a query,
+user info, `http://openrouter.ai`, `localhost`, and the regional `eu.` / `us.openrouter.ai`, whose in-region
+routing "is only enabled for enterprise customers by request". It never comes from a recipe, and there is no
+UI for it. **The key rule** on top: a key that starts with `test-` goes only to the loopback mock, and any
+other key never goes there; both mismatches are refused before any request, for the image runs, *check
+balance* and the upsampling rows alike. So a real key cannot reach a local listener a setting points at, and
+a test key never reaches openrouter.ai.
+
+**Privacy.**
+
+- **What leaves the machine:** the crop, the mask (fill), the references and the prompt, inline in the
+  request to `openrouter.ai`, which passes them to a host that serves the model (the table below). Nothing
+  goes to a file host, and the result comes back in the answer.
+- **No attribution headers:** no `HTTP-Referer`, `X-Title`, `X-OpenRouter-Title`, `X-OpenRouter-Categories`
+  or `X-OpenRouter-App-Visibility` goes out. OpenRouter's app-attribution page: `HTTP-Referer` "is required
+  for app attribution. Without it, no app page will be created"; with it, and without
+  `X-OpenRouter-App-Visibility: hidden`, the app page is public. Scumble's name must not appear in public
+  before the trademark check (CLAUDE.md), so none is sent.
+- **The hosts in China:** every image request (and every upsampling request) carries `provider.ignore`
+  with the hosts OpenRouter lists with their headquarters or a datacentre in China (`GET /api/v1/providers`,
+  public, no key, countries as "ISO 3166-1 Alpha-2 country codes"). The list is read once per session, at the
+  first image run or upsampling on OpenRouter (10 s timeout), and merged with the list of 2026-09-19: `alibaba`, `baidu`,
+  `deepseek`, `nex-agi`, `streamlake`, `tencent`, `xiaomi`. When the read fails, the dated list alone goes
+  out, the log says so, and the next request asks again. OpenRouter merges `ignore` with the account's own
+  ignored providers. Of the image hosts only `alibaba` is on the list.
+- **No `data_collection` or `zdr` on images:** the Image API's `provider` object has only `allow_fallbacks`,
+  `ignore`, `only`, `options`, `order` and `sort` (the request schema; the image guide names the same
+  routing fields). The chat route's `data_collection` and `zdr` are not in it, whether `/images` would honour
+  them is not stated, and the first validation stage accepts unknown keys, so a probe without a key cannot
+  tell. Neither is sent. An account-wide ZDR setting at openrouter.ai "only applies to provider routing for
+  inference requests"; whether that covers `/images` is not stated either.
+- **OpenRouter itself:** "OpenRouter does not store your prompts or responses, *unless* you opt in"
+  (Input & Output Logging, off by default, whose data "is retained for a minimum of 3 months" once it is
+  on; the Data Collection page and the logging page), and "OpenRouter itself has a ZDR
+  policy; your prompts are not retained unless you specifically opt in to prompt logging" (the ZDR page).
+  Its privacy policy (last updated 2026-08-31; read through a fetch tool, not as raw text): "We do not
+  persist image, audio or video files beyond the duration necessary to route the request, except as
+  required for abuse detection, security, billing, or legal compliance." How long a generated image is kept
+  is not stated.
+- **The hosts** as of 2026-09-19: which host serves a model from `GET /api/v1/images/models/<id>/endpoints`,
+  headquarters and datacentres from `GET /api/v1/providers`, and training and retention from
+  `GET /api/frontend/v1/all-providers`, an **undocumented** list (the Provider Logging page renders its
+  table from it) that can change without notice. Every host below has `training: false` there.
+
+| Host (slug) | Serves here | Headquarters / datacentres | Keeps prompts |
+|---|---|---|---|
+| OpenAI (`openai`) | GPT Image 2, 2.5 Flare, 2.5 Sunburst | US / none listed | yes, for a period not given |
+| Google AI Studio (`google-ai-studio`) | Nano Banana 2, 2 Lite, Pro | US / none listed | 55 days |
+| Google Vertex (`google-vertex`) | the same three (Pro up to 2K) | US / none listed | no (on `GET /api/v1/endpoints/zdr`) |
+| Black Forest Labs (`black-forest-labs`) | FLUX.2 max, pro, flex | not listed | 30 days |
+| Seed (`seed`, ByteDance) | Seedream 5 lite, pro | SG / none listed | no (on `/endpoints/zdr`) |
+| xAI (`xai`, listed as "SpaceXAI") | Grok Imagine 2.0 | US / none listed | 30 days |
+| Krea (`krea`) | Krea 2 large | US / none listed | no (on `/endpoints/zdr`) |
+| Recraft (`recraft`) | Recraft V4 | not listed | yes, for a period not given |
+| Alibaba Cloud Int. (`alibaba`) | Qwen Image 3 and 3 Pro, **not offered** | SG / SG, **CN** | yes, for a period not given |
+
+Where a model has two hosts (the Nano Banana models: AI Studio, which keeps prompts 55 days, and Vertex AI,
+which keeps none), OpenRouter picks one per request and Scumble pins neither, except Nano Banana Pro's 4K,
+which only AI Studio lists and which goes there alone (`only_for`, above). **Qwen Image 3 is left out:** its only host on OpenRouter is Alibaba Cloud International,
+which lists a datacentre in China, so the ignore list would leave it no host; `qwen_image_edit` has no
+OpenRouter variant.
+
+**The recipes** (model ids and parameters from `GET /api/v1/images/models`, 2026-09-19; "pictures" counts the
+crop, the mask, *Original* and the reference layers together):
+
+| Recipe | OpenRouter model | Input | Settings rows | `resolution` tiers | Pictures | Generate new |
+|---|---|---|---|---|---|---|
+| `gpt_image_2` | `openai/gpt-image-2` | fill (mask as 2nd picture) | Quality (auto, low, medium, high) | none: the host picks the size | 16 | 1536 |
+| `gpt_image_2_5_flare`, `_sunburst` | `openai/gpt-image-2.5-flare`, `-sunburst` | fill | Quality (auto to max), Background (auto, opaque, transparent) | none | 16 | 1536 |
+| `nano_banana_2` | `google/gemini-3.1-flash-image` | fill | Resolution | 512, 1K, 2K, 4K | 14 | 1024, 2048, 4096 |
+| `nano_banana_2_lite` | `google/gemini-3.1-flash-lite-image` | fill | none | 1K, always sent | 14 | 1024 |
+| `nano_banana_pro` | `google/gemini-3-pro-image` | fill | Resolution | 1K, 2K, 4K (4K on AI Studio only) | 14 | 1024, 2048, 4096 |
+| `flux2_max`, `flux2_pro`, `flux2_flex` | `black-forest-labs/flux.2-max`, `-pro`, `-flex` | edit, `seed`, fixed `output_format: png` | none | none | 8 | 1024 |
+| `seedream_5_lite` | `bytedance-seed/seedream-5-0-lite` | edit, `seed` | Resolution | 2K, 4K | 14, none steeper than 16:1 | 2048, 4096 |
+| `seedream_5_pro` | `bytedance-seed/seedream-5-0-pro` | edit, `seed` | Resolution | 1K, 2K | 10 (OpenRouter lists 14), none steeper than 16:1 | 1024, 2048 |
+| `grok_imagine` | `x-ai/grok-imagine-image-2.0` | edit | Resolution, Quality (low, medium) | 1K, 2K | 3 | 1024, 2048 |
+| `krea_2` | `krea/krea-2-large` | text only (`edit: false`), `seed` | none | 1K, always sent | none | 1024 |
+| `recraft_v4` | `recraft/recraft-v4` | text only (`edit: false`) | none | none | none | 1024 |
+
+"Generate new" is the variant's `text.sizes` (the long sides the dialog offers). Every model's
+`aspect_ratio` presets are in its variant's `options.ratios`. `recraft/recraft-v4-pro` is the pro tier of the
+same model, not wired; nor are `recraft/recraft-v4.1` and `-v4.1-pro`, which the same list carried.
+
+**Only a real key can verify** (written defensively, and listed here until a live run):
+
+- per model, whether a picture in `input_references` is edited or only referenced (the docs call them
+  "reference images" for "image-to-image"; OpenRouter's GPT Image 2 guide has an "Edit Image" example), and
+  whether GPT Image and Nano Banana keep to the mask picture;
+- whether an edit without `aspect_ratio` keeps the crop's shape on every model;
+- the output size per tier and model ("derived per-provider"), and what GPT Image and FLUX.2 answer without
+  a tier;
+- the body limit behind the 413, and the timeouts: OpenRouter states none, and the request has no timeout of
+  its own, so a generation that has not sent its answer's headers within Node's (undici's) default 300 s fails
+  as a network error and is not sent again (OpenRouter's one data point: GPT Image 2, "Generation time:
+  94s");
+- whether a parameter a model does not list is rejected with a 400 or dropped (the adapter sends none, so
+  this matters for a hand-edited variant only);
+- where `error_type` appears on `/images` errors (documented for chat, messages and responses only), and
+  whether the moderation `reasons` and `limit_source` arrive there as documented for chat;
+- Krea 2's price (its endpoint's `pricing` list was empty on 2026-09-19);
+- that `provider.ignore` is honoured on `/images` (the image guide lists it; nothing without a key can show
+  it), and that the host list keeps the shape the adapter reads;
+- whether a transparent GPT Image 2.5 answer keeps its alpha without an `output_format` ("If omitted, the
+  provider's default applies");
+- whether a JPEG data URL is taken by every model (the chat image guide lists PNG, JPEG, WebP and GIF; the
+  Image API states no formats);
+- whether `GET /api/v1/key` is free;
+- whether a 4K run of Nano Banana Pro with `provider.only: ["google-ai-studio"]` reaches AI Studio (the base
+  slug of its `google-ai-studio/global` endpoint), and what a 4K request would do on Vertex without it;
+- whether Seed takes 11 to 14 pictures for Seedream 5.0 pro through OpenRouter (it lists 14, ModelArk
+  documents 10), and whether ModelArk's [1/16, 16] input range is the one that holds there;
+- whether the Retry-After values OpenRouter really sends stay under 60 s.
+
+**Tests.** `tools/openrouter_mock.py` is the loopback stand-in (the pattern of `toapis_mock.py`): `GET
+/api/v1/providers` with four made-up hosts (one with its headquarters in CN, one with a datacentre there),
+`POST /api/v1/images` (401 without a Bearer key; an edit echoes its first picture with that picture's media
+type, a text request gets a PNG of its `aspect_ratio` at its tier's long side, `usage.cost` 0.04; the model
+`mock-402` answers the documented "Insufficient credits" 402, `mock-429` a 429 with `Retry-After: 1` once
+and then an image, `mock-502` a 502), `GET /api/v1/key` (a $20 limit with $12.50 left and $7.50 used, or no
+limit) and `POST /api/v1/chat/completions` for the four upsampling ids (`llm_mock.py`'s answer, 404 for any
+other model). It records every header of every request, so a test can check that no attribution header went
+out on any call, and keeps the decoded pictures of each image request.
+
+`node tools/openrouter_test.js` runs the adapter and the OpenRouter rows of `llm.js` in plain Node, without
+Electron and without a key, against a scripted fetch that plays openrouter.ai; `ctx.sleep` records its waits
+instead of waiting. Twelve sections, the first eleven: an edit (one `POST /api/v1/images` whose headers are `Authorization`
+and `Content-Type` and nothing else, the crop and then the references as data URLs, the prompt's sentences,
+no `aspect_ratio`, the tier rule and a *Resolution* row winning over it, `seed` and `n` only where `accepts`
+has them, `provider` as `ignore` alone, the answer's bytes, `media_type` and `usage.cost`); a fill (the
+luminance mask, not the alpha one, as the second picture, the mask sentence, no mask field; an edit never
+sends the mask); text runs (no pictures even when the request carries some, the asked or the closest preset,
+the tier of the asked size, an empty prompt refused); the parameter filter (`size`, `moderation`, `channel`,
+`style` and `random_seed` never sent, `auto` and empty values left out, a transparent JPEG sent as PNG,
+FLUX's fixed `png`); the guards before any call (`max_images` with the counts in the message, `max_ratio` on
+the crop and on a reference, the 18 MB budget with the JPEG fallback largest first, never the mask or a
+picture with transparency, and a refusal when it still does not fit); every error word, both error shapes
+and the key taken out of the messages, the retries (a 429, a 529 and an overloaded 503 once more, the
+in-flight 402 only with `Retry-After`, never before the header's time and not at all past 60 s, with "try
+again in N s"; a plain 402, a 502 and a network error sent once) and an error object inside a 200; the host list (read once per session and base, without the key, the dated list when it fails, asked
+again after a failure); *check balance* with and without a limit, with a monthly and a daily limit (the
+period's use, BYOK counted when the key includes it) and with a reset it does not know; the base allowlist and the key rule on
+edit, generate and balance; every shipped recipe normalised by `recipes.js` (fourteen with an `openrouter`
+variant, none with a Qwen model, `openrouter` last, the `default` kept, ToAPIs first where present, the
+settings rows within `accepts`, the notes and descriptions, each building an edit and a text request of
+accepted keys only); the four upsampling rows (after every other row, no `reasoning` in `llm.list()`, the
+body with the reasoning switch and `provider: { data_collection: "deny", ignore }`, the strict retry rule,
+the errors inside a 200, the key rule). The last check: no call of the whole run carried `HTTP-Referer`,
+`Referer`, `X-Title` or an `X-OpenRouter-*` header. A twelfth section sends an error that echoes the key
+from every upsampling provider (OpenAI, Gemini, Anthropic, ToAPIs with a failed status and inside a 200, the
+local endpoint) through `llm.ask()` and finds the key taken out, and a local server's placeholder key
+("ollama") left in its own words. A mutation round on 2026-09-19 on the final code (95 mutations of
+`openrouter.js`, `llm.js`, `recipes.js` and the recipe variants, one at a time on a copy of the tree, with
+`toapis_test.js` run too since it shares `askCompatible`) turned a test red for every one of them, among them
+an attribution header on either path, every 402, a 502 or a network error retried, a `Retry-After` cut
+short, clamped or read wrongly as an HTTP date, a third request after a second refusal, an `aspect_ratio` on
+an edit, the mask sent on an edit or converted to JPEG, an async encoder not awaited, the budget counted in raw
+bytes, the host list read with the key, without a timeout or not read again after a failure, a CN datacentre
+not counted, `localhost` or a path allowed as the base, a test key sent to openrouter.ai, the error words of
+the in-flight and key-limit 402, a 403 and an overloaded 503 lost, the chat path without the error metadata,
+the key left in any provider's upsampling error, a refusal or an error inside a 200 taken as the prompt, the
+balance counting the all-time use for a limit that resets, `only_for` ignored or applied to every tier,
+Seedream's limits back at ToAPIs' 3:1 and 14 pictures, and `openrouter` missing from `TEXT_PROVIDERS`.
+
+Gate `openrouter` (`tools/openrouter_test.py`; start the instance with `--offline`, since a result lands in
+the mirror and would be forwarded to a connected ComfyUI) runs that first, then drives the app over CDP with
+`settings.openrouter.base` on the mock and a `test-` key, refusing a profile that already holds an OpenRouter
+key: the lists before the key (ToAPIs first in Settings › API providers, the OpenRouter row with *get a key*
+and no *check balance*, OpenRouter last and reading "OpenRouter (no key)" in every served recipe's select,
+the defaults kept, no OpenRouter upsampling row); *check balance* with a limit and without one; an inpaint
+on the shipped Nano Banana 2 variant (one request, the crop at the emitted size first, the mask second and
+white in the selection, the tier the adapter's rule gives, no `aspect_ratio`, no seed, `provider` with
+`ignore` alone, holding the dated list and the mock's two hosts in China and not its other two); an edit on
+FLUX.2 [pro] (one picture fewer than the fill, `output_format: png`, a seed); Generate new at 16:9 (no
+picture, `1K`, a 1024 × 576 base); an upsampling on the Gemini row (the image, the reasoning switch, the
+routing object); a 402 in the status line and in the log without the key, sent once; a 429 sent again after
+its `Retry-After`; a 502 that says nothing was charged; a real-looking key refused at the test address on
+Generate, *check balance* and upsampling with nothing reaching the mock; and no attribution header on any
+request of the whole gate. The clean-up clears the key and puts `settings.openrouter`, the remembered
+providers and the selected recipe back.
+
+### BytePlus ModelArk (`ark`)
+
+BytePlus ModelArk is ByteDance's own API for its Seed models, Seedream among them. Scumble uses its Image
+generation API for two recipes, Seedream 5.0 pro and Seedream 5.0 lite. The adapter
+`electron/main/providers/ark.js` is written from the English pages under `docs.byteplus.com/en/docs/ModelArk/`,
+all read on 2026-09-19: the Image generation API reference (`1541523`, updated 2026-09-10), the error codes
+(`1299023`), the model list (`1330310`), region availability (`2191806`), pricing (`1544106`), the data processing
+page, the content filter overview and the country availability page. The pages are rendered by script; their text
+was read from the Markdown the served HTML carries. The adapter **has not run against the live API**, and both
+ModelArk variants' notes say so. Four probes without a valid key (both hosts, once without a key and once with an
+invalid one) showed the error shape.
+
+**Where it shows up.**
+
+- **The key row.** "BytePlus ModelArk (Seedream)" comes after OpenRouter in Settings › API providers
+  (`PROVIDERS` in `providers/index.js`, before Anthropic's key-only row). Its hint is "API key from the ModelArk
+  console (it belongs to the region it was made in)". Its *get a key* link opens
+  `ai.byteplus.com/ark/region:ap-southeast-1/apiKey`, the Johor console, with no referral code. There is no
+  *check balance*, because the docs name no balance call.
+- **The recipes.** In `seedream_5_pro` and `seedream_5_lite`, `ark` comes **right after `toapis`** in
+  `providers`. It is therefore second in their provider select, in Generate new and in `list_recipes`, and
+  OpenRouter stays last. **The `default` stays fal**, although ModelArk is the model's own API. Nothing switches
+  to ModelArk on its own. A recipe runs there when you pick it in the recipe's select, in Generate new or with
+  `select_recipe(id, "ark")`. The two recipes' descriptions say "Also on BytePlus ModelArk (ByteDance's own API)."
+- **Generate new.** `ark` is in `TEXT_PROVIDERS`. A text run uses the edit variant's model id and sends no
+  `image`.
+- **Not wired:** Seedream 4.5 (`seedream-4-5-251128`) and 4.0 (`seedream-4-0-250828`). ModelArk serves both,
+  but Scumble has no recipe for either.
+
+A model has to be **activated** in the ModelArk console before its first run. The reference says: "Activate the
+model on the Model activation page, and then find its Model ID". A model that is not activated gets 404
+`ModelNotOpen`.
+
+**The protocol.** One synchronous request per image. Nothing is uploaded anywhere else and nothing is polled.
+
+1. `POST <host>/api/v3/images/generations`. The headers are `Authorization: Bearer <key>` and `Content-Type:
+   application/json`; the reference names one method: "This API only supports API Key authentication". The body is
+   `{ model, prompt, image, size, watermark: false, response_format: "b64_json", output_format: "png" }`:
+   - `model`: the variant's id. Pro is `dola-seedream-5-0-pro-260628`. Lite is `seedream-5-0-260128`, the model
+     list's id, which "also supports" `seedream-5-0-lite-260128`, the id on the pricing page.
+   - `prompt`: an edit's prompt starts with "Edit the first image and keep its size and framing.". When there are
+     references it ends with "The remaining image is reference material." ("images are" for more). A text run
+     sends the prompt as it is, and an empty one is refused before any request. The reference recommends "no more
+     than 300 Chinese characters or 600 English words"; that is advice, and Scumble does not cut. No negative
+     prompt goes out, because the API has none.
+   - `image`: the pictures as data URLs, `data:image/png;base64,...` (the reference: "`<image format>` must be in
+     lowercase"). The crop comes first, then *Original* and the reference layers. A text run sends none.
+   - `size`: always pixels, `"WxH"` (see "Sizes" below).
+   - `watermark: false`, because the default is `true`: "Adds an "AI-generated" watermark to the lower-right
+     corner of the image".
+   - `response_format: "b64_json"`, because the default `url` returns "a download URL for the image. The URL is
+     valid for 24 hours after the image is generated". With base64 the image comes back in the answer, and no
+     second host is involved.
+   - `output_format: "png"`, sent where the variant's `options.png` is set (both variants). The default is
+     `jpeg`. The reference names 5.0 pro and 5.0 lite as the models that take the field. For 4.5 and 4.0 the
+     tutorial says the format "defaults to `jpeg` and does not support custom settings".
+
+   **Not sent:**
+   - `seed`: the reference does not name it. The SDK's generated request type has it, which proves nothing for
+     Seedream.
+   - `n`: there is no such field.
+   - `sequential_image_generation`, `stream`, `optimize_prompt_options` and `layer_decomposition`.
+   - 5.0 pro's `background` (see "Transparent results" above).
+2. The answer is `{ model, created, data: [{ b64_json, size }], usage: { generated_images, output_tokens, ... } }`.
+   - The image is the first `data` entry with `b64_json`. If the service ignored `response_format` and sent a
+     `url`, that URL is downloaded at once, without the key.
+   - Whether the image is PNG or JPEG is read from its first bytes, because only 5.0 pro answers
+     `data[].output_format`.
+   - The run's `info` goes to the log: the model, the region, the size sent, the size answered (`data[].size`),
+     each picture with PNG or JPEG, and `usage.generated_images`.
+   - These fail the run like an error status: an `error` object inside an HTTP 200, and a `data` entry that
+     carries only an `error`.
+
+Billing: "Billing is based only on successfully generated images" (the reference, `usage.generated_images`).
+The pricing page adds: "Images that are not successfully output due to reasons such as content moderation are
+not billed."
+
+**Fill and edit.** The reference has **no mask field**, so both variants are `input: "edit"`: an instruction
+edit of the crop plus the references, as on every other provider of Seedream. The stitch keeps the selection. The
+image generation tutorial (`1824121`) describes the case as "Image-to-image (single-image input, single-image
+output). Edit an existing image using text instructions ...". For area-directed edits set Fill to green and
+Original on, and say "fill the green area". Which picture of the `image` array the model reads as "Image 1" is
+not stated.
+
+Seedream 5.0 pro's interactive editing guide (`2582775`) takes an edit area as coordinates in the prompt:
+`<bbox>x1 y1 x2 y2</bbox>`, normalised to [0, 999]. Scumble does not send one. It is an idea whose effect is not
+verified.
+
+**Sizes.** The reference offers two ways to give `size`, "but they cannot be used at the same time":
+
+- a tier (pro `1K`, `1.5K`, `2K`; lite `2K`, `3K`, `4K`) with the shape described in the prompt: "The model
+  determines the final image size";
+- pixels, `widthxheight`, inside a total-pixel range and an aspect range.
+
+With a tier the model picks the shape from the prompt, and the reference does not say whether an edit with a tier
+follows the input picture's shape. So **Scumble always sends pixels**:
+
+| Model | "Total pixels range" (method 2) | Aspect range |
+|---|---|---|
+| 5.0 pro | [`1280x720` (921,600), `2048x2048x1.1025` (4,624,220)] | [1/16, 16] |
+| 5.0 lite | [`2560x1440` (3,686,400), `4096x4096` (16,777,216)] | [1/16, 16] |
+
+"The total pixel limit applies to the product of the single image's width and height, rather than to either
+dimension individually." The reference states no step and no edge limit. The adapter's own choice is **16 px
+steps**, with the ratio held at 16:1 (`fitPixels` in `util.js`, with a 16,384 px edge, which is 16:1 at lite's
+ceiling). The variant's `options.pixels` carries the range.
+
+- **An edit** asks for the emitted crop's own shape at a size inside the range. The app emits the crop inside
+  the range already (see "The crop's `limits`" below), so the size sent is the crop's own. Given a smaller crop,
+  the adapter would ask for it larger: 512 × 512 at 960 × 960 on pro and at 1920 × 1920 on lite. A size off the
+  16 px steps is rounded to them, which can move the shape by a pixel or so. `finishResult` scales the answer back
+  to the region either way.
+- **A text run** (Generate new) sends **exactly the dialog's aspect**, at the size on 16 px steps whose long side
+  is nearest the dialog's and whose area lies in the range: pro at 1280 and 16:9 is 1280 × 720, 3:2 is 1296 × 864
+  (not the dialog's rounded 1280 × 848), 21:9 is 1568 × 672 (grown to the 0.92 MP floor); lite at 2560 and 16:9 is
+  2560 × 1440. Only a free size, or an aspect with no such size in the range, is fitted the way an edit is.
+
+These numbers come from running the adapter's `sizeFor`, not from a live answer.
+
+**The crop's `limits`.** The variants hold the crop the app emits to the same rules: `{ max, step: 16, pixels,
+minPixels, ratio: 16 }`, with the model's range as `pixels` and `minPixels`; `max` is 4096 on pro and **7680 on
+lite**, the side a 16:1 crop needs to reach lite's 3.7 MP floor (sqrt(16 × 3,686,400); ByteDance states no side
+limit, and the 16.8 MP cap still holds a square crop to 4096 × 4096). With a 4096 edge, a lite crop steeper than
+about 4.55:1 went out under the floor and was asked for at another size and a slightly different shape, which
+`finishResult` then centre-cropped. So with Highres fix on *Maximum* a pro crop goes out at up to 4.6 MP, which
+is the dearer price (see "Prices" below), and a lite crop at up to 16.8 MP (a 2:1 crop at 5792 × 2896, a 5:1 one
+at 7680 × 1536); a lite crop that large can pass 30 MB and then goes as JPEG. Every Highres fix setting pushes a
+smaller crop up to the floor (0.92 MP on pro, 3.7 MP on lite). `ratio: 16` widens a crop thinner than 16:1 with more context, as on OpenRouter. The
+Generate-new sizes (`text.sizes`) are 1280, 1536 and 2048 for pro and 2560, 3072 and 4096 for lite, all inside
+each range.
+
+**The Region row.** "Platform-level resources, such as API keys and model activation status, are isolated by
+region" (`2191806`). ModelArk has two regions: Johor, Malaysia (`ap-southeast-1`) and Dublin, Ireland
+(`eu-west-1`). The variant's `options.regions` lists the regions the model may run in, the first being the
+default. A *Region* row in the editor's Settings panel (key `region`, values `ap-southeast` / `eu-west`) picks
+one:
+
+- **5.0 lite** has the row, defaulting to `ap-southeast`; `eu-west` goes to Dublin. The docs disagree on whether
+  Dublin serves this model. The model list says "The seed-2-0 and seedream-5-0-lite models are also supported in
+  the `eu-west-1` region". The region page (updated 2026-09-10) says "The EU region currently supports the
+  following models: `seed-2-0-lite`", while it lists the Image generation API among the "APIs supported in the EU
+  region".
+- **5.0 pro** has no row and runs in Johor only. The model list says all its models are supported in
+  `ap-southeast-1`, and neither page lists pro for Dublin.
+
+The region is not stored with the key. A key made in Dublin needs *Region* on `eu-west` for lite, and it cannot
+run pro. Either host may also hand a request to the other region: "some requests may be routed to inference
+resources in other regions". The region page's table says "Inference prefers EU, but may spill over to AP if
+needed", and the same the other way round.
+
+**Pictures.** Every picture is checked against the reference's input rules **before any request** (its shape and
+area from its PNG header):
+
+- **Count.** "Seedream 5.0 pro supports up to 10 reference images. Seedream 5.0 lite, 4.5, and 4.0 support up to
+  14 reference images." `options.max_images` is 10 for pro and 14 for lite. The crop, *Original* and the reference
+  layers count together. A run with more is refused with the count and "turn Original off or hide reference
+  layers".
+- **Shape.** "Aspect ratio (width / height): [1/16, 16]" and "Width and height (px): > 14". A picture steeper than
+  16:1, or 14 px or less on a side, is refused. A thin crop is widened by `limits.ratio` first, so this catches
+  reference layers, or a document that is itself steeper than 16:1.
+- **Area.** "Total pixels: [196, `6000×6000` (36,000,000)]". A picture over 36 MP is refused.
+- **Bytes.** The reference says "Size: Up to 30 MB". The adapter reads that as **30,000,000 bytes** (the smaller
+  reading) of the PNG itself, not of its base64.
+  - A picture over it with no transparent pixel (`ctx.opaque`) goes as JPEG at quality 92 (`ctx.toJpeg`,
+    Electron's `nativeImage`, `data:image/jpeg;base64,...`).
+  - A picture with transparency, or one still over 30 MB as JPEG, is refused with "Set Highres fix lower or use a
+    smaller reference layer".
+  - For scale, the ToAPIs measurements above found 3840 × 2160 PNG crops of photographs at 11.9 to 18.7 MB. A lite
+    crop at 4096 × 4096 has twice those pixels, so it can pass 30 MB and then goes as JPEG.
+
+The formats the reference lists are "jpeg, png, webp, bmp, tiff, gif, heic, or heif"; Scumble sends PNG, and JPEG
+for the fallback. The reference states no limit for the whole request body. Fourteen pictures of up to 30 MB
+would come to about 560 MB of base64.
+
+**Errors.** A failed answer is `{ error: { code, message, param, type } }`, as the reference documents. The same
+shape came back from both hosts on 2026-09-19 for a request without a key:
+
+```
+401 {"error":{"code":"AuthenticationError","message":"the API key or AK/SK in the request is missing or invalid. request id: ...","param":"","type":"Unauthorized"}}
+```
+
+An invalid key got "The API key format is incorrect" instead. The adapter puts plain words in front of `code:
+message`. It chooses them by the code of the error-code page (`1299023`) first and by the status second:
+
+| Code (status on the error-code page) | Words |
+|---|---|
+| `InvalidAccountStatus` (401) | the BytePlus account's status blocks the call: see the ModelArk console or BytePlus support |
+| `AuthenticationError` (401), or a 401 without a code | on lite (a *Region* row): key refused by the Johor / Dublin host (a key works only in the region it was made in: check the Region row); on pro: key refused (this model runs in Johor only, and a key works only in the region it was made in) |
+| any other 401 | refused |
+| `AccountOverdueError` (403) | the BytePlus account is overdue: top it up in the console |
+| `OperationDenied.ServiceNotOpen` (403) | ModelArk is not activated on this account |
+| `ModelNotOpen` (404) | the model is not activated: activate it under Model activation in the ModelArk console |
+| `InvalidEndpointOrModel.ModelIDAccessDisabled` (404) | this account must call the model through an endpoint id, which Scumble does not support yet |
+| any other `InvalidEndpointOrModel...` (404) | no such model in this region |
+| `InputImageSensitiveContentDetected.PrivacyInformation` (400) | refused: the picture may show a real person |
+| any other `...SensitiveContentDetected...` (400) | refused by the content filter |
+| `ModelAccountIpmRateLimitExceeded` (429) | rate limited (images per minute) |
+| `SetLimitExceeded` (429) | paused by the account's Safe Experience Mode limit (the console's model settings) |
+| `QuotaExceeded` (429) | a quota is used up, or too many tasks are queued (the free quota, a period's quota or the queue: the server's words say which) |
+| `ServerOverloaded` (429) | the service is overloaded |
+| `InvalidImageURL...` (400) | a picture was not accepted |
+| `InvalidParameter`, `MissingParameter`, any other 400 | request refused |
+| any other 404 / 429 / 5xx | not found / rate limited / the service failed |
+
+The error-code page gives `QuotaExceeded` three meanings: a used-up free trial, "The number of tasks in the queued
+state for the current account has exceeded the limit", and a 5-hour, weekly or monthly quota. The words name all
+three, and the server's own message after them says which it was.
+
+A message reads `ModelArk <model>: <words> - <code>: <message>`, and ends with "; try again in N s" when a wait is
+known. The key is taken out of every message. The error reaches the status line and the log (`source: "ark"`).
+
+**Sent once more.** One retry, and **never before the time the server set**. It applies to a 429, 500 or 503
+whose code is one of two:
+
+- `ModelAccountIpmRateLimitExceeded`: "IPM (Images Per Minute) limit of the model is exceeded". The model list
+  gives 500 images a minute for each Seedream model, and calls its limits "theoretical maximum values which are
+  not guaranteed".
+- `ServerOverloaded`: "Please retry later".
+
+The adapter's reasoning: nothing was generated then, and only generated images are billed. The docs do not say
+in so many words that such a refusal generated nothing.
+
+- **The wait** is the `Retry-After` header's, in seconds or as an HTTP date, and 5 s without one.
+- **A wait over 60 s** is not taken: the run fails at once and its message ends "try again in N s".
+- **A second refusal** that carries a `Retry-After` ends the run with the same "try again in N s". There is no
+  third request.
+- **Never retried:** `QuotaExceeded`, `SetLimitExceeded`, every other code, and a network error. An answer lost on
+  the way may be a paid image, and a second request could be a second one.
+
+Whether ModelArk sends `Retry-After` at all is not stated.
+
+**The host and the key rule.** The host is one of the two regional hosts, picked by the *Region* row:
+`https://ark.ap-southeast.bytepluses.com` (Johor) or `https://ark.eu-west.bytepluses.com` (Dublin). It never comes
+from a recipe:
+
+- a recipe's `options.regions` names regions, not hosts, and only these two exist;
+- an unknown region is refused before any request;
+- so is a region the variant's `regions` do not list.
+
+`settings.ark.base` may name only the loopback mock, `http://127.0.0.1:<port>`, with no path, query or user info
+(and not `localhost`); anything else is ignored. There is no UI for it. **The key rule** applies on top: a key
+that starts with `test-` goes only to that mock, and any other key never goes there. Both mismatches are refused
+before any request. So a real key cannot reach a local listener a setting points at, and a test key never
+reaches BytePlus.
+
+**Privacy.**
+
+- **What leaves the machine:** the crop, *Original*, the reference layers and the prompt, inline in the request to
+  the host of the *Region* row. Nothing goes to a file host. The image comes back in the answer (`b64_json`), so no
+  result URL is asked for. (Such a URL "will expire within 24 hours", the reference; "Image URL is retained for 24
+  hours and will be automatically cleared after expiration", the tutorial.) How long BytePlus keeps a generated
+  image when no URL is asked for is not stated.
+- **Where:** the host's region, which may pass a request to the other one (see "The Region row" above). The data
+  processing page (updated 2026-09-10) says: "BytePlus ModelArk may use data centers, including those located in
+  Malaysia, Indonesia, and/or the EU/EEA, for model deployment and Customer Data processing". It also says its
+  load balancing "is currently deployed in Malaysia, Indonesia, and/or EU/EEA".
+- **Training:** "Without the customer's prior authorization, BytePlus ModelArk will neither interfere with the
+  data processing nor use Customer Data for its own model training."
+- **Retention:**
+  - The data processing page: "input and output triggered by the filter are retained for 180 days in Malaysia".
+  - The content filter page says the filter's logs and the filtered content are "stored on servers in Malaysia
+    or Singapore belonging to BytePlus or its affiliates". It adds that "even if you disable this feature, our
+    services still maintain baseline content safety policies".
+  - The filter switch is described for inference endpoints. Whether it applies to calls by model id, which is how
+    Scumble calls, is not stated.
+  - How long unfiltered inputs are kept is not stated.
+  - The contracting entity and the data processing terms were not read.
+- **Availability:** the country availability page (updated 2026-04-21) says the service is available, "with the
+  exception of Restricted Models", in a list of countries. The list has every EU member state and the United
+  Kingdom. It does not have the United States or mainland China. Whether Seedream is a "Restricted Model" is not
+  stated.
+
+**Prices** (the pricing page, updated 2026-09-17, USD per image):
+
+- **5.0 pro, output:** "≤ 2.61 million pixels (1.5K or lower): 0.045" and "> 2.61 million pixels (higher than
+  1.5K): 0.09".
+  - With Highres fix on *Maximum* a pro crop goes out at up to 4.6 MP and costs $0.09. The variant's note says
+    so, and says to set Highres fix lower for the cheaper size. Whether a lower setting brings a given crop under
+    2.61 MP depends on the crop; the log's `size` shows what was asked for.
+  - In Generate new, 1536 and below always stay under 2.61 MP. At 2048, a square (4.2 MP) is over it and 16:9
+    (2048 × 1152, 2.4 MP) is under.
+- **5.0 pro, input pictures:** "First image: Free", "From the 2nd image: 0.003". So *Original* and each reference
+  layer add $0.003.
+- **5.0 lite:** $0.035 an image, input pictures free. Its floor is 3.7 MP, so every size asked for has at least
+  that many pixels.
+
+The docs state no free quota for images. The free-quota pages speak of tokens ("500k free tokens").
+
+**The recipes** ("pictures" counts the crop, *Original* and the reference layers together):
+
+| Recipe | ModelArk model | Input | Settings rows | Output pixels | Pictures | Generate new | Price |
+|---|---|---|---|---|---|---|---|
+| `seedream_5_pro` | `dola-seedream-5-0-pro-260628` | edit | none (Johor only) | 921,600 to 4,624,220 | 10, none steeper than 16:1 | 1280, 1536, 2048 | $0.045 up to 2.61 MP, $0.09 above; $0.003 a picture after the first |
+| `seedream_5_lite` | `seedream-5-0-260128` | edit | Region (`ap-southeast`, `eu-west`) | 3,686,400 to 16,777,216 | 14, none steeper than 16:1 | 2560, 3072, 4096 | $0.035 |
+
+A variant's `options` describe the model:
+
+- `pixels`: `[min, max]`, the output's total-pixel range;
+- `max_images`: the picture count above;
+- `png`: send `output_format: "png"`;
+- `regions`: the *Region* values the model may use, the first being the default.
+
+Both variants carry `limits` of `{ max, step: 16, pixels, minPixels, ratio: 16 }` (`max` 4096 on pro, 7680 on
+lite) and a `note` that names where the pictures go.
+
+**Only a real key can verify** (written defensively, and listed here until a live run):
+
+- that a new account can activate the two models and call them by model id. Some accounts must use an endpoint id
+  instead (404 `InvalidEndpointOrModel.ModelIDAccessDisabled`, "Accessing the model via Model ID is not allowed
+  for your account. Please use a custom endpoint ID instead"), which the adapter does not support yet;
+- whether a `WxH` is answered exactly on an edit (the log's `answered`), which steps it takes (the 16 is the
+  adapter's own choice), whether an edge has a limit, and whether the edit keeps the crop's framing;
+- whether Dublin serves 5.0 lite (the two pages above disagree), and whether a key made there reaches it;
+- whether `seed` would be accepted, ignored or refused (it is not sent; the reference does not name it);
+- the real latency. The docs state none, and the SDK's default timeout is 600 s. The request has no timeout of its
+  own, so a generation whose answer headers take longer than Node's (undici's) default of 300 s fails as a
+  network error and is not sent again;
+- whether the "real person" refusal (`InputImageSensitiveContentDetected.PrivacyInformation`, "the input image may
+  contain real person") hits ordinary photographs, which would rule out retouching portraits here;
+- the free quota for images, which the docs do not give;
+- whether the 30 MB counts the decoded bytes or the base64 text, and the limit for the whole request body;
+- whether Seedream is a "Restricted Model" in the user's country;
+- whether `output_format: "png"` is honoured on 5.0 lite (the adapter reads the format from the bytes either way);
+- the shape of real errors on `/images/generations` beyond the 401 seen, and whether a 429 carries `Retry-After`;
+- whether an answer ever carries `data[].url` despite `b64_json` (the fallback download).
+
+**Tests.** `tools/ark_mock.py` is the loopback stand-in (the pattern of `openrouter_mock.py`). It answers
+`POST /api/v3/images/generations`:
+
+- without a Bearer key, 401 with the body the live hosts answered;
+- an edit echoes its first picture as `data[0].b64_json`;
+- a text request gets a plain PNG of exactly the requested `WxH`;
+- `data[0].size` is the requested size, `output_format` the requested one (`jpeg` without one), and `usage`
+  counts one generated image.
+
+The mock refuses what the docs say the live API refuses:
+
+- a missing model or prompt (400 `MissingParameter`);
+- a size that is not `WxH` (400 `InvalidParameter`);
+- a picture that is not a base64 data URL with a lowercase type (400 `InvalidImageURL.InvalidFormat`);
+- an unknown model id (404 `InvalidEndpointOrModel.NotFound`). It knows the four Seedream ids of the model list
+  and the lite alias.
+
+It has three synthetic models:
+
+- `mock-quota` answers 429 `QuotaExceeded`;
+- `mock-ipm` answers 429 `ModelAccountIpmRateLimitExceeded` with `Retry-After: 1` once, then an image;
+- `mock-notopen` answers 404 `ModelNotOpen`.
+
+The mock records every header of every request and keeps the decoded pictures of each image request.
+
+`node tools/ark_test.js` runs the adapter, its two recipe variants and its wiring in `providers/index.js` and
+`recipes.js` in plain Node, without Electron and without a key. A scripted fetch plays both ModelArk hosts, the
+loopback mock and a result host for a `url` answer, and `ctx.sleep` records its waits instead of waiting. It has
+seven sections of checks:
+
+1. **An edit.** One POST whose headers are exactly `Authorization` and `Content-Type`, and a body of exactly the
+   seven fields. The prompt's sentences for none, one and several references. The pictures decode to the crop
+   first, then the references in order, and neither mask goes out, not even for kind `fill`. The answer's format is
+   read from its bytes (PNG, JPEG, or the asked format for anything else). A text run sends no `image`. An empty
+   prompt, a missing crop or a missing model id is refused before any call.
+2. **Sizes.** Checks that a small crop grows into the range, a big one shrinks, a crop inside the range goes as it
+   is, and one steeper than 16:1 goes at 16:1. A sweep of 512 crop shapes has to stay inside the range, on 16 px
+   steps, in the crop's shape. Generate new is checked with the dialog's own aspects (`GEN_ASPECTS` in `shell.js`)
+   at each variant's text sizes, for the exact aspect wherever a size of it on 16 px steps lies in the range.
+3. **Regions and hosts.** Checks that the Region param reaches Johor and Dublin, with a real key and with the mock,
+   and that these are refused before any call: pro in `eu-west`, an unknown region value, and region names like
+   `constructor` or `__proto__`. `settings.ark.base` is checked against the loopback rule.
+4. **Pictures, before any call.** 10 and 14 pictures pass and 11 and 15 are refused, with the counts in the
+   message. The 30,000,000-byte limit is tested at its edge, with the JPEG fallback (an asynchronous encoder
+   awaited), a transparent picture refused, and a JPEG still too large refused. A shape rule is checked before any
+   encode.
+5. **Errors.** The live 401 shape with the key scrubbed. Every code's words, each with one call and no wait. The
+   IPM limit and `ServerOverloaded` are sent once more after `Retry-After` (3 s, 60 s in full, the 5 s default, an
+   HTTP date). A wait past 60 s is not taken, and there is no third request. `QuotaExceeded`, `SetLimitExceeded`,
+   a 500 and a network error are sent once. An error inside a 200 fails the run. A `url` answer is downloaded with
+   no header at all.
+6. **The recipes** as `recipes.js` lists them. Only the two Seedream recipes carry `ark`, right after `toapis`
+   with fal kept as the default. Each variant's model, `options`, `limits`, Region row, text sizes, note and
+   description are checked. Each variant builds an edit and a text request, and each of its regions reaches that
+   region's host. `index.js` gets the key row after OpenRouter, the text provider, the stored key, `settings.ark.base`
+   and the app's `toJpeg` / `opaque`.
+7. **The whole run.** No call carried a header beyond `Authorization` and `Content-Type`. The test key went only
+   to the mock and the real key only to the two BytePlus hosts. Neither key appears in any error.
+
+Gate `ark` (`tools/ark_test.py`) needs the instance started with `--offline`, since a result lands in the mirror
+and would be forwarded to a connected ComfyUI. It runs `tools/ark_test.js` first. Then it drives the app over CDP,
+with `settings.ark.base` on the mock and a `test-` key, and refuses a profile that already holds a ModelArk key.
+The steps:
+
+- **The lists before the key.** ToAPIs comes first in Settings › API providers. The ModelArk row has *get a key*
+  and its key link, and no *check balance*; `providers.balance("ark")` is refused. Only the two Seedream recipes
+  list `ark`, each right after `toapis`, with fal still their default. Their select reads "BytePlus ModelArk
+  (Seedream) (no key)".
+- **The key stored.** The row and the select option change accordingly.
+- **An inpaint on Seedream 5.0 Lite.** One POST. The crop at the emitted size is `image[0]`, a PNG data URL.
+  `size` is in 16 px steps, inside [3,686,400, 16,777,216] and within 2 % of the crop's shape. The body has
+  `watermark: false`, `response_format: "b64_json"` and `output_format: "png"`, and no field beyond the seven the
+  adapter sends. The prompt starts with the edit sentence, the key goes as a Bearer, and the log line's region is
+  `ap-southeast`.
+- **The Region row.** Set to `eu-west` through `set_settings`, it reaches the adapter: the log says `eu-west`, and
+  the request still goes to the mock. It is then set back.
+- **An inpaint on Seedream 5.0 Pro.** Its own model id, no settings rows, and a size inside [921,600, 4,624,220].
+- **Generate new** at 16:9 and 2560: `2560x1440`, no picture, and a 2560 × 1440 base.
+- **The failures.**
+  - `QuotaExceeded` appears in the error, the status line and the log without the key, and is sent once.
+  - `ModelAccountIpmRateLimitExceeded` is sent once more after its `Retry-After`.
+  - `ModelNotOpen` says the model is not activated.
+  - A real-looking key is refused at the test address on Generate and on Generate new, and nothing reaches the
+    mock.
+
+The clean-up clears the key and puts `settings.ark`, the remembered providers and the selected recipe back.
+
+A mutation round on 2026-09-19 on the final code (117 mutations of `ark.js`, the wiring in `providers/index.js`
+and `recipes.js`, and the two recipe variants, one at a time on a copy of the tree) turned `tools/ark_test.js` red
+for every one of them, among them `watermark` left on, `response_format: "url"`, a tier for `size`, the pixel range
+or 16:1 not held, the dialog's rounded size sent for Generate new, the 30 MB guard off or a transparent picture sent
+as JPEG, the mask sent, a region that is no region or a host from a recipe, the test-key rule off either way, a
+retry for `QuotaExceeded`, before `Retry-After` or a third time, the key left in a message or its head left at the
+300-character cut, the error words of every code, lite's `limits.max` back at 4096, and a variant's default,
+model id or place in the list.

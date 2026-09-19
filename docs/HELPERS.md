@@ -44,11 +44,80 @@ and go with the key, and that the request reaches the endpoint with the crop and
 (`tools/llm_mock.py` answers the three ids), and section 8 of `node tools/toapis_test.js` the strict
 retry rule, the plain words and the "text only" note against a scripted fetch.
 
+### Through the OpenRouter key
+
+A stored OpenRouter key (the image provider, docs/RECIPES.md "OpenRouter") adds four rows **after the
+Anthropic rows**, the last of the key rows (the ToAPIs rows stay first; a local endpoint's entry, below,
+comes after them): Gemini 3.8 Flash (`google/gemini-3.8-flash`), GPT-5.6 Luna (`openai/gpt-5.6-luna`), Claude Haiku 4.5
+(`anthropic/claude-haiku-4.5`, with a dot; the hyphenated id does not exist there) and Mistral Small 4
+(`mistralai/mistral-small-2603`), each labelled "(OpenRouter key)", ids `openrouter:<model>`. They go
+through the same client as the ToAPIs rows (`askCompatible`, strict, `<think>` stripping, 120 s timeout) to
+`POST <base>/api/v1/chat/completions`, where the base is what `providers/openrouter.js` allows
+(`settings.openrouter.base`, else `https://openrouter.ai`), with the text first and the crop as a data-URI
+`image_url` part after it, as OpenRouter's image-input page recommends. From `GET /api/v1/models` on
+2026-09-19 they cost, per million tokens in / out, $0.75 / $3.75 (Gemini 3.8 Flash), $0.20 / $1.20 (GPT-5.6
+Luna), $1 / $5 (Claude Haiku 4.5) and $0.15 / $0.60 (Mistral Small 4, on Mistral's own hosts in France).
+Left out: Claude Sonnet / Opus 5 and GPT-5.6 Terra (6 to 25 times Luna's price for a prompt rewrite), and
+the Qwen vision models: Qwen3.8 Flash, Qwen3.7 Flash and Qwen3 VL 32B have Alibaba as their only host, which
+the ignore list below leaves out, so they would fail with a 503.
+
+**Reasoning, per row** (`reasoning` in `MODELS`, sent as OpenRouter's `reasoning` object): Gemini 3.8 Flash
+and GPT-5.6 Luna send `{ effort: "low", exclude: true }`, the lowest effort each takes (Gemini 3.8 Flash
+reasons always, so `effort: "none"` would be refused with a 400; GPT-5.6 Luna reasons at medium by default).
+`exclude` keeps the reasoning out of the answer; it is still billed and counts against `max_tokens` (4096 by
+default). Claude Haiku 4.5 and Mistral Small 4 send no field and do not reason: on OpenRouter Anthropic's
+models reason only when the `reasoning` parameter asks, and Mistral Small 4 has reasoning off by default.
+The switch stays in the main process: `llm.list()` hands the renderer `id`, `provider`, `model`, `label`
+and `key` only.
+
+**Routing.** Every request carries `provider: { data_collection: "deny", ignore: [the hosts in China] }`.
+`deny` means "use only providers which do not collect user data", which is about training: hosts that keep
+prompts are not left out ("OpenRouter does not have routing rules that change based on data retention
+policies of providers"), and a model with no host left fails with a 503. The ignore list is the image
+adapter's (`chinaHosts`: `GET /api/v1/providers` once per session, merged with the list of 2026-09-19).
+On 2026-09-19 none of the four rows routed to a host in China with its plain id (Gemini: Google AI Studio
+and Vertex; GPT-5.6: OpenAI, Azure, Bedrock; Claude: Anthropic, Azure, Bedrock, Vertex, Claude Platform
+on AWS; Mistral: Mistral), none of those hosts trains on the data, and they keep prompts for none (Vertex,
+Azure, Bedrock), 30 days (Anthropic, Mistral), 55 days (AI Studio) or a period not given (OpenAI), per
+OpenRouter's undocumented provider list (`GET /api/frontend/v1/all-providers`). `zdr: true` is not sent;
+with it GPT-5.6 would be left with Azure's endpoints alone, which list `max_completion_tokens` but not the
+`max_tokens` this client sends (whether OpenRouter translates one into the other is not stated).
+
+**Errors and retries.** The strict rule of the ToAPIs rows: the retry without the image only for a 400 /
+413 / 415 / 422 whose message names the image (then the status line ends with "text only"), never for a
+refused key (401), missing credits (402), a refusal (403), a rate limit (429) or a server error. Apart from
+that retry this path sends nothing a second time, not even a 429, which the image adapter sends once more
+after `Retry-After`. A failed answer is read
+the way the image adapter reads one (`openrouter.readFailure`: the message and `error.metadata`), and its
+plain words (`openrouter.explain`) go in front of OpenRouter's message: "key refused", "credits too low, top
+up at openrouter.ai/credits", "this key's spending limit is reached" for a 402 of the key's own limit, "recent
+paid requests are still settling" for the in-flight budget, "refused by the content policy" with the
+moderation `reasons`, "rate limited" and the rest of docs/RECIPES.md "OpenRouter". The key is taken out of
+every message, the ones inside an HTTP 200 included: `llm.ask()` does it for every row of every provider (a
+key of 12 characters or more, so a local server's placeholder key such as "ollama" is left alone). An error that arrives inside an HTTP 200 after the answer began
+(`finish_reason: "error"`, which OpenRouter documents with partial content) fails with its message instead
+of the partial text becoming the prompt; a 200 that holds only an `error` object fails with its message as
+before. A **refusal** (`finish_reason: "content_filter"`, the reason in `message.refusal`, OpenRouter's
+contract for a model that declines, e.g. Anthropic's `stop_reason: "refusal"`) fails with "refused: <the
+reason>", and whatever content came with it is not taken as the prompt; this holds for every row that goes
+through the OpenAI-compatible client.
+
+**No attribution headers** go out (`Content-Type` and `Authorization` only; docs/RECIPES.md "OpenRouter",
+"Privacy"), and **the key rule** of the image adapter holds: a key that starts with `test-` goes only to the
+loopback mock, any other key never there, both refused before a request. **Not run against the live API.**
+Section 11 of `node tools/openrouter_test.js` checks the rows' place in `llm.list()`, the body (the
+reasoning switch per row, the routing object), the strict retry rule, the errors inside a 200 and the key
+rule against a scripted fetch; the gate `openrouter` (docs/RECIPES.md "OpenRouter", "Tests") sees the rows
+come with the key, after the ToAPIs rows, and upsamples on the Gemini row against `tools/openrouter_mock.py`,
+which answers the four ids on `/api/v1/chat/completions`.
+
 ### A local or self-hosted OpenAI-compatible endpoint
 
 Any server that speaks `POST /v1/chat/completions` joins the same list without a provider
-key: Ollama (`http://localhost:11434`), LM Studio (`http://localhost:1234`), vLLM, a proxy,
-OpenRouter. Settings › Local / OpenAI-compatible endpoint has the URL, the model and an
+key: Ollama (`http://localhost:11434`), LM Studio (`http://localhost:1234`), vLLM, a proxy.
+For OpenRouter use its own rows above: pointed at from here, it would go without the
+routing object, the reasoning switch and the strict retry rule, with the key stored as
+`compat`. Settings › Local / OpenAI-compatible endpoint has the URL, the model and an
 optional key (secret name `compat`; local servers want none). The values live in
 `settings.llm.compat = { url, model }`, the entry appears as `compat:<model>` in `llm.list()`
 and as `app:compat:<model>` in the editor's upsample select as soon as both fields are

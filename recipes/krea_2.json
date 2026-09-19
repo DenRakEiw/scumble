@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Krea 2 [large]",
   "family": "Krea",
-  "description": "Krea's own model, aimed at photographic realism. Text to image only on fal, so it works in \"Generate new\", not in Generate. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet.",
+  "description": "Krea's own model, aimed at photographic realism. Text to image only on fal, so it works in \"Generate new\", not in Generate. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on OpenRouter.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -35,6 +35,37 @@
         }
       ],
       "note": "Text to image only, and the size comes from the aspect ratio, not from pixels: the dialog's aspect is sent, its long side is ignored."
+    },
+    "openrouter": {
+      "model": "krea/krea-2-large",
+      "edit": false,
+      "options": {
+        "accepts": [
+          "resolution",
+          "aspect_ratio",
+          "seed"
+        ],
+        "ratios": [
+          "1:1",
+          "4:3",
+          "3:2",
+          "16:9",
+          "4:5",
+          "2:3",
+          "9:16"
+        ],
+        "tiers": {
+          "1K": 1024
+        },
+        "max_images": 1
+      },
+      "settings": [],
+      "text": {
+        "sizes": [
+          1024
+        ]
+      },
+      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. Only the prompt goes to OpenRouter, which passes it to Krea. OpenRouter lists one input picture for this model but does not say whether it is edited or only used as a style reference, so this variant makes images from the prompt alone: it works in \"Generate new\", not in Generate; the dialog's aspect is sent as the closest preset. 1K only. OpenRouter listed no price for it on 2026-09-19."
     }
   }
 }

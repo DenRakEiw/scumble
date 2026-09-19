@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Nano Banana 2 Lite (Gemini 3.1 Flash-Lite Image)",
   "family": "Google",
-  "description": "Google's fastest and cheapest image model, 1K only. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Google's fastest and cheapest image model, 1K only. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {
     "toapis": {
@@ -129,6 +129,44 @@
       },
       "settings": [],
       "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "openrouter": {
+      "model": "google/gemini-3.1-flash-lite-image",
+      "input": "fill",
+      "options": {
+        "accepts": [
+          "resolution",
+          "aspect_ratio",
+          "n"
+        ],
+        "ratios": [
+          "1:1",
+          "1:4",
+          "1:8",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:1",
+          "4:3",
+          "4:5",
+          "5:4",
+          "8:1",
+          "9:16",
+          "16:9",
+          "21:9"
+        ],
+        "tiers": {
+          "1K": 1024
+        },
+        "max_images": 14
+      },
+      "settings": [],
+      "text": {
+        "sizes": [
+          1024
+        ]
+      },
+      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. The pictures go inline in the request to OpenRouter, which passes them to Google (AI Studio, which keeps data 55 days, or Vertex AI, which keeps none; OpenRouter picks). No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. 1K only: a crop larger than that comes back at 1K and is scaled to the selection."
     }
   }
 }

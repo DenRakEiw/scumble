@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Seedream 5.0 Pro",
   "family": "ByteDance",
-  "description": "ByteDance's full Seedream 5, 1K or 2K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "ByteDance's full Seedream 5, 1K or 2K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on BytePlus ModelArk (ByteDance's own API). Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {
     "toapis": {
@@ -57,6 +57,37 @@
         "ratio": 3
       },
       "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The model takes aspect presets: a crop of another shape comes back re-framed and is centre-cropped. Resolution 1K or 2K only. Seedream takes no image longer than 3:1: a thin selection gets more context on its short side, and a longer reference layer is refused before any upload."
+    },
+    "ark": {
+      "model": "dola-seedream-5-0-pro-260628",
+      "input": "edit",
+      "options": {
+        "pixels": [
+          921600,
+          4624220
+        ],
+        "max_images": 10,
+        "png": true,
+        "regions": [
+          "ap-southeast"
+        ]
+      },
+      "settings": [],
+      "limits": {
+        "max": 4096,
+        "step": 16,
+        "pixels": 4624220,
+        "minPixels": 921600,
+        "ratio": 16
+      },
+      "text": {
+        "sizes": [
+          1280,
+          1536,
+          2048
+        ]
+      },
+      "note": "Runs on BytePlus ModelArk, ByteDance's own API for Seedream; not run against the live API yet. The pictures go inline in the request to BytePlus in Johor, Malaysia, which may route a request to its other region; BytePlus names data centres in Malaysia, Indonesia and the EU/EEA for its processing, keeps what its content filter flags for 180 days in Malaysia (its filter page says Malaysia or Singapore), and uses nothing for training without consent. The model must be activated in the ModelArk console first, and a key works only in the region it was made in. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The answer is the crop's own shape at a pixel size inside the model's range, without a watermark. 0.92 to 4.6 megapixels: up to 2.61 MP an image costs $0.045, above that $0.09 (with Highres fix on Maximum a crop goes out at up to 4.6 MP; set it lower for the cheaper size), and every picture after the first (Original on, each reference layer) adds $0.003. At most ten pictures go in (the crop, Original and the reference layers), none steeper than 16:1. The Johor region only: neither the model list nor the region page names 5.0 pro for Dublin."
     },
     "fal": {
       "model": "bytedance/seedream/v5/pro/edit",
@@ -152,6 +183,70 @@
         "max": 2496,
         "step": 2
       }
+    },
+    "openrouter": {
+      "model": "bytedance-seed/seedream-5-0-pro",
+      "input": "edit",
+      "options": {
+        "accepts": [
+          "resolution",
+          "aspect_ratio",
+          "seed",
+          "n"
+        ],
+        "ratios": [
+          "1:1",
+          "1:2",
+          "2:1",
+          "2:3",
+          "3:2",
+          "3:4",
+          "4:3",
+          "4:5",
+          "5:4",
+          "9:16",
+          "16:9",
+          "9:19.5",
+          "19.5:9",
+          "9:20",
+          "20:9",
+          "9:21",
+          "21:9"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048
+        },
+        "max_images": 10,
+        "max_ratio": 16
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "ratio": 16
+      },
+      "text": {
+        "sizes": [
+          1024,
+          2048
+        ]
+      },
+      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. The pictures go inline in the request to OpenRouter, which passes them to ByteDance's Seed (Singapore). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. Resolution auto takes the smallest tier that covers the crop. A picture steeper than 16:1 (the input range ByteDance's ModelArk documents; not verified through OpenRouter) is refused before anything is sent; a thinner selection gets more context instead. At most ten pictures go in (the crop, Original and the reference layers): OpenRouter lists 14, ByteDance's ModelArk documents 10 for 5.0 pro."
     }
   }
 }

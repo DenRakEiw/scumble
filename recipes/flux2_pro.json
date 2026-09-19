@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "FLUX.2 [pro]",
   "family": "Black Forest Labs",
-  "description": "BFL's production FLUX.2: text rendering, photorealism, multi-reference editing. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "BFL's production FLUX.2: text rendering, photorealism, multi-reference editing. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "bfl",
   "providers": {
     "toapis": {
@@ -167,6 +167,39 @@
       },
       "settings": [],
       "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). Size fitted to the crop (256 to 2048 px, multiples of 32). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+    },
+    "openrouter": {
+      "model": "black-forest-labs/flux.2-pro",
+      "input": "edit",
+      "fixed": {
+        "output_format": "png"
+      },
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "output_format",
+          "seed",
+          "n"
+        ],
+        "ratios": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "16:9",
+          "9:16",
+          "21:9"
+        ],
+        "max_images": 8
+      },
+      "settings": [],
+      "text": {
+        "sizes": [
+          1024
+        ]
+      },
+      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. The pictures go inline in the request to OpenRouter, which passes them to Black Forest Labs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. There is no size parameter: the host picks the output size. At most eight pictures go in (the crop, Original and the reference layers)."
     }
   },
   "limits": {

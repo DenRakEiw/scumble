@@ -275,7 +275,7 @@ const COMMANDS = {
         },
     },
     select_recipe: {
-        scope: "app", description: "Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud; list_recipes has each recipe's own), else the remembered or default one.",
+        scope: "app", description: "Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark; list_recipes has each recipe's own), else the remembered or default one.",
         params: { id: P.str("recipe id (from list_recipes)", { required: true }), provider: P.str("provider id for a model recipe (one of its providers from list_recipes)") },
         async run(_, a) {
             const r = host.shell.recipes().find((x) => x.id === a.id);
@@ -498,7 +498,7 @@ const COMMANDS = {
         },
     },
     upsample_prompt: {
-        needsImage: true, description: "Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, an API key for OpenAI / Google / Anthropic, or a local OpenAI-compatible server).",
+        needsImage: true, description: "Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, an API key for ToAPIs / OpenAI / Google / Anthropic / OpenRouter, or a local OpenAI-compatible server).",
         params: { timeout: P.timeout(300) },
         async run(ed, a) {
             if (ed.upsamplePending) throw new Error("an upsampling is still running");
