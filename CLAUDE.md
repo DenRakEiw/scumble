@@ -80,8 +80,16 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-19)
 
-**2026-09-19, the session after 0.1.19 (not released; `CHANGELOG.md` has a "0.1.20 — not released yet" section: give
-it the date when it is released, `package.json` is still 0.1.19).** Three of the four daily-use bugs are fixed, each
+**0.1.20 is prepared, not published** (2026-09-19, on the user's word "release vorbereiten, dann push auf github"):
+`package.json` 0.1.20, `CHANGELOG.md` "0.1.20 — 2026-09-19", `npm run dist` built `Scumble Setup 0.1.20.exe`, the tag
+`v0.1.20` pushed, CI's draft release waits for the user's word to publish (check `gh release list` first). Exe gates,
+all `--offline` against `dist/win-unpacked/Scumble.exe`, each on its own profile: `rel20-exe` (tiles: log pixels editor
+composite commands shape brush film glb ailabel size transparent generate mcp toapis llm export pxjobs), `rel20-exe-canvas`
+(tiles off: pixels editor composite commands shape brush film size transparent generate) and `rel20-exe-huge`
+(`huge:30000x20000`) ALL PASS at the first try. On a huge document the provider crop still takes the canvas fallback
+(`readBoxBytes` skips the stack above the canvas limit): 552 ms blocked at 30k in `huge_test`, not the user's size.
+
+**2026-09-19, the session after 0.1.19 (what 0.1.20 carries).** Three of the four daily-use bugs are fixed, each
 with a gate step, mutations and both backends' gates ALL PASS (`docs/BUGS.md` "Fixed, waiting for its release"):
 large JPEG / WebP / profiled PNG files open through a pool worker (`image_read`; the block at 15k 0.95 to 4.4 s down to
 34 to 98 ms, the same bytes), a provider run's crop and stitch run in a stitch worker of their own with the box from the
@@ -89,16 +97,17 @@ tile workers (`prepareCropAsync` / `finishResultAsync`, `readBoxBytes`, `stitch_
 on a plain / matched / matched-and-filmed 15k document down to 24 / 22 / 51 ms), and on tiles a stroke is committed a
 tile at a time through the compositing kernel (`commitStrokeTiles`, `compositeStroke`; the release 70 to 288 ms down
 to 34 to 66 ms, `tools/release_test.py` is the new measurement with real mouse events). The fourth ("erasing switches
-the active layer to the base") waits for the user's answer to a sharper question (`docs/BUGS.md`): the session's
-recordings point at the display bug fixed in 0.1.8. **`smoke` ran** (the user freed ComfyUI for an hour): on the dev
+the active layer to the base") is closed on the user's word (2026-09-19: "bug ist beim letzten test nicht
+aufgetreten"): the report's recordings pointed at the display bug fixed in 0.1.8. **`smoke` ran** (the user freed ComfyUI for an hour): on the dev
 tree with the three fixes in, tiles and canvas backend with `--no-helpers`, and once in full with every helper (SAM3,
 RMBG, Qwen-VL, SAM2 on the server; the in-app SAM2 / RMBG were skipped: no model in a fresh profile), ALL PASS; and a
 local run on a 6000 x 4000 document with a soft, a matched and a levels layer: the base went up in bands through the
 filter program and reached the node byte for byte (its hash recomputed), the result landed at the crop box. **Found
 there:** the node's own stitch spent 15 of the run's 19 minutes on one CPU core (a square `max_pool2d` over the whole
 picture's mask); a byte-equal fix (separable dilation, masks on a window) is prepared and tested in that session's
-scratchpad, **not applied: it needs the user's word, a commit in the node repo and a ComfyUI restart** (`docs/BUGS.md`
-"A local run on a large document spends minutes in the node's stitch"). Not done: the node in a real ComfyUI tab and in
+scratchpad and, on the user's word, **committed in the node repo (`fba1fd8`, not pushed); it goes live with the next
+ComfyUI restart, which the user does** (`docs/BUGS.md` "A local run on a large document spends minutes in the node's
+stitch"). Not done: the node in a real ComfyUI tab and in
 Firefox (the node repo is behind; building the editor into it is a node release).
 
 **Releases.** **0.1.19 is published** (Latest since 2026-09-18, `v0.1.19`, the CI draft published from this session on the user's
@@ -148,8 +157,9 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
   `electron.exe ... --mcp` processes fixes it; the missing hand-over is not measured.
 - **§C7's memory gate is not met** (at most 300 MB of GPU process per document); the default went on anyway, on the user's
   decision.
-- **The node repo is behind** (master 647db5d, before C3, plus one local, unpushed commit 1f37ad0: `exportIsPlain` in the
-  node's own `js/host.js`, which the editor asks for since E2 and `build_node.py --check` insists on). `nodecopy` builds and tests it in a scratch copy; build it into
+- **The node repo is behind** (master 647db5d, before C3, plus two local, unpushed commits: 1f37ad0, `exportIsPlain` in
+  the node's own `js/host.js`, which the editor asks for since E2 and `build_node.py --check` insists on; fba1fd8 (2026-09-19),
+  the stitch's masks on a window and a separable dilation, live after a ComfyUI restart). `nodecopy` builds and tests it in a scratch copy; build it into
   the real repo only when a node version is meant to ship.
 
 **What comes next, in order** (`dist/c6map/c/` holds the maps; they are older than the code):
@@ -399,10 +409,9 @@ import order), and twelve sites in four subjects read switches on the class name
 that subject is reworked anyway, as the prelude of that work; (2) **the object tool's change A is parked**: if the coarse
 outlines at 15k turn out to matter, compute the image-size label map only in the hovered object's box, on demand,
 never for the whole picture; (3) **B item 6 stays on ice** (it saves memory, not time; 97 GB of RAM and the 15.5 GB cap
-are not the limit at 15k). **Next, in this order:** the node's stitch fix into the node repo once the user agrees (and a
-ComfyUI restart, then a local run on a large document); the node in a real ComfyUI tab and in Firefox when a node
-version is meant to ship; the fourth daily-use bug once the user answers (the three others are fixed on 2026-09-19);
-then **OpenRouter (item 12)** and **ModelArk (item 12b)**; then the assistant (item 13,
+are not the limit at 15k). **Next, in this order:** after the user's ComfyUI restart, one local run on a large document
+with the node's stitch fix (`fba1fd8`); the node in a real ComfyUI tab and in Firefox when a node version is meant to
+ship; then **OpenRouter (item 12)** and **ModelArk (item 12b)**; then the assistant (item 13,
 `docs/PLAN_ASSISTANT.md`), as a release of its own (the user, 2026-09-19: "agent als letztes, wird ein seperates
 release", and the same day: "assistant kommt vor codesignierung"); the `buildModal` split (item 11) also comes
 before it; then SignPath, last. Nothing else stands before them, unless the user names something else first.

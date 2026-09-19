@@ -13,7 +13,7 @@ the ones that were performance work.
 
 An entry here leaves the file when the release named in it is published.
 
-- **Opening a large JPEG, WebP or a PNG with a colour profile blocked the window** (fixed 2026-09-19, for 0.1.20; it
+- **Opening a large JPEG, WebP or a PNG with a colour profile blocked the window** (fixed 2026-09-19, in 0.1.20; it
   was under "What phase N1 found on the way"). On tiles such a file of `InpaintEditor.imageWorkerFrom` pixels and more
   (32 MP; 0 turns it off) is decoded in a pool worker (`image_read`: `createImageBitmap` with the `<img>`'s settings,
   drawn in bands of 256 rows into a CPU OffscreenCanvas and read there) and put into tiles without the round trip
@@ -31,7 +31,7 @@ An entry here leaves the file when the release named in it is published.
   a restore through the worker). Mutations caught: the profile dropped, `premultiplyAlpha: "none"`, a band a row off,
   the restore not routed, `imageOrientation: "flipY"`; `"none"` is equivalent (Chromium 152 treats it as
   `"from-image"`). Canvas backend unchanged.
-- **A provider run's crop and stitch held the window** (fixed 2026-09-19, for 0.1.20). The row in the list said
+- **A provider run's crop and stitch held the window** (fixed 2026-09-19, in 0.1.20). The row in the list said
   0.6 s; on the user's usual document it was far worse, because `readBox` took the whole flatten for a colour-matched
   layer: 15000 x 10000, a 1,024 px selection (`native_test.py provider_crop`, `match_provider_crop`,
   `film_provider_crop`), the longest block before / after: plain stack 665 / 24 ms, with a 5,000 x 3,500 matched
@@ -54,7 +54,7 @@ An entry here leaves the file when the release named in it is published.
   (2026-09-19, PASS on both backends). An adversarial review (four lenses, two refuters a finding: 15 findings, 7
   upheld, all fixed with the other 8) gave the one-moment snapshot, the parameters at the click, the `<img>` fallback of
   the stream reader, `cICP`, the restore by file size and the transfers instead of copies.
-- **Releasing a stroke held the window** (fixed on tiles 2026-09-19, for 0.1.20; the bullet "Releasing an erase stroke
+- **Releasing a stroke held the window** (fixed on tiles 2026-09-19, in 0.1.20; the bullet "Releasing an erase stroke
   is its own stutter" below). The commit wrote band after band through canvases (the stroke's part materialised, the
   layer's tiles put into a scratch, drawn, read back): on tiles a stroke is now composited a tile at a time through
   the compositing kernel (`commitStrokeTiles`, `compositeStroke`: the stroke's box and, with a clip, the selection
@@ -177,15 +177,17 @@ k squared comparisons a pixel on the CPU: 35 s a megapixel at k = 137 (the Comfy
 min at 24 MP and 90 min at 15000 x 10000. The run's own crop (`_denoise_mask` on the crop) costs about a minute the same
 way (the 55 s between "got prompt" and the model load).
 
-**The fix is prepared, not applied** (the node folder is the user's live ComfyUI; its Python only loads after a
-restart): `_dilate_mask` as two separable `max_pool2d` passes (the same values: a square max is the max of the row
+**The fix is committed in the node repo, not pushed and not live yet** (`fba1fd8` on master of
+ComfyUI-InpaintCanvas, on the user's word of 2026-09-19; the node folder is the user's live ComfyUI and its Python only
+loads after a restart): `_dilate_mask` as two separable `max_pool2d` passes (the same values: a square max is the max of the row
 maxima), and the stitch's masks on a window around the region with the margin the app's `finishResult` uses. The
 patch and its tests are in the session's scratchpad (`node_fix_patch.py`, `node_mask_test.py`,
 `node_stitch_e2e.py`): the node's own `InpaintCanvasStitch.stitch`, today's `nodes.py` against the patched copy with
 ComfyUI stubbed out, gives the same returned image and the same patch PNG, byte for byte, with auto feather, colour
 match and alignment (71.5 s to 1.96 s at 2500 x 1800), with `paste` "crop" (43.1 to 0.61 s) and a plain feather; the
-masks alone at 6000 x 4000 889.5 s to 4.4 s, equal on eight cases. **Needs the user:** the commit in the node repo and
-a ComfyUI restart when it suits, then one local run on a large document.
+masks alone at 6000 x 4000 889.5 s to 4.4 s, equal on eight cases; run again against the committed file, the same.
+**Next:** a ComfyUI restart when it suits the user, then one local run on a large document; the entry leaves this file
+when that run is fast and the node is pushed with a node release.
 
 ### A headless MCP instance keeps Scumble from starting
 
@@ -215,43 +217,6 @@ Scumble shows it". Here nothing appeared.
 `electron.exe ... --mcp` processes. A fix belongs in the hand-over (the running headless instance shows its window on a
 second start of any build), with a gate step in `tools/mcp_test.py`: start headless through the launcher, start the
 app a second time, assert a visible window within a few seconds.
-
-### Erasing switches the active layer to the base
-
-Reported 2026-09-11, same session as the vanishing layer (fixed in 0.1.8, see
-`CHANGELOG.md`: the erase wiped the layer's cached display level outside the stroke's
-rectangle, so the picture lost the layer while its pixels and its thumbnail kept it). A layer
-that disappears from the picture after an erase looks exactly like the base having been
-selected and erased on, so this report is **probably the same bug seen from the other side**.
-It stays open until the user confirms on 0.1.8, or answers the question below.
-
-Erasing on a result layer with the mouse button held switches the active layer to the
-base underneath.
-
-**Not identified as a bug of its own.** The pointer-up branch for `layerpaint` touches no layer
-selection at all, and the reproduction of the vanishing layer (real pointer events, a
-selection, 400 px at 43 %) left `activeLayerId` on the result layer every time.
-The **only** code that reports switching to the base is the Ctrl+click auto-select, which sets
-`activeLayerId = null` and writes *"Base selected."* to the status line when nothing is hit;
-it needs Ctrl held, which the report does not mention. A removed layer also falls back to the
-base, and a still-*pending* result is discarded by `cancelPending()` on a layer-row click and
-on that same Ctrl+click path.
-
-**Ask the user**: does the status line say *"Base selected."* when it happens? That one answer
-separates the auto-select path from everything else. The question was put on 2026-09-11 and is
-still unanswered.
-
-**Read again 2026-09-19** (a map of every write of `activeLayerId`; no code changed). The two screen recordings of the
-report's session (`C:\Users\schoeneberg\Videos\2026-09-11 22-19-50.mp4` and `22-24-49.mp4`) show the result row
-highlighted throughout and the status line unchanged ("Result 3 restored.", "Result 5 added ...") while the layer
-loses pieces or vanishes: no "Base selected." and no "The base layer cannot be erased" (which the next press would
-say if the base were active). That is the display bug fixed in 0.1.8, and the likeliest reading. Other paths that do
-make the base active, none of them with the button merely held: Ctrl held at a press (auto-select picks the base on
-a just-erased spot), undo past a result's addition (0.1.7 allowed an undo during a held stroke; today it is refused),
-Delete / Backspace or Ctrl+X with nothing selected (removes the active layer), Ctrl+E on the bottom layer. The sharper
-question: *when it happens, is the result layer still in the list, and which row is highlighted, the result or
-"Base"? And what does the status line say?* Row still there and highlighted: the display bug; "Base" highlighted:
-auto-select; the row gone: the status line names Delete, Cut or merge.
 
 ### Selection undo and bounds lose isolated pixels above 1 MP (canvas backend)
 

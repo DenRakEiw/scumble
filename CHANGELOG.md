@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.20 — not released yet
+## 0.1.20 — 2026-09-19
 
 - **Large JPEG, WebP and colour-profiled PNG files open without freezing the window.** Opening a 15000 × 10000 picture
   used to hold the window for one to four and a half seconds while the browser decoded and read it; the picture is now
