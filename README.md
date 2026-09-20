@@ -63,8 +63,14 @@ blend mode, put filter layers and text on top. Nothing is baked in until you fla
 ![The layer stack: a vignette and a Kodak Portra 400 film look as filter layers, a text layer and the base](docs/images/layers.jpg)
 
 - A full layer stack: paint, image, text and filter layers, masks, blend modes, opacity,
-  colour match per layer, retouch tools (clone, heal, smudge), transform, crop and extend,
-  copy and paste of whole layers between tabs, SVG files as layers.
+  retouch tools (clone, heal, smudge), transform, crop and extend, copy and paste of whole
+  layers between tabs, SVG files as layers.
+- Colour match per layer: a result that came back a shade off is matched to its
+  surroundings (or to what lies below it) with one slider in the layer row, non-destructively;
+  the slider can also stay at 40 % when the model's own tone is worth keeping.
+
+![Colour match: the same result layer at Match 0 % with a visible cold rectangle, and at 100 % blended into the ground; below, the layer row with the Match slider](docs/images/colour-match.jpg)
+
 - Filter layers on the GPU (WebGL2): grain with film presets, curves, levels, colour
   balance, HSL, LUT (.cube), vignette, normalise, sharpen, blur and more; a film pack plugin with
   film looks, halation, glow, bleach bypass, cross processing, split toning, light leaks,
