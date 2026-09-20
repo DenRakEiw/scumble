@@ -115,8 +115,14 @@ on both backends (`llm toapis openrouter generate log mcp commands editor assist
 `lm-canvas`), each at the first try. **Not covered by any gate, and it is the old line:** no row has run against a
 live API - the four new upsampling hosts (DeepSeek, Moonshot, Z.ai, WaveSpeed) are written from the registry's base
 URLs, and nothing checks that a model id exists at its provider or that it takes tools; the provider's own error is
-what the user sees. **0.1.22 is unreleased** (0.1.21 is Latest; check `gh release list` before believing any release
-state written down anywhere).
+what the user sees. **The release:** `npm run dist` built `Scumble Setup 0.1.22.exe`, the CHANGELOG section is dated
+2026-09-20, and the exe gates ran `--offline` against `dist/win-unpacked/Scumble.exe` - `rel22-exe` (tiles: log pixels
+editor composite commands mcp toapis llm openrouter export assistant) **ALL PASS at the first try**, `rel22-exe-canvas`
+(tiles off: pixels editor composite film export assistant) with `editor` and `composite` red and **both green on the
+rerun `rel22-exe-canvas-b`**, each a known flake (the live stroke says "a real mouse over the window?", composite's
+source windows the same shape as the 0.1.19 release). **No `smoke`** (it needs the user's ComfyUI), and no model has
+run against a live API. The tag `v0.1.22` is pushed and CI builds the draft; **publishing it is the user's** (check
+`gh release list` before believing any release state written down anywhere).
 
 **2026-09-20: the two defects the OpenRouter session found are fixed, for 0.1.21** (`docs/BUGS.md` "Fixed, waiting
 for its release"; CHANGELOG 0.1.21; `docs/RECIPES.md` "Import"). (1) **FLUX.2 [flex] on fal** carried

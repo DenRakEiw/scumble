@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.22 — unreleased
+## 0.1.22 — 2026-09-20
 
 - **Your own language models, for the assistant and for prompt upsampling.** *Settings › Language models* is a
   list you fill: pick a provider (OpenRouter, OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot, Z.ai, ToAPIs,
