@@ -282,6 +282,270 @@ return out;"""
 
     # ---- the steps ---------------------------------------------------------------------------
 
+    # ---- the panel (A5) -----------------------------------------------------------------
+
+    async def panel_opens(self):
+        """The column opens, narrows the editor, and comes back as the user left it."""
+        out = await self.ev("""
+const a = await import("./assistant.js");
+const d = document.getElementById("assistant");
+const hostEl = document.getElementById("editor-host");
+a.toggleAssistant(false);                     // an earlier step may have left it open
+await wait(150);
+const before = Math.round(hostEl.getBoundingClientRect().width);
+a.toggleAssistant(true);
+await wait(250);
+const open = { dialog: d.open, flag: localStorage.getItem("shell.assistant.open"), panel: Math.round(d.getBoundingClientRect().width), host: Math.round(hostEl.getBoundingClientRect().width) };
+const parts = { head: !!d.querySelector(".as-head"), list: !!d.querySelector(".as-list"), foot: !!d.querySelector(".as-foot"), picker: (d.querySelector("select") || {}).length || 0 };
+a.toggleAssistant(false);
+await wait(150);
+const closed = { dialog: d.open, flag: localStorage.getItem("shell.assistant.open"), host: Math.round(hostEl.getBoundingClientRect().width) };
+a.toggleAssistant(true);
+await wait(150);
+return { before, open, parts, closed, again: d.open };""")
+        o, c = out["open"], out["closed"]
+        if not o["dialog"] or o["flag"] != "1" or o["panel"] < 300 or o["host"] >= out["before"]:
+            raise RuntimeError("the panel did not open beside the editor: " + json.dumps(out))
+        if c["dialog"] or c["flag"] is not None or c["host"] != out["before"]:
+            raise RuntimeError("the panel did not give the width back: " + json.dumps(out))
+        if not (out["parts"]["head"] and out["parts"]["list"] and out["parts"]["foot"]) or out["parts"]["picker"] < 10:
+            raise RuntimeError("the panel's parts: " + json.dumps(out["parts"]))
+        return f"{o['panel']} px beside {o['host']} px of editor, {out['parts']['picker']} models in the picker"
+
+    async def panel_keys(self):
+        """A chat key is the chat's: not the editor's shortcut, and not an open question's answer."""
+        self.mock.reset()
+        self.mock.push(Turn(answer={"text": "ich bin noch da"}))
+        out = await self.ev("""
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(150);
+const ed = ednow(DOC);
+host.shell.activate(ed);
+const d = document.getElementById("assistant");
+const area = d.querySelector("textarea");
+area.focus();
+const toolBefore = ed.tool;
+const send = (key, opts = {}) => {
+    const e = new KeyboardEvent("keydown", { key, code: key.length === 1 ? "Key" + key.toUpperCase() : key, bubbles: true, cancelable: true, ...opts });
+    area.dispatchEvent(e);
+    return e;
+};
+area.value = "b";
+send("b");                                   // the brush shortcut of the editor
+area.value = "";
+const afterLetter = ed.tool;
+// an open editor question listens on window: Enter in the chat must not answer it
+let answered = null;
+const asking = ed.ask("a question of the editor", { ok: "Yes" }).then((v) => { answered = v; });
+await wait(150);
+const openAsk = !!ed.askOpen;
+area.value = "hello";
+const enter = send("Enter");
+await wait(150);
+const sentText = area.value;
+for (const b of document.querySelectorAll(".ipc-ask button")) { b.click(); break; }   // Cancel
+await wait(200);
+// Escape hands the focus back to the editor when no turn runs
+area.focus();
+send("Escape");
+await wait(100);
+const focusAfterEscape = document.activeElement === area ? "chat" : (ed.root.contains(document.activeElement) ? "editor" : "elsewhere");
+return { toolBefore, afterLetter, openAsk, answered, enterPrevented: enter.defaultPrevented, sentText, focusAfterEscape };""")
+        if out["afterLetter"] != out["toolBefore"]:
+            raise RuntimeError("a letter typed in the chat changed the editor's tool: " + json.dumps(out))
+        if not out["openAsk"]:
+            raise RuntimeError("the editor's question did not open: " + json.dumps(out))
+        if out["answered"] is not None:
+            raise RuntimeError("Enter in the chat answered the editor's question: " + json.dumps(out))
+        if not out["enterPrevented"] or out["sentText"] != "":
+            raise RuntimeError("Enter did not send the chat text: " + json.dumps(out))
+        if out["focusAfterEscape"] != "editor":
+            raise RuntimeError("Escape did not hand the focus back: " + json.dumps(out))
+        return "a letter, Enter with an open editor question, and Escape all stayed in the chat"
+
+    async def panel_focus_and_drop(self):
+        """The chat field keeps the focus the editor takes, and a drop on the panel navigates nowhere.
+
+        Chromium delivers no focus or blur events to a window that is not focused, and a gate runs
+        behind the terminal: `root.focus()` moves `activeElement` here without the `focusout` the
+        real app fires. The step therefore dispatches that `focusout` itself, with the same
+        `relatedTarget` the editor's own call produces, and then checks what the panel does with
+        it - including the two cases where it must do nothing.
+        """
+        out = await self.ev("""
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(150);
+const d = document.getElementById("assistant");
+const area = d.querySelector("textarea");
+const ed = ednow(DOC);
+const leave = (to, typing = true) => {
+    area.focus();
+    // a window in the back gets no focus events at all, so "the user was writing here" is said
+    // with the input event the typing itself fires
+    if (typing) area.dispatchEvent(new Event("input", { bubbles: true }));
+    to.focus();                                   // what the editor does
+    area.dispatchEvent(new FocusEvent("focusout", { relatedTarget: to, bubbles: true }));
+};
+
+// 1. the editor takes the focus for itself: the chat takes it back
+leave(ed.root);
+await wait(120);
+const back = document.activeElement === area;
+
+// 2. the editor asks a question: its field or button must keep the focus
+const asking = ed.ask({ message: "a question of the editor", ok: "Yes" });
+await wait(150);
+const askButton = document.querySelector(".ipc-ask button");
+leave(askButton);
+await wait(120);
+const askKept = document.activeElement === askButton;
+for (const b of document.querySelectorAll(".ipc-ask button")) { b.click(); break; }
+await asking.catch(() => {});
+await wait(100);
+
+// 2b. the user clicks into a field of the editor: that field keeps the focus, and no
+//     question is open, so only the rule about what wants the focus can hold it
+const wasPane = Object.entries(ed.panes).find(([, p]) => !p.hidden);
+ed.showPane("gen");
+leave(ed.promptInput);
+await wait(120);
+const fieldKept = document.activeElement === ed.promptInput;
+ed.promptInput.blur();
+ed.showPane(wasPane ? wasPane[0] : "image");
+await wait(50);
+
+// 3. the user pressed Escape: the chat hands the focus over and does not take it back
+area.focus();
+area.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+await wait(50);
+const handedOff = document.activeElement !== area;
+// the user does not touch the chat after Escape: only the focusout the editor's own focus()
+// would fire is dispatched, and no focus() on the field (which would mean "back to writing")
+ed.root.focus();
+area.dispatchEvent(new FocusEvent("focusout", { relatedTarget: ed.root, bubbles: true }));
+await wait(120);
+const stayedAway = document.activeElement !== area;
+
+// 4. a drop on the panel goes nowhere
+const drop = new DragEvent("drop", { bubbles: true, cancelable: true });
+d.dispatchEvent(drop);
+const over = new DragEvent("dragover", { bubbles: true, cancelable: true });
+d.dispatchEvent(over);
+await wait(50);
+return { back, askKept, fieldKept, handedOff, stayedAway, dropPrevented: drop.defaultPrevented, overPrevented: over.defaultPrevented, url: location.href };""")
+        if not out["back"]:
+            raise RuntimeError("the chat field did not take the focus back: " + json.dumps(out))
+        if not out["askKept"]:
+            raise RuntimeError("the panel stole the focus from the editor's question: " + json.dumps(out))
+        if not out["fieldKept"]:
+            raise RuntimeError("the panel stole the focus from the editor's prompt field: " + json.dumps(out))
+        if not out["handedOff"] or not out["stayedAway"]:
+            raise RuntimeError("Escape did not hand the focus over for good: " + json.dumps(out))
+        if not out["dropPrevented"] or not out["overPrevented"] or not out["url"].startswith("scumble://app/"):
+            raise RuntimeError("a drop on the panel was not stopped: " + json.dumps(out))
+        return "the focus came back, the question and the prompt field kept it, Escape gave it away, the drop was stopped"
+
+    async def panel_shows_a_turn(self):
+        """A turn the panel drives: bubbles, a tool card with its result, and markup that is text."""
+        self.mock.reset()
+        answer = "Das sieht **gut** aus.\n\n- eine Ebene\n- ein Bild\n\n```js\nconst x = 1;\n```\n\n<img src=x onerror=alert(1)> und `code`."
+        self.mock.push(
+            Turn(answer={"tool_calls": [{"name": "list_layers", "args": {}}]}),
+            Turn(answer={"text": answer}),
+        )
+        out = await self.ev("""
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(150);
+const d = document.getElementById("assistant");
+const area = d.querySelector("textarea");
+area.value = "was ist da?";
+area.focus();
+area.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+for (let i = 0; i < 120; i++) {
+    await wait(250);
+    const s = await window.scumble.assistant.state();
+    if (!s.busy && s.events.some((e) => e.type === "turn:done")) break;
+}
+await wait(300);
+const list = d.querySelector(".as-list");
+const last = (sel) => Array.from(list.querySelectorAll(sel)).pop() || null;
+const model = last(".as-bubble.as-model");
+const card = last(".as-card:not(.as-ask):not(.as-note)");
+return {
+    user: (last(".as-bubble.as-user") || {}).textContent,
+    bold: !!(model && model.querySelector("strong")),
+    list: !!(model && model.querySelector("ul")),
+    code: !!(model && model.querySelector("pre code")),
+    inline: !!(model && model.querySelector("code")),
+    imgTags: list.querySelectorAll("img[src='x']").length,
+    text: model ? model.textContent.slice(0, 200) : "",
+    cardName: card ? (card.querySelector(".as-card-name") || {}).textContent : null,
+    cardState: card ? (card.querySelector(".as-card-state") || {}).textContent : null,
+    cardResult: card ? !!card.querySelector("details pre") : false,
+    cost: (d.querySelector(".as-cost") || {}).textContent,
+};""", timeout=120)
+        if out["user"] != "was ist da?":
+            raise RuntimeError("the user's line is not in the panel: " + json.dumps(out))
+        if not (out["bold"] and out["list"] and out["code"] and out["inline"]):
+            raise RuntimeError("the markup was not rendered: " + json.dumps(out))
+        if out["imgTags"] or "<img" not in out["text"]:
+            raise RuntimeError("markup in the answer became HTML: " + json.dumps(out))
+        if out["cardName"] != "list_layers" or "done in" not in (out["cardState"] or "") or not out["cardResult"]:
+            raise RuntimeError("the tool card is not complete: " + json.dumps(out))
+        return f"bubbles, markup as text, the card says {out['cardState']!r}, cost {out['cost']!r}"
+
+    async def panel_ask_card(self):
+        """An ask opens the panel by itself, and its buttons answer the card."""
+        self.mock.reset()
+        self.mock.push(
+            Turn(answer={"tool_calls": [{"name": "new_canvas", "args": {"width": 320, "height": 240, "color": "#334455"}}]}),
+            Turn(answer={"text": "done"}),
+        )
+        out = await self.ev("""
+const a = await import("./assistant.js");
+a.toggleAssistant(false);
+await wait(150);
+const d = document.getElementById("assistant");
+await window.scumble.assistant.send("mach die leinwand kleiner");
+let card = null;
+for (let i = 0; i < 80; i++) {
+    await wait(250);
+    const cards = Array.from(d.querySelectorAll(".as-card.as-ask"));
+    card = cards.length ? cards[cards.length - 1] : null;
+    if (card && (card.querySelector(".as-card-state") || {}).textContent === "waiting for you") break;
+    card = null;
+}
+const openedItself = d.open;
+const before = [ednow(DOC).width, ednow(DOC).height];
+const allow = card ? Array.from(card.querySelectorAll("button")).find((b) => b.textContent === "Allow") : null;
+if (allow) allow.click();
+for (let i = 0; i < 80; i++) {
+    await wait(250);
+    const s = await window.scumble.assistant.state();
+    if (!s.busy) break;
+}
+await wait(200);
+return {
+    openedItself,
+    card: !!card,
+    name: card ? (card.querySelector(".as-card-name") || {}).textContent : null,
+    reason: card ? (card.querySelector(".as-reason") || {}).textContent : null,
+    state: card ? (card.querySelector(".as-card-state") || {}).textContent : null,
+    before,
+    after: [ednow(DOC).width, ednow(DOC).height],
+};""", timeout=120)
+        if not out["card"] or not out["openedItself"]:
+            raise RuntimeError("the ask card did not open the panel: " + json.dumps(out))
+        if out["name"] != "new_canvas" or not out["reason"]:
+            raise RuntimeError("the ask card is not the call's: " + json.dumps(out))
+        if out["after"] == out["before"] or out["after"] != [320, 240]:
+            raise RuntimeError("Allow did not let the call run: " + json.dumps(out))
+        return f"the panel opened itself, {out['name']} asked ({out['state']}), Allow ran it"
+
+
     async def identity(self):
         """The assistant's list is the MCP list minus exactly the exclusion set."""
         from mcp import ClientSession, StdioServerParameters
@@ -582,7 +846,7 @@ return { ids, first: ids[0], anthropic: row("anthropic") && row("anthropic").lab
         refused = [e for e in s["events"] if e["type"] == "call" and e.get("action") == "refuse"]
         if not refused or refused[-1]["name"] != "export":
             raise RuntimeError("no refuse event: " + json.dumps([e["type"] for e in s["events"]]))
-        opened = await self.ev("return !!document.querySelector('dialog[open]');")
+        opened = await self.ev("return !!document.querySelector('dialog[open]:not(#assistant)');")
         if opened:
             raise RuntimeError("a dialog is open")
         return "refused before any dialog: " + refused[-1].get("reason", "")
@@ -848,6 +1112,11 @@ async def main():
             await g.run_step("a_real_key_never_goes_to_the_test_base", g.real_key)
             await g.run_step("relaunch_is_refused_while_a_turn_runs", g.relaunch)
             await g.run_step("the_assistant_is_not_counted_as_an_agent", g.not_an_agent)
+            await g.run_step("the_panel_opens_beside_the_editor_and_remembers_it", g.panel_opens)
+            await g.run_step("a_chat_key_never_reaches_the_editor", g.panel_keys)
+            await g.run_step("the_chat_field_keeps_the_focus_and_stops_a_drop", g.panel_focus_and_drop)
+            await g.run_step("the_panel_shows_a_turn_and_writes_no_markup", g.panel_shows_a_turn)
+            await g.run_step("an_ask_opens_the_panel_and_its_buttons_answer", g.panel_ask_card)
         except Exception as e:  # noqa: BLE001
             g.results.append(False)
             print("[FAIL] setup:", str(e)[:1500], flush=True)

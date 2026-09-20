@@ -270,8 +270,35 @@ commands assistant`) **ALL PASS**. **Trap worth keeping:** on Windows `safeStora
 that lives in `<userData>/Local State`, so a scratch profile holding a copy of `secrets.json` alone
 decrypts nothing and every row reads "no API key" - copy both. **What the user has to decide:** a
 working key (Anthropic, OpenAI, Google - or an OpenRouter key, which would also cover the Chat
-Completions family), then the five-task form of the checkpoint costs well under a dollar; A5 (the panel)
-can be built before that, at the risk the plan names.
+Completions family), then the five-task form of the checkpoint costs well under a dollar. **The user's
+word (2026-09-20): "hab gerade keinen key, lass uns das testing ueberspringen, machen wir nach release
+mach dann eh extreme bug suchen"** - so the model-by-model verdicts wait for the release and the user's own
+bug hunt, and building went on with A5.
+
+**2026-09-20: A5 is built - the panel** (`docs/PLAN_ASSISTANT.md` "A5 as built"). `renderer/assistant.js`
+(about 600 lines) and `assistant.css`, a `<dialog id="assistant">` in a new `#shell-main` row of
+`index.html`, a bar button, **View > Assistant (Ctrl+Shift+A)**, and **`tool_end`** as a new event of the
+loop. The plan's three rules hold: a non-modal `show()` (the canvas stays usable, the panel stays out of the
+top layer), **one window capture `keydown` listener** registered at shell start so it runs before any editor
+question's, and **no markup written anywhere** (`renderText` builds with `createElement` and `textContent`;
+the Node check `no_markup_writes` holds the file to it). The picker is grouped by provider, a provider
+without a key greyed out, models marked ("cannot look at the picture", "not tried with a real key"), a free
+OpenRouter id from the live list; the chat shows bubbles, streamed text rendered once when the block ends,
+tool cards (`running`, `done in N s`, the result in a `<details>`, a screenshot thumbnail) and ask cards
+with the policy's reason, the file, the recipe and old > new values, **neither button a default**; an ask
+opens the panel by itself. **Three things the plan did not have and one it had wrong:** `tool_end` (the
+panel cannot say what a call did without it; `state()` strips its data URL so a reloaded panel carries no
+base64 over IPC); **a call id is unique inside its turn, not the chat** (every family numbers per request,
+so `tool_end` found an older turn's card - the cards live in a `Map` the turn empties; the gate found it);
+**Escape and the focus guard fought each other**; and the plan's `keepFocus` flag is set by a focus event
+**a window in the back never gets** - the guard reads the `focusout` instead. Gate: **five new steps, 24 in
+all**; a mutation round of **13, 10 red** (the three green ones are each a rule a second rule already
+covers, written down). Gates `--offline` on both backends (`editor composite generate transparent size log
+mcp commands assistant`): **ALL PASS** (`a5-tiles`, `a5-canvas`). **Trap worth keeping:** Chromium delivers
+**no focus or blur events at all** to a window that is not focused, and a gate runs behind the terminal:
+`focus()` moves `activeElement` silently, so a focus test has to dispatch the `focusout` the real app would
+fire. **Next: A6** (chats on disk and the reset), then A7 (undo per step and per turn), A8 (the whole gate
+and the docs), A9 (the live check and the release).
 
 ## Where things stand (2026-09-19)
 

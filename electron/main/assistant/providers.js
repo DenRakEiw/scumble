@@ -237,6 +237,8 @@ function picker(ready = {}) {
             models: (provider === "compat" ? (ready.compatModels || []) : p.models).map((m) => ({
                 value: `${provider}:${m.id}`,
                 label: m.label || m.id,
+                vision: m.vision !== false,
+                note: m.note || "",
             })),
         };
     });

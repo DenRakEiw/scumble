@@ -386,7 +386,7 @@ class Assistant {
             turn: this.turn ? this.turn.id : null,
             readOnly: !!this.readOnly,
             base: loopbackBase(s.base),
-            events: this.events.slice(),
+            events: this.events.map((e) => (e && e.image ? { ...e, image: null } : e)),
             pending: this.pending ? this.pending.card : null,
             usage: chat ? { ...chat.usage } : null,
             toolsChanged: null,
@@ -658,6 +658,7 @@ class Assistant {
         if (!policy.READS.has(name) && doc !== undefined && doc !== null) turn.docs.add(doc);
         this.emit("call", { call: call.id, name, args: canonical.args, action: decision.action === "ask" ? "allowed" : "auto" });
         const before = layers.map((l) => l.id);
+        const startedAt = Date.now();
         let res;
         try {
             res = await this.client.callTool(
@@ -671,6 +672,18 @@ class Assistant {
         } finally {
             turn.undo = null;
         }
+        // what the panel shows on the call's card (A5): how long it took, and the first of what
+        // came back. The picture rides along for the live card only - `state()` takes it out
+        // again, so a reloaded panel is rebuilt without megabytes of base64 over IPC.
+        const image = ((res && res.content) || []).find((c) => c && c.type === "image" && c.data);
+        this.emit("tool_end", {
+            call: call.id,
+            name,
+            ok: !res.isError,
+            ms: Date.now() - startedAt,
+            text: textOf(res).slice(0, 400),
+            image: image ? `data:${image.mimeType || "image/jpeg"};base64,${image.data}` : null,
+        });
         turn.steps++;
         this.countFailure(chat, canonical, res.isError);
 

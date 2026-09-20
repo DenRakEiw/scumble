@@ -59,7 +59,7 @@ const shell = await import("./shell.js");
 host.shell.activate(ednow(window.__t));
 await %s;
 await wait(200);
-const dlg = document.querySelector("dialog[open]");
+const dlg = document.querySelector("dialog[open]:not(#assistant)");
 if (!dlg) throw new Error("the %s dialog did not open");
 const el = dlg.contains(document.activeElement) ? document.activeElement : dlg;
 const evt = new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true });
@@ -69,7 +69,7 @@ return 1;
 """ % (opener, name)), timeout=60)
         for kind in ("keyDown", "keyUp"):
             await c.call("Input.dispatchKeyEvent", type=kind, key="Escape", code="Escape", windowsVirtualKeyCode=27, nativeVirtualKeyCode=27)
-        r = await c.eval("(async () => { await new Promise((r) => setTimeout(r, 200)); const d = document.querySelector('dialog[open]'); return { ...window.__esc, stillOpen: !!d }; })()")
+        r = await c.eval("(async () => { await new Promise((r) => setTimeout(r, 200)); const d = document.querySelector('dialog[open]:not(#assistant)'); return { ...window.__esc, stillOpen: !!d }; })()")
         out[name] = r
         if r["prevented"]:
             raise Exception("%s: the editor's key handler still prevents Escape (%s)" % (name, json.dumps(r)))

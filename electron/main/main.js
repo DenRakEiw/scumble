@@ -261,6 +261,18 @@ function showAgents() {
 // same server external agents get (mcp/server.js createServer), so both see one tool surface.
 // Made at the first use, so the SDK's client is not loaded at start.
 let assistant = null;
+
+/** An ask that waits while the window is in the back flashes the taskbar entry, and stops on focus. */
+function attention(event) {
+    if (!win || win.isDestroyed()) return;
+    if (event && event.type === "ask" && !win.isFocused()) {
+        win.flashFrame(true);
+        win.once("focus", () => { if (!win.isDestroyed()) win.flashFrame(false); });
+    } else if (event && (event.type === "turn:done" || event.type === "call")) {
+        win.flashFrame(false);
+    }
+}
+
 function getAssistant() {
     if (assistant) return assistant;
     const { Assistant } = require("./assistant/index.js");
@@ -269,7 +281,7 @@ function getAssistant() {
     const { InMemoryTransport } = require("@modelcontextprotocol/sdk/inMemory.js");
     assistant = new Assistant({
         bridge, keys, settings, log,
-        emit: (event) => send("assistant:event", event),
+        emit: (event) => { send("assistant:event", event); attention(event); },
         createServer, Client, InMemoryTransport,
         version: app.getVersion(),
         // what the policy needs to know about an export path (the extension, whether the file exists)
@@ -327,6 +339,8 @@ function buildMenu() {
                 { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" },
                 { type: "separator" },
                 { role: "togglefullscreen" },
+                { type: "separator" },
+                { label: "Assistant", accelerator: "CmdOrCtrl+Shift+A", click: () => send("menu", "assistant") },
             ],
         },
         pluginMenu,

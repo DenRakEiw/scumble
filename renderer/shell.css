@@ -31,7 +31,10 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 .shell-tab-close:hover { background: #3a3a3a; color: #fff; }
 #shell-tab-add { background: none; color: #999; border: 0; border-right: 1px solid #000; width: 28px; font-size: 16px; cursor: pointer; }
 #shell-tab-add:hover { background: #1e1e1e; color: #eee; }
-#editor-host { position: relative; flex: 1; min-height: 0; }
+/* the editor and the assistant's column side by side; the panel is a non-modal dialog, so it
+   has to be talked out of the UA sheet's absolute position - assistant.css does that */
+#shell-main { display: flex; flex: 1; min-height: 0; min-width: 0; }
+#editor-host { position: relative; flex: 1; min-height: 0; min-width: 0; }
 #editor-host > .ipc-modal { position: absolute; inset: 0; }
 .shell-hidden, [hidden] { display: none !important; }
 

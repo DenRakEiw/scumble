@@ -5,6 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' scumble://app blob: data:; img-src 'self' scumble://app blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' scumble://app blob: data:; connect-src 'self' scumble://app blob: data:; script-src 'self' 'wasm-unsafe-eval'">
 <title>Scumble</title>
 <link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="assistant.css">
 </head>
 <body>
 <div id="shell">
@@ -16,11 +17,15 @@
     <span id="shell-progress" hidden><span id="shell-progress-bar"></span><span id="shell-progress-text"></span></span>
     <label class="shell-field">ComfyUI <input id="shell-url" type="text" spellcheck="false" placeholder="http://127.0.0.1:8188"></label>
     <button id="shell-connect" type="button">Connect</button>
+    <button id="shell-assistant" type="button" title="The assistant chats beside the picture and drives the editor (Ctrl+Shift+A)">Assistant</button>
     <span id="shell-status"><span id="shell-dot" class="dot"></span><span id="shell-status-text">not connected</span></span>
     <button id="shell-update" type="button" hidden title="A new version is downloaded; restart to install it"></button>
   </div>
   <div id="shell-tabs"><div id="shell-tab-list"></div><button id="shell-tab-add" type="button" title="New tab (Ctrl+T)">+</button></div>
-  <div id="editor-host"></div>
+  <div id="shell-main">
+    <div id="editor-host"></div>
+    <dialog id="assistant" class="shell-assistant" tabindex="-1" aria-label="Assistant"></dialog>
+  </div>
 </div>
 <dialog id="shell-settings">
   <form method="dialog">

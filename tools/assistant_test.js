@@ -3053,6 +3053,21 @@ async function main() {
         }
     });
 
+
+    // ---- 18. the panel's one rule that a test can hold it to (A5) --------------------------
+    await section("18. the panel writes no markup (A5)", async () => {
+        const fs = require("node:fs");
+        const src = fs.readFileSync(path.join(ROOT, "renderer", "assistant.js"), "utf8");
+        // The model's answer, a layer name, a log line and a tool result all end up in the panel.
+        // Every one of them is somebody else's text, so none of it may be written as markup.
+        const banned = [/\.innerHTML\s*=/, /\.outerHTML\s*=/, /insertAdjacentHTML/, /document\.write/, /\bnew Function\b/, /dangerously/i];
+        const hits = banned.filter((re) => re.test(src)).map((re) => String(re));
+        check("no_markup_writes", !hits.length, hits.join(", ") || `${src.length} bytes of renderer/assistant.js, none of them markup`);
+        check("the_panel_builds_its_nodes",
+            /createElement\(/.test(src) && /textContent/.test(src) && /createTextNode/.test(src),
+            "createElement, textContent and createTextNode are how it builds");
+    });
+
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);
     console.log(failed ? "FAIL" : "PASS");

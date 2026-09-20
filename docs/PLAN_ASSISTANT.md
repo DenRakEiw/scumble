@@ -1979,6 +1979,69 @@ for the dialog under test.
 **Estimate.** Two and a half days: two for the panel as it was planned, half a day for the
 grouped picker, the free OpenRouter id and the streamed text.
 
+
+### A5 as built (2026-09-20)
+
+`renderer/assistant.js` (about 600 lines), `renderer/assistant.css`, a `<dialog id="assistant">`
+in `index.html` inside a new `#shell-main` row, a bar button, View > Assistant (Ctrl+Shift+A),
+and `tool_end` as a new event of the loop. The panel is the plan's, minus the parts that belong
+to steps that are not built (the saved chats of A6, "Undo this turn" of A7), and it holds to the
+plan's three rules: a non-modal `show()`, one window capture key listener, and no markup written
+anywhere.
+
+**What it shows.** The picker, grouped by provider in the order of §2 row 33, with a provider
+that has no key greyed out and its models marked ("cannot look at the picture", "not tried with
+a real key"); a free OpenRouter id with a `<datalist>` from the live list; New chat and close;
+the notices (the test endpoint, an external agent, the provider's privacy line, "no key - add it
+under Settings > API providers"). Below it the chat: user and model bubbles, the model's text
+streamed into a text node and rendered once when the block ends, tool cards with their arguments,
+their state (`running`, `done in N s`, `error after N s`, `refused`), the first 400 characters of
+the result in a `<details>` and a screenshot as a thumbnail, and ask cards with the policy's
+reason, what the card carries (the file and whether it exists, the recipe, old > new values, the
+queue) and Allow / Don't, neither of them a default. At the bottom the textarea, Send (Stop while
+a turn runs) and the cost line.
+
+**Three things that were not in the plan, and one that was wrong in it:**
+
+- **`tool_end`.** The panel cannot say what a call did without it; A4's review had already
+  written it down as A5's. The loop emits it after every call with `ok`, `ms`, the first 400
+  characters of the result and, for a picture, a data URL. **`state()` strips that data URL**, so
+  a panel rebuilt after a reload is rebuilt without megabytes of base64 over IPC.
+- **A call id is unique inside its turn, not inside the chat.** Every family numbers its calls
+  per request, so `tool_end` looked its card up by `data-call` and found *an older turn's* card:
+  the new card stayed "running" forever. The cards of the running turn live in a `Map` that
+  `turn:start` empties. Found by the gate, not by reading.
+- **The focus guard and Escape fought each other.** Escape hands the focus to the editor; the
+  guard pulled it straight back, so Escape did nothing the user could see. The guard now knows
+  about the hand-off (`handedOff`), and it never takes the focus from an element that wants it
+  for typing (`wants()`) - which is what the editor's own question does the moment it opens, a
+  case the plan's rule would have broken.
+- The plan's `keepFocus` flag was **set by a `focus` event that a window in the back never
+  gets**. The guard reads what happened instead: a `focusout` of the textarea, with the
+  hand-off and the user's own click or Tab as the exceptions.
+
+**What the gate proves** (`tools/assistant_test.py`, five new steps, 24 in all):
+`the_panel_opens_beside_the_editor_and_remembers_it` (341 px beside the editor, the editor
+narrowed, the flag in `localStorage`, the parts, 28 models in the picker);
+`a_chat_key_never_reaches_the_editor` (a letter does not switch the editor's tool, **Enter with
+an open editor question sends the chat and does not answer the question**, Escape hands the
+focus over); `the_chat_field_keeps_the_focus_and_stops_a_drop` (the editor's `root.focus()` is
+taken back, a question's button keeps it, after Escape it stays away, a drop is prevented and the
+window stays on `scumble://app/`); `the_panel_shows_a_turn_and_writes_no_markup` (bubbles, a card
+that says `done in N s` with its result, `**bold**`, lists, fences and inline code rendered, and
+`<img src=x onerror=...>` still text); `an_ask_opens_the_panel_and_its_buttons_answer` (the panel
+opens itself, Allow runs the call). Node: section 18, `no_markup_writes`.
+
+**A trap worth keeping, found here:** Chromium delivers **no focus or blur events at all** to a
+window that is not focused, and a gate runs behind the terminal - `focus()` moves
+`document.activeElement` silently. A focus test in a gate has to dispatch the `focusout` the real
+app would fire, and say so.
+
+**Not built here, on purpose:** the saved chats and the reset (A6), "Undo this turn" (A7),
+`docs/ASSISTANT.md` and the whole gate list (A8). The picker's Moonshot note, the per-document
+`set_settings` record behind the render card, and the `/queue` read on an ask card are the plan's
+and are not in: the card shows what the policy itself carries, and the recipe from `host.recipe`.
+
 ### A6. Chats on disk and the reset (one and a half days)
 
 **Purpose.** Chats survive a restart, and one button in Settings deletes everything the

@@ -8,6 +8,7 @@ import { setPixelsOptions } from "./editor/inpaint_pixels.js";
 import { commands, docSummary } from "./commands.js";
 import * as plugins from "./plugins.js";
 import { waitForUser, editorOf } from "./assistant_wait.js";
+import { initAssistant, toggleAssistant } from "./assistant.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -1510,6 +1511,7 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "prev-tab") cycleTab(-1);
     else if (cmd === "import-recipe") importRecipe();
     else if (cmd === "reload-plugins") plugins.reloadPlugins().then((list) => { if (host.editor) host.editor.setStatus(`Plugins reloaded: ${list.filter((p) => p.loaded).length} of ${list.length} loaded.`); });
+    else if (cmd === "assistant") toggleAssistant();
     else if (cmd === "mcp-copied") host.editor && host.editor.setStatus("MCP registration copied. Paste it into your client; see docs/MCP.md.");
     else if (cmd === "settings-updates") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Updates"); if (h) h.scrollIntoView(); });
     else if (cmd === "settings-plugins") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Plugins"); if (h) h.scrollIntoView(); });
@@ -1569,6 +1571,11 @@ await host.refreshLLMs();
 selectRecipe(settings.recipe);
 showStatus(await window.scumble.comfy.status());
 window.scumble.commands.ready();
+// the assistant's column (docs/PLAN_ASSISTANT.md A5): built last, so its window key listener is
+// registered before any editor question's, and it sees a chat key first
+initAssistant({ openSettings });
+const assistantButton = $("shell-assistant");
+if (assistantButton) assistantButton.addEventListener("click", () => toggleAssistant());
 
 // ---- the console dialog: the log's ring buffer, filtered, growing live ----------------------
 
