@@ -282,6 +282,259 @@ return out;"""
 
     # ---- the steps ---------------------------------------------------------------------------
 
+    # ---- undo, per step and per turn (A7) ---------------------------------------------------
+
+    async def tiles(self):
+        """The pixel backend of this instance: turn undo is the tile engine's alone (A7)."""
+        return bool(await self.ev("return !!ednow(DOC).tileMode;"))
+
+    async def undo_per_step(self):
+        """Ctrl+Z takes back a call the command itself records no undo step for."""
+        self.mock.reset()
+        self.mock.push(
+            Turn(answer={"tool_calls": [{"name": "add_paint_layer", "args": {"name": "Assistant layer"}}]}),
+            Turn(answer={"text": "da ist sie"}),
+        )
+        out = await self.ev("""
+const ed = ednow(DOC);
+host.shell.activate(ed);
+const before = { layers: ed.layers.length, undo: ed.undo.length };
+await window.scumble.assistant.send("leg eine ebene an");
+for (let i = 0; i < 80; i++) { await wait(250); const s = await window.scumble.assistant.state(); if (!s.busy) break; }
+const after = { layers: ed.layers.length, undo: ed.undo.length, top: (ed.undo[ed.undo.length - 1] || {}).kind };
+await ed.undoStep();
+await wait(300);
+const undone = { layers: ed.layers.length, names: ed.layers.map((l) => l.name) };
+return { before, after, undone };""", timeout=120)
+        if out["after"]["layers"] != out["before"]["layers"] + 1:
+            raise RuntimeError("the layer was not added: " + json.dumps(out))
+        if out["after"]["top"] != "layers" or out["after"]["undo"] <= out["before"]["undo"]:
+            raise RuntimeError("no undo step was pushed for the call: " + json.dumps(out))
+        if out["undone"]["layers"] != out["before"]["layers"]:
+            raise RuntimeError("Ctrl+Z did not take the assistant's layer back: " + json.dumps(out))
+        return f"{out['after']['top']} step pushed, Ctrl+Z took the layer back"
+
+    async def undo_whole_turn(self):
+        """A whole turn back: the pixels, the selection and the prompt as they were before it."""
+        if not await self.tiles():
+            return "skipped: the canvas backend takes no turn snapshot (turn_undo_is_refused_on_the_canvas_backend has it)"
+        self.mock.reset()
+        self.mock.push(
+            Turn(answer={"tool_calls": [
+                {"name": "set_prompt", "args": {"text": "ein abendhimmel"}},
+                {"name": "add_paint_layer", "args": {"name": "Turn layer"}},
+                {"name": "select_rect", "args": {"x": 10, "y": 10, "w": 120, "h": 90}},
+            ]}),
+            Turn(answer={"text": "erledigt"}),
+        )
+        out = await self.ev("""
+const ed = ednow(DOC);
+host.shell.activate(ed);
+await run("select_none", { doc: DOC });
+await run("set_prompt", { doc: DOC, text: "vorher" });
+await wait(150);
+const before = { prompt: ed.promptText, layers: ed.layers.length, sel: ed.selectionExtent(), undo: ed.undo.length };
+await window.scumble.assistant.send("mach drei dinge");
+for (let i = 0; i < 80; i++) { await wait(250); const s = await window.scumble.assistant.state(); if (!s.busy) break; }
+const after = { prompt: ed.promptText, layers: ed.layers.length, sel: ed.selectionExtent() };
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(200);
+const d = document.getElementById("assistant");
+const card = Array.from(d.querySelectorAll(".as-card.as-undo")).pop();
+const button = card ? card.querySelector("button") : null;
+if (button) button.click();
+await wait(600);
+const undone = { prompt: ed.promptText, layers: ed.layers.length, sel: ed.selectionExtent(), top: (ed.undo[ed.undo.length - 1] || {}).kind, label: button ? button.textContent : null };
+// Ctrl+Z takes the restore back: the turn's state comes again
+await ed.undoStep();
+await wait(400);
+const redoneByUndo = { prompt: ed.promptText, layers: ed.layers.length, sel: ed.selectionExtent() };
+return { before, after, undone, redoneByUndo, card: !!card };""", timeout=180)
+        if not out["card"]:
+            raise RuntimeError("no undo card after the turn: " + json.dumps(out))
+        b, a, u = out["before"], out["after"], out["undone"]
+        if a["prompt"] != "ein abendhimmel" or a["layers"] != b["layers"] + 1 or not a["sel"]:
+            raise RuntimeError("the turn did not do its three things: " + json.dumps(out))
+        if u["prompt"] != b["prompt"] or u["layers"] != b["layers"] or u["sel"] != b["sel"]:
+            raise RuntimeError("the turn was not taken back: " + json.dumps(out))
+        if u["top"] != "turn":
+            raise RuntimeError("the restore left no turn step on the stack: " + json.dumps(out))
+        r = out["redoneByUndo"]
+        if r["prompt"] != a["prompt"] or r["layers"] != a["layers"]:
+            raise RuntimeError("Ctrl+Z did not take the restore back: " + json.dumps(out))
+        return f"prompt {b['prompt']!r} -> {a['prompt']!r} -> {u['prompt']!r}, and Ctrl+Z back to {r['prompt']!r}"
+
+    async def undo_turn_asks_after_an_edit(self):
+        """When the user edited during the turn, the button says so before it discards anything."""
+        if not await self.tiles():
+            return "skipped: the canvas backend takes no turn snapshot (turn_undo_is_refused_on_the_canvas_backend has it)"
+        self.mock.reset()
+        self.mock.push(
+            Turn(answer={"tool_calls": [{"name": "add_paint_layer", "args": {"name": "Edited turn"}}]}),
+            Turn(answer={"text": "ok"}),
+        )
+        before = await self.ev("""
+const ed = ednow(DOC);
+host.shell.activate(ed);
+const layersBefore = ed.layers.length;
+await window.scumble.assistant.send("leg noch eine an");
+for (let i = 0; i < 80; i++) { await wait(250); const s = await window.scumble.assistant.state(); if (!s.busy) break; }
+const wasPane = Object.entries(ed.panes).find(([, p]) => !p.hidden);
+ed.showPane("gen");
+ed.promptInput.focus();
+return { layersBefore, pane: wasPane ? wasPane[0] : "image", focused: document.activeElement === ed.promptInput };""", timeout=120)
+        if not before["focused"]:
+            raise RuntimeError("the editor's prompt field did not take the focus: " + json.dumps(before))
+        # the user's own edit: text the browser itself delivers into the editor's own field. A
+        # constructed event is never trusted, and the watcher counts trusted events alone - which
+        # is what keeps the assistant's own calls from looking like the user.
+        await self.c.call("Input.insertText", text="x")
+        out = await self.ev("""
+const ed = ednow(DOC);
+const layersBefore = __LB__;
+ed.showPane(__PANE__);
+const t = await import("./assistant_turns.js");
+const state = t.turnState();
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(200);
+const d = document.getElementById("assistant");
+const card = Array.from(d.querySelectorAll(".as-card.as-undo")).pop();
+const button = card.querySelector("button");
+button.click();                                   // the first press only warns
+await wait(200);
+const warned = { text: button.textContent, reason: (card.querySelector(".as-reason") || {}).textContent, layers: ed.layers.length };
+button.click();                                   // the second one does it
+await wait(500);
+const done = { layers: ed.layers.length, text: button.textContent };
+return { layersBefore, edited: state ? state.edited : null, warned, done };""".replace("__LB__", json.dumps(before["layersBefore"])).replace("__PANE__", json.dumps(before["pane"])), timeout=180)
+        if not out["edited"]:
+            raise RuntimeError("the user's own edit was not seen: " + json.dumps(out))
+        if "Undo anyway" not in out["warned"]["text"] or "discards those edits" not in (out["warned"]["reason"] or ""):
+            raise RuntimeError("the button did not ask first: " + json.dumps(out))
+        if out["warned"]["layers"] != out["layersBefore"] + 1 or out["done"]["layers"] != out["layersBefore"]:
+            raise RuntimeError("the second press did not undo the turn: " + json.dumps(out))
+        return "the first press warned about the user's edit, the second took the turn back"
+
+    async def undo_turn_tells_the_model(self):
+        """After a restore the next request says the user undid the turn."""
+        if not await self.tiles():
+            return "skipped: the canvas backend takes no turn snapshot (turn_undo_is_refused_on_the_canvas_backend has it)"
+        self.mock.reset()
+        self.mock.push(
+            Turn(answer={"tool_calls": [{"name": "add_paint_layer", "args": {"name": "Told"}}]}),
+            Turn(answer={"text": "ok"}),
+            Turn(expect=lambda r: ("undid" in (r["messages"][-1]["text"] or "")) or f"the note does not say it: {r['messages'][-1]['text'][:200]}",
+                 answer={"text": "verstanden"}),
+        )
+        out = await self.ev("""
+const ed = ednow(DOC);
+host.shell.activate(ed);
+await window.scumble.assistant.send("leg eine an");
+for (let i = 0; i < 80; i++) { await wait(250); const s = await window.scumble.assistant.state(); if (!s.busy) break; }
+const t = await import("./assistant_turns.js");
+const out = t.restoreTurn();
+await window.scumble.assistant.turnUndone(out.turn, out.docs);
+await window.scumble.assistant.send("und nun?");
+for (let i = 0; i < 80; i++) { await wait(250); const s = await window.scumble.assistant.state(); if (!s.busy) break; }
+const s = await window.scumble.assistant.state();
+const done = [...s.events].reverse().find((e) => e.type === "turn:done") || {};
+return { restored: out, reason: done.reason, detail: done.detail };""", timeout=180)
+        if not out["restored"]["ok"] or out["reason"] != "end":
+            raise RuntimeError("the turn after the restore did not run: " + json.dumps(out))
+        return "the state note after a restore says the user undid the turn"
+
+    async def undo_turn_on_canvas(self):
+        """On the canvas backend there is no turn snapshot, and the panel says so."""
+        out = await self.ev("""
+const ed = ednow(DOC);
+return { tiles: !!ed.tileMode, snapshot: ed.turnSnapshot() };""")
+        if out["tiles"]:
+            if out["snapshot"] is None:
+                raise RuntimeError("no snapshot on the tile engine: " + json.dumps(out))
+            return "on tiles a turn snapshot is taken"
+        if out["snapshot"] is not None:
+            raise RuntimeError("the canvas backend took a full copy of every layer: " + json.dumps(out))
+        return "on the canvas backend no snapshot is taken (a full copy per layer would be 600 MB at 15k)"
+
+    async def undo_long_turn(self):
+        """A turn longer than the undo stack comes back whole: the snapshot sits outside it."""
+        if not await self.tiles():
+            return "skipped: the canvas backend takes no turn snapshot (turn_undo_is_refused_on_the_canvas_backend has it)"
+        self.mock.reset()
+        calls = [{"name": "add_paint_layer", "args": {"name": f"L{i}"}} for i in range(35)]
+        self.mock.push(
+            Turn(answer={"tool_calls": calls}),
+            Turn(answer={"text": "fertig"}),
+        )
+        out = await self.ev("""
+const ed = ednow(DOC);
+host.shell.activate(ed);
+const saved = (await window.scumble.settings.get()).assistant || {};
+await window.scumble.settings.set({ assistant: { ...saved, maxSteps: 40 } });
+const before = { layers: ed.layers.length, undo: ed.undo.length };
+await window.scumble.assistant.send("leg fuenfunddreissig ebenen an");
+for (let i = 0; i < 160; i++) { await wait(250); const s = await window.scumble.assistant.state(); if (!s.busy) break; }
+const after = { layers: ed.layers.length, undo: ed.undo.length, trimmed: ed.undo.length < 35 };
+const t = await import("./assistant_turns.js");
+const out = t.restoreTurn();
+await wait(500);
+const undone = { layers: ed.layers.length, names: ed.layers.map((l) => l.name).slice(0, 3) };
+await window.scumble.settings.set({ assistant: saved });
+return { before, after, undone, restored: out };""", timeout=300)
+        b, a, u = out["before"], out["after"], out["undone"]
+        if a["layers"] < b["layers"] + 30:
+            raise RuntimeError("the long turn did not run: " + json.dumps(out))
+        if not a["trimmed"]:
+            raise RuntimeError("the undo stack was not trimmed, so the step proves nothing: " + json.dumps(out))
+        if u["layers"] != b["layers"]:
+            raise RuntimeError("the turn did not come back whole: " + json.dumps(out))
+        return f"{a['layers'] - b['layers']} layers in one turn, the stack trimmed to {a['undo']}, all back"
+
+    async def undo_turn_two_documents(self):
+        """A turn that changed two documents restores both."""
+        if not await self.tiles():
+            return "skipped: the canvas backend takes no turn snapshot (turn_undo_is_refused_on_the_canvas_backend has it)"
+        self.mock.reset()
+        out1 = await self.ev("""
+const d = await run("new_document");
+await run("new_canvas", { doc: d.id, width: 320, height: 240, color: "#203040" });
+host.shell.activate(ednow(DOC));
+return { other: d.id };""")
+        other = out1["other"]
+        self.made_docs.append(other)
+        self.mock.push(
+            Turn(answer={"tool_calls": [
+                {"name": "add_paint_layer", "args": {"name": "In the first"}},
+                {"name": "activate_document", "args": {"doc": other}},
+                {"name": "add_paint_layer", "args": {"name": "In the second"}},
+            ]}),
+            Turn(answer={"text": "beide"}),
+        )
+        out = await self.ev("""
+const other = __O__;
+const a = ednow(DOC), b = ednow(other);
+const before = { a: a.layers.length, b: b.layers.length };
+await window.scumble.assistant.send("mach in beiden etwas");
+for (let i = 0; i < 120; i++) { await wait(250); const s = await window.scumble.assistant.state(); if (!s.busy) break; }
+const after = { a: a.layers.length, b: b.layers.length };
+const t = await import("./assistant_turns.js");
+const state = t.turnState();
+const out = t.restoreTurn();
+await wait(600);
+const undone = { a: a.layers.length, b: b.layers.length };
+host.shell.activate(ednow(DOC));
+return { before, after, undone, docs: state ? state.docs : null, restored: out };""".replace("__O__", json.dumps(other)), timeout=180)
+        b, a, u = out["before"], out["after"], out["undone"]
+        if a["a"] != b["a"] + 1 or a["b"] != b["b"] + 1:
+            raise RuntimeError("the turn did not reach both documents: " + json.dumps(out))
+        if u != b:
+            raise RuntimeError("both documents did not come back: " + json.dumps(out))
+        if len(out["docs"] or []) != 2:
+            raise RuntimeError("the turn held snapshots of one document only: " + json.dumps(out))
+        return f"documents {', '.join(str(d) for d in out['docs'])} both restored"
+
     # ---- the chats on disk (A6) -----------------------------------------------------------
 
     async def chat_survives(self):
@@ -615,7 +868,7 @@ await wait(300);
 const list = d.querySelector(".as-list");
 const last = (sel) => Array.from(list.querySelectorAll(sel)).pop() || null;
 const model = last(".as-bubble.as-model");
-const card = last(".as-card:not(.as-ask):not(.as-note)");
+const card = last(".as-card:not(.as-ask):not(.as-note):not(.as-undo)");   // the tool card, not the turn-undo card (A7)
 return {
     user: (last(".as-bubble.as-user") || {}).textContent,
     bold: !!(model && model.querySelector("strong")),
@@ -1263,6 +1516,13 @@ async def main():
             await g.run_step("the_picture_is_a_file_beside_the_chat", g.chat_history_is_byte_equal)
             await g.run_step("a_chat_reopened_with_another_model_is_read_only", g.chat_read_only)
             await g.run_step("the_oldest_chat_goes_above_the_limit", g.chats_are_pruned)
+            await g.run_step("ctrl_z_takes_back_each_assistant_step", g.undo_per_step)
+            await g.run_step("undo_of_a_turn_restores_what_was_before_it", g.undo_whole_turn)
+            await g.run_step("undo_of_a_turn_asks_when_the_user_edited_during_it", g.undo_turn_asks_after_an_edit)
+            await g.run_step("a_turn_of_thirty_five_steps_comes_back_whole", g.undo_long_turn)
+            await g.run_step("a_turn_over_two_documents_restores_both", g.undo_turn_two_documents)
+            await g.run_step("the_model_is_told_its_turn_was_undone", g.undo_turn_tells_the_model)
+            await g.run_step("turn_undo_is_refused_on_the_canvas_backend", g.undo_turn_on_canvas)
             await g.run_step("the_reset_deletes_every_chat_and_keeps_the_keys", g.reset_all)
         except Exception as e:  # noqa: BLE001
             g.results.append(False)

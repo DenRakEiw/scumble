@@ -80,7 +80,14 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **The assistant's chats are kept**: every chat is saved as it goes, with its screenshots beside it, and the
   panel's *Chats* button reopens one - on the model it was written with, or to read only. *Settings >
   Assistant* says how many chats to keep and how many tool calls one turn may take, and deletes everything
-  the assistant ever stored, its lines in the app log included. **Your API keys stay.** DeepSeek and Moonshot get
+  the assistant ever stored, its lines in the app log included. **Your API keys stay.**
+- **Everything the assistant does can be taken back.** Ctrl+Z undoes each of its steps, the ones the editor
+  records no step for included (a new layer, a filter setting, a text, a colour match). And when a turn is
+  done, the panel offers *Undo this turn*: every document it touched goes back to what it was before the
+  turn's first change there - the pixels, the selection, the prompt and the settings - even when the turn was
+  longer than the undo stack. Ctrl+Z takes that restore back in turn. It needs the tile engine; on the canvas
+  backend a copy of every layer would cost too much memory. If you edited something yourself while the turn
+  ran, the button says so before it discards your work. DeepSeek and Moonshot get
   *check balance* (their balance endpoints; not tried against the live services); a Moonshot key has to come from
   platform.kimi.ai, a Z.ai key has to be a pay-as-you-go key, not a GLM Coding Plan key.
 - A file dropped on the tab bar or a panel no longer navigates the window away from the editor, and a

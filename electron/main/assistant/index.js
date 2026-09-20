@@ -124,6 +124,8 @@ class Assistant {
                 wait: name === "screenshot" ? "soft" : !read,
                 refuseBusy: policy.RUNS.has(name),
                 turn: read ? undefined : (turn && turn.id),
+                // the editor's own step kind for this call, with the layer it is about (A7): the
+                // shell pushes it right before the command, for the calls the commands push none for
                 undo: read ? undefined : (turn && turn.undo),
                 signal: turn && turn.signal,
             };
@@ -469,6 +471,15 @@ class Assistant {
         return { id: saved.id, readOnly: !!chat.readOnly, reason, title: saved.title || "", turns: this.events.filter((e) => e.type === "user").length };
     }
 
+    /** The window took a whole turn back: the next state note says so (§4 A7). */
+    turnUndone({ turn, docs } = {}) {
+        if (this.chat) this.chat.undone = true;
+        this.lastTurn = null;
+        this.emit("note", { text: `the turn was taken back${(docs || []).length ? ` (document${docs.length > 1 ? "s" : ""} ${docs.join(", ")})` : ""}` });
+        this.record(`the user undid turn ${turn || ""}`);
+        return true;
+    }
+
     async deleteChat(id) {
         if (!this.deps.store) return false;
         await this.deps.store.remove(id);
@@ -746,7 +757,8 @@ class Assistant {
         }
 
         // ---- run it
-        turn.undo = policy.undoStep(canonical, { layers });
+        const undoKind = policy.undoStep(canonical, { layers });
+        turn.undo = undoKind ? { kind: undoKind, id: canonical.args.layer || null } : null;
         // what "Undo this turn" (A7) would take back: the documents a write reached, so a turn
         // that only read leaves `lastTurn` null
         if (!policy.READS.has(name) && doc !== undefined && doc !== null) turn.docs.add(doc);

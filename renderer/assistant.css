@@ -88,3 +88,4 @@
 .as-chat-note { color: #888; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .as-chat-del { background: none; border: 0; color: #777; font-size: 15px; padding: 0 8px; cursor: pointer; }
 .as-chat-del:hover { color: #e0533d; background: #2a2020; }
+.as-card.as-undo { border-left-color: #6a8f4a; }

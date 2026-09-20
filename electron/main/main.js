@@ -563,6 +563,7 @@ function installIpc() {
     ipcMain.handle("assistant:open", (_e, req) => getAssistant().openChat(String(req && req.id)));
     ipcMain.handle("assistant:delete", (_e, req) => getAssistant().deleteChat(String(req && req.id)));
     ipcMain.handle("assistant:resetAll", () => getAssistant().resetAll());
+    ipcMain.handle("assistant:turnUndone", (_e, req) => getAssistant().turnUndone(req || {}));
     ipcMain.handle("assistant:noticed", (_e, req) => {
         // the privacy notice was shown for this provider: the date, in the whole merged object (settings.js)
         const a = { ...settings.DEFAULTS.assistant, ...(settings.get().assistant || {}) };

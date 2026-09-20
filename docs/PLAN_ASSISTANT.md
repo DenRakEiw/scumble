@@ -2260,6 +2260,62 @@ show, and this harness cannot make one.
 half for turn undo. It is the only step that touches the shared editor file and its undo
 stack.
 
+
+### A7 as built (2026-09-20)
+
+Two levels, as the plan has them, and both in.
+
+**Per step.** `policy.undoStep` (A1) names the editor's own step kind for the call about to go
+out; `backendFor` sends it as `meta.undo` **with the layer it is about** (`{kind, id}`), and the
+shell's bridge handler calls `ed.pushUndo()` right before `commands.call` - after the
+user-activity wait, the busy check and the turn snapshot, with no await in between. No command
+and no editor behaviour changes for it; a request without `meta` takes today's path.
+
+**Per turn.** `turnSnapshot()` in `inpaint_canvas.js` is a `canvas` step **plus a copy-on-write
+clone of every layer's pixels and mask** - a `canvas` step keeps the layer objects by reference,
+which is enough for an extend or a crop (they replace pixels, never write them) but not for a
+row of edits that write into the layers the document still holds - **plus what no undo step
+holds at all**: the prompt, the negative prompt, the generation and crop settings and the
+recipe's setting values. On the canvas backend it answers `null` (a full copy of every layer is
+600 MB at 15,000 x 10,000) and the panel offers nothing there. `applySnapshot` gained a `turn`
+branch, `snapshot({kind:"turn"})` answers `turnSnapshot()`, and `releaseSnapshot` releases the
+per-layer clones - so a `turn` step behaves like any other on the stack.
+
+`renderer/assistant_turns.js` keeps the snapshots of **the last turn that changed something**,
+keyed by document id, each taken at that turn's **first** change in that document, so a turn
+that switched tabs restores both. It holds no editor (a closed tab takes its snapshot with it,
+`forgetDocument` from `closeDocument`). `restoreTurn()` pushes the present state as one `turn`
+step first, so **Ctrl+Z takes the restore back and redo does it again**; the steps the turn
+pushed stay on the stack below it, and because the snapshot sits outside the stack, **a turn of
+thirty-five steps comes back whole** although the stack was trimmed to thirty.
+
+**The user's own edits** during a turn are watched as **trusted** pointer, key and input events
+inside an editor's root - the assistant's own calls are synthetic and never count. When one of
+the turn's documents has one, the button says so and only the second press discards them. After
+a restore the panel calls `assistant:turnUndone`, which sets `chat.undone`, so the next state
+note begins with the user having undone the turn (A1 already wrote that sentence).
+
+**Gate:** six new steps, **36 in all** - `ctrl_z_takes_back_each_assistant_step`,
+`undo_of_a_turn_restores_what_was_before_it` (the prompt, the layers and the selection as they
+were before the turn, then Ctrl+Z back to after it), `a_turn_of_thirty_five_steps_comes_back_whole`
+(the stack trimmed, the turn whole), `a_turn_over_two_documents_restores_both`,
+`undo_of_a_turn_asks_when_the_user_edited_during_it`, `the_model_is_told_its_turn_was_undone`,
+`turn_undo_is_refused_on_the_canvas_backend`. A mutation round of **13 against a restarted app**.
+
+**A trap worth keeping:** a test cannot fake the user. `dispatchEvent(new KeyboardEvent(...))`
+is never trusted, and the watcher counts trusted events alone - which is exactly what keeps the
+assistant's own calls from looking like the user's hand. The gate uses CDP `Input.insertText`
+into the editor's own prompt field instead. **And a trap about the round itself:** a mutation
+that breaks a run leaves the gate's test keys in the profile, and every later run dies in
+`setup` ("this profile holds a key"); a runner that counts that as red proves nothing. The
+runner clears the rows before each run and calls a run that never started VOID.
+
+**What is not covered by a check, and is written down instead:** the per-layer clone. Every
+auto call that writes pixels in place needs an ask (`flatten`, `extend_canvas`, `generate`), so
+the gate's turn writes pixels only through the selection - which the selection clone covers.
+The layer clones are what a `generate` result or a merge inside a turn would need, and only a
+run with a real provider or a longer scripted turn would show them.
+
 ### A8. The whole gate, the measurements and the docs (three days)
 
 **Purpose.** A gate that proves the whole path in the app without a key; the cost of the

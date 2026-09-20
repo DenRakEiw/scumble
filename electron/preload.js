@@ -155,6 +155,7 @@ contextBridge.exposeInMainWorld("scumble", {
         open: (id) => ipcRenderer.invoke("assistant:open", { id }),
         delete: (id) => ipcRenderer.invoke("assistant:delete", { id }),
         resetAll: () => ipcRenderer.invoke("assistant:resetAll"),
+        turnUndone: (turn, docs) => ipcRenderer.invoke("assistant:turnUndone", { turn, docs }),
         onEvent: (cb) => on("assistant:event", cb),
     },
     updates: {

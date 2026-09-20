@@ -321,8 +321,34 @@ and it is the plan's own:** the **one line per turn in the app log** (A1's, the 
 without the rename, which only a crash mid-write would show). Gates `--offline` on both backends
 (`editor log mcp commands assistant`): **ALL PASS** (`a6-tiles` after two known start-of-instance flakes
 of `editor` - `a_settled_read...` and `erase_stroke...`, the third run 68 of 68 -, `a6-canvas` at the
-first try). **Next: A7** (undo per step and "Undo this turn"), then A8 (the whole gate and the docs) and
-A9 (the live check and the release).
+first try). **A7 followed the same day** (the next paragraph).
+
+**2026-09-20: A7 is built - Ctrl+Z for every step, and "Undo this turn"** (`docs/PLAN_ASSISTANT.md`
+"A7 as built"). **Per step:** `policy.undoStep` names the editor's own step kind for the call about to go
+out, `backendFor` sends it as `meta.undo` with the layer it is about, and the shell's handler calls
+`ed.pushUndo()` right before `commands.call` - no command and no editor behaviour changes for it.
+**Per turn:** `turnSnapshot()` / `restoreTurn()` in `inpaint_canvas.js` (a `canvas` step **plus a
+copy-on-write clone of every layer's pixels and mask** - a `canvas` step keeps the layers by reference,
+which a row of edits that write in place would lose - **plus what no undo step holds**: prompt, negative
+prompt, generation and crop settings, the recipe's setting values), `applySnapshot`'s new `turn` branch and
+`releaseSnapshot` releasing the clones. `renderer/assistant_turns.js` keeps the last changing turn's
+snapshots, **one per document, taken at that turn's first change there**, holds no editor, and a closed tab
+takes its snapshot with it. The restore pushes the present as one `turn` step, so **Ctrl+Z takes the
+restore back**; the snapshot sits outside the stack, so **a turn of 35 steps comes back whole** although
+the stack trimmed to 30. **The user's own edits** during a turn are watched as **trusted** pointer, key and
+input events inside an editor root, and the button asks before it discards them. After a restore
+`assistant:turnUndone` sets `chat.undone`, so the next state note says so. **Canvas backend:** no snapshot
+(600 MB per full layer at 15k), and the gate's four turn steps skip there,
+`turn_undo_is_refused_on_the_canvas_backend` being the check instead. Gate **36 steps**, a mutation round
+of **13, 12 red** (the green one takes the per-layer clones out: every auto call that writes pixels in
+place asks first, so only the selection's clone is covered by a step - written down, not papered over).
+Gates `--offline` on both backends (`editor composite pixels nodecopy mcp commands assistant`): **ALL
+PASS** (`a7-tiles`, `a7-canvas` / `a7-canvas2`). **Traps worth keeping:** a test cannot fake the user -
+`dispatchEvent(new KeyboardEvent(...))` is never trusted, which is the point of the rule; the gate uses CDP
+`Input.insertText` into the editor's own prompt field. And a mutation that breaks a gate run leaves the
+gate's test keys in the profile, so every later run dies in `setup` - a runner that counts that as red
+proves nothing. **Next: A8** (the rest of the gate, the measurements and the docs), then A9 (the live check
+and the release).
 
 ## Where things stand (2026-09-19)
 

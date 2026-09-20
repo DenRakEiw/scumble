@@ -6814,6 +6814,14 @@ class InpaintEditor {
             if (p && typeof p.release === "function") p.release();
             snap[k] = null;
         }
+        // a turn step holds one clone per layer (turnSnapshot); a restore took them out first
+        if (Array.isArray(snap.pixels)) {
+            for (const p of snap.pixels) {
+                if (p && p.px && typeof p.px.release === "function") p.px.release();
+                if (p && p.maskPx && typeof p.maskPx.release === "function") p.maskPx.release();
+            }
+            snap.pixels = null;
+        }
     }
 
     /**
@@ -6830,12 +6838,67 @@ class InpaintEditor {
         return c;
     }
 
+    /**
+     * The whole document as one step (`{kind: "turn"}`), for the assistant's "Undo this turn"
+     * (docs/PLAN_ASSISTANT.md §4 A7). It is a `canvas` step plus **a copy-on-write clone of every
+     * layer's pixels and mask** - a canvas step keeps the layer objects by reference, which is
+     * enough for an extend or a crop (they replace pixels, never write them), but a turn is a
+     * row of edits that write into the layers the document still holds. The clones cost nothing
+     * to take on tiles; on the canvas backend a full copy of every layer would be 600 MB at
+     * 15,000 x 10,000, so there this answers **null** and the panel says so.
+     *
+     * It also holds what no undo step holds: the prompt, the negative prompt, the generation and
+     * crop settings and the recipe's setting values, which `set_prompt`, `set_generation`,
+     * `set_crop` and `set_settings` change and no step of the editor's own covers.
+     */
+    turnSnapshot() {
+        if (!this.tileMode || !this.sel) return null;
+        const pixels = [];
+        const layers = this.layers.map((l) => {
+            const record = this.snapshotLayer(l);
+            pixels.push({ id: l.id, px: l.px ? l.px.clone() : null, maskPx: l.maskPx ? l.maskPx.clone() : null });
+            return record;
+        });
+        return {
+            kind: "turn",
+            base: this.base,
+            width: this.width,
+            height: this.height,
+            selPx: this.sel.clone(),
+            layers,
+            pixels,
+            activeLayerId: this.activeLayerId,
+            doc: {
+                prompt: this.promptText,
+                negative: this.negativeText,
+                gen: JSON.parse(JSON.stringify(this.genSettings || {})),
+                crop: JSON.parse(JSON.stringify(this.cropSettings || {})),
+                settings: JSON.parse(JSON.stringify(this.settings || {})),
+            },
+        };
+    }
+
+    /**
+     * Put a turn snapshot back and leave the way back on the undo stack: the present goes on as
+     * one `turn` step, so Ctrl+Z takes the restore back and redo does it again, like any step.
+     * The steps the turn itself pushed stay below it; nothing is collapsed.
+     */
+    restoreTurn(snap) {
+        if (!snap || snap.kind !== "turn" || !this.tileMode) return false;
+        const now = this.turnSnapshot();
+        if (now) this.pushUndoSnapshot(now);
+        this.applySnapshot(snap);
+        this.scheduleDetachedRelease();
+        return true;
+    }
+
     snapshot(step) {
         if (step.kind === "layerrect") {
             const l = this.layers.find((x) => x.id === step.id);
             return l ? this.snapshotRect(l, step, step.mask, true) : null;
         }
         if (step.kind === "selection") return this.snapshotSelection();
+        if (step.kind === "turn") return this.turnSnapshot();
         if (step.kind === "layers") return { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), activeLayerId: this.activeLayerId };
         // On tiles a whole-layer step (and the canvas step's selection) holds a copy-on-write clone of the pixels
         // instead of a PNG: a clone shares every tile, costs nothing to take or to restore, and never materialises
@@ -6968,6 +7031,57 @@ class InpaintEditor {
             this.uploaded.baseHash = null;
             this.uploaded.controlHash = null;
             this.renderLayers(); this.renderHistory(); this.draw(); this.drawThumb(); this.notifyChanged();
+            return;
+        }
+        if (snap.kind === "turn") {
+            if (this.pending) this.cancelPending();
+            if (this.textEdit) this.endTextEdit(false);
+            const byId = new Map((snap.pixels || []).map((p) => [p.id, p]));
+            this.base = snap.base;
+            this.width = snap.width;
+            this.height = snap.height;
+            this.layers = snap.layers.map((l) => {
+                const kept = byId.get(l.id);
+                const copy = installLayerAliases({ ...l, dirty: true, exportRef: null, _maskedValid: false, _mcache: null, _fcache: null, _fxCache: null }, this.pixels);
+                // the clones move into the document; the step must not hand them out twice
+                if (kept) {
+                    if (kept.px) { copy.px = kept.px; kept.px = null; }
+                    if (kept.maskPx) { copy.maskPx = kept.maskPx; kept.maskPx = null; copy.maskDirty = true; }
+                }
+                return copy;
+            });
+            snap.pixels = null;
+            this.activeLayerId = this.layers.some((l) => l.id === snap.activeLayerId) ? snap.activeLayerId : null;
+            const sel = snap.selPx || this.pixels.Mask.empty(this.width, this.height);
+            snap.selPx = null;
+            this.sel = sel;
+            this.touchSource(sel);
+            this.uploaded = this.makeUploaded();
+            this.selectionDirty = true; this.selectionLoose = false;
+            this.selectionDataUrl = null; this.selectionEncoded = false;
+            // what no undo step holds: the fields set_prompt, set_generation, set_crop and
+            // set_settings change; put back the way setValue puts them back
+            const doc = snap.doc || {};
+            if (doc.prompt !== undefined) {
+                this.promptText = doc.prompt;
+                if (this.promptInput) this.promptInput.value = doc.prompt;
+            }
+            if (doc.negative !== undefined) {
+                this.negativeText = doc.negative;
+                if (this.negativeInput) this.negativeInput.value = doc.negative;
+            }
+            if (doc.gen) this.genSettings = JSON.parse(JSON.stringify(doc.gen));
+            if (doc.crop) { this.cropSettings = JSON.parse(JSON.stringify(doc.crop)); this.syncCropControls(); }
+            if (doc.settings) this.settings = JSON.parse(JSON.stringify(doc.settings));
+            this.syncGenControls();
+            this.renderSettings();
+            this.renderLayers();
+            this.renderInfo();
+            this.renderHistory();
+            this.draw();
+            this.drawThumb();
+            this.notifyChanged();
+            this.setStatus("The assistant's turn was taken back.");
             return;
         }
         if (snap.kind === "canvas") {

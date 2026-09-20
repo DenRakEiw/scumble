@@ -16,6 +16,7 @@
 //   `textContent` (`renderText`), so a picture's text, a layer name or a log line can never
 //   become HTML. `no_markup_writes` in tools/assistant_test.js holds this file to it.
 import { host } from "./editor/host.js";
+import { turnState, restoreTurn, forgetTurns } from "./assistant_turns.js";
 
 const OPEN_KEY = "shell.assistant.open";
 const THUMB_MAX = 240;
@@ -510,6 +511,7 @@ function onEvent(e) {
             if (e.reason && e.reason !== "end") note(doneWords(e), e.reason === "error" ? "as-bad" : "");
             if (e.usage) usage = e.usage;
             showCost();
+            undoCard();
             syncButton();
             break;
         case "agents":
@@ -559,6 +561,54 @@ function showNotice() {
     if (ui.pickNote) lines.push(ui.pickNote);
     ui.notice.textContent = lines.join(" · ");
     ui.notice.classList.toggle("as-warn", !!ui.baseNote || !!agents);
+}
+
+// ---- undo the whole turn (A7) ---------------------------------------------------------------
+
+/**
+ * After a turn that changed something: one card with "Undo this turn". It takes every document
+ * the turn touched back to the state it had before the turn's first change there - which is more
+ * than Ctrl+Z, because it covers the calls that record no undo step at all (the prompt, the
+ * generation settings, the crop, the recipe's settings) and a turn of more than thirty steps.
+ */
+function undoCard() {
+    const state = turnState();
+    if (!state) return;
+    const card = el("div", "as-card as-undo");
+    const head = el("div", "as-card-head");
+    head.appendChild(el("span", "as-card-name", "this turn"));
+    head.appendChild(el("span", "as-card-state", `document${state.docs.length > 1 ? "s" : ""} ${state.docs.join(", ")}`));
+    card.appendChild(head);
+    const button = el("button", null, "Undo this turn");
+    button.type = "button";
+    const row = el("div", "as-card-buttons");
+    row.appendChild(button);
+    card.appendChild(row);
+    button.addEventListener("click", () => askThenUndo(card, button));
+    add(card);
+}
+
+function askThenUndo(card, button) {
+    const state = turnState();
+    if (!state) { button.disabled = true; return; }
+    if (state.edited.length && !card.dataset.asked) {
+        // work that is not the assistant's would go with it: the user says so first
+        card.dataset.asked = "1";
+        card.appendChild(el("div", "as-reason",
+            `You edited document${state.edited.length > 1 ? "s" : ""} ${state.edited.join(", ")} since this turn started; undoing the turn discards those edits too.`));
+        button.textContent = "Undo anyway";
+        return;
+    }
+    const out = restoreTurn();
+    button.disabled = true;
+    if (!out.ok) {
+        card.appendChild(el("div", "as-reason", "nothing of this turn could be taken back" + (out.missing && out.missing.length ? ` (document${out.missing.length > 1 ? "s" : ""} ${out.missing.join(", ")} closed)` : "")));
+        return;
+    }
+    button.textContent = "Turn taken back";
+    if (out.missing && out.missing.length) card.appendChild(el("div", "as-reason", `document${out.missing.length > 1 ? "s" : ""} ${out.missing.join(", ")} could not be restored (closed)`));
+    card.appendChild(el("div", "as-note", "Ctrl+Z takes this restore back; the steps of the turn stay on the stack below it."));
+    api().turnUndone(out.turn, out.docs).catch(() => { /* the model is told at the next turn anyway */ });
 }
 
 // ---- the chats on disk (A6) -----------------------------------------------------------------
@@ -630,6 +680,7 @@ async function openChat(id) {
 /** Settings deleted everything the assistant stored: the panel goes back to how it started. */
 export function resetAssistant() {
     if (!started) return;
+    forgetTurns();
     ui.list.textContent = "";
     ui.chatList.textContent = "";
     ui.chatList.hidden = true;
@@ -677,6 +728,7 @@ function stop() {
 
 async function newChat() {
     await api().reset().catch(() => {});
+    forgetTurns();
     ui.chatList.hidden = true;
     ui.text.disabled = false;
     ui.send.disabled = false;

@@ -8,6 +8,7 @@ import { setPixelsOptions } from "./editor/inpaint_pixels.js";
 import { commands, docSummary } from "./commands.js";
 import * as plugins from "./plugins.js";
 import { waitForUser, editorOf } from "./assistant_wait.js";
+import { beforeCall as snapshotTurn, watchUserEdits, forgetDocument } from "./assistant_turns.js";
 import { initAssistant, toggleAssistant, resetAssistant } from "./assistant.js";
 
 const $ = (id) => document.getElementById(id);
@@ -150,6 +151,8 @@ function closeDocument(editor, { force = false } = {}) {
     if (!editor) return;
     if (!force && editor.base && busy(editor) && !window.confirm(`${docName(editor)} is still working. Close it anyway?`)) return;
     if (!force && editor.base && !window.confirm(`Close ${docName(editor)}? The document stays in the local file store, but it leaves the tab bar.`)) return;
+    // a turn snapshot of this document goes with the tab (A7): its clones hold tiles
+    try { forgetDocument(editor.node && editor.node.id); } catch (err) { console.warn(err); }
     host.removeEditor(editor);
     try { editor.destroy(); } catch (err) { console.warn(err); }
     if (!host.editors().length) newDocument();
@@ -1584,6 +1587,19 @@ window.scumble.commands.onRequest(async ({ id, name, args, meta }) => {
         const ed = editorOf(args && args.doc);
         if (ed && docSummary(ed).busy) return reply({ ok: false, error: "the document is busy: a run is in progress; nothing was run" });
     }
+    if (meta && meta.turn) {
+        // the turn's snapshot of this document (A7), taken once per turn and document, and the
+        // editor's own undo step for the calls the commands record none for. No await from here
+        // to commands.call: what they hold is the state the command is about to change.
+        snapshotTurn(meta, args && args.doc);
+        if (meta.undo && meta.undo.kind) {
+            const ed = editorOf(args && args.doc);
+            if (ed && typeof ed.pushUndo === "function") {
+                try { ed.pushUndo(meta.undo.id ? { kind: meta.undo.kind, id: meta.undo.id } : { kind: meta.undo.kind }); }
+                catch (err) { console.warn("assistant: the undo step could not be pushed", err); }
+            }
+        }
+    }
     reply(await commands.call(name, args || {}));
 });
 
@@ -1614,6 +1630,7 @@ window.scumble.commands.ready();
 // the assistant's column (docs/PLAN_ASSISTANT.md A5): built last, so its window key listener is
 // registered before any editor question's, and it sees a chat key first
 initAssistant({ openSettings });
+watchUserEdits();
 const assistantButton = $("shell-assistant");
 if (assistantButton) assistantButton.addEventListener("click", () => toggleAssistant());
 
