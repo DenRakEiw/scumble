@@ -378,7 +378,11 @@ so no gate turn reaches it). **What the user has to bring:** a key that can pay 
 Google (their stored ones were invalid or capped on 2026-09-20), or an OpenRouter key, which would also
 cover the seven Chat Completions providers and the route comparison. **Optional and only on the user's
 word:** A10 (a budget, "allow for this chat", a basic tool set) and A11 (the assistant's own undo steps).
-**After the assistant comes SignPath** (the user, 2026-09-19: "assistant kommt vor codesignierung").
+**Reported by the user the same evening, on the list, not fixed:** the picker marks **every** model "not
+tried with a real key" and so reads as a warning about the app (`docs/BUGS.md`, "The assistant's picker
+warns about itself"); what the mark should be instead is the user's call, and the honest sentence belongs
+in `docs/ASSISTANT.md`, not on every row. **After the assistant comes SignPath** (the user, 2026-09-19:
+"assistant kommt vor codesignierung").
 
 ## Where things stand (2026-09-19)
 
