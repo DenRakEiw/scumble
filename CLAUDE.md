@@ -121,7 +121,8 @@ editor composite commands mcp toapis llm openrouter export assistant) **ALL PASS
 (tiles off: pixels editor composite film export assistant) with `editor` and `composite` red and **both green on the
 rerun `rel22-exe-canvas-b`**, each a known flake (the live stroke says "a real mouse over the window?", composite's
 source windows the same shape as the 0.1.19 release). **No `smoke`** (it needs the user's ComfyUI), and no model has
-run against a live API. The tag `v0.1.22` is pushed and CI builds the draft; **publishing it is the user's** (check
+run against a live API. The tag `v0.1.22` is pushed, CI built the draft, and **0.1.22 is Latest since 2026-09-20**
+on the user's word ("machen wir klar", the same evening); `latest.yml` on the feed answers `version: 0.1.22` (check
 `gh release list` before believing any release state written down anywhere).
 
 **2026-09-20: the two defects the OpenRouter session found are fixed, for 0.1.21** (`docs/BUGS.md` "Fixed, waiting
