@@ -362,11 +362,23 @@ instead is **36 gate steps and 66 mutations across A4 to A7**. **A9:** `npm run 
 `rel21-exe` (tiles: log pixels editor composite commands mcp assistant toapis llm export) and
 `rel21-exe-canvas` (tiles off: pixels editor composite film export assistant), the assistant gate **36 of 36
 on both**. The CHANGELOG's 0.1.21 section is dated 2026-09-20 and its assistant part rewritten (it is in this
-version, not "coming"); the tag **`v0.1.21`** is pushed and CI builds the draft. **The user publishes the
-draft** (`gh release list` before believing any release state written down anywhere). **No `smoke`** (the
-user's ComfyUI was not free), and **no model has completed a task against a live API** - the picker marks
-every provider "not tried with a real key", and that is what the user's own bug hunt after the release is
-for.
+version, not "coming"); the tag **`v0.1.21`** is pushed, CI built the draft, and **the user published it the
+same evening: 0.1.21 is Latest since 2026-09-20** (`latest.yml` on the feed answers `version: 0.1.21`; check
+`gh release list` before believing any release state written down anywhere). **No `smoke`** (the user's
+ComfyUI was not free), and **no model has completed a task against a live API** - the picker marks every
+provider "not tried with a real key", and that is what the user's own bug hunt after the release is for.
+
+**Where the assistant stands after 0.1.21, for whoever comes next.** Built and shipped: A0 to A9 of
+`docs/PLAN_ASSISTANT.md` (each with its own "as built" section there). **What is not done, and why:** the
+checkpoint's model-by-model verdicts and A8's measurements at 15k, both on the user's word ("lass uns das
+testing ueberspringen, machen wir nach release mach dann eh extreme bug suchen"); the remaining gate steps
+of §6 and the plan's twenty-one-mutation round (36 gate steps and 66 mutations exist instead); the per-layer
+clone of a turn snapshot has no check of its own (every auto call that writes pixels in place asks first,
+so no gate turn reaches it). **What the user has to bring:** a key that can pay - Anthropic, OpenAI or
+Google (their stored ones were invalid or capped on 2026-09-20), or an OpenRouter key, which would also
+cover the seven Chat Completions providers and the route comparison. **Optional and only on the user's
+word:** A10 (a budget, "allow for this chat", a basic tool set) and A11 (the assistant's own undo steps).
+**After the assistant comes SignPath** (the user, 2026-09-19: "assistant kommt vor codesignierung").
 
 ## Where things stand (2026-09-19)
 
