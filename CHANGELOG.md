@@ -56,6 +56,16 @@ the section for its version; `docs/` and the commit history hold the technical d
   declines to rewrite the prompt now says why instead of "content_filter", and an answer that breaks off with an error
   partway through is no longer taken as the prompt.
 - The descriptions of the MCP commands `select_recipe` and `upsample_prompt` name OpenRouter (and ToAPIs).
+- **FLUX.2 [flex] on fal ran with 2 steps.** Its *Steps* and *Safety tolerance* rows shared one settings slot, so the
+  panel showed *Safety tolerance* where *Steps* belonged and sent that value as the step count as well: a run with the
+  defaults asked fal for 2 steps instead of 50. The three rows (*Steps*, *Guidance*, *Safety tolerance*) are three rows
+  again. Only FLUX.2 [flex] on fal was affected; the same model on Black Forest Labs, ToAPIs, Replicate, WaveSpeed and
+  OpenRouter was right, and so is every other recipe.
+- **A recipe with several providers can be imported.** *Settings › Recipes › Import* took an API recipe only in
+  the old shape with a single provider and turned away the shape every shipped recipe has, so you could not copy one,
+  add a model of your own to it and bring it back in. It imports now, with all its variants, and the note says which
+  providers came in; a copy that keeps the shipped id replaces that recipe in the list, as a copy put into the recipes
+  folder by hand always did.
 
 ## 0.1.20 — 2026-09-19
 

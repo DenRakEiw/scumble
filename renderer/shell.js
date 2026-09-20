@@ -465,10 +465,14 @@ async function importRecipe(file) {
         await loadRecipes();
         renderRecipeList();
         selectRecipe(r.id);
-        ui.recipeNoteSet.textContent = `Imported "${r.name}" (${r.mode}, ${Object.keys(r.prompt || {}).length} nodes, ${(r.settings || []).length} settings)` + (r.notes && r.notes.length ? ": " + r.notes.join("; ") : ".");
+        const ids = r.providerIds || [];
+        const what = r.kind === "provider"
+            ? `${ids.length} provider${ids.length === 1 ? "" : "s"}: ${ids.join(", ")}`
+            : `${r.mode}, ${Object.keys(r.prompt || {}).length} nodes, ${(r.settings || []).length} settings`;
+        ui.recipeNoteSet.textContent = `Imported "${r.name}" (${what})` + (r.notes && r.notes.length ? ": " + r.notes.join("; ") : ".");
         return r;
     } catch (err) {
-        ui.recipeNoteSet.textContent = String(err.message || err);
+        ui.recipeNoteSet.textContent = String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, "");
         return null;
     }
 }

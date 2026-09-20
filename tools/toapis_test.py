@@ -51,7 +51,10 @@ SETUP = """
 const had = await window.scumble.keys.list();
 if ((had.keys || {}).toapis && had.keys.toapis.set) throw new Error("this profile holds a ToAPIs key; the test never overwrites a key");
 const s = await window.scumble.settings.get();
-window.__tp = { toapis: s.toapis, recipe: host.recipe, stored: false, recipeProviders: s.recipeProviders || {} };
+// the renderer keeps its own copy of the settings, so the provider every recipe runs on is noted here too
+const actives = {};
+for (const r of (await run("list_recipes")).recipes) if (r.provider) actives[r.id] = r.provider;
+window.__tp = { toapis: s.toapis, recipe: host.recipe, stored: false, recipeProviders: s.recipeProviders || {}, actives };
 await window.scumble.settings.set({ toapis: { base: __MOCK__ } });
 const d = await run("new_document");
 window.__tpDoc = d.id;
@@ -260,7 +263,17 @@ return { seconds: (Date.now() - t0) / 1000, status: ed.status };
 CLEANUP = """
 const out = {};
 if (window.__tp && window.__tp.stored) { await window.scumble.keys.clear("toapis"); out.keyCleared = true; }
-if (window.__tp) { await window.scumble.settings.set({ toapis: window.__tp.toapis, recipeProviders: window.__tp.recipeProviders }); if (window.__tp.recipe) host.setRecipe(window.__tp.recipe); }
+if (window.__tp) {
+    // every recipe this test switched goes back to the provider it ran on, in the renderer as well as in the
+    // stored settings: a later gate in the same instance reads the renderer's choice (list_recipes) and the
+    // stored map, and a mismatch between them is a failure of that gate
+    const now = {};
+    for (const r of (await run("list_recipes")).recipes) if (r.provider) now[r.id] = r.provider;
+    out.switchedBack = [];
+    for (const [id, was] of Object.entries(window.__tp.actives || {})) if (now[id] && now[id] !== was) { host.shell.selectRecipe(id, was); out.switchedBack.push(id + ":" + now[id] + "->" + was); }
+    await window.scumble.settings.set({ toapis: window.__tp.toapis, recipeProviders: window.__tp.recipeProviders });
+    if (window.__tp.recipe) host.setRecipe(window.__tp.recipe);
+}
 for (const d of document.querySelectorAll("dialog[open]")) d.close();
 if (window.__tpDoc) { try { await run("close_document", { doc: window.__tpDoc, force: true }); } catch (_) { /* gone */ } }
 const k = await window.scumble.keys.list();

@@ -161,7 +161,7 @@
           ]
         },
         {
-          "index": 1,
+          "index": 3,
           "key": "safety_tolerance",
           "label": "Safety tolerance",
           "spec": [

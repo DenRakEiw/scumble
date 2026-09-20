@@ -64,11 +64,21 @@ Settings › Recipes › Import workflow (or File › Import Workflow as Recipe)
 - an API-format prompt (Export (API) in ComfyUI, or a prompt the node queued): the
   `result_source[_local]` inputs of the canvas node give the result wiring, inputs
   linked to `setting_n` outputs become settings.
-- a Scumble recipe file.
+- a Scumble recipe file: a ComfyUI recipe, or a provider recipe in either shape - the
+  `providers` map every shipped one has, or the old single `provider`. So a shipped
+  recipe can be copied out of `recipes/`, given a variant of its own (a model id the app
+  does not ship, for one) and imported; a `kind: "provider"` file that names no provider
+  at all is refused with a message saying so.
 
 The result input that is wired decides the mode (`result_local` wins when both are).
 Setting outputs keep the value the target widget had. The import goes to the user
-folder and is selected right away; Remove deletes it, Use selects it.
+folder and is selected right away; Remove deletes it, Use selects it. An imported recipe
+that keeps a shipped recipe's id shadows it in the list, as a copy placed in
+`%APPDATA%/Scumble/recipes/` by hand does.
+
+Every settings row of a recipe needs a slot (`index`) of its own, 1 to 8: the editor
+stores one value per slot, so two rows on one slot send that one value under both keys
+(`node tools/recipes_test.js` checks every shipped recipe for it).
 
 ## Provider recipes (`kind: "provider"`)
 

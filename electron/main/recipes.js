@@ -402,6 +402,12 @@ function fromPrompt(src, objectInfo, meta) {
     return { kind: "comfy", mode, canvas: canvasId, result: resultLocal || resultApi, needs, settings, prompt, description: `Imported from ${meta.file} on ${meta.date}.` + (notes.length ? " " + notes.join("; ") + "." : ""), notes };
 }
 
+/** A provider recipe names its variants in a `providers` map, or, in the old shape, one `provider`. */
+function hasVariants(data) {
+    const p = data.providers;
+    return !!(data.provider || (p && typeof p === "object" && !Array.isArray(p) && Object.keys(p).length));
+}
+
 function looksLikePrompt(obj) {
     const vals = Object.values(obj || {});
     return vals.length > 0 && vals.every((v) => v && typeof v === "object" && typeof v.class_type === "string");
@@ -419,8 +425,8 @@ async function importFile(file, objectInfo) {
     let recipe;
     if (data && data.kind && data.prompt && data.canvas) {
         recipe = { ...data };            // a Scumble recipe file
-    } else if (data && data.kind === "provider" && data.provider) {
-        recipe = { ...data };
+    } else if (data && data.kind === "provider" && hasVariants(data)) {
+        recipe = { ...data };            // a provider recipe, in either shape
     } else if (data && Array.isArray(data.nodes)) {
         if (!objectInfo) throw new Error("Reading a workflow saved from the ComfyUI UI needs the node definitions: connect to ComfyUI first (or export the workflow in API format).");
         recipe = fromWorkflow(data, objectInfo, meta);
@@ -430,6 +436,7 @@ async function importFile(file, objectInfo) {
         if (!objectInfo) throw new Error("Reading a workflow saved from the ComfyUI UI needs the node definitions: connect to ComfyUI first.");
         recipe = fromWorkflow(data.workflow, objectInfo, meta);
     } else {
+        if (data && data.kind === "provider") throw new Error("This provider recipe names no provider: it needs a `providers` map (or, in the old shape, a `provider`).");
         throw new Error("This file is neither a ComfyUI workflow, an API-format prompt nor a Scumble recipe.");
     }
     const stem = path.basename(file).replace(/\.json$/i, "");
@@ -438,7 +445,8 @@ async function importFile(file, objectInfo) {
     // never shadow a shipped recipe silently
     recipe.id = recipe.id.replace(/^flux2_klein_local$/, "flux2_klein_local_imported");
     const saved = await save(recipe);
-    return { ...recipe, file: path.basename(saved), source: "user" };
+    // the file keeps the shape it was written in; the caller gets the recipe as list() serves it
+    return normalize({ ...recipe, file: path.basename(saved), source: "user" });
 }
 
 module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, userDir };

@@ -78,6 +78,31 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-16) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
+## Where things stand (2026-09-20)
+
+**2026-09-20: the two defects the OpenRouter session found are fixed, for 0.1.21** (`docs/BUGS.md` "Fixed, waiting
+for its release"; CHANGELOG 0.1.21; `docs/RECIPES.md` "Import"). (1) **FLUX.2 [flex] on fal** carried
+`num_inference_steps` and `safety_tolerance` both at `"index": 1`; measured in the app on the old file before the fix,
+the panel showed two rows instead of three (no *Steps* at all) and the request went out as
+`num_inference_steps: "2", guidance_scale: 2.5, safety_tolerance: "2"` - 2 steps instead of 50, and as a string. The
+row is slot 3 now. (2) **A recipe with a `providers` map could not be imported** (`importFile` took only the old
+one-provider shape): `hasVariants` takes either shape, an empty map and an array count as no provider and get a
+message of their own, and `importFile` answers the **normalized** recipe as `list()` serves it - two defects of the
+same path that came with it, because the Settings note read "Imported ... (undefined, 0 nodes, 0 settings)" for a
+provider recipe (it names the providers now) and the refusal carried the IPC prefix (stripped, as the file's three
+other handlers do). **New gate `recipes`** (`tools/recipes_test.js` in plain Node, then `tools/recipes_test.py` in
+the app): every settings row of every shipped recipe owns its slot (1 to 8) and its key - 138 rows in 91 provider
+variants plus the comfy recipes, the only shared slot in the tree was the FLUX one - and the importer in both shapes,
+what stays refused, and the import through the Settings dialog end to end. A mutation round of **19 turned a check
+red, all 19** (17 in Node, 2 in the renderer against a restarted app). Gates `--offline` on both backends
+(`recipes pixels editor composite commands size transparent generate log mcp toapis openrouter ark llm`):
+**ALL PASS on tiles and on the canvas backend**, each at the first try. **Found on the way and fixed:** the `toapis`
+gate left the *window's* view of `gpt_image_2` on toapis while restoring the stored settings, which made the
+`openrouter` gate red when it ran after it (`openrouter` alone on a fresh profile passed); its cleanup now puts every
+recipe it switched back through `selectRecipe`, and the trap is in "Testing and benchmarking" below. **0.1.21 is
+still unreleased** (0.1.20 is Latest); ComfyUI (8188) did not answer in this session, so the two points that need it
+are still open.
+
 ## Where things stand (2026-09-19)
 
 **2026-09-19, evening: OpenRouter (item 12) is built, for 0.1.21** (`package.json` 0.1.21, `CHANGELOG.md` "0.1.21 —
@@ -475,12 +500,14 @@ import order), and twelve sites in four subjects read switches on the class name
 that subject is reworked anyway, as the prelude of that work; (2) **the object tool's change A is parked**: if the coarse
 outlines at 15k turn out to matter, compute the image-size label map only in the hovered object's box, on demand,
 never for the whole picture; (3) **B item 6 stays on ice** (it saves memory, not time; 97 GB of RAM and the 15.5 GB cap
-are not the limit at 15k). **Next, in this order:** after the user's ComfyUI restart, one local run on a large document
-with the node's stitch fix (`fba1fd8`); the node in a real ComfyUI tab and in Firefox when a node version is meant to
-ship; then ~~OpenRouter (item 12)~~ and ~~ModelArk (item 12b)~~ (both built 2026-09-19, for 0.1.21); then the assistant (item 13,
-`docs/PLAN_ASSISTANT.md`), as a release of its own (the user, 2026-09-19: "agent als letztes, wird ein seperates
-release", and the same day: "assistant kommt vor codesignierung"); the `buildModal` split (item 11) also comes
-before it; then SignPath, last. Nothing else stands before them, unless the user names something else first.
+are not the limit at 15k). **Next, in this order** (the user, 2026-09-20, on this session's plan: the two defects,
+then `buildModal`, "und den assistent"): ~~the two defects of the OpenRouter session~~ (fixed 2026-09-20, see the top
+of this section); the **`buildModal` split** (item 11); then the **assistant** (item 13, `docs/PLAN_ASSISTANT.md`), as
+a release of its own (the user, 2026-09-19: "agent als letztes, wird ein seperates release", and the same day:
+"assistant kommt vor codesignierung"); then SignPath, last. Waiting on the user's ComfyUI, whenever it is free: one
+local run on a large document with the node's stitch fix (`fba1fd8`), and the node in a real ComfyUI tab and in
+Firefox when a node version is meant to ship. Nothing else stands before them, unless the user names something else
+first.
 
 **Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`
 are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,
@@ -497,7 +524,7 @@ their own 15k file.
 port 9555 with its own profile (with `test_base.png`), runs each gate with a timeout, and writes logs and `summary.txt` under
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
-mcp nodecopy toapis openrouter ark llm export pxjobs`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+mcp nodecopy toapis openrouter ark recipes llm export pxjobs`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
 forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and
@@ -603,6 +630,12 @@ Known flakes; **re-run before believing any of these**:
 - Three 8-bit roundings in a blend formula are up to 1.45 levels off and a level from the shader on 29 % of the bytes of
   a half-transparent layer; one rounding of exact products is within 0.5. Measure a kernel against exact floats
   before blaming the other path.
+- The renderer keeps its own copy of the settings (`settings` in `shell.js`). A test that calls
+  `window.scumble.settings.set()` directly changes the stored file, not the window's view, and a later gate in the
+  same instance that reads both (`list_recipes` against `settings.get()`) fails on the difference: the `toapis` gate
+  left `gpt_image_2` on toapis and made `openrouter` red on 2026-09-20 when it ran before it. Its cleanup now puts
+  every recipe it switched back through `selectRecipe`, so the order no longer matters; a gate that switches
+  anything in the window has to do the same.
 
 **Tile engine code**
 - A tile's bytes are a view into a SharedArrayBuffer in the app: no `ImageData`, `Blob` or `crypto.subtle` over them
