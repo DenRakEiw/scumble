@@ -347,8 +347,26 @@ PASS** (`a7-tiles`, `a7-canvas` / `a7-canvas2`). **Traps worth keeping:** a test
 `dispatchEvent(new KeyboardEvent(...))` is never trusted, which is the point of the rule; the gate uses CDP
 `Input.insertText` into the editor's own prompt field. And a mutation that breaks a gate run leaves the
 gate's test keys in the profile, so every later run dies in `setup` - a runner that counts that as red
-proves nothing. **Next: A8** (the rest of the gate, the measurements and the docs), then A9 (the live check
-and the release).
+proves nothing. **A8 and A9 followed the same day** (the next paragraph).
+
+**2026-09-20: A8 (the documentation) and A9 (the release) - the assistant is in 0.1.21.**
+**A8** is its documentation, not its measurements: `docs/ASSISTANT.md` (the whole feature for the user - the
+key rows and the providers, what a turn is, what asks before it acts, **how to take it back**, the chats and
+the reset, **where the picture goes** per provider, what it cannot do, the keys and the focus rules, what it
+costs), one sentence in `docs/PROMPTS.md`, the in-process client in `docs/MCP.md`, the assistant's path in
+this file's "How the app is put together". **Not done and written into the plan** (`docs/PLAN_ASSISTANT.md`
+"A8, as far as the user asked for it"): the 15k measurement and the rule it would decide (a screenshot cap
+on the canvas backend), the remaining §6 gate steps and the plan's twenty-one-mutation round - what exists
+instead is **36 gate steps and 66 mutations across A4 to A7**. **A9:** `npm run dist` built
+`Scumble Setup 0.1.21.exe`; **exe gates against the package, `--offline`, ALL PASS at the first try** -
+`rel21-exe` (tiles: log pixels editor composite commands mcp assistant toapis llm export) and
+`rel21-exe-canvas` (tiles off: pixels editor composite film export assistant), the assistant gate **36 of 36
+on both**. The CHANGELOG's 0.1.21 section is dated 2026-09-20 and its assistant part rewritten (it is in this
+version, not "coming"); the tag **`v0.1.21`** is pushed and CI builds the draft. **The user publishes the
+draft** (`gh release list` before believing any release state written down anywhere). **No `smoke`** (the
+user's ComfyUI was not free), and **no model has completed a task against a live API** - the picker marks
+every provider "not tried with a real key", and that is what the user's own bug hunt after the release is
+for.
 
 ## Where things stand (2026-09-19)
 

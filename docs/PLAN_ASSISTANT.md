@@ -2523,6 +2523,30 @@ only spares the ask on `undo` and `redo`.
 
 ---
 
+
+### A9 as run (2026-09-20)
+
+**Not the plan's A9.** Its live check needs a key that can pay, and the user has none right now
+("hab gerade keinen key, lass uns das testing ueberspringen, machen wir nach release mach dann eh
+extreme bug suchen"), so the packaged app was proven against the mock and the real hosts' refusals,
+not against a model that answers. What ran:
+
+- `npm run dist` built `Scumble Setup 0.1.21.exe` and `dist/win-unpacked`.
+- **Exe gates against the package**, `--offline`, each on its own profile: `rel21-exe` (tiles:
+  `log pixels editor composite commands mcp assistant toapis llm export`) and `rel21-exe-canvas`
+  (tiles off: `pixels editor composite film export assistant`) - **ALL PASS, both at the first
+  try**, the assistant gate 36 of 36 on both, so the panel, the policy, the chats and the undo
+  all work in the packaged app.
+- The CHANGELOG's 0.1.21 section was dated and its assistant part rewritten (it is in this
+  version, not "coming"), the tag `v0.1.21` pushed, and CI builds the draft release from it.
+
+**What the release does not have, and says so:** no model has completed a task against a live
+API. Every family reaches its host and reads the answer - that much is measured - but the
+picker marks every provider "not tried with a real key", and `docs/ASSISTANT.md` says it in
+plain words. The user's plan for it: their own bug hunt after the release.
+
+**Also not run:** `smoke` (it needs the user's ComfyUI, which was not free in this session).
+
 ## 5. The tool policy
 
 **Decided by the planner on the user's behalf on 2026-09-19** (§8.2: "weiss ich nicht
