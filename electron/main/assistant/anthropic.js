@@ -119,6 +119,31 @@ function requestBytes(chat, history) {
 
 const STOP = { tool_use: "tools", end_turn: "end", stop_sequence: "end", max_tokens: "cut", refusal: "refusal", pause_turn: "end" };
 
+/**
+ * The answers that never come back by waiting, in plain words (§2 row 35), as the other three
+ * adapters have them. Measured against the live API on 2026-09-20: a key that is not valid
+ * answered 401 `authentication_error`, and the raw JSON was what the user saw.
+ */
+function finalWords(status, bodyText) {
+    let e = null;
+    try { const j = JSON.parse(String(bodyText || "")); e = (j && j.error) || null; } catch (_) { /* not JSON */ }
+    const type = String((e && e.type) || "");
+    const message = String((e && e.message) || "");
+    if (type === "authentication_error" || Number(status) === 401) {
+        return "The Anthropic key is not valid. Check it under Settings > API providers.";
+    }
+    if (Number(status) === 400 && /credit balance is too low/i.test(message)) {
+        return "The Anthropic account has no credit left for this key; top it up or use another key.";
+    }
+    if (type === "permission_error") {
+        return `Anthropic refused this key for this model: ${message.slice(0, 200)}`;
+    }
+    if (type === "not_found_error" && /model/i.test(message)) {
+        return `Anthropic does not serve this model: ${message.slice(0, 200)}`;
+    }
+    return null;
+}
+
 /** `usage` as the loop counts it, whatever the family calls the fields. */
 function usageOf(start, delta) {
     const u = { ...(start || {}), ...(delta || {}) };
@@ -146,11 +171,20 @@ async function stream(chat, history, opts = {}) {
         "anthropic-version": VERSION,
         "content-type": "application/json",
     };
-    const { res } = await postStream(url, headers, bodyFor(chat, history), {
-        signal, key: chat.key, keys: [chat.key], idleMs: chat.idleMs,
-        noRetry: (status, body) => status === 402 || /"type"\s*:\s*"(authentication|permission)_error"/.test(String(body)),
-        sleep: opts.sleep, log: opts.log, fetchImpl,
-    });
+    let res;
+    try {
+        ({ res } = await postStream(url, headers, bodyFor(chat, history), {
+            signal, key: chat.key, keys: [chat.key], idleMs: chat.idleMs,
+            noRetry: (status, body) => status === 402 || /"type"\s*:\s*"(authentication|permission)_error"/.test(String(body)) || finalWords(status, body) !== null,
+            sleep: opts.sleep, log: opts.log, fetchImpl,
+        }));
+    } catch (err) {
+        if (err && err.status !== undefined) {
+            const words = finalWords(err.status, err.body);
+            if (words) { const e = new Error(words); e.status = err.status; e.final = true; throw e; }
+        }
+        throw err;
+    }
 
     const blocks = [];
     const fragments = new Map();      // index -> the joined input_json_delta text
@@ -232,5 +266,5 @@ module.exports = {
     family: "messages",
     toolsFor, userMessage, resultsMessages, prune, countImages, requestBytes, stream,
     REQUEST_CAP, TEXT_CAP, VERSION,
-    _bodyFor: bodyFor, _usageOf: usageOf, STOP,
+    _bodyFor: bodyFor, _usageOf: usageOf, _finalWords: finalWords, STOP,
 };

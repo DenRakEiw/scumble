@@ -165,6 +165,31 @@ const STOP = {
     OTHER: "end",
 };
 
+/**
+ * The answers that never come back by waiting, in plain words (§2 row 35). A 429 here is
+ * usually a rate limit and is retried like any other - but a **spending cap** or an exhausted
+ * billing quota is a 429 too, and waiting for it only costs the user time: measured on
+ * 2026-09-20 against the live API, where a capped project answered
+ * `RESOURCE_EXHAUSTED: Your project has exceeded its monthly spending cap`, which the retries
+ * then asked for three more times.
+ */
+function finalWords(status, bodyText) {
+    let e = null;
+    try { const j = JSON.parse(String(bodyText || "")); e = (j && j.error) || null; } catch (_) { /* not JSON */ }
+    const message = String((e && e.message) || "");
+    const gstatus = String((e && e.status) || "");
+    if (Number(status) === 429 && /spending cap|spend cap|billing|exceeded its monthly/i.test(message)) {
+        return "Your Google Cloud project has reached its spending cap for this month; raise it in AI Studio (ai.studio/spend) or use another key.";
+    }
+    if (gstatus === "PERMISSION_DENIED" || /API[_ ]key not valid|API_KEY_INVALID/i.test(message)) {
+        return "The Google API key is not valid for this model. Check it under Settings > API providers.";
+    }
+    if (Number(status) === 404 && /model/i.test(message)) {
+        return `Google does not serve this model: ${message.slice(0, 200)}`;
+    }
+    return null;
+}
+
 /** `usage` as the loop counts it, whatever the family calls the fields. */
 function usageOf(usage) {
     const u = usage || {};
@@ -191,11 +216,20 @@ async function stream(chat, history, opts = {}) {
         "x-goog-api-key": chat.key,
         "content-type": "application/json",
     };
-    const { res } = await postStream(url, headers, bodyFor(chat, history), {
-        signal, key: chat.key, keys: [chat.key], idleMs: chat.idleMs,
-        noRetry: (status, body) => status === 402 || /API_KEY_INVALID|PERMISSION_DENIED/.test(String(body)),
-        sleep: opts.sleep, log: opts.log, fetchImpl,
-    });
+    let res;
+    try {
+        ({ res } = await postStream(url, headers, bodyFor(chat, history), {
+            signal, key: chat.key, keys: [chat.key], idleMs: chat.idleMs,
+            noRetry: (status, body) => status === 402 || finalWords(status, body) !== null,
+            sleep: opts.sleep, log: opts.log, fetchImpl,
+        }));
+    } catch (err) {
+        if (err && err.status !== undefined) {
+            const words = finalWords(err.status, err.body);
+            if (words) { const e = new Error(words); e.status = err.status; e.final = true; throw e; }
+        }
+        throw err;
+    }
 
     const parts = [];
     let finishReason = null;
@@ -263,5 +297,5 @@ module.exports = {
     family: "gemini",
     toolsFor, userMessage, appendUserText, resultsMessages, prune, countImages, requestBytes, stream,
     REQUEST_CAP, TEXT_CAP, STUB, STOP,
-    _bodyFor: bodyFor, _usageOf: usageOf, _answerOf: answerOf,
+    _bodyFor: bodyFor, _usageOf: usageOf, _answerOf: answerOf, _finalWords: finalWords,
 };

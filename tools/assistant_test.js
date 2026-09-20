@@ -2950,6 +2950,43 @@ async function main() {
         }
 
 
+
+        // ---- the answers that never come back by waiting (the live checkpoint of 2026-09-20
+        //      found this: a capped Google project answers 429, and the retries asked three
+        //      more times before the user saw anything)
+        {
+            const rows = [];
+            const CAP = JSON.stringify({ error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "Your project has exceeded its monthly spending cap. Please go to AI Studio at https://ai.studio/spend to manage your project spend cap." } });
+            const RATE = JSON.stringify({ error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "Quota exceeded for quota metric 'Generate requests per minute'." } });
+            const QUOTA = JSON.stringify({ error: { message: "You exceeded your current quota, please check your plan and billing details.", type: "insufficient_quota", code: "insufficient_quota" } });
+            const BADKEY = JSON.stringify({ error: { message: "Incorrect API key provided: key_QW****cF.", type: "invalid_request_error", code: "invalid_api_key" } });
+            const ANTH = JSON.stringify({ type: "error", error: { type: "authentication_error", message: "API key is invalid." } });
+            for (const [name, family, body, status, wantFinal, words] of [
+                ["gemini spending cap", GEMINI, CAP, 429, true, /spending cap/],
+                ["gemini rate limit", GEMINI, RATE, 429, false, null],
+                ["openai no credit", OPENAI, QUOTA, 429, true, /no credit left/],
+                ["openai bad key", OPENAI, BADKEY, 401, true, /not valid/],
+                ["anthropic bad key", ["anthropic", "claude-sonnet-5"], ANTH, 401, true, /Anthropic key is not valid/],
+            ]) {
+                const editor = new FakeEditor();
+                let n = 0;
+                const { a } = familyOn(editor, async () => {
+                    n++;
+                    if (n > 3 && !wantFinal) return sseResponse(geminiStream([{ type: "text", text: "after the wait" }]));
+                    return sseResponse(body, { status, headers: { "retry-after": "0" } });
+                }, ...family);
+                const out = await a.send("go");
+                const tried = n;
+                const ok = wantFinal
+                    ? (out.reason === "error" && tried === 1 && words.test(out.detail) && !/HTTP|\{/.test(out.detail))
+                    : (out.reason === "end" && tried === 4);
+                if (!ok) rows.push(`${name}: ${out.reason} after ${tried} requests: ${short(out.detail)}`);
+                await a.close();
+            }
+            check("a_final_answer_is_not_retried_and_reads_as_words", !rows.length,
+                rows.join(" | ") || "the spending cap and the empty account end at once; a rate limit is retried");
+        }
+
         // ---- the loop itself adds the text of a stopped turn in the family's own shape
         {
             const rows = [];

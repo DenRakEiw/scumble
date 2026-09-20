@@ -154,6 +154,27 @@ function usageOf(usage) {
     };
 }
 
+/**
+ * The answers that never come back by waiting, in plain words (§2 row 35). An exhausted
+ * account answers 429 like a rate limit does, and only the body tells them apart.
+ */
+function finalWords(status, bodyText) {
+    let e = null;
+    try { const j = JSON.parse(String(bodyText || "")); e = (j && j.error) || null; } catch (_) { /* not JSON */ }
+    const code = String((e && e.code) || "");
+    const message = String((e && e.message) || "");
+    if (code === "insufficient_quota" || /exceeded your current quota/i.test(message)) {
+        return "The OpenAI account has no credit left for this key; top it up or use another key.";
+    }
+    if (code === "invalid_api_key" || Number(status) === 401) {
+        return "The OpenAI key is not valid. Check it under Settings > API providers.";
+    }
+    if (code === "model_not_found") {
+        return `OpenAI does not serve this model: ${message.slice(0, 200)}`;
+    }
+    return null;
+}
+
 /** The refusal a message item carries, if it carries one. */
 function refusalOf(items) {
     for (const item of items) {
@@ -176,11 +197,20 @@ async function stream(chat, history, opts = {}) {
         Authorization: `Bearer ${chat.key}`,
         "content-type": "application/json",
     };
-    const { res } = await postStream(url, headers, bodyFor(chat, history), {
-        signal, key: chat.key, keys: [chat.key], idleMs: chat.idleMs,
-        noRetry: (status, body) => status === 402 || /insufficient_quota|invalid_api_key/.test(String(body)),
-        sleep: opts.sleep, log: opts.log, fetchImpl,
-    });
+    let res;
+    try {
+        ({ res } = await postStream(url, headers, bodyFor(chat, history), {
+            signal, key: chat.key, keys: [chat.key], idleMs: chat.idleMs,
+            noRetry: (status, body) => status === 402 || finalWords(status, body) !== null,
+            sleep: opts.sleep, log: opts.log, fetchImpl,
+        }));
+    } catch (err) {
+        if (err && err.status !== undefined) {
+            const words = finalWords(err.status, err.body);
+            if (words) { const e = new Error(words); e.status = err.status; e.final = true; throw e; }
+        }
+        throw err;
+    }
 
     const items = [];
     let usage = null;
@@ -256,5 +286,5 @@ module.exports = {
     family: "responses",
     toolsFor, userMessage, appendUserText, resultsMessages, prune, countImages, requestBytes, stream,
     REQUEST_CAP, TEXT_CAP, STUB,
-    _bodyFor: bodyFor, _usageOf: usageOf,
+    _bodyFor: bodyFor, _usageOf: usageOf, _finalWords: finalWords,
 };

@@ -1767,6 +1767,61 @@ most of §7 early, for every family.
 
 **Gate.** The table in "Checkpoint as run" and the user's go.
 
+
+### Checkpoint as run (2026-09-20, short form)
+
+**The user cut it down** ("so viele tests brauchen wir nicht nur ganz kurz die funktion ... nur
+ein kurzer call je modell maximal um verdrahtung zu testen; ist ja open source die user testen
+es und auf feedback reagieren wir"), so this is not the day the plan describes: no ten tasks, no
+`effort` comparison, no pruning or Stop runs, no cost table. One turn per model, against the
+real hosts, to prove the wiring - and that is what it proved, in both directions.
+
+**Setup.** A scratch profile (`--no-comfy`, port 9555) with a copy of the user's
+`secrets.json` **and of `Local State`**: on Windows `safeStorage` encrypts with a key that lives
+in `Local State`, so the ciphertexts alone decrypt to nothing and every row reads "no API key"
+(the first run of this checkpoint died on exactly that). `settings.assistant.base` empty, so
+every request went to the real host; `test_base.png` as the picture; the task
+"Sieh dir das Bild an und sage in einem Satz, was darauf zu sehen ist.", which makes the model
+call `screenshot` - the tool result with a picture in it is the part each family shapes
+differently - and then answer.
+
+**The keys the user holds** (their own profile, stored 2026-09-11): anthropic, openai, gemini,
+plus bfl, fal, replicate and comfycloud for the image providers. **No key for the Chat
+Completions family** (OpenRouter, DeepSeek, Moonshot, Z.ai, ToAPIs, WaveSpeed), so that family
+stays "not tried with a real key" until the user adds one.
+
+| model | family | what the live host answered | time |
+|---|---|---|---|
+| `claude-sonnet-5` | Messages | 401 `authentication_error`, "API key is invalid." | 0.6 s |
+| `claude-opus-5` | Messages | the same | 0.5 s |
+| `gpt-5.6-terra` | Responses | 401 `invalid_api_key`, "Incorrect API key provided: key_QWps****hTcF" (the stored key does not have OpenAI's `sk-` shape) | 0.5 s |
+| `gemini-3.8-flash` | Gemini | **429 `RESOURCE_EXHAUSTED`: "Your project has exceeded its monthly spending cap"** - so the key itself authenticated | 15.3 s, then 0.5 s after the fix below |
+
+**What this proves.** Every family built its request from the settings, reached its real host
+over the real key, read the answer, kept the key out of the error (`scrub`), ended the turn
+cleanly and left the app usable: no crash, no hang, no half state. The Gemini row proves an
+authenticated request end to end. **No model completed a task, because no key could pay for
+one**, so there is no go or no-go per model: that decision waits for a key that works.
+
+**What it found, and what was fixed on the spot:**
+
+- **A 429 that will never clear was retried.** The capped Google project answered 429, which
+  `http.js` retries like any rate limit: the user waited 15.3 s for four identical refusals.
+  `gemini.js`, `responses.js` and `anthropic.js` now have `finalWords(status, body)` like
+  `chat.js`'s dialects: a spending cap, an empty account, an invalid key, a model the provider
+  does not serve are **final and read as a sentence**, a plain rate limit is still retried.
+  Measured again live afterwards: all four rows answer in **0.5 to 0.6 s** with a sentence such
+  as "Your Google Cloud project has reached its spending cap for this month; raise it in AI
+  Studio (ai.studio/spend) or use another key." and "The Anthropic key is not valid. Check it
+  under Settings > API providers."
+- `a_final_answer_is_not_retried_and_reads_as_words` is the check (all four families, a rate
+  limit among them to prove it is still retried); four mutations of it are red.
+
+**Still open, for the user:** a working Anthropic, OpenAI or Google key (or an OpenRouter key,
+which would also cover the Chat Completions family and the route comparison the plan wants).
+With one of those the five-task form of this checkpoint costs well under a dollar and can be run
+in a few minutes.
+
 ### A5. The panel (two and a half days)
 
 **Purpose.** Chatting beside the picture, with the provider and model chosen from the key

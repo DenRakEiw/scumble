@@ -247,8 +247,31 @@ neither new family takes); a `functionCall` without an `id` must not be answered
 name. `node tools/assistant_test.js` is **214 checks** (section 17), the mutation round **26 of 26 red**,
 gates `--offline` on both backends (`llm toapis log generate mcp commands editor assistant`) **ALL PASS**
 (`a3-tiles`, `a3-canvas`). **Nothing has run against a live key.**
-**Next is the checkpoint** (`docs/PLAN_ASSISTANT.md` "The checkpoint"): the user's own keys on several
-models across providers, a ceiling of about $10, before the ten days of A5 to A9. It needs the user.
+**The checkpoint ran the same day** (the next paragraph).
+
+**2026-09-20: the checkpoint ran, in the short form the user asked for** (`docs/PLAN_ASSISTANT.md`
+"Checkpoint as run"; the user: "so viele tests brauchen wir nicht nur ganz kurz die funktion ... nur ein
+kurzer call je modell maximal um verdrahtung zu testen"). One live turn per model against the real hosts,
+on a scratch profile. **The keys the user holds are Anthropic, OpenAI and Google** (plus bfl, fal,
+replicate, comfycloud for the image providers); **no key for the Chat Completions family**, which stays
+"not tried with a real key". What the hosts answered: Anthropic **401 `authentication_error`** on both
+models, OpenAI **401 `invalid_api_key`** (the stored key does not have OpenAI's `sk-` shape), Google
+**429 `RESOURCE_EXHAUSTED`, "Your project has exceeded its monthly spending cap"** - which means that
+request **authenticated**. So every family builds its request from the settings, reaches its real host
+over the real key, reads the answer, keeps the key out of the error and ends the turn cleanly; **no
+model could pay for a task, so there is no go or no-go per model yet.** **Found and fixed on the spot:**
+a 429 that will never clear was retried (15.3 s of four identical refusals, and raw JSON as the error);
+`gemini.js`, `responses.js` and `anthropic.js` now have `finalWords(status, body)` like `chat.js`'s
+dialects - a spending cap, an empty account, an invalid key and a model the provider does not serve are
+final and **read as a sentence**, a plain rate limit is still retried; measured live again, all four
+rows answer in **0.5 to 0.6 s**. `a_final_answer_is_not_retried_and_reads_as_words` is the check (four
+mutations red), the node test is **215 checks**, gates `--offline` on both backends (`llm toapis mcp
+commands assistant`) **ALL PASS**. **Trap worth keeping:** on Windows `safeStorage` encrypts with a key
+that lives in `<userData>/Local State`, so a scratch profile holding a copy of `secrets.json` alone
+decrypts nothing and every row reads "no API key" - copy both. **What the user has to decide:** a
+working key (Anthropic, OpenAI, Google - or an OpenRouter key, which would also cover the Chat
+Completions family), then the five-task form of the checkpoint costs well under a dollar; A5 (the panel)
+can be built before that, at the risk the plan names.
 
 ## Where things stand (2026-09-19)
 
