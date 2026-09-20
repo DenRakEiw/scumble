@@ -76,7 +76,11 @@ the section for its version; `docs/` and the commit history hold the technical d
   Assistant* or Ctrl+Shift+A. Pick the provider and the model from the key list, write to it, watch it work: its
   text arrives as it is written, every tool call shows as a card with what it did, and everything that can cost
   money or cannot be undone asks first. It remembers whether it was open. Without a key nothing happens - the
-  panel says which row to fill under *Settings > API providers*. DeepSeek and Moonshot get
+  panel says which row to fill under *Settings > API providers*.
+- **The assistant's chats are kept**: every chat is saved as it goes, with its screenshots beside it, and the
+  panel's *Chats* button reopens one - on the model it was written with, or to read only. *Settings >
+  Assistant* says how many chats to keep and how many tool calls one turn may take, and deletes everything
+  the assistant ever stored, its lines in the app log included. **Your API keys stay.** DeepSeek and Moonshot get
   *check balance* (their balance endpoints; not tried against the live services); a Moonshot key has to come from
   platform.kimi.ai, a Z.ai key has to be a pay-as-you-go key, not a GLM Coding Plan key.
 - A file dropped on the tab bar or a panel no longer navigates the window away from the editor, and a

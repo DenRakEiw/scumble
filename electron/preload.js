@@ -151,6 +151,10 @@ contextBridge.exposeInMainWorld("scumble", {
         openrouterModels: () => ipcRenderer.invoke("assistant:openrouterModels"),
         tools: () => ipcRenderer.invoke("assistant:tools"),
         noticed: (provider) => ipcRenderer.invoke("assistant:noticed", { provider }),
+        chats: () => ipcRenderer.invoke("assistant:chats"),
+        open: (id) => ipcRenderer.invoke("assistant:open", { id }),
+        delete: (id) => ipcRenderer.invoke("assistant:delete", { id }),
+        resetAll: () => ipcRenderer.invoke("assistant:resetAll"),
         onEvent: (cb) => on("assistant:event", cb),
     },
     updates: {

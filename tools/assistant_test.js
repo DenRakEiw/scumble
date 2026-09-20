@@ -3068,6 +3068,77 @@ async function main() {
             "createElement, textContent and createTextNode are how it builds");
     });
 
+
+    // ---- 19. the chats on disk (A6) -------------------------------------------------------
+    await section("19. the chats on disk (A6)", async () => {
+        const fs = require("node:fs");
+        const os = require("node:os");
+        const { Store } = require(path.join(ROOT, "electron", "main", "assistant", "store.js"));
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "scumble-chats-"));
+        const store = new Store(dir);
+        const big = "QUJD".repeat(200);                     // long enough to count as a picture
+
+        // one history with every family's own way of carrying a picture
+        const history = [
+            { role: "user", content: [{ type: "text", text: "look" }] },
+            { role: "user", content: [{ type: "tool_result", tool_use_id: "c1", content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: big } }] }] },
+            { role: "tool", tool_call_id: "c2", content: "ok" },
+            { role: "user", content: [{ type: "image_url", image_url: { url: "data:image/jpeg;base64," + big } }] },
+            { type: "function_call_output", call_id: "c3", output: [{ type: "input_text", text: "{}" }, { type: "input_image", image_url: "data:image/png;base64," + big, detail: "auto" }] },
+            { role: "user", parts: [{ functionResponse: { id: "c4", name: "screenshot", response: { ok: true }, parts: [{ inlineData: { mimeType: "image/jpeg", data: big, displayName: "shot" } }] } }] },
+        ];
+        const events = [
+            { type: "user", at: 1, text: "Schau dir das Bild an und sag mir in einem Satz was darauf ist, bitte ganz genau" },
+            { type: "tool_end", at: 2, call: "c1", name: "screenshot", ok: true, ms: 3, text: "{}", image: "data:image/jpeg;base64," + big },
+        ];
+        const chat = { id: "ctest1", provider: "anthropic", model: "claude-sonnet-5", label: "Claude Sonnet 5", family: "messages", created: 1000, usage: { input: 10, cost: 0.01 }, history, vision: true };
+
+        await store.save(chat, { events });
+        const raw = fs.readFileSync(store.file("ctest1"), "utf8");
+        check("the_pictures_are_files_not_json",
+            // five: the four of the history and the one the panel's tool_end event carried
+            !raw.includes(big) && /\$image:/.test(raw) && fs.readdirSync(store.folder("ctest1")).length === 5,
+            `${raw.length} bytes of JSON, ${fs.readdirSync(store.folder("ctest1")).join(", ")}`);
+
+        const back = await store.load("ctest1");
+        check("a_chat_round_trips_byte_for_byte",
+            eq(back.history, history) && eq(back.events, events),
+            eq(back.history, history) ? "history and events identical" : short(back.history));
+        check("the_title_is_the_first_user_line_cut_at_60",
+            back.title.length === 61 && back.title.startsWith("Schau dir das Bild an") && back.title.endsWith("\u2026"),
+            `${back.title.length} characters: ${back.title}`);
+
+        // a picture whose file is gone leaves a line, not a broken marker
+        const saved = JSON.parse(raw);
+        const marker = saved.history[1].content[0].content[0].source.data;   // "$image:<n>.jpg|<prefix>"
+        fs.rmSync(path.join(store.folder("ctest1"), marker.slice("$image:".length).split("|")[0]));
+        const gone = await store.load("ctest1");
+        check("a_missing_picture_becomes_a_line",
+            /no longer attached/.test(gone.history[1].content[0].content[0].source.data),
+            short(gone.history[1].content[0].content[0].source.data));
+
+        // a file that does not parse is a row with a delete button
+        fs.writeFileSync(path.join(store.chats, "cbroken.json"), "{not json");
+        const rows = await store.list();
+        const broken = rows.find((r) => r.id === "cbroken");
+        check("a_broken_file_is_a_row_not_a_throw", !!broken && broken.broken === true && rows.length === 2, JSON.stringify(rows.map((r) => r.id)));
+
+        // the oldest goes above the limit, with its folder
+        for (let i = 2; i <= 4; i++) {
+            await store.save({ ...chat, id: "ctest" + i, history: [], usage: {} }, { events: [{ type: "user", text: "chat " + i }] });
+            await new Promise((r) => setTimeout(r, 5));
+        }
+        const dropped = await store.prune(2);
+        const left = (await store.list()).map((r) => r.id).sort();
+        check("the_oldest_chat_goes_when_the_limit_is_reached",
+            left.length === 2 && !left.includes("ctest1") && !fs.existsSync(store.folder("ctest1")) && dropped.length >= 1,
+            `${left.join(", ")} left, ${dropped.join(", ")} removed`);
+
+        await store.removeAll();
+        check("the_reset_takes_the_whole_folder", !fs.existsSync(path.join(dir, "assistant")), path.join(dir, "assistant"));
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);
     console.log(failed ? "FAIL" : "PASS");

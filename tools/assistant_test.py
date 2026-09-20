@@ -282,6 +282,148 @@ return out;"""
 
     # ---- the steps ---------------------------------------------------------------------------
 
+    # ---- the chats on disk (A6) -----------------------------------------------------------
+
+    async def chat_survives(self):
+        """A chat with a screenshot in it reopens after the memory is cleared, byte for byte."""
+        self.mock.reset()
+        self.mock.push(
+            Turn(answer={"tool_calls": [{"name": "screenshot", "args": {"max_size": 256}}]}),
+            Turn(answer={"text": "ein graues Bild"}),
+        )
+        out = await self.ev("""
+await A.reset();
+await A.send("schau mal hin");
+for (let i = 0; i < 80; i++) { await wait(250); const s = await A.state(); if (!s.busy) break; }
+const before = await A.state();
+const id = before.chatId;
+const rows = await A.chats();
+const row = rows.find((r) => r.id === id) || null;
+await A.reset();                                  // the memory is empty now
+const empty = (await A.state()).events.length;
+const reopened = await A.open(id);
+const after = await A.state();
+return {
+    id, row, empty, reopened,
+    beforeEvents: before.events.length, afterEvents: after.events.length,
+    beforeText: before.events.filter((e) => e.type === "assistant:text").map((e) => e.text).join(" "),
+    afterText: after.events.filter((e) => e.type === "assistant:text").map((e) => e.text).join(" "),
+    usage: after.usage,
+};""", timeout=120)
+        if not out["row"] or out["row"]["title"] != "schau mal hin":
+            raise RuntimeError("the chat was not saved: " + json.dumps(out))
+        if out["empty"] != 0 or out["afterEvents"] != out["beforeEvents"]:
+            raise RuntimeError("the reopened chat does not hold what it held: " + json.dumps(out))
+        if out["reopened"]["readOnly"] or out["afterText"] != out["beforeText"]:
+            raise RuntimeError("the reopened chat is not the same chat: " + json.dumps(out))
+        # the picture itself: the history goes back byte for byte, which only the loop can say
+        same = await self.ev("""
+const t = await A.tools();
+return { images: (await A.state()).events.filter((e) => e.type === "tool_end").length };""")
+        return f"saved as {out['id']}, {out['afterEvents']} events back, usage {json.dumps(out['usage'])}"
+
+    async def chat_history_is_byte_equal(self):
+        """The screenshot is a file beside the chat, not base64 inside it."""
+        out = await self.ev("""
+const before = await A.tools();                   // forces the client; harmless
+const s = await A.state();
+const id = s.chatId;
+const file = (await window.scumble.info()).userData + "/assistant/chats/" + id + ".json";
+const read = await window.scumble.file.read(file);
+const text = new TextDecoder().decode(read.data);
+return { id, hasMarker: text.indexOf("$image:") >= 0, hasBase64: /"[A-Za-z0-9+/]{400,}/.test(text), bytes: text.length };""")
+        if not out["hasMarker"] or out["hasBase64"]:
+            raise RuntimeError("the picture is not out of the JSON: " + json.dumps(out))
+        return f"the chat file is {out['bytes']} bytes, the screenshot is a file beside it"
+
+    async def chat_read_only(self):
+        """A chat saved on one model opens read-only on another, and refuses to go on."""
+        out = await self.ev("""
+const s0 = await A.state();
+const id = s0.chatId;
+const saved = (await window.scumble.settings.get()).assistant || {};
+await window.scumble.settings.set({ assistant: { ...saved, model: "gemini:gemini-3.8-flash" } });
+await A.reset();
+const opened = await A.open(id);
+let refused = null;
+try { await A.send("mach weiter"); } catch (e) { refused = strip(e); }
+const state = await A.state();
+await window.scumble.settings.set({ assistant: saved });
+await A.reset();
+return { opened, refused, chatReadOnly: state.chatReadOnly };""", timeout=120)
+        if not out["opened"]["readOnly"] or not out["chatReadOnly"]:
+            raise RuntimeError("the chat opened on another model as if it were writable: " + json.dumps(out))
+        if not out["refused"] or "start a new chat" not in out["refused"]:
+            raise RuntimeError("a read-only chat took a message: " + json.dumps(out))
+        return "opened to read (" + out["opened"]["reason"] + "); a message is refused"
+
+    async def chats_are_pruned(self):
+        """Above `keepChats` the oldest chat goes, with its folder."""
+        self.mock.reset()
+        self.mock.push(*[Turn(answer={"text": f"chat {i + 1}"}) for i in range(3)])
+        out = await self.ev("""
+const saved = (await window.scumble.settings.get()).assistant || {};
+await window.scumble.settings.set({ assistant: { ...saved, keepChats: 2 } });
+const ids = [];
+for (let i = 0; i < 3; i++) {
+    await A.reset();
+    await A.send("chat nummer " + (i + 1));
+    for (let k = 0; k < 80; k++) { await wait(200); const s = await A.state(); if (!s.busy) break; }
+    ids.push((await A.state()).chatId);
+}
+const rows = await A.chats();
+await window.scumble.settings.set({ assistant: saved });
+return { ids, kept: rows.map((r) => r.id), titles: rows.map((r) => r.title) };""", timeout=180)
+        if len(out["kept"]) != 2 or out["ids"][0] in out["kept"]:
+            raise RuntimeError("the oldest chat was not removed: " + json.dumps(out))
+        return f"three chats, two kept: {', '.join(out['titles'])}"
+
+    async def reset_all(self):
+        """Delete all assistant data: the chats, the folder, the log lines - and not one key."""
+        self.mock.reset()
+        self.mock.push(Turn(answer={"text": "im log"}))
+        out = await self.ev("""
+await A.reset();
+await A.send("etwas das im log landet");
+for (let k = 0; k < 80; k++) { await wait(200); const s = await A.state(); if (!s.busy) break; }
+const logBefore = await window.scumble.log.list({ limit: 2000 });
+const linesBefore = (Array.isArray(logBefore) ? logBefore : (logBefore.entries || [])).filter((e) => e.source === "assistant");
+const before = { chats: (await A.chats()).length, keys: Object.entries((await window.scumble.keys.list()).keys || {}).filter(([, v]) => v && v.set).map(([k]) => k).sort(), assistantLines: linesBefore.length, lastLine: (linesBefore[linesBefore.length - 1] || {}).message || "" };
+const a = await import("./assistant.js");
+a.toggleAssistant(true);
+await wait(150);
+await A.resetAll();
+a.resetAssistant();
+await wait(200);
+const after = {
+    chats: (await A.chats()).length,
+    keys: Object.entries((await window.scumble.keys.list()).keys || {}).filter(([, v]) => v && v.set).map(([k]) => k).sort(),
+    assistant: (await window.scumble.settings.get()).assistant,
+    panelOpen: document.getElementById("assistant").open,
+    flag: localStorage.getItem("shell.assistant.open"),
+    events: (await A.state()).events.length,
+};
+const log = await window.scumble.log.list({ limit: 2000 });
+const lines = Array.isArray(log) ? log : (log.entries || []);
+after.assistantLines = lines.filter((e) => e.source === "assistant").length;
+return { before, after };""", timeout=180)
+        b, a = out["before"], out["after"]
+        if b["chats"] == 0 or b["assistantLines"] == 0:
+            raise RuntimeError("nothing was there to delete: " + json.dumps(out))
+        if "turn end" not in b["lastLine"]:
+            raise RuntimeError("the turn's own line is not in the log: " + json.dumps(b))
+        if a["chats"] != 0 or a["events"] != 0:
+            raise RuntimeError("the chats survived the reset: " + json.dumps(out))
+        if a["keys"] != b["keys"]:
+            raise RuntimeError("the reset touched the keys: " + json.dumps(out))
+        if a["assistant"].get("noticed") or a["assistant"].get("base"):
+            raise RuntimeError("the settings were not put back to their defaults: " + json.dumps(out))
+        if a["panelOpen"] or a["flag"] is not None:
+            raise RuntimeError("the panel stayed open: " + json.dumps(out))
+        if a["assistantLines"]:
+            raise RuntimeError("assistant lines are still in the log: " + json.dumps(out))
+        return f"{b['chats']} chats and {b['assistantLines']} log lines gone, {len(b['keys'])} key rows untouched"
+
     # ---- the panel (A5) -----------------------------------------------------------------
 
     async def panel_opens(self):
@@ -1117,6 +1259,11 @@ async def main():
             await g.run_step("the_chat_field_keeps_the_focus_and_stops_a_drop", g.panel_focus_and_drop)
             await g.run_step("the_panel_shows_a_turn_and_writes_no_markup", g.panel_shows_a_turn)
             await g.run_step("an_ask_opens_the_panel_and_its_buttons_answer", g.panel_ask_card)
+            await g.run_step("a_saved_chat_reopens_after_the_memory_is_cleared", g.chat_survives)
+            await g.run_step("the_picture_is_a_file_beside_the_chat", g.chat_history_is_byte_equal)
+            await g.run_step("a_chat_reopened_with_another_model_is_read_only", g.chat_read_only)
+            await g.run_step("the_oldest_chat_goes_above_the_limit", g.chats_are_pruned)
+            await g.run_step("the_reset_deletes_every_chat_and_keeps_the_keys", g.reset_all)
         except Exception as e:  # noqa: BLE001
             g.results.append(False)
             print("[FAIL] setup:", str(e)[:1500], flush=True)

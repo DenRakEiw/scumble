@@ -86,6 +86,29 @@ function list({ after = 0, limit = RING } = {}) {
 
 function clear() { entries.length = 0; }
 
+/**
+ * Drop every entry of one source from the ring and from the files on disk (the assistant's
+ * reset, docs/PLAN_ASSISTANT.md §4 A6). The files are rewritten without the lines tagged
+ * `[<source>]`; a line that belongs to an entry's `detail` is indented by the writer, so a
+ * line that does not start a new entry follows the fate of the entry above it.
+ */
+async function forget(source) {
+    const tag = `[${String(source)}]`;
+    for (let i = entries.length - 1; i >= 0; i--) if (entries[i].source === String(source)) entries.splice(i, 1);
+    await flush();
+    const names = ["scumble.log", "scumble.1.log"];
+    for (const name of names) {
+        const f = dir ? path.join(dir, name) : null;
+        if (!f) continue;
+        let text;
+        try { text = await fsp.readFile(f, "utf8"); } catch (_) { continue; }
+        const kept = text.split("\n").filter((line) => !line.includes(tag));
+        await fsp.writeFile(f, kept.join("\n"));
+    }
+    size = -1;
+    return true;
+}
+
 function onEntry(fn) { listeners.push(fn); return () => { listeners = listeners.filter((x) => x !== fn); }; }
 
 /** Wait for the file to hold everything recorded so far (tests). */
@@ -119,4 +142,4 @@ function install(logDir) {
     record({ source: "main", message: `log started, ${path.join(logDir, "scumble.log")}` });
 }
 
-module.exports = { install, record, list, clear, onEntry, flush, file, setDir, ROTATE_BYTES, RING };
+module.exports = { install, record, list, clear, forget, onEntry, flush, file, setDir, ROTATE_BYTES, RING };

@@ -276,11 +276,13 @@ function attention(event) {
 function getAssistant() {
     if (assistant) return assistant;
     const { Assistant } = require("./assistant/index.js");
+    const { Store } = require("./assistant/store.js");
     const { createServer } = require("./mcp/server");
     const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
     const { InMemoryTransport } = require("@modelcontextprotocol/sdk/inMemory.js");
     assistant = new Assistant({
         bridge, keys, settings, log,
+        store: new Store(app.getPath("userData")),
         emit: (event) => { send("assistant:event", event); attention(event); },
         createServer, Client, InMemoryTransport,
         version: app.getVersion(),
@@ -556,6 +558,11 @@ function installIpc() {
     ipcMain.handle("assistant:models", () => getAssistant().models());
     ipcMain.handle("assistant:openrouterModels", () => getAssistant().openrouterModels());
     ipcMain.handle("assistant:tools", () => getAssistant().tools());
+    // the saved chats (docs/PLAN_ASSISTANT.md §4 A6)
+    ipcMain.handle("assistant:chats", () => getAssistant().chats());
+    ipcMain.handle("assistant:open", (_e, req) => getAssistant().openChat(String(req && req.id)));
+    ipcMain.handle("assistant:delete", (_e, req) => getAssistant().deleteChat(String(req && req.id)));
+    ipcMain.handle("assistant:resetAll", () => getAssistant().resetAll());
     ipcMain.handle("assistant:noticed", (_e, req) => {
         // the privacy notice was shown for this provider: the date, in the whole merged object (settings.js)
         const a = { ...settings.DEFAULTS.assistant, ...(settings.get().assistant || {}) };

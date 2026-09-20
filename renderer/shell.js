@@ -8,7 +8,7 @@ import { setPixelsOptions } from "./editor/inpaint_pixels.js";
 import { commands, docSummary } from "./commands.js";
 import * as plugins from "./plugins.js";
 import { waitForUser, editorOf } from "./assistant_wait.js";
-import { initAssistant, toggleAssistant } from "./assistant.js";
+import { initAssistant, toggleAssistant, resetAssistant } from "./assistant.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -61,7 +61,8 @@ const ui = {
     compatKeyState: $("set-compat-key-state"), compatTest: $("set-compat-test"), compatState: $("set-compat-state"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
-    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
+    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
+    setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
@@ -1318,6 +1319,10 @@ async function openSettings() {
     ui.setGpuLimit.value = wholeMB(mem.gpuLimitMB, 0, 3072);
     ui.setCardMin.value = wholeMB(mem.cardMinFreeMB, 0, 2048);
     ui.setAtlas.value = wholeMB(mem.atlasMB, 16, 512);
+    const as = settings.assistant || {};
+    ui.setAsKeep.value = Math.max(1, Math.round(Number(as.keepChats) || 20));
+    ui.setAsSteps.value = Math.max(1, Math.round(Number(as.maxSteps) || 25));
+    ui.setAsNote.textContent = "";
     await renderTileMode();
     try {
         const mb = await gpuMemoryMB();
@@ -1396,6 +1401,41 @@ ui.updateAuto.addEventListener("change", async () => { settings = await window.s
 function wholeMB(v, min, fallback) {
     return v == null || v === "" || !Number.isFinite(Number(v)) ? fallback : Math.max(min, Math.round(Number(v)));
 }
+
+// the assistant's two numbers and the one button that deletes everything it stored (A6)
+ui.setAsKeep.addEventListener("change", async () => {
+    const v = Math.min(200, Math.max(1, Math.round(Number(ui.setAsKeep.value) || 20)));
+    ui.setAsKeep.value = v;
+    settings = await window.scumble.settings.set({ assistant: { ...(settings.assistant || {}), keepChats: v } });
+});
+ui.setAsSteps.addEventListener("change", async () => {
+    const v = Math.min(100, Math.max(1, Math.round(Number(ui.setAsSteps.value) || 25)));
+    ui.setAsSteps.value = v;
+    settings = await window.scumble.settings.set({ assistant: { ...(settings.assistant || {}), maxSteps: v } });
+});
+ui.setAsReset.addEventListener("click", async () => {
+    // the editor's own question, not a native confirm: it says exactly what goes and what stays
+    const ed = host.editor;
+    const yes = ed
+        ? await ed.ask({
+            title: "Delete all assistant data",
+            message: "Deletes every assistant chat and its screenshots, the privacy-notice dates, the assistant settings and the assistant's lines in the app log. Your API keys stay; they belong to Settings > API providers.",
+            ok: "Delete", cancel: "Cancel", danger: true,
+        })
+        : true;
+    if (!yes) return;
+    ui.setAsNote.textContent = "deleting ...";
+    try {
+        await window.scumble.assistant.resetAll();
+        resetAssistant();
+        settings = await window.scumble.settings.get();
+        ui.setAsKeep.value = Math.max(1, Math.round(Number((settings.assistant || {}).keepChats) || 20));
+        ui.setAsSteps.value = Math.max(1, Math.round(Number((settings.assistant || {}).maxSteps) || 25));
+        ui.setAsNote.textContent = "every chat, screenshot and log line of the assistant is gone; the keys are untouched";
+    } catch (err) {
+        ui.setAsNote.textContent = "could not delete: " + ((err && err.message) || err);
+    }
+});
 
 ui.setGpuLimit.addEventListener("change", async () => {
     const v = Math.max(0, Math.round(Number(ui.setGpuLimit.value) || 0));

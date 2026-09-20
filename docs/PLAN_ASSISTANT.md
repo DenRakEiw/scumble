@@ -2097,6 +2097,65 @@ assistant stored (§8.5).
 **Estimate.** One and a half days: a day for the store and the reopening, half a day for the
 reset, its Settings section and the log lines.
 
+
+### A6 as built (2026-09-20)
+
+`electron/main/assistant/store.js`, the four channels (`assistant:chats`, `:open`, `:delete`,
+`:resetAll`), `log.forget(source)`, the panel's *Chats* list and a **Settings > Assistant**
+section with the two numbers and *Delete all assistant data*.
+
+**The files.** `<userData>/assistant/chats/<id>.json` per chat, its pictures beside it in
+`<userData>/assistant/chats/<id>/<n>.jpg`. A chat is written at the end of **every** turn
+(a crash costs the turn that was running, nothing older), to a temporary file that is renamed.
+
+**The pictures are taken out of the JSON, and the way they go back is the point.** A screenshot
+is 100 to 200 kB of base64; a chat of twenty turns would be a file nobody can read or copy. What
+stays is a marker, `$image:<n>.jpg|<prefix>`, which carries **the prefix the family's own shape
+had** (`data:image/jpeg;base64,` for Chat Completions and Responses, nothing for Anthropic's
+`source.data` and Gemini's `inlineData.data`), so loading gives back **the same string, byte for
+byte**. A replayed history a provider does not accept is worse than no history at all: every
+family checks its own shape, and Gemini and DeepSeek answer 400 on a history that was edited.
+`store.js` knows no family for this - it walks the JSON and replaces what looks like image bytes
+(a data URL, or a base64 string of at least 256 characters).
+
+**Reopening.** A chat goes on only on the provider and model it was saved with, and only while a
+key for them is there; otherwise it opens **read-only** and the panel says why ("this window is
+set to Gemini 3.8 Flash"), the field and Send are disabled, and `_start` refuses with "start a
+new chat to go on". What a reopened chat does **not** bring back is its ownership: `owned` and
+`seen` are Maps that JSON does not carry, so the policy asks again before the assistant touches
+a layer it made in an earlier session - the safe direction.
+
+**A file that does not parse** is a row that says "could not be read" with its delete button, and
+a picture whose file is gone becomes the line "[screenshot no longer attached; call screenshot
+again]" - neither is ever thrown at the panel.
+
+**Retention** is `settings.assistant.keepChats` (20, a number in the new Settings section next to
+the step cap): after every save the chats beyond it go, with their folders.
+
+**The reset** (§8.5) stops a running turn, clears the chat in main, removes `<userData>/assistant/`
+whole, writes `DEFAULTS.assistant` (the notice dates with it), calls `log.forget("assistant")` -
+which drops that source from the ring **and rewrites `scumble.log` and `scumble.1.log` without
+the lines tagged `[assistant]`** - and the panel closes with its `localStorage` flag removed.
+**No key row is touched**, and the gate checks exactly that.
+
+**What the mutation round found, and it is the plan's own:** **the one line per turn in the app
+log (A1's, the one A6's reset takes out) had never been written.** `record()` was called for a
+handful of events only, so "no assistant line left in the log" was a check that could not fail.
+`recordTurn()` writes it now at the end of every turn - provider and model, why the turn ended,
+the seconds, the calls and their tool names, the tokens and the chat's cost - and the gate's reset
+step first proves the lines were there (`turn end` among them) before it demands they are gone.
+
+**Tests.** `node tools/assistant_test.js` is **224 checks** (section 19: a history carrying all
+four families' picture shapes round-trips byte for byte, the JSON holds no base64, the title is
+cut at 60, a missing picture becomes a line, a broken file is a row, pruning takes the oldest with
+its folder, the reset takes the whole folder). The gate has **five more steps, 29 in all**:
+`a_saved_chat_reopens_after_the_memory_is_cleared`, `the_picture_is_a_file_beside_the_chat`,
+`a_chat_reopened_with_another_model_is_read_only`, `the_oldest_chat_goes_above_the_limit`,
+`the_reset_deletes_every_chat_and_keeps_the_keys` (three chats and 31 log lines gone, ten key rows
+untouched). A mutation round of **14, 13 red**; the one that stays green writes the chat file
+without the temporary file and the rename, which only a crash in the middle of a write would
+show, and this harness cannot make one.
+
 ### A7. Undo each step and a whole turn (three days)
 
 **Purpose.** Ctrl+Z for every assistant step, and "Undo this turn" on tiles (§8.4).

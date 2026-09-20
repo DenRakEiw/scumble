@@ -105,6 +105,15 @@
       <p class="shell-help">The object tool (O) and layer cutouts run these models inside the app through ONNX Runtime, no ComfyUI needed. Point the folder at a ComfyUI <code>models</code> folder to share the files: it is scanned at once, every ONNX file it holds for one of these models is linked whatever its name or subfolder, and downloads go to its <code>onnx</code> subfolder. The PyTorch weights the ComfyUI nodes use (<code>.safetensors</code>, <code>.pt</code>, <code>.pth</code>) are reported but cannot be loaded here; the ONNX download stays necessary for those. Selection by text (SAM3) still runs on the server.</p>
     </section>
     <section>
+      <h3>Assistant</h3>
+      <div class="shell-row">
+        <label for="set-as-keep">Keep the last</label><input id="set-as-keep" type="number" min="1" max="200" step="1" style="width:5em"><span class="shell-note">chats</span>
+        <label for="set-as-steps">at most</label><input id="set-as-steps" type="number" min="1" max="100" step="1" style="width:5em"><span class="shell-note">tool calls per turn</span>
+      </div>
+      <div class="shell-row"><button id="set-as-reset" type="button">Delete all assistant data ...</button><span id="set-as-note" class="shell-note"></span></div>
+      <p class="shell-help">The chat assistant keeps its chats and their screenshots under <code>assistant/</code> in the app data folder, one file per chat. Deleting removes every chat and its screenshots, the dates of the privacy notices, the assistant's settings and its lines in the app log. <strong>Your API keys stay</strong>: they belong to <em>API providers</em> above.</p>
+    </section>
+    <section>
       <h3>Plugins</h3>
       <div id="set-plugins"></div>
       <div class="shell-row"><button id="set-plugins-reload" type="button">Reload plugins</button><button id="set-plugins-folder" type="button">Open folder</button><span id="set-plugins-note" class="shell-note"></span></div>

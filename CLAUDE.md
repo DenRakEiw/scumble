@@ -297,8 +297,32 @@ covers, written down). Gates `--offline` on both backends (`editor composite gen
 mcp commands assistant`): **ALL PASS** (`a5-tiles`, `a5-canvas`). **Trap worth keeping:** Chromium delivers
 **no focus or blur events at all** to a window that is not focused, and a gate runs behind the terminal:
 `focus()` moves `activeElement` silently, so a focus test has to dispatch the `focusout` the real app would
-fire. **Next: A6** (chats on disk and the reset), then A7 (undo per step and per turn), A8 (the whole gate
-and the docs), A9 (the live check and the release).
+fire. **A6 followed the same day** (the next paragraph).
+
+**2026-09-20: A6 is built - the chats on disk and the reset** (`docs/PLAN_ASSISTANT.md` "A6 as built").
+`electron/main/assistant/store.js`, four channels (`assistant:chats` / `:open` / `:delete` /
+`:resetAll`), **`log.forget(source)`**, the panel's *Chats* list and a **Settings > Assistant** section
+(how many chats to keep, the step cap, *Delete all assistant data*). A chat is written at the end of
+**every** turn to `<userData>/assistant/chats/<id>.json` through a temporary file that is renamed, its
+screenshots beside it. **The pictures are taken out of the JSON and the way they go back is the point:**
+the marker `$image:<n>.jpg|<prefix>` carries the prefix the family's own shape had, so the history comes
+back **byte for byte** - Gemini and DeepSeek answer 400 on a history that was edited. `store.js` knows no
+family: it walks the JSON and replaces what looks like image bytes. **Reopening** goes on only on the
+provider and model the chat was saved with and only with a key for them, else **read-only** (the field and
+Send disabled, `_start` refuses); ownership (`owned`, `seen`) is not restored, so the policy asks again
+before a layer of an earlier session is touched. A file that does not parse is a row with a delete button,
+a picture whose file is gone becomes a line. **The reset** removes `<userData>/assistant/` whole, writes
+the defaults back, calls `log.forget("assistant")` (the ring **and** `scumble.log` / `scumble.1.log`) and
+closes the panel - **no key row is touched**, and the gate checks that. **What the mutation round found,
+and it is the plan's own:** the **one line per turn in the app log** (A1's, the one the reset takes out)
+**had never been written**, so "no assistant line left in the log" was a check that could not fail;
+`recordTurn()` writes it now and the gate proves the lines were there first. Node **224 checks**
+(section 19), the gate **29 steps**, a mutation round of **14, 13 red** (the green one writes the file
+without the rename, which only a crash mid-write would show). Gates `--offline` on both backends
+(`editor log mcp commands assistant`): **ALL PASS** (`a6-tiles` after two known start-of-instance flakes
+of `editor` - `a_settled_read...` and `erase_stroke...`, the third run 68 of 68 -, `a6-canvas` at the
+first try). **Next: A7** (undo per step and "Undo this turn"), then A8 (the whole gate and the docs) and
+A9 (the live check and the release).
 
 ## Where things stand (2026-09-19)
 

@@ -126,14 +126,21 @@ export function initAssistant(options = {}) {
     ui.newChat = el("button", null, "New chat");
     ui.newChat.type = "button";
     ui.newChat.title = "Forget this chat and start over";
+    ui.chats = el("button", null, "Chats");
+    ui.chats.type = "button";
+    ui.chats.title = "The chats on disk";
     ui.close = el("button", null, "×");
     ui.close.type = "button";
     ui.close.title = "Close the assistant (Ctrl+Shift+A)";
     const row = el("div", "as-head-row");
     row.appendChild(ui.model);
+    row.appendChild(ui.chats);
     row.appendChild(ui.newChat);
     row.appendChild(ui.close);
     head.appendChild(row);
+    ui.chatList = el("div", "as-chats");
+    ui.chatList.hidden = true;
+    head.appendChild(ui.chatList);
     ui.free = el("div", "as-free");
     ui.freeId = el("input");
     ui.freeId.type = "text";
@@ -180,6 +187,7 @@ export function initAssistant(options = {}) {
     // ---- the panel's own
     ui.close.addEventListener("click", () => toggleAssistant(false));
     ui.newChat.addEventListener("click", () => newChat());
+    ui.chats.addEventListener("click", () => toggleChats());
     ui.send.addEventListener("click", () => (busy ? stop() : send()));
     ui.model.addEventListener("change", () => pickModel(ui.model.value));
     ui.freeUse.addEventListener("click", () => pickModel("openrouter:" + ui.freeId.value.trim()));
@@ -553,6 +561,94 @@ function showNotice() {
     ui.notice.classList.toggle("as-warn", !!ui.baseNote || !!agents);
 }
 
+// ---- the chats on disk (A6) -----------------------------------------------------------------
+
+async function toggleChats() {
+    if (!ui.chatList.hidden) { ui.chatList.hidden = true; return; }
+    ui.chatList.textContent = "";
+    ui.chatList.hidden = false;
+    ui.chatList.appendChild(el("div", "as-note", "reading \u2026"));
+    let rows = [];
+    try { rows = await api().chats(); } catch (err) { rows = null; }
+    ui.chatList.textContent = "";
+    if (!rows) { ui.chatList.appendChild(el("div", "as-note", "the chats could not be read")); return; }
+    if (!rows.length) { ui.chatList.appendChild(el("div", "as-note", "no chat is saved yet")); return; }
+    for (const row of rows) ui.chatList.appendChild(chatRow(row));
+}
+
+function chatRow(row) {
+    const node = el("div", "as-chat");
+    node.dataset.chat = row.id;
+    const open = el("button", "as-chat-open");
+    open.type = "button";
+    open.appendChild(el("div", "as-chat-title", row.title || (row.broken ? "could not be read" : "(no text)")));
+    const when = row.updated ? new Date(row.updated).toLocaleString() : "";
+    open.appendChild(el("div", "as-chat-note", [row.label || row.model, when, row.turns ? `${row.turns} turns` : ""].filter(Boolean).join(" \u00b7 ")));
+    if (row.broken) open.disabled = true;
+    else open.addEventListener("click", () => openChat(row.id));
+    const del = el("button", "as-chat-del", "\u00d7");
+    del.type = "button";
+    del.title = "Delete this chat and its screenshots";
+    del.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await api().delete(row.id).catch(() => {});
+        node.remove();
+    });
+    node.appendChild(open);
+    node.appendChild(del);
+    return node;
+}
+
+async function openChat(id) {
+    let out;
+    try {
+        out = await api().open(id);
+    } catch (err) {
+        note(String((err && err.message) || err).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, ""), "as-bad");
+        return;
+    }
+    ui.chatList.hidden = true;
+    ui.list.textContent = "";
+    cards = new Map();
+    usage = null;
+    lastTurnCost = 0;
+    busy = false;
+    openAsk = null;
+    streamBubble = null;
+    ui.send.textContent = "Send";
+    await refresh();
+    if (out.readOnly) {
+        note(`this chat is open to read: ${out.reason}. Start a new chat to go on.`);
+        ui.text.disabled = true;
+        ui.send.disabled = true;
+    } else {
+        ui.text.disabled = false;
+        ui.send.disabled = false;
+    }
+}
+
+/** Settings deleted everything the assistant stored: the panel goes back to how it started. */
+export function resetAssistant() {
+    if (!started) return;
+    ui.list.textContent = "";
+    ui.chatList.textContent = "";
+    ui.chatList.hidden = true;
+    cards = new Map();
+    usage = null;
+    lastTurnCost = 0;
+    busy = false;
+    openAsk = null;
+    streamBubble = null;
+    picker = null;
+    ui.send.textContent = "Send";
+    ui.text.disabled = false;
+    ui.send.disabled = false;
+    showCost();
+    open(false);
+    store(false);
+    syncButton();
+}
+
 // ---- sending --------------------------------------------------------------------------------
 
 async function send() {
@@ -581,6 +677,9 @@ function stop() {
 
 async function newChat() {
     await api().reset().catch(() => {});
+    ui.chatList.hidden = true;
+    ui.text.disabled = false;
+    ui.send.disabled = false;
     ui.list.textContent = "";
     cards = new Map();
     usage = null;
@@ -612,6 +711,10 @@ async function refresh() {
     ui.send.textContent = busy ? "Stop" : "Send";
     agents = state.agents || 0;
     ui.baseNote = state.base ? `test endpoint: every request goes to ${state.base}` : "";
+    if (state.chatReadOnly) {
+        ui.text.disabled = true;
+        ui.send.disabled = true;
+    }
     await fillPicker(state);
     showNotice();
     showCost();

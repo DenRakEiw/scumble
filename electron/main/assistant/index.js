@@ -206,6 +206,7 @@ class Assistant {
         const dialect = { ...(t.entry.dialect || {}), ...(t.model.thinking !== undefined ? { thinking: t.model.thinking } : {}) };
         return {
             id: `c${Date.now().toString(36)}`,
+            created: Date.now(),
             provider: t.provider,
             model: t.id,
             label: t.model.label || t.id,
@@ -311,6 +312,9 @@ class Assistant {
 
         await this.connect();
         if (!this.chat) this.chat = await this.newChat();
+        if (this.chat.readOnly) {
+            throw new Error(`this chat was saved on ${this.chat.label || this.chat.model}; start a new chat to go on with ${this.target().model.label || this.target().id}`);
+        }
         const chat = this.chat;
         if (chat.dialect && chat.dialect.contextNote && !chat.noted) {
             chat.noted = true;                       // the one-time note of §2 row 26
@@ -324,6 +328,7 @@ class Assistant {
             steps: 0,
             undo: null,
             docs: new Set(),
+            tools: [],
             started: Date.now(),
         };
         turn.signal = turn.abort.signal;
@@ -385,6 +390,8 @@ class Assistant {
             busy: this.busy(),
             turn: this.turn ? this.turn.id : null,
             readOnly: !!this.readOnly,
+            chatReadOnly: !!(chat && chat.readOnly),
+            chatId: chat ? chat.id : null,
             base: loopbackBase(s.base),
             events: this.events.map((e) => (e && e.image ? { ...e, image: null } : e)),
             pending: this.pending ? this.pending.card : null,
@@ -409,6 +416,93 @@ class Assistant {
         }
         out.toolsChanged = chat ? this.toolsChanged || null : null;
         return out;
+    }
+
+    // ---- the chats on disk (A6) -----------------------------------------------------------
+
+    /** Every saved chat, newest first, for the panel's list. */
+    async chats() {
+        return this.deps.store ? this.deps.store.list() : [];
+    }
+
+    /**
+     * Reopen a saved chat. It goes on only on the provider and model it was saved with, and
+     * only while a key for them is there; otherwise it opens **read-only** - a history sent to
+     * another model is a history that model did not write, and every family checks that.
+     */
+    async openChat(id) {
+        if (!this.deps.store) throw new Error("no chat store");
+        if (this.turn || this.starting) throw new Error("a turn is running");
+        const saved = await this.deps.store.load(id);
+        await this.connect();
+        const t = this.target();
+        const entry = PROVIDERS[saved.provider] || null;
+        const built = !!(entry && ADAPTERS[entry.family]);
+        const sameModel = t.provider === saved.provider && t.id === saved.model;
+        const hasKey = !!t.key || t.needsKey === false;
+        let chat;
+        let reason = "";
+        if (sameModel && built && hasKey) {
+            chat = await this.newChat();                 // the tools and the system text are fresh
+            chat.id = saved.id;
+            chat.created = saved.created || Date.now();
+            chat.history = saved.history || [];
+            chat.usage = { ...chat.usage, ...(saved.usage || {}) };
+        } else {
+            reason = !built ? `${saved.provider} is not built yet`
+                : (!sameModel ? `this window is set to ${t.model.label || t.id}` : `no key for ${entry ? entry.label : saved.provider}`);
+            chat = {
+                ...saved,
+                readOnly: true,
+                history: saved.history || [],
+                usage: saved.usage || { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, cost: 0 },
+                names: new Set(),
+                owned: new Map(),
+                seen: new Map(),
+                failures: new Map(),
+            };
+        }
+        this.chat = chat;
+        this.events = (saved.events || []).slice();
+        this.lastTurn = null;
+        this.toolsChanged = null;
+        return { id: saved.id, readOnly: !!chat.readOnly, reason, title: saved.title || "", turns: this.events.filter((e) => e.type === "user").length };
+    }
+
+    async deleteChat(id) {
+        if (!this.deps.store) return false;
+        await this.deps.store.remove(id);
+        if (this.chat && this.chat.id === id) { this.chat = null; this.events = []; }
+        return true;
+    }
+
+    /** The chat as it stands, on disk; called at the end of every turn. */
+    async saveChat(chat) {
+        if (!this.deps.store || !chat || chat.readOnly) return null;
+        const saved = await this.deps.store.save(chat, { events: this.events });
+        await this.deps.store.prune(this.settings().keepChats);
+        return saved;
+    }
+
+    /**
+     * Everything the assistant stored, gone (§8.5): the chats and their pictures, the notice
+     * dates, the settings, and its lines in the app log. **No key is touched** - those belong
+     * to Settings > API providers, and the assistant never wrote them.
+     */
+    async resetAll() {
+        this.stop();
+        if (this.starting) await Promise.race([this.starting, new Promise((r) => setTimeout(r, 5000))]);
+        if (this.turnDone) await Promise.race([this.turnDone.catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
+        this.chat = null;
+        this.events = [];
+        this.lastTurn = null;
+        this.toolsDirty = false;
+        this.toolsChanged = null;
+        this.readOnly = false;
+        if (this.deps.store) await this.deps.store.removeAll();
+        if (this.deps.settings && this.deps.settings.set) this.deps.settings.set({ assistant: { ...DEFAULTS, noticed: {} } });
+        if (this.deps.log && this.deps.log.forget) await this.deps.log.forget("assistant");
+        return { ok: true };
     }
 
     /** The privacy notice of a provider (§2 row 31), in plain words about where the pictures go. */
@@ -685,6 +779,7 @@ class Assistant {
             image: image ? `data:${image.mimeType || "image/jpeg"};base64,${image.data}` : null,
         });
         turn.steps++;
+        turn.tools.push(name);
         this.countFailure(chat, canonical, res.isError);
 
         // ---- ownership and the pin
@@ -760,13 +855,32 @@ class Assistant {
         return models.costOf(chat.provider, chat.model, usage, this.deps.now ? this.deps.now() : Date.now());
     }
 
+    /**
+     * One line per turn in the app log (§4 A1): what ran, on which model, how long it took and
+     * what it cost. It is tagged `assistant`, which is what the reset of A6 looks for when it
+     * takes the assistant's lines out of `scumble.log`.
+     */
+    recordTurn(chat, turn, reason, detail) {
+        const seconds = ((Date.now() - (turn.started || Date.now())) / 1000).toFixed(1);
+        const tools = [...new Set(turn.tools || [])].join(", ");
+        const u = chat.usage || {};
+        const cost = u.cost ? `, $${u.cost.toFixed(4)} for the chat` : "";
+        this.record(`${chat.provider}:${chat.model} turn ${reason}${detail ? " (" + String(detail).slice(0, 200) + ")" : ""}`
+            + ` in ${seconds} s, ${turn.steps} call${turn.steps === 1 ? "" : "s"}${tools ? " [" + tools + "]" : ""}`
+            + `, ${(u.input || 0) + (u.cacheRead || 0)} in / ${u.output || 0} out tokens${cost}`);
+    }
+
     record(line) {
         if (this.deps.log && this.deps.log.record) this.deps.log.record({ source: "assistant", message: String(line) });
     }
 
     done(chat, turn, reason, detail) {
         if (turn.steps > 0 && turn.docs.size) this.lastTurn = { id: turn.id, docs: [...turn.docs], steps: turn.steps, started: turn.started || null };
+        this.recordTurn(chat, turn, reason, detail);
         this.emit("turn:done", { turn: turn.id, reason, detail: detail || "", steps: turn.steps, usage: { ...chat.usage } });
+        // the chat goes to disk at the end of every turn (A6); a failed write is a log line, not
+        // an error the user sees in the middle of an answer
+        this.saveChat(chat).catch((err) => this.record(`the chat could not be saved: ${(err && err.message) || err}`));
         return { reason, detail: detail || "", steps: turn.steps, usage: { ...chat.usage } };
     }
 }
