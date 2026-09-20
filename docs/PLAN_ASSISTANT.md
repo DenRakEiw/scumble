@@ -848,6 +848,38 @@ external agents see changed (§8.9).
 
 **Estimate.** Half a day.
 
+### A0 as built (2026-09-20)
+
+`createServer(backend, opts)` holds what `serve()` built, `serve()` is `createServer` plus the
+stdio transport, and the exports are `{ serve, createServer, toTool, toolName, textOf,
+INSTRUCTIONS }`. The `changed` handler is named, attached in `createServer` and taken off the
+backend in `server.onclose`; **the plan's `onclose` chain was dropped**, because nothing sets
+`server.onclose` before `createServer` does - it was a branch no test could reach, and a mutation
+of it stayed alive. A caller that wants its own `onclose` chains this one, which the code says.
+
+**The proof of identity.** `tools_snapshot.py` (the session's scratchpad) reads the server's info,
+its capabilities, its instructions and every tool (name, description, `inputSchema`, annotations,
+sorted) through the same client `mcp_test.py` uses, and writes them as JSON. Four reads - proxy and
+headless, before and after the split - are **the same file, md5
+`05837058b7b253f9156769bd89b9f14f`**: 72 tools (62 core commands and 10 from the built-in plugins),
+instructions 1,042 characters, `scumble 0.1.21`.
+
+**`tools/assistant_test.js` section 1** is written (11 checks): the tool list over
+`InMemoryTransport` against what `toTool` makes of the fixture, the shapes that have to survive (a
+required list, an enum, a default written into the description, an `object` parameter with no
+type), the dotted plugin name as one tool, an image result as image content with the base64 out of
+the text part, `ping` carrying the backend's `info()`, a thrown command as `isError`, an unknown
+tool as an error result, **the listener detached on close** (20 sessions, 1 listener while one is
+open, 0 after), a `changed` backend reaching the client while the session is open, and
+`serve_and_create_server_list_the_same_tools`: the file starts itself again as a child with
+`--serve-fixture`, which runs the real `serve()` on the same fake backend, and the two tool lists,
+the server info and the instructions are equal. A mutation round of **8, all 8 red**.
+
+**Gates.** `node tools/assistant_test.js` PASS. `mcp` headless on a fresh profile PASS (1.5 s), and
+`mcp commands` in proxy mode on both backends. `docs/MCP.md` names the split, the listener rule and
+the count. **Not run: `--exe`** - the package in `dist/win-unpacked` is 0.1.20 and holds the code
+from before the split, so that run belongs to the release (A9), not here.
+
 ### A1. The loop, the policy, the registry and the Anthropic adapter, in plain Node (three and a half days)
 
 **Purpose.** The heart of the feature on its first family, streaming, finished and proven

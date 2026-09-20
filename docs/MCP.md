@@ -114,7 +114,11 @@ MCP client ──stdio──> Scumble --mcp (electron/main/mcp/server.js)
   authentication: the same trust as the DevTools port and the node's loopback route.
 - **`electron/main/mcp/server.js`**: `@modelcontextprotocol/sdk` (MIT) low-level `Server`
   with `tools/list` and `tools/call` handlers built from `list_commands` on every list, so
-  plugin commands appear without a restart. Stdin is read through
+  plugin commands appear without a restart. `createServer(backend, opts)` makes that server
+  and `serve(backend, opts)` puts it on stdio; an in-process client (the in-app assistant)
+  connects the same server to a transport pair instead, so both see one tool surface. The
+  `changed` listener goes off the backend again when the server closes: the Bridge outlives
+  an in-memory session, and Node warns after ten listeners. Stdin is read through
   `fs.createReadStream(null, {fd: 0})`: in Electron's main process `process.stdin` never
   emits `data` when stdin is a pipe on Windows (the stream ends, the bytes are lost). The
   transport does not watch the end of stdin either, so the server closes on `end` / `close`
@@ -137,7 +141,8 @@ agent sees the user's last documents.
 ## Testing
 
 `python tools/mcp_test.py [--exe dist/win-unpacked/Scumble.exe]` talks to the server with
-the Python `mcp` client: instructions, 62 tools with valid names and schemas, `ping`
+the Python `mcp` client: instructions, the tools with valid names and schemas (72 on a fresh
+profile: 62 core commands and 10 from the built-in plugins), `ping`
 (reports the mode), `new_document`, `load_image` by path, `select_rect`, `add_filter`
 (`sample.posterize`, WebGL2 in the hidden window), `sample_mean_color`, `screenshot` as
 image content (`dist/smoke/mcp_screenshot.jpg`), `export` to a path, an error case, an

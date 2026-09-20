@@ -126,6 +126,21 @@ transparent generate log mcp recipes`, tiles also `nodecopy`): **ALL PASS**, at 
 looked at in a running app (no console error, every panel in its tab, the plugins' sections still arriving through
 `ed.addSection`).
 
+**2026-09-20: the assistant (item 13) is started - A0, the server split, is built** (`docs/PLAN_ASSISTANT.md`
+"A0 as built", `docs/MCP.md`). `electron/main/mcp/server.js` now has `createServer(backend, opts)` beside
+`serve(backend, opts)` (= `createServer` plus the stdio transport), exports `{ serve, createServer, toTool,
+toolName, textOf, INSTRUCTIONS }`, and takes its `changed` listener off the backend again when the server closes
+(the Bridge outlives an in-memory session; Node warns after ten). **Nothing an external agent sees changed, and it
+is proven:** the server's info, capabilities, instructions and all 72 tools (62 core, 10 plugin) read through
+`mcp_test.py`'s own client, in proxy and in headless mode, before and after the split - four reads, one md5
+(`05837058b7b253f9156769bd89b9f14f`). **Not the plan in one point:** its `onclose` chain is gone, because nothing
+sets `server.onclose` before `createServer` does (an unreachable branch; its mutation was the only one to survive).
+`tools/assistant_test.js` is the new plain-Node test (section 1, 11 checks, including the listener over 20 sessions
+and a child process that runs the real `serve()` on stdio and lists the same tools); 8 of 8 mutations red. Gates:
+`node tools/assistant_test.js` PASS, `mcp` headless PASS, `mcp commands` on both backends ALL PASS. `--exe` was not
+run: the package in `dist/win-unpacked` is 0.1.20, so that run belongs to the assistant's own release (A9). **Next
+is A1** (the loop, the policy, the registry and the Anthropic adapter in plain Node, three and a half days).
+
 ## Where things stand (2026-09-19)
 
 **2026-09-19, evening: OpenRouter (item 12) is built, for 0.1.21** (`package.json` 0.1.21, `CHANGELOG.md` "0.1.21 —

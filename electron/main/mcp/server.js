@@ -74,11 +74,14 @@ function textOf(result) {
 }
 
 /**
+ * The server with its two handlers and no transport of its own: `serve()` puts it on stdio for
+ * an external client, and an in-process client (the assistant) connects it to a transport pair.
+ *
  * @param backend {run(name, args), describe(), on("changed"), info()}: the Bridge (in-process)
  *                or a LocalClient (proxy); `info()` yields {mode, pid} for `ping`.
- * @param opts    {version, onClose}
+ * @param opts    {version, info}
  */
-async function serve(backend, opts = {}) {
+function createServer(backend, opts = {}) {
     const server = new Server({ name: "scumble", version: opts.version || "0.0.0" }, {
         capabilities: { tools: { listChanged: true } },
         instructions: INSTRUCTIONS,
@@ -110,7 +113,26 @@ async function serve(backend, opts = {}) {
         return { content: [{ type: "text", text: textOf(result) }] };
     });
 
-    if (typeof backend.on === "function") backend.on("changed", () => server.sendToolListChanged().catch(() => { /* client gone */ }));
+    if (typeof backend.on === "function") {
+        // named, so it can go again: the Bridge outlives an in-memory session and Node warns
+        // after ten listeners on one emitter. This takes `server.onclose`, which nothing has set
+        // at this point; a caller that wants its own has to chain this one.
+        const changed = () => server.sendToolListChanged().catch(() => { /* client gone */ });
+        backend.on("changed", changed);
+        server.onclose = () => {
+            if (typeof backend.removeListener === "function") backend.removeListener("changed", changed);
+        };
+    }
+    return server;
+}
+
+/**
+ * The same server on stdio, for `Scumble --mcp`.
+ *
+ * @param opts {version, info, onClose}
+ */
+async function serve(backend, opts = {}) {
+    const server = createServer(backend, opts);
 
     // Electron's main process never sees `data` on process.stdin when stdin is a pipe on
     // Windows (the stream ends, the bytes are lost); a read stream on fd 0 works everywhere.
@@ -125,4 +147,4 @@ async function serve(backend, opts = {}) {
     return server;
 }
 
-module.exports = { serve, toTool, toolName, INSTRUCTIONS };
+module.exports = { serve, createServer, toTool, toolName, textOf, INSTRUCTIONS };
