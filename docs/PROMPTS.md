@@ -50,6 +50,10 @@ Placeholders in the body, all optional:
 no quotes, no headings, no explanation"), so a template that forgets to say it still yields
 a usable prompt.
 
+The **assistant** (`docs/ASSISTANT.md`) is not a template and uses none: a template is one call
+with no tools, the assistant is a loop with the editor's commands in its hand. It is an app
+feature beside templates, like prompt upsampling itself.
+
 ## Where a template is used
 
 - **Generate new**: the select in the dialog. It changes what *Upsample prompt* asks for,

@@ -2394,6 +2394,43 @@ assistant's reads at the user's 15k on both backends; the documentation.
 **Estimate.** Three days: the gate has 76 steps across four families, and twenty-one
 mutations each need a freshly started instance.
 
+
+### A8, as far as the user asked for it (2026-09-20)
+
+**The user cut this step down too** (the same word as for the checkpoint: "lass uns das testing
+ueberspringen, machen wir nach release mach dann eh extreme bug suchen"), so A8 is its
+documentation, not its measurements or its remaining gate steps.
+
+**Written:**
+
+- **`docs/ASSISTANT.md`** - the whole feature for the user: what it needs (the key rows, the
+  providers and their models with their marks), what a turn is, what asks before it acts and what
+  does not, **how to take it back** (Ctrl+Z per step, what it covers that the editor does not,
+  "Undo this turn" with its three limits: the tile engine, the user's own edits, and the fields
+  that come back only with it), the chats on disk and the reset, **where the picture goes** per
+  provider, what it cannot do (the six tools it does not have, a blind model, no live run yet),
+  the keys and the focus rules, the accelerators that still fire, and what it costs.
+- **`docs/PROMPTS.md`**: the assistant is not a template and uses none - a template is one call
+  with no tools.
+- **`docs/MCP.md`**: the in-process client beside the stdio one, and that nothing an external
+  agent sees changed (proven byte for byte at A0).
+- **`CLAUDE.md`**: the assistant's path in "How the app is put together", `assistant` in the gate
+  list (A4), and a paragraph per step in "Where things stand".
+- **`CHANGELOG.md`**: the 0.1.21 section carries the panel, the chats and the undo.
+
+**Not done, and it is not hidden:**
+
+- **The measurement** (`--measure 15000x10000`, five runs per backend: `screenshot`, the reads,
+  a turn snapshot and its restore). With it goes the rule it would decide: a cap on screenshots
+  per turn on the canvas backend if one costs more than about 2 s there.
+- **The remaining gate steps of §6** (the injection step, the key steps, the leading example as
+  one run) and the plan's **twenty-one mutations in one round**. What exists instead: **36 gate
+  steps** and **66 mutations** across A4 to A7, each round on a restarted app, each written down
+  where it ran.
+- **`docs/BUGS.md`'s three entries** from the planning session (`llm.js` errors unscrubbed,
+  `tools/list_changed` on every plugin error, `askOpenAI` without `store: false`) - they are the
+  planner's findings about code this release does not touch.
+
 ### A9. The live check and the release (one day, with the user)
 
 **Purpose.** The panel, the packaged app and the real APIs together, once, before the

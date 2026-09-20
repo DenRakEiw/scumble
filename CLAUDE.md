@@ -939,6 +939,11 @@ Known flakes; **re-run before believing any of these**:
   `main.js` → the running instance over `electron/main/local.js` (named pipe) or the app
   started headless in the same process → `electron/main/bridge.js` (IPC `commands:request` /
   `commands:reply`) → `commands.call` in `renderer/shell.js`. `docs/MCP.md`.
+- The assistant: the panel (`renderer/assistant.js`) -> IPC `assistant:*` ->
+  `electron/main/assistant/` (the loop, the policy, the four adapters) -> an in-process MCP client
+  over `InMemoryTransport` -> the same `createServer` external agents get -> `bridge.js` with
+  `meta` (the user-activity wait, the busy check, the turn and its undo step) -> `commands.call`.
+  Chats under `<userData>/assistant/`, `docs/ASSISTANT.md`, the plan in `docs/PLAN_ASSISTANT.md`.
 - Provider runs: `host.runProvider` (the recipe resolved to the chosen provider's variant by
   `shell.js`) → `renderer/editor/stitch.js` (crop) → IPC `provider:edit` →
   `electron/main/providers/index.js` picks the adapter and the key (`keys.js`) →

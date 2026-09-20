@@ -111,6 +111,13 @@ MCP client ──stdio──> Scumble --mcp (electron/main/mcp/server.js)
   before `commands.call`; when the assistant's turn is stopped while such a request still waits,
   the Bridge sends `commands:cancel {id}` and the request never runs. Requests without `meta`
   (external agents, `--cmd`, scripts) take exactly the path they always took.
+- **The in-app assistant** (`docs/ASSISTANT.md`) drives the editor through **the same server**:
+  `createServer(backend)` on an `InMemoryTransport` pair inside the main process, with the Bridge
+  as its backend. It sees the same tools minus six it must not have (`list_commands`, `run_action`,
+  `set_status`, the three `ailabel_*`), and its requests carry the `meta` above. **Nothing an
+  external agent sees changed for it**: the tool list, the instructions, the annotations and the
+  error texts are what they were, and that was proven byte for byte when `createServer` was split
+  out of `serve()`.
 - **`electron/main/local.js`**: the command socket every running instance opens:
   `\\.\pipe\scumble-<hash of userData>` on Windows, `<userData>/scumble.sock` elsewhere.
   Newline-delimited JSON, `{id, cmd: run|describe|ping, name, args}` → `{id, ok,
