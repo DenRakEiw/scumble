@@ -111,11 +111,35 @@ rule against a scripted fetch; the gate `openrouter` (docs/RECIPES.md "OpenRoute
 come with the key, after the ToAPIs rows, and upsamples on the Gemini row against `tools/openrouter_mock.py`,
 which answers the four ids on `/api/v1/chat/completions`.
 
+### Rows the user adds (Settings › Language models)
+
+`electron/main/llm_custom.js` holds the list in `settings.llm.models`, one row
+`{ provider, model, label, upsample, assistant, vision }`, and **both** pickers read it: `llm.list()`
+appends the rows marked `upsample` after the built-in ones (label "<name> (<provider>)", `key` from that
+provider's own row, or for the local endpoint from its URL), and `picker()` in
+`electron/main/assistant/providers.js` appends the rows marked `assistant` to their provider group, after
+the curated models and never repeating one. The provider registry is the assistant's, so the ten providers,
+their key rows and their base URLs are the same list in both features; `vision: false` means the model gets
+no crop and, in the assistant, no `screenshot` tool.
+
+A row of a Chat Completions provider that has no upsample adapter of its own - **DeepSeek, Moonshot, Z.ai,
+WaveSpeedAI** - goes through `askChat`, the same `askCompatible` client as the ToAPIs and OpenRouter rows
+(strict retry, `<think>` stripping, 120 s timeout), to the base `llm_custom.endpoint(provider)` reads from
+the registry. ToAPIs and the local endpoint keep their own paths (their host comes from the settings). A
+row whose provider has no key is listed but not selectable, exactly as a keyless built-in row.
+
+The list is normalised on every read: an unknown provider, an empty id and a duplicate are dropped, an id
+is cut at 200 characters and a name at 120, and at most 50 rows are kept. Nothing checks that the id exists
+at the provider or that the model takes tools - the provider's own error is what the user sees.
+`node tools/models_test.js` is the gate for all of it (29 checks, the first step of `tools/llm_test.py`),
+`tools/llm_test.py` step 5 drives the dialog end to end, and `tools/assistant_test.py`
+`the_picker_carries_the_users_own_models_and_no_warning_about_itself` the rendered picker.
+
 ### Key rows for the assistant (DeepSeek, Moonshot, Z.ai)
 
 Three key rows in Settings › API providers exist for the in-app assistant (`docs/PLAN_ASSISTANT.md`),
-which reads them through `electron/main/assistant/providers.js`; they run no image model and add no
-prompt upsampling row (`providers/deepseek.js`, `moonshot.js`, `zai.js`, right after the Anthropic row;
+which reads them through `electron/main/assistant/providers.js`; they run no image model and ship no
+built-in prompt upsampling row (one added under Settings › Language models runs on the same key, above) (`providers/deepseek.js`, `moonshot.js`, `zai.js`, right after the Anthropic row;
 the Anthropic row itself is read by the assistant too). Where the keys come from: DeepSeek from
 `platform.deepseek.com/api_keys` (`sk-...`); Moonshot / Kimi from `platform.kimi.ai/console/api-keys`
 only (a key from the China platform, platform.moonshot.cn, does not work against `api.moonshot.ai`);

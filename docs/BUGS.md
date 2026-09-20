@@ -13,6 +13,18 @@ the ones that were performance work.
 
 An entry here leaves the file when the release named in it is published.
 
+- **The assistant's picker warned about itself** (fixed 2026-09-20, in 0.1.22; reported by the user the same
+  evening 0.1.21 went out: "wieso hast du im agent ueberall geschrieben: not tried with a real key... muessen die
+  user ja nicht wissen"). `marks()` in `renderer/assistant.js` appended "not tried with a real key" to every model
+  of every provider, because every registry entry carried `tried: false` - ten providers, so the picker read as a
+  row of warnings about the app instead of information about a model. **Decided and done:** the mark goes
+  altogether, and with it the `tried` flag of `electron/main/assistant/providers.js` and the field `picker()` and
+  `noticeFor()` put on their answer. A row now says only what is true of that model ("cannot look at the picture",
+  a provider's own preview note). The honest sentence stays where the report said it belongs: `docs/ASSISTANT.md`,
+  "What it cannot do" ("It has **not been tried against a live API** in this release"), and the release notes.
+  Gate: `tools/assistant_test.py` `the_picker_carries_the_users_own_models_and_no_warning_about_itself` (no option
+  of the rendered picker matches "not tried" or "not tested"), and `node tools/models_test.js`
+  `no_group_warns_about_itself` for the groups the main process hands over; both red when the mark is put back.
 - **FLUX.2 [flex] on fal sent the safety tolerance as its step count** (fixed 2026-09-20, in 0.1.21; it was under
   "What OpenRouter (item 12) found on the way"). `recipes/flux2_flex.json`, the `fal` variant carried
   `num_inference_steps` and `safety_tolerance` both at `"index": 1`. One slot holds one value
@@ -93,35 +105,6 @@ An entry here leaves the file when the release named in it is published.
 ---
 
 ## Open
-
-### The assistant's picker warns about itself: "not tried with a real key" on every model
-
-**Reported by the user, 2026-09-20, right after 0.1.21 went out:** "wieso hast du im agent ueberall
-geschrieben: not tried with a real key... muessen die user ja nicht wissen".
-
-**What it is.** `renderer/assistant.js` `marks()` appends "not tried with a real key" to every model of a
-provider whose registry entry has `tried: false` (`electron/main/assistant/providers.js`), and **every one of
-the ten providers has it**, because nothing has run against a live model here. So the picker reads as a row
-of warnings about the app rather than as information about a model, and `docs/ASSISTANT.md` repeats it.
-
-**Where it came from.** §2 row 33 of `docs/PLAN_ASSISTANT.md`, which the user approved in §8 on 2026-09-19:
-the mark is what the ToAPIs image adapter shipped with. The plan had **single** untried providers in mind,
-one mark among rows that carried none; with all ten marked it says something else.
-
-**What has to be decided before anyone writes code** (the user decides, it is his product):
-
-1. Does the mark go altogether, or stay for a provider whose *own* first run is still ahead while the others
-   drop it once they have answered once?
-2. If it stays in some form: where does the truth live? `tried` is a hand-kept boolean in the registry
-   today. It could become what it says - set the first time a turn on that provider ends with `reason:
-   "end"`, kept in `settings.assistant.tried`, so the picker stops warning by itself once a provider has
-   worked. That is honest and needs no editing of the registry per release.
-3. What `docs/ASSISTANT.md` says instead: the honest sentence belongs there ("no model has completed a task
-   here yet"), not on every row of the picker.
-
-**Not urgent, and it is not a defect of the code:** the marks are right, they are just in the wrong place and
-in the wrong number. The same question does not touch the image providers' "Not tried against the real
-service yet" in `CHANGELOG.md` and `docs/RECIPES.md`, which are release notes and reference, not a control.
 
 ### What planning the assistant found on the way
 

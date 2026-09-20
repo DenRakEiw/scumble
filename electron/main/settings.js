@@ -19,7 +19,9 @@ const DEFAULTS = {
     updates: { check: true },   // check GitHub Releases at start (electron/main/updater.js)
     // prompt upsampling on a local or self-hosted OpenAI-compatible server (Ollama, LM
     // Studio, vLLM, a proxy); an optional key lives in keys.js under the name "compat"
-    llm: { compat: { url: "", model: "" } },
+    // `models` are the rows the user added under Settings > Language models
+    // (electron/main/llm_custom.js): { provider, model, label, upsample, assistant, vision }
+    llm: { compat: { url: "", model: "" }, models: [] },
     // which prompt instruction template (electron/main/prompts.js) each use takes; "" = built in
     promptTemplates: { upsample: "", generate: "" },
     // above this many MB in the GPU process the shell releases the caches of the tabs that

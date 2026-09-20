@@ -69,11 +69,22 @@ class Assistant {
         return { ...DEFAULTS, ...(all.assistant || {}) };
     }
 
+    /**
+     * The rows the user added under Settings > Language models, those marked for the assistant
+     * (electron/main/llm_custom.js). A deps override keeps the tests off the file.
+     */
+    customModels(all) {
+        if (this.deps.customModels) return this.deps.customModels();
+        const s = all || (this.deps.settings && this.deps.settings.get && this.deps.settings.get()) || {};
+        return require("../llm_custom.js").forAssistant(s);
+    }
+
     /** The provider, its base URL and its key, with the loopback base replacing the host. */
     target(value) {
         const all = (this.deps.settings && this.deps.settings.get && this.deps.settings.get()) || {};
         const s = { ...DEFAULTS, ...(all.assistant || {}) };
-        const chosen = providerOf(value || s.model) || providerOf(DEFAULT_MODEL);
+        const custom = this.customModels(all);
+        const chosen = providerOf(value || s.model, custom) || providerOf(DEFAULT_MODEL, custom);
         const entry = chosen.entry;
         const base = this.baseFor(chosen.provider, entry, s, all);
         const key = (this.deps.keys && this.deps.keys.get && this.deps.keys.get(entry.key)) || "";
@@ -194,7 +205,8 @@ class Assistant {
         const t = this.target();
         const adapter = ADAPTERS[t.entry.family];
         if (!adapter) throw new Error(`${t.entry.label} is not built yet`);
-        if (t.provider === "openrouter" && !t.entry.models.some((m) => m.id === t.id)) {
+        // a free id: not one of OpenRouter's curated rows and not one the user added by hand
+        if (t.provider === "openrouter" && !t.custom && !t.entry.models.some((m) => m.id === t.id)) {
             // a free id: it must be on the live list of tool-capable models, whose row says whether it takes images
             const row = (await this.openrouterModels()).find((m) => m.id === t.id);
             if (!row) throw new Error(`${t.id} is not on OpenRouter's list of models that take tools; pick another id`);
@@ -524,7 +536,6 @@ class Assistant {
             provider,
             label: entry.label,
             text: `Your messages, a short note on the open documents and screenshots of the picture go to ${entry.label}: ${entry.where}.`,
-            tried: !!entry.tried,
         };
     }
 
@@ -562,7 +573,7 @@ class Assistant {
         if (ready.compat) {
             try { ready.compatModels = await this.compatModels(); } catch (err) { ready.compatModels = []; ready.compatError = String((err && err.message) || err); }
         }
-        const groups = picker(ready);
+        const groups = picker(ready, this.customModels(all));
         for (const g of groups) {
             if (!ADAPTERS[PROVIDERS[g.provider].family]) { g.ready = false; g.note = "not built yet"; }
             if (g.provider === "compat" && ready.compatError) g.note = ready.compatError;

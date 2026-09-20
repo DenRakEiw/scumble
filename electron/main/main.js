@@ -508,6 +508,8 @@ function installIpc() {
     ipcMain.handle("llm:list", () => llm.list());
     ipcMain.handle("llm:ask", (_e, req) => llm.ask(req));
     ipcMain.handle("llm:models", (_e, url) => llm.compatModels(url));
+    // the providers a row of Settings > Language models may name, with whether each has its key
+    ipcMain.handle("llm:providers", () => require("./llm_custom.js").options().map((o) => ({ ...o, hasKey: !!keys.describe(o.key).set })));
     // prompt instruction templates (electron/main/prompts.js)
     ipcMain.handle("log:add", (_e, entry) => { const e = entry && typeof entry === "object" ? entry : { message: String(entry) }; return log.record({ level: e.level, source: e.source || "renderer", message: e.message, detail: e.detail }).id; });
     ipcMain.handle("log:list", (_e, q) => log.list(q || {}));

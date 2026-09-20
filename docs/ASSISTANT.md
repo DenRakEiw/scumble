@@ -27,12 +27,31 @@ its last four characters.
 | WaveSpeed | `wavespeed` | Claude Sonnet 5 / Opus 5, Gemini 3.8 Flash |
 | Local / OpenAI-compatible server | none (a saved URL) | whatever its `/models` lists |
 
-A provider without a key is greyed out in the picker. Every model carries its marks: **"not
-tried with a real key"** while nobody has run it here, **"cannot look at the picture"** for a
-model without image input, and the preview note where the provider calls a model one.
+A provider without a key is greyed out in the picker. A model carries a mark only where
+something is true of that model: **"cannot look at the picture"** for a model without image
+input, and the preview note where the provider calls a model one.
 
 The provider and the model are **fixed per chat**: picking another one starts a new chat and the
 panel says so.
+
+## Models of your own
+
+The table above is what Scumble ships with. Any other model of any of those providers - one that
+came out after this release, a cheaper one, an OpenRouter id nobody curated - goes into
+*Settings › Language models*: pick the provider, type the model id the provider itself uses,
+give it a name if you like, and say what it is for:
+
+- **Prompt upsampling** puts it in the editor's *Upsample* list (`docs/PROMPTS.md`).
+- **Assistant** puts it in this picker, in its provider's group, after the models Scumble knows.
+- **Can see the picture** off means the model has no image input: it then never gets the crop,
+  and the assistant leaves `screenshot` out of its tool list, as for any blind model.
+
+It runs on the key that provider already has under *API providers* (the local endpoint on the
+URL above it); a provider without a key stays greyed out. *Remove* takes a row out of both lists
+again. For OpenRouter the id field suggests from its live list of models that take tools.
+
+Nothing checks that the id exists or that the model can use tools - that is between you and the
+provider, and its own error comes back into the chat.
 
 ## What it does with a turn
 

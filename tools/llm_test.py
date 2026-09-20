@@ -1,11 +1,14 @@
 """The OpenAI-compatible upsample endpoint against a mock server (see tools/cdp.py).
 
 No ComfyUI, no API key and no local model needed: tools/llm_mock.py plays the server, this
-drives the running app over CDP. It points settings.llm.compat at the mock, checks the
+drives the running app over CDP. The first step is tools/models_test.js in plain Node (the rules
+the stored rows of Settings > Language models are held to). Then it points settings.llm.compat at the mock, checks the
 backend shows up in the editor's upsample list, upsamples once with a model that sees the
 crop and once with a text-only model (the adapter must retry without the image and say so),
 then the ToAPIs rows (the same client on the ToAPIs image key, at the host settings.toapis.base
-allows: the mock on 127.0.0.1), and finally with the server stopped, where the error has to name
+allows: the mock on 127.0.0.1), then a model the user added by hand under Settings > Language
+models (the dialog writes it, the editor lists it, the request goes to that provider on its key),
+and finally with the server stopped, where the error has to name
 the URL. The settings are put back at the end whatever happens, and the test key is cleared; a
 profile that already holds a ToAPIs key is refused rather than overwritten.
 
@@ -16,6 +19,7 @@ Start the app first: ./node_modules/.bin/electron . --remote-debugging-port=9555
 import asyncio
 import json
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -38,11 +42,25 @@ def js(body):
 })()""" % body
 
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def node_test():
+    """tools/models_test.js: the rules the stored model rows are held to, without the app."""
+    r = subprocess.run(["node", os.path.join(ROOT, "tools", "models_test.js")], cwd=ROOT,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    tail = (r.stdout or "") + (r.stderr or "")
+    if r.returncode != 0:
+        raise Exception("tools/models_test.js: " + tail[-1500:])
+    print("[ok] models_test.js:", tail.strip().splitlines()[-1])
+
+
 async def run(c):
     mock = Mock().start()
     print("mock server on", mock.url)
     ok = True
     try:
+        node_test()
         await c.eval("""(async () => {
     window.__llm = { commands: await import('./commands.js'), host: (await import('./editor/host.js')).host };
     window.__llmSaved = (await window.scumble.settings.get()).llm || null;
@@ -146,7 +164,67 @@ async def run(c):
         if auths[1] and "toapis" in auths[1]:
             raise RuntimeError("the compat endpoint got the ToAPIs key")
 
-        # 5. the server is gone: the error names the URL
+        # 5. a model the user added by hand: the dialog writes it, both pickers take it, the
+        # request goes to that provider on its own key
+        res = await c.eval(js("""
+    const shell = await import("./shell.js");
+    await shell.openSettings();
+    await window.scumble.keys.set("toapis", "sk-llmtest-toapis-000000");
+    window.__llmToapisKey = true;
+    const el = (id) => document.getElementById(id);
+    el("set-lm-provider").value = "toapis";
+    el("set-lm-model").value = "mock-vision";
+    el("set-lm-label").value = "My own row";
+    el("set-lm-upsample").checked = true;
+    el("set-lm-assistant").checked = true;
+    el("set-lm-vision").checked = true;
+    el("set-lm-add").click();
+    for (let i = 0; i < 40 && !((await window.scumble.settings.get()).llm.models || []).length; i++) await new Promise((r) => setTimeout(r, 100));
+    const stored = (await window.scumble.settings.get()).llm.models;
+    const listed = (await window.scumble.llm.list()).find((l) => l.id === "toapis:mock-vision");
+    const group = (await window.scumble.assistant.models()).groups.find((g) => g.provider === "toapis");
+    const inPicker = group.models.find((m) => m.value === "toapis:mock-vision");
+    // the picker warns about a model, never about itself
+    const warns = group.models.some((m) => /not tried/i.test(m.label || "")) || ("tried" in group);
+    await c("set_prompt", { text: %s });
+    ed.refreshSegmentBackends();
+    ed.upBackendSel.value = "app:toapis:mock-vision";
+    if (ed.upBackendSel.value !== "app:toapis:mock-vision") throw new Error("the editor has no row for it: " + Array.from(ed.upBackendSel.options).map((o) => o.value).join(", "));
+    const r = await c("upsample_prompt");
+    // Remove takes it out of both lists again
+    document.querySelectorAll("#set-lm-list .shell-lm-row button").forEach((b) => b.click());
+    for (let i = 0; i < 40 && ((await window.scumble.settings.get()).llm.models || []).length; i++) await new Promise((r2) => setTimeout(r2, 100));
+    await host.refreshLLMs();
+    const gone = !(await window.scumble.llm.list()).some((l) => l.id === "toapis:mock-vision")
+        && !(await window.scumble.assistant.models()).groups.find((g) => g.provider === "toapis").models.some((m) => m.value === "toapis:mock-vision");
+    await window.scumble.keys.clear("toapis");
+    window.__llmToapisKey = false;
+    await host.refreshLLMs();
+    if (document.getElementById("shell-settings").open) document.getElementById("shell-settings").close();
+    ed.refreshSegmentBackends();
+    ed.upBackendSel.value = "app:compat:mock-text";   // what the offline step below asks
+    return { stored, label: listed && listed.label, key: listed && listed.key, inPicker, warns, prompt: r.prompt || ed.promptText, gone };
+""" % json.dumps(PROMPT)))
+        print("[ok] own row:", json.dumps(res)[:400])
+        if not res["stored"] or res["stored"][0]["model"] != "mock-vision" or res["stored"][0]["provider"] != "toapis":
+            raise RuntimeError("the dialog did not store the row: %s" % res["stored"])
+        if res["label"] != "My own row (ToAPIs)" or res["key"] is not True:
+            raise RuntimeError("the upsample list row is wrong: %s" % json.dumps(res))
+        if not res["inPicker"] or res["inPicker"].get("custom") is not True or res["inPicker"].get("label") != "My own row":
+            raise RuntimeError("the assistant picker does not carry the row: %s" % json.dumps(res["inPicker"]))
+        if res["warns"]:
+            raise RuntimeError("the picker still warns about itself")
+        if "UPSAMPLED" not in res["prompt"] or "image: yes" not in res["prompt"]:
+            raise RuntimeError("the row did not reach the endpoint with the crop: " + res["prompt"])
+        if not res["gone"]:
+            raise RuntimeError("Remove left the row in a list")
+        posts, auths = mock.posts(), mock.post_auths()
+        if len(posts) != 5 or posts[4].get("model") != "mock-vision":
+            raise RuntimeError("the row request is not the fifth, or not on its model: %s" % [p.get("model") for p in posts])
+        if auths[4] != "Bearer sk-llmtest-toapis-000000":
+            raise RuntimeError("the row request did not carry the provider key: %r" % auths[4])
+
+        # 6. the server is gone: the error names the URL
         mock.stop()
         mock = None
         res = await c.eval(js("""
@@ -170,7 +248,7 @@ async def run(c):
         try:
             await c.eval("""(async () => {
     const host = window.__llm.host, raw = window.__llm.commands;
-    await window.scumble.settings.set({ llm: window.__llmSaved || { compat: { url: "", model: "" } } });
+    await window.scumble.settings.set({ llm: window.__llmSaved || { compat: { url: "", model: "" }, models: [] } });
     if (window.__llmToapisKey) { await window.scumble.keys.clear("toapis"); window.__llmToapisKey = false; }
     if ("__llmToapisBase" in window) { await window.scumble.settings.set({ toapis: window.__llmToapisBase }); delete window.__llmToapisBase; }
     await host.refreshLLMs();

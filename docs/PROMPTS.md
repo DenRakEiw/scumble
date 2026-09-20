@@ -66,6 +66,9 @@ feature beside templates, like prompt upsampling itself.
 
 The chosen language model is a separate matter: any API key, or a local server through
 Settings › Local / OpenAI-compatible endpoint (Ollama, LM Studio). See `docs/HELPERS.md`.
+The list holds the models Scumble ships with; any other model of any of those providers -
+OpenRouter ids included - goes into it through *Settings › Language models*, which feeds the
+assistant's picker from the same rows (`docs/ASSISTANT.md`, "Models of your own").
 
 ## How it is put together
 

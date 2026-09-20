@@ -9,7 +9,7 @@ import { commands, docSummary } from "./commands.js";
 import * as plugins from "./plugins.js";
 import { waitForUser, editorOf } from "./assistant_wait.js";
 import { beforeCall as snapshotTurn, watchUserEdits, forgetDocument } from "./assistant_turns.js";
-import { initAssistant, toggleAssistant, resetAssistant } from "./assistant.js";
+import { initAssistant, toggleAssistant, resetAssistant, refreshAssistantModels } from "./assistant.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -60,6 +60,9 @@ const ui = {
     compatUrl: $("set-compat-url"), compatModel: $("set-compat-model"), compatModels: $("set-compat-models"),
     compatKey: $("set-compat-key"), compatKeySave: $("set-compat-key-save"), compatKeyClear: $("set-compat-key-clear"),
     compatKeyState: $("set-compat-key-state"), compatTest: $("set-compat-test"), compatState: $("set-compat-state"),
+    lmProvider: $("set-lm-provider"), lmModel: $("set-lm-model"), lmModels: $("set-lm-models"), lmLabel: $("set-lm-label"),
+    lmUpsample: $("set-lm-upsample"), lmAssistant: $("set-lm-assistant"), lmVision: $("set-lm-vision"),
+    lmAdd: $("set-lm-add"), lmState: $("set-lm-state"), lmList: $("set-lm-list"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
@@ -620,6 +623,145 @@ ui.compatTest.addEventListener("click", async () => {
         ui.compatState.textContent = String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
     } finally {
         ui.compatTest.disabled = false;
+    }
+});
+
+// ---- language models the user added (Settings > Language models) ----------------------
+
+// electron/main/llm_custom.js keeps the rows in settings.llm.models; both pickers read them
+// from there (the editor's Upsample list through llm.list(), the assistant's through its own
+// models()). The dialog only ever writes the whole list back.
+let lmProviders = [];
+
+/**
+ * The rows as they are stored right now. The dialog reads the file, not the window's cached
+ * settings: the endpoint above writes settings.llm without touching that cache, and a stale
+ * read here would write its old URL back.
+ */
+async function lmRows() {
+    const set = await window.scumble.settings.get();
+    return Array.isArray((set.llm || {}).models) ? (set.llm || {}).models : [];
+}
+
+async function lmSave(rows) {
+    const set = await window.scumble.settings.get();
+    settings = await window.scumble.settings.set({ llm: { ...(set.llm || {}), models: rows } });
+    await renderModels();
+    await host.refreshLLMs();
+    refreshAssistantModels();
+}
+
+async function renderModels() {
+    // read every time: a key saved above changes what the rows say, and the list is small
+    try { lmProviders = await window.scumble.llm.providers(); } catch (_) { lmProviders = lmProviders || []; }
+    const keep = ui.lmProvider.value;
+    ui.lmProvider.innerHTML = "";
+    for (const p of lmProviders) {
+        const o = document.createElement("option");
+        o.value = p.provider;
+        o.textContent = p.label + (p.hasKey || !p.needsKey ? "" : " — no key");
+        ui.lmProvider.appendChild(o);
+    }
+    if (keep) ui.lmProvider.value = keep;
+    lmPlaceholder();
+    ui.lmList.innerHTML = "";
+    const rows = await lmRows();
+    for (const r of rows) {
+        const p = lmProviders.find((x) => x.provider === r.provider);
+        const row = document.createElement("div");
+        row.className = "shell-provider shell-lm-row";
+        const label = document.createElement("span");
+        label.textContent = p ? p.label : r.provider;
+        row.appendChild(label);
+        const what = document.createElement("span");
+        what.className = "shell-note";
+        what.textContent = r.label ? `${r.label} — ${r.model}` : r.model;
+        what.title = r.model;
+        row.appendChild(what);
+        const uses = document.createElement("span");
+        uses.className = "shell-uses";
+        const used = [];
+        if (r.upsample !== false) used.push("upsampling");
+        if (r.assistant !== false) used.push("assistant");
+        if (r.vision === false) used.push("no picture");
+        uses.textContent = used.join(" · ") || "not used";
+        row.appendChild(uses);
+        const del = document.createElement("button");
+        del.type = "button";
+        del.textContent = "Remove";
+        del.addEventListener("click", async () => {
+            const next = (await lmRows()).filter((x) => !(x.provider === r.provider && String(x.model || "").trim() === String(r.model || "").trim()));
+            await lmSave(next);
+        });
+        row.appendChild(del);
+        ui.lmList.appendChild(row);
+    }
+    if (!rows.length) {
+        const empty = document.createElement("p");
+        empty.className = "shell-note";
+        empty.textContent = "No models of your own yet; the built-in ones are in the pickers anyway.";
+        ui.lmList.appendChild(empty);
+    }
+}
+
+/** One of the provider's own ids as the placeholder of the id field. No request. */
+function lmPlaceholder() {
+    const p = lmProviders.find((x) => x.provider === ui.lmProvider.value);
+    ui.lmModel.placeholder = (p && p.curated && p.curated[0]) || "the model id of that provider";
+    if (ui.lmProvider.value !== "openrouter") ui.lmModels.innerHTML = "";
+}
+
+/**
+ * OpenRouter's live list of models that take tools, as suggestions for the id field. It is read
+ * when the user turns to that field or picks the provider, not merely because the dialog opened:
+ * a settings dialog should not talk to a host by itself.
+ */
+async function lmSuggest() {
+    lmPlaceholder();
+    if (ui.lmProvider.value !== "openrouter" || ui.lmModels.childNodes.length) return;
+    try {
+        const list = await window.scumble.assistant.openrouterModels();
+        for (const m of (list || []).slice(0, 400)) {
+            const o = document.createElement("option");
+            o.value = m.id;
+            o.label = m.label || m.id;
+            ui.lmModels.appendChild(o);
+        }
+    } catch (_) { /* the suggestions are a convenience */ }
+}
+
+ui.lmProvider.addEventListener("change", () => { lmSuggest(); });
+ui.lmModel.addEventListener("focus", () => { lmSuggest(); });
+for (const el of [ui.lmModel, ui.lmLabel]) {
+    el.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); ui.lmAdd.click(); } });
+}
+ui.lmAdd.addEventListener("click", async () => {
+    const model = ui.lmModel.value.trim();
+    if (!model) { ui.lmState.textContent = "Enter a model id first."; return; }
+    const provider = ui.lmProvider.value;
+    const rows = (await lmRows()).slice();
+    if (rows.some((r) => r.provider === provider && String(r.model || "").trim() === model)) {
+        ui.lmState.textContent = "That model is already on the list.";
+        return;
+    }
+    rows.push({
+        provider,
+        model,
+        label: ui.lmLabel.value.trim(),
+        upsample: ui.lmUpsample.checked,
+        assistant: ui.lmAssistant.checked,
+        vision: ui.lmVision.checked,
+    });
+    try {
+        await lmSave(rows);
+        ui.lmModel.value = "";
+        ui.lmLabel.value = "";
+        const p = lmProviders.find((x) => x.provider === provider);
+        ui.lmState.textContent = p && p.needsKey && !p.hasKey
+            ? `Added. ${p.label} has no key yet — add it under API providers above.`
+            : "Added.";
+    } catch (err) {
+        ui.lmState.textContent = String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
     }
 });
 
@@ -1343,6 +1485,8 @@ async function openSettings() {
     await loadProviders();
     await renderProviders();
     await renderCompat();
+    await renderModels();
+    ui.lmState.textContent = "";
     await host.refreshPromptTemplates();
     renderPrompts();
     renderRecipeList();

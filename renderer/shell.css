@@ -65,6 +65,10 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 .shell-recipe select { min-width: 150px; max-width: 190px; }
 .shell-recipe.active .shell-recipe-name { color: #fff; font-weight: 600; }
 .shell-provider:last-child, .shell-recipe:last-child { border-bottom: 0; }
+/* a row of Settings > Language models: provider, model, what it is used for, Remove */
+.shell-lm-row .shell-note { max-width: none; white-space: normal; overflow: visible; text-overflow: clip; word-break: break-all; }
+.shell-lm-row .shell-uses { color: #7cc47f; font-size: 12px; white-space: nowrap; }
+.shell-lm-state { max-width: none; white-space: normal; overflow: visible; text-overflow: clip; margin: 6px 0 0; }
 .shell-provider input { width: 100%; background: #111; color: #ddd; border: 1px solid #333; border-radius: 3px; padding: 3px 6px; font: inherit; }
 .shell-provider .shell-key-state { grid-column: 1 / -1; color: #888; font-size: 12px; }
 .shell-provider .shell-key-state.set { color: #7cc47f; }

@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld("scumble", {
         list: () => ipcRenderer.invoke("llm:list"),
         ask: (req) => ipcRenderer.invoke("llm:ask", req),
         models: (url) => ipcRenderer.invoke("llm:models", url),
+        providers: () => ipcRenderer.invoke("llm:providers"),
     },
     log: {
         add: (entry) => ipcRenderer.invoke("log:add", entry),

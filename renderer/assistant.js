@@ -222,6 +222,15 @@ export function toggleAssistant(on) {
     return want;
 }
 
+/**
+ * Read the picker again: called by the settings dialog when the user's own model list changes
+ * (the groups are cached for the session, so a new row would not show otherwise).
+ */
+export function refreshAssistantModels() {
+    picker = null;
+    if (started && ui.dialog.open) refresh().catch(() => { /* the picker fills at the next open */ });
+}
+
 export function assistantOpen() {
     return !!(started && ui.dialog.open);
 }
@@ -798,7 +807,7 @@ async function fillPicker(state) {
         const g = el("optgroup");
         g.label = group.ready ? group.label : `${group.label} — ${group.note || "no key"}`;
         for (const m of group.models) {
-            const o = el("option", null, m.label + marks(group, m));
+            const o = el("option", null, m.label + marks(m));
             o.value = m.value;
             o.disabled = !group.ready;
             if (m.value === current) { o.selected = true; found = true; }
@@ -835,10 +844,15 @@ async function fillPicker(state) {
     ui.pickNote = notes.join(" · ");
 }
 
-function marks(group, m) {
+/**
+ * What a row says about itself beside its name. Only what is true of that model: whether it
+ * can look at the picture, and whatever note its entry carries. What has and has not run
+ * against a live key is one sentence in docs/ASSISTANT.md, not a warning on every row
+ * (docs/BUGS.md, "The assistant's picker warns about itself").
+ */
+function marks(m) {
     const out = [];
     if (m.vision === false) out.push("cannot look at the picture");
-    if (!group.tried) out.push("not tried with a real key");
     if (m.note) out.push(m.note);
     return out.length ? ` — ${out.join(", ")}` : "";
 }

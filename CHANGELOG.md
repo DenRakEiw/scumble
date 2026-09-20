@@ -3,6 +3,27 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.22 — unreleased
+
+- **Your own language models, for the assistant and for prompt upsampling.** *Settings › Language models* is a
+  list you fill: pick a provider (OpenRouter, OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot, Z.ai, ToAPIs,
+  WaveSpeed or your local endpoint), type the model id that provider itself uses, and tick what it is for -
+  *Prompt upsampling* puts it in the editor's *Upsample* list, *Assistant* puts it in the chat's model picker, in
+  its provider's group. It runs on the key that provider already has under *API providers*, so no new key is
+  needed; a provider without a key stays greyed out until you add one. Untick *Can see the picture* for a model
+  without image input: it then never gets the crop, and the assistant leaves the screenshot tool out of its list.
+  *Remove* takes a row out of both lists again.
+  - For OpenRouter the id field suggests from OpenRouter's own live list of models that take tools, so any model it
+    routes can be used without waiting for a Scumble release.
+  - DeepSeek, Moonshot, Z.ai and WaveSpeed become prompt upsamplers this way too; until now their keys were only
+    for the assistant.
+  - Nothing checks that the id exists or that the model understands tools - that is between you and the provider,
+    and its own message comes back into the chat or the status line.
+- **The assistant's model picker no longer warns about itself.** Every row used to end in "not tried with a real
+  key", on all ten providers, which read as a warning about Scumble rather than about a model. A row now says only
+  what is true of that model ("cannot look at the picture", a provider's preview note). That nothing has yet
+  completed a task against a live API is said once, in `docs/ASSISTANT.md` and in these notes, not on every row.
+
 ## 0.1.21 — 2026-09-20
 
 - **OpenRouter as a provider.** One key from [openrouter.ai](https://openrouter.ai) runs GPT Image 2 and 2.5

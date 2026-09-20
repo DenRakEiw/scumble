@@ -80,6 +80,44 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-20)
 
+**2026-09-20, after 0.1.21: the language models are the user's own list now, and the picker stopped warning about
+itself, for 0.1.22** (`package.json` 0.1.22, CHANGELOG "0.1.22 - unreleased"; the user: "fuer die llm's im agent und
+prompt upsampling sollen auch anbieter wie openrouter verwendet werden koennen, also brauchen wir settings in
+einstellungen um das umzusetzen. Ausserdem entferne die 'not tested' hinweise"). OpenRouter was already both a
+provider of the assistant and an upsampling backend since 0.1.21; what was missing is a place in the Settings and the
+freedom to name **any** model. **New: `electron/main/llm_custom.js`** (plain Node, no Electron) holds
+`settings.llm.models`, a list of `{ provider, model, label, upsample, assistant, vision }`, normalised on every read
+(unknown provider, empty id and duplicates dropped, id cut at 200 and name at 120, at most 50 rows, prototype keys
+are not providers). **One registry for both features:** it reads the assistant's `providers.js`, so the ten providers,
+their key rows and their base URLs are the same list for the assistant and for prompt upsampling. `llm.list()`
+appends the rows marked *upsample* after the built-in ones (`key` from that provider's own credential row, the local
+endpoint from its URL) and `ask()` resolves them; `picker()` appends the rows marked *assistant* to their provider
+group, after the curated models and never repeating one, and `providerOf(value, custom)` gives the loop the row's own
+name and `vision` (a row marked blind loses `screenshot`, like any blind model). **New for upsampling: `askChat`** -
+DeepSeek, Moonshot, Z.ai and WaveSpeedAI had key rows for the assistant only; a row of theirs now goes through the
+same `askCompatible` client as the ToAPIs and OpenRouter rows, to the base `llm_custom.endpoint()` reads from the
+registry (ToAPIs and the local endpoint keep their own paths, their host comes from the settings). **UI:**
+*Settings > Language models* (provider select, model id with OpenRouter's live tool-model list as suggestions, name,
+three checkboxes, Add, a row list with Remove), `llm:providers` as the one new IPC channel, and
+`refreshAssistantModels()` so a new row reaches the panel's cached picker. **The dialog reads the settings file, not
+the window's cached copy** (the endpoint above writes `settings.llm` without touching that cache; the trap is in
+"Testing and benchmarking"). **The "not tried with a real key" mark is gone** with the `tried` flag of every registry
+entry and the field `picker()` and `noticeFor()` carried: a row says only what is true of that model. The honest
+sentence stays in `docs/ASSISTANT.md` ("What it cannot do") and in the release notes - `docs/BUGS.md` moved the
+report to "Fixed, waiting for its release". **Tests:** `node tools/models_test.js` (29 checks, plain Node, the first
+step of the `llm` gate), `tools/llm_test.py` step 5 (the dialog writes the row, both pickers take it, the request
+reaches the provider on its own key, Remove takes it out again) and `tools/assistant_test.py`
+`the_picker_carries_the_users_own_models_and_no_warning_about_itself` (37 steps now). **Mutations: 15 of 16 on the
+Node side** (the green one takes the `hasOwnProperty` guard out of `endpoint()`, which no check can see because no
+prototype member has a `.base`; written down, not papered over) **and 5 of 5 against the two app gates** (the rows
+dropped from `list()`, from `ask()`, from the Add button, from `picker()`, and the mark put back). Gates `--offline`
+on both backends (`llm toapis openrouter generate log mcp commands editor assistant`): **ALL PASS** (`lm-tiles`,
+`lm-canvas`), each at the first try. **Not covered by any gate, and it is the old line:** no row has run against a
+live API - the four new upsampling hosts (DeepSeek, Moonshot, Z.ai, WaveSpeed) are written from the registry's base
+URLs, and nothing checks that a model id exists at its provider or that it takes tools; the provider's own error is
+what the user sees. **0.1.22 is unreleased** (0.1.21 is Latest; check `gh release list` before believing any release
+state written down anywhere).
+
 **2026-09-20: the two defects the OpenRouter session found are fixed, for 0.1.21** (`docs/BUGS.md` "Fixed, waiting
 for its release"; CHANGELOG 0.1.21; `docs/RECIPES.md` "Import"). (1) **FLUX.2 [flex] on fal** carried
 `num_inference_steps` and `safety_tolerance` both at `"index": 1`; measured in the app on the old file before the fix,
@@ -787,9 +825,11 @@ outlines at 15k turn out to matter, compute the image-size label map only in the
 never for the whole picture; (3) **B item 6 stays on ice** (it saves memory, not time; 97 GB of RAM and the 15.5 GB cap
 are not the limit at 15k). **Next, in this order** (the user, 2026-09-20, on this session's plan: the two defects,
 then `buildModal`, "und den assistent"): ~~the two defects of the OpenRouter session~~ and ~~the `buildModal` split~~
-(both 2026-09-20, see the top of this section); **next is the assistant** (item 13, `docs/PLAN_ASSISTANT.md`), as
-a release of its own (the user, 2026-09-19: "agent als letztes, wird ein seperates release", and the same day:
-"assistant kommt vor codesignierung"); then SignPath, last. Waiting on the user's ComfyUI, whenever it is free: one
+(both 2026-09-20, see the top of this section); ~~the assistant~~ (item 13, A0 to A9, shipped in 0.1.21 the same
+day, the release of its own the user asked for: "agent als letztes, wird ein seperates release"); then, on the
+user's word of the same evening, ~~the user's own language models in the Settings and the end of the "not tried"
+marks~~ (0.1.22, unreleased, see the top of this section); **next is SignPath**, last ("assistant kommt vor
+codesignierung"). Waiting on the user's ComfyUI, whenever it is free: one
 local run on a large document with the node's stitch fix (`fba1fd8`), and the node in a real ComfyUI tab and in
 Firefox when a node version is meant to ship. Nothing else stands before them, unless the user names something else
 first.

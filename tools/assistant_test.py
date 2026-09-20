@@ -707,6 +707,40 @@ return { before, open, parts, closed, again: d.open };""")
             raise RuntimeError("the panel's parts: " + json.dumps(out["parts"]))
         return f"{o['panel']} px beside {o['host']} px of editor, {out['parts']['picker']} models in the picker"
 
+    async def panel_picker_rows(self):
+        """A model the user added is in the picker; a row says what the model cannot do, not what the app has not tried."""
+        out = await self.ev("""
+const a = await import("./assistant.js");
+const has = () => Array.from(document.querySelectorAll("#assistant select option")).some((o) => o.value === "anthropic:claude-gate-own");
+const s0 = await window.scumble.settings.get();
+await window.scumble.settings.set({ llm: { ...(s0.llm || {}), models: [{ provider: "anthropic", model: "claude-gate-own", label: "My own row", upsample: false, assistant: true, vision: false }] } });
+a.toggleAssistant(true);
+await wait(150);
+a.refreshAssistantModels();
+for (let i = 0; i < 40 && !has(); i++) await wait(100);
+const sel = document.querySelector("#assistant select");
+const options = Array.from(sel.options).map((o) => ({ value: o.value, text: o.textContent }));
+const mine = options.find((o) => o.value === "anthropic:claude-gate-own") || null;
+const group = mine ? sel.querySelector("option[value='anthropic:claude-gate-own']").parentNode.label : "";
+const warns = options.filter((o) => /not tried|not tested/i.test(o.text)).map((o) => o.text);
+// and out of the picker again as soon as the row goes
+const s1 = await window.scumble.settings.get();
+await window.scumble.settings.set({ llm: { ...(s1.llm || {}), models: [] } });
+a.refreshAssistantModels();
+for (let i = 0; i < 40 && has(); i++) await wait(100);
+return { count: options.length, mine, group, warns, left: has() };""")
+        if not out["mine"]:
+            raise RuntimeError("the row the user added is not in the picker: " + json.dumps(out)[:400])
+        if "My own row" not in out["mine"]["text"] or "cannot look at the picture" not in out["mine"]["text"]:
+            raise RuntimeError("the row does not read as its own: " + json.dumps(out["mine"]))
+        if "Anthropic" not in out["group"]:
+            raise RuntimeError("the row is not in its provider group: " + json.dumps(out))
+        if out["warns"]:
+            raise RuntimeError("the picker warns about itself: " + json.dumps(out["warns"])[:400])
+        if out["left"]:
+            raise RuntimeError("the row stayed in the picker after it was deleted")
+        return f"{out['count']} rows, the user own row among them, none warning about the app"
+
     async def panel_keys(self):
         """A chat key is the chat's: not the editor's shortcut, and not an open question's answer."""
         self.mock.reset()
@@ -1508,6 +1542,7 @@ async def main():
             await g.run_step("relaunch_is_refused_while_a_turn_runs", g.relaunch)
             await g.run_step("the_assistant_is_not_counted_as_an_agent", g.not_an_agent)
             await g.run_step("the_panel_opens_beside_the_editor_and_remembers_it", g.panel_opens)
+            await g.run_step("the_picker_carries_the_users_own_models_and_no_warning_about_itself", g.panel_picker_rows)
             await g.run_step("a_chat_key_never_reaches_the_editor", g.panel_keys)
             await g.run_step("the_chat_field_keeps_the_focus_and_stops_a_drop", g.panel_focus_and_drop)
             await g.run_step("the_panel_shows_a_turn_and_writes_no_markup", g.panel_shows_a_turn)

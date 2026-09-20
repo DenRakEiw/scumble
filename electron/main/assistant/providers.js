@@ -1,12 +1,13 @@
 // The provider registry: which API family a provider speaks, where its key comes from, what
 // its base URL is, which models are offered and what the user is told about where the pictures
 // go. Read from each provider's own documentation on 2026-09-18 and 2026-09-19
-// (docs/PLAN_ASSISTANT.md §3, "The provider registry" and "Where the pictures go"); **nothing
-// here has run against a live key** (§7), which is what `tried` says.
+// (docs/PLAN_ASSISTANT.md §3, "The provider registry" and "Where the pictures go"). What has
+// and has not been run against a live key is one sentence in docs/ASSISTANT.md, not a warning
+// on every row of the picker (docs/BUGS.md, "The assistant's picker warns about itself").
 //
 // The order is the picker's (§2 row 33). A model listed here takes images and tools; a model
 // without image input loses `screenshot` from its tool list (§2 row 34), which is how a free
-// OpenRouter id is handled.
+// OpenRouter id and a row the user added under Settings > Language models are handled.
 "use strict";
 
 const ANTHROPIC = "https://api.anthropic.com";
@@ -26,7 +27,6 @@ const PROVIDERS = {
         family: "chat",
         key: "openrouter",
         base: "https://openrouter.ai/api/v1",
-        tried: false,
         where: "a host OpenRouter picks for the model, never one it lists in China; Scumble asks it to leave out hosts that train on your data",
         models: [
             { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5" },
@@ -57,7 +57,6 @@ const PROVIDERS = {
         family: "responses",
         key: "openai",
         base: "https://api.openai.com/v1",
-        tried: false,
         where: "OpenAI; its default region is not stated",
         models: [
             { id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
@@ -70,7 +69,6 @@ const PROVIDERS = {
         family: "messages",
         key: "anthropic",
         base: ANTHROPIC,
-        tried: false,
         where: "Anthropic, which runs inference in any region",
         models: [
             { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
@@ -82,7 +80,6 @@ const PROVIDERS = {
         family: "gemini",
         key: "gemini",
         base: "https://generativelanguage.googleapis.com/v1beta",
-        tried: false,
         where: "Google, which runs inference in any region",
         requestCap: 18 * 1024 * 1024,        // §2 row 9: Google's own docs contradict each other
         models: [
@@ -96,7 +93,6 @@ const PROVIDERS = {
         family: "chat",
         key: "deepseek",
         base: "https://api.deepseek.com",
-        tried: false,
         where: "DeepSeek, in the People's Republic of China",
         models: [{ id: "deepseek-flash", label: "DeepSeek V4.1 Flash" }],
         dialect: {
@@ -114,7 +110,6 @@ const PROVIDERS = {
         family: "chat",
         key: "moonshot",
         base: "https://api.moonshot.ai/v1",
-        tried: false,
         where: "Moonshot AI, in the People's Republic of China",
         models: [
             { id: "kimi-k3", label: "Kimi K3", thinking: { reasoning_effort: "high" } },
@@ -138,7 +133,6 @@ const PROVIDERS = {
         family: "chat",
         key: "zai",
         base: "https://api.z.ai/api/paas/v4",
-        tried: false,
         where: "Z.ai, in the People's Republic of China",
         models: [
             { id: "glm-5.3-flash", label: "GLM-5.3-Flash" },
@@ -161,7 +155,6 @@ const PROVIDERS = {
         family: "chat",
         key: "toapis",
         base: null,                          // toapis.baseUrl(settings) + "/v1", filled in by index.js
-        tried: false,
         where: "ToAPIs, a reseller; its terms were not read, so where it sends them is not stated",
         models: [
             { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
@@ -175,7 +168,6 @@ const PROVIDERS = {
         family: "chat",
         key: "wavespeed",
         base: "https://llm.wavespeed.ai/v1",
-        tried: false,
         where: "WaveSpeedAI; its terms were not read, so where it sends them is not stated",
         models: [
             { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5" },
@@ -190,7 +182,6 @@ const PROVIDERS = {
         key: "compat",                       // a local server needs none; the key is sent only when stored
         base: null,                          // compatBase(settings.llm.compat.url), filled in by index.js
         needsKey: false,
-        tried: false,
         where: "the server at the URL you set; nothing leaves your machine when it runs on it",
         models: [],                          // whatever its /models lists
         dialect: {
@@ -208,8 +199,12 @@ const ORDER = ["openrouter", "openai", "anthropic", "gemini", "deepseek", "moons
 /** The model a fresh install starts on (§2 row 6). */
 const DEFAULT_MODEL = "anthropic:claude-sonnet-5";
 
-/** "<provider>:<model id>" -> {provider, id, entry, model} or null. */
-function providerOf(value) {
+/**
+ * "<provider>:<model id>" -> {provider, id, entry, model} or null. `custom` are the user's own
+ * rows: a model that is not curated takes its label and whether it sees pictures from its row,
+ * so a blind model the user marked as one loses `screenshot` like any other.
+ */
+function providerOf(value, custom = []) {
     const raw = String(value || "");
     const at = raw.indexOf(":");
     if (at < 0) return null;
@@ -217,29 +212,41 @@ function providerOf(value) {
     const id = raw.slice(at + 1);
     const entry = PROVIDERS[Object.prototype.hasOwnProperty.call(PROVIDERS, provider) ? provider : ""];
     if (!entry || !id) return null;
-    return { provider, id, entry, model: entry.models.find((m) => m.id === id) || { id, label: id } };
+    const own = (custom || []).find((r) => r.provider === provider && r.model === id);
+    const model = entry.models.find((m) => m.id === id)
+        || (own ? { id, label: own.label || id, vision: own.vision !== false, custom: true } : { id, label: id });
+    return { provider, id, entry, model, custom: !!own };
 }
 
 /**
  * The picker's rows, grouped by provider in the order above. `ready` says which providers have
  * what they need (a stored key; for the local server a saved URL), and only those are selectable.
+ * `custom` are the rows the user added under Settings > Language models (llm_custom.js): they
+ * join their provider's group, after its curated models and without repeating one.
  */
-function picker(ready = {}) {
+function picker(ready = {}, custom = []) {
     return ORDER.map((provider) => {
         const p = PROVIDERS[provider];
+        const listed = provider === "compat" ? (ready.compatModels || []) : p.models;
+        const mine = (custom || []).filter((r) => r.provider === provider && !listed.some((m) => m.id === r.model));
         return {
             provider,
             label: p.label,
             ready: !!ready[provider],
             note: ready[provider] ? "" : (provider === "compat" ? "no URL" : "no key"),
-            tried: !!p.tried,
             where: p.where,
-            models: (provider === "compat" ? (ready.compatModels || []) : p.models).map((m) => ({
+            models: listed.map((m) => ({
                 value: `${provider}:${m.id}`,
                 label: m.label || m.id,
                 vision: m.vision !== false,
                 note: m.note || "",
-            })),
+            })).concat(mine.map((r) => ({
+                value: `${provider}:${r.model}`,
+                label: r.label || r.model,
+                vision: r.vision !== false,
+                note: "",
+                custom: true,
+            }))),
         };
     });
 }

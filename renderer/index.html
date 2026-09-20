@@ -70,6 +70,25 @@
       <p class="shell-help">Any server that speaks <code>/v1/chat/completions</code> - Ollama (<code>http://localhost:11434</code>), LM Studio (<code>http://localhost:1234</code>), vLLM, a proxy - becomes a prompt upsampler in the editor's Upsample list. A model that can see gets the crop with the instruction; a text-only model answers on the words alone and the status line says so.</p>
     </section>
     <section>
+      <h3>Language models</h3>
+      <div class="shell-grid">
+        <label class="shell-field">Provider <select id="set-lm-provider"></select></label>
+        <label class="shell-field">Model id <input id="set-lm-model" type="text" spellcheck="false" autocomplete="off" placeholder="google/gemini-3.8-flash" list="set-lm-models"><datalist id="set-lm-models"></datalist></label>
+      </div>
+      <div class="shell-grid">
+        <label class="shell-field">Name (optional) <input id="set-lm-label" type="text" spellcheck="false" autocomplete="off" placeholder="what the pickers show"></label>
+      </div>
+      <div class="shell-row">
+        <label class="shell-check"><input id="set-lm-upsample" type="checkbox" checked> Prompt upsampling</label>
+        <label class="shell-check"><input id="set-lm-assistant" type="checkbox" checked> Assistant</label>
+        <label class="shell-check" title="A model without image input never gets the crop, and the assistant leaves the screenshot tool out of its list."><input id="set-lm-vision" type="checkbox" checked> Can see the picture</label>
+        <button id="set-lm-add" type="button">Add</button>
+      </div>
+      <p id="set-lm-state" class="shell-note shell-lm-state"></p>
+      <div id="set-lm-list"></div>
+      <p class="shell-help">Your own models, for the editor's <em>Upsample</em> list and for the assistant's picker. Any model of any provider above - an OpenRouter id, a model a provider added after this release - with the key that provider already has under <em>API providers</em>; the local endpoint takes the URL and key set above. The model id is the provider's own (OpenRouter: <code>vendor/model</code>, and its list of models that take tools fills the suggestions).</p>
+    </section>
+    <section>
       <h3>Prompt templates</h3>
       <div id="set-prompts"></div>
       <div class="shell-row"><button id="set-prompt-import" type="button">Import .md ...</button><button id="set-prompt-folder" type="button">Open folder</button><span id="set-prompt-note" class="shell-note"></span></div>

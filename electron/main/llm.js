@@ -23,6 +23,7 @@ const settings = require("./settings");
 const { b64, dataUri, readError } = require("./providers/util");
 const toapis = require("./providers/toapis");
 const openrouter = require("./providers/openrouter");
+const custom = require("./llm_custom");
 
 // ToAPIs first, as in every provider list. Prices from its catalogue on 2026-09-15 (per million tokens
 // in / out): Gemini 3.8 Flash and Claude Haiku 4.5 $0.30 / $1.50, GPT-5.6 Terra $0.40 / $2.40, about a
@@ -47,7 +48,11 @@ const MODELS = [
     { provider: "openrouter", model: "mistralai/mistral-small-2603", label: "Mistral Small 4 (OpenRouter key)" },
 ];
 
-const PROVIDER_LABEL = { toapis: "ToAPIs", openai: "OpenAI", gemini: "Google Gemini", anthropic: "Anthropic", openrouter: "OpenRouter", compat: "OpenAI-compatible endpoint" };
+const PROVIDER_LABEL = {
+    toapis: "ToAPIs", openai: "OpenAI", gemini: "Google Gemini", anthropic: "Anthropic", openrouter: "OpenRouter",
+    deepseek: "DeepSeek", moonshot: "Moonshot (Kimi)", zai: "Z.ai (GLM)", wavespeed: "WaveSpeedAI",
+    compat: "OpenAI-compatible endpoint",
+};
 
 /** settings.llm.compat = { url, model }: an Ollama / LM Studio / any /v1/chat/completions server. */
 function compatConfig() {
@@ -78,7 +83,23 @@ function list() {
     // `key` is what the editor filters on (host.upsampleBackends), so a keyless local
     // server counts as "set" as soon as it has a URL and a model.
     if (c.url && c.model) out.push({ id: `compat:${c.model}`, provider: "compat", model: c.model, label: `${c.model} (${compatHost(c.url)})`, key: true });
+    // the rows the user added under Settings > Language models, after the built-in ones
+    for (const row of custom.forUpsample(settings.get())) {
+        const id = `${row.provider}:${row.model}`;
+        if (out.some((x) => x.id === id)) continue;
+        const label = `${row.label || row.model} (${PROVIDER_LABEL[row.provider] || row.provider})`;
+        out.push({ id, provider: row.provider, model: row.model, label, key: customHasKey(row), custom: true });
+    }
     return out;
+}
+
+/**
+ * Whether a row the user added can run: a stored key, or for the local endpoint a saved URL
+ * (it needs no key). This is what the editor filters its upsample list on.
+ */
+function customHasKey(row) {
+    if (row.provider === "compat") return !!compatConfig().url;
+    return !!keys.describe(row.provider).set;
 }
 
 /** The model ids the endpoint serves (GET <base>/models); used by the Test button. */
@@ -282,7 +303,22 @@ async function askOpenRouter(a) {
     return await askCompatible({ ...a, url: base + "/api/v1", label: "OpenRouter", strict: true, explain: openrouter.explain, readFailure: openrouter.readFailure, extra });
 }
 
-const ADAPTERS = { toapis: askToAPIs, openai: askOpenAI, gemini: askGemini, anthropic: askAnthropic, openrouter: askOpenRouter };
+/**
+ * The Chat Completions providers that have no upsample adapter of their own (DeepSeek, Moonshot,
+ * Z.ai, WaveSpeedAI): the OpenAI-compatible client on that provider's own key and base URL, as
+ * the registry (assistant/providers.js) has them. Only a model the user added by hand reaches
+ * this; `strict` keeps the retry without the picture to a 4xx that names the image.
+ */
+async function askChat(a) {
+    const entry = custom.endpoint(a.provider);
+    if (!entry) throw new Error(`No endpoint for ${PROVIDER_LABEL[a.provider] || a.provider}.`);
+    return await askCompatible({ ...a, url: entry.base, label: entry.label, strict: true });
+}
+
+const ADAPTERS = {
+    toapis: askToAPIs, openai: askOpenAI, gemini: askGemini, anthropic: askAnthropic, openrouter: askOpenRouter,
+    deepseek: askChat, moonshot: askChat, zai: askChat, wavespeed: askChat,
+};
 
 // ---- entry ----------------------------------------------------------------------------
 
@@ -310,14 +346,14 @@ async function ask(req) {
         text = res.text;
         if (res.textOnly) note = "text only";
     } else {
-        const m = MODELS.find((x) => `${x.provider}:${x.model}` === id);
+        const m = MODELS.find((x) => `${x.provider}:${x.model}` === id) || customModel(id);
         if (!m) throw new Error("Unknown language model: " + id);
         const key = keys.get(m.provider);
         if (!key) throw new Error(`No API key for ${PROVIDER_LABEL[m.provider]}. Add it under Settings › API providers.`);
         model = m.model;
         let res;
         try {
-            res = await ADAPTERS[m.provider]({ model: m.model, key, instruction, image, maxTokens, row: m });
+            res = await ADAPTERS[m.provider]({ provider: m.provider, model: m.model, key, instruction, image, maxTokens, row: m });
         } catch (err) {
             // every provider's error text, a failed status or an error inside an HTTP 200, without the key
             throw new Error(scrubKey(err && err.message || err, key));
@@ -331,6 +367,17 @@ async function ask(req) {
     if (/^".*"$/s.test(text) && !text.slice(1, -1).includes('"')) text = text.slice(1, -1).trim();
     console.log(`[llm] ${id} ${((Date.now() - t0) / 1000).toFixed(1)} s, ${text.split(/\s+/).length} words${note ? ", " + note : ""}`);
     return { text, seconds: (Date.now() - t0) / 1000, model, note };
+}
+
+/** One of the user's own rows as a MODELS entry, or null (Settings > Language models). */
+function customModel(id) {
+    const at = id.indexOf(":");
+    if (at < 0) return null;
+    const provider = id.slice(0, at);
+    const model = id.slice(at + 1);
+    const row = custom.find(custom.forUpsample(settings.get()), provider, model);
+    if (!row || !ADAPTERS[Object.prototype.hasOwnProperty.call(ADAPTERS, provider) ? provider : ""]) return null;
+    return { provider, model, label: row.label || model };
 }
 
 module.exports = { list, ask, compatModels, MODELS };
