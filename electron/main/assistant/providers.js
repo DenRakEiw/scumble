@@ -1,0 +1,235 @@
+// The provider registry: which API family a provider speaks, where its key comes from, what
+// its base URL is, which models are offered and what the user is told about where the pictures
+// go. Read from each provider's own documentation on 2026-09-18 and 2026-09-19
+// (docs/PLAN_ASSISTANT.md §3, "The provider registry" and "Where the pictures go"); **nothing
+// here has run against a live key** (§7), which is what `tried` says.
+//
+// The order is the picker's (§2 row 33). A model listed here takes images and tools; a model
+// without image input loses `screenshot` from its tool list (§2 row 34), which is how a free
+// OpenRouter id is handled.
+"use strict";
+
+const ANTHROPIC = "https://api.anthropic.com";
+
+/**
+ * families: "messages" (Anthropic), "chat" (Chat Completions), "responses" (OpenAI),
+ *           "gemini" (generateContent)
+ * dialect:  for "chat", the provider's own rules (§3, "The Chat Completions providers side by
+ *           side"); the adapter never guesses them at run time.
+ * key:      the row in the credential store (electron/main/keys.js) the key comes from.
+ * where:    the plain-words part of the privacy notice (§2 row 31). It names a country only
+ *           where the provider's own terms do.
+ */
+const PROVIDERS = {
+    openrouter: {
+        label: "OpenRouter",
+        family: "chat",
+        key: "openrouter",
+        base: "https://openrouter.ai/api/v1",
+        tried: false,
+        where: "a host OpenRouter picks for the model, never one it lists in China; Scumble asks it to leave out hosts that train on your data",
+        models: [
+            { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5" },
+            { id: "anthropic/claude-opus-5", label: "Claude Opus 5" },
+            { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra" },
+            { id: "google/gemini-3.8-flash", label: "Gemini 3.8 Flash" },
+            { id: "deepseek/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash" },
+            { id: "moonshotai/kimi-k3", label: "Kimi K3" },
+            { id: "moonshotai/kimi-k2.6", label: "Kimi K2.6" },
+            { id: "z-ai/glm-5.3-flash", label: "GLM-5.3-Flash" },
+        ],
+        dialect: {
+            reasoningField: "reasoning_details",
+            thinking: { reasoning: { effort: "medium" } },
+            lengthField: "max_tokens",
+            imagesInToolMessage: false,
+            streamOptions: false,            // OpenRouter always sends usage in the last chunk
+            sessionId: true,
+            cacheControlFor: /^anthropic\//,
+            costFromUsage: true,             // usage.cost, taken as it comes (§2 row 25)
+            noRetryCodes: [402],
+        },
+    },
+    openai: {
+        label: "OpenAI",
+        family: "responses",
+        key: "openai",
+        base: "https://api.openai.com/v1",
+        tried: false,
+        where: "OpenAI; its default region is not stated",
+        models: [
+            { id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+            { id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+            { id: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
+        ],
+    },
+    anthropic: {
+        label: "Anthropic",
+        family: "messages",
+        key: "anthropic",
+        base: ANTHROPIC,
+        tried: false,
+        where: "Anthropic, which runs inference in any region",
+        models: [
+            { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
+            { id: "claude-opus-5", label: "Claude Opus 5" },
+        ],
+    },
+    gemini: {
+        label: "Google Gemini",
+        family: "gemini",
+        key: "gemini",
+        base: "https://generativelanguage.googleapis.com/v1beta",
+        tried: false,
+        where: "Google, which runs inference in any region",
+        requestCap: 18 * 1024 * 1024,        // §2 row 9: Google's own docs contradict each other
+        models: [
+            { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash" },
+            { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (preview)" },
+            { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite" },
+        ],
+    },
+    deepseek: {
+        label: "DeepSeek",
+        family: "chat",
+        key: "deepseek",
+        base: "https://api.deepseek.com",
+        tried: false,
+        where: "DeepSeek, in the People's Republic of China",
+        models: [{ id: "deepseek-flash", label: "DeepSeek V4.1 Flash" }],
+        dialect: {
+            reasoningField: "reasoning_content",
+            reasoningOnEveryMessage: true,   // 400 without it in a request that carries tools
+            thinking: { thinking: { type: "enabled" }, reasoning_effort: "high" },
+            lengthField: "max_tokens",
+            imagesInToolMessage: false,
+            streamOptions: true,
+            noRetryCodes: [402],
+        },
+    },
+    moonshot: {
+        label: "Moonshot (Kimi)",
+        family: "chat",
+        key: "moonshot",
+        base: "https://api.moonshot.ai/v1",
+        tried: false,
+        where: "Moonshot AI, in the People's Republic of China",
+        models: [
+            { id: "kimi-k3", label: "Kimi K3", thinking: { reasoning_effort: "high" } },
+            { id: "kimi-k2.6", label: "Kimi K2.6", thinking: { thinking: { type: "enabled", keep: "all" } } },
+        ],
+        dialect: {
+            reasoningField: "reasoning_content",
+            reasoningOnEveryMessage: true,
+            lengthField: "max_completion_tokens",
+            imagesInToolMessage: true,       // its Message schema allows one; not verified (§7)
+            strictOnTools: false,
+            streamOptions: true,
+            noRetryTypes: ["exceeded_current_quota_error"],
+            noRetryMessage: /TPD|tokens per day|daily/i,
+        },
+    },
+    zai: {
+        label: "Z.ai (GLM)",
+        family: "chat",
+        key: "zai",
+        base: "https://api.z.ai/api/paas/v4",
+        tried: false,
+        where: "Z.ai, in the People's Republic of China",
+        models: [
+            { id: "glm-5.3-flash", label: "GLM-5.3-Flash" },
+            { id: "glm-5.3-flashx", label: "GLM-5.3-FlashX" },
+        ],
+        dialect: {
+            reasoningField: "reasoning_content",
+            reasoningOnEveryMessage: true,
+            thinking: { thinking: { type: "enabled", clear_thinking: false }, reasoning_effort: "high" },
+            lengthField: "max_tokens",
+            imagesInToolMessage: false,
+            streamOptions: false,
+            toolStream: true,
+            noRetryCodes: [1113, 1301, 1261],
+        },
+    },
+    toapis: {
+        label: "ToAPIs",
+        family: "chat",
+        key: "toapis",
+        base: null,                          // toapis.baseUrl(settings) + "/v1", filled in by index.js
+        tried: false,
+        where: "ToAPIs, a reseller; its terms were not read, so where it sends them is not stated",
+        models: [
+            { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
+            { id: "claude-opus-5", label: "Claude Opus 5" },
+            { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash" },
+        ],
+        dialect: { reasoningField: "any", lengthField: "max_tokens", imagesInToolMessage: false, streamOptions: true },
+    },
+    wavespeed: {
+        label: "WaveSpeedAI",
+        family: "chat",
+        key: "wavespeed",
+        base: "https://llm.wavespeed.ai/v1",
+        tried: false,
+        where: "WaveSpeedAI; its terms were not read, so where it sends them is not stated",
+        models: [
+            { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5" },
+            { id: "anthropic/claude-opus-5", label: "Claude Opus 5" },
+            { id: "google/gemini-3.8-flash", label: "Gemini 3.8 Flash" },
+        ],
+        dialect: { reasoningField: "any", lengthField: "max_tokens", imagesInToolMessage: false, streamOptions: true },
+    },
+    compat: {
+        label: "Local / OpenAI-compatible endpoint",
+        family: "chat",
+        key: "compat",                       // a local server needs none; the key is sent only when stored
+        base: null,                          // compatBase(settings.llm.compat.url), filled in by index.js
+        needsKey: false,
+        tried: false,
+        where: "the server at the URL you set; nothing leaves your machine when it runs on it",
+        models: [],                          // whatever its /models lists
+        dialect: { reasoningField: "any", lengthField: "max_tokens", imagesInToolMessage: false, streamOptions: true },
+    },
+};
+
+/** The picker's order (§2 row 33). */
+const ORDER = ["openrouter", "openai", "anthropic", "gemini", "deepseek", "moonshot", "zai", "toapis", "wavespeed", "compat"];
+
+/** The model a fresh install starts on (§2 row 6). */
+const DEFAULT_MODEL = "anthropic:claude-sonnet-5";
+
+/** "<provider>:<model id>" -> {provider, id, entry, model} or null. */
+function providerOf(value) {
+    const raw = String(value || "");
+    const at = raw.indexOf(":");
+    if (at < 0) return null;
+    const provider = raw.slice(0, at);
+    const id = raw.slice(at + 1);
+    const entry = PROVIDERS[Object.prototype.hasOwnProperty.call(PROVIDERS, provider) ? provider : ""];
+    if (!entry || !id) return null;
+    return { provider, id, entry, model: entry.models.find((m) => m.id === id) || { id, label: id } };
+}
+
+/**
+ * The picker's rows, grouped by provider in the order above. `ready` says which providers have
+ * what they need (a stored key; for the local server a saved URL), and only those are selectable.
+ */
+function picker(ready = {}) {
+    return ORDER.map((provider) => {
+        const p = PROVIDERS[provider];
+        return {
+            provider,
+            label: p.label,
+            ready: !!ready[provider],
+            note: ready[provider] ? "" : (provider === "compat" ? "no URL" : "no key"),
+            tried: !!p.tried,
+            where: p.where,
+            models: (provider === "compat" ? (ready.compatModels || []) : p.models).map((m) => ({
+                value: `${provider}:${m.id}`,
+                label: m.label || m.id,
+            })),
+        };
+    });
+}
+
+module.exports = { PROVIDERS, ORDER, DEFAULT_MODEL, providerOf, picker };

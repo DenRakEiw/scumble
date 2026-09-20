@@ -138,8 +138,26 @@ sets `server.onclose` before `createServer` does (an unreachable branch; its mut
 `tools/assistant_test.js` is the new plain-Node test (section 1, 11 checks, including the listener over 20 sessions
 and a child process that runs the real `serve()` on stdio and lists the same tools); 8 of 8 mutations red. Gates:
 `node tools/assistant_test.js` PASS, `mcp` headless PASS, `mcp commands` on both backends ALL PASS. `--exe` was not
-run: the package in `dist/win-unpacked` is 0.1.20, so that run belongs to the assistant's own release (A9). **Next
-is A1** (the loop, the policy, the registry and the Anthropic adapter in plain Node, three and a half days).
+run: the package in `dist/win-unpacked` is 0.1.20, so that run belongs to the assistant's own release (A9).
+
+**2026-09-20: A1 is built too - the loop, the policy, the registry and the Anthropic adapter, in plain Node**
+(`docs/PLAN_ASSISTANT.md` "A1 as built"). Eight modules under `electron/main/assistant/`, none of which requires
+Electron: `http.js` (the streamed POST, the retries only before the first byte, `scrub`, the test-key rule both
+ways, and `loopbackBase` / `compatBase` / `refusesImage` written again from code that does not export them),
+`sse.js`, `providers.js` (the ten providers, all marked "not tried with a real key"), `models.js` (the prices of
+2026-09-19), `prompt.js`, `policy.js` (the whole §5 table as data, `clamp`, `undoStep`), `anthropic.js` and
+`index.js` (the turn: pin, canonical arguments, policy, ask, the call through the in-process MCP client,
+ownership by all three rules, the caps, Stop). **Two things the plan did not have, both found by the mutation
+round:** a tool that takes a layer but no `doc` had its layer references sent unresolved (now `takesDoc ||
+takesLayer`), and the pinned document closed **by the user** mid-turn is answered and ends the turn (the
+assistant closing it itself only drops the pin). `node tools/assistant_test.js` is **98 checks** (sections 1 to
+10 in their Anthropic shape, the policy table as 54 rows, the leading example, the golden request body); the
+mutation round is **36 of 36 red**, after four survivors were each answered with a check or with the removal of
+a branch `decide` already covered. Gates: the node test PASS, and `toapis llm mcp commands` re-run, which is what
+proves `llm.js` and the command core are untouched. **Nothing is wired into the app yet** (that is A4): no IPC,
+no panel, `bridge.run` still takes two arguments, so the assistant cannot be used from the window. **Next is A2**
+(Chat Completions and its seven providers, two and a half days), then A3 (OpenAI Responses and Gemini), then A4
+and the checkpoint with the user's own keys.
 
 ## Where things stand (2026-09-19)
 
