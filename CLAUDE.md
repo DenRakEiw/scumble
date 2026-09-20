@@ -155,9 +155,42 @@ assistant closing it itself only drops the pin). `node tools/assistant_test.js` 
 mutation round is **36 of 36 red**, after four survivors were each answered with a check or with the removal of
 a branch `decide` already covered. Gates: the node test PASS, and `toapis llm mcp commands` re-run, which is what
 proves `llm.js` and the command core are untouched. **Nothing is wired into the app yet** (that is A4): no IPC,
-no panel, `bridge.run` still takes two arguments, so the assistant cannot be used from the window. **Next is A2**
-(Chat Completions and its seven providers, two and a half days), then A3 (OpenAI Responses and Gemini), then A4
-and the checkpoint with the user's own keys.
+no panel, `bridge.run` still takes two arguments, so the assistant cannot be used from the window. **A2 followed the same day** (the next paragraph).
+
+**2026-09-20: A2 is built - Chat Completions and its seven providers, in plain Node** (`docs/PLAN_ASSISTANT.md` "A2 as
+built"). `electron/main/assistant/chat.js` is the one adapter; OpenRouter, DeepSeek, Moonshot (Kimi), Z.ai (GLM), ToAPIs,
+WaveSpeed and the local endpoint differ only in the dialect data of `providers.js` (the reasoning field, the thinking
+switch, the length field, where a screenshot goes, `stream_options` / `tool_stream` / `session_id` / `provider` /
+`cache_control`, `strict: false` on Moonshot's tools, the final error codes with their plain words). Tool calls are
+rebuilt by `index` and parsed at the end (a whole call in one delta and an `arguments` object too), one `tool` message
+per call with an `Error: ` prefix on an error result, a screenshot inline on Moonshot and as one follow-up `user` message
+elsewhere, the assistant message replayed as rebuilt with `reasoning_content` on every message (`""` when none came)
+and OpenRouter's `reasoning_details` concatenated unmodified; usage read from either last chunk; the seven final
+answers (the 402s, Moonshot's quota and daily limit, Z.ai's 1113 / 1261 / 1301) never retried, the overloads and rate
+limits retried like any 429. **Not the plan's word:** `openrouterIgnore()` delegates to the image adapter's
+`chinaHosts` (one fetch of the host list per session for both, its seven-host dated list); `checkKey` got `localOk`
+for the local server's own key, which goes to a loopback URL by nature; `index.js` reads the tool schema from a
+family-neutral `chat.schemas` map (A1's lookup used the Anthropic tool shape, so on any other family `doc` would never
+have been injected and no layer reference resolved: a latent A1 defect, caught by the first chat-family run); the 18 MB
+cap holds for `google/*` and `gemini-*` ids on any provider; an answer that is not an event stream and a stream that
+ends empty are errors, not empty turns. **Tests:** `node tools/assistant_test.js` is **179 checks** (sections 11 to 15
+new: the golden body of every provider, the loop per dialect, the reasoning replay across turns, images in both
+places, the local server's image fallback, keys and hosts, the final answers, cost, and the same answer cut at every
+one of its 1,857 byte offsets); a mutation round of **95 against a copy of the tree** (the scratchpad's `mutate_a2.js`),
+**all 95 red** (77 of the first 80 at the first run; the three survivors and the review's gaps each got a check).
+**A review of four lenses with two refuters per finding (27 findings, 22 held, 5 fell) fixed ten things, four of them
+A1's:** a stream that ends before its `finish_reason` pushed its half answer as the answer (on Anthropic too; now an
+error that pushes nothing); pruning ran at every new user message once more than `keepImages` were attached instead of
+above twice that (the plan's batches); `refusesImage` was wider than `llm.js`'s rule, so a local server's 400 about an
+unsupported parameter would have stripped every screenshot and turned `screenshot` off; the "(stopped)" line stood
+twice in a pending user message. A2's own: a refusal with calls left them unanswered (every later request a 400), a
+server without `index` merged or split its calls, an `arguments` array ran as a tool's arguments, two error paths in
+the adapter were unscrubbed, a failed host-list read was asked again before every call. Rejected: `reasoning` for
+every curated OpenRouter model (kept; the live list is A4's), the truncated error body (`err.body` is whole), the
+`localOk` gap (already red in the mutation round). Gates: the node test PASS, `toapis llm` `--offline` ALL PASS
+(`a2-node`, and `a2-node2` after the fixes). **Nothing is wired into the app yet** (A4), and no dialect has run against a
+live key. **Next is A3** (OpenAI Responses and Gemini, two and a half days), then A4 and the checkpoint with the user's own
+keys.
 
 ## Where things stand (2026-09-19)
 

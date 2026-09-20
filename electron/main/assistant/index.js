@@ -10,9 +10,12 @@ const { PROVIDERS, DEFAULT_MODEL, providerOf } = require("./providers.js");
 const policy = require("./policy.js");
 const prompt = require("./prompt.js");
 const models = require("./models.js");
-const { loopbackBase, scrub } = require("./http.js");
+const { loopbackBase, compatBase, scrub } = require("./http.js");
 
-const ADAPTERS = { messages: require("./anthropic.js") };
+const ADAPTERS = { messages: require("./anthropic.js"), chat: require("./chat.js") };
+
+/** A Gemini model takes the smaller cap wherever it runs: Google's own, or a `google/*` id through a gateway (§2 row 9). */
+const isGemini = (model) => /^(google\/|gemini-)/.test(String(model || ""));
 
 const DEFAULTS = {
     model: DEFAULT_MODEL,
@@ -53,19 +56,29 @@ class Assistant {
 
     /** The provider, its base URL and its key, with the loopback base replacing the host. */
     target(value) {
-        const s = this.settings();
+        const all = (this.deps.settings && this.deps.settings.get && this.deps.settings.get()) || {};
+        const s = { ...DEFAULTS, ...(all.assistant || {}) };
         const chosen = providerOf(value || s.model) || providerOf(DEFAULT_MODEL);
         const entry = chosen.entry;
-        const base = this.baseFor(chosen.provider, entry, s);
+        const base = this.baseFor(chosen.provider, entry, s, all);
         const key = (this.deps.keys && this.deps.keys.get && this.deps.keys.get(entry.key)) || "";
         return { ...chosen, base, key, needsKey: entry.needsKey !== false };
     }
 
-    baseFor(provider, entry, s) {
+    /**
+     * The provider's base. The local server's comes from `settings.llm.compat.url` through
+     * `compatBase` (http.js's copy of llm.js's rule), ToAPIs' from `toapis.baseUrl(settings)` plus
+     * `/v1` (as llm.js takes it); both may be replaced by the tests through `deps`.
+     */
+    baseFor(provider, entry, s, all = {}) {
         const test = loopbackBase(s.base);
         let base = entry.base;
-        if (!base && provider === "compat") base = this.deps.compatBase ? this.deps.compatBase() : "";
-        if (!base && provider === "toapis") base = this.deps.toapisBase ? this.deps.toapisBase() : "";
+        if (!base && provider === "compat") {
+            base = this.deps.compatBase ? this.deps.compatBase() : compatBase(((all.llm || {}).compat || {}).url);
+        }
+        if (!base && provider === "toapis") {
+            base = this.deps.toapisBase ? this.deps.toapisBase() : require("../providers/toapis.js").baseUrl(all) + "/v1";
+        }
         if (!test) return base;
         // the test endpoint replaces scheme, host and port; the provider's own path stays (§2 row 27)
         try {
@@ -131,6 +144,8 @@ class Assistant {
             .filter((tool) => !policy.EXCLUDED.has(tool.name))
             .filter((tool) => t.model.vision !== false || tool.name !== "screenshot")
             .map((tool) => ({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }));
+        // the dialect is the provider's, with the model's own thinking switch where it has one (Moonshot)
+        const dialect = { ...(t.entry.dialect || {}), ...(t.model.thinking !== undefined ? { thinking: t.model.thinking } : {}) };
         return {
             id: `c${Date.now().toString(36)}`,
             provider: t.provider,
@@ -139,8 +154,10 @@ class Assistant {
             key: t.key,
             family: t.entry.family,
             adapter,
+            dialect,
             system: prompt.systemText(this.client.getInstructions(), { vision: t.model.vision !== false }),
-            tools: adapter.toolsFor(tools),
+            tools: adapter.toolsFor(tools, dialect),
+            schemas: new Map(tools.map((x) => [x.name, x.inputSchema || {}])),   // family-neutral, for the canonical arguments
             names: new Set(tools.map((x) => x.name)),
             maxTokens: s.maxTokens,
             effort: s.effort,
@@ -202,6 +219,10 @@ class Assistant {
         await this.connect();
         if (!this.chat) this.chat = await this.newChat();
         const chat = this.chat;
+        if (chat.dialect && chat.dialect.contextNote && !chat.noted) {
+            chat.noted = true;                       // the one-time note of §2 row 26
+            this.emit("note", { text: chat.dialect.contextNote });
+        }
 
         const turn = {
             id: `t${Date.now().toString(36)}`,
@@ -248,12 +269,12 @@ class Assistant {
         const note = prompt.stateNote(list, layers, { pin: turn.pin, undone: chat.undone, stopped: chat.stopped });
         chat.undone = false;
         const pendingUser = chat.history.length && chat.history[chat.history.length - 1].role === "user";
-        if (!pendingUser && s.keepImages > 0) adapter.prune(chat.history, s.keepImages);
-        if (pendingUser) appendUserText(chat.history[chat.history.length - 1], note, text, chat.stopped);
+        if (!pendingUser && s.keepImages > 0 && adapter.countImages(chat.history) > 2 * s.keepImages) adapter.prune(chat.history, s.keepImages);
+        if (pendingUser) appendUserText(chat.history[chat.history.length - 1], note, text);
         else chat.history.push(adapter.userMessage(note, text));
         chat.stopped = false;
 
-        const cap = PROVIDERS[chat.provider].requestCap || adapter.REQUEST_CAP;
+        const cap = PROVIDERS[chat.provider].requestCap || (isGemini(chat.model) ? PROVIDERS.gemini.requestCap : adapter.REQUEST_CAP);
         for (;;) {
             if (turn.stopped) return this.done(chat, turn, "stopped");
             const bytes = adapter.requestBytes(chat, chat.history);
@@ -280,10 +301,13 @@ class Assistant {
             if (res.text) this.emit("assistant:text", { text: res.text });
 
             if (res.stop === "cut") {
-                if (res.calls.length) chat.history.push(...adapter.resultsMessages(res.calls, res.calls.map(() => errorResult("not run: the answer was cut off"))));
+                if (res.calls.length) chat.history.push(...adapter.resultsMessages(res.calls, res.calls.map(() => errorResult("not run: the answer was cut off")), chat));
                 return this.done(chat, turn, "cut");
             }
-            if (res.stop === "refusal") return this.done(chat, turn, "refusal", JSON.stringify(res.stopDetails || {}));
+            if (res.stop === "refusal") {
+                if (res.calls.length) chat.history.push(...adapter.resultsMessages(res.calls, res.calls.map(() => errorResult("not run: the answer was refused")), chat));
+                return this.done(chat, turn, "refusal", JSON.stringify(res.stopDetails || {}));
+            }
             if (!res.calls.length) return this.done(chat, turn, "end");
 
             const results = [];
@@ -294,7 +318,7 @@ class Assistant {
                 if (this.lastWasDecline) declined = true;
                 if (this.lastWasClosed) closed = true;
             }
-            chat.history.push(...adapter.resultsMessages(res.calls, results));
+            chat.history.push(...adapter.resultsMessages(res.calls, results, chat));
             if (closed) return this.done(chat, turn, "closed");
             if (turn.steps >= s.maxSteps) return this.done(chat, turn, "cap");
         }
@@ -309,14 +333,19 @@ class Assistant {
         if (state.declined) return errorResult("skipped: an earlier call in this step was declined");
         if (call.badJson) return errorResult(`the arguments were not valid JSON: ${String(call.badJson).slice(0, 200)}`);
 
-        const tool = chat.tools.find((x) => x.name === name);
         if (!chat.names.has(name)) {
             this.emit("call", { call: call.id, name, action: "refuse", reason: "not one of your tools in this chat" });
             return errorResult(`refused by Scumble: not one of your tools in this chat`);
         }
+        if (name === "screenshot" && chat.noImages) {
+            // the local server refused a picture earlier in this chat (§2 row 26)
+            this.emit("call", { call: call.id, name, action: "refuse", reason: "this server does not take images" });
+            return errorResult("refused by Scumble: this server does not take images; judge from list_layers and status, and ask the user to look");
+        }
 
         // ---- canonical arguments
-        const takesDoc = !!(tool && tool.input_schema && tool.input_schema.properties && tool.input_schema.properties.doc);
+        const props = (chat.schemas.get(name) || {}).properties || {};
+        const takesDoc = !!props.doc;
         let args = { ...(call.args || {}) };
         if (takesDoc && args.doc === undefined) {
             if (turn.pin == null) return errorResult("the document of this turn was closed; pass doc (see list_documents)");
@@ -324,8 +353,7 @@ class Assistant {
         }
         const doc = args.doc !== undefined ? args.doc : turn.pin;
         let layers = [];
-        const takesLayer = !!(tool && tool.input_schema && tool.input_schema.properties
-            && (tool.input_schema.properties.layer || tool.input_schema.properties.source || tool.input_schema.properties.target));
+        const takesLayer = !!(props.layer || props.source || props.target);
         const wantsLayers = !policy.READS.has(name) && (takesDoc || takesLayer) && doc != null;
         if (wantsLayers) {
             try {
@@ -554,10 +582,12 @@ function findLayer(layers, ref) {
     return { error: `no layer "${want}" (layers: ${layers.map((l) => l.name).join(", ") || "none"})` };
 }
 
-/** The user's text joined to a pending user message, never as a second user message (§3). */
-function appendUserText(message, note, text, stopped) {
+/**
+ * The user's text joined to a pending user message, never as a second user message (§3). The
+ * note carries the "(stopped)" line when the last answer was stopped.
+ */
+function appendUserText(message, note, text) {
     const parts = Array.isArray(message.content) ? message.content : [{ type: "text", text: String(message.content || "") }];
-    if (stopped) parts.push({ type: "text", text: "(your previous answer was stopped before it finished)" });
     if (note) parts.push({ type: "text", text: note });
     parts.push({ type: "text", text: String(text == null ? "" : text) });
     message.content = parts;

@@ -52,6 +52,18 @@ function resultsMessages(calls, results) {
     return content.length ? [{ role: "user", content }] : [];
 }
 
+/** How many screenshots the history carries. */
+function countImages(history) {
+    let n = 0;
+    for (const m of history) {
+        if (!m || !Array.isArray(m.content)) continue;
+        for (const block of m.content) {
+            if (block && block.type === "tool_result") for (const part of block.content || []) if (part && part.type === "image") n++;
+        }
+    }
+    return n;
+}
+
 /**
  * Detach all but the last `keep` screenshots: every earlier image block becomes a stub. Only
  * ever called at a new user message (§2 row 9), never inside a turn.
@@ -194,6 +206,11 @@ async function stream(chat, history, opts = {}) {
     });
 
     if (streamError) throw streamError;
+    if (stopReason === null) {
+        // no message_delta: the connection closed before the answer was finished, so nothing of it
+        // is pushed (§3, "The turn": a stream that broke)
+        throw new Error("the stream ended before the answer was finished");
+    }
 
     const content = blocks.filter(Boolean);
     const calls = content
@@ -213,7 +230,7 @@ async function stream(chat, history, opts = {}) {
 
 module.exports = {
     family: "messages",
-    toolsFor, userMessage, resultsMessages, prune, requestBytes, stream,
+    toolsFor, userMessage, resultsMessages, prune, countImages, requestBytes, stream,
     REQUEST_CAP, TEXT_CAP, VERSION,
     _bodyFor: bodyFor, _usageOf: usageOf, STOP,
 };

@@ -1116,6 +1116,151 @@ local endpoint, each with its dialect from the registry (§2 row 35, §3).
 **Estimate.** Two and a half days: a day for the adapter and its stream, a day and a half
 for seven dialects and their golden shapes.
 
+### A2 as built (2026-09-20)
+
+One adapter, `electron/main/assistant/chat.js`, plain Node like the rest of A1, wired into
+`index.js` as the `chat` family. The seven providers share it and differ only in the dialect data
+of `providers.js` (§2 row 35): the reasoning field, the thinking switch, the length field, where a
+screenshot goes, `stream_options`, `tool_stream`, `session_id`, `provider`, `cache_control`,
+`strict: false` on Moonshot's tools, and the answers that are final.
+
+- **The request** is the plan's: `POST <base>/chat/completions`, `Authorization: Bearer` only when
+  a key exists, the system text as the first message, `tools` as `function` objects with the MCP
+  schema as `parameters`, `stream: true`, the dialect's length and thinking fields. No
+  `tool_choice`, `parallel_tool_calls`, `temperature`, `top_p`, `n`, penalty, `HTTP-Referer` or
+  `X-Title` goes to anyone (the golden bodies of all seven providers prove it).
+- **Calls** are rebuilt by `index` and parsed only at the end; a whole call in one delta and an
+  `arguments` object are taken too (Z.ai without `tool_stream`); invalid JSON is the error result
+  "the arguments were not valid JSON"; a server that sends no `id` gets `call_<n>`, and the
+  result names the same id.
+- **Results**: one `tool` message per call, text (`Error: ` in front of an error result, because
+  this family has no `is_error`; "ok" for an empty one; cut at 32,000 characters); a screenshot
+  inline as an `image_url` part on Moonshot, elsewhere the tool message says it follows and one
+  `user` message after the last tool message carries the screenshots of the step, each after
+  "Screenshot from call <id>".
+- **Replay**: the assistant message goes back as rebuilt - `content`, the dialect's reasoning
+  field, `tool_calls` - on every assistant message of the chat, earlier turns included;
+  `reasoning_content` is present (as `""`) even when none came where the dialect requires it
+  (DeepSeek, Moonshot, Z.ai); OpenRouter's `reasoning_details` go back as the concatenation of
+  the arrays that arrived, unmodified and in order; the gateways get back whichever of
+  `reasoning_content`, `reasoning` and `reasoning_details` came.
+- **The stream**: `delta.content` (a string, or parts on some local servers), the reasoning
+  deltas, `delta.tool_calls[i]`, `delta.refusal`; usage from the last chunk whether it stands at
+  the top level with `choices: []`, in `choices[0].usage` or in both; an `error` chunk or a
+  `finish_reason` of `error`, `network_error`, `insufficient_system_resource`, `aborted` or
+  `model_context_window_exceeded` ends the call as an error, `length` is "cut",
+  `content_filter` and Z.ai's `sensitive` are "refusal".
+- **Final answers, by dialect, in plain words**: a 402 ("the DeepSeek balance is empty", "the
+  OpenRouter credits are used up"), Moonshot's `exceeded_current_quota_error` and a
+  `rate_limit_reached_error` naming the daily limit, Z.ai's codes 1113, 1261 and 1301; none of
+  them is retried, while `engine_overloaded_error`, the RPM / TPM limits and Z.ai's 1302 / 1305
+  are retried like any 429.
+- **OpenRouter**: `session_id` = the chat id, `provider: {data_collection: "deny", ignore:
+  [...]}` on every request, a top-level `cache_control` for `anthropic/*`, `reasoning: {effort:
+  "medium"}`, `usage.cost` as the cost.
+- **The local server**: the base from `settings.llm.compat.url` through `compatBase`, its key
+  (when one is stored) to that URL and nowhere else, the strict image rule (a 400 / 413 / 415 /
+  422 whose body names the image) sends the request once more with every screenshot replaced by
+  a note and refuses `screenshot` for the rest of the chat; a one-time `note` event asks for 64k
+  of context (the panel shows it in A5).
+
+**Not the plan's word, and why:**
+- The dialect names its final answers as `finalStatus` / `finalCodes` / `finalTypes` /
+  `finalMessage` with the words beside the code (A1's registry had `noRetryCodes` and no words);
+  `finalWords()` in chat.js reads them and doubles as `postStream`'s `noRetry`.
+- `openrouterIgnore()` stands in `providers.js` as the plan says, but delegates to the image
+  adapter's `chinaHosts` (`electron/main/providers/openrouter.js`, plain Node): one fetch of
+  `GET /api/v1/providers` per session for both, the same cache, and the same dated fallback list
+  (seven hosts as of 2026-09-19, not the plan's four).
+- `reasoning_details` are not merged by `index` - they go back exactly as they arrived, array
+  after array. Whether OpenRouter wants them merged is a checkpoint question (§7); "unmodified"
+  is the safer reading.
+- `reasoning: {effort: "medium"}` goes to every curated OpenRouter model (OpenRouter drops a
+  parameter a model lacks); the live list decides for a free id in A4.
+- `http.js`'s `checkKey` got `localOk`: the local server is the one provider whose URL is a
+  loopback listener by nature, so its own key (LM Studio's, a vLLM token) may go there; every
+  other provider keeps both halves of the rule, and the adapter passes `localOk` from the dialect
+  alone (`localKey`).
+- `index.js` now reads the tool schema from a family-neutral `chat.schemas` map; `runCall` had
+  looked it up as `chat.tools.find(...).input_schema`, the Anthropic shape, so on any other
+  family `doc` would never have been injected and no layer reference resolved (a latent A1
+  defect, caught by the first chat-family loop run). `resultsMessages` takes the chat as its
+  third argument (the dialect decides where the images go); the Anthropic adapter ignores it.
+- An answer whose `content-type` is not `text/event-stream` is read as an error body (Z.ai
+  reports some errors as HTTP 200 JSON); a stream that ends with no `finish_reason`, no text and
+  no call is an error ("the answer was empty"), not an empty turn.
+- The 18 MB cap holds for a `google/*` or `gemini-*` id on any provider, not only on Google's own.
+
+**Tests.** `node tools/assistant_test.js` is **179 checks**: sections 1 to 10 as before, and five
+new sections on the chat family - 11 the shapes (a golden body per provider, the tools' shape,
+Kimi K2.6's own switch, the plain-string results), 12 the loop (every dialect once, the reasoning
+replay across turns, `reasoning_details`, interleaved fragments by index, the whole call and the
+`arguments` object, a call without an id, bad JSON, the cut answer, refusals, the four mid-stream
+errors, the empty stream, keep-alive, usage in either last chunk, text deltas, the context note
+once per chat, a layer reference on a tool without `doc`, and the same answer cut at every one of
+its 1,857 byte offsets, UTF-8 inside), 13 images (Moonshot inline, the follow-up message
+elsewhere, the local server's fallback and its strictness, its recursion guard, that the fallback
+is the local server's alone, pruning in both places, the 18 MB cap through a gateway), 14 keys
+and hosts (each provider's own row in the Bearer header, every path under the loopback base, no
+key for the local server, its URL, the `localOk` rule three ways, the adapter's own key check,
+the hosts in China from the mock's list and the dated list when it fails, no attribution header,
+the seven final answers and the three retried ones, the JSON answer, the scrubbed key) and 15
+cost (the usage of every dialect normalised and priced). The scripted `fetch` answers GETs
+(OpenRouter's host list) and `sseResponse` takes byte chunks, so a cut inside a UTF-8 sequence is
+a real one. A mutation round against a copy of the tree (the scratchpad's `mutate_a2.js`): **80
+mutations, 77 red at the first run, 80 after the three survivors each got a check** (the image
+fallback reachable from every provider, usage read only from `choices[0].usage`, `takesLayer` for a
+tool with a layer but no `doc`, which A1 had fixed without a check of its own); **95 after the
+review below, all 95 red** (65 in chat.js, 12 in providers.js, 3 in http.js, 13 in index.js, 2 in
+anthropic.js).
+
+**Review.** Four lenses (the dialects against the tables; the stream rebuild and the four history
+invariants; keys, privacy and retries; the wiring into `index.js` and the test's gaps), 27 findings,
+each read by two refuters: 22 held at least one refuter, 5 fell. Fixed, four of them A1's:
+- a stream that ends without a `finish_reason` (a clean end of the body before the last chunk) is
+  an error and pushes nothing - the plan's "a stream that broke", which A1's Anthropic adapter had
+  not kept either (no `message_delta` -> the half answer was pushed as "end"; now the same error);
+- pruning only above twice `keepImages`, in batches (§2 row 9); A1's loop had pruned at every new
+  user message once more than `keepImages` were attached, breaking the prefix cache every turn
+  from the fourth screenshot on. Both adapters got `countImages(history)` for the threshold;
+- `refusesImage` is `llm.js`'s regex verbatim (`/image|vision|multimodal|content part/i`); A1's
+  copy also matched "content type" and "unsupported", so a local server's 400 about an unsupported
+  parameter would have stripped every screenshot and turned `screenshot` off for the chat;
+- the "(stopped)" line stood twice in a pending user message (the note carries it; the join no
+  longer adds its own);
+- a refusal that still carries calls answers them "not run: the answer was refused", as the cut
+  path does, so the next request stays valid (Z.ai's `sensitive` after a call had left
+  `tool_calls` unanswered: every later request a 400);
+- a server without `index` gets its calls split and joined right: a fragment that repeats an `id`
+  belongs to that call, one that brings an id or a name opens a call, the rest joins the last;
+- an `arguments` array or scalar (a string, whether as JSON text or as an object) is bad JSON, not
+  a tool's arguments;
+- the adapter scrubs the key itself where a server's text enters an error (the JSON answer that
+  is not a stream, the error chunk); `index.js` scrubbed once more above it, but that line had no
+  check;
+- the host list is asked once per chat: a failed read had been asked again before every model
+  call, ten seconds each;
+- a Moonshot tool message with an image alone still carries "ok" (both refuters called it moot
+  because `screenshot` always answers text; fixed anyway, one line).
+Rejected: `reasoning: {effort: "medium"}` for every curated OpenRouter model stays (OpenRouter
+drops a parameter a model lacks; the live list decides for a free id in A4); the truncated error
+body (`err.body` is the whole scrubbed text, only the message is cut to 600 characters); the
+`localOk` gap (the adapter-level key check already turns that mutation red). Nine findings were
+gaps in the test and each got a check: every other tool still runs after a refused picture, the
+18 MB cap on `gemini-*` through ToAPIs and on `google/*` through WaveSpeed, `cache_control` on no
+other OpenRouter model, `aborted`, the fallback needing a picture in the history,
+`reasoning_details` through a gateway, non-object JSON arguments, the `content-type` header, a
+non-numeric `usage.cost`.
+
+**Gates.** `node tools/assistant_test.js` PASS; `toapis` and `llm` re-run `--offline` on a fresh
+instance, ALL PASS (`a2-node`, and `a2-node2` after the review's fixes), which is what proves
+`llm.js` and the ToAPIs adapter untouched.
+
+**Not done here** (A3 and later): the OpenAI Responses and Gemini adapters, everything in the
+app (IPC, the key rows for DeepSeek, Moonshot and Z.ai, the panel), the free OpenRouter id's
+live list, the chats on disk. Nothing of A2 can be used from the window yet, and no dialect has
+run against a live key (§7).
+
 ### A3. OpenAI Responses and Gemini, in plain Node (two and a half days)
 
 **Purpose.** The two remaining families, each with its own replay rule.

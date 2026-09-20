@@ -8,6 +8,9 @@
 // The fixture is a hand-written describe() list covering the shapes the real commands have: an
 // `object` parameter, an enum, a required parameter, a dotted plugin name, a `doc` parameter and a
 // command whose result is a picture.
+//
+// Sections 2 to 10 run the loop in its Anthropic shape (A1); sections 11 to 15 run it on the seven
+// Chat Completions providers (A2), through a scripted `fetch` that answers in each dialect's SSE.
 "use strict";
 
 const path = require("node:path");
@@ -133,6 +136,7 @@ const EDITOR_COMMANDS = [
     { name: "ailabel_add", description: "Add the AI label.", plugin: "ailabel", params: {} },
     { name: "ailabel_remove", description: "Remove the AI label.", plugin: "ailabel", params: {} },
     { name: "ailabel_info", description: "About the AI label.", plugin: "ailabel", params: {} },
+    { name: "tint.layer", description: "Tint a layer (a plugin tool with a layer but no doc).", plugin: "tint", params: { layer: { type: "string", description: "id or name" }, amount: { type: "number", description: "0..100" } } },
 ];
 
 /** The commands the assistant's own list is built from: the shapes fixture plus the editor's. */
@@ -194,13 +198,13 @@ class FakeEditor extends EventEmitter {
 
 // ---- a scripted model: SSE bodies in the Anthropic shape ----------------------------------
 
-/** A Response as postStream and readSse use it: ok, status, headers, body, text(). */
+/** A Response as postStream and readSse use it: ok, status, headers, body, text(). A chunk may be a string or bytes. */
 function sseResponse(text, opts = {}) {
     const chunks = opts.chunks || [text];
     const body = new ReadableStream({
         start(controller) {
             const enc = new TextEncoder();
-            for (const c of chunks) controller.enqueue(enc.encode(c));
+            for (const c of chunks) controller.enqueue(typeof c === "string" ? enc.encode(c) : new Uint8Array(c));
             controller.close();
         },
     });
@@ -250,11 +254,86 @@ function splitJson(json) {
     return [json.slice(0, at), json.slice(at)];
 }
 
-/** A fetch that answers the scripted streams in order and records every request. */
-function scriptedFetch(streams) {
+// ---- a scripted model: SSE bodies in the Chat Completions shape ---------------------------
+
+/**
+ * The SSE text of a Chat Completions answer as a dialect sends it: a role chunk, text and
+ * reasoning deltas (`reasoning_content`, `reasoning` or `reasoning_details`), tool calls in
+ * fragments by index or whole in one delta (`whole`, with `object` for an arguments object,
+ * `noIndex` for a server that sends none), a raw chunk of the test's own, `finish_reason` and
+ * usage in the last chunk with choices (`usageWhere: "last"`), in a last chunk with `choices: []`
+ * (`"empty"`, Moonshot) or in both (`"both"`), `: keep-alive` comments (DeepSeek), an error chunk
+ * (OpenRouter) and `data: [DONE]`.
+ */
+function chatStream(parts, opts = {}) {
+    const chunks = [];
+    const push = (obj) => chunks.push("data: " + JSON.stringify(obj) + "\n\n");
+    const wrap = (delta, extra = {}) => ({ id: opts.id || "chatcmpl-1", object: "chat.completion.chunk", created: 1700000000, model: opts.model || "m", choices: [{ index: 0, delta, finish_reason: null, ...extra }] });
+    push(wrap({ role: "assistant", content: "" }));
+    let hasCalls = false;
+    let next = 0;
+    for (const part of parts) {
+        if (part.type === "text") {
+            for (const piece of part.pieces || [part.text]) push(wrap({ content: piece }));
+        } else if (part.type === "reasoning") {
+            const field = part.field || opts.reasoningField || "reasoning_content";
+            if (field === "reasoning_details") push(wrap({ reasoning_details: part.details }));
+            else for (const piece of part.pieces || [part.text]) push(wrap({ [field]: piece }));
+        } else if (part.type === "tool_call") {
+            hasCalls = true;
+            const index = part.index !== undefined ? part.index : next++;
+            const json = part.raw !== undefined ? part.raw : JSON.stringify(part.input || {});
+            const head = { index, id: part.id, type: "function", function: { name: part.name, arguments: "" } };
+            if (part.noIndex) delete head.index;
+            if (part.id === undefined) delete head.id;
+            if (part.whole) {
+                head.function.arguments = part.object ? part.input : json;
+                push(wrap({ tool_calls: [head] }));
+            } else {
+                push(wrap({ tool_calls: [head] }));
+                for (const piece of splitJson(json)) {
+                    const frag = { index, function: { arguments: piece } };
+                    if (part.noIndex) delete frag.index;
+                    push(wrap({ tool_calls: [frag] }));
+                }
+            }
+        } else if (part.type === "raw") {
+            push(part.chunk);
+        }
+        if (opts.keepAlive) chunks.push(": keep-alive\n\n");
+    }
+    const finish = opts.finish || (hasCalls ? "tool_calls" : "stop");
+    const usage = opts.usage || { prompt_tokens: 100, completion_tokens: 20 };
+    const where = opts.usageWhere || "last";
+    if (where === "last") push({ ...wrap({}, { finish_reason: finish }), usage });
+    else if (where === "choice") push(wrap({}, { finish_reason: finish, usage }));
+    else {
+        push(wrap({}, { finish_reason: finish }));
+        const last = { id: opts.id || "chatcmpl-1", object: "chat.completion.chunk", choices: [], usage };
+        if (where === "both") last.choices = [{ index: 0, delta: {}, finish_reason: null, usage }];
+        push(last);
+    }
+    if (opts.errorChunk) push(opts.errorChunk);
+    if (!opts.noDone) chunks.push("data: [DONE]\n\n");
+    return chunks.join("");
+}
+
+/**
+ * A fetch that answers the scripted streams in order and records every request. A GET (no body)
+ * is answered by `gets(url)` when that gives something, else with an empty `{data: []}` list; the
+ * GETs are recorded in `impl.got`.
+ */
+function scriptedFetch(streams, gets) {
     const sent = [];
+    const got = [];
     const queue = streams.slice();
     const impl = async (url, init) => {
+        if (!init || init.body === undefined) {
+            got.push({ url: String(url), headers: (init && init.headers) || {} });
+            const answer = gets ? gets(String(url)) : null;
+            if (answer) return answer;
+            return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ data: [] }), text: async () => "{\"data\":[]}" };
+        }
         sent.push({ url: String(url), headers: init.headers, body: JSON.parse(init.body) });
         const next = queue.shift();
         if (next === undefined) throw new Error("the model was called more often than the test scripted");
@@ -262,19 +341,28 @@ function scriptedFetch(streams) {
         return sseResponse(next);
     };
     impl.sent = sent;
+    impl.got = got;
     impl.left = () => queue.length;
     return impl;
 }
 
-/** An Assistant wired to a fake editor and a scripted model. */
+/**
+ * An Assistant wired to a fake editor and a scripted model. `opts.key` is the key of every row,
+ * `opts.keys` a key per row (a row it lacks has none); `opts.settings` the rest of the settings
+ * file (`llm.compat.url`, `toapis.base`); `opts.gets` answers the scripted fetch's GETs.
+ */
 function assistantOn(editor, streams, opts = {}) {
     const { Assistant } = require(path.join(ROOT, "electron", "main", "assistant", "index.js"));
     const events = [];
-    const fetchImpl = typeof streams === "function" ? streams : scriptedFetch(streams);
+    const fetchImpl = typeof streams === "function" ? streams : scriptedFetch(streams, opts.gets);
+    const keyOf = (row) => {
+        if (opts.keys) return opts.keys[row] === undefined ? "" : opts.keys[row];
+        return opts.key === undefined ? "test-anthropic-0000" : opts.key;
+    };
     const a = new Assistant({
         bridge: editor,
-        keys: { get: () => (opts.key === undefined ? "test-anthropic-0000" : opts.key) },
-        settings: { get: () => ({ assistant: { base: "http://127.0.0.1:5599", ...(opts.assistant || {}) } }) },
+        keys: { get: keyOf },
+        settings: { get: () => ({ ...(opts.settings || {}), assistant: { base: "http://127.0.0.1:5599", ...(opts.assistant || {}) } }) },
         emit: (e) => events.push(e),
         fetchImpl,
         sleep: async () => {},
@@ -795,7 +883,7 @@ async function main() {
             await a.send("carry on");
             const users = a.chat.history.filter((m) => m.role === "user");
             check("the next user text joins the pending message with the note",
-                users.length === 1 && users[0].content.some((p) => /stopped before it finished/.test(p.text)),
+                users.length === 1 && users[0].content.filter((p) => /stopped before it finished/.test(p.text || "")).length === 1,
                 `${users.length} user messages`);
             await a.close();
         }
@@ -908,7 +996,8 @@ async function main() {
             let calls = 0;
             const { a } = assistantOn(editor, async () => { calls++; return sseResponse(head); });
             const out = await a.send("hello");
-            check("a_stream_broken_after_its_first_byte_is_not_retried", calls === 1, `${calls} model calls, turn ${out.reason}`);
+            check("a_stream_broken_after_its_first_byte_is_not_retried", calls === 1 && out.reason === "error" && /before the answer was finished/.test(out.detail) && a.chat.history.length === 1,
+                `${calls} model calls, turn ${out.reason}: ${out.detail}, ${a.chat.history.length} messages`);
             await a.close();
         }
         {
@@ -1187,6 +1276,10 @@ async function main() {
         check("old_screenshots_are_detached_only_at_a_user_message", left.length === 3 && eq(left, ["IMG5", "IMG6", "IMG7"]), left.join(", "));
         const kept = a.chat.adapter.prune(JSON.parse(JSON.stringify(many)), 0);
         check("with_keep_images_0_every_screenshot_stays", (JSON.stringify(kept).match(/IMG\d/g) || []).length === 8);
+        const mixed = JSON.parse(JSON.stringify(many));
+        mixed[0].content[0].content.push({ type: "text", text: "{\"width\": 1024}" });
+        check("count_images_counts_the_images_alone", a.chat.adapter.countImages(mixed) === 8 && a.chat.adapter.countImages(pruned) === 3,
+            `${a.chat.adapter.countImages(mixed)} with a text part, ${a.chat.adapter.countImages(pruned)} after pruning`);
         await a.close();
 
         {
@@ -1285,6 +1378,977 @@ async function main() {
 
         const local = models.costOf("compat", "llama", usage);
         check("a local model costs nothing", local.amount === 0 && local.note === "local");
+    });
+
+    // ---- 11. the Chat Completions dialects: the shapes (A2) -------------------------------
+    const CHAT = [
+        { provider: "openrouter", model: "anthropic/claude-sonnet-5", key: "test-or-0000", path: "/api/v1/chat/completions" },
+        { provider: "deepseek", model: "deepseek-flash", key: "test-ds-0000", path: "/chat/completions" },
+        { provider: "moonshot", model: "kimi-k3", key: "test-ms-0000", path: "/v1/chat/completions" },
+        { provider: "zai", model: "glm-5.3-flash", key: "test-zai-0000", path: "/api/paas/v4/chat/completions" },
+        { provider: "toapis", model: "claude-sonnet-5", key: "test-toapis-0000", path: "/v1/chat/completions" },
+        { provider: "wavespeed", model: "anthropic/claude-sonnet-5", key: "test-ws-0000", path: "/v1/chat/completions" },
+        { provider: "compat", model: "llama3.2-vision", key: "", path: "/v1/chat/completions" },
+    ];
+    const LOCAL = { llm: { compat: { url: "http://127.0.0.1:11434" } } };
+    /** An Assistant on one Chat Completions provider, the test base in front of it. */
+    const chatOn = (editor, streams, p, extra = {}) => assistantOn(editor, streams, {
+        key: p.key, ...extra,
+        assistant: { model: `${p.provider}:${p.model}`, ...(extra.assistant || {}) },
+        settings: { ...LOCAL, ...(extra.settings || {}) },
+    });
+    const orHosts = require(path.join(ROOT, "electron", "main", "providers", "openrouter.js"));
+    /** The reasoning part of a scripted answer, in the dialect's field. */
+    const reasoningPart = (p, text) => (p.provider === "openrouter"
+        ? { type: "reasoning", field: "reasoning_details", details: [{ type: "reasoning.text", text, format: "unknown", index: 0 }] }
+        : { type: "reasoning", text });
+
+    await section("11. the Chat Completions dialects: the shapes", async () => {
+        const chatAdapter = require(path.join(ROOT, "electron", "main", "assistant", "chat.js"));
+        const note = "Open documents (1):\n> #1 \"Untitled\", 1200 x 800, active";
+        const IMAGE = { type: "image_url", image_url: { url: "data:image/jpeg;base64,QUJD" } };
+        const bad = [];
+        for (const p of CHAT) {
+            const editor = new FakeEditor();
+            const { a } = chatOn(editor, [], p);
+            await a.connect();
+            const chat = await a.newChat();
+            chat.ignore = ["alibaba", "baidu"];
+
+            // the tools: function objects with the MCP schema as parameters, strict:false on Moonshot only
+            const served = (await a.client.listTools()).tools.filter((t) => !policy.EXCLUDED.has(t.name));
+            const shape = chat.tools.every((t) => t.type === "function" && t.function.name && typeof t.function.description === "string"
+                && eq(t.function.parameters, served.find((s) => s.name === t.function.name).inputSchema) && t.annotations === undefined && t.function.annotations === undefined);
+            const strict = p.provider === "moonshot" ? chat.tools.every((t) => t.function.strict === false) : chat.tools.every((t) => t.function.strict === undefined);
+            if (!shape || !strict || chat.tools.length !== served.length) bad.push(`${p.provider}: tools`);
+
+            // the golden body: text, a call, an image result, an error result and the dialect's reasoning field
+            const reasoning = p.provider === "openrouter"
+                ? { reasoning_details: [{ type: "reasoning.text", text: "I should look.", format: "anthropic-claude-v1", index: 0 }] }
+                : { reasoning_content: "I should look." };
+            const history = [
+                chat.adapter.userMessage(note, "look at it"),
+                { role: "assistant", content: "Looking.", ...reasoning, tool_calls: [
+                    { id: "call_1", type: "function", function: { name: "screenshot", arguments: "{\"max_size\":1024}" } },
+                    { id: "call_2", type: "function", function: { name: "remove_layer", arguments: "{\"doc\":1,\"layer\":\"Lbase\"}" } },
+                ] },
+                ...chat.adapter.resultsMessages(
+                    [{ id: "call_1" }, { id: "call_2" }],
+                    [
+                        { content: [{ type: "image", data: "QUJD", mimeType: "image/jpeg" }, { type: "text", text: "{\"width\": 1024}" }] },
+                        { content: [{ type: "text", text: "refused by Scumble: removes a layer you made" }], isError: true },
+                    ],
+                    chat,
+                ),
+            ];
+            const tail = p.provider === "moonshot"
+                ? [
+                    { role: "tool", tool_call_id: "call_1", content: [{ type: "text", text: "{\"width\": 1024}" }, IMAGE] },
+                    { role: "tool", tool_call_id: "call_2", content: "Error: refused by Scumble: removes a layer you made" },
+                ]
+                : [
+                    { role: "tool", tool_call_id: "call_1", content: "{\"width\": 1024}\nThe screenshot follows in the next message." },
+                    { role: "tool", tool_call_id: "call_2", content: "Error: refused by Scumble: removes a layer you made" },
+                    { role: "user", content: [{ type: "text", text: "Screenshot from call call_1" }, IMAGE] },
+                ];
+            const messages = [
+                { role: "system", content: chat.system },
+                { role: "user", content: [{ type: "text", text: note }, { type: "text", text: "look at it" }] },
+                history[1],
+                ...tail,
+            ];
+            const TOP = {
+                openrouter: { model: "anthropic/claude-sonnet-5", messages, tools: chat.tools, stream: true, max_tokens: 32000,
+                    reasoning: { effort: "medium" }, session_id: chat.id, provider: { data_collection: "deny", ignore: ["alibaba", "baidu"] }, cache_control: { type: "ephemeral" } },
+                deepseek: { model: "deepseek-flash", messages, tools: chat.tools, stream: true, max_tokens: 32000,
+                    thinking: { type: "enabled" }, reasoning_effort: "high", stream_options: { include_usage: true } },
+                moonshot: { model: "kimi-k3", messages, tools: chat.tools, stream: true, max_completion_tokens: 32000,
+                    reasoning_effort: "high", stream_options: { include_usage: true } },
+                zai: { model: "glm-5.3-flash", messages, tools: chat.tools, stream: true, max_tokens: 32000,
+                    thinking: { type: "enabled", clear_thinking: false }, reasoning_effort: "high", tool_stream: true },
+                toapis: { model: "claude-sonnet-5", messages, tools: chat.tools, stream: true, max_tokens: 32000, stream_options: { include_usage: true } },
+                wavespeed: { model: "anthropic/claude-sonnet-5", messages, tools: chat.tools, stream: true, max_tokens: 32000, stream_options: { include_usage: true } },
+                compat: { model: "llama3.2-vision", messages, tools: chat.tools, stream: true, max_tokens: 32000, stream_options: { include_usage: true } },
+            };
+            const body = chat.adapter._bodyFor(chat, history);
+            check(`${p.provider}_history_with_a_screenshot_has_the_golden_shape`, eq(body, TOP[p.provider]), short(diffOf(body, TOP[p.provider])));
+            const keys = Object.keys(body);
+            if (keys.some((k) => ["temperature", "top_p", "top_k", "tool_choice", "parallel_tool_calls", "n", "frequency_penalty", "presence_penalty", "seed", "logprobs"].includes(k))) bad.push(`${p.provider}: ${keys.join(",")}`);
+            await a.close();
+        }
+        check("chat_tools_are_function_objects_with_strict_false_on_moonshot_only", !bad.some((b) => /tools/.test(b)), bad.join("; ") || `${CHAT.length} dialects`);
+        check("no_sampling_parameter_is_sent_on_any_dialect", !bad.some((b) => !/tools/.test(b)), bad.join("; ") || `${CHAT.length} bodies`);
+
+        {
+            // Kimi K2.6 takes the other thinking switch of the same provider
+            const editor = new FakeEditor();
+            const { a } = chatOn(editor, [], { provider: "moonshot", model: "kimi-k2.6", key: "test-ms-0000" });
+            await a.connect();
+            const chat = await a.newChat();
+            const body = chat.adapter._bodyFor(chat, []);
+            check("kimi_k2_6_sends_its_own_thinking_switch", eq(body.thinking, { type: "enabled", keep: "all" }) && body.reasoning_effort === undefined && body.max_completion_tokens === 32000,
+                short({ thinking: body.thinking, reasoning_effort: body.reasoning_effort }));
+            await a.close();
+        }
+        {
+            // the top-level cache_control goes to anthropic/* models on OpenRouter and to no other
+            const bodies = {};
+            for (const model of ["google/gemini-3.8-flash", "openai/gpt-5.6-terra", "anthropic/claude-opus-5"]) {
+                const editor = new FakeEditor();
+                const { a } = chatOn(editor, [], { provider: "openrouter", model, key: "test-or-0000" });
+                await a.connect();
+                const chat = await a.newChat();
+                bodies[model] = chat.adapter._bodyFor(chat, []).cache_control;
+                await a.close();
+            }
+            check("openrouter_cache_control_goes_to_anthropic_models_only",
+                bodies["google/gemini-3.8-flash"] === undefined && bodies["openai/gpt-5.6-terra"] === undefined && eq(bodies["anthropic/claude-opus-5"], { type: "ephemeral" }), short(bodies));
+        }
+        {
+            // a text-only result, an empty result and a long one
+            const msgs = chatAdapter.resultsMessages([{ id: "a" }, { id: "b" }, { id: "c" }], [
+                { content: [{ type: "text", text: "{\"ok\":true}" }] },
+                { content: [] },
+                { content: [{ type: "text", text: "x".repeat(40000) }] },
+            ], { dialect: {} });
+            check("text_results_are_plain_strings_and_an_empty_one_says_ok",
+                msgs.length === 3 && msgs[0].content === "{\"ok\":true}" && msgs[1].content === "ok" && /cut after 32000 characters/.test(msgs[2].content) && msgs[2].content.length < 32100,
+                `${msgs.length} messages, ${msgs[2].content.length} chars`);
+            const only = chatAdapter.resultsMessages([{ id: "a" }], [{ content: [{ type: "image", data: "QUJD", mimeType: "image/jpeg" }] }], { dialect: { imagesInToolMessage: true } });
+            check("an_image_only_result_still_carries_text_inline", only.length === 1 && eq(only[0].content, [{ type: "text", text: "ok" }, IMAGE]), short(only[0].content));
+        }
+    });
+
+    // ---- 12. the dialects run the loop ----------------------------------------------------
+    await section("12. the dialects run the loop", async () => {
+        const chatAdapter = require(path.join(ROOT, "electron", "main", "assistant", "chat.js"));
+        {
+            const wrong = [];
+            for (const p of CHAT) {
+                orHosts._resetHosts();
+                const editor = new FakeEditor();
+                const { a, events, fetchImpl } = chatOn(editor, [
+                    chatStream([reasoningPart(p, "hm"), { type: "tool_call", id: "c1", name: "list_layers", input: { doc: 1 } }]),
+                    chatStream([{ type: "text", text: "One layer." }]),
+                ], p);
+                const out = await a.send("what is in the picture?");
+                const second = fetchImpl.sent[1] && fetchImpl.sent[1].body.messages;
+                const asst = second && second.find((m) => m.role === "assistant");
+                const tool = second && second.find((m) => m.role === "tool");
+                const back = p.provider === "openrouter"
+                    ? eq(asst && asst.reasoning_details, [{ type: "reasoning.text", text: "hm", format: "unknown", index: 0 }]) && asst.reasoning_content === undefined
+                    : asst && asst.reasoning_content === "hm" && asst.reasoning_details === undefined;
+                const ok = out.reason === "end" && out.steps === 1 && fetchImpl.sent.length === 2
+                    && fetchImpl.sent[0].url === "http://127.0.0.1:5599" + p.path
+                    && asst && asst.content === "" && eq(asst.tool_calls, [{ id: "c1", type: "function", function: { name: "list_layers", arguments: "{\"doc\":1}" } }])
+                    && tool && tool.tool_call_id === "c1" && /"layers"/.test(tool.content) && second.indexOf(tool) === second.indexOf(asst) + 1
+                    && back && events.some((e) => e.type === "assistant:text" && /One layer/.test(e.text))
+                    && a.chat.usage.input === 200 && a.chat.usage.output === 40
+                    && (p.provider !== "compat" || events.filter((e) => e.type === "note").length === 1)
+                    && (p.provider === "compat" || !events.some((e) => e.type === "note"));
+                if (!ok) wrong.push(`${p.provider}: ${out.reason} ${out.detail} url=${fetchImpl.sent[0] && fetchImpl.sent[0].url} asst=${short(asst)} tool=${short(tool)} usage=${short(a.chat.usage)}`);
+                await a.close();
+            }
+            check("every_chat_dialect_runs_the_loop", !wrong.length, wrong.join(" | ") || `${CHAT.length} dialects, one call then text each`);
+        }
+        {
+            // DeepSeek: reasoning_content on every assistant message of the chat, earlier turns included
+            const p = CHAT[1];
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([{ type: "reasoning", text: "r1" }, { type: "tool_call", id: "c1", name: "list_layers", input: { doc: 1 } }]),
+                chatStream([{ type: "reasoning", pieces: ["r", "2"] }, { type: "text", text: "done" }]),
+                chatStream([{ type: "text", text: "ok" }]),                  // no reasoning came
+                chatStream([{ type: "text", text: "still here" }]),
+            ], p);
+            await a.send("look");
+            await a.send("thanks");
+            await a.send("again");
+            const asst = fetchImpl.sent[3].body.messages.filter((m) => m.role === "assistant");
+            check("reasoning_content_goes_back_on_every_assistant_message",
+                asst.length === 3 && asst[0].reasoning_content === "r1" && asst[0].tool_calls.length === 1 && asst[1].reasoning_content === "r2" && asst[1].content === "done"
+                && asst[2].reasoning_content === "" && asst[2].content === "ok",
+                asst.map((m) => JSON.stringify(m.reasoning_content)).join(", "));
+            await a.close();
+        }
+        {
+            // OpenRouter: reasoning_details as they came, in order, an encrypted block included
+            const p = CHAT[0];
+            const editor = new FakeEditor();
+            const d1 = [{ type: "reasoning.text", text: "I ", format: "anthropic-claude-v1", index: 0 }];
+            const d2 = [{ type: "reasoning.text", text: "look.", format: "anthropic-claude-v1", index: 0 }, { type: "reasoning.encrypted", data: "[REDACTED]", id: "rs_1", format: "openai-responses-v1", index: 1 }];
+            const d3 = [{ type: "reasoning.encrypted", data: "ENCRYPTEDBYTES", id: "rs_1", format: "openai-responses-v1", index: 1 }];
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([
+                    { type: "reasoning", field: "reasoning_details", details: d1 },
+                    { type: "reasoning", field: "reasoning_details", details: d2 },
+                    { type: "reasoning", field: "reasoning_details", details: d3 },
+                    { type: "tool_call", id: "c1", name: "list_layers", input: { doc: 1 } },
+                ]),
+                chatStream([{ type: "text", text: "ok" }]),
+            ], p);
+            await a.send("look");
+            const asst = fetchImpl.sent[1].body.messages.find((m) => m.role === "assistant");
+            check("openrouter_reasoning_details_go_back_unmodified", eq(asst.reasoning_details, [...d1, ...d2, ...d3]) && asst.reasoning_content === undefined && asst.reasoning === undefined,
+                short(asst.reasoning_details));
+            await a.close();
+        }
+        {
+            // ToAPIs ("any"): whatever reasoning field came goes back
+            const p = CHAT[4];
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([{ type: "reasoning", field: "reasoning", text: "thinking..." }, { type: "tool_call", id: "c1", name: "list_layers", input: { doc: 1 } }]),
+                chatStream([{ type: "text", text: "ok" }]),
+            ], p);
+            await a.send("look");
+            const asst = fetchImpl.sent[1].body.messages.find((m) => m.role === "assistant");
+            check("a_gateway_sends_back_whichever_reasoning_field_came", asst.reasoning === "thinking..." && asst.reasoning_content === undefined, short(asst));
+            await a.close();
+            const details = [{ type: "reasoning.encrypted", data: "ENC", id: "rs_9", format: "openai-responses-v1", index: 0 }];
+            const back = [];
+            for (const q of [CHAT[4], CHAT[6]]) {
+                const ed = new FakeEditor();
+                const { a: b, fetchImpl: f } = chatOn(ed, [
+                    chatStream([{ type: "reasoning", field: "reasoning_details", details }, { type: "tool_call", id: "c1", name: "list_layers", input: { doc: 1 } }]),
+                    chatStream([{ type: "text", text: "ok" }]),
+                ], q);
+                await b.send("look");
+                back.push(f.sent[1].body.messages.find((m) => m.role === "assistant").reasoning_details);
+                await b.close();
+            }
+            check("a_gateway_sends_back_reasoning_details_as_they_came", back.length === 2 && back.every((d) => eq(d, details)), short(back));
+        }
+        {
+            // two calls whose fragments interleave, by index
+            const p = CHAT[1];
+            const editor = new FakeEditor();
+            const wrap = (delta) => ({ id: "x", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason: null }] });
+            const raw = (delta) => ({ type: "raw", chunk: wrap(delta) });
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([
+                    raw({ tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "add_paint_layer", arguments: "" } }] }),
+                    raw({ tool_calls: [{ index: 1, id: "c2", type: "function", function: { name: "add_paint_layer", arguments: "" } }] }),
+                    raw({ tool_calls: [{ index: 0, function: { arguments: "{\"doc\":1," } }] }),
+                    raw({ tool_calls: [{ index: 1, function: { arguments: "{\"doc\":1,\"na" } }] }),
+                    raw({ tool_calls: [{ index: 0, function: { arguments: "\"name\":\"A\"}" } }] }),
+                    raw({ tool_calls: [{ index: 1, function: { arguments: "me\":\"B\"}" } }] }),
+                ]),
+                chatStream([{ type: "text", text: "two" }]),
+            ], p);
+            const out = await a.send("two layers");
+            const names = editor.calls.filter((c) => c.name === "add_paint_layer").map((c) => c.args.name);
+            const tools = fetchImpl.sent[1].body.messages.filter((m) => m.role === "tool").map((m) => m.tool_call_id);
+            check("tool_call_fragments_are_joined_by_index", eq(names, ["A", "B"]) && out.steps === 2 && eq(tools, ["c1", "c2"]), `${names.join(",")}; ${tools.join(",")}`);
+            await a.close();
+        }
+        {
+            // Z.ai without tool_stream: the whole call in one delta, and arguments as an object
+            const p = CHAT[3];
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([{ type: "tool_call", id: "c1", name: "add_paint_layer", input: { doc: 1, name: "W" }, whole: true }]),
+                chatStream([{ type: "tool_call", id: "c2", name: "add_paint_layer", input: { doc: 1, name: "O" }, whole: true, object: true }]),
+                chatStream([{ type: "text", text: "done" }]),
+            ], p);
+            const out = await a.send("layers");
+            const names = editor.calls.filter((c) => c.name === "add_paint_layer").map((c) => c.args.name);
+            const replay = fetchImpl.sent[2].body.messages.filter((m) => m.role === "assistant").map((m) => m.tool_calls[0].function.arguments);
+            check("a_whole_call_in_one_delta_is_taken_and_an_arguments_object_as_it_is",
+                eq(names, ["W", "O"]) && out.steps === 2 && eq(replay, ["{\"doc\":1,\"name\":\"W\"}", "{\"doc\":1,\"name\":\"O\"}"]), `${names.join(",")}; ${replay.join(" ")}`);
+            await a.close();
+        }
+        {
+            // a local server that sends neither id nor index
+            const p = CHAT[6];
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([{ type: "tool_call", id: undefined, name: "list_layers", input: { doc: 1 }, noIndex: true }]),
+                chatStream([{ type: "text", text: "ok" }]),
+            ], p);
+            const out = await a.send("look");
+            const msgs = fetchImpl.sent[1].body.messages;
+            const asst = msgs.find((m) => m.role === "assistant");
+            const tool = msgs.find((m) => m.role === "tool");
+            check("a_call_without_an_id_gets_one_that_its_result_names",
+                out.steps === 1 && asst.tool_calls.length === 1 && asst.tool_calls[0].id && tool.tool_call_id === asst.tool_calls[0].id
+                && msgs.filter((m) => m.role === "tool").length === 1 && editor.calls.some((c) => c.name === "list_layers" && c.args.doc === 1),
+                `${asst.tool_calls.length} calls: ${asst.tool_calls[0].id} / ${tool.tool_call_id}`);
+            await a.close();
+        }
+        {
+            // a plugin tool that takes a layer but no doc: the reference is resolved, no doc is injected
+            const p = CHAT[3];
+            const editor = new FakeEditor();
+            const { a, events } = chatOn(editor, [
+                chatStream([{ type: "tool_call", id: "c1", name: "tint_layer", input: { layer: "Base", amount: 40 } }]),
+                chatStream([{ type: "text", text: "tinted" }]),
+            ], p);
+            const stopAsks = answerAsks(a, events, true);
+            const out = await a.send("tint the base");
+            stopAsks();
+            const call = editor.calls.find((c) => c.name === "tint.layer");
+            check("a_layer_reference_is_resolved_for_a_tool_without_doc", out.reason === "end" && call && call.args.layer === "Lbase" && call.args.doc === undefined && call.args.amount === 40, short(call && call.args));
+            await a.close();
+        }
+        {
+            const p = CHAT[1];
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([
+                    { type: "tool_call", id: "c1", name: "add_paint_layer", raw: "{\"doc\": 1," },
+                    { type: "tool_call", id: "c2", name: "add_paint_layer", raw: "[1]" },
+                    { type: "tool_call", id: "c3", name: "add_paint_layer", raw: "\"doc\"" },
+                ]),
+                chatStream([{ type: "text", text: "oops" }]),
+            ], p);
+            await a.send("add");
+            const tools = fetchImpl.sent[1].body.messages.filter((m) => m.role === "tool");
+            check("bad_json_arguments_come_back_as_an_error_on_chat",
+                tools.length === 3 && tools.every((t) => /^Error: the arguments were not valid JSON/.test(t.content)) && !editor.calls.some((c) => c.name === "add_paint_layer"),
+                tools.map((t) => short(t.content)).join(" | "));
+            await a.close();
+        }
+        {
+            const p = CHAT[2];
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([{ type: "tool_call", id: "c1", name: "add_paint_layer", input: { doc: 1 } }], { finish: "length" }),
+            ], p);
+            const out = await a.send("add");
+            const tool = a.chat.history.find((m) => m.role === "tool");
+            check("a_cut_off_chat_answer_runs_no_tool", out.reason === "cut" && !editor.calls.some((c) => c.name === "add_paint_layer") && tool && /Error: not run: the answer was cut off/.test(tool.content) && fetchImpl.sent.length === 1,
+                `${out.reason}; ${short(tool && tool.content)}`);
+            await a.close();
+        }
+        {
+            const filtered = await (async () => { const { a } = chatOn(new FakeEditor(), [chatStream([{ type: "text", text: "no" }], { finish: "content_filter" })], CHAT[4]); const o = await a.send("x"); await a.close(); return o; })();
+            const sensitive = await (async () => { const { a } = chatOn(new FakeEditor(), [chatStream([], { finish: "sensitive" })], CHAT[3]); const o = await a.send("x"); await a.close(); return o; })();
+            check("content_filter_and_z_ai_sensitive_are_refusals", filtered.reason === "refusal" && sensitive.reason === "refusal", `${filtered.reason}, ${sensitive.reason}`);
+        }
+        {
+            const runs = [];
+            const orError = { id: "x", choices: [{ index: 0, delta: {}, finish_reason: "error" }], error: { code: 502, message: "Provider returned error" } };
+            for (const [p, opts, want] of [
+                [CHAT[0], { errorChunk: orError, noDone: true }, /Provider returned error/],
+                [CHAT[3], { finish: "network_error" }, /network error/],
+                [CHAT[1], { finish: "insufficient_system_resource" }, /insufficient_system_resource/],
+                [CHAT[1], { finish: "aborted" }, /aborted/],
+                [CHAT[3], { finish: "model_context_window_exceeded" }, /context window/],
+            ]) {
+                const editor = new FakeEditor();
+                const { a } = chatOn(editor, [chatStream([{ type: "text", text: "partial" }], opts)], p);
+                const out = await a.send("hello");
+                runs.push({ p: p.provider, out, history: a.chat.history.length });
+                if (out.reason !== "error" || !want.test(out.detail) || a.chat.history.length !== 1) runs.push(`WRONG ${p.provider}: ${out.reason} ${out.detail} (${a.chat.history.length} messages)`);
+                await a.close();
+            }
+            check("a_mid_stream_error_ends_the_chat_call_and_appends_nothing", !runs.some((r) => typeof r === "string"), runs.filter((r) => typeof r === "string").join("; ") || "OpenRouter error chunk, Z.ai network_error, DeepSeek insufficient_system_resource, Z.ai context window");
+        }
+        {
+            const editor = new FakeEditor();
+            const { a } = chatOn(editor, ["data: [DONE]\n\n"], CHAT[1]);
+            const out = await a.send("hello");
+            check("an_empty_chat_stream_is_an_error", out.reason === "error" && /empty/.test(out.detail) && a.chat.history.length === 1, `${out.reason}: ${out.detail}`);
+            await a.close();
+        }
+        {
+            // the connection closes before the finish_reason: nothing of the half answer is pushed, no half call runs
+            const wrap = (delta) => "data: " + JSON.stringify({ id: "x", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason: null }] }) + "\n\n";
+            const textOnly = wrap({ role: "assistant", content: "" }) + wrap({ content: "Let me " });
+            const inCall = textOnly + wrap({ tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "add_paint_layer", arguments: "{\"doc\":1," } }] });
+            const runs = [];
+            const editor = new FakeEditor();
+            for (const body of [textOnly, inCall]) {
+                const { a } = chatOn(editor, [body], CHAT[3]);
+                const out = await a.send("hello");
+                runs.push(`${out.reason}: ${out.detail} (${a.chat.history.length} messages)`);
+                if (out.reason !== "error" || !/before the answer was finished/.test(out.detail) || a.chat.history.length !== 1) runs.push("WRONG");
+                await a.close();
+            }
+            check("a_chat_stream_that_breaks_before_its_finish_reason_pushes_nothing", !runs.includes("WRONG") && !editor.calls.some((c) => c.name === "add_paint_layer"), runs.join(" | "));
+        }
+        {
+            // a refusal that still carries calls answers them, so the next request is valid
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([{ type: "tool_call", id: "c1", name: "add_paint_layer", input: { doc: 1 } }], { finish: "content_filter" }),
+                chatStream([{ type: "text", text: "ok" }]),
+            ], CHAT[4]);
+            const out = await a.send("add");
+            const tool = a.chat.history.find((m) => m.role === "tool");
+            const out2 = await a.send("and now?");
+            const msgs = fetchImpl.sent[1].body.messages;
+            const at = msgs.findIndex((m) => m.role === "assistant" && m.tool_calls);
+            check("a_refused_answer_with_calls_answers_them", out.reason === "refusal" && tool && /Error: not run: the answer was refused/.test(tool.content)
+                && !editor.calls.some((c) => c.name === "add_paint_layer") && out2.reason === "end" && at >= 0 && msgs[at + 1].role === "tool" && msgs[at + 1].tool_call_id === "c1",
+                `${out.reason}; ${short(tool && tool.content)}; then ${out2.reason}`);
+            await a.close();
+        }
+        {
+            // a server without index: two whole calls with neither id nor index are two calls; fragments that repeat an id are one
+            const wrap = (delta) => ({ type: "raw", chunk: { id: "x", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason: null }] } });
+            const editor = new FakeEditor();
+            const { a } = chatOn(editor, [
+                chatStream([
+                    wrap({ tool_calls: [{ type: "function", function: { name: "add_paint_layer", arguments: "{\"doc\":1,\"name\":\"A\"}" } }] }),
+                    wrap({ tool_calls: [{ type: "function", function: { name: "add_paint_layer", arguments: "{\"doc\":1,\"name\":\"B\"}" } }] }),
+                ]),
+                chatStream([
+                    wrap({ tool_calls: [{ id: "k1", type: "function", function: { name: "add_paint_layer", arguments: "" } }] }),
+                    wrap({ tool_calls: [{ id: "k1", function: { arguments: "{\"doc\":1," } }] }),
+                    wrap({ tool_calls: [{ id: "k1", function: { arguments: "\"name\":\"C\"}" } }] }),
+                ]),
+                chatStream([{ type: "text", text: "three" }]),
+            ], CHAT[6]);
+            const out = await a.send("layers");
+            const names = editor.calls.filter((c) => c.name === "add_paint_layer").map((c) => c.args.name);
+            const asst = a.chat.history.filter((m) => m.role === "assistant" && m.tool_calls);
+            check("a_server_without_index_gets_its_calls_split_and_joined_right",
+                eq(names, ["A", "B", "C"]) && out.steps === 3 && asst.length === 2 && asst[0].tool_calls.length === 2 && asst[1].tool_calls.length === 1 && asst[1].tool_calls[0].id === "k1",
+                `${names.join(",")}; ${asst.map((m) => m.tool_calls.length).join("/")}`);
+            await a.close();
+        }
+        {
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([{ type: "tool_call", id: "c1", name: "add_paint_layer", input: [1, 2], whole: true, object: true }]),
+                chatStream([{ type: "text", text: "oops" }]),
+            ], CHAT[3]);
+            await a.send("add");
+            const tool = fetchImpl.sent[1].body.messages.find((m) => m.role === "tool");
+            check("an_arguments_array_is_bad_json_too", /^Error: the arguments were not valid JSON/.test(tool.content) && !editor.calls.some((c) => c.name === "add_paint_layer"), short(tool.content));
+            await a.close();
+        }
+        {
+            // a refusal streamed as delta.refusal (OpenAI models through a gateway), with a plain stop
+            const wrap = (delta) => ({ type: "raw", chunk: { id: "x", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason: null }] } });
+            const editor = new FakeEditor();
+            const { a } = chatOn(editor, [chatStream([wrap({ refusal: "I can't " }), wrap({ refusal: "help with that." })], { finish: "stop" })], CHAT[0]);
+            const out = await a.send("hello");
+            check("a_refusal_delta_ends_the_turn_as_a_refusal", out.reason === "refusal" && /help with that/.test(out.detail), `${out.reason}: ${out.detail}`);
+            await a.close();
+        }
+        {
+            // delta.content as an array of parts (some local servers)
+            const wrap = (delta) => ({ type: "raw", chunk: { id: "x", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason: null }] } });
+            const editor = new FakeEditor();
+            const { a, events } = chatOn(editor, [chatStream([wrap({ content: [{ type: "text", text: "Hel" }] }), wrap({ content: [{ type: "text", text: "lo" }] })])], CHAT[6]);
+            await a.send("hi");
+            const text = events.filter((e) => e.type === "assistant:text").map((e) => e.text).join("");
+            check("content_parts_in_a_delta_are_read_as_text", text === "Hello" && a.chat.history[1].content === "Hello", text);
+            await a.close();
+        }
+        {
+            const editor = new FakeEditor();
+            const { a, events } = chatOn(editor, [chatStream([{ type: "text", text: "a" }]), chatStream([{ type: "text", text: "b" }])], CHAT[6]);
+            await a.send("one");
+            await a.send("two");
+            check("the_context_note_comes_once_per_chat", events.filter((e) => e.type === "note").length === 1 && /64k/.test(events.find((e) => e.type === "note").text), `${events.filter((e) => e.type === "note").length} notes`);
+            await a.close();
+        }
+        {
+            // DeepSeek's keep-alive comments change nothing
+            const parts = [{ type: "reasoning", text: "r" }, { type: "text", pieces: ["Hel", "lo"] }, { type: "tool_call", id: "c1", name: "list_layers", input: { doc: 1 } }];
+            const run = async (opts) => {
+                const editor = new FakeEditor();
+                const { a, fetchImpl } = chatOn(editor, [chatStream(parts, opts), chatStream([{ type: "text", text: "ok" }])], CHAT[1]);
+                const out = await a.send("look");
+                const asst = fetchImpl.sent[1].body.messages.find((m) => m.role === "assistant");
+                await a.close();
+                return { out: out.reason, asst, usage: a.chat.usage };
+            };
+            const plain = await run({});
+            const kept = await run({ keepAlive: true });
+            check("keep_alive_comments_are_skipped_on_chat", eq(plain, kept) && plain.asst.content === "Hello", short(kept.asst));
+        }
+        {
+            // Moonshot: usage in a last chunk with choices: [], or in both places
+            const results = [];
+            for (const where of ["last", "empty", "both", "choice"]) {
+                const editor = new FakeEditor();
+                const { a } = chatOn(editor, [chatStream([{ type: "text", text: "hi" }], { usageWhere: where, usage: { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 10 } } })], CHAT[2]);
+                await a.send("hello");
+                results.push(`${where}: ${JSON.stringify(a.chat.usage)}`);
+                if (!(a.chat.usage.input === 60 && a.chat.usage.cacheRead === 30 && a.chat.usage.cacheWrite === 10 && a.chat.usage.output === 20)) results.push("WRONG");
+                await a.close();
+            }
+            check("usage_is_read_from_either_last_chunk", !results.includes("WRONG"), results.join(" | "));
+        }
+        {
+            // text deltas reach the panel as they arrive
+            const editor = new FakeEditor();
+            const { a, events } = chatOn(editor, [chatStream([{ type: "text", pieces: ["Hel", "lo ", "there"] }])], CHAT[3]);
+            await a.send("hi");
+            const deltas = events.filter((e) => e.type === "text_delta").map((e) => e.text);
+            check("chat_text_deltas_reach_the_panel_before_the_end", eq(deltas, ["Hel", "lo ", "there"]), deltas.join("|"));
+            await a.close();
+        }
+        {
+            // the same answer in one chunk and cut at every byte offset (UTF-8 inside) gives the same message
+            const editor = new FakeEditor();
+            const { a } = chatOn(editor, [], CHAT[1]);
+            await a.connect();
+            const chat = await a.newChat();
+            const text = chatStream([
+                { type: "reasoning", pieces: ["Zwölf ", "Boxkämpfer"] },
+                { type: "text", pieces: ["Héllo ", "\u{1F5BC} wörld"] },
+                { type: "tool_call", id: "c1", name: "set_prompt", input: { doc: 1, prompt: "über \u{1F3A8}" } },
+            ], { usage: { prompt_tokens: 100, completion_tokens: 20, prompt_cache_hit_tokens: 40, prompt_cache_miss_tokens: 60 } });
+            const bytes = Buffer.from(text, "utf8");
+            const run = async (chunks) => {
+                const res = await chat.adapter.stream(chat, [chat.adapter.userMessage("", "x")], { fetchImpl: async () => sseResponse(text, { chunks }) });
+                return JSON.stringify({ m: res.messages, c: res.calls, s: res.stop, u: res.usage, t: res.text });
+            };
+            const whole = await run([bytes]);
+            let same = true;
+            for (let at = 1; at < bytes.length; at++) {
+                const cut = await run([bytes.subarray(0, at), bytes.subarray(at)]);
+                if (cut !== whole) { same = false; check("chat stream cut at " + at + " differs", false, short(cut)); break; }
+            }
+            const parsed = JSON.parse(whole);
+            check("a_chat_stream_cut_at_every_byte_offset_rebuilds_the_same_message",
+                same && parsed.m[0].reasoning_content === "Zwölf Boxkämpfer" && parsed.t === "Héllo \u{1F5BC} wörld" && parsed.c[0].args.prompt === "über \u{1F3A8}" && parsed.u.input === 60 && parsed.u.cacheRead === 40,
+                `${bytes.length} offsets`);
+            await a.close();
+        }
+    });
+
+    // ---- 13. images on Chat Completions ---------------------------------------------------
+    await section("13. images on Chat Completions", async () => {
+        const chatAdapter = require(path.join(ROOT, "electron", "main", "assistant", "chat.js"));
+        {
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([{ type: "tool_call", id: "c1", name: "screenshot", input: {} }]),
+                chatStream([{ type: "text", text: "I see it." }]),
+            ], CHAT[2]);
+            await a.send("look");
+            const msgs = fetchImpl.sent[1].body.messages;
+            const tool = msgs.find((m) => m.role === "tool");
+            const users = msgs.filter((m) => m.role === "user");
+            check("moonshot_images_go_into_the_tool_message",
+                Array.isArray(tool.content) && tool.content.some((c) => c.type === "image_url" && c.image_url.url === "data:image/jpeg;base64,QUJD") && tool.content.some((c) => c.type === "text" && /1024/.test(c.text))
+                && users.length === 1 && msgs[msgs.length - 1].role === "tool",
+                short(tool.content));
+            await a.close();
+        }
+        {
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([{ type: "tool_call", id: "c1", name: "screenshot", input: {} }, { type: "tool_call", id: "c2", name: "list_layers", input: { doc: 1 } }]),
+                chatStream([{ type: "text", text: "I see it." }]),
+            ], CHAT[1]);
+            await a.send("look");
+            const msgs = fetchImpl.sent[1].body.messages;
+            const tools = msgs.filter((m) => m.role === "tool");
+            const last = msgs[msgs.length - 1];
+            check("images_follow_the_tool_messages_elsewhere",
+                tools.length === 2 && typeof tools[0].content === "string" && /The screenshot follows in the next message/.test(tools[0].content) && !/follows/.test(tools[1].content)
+                && last.role === "user" && eq(last.content, [{ type: "text", text: "Screenshot from call c1" }, { type: "image_url", image_url: { url: "data:image/jpeg;base64,QUJD" } }])
+                && msgs.indexOf(last) === msgs.indexOf(tools[1]) + 1 && !JSON.stringify(tools).includes("QUJD"),
+                msgs.map((m) => m.role).join(" "));
+            await a.close();
+        }
+        {
+            // the local server refuses the picture: once more without it, and no screenshot afterwards
+            const lines = [];
+            const editor = new FakeEditor();
+            let n = 0;
+            const answers = [
+                () => sseResponse(chatStream([{ type: "tool_call", id: "c1", name: "screenshot", input: {} }])),
+                () => sseResponse(JSON.stringify({ error: { message: "image input is not supported by this model", type: "invalid_request_error" } }), { status: 400 }),
+                () => sseResponse(chatStream([{ type: "text", text: "blind" }])),
+                () => sseResponse(chatStream([{ type: "tool_call", id: "c2", name: "screenshot", input: {} }, { type: "tool_call", id: "c3", name: "add_paint_layer", input: { doc: 1 } }])),
+                () => sseResponse(chatStream([{ type: "text", text: "still blind" }])),
+            ];
+            const sent = [];
+            const impl = async (url, init) => { sent.push(JSON.parse(init.body)); return answers[n++](); };
+            const { a, events } = chatOn(editor, impl, CHAT[6], { log: { record: (e) => lines.push(e.text) } });
+            const out1 = await a.send("look");
+            const out2 = await a.send("look again");
+            const third = JSON.stringify(sent[2]);
+            const tool2 = a.chat.history.find((m) => m.role === "tool" && m.tool_call_id === "c2");
+            const tool3 = a.chat.history.find((m) => m.role === "tool" && m.tool_call_id === "c3");
+            check("a_refused_image_turns_screenshot_off_for_the_chat",
+                out1.reason === "end" && out2.reason === "end" && sent.length === 5 && a.chat.noImages === true
+                && !third.includes("image_url") && third.includes(chatAdapter.REFUSED) && JSON.stringify(sent[1]).includes("QUJD")
+                && editor.calls.filter((c) => c.name === "screenshot").length === 1 && /does not take images/.test(tool2.content)
+                && lines.some((l) => /refused the picture/.test(l)),
+                `${out1.reason}/${out2.reason}, ${sent.length} requests, noImages=${a.chat.noImages}, ${short(tool2 && tool2.content)}`);
+            check("after_a_refused_picture_every_other_tool_still_runs",
+                editor.calls.filter((c) => c.name === "add_paint_layer").length === 1 && tool3 && /"id"/.test(tool3.content) && out2.steps === 1
+                && events.some((e) => e.type === "call" && e.call === "c2" && e.action === "refuse" && /does not take images/.test(e.reason)),
+                `${out2.steps} steps; ${short(tool3 && tool3.content)}`);
+            await a.close();
+        }
+        {
+            // the fallback is the local server's alone: a gateway that names the image in a 400 ends the turn, pictures kept
+            const editor = new FakeEditor();
+            let n = 0;
+            const answers = [
+                () => sseResponse(chatStream([{ type: "tool_call", id: "c1", name: "screenshot", input: {} }])),
+                () => sseResponse(JSON.stringify({ error: { message: "image input is not supported by this model" } }), { status: 400 }),
+            ];
+            const { a } = chatOn(editor, async () => answers[n++](), CHAT[4]);
+            const out = await a.send("look");
+            check("the_image_fallback_is_the_local_servers_alone", out.reason === "error" && n === 2 && a.chat.noImages === undefined && JSON.stringify(a.chat.history).includes("QUJD"), `${out.reason}: ${out.detail}; ${n} requests`);
+            await a.close();
+        }
+        {
+            // a second refusal after the strip is the turn's error, not another try
+            const editor = new FakeEditor();
+            let n = 0;
+            const answers = [
+                () => sseResponse(chatStream([{ type: "tool_call", id: "c1", name: "screenshot", input: {} }])),
+                () => sseResponse(JSON.stringify({ error: { message: "image input is not supported" } }), { status: 400 }),
+                () => sseResponse(JSON.stringify({ error: { message: "image input is not supported" } }), { status: 400 }),
+                () => sseResponse(JSON.stringify({ error: { message: "image input is not supported" } }), { status: 400 }),
+            ];
+            const { a } = chatOn(editor, async () => answers[n++](), CHAT[6]);
+            const out = await a.send("look");
+            check("a_second_refusal_after_the_strip_is_not_tried_again", out.reason === "error" && n === 3 && /HTTP 400/.test(out.detail), `${out.reason}: ${out.detail}; ${n} requests`);
+            await a.close();
+        }
+        {
+            // the strict rule: only a 400 / 413 / 415 / 422 that names the image; a 401 with the word keeps the pictures
+            const editor = new FakeEditor();
+            let n = 0;
+            const answers = [
+                () => sseResponse(chatStream([{ type: "tool_call", id: "c1", name: "screenshot", input: {} }])),
+                () => sseResponse(JSON.stringify({ error: { message: "bad key for image models" } }), { status: 401 }),
+            ];
+            const { a } = chatOn(editor, async () => answers[n++](), CHAT[6]);
+            const out = await a.send("look");
+            check("only_a_4xx_that_names_the_image_is_the_fallback",
+                out.reason === "error" && n === 2 && a.chat.noImages === undefined && JSON.stringify(a.chat.history).includes("QUJD"), `${out.reason}: ${out.detail}; ${n} requests`);
+            await a.close();
+        }
+        {
+            // the fallback needs a picture in the history: a 400 naming the image before any screenshot is a plain error
+            const editor = new FakeEditor();
+            let n = 0;
+            const { a } = chatOn(editor, async () => { n++; return sseResponse(JSON.stringify({ error: { message: "model does not support images" } }), { status: 400 }); }, CHAT[6]);
+            const out = await a.send("hello");
+            check("the_image_fallback_needs_a_picture_in_the_history", out.reason === "error" && n === 1 && a.chat.noImages === undefined && /HTTP 400/.test(out.detail), `${out.reason}: ${out.detail}; ${n} requests`);
+            await a.close();
+        }
+        {
+            // the strict rule is llm.js's: a 400 about an unsupported parameter is no image refusal; one about a content part is
+            const run = async (message) => {
+                const editor = new FakeEditor();
+                let n = 0;
+                const answers = [
+                    () => sseResponse(chatStream([{ type: "tool_call", id: "c1", name: "screenshot", input: {} }])),
+                    () => sseResponse(JSON.stringify({ error: { message } }), { status: 400 }),
+                    () => sseResponse(chatStream([{ type: "text", text: "blind" }])),
+                ];
+                const { a } = chatOn(editor, async () => answers[n++](), CHAT[6]);
+                const out = await a.send("look");
+                await a.close();
+                return { reason: out.reason, n, off: a.chat.noImages === true, kept: JSON.stringify(a.chat.history).includes("QUJD") };
+            };
+            const param = await run("Unsupported parameter: 'max_tokens'. Use 'max_completion_tokens' instead.");
+            const part = await run("Invalid content part");
+            check("only_a_400_that_names_the_picture_is_an_image_refusal",
+                param.reason === "error" && param.n === 2 && !param.off && param.kept && part.reason === "end" && part.n === 3 && part.off && !part.kept,
+                `${JSON.stringify(param)} / ${JSON.stringify(part)}`);
+        }
+        {
+            // pruning in batches: nothing until more than twice keepImages are attached, then down to keepImages
+            const shots = (n, from) => Array.from({ length: n }, (_, i) => ({ type: "tool_call", id: "s" + (from + i), name: "screenshot", input: {} }));
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream(shots(5, 1)), chatStream([{ type: "text", text: "five" }]),
+                chatStream(shots(2, 6)), chatStream([{ type: "text", text: "seven" }]),
+                chatStream([{ type: "text", text: "eight" }]),
+            ], CHAT[1]);
+            await a.send("look five times");
+            await a.send("look twice more");            // 5 attached at this user message: nothing is pruned
+            const second = (JSON.stringify(fetchImpl.sent[2].body.messages).match(/"type":"image_url"/g) || []).length;
+            await a.send("done?");                      // 7 attached: all but the last 3 become stubs
+            const third = JSON.stringify(fetchImpl.sent[4].body.messages);
+            const left = (third.match(/"type":"image_url"/g) || []).length;
+            const stubs = third.split(chatAdapter.STUB).length - 1;
+            check("pruning_starts_above_twice_keep_images_and_prunes_to_keep_images", second === 5 && left === 3 && stubs === 4,
+                `${second} attached at the second message, ${left} at the third, ${stubs} stubs`);
+            await a.close();
+        }
+        {
+            // pruning: all but the last 3 screenshots become a text stub, in both places
+            const build = (chat) => { const h = []; for (let i = 1; i <= 8; i++) h.push(...chatAdapter.resultsMessages([{ id: "c" + i }], [{ content: [{ type: "image", data: "IMG" + i, mimeType: "image/jpeg" }] }], chat)); return h; };
+            const left = (h) => (JSON.stringify(h).match(/IMG\d/g) || []);
+            const follow = build({ dialect: { imagesInToolMessage: false } });
+            chatAdapter.prune(follow, 3);
+            const inline = build({ dialect: { imagesInToolMessage: true } });
+            chatAdapter.prune(inline, 3);
+            const stubs = (h) => JSON.stringify(h).split(chatAdapter.STUB).length - 1;
+            check("old_chat_screenshots_are_detached_only_at_a_user_message",
+                eq(left(follow), ["IMG6", "IMG7", "IMG8"]) && stubs(follow) === 5 && eq(left(inline), ["IMG6", "IMG7", "IMG8"]) && stubs(inline) === 5,
+                `${left(follow).join(",")} / ${left(inline).join(",")}`);
+            const all = build({ dialect: {} });
+            chatAdapter.prune(all, 0);
+            check("with_keep_images_0_every_chat_screenshot_stays", left(all).length === 8);
+        }
+        {
+            // a Gemini model through a gateway takes Google's cap
+            const big = "x".repeat(19 * 1024 * 1024);
+            const run = async (q) => {
+                const editor = new FakeEditor();
+                const { a, fetchImpl } = chatOn(editor, [chatStream([{ type: "text", text: "ok" }])], q);
+                await a.connect();
+                a.chat = await a.newChat();
+                a.chat.history.push(a.chat.adapter.userMessage("", big));
+                const out = await a.send("hello");
+                await a.close();
+                return `${q.provider}:${q.model} ${out.reason} (${fetchImpl.sent.length} sent)`;
+            };
+            const got = [
+                await run({ provider: "openrouter", model: "google/gemini-3.8-flash", key: "test-or-0000" }),
+                await run({ provider: "wavespeed", model: "google/gemini-3.8-flash", key: "test-ws-0000" }),
+                await run({ provider: "toapis", model: "gemini-3.8-flash", key: "test-toapis-0000" }),
+                await run({ provider: "openrouter", model: "anthropic/claude-sonnet-5", key: "test-or-0000" }),
+                await run({ provider: "toapis", model: "claude-sonnet-5", key: "test-toapis-0000" }),
+            ];
+            check("a_gemini_model_on_any_provider_caps_at_18_mb",
+                got.slice(0, 3).every((g) => /full \(0 sent\)/.test(g)) && got.slice(3).every((g) => /end \(1 sent\)/.test(g)), got.join("; "));
+        }
+    });
+
+    // ---- 14. keys and hosts on Chat Completions -------------------------------------------
+    await section("14. keys and hosts on Chat Completions", async () => {
+        const http = require(path.join(ROOT, "electron", "main", "assistant", "http.js"));
+        const KEYS = { anthropic: "test-ant-1", openrouter: "test-or-1", deepseek: "test-ds-1", moonshot: "test-ms-1", zai: "test-zai-1", toapis: "test-toapis-1", wavespeed: "test-ws-1", compat: "test-compat-1" };
+        {
+            const wrong = [];
+            for (const p of CHAT) {
+                orHosts._resetHosts();
+                const editor = new FakeEditor();
+                const { a, fetchImpl } = chatOn(editor, [chatStream([{ type: "text", text: "hi" }])], p, { keys: KEYS });
+                await a.send("hello");
+                const req = fetchImpl.sent[0];
+                const others = Object.entries(KEYS).filter(([row]) => row !== p.provider).map(([, k]) => k);
+                const all = JSON.stringify(req);
+                if (req.headers.Authorization !== "Bearer " + KEYS[p.provider] || req.headers["content-type"] !== "application/json" || Object.keys(req.headers).length !== 2
+                    || others.some((k) => all.includes(k)) || JSON.stringify(req.body).includes(KEYS[p.provider])
+                    || req.url !== "http://127.0.0.1:5599" + p.path) wrong.push(`${p.provider}: ${req.url} ${Object.keys(req.headers).join(",")} ${req.headers.Authorization}`);
+                await a.close();
+            }
+            check("each_provider_takes_its_own_key_row_in_the_bearer_header_only", !wrong.length, wrong.join("; ") || `${CHAT.length} providers`);
+            check("the_loopback_base_keeps_each_chat_providers_path", !wrong.length, wrong.join("; ") || CHAT.map((p) => p.path).join(" "));
+        }
+        {
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [chatStream([{ type: "text", text: "hi" }])], CHAT[6], { keys: { compat: "" } });
+            const out = await a.send("hello");
+            check("the_local_server_needs_no_key", out.reason === "end" && fetchImpl.sent[0].headers.Authorization === undefined && fetchImpl.sent[0].url === "http://127.0.0.1:5599/v1/chat/completions"
+                && eq(Object.keys(fetchImpl.sent[0].headers), ["content-type"]),
+                `${out.reason}; ${Object.keys(fetchImpl.sent[0].headers).join(",")}`);
+            await a.close();
+        }
+        {
+            const editor = new FakeEditor();
+            const { a } = chatOn(editor, [], CHAT[6], { settings: { llm: { compat: { url: "" } } } });
+            let message = "";
+            try { await a.send("hello"); } catch (err) { message = err.message; }
+            check("a_local_server_without_a_url_says_where_to_set_one", /No endpoint URL\. Set one under Settings . Local \/ OpenAI-compatible endpoint\./.test(message), message);
+            await a.close();
+        }
+        {
+            let direct = "";
+            let sentTo = "";
+            const impl = async (url) => { sentTo = String(url); return sseResponse("data: [DONE]\n\n"); };
+            try { await http.postStream("http://127.0.0.1:11434/v1/chat/completions", {}, {}, { key: "lm-studio", localOk: true, fetchImpl: impl }); } catch (err) { direct = err.message; }
+            let refused = "";
+            try { await http.postStream("http://127.0.0.1:11434/v1/chat/completions", {}, {}, { key: "lm-studio", fetchImpl: impl }); } catch (err) { refused = err.message; }
+            let testKey = "";
+            try { await http.postStream("https://llm.example.com/v1/chat/completions", {}, {}, { key: "test-x", localOk: true, fetchImpl: impl }); } catch (err) { testKey = err.message; }
+            check("the_compat_key_goes_to_the_compat_url_only",
+                direct === "" && sentTo === "http://127.0.0.1:11434/v1/chat/completions" && /test keys only/.test(refused) && /test key goes to the test endpoint only/.test(testKey),
+                `localOk: ${direct || "sent"}; without: ${refused}; test key: ${testKey}`);
+            const chatAdapter = require(path.join(ROOT, "electron", "main", "assistant", "chat.js"));
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [chatStream([{ type: "text", text: "hi" }])], CHAT[6], { keys: { compat: "lm-studio" }, assistant: { base: "" }, settings: { llm: { compat: { url: "http://localhost:1234" } } } });
+            const out = await a.send("hello");
+            check("a_real_compat_key_reaches_the_saved_local_url", out.reason === "end" && fetchImpl.sent[0].url === "http://localhost:1234/v1/chat/completions" && fetchImpl.sent[0].headers.Authorization === "Bearer lm-studio",
+                `${out.reason} ${out.detail}; ${fetchImpl.sent[0] && fetchImpl.sent[0].url}`);
+            const editor2 = new FakeEditor();
+            const { a: a2, fetchImpl: f2 } = chatOn(editor2, [chatStream([{ type: "text", text: "hi" }])], CHAT[1], { keys: { deepseek: "sk-real-deepseek-key" }, assistant: { base: "" }, settings: { llm: { compat: { url: "http://localhost:1234" } } } });
+            let refusedReal = "";
+            try { await a2.send("hello"); } catch (err) { refusedReal = err.message; }
+            // the real key would go to api.deepseek.com: the scripted fetch answers, so the request must not have been refused by the key rule
+            check("only_the_local_server_lifts_the_loopback_rule", refusedReal === "" && f2.sent[0].url === "https://api.deepseek.com/chat/completions" && chatAdapter.family === "chat", refusedReal || f2.sent[0].url);
+            await a.close(); await a2.close();
+        }
+        {
+            // a loopback base from another setting (settings.toapis.base) takes no real key either, and the turn says so
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = chatOn(editor, [chatStream([{ type: "text", text: "hi" }])], CHAT[4], { keys: { toapis: "sk-real-toapis-000" }, assistant: { base: "" }, settings: { toapis: { base: "http://127.0.0.1:9911" } } });
+            const out = await a.send("hello");
+            check("a_real_key_never_reaches_a_loopback_gateway_base", out.reason === "error" && /test keys only/.test(out.detail) && fetchImpl.sent.length === 0, `${out.reason}: ${out.detail}; ${fetchImpl.sent.length} sent`);
+            await a.close();
+        }
+        {
+            // the adapter scrubs the key itself where a server's text enters an error: the JSON answer and the error chunk
+            const chatAdapter = require(path.join(ROOT, "electron", "main", "assistant", "chat.js"));
+            const { PROVIDERS } = require(path.join(ROOT, "electron", "main", "assistant", "providers.js"));
+            const fake = { id: "c1", model: "glm-5.3-flash", system: "s", tools: [], maxTokens: 10, idleMs: 0, dialect: PROVIDERS.zai.dialect, base: "http://127.0.0.1:5599/api/paas/v4", key: "test-zai-0000" };
+            const json = JSON.stringify({ error: { code: "1002", message: "token test-zai-0000 is invalid" } });
+            let m1 = "";
+            try { await chatAdapter.stream(fake, [], { fetchImpl: async () => sseResponse(json, { headers: { "content-type": "application/json" } }) }); } catch (err) { m1 = err.message; }
+            const chunk = { id: "x", choices: [{ index: 0, delta: {}, finish_reason: "error" }], error: { code: 401, message: "bad key test-zai-0000" } };
+            let m2 = "";
+            try { await chatAdapter.stream(fake, [], { fetchImpl: async () => sseResponse(chatStream([], { errorChunk: chunk, noDone: true })) }); } catch (err) { m2 = err.message; }
+            check("the_adapter_scrubs_the_key_from_a_json_answer_and_an_error_chunk", /<key>/.test(m1) && !/test-zai-0000/.test(m1) && /<key>/.test(m2) && !/test-zai-0000/.test(m2), `${m1} | ${m2}`);
+        }
+        {
+            const editor = new FakeEditor();
+            const { a } = chatOn(editor, [], CHAT[1], { keys: {} });
+            let message = "";
+            try { await a.send("hello"); } catch (err) { message = err.message; }
+            check("a_missing_chat_key_names_the_provider_and_where_to_add_it", /No API key for DeepSeek\. Add it under Settings . API providers\./.test(message), message);
+            await a.close();
+        }
+        {
+            // the adapter refuses on its own, below send()'s check: a real key never reaches the test base, a test key never a real host
+            const chatAdapter = require(path.join(ROOT, "electron", "main", "assistant", "chat.js"));
+            const { PROVIDERS } = require(path.join(ROOT, "electron", "main", "assistant", "providers.js"));
+            let sent = 0;
+            const fetchImpl = async () => { sent++; return sseResponse(chatStream([{ type: "text", text: "hi" }])); };
+            const fake = (over) => ({ id: "c1", model: "deepseek-flash", system: "s", tools: [], maxTokens: 10, idleMs: 0, dialect: PROVIDERS.deepseek.dialect, ...over });
+            let real = "";
+            try { await chatAdapter.stream(fake({ base: "http://127.0.0.1:5599", key: "sk-real-000000" }), [], { fetchImpl }); } catch (err) { real = err.message; }
+            let test = "";
+            try { await chatAdapter.stream(fake({ base: "https://api.deepseek.com", key: "test-ds-0000" }), [], { fetchImpl }); } catch (err) { test = err.message; }
+            check("the_adapter_itself_keeps_the_key_rule", /test keys only/.test(real) && /test key goes to the test endpoint only/.test(test) && sent === 0, `${real} | ${test} | ${sent} sent`);
+        }
+        {
+            orHosts._resetHosts();
+            const editor = new FakeEditor();
+            const providers = { data: [
+                { slug: "alibaba", headquarters: "CN", datacenters: ["CN", "SG"] },
+                { slug: "nebius", headquarters: "NL", datacenters: ["FI"] },
+                { slug: "tencent-cloud", headquarters: "US", datacenters: ["CN", "US"] },
+                { slug: "lower-case", headquarters: "cn" },
+            ] };
+            const gets = (url) => (/\/api\/v1\/providers$/.test(url) ? { ok: true, status: 200, json: async () => providers } : null);
+            const { a, fetchImpl } = chatOn(editor, [
+                chatStream([{ type: "tool_call", id: "c1", name: "list_layers", input: { doc: 1 } }]),
+                chatStream([{ type: "text", text: "ok" }]),
+            ], CHAT[0], { gets });
+            await a.send("look");
+            const bodies = fetchImpl.sent.map((r) => r.body);
+            const ignore = bodies[0].provider.ignore;
+            check("openrouter_ignores_the_hosts_in_china",
+                ["alibaba", "tencent-cloud", "lower-case", ...orHosts.CHINA_HOSTS].every((h) => ignore.includes(h)) && !ignore.includes("nebius")
+                && eq(ignore, [...ignore].sort()) && bodies.every((b) => eq(b.provider, { data_collection: "deny", ignore }) && b.session_id === a.chat.id)
+                && fetchImpl.got.filter((g) => /\/api\/v1\/providers$/.test(g.url)).length === 1 && fetchImpl.got[0].url === "http://127.0.0.1:5599/api/v1/providers",
+                `${ignore.join(",")}; ${fetchImpl.got.length} GET`);
+            const headers = fetchImpl.sent[0].headers;
+            check("openrouter_sends_no_attribution_header", !Object.keys(headers).some((h) => /referer|x-title|x-openrouter/i.test(h)) && headers.Authorization === "Bearer test-or-0000", Object.keys(headers).join(", "));
+            await a.close();
+
+            orHosts._resetHosts();
+            const editor2 = new FakeEditor();
+            const { a: a2, fetchImpl: f2 } = chatOn(editor2, [
+                chatStream([{ type: "tool_call", id: "c1", name: "list_layers", input: { doc: 1 } }]),
+                chatStream([{ type: "text", text: "ok" }]),
+            ], CHAT[0], { gets: () => ({ ok: false, status: 500, json: async () => ({}) }) });
+            await a2.send("hello");
+            const hostGets = f2.got.filter((g) => /\/api\/v1\/providers$/.test(g.url)).length;
+            check("when_the_host_list_cannot_be_read_the_dated_list_is_sent_and_it_is_asked_once_per_chat",
+                f2.sent.length === 2 && f2.sent.every((r) => eq(r.body.provider.ignore, [...orHosts.CHINA_HOSTS].sort())) && f2.sent[0].body.provider.ignore.length >= 4 && hostGets === 1,
+                `${f2.sent[0].body.provider.ignore.join(",")}; ${hostGets} GET for ${f2.sent.length} model calls`);
+            await a2.close();
+            orHosts._resetHosts();
+        }
+        {
+            // the final answers: plain words, one request, the turn ends "error"
+            const cases = [
+                ["a_deepseek_402_says_the_balance_is_empty", CHAT[1], { status: 402, body: JSON.stringify({ error: { message: "Insufficient Balance" } }) }, /^the DeepSeek balance is empty$/],
+                ["an_openrouter_402_is_final", CHAT[0], { status: 402, body: JSON.stringify({ error: { code: 402, message: "Insufficient credits" } }) }, /OpenRouter credits/],
+                ["a_moonshot_empty_balance_is_final", CHAT[2], { status: 429, body: JSON.stringify({ error: { type: "exceeded_current_quota_error", message: "Your account is suspended" } }) }, /^the Moonshot balance is empty$/],
+                ["a_moonshot_daily_limit_is_final", CHAT[2], { status: 429, body: JSON.stringify({ error: { type: "rate_limit_reached_error", message: "Your account reached max request TPD: 1500000, please try again after 1 day" } }) }, /daily token limit.*next day/],
+                ["a_z_ai_empty_balance_is_final", CHAT[3], { status: 429, body: JSON.stringify({ error: { code: "1113", message: "Insufficient account balance" } }) }, /^the Z.ai balance is empty$/],
+                ["a_z_ai_sensitive_answer_is_final", CHAT[3], { status: 400, body: JSON.stringify({ error: { code: "1301", message: "unsafe" } }) }, /sensitive/],
+                ["a_z_ai_too_long_request_is_final", CHAT[3], { status: 400, body: JSON.stringify({ error: { code: 1261, message: "too long" } }) }, /too long for Z.ai/],
+            ];
+            for (const [name, p, answer, want] of cases) {
+                const editor = new FakeEditor();
+                let n = 0;
+                // the fetch also answers OpenRouter's GET of the host list, which is not a model call
+                const { a } = chatOn(editor, async (url, init) => { if (init && init.body !== undefined) n++; return sseResponse(answer.body, { status: answer.status, headers: { "retry-after": "1" } }); }, p);
+                const out = await a.send("hello");
+                check(name, out.reason === "error" && n === 1 && want.test(out.detail) && a.chat.history.length === 1, `${out.reason}: ${out.detail} (${n} requests)`);
+                await a.close();
+            }
+            const retried = [
+                ["a_moonshot_overload_is_retried_by_the_adapter", CHAT[2], JSON.stringify({ error: { type: "engine_overloaded_error", message: "busy" } })],
+                ["a_moonshot_rpm_limit_is_retried", CHAT[2], JSON.stringify({ error: { type: "rate_limit_reached_error", message: "Your account reached max request RPM: 3, please try again after 1 seconds" } })],
+                ["a_z_ai_rate_limit_is_retried", CHAT[3], JSON.stringify({ error: { code: "1302", message: "too many requests" } })],
+            ];
+            for (const [name, p, body] of retried) {
+                const editor = new FakeEditor();
+                let n = 0;
+                const { a } = chatOn(editor, async () => (++n === 1 ? sseResponse(body, { status: 429 }) : sseResponse(chatStream([{ type: "text", text: "ok" }]))), p);
+                const out = await a.send("hello");
+                check(name, out.reason === "end" && n === 2, `${out.reason}: ${out.detail} (${n} requests)`);
+                await a.close();
+            }
+        }
+        {
+            // an answer that is not a stream (Z.ai reports some errors as HTTP 200 JSON)
+            const editor = new FakeEditor();
+            const json = JSON.stringify({ error: { code: "1113", message: "Insufficient balance" } });
+            const { a } = chatOn(editor, async () => sseResponse(json, { headers: { "content-type": "application/json" } }), CHAT[3]);
+            const out = await a.send("hello");
+            check("a_json_answer_is_not_read_as_a_stream", out.reason === "error" && /the Z.ai balance is empty/.test(out.detail), `${out.reason}: ${out.detail}`);
+            await a.close();
+        }
+        {
+            const editor = new FakeEditor();
+            const { a } = chatOn(editor, async () => sseResponse(JSON.stringify({ error: { message: "key test-ds-0000 is invalid" } }), { status: 401 }), CHAT[1]);
+            const out = await a.send("hello");
+            check("a_chat_error_that_echoes_the_key_is_scrubbed", out.reason === "error" && /<key>/.test(out.detail) && !/test-ds-0000/.test(out.detail), out.detail);
+            await a.close();
+        }
+    });
+
+    // ---- 15. cost on Chat Completions -----------------------------------------------------
+    await section("15. cost on Chat Completions", async () => {
+        const chatAdapter = require(path.join(ROOT, "electron", "main", "assistant", "chat.js"));
+        const u = chatAdapter._usageOf;
+        const deepseek = u({ prompt_tokens: 1000, prompt_cache_hit_tokens: 300, prompt_cache_miss_tokens: 700, completion_tokens: 50, completion_tokens_details: { reasoning_tokens: 10 } });
+        const moonshot = u({ prompt_tokens: 1000, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 300, cache_write_tokens: 200 } });
+        const openrouter = u({ prompt_tokens: 1000, completion_tokens: 50, cost: 0.0123, prompt_tokens_details: { cached_tokens: 100, cache_write_tokens: 0 }, completion_tokens_details: { reasoning_tokens: 5 } });
+        const zai = u({ prompt_tokens: 1000, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 250 } });
+        const plain = u({ prompt_tokens: 1000, completion_tokens: 50 });
+        const odd = u({ prompt_tokens: 1000, completion_tokens: 50, cost: "n/a" });
+        check("chat_usage_is_normalised_per_dialect",
+            eq(deepseek, { input: 700, cacheRead: 300, cacheWrite: 0, output: 50, reasoning: 10 })
+            && eq(moonshot, { input: 500, cacheRead: 300, cacheWrite: 200, output: 50, reasoning: 0 })
+            && eq(openrouter, { input: 900, cacheRead: 100, cacheWrite: 0, output: 50, reasoning: 5, cost: 0.0123 })
+            && eq(zai, { input: 750, cacheRead: 250, cacheWrite: 0, output: 50, reasoning: 0 })
+            && eq(plain, { input: 1000, cacheRead: 0, cacheWrite: 0, output: 50, reasoning: 0 }) && eq(odd, plain) && eq(u(null), plain && { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0 }),
+            [deepseek, moonshot, openrouter, zai].map((x) => JSON.stringify(x)).join(" "));
+        const peak = Date.UTC(2026, 8, 21, 2, 0, 0);   // a Monday, 02:00 UTC
+        const ds = models.costOf("deepseek", "deepseek-flash", deepseek, peak);
+        const ms = models.costOf("moonshot", "kimi-k3", moonshot);
+        const or = models.costOf("openrouter", "anthropic/claude-sonnet-5", openrouter);
+        const local = models.costOf("compat", "llama3.2-vision", plain);
+        check("chat_usage_is_priced_per_dialect",
+            Math.abs(ds.amount - (700 * 0.30 + 50 * 1.20 + 300 * 0.006) / 1e6) < 1e-12 && /peak/.test(ds.note)
+            && Math.abs(ms.amount - (500 * 3 + 50 * 15 + 300 * 0.30) / 1e6) < 1e-12 && /cache writes are billed, price not published/.test(ms.note)
+            && or.amount === 0.0123 && local.amount === 0,
+            [ds, ms, or, local].map((x) => JSON.stringify(x)).join(" "));
+        {
+            // the chat's running total takes the cost OpenRouter reported
+            const editor = new FakeEditor();
+            const { a } = chatOn(editor, [chatStream([{ type: "text", text: "hi" }], { usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.002 } })], CHAT[0]);
+            await a.send("hello");
+            check("an_openrouter_chat_sums_usage_cost", Math.abs(a.chat.usage.cost - 0.002) < 1e-12 && a.chat.usage.input === 10, JSON.stringify(a.chat.usage));
+            await a.close();
+        }
     });
 
     const failed = results.filter((x) => !x).length;

@@ -47,21 +47,23 @@ function compatBase(url) {
  */
 function refusesImage(status, body) {
     if (![400, 413, 415, 422].includes(Number(status))) return false;
-    return /image|vision|multimodal|content type|unsupported/i.test(String(body || ""));
+    return /image|vision|multimodal|content part/i.test(String(body || ""));
 }
 
 /**
  * The key rule, both ways (§2 row 27). A key that starts with `test-` goes to a loopback URL
  * only, and a loopback URL takes no other key: a gate never reaches a real host, and no real key
- * ever reaches a local listener.
+ * ever reaches a local listener. `localOk` lifts the second half for the one provider whose URL
+ * is a local listener by nature: the local OpenAI-compatible server, whose own key (LM Studio's,
+ * a vLLM token) goes to the URL the user saved (§2 row 26).
  */
-function checkKey(url, key) {
+function checkKey(url, key, opts = {}) {
     const k = String(key || "");
     if (!k) return;
     const test = k.startsWith("test-");
     const local = isLoopback(url);
     if (test && !local) throw new Error("a test key goes to the test endpoint only");
-    if (!test && local) throw new Error("the test endpoint takes test keys only");
+    if (!test && local && !opts.localOk) throw new Error("the test endpoint takes test keys only");
 }
 
 /** Every key out of a text, whatever wrapped it: the model's answer, an error, a log line. */
@@ -108,7 +110,7 @@ function httpError(status, bodyText, keys) {
 async function postStream(url, headers, body, opts = {}) {
     const { signal, retries = 3, keys = [], noRetry, sleep = wait, log, fetchImpl } = opts;
     const send = fetchImpl || fetch;                 // the tests script it; nothing else does
-    checkKey(url, opts.key);
+    checkKey(url, opts.key, { localOk: !!opts.localOk });
     const payload = typeof body === "string" ? body : JSON.stringify(body);
     let connectionTried = false;
     for (let attempt = 0; ; attempt++) {

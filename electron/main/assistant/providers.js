@@ -44,10 +44,12 @@ const PROVIDERS = {
             lengthField: "max_tokens",
             imagesInToolMessage: false,
             streamOptions: false,            // OpenRouter always sends usage in the last chunk
-            sessionId: true,
+            sessionId: true,                 // = the chat id: sticky routing, cache hits
+            ignoreHosts: true,               // provider.ignore = the hosts in China (openrouterIgnore below)
+            dataCollection: "deny",          // provider.data_collection: hosts that train on the data are left out
             cacheControlFor: /^anthropic\//,
             costFromUsage: true,             // usage.cost, taken as it comes (§2 row 25)
-            noRetryCodes: [402],
+            finalStatus: { 402: "the OpenRouter credits are used up" },
         },
     },
     openai: {
@@ -104,7 +106,7 @@ const PROVIDERS = {
             lengthField: "max_tokens",
             imagesInToolMessage: false,
             streamOptions: true,
-            noRetryCodes: [402],
+            finalStatus: { 402: "the DeepSeek balance is empty" },
         },
     },
     moonshot: {
@@ -125,8 +127,10 @@ const PROVIDERS = {
             imagesInToolMessage: true,       // its Message schema allows one; not verified (§7)
             strictOnTools: false,
             streamOptions: true,
-            noRetryTypes: ["exceeded_current_quota_error"],
-            noRetryMessage: /TPD|tokens per day|daily/i,
+            // read from error.type: an empty balance and the daily limit are final; engine_overloaded_error
+            // and the RPM, TPM and concurrency limits are retried like any 429
+            finalTypes: { exceeded_current_quota_error: "the Moonshot balance is empty" },
+            finalMessage: { type: "rate_limit_reached_error", test: /TPD|tokens per day|daily/i, words: "Moonshot's daily token limit is reached; it resets the next day" },
         },
     },
     zai: {
@@ -148,7 +152,8 @@ const PROVIDERS = {
             imagesInToolMessage: false,
             streamOptions: false,
             toolStream: true,
-            noRetryCodes: [1113, 1301, 1261],
+            // read from error.code; 1302 and 1305 (rate limits) are retried like any 429
+            finalCodes: { 1113: "the Z.ai balance is empty", 1301: "Z.ai refused the content as sensitive", 1261: "the request is too long for Z.ai; start a new chat" },
         },
     },
     toapis: {
@@ -188,7 +193,12 @@ const PROVIDERS = {
         tried: false,
         where: "the server at the URL you set; nothing leaves your machine when it runs on it",
         models: [],                          // whatever its /models lists
-        dialect: { reasoningField: "any", lengthField: "max_tokens", imagesInToolMessage: false, streamOptions: true },
+        dialect: {
+            reasoningField: "any", lengthField: "max_tokens", imagesInToolMessage: false, streamOptions: true,
+            localKey: true,                  // its key goes to the saved URL, loopback or not (§2 row 26)
+            imageFallback: true,             // a refused picture: once more without it, no screenshot afterwards
+            contextNote: "The local server should give the model at least 64k tokens of context (Ollama: OLLAMA_CONTEXT_LENGTH=65536); with less, the tool list alone fills it.",
+        },
     },
 };
 
@@ -232,4 +242,17 @@ function picker(ready = {}) {
     });
 }
 
-module.exports = { PROVIDERS, ORDER, DEFAULT_MODEL, providerOf, picker };
+/**
+ * The hosts OpenRouter lists in China, for `provider.ignore` on every request (§3, "Where the
+ * pictures go"): the image adapter's list and its once-per-session cache, so both read
+ * `GET /api/v1/providers` once and fall back to the same dated list. `base` is the chat's base
+ * (`https://openrouter.ai/api/v1`, or the loopback test base with that path).
+ */
+function openrouterIgnore(base, ctx = {}) {
+    const { chinaHosts } = require("../providers/openrouter.js");
+    let origin = "https://openrouter.ai";
+    try { const u = new URL(String(base)); origin = `${u.protocol}//${u.host}`; } catch (_) { /* the default */ }
+    return chinaHosts({ base: origin, fetch: ctx.fetch || fetch, log: ctx.log });
+}
+
+module.exports = { PROVIDERS, ORDER, DEFAULT_MODEL, providerOf, picker, openrouterIgnore };
