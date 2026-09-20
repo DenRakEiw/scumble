@@ -5,8 +5,9 @@ import { host, api } from "./editor/host.js";
 import { InpaintEditor } from "./editor/inpaint_canvas.js";
 import { glFiltersAvailable } from "./editor/inpaint_filters_gl.js";
 import { setPixelsOptions } from "./editor/inpaint_pixels.js";
-import { commands } from "./commands.js";
+import { commands, docSummary } from "./commands.js";
 import * as plugins from "./plugins.js";
+import { waitForUser, editorOf } from "./assistant_wait.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -1517,12 +1518,31 @@ window.scumble.onMenu((cmd) => {
 
 // ---- the command bridge: main (MCP server, --cmd, the local socket) runs commands here -----
 
-window.scumble.commands.onRequest(async ({ id, name, args }) => {
-    const r = await commands.call(name, args || {});
-    let payload;
-    try { payload = JSON.parse(JSON.stringify({ id, ...r })); }   // results are JSON by contract; anything else is an error, not a crash
-    catch (err) { payload = { id, ok: false, error: "the result is not JSON: " + (err.message || err) }; }
-    window.scumble.commands.reply(payload);
+// A request of the in-app assistant carries `meta` (docs/PLAN_ASSISTANT.md §3): `wait` holds it while the
+// user is in the middle of an edit (renderer/assistant_wait.js), `refuseBusy` turns it away while a run
+// is in progress on the document, and a cancel that arrives while it waits means it never runs. Requests
+// without `meta` (external agents, --cmd, scripts) take exactly the path they always took.
+const cancelledRequests = new Set();
+window.scumble.commands.onCancel(({ id }) => { if (cancelledRequests.size > 500) cancelledRequests.clear(); cancelledRequests.add(id); });
+window.scumble.commands.onRequest(async ({ id, name, args, meta }) => {
+    const reply = (r) => {
+        let payload;
+        try { payload = JSON.parse(JSON.stringify({ id, ...r })); }   // results are JSON by contract; anything else is an error, not a crash
+        catch (err) { payload = { id, ok: false, error: "the result is not JSON: " + (err.message || err) }; }
+        window.scumble.commands.reply(payload);
+    };
+    if (meta && meta.wait) {
+        const why = await waitForUser(args && args.doc, name, meta.wait, () => cancelledRequests.has(id));
+        if (why) { cancelledRequests.delete(id); return reply({ ok: false, error: why }); }
+    }
+    if (meta && cancelledRequests.delete(id)) return reply({ ok: false, error: "cancelled before it ran" });
+    if (meta && meta.refuseBusy) {
+        // right before the command, with no await in between: a run the user starts while the ask card is open sets
+        // `providerPending` synchronously at its start, so only a check here catches it
+        const ed = editorOf(args && args.doc);
+        if (ed && docSummary(ed).busy) return reply({ ok: false, error: "the document is busy: a run is in progress; nothing was run" });
+    }
+    reply(await commands.call(name, args || {}));
 });
 
 // ---- start: plugins, restore the last session, then connect -------------------------------

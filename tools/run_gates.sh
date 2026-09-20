@@ -10,13 +10,17 @@
 # ($SCUMBLE_GATES/nodecopy), so the real node repo is never written.
 #
 # A gate is a tools/ script name without .py (editor, composite, pixels, shape, brush, commands,
-# film, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, recipes, mcp, smoke, node, perf:<args>).
+# film, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, recipes, assistant, mcp, smoke,
+# node, perf:<args>).
 # Gate "toapis" (tools/toapis_test.py) runs tools/toapis_test.js in plain Node first, then the app against
 # tools/toapis_mock.py; it needs no ToAPIs key and refuses a profile that holds one. Gate "openrouter"
 # (tools/openrouter_test.py) does the same with tools/openrouter_test.js and tools/openrouter_mock.py, and gate
 # "ark" (tools/ark_test.py, BytePlus ModelArk) with tools/ark_test.js and tools/ark_mock.py. Gate "recipes"
 # (tools/recipes_test.py) runs tools/recipes_test.js in plain Node first (the shipped recipes' settings slots and
-# the importer), then the import through the app's Settings dialog; it needs no key and no ComfyUI.
+# the importer), then the import through the app's Settings dialog; it needs no key and no ComfyUI. Gate "assistant"
+# (tools/assistant_test.py) runs tools/assistant_test.js in plain Node first, then the in-app assistant against
+# tools/assistant_mock.py (every model family through the mock, the asks, the pin, the user-activity wait); it needs
+# no key, refuses a profile that holds one, refuses an instance connected to ComfyUI, and goes last in a list.
 # Logs and summary.txt go to $SCUMBLE_GATES/gates/<label>/. Exit code 0 only when every gate passed.
 # Logs, profiles and the node copy go under $SCUMBLE_GATES (default F:/canvas/dist/gates, ignored by git).
 SP="${SCUMBLE_GATES:-/f/canvas/dist/gates}"
@@ -77,6 +81,7 @@ for g in "$@"; do
     smoke) q0=$(curl -s -m 5 http://127.0.0.1:8188/queue); $T python tools/smoke_test.py "$OUT/smoke" --no-helpers > "$OUT/$g.log" 2>&1; rc=$?; q1=$(curl -s -m 5 http://127.0.0.1:8188/queue); echo "queue before $q0 after $q1" >> "$OUT/$g.log" ;;
     mcp) if [ -n "$EXE" ]; then $T python tools/mcp_test.py --exe "$EXE" --user-data-dir "$PROFILE" "$OUT/mcp" > "$OUT/$g.log" 2>&1; else $T python tools/mcp_test.py --user-data-dir "$PROFILE" "$OUT/mcp" > "$OUT/$g.log" 2>&1; fi; rc=$? ;;
     commands) $T python tools/commands_test.py "$OUT/commands" > "$OUT/$g.log" 2>&1; rc=$? ;;
+    assistant) timeout 900 python tools/assistant_test.py --user-data-dir "$PROFILE" ${EXE:+--exe "$EXE"} "$OUT/assistant" > "$OUT/$g.log" 2>&1; rc=$? ;;
     film) $T python tools/film_test.py "$OUT/film" > "$OUT/$g.log" 2>&1; rc=$? ;;
     nodecopy) NC="$SP/nodecopy"; rm -rf "$NC"; mkdir -p "$NC"; (cd "/f/Comfyui/ComfyUI_windows_portable_nvidia/ComfyUI/custom_nodes/ComfyUI-InpaintCanvas" && tar --exclude=.git --exclude=__pycache__ -cf - .) | (cd "$NC" && tar -xf -); { $T python tools/build_node.py --node "$NC" && $T python tools/build_node.py --node "$NC" --check && $T python tools/node_test.py --node "$NC"; } > "$OUT/$g.log" 2>&1; rc=$? ;;
     node) $T python tools/build_node.py --check > "$OUT/$g.log" 2>&1 && $T python tools/node_test.py >> "$OUT/$g.log" 2>&1; rc=$? ;;

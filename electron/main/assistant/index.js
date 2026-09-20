@@ -6,11 +6,15 @@
 // bridge and a scripted fetch (tools/assistant_test.js). Nothing here requires Electron.
 "use strict";
 
-const { PROVIDERS, DEFAULT_MODEL, providerOf } = require("./providers.js");
+const { PROVIDERS, ORDER, DEFAULT_MODEL, providerOf, picker, openrouterModels } = require("./providers.js");
 const policy = require("./policy.js");
 const prompt = require("./prompt.js");
 const models = require("./models.js");
 const { loopbackBase, compatBase, scrub } = require("./http.js");
+
+/** A command's MCP tool name (mcp/server.js toolName, written again: requiring the server here
+ *  would pull the SDK into every plain-Node run; a check keeps the two rules equal). */
+const toolName = (command) => String(command).replace(/[^A-Za-z0-9_-]/g, "_");
 
 const ADAPTERS = { messages: require("./anthropic.js"), chat: require("./chat.js") };
 
@@ -41,10 +45,16 @@ class Assistant {
         this.deps = deps;
         this.chat = null;
         this.turn = null;
+        this.turnDone = null;       // the running turn's promise (reset waits for it)
+        this.turnSeq = 0;
         this.pending = null;        // the ask a turn is waiting on
         this.client = null;
         this.server = null;
         this.events = [];
+        this.readOnly = false;      // the gate's first milestone: reads only (A4)
+        this.lastTurn = null;       // the last turn that changed a document ("Undo this turn", A7)
+        this.toolsDirty = false;
+        this.toolsChanged = null;
     }
 
     // ---- settings and keys ---------------------------------------------------------------
@@ -89,17 +99,30 @@ class Assistant {
 
     // ---- the MCP client ------------------------------------------------------------------
 
-    /** The backend the in-process server runs on: the one Bridge, with the assistant's `meta`. */
-    backendFor(turn) {
+    /**
+     * The backend the in-process server runs on: the one Bridge, with the assistant's `meta`. The
+     * server is made once and outlives every turn, so the meta reads the running turn at call
+     * time (its id, the undo step chosen for the call and its abort signal), not the turn the
+     * server was made in.
+     */
+    backendFor() {
         const bridge = this.deps.bridge;
-        const metaFor = (name) => ({
-            origin: "assistant",
-            wait: name === "screenshot" ? "soft" : !policy.READS.has(name),
-            refuseBusy: policy.RUNS.has(name),
-            turn: policy.READS.has(name) ? undefined : (turn && turn.id),
-            undo: policy.READS.has(name) ? undefined : (turn && turn.undo),
-            signal: turn && turn.signal,
-        });
+        const metaFor = (command) => {
+            const turn = this.turn;
+            // the Bridge is called with the command's own name, the policy's sets hold MCP tool
+            // names: they differ for a plugin command (film.looks -> film_looks), whose read would
+            // otherwise take the user-activity wait and count as a step to undo
+            const name = toolName(command);
+            const read = policy.READS.has(name);
+            return {
+                origin: "assistant",
+                wait: name === "screenshot" ? "soft" : !read,
+                refuseBusy: policy.RUNS.has(name),
+                turn: read ? undefined : (turn && turn.id),
+                undo: read ? undefined : (turn && turn.undo),
+                signal: turn && turn.signal,
+            };
+        };
         return {
             run: (name, args) => bridge.run(name, args, metaFor(name)),
             describe: () => bridge.describe(),
@@ -111,17 +134,25 @@ class Assistant {
     async connect() {
         if (this.client) return this.client;
         const { createServer, Client, InMemoryTransport } = this.deps;
-        this.server = createServer(this.backendFor(null), {
+        this.server = createServer(this.backendFor(), {
             version: this.deps.version || "0.0.0",
             info: () => ({ mode: "assistant", pid: process.pid }),
         });
         const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
         this.client = new Client({ name: "scumble-assistant", version: "1" }, { capabilities: {} });
         await Promise.all([this.server.connect(serverSide), this.client.connect(clientSide)]);
+        // the command table changed (a plugin loaded or failed): the chat's list is frozen, so the
+        // diff is shown, not applied (§2 row 8); computed when the panel asks (`state`)
+        const bridge = this.deps.bridge;
+        if (bridge && typeof bridge.on === "function") {
+            this._onChanged = () => { this.toolsDirty = true; };
+            bridge.on("changed", this._onChanged);
+        }
         return this.client;
     }
 
     async close() {
+        if (this._onChanged && this.deps.bridge && this.deps.bridge.removeListener) { this.deps.bridge.removeListener("changed", this._onChanged); this._onChanged = null; }
         if (this.client) { await this.client.close().catch(() => {}); this.client = null; }
         if (this.server) { await this.server.close().catch(() => {}); this.server = null; }
     }
@@ -135,11 +166,33 @@ class Assistant {
 
     // ---- the chat ------------------------------------------------------------------------
 
+    /**
+     * OpenRouter's live list of tool-capable models, fetched once per session in main (the CSP
+     * keeps the renderer off every API host); an id typed into the picker is checked against it
+     * (§2 row 33), and its image input decides whether `screenshot` is offered (§2 row 34).
+     */
+    async openrouterModels() {
+        const base = this.baseFor("openrouter", PROVIDERS.openrouter, this.settings(), (this.deps.settings && this.deps.settings.get && this.deps.settings.get()) || {});
+        // once per session, but per base: the test endpoint answers its own list, not the live one
+        if (!this._openrouterModels || this._openrouterBase !== base) {
+            this._openrouterBase = base;
+            this._openrouterModels = openrouterModels(base, { fetch: this.deps.fetchImpl, log: (line) => this.record(line) })
+                .catch((err) => { if (this._openrouterBase === base) this._openrouterModels = null; throw err; });
+        }
+        return this._openrouterModels;
+    }
+
     async newChat() {
         const s = this.settings();
         const t = this.target();
         const adapter = ADAPTERS[t.entry.family];
         if (!adapter) throw new Error(`${t.entry.label} is not built yet`);
+        if (t.provider === "openrouter" && !t.entry.models.some((m) => m.id === t.id)) {
+            // a free id: it must be on the live list of tool-capable models, whose row says whether it takes images
+            const row = (await this.openrouterModels()).find((m) => m.id === t.id);
+            if (!row) throw new Error(`${t.id} is not on OpenRouter's list of models that take tools; pick another id`);
+            t.model = { ...t.model, vision: row.vision, reasoning: row.reasoning, price: row.price };
+        }
         const tools = (await this.client.listTools()).tools
             .filter((tool) => !policy.EXCLUDED.has(tool.name))
             .filter((tool) => t.model.vision !== false || tool.name !== "screenshot")
@@ -150,6 +203,8 @@ class Assistant {
             id: `c${Date.now().toString(36)}`,
             provider: t.provider,
             model: t.id,
+            label: t.model.label || t.id,
+            vision: t.model.vision !== false,
             base: t.base,
             key: t.key,
             family: t.entry.family,
@@ -186,9 +241,11 @@ class Assistant {
         return event;
     }
 
-    busy() { return !!this.turn; }
+    busy() { return !!this.turn || !!this.starting; }
 
     stop() {
+        // Stop between send() and the first request: the turn starts and ends at once (_startTurn)
+        if (!this.turn && this.starting) { this.stopStarting = true; return true; }
         if (!this.turn) return false;
         this.turn.stopped = true;
         this.turn.abort.abort(stopError());
@@ -207,8 +264,39 @@ class Assistant {
 
     // ---- the turn ------------------------------------------------------------------------
 
+    /** The whole turn: resolves with its `done` record (the plain-Node tests, the checkpoint's console). */
     async send(text) {
-        if (this.turn) throw new Error("a turn is running");
+        const started = await this._start(text);
+        return started.done;
+    }
+
+    /**
+     * The window's way in (IPC `assistant:send`): the turn is started and runs on in the
+     * background, its progress reaches the panel as events; the answer is the turn's id.
+     */
+    async begin(text) {
+        const started = await this._start(text);
+        started.done.catch(() => { /* reported as a turn:done event */ });
+        return { turn: started.turn.id };
+    }
+
+    /**
+     * `this.turn` is set only after connect() and newChat(), which are a renderer round trip (the
+     * tool list) and, for a free OpenRouter id, a fetch of its live list. Two assistant:send calls
+     * landing in that window would both start a loop on one chat, and the first would be invisible
+     * and unstoppable (stop() reaches `this.turn` alone), so `starting` is a guard too; reset()
+     * waits for it.
+     */
+    async _start(text) {
+        if (this.turn || this.starting) throw new Error("a turn is running");
+        const started = this._startTurn(text);
+        this.starting = started.catch(() => { /* the caller sees the rejection */ });
+        // `stopStarting` is consumed by the turn itself (below); a start that failed before it
+        // got that far must not stop the next one
+        try { return await started; } finally { this.starting = null; this.stopStarting = false; }
+    }
+
+    async _startTurn(text) {
         const s = this.settings();
         const t = this.target();
         const test = loopbackBase(s.base);
@@ -225,23 +313,168 @@ class Assistant {
         }
 
         const turn = {
-            id: `t${Date.now().toString(36)}`,
+            id: `t${Date.now().toString(36)}${(++this.turnSeq).toString(36)}`,
             abort: new AbortController(),
             stopped: false,
             steps: 0,
             undo: null,
             docs: new Set(),
+            started: Date.now(),
         };
         turn.signal = turn.abort.signal;
         this.turn = turn;
+        if (this.stopStarting) { this.stopStarting = false; this.stop(); }
+        this.emit("user", { turn: turn.id, text: String(text == null ? "" : text) });
         this.emit("turn:start", { turn: turn.id, provider: chat.provider, model: chat.model });
 
-        try {
-            return await this.runTurn(chat, turn, text, s);
-        } finally {
-            this.turn = null;
-            if (this.pending) { this.pending.resolve(false); this.pending = null; }
+        const done = (async () => {
+            try {
+                return await this.runTurn(chat, turn, text, s);
+            } catch (err) {
+                // the loop answers every expected failure itself; this is a defect, and the turn still ends
+                return this.done(chat, turn, "error", scrub(String((err && err.message) || err), [chat.key]));
+            } finally {
+                this.turn = null;
+                this.turnDone = null;
+                if (this.pending) { this.pending.resolve(false); this.pending = null; }
+            }
+        })();
+        this.turnDone = done;
+        return { turn, done };
+    }
+
+    // ---- the window's view --------------------------------------------------------------
+
+    /**
+     * Stop a running turn and start a new chat. `readOnly` (set by the gate alone, through
+     * `assistant:reset {readOnly: true}`) refuses every call outside `READS` with "not enabled in
+     * this run", so the first turn in the app can be proven harmless before any write is driven.
+     */
+    async reset(opts = {}) {
+        this.stop();
+        // a turn between connect() and its first request has no `turnDone` yet
+        if (this.starting) await Promise.race([this.starting, new Promise((r) => setTimeout(r, 5000))]);
+        this.stop();
+        if (this.turnDone) await Promise.race([this.turnDone.catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
+        this.chat = null;
+        this.events = [];
+        this.lastTurn = null;
+        this.toolsDirty = false;
+        this.toolsChanged = null;
+        this.readOnly = !!opts.readOnly;
+        return { readOnly: this.readOnly };
+    }
+
+    /** What the panel needs to rebuild itself after a window reload, a pending ask included. */
+    async state() {
+        const s = this.settings();
+        const t = this.target();
+        const chat = this.chat;
+        const out = {
+            provider: chat ? chat.provider : t.provider,
+            model: chat ? chat.model : t.id,
+            label: chat ? chat.label : (t.model.label || t.id),
+            vision: chat ? chat.vision : t.model.vision !== false,
+            family: t.entry.family,
+            built: !!ADAPTERS[t.entry.family],
+            busy: this.busy(),
+            turn: this.turn ? this.turn.id : null,
+            readOnly: !!this.readOnly,
+            base: loopbackBase(s.base),
+            events: this.events.slice(),
+            pending: this.pending ? this.pending.card : null,
+            usage: chat ? { ...chat.usage } : null,
+            toolsChanged: null,
+            agents: this.deps.agents ? this.deps.agents() : 0,
+            lastTurn: this.lastTurn,
+            notice: (s.noticed || {})[chat ? chat.provider : t.provider] ? null : this.noticeFor(chat ? chat.provider : t.provider),
+        };
+        // the diff is a listTools() through the Bridge, which waits up to 120 s for a renderer
+        // that is not ready: the panel's state() right after a reload has to answer at once, so it
+        // waits for a later call instead (`toolsDirty` stays set)
+        if (chat && this.toolsDirty && this.client && !(this.deps.bridge && this.deps.bridge.ready === false)) {
+            this.toolsDirty = false;
+            try {
+                const now = new Set((await this.client.listTools()).tools.map((x) => x.name).filter((n) => !policy.EXCLUDED.has(n)));
+                if (!chat.vision) now.delete("screenshot");
+                const added = [...now].filter((n) => !chat.names.has(n));
+                const removed = [...chat.names].filter((n) => !now.has(n));
+                this.toolsChanged = added.length || removed.length ? { added, removed } : null;
+            } catch (_) { /* the next state() asks again */ this.toolsDirty = true; }
         }
+        out.toolsChanged = chat ? this.toolsChanged || null : null;
+        return out;
+    }
+
+    /** The privacy notice of a provider (§2 row 31), in plain words about where the pictures go. */
+    noticeFor(provider) {
+        const entry = PROVIDERS[provider];
+        if (!entry) return null;
+        return {
+            provider,
+            label: entry.label,
+            text: `Your messages, a short note on the open documents and screenshots of the picture go to ${entry.label}: ${entry.where}.`,
+            tried: !!entry.tried,
+        };
+    }
+
+    /**
+     * The tool surface, for the gate's identity check: the MCP list an external agent gets, the
+     * names the assistant leaves out, and what it sends to the model (family-neutral).
+     */
+    async tools() {
+        await this.connect();
+        const t = this.target();
+        const vision = this.chat ? this.chat.vision : t.model.vision !== false;
+        const mcp = (await this.client.listTools()).tools;
+        const sent = mcp
+            .filter((tool) => !policy.EXCLUDED.has(tool.name))
+            .filter((tool) => vision || tool.name !== "screenshot")
+            .map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.inputSchema }));
+        return { mcp, excluded: [...policy.EXCLUDED], sent, policy: Object.keys(policy.POLICY), system: this.chat ? this.chat.system : null };
+    }
+
+    /**
+     * The picker's groups (§2 row 33): every provider in its order, `ready` when its key is stored
+     * (the local server: a saved URL) and its family is built, its curated models, and for the
+     * local server whatever its `/models` lists.
+     */
+    async models() {
+        const all = (this.deps.settings && this.deps.settings.get && this.deps.settings.get()) || {};
+        const has = (row) => !!(this.deps.keys && this.deps.keys.get && this.deps.keys.get(row));
+        const ready = {};
+        for (const provider of ORDER) {
+            const entry = PROVIDERS[provider];
+            if (!ADAPTERS[entry.family]) continue;
+            if (provider === "compat") ready[provider] = !!(((all.llm || {}).compat || {}).url || "").trim();
+            else ready[provider] = has(entry.key);
+        }
+        if (ready.compat) {
+            try { ready.compatModels = await this.compatModels(); } catch (err) { ready.compatModels = []; ready.compatError = String((err && err.message) || err); }
+        }
+        const groups = picker(ready);
+        for (const g of groups) {
+            if (!ADAPTERS[PROVIDERS[g.provider].family]) { g.ready = false; g.note = "not built yet"; }
+            if (g.provider === "compat" && ready.compatError) g.note = ready.compatError;
+        }
+        return { groups, current: this.settings().model, default: DEFAULT_MODEL };
+    }
+
+    /** The local server's `/models`, with its key only when one is stored (it goes to the saved URL alone). */
+    async compatModels() {
+        const all = (this.deps.settings && this.deps.settings.get && this.deps.settings.get()) || {};
+        const s = { ...DEFAULTS, ...(all.assistant || {}) };
+        const base = this.baseFor("compat", PROVIDERS.compat, s, all);
+        let key = (this.deps.keys && this.deps.keys.get && this.deps.keys.get("compat")) || "";
+        // the key rule of a turn holds for the picker's read too: a real key never goes to the
+        // test endpoint, a test key never to the user's own server
+        if (loopbackBase(s.base) ? !key.startsWith("test-") : key.startsWith("test-")) key = "";
+        const headers = key ? { Authorization: `Bearer ${key}` } : {};
+        const send = this.deps.fetchImpl || fetch;
+        const r = await send(`${base}/models`, { headers, signal: AbortSignal.timeout(10000) });
+        if (!r.ok) throw new Error(`the local server answered ${r.status} on /models`);
+        const j = (await r.json()) || {};
+        return (Array.isArray(j.data) ? j.data : []).map((m) => ({ id: String(m.id || ""), label: String(m.id || "") })).filter((m) => m.id);
     }
 
     async runTurn(chat, turn, text, s) {
@@ -337,6 +570,11 @@ class Assistant {
             this.emit("call", { call: call.id, name, action: "refuse", reason: "not one of your tools in this chat" });
             return errorResult(`refused by Scumble: not one of your tools in this chat`);
         }
+        if (this.readOnly && !policy.READS.has(name)) {
+            // the gate's read-only milestone (A4): nothing but reads runs in this chat
+            this.emit("call", { call: call.id, name, action: "refuse", reason: "not enabled in this run" });
+            return errorResult("refused by Scumble: not enabled in this run");
+        }
         if (name === "screenshot" && chat.noImages) {
             // the local server refused a picture earlier in this chat (§2 row 26)
             this.emit("call", { call: call.id, name, action: "refuse", reason: "this server does not take images" });
@@ -407,7 +645,9 @@ class Assistant {
 
         // ---- run it
         turn.undo = policy.undoStep(canonical, { layers });
-        turn.docs.add(doc);
+        // what "Undo this turn" (A7) would take back: the documents a write reached, so a turn
+        // that only read leaves `lastTurn` null
+        if (!policy.READS.has(name) && doc !== undefined && doc !== null) turn.docs.add(doc);
         this.emit("call", { call: call.id, name, args: canonical.args, action: decision.action === "ask" ? "allowed" : "auto" });
         const before = layers.map((l) => l.id);
         let res;
@@ -477,8 +717,9 @@ class Assistant {
     /** Show the ask card and wait for the user (Stop counts as a decline). */
     ask(call, canonical, decision) {
         return new Promise((resolve) => {
-            this.pending = { callId: call.id, resolve };
-            this.emit("ask", { call: call.id, name: canonical.name, args: canonical.args, reason: decision.reason, card: decision.card });
+            const card = { call: call.id, name: canonical.name, args: canonical.args, reason: decision.reason, card: decision.card };
+            this.pending = { callId: call.id, resolve, card };   // `card` is what a reloaded panel shows again
+            this.emit("ask", card);
         });
     }
 
@@ -499,10 +740,11 @@ class Assistant {
     }
 
     record(line) {
-        if (this.deps.log && this.deps.log.record) this.deps.log.record({ source: "assistant", text: String(line) });
+        if (this.deps.log && this.deps.log.record) this.deps.log.record({ source: "assistant", message: String(line) });
     }
 
     done(chat, turn, reason, detail) {
+        if (turn.steps > 0 && turn.docs.size) this.lastTurn = { id: turn.id, docs: [...turn.docs], steps: turn.steps, started: turn.started || null };
         this.emit("turn:done", { turn: turn.id, reason, detail: detail || "", steps: turn.steps, usage: { ...chat.usage } });
         return { reason, detail: detail || "", steps: turn.steps, usage: { ...chat.usage } };
     }

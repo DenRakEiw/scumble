@@ -66,6 +66,15 @@ the section for its version; `docs/` and the commit history hold the technical d
   add a model of your own to it and bring it back in. It imports now, with all its variants, and the note says which
   providers came in; a copy that keeps the shipped id replaces that recipe in the list, as a copy put into the recipes
   folder by hand always did.
+- **Three key rows for the coming assistant: DeepSeek, Moonshot / Kimi and Z.ai / GLM** under *Settings › API
+  providers*, after the Anthropic row (whose label now says the key also serves the assistant). They run no image
+  model and no prompt upsampling yet: they are for the chat assistant that drives the editor over its own MCP tools,
+  which is being built for a release of its own (`docs/PLAN_ASSISTANT.md`); its loop, its policy and its wiring into
+  the app are in this version but have no panel yet, so nothing shows in the window. DeepSeek and Moonshot get
+  *check balance* (their balance endpoints; not tried against the live services); a Moonshot key has to come from
+  platform.kimi.ai, a Z.ai key has to be a pay-as-you-go key, not a GLM Coding Plan key.
+- A file dropped on the tab bar or a panel no longer navigates the window away from the editor, and a
+  command an agent had sent while it happened no longer waits forever.
 
 ## 0.1.20 — 2026-09-19
 

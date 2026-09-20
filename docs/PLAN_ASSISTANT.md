@@ -1474,6 +1474,171 @@ path rule are gated before the checkpoint drives any write.
 **Estimate.** Two and a half days: two for the door and the gate, half a day for the key
 rows and the mock's other three families.
 
+### A4 as built (2026-09-20)
+
+Built before A3, on the user's word ("jetzt a4 verdrahten"): the door between the window and the loop
+for the two families that exist (Anthropic Messages and Chat Completions with its seven providers);
+OpenAI and Gemini are in the picker as "not built yet" and `newChat` refuses them with "<label> is not
+built yet" until A3 lands.
+
+- **IPC** (`electron/main/main.js`, all `ipcMain.handle`): `assistant:send {text}` -> `{turn}` (the turn
+  runs on in the background; `Assistant.begin()` beside `send()`, which the plain-Node tests keep),
+  `assistant:stop`, `assistant:answer {call, allow}`, `assistant:reset {readOnly?}`, `assistant:state`,
+  `assistant:models`, `assistant:openrouterModels`, `assistant:tools` (`{mcp, excluded, sent, policy,
+  system}` for the gate), `assistant:noticed {provider}` (the date into the whole merged `assistant`
+  object). The instance is made at the first call (`getAssistant()`), so the SDK's client is not
+  loaded at start. Every event of the loop (`user`, `turn:start`, `text_delta`, `assistant:text`,
+  `call`, `ask`, `usage`, `note`, `turn:done`; the plan's names were A1's design, the built names
+  are A1's, the panel takes them as they are) goes out on `assistant:event`; `agents {n}` is sent
+  from `local.on("clients")`. **Preload:** `window.scumble.assistant.{send, stop, answer, reset,
+  state, models, openrouterModels, tools, noticed, onEvent}` and `commands.onCancel`.
+- **`Assistant` (index.js) grew** `begin`, `reset` (stops, waits up to 5 s for the turn, clears the chat
+  and the events, sets `readOnly`), `state` (provider, model, label, vision, family, built, busy, turn,
+  readOnly, base, events, pending = the ask card for a reloaded panel, usage, toolsChanged, agents,
+  lastTurn, notice), `tools`, `models` (the picker with `ready` = a stored key and a built family; the
+  local server's list from its `/models`), `compatModels`, `openrouterModels` (the live list once per
+  session; a free id must be on it, its row's `input_modalities` decide `screenshot`), `noticeFor`,
+  the `readOnly` refusal ("not enabled in this run") in `runCall`, and `lastTurn` at `done`. **A
+  defect of A1 found here:** the backend wrapper was made once with `turn = null`, so `meta.turn`,
+  `meta.undo` and `meta.signal` were always empty; `backendFor()` now reads `this.turn` at call time.
+- **The Bridge:** `run(name, args, meta)` sends `meta` without its `signal`; when the signal aborts
+  before the reply, `commands:cancel {id}` goes out, the call rejects with an `AbortError` and a late
+  reply is ignored; the abort listener goes off on every path. **The shell** (`renderer/shell.js`):
+  `cancelledRequests`, the wait for `meta.wait`, "cancelled before it ran", the busy check right before
+  `commands.call` for `meta.refuseBusy`; a request without `meta` takes the old path byte for byte.
+- **`renderer/assistant_wait.js`**: `waitForUser(doc, name, mode, cancelled)`, `editorOf`, `userBusy`
+  (`gestureHeld()`, `pending`, `textEdit`, `polyPoints`, `shapePoints`, `askOpen`, and for `set_prompt`
+  / `generate_new` the prompt field with an input event under 2 s), 100 ms steps, 20 s, "soft" runs.
+- **Settings:** `DEFAULTS.assistant` in `settings.js` is `index.js`'s `DEFAULTS` plus `noticed: {}`
+  (one source; `idleMs` is in it too). **Main:** `app:relaunch` throws "The assistant is working;
+  stop it first." while a turn runs, `before-quit` stops a turn, `will-navigate` keeps the window on
+  `scumble://app/` (a file drop no longer replaces the editor).
+- **The key rows:** `providers/deepseek.js`, `moonshot.js`, `zai.js` after `anthropic` (ToAPIs still
+  first), `balance()` for DeepSeek and Moonshot (a `test-` key is refused before any fetch), the
+  Anthropic label names the assistant; `docs/HELPERS.md` has the section.
+- **Not the plan's word:** no View › Assistant menu item yet - it would open nothing before A5, so it
+  comes with the panel; the event names are A1's, not the plan's list; `assistant:tools` also
+  answers `policy` and `system` so the gate needs no second channel; `state()` carries `label`,
+  `family`, `built` and `notice` for the picker and the privacy line.
+- **`tools/assistant_mock.py`** (1,225 lines, standard library): `Mock` and `Turn` as A4 describes them,
+  all four families rendered (Responses and Gemini for A3), the streams cut at byte offsets that land
+  inside events and UTF-8 sequences, `GET /models` (OpenRouter's list with the `supported_parameters`
+  filter, the local server's list) and `GET /providers`; `--selftest` (17 groups) and a standalone mode.
+- **`tools/assistant_test.py`** (gate `assistant`, last in a list): the 17 A4 steps of §6 - the node
+  layer, the MCP identity check through the Python client in proxy mode (72 external tools, 66 sent,
+  the six excluded), `ping` as the assistant, every tool a policy row, one turn per family and dialect
+  (8: the path, the key row, the reasoning part sent back - `sig-<n>`, `rd-<n>`, `rc-<n>` - and the
+  screenshot's place; DeepSeek's second turn with `reasoning_content` on every assistant message), the
+  blind OpenRouter id (65 tools, the blind sentence, the live list), the three key rows, the read-only
+  turn, the paid run (deny, then allow, the loopback result as a layer), `new_canvas` at its card, the
+  path-less export refused, the pin across a tab switch, the chat across `Page.reload` (46 events kept),
+  the held pointer (an external `--cmd` answers in 0.2 s meanwhile), the test-key rule, the relaunch
+  refusal and the agent count; **17 of 17 in 15 s** (after two gate defects of its own: it read every
+  tool result of the history instead of the last step's, and it demanded a `GET /models` a warm
+  instance answers from its cache).
+
+
+### A4, the review and what it changed (2026-09-20)
+
+The review of the A4 diff ran as six finder lenses (lifecycle, bridge, wait, plan conformance,
+the gate and the mock, keys and privacy) with two independent refuters per finding. The session
+that started it hit its usage limit while it ran: **36 findings arrived, 16 of the 72 verdicts**.
+The session after it (this one) read the workflow's journal, took the verdicts that had arrived,
+and judged the rest by reading the code itself. What follows is what was fixed, what was measured
+and what was left alone, with the check that holds each fix.
+
+**Held and fixed, in the loop** (`electron/main/assistant/index.js`):
+
+- **The "a turn is running" guard was not atomic** (four lenses found it, both refuters held it,
+  one reproduced it in plain Node). `this.turn` is set only after `connect()` and `newChat()` -
+  a renderer round trip for the tool list, plus a fetch of OpenRouter's live list for a free id -
+  so two `assistant:send` calls in that window both started a loop **on one chat**, and the first
+  one was invisible to `stop()` and to `state().busy`. `_start` now takes a second guard,
+  `starting`, which `busy()` reads and `reset()` waits for; a **Stop that arrives while the turn
+  starts** is remembered and the turn ends at once instead of running on unstoppable.
+- **The Bridge is called with command names, the policy's sets hold tool names.** A plugin
+  command (`film.looks`, `glb.info`) is `film_looks` / `glb_info` as a tool, so the two plugin
+  reads took the user-activity wait (up to 20 s, then a refusal) and counted as a step to undo.
+  `metaFor` normalises with the server's rule, written again here so the SDK does not load in
+  every plain-Node run; a check compares it with `toolName` from `mcp/server.js`.
+- **`state()` could block for up to 120 s.** The tool diff is a `listTools()` through the Bridge,
+  which waits for the renderer's `commands:ready`; the panel calls `state()` right after a reload,
+  which is exactly when the renderer is not ready. It now skips the diff while `bridge.ready` is
+  false and reads it at a later call.
+- **Every assistant log line was written empty**: `record()` passed `text`, `log.record` reads
+  `message`. The plain-Node test had the same typo in its stub, which is why the defect survived
+  its own check; the check now asserts the field `electron/main/log.js` really destructures.
+- **`lastTurn` was set for turns that changed nothing**: `turn.docs` collected every call,
+  reads and `undefined` included. Only a write with a document goes in now, so a read-only turn
+  leaves `lastTurn` null (what A7's "Undo this turn" reads).
+- **`reset()` left the old chat's tool diff behind** (`toolsChanged` / `toolsDirty`), which the
+  next chat's `state()` reported.
+- **OpenRouter's live list was cached per session, across a change of base**: it is cached per
+  base now, so the test endpoint's list is never served as the live one.
+- **The local server's key ignored the key rule** in `compatModels()` (the picker's read): a real
+  key went to the test endpoint and a `test-` key to the user's own server. It follows the turn's
+  rule now.
+
+**Held and fixed, the window and the Bridge** (`renderer/assistant_wait.js`,
+`electron/main/bridge.js`, `electron/main/main.js`):
+
+- **A file drop left the Bridge dead for the session.** A4's `will-navigate` guard prevents the
+  navigation, but Chromium announces it first: `did-start-navigation` fires, `bridge.js` drops
+  `ready` and rejects everything in flight, and because the page never reloads, no
+  `commands:ready` ever comes again - **every command of the session then waits 120 s and fails**.
+  Measured in the running app: with the guard in place and the navigation prevented, an external
+  `Scumble --cmd ping` **timed out at 40 s**; before the guard existed it answered in 0.3 s.
+  `attach(contents, {navigates})` now takes the same rule `will-navigate` uses, and a navigation
+  that will be prevented drops nothing. **The first probe of this was worthless and said so:** a
+  page on a custom scheme is not allowed to navigate itself to a `file:` URL, so that navigation
+  never starts. The probe is an `https` URL on a dead local port, which takes the path a dropped
+  file takes; port 9 refuses at once and the navigation is prevented before any request.
+- **The wait kept a closed tab's editor alive.** The document-level `input` listener held the
+  last edited element strongly, and through the prompt textarea's own listeners the whole editor
+  of a closed tab; it is a `WeakRef` now.
+- **The wait judged the wrong document.** `editorOf(doc)` fell back to the active document when
+  `doc` was given but not open, so a call for a closed tab was held - and refused - because the
+  user was busy in another one. It answers null now, and the command itself says "no document
+  with id ...". The editor is looked up again every round, so a document closed during the wait
+  ends it.
+- **`upsample_prompt` now waits while the user types in that prompt field**, as `set_prompt` does:
+  it reads the prompt and writes the upsampled text back into the same field.
+
+**Held and fixed, the gate and the mock** (`tools/assistant_test.py`, `tools/assistant_mock.py`):
+
+- **The cleanup deleted every key row even when the setup had refused to run.** Setup refuses a
+  profile that holds a key - that is the user's own profile - and the cleanup then cleared exactly
+  those rows: **the user's real keys**. It clears only rows this run stored.
+- **The reload step wiped the state the cleanup relies on**: it lived in window globals
+  (`__asSaved`, `__asRecipe`, `__asDocs`), which `Page.reload` clears, so the settings were never
+  put back and the second document never closed. All three live in Python now, and the cleanup
+  brings the window back to the app first when a step took it off (a mutation run does).
+- **`Mock.reset()` cleared the failures**, and the runner reads them by the index it saw when the
+  step started: once any expectation had failed, every later failure in the run was invisible. The
+  reset keeps them.
+
+**Refuted, or plan conformance, and left alone:** no `flashFrame` while an ask waits (A5's, per
+the plan); the render card's recipe fields, which are A1 code that A5 fills; the whole assistant
+module tree loading at app start through `settings.js` (the SDK is still lazy, the rest is
+milliseconds); the soft wait holding on all six conditions (§2 row 20 says `screenshot` waits too
+and runs anyway); `ed.pending` being armed while the user is idle (the plan names the pending
+transform as a reason to wait - **a sharp edge for the checkpoint**: a user who leaves Rotate,
+Distort or Warp armed and then does nothing delays every write by 20 s and then gets a refusal).
+**Deferred to A5, written down here:** there is no event after a tool call ends (the plan's
+`tool_end`), `tools_changed` is never pushed (the panel polls `state()`), and the picker's rows
+carry `{value, label}` rather than the plan's `{id, label, vision, price, dated, note}` - the
+panel is where all three are needed.
+
+**What proves it.** `node tools/assistant_test.js` is **192 checks** (section 16 is new: the start
+guard, the Stop while starting, a Stop on a start that then failed, the reset that waits, the
+plugin read's meta, the read-only turn's `lastTurn`, the log field, `state()` against a renderer
+that is not ready, the reset's tool diff, the OpenRouter list per base, the local server's key
+rule). The gate is **19 steps**
+(`a_file_drop_leaves_the_window_on_the_app`, `the_wait_judges_the_calls_own_document`). A
+mutation round of **15, all 15 red**: eleven against the plain-Node layer and the mock's selftest
+(the tree hashed before and after), four against a restarted app (the wait's two, the navigation
+guard's two). The mock's own selftest is 17 groups, PASS.
+
 ### The checkpoint (after A4; one day, with the user)
 
 **Purpose.** A go or no-go per model before ten days go into the panel, the store, undo,

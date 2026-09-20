@@ -1964,7 +1964,7 @@ async function main() {
             ];
             const sent = [];
             const impl = async (url, init) => { sent.push(JSON.parse(init.body)); return answers[n++](); };
-            const { a, events } = chatOn(editor, impl, CHAT[6], { log: { record: (e) => lines.push(e.text) } });
+            const { a, events } = chatOn(editor, impl, CHAT[6], { log: { record: (e) => lines.push(e.message) } });
             const out1 = await a.send("look");
             const out2 = await a.send("look again");
             const third = JSON.stringify(sent[2]);
@@ -2348,6 +2348,172 @@ async function main() {
             await a.send("hello");
             check("an_openrouter_chat_sums_usage_cost", Math.abs(a.chat.usage.cost - 0.002) < 1e-12 && a.chat.usage.input === 10, JSON.stringify(a.chat.usage));
             await a.close();
+        }
+    });
+
+
+    // ---- 16. the door between the window and the loop (A4) --------------------------------
+    await section("16. in the app: the start guard, the meta, the log line (A4)", async () => {
+        const naptime = (ms) => new Promise((r) => setTimeout(r, ms));
+        const slow = (editor, ms = 60) => { editor.describe = async () => { await naptime(ms); return ALL_COMMANDS; }; return editor; };
+        {
+            // connect() and newChat() are renderer round trips: the guard has to hold across them
+            const editor = slow(new FakeEditor());
+            const { a, events } = assistantOn(editor, [
+                anthropicStream([{ type: "text", text: "one" }]),
+                anthropicStream([{ type: "text", text: "two" }]),
+            ]);
+            const first = a.begin("hello");
+            let second = null;
+            try { await a.begin("again"); } catch (err) { second = err.message; }
+            const started = await first;
+            await waitFor(() => a.turn === null);
+            const starts = events.filter((e) => e.type === "turn:start");
+            check("two_sends_in_the_start_window_do_not_start_two_turns",
+                second === "a turn is running" && starts.length === 1 && starts[0].turn === started.turn && a.turn === null,
+                `${second}; ${starts.length} turn:start`);
+            await a.close();
+        }
+        {
+            // Stop while the turn is starting: it must not run on unstoppable
+            const editor = slow(new FakeEditor());
+            const { a, events } = assistantOn(editor, [anthropicStream([{ type: "text", text: "one" }])]);
+            const p = a.send("hello");
+            const stopped = a.stop();
+            const out = await p;
+            check("a_stop_while_the_turn_starts_ends_it",
+                stopped === true && out.reason === "stopped" && out.steps === 0 && events.filter((e) => e.type === "turn:start").length === 1,
+                `stop=${stopped}, ${out.reason}, ${out.steps} steps`);
+            await a.close();
+        }
+        {
+            // a Stop that hit a start which then failed must not stop the turn after it
+            const editor = new FakeEditor();
+            editor.describe = async () => { await new Promise((r) => setTimeout(r, 60)); throw new Error("the window reloaded"); };
+            const { a } = assistantOn(editor, [anthropicStream([{ type: "text", text: "second" }])]);
+            const failed = await a.send("hello").then(() => null, (err) => err.message);
+            a.stop();
+            editor.describe = async () => ALL_COMMANDS;
+            const out = await a.send("again");
+            check("a_stop_on_a_start_that_failed_does_not_stop_the_next_turn",
+                /reloaded/.test(String(failed)) && out.reason === "end" && a.stopStarting === false,
+                `${failed} then ${out.reason}`);
+            await a.close();
+        }
+        {
+            // reset() has to wait for a turn that has no turnDone yet
+            const editor = slow(new FakeEditor());
+            const { a } = assistantOn(editor, [anthropicStream([{ type: "text", text: "one" }])]);
+            const p = a.send("hello").catch(() => "gone");
+            await a.reset();
+            const after = { turn: a.turn, chat: a.chat, starting: a.starting };
+            await p;
+            check("reset_waits_for_a_turn_that_is_starting",
+                after.turn === null && after.chat === null && !after.starting,
+                JSON.stringify({ turn: after.turn, chat: !!after.chat, starting: !!after.starting }));
+            await a.close();
+        }
+        {
+            // the Bridge is called with the command name, the policy's sets hold tool names
+            const editor = new FakeEditor();
+            const { a } = assistantOn(editor, []);
+            const backend = a.backendFor();
+            await backend.run("film.looks", {});
+            await backend.run("glb.info", {});
+            await backend.run("tint.layer", { layer: "L1" });
+            await backend.run("screenshot", {});
+            const [looks, info, tint, shot] = editor.metas;
+            check("a_plugin_read_takes_no_wait_and_no_undo_step",
+                looks.wait === false && looks.turn === undefined && looks.undo === undefined
+                && info.wait === false && tint.wait === true && shot.wait === "soft",
+                `film.looks wait=${looks.wait}, glb.info wait=${info.wait}, tint.layer wait=${tint.wait}, screenshot wait=${shot.wait}`);
+            const same = ["film.looks", "glb.info", "tint.layer", "ailabel_add", "set_layer"].every((n) => toolName(n) === String(n).replace(/[^A-Za-z0-9_-]/g, "_"));
+            check("the_assistants_tool_name_rule_is_the_servers", same, "the server's toolName and the loop's own agree");
+            await a.close();
+        }
+        {
+            // a turn that only read leaves nothing for "Undo this turn" (A7)
+            const editor = new FakeEditor();
+            const { a } = assistantOn(editor, [
+                anthropicStream([{ type: "tool_use", id: "c1", name: "list_layers", input: { doc: 1 } }]),
+                anthropicStream([{ type: "text", text: "one layer" }]),
+                anthropicStream([{ type: "tool_use", id: "c2", name: "add_paint_layer", input: { doc: 1, name: "A" } }]),
+                anthropicStream([{ type: "text", text: "added" }]),
+            ]);
+            await a.send("what is there?");
+            const afterRead = a.lastTurn;
+            await a.send("add a layer");
+            const afterWrite = a.lastTurn;
+            check("a_read_only_turn_leaves_no_last_turn",
+                afterRead === null && afterWrite && afterWrite.steps === 1 && eq(afterWrite.docs, [1]),
+                `${JSON.stringify(afterRead)} then ${JSON.stringify(afterWrite && afterWrite.docs)}`);
+            await a.close();
+        }
+        {
+            // the log line: the field the app's log reads, not one it drops
+            const lines = [];
+            const editor = new FakeEditor();
+            const { a } = assistantOn(editor, [], { log: { record: (e) => lines.push(e) } });
+            a.record("a line from the assistant");
+            const src = require("node:fs").readFileSync(path.join(ROOT, "electron", "main", "log.js"), "utf8");
+            const reads = /function record\(\{[^}]*\bmessage\b/.test(src);
+            check("the_assistant_log_line_carries_the_field_the_log_reads",
+                lines.length === 1 && lines[0].message === "a line from the assistant" && lines[0].source === "assistant" && reads,
+                `${JSON.stringify(lines[0])}; log.js reads message: ${reads}`);
+            await a.close();
+        }
+        {
+            // state() answers the panel at once, even when the renderer is not ready yet
+            const editor = new FakeEditor();
+            const { a } = assistantOn(editor, [anthropicStream([{ type: "text", text: "hi" }])]);
+            await a.send("hello");
+            editor.ready = false;
+            a.toolsDirty = true;
+            const t0 = Date.now();
+            const s = await a.state();
+            const took = Date.now() - t0;
+            check("state_does_not_wait_for_a_renderer_that_is_not_ready",
+                took < 200 && s.toolsChanged === null && a.toolsDirty === true,
+                `${took} ms, toolsDirty still ${a.toolsDirty}`);
+            editor.ready = true;
+            await a.state();
+            check("the_tool_diff_is_read_when_the_renderer_is_ready_again", a.toolsDirty === false, `toolsDirty ${a.toolsDirty}`);
+            a.toolsChanged = { added: ["x"], removed: [] };
+            a.toolsDirty = true;
+            await a.reset();
+            check("reset_leaves_no_tool_diff_of_the_old_chat", a.toolsChanged === null && a.toolsDirty === false, JSON.stringify(a.toolsChanged));
+            await a.close();
+        }
+        {
+            // the OpenRouter list belongs to the base it came from
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = assistantOn(editor, []);
+            await a.openrouterModels();
+            await a.openrouterModels();
+            const once = fetchImpl.got.length;
+            a.settings = () => ({ base: "http://127.0.0.1:5600", model: "anthropic:claude-sonnet-5" });
+            await a.openrouterModels().catch(() => {});
+            check("the_openrouter_list_is_read_again_for_another_base",
+                once === 1 && fetchImpl.got.length === 2 && /5599/.test(fetchImpl.got[0].url) && /5600/.test(fetchImpl.got[1].url),
+                `${fetchImpl.got.length} GETs: ${fetchImpl.got.map((g) => g.url).join(", ")}`);
+            await a.close();
+        }
+        {
+            // the local server's key follows the same rule as a turn's key (§2 row 27)
+            const settings = { llm: { compat: { url: "http://127.0.0.1:11434/v1" } } };
+            const auth = async (base, key) => {
+                const { a, fetchImpl } = assistantOn(new FakeEditor(), [], { settings, assistant: { base }, keys: { compat: key } });
+                await a.compatModels();
+                await a.close();
+                return (fetchImpl.got[0].headers || {}).Authorization || null;
+            };
+            const testReal = await auth("http://127.0.0.1:5599", "sk-real-0000");
+            const testTest = await auth("http://127.0.0.1:5599", "test-compat-0000");
+            const ownReal = await auth("", "sk-real-0000");
+            const ownTest = await auth("", "test-compat-0000");
+            check("the_local_servers_key_follows_the_key_rule",
+                testReal === null && testTest === "Bearer test-compat-0000" && ownReal === "Bearer sk-real-0000" && ownTest === null,
+                `test base: ${testReal} / ${testTest}; the user's own URL: ${ownReal} / ${ownTest}`);
         }
     });
 

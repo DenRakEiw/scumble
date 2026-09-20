@@ -111,6 +111,20 @@ rule against a scripted fetch; the gate `openrouter` (docs/RECIPES.md "OpenRoute
 come with the key, after the ToAPIs rows, and upsamples on the Gemini row against `tools/openrouter_mock.py`,
 which answers the four ids on `/api/v1/chat/completions`.
 
+### Key rows for the assistant (DeepSeek, Moonshot, Z.ai)
+
+Three key rows in Settings › API providers exist for the in-app assistant (`docs/PLAN_ASSISTANT.md`),
+which reads them through `electron/main/assistant/providers.js`; they run no image model and add no
+prompt upsampling row (`providers/deepseek.js`, `moonshot.js`, `zai.js`, right after the Anthropic row;
+the Anthropic row itself is read by the assistant too). Where the keys come from: DeepSeek from
+`platform.deepseek.com/api_keys` (`sk-...`); Moonshot / Kimi from `platform.kimi.ai/console/api-keys`
+only (a key from the China platform, platform.moonshot.cn, does not work against `api.moonshot.ai`);
+Z.ai a pay-as-you-go API key from `z.ai/manage-apikey/apikey-list`, not a GLM Coding Plan key. **check
+balance** exists for DeepSeek (`GET https://api.deepseek.com/user/balance`, the USD row's `total_balance`;
+other currencies and "not available" in the note) and Moonshot (`GET https://api.moonshot.ai/v1/users/me/balance`,
+`available_balance`, with cash and vouchers in the note); Z.ai documents none. A `test-` key (what the gates
+store) is refused before any request. Written from the docs on 2026-09-20, **not run against the live APIs.**
+
 ### A local or self-hosted OpenAI-compatible endpoint
 
 Any server that speaks `POST /v1/chat/completions` joins the same list without a provider

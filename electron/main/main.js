@@ -212,7 +212,13 @@ function createWindow() {
         if (agentMode) { e.preventDefault(); win.hide(); headless = true; }
     });
     win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
-    bridge.attach(win.webContents);
+    // an unhandled file drop (the shell bar, the tabs, a panel) would navigate the window to the file:
+    // every call in flight rejects and the editor is gone. Only the app's own origin may be navigated
+    // to; the Bridge reads the same rule, because `did-start-navigation` fires before this handler and
+    // a drop for a navigation that never happens would leave it waiting for a `commands:ready` forever
+    const staysInApp = (url) => String(url).startsWith(ORIGIN + "/");
+    win.webContents.on("will-navigate", (e, url) => { if (!staysInApp(url)) e.preventDefault(); });
+    bridge.attach(win.webContents, { navigates: staysInApp });
     win.loadURL(ORIGIN + "/index.html");
 }
 
@@ -246,6 +252,35 @@ function send(channel, payload) {
 function showAgents() {
     const n = local.clients.size + (agentMode ? 1 : 0);
     if (win && !win.isDestroyed()) win.setTitle(n ? `Scumble · ${n} agent${n > 1 ? "s" : ""} connected` : "Scumble");
+}
+
+// ---- the in-app assistant (electron/main/assistant/index.js, docs/PLAN_ASSISTANT.md) -----
+//
+// The loop runs here, in main: only main reads the keys and reaches the model hosts, and it
+// survives a window reload. It drives the editor through an in-process MCP client against the
+// same server external agents get (mcp/server.js createServer), so both see one tool surface.
+// Made at the first use, so the SDK's client is not loaded at start.
+let assistant = null;
+function getAssistant() {
+    if (assistant) return assistant;
+    const { Assistant } = require("./assistant/index.js");
+    const { createServer } = require("./mcp/server");
+    const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } = require("@modelcontextprotocol/sdk/inMemory.js");
+    assistant = new Assistant({
+        bridge, keys, settings, log,
+        emit: (event) => send("assistant:event", event),
+        createServer, Client, InMemoryTransport,
+        version: app.getVersion(),
+        // what the policy needs to know about an export path (the extension, whether the file exists)
+        statFile: (file) => {
+            const ext = path.extname(String(file || "")).slice(1).toLowerCase();
+            try { return { ext, exists: fs.statSync(String(file)).isFile() }; } catch (_) { return { ext, exists: false }; }
+        },
+        // the assistant is not an agent for the title line: it counts what showAgents() counts
+        agents: () => local.clients.size + (agentMode ? 1 : 0),
+    });
+    return assistant;
 }
 
 let pluginActions = [];   // [{id, label, accelerator}] from renderer/plugins.js
@@ -497,6 +532,23 @@ function installIpc() {
     ipcMain.handle("plugins:menu", (_e, actions) => { pluginActions = Array.isArray(actions) ? actions.map((a) => ({ id: String(a.id), label: String(a.label || a.id), accelerator: a.accelerator ? String(a.accelerator) : null })) : []; buildMenu(); return true; });
     ipcMain.handle("plugins:getData", (_e, id) => plugins.getData(String(id)));
     ipcMain.handle("plugins:setData", (_e, { id, patch }) => plugins.setData(String(id), patch));
+    // the in-app assistant (docs/PLAN_ASSISTANT.md §4 A4): `send` starts a turn that runs on in the
+    // background and reports through `assistant:event`; `state` rebuilds the panel after a reload
+    ipcMain.handle("assistant:send", (_e, req) => getAssistant().begin(String(req && req.text != null ? req.text : "")));
+    ipcMain.handle("assistant:stop", () => getAssistant().stop());
+    ipcMain.handle("assistant:answer", (_e, req) => getAssistant().answer(req && req.call, !!(req && req.allow)));
+    ipcMain.handle("assistant:reset", (_e, opts) => getAssistant().reset(opts || {}));
+    ipcMain.handle("assistant:state", () => getAssistant().state());
+    ipcMain.handle("assistant:models", () => getAssistant().models());
+    ipcMain.handle("assistant:openrouterModels", () => getAssistant().openrouterModels());
+    ipcMain.handle("assistant:tools", () => getAssistant().tools());
+    ipcMain.handle("assistant:noticed", (_e, req) => {
+        // the privacy notice was shown for this provider: the date, in the whole merged object (settings.js)
+        const a = { ...settings.DEFAULTS.assistant, ...(settings.get().assistant || {}) };
+        a.noticed = { ...(a.noticed || {}), [String(req && req.provider)]: new Date().toISOString().slice(0, 10) };
+        settings.set({ assistant: a });
+        return a.noticed;
+    });
     ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: app.getPath("userData"), pluginDir: plugins.userDir() }));
     ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
     // memory (docs/PHASE6_PLAN.md step 1a): the bytes that matter live in the GPU process, and
@@ -531,6 +583,7 @@ function installIpc() {
     // while an agent drives the app, whose session would end with it
     ipcMain.handle("app:relaunch", () => {
         if (agentMode || local.clients.size) throw new Error("An agent is connected to Scumble; restart it after the agent is done.");
+        if (assistant && assistant.busy()) throw new Error("The assistant is working; stop it first.");
         const plan = restartPlan({ argv: process.argv.slice(1), updateState: updater.status.state });
         if (plan.install && updater.install()) return { installing: updater.status.version };
         app.relaunch({ args: restartPlan({ argv: process.argv.slice(1) }).args });
@@ -552,7 +605,9 @@ function startApp() {
     buildMenu();
     createWindow();
     local.listen(app.getPath("userData"));
-    local.on("clients", () => { showAgents(); maybeQuit(); });
+    local.on("clients", (n) => { showAgents(); maybeQuit(); send("assistant:event", { type: "agents", n: local.clients.size + (agentMode ? 1 : 0), at: Date.now() }); });
+    // a running assistant turn ends with the app; a relaunch between turns is refused while one runs (app:relaunch)
+    app.on("before-quit", () => { if (assistant) assistant.stop(); });
     // --no-comfy: a test instance that stays off the server (no connect at start, so no upload is forwarded to it)
     const url = !process.argv.includes("--no-comfy") && settings.get().comfy && settings.get().comfy.url;
     if (url) connectComfy().catch((err) => console.warn("connect at start:", err.message));

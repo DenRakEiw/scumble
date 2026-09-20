@@ -133,9 +133,25 @@ contextBridge.exposeInMainWorld("scumble", {
     // the command bridge (electron/main/bridge.js): main asks, the renderer runs commands.call
     commands: {
         onRequest: (cb) => on("commands:request", cb),
+        // a request the assistant's turn abandoned before it ran (its Stop; docs/PLAN_ASSISTANT.md §3)
+        onCancel: (cb) => on("commands:cancel", cb),
         reply: (payload) => ipcRenderer.send("commands:reply", payload),
         ready: () => ipcRenderer.send("commands:ready"),
         changed: () => ipcRenderer.send("commands:changed"),
+    },
+    // the in-app assistant (electron/main/assistant/index.js): the loop runs in main, the window
+    // shows the chat; every event of a turn arrives on `onEvent`
+    assistant: {
+        send: (text) => ipcRenderer.invoke("assistant:send", { text }),
+        stop: () => ipcRenderer.invoke("assistant:stop"),
+        answer: (call, allow) => ipcRenderer.invoke("assistant:answer", { call, allow }),
+        reset: (opts) => ipcRenderer.invoke("assistant:reset", opts || {}),
+        state: () => ipcRenderer.invoke("assistant:state"),
+        models: () => ipcRenderer.invoke("assistant:models"),
+        openrouterModels: () => ipcRenderer.invoke("assistant:openrouterModels"),
+        tools: () => ipcRenderer.invoke("assistant:tools"),
+        noticed: (provider) => ipcRenderer.invoke("assistant:noticed", { provider }),
+        onEvent: (cb) => on("assistant:event", cb),
     },
     updates: {
         status: () => ipcRenderer.invoke("update:status"),

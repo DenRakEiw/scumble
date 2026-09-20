@@ -25,6 +25,10 @@ const DEFAULTS = {
     // above this many MB in the GPU process the shell releases the caches of the tabs that
     // are not in front (renderer/shell.js watchMemory); 0 switches the watch off
     memory: { gpuLimitMB: 3072, cardMinFreeMB: 2048, atlasMB: 512 },
+    // the in-app assistant (electron/main/assistant/index.js holds the values; docs/PLAN_ASSISTANT.md §2
+    // row 27). `get()` merges only this level, so a stored `assistant` object replaces the whole default:
+    // every writer writes the whole merged object
+    assistant: { ...require("./assistant/index.js").DEFAULTS, noticed: {} },
     window: null,
 };
 

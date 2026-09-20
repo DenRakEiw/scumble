@@ -106,7 +106,11 @@ MCP client ──stdio──> Scumble --mcp (electron/main/mcp/server.js)
   The renderer sends `commands:ready` at the end of its start (plugins loaded, session
   restored); earlier calls wait for it (up to 120 s). A reload of the window rejects pending
   calls. Bridge timeout: 10 minutes plus the command's own `timeout` argument, so a long
-  `generate` always ends in the editor first.
+  `generate` always ends in the editor first. A request of the in-app assistant carries a third
+  argument, `meta` (its origin, the user-activity wait, the busy check), which the shell reads
+  before `commands.call`; when the assistant's turn is stopped while such a request still waits,
+  the Bridge sends `commands:cancel {id}` and the request never runs. Requests without `meta`
+  (external agents, `--cmd`, scripts) take exactly the path they always took.
 - **`electron/main/local.js`**: the command socket every running instance opens:
   `\\.\pipe\scumble-<hash of userData>` on Windows, `<userData>/scumble.sock` elsewhere.
   Newline-delimited JSON, `{id, cmd: run|describe|ping, name, args}` → `{id, ok,

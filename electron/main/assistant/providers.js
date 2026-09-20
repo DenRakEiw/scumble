@@ -255,4 +255,29 @@ function openrouterIgnore(base, ctx = {}) {
     return chinaHosts({ base: origin, fetch: ctx.fetch || fetch, log: ctx.log });
 }
 
-module.exports = { PROVIDERS, ORDER, DEFAULT_MODEL, providerOf, picker, openrouterIgnore };
+/**
+ * OpenRouter's live list of models that take tools (`GET /models?supported_parameters=tools`,
+ * §2 row 33), read once per session in main: `[{id, label, vision, price: {input, output} in USD
+ * per million tokens, reasoning}]`. `base` is the chat's base (`https://openrouter.ai/api/v1`, or
+ * the loopback test base with that path). A row whose `input_modalities` lack `image` is a blind
+ * model (§2 row 34).
+ */
+async function openrouterModels(base, ctx = {}) {
+    const send = ctx.fetch || fetch;
+    const r = await send(`${String(base).replace(/\/+$/, "")}/models?supported_parameters=tools`, { signal: AbortSignal.timeout(15000) });
+    if (!r.ok) throw new Error(`OpenRouter's model list answered ${r.status}`);
+    const j = (await r.json()) || {};
+    const perMillion = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.round(n * 1e6 * 1000) / 1000 : null; };
+    return (Array.isArray(j.data) ? j.data : [])
+        .filter((m) => m && m.id)
+        .filter((m) => !Array.isArray(m.supported_parameters) || m.supported_parameters.includes("tools"))
+        .map((m) => ({
+            id: String(m.id),
+            label: String(m.name || m.id),
+            vision: Array.isArray((m.architecture || {}).input_modalities) ? m.architecture.input_modalities.includes("image") : false,
+            price: { input: perMillion((m.pricing || {}).prompt), output: perMillion((m.pricing || {}).completion) },
+            reasoning: Array.isArray(m.supported_parameters) ? m.supported_parameters.includes("reasoning") : false,
+        }));
+}
+
+module.exports = { PROVIDERS, ORDER, DEFAULT_MODEL, providerOf, picker, openrouterIgnore, openrouterModels };

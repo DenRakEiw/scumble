@@ -189,8 +189,42 @@ the adapter were unscrubbed, a failed host-list read was asked again before ever
 every curated OpenRouter model (kept; the live list is A4's), the truncated error body (`err.body` is whole), the
 `localOk` gap (already red in the mutation round). Gates: the node test PASS, `toapis llm` `--offline` ALL PASS
 (`a2-node`, and `a2-node2` after the fixes). **Nothing is wired into the app yet** (A4), and no dialect has run against a
-live key. **Next is A3** (OpenAI Responses and Gemini, two and a half days), then A4 and the checkpoint with the user's own
-keys.
+live key. **Next was A3** in the plan; the user asked for A4 first ("jetzt a4 verdrahten"), which is the next paragraph.
+
+**2026-09-20: A4 is built - the door between the window and the loop, with its review worked through**
+(`docs/PLAN_ASSISTANT.md` "A4 as built" and "A4, the review and what it changed"). Built **before A3**, on the
+user's word ("jetzt a4 verdrahten"), for the two families that exist; OpenAI and Gemini stand in the picker as
+"not built yet" until A3 lands. **IPC** in `main.js` (`assistant:send` / `stop` / `answer` / `reset` /
+`state` / `models` / `openrouterModels` / `tools` / `noticed`, the instance made at the first call so the SDK is
+not loaded at start, every event of the loop on `assistant:event`), `window.scumble.assistant.*` and
+`commands.onCancel` in the preload, **`bridge.run(name, args, meta)`** with `commands:cancel` for a request the
+turn abandoned while it waited, the shell's handler reading `meta` (a request without `meta` takes the old path
+byte for byte), **`renderer/assistant_wait.js`** (the user-activity wait), `DEFAULTS.assistant` in `settings.js`,
+the relaunch refusal and `before-quit`, and **three key rows** (DeepSeek, Moonshot / Kimi, Z.ai / GLM; `docs/HELPERS.md`).
+**`tools/assistant_mock.py`** plays all four families (Responses and Gemini already, for A3) and
+**`tools/assistant_test.py`** is the new gate `assistant`, which refuses a profile that holds a key and an instance
+connected to ComfyUI, and goes last in a list. **The review** (six lenses, two refuters per finding) was cut short
+by the other session's usage limit - 36 findings, 16 of 72 verdicts - and this session read the workflow's journal
+and judged the rest by reading. **Fixed:** the non-atomic "a turn is running" guard (two sends in the
+`connect()` / `newChat()` window started two loops on one chat, the first unstoppable); **a file drop left the
+Bridge dead for the whole session** (Chromium announces the navigation before `will-navigate` can prevent it, the
+Bridge dropped `ready`, and no `commands:ready` ever came again: measured, an external `--cmd ping` then timed out
+at 40 s; `attach()` takes the same rule now); the two plugin reads taking the user-activity wait (the Bridge is
+called with command names, the policy's sets hold tool names); `state()` blocking up to 120 s on a renderer that
+is not ready; **every assistant log line written empty** (`text` where `log.record` reads `message`, and the test's
+own stub had the same typo); `lastTurn` set for read-only turns; the stale tool diff after `reset()`; OpenRouter's
+live list cached across a change of base; the local server's key ignoring the test-key rule; and in the wait, a
+closed tab's editor kept alive, the wrong document judged, and `upsample_prompt` overwriting a prompt the user was
+typing. **The gate's own three:** its cleanup deleted **every key row even when the setup had refused to run on a
+profile holding the user's real keys**; the reload step wiped the state the cleanup relies on (it is in Python now,
+and the cleanup brings the window back to the app when a step took it off); `Mock.reset()` cleared the failures the
+runner reads, so after the first failure every later one was invisible. `node tools/assistant_test.js` is **192
+checks**, the gate **19 steps**, the mutation rounds **17 (the build) and 16 (the fixes), all red**. Gates
+`--offline` on both backends (`llm toapis log generate mcp commands editor assistant`): **ALL PASS**
+(`a4b-tiles`, `a4b-canvas`). **Trap worth keeping:** a page on a custom scheme cannot navigate itself to a `file:`
+URL, so a `file:` probe proves nothing about a drop; the probe is an `https` URL on a dead local port.
+**Next is A3** (OpenAI Responses and Gemini), then the checkpoint with the user's own keys (a ceiling of about $10),
+then A5.
 
 ## Where things stand (2026-09-19)
 
@@ -617,7 +651,7 @@ their own 15k file.
 port 9555 with its own profile (with `test_base.png`), runs each gate with a timeout, and writes logs and `summary.txt` under
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
-mcp nodecopy toapis openrouter ark recipes llm export pxjobs`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
 forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and

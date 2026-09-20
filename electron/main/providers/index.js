@@ -33,6 +33,9 @@ const PROVIDERS = {
     openrouter: require("./openrouter"),
     ark: require("./ark"),
     anthropic: require("./anthropic"),   // key row only: prompt upsampling (llm.js)
+    deepseek: require("./deepseek"),     // key row only: the assistant
+    moonshot: require("./moonshot"),     // key row only: the assistant
+    zai: require("./zai"),               // key row only: the assistant
     compat: require("./compat"),         // key row only: the OpenAI-compatible endpoint (llm.js)
     loopback: require("./loopback"),
 };
