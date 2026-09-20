@@ -70,7 +70,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   providers*, after the Anthropic row (whose label now says the key also serves the assistant). They run no image
   model and no prompt upsampling yet: they are for the chat assistant that drives the editor over its own MCP tools,
   which is being built for a release of its own (`docs/PLAN_ASSISTANT.md`); its loop, its policy and its wiring into
-  the app are in this version but have no panel yet, so nothing shows in the window. DeepSeek and Moonshot get
+  the app are in this version but have no panel yet, so nothing shows in the window. It speaks all four model
+  families (Anthropic Messages, OpenAI Responses, Google Gemini and OpenAI-compatible chat completions). DeepSeek and Moonshot get
   *check balance* (their balance endpoints; not tried against the live services); a Moonshot key has to come from
   platform.kimi.ai, a Z.ai key has to be a pay-as-you-go key, not a GLM Coding Plan key.
 - A file dropped on the tab bar or a panel no longer navigates the window away from the editor, and a

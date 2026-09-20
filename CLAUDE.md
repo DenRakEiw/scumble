@@ -223,8 +223,32 @@ checks**, the gate **19 steps**, the mutation rounds **17 (the build) and 16 (th
 `--offline` on both backends (`llm toapis log generate mcp commands editor assistant`): **ALL PASS**
 (`a4b-tiles`, `a4b-canvas`). **Trap worth keeping:** a page on a custom scheme cannot navigate itself to a `file:`
 URL, so a `file:` probe proves nothing about a drop; the probe is an `https` URL on a dead local port.
-**Next is A3** (OpenAI Responses and Gemini), then the checkpoint with the user's own keys (a ceiling of about $10),
-then A5.
+**A3 followed the same day** (the next paragraph).
+
+**2026-09-20: A3 is built too - OpenAI Responses and Gemini, the last two families**
+(`docs/PLAN_ASSISTANT.md` "A3 as built"). Built **after A4**, so both adapters went into a loop the app
+already drives: the picker's "not built yet" is gone for OpenAI and Google, and the gate runs a turn on
+**all four families** (`every_family_runs_a_turn_in_the_app`: anthropic, openai, gemini, openrouter,
+deepseek, moonshot, zai, toapis, wavespeed, compat). **`responses.js`**: the history is a list of input
+*items*, not messages; items are taken whole from `response.output_item.done` and never rebuilt from the
+deltas, `store: false`, a screenshot in the parts form of `output` (`input_text` + `input_image`), an
+error result prefixed `Error: `, `response.incomplete` a cut, a `refusal` part a refusal, a stream
+without a terminal event pushes nothing. **Not the plan's word:** the request also asks for
+`include: ["reasoning.encrypted_content"]` (the plan says `store:false` returns it by itself and §7 lists
+that as unverified; asking costs nothing if it does and is what makes the replay work if it does not).
+**`gemini.js`**: `generateContent` with `x-goog-api-key`, the model's parts sent back in their order and
+**never merged** (a `thoughtSignature` stays on its part), tool results one user content of
+`functionResponse` parts, a screenshot an `inlineData` part inside that response with the JSON answer
+pointing at it by `displayName`, `MAX_TOKENS` a cut, the block reasons refusals, no `toolConfig`, and the
+registry's 18 MB cap. **Three things the plan did not have:** `appendUserText` per adapter (the loop adds
+a stopped turn's text to the pending user message, and A1's helper writes Anthropic-shaped parts, which
+neither new family takes); a `functionCall` without an `id` must not be answered with the loop's own id
+(`rawId`); and a `functionResponse.response` is a struct, so an array or scalar result goes in under a
+name. `node tools/assistant_test.js` is **214 checks** (section 17), the mutation round **26 of 26 red**,
+gates `--offline` on both backends (`llm toapis log generate mcp commands editor assistant`) **ALL PASS**
+(`a3-tiles`, `a3-canvas`). **Nothing has run against a live key.**
+**Next is the checkpoint** (`docs/PLAN_ASSISTANT.md` "The checkpoint"): the user's own keys on several
+models across providers, a ceiling of about $10, before the ten days of A5 to A9. It needs the user.
 
 ## Where things stand (2026-09-19)
 

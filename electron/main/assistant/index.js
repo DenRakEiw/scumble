@@ -16,7 +16,12 @@ const { loopbackBase, compatBase, scrub } = require("./http.js");
  *  would pull the SDK into every plain-Node run; a check keeps the two rules equal). */
 const toolName = (command) => String(command).replace(/[^A-Za-z0-9_-]/g, "_");
 
-const ADAPTERS = { messages: require("./anthropic.js"), chat: require("./chat.js") };
+const ADAPTERS = {
+    messages: require("./anthropic.js"),
+    chat: require("./chat.js"),
+    responses: require("./responses.js"),
+    gemini: require("./gemini.js"),
+};
 
 /** A Gemini model takes the smaller cap wherever it runs: Google's own, or a `google/*` id through a gateway (§2 row 9). */
 const isGemini = (model) => /^(google\/|gemini-)/.test(String(model || ""));
@@ -503,7 +508,10 @@ class Assistant {
         chat.undone = false;
         const pendingUser = chat.history.length && chat.history[chat.history.length - 1].role === "user";
         if (!pendingUser && s.keepImages > 0 && adapter.countImages(chat.history) > 2 * s.keepImages) adapter.prune(chat.history, s.keepImages);
-        if (pendingUser) appendUserText(chat.history[chat.history.length - 1], note, text);
+        // the family's own way to add text to a user message that is still pending (a stopped
+        // turn, §3); the two families whose user message is neither `content` parts nor a string
+        // bring their own
+        if (pendingUser) (adapter.appendUserText || appendUserText)(chat.history[chat.history.length - 1], note, text);
         else chat.history.push(adapter.userMessage(note, text));
         chat.stopped = false;
 

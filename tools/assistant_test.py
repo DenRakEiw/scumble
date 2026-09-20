@@ -5,7 +5,7 @@ drives the running app over CDP with `settings.assistant.base` pointed at the mo
 `test-` key stored in every provider row. Step 0 runs the plain-Node layer
 (tools/assistant_test.js). Then, in the app: the MCP identity check (the assistant's tool list
 is the external agents' list minus the exclusion set), `ping` as the assistant, every tool has
-a policy row, one scripted turn per model family and Chat Completions dialect through the mock
+a policy row, one scripted turn per model family (all four) and Chat Completions dialect through the mock
 (the key row, the path, the reasoning part sent back, the screenshot's place), a blind
 OpenRouter id, the three new key rows, a read-only turn, the asks of a paid run and of an
 irreversible call, the refused path-less export, the document pin across a tab switch, the
@@ -63,6 +63,8 @@ EXCLUDED = ["list_commands", "run_action", "set_status", "ailabel_add", "ailabel
 # one curated model per built family and dialect, with the path its requests keep under the loopback base
 FAMILIES = [
     ("anthropic", "claude-sonnet-5", "/v1/messages"),
+    ("openai", "gpt-5.6-terra", "/v1/responses"),
+    ("gemini", "gemini-3.8-flash", ":streamGenerateContent"),
     ("openrouter", "anthropic/claude-sonnet-5", "/api/v1/chat/completions"),
     ("deepseek", "deepseek-flash", "/chat/completions"),
     ("moonshot", "kimi-k3", "/v1/chat/completions"),
@@ -367,15 +369,23 @@ return { mcp: t.mcp.map((x) => ({ name: x.name, description: x.description, inpu
                     details = reasoning.get("reasoning_details")
                     if not details or details[0].get("text") != f"rd-{n1}":
                         return f"{provider}: reasoning_details not sent back unmodified ({json.dumps(details)[:200]})"
+                elif provider == "openai":
+                    enc = reasoning.get("encrypted_content") or []
+                    if f"enc-{n1}" not in enc:
+                        return f"{provider}: the reasoning item did not come back ({enc})"
+                elif provider == "gemini":
+                    sigs = reasoning.get("thoughtSignature") or []
+                    if f"ts-{n1}" not in sigs:
+                        return f"{provider}: the thought signature did not come back ({sigs})"
                 else:
                     if reasoning.get("reasoning_content") != f"rc-{n1}":
                         return f"{provider}: reasoning_content not sent back ({json.dumps(reasoning)[:200]})"
                 results = last_results(r)
                 if len(results) != 2 or any(x["is_error"] for x in results):
                     return f"{provider}: results {json.dumps(results)[:300]}"
-                if provider == "anthropic":
+                if provider in ("anthropic", "openai", "gemini"):
                     if not results[1]["image"]:
-                        return f"{provider}: the screenshot is not an image in the tool_result"
+                        return f"{provider}: the screenshot is not in the tool result itself"
                 elif provider == "moonshot":
                     if not results[1]["image"]:
                         return f"{provider}: the screenshot is not inline in the tool message"

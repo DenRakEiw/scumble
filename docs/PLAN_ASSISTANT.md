@@ -1310,6 +1310,74 @@ run against a live key (§7).
 **Estimate.** Two and a half days: one for Responses, one and a half for Gemini, whose
 streamed signatures are the least documented part of the release.
 
+
+### A3 as built (2026-09-20)
+
+Built after A4, so the two adapters were wired into a loop that the app already drives: the
+picker's "not built yet" is gone for OpenAI and Google, and the gate runs a turn on **all four
+families** through the mock (`every_family_runs_a_turn_in_the_app`: anthropic, openai, gemini,
+openrouter, deepseek, moonshot, zai, toapis, wavespeed, compat).
+
+**`electron/main/assistant/responses.js`** (OpenAI Responses). The history is a list of input
+*items*, not messages: a `message` item for the user, whatever the model answered (`reasoning`,
+`message`, `function_call`) and one `function_call_output` per call. Items are taken whole from
+`response.output_item.done` and never rebuilt from the deltas, so the replay is byte for byte
+what arrived; `response.output_text.delta` is what reaches the panel. A screenshot rides in the
+parts form of `output` (`input_text` plus `input_image` with a data URL and `detail: "auto"`),
+which is where this family puts a picture, and an error result is prefixed `Error: ` (the family
+has no error flag). `response.incomplete` is "cut", a `refusal` content part is "refusal",
+`response.failed` and `error` throw, and a stream that ends with no terminal event pushes nothing
+(A2's rule). Usage: `input_tokens`, `input_tokens_details.{cached_tokens, cache_write_tokens}`,
+`output_tokens`, `output_tokens_details.reasoning_tokens`.
+
+**Not the plan's word, in one point:** the request carries
+`include: ["reasoning.encrypted_content"]`. The plan says `store: false` returns the encrypted
+reasoning by itself and §7 lists that as unverified; asking for it costs nothing if the plan is
+right and is what makes the replay work if it is not.
+
+**`electron/main/assistant/gemini.js`** (`generateContent`). The history is `contents`; the
+model's content goes back as it streamed - **the parts in their order, never merged**, so a
+`thoughtSignature` stays on the part it came with, and a signature that arrives in a last chunk
+with empty text stays its own part. Tool results are one user content of `functionResponse`
+parts in call order; a screenshot is an `inlineData` part inside that `functionResponse`, with a
+`displayName` the JSON answer points at (`{"$ref": ...}`). `finishReason` maps `MAX_TOKENS` to
+"cut" and `SAFETY`, `RECITATION`, `PROHIBITED_CONTENT`, `SPII`, `BLOCKLIST` and `IMAGE_SAFETY` to
+"refusal"; a `promptFeedback.blockReason` is a refusal too. `toolConfig` is not sent, so the mode
+stays `AUTO`. The cap is the registry's 18 MB, not the adapter's 24.
+
+**One thing the plan did not have:** `appendUserText`. The loop adds the text of a stopped turn
+to the user message that is still pending; A1's helper writes `{type: "text"}` parts, which is
+the Anthropic and Chat Completions shape and wrong for both new families (Responses takes
+`input_text`, Gemini takes `parts`). Each adapter brings its own, and the loop asks for it
+(`adapter.appendUserText || appendUserText`). On Gemini the text joins the content that carries
+the results of the stopped turn, which keeps it one user turn.
+
+**Two more things the adapters answer for, both found while reviewing this step's own code:**
+Gemini may send a `functionCall` without an `id`, so the loop's own id (`call_<i>`) must not
+appear in the answer - the `functionResponse` carries an `id` only where the call really had one
+(`rawId`); and a `functionResponse.response` is a struct, so a tool result that is a JSON array
+or a scalar goes in under a name (`{result: ...}`) instead of being sent as it is.
+
+**Tests.** `node tools/assistant_test.js` is **214 checks**; section 17 is new and covers, for
+both families: the golden body (and what is *not* in it - no `tool_choice`, no
+`parallel_tool_calls`, no `previous_response_id`, no `toolConfig`), the loop with its URL and
+auth header, the replay (`reasoning_items_go_back_with_store_false`,
+`thought_signatures_go_back_unchanged`, `streamed_gemini_parts_are_never_merged`), the screenshot
+in each family's own place, pruning above twice `keepImages`, a cut and a refusal, a stream that
+ends early, Stop, a declined call answered as an error result, the provider's own request cap, a
+retried 429, the pending user message in the family's own parts, the call without an id and the
+struct rule. A mutation round of **26, all 26 red** (`mutate_a3.py` in the session's scratchpad;
+the tree hashed before and after).
+
+**Gates.** `assistant` now runs all four families in the app (the gate's `FAMILIES` gained
+`openai:gpt-5.6-terra` -> `/v1/responses` and `gemini:gemini-3.8-flash` ->
+`:streamGenerateContent`, with the reasoning each family sends back: `enc-<n>` as
+`encrypted_content`, `ts-<n>` as `thoughtSignature`, and the screenshot in the tool result
+itself, not in a follow-up user message).
+
+**Still true:** no family has run against a live key. §7 keeps the list, and the two points this
+step adds to it are the `include` above and Gemini's `thinkingLevel` on 3.8 Flash.
+
 ### A4. In the app: IPC, the user-activity wait, settings, the key rows and the first gate (two and a half days)
 
 **Purpose.** The door between the window and the loop, proven in the running app on every

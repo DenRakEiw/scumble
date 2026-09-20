@@ -346,6 +346,102 @@ function scriptedFetch(streams, gets) {
     return impl;
 }
 
+
+// ---- a scripted model: SSE bodies in the OpenAI Responses and Gemini shapes ----------------
+
+/**
+ * The SSE text of a Responses answer. `parts` are `{type:"reasoning", id?, encrypted}`,
+ * `{type:"text", text, pieces?}` and `{type:"function_call", id, callId, name, input|raw}`, in
+ * the order the model would emit them. `opts.status` is "completed" (the default), "incomplete"
+ * or "failed"; `opts.noEnd` leaves the terminal event out altogether.
+ */
+function responsesStream(parts, opts = {}) {
+    const out = [];
+    let seq = 0;
+    const ev = (type, data) => out.push("event: " + type + "\n" + "data: " + JSON.stringify({ ...data, type, sequence_number: seq++ }) + "\n\n");
+    const items = [];
+    ev("response.created", { response: { id: "resp_1", object: "response", status: "in_progress", output: [] } });
+    for (const part of parts) {
+        const at = items.length;
+        if (part.type === "reasoning") {
+            const item = { type: "reasoning", id: part.id || "rs_1", encrypted_content: part.encrypted || "enc-1", summary: [] };
+            ev("response.output_item.added", { output_index: at, item });
+            ev("response.output_item.done", { output_index: at, item });
+            items.push(item);
+        } else if (part.type === "text" || part.type === "refusal") {
+            const id = part.id || "msg_1";
+            ev("response.output_item.added", { output_index: at, item: { type: "message", id, status: "in_progress", role: "assistant", content: [] } });
+            if (part.type === "text") {
+                for (const piece of part.pieces || [part.text]) ev("response.output_text.delta", { item_id: id, output_index: at, content_index: 0, delta: piece });
+                ev("response.output_text.done", { item_id: id, output_index: at, content_index: 0, text: part.text });
+            }
+            const content = part.type === "text"
+                ? [{ type: "output_text", text: part.text, annotations: [] }]
+                : [{ type: "refusal", refusal: part.refusal || "I cannot help with that." }];
+            const item = { type: "message", id, status: "completed", role: "assistant", content };
+            ev("response.output_item.done", { output_index: at, item });
+            items.push(item);
+        } else if (part.type === "function_call") {
+            const id = part.id || "fc_1";
+            const args = part.raw !== undefined ? part.raw : JSON.stringify(part.input || {});
+            ev("response.output_item.added", { output_index: at, item: { type: "function_call", id, call_id: part.callId, name: part.name, arguments: "", status: "in_progress" } });
+            for (const piece of splitJson(args)) ev("response.function_call_arguments.delta", { item_id: id, output_index: at, delta: piece });
+            ev("response.function_call_arguments.done", { item_id: id, output_index: at, arguments: args });
+            const item = { type: "function_call", id, call_id: part.callId, name: part.name, arguments: args, status: "completed" };
+            ev("response.output_item.done", { output_index: at, item });
+            items.push(item);
+        }
+    }
+    if (opts.noEnd) return out.join("");
+    const usage = opts.usage || { input_tokens: 100, input_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 }, output_tokens: 20, output_tokens_details: { reasoning_tokens: 5 } };
+    if (opts.status === "failed") {
+        ev("response.failed", { response: { id: "resp_1", status: "failed", error: { code: "server_error", message: "it broke" } } });
+    } else if (opts.status === "incomplete") {
+        ev("response.incomplete", { response: { id: "resp_1", status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, usage, output: items } });
+    } else {
+        ev("response.completed", { response: { id: "resp_1", object: "response", status: "completed", output: items, usage } });
+    }
+    return out.join("");
+}
+
+/**
+ * The SSE text of a Gemini answer: one chunk per part, as `streamGenerateContent?alt=sse` sends
+ * them. `parts` are `{type:"signature", signature}`, `{type:"text", text, pieces?}` and
+ * `{type:"function_call", id, name, args}`; `opts.finish` is the finishReason (default STOP),
+ * `opts.noFinish` leaves it out, `opts.block` is a promptFeedback block.
+ */
+function geminiStream(parts, opts = {}) {
+    const out = [];
+    const chunks = [];
+    for (const part of parts) {
+        if (part.type === "signature") chunks.push({ text: "", thoughtSignature: part.signature });
+        else if (part.type === "text") for (const piece of part.pieces || [part.text]) chunks.push({ text: piece });
+        else if (part.type === "function_call") chunks.push({ functionCall: { id: part.id, name: part.name, args: part.args || {} } });
+    }
+    const usage = opts.usage || { promptTokenCount: 100, candidatesTokenCount: 20, thoughtsTokenCount: 5, totalTokenCount: 125 };
+    const slots = chunks.length ? chunks : [null];
+    slots.forEach((part, i) => {
+        const candidate = { content: { role: "model", parts: part ? [part] : [] }, index: 0 };
+        const msg = { candidates: [candidate], modelVersion: "gemini-3.8-flash", responseId: "r1" };
+        if (i === slots.length - 1) {
+            if (!opts.noFinish) candidate.finishReason = opts.finish || "STOP";
+            if (opts.block) msg.promptFeedback = { blockReason: opts.block };
+            msg.usageMetadata = usage;
+        }
+        out.push("data: " + JSON.stringify(msg) + "\n\n");
+    });
+    return out.join("");
+}
+
+/** An Assistant on one of the two A3 families (the key row and the model of that provider). */
+function familyOn(editor, streams, provider, model, opts = {}) {
+    return assistantOn(editor, streams, {
+        ...opts,
+        keys: { [provider]: `test-${provider}-0000` },
+        assistant: { model: `${provider}:${model}`, ...(opts.assistant || {}) },
+    });
+}
+
 /**
  * An Assistant wired to a fake editor and a scripted model. `opts.key` is the key of every row,
  * `opts.keys` a key per row (a row it lacks has none); `opts.settings` the rest of the settings
@@ -2514,6 +2610,409 @@ async function main() {
             check("the_local_servers_key_follows_the_key_rule",
                 testReal === null && testTest === "Bearer test-compat-0000" && ownReal === "Bearer sk-real-0000" && ownTest === null,
                 `test base: ${testReal} / ${testTest}; the user's own URL: ${ownReal} / ${ownTest}`);
+        }
+    });
+
+
+    // ---- 17. OpenAI Responses and Gemini (A3) ---------------------------------------------
+    await section("17. OpenAI Responses and Gemini (A3)", async () => {
+        const responses = require(path.join(ROOT, "electron", "main", "assistant", "responses.js"));
+        const gemini = require(path.join(ROOT, "electron", "main", "assistant", "gemini.js"));
+        const OPENAI = ["openai", "gpt-5.6-terra"];
+        const GEMINI = ["gemini", "gemini-3.8-flash"];
+
+        // ---- the golden bodies
+        {
+            const editor = new FakeEditor();
+            const { a } = familyOn(editor, [], ...OPENAI);
+            await a.connect();
+            const chat = await a.newChat();
+            const history = [
+                chat.adapter.userMessage("Open documents (1):", "look at it"),
+                { type: "reasoning", id: "rs_1", encrypted_content: "enc-1", summary: [] },
+                { type: "function_call", id: "fc_1", call_id: "call_1", name: "screenshot", arguments: "{}", status: "completed" },
+                ...chat.adapter.resultsMessages([{ id: "call_1", name: "screenshot" }],
+                    [{ content: [{ type: "image", data: "QUJD", mimeType: "image/jpeg" }, { type: "text", text: "{\"width\": 1024}" }] }]),
+            ];
+            const body = chat.adapter._bodyFor(chat, history);
+            check("responses_sends_the_familys_body",
+                eq(Object.keys(body).sort(), ["include", "input", "instructions", "max_output_tokens", "model", "prompt_cache_key", "reasoning", "store", "stream", "tools"])
+                && body.store === false && body.stream === true && body.model === "gpt-5.6-terra"
+                && body.instructions === chat.system && body.input === history && body.max_output_tokens === 32000
+                && body.prompt_cache_key === chat.id && eq(body.reasoning, { effort: "medium" })
+                && eq(body.include, ["reasoning.encrypted_content"])
+                && body.tools[0].type === "function" && typeof body.tools[0].name === "string" && body.tools[0].strict === false
+                && body.tools[0].parameters && body.tools[0].annotations === undefined
+                && body.tool_choice === undefined && body.parallel_tool_calls === undefined && body.previous_response_id === undefined
+                && body.temperature === undefined,
+                `${Object.keys(body).join(", ")}; ${body.tools.length} tools`);
+            check("a_screenshot_goes_into_function_call_output",
+                history[3].type === "function_call_output" && history[3].call_id === "call_1"
+                && Array.isArray(history[3].output) && history[3].output[0].type === "input_text"
+                && history[3].output[1].type === "input_image" && history[3].output[1].image_url === "data:image/jpeg;base64,QUJD"
+                && history[3].output[1].detail === "auto",
+                short(history[3]));
+            await a.close();
+        }
+        {
+            const editor = new FakeEditor();
+            const { a } = familyOn(editor, [], ...GEMINI);
+            await a.connect();
+            const chat = await a.newChat();
+            const history = [
+                chat.adapter.userMessage("Open documents (1):", "look at it"),
+                { role: "model", parts: [{ text: "", thoughtSignature: "ts-1" }, { functionCall: { id: "call_1", name: "screenshot", args: {} } }] },
+                ...chat.adapter.resultsMessages([{ id: "call_1", rawId: "call_1", name: "screenshot" }],
+                    [{ content: [{ type: "image", data: "QUJD", mimeType: "image/jpeg" }, { type: "text", text: "{\"width\": 1024}" }] }]),
+            ];
+            const body = chat.adapter._bodyFor(chat, history);
+            const fr = (((history[2] || {}).parts || [])[0] || {}).functionResponse || { response: {}, parts: [] };
+            check("gemini_sends_the_familys_body",
+                eq(Object.keys(body).sort(), ["contents", "generationConfig", "systemInstruction", "tools"])
+                && eq(body.systemInstruction, { parts: [{ text: chat.system }] }) && body.contents === history
+                && body.generationConfig.maxOutputTokens === 32000
+                && eq(body.generationConfig.thinkingConfig, { thinkingLevel: "medium" })
+                && body.tools.length === 1 && Array.isArray(body.tools[0].functionDeclarations)
+                && body.tools[0].functionDeclarations[0].parametersJsonSchema
+                && body.tools[0].functionDeclarations.every((d) => d.parameters === undefined && d.annotations === undefined)
+                && body.toolConfig === undefined && body.safetySettings === undefined,
+                `${Object.keys(body).join(", ")}; ${body.tools[0].functionDeclarations.length} declarations`);
+            check("a_screenshot_goes_into_function_response_parts",
+                history[2].role === "user" && fr.id === "call_1" && fr.name === "screenshot"
+                && ((fr.parts || [])[0] || {}).inlineData && fr.parts[0].inlineData.mimeType === "image/jpeg"
+                && fr.parts[0].inlineData.data === "QUJD" && fr.parts[0].inlineData.displayName === "screenshot-call_1-0"
+                && eq(fr.response.screenshot, { $ref: "screenshot-call_1-0" }) && fr.response.width === 1024,
+                short(history[2]));
+            await a.close();
+        }
+
+        // ---- the loop, and the replay each family needs
+        {
+            const editor = new FakeEditor();
+            const { a, events, fetchImpl } = familyOn(editor, [
+                responsesStream([
+                    { type: "reasoning", encrypted: "enc-1" },
+                    { type: "function_call", callId: "call_1", name: "list_layers", input: { doc: 1 } },
+                ]),
+                responsesStream([{ type: "reasoning", id: "rs_2", encrypted: "enc-2" }, { type: "text", text: "One layer.", pieces: ["One ", "layer."] }]),
+            ], ...OPENAI);
+            const out = await a.send("what is in the picture?");
+            const sent = fetchImpl.sent[1].body.input;
+            const first = fetchImpl.sent[0].body;
+            check("responses_runs_the_loop",
+                out.reason === "end" && out.steps === 1 && fetchImpl.sent.length === 2
+                && fetchImpl.sent[0].url === "http://127.0.0.1:5599/v1/responses"
+                && fetchImpl.sent[0].headers.Authorization === "Bearer test-openai-0000"
+                && first.input.length === 1 && first.input[0].content[0].type === "input_text"
+                && events.some((e) => e.type === "assistant:text" && /One layer/.test(e.text))
+                && a.chat.usage.input === 200 && a.chat.usage.output === 40 && a.chat.usage.reasoning === 10,
+                `${out.reason}, ${out.steps} step, ${fetchImpl.sent.length} requests`);
+            check("reasoning_items_go_back_with_store_false",
+                eq(sent[1], { type: "reasoning", id: "rs_1", encrypted_content: "enc-1", summary: [] })
+                && eq(sent[2], { type: "function_call", id: "fc_1", call_id: "call_1", name: "list_layers", arguments: "{\"doc\":1}", status: "completed" })
+                && sent[3].type === "function_call_output" && sent[3].call_id === "call_1" && /"layers"/.test(sent[3].output)
+                && fetchImpl.sent[1].body.store === false,
+                sent.map((i) => i.type).join(" | "));
+            await a.close();
+        }
+        {
+            const editor = new FakeEditor();
+            const { a, events, fetchImpl } = familyOn(editor, [
+                geminiStream([
+                    { type: "signature", signature: "ts-1" },
+                    { type: "function_call", id: "call_1", name: "list_layers", args: { doc: 1 } },
+                ]),
+                geminiStream([{ type: "text", text: "One layer.", pieces: ["One ", "layer."] }]),
+            ], ...GEMINI);
+            const out = await a.send("what is in the picture?");
+            const contents = fetchImpl.sent[1].body.contents;
+            const model = contents[1];
+            check("gemini_runs_the_loop",
+                out.reason === "end" && out.steps === 1 && fetchImpl.sent.length === 2
+                && fetchImpl.sent[0].url === "http://127.0.0.1:5599/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse"
+                && fetchImpl.sent[0].headers["x-goog-api-key"] === "test-gemini-0000"
+                && contents[0].role === "user" && contents[0].parts[0].text
+                && events.some((e) => e.type === "assistant:text" && /One layer/.test(e.text))
+                && a.chat.usage.input === 200 && a.chat.usage.output === 40 && a.chat.usage.reasoning === 10,
+                `${out.reason}, ${out.steps} step, ${fetchImpl.sent.length} requests`);
+            check("thought_signatures_go_back_unchanged",
+                model.role === "model" && model.parts.length === 2
+                && eq(model.parts[0], { text: "", thoughtSignature: "ts-1" })
+                && eq(model.parts[1], { functionCall: { id: "call_1", name: "list_layers", args: { doc: 1 } } })
+                && contents[2].role === "user" && contents[2].parts[0].functionResponse.id === "call_1",
+                short(model.parts));
+            const second = a.chat.history[a.chat.history.length - 1];
+            check("streamed_gemini_parts_are_never_merged",
+                second.role === "model" && second.parts.length === 2 && eq(second.parts.map((p) => p.text), ["One ", "layer."]),
+                short(second.parts));
+            await a.close();
+        }
+
+        // ---- images: in the result, and pruned at the next user message
+        {
+            const editor = new FakeEditor();
+            // pruning runs at a new user message once more than twice `keepImages` are attached
+            const { a, fetchImpl } = familyOn(editor, [
+                responsesStream([{ type: "function_call", id: "fc_1", callId: "c1", name: "screenshot", input: {} }]),
+                responsesStream([{ type: "text", text: "seen" }]),
+                responsesStream([{ type: "function_call", id: "fc_2", callId: "c2", name: "screenshot", input: {} }]),
+                responsesStream([{ type: "text", text: "seen again" }]),
+                responsesStream([{ type: "function_call", id: "fc_3", callId: "c3", name: "screenshot", input: {} }]),
+                responsesStream([{ type: "text", text: "seen once more" }]),
+                responsesStream([{ type: "text", text: "nothing new" }]),
+            ], ...OPENAI, { assistant: { keepImages: 1 } });
+            await a.send("look");
+            await a.send("look again");
+            await a.send("once more");
+            await a.send("and now?");
+            const last = fetchImpl.sent[6].body.input.filter((i) => i.type === "function_call_output");
+            const images = last.map((i) => (Array.isArray(i.output) ? i.output.filter((p) => p.type === "input_image").length : 0));
+            check("old_screenshots_are_pruned_on_responses",
+                last.length === 3 && eq(images, [0, 0, 1])
+                && Array.isArray(last[0].output) && last[0].output.some((p) => p.type === "input_text" && p.text === responses.STUB),
+                `images per result: ${images.join(", ")}`);
+            await a.close();
+        }
+        {
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = familyOn(editor, [
+                geminiStream([{ type: "function_call", id: "c1", name: "screenshot", args: {} }]),
+                geminiStream([{ type: "text", text: "seen" }]),
+                geminiStream([{ type: "function_call", id: "c2", name: "screenshot", args: {} }]),
+                geminiStream([{ type: "text", text: "seen again" }]),
+                geminiStream([{ type: "function_call", id: "c3", name: "screenshot", args: {} }]),
+                geminiStream([{ type: "text", text: "seen once more" }]),
+                geminiStream([{ type: "text", text: "nothing new" }]),
+            ], ...GEMINI, { assistant: { keepImages: 1 } });
+            await a.send("look");
+            await a.send("look again");
+            await a.send("once more");
+            await a.send("and now?");
+            const results = fetchImpl.sent[6].body.contents
+                .flatMap((c) => (c.parts || []).filter((p) => p.functionResponse).map((p) => p.functionResponse));
+            check("old_screenshots_are_pruned_on_gemini",
+                results.length === 3 && results.slice(0, 2).every((r) => r.parts === undefined && r.response.screenshot_removed === gemini.STUB)
+                && results[2].parts && results[2].parts[0].inlineData.data === "QUJD"
+                && eq(results[2].response.screenshot, { $ref: results[2].parts[0].inlineData.displayName }),
+                `${results.length} results, kept: ${results.map((r) => (r.parts ? 1 : 0)).join("")}`);
+            await a.close();
+        }
+
+        // ---- the ends of a turn
+        {
+            const rows = [];
+            for (const [name, streams, want] of [
+                ["responses_cut", [responsesStream([{ type: "text", text: "half" }], { status: "incomplete" })], "cut"],
+                ["responses_refusal", [responsesStream([{ type: "refusal", refusal: "no" }])], "refusal"],
+                ["gemini_cut", [geminiStream([{ type: "text", text: "half" }], { finish: "MAX_TOKENS" })], "cut"],
+                ["gemini_refusal", [geminiStream([{ type: "text", text: "" }], { finish: "SAFETY" })], "refusal"],
+            ]) {
+                const editor = new FakeEditor();
+                const openai = name.startsWith("responses");
+                const { a } = familyOn(editor, streams, ...(openai ? OPENAI : GEMINI));
+                const out = await a.send("go");
+                if (out.reason !== want) rows.push(`${name}: ${out.reason} (want ${want})`);
+                await a.close();
+            }
+            check("a_cut_and_a_refusal_end_the_turn_on_both_families", !rows.length, rows.join("; ") || "cut and refusal on both");
+        }
+        {
+            const rows = [];
+            for (const [name, body, family] of [
+                ["responses", responsesStream([{ type: "text", text: "half" }], { noEnd: true }), OPENAI],
+                ["gemini", geminiStream([{ type: "text", text: "half" }], { noFinish: true }), GEMINI],
+            ]) {
+                const editor = new FakeEditor();
+                const { a } = familyOn(editor, [body], ...family);
+                const out = await a.send("go");
+                const pushed = a.chat.history.length;
+                if (out.reason !== "error" || !/ended before the answer was finished/.test(out.detail) || pushed !== 1) {
+                    rows.push(`${name}: ${out.reason} ${out.detail} (${pushed} messages)`);
+                }
+                await a.close();
+            }
+            check("a_stream_that_ends_early_pushes_nothing_on_both_families", !rows.length, rows.join("; ") || "one user message each, nothing of the answer");
+        }
+
+
+
+        // ---- what this family sends back when the call carried no id, and what a result that is
+        //      not an object looks like in a `response`, which has to be a struct
+        {
+            const editor = new FakeEditor();
+            const { a, fetchImpl } = familyOn(editor, [
+                geminiStream([{ type: "function_call", name: "list_layers", args: { doc: 1 } }]),
+                geminiStream([{ type: "text", text: "one layer" }]),
+            ], ...GEMINI);
+            const out = await a.send("look");
+            const answered = fetchImpl.sent[1].body.contents
+                .flatMap((c) => (c.parts || []).filter((p) => p.functionResponse).map((p) => p.functionResponse));
+            check("a_call_without_an_id_is_answered_without_one",
+                out.reason === "end" && out.steps === 1 && answered.length === 1
+                && answered[0].id === undefined && answered[0].name === "list_layers" && answered[0].response.layers,
+                short(answered[0]));
+            const scalarList = gemini._answerOf("[1, 2, 3]", false);
+            const object = gemini._answerOf("{\"layers\": []}", false);
+            const plain = gemini._answerOf("ok", false);
+            const error = gemini._answerOf("refused by Scumble", true);
+            check("a_response_is_always_a_struct",
+                eq(scalarList, { result: [1, 2, 3] }) && eq(object, { layers: [] })
+                && eq(plain, { result: "ok" }) && eq(error, { error: "refused by Scumble" }),
+                [scalarList, object, plain, error].map((x) => JSON.stringify(x)).join(" "));
+            await a.close();
+        }
+
+        // ---- the loop's own rules, on both families: Stop, the ask, the caps, a retry
+        {
+            const rows = [];
+            for (const [name, family, make] of [
+                ["responses", OPENAI, () => responsesStream([{ type: "function_call", callId: "c1", name: "add_paint_layer", input: { doc: 1 } }])],
+                ["gemini", GEMINI, () => geminiStream([{ type: "function_call", id: "c1", name: "add_paint_layer", args: { doc: 1 } }])],
+            ]) {
+                const editor = new FakeEditor();
+                let live = null;
+                const { a } = familyOn(editor, async () => {
+                    if (live && live.turn) live.turn.stopped = true;     // Stop as the last byte arrives
+                    return sseResponse(make());
+                }, ...family);
+                live = a;
+                const out = await a.send("add a layer");
+                const answered = a.chat.history.some((m) => m.role === "model" || m.type === "function_call");
+                if (out.reason !== "stopped" || answered || editor.calls.some((c) => c.name === "add_paint_layer")) {
+                    rows.push(`${name}: ${out.reason}, ${a.chat.history.length} messages`);
+                }
+                await a.close();
+            }
+            check("a_stop_appends_nothing_on_both_families", !rows.length, rows.join("; ") || "nothing appended, nothing run");
+        }
+        {
+            const rows = [];
+            for (const [name, family, streams] of [
+                ["responses", OPENAI, [
+                    responsesStream([{ type: "function_call", callId: "c1", name: "flatten", input: { doc: 1 } }]),
+                    responsesStream([{ type: "text", text: "as you wish" }]),
+                ]],
+                ["gemini", GEMINI, [
+                    geminiStream([{ type: "function_call", id: "c1", name: "flatten", args: { doc: 1 } }]),
+                    geminiStream([{ type: "text", text: "as you wish" }]),
+                ]],
+            ]) {
+                const editor = new FakeEditor();
+                const { a, events, fetchImpl } = familyOn(editor, streams, ...family);
+                const stop = answerAsks(a, events, false);               // the user declines
+                const out = await a.send("flatten it");
+                stop();
+                const asked = events.filter((e) => e.type === "ask" && e.name === "flatten").length;
+                const second = fetchImpl.sent[1].body;
+                const answer = name === "responses"
+                    ? (second.input.find((i) => i.type === "function_call_output") || {}).output
+                    : JSON.stringify(((second.contents.find((c) => (c.parts || []).some((p) => p.functionResponse)) || { parts: [] })
+                        .parts.find((p) => p.functionResponse) || {}).functionResponse);
+                if (out.reason !== "end" || asked !== 1 || editor.calls.some((c) => c.name === "flatten") || !/declined/.test(String(answer))) {
+                    rows.push(`${name}: ${out.reason}, ${asked} asks, answer ${short(answer)}`);
+                }
+                await a.close();
+            }
+            check("a_declined_call_is_answered_on_both_families", !rows.length, rows.join("; ") || "flatten asked, declined, answered as an error result");
+        }
+        {
+            // the provider's own request cap: Gemini's 18 MB, not the adapter's 24
+            const editor = new FakeEditor();
+            const { a } = familyOn(editor, [geminiStream([{ type: "text", text: "never sent" }])], ...GEMINI);
+            await a.connect();
+            a.chat = await a.newChat();
+            a.chat.history.push({ role: "user", parts: [{ text: "x".repeat(19 * 1024 * 1024) }] });
+            const out = await a.send("and now?");
+            check("the_request_cap_is_the_providers_on_gemini",
+                out.reason === "full" && /19 MB|18 MB|too long/.test(out.detail) && gemini.REQUEST_CAP === 18 * 1024 * 1024,
+                `${out.reason}: ${out.detail}`);
+            await a.close();
+        }
+        {
+            // a 429 before the first byte is retried on both families, with the same rule
+            const rows = [];
+            for (const [name, family, body] of [
+                ["responses", OPENAI, () => responsesStream([{ type: "text", text: "second try" }])],
+                ["gemini", GEMINI, () => geminiStream([{ type: "text", text: "second try" }])],
+            ]) {
+                const editor = new FakeEditor();
+                let n = 0;
+                const { a } = familyOn(editor, async () => {
+                    n++;
+                    if (n === 1) return sseResponse("{\"error\":{\"message\":\"slow down\"}}", { status: 429, headers: { "retry-after": "0" } });
+                    return sseResponse(body());
+                }, ...family);
+                const out = await a.send("go");
+                if (out.reason !== "end" || n !== 2) rows.push(`${name}: ${out.reason} after ${n} requests`);
+                await a.close();
+            }
+            check("a_429_is_retried_on_both_families", !rows.length, rows.join("; ") || "one retry each, then the answer");
+        }
+
+
+        // ---- the loop itself adds the text of a stopped turn in the family's own shape
+        {
+            const rows = [];
+            for (const [name, family, again] of [
+                ["responses", OPENAI, () => responsesStream([{ type: "text", text: "ok" }])],
+                ["gemini", GEMINI, () => geminiStream([{ type: "text", text: "ok" }])],
+            ]) {
+                const editor = new FakeEditor();
+                let live = null;
+                let n = 0;
+                const sent = [];
+                const { a } = familyOn(editor, async (url, init) => {
+                    sent.push(JSON.parse(init.body));
+                    n++;
+                    if (n === 1) { if (live && live.turn) live.turn.stopped = true; return sseResponse(again()); }
+                    return sseResponse(again());
+                }, ...family);
+                live = a;
+                const first = await a.send("first");
+                const out = await a.send("second");
+                const body = sent[1];
+                const pending = name === "responses" ? body.input[0] : body.contents[0];
+                const parts = name === "responses" ? pending.content : pending.parts;
+                const shapes = parts.map((p) => (name === "responses" ? p.type : (typeof p.text === "string" ? "text" : "?")));
+                const ok = first.reason === "stopped" && out.reason === "end"
+                    && parts.length === 4 && shapes.every((t) => t === (name === "responses" ? "input_text" : "text"))
+                    && parts[parts.length - 1].text === "second"
+                    && (name === "responses" ? body.input.length : body.contents.length) === 1;   // the two texts are one pending message
+                if (!ok) rows.push(`${name}: ${first.reason}/${out.reason}, ${shapes.join(",")}`);
+                await a.close();
+            }
+            check("the_loop_adds_the_stopped_turns_text_in_the_familys_shape", !rows.length,
+                rows.join("; ") || "one pending user message each, four parts of the family's own kind");
+        }
+
+        // ---- the text of a stopped turn joins the pending user message in the family's own shape
+        {
+            const editor = new FakeEditor();
+            const { a } = familyOn(editor, [
+                responsesStream([{ type: "function_call", callId: "c1", name: "list_layers", input: { doc: 1 } }]),
+                responsesStream([{ type: "text", text: "ok" }]),
+            ], ...OPENAI);
+            await a.send("first");
+            a.chat.history.push(a.chat.adapter.userMessage(null, "pending"));
+            const before = a.chat.history.length;
+            (a.chat.adapter.appendUserText)(a.chat.history[a.chat.history.length - 1], "note", "more");
+            const item = a.chat.history[a.chat.history.length - 1];
+            check("the_pending_user_message_takes_the_familys_own_parts",
+                a.chat.history.length === before && item.type === "message" && item.role === "user"
+                && item.content.length === 3 && item.content.every((p) => p.type === "input_text")
+                && item.content[2].text === "more",
+                short(item.content));
+            const ed2 = new FakeEditor();
+            const g = familyOn(ed2, [geminiStream([{ type: "text", text: "ok" }])], ...GEMINI);
+            await g.a.send("first");
+            const content = g.a.chat.adapter.userMessage(null, "pending");
+            g.a.chat.adapter.appendUserText(content, "note", "more");
+            check("the_pending_gemini_content_takes_text_parts",
+                content.role === "user" && content.parts.length === 3 && content.parts.every((p) => typeof p.text === "string")
+                && content.parts[2].text === "more",
+                short(content.parts));
+            await a.close();
+            await g.a.close();
         }
     });
 
