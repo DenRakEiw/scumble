@@ -1,12 +1,8 @@
 # Scumble
 
 > **Work in progress.** Scumble is in an early state (0.1.x). Not every feature has been
-> tested end to end yet, and the API provider adapters (ToAPIs, Google Gemini, OpenAI, Black Forest
-> Labs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud, OpenRouter, BytePlus ModelArk) have been written from the providers'
-> documentation but have not run against the live APIs so far. The same goes for the assistant: it
-> reaches every provider it lists, but no model has completed a task against a live API yet. Expect
-> rough edges, keep backups of your images, and please report what breaks in the
-> [issues](https://github.com/DenRakEiw/scumble/issues).
+> tested end to end yet. Expect rough edges, keep backups of your images, and please report
+> what breaks in the [issues](https://github.com/DenRakEiw/scumble/issues).
 
 A desktop editor for AI inpainting. Open an image, select an area (brush, shape, magic
 wand, object hover or a text description), write a prompt, generate. The result lands as a
@@ -32,7 +28,7 @@ Windows first (installer below), Linux builds are planned. Free software, GPL-3.
 What has been verified so far: local rendering through ComfyUI, the in-app helper models,
 the film pack, the command core, the MCP server, the tile engine on large documents and
 auto-update; the API providers and the assistant's model calls are untested against the live
-services (see the note above).
+services.
 
 ## Features
 
