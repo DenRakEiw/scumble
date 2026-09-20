@@ -2001,6 +2001,22 @@ if (inputs.length !== 2) throw new Error("not two boxes");
 if (ed.width !== 1440 || ed.height !== 900) throw new Error("size " + ed.width + "x" + ed.height);
 return { labels, focusedFirst, tiedHeight, size: [ed.width, ed.height] };
 """),
+    ("every_panel_sits_in_the_tab_it_belongs_to", """
+// the dialog is built by inpaint_modal.js, one function per panel, and the Generate tab is filled after the
+// side panel switches over (`toGenPane`, the method's `pane = this.panes.gen`). A panel in the wrong tab is
+// the way that switch breaks, and nothing else in the gates would show it.
+const ed = ednow(window.__t);
+const titles = (pane) => Array.from(pane.querySelectorAll(":scope > details > summary")).map((s) => s.textContent);
+const image = titles(ed.panes.image), gen = titles(ed.panes.gen);
+for (const want of ["Selection", "Canvas", "Export"]) if (!image.includes(want)) throw new Error(want + " is not in the Image tab: " + image.join(", "));
+for (const want of ["Prompt", "Generate", "Settings", "History", "Crop"]) if (!gen.includes(want)) throw new Error(want + " is not in the Generate tab: " + gen.join(", "));
+if (gen.some((t) => ["Selection", "Canvas", "Export"].includes(t))) throw new Error("an Image panel in the Generate tab: " + gen.join(", "));
+if (image.some((t) => ["Prompt", "Generate", "History", "Crop"].includes(t))) throw new Error("a Generate panel in the Image tab: " + image.join(", "));
+// the plugins' own sections go through ed.addSection, which names its tab
+if (!ed.panes.image.querySelector("h4") || !ed.layerList || !ed.refList) throw new Error("the layer or reference list is missing");
+if (!ed.root.querySelector(".ipc-top") || !ed.toolsEl || !ed.viewEl) throw new Error("a part of the dialog is missing");
+return { image, gen };
+"""),
     ("keyboard_focus_survives_the_button_click", """
 const ed = ednow(window.__t);
 const btn = Array.from(ed.root.querySelectorAll("button")).find((b) => (b.title || "").startsWith("New:"));

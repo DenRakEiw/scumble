@@ -103,6 +103,29 @@ recipe it switched back through `selectRecipe`, and the trap is in "Testing and 
 still unreleased** (0.1.20 is Latest); ComfyUI (8188) did not answer in this session, so the two points that need it
 are still open.
 
+**2026-09-20: the `buildModal` split (item 11) is built** (`docs/BUILD_NODE.md`, its file table and the module-cycle
+note). `renderer/editor/inpaint_modal.js` (758 lines) holds `buildEditorModal(ed)` and one function per part -
+`buildTopBar`, `buildTools`, `buildView`, `buildSidePanel`, `buildLayers`, `buildReferences`, `buildSelection`,
+`buildCanvasPanel`, `buildExport`, `buildPrompt`, `buildGenerate`, `buildSettings`, `buildHistory`, `buildCrop` -
+and the class keeps a four-line `buildModal()` that calls it; `inpaint_canvas.js` is 12,808 lines down to 12,126.
+**The move is proven**, by a verifier written against the untouched copy (the session's scratchpad,
+`verify_modal.js`): the module taken apart, `ed` read back as `this`, the indentation level put back, the pieces
+returned to the method's order - **654 of 654 non-empty lines identical, 0 different**. What changed: `this` -> `ed`
+at **524 places, in code only** (a scanner that knows strings, template holes, comments and regex literals, 14 tests
+of its own; the 6 `this` in tooltip text - "Everything in this editor" - are untouched), one indentation level, 72
+frame lines (heads, doc comments, calls, braces), and **one line that is not a pure move**: `pane = this.panes.gen;`
+became `toGenPane()`, because `pane` is a closure of the side panel and the Generate tab is filled after it.
+`inpaint_modal.js` imports the DOM helpers and `hostText`, `REF_FITS`, `REF_DEFAULTS`, `UPSAMPLE_CASES`,
+`randomSeed` back from `inpaint_canvas.js` (now exported) and reads all of them inside functions only: the same
+cycle rule as stage 1. **That one translated line had no gate**, so `editor_test.py` got
+`every_panel_sits_in_the_tab_it_belongs_to` (Selection / Canvas / Export in the Image tab, Prompt / Generate /
+Settings / History / Crop in the Generate tab, neither in the other, and the lists and bars present); four
+mutations against a restarted app (no `toGenPane`, no Crop panel, no tool column, no reference list) all turn it
+red. Gates `--offline` on both backends (`pixels editor composite commands shape brush film glb ailabel size
+transparent generate log mcp recipes`, tiles also `nodecopy`): **ALL PASS**, at the first try. The dialog was also
+looked at in a running app (no console error, every panel in its tab, the plugins' sections still arriving through
+`ed.addSection`).
+
 ## Where things stand (2026-09-19)
 
 **2026-09-19, evening: OpenRouter (item 12) is built, for 0.1.21** (`package.json` 0.1.21, `CHANGELOG.md` "0.1.21 —
@@ -389,7 +412,11 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    readable place. Not the whole class, not the pointer handlers (the heart of the live-stroke gates; by tool only when
    a tool is reworked), not the 269 fields into state objects (weeks, and behaviour can move quietly). It comes in a
    session of its own after `smoke` and the node test, under the same rule as stage 1: moves, the byte-for-byte proof,
-   both backends, `nodecopy`.
+   both backends, `nodecopy`. **BUILT on 2026-09-20** (see the top of this section): `renderer/editor/inpaint_modal.js`,
+   654 of 654 lines proven identical, one line translated (`pane = this.panes.gen` -> `toGenPane()`), a gate step of
+   its own for it, both backends ALL PASS. **Not the plan's word in one respect:** "pure construction and no state"
+   cannot hold - the method writes 101 fields onto the editor, so every function takes `ed` and writes onto it, as the
+   method wrote onto `this`. That is navigation, not decoupling, which is what the class measurement said it would be.
 
 12. **OpenRouter as a provider: BUILT on 2026-09-19 (see the top of this section; the plan below is what was asked,
    not what was built: the image route is `/api/v1/images`, and no `HTTP-Referer` / `X-Title` goes out).** OpenRouter
@@ -501,8 +528,8 @@ that subject is reworked anyway, as the prelude of that work; (2) **the object t
 outlines at 15k turn out to matter, compute the image-size label map only in the hovered object's box, on demand,
 never for the whole picture; (3) **B item 6 stays on ice** (it saves memory, not time; 97 GB of RAM and the 15.5 GB cap
 are not the limit at 15k). **Next, in this order** (the user, 2026-09-20, on this session's plan: the two defects,
-then `buildModal`, "und den assistent"): ~~the two defects of the OpenRouter session~~ (fixed 2026-09-20, see the top
-of this section); the **`buildModal` split** (item 11); then the **assistant** (item 13, `docs/PLAN_ASSISTANT.md`), as
+then `buildModal`, "und den assistent"): ~~the two defects of the OpenRouter session~~ and ~~the `buildModal` split~~
+(both 2026-09-20, see the top of this section); **next is the assistant** (item 13, `docs/PLAN_ASSISTANT.md`), as
 a release of its own (the user, 2026-09-19: "agent als letztes, wird ein seperates release", and the same day:
 "assistant kommt vor codesignierung"); then SignPath, last. Waiting on the user's ComfyUI, whenever it is free: one
 local run on a large document with the node's stitch fix (`fba1fd8`), and the node in a real ComfyUI tab and in

@@ -40,7 +40,7 @@ FILES = [
     "inpaint_canvas.js", "inpaint_filters.js", "inpaint_filters_gl.js", "inpaint_curves.js",
     "inpaint_text.js", "inpaint_raster.js", "inpaint_export.js", "inpaint_worker.js",
     "inpaint_compositor.js", "inpaint_brushes.js", "inpaint_pixels.js", "inpaint_tiles.js", "inpaint_arena.js", "inpaint_pool.js", "inpaint_png.js", "inpaint_bands.js",
-    "inpaint_jobs.js", "inpaint_encode.js", "inpaint_upload.js",
+    "inpaint_jobs.js", "inpaint_encode.js", "inpaint_upload.js", "inpaint_modal.js",
     "px/kernels_js.js", "px/kernels.js", "px/px.js",
 ]
 BINARIES = ["px/px.wasm"]
