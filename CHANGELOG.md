@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.21 — unreleased
+## 0.1.21 — 2026-09-20
 
 - **OpenRouter as a provider.** One key from [openrouter.ai](https://openrouter.ai) runs GPT Image 2 and 2.5
   (Flare, Sunburst), Nano Banana 2, 2 Lite and Pro, FLUX.2 max, pro and flex, Seedream 5 lite and pro and Grok Imagine
@@ -66,30 +66,43 @@ the section for its version; `docs/` and the commit history hold the technical d
   add a model of your own to it and bring it back in. It imports now, with all its variants, and the note says which
   providers came in; a copy that keeps the shipped id replaces that recipe in the list, as a copy put into the recipes
   folder by hand always did.
-- **Three key rows for the coming assistant: DeepSeek, Moonshot / Kimi and Z.ai / GLM** under *Settings › API
-  providers*, after the Anthropic row (whose label now says the key also serves the assistant). They run no image
-  model and no prompt upsampling yet: they are for the chat assistant that drives the editor over its own MCP tools,
-  which is being built for a release of its own (`docs/PLAN_ASSISTANT.md`); its loop, its policy and its wiring into
-  the app are in this version. It speaks all four model families (Anthropic Messages, OpenAI Responses, Google
-  Gemini and OpenAI-compatible chat completions).
-- **The assistant has a panel**: a column right of the picture, from the *Assistant* button in the bar, *View >
-  Assistant* or Ctrl+Shift+A. Pick the provider and the model from the key list, write to it, watch it work: its
-  text arrives as it is written, every tool call shows as a card with what it did, and everything that can cost
-  money or cannot be undone asks first. It remembers whether it was open. Without a key nothing happens - the
-  panel says which row to fill under *Settings > API providers*.
+- **The assistant: a chat column that drives the editor.** Open it with the *Assistant* button in the bar,
+  *View › Assistant* or Ctrl+Shift+A. You write what you want; it selects, adds layers, sets the prompt, renders,
+  colour matches and exports through the same commands an external agent gets - and you watch every step as a card.
+  It runs on your own API key, on **all four model families**: Anthropic (Claude Sonnet 5, Opus 5), OpenAI
+  (GPT-5.6 Terra, Sol, Luna), Google (Gemini 3.8 Flash, 3.1 Pro preview, 3.5 Flash-Lite) and every
+  OpenAI-compatible endpoint - OpenRouter (any tool-capable model id it lists), DeepSeek, Moonshot / Kimi, Z.ai /
+  GLM, ToAPIs, WaveSpeed and your own local server. The picker is grouped by provider; a provider without a key is
+  greyed out, and every model says whether it can look at the picture. `docs/ASSISTANT.md` is the whole thing in
+  one page.
+  - **Not tried against a live model yet.** Every family was built from its documentation and proven against the
+    real hosts as far as a key without credit allows: each one builds its request, reaches its host and reads the
+    answer. No model has completed a task here, and the picker marks every provider "not tried with a real key".
+  - **What asks before it acts:** everything that can cost money or queue on your ComfyUI (*generate*,
+    *generate new*, *select by text*, *cutout*, *upsample*), everything that clears the undo stack or bakes your
+    layers in (*flatten*, *extend canvas*, *new canvas*, *load image*), and every edit to a layer that is not the
+    assistant's own. Neither button of a card is the default, and Enter in the chat never answers one. An export
+    without a path is refused outright.
+  - **What leaves your machine:** your messages, a short note on the open documents (names, sizes, layer names),
+    the results of the tools it called and the screenshots it took - to the provider you picked and to nobody
+    else. Scumble asks none of them to keep the conversation, and the panel shows a one-line notice per provider
+    the first time you send to it.
 - **The assistant's chats are kept**: every chat is saved as it goes, with its screenshots beside it, and the
-  panel's *Chats* button reopens one - on the model it was written with, or to read only. *Settings >
-  Assistant* says how many chats to keep and how many tool calls one turn may take, and deletes everything
-  the assistant ever stored, its lines in the app log included. **Your API keys stay.**
-- **Everything the assistant does can be taken back.** Ctrl+Z undoes each of its steps, the ones the editor
-  records no step for included (a new layer, a filter setting, a text, a colour match). And when a turn is
-  done, the panel offers *Undo this turn*: every document it touched goes back to what it was before the
-  turn's first change there - the pixels, the selection, the prompt and the settings - even when the turn was
-  longer than the undo stack. Ctrl+Z takes that restore back in turn. It needs the tile engine; on the canvas
-  backend a copy of every layer would cost too much memory. If you edited something yourself while the turn
-  ran, the button says so before it discards your work. DeepSeek and Moonshot get
-  *check balance* (their balance endpoints; not tried against the live services); a Moonshot key has to come from
-  platform.kimi.ai, a Z.ai key has to be a pay-as-you-go key, not a GLM Coding Plan key.
+  panel's *Chats* button reopens one - on the model it was written with, or to read only. *Settings › Assistant*
+  says how many chats to keep and how many tool calls one turn may take, and deletes everything the assistant ever
+  stored, its lines in the app log included. **Your API keys stay.**
+- **Everything the assistant does can be taken back.** Ctrl+Z undoes each of its steps, the ones the editor records
+  no step for included (a new layer, a filter setting, a text, a colour match). And when a turn is done, the panel
+  offers *Undo this turn*: every document it touched goes back to what it was before the turn's first change there
+  - the pixels, the selection, the prompt and the settings - even when the turn was longer than the undo stack.
+  Ctrl+Z takes that restore back in turn. It needs the tile engine; on the canvas backend a copy of every layer
+  would cost too much memory. If you edited something yourself while the turn ran, the button says so before it
+  discards your work.
+- **Three more key rows: DeepSeek, Moonshot / Kimi and Z.ai / GLM** under *Settings › API providers*, after the
+  Anthropic row (whose label now says the key also serves the assistant). They run no image model and no prompt
+  upsampling: they are the assistant's. DeepSeek and Moonshot get *check balance* (their balance endpoints; not
+  tried against the live services); a Moonshot key has to come from platform.kimi.ai, and a Z.ai key has to be a
+  pay-as-you-go key, not a GLM Coding Plan key.
 - A file dropped on the tab bar or a panel no longer navigates the window away from the editor, and a
   command an agent had sent while it happened no longer waits forever.
 
