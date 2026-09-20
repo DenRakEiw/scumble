@@ -24,7 +24,7 @@ run inside the app through ONNX Runtime (SAM2, BiRefNet, RMBG). The editor is th
 code as the ComfyUI node [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas);
 Scumble is the standalone window around it, plus recipes, plugins, an MCP server and the assistant.
 
-Windows first (installer below), Linux builds are planned. Free software, GPL-3.0.
+Windows first (installer below), Linux and macOS builds are planned. Free software, GPL-3.0.
 What has been verified so far: local rendering through ComfyUI, the in-app helper models,
 the film pack, the command core, the MCP server, the tile engine on large documents and
 auto-update; the API providers and the assistant's model calls are untested against the live
