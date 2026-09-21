@@ -78,6 +78,34 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-16) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
+## Where things stand (2026-09-21)
+
+**2026-09-21: 0.1.23, a small patch** (`package.json` 0.1.23, CHANGELOG "0.1.23 - 2026-09-21"). (1) **Layer names
+were invisible** (GitHub issue #1, `docs/BUGS.md` "Fixed, waiting for its release"): measured in a fresh instance, the
+panel 291 px, a row 259 px (247 with the list's scrollbar), its content 274 px, the name of every layer with the full
+button set 0 px - the name was the only element that gave in, so nothing could be double-clicked and the list
+scrolled sideways; the rename itself was never broken. `.ipc-side` is **320 px** now, the row's minis 22 px with a
+3 px gap, `.ipc-name` `min-width:48px`, the kind select shrinks (44 to 84 px), the expanded rows' selects shrink, a
+text layer's rows wrap, and a rename pushes a `layers` undo step. Gate step `editor_test.py`
+`layer_rows_fit_the_panel_and_names_can_be_renamed` (17 layers, the active row of each kind, nothing past the list's
+edge, a real `dblclick` + Enter + undo), red on the 0.1.22 code and red without the undo step. **What the wider panel
+moved:** `a_colour_matched_layer_draws_from_its_own_tiles`' flip check went red on the canvas backend only (an A/B:
+green at 290 px with every other change in); two fresh matches of one state differ by 2 levels on 12,402 of 8.7 M
+bytes there at the new geometry, and that backend has no provisional statistics, so its bound is 2 and the tiles
+bound stays 1 (a mutation that keeps the provisional entry is red at 1 and green at 2 - a blanket 2 would have
+blinded the step). (2) **`recipes/qwen_image_edit_2_1_local.json`**, from the user's ComfyUI template
+(`image_qwen_image_2_1_image_edit.json`): subgraph flattened, save / compare nodes dropped, the crop batch split by
+`ImageFromBatch` into `images.image_1..3` because `TextEncodeQwenImage21` reads `image[:1]` per input (an autogrow
+input is a flat dotted key in an API prompt); `docs/RECIPES.md` "The shipped ComfyUI recipes". Checked against the
+user's `/object_info` (every class, input, link and setting target); **not run** - the three Qwen 2.1 model files
+were not on that server. (3) The *upscale* upsample use case (committed earlier the same day, `c0df448`).
+Gates `--offline`: tiles `p23-tiles` (pixels editor composite commands shape brush film recipes llm generate mcp log
+nodecopy assistant) ALL PASS, canvas `p23-canvas` ALL PASS after the bound (editor rerun `p23-canvas-ed3`). `npm run dist`
+built `Scumble Setup 0.1.23.exe`; exe gates `--offline` against `dist/win-unpacked/Scumble.exe`: `rel23-exe` (tiles: log
+pixels editor composite commands mcp recipes llm export assistant) and `rel23-exe-canvas` (tiles off: pixels editor
+composite film export assistant) ALL PASS at the first try. No `smoke` (the user's ComfyUI). Tag `v0.1.23` pushed;
+whether the draft is published is the user's word (check `gh release list`).
+
 ## Where things stand (2026-09-20)
 
 **2026-09-20, after 0.1.21: the language models are the user's own list now, and the picker stopped warning about

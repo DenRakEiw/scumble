@@ -11,6 +11,18 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### Layer names cannot be edited (GitHub issue #1) - fixed for 0.1.23
+
+Measured on 2026-09-21 in a fresh instance: the side panel was 291 px, a layer row 259 px, its content 274 px, and
+the name of every layer with the full button set **0 px** wide (the Base row, with fewer buttons, 202 px). The name is
+the only element that gives in (`flex:1` with `overflow:hidden`), so it vanished, could not be double-clicked, and the
+trash button stood 23 px past the list's edge. The rename itself (`renameLayerInline`) was never broken. Fixed: the
+panel is 320 px, the row's mini buttons 22 px with a 3 px gap, the name `min-width:48px`, the kind select shrinks
+(44 to 84 px), the selects of the expanded rows shrink, a text layer's rows wrap, and a rename pushes a `layers` undo
+step. `editor_test.py` `layer_rows_fit_the_panel_and_names_can_be_renamed` (17 layers, so the list shows its
+scrollbar; the active row of each kind; nothing past the list's edge; a real `dblclick`, Enter, undo) is red on the
+0.1.22 code and red without the undo step.
+
 An entry here leaves the file when the release named in it is published.
 
 - **The assistant's picker warned about itself** (fixed 2026-09-20, in 0.1.22; reported by the user the same
@@ -105,17 +117,6 @@ An entry here leaves the file when the release named in it is published.
 ---
 
 ## Open
-
-### Layer names cannot be edited (GitHub issue #1)
-
-Reported by the user on 2026-09-21 against 0.1.22: a layer's name cannot be edited in the layer list
-(https://github.com/DenRakEiw/scumble/issues/1). The code has a rename: the name element of a layer row and of a
-reference row carries a `dblclick` listener that calls `renameLayerInline(layer, nameEl)` in
-`renderer/editor/inpaint_canvas.js`, and its tooltip says "Double-click to rename". **To measure first:** whether
-the `dblclick` reaches that element at all (a real double-click in the app, on both backends): if the row's first
-click selects the layer and `renderLayers()` rebuilds the list, the second click lands on a new element and the
-old one never gets its `dblclick`. The MCP command `set_layer` with `name` renames, so agents are not affected.
-When fixed, the rename should also get an undo step (it records none today).
 
 ### What planning the assistant found on the way
 

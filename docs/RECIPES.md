@@ -36,6 +36,25 @@ node's `setting_n` outputs), `node`/`input` where the value goes. The control's 
 comes from the server's `/object_info` when connected, else from `spec` (ComfyUI's
 input spec format: `["INT", {default, min, max}]`, `[["a", "b"], {}]` for a combo).
 
+### The shipped ComfyUI recipes
+
+- `flux2_klein_local`, **Flux.2 Klein 4B / 9B**: the crop and the Original copy as reference latents, 20 steps,
+  CFG 5.
+- `qwen_image_edit_2_1_local`, **Qwen Image Edit 2.1** (added for 0.1.23): ComfyUI's own template
+  `image_qwen_image_2_1_image_edit.json` with its subgraph flattened and its save and compare nodes left out (they
+  would write every run into the server's output folder). `TextEncodeQwenImage21` takes **one picture per input**
+  (`image[:1]`, `comfy_extras/nodes_qwen.py`), so the crop batch is split with `ImageFromBatch`: the crop is
+  `images.image_1` (`<image1>` in the prompt), batch pictures 1 and 2 (the Original copy with a fill mode, then the
+  reference layers) are `images.image_2` / `images.image_3`. `ImageFromBatch` clamps its index, so with fewer
+  pictures the last one repeats, as in the Klein recipe. `resolution` 0 keeps the crop's size (the crop already
+  comes at `target_size`, a multiple of 64), the sampler's latent is the encoder's own (`latent_image` from the
+  encode's third output, so the output keeps `<image1>`'s size), 25 steps, CFG 1 (the negative prompt counts only
+  above 1). Settings: Model, Text encoder, VAE, Steps, CFG, Resolution. An autogrow input is a flat dotted key in
+  an API prompt (`"images.image_1"`), which is how ComfyUI's `build_nested_inputs` reads it. Needs a ComfyUI with
+  `TextEncodeQwenImage21` and `QwenImage21Cache` and the three model files the recipe's `models` names. Checked
+  against the user's `/object_info` on 2026-09-21 (every class, input and link); **not run** (the model files were
+  not on that server yet).
+
 ### Presets
 
 The Settings section starts with a **Preset** row when the recipe has two or more file

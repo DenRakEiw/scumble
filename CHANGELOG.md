@@ -3,6 +3,26 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.23 — 2026-09-21
+
+- **Layer names are visible again, and can be renamed.** A layer row was a little wider than the panel, so the
+  name was squeezed to nothing: you saw the eye, the thumbnail and the IMAGE / RESULT select, but no name to
+  double-click, the delete button was cut off, and the layer list scrolled sideways
+  ([#1](https://github.com/DenRakEiw/scumble/issues/1)). The panel on the right is 320 px wide now instead of 290,
+  the row's buttons are a little more compact, a name always keeps at least 48 px, and the rows of a text layer wrap
+  instead of running past the edge. Double-click a name to rename the layer, as the tooltip always said; **the
+  rename is an undo step now**, so Ctrl+Z puts the old name back.
+- **Qwen Image Edit 2.1 on your own ComfyUI.** A new local recipe, *Qwen Image Edit 2.1 (ComfyUI)*, built from
+  ComfyUI's own template: the crop is `<image1>`, the next two pictures of the crop (the *Original* copy, reference
+  layers) are `<image2>` and `<image3>`, 25 steps, CFG 1, the result at the crop's size. Model, text encoder, VAE,
+  steps, CFG and resolution are in the Settings panel. It needs a current ComfyUI (with `TextEncodeQwenImage21`) and
+  the three Qwen Image 2.1 model files, whose download links the recipe lists. Checked against a real ComfyUI's node
+  definitions, not run yet.
+- **An *upscale* use case for prompt upsampling.** Pick *upscale* next to the Upsample button and the language model
+  describes what is already in the picture, with the fine detail (textures, pores, fabric, hair, crisp edges) an
+  upscale or refinement pass should bring out, and is told not to add, remove or change anything. Whatever you type
+  goes along as guidance on style and detail. Your own prompt templates see it as `{useCase}` = `upscale`.
+
 ## 0.1.22 — 2026-09-20
 
 - **Your own language models, for the assistant and for prompt upsampling.** *Settings › Language models* is a

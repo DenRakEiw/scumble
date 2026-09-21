@@ -2017,6 +2017,61 @@ if (!ed.panes.image.querySelector("h4") || !ed.layerList || !ed.refList) throw n
 if (!ed.root.querySelector(".ipc-top") || !ed.toolsEl || !ed.viewEl) throw new Error("a part of the dialog is missing");
 return { image, gen };
 """),
+    ("layer_rows_fit_the_panel_and_names_can_be_renamed", """
+// 0.1.22: a layer row was 15 px wider than the panel, the name was squeezed to 0 px (so it could not be
+// double-clicked) and the list scrolled sideways (GitHub issue #1). Every row, and the active row of each
+// kind, has to fit with the list's own scrollbar showing; renaming is one undo step.
+const doc = await run("new_document");
+const d = { doc: doc.id };
+await run("new_canvas", { width: 640, height: 480, ...d });
+for (let i = 0; i < 14; i++) await run("add_paint_layer", d);
+await run("add_filter", { type: "grain", ...d });
+await run("add_text", { text: "Hello", ...d });
+const ed = ednow(doc.id);
+host.shell.activate(ed);
+await wait(200);
+const list = ed.layerList;
+const scrollbar = list.offsetWidth - list.clientWidth;
+const probe = (label) => {
+    ed.renderLayers();
+    const right = list.getBoundingClientRect().left + list.clientWidth + 0.5;
+    const names = Array.from(list.querySelectorAll(".ipc-layer .ipc-name")).map((n) => n.getBoundingClientRect().width);
+    const narrowest = Math.min(...names);
+    const sticking = Array.from(list.querySelectorAll(".ipc-layer *"))
+        .filter((e) => e.getClientRects().length && e.getBoundingClientRect().right > right)
+        .map((e) => (e.className || e.tagName) + "@" + Math.round(e.getBoundingClientRect().right - right));
+    if (sticking.length) throw new Error(label + ": past the list's edge: " + sticking.slice(0, 8).join(", "));
+    if (list.scrollWidth > list.clientWidth) throw new Error(label + ": the list scrolls sideways, " + list.scrollWidth + " > " + list.clientWidth);
+    if (narrowest < 40) throw new Error(label + ": a layer name is " + narrowest + " px wide");
+    return Math.round(narrowest);
+};
+const kinds = {};
+for (const layer of ed.layers) {
+    const k = layer.kind;
+    if (kinds[k] != null) continue;
+    ed.activeLayerId = layer.id;
+    kinds[k] = probe("active " + k);
+}
+if (scrollbar <= 0) throw new Error("the list shows no scrollbar with 17 layers, so the narrow case was not measured");
+// rename through the name's own double-click, then take it back
+const layer = ed.layers.find((l) => l.kind === "paint");
+ed.activeLayerId = layer.id;
+ed.renderLayers();
+const before = layer.name;
+const nameEl = Array.from(list.querySelectorAll(".ipc-layer .ipc-name")).find((n) => n.textContent === before);
+nameEl.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+const input = nameEl.querySelector("input");
+if (!input) throw new Error("a double-click on the name opened no text field");
+input.value = "Renamed layer";
+input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+if (layer.name !== "Renamed layer") throw new Error("the name is " + layer.name);
+await run("undo", d);
+const back = ed.layers.find((l) => l.id === layer.id).name;
+if (back !== before) throw new Error("undo left the name at " + back);
+const panel = Math.round(ed.root.querySelector(".ipc-side").getBoundingClientRect().width);
+await run("close_document", d);
+return { panel, scrollbar, narrowestName: kinds, renamedAndUndone: [before, back] };
+"""),
     ("keyboard_focus_survives_the_button_click", """
 const ed = ednow(window.__t);
 const btn = Array.from(ed.root.querySelectorAll("button")).find((b) => (b.title || "").startsWith("New:"));
@@ -3361,7 +3416,13 @@ try {
             const f2 = await screen();
             const df = diff(f1, f2);
             out.flip = { vsFresh: df };
-            if (df.max > 1) throw new Error(`after a flip of the matched layer settled, the screen differs from its statistics and match made again by ${df.max} levels on ${df.o3} bytes over 3 (statistics of the coarse picture kept)`);
+            // What this catches is the tile engine's provisional statistics (made from coarse levels while chains are in the
+            // worker) kept after the chains landed: 2 levels here, so on tiles the bound stays 1 (a mutation that keeps them
+            // is red at 1 and green at 2, measured 2026-09-21). The canvas backend has no provisional entry, and with the
+            // 320 px panel of 0.1.23 two fresh matches of the same state differ by 2 levels on 12,402 of 8.7 M bytes there,
+            // the settled screen by 2 on 61: its bound is 2.
+            const flipBound = ed.tileMode ? 1 : 2;
+            if (df.max > flipBound) throw new Error(`after a flip of the matched layer settled, the screen differs from its statistics and match made again by ${df.max} levels on ${df.o3} bytes over 3 (statistics of the coarse picture kept)`);
         }
     }
     if (fitShots.gl) {

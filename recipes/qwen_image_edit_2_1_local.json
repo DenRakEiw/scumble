@@ -1,0 +1,41 @@
+{
+  "id": "qwen_image_edit_2_1_local",
+  "name": "Qwen Image Edit 2.1 (ComfyUI)",
+  "description": "Qwen Image 2.1 edit chain from ComfyUI's template, without its save and compare nodes: the crop is <image1>, the next two pictures of the crop batch (the Original copy, reference layers) are <image2> and <image3>; with fewer pictures the last one repeats. 25 steps, CFG 1 (the negative prompt only counts above 1), the output keeps the crop's size. Needs a ComfyUI that has TextEncodeQwenImage21 and QwenImage21Cache.",
+  "mode": "local",
+  "canvas": "canvas",
+  "result": "decode:0",
+  "needs": ["InpaintCanvas", "ImageFromBatch", "UNETLoader", "CLIPLoader", "VAELoader", "QwenImage21Cache", "TextEncodeQwenImage21", "KSampler", "VAEDecode"],
+  "settings": [
+    { "index": 1, "node": "unet", "input": "unet_name", "label": "Model" },
+    { "index": 2, "node": "clip", "input": "clip_name", "label": "Text encoder" },
+    { "index": 3, "node": "vae", "input": "vae_name", "label": "VAE" },
+    { "index": 4, "node": "run", "input": "steps", "label": "Steps" },
+    { "index": 5, "node": "run", "input": "cfg", "label": "CFG" },
+    { "index": 6, "node": "encode", "input": "resolution", "label": "Resolution (0 = crop size)" }
+  ],
+  "models": {
+    "diffusion_models": ["qwen_image_2.1_int8_convrot.safetensors (https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors)"],
+    "text_encoders": ["qwen3vl_8b_int8_convrot.safetensors (https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors)"],
+    "vae": ["qwen_image_2.1_vae_bf16.safetensors (https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors)"]
+  },
+  "prompt": {
+    "canvas": { "class_type": "InpaintCanvas", "inputs": { "padding": 64, "target_size": 1024, "feather": 16, "multiple_of": 64 } },
+    "img0": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 0, "length": 1 } },
+    "img1": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 1, "length": 1 } },
+    "img2": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 2, "length": 1 } },
+    "unet": { "class_type": "UNETLoader", "inputs": { "unet_name": "qwen_image_2.1_int8_convrot.safetensors", "weight_dtype": "default" } },
+    "clip": { "class_type": "CLIPLoader", "inputs": { "clip_name": "qwen3vl_8b_int8_convrot.safetensors", "type": "qwen_image", "device": "default" } },
+    "vae": { "class_type": "VAELoader", "inputs": { "vae_name": "qwen_image_2.1_vae_bf16.safetensors" } },
+    "cache": { "class_type": "QwenImage21Cache", "inputs": { "model": ["unet", 0], "device": "auto", "dtype": "default" } },
+    "encode": { "class_type": "TextEncodeQwenImage21", "inputs": {
+      "clip": ["clip", 0], "vae": ["vae", 0], "prompt": ["canvas", 7], "negative_prompt": ["canvas", 12], "resolution": 0,
+      "images.image_1": ["img0", 0], "images.image_2": ["img1", 0], "images.image_3": ["img2", 0]
+    } },
+    "run": { "class_type": "KSampler", "inputs": {
+      "model": ["cache", 0], "positive": ["encode", 0], "negative": ["encode", 1], "latent_image": ["encode", 2],
+      "seed": ["canvas", 10], "steps": 25, "cfg": 1, "sampler_name": "euler", "scheduler": "simple", "denoise": 1
+    } },
+    "decode": { "class_type": "VAEDecode", "inputs": { "samples": ["run", 0], "vae": ["vae", 0] } }
+  }
+}
