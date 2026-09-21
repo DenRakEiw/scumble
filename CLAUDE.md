@@ -103,8 +103,9 @@ Gates `--offline`: tiles `p23-tiles` (pixels editor composite commands shape bru
 nodecopy assistant) ALL PASS, canvas `p23-canvas` ALL PASS after the bound (editor rerun `p23-canvas-ed3`). `npm run dist`
 built `Scumble Setup 0.1.23.exe`; exe gates `--offline` against `dist/win-unpacked/Scumble.exe`: `rel23-exe` (tiles: log
 pixels editor composite commands mcp recipes llm export assistant) and `rel23-exe-canvas` (tiles off: pixels editor
-composite film export assistant) ALL PASS at the first try. No `smoke` (the user's ComfyUI). Tag `v0.1.23` pushed;
-whether the draft is published is the user's word (check `gh release list`).
+composite film export assistant) ALL PASS at the first try. No `smoke` (the user's ComfyUI). Tag `v0.1.23` pushed, CI
+built the draft, and **0.1.23 is Latest since 2026-09-21** on the user's word; `latest.yml` on the feed answers
+`version: 0.1.23` (check `gh release list` before believing any release state written down anywhere).
 
 ## Where things stand (2026-09-20)
 
