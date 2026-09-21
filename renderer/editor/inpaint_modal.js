@@ -603,7 +603,7 @@ function buildPrompt(ed, section) {
         // prompt upsampling
         const up = el("div", "ipc-sec ipc-upsample");
         const caseLab = el("label", null, "Use case");
-        ed.upCaseSel = selectInput(UPSAMPLE_CASES, "auto", "What the rewritten prompt is for. auto = an editing instruction (Flux.2, Kontext, Klein), or outpaint when the selection touches the border. fill / add / remove write a description of the finished area for inpaint models.");
+        ed.upCaseSel = selectInput(UPSAMPLE_CASES, "auto", "What the rewritten prompt is for. auto = an editing instruction (Flux.2, Kontext, Klein), or outpaint when the selection touches the border. fill / add / remove write a description of the finished area for inpaint models; upscale describes what is there with the fine detail an upscale or refinement pass should bring out.");
         ed.upCaseSel.addEventListener("change", () => { ed.upsampleSettings.useCase = ed.upCaseSel.value; ed.notifyChanged(); });
         caseLab.appendChild(ed.upCaseSel);
         up.appendChild(caseLab);

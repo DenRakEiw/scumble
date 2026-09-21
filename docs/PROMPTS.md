@@ -42,7 +42,7 @@ Placeholders in the body, all optional:
 | `{prompt}` | what the user typed |
 | `{model}` | the model of the selected recipe |
 | `{aspect}` `{width}` `{height}` | the size being asked for (Generate new) |
-| `{useCase}` | `fill`, `add`, `remove`, `edit`, `outpaint` or `generate` |
+| `{useCase}` | `fill`, `add`, `remove`, `edit`, `outpaint`, `upscale` or `generate` |
 | `{region}` | how the worked-on area is described to the model |
 | `{hint}` | what the selection currently shows, when it came from a text selection |
 

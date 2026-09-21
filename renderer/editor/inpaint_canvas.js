@@ -656,7 +656,7 @@ function availableUpsampleBackends() {
     return [...UPSAMPLE_BACKENDS.filter((b) => b.needs.every((n) => !!types[n])), ...host.upsampleBackends()];
 }
 
-const UPSAMPLE_CASES = ["auto", "fill", "add", "remove", "edit", "outpaint"];
+const UPSAMPLE_CASES = ["auto", "fill", "add", "remove", "edit", "outpaint", "upscale"];
 
 /** Short noun phrase for a segmentation model, derived from the user's prompt by a VLM. */
 function segmentTermInstruction(promptText) {
@@ -693,6 +693,8 @@ function builtInUpsampleInstruction(useCase, text, region, hint) {
             return `You write instructions for an image editing model. Request: ${req}. ${look} Rewrite the request as one English instruction of 15 to 35 words for the editing model: start with a verb, name the subject as it appears in the picture (the woman, the red car, the wall), apply exactly the requested change with the exact colours, materials or objects named in the request, and end with what must stay unchanged. Do not describe the picture, do not describe the current state, do not add a story or mood. Examples: request "change her haircolor to light blue" -> "Change the woman's hair color to light blue, keeping her hairstyle, face, expression, skin, clothing, pose, lighting and background exactly as they are." Request "mach den Stuhl aus Holz" -> "Make the chair out of natural wood with visible grain, keeping its shape, position, the person sitting on it and the rest of the scene unchanged." Output only the instruction. Request again: ${req}`;
         case "outpaint":
             return `${look} ${region[0].toUpperCase()}${region.slice(1)} lies at the border and the scene will be extended beyond it${text ? `; request: ${req}` : ""}. Write the image-generation prompt for the extension: one English paragraph of 40 to 80 words describing what appears further out, continuing the same environment, perspective, lighting and style without a visible seam. ${rules} ${tail}`;
+        case "upscale":
+            return `${look} ${region[0].toUpperCase()}${region.slice(1)} will be upscaled and refined at a higher resolution without changing what it shows${text ? `; extra guidance on style and detail: ${req}` : ""}. Write the image-generation prompt for the refinement: one English paragraph of 40 to 80 words describing faithfully what is already there (subjects, materials, colours, lighting, style), then the fine detail a sharp high-resolution version would show (surface textures, pores, fabric weave, hair strands, foliage, crisp edges). Do not add, remove or change any object, do not change colours or composition. ${rules}${text ? ` ${tail}` : ""}`;
         default:
             return `${look} ${region[0].toUpperCase()}${region.slice(1)} will be repainted according to this request: ${req}. Write the image-generation prompt for that area: one English paragraph of 40 to 80 words, starting with the requested subject, then its materials and colours, then how its lighting, perspective and scale match the surroundings so the result blends in. ${rules} ${tail}`;
     }

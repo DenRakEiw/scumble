@@ -224,6 +224,36 @@ async def run(c):
         if auths[4] != "Bearer sk-llmtest-toapis-000000":
             raise RuntimeError("the row request did not carry the provider key: %r" % auths[4])
 
+        # 5b. the "upscale" use case: the built-in instruction describes what is there, asks for fine detail
+        #     and forbids changes; the select offers it and the status names it
+        before = len(mock.posts())
+        res = await c.eval(js("""
+    await c("set_prompt", { text: "keep it photographic" });
+    const offered = Array.from(ed.upCaseSel.options).map((o) => o.value);
+    ed.upCaseSel.value = "upscale";
+    ed.upCaseSel.dispatchEvent(new Event("change"));
+    const r = await c("upsample_prompt");
+    const status = ed.status;
+    ed.upCaseSel.value = "auto";
+    ed.upCaseSel.dispatchEvent(new Event("change"));
+    return { offered, prompt: r.prompt || ed.promptText, status, useCase: ed.upsampleSettings.useCase };
+"""))
+        print("[ok] upscale case:", json.dumps(res)[:300])
+        if "upscale" not in res["offered"]:
+            raise RuntimeError("the use case select does not offer upscale: %s" % res["offered"])
+        if '"upscale"' not in res["status"]:
+            raise RuntimeError("the status does not name the upscale case: " + res["status"])
+        if res["useCase"] != "auto":
+            raise RuntimeError("the use case was not put back to auto")
+        from llm_mock import instruction_of
+        new = mock.posts()[before:]
+        if not new:
+            raise RuntimeError("the upscale upsampling sent no request")
+        text = instruction_of(new[-1])
+        for want in ("will be upscaled and refined", "fine detail", "Do not add, remove or change any object", "keep it photographic"):
+            if want not in text:
+                raise RuntimeError("the upscale instruction lacks %r: %s" % (want, text[:400]))
+
         # 6. the server is gone: the error names the URL
         mock.stop()
         mock = None
