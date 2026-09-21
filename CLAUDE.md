@@ -74,6 +74,25 @@ code.
   First releases are **unsigned**; code signing goes through the SignPath Foundation
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
+- **Every published release also gets a post in the dev blog on the user's website**
+  (https://www.denrakeiw.com/scumble/blog; the user, 2026-09-21). The site is the repo `F:\portfolio_web`
+  (GitHub `DenRakEiw/Portfolio_vercel`, Next.js, deployed by Vercel). A post is one entry at the top of `devlog` in
+  `lib/scumble-posts.ts` (slug `v0-1-NN`, `version`, `date`, `time` = the release's `publishedAt` from
+  `gh release view` in German time with its offset, `release` link, title, summary, `body` paragraphs): the
+  CHANGELOG section retold in a loose, personal first-person voice, in English like the rest of the site, no
+  markdown in the strings; `hub.version` in `lib/scumble.ts` follows the release. `npx tsc --noEmit -p .` and
+  `npx next build` before committing. **Who pushes matters: Vercel runs on a free (Hobby) account, which deploys
+  only commits of its one owner.** Commit only as `git -c user.name="Dennis Schöneberg" -c
+  user.email=dennis.schoeneberg@me.com` (the identity of every deploy that went through), never as the
+  `DenRakEiw` noreply address this repo uses, and **no `Co-Authored-By` trailer** (a second author blocks a Hobby
+  deploy); stage only the files of the post (the tree holds untracked files of the user's that must not go out,
+  e.g. a portrait under `public/`). **Since 2026-09-20 Vercel blocks every git deploy of this repo anyway**
+  ("Deployment was blocked", the same metadata as the last one that went through on 2026-08-29; the Vercel user
+  `schoenebergde-4863` shows no GitHub login connection, the likely cause, which only the user can reconnect). Until
+  the user fixes that, read the commit's status (`gh api repos/DenRakEiw/Portfolio_vercel/commits/<sha>/status`)
+  and, when it says blocked, deploy exactly that commit with the CLI from a clean export, never from the working
+  tree: `git archive <sha> | tar -x -C <scratch>`, copy `.vercel/project.json` into it, `vercel --prod --yes`
+  there; then check the live page.
 
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-16) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
