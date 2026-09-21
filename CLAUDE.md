@@ -881,8 +881,8 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    resized, which clears undo like *Resize*, or a new layer), the size limits (a 4x of a 15k picture is past the
    65,535 px side and the gigapixel cap), and whether the assistant's policy asks before an upscale (it costs money
    on an API and queues on ComfyUI, so yes by the existing rule).
-15. **Qwen Image Edit 2.1, a model to support (asked for by the user on 2026-09-21; on the list only, not built,
-   nothing below verified).** Today `recipes/qwen_image_edit.json` runs older Qwen edit endpoints (fal
+15. **Qwen Image Edit 2.1, a model to support (asked for by the user on 2026-09-21). The local ComfyUI recipe is
+   BUILT and shipped in 0.1.23 (`recipes/qwen_image_edit_2_1_local.json`, not run yet); the API side below is open.** Today `recipes/qwen_image_edit.json` runs older Qwen edit endpoints (fal
    `fal-ai/qwen-image-edit/inpaint` with a mask, Replicate `qwen/qwen-image-edit`, WaveSpeed
    `wavespeed-ai/qwen-image/edit-plus`) and, on ToAPIs and Comfy Cloud, Qwen Image 3.0; there is no local Qwen recipe.
    **To find out before building:** which providers serve 2.1 and under which ids (fal, Replicate, WaveSpeed,
@@ -907,8 +907,8 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    variant in each, last, no default changed, like OpenRouter). Pieces as for every provider: an adapter in
    `electron/main/providers/`, a key row, `docs/RECIPES.md`, a plain-Node test of the request shape, a loopback mock
    and a gate.
-17. **A side panel of adjustable width (asked for by the user on 2026-09-21, with a screenshot; on the list only, not
-   built).** The panel right of the canvas (Image / Generate tabs, the layer list) is a fixed `.ipc-side { width:290px }`
+17. **A side panel of adjustable width (asked for by the user on 2026-09-21, with a screenshot). The horizontal
+   scrollbar is gone since 0.1.23 (panel 320 px, rows that fit); the drag handle below is still open.** The panel right of the canvas (Image / Generate tabs, the layer list) is a fixed `.ipc-side { width:290px }`
    in the editor's `STYLE` (`renderer/editor/inpaint_canvas.js`), and an expanded layer row (Opacity, Match with its
    *surroundings* select, Blend, Role, the cutout row) is wider than that, so the layer list and the reference list
    get a horizontal scrollbar. The wish: drag the panel's left edge to make it wider or narrower. Assessed as small
