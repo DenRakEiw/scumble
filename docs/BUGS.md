@@ -106,6 +106,17 @@ An entry here leaves the file when the release named in it is published.
 
 ## Open
 
+### Layer names cannot be edited (GitHub issue #1)
+
+Reported by the user on 2026-09-21 against 0.1.22: a layer's name cannot be edited in the layer list
+(https://github.com/DenRakEiw/scumble/issues/1). The code has a rename: the name element of a layer row and of a
+reference row carries a `dblclick` listener that calls `renameLayerInline(layer, nameEl)` in
+`renderer/editor/inpaint_canvas.js`, and its tooltip says "Double-click to rename". **To measure first:** whether
+the `dblclick` reaches that element at all (a real double-click in the app, on both backends): if the row's first
+click selects the layer and `renderLayers()` rebuilds the list, the second click lands on a new element and the
+old one never gets its `dblclick`. The MCP command `set_layer` with `name` renames, so agents are not affected.
+When fixed, the rename should also get an undo step (it records none today).
+
 ### What planning the assistant found on the way
 
 **Written** 2026-09-19 while planning the in-app assistant (`docs/PLAN_ASSISTANT.md`). Found by reading

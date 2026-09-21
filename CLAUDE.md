@@ -817,6 +817,59 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    routes each model with `data_collection: "deny"` and the hosts in China ignored, and whether it does with
    `zdr: true` (then the user decides); that ToAPIs and WaveSpeed pass tools at all, and where they are and what they
    keep. No OpenRouter attribution headers go out before the trademark check (they make a public app page).
+14. **Upscaling, a future feature (asked for by the user on 2026-09-21; parked: only on the to-do list, not planned
+   in detail, not built, nothing below verified).** Upscale the document, a layer or the selection by a model, in
+   three routes the user named: (a) **through the user's ComfyUI**, as a recipe with `UpscaleModelLoader` +
+   `ImageUpscaleWithModel` (`comfy.js` already lists `UpscaleModelLoader` models for the recipe settings), the models
+   the user already has in `models/upscale_models`; (b) **in the app**, on the ONNX Runtime the helpers already use,
+   with upscale models downloaded or read from the linked ComfyUI `models/` folder (only ONNX files load there; the
+   usual `.pth` / `.safetensors` upscalers need an ONNX export, as the helper scan of 2026-09-12 found for SAM2 /
+   RMBG), tiled for large pictures; (c) **API upscaling**, e.g. Topaz Labs and Magnific, as provider adapters with
+   key rows like the other providers. **Asked, to be checked before planning:** whether a **locally installed
+   Topaz** (Gigapixel / Photo AI) can be driven from Scumble, e.g. through a command-line interface of the desktop
+   app (which products and licences offer one, what it takes and returns), and whether it can go **over MCP**:
+   either an external agent chains Scumble's own tools (`export` -> Topaz -> `load_image` / `add_image_layer`), or
+   Scumble calls a Topaz-side MCP server or CLI itself. Also to decide: where the result lands (the whole document
+   resized, which clears undo like *Resize*, or a new layer), the size limits (a 4x of a 15k picture is past the
+   65,535 px side and the gigapixel cap), and whether the assistant's policy asks before an upscale (it costs money
+   on an API and queues on ComfyUI, so yes by the existing rule).
+15. **Qwen Image Edit 2.1, a model to support (asked for by the user on 2026-09-21; on the list only, not built,
+   nothing below verified).** Today `recipes/qwen_image_edit.json` runs older Qwen edit endpoints (fal
+   `fal-ai/qwen-image-edit/inpaint` with a mask, Replicate `qwen/qwen-image-edit`, WaveSpeed
+   `wavespeed-ai/qwen-image/edit-plus`) and, on ToAPIs and Comfy Cloud, Qwen Image 3.0; there is no local Qwen recipe.
+   **To find out before building:** which providers serve 2.1 and under which ids (fal, Replicate, WaveSpeed,
+   OpenRouter, ToAPIs, ModelArk is ByteDance only), whether any of them takes a mask, its size limits and input count
+   (the `limits` block needs a source, not the 2048 default), its price; whether it is a new variant in
+   `qwen_image_edit.json` or a recipe of its own; and whether open weights exist for a **local ComfyUI recipe**
+   (which nodes, text encoder and VAE). Each new variant gets its row in the `recipes` gate.
+16. **Oxen.ai as an API provider (asked for by the user on 2026-09-21, https://www.oxen.ai/ai/models; on the list only,
+   not built, not run against the live API).** An aggregator of "200+ models through one API", like fal or OpenRouter.
+   What its docs said on 2026-09-21 (`https://docs.oxen.ai/llms.txt`; the models page itself sits behind a Vercel
+   browser check and could not be read by script): base `https://hub.oxen.ai/api/ai`, a Bearer key; **image edit**
+   `POST /images/edit` with `model` (e.g. `qwen-image-edit`, `nano-banana-2-edit`, `gpt-image-2-edit`,
+   `xai-grok-imagine-image-edit`), `prompt`, `input_image` (a URL or, for some models, an array of URLs) and
+   `response_format` `url` / `b64_json`, answered in the same request (`images[0].url`); **image generation** for
+   "Generate new" at `/images/generate`; an **async queue** for long jobs; `GET /models` and `/models/search` list the
+   models; per-model parameters on a "model references" page; **chat completions** OpenAI-compatible at the same base
+   (streaming, vision, tool calling), so it can also be a row of the LLM / assistant registry (`providers.js`,
+   `llm_custom.js`) for prompt upsampling and the assistant. **To find out before building:** whether `input_image`
+   takes a data URL or needs a hosted file (then an upload step and a privacy note like ToAPIs'), whether any edit
+   model takes a mask, the per-model size limits and input counts (the `limits` block needs a source), prices and
+   balance endpoint, where the data goes and what is kept, and which of the recipes' models it serves (an `oxen`
+   variant in each, last, no default changed, like OpenRouter). Pieces as for every provider: an adapter in
+   `electron/main/providers/`, a key row, `docs/RECIPES.md`, a plain-Node test of the request shape, a loopback mock
+   and a gate.
+17. **A side panel of adjustable width (asked for by the user on 2026-09-21, with a screenshot; on the list only, not
+   built).** The panel right of the canvas (Image / Generate tabs, the layer list) is a fixed `.ipc-side { width:290px }`
+   in the editor's `STYLE` (`renderer/editor/inpaint_canvas.js`), and an expanded layer row (Opacity, Match with its
+   *surroundings* select, Blend, Role, the cutout row) is wider than that, so the layer list and the reference list
+   get a horizontal scrollbar. The wish: drag the panel's left edge to make it wider or narrower. Assessed as small
+   (about half a day with a gate step): a drag handle on the left edge that sets the width (a CSS variable, clamped,
+   e.g. 240 px to half the window), the width kept per install (the app's settings; the node could keep it in
+   `localStorage`), and `resizeCanvas()` called while dragging, which already refits the view when its size changes;
+   editor code, so `build_node.py --check` and `nodecopy`, and a step in `editor_test.py` (drag, width kept after a
+   reload, view refitted, no horizontal scrollbar at the default width). **Independent of it and smaller:** the
+   expanded row could wrap or shrink its controls so no horizontal scrollbar appears at 290 px at all.
 
 **Decision (b) of 7c is made (the user, 2026-09-18): exports and runs of a colour-matched layer may move.** They may
 take their statistics from tiles instead of from the whole flatten, with **point samples** (measured mean 0.56, max 8
