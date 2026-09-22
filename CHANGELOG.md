@@ -5,6 +5,11 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.27 — unreleased
 
+- **Scumble has a logo.** A small creature made of paint, with a chalk brush stroke behind it that shows through
+  its body: that is what a scumble is, a thin semi-opaque layer over a dry one. It replaces the first icon from the
+  project's opening week. The window, the taskbar, the installer and the shortcut carry it. At 16 and 24 pixels the
+  icon carries a simplified drawing of its own (no mouth, larger eyes), as an icon file is meant to.
+
 - **The Upscale dialog has a prompt field** for the upscalers that take one (Clarity, Magnific Creative). They always
   followed the prompt of the Generate tab, but the dialog did not show it, so it looked as if no prompt could go
   along. The field starts with the tab's prompt; what you type there goes to the upscaler and leaves the tab's

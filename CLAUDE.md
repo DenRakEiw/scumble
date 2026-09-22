@@ -1043,9 +1043,18 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    editor code, so `build_node.py --check` and `nodecopy`, and a step in `editor_test.py` (drag, width kept after a
    reload, view refitted, no horizontal scrollbar at the default width). **Independent of it and smaller:** the
    expanded row could wrap or shrink its controls so no horizontal scrollbar appears at 290 px at all.
-18. **A logo for Scumble, to be designed (asked for by the user on 2026-09-22; on the list only, not started).**
-   Today's `build/icon.png` is 512 x 512 and `build/icon.ico` is made from it; there is no vector source and no
-   1024 px master. A logo means: a mark that reads at 16 px (taskbar, tab, tray) and at 1024 px (macOS icns,
+18. **A logo for Scumble: DRAWN on 2026-09-22 (for 0.1.27), the mascot is open.** `build/icon.svg` is the source
+   (plus `icon-small.svg` for 16 / 24 px, `icon-tile.svg` for macOS, `icon-plain.svg` without a background),
+   `build/icon.png` is 1024 px and `build/icon.ico` holds 16 to 256 with **the small sizes drawn separately**
+   (PNG entries, written by hand because PIL resamples one picture for every size). It is a creature made of
+   sienna paint (`#C4643A`) over a chalk stroke (`#EFE7DA`) on near-black brown (`#1B1714`), the stroke showing
+   through its body as `#D08967`: the name's meaning as a figure. The colours came from a survey of the field
+   (Photoshop owns `#001E36` / `#31A8FF`, Affinity purple, Krita magenta / cyan), the legibility from measuring
+   every candidate at 16, 24, 32 and 48 px: an S mark read best at 16 but the user chose the creature
+   ("Der Klecks ueberall"), which holds to 24 px and below that is a coloured blob with a light band. The old icon
+   is kept as `build/icon-0.1.26.png`. **Open:** the mascot's other poses (a six-expression sheet exists as
+   generated drafts only), the website and the About dialog. The original wording of this item:
+   there was no vector source and no 1024 px master. A logo means: a mark that reads at 16 px (taskbar, tab, tray) and at 1024 px (macOS icns,
    the website), a vector source (SVG) committed under `build/`, the exports electron-builder needs (`icon.png` at
    1024, `icon.ico` with 16 to 256, later `icon.icns`), the About dialog, the README and the website
    (`F:\portfolio_web`, the Scumble pages). The name's idea (a thin semi-opaque layer over a dry one) is the obvious

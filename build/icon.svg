@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- the body: wider than tall, soft shoulders, a flat-ish bottom the drips hang from -->
+    <g id="shape">
+      <path d="M 138 540
+        C 138 276 306 116 512 116
+        C 718 116 886 276 886 540
+        L 886 648
+        C 886 700 858 720 806 720
+        L 218 720
+        C 166 720 138 700 138 648 Z"/>
+      <circle cx="318" cy="726" r="58"/>
+      <circle cx="516" cy="752" r="70"/>
+      <circle cx="702" cy="732" r="50"/>
+      <path d="M 596 828 C 628 828 636 858 626 884 C 616 908 580 908 570 884 C 560 858 566 828 596 828 Z"/>
+    </g>
+    <clipPath id="inside"><use href="#shape"/></clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#1B1714"/>
+
+  <!-- the chalk stroke he stands in front of -->
+  <rect x="26" y="520" width="972" height="178" fill="#EFE7DA"/>
+
+  <!-- the creature, and the same stroke seen through him -->
+  <g fill="#C4643A"><use href="#shape"/></g>
+  <g clip-path="url(#inside)"><rect x="26" y="520" width="972" height="178" fill="#D08967"/></g>
+
+  <!-- the face -->
+  <g fill="#1B1714"><circle cx="404" cy="372" r="50"/><circle cx="620" cy="372" r="50"/></g>
+  <path d="M 442 452 C 472 494 552 494 582 452" fill="none" stroke="#1B1714" stroke-width="30" stroke-linecap="round"/>
+</svg>
