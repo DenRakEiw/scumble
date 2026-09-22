@@ -328,12 +328,13 @@ function emitTarget(limits, fixedSize, cw, ch) {
 }
 
 /** What `planCrop` reads of the editor and the recipe: numbers and strings only, so a worker can have them too. */
-function cropSettingsOf(editor, params, limits) {
+function cropSettingsOf(editor, params, limits, cropOver = null) {
     const gen = editor.genSettings || {};
     return {
         width: editor.width, height: editor.height,
         gen: { mode: gen.mode, denoise: gen.denoise, refine: gen.refine },
-        crop: { ...(editor.cropSettings || {}) },
+        // `cropOver`: settings a run holds fixed whatever the panel says (an upscale sends no fill)
+        crop: { ...(editor.cropSettings || {}), ...(cropOver || {}) },
         params: { padding: params.padding, target_size: params.target_size, feather: params.feather, multiple_of: params.multiple_of },
         limits: limits ? { ...limits } : null,
         base: editor.base && editor.base.ref ? { ...editor.base.ref } : null,
@@ -464,13 +465,13 @@ export function cropPixels(p, sel, region, { own = false } = {}) {
  * mask at the emitted size, references. `params` = { padding, target_size, feather,
  * multiple_of } (the app's node params).
  */
-export function prepareCrop(editor, params, limits) {
+export function prepareCrop(editor, params, limits, opts = {}) {
     const sel = selectionWindow(editor);
-    const p = planCrop(cropSettingsOf(editor, params, limits), sel);
+    const p = planCrop(cropSettingsOf(editor, params, limits, opts.crop), sel);
     // E2: the crop box composited on its own (`readBox`: a region pass at full resolution, or the box cut out of the
     // whole flatten when no margin gives those pixels), never the whole image for a box of it
     const { crop, mask, maskAlpha, references } = cropPixels(p, sel, regionOf(editor, p.x0, p.y0, p.cw, p.ch));
-    for (const l of editor.referenceLayers()) references.push(editor.layerPixels(l));
+    if (opts.references !== false) for (const l of editor.referenceLayers()) references.push(editor.layerPixels(l));
     return { crop, mask, maskAlpha, references, info: p.info, sel };
 }
 
@@ -698,8 +699,9 @@ async function regionBytes(editor, x, y, w, h, held = undefined) {
  * size, `info` as `prepareCrop` gives it, `sel` for `finishResultAsync`, `how` the region's way (or "window" when it
  * ran as before). Falls back to `prepareCrop` on the window when the worker is not there or fails.
  */
-export async function prepareCropAsync(editor, params, limits) {
-    const settings = cropSettingsOf(editor, params, limits);
+export async function prepareCropAsync(editor, params, limits, opts = {}) {
+    const settings = cropSettingsOf(editor, params, limits, opts.crop);
+    const withRefs = opts.references !== false;
     if (STITCH_IN_WORKER && stitchWorker()) {
         // one moment, as the synchronous crop had it: the selection's window, the stack the box is composited from (its
         // clones are taken before `holdRunStack` returns) and the reference layers are read here, before any await
@@ -707,7 +709,7 @@ export async function prepareCropAsync(editor, params, limits) {
         try {
             const win = selectionWindowPixels(editor);
             holding = typeof editor.holdRunStack === "function" ? editor.holdRunStack({ forRun: true }) : null;
-            const refs = editor.referenceLayers().map((l) => editor.layerPixels(l));
+            const refs = withRefs ? editor.referenceLayers().map((l) => editor.layerPixels(l)) : [];
             const planned = await stitchCall("plan", { settings, sel: { data: win.img.data, width: win.img.width, height: win.img.height, ox: win.ox, oy: win.oy, fullW: win.fullW, fullH: win.fullH } }, [win.img.data.buffer]);
             held = holding ? await holding : null;
             const p = planned.plan;
@@ -724,7 +726,7 @@ export async function prepareCropAsync(editor, params, limits) {
             else if (holding) holding.then((h) => { if (h) h.release(); }, () => {});
         }
     }
-    const prep = prepareCrop(editor, params, limits);
+    const prep = prepareCrop(editor, params, limits, opts);
     const [image, mask, maskAlpha, ...references] = await Promise.all([canvasBytes(prep.crop), canvasBytes(prep.mask), canvasBytes(prep.maskAlpha), ...prep.references.map((c) => canvasBytes(c))]);
     return { image, mask, maskAlpha, references, width: prep.crop.width, height: prep.crop.height, info: prep.info, sel: prep.sel, how: "window" };
 }

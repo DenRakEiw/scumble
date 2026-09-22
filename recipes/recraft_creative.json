@@ -1,0 +1,40 @@
+{
+  "id": "recraft_creative",
+  "kind": "provider",
+  "task": "upscale",
+  "name": "Recraft Creative (upscale)",
+  "family": "Upscale",
+  "description": "Recraft's creative upscaler through fal.ai: larger with added texture and detail. The model picks the factor. Written from the provider's schema and not run against the live API yet. Also on Comfy Cloud.",
+  "default": "fal",
+  "factor": {
+    "fixed": true
+  },
+  "providers": {
+    "fal": {
+      "model": "fal-ai/recraft/upscale/creative",
+      "fields": {
+        "factor": false
+      },
+      "options": {
+        "omit": [
+          "output_format"
+        ]
+      },
+      "settings": [],
+      "note": "fal-ai/recraft/upscale/creative takes a PNG and no factor: the answer is as large as Recraft makes it. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    },
+    "comfycloud": {
+      "model": "RecraftCreativeUpscaleNode",
+      "options": {
+        "node": "RecraftCreativeUpscaleNode"
+      },
+      "settings": [],
+      "note": "Runs as a Partner Node on Comfy Cloud (one Comfy key, billed in Comfy credits); not run against the live API yet. The picture alone, no factor. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    }
+  },
+  "limits": {
+    "min": 32,
+    "max": 4096,
+    "step": 1
+  }
+}

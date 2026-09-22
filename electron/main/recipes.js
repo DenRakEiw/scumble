@@ -77,6 +77,25 @@ function editLimits(r, v) {
     return l;
 }
 
+// An upscale recipe (`task: "upscale"`, docs/RECIPES.md "Upscale recipes") says what factors the
+// model takes: `factor: { default, min, max, steps }` on the recipe or a variant; `steps` lists the
+// only values a model accepts (Magnific Creative: 2, 4, 8, 16), `fixed: true` a model that picks
+// its own factor (Recraft's upscalers). Without it: 2, 1 to 4.
+const FACTOR_DEFAULT = { default: 2, min: 1, max: 4, steps: null, fixed: false };
+
+function upscaleFactor(r, v) {
+    const f = { ...FACTOR_DEFAULT, ...(r.factor || {}), ...(v.factor || {}) };
+    const n = (x, d) => (Number.isFinite(+x) && +x >= 1 ? +x : d);
+    f.min = n(f.min, FACTOR_DEFAULT.min);
+    f.max = Math.max(f.min, n(f.max, FACTOR_DEFAULT.max));
+    f.steps = Array.isArray(f.steps) ? f.steps.map(Number).filter((x) => Number.isFinite(x) && x >= f.min && x <= f.max).sort((a, b) => a - b) : null;
+    if (f.steps && !f.steps.length) f.steps = null;
+    f.default = Math.min(f.max, Math.max(f.min, n(f.default, FACTOR_DEFAULT.default)));
+    if (f.steps && !f.steps.includes(f.default)) f.default = f.steps[0];
+    f.fixed = f.fixed === true;
+    return f;
+}
+
 function textModelOf(providerId, model) {
     const m = String(model || "");
     if (providerId === "fal" || providerId === "wavespeed") return m.replace(/\/(edit|inpaint|fill)$/, "");
@@ -113,9 +132,19 @@ function normalize(r) {
         r.providers = { [id]: { model: r.model || "", input: r.input || "fill", fields: r.fields || null, fixed: r.fixed || null, settings: r.settings || [], options: r.options || null, note: r.note || "" } };
         r.default = id;
     }
+    r.task = r.task === "upscale" ? "upscale" : "edit";
     for (const [id, v] of Object.entries(r.providers)) {
-        v.text = textVariant(id, v);
         v.limits = editLimits(r, v);
+        if (r.task === "upscale") {
+            // an upscaler makes nothing from a prompt alone, so it has no Generate new shape
+            v.text = null;
+            v.edit = true;
+            v.factor = upscaleFactor(r, v);
+            // the tab's prompt goes along as guidance only where the model takes one (Clarity, Magnific Creative)
+            v.usesPrompt = v.usesPrompt === true || (v.usesPrompt === undefined && r.usesPrompt === true);
+            continue;
+        }
+        v.text = textVariant(id, v);
         v.edit = v.edit !== false;   // false: text to image only, no Generate on a crop
     }
     r.providerIds = Object.keys(r.providers);
@@ -449,4 +478,4 @@ async function importFile(file, objectInfo) {
     return normalize({ ...recipe, file: path.basename(saved), source: "user" });
 }
 
-module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, userDir };
+module.exports = { list, remove, save, importFile, fromWorkflow, fromPrompt, userDir, _normalize: normalize };

@@ -440,7 +440,7 @@ function cardLines(e) {
     const lines = [];
     if (c.path) lines.push(`${c.path}${c.exists ? " — exists, will be overwritten" : " — a new file"}`);
     if (c.recipe) lines.push(`recipe: ${c.recipe}${c.mode ? " (" + c.mode + ")" : ""}`);
-    else if (e.name === "generate" || e.name === "generate_new") {
+    else if (e.name === "generate" || e.name === "generate_new" || e.name === "upscale") {
         const r = host.recipe;
         if (r) lines.push(`recipe: ${r.name || r.id}${r.mode ? " (" + r.mode + ")" : ""}`);
     }

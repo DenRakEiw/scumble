@@ -141,6 +141,16 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 #gen-dialog #gen-go { background: #2f6b3f; border-color: #3d8a52; }
 #gen-dialog #gen-go:hover { background: #37804a; }
 #gen-dialog .shell-field { display: flex; gap: 8px; align-items: center; }
+#up-dialog { background: #202020; color: #ddd; border: 1px solid #444; border-radius: 6px; padding: 0; width: 620px; max-width: 92vw; max-height: 92vh; overflow-y: auto; font: 13px/1.4 system-ui, sans-serif; }
+#up-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+#up-dialog form { padding: 16px 20px 14px; display: flex; flex-direction: column; gap: 12px; }
+#up-dialog h2 { margin: 0 0 4px; font-size: 16px; color: #f0c674; }
+#up-dialog button { background: #2d2d2d; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 4px 12px; font: inherit; cursor: pointer; }
+#up-dialog button:hover { background: #3a3a3a; }
+#up-dialog button:disabled { opacity: 0.5; cursor: default; }
+#up-dialog #up-go { background: #2f6b3f; border-color: #3d8a52; }
+#up-dialog #up-go:hover { background: #37804a; }
+#up-dialog .shell-field { display: flex; gap: 8px; align-items: center; }
 #gen-dialog .gen-wide { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
 #gen-dialog textarea { width: 100%; box-sizing: border-box; font: inherit; resize: vertical; background: #1b1b1b; color: #eee; border: 1px solid #4a4a4a; border-radius: 4px; padding: 6px 8px; }
 #gen-dialog .shell-check { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
@@ -148,6 +158,10 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 #gen-dialog #gen-note { color: #9a9a9a; }
 #gen-dialog.gen-fixed .gen-free { display: none; }
 #gen-dialog.gen-free-size #gen-res-row { display: none; }
+#up-dialog .shell-check { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+#up-dialog .shell-note, #up-dialog .shell-help { white-space: normal; overflow: visible; text-overflow: clip; }
+#up-dialog #up-note { color: #9a9a9a; }
+#up-dialog select { max-width: 360px; }
 
 /* ---- console (log) dialog ---- */
 #log-dialog { background: #202020; color: #ddd; border: 1px solid #444; border-radius: 6px; padding: 0; width: 900px; max-width: 94vw; font: 13px/1.4 system-ui, sans-serif; }

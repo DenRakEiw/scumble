@@ -1,0 +1,136 @@
+{
+  "id": "topaz_precision",
+  "kind": "provider",
+  "task": "upscale",
+  "name": "Topaz Precision (upscale)",
+  "family": "Upscale",
+  "description": "Topaz Labs' faithful upscalers (Standard, High Fidelity, Low Resolution, CGI, Text Refine, Faces) through fal.ai, no Topaz account needed. Topaz can take several minutes on a large picture; the window stays usable while it runs. Written from the provider's schema and not run against the live API yet.",
+  "default": "fal",
+  "factor": {
+    "default": 2,
+    "min": 1,
+    "max": 4
+  },
+  "providers": {
+    "fal": {
+      "model": "topaz/upscale/image/precision",
+      "options": {
+        "numbers": [
+          "sharpen",
+          "denoise",
+          "fix_compression"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "model",
+          "label": "Model",
+          "spec": [
+            [
+              "Standard V2",
+              "High Fidelity V3",
+              "High Fidelity V2",
+              "Low Resolution V2",
+              "CGI",
+              "Text Refine",
+              "Faces"
+            ],
+            {
+              "default": "Standard V2"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "face_enhancement",
+          "label": "Face enhancement",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": false
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "sharpen",
+          "label": "Sharpen",
+          "spec": [
+            [
+              "auto",
+              "0",
+              "0.1",
+              "0.2",
+              "0.3",
+              "0.4",
+              "0.5",
+              "0.6",
+              "0.7",
+              "0.8",
+              "0.9",
+              "1"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "key": "denoise",
+          "label": "Denoise",
+          "spec": [
+            [
+              "auto",
+              "0",
+              "0.1",
+              "0.2",
+              "0.3",
+              "0.4",
+              "0.5",
+              "0.6",
+              "0.7",
+              "0.8",
+              "0.9",
+              "1"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "key": "fix_compression",
+          "label": "Fix compression",
+          "spec": [
+            [
+              "auto",
+              "0",
+              "0.1",
+              "0.2",
+              "0.3",
+              "0.4",
+              "0.5",
+              "0.6",
+              "0.7",
+              "0.8",
+              "0.9",
+              "1"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "note": "topaz/upscale/image/precision on fal: 1 to 4 times. \"auto\" leaves the value to the model (its default differs per model); Fix compression does not apply to CGI. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    }
+  },
+  "limits": {
+    "min": 32,
+    "max": 4096,
+    "step": 1
+  }
+}

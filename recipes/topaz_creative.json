@@ -1,0 +1,69 @@
+{
+  "id": "topaz_creative",
+  "kind": "provider",
+  "task": "upscale",
+  "name": "Topaz Bloom (upscale)",
+  "family": "Upscale",
+  "description": "Topaz Labs' creative upscalers (Bloom 2, Bloom, Bloom Realism) through fal.ai: adds detail, may change small things. Topaz can take several minutes on a large picture; the window stays usable while it runs. Written from the provider's schema and not run against the live API yet.",
+  "default": "fal",
+  "factor": {
+    "default": 2,
+    "min": 1,
+    "max": 4
+  },
+  "providers": {
+    "fal": {
+      "model": "topaz/upscale/image/creative",
+      "options": {
+        "numbers": [
+          "creativity"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "model",
+          "label": "Model",
+          "spec": [
+            [
+              "Bloom 2",
+              "Bloom",
+              "Bloom Realism"
+            ],
+            {
+              "default": "Bloom 2"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "creativity",
+          "label": "Creativity",
+          "spec": [
+            [
+              "auto",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "7",
+              "8",
+              "9"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "note": "topaz/upscale/image/creative on fal: 1 to 4 times; Creativity (1 to 9) applies to Bloom 2 only. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    }
+  },
+  "limits": {
+    "min": 32,
+    "max": 4096,
+    "step": 1
+  }
+}

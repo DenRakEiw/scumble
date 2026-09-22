@@ -270,12 +270,12 @@ const COMMANDS = {
             const cur = host.recipe;
             return { selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null, recipes: host.shell.recipes().map((r) => {
                 const v = host.shell.resolveRecipe(r);
-                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: r.mode || (r.kind === "provider" ? "api" : "local"), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, description: r.description || "", source: r.source || "builtin" };
+                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: r.mode || (r.kind === "provider" ? "api" : "local"), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, description: r.description || "", source: r.source || "builtin" };
             }) };
         },
     },
     select_recipe: {
-        scope: "app", description: "Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark; list_recipes has each recipe's own), else the remembered or default one.",
+        scope: "app", description: "Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark, magnific; list_recipes has each recipe's own), else the remembered or default one.",
         params: { id: P.str("recipe id (from list_recipes)", { required: true }), provider: P.str("provider id for a model recipe (one of its providers from list_recipes)") },
         async run(_, a) {
             const r = host.shell.recipes().find((x) => x.id === a.id);
@@ -552,6 +552,32 @@ const COMMANDS = {
             await ed.flatten();
             ed.notifyChanged();
             return { mode: "local", recipe: r.id, width: ed.width, height: ed.height, seconds: Math.round((Date.now() - t0) / 1000), result: res && res.layer ? res.layer : null, status: ed.status };
+        },
+    },
+    upscale: {
+        needsImage: true, description: "Upscale with the selected upscale recipe (list_recipes: task \"upscale\"; select_recipe picks one). scope \"selection\": the selection's box goes to the upscaler at its own size and the sharper answer comes back into it at the document's resolution, as a result layer. scope \"document\": the base image goes out, the answer becomes the new base N times larger, and every layer, mask and the selection are scaled along (one undo step). Waits for the answer; Topaz can take several minutes.",
+        params: {
+            scope: P.str("selection (a detail pass) or document (the whole picture larger)", { enum: ["selection", "document"], default: "selection" }),
+            factor: P.num("how many times larger; the recipe's default when left out (list_recipes shows each recipe's factors); ignored by a model that picks its own"),
+            timeout: P.timeout(1800),
+        },
+        async run(ed, a) {
+            const r = host.recipe;
+            if (!r || r.kind !== "provider" || r.task !== "upscale") throw new Error(`the selected recipe is no upscaler: select_recipe one with task "upscale" (${host.shell.recipes().filter((x) => x.task === "upscale").map((x) => x.id).join(", ") || "none installed"})`);
+            if (ed.providerPending) throw new Error("a run is still going on this document");
+            const scope = a.scope === "document" ? "document" : "selection";
+            const n0 = ed.history.length;
+            const limit = clampInt(a.timeout, 5, 3600, 1800) * 1000;
+            let timer = null;
+            const out = await Promise.race([
+                host.runUpscale(ed, { scope, factor: a.factor }),
+                new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("the upscale timed out: " + ed.status)), limit); }),
+            ]).finally(() => clearTimeout(timer));
+            ed.notifyChanged();
+            if (scope === "document") return { scope, recipe: out.recipe, provider: out.provider, factor: out.factor, from: out.from, width: out.width, height: out.height, seconds: Math.round(out.seconds * 10) / 10, info: out.info, status: ed.status };
+            const h = ed.history.length > n0 ? ed.history[ed.history.length - 1] : null;
+            const layer = h ? ed.layers.find((l) => l.id === h.layerId) : null;
+            return { scope, recipe: out.recipe, provider: out.provider, factor: out.factor, box: { x: out.x, y: out.y, w: out.w, h: out.h }, layer: layer ? layerSummary(ed, layer) : null, seconds: Math.round(out.seconds * 10) / 10, info: out.info, status: ed.status };
         },
     },
     generate: {

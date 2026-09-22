@@ -74,7 +74,7 @@ The recipes (ComfyUI workflows and API providers) and which one is selected.
 
 ### `select_recipe` *(app)*
 
-Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark; list_recipes has each recipe's own), else the remembered or default one.
+Select the recipe every tab generates with; model recipes take the provider to run on (toapis, gemini, openai, bfl, fal, replicate, wavespeed, comfycloud, openrouter, ark, magnific; list_recipes has each recipe's own), else the remembered or default one.
 
 | param | type | description |
 |---|---|---|
@@ -350,6 +350,17 @@ Generate with the selected recipe: the selected area (with context) goes to the 
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
+
+### `upscale` *(image)*
+
+Upscale with the selected upscale recipe (list_recipes: task "upscale"; select_recipe picks one). scope "selection": the selection's box goes to the upscaler at its own size and the sharper answer comes back into it at the document's resolution, as a result layer. scope "document": the base image goes out, the answer becomes the new base N times larger, and every layer, mask and the selection are scaled along (one undo step). Waits for the answer; Topaz can take several minutes.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `scope` | string | selection (a detail pass) or document (the whole picture larger) (default `"selection"`; one of `selection`, `document`) |
+| `factor` | number | how many times larger; the recipe's default when left out (list_recipes shows each recipe's factors); ignored by a model that picks its own |
+| `timeout` | integer | seconds to wait for the result (default 1800) (default `1800`) |
 
 ## Layers
 

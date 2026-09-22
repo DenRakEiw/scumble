@@ -17,6 +17,12 @@
 // dynamic inputs of the nodes (model combos, autogrow image lists) use dotted keys in the API
 // prompt: "model": "gpt-image-2", "model.quality": "medium", "model.images.image_1": [id, 0].
 // Recipe settings are copied by key, so a setting's key is the full input key.
+//
+// upscale (kind "upscale", docs/RECIPES.md "Upscale recipes"): the same graph around one of the upscaler
+// Partner Nodes (Magnific Precise V2 and Creative, Recraft Crisp and Creative; their inputs read from a
+// ComfyUI's /object_info on 2026-09-22). Magnific's nodes take the factor as "2x" .. "16x" and are told not to
+// downscale the picture on their own (auto_downscale false: Scumble refuses a picture above the variant's
+// limit instead); Recraft's take the picture alone.
 "use strict";
 
 const { readError, sleep, num, closestAspect } = require("./util");
@@ -82,12 +88,30 @@ const SHAPES = {
         g.set("image", g.crop); g.set("mask", m); g.set("prompt", v.prompt); g.set("seed", v.seed);
         g.set("prompt_upsampling", false); g.set("guidance", 60); g.set("steps", 50);
     },
+    MagnificImageUpscalerPreciseV2Node(g, v) {
+        g.set("image", g.crop); g.set("scale_factor", magnificFactor(v.factor)); g.set("auto_downscale", false);
+        g.set("flavor", "photo"); g.set("sharpen", 7); g.set("smart_grain", 7); g.set("ultra_detail", 30);
+    },
+    MagnificImageUpscalerCreativeNode(g, v) {
+        g.set("image", g.crop); g.set("prompt", v.prompt); g.set("scale_factor", magnificFactor(v.factor)); g.set("auto_downscale", false);
+        g.set("optimized_for", "standard"); g.set("engine", "automatic");
+        for (const k of ["creativity", "hdr", "resemblance", "fractality"]) g.set(k, 0);
+    },
+    RecraftCrispUpscaleNode(g) { g.set("image", g.crop); },
+    RecraftCreativeUpscaleNode(g) { g.set("image", g.crop); },
     QwenImageEditApi(g, v) {
         g.set("model", v.model); g.set("model.prompt", v.prompt); g.set("model.negative_prompt", v.negative || "");
         g.set("size", "match input"); g.set("n", 1); g.set("seed", v.seed); g.set("prompt_extend", true); g.set("watermark", false);
         g.images("model.images.image_", [g.crop, ...g.refs].slice(0, 3));
     },
 };
+
+/** Magnific's nodes take 2x, 4x, 8x or 16x. */
+function magnificFactor(f) {
+    const n = Math.round(+f || 2);
+    if (![2, 4, 8, 16].includes(n)) throw new Error(`Magnific on Comfy Cloud upscales by 2, 4, 8 or 16, not ${f}.`);
+    return `${n}x`;
+}
 
 async function upload(ctx, bytes, name) {
     const fd = new FormData();
@@ -130,7 +154,7 @@ async function buildGraph(req, ctx, node) {
     };
     const shape = SHAPES[node];
     if (!shape) throw new Error(`Comfy Cloud: no wiring for the node ${node} (known: ${Object.keys(SHAPES).join(", ")})`);
-    shape(g, { prompt: req.prompt || "", negative: req.negative || "", model: req.model, seed: req.seed != null && !req.params.random_seed ? (req.seed >>> 0) : Math.floor(Math.random() * 2147483647), width: req.width, height: req.height });
+    shape(g, { prompt: req.prompt || "", negative: req.negative || "", model: req.model, seed: req.seed != null && !req.params.random_seed ? (req.seed >>> 0) : Math.floor(Math.random() * 2147483647), width: req.width, height: req.height, factor: req.factor });
     // recipe settings and fixed values by input key (the settings' keys are the full input keys)
     for (const [k, v] of Object.entries(req.params)) { if (k === "random_seed" || k === "model" || v === "" || v == null || v === "auto") continue; partner.inputs[k] = v; }
     const pid = String(++n);
@@ -181,11 +205,24 @@ async function failureDetail(ctx, id, status, info) {
     return `${status}${detail ? " - " + brief(detail) : ""}${detail ? "" : extra}`;
 }
 
+const EDIT_WAIT_MS = 20 * 60 * 1000;
+const UPSCALE_WAIT_MS = 30 * 60 * 1000;
+
 module.exports = {
     label: "Comfy Cloud",
     keyUrl: "https://platform.comfy.org/profile/api-keys",
     keyHint: "API key from platform.comfy.org (needs a paid Comfy Cloud plan; Partner Nodes are billed in credits)",
-    async edit(req, ctx) {
+    edit(req, ctx) { return run(req, ctx, EDIT_WAIT_MS); },
+    upscale(req, ctx) {
+        if (!req.image) return Promise.reject(new Error("Comfy Cloud: no picture to upscale."));
+        return run({ ...req, references: [], mask: null }, ctx, UPSCALE_WAIT_MS);
+    },
+    failureDetail,   // for tests
+    _buildGraph: buildGraph,
+};
+
+async function run(req, ctx, waitMs) {
+        const pause = ctx.sleep || sleep;
         const node = String(req.options && req.options.node || "");
         if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
         const headers = { "X-API-Key": ctx.key, "Content-Type": "application/json" };
@@ -199,8 +236,8 @@ module.exports = {
         let status = "", info = {};
         const done = new Set(["success", "completed", "error", "non_retryable_error", "lost", "cancelled", "failed"]);
         while (!done.has(status)) {
-            if (Date.now() - t0 > 20 * 60 * 1000) throw new Error("Comfy Cloud: timed out after 20 minutes");
-            await sleep(POLL_MS);
+            if (Date.now() - t0 > waitMs) throw new Error(`Comfy Cloud: timed out after ${Math.round(waitMs / 60000)} minutes`);
+            await pause(POLL_MS);
             const r = await ctx.fetch(`${BASE}/api/job/${id}/status`, { headers: { "X-API-Key": ctx.key } });
             if (!r.ok) throw new Error(`Comfy Cloud status: ${await readError(r)}`);
             info = await r.json();
@@ -216,6 +253,4 @@ module.exports = {
         if (!file) throw new Error("Comfy Cloud: the job finished without an image (" + JSON.stringify(entry).slice(0, 300) + ")");
         const got = await download(ctx, file);
         return { bytes: got.bytes, mime: got.mime, seed: num(req.seed, null), info: { node, model: req.model, prompt_id: id } };
-    },
-    failureDetail,   // for tests
-};
+}

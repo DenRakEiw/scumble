@@ -3,6 +3,33 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.24 - unreleased
+
+- **Upscale.** A new *Upscale* button next to *Generate new* opens a small dialog: pick the model, then either
+  **the selection** or **the whole picture**, and the factor.
+  - *The selection* goes to the upscaler at its own size, and the sharper answer comes back into the selection at
+    the document's resolution, as a new layer: a detail pass, nothing gets bigger. *Generate* does the same while an
+    upscale model is the selected recipe.
+  - *The whole picture* sends the base image, and the answer becomes the new picture, 2, 4 ... times larger; every
+    layer, mask and the selection are scaled along. One Ctrl+Z takes it all back. A picture larger than the model
+    takes (4096 px on the long side for the shipped ones) is refused before anything is sent; upscale a selection
+    of it instead.
+- **Nine upscale models**, in their own *Upscale* group of the recipe list:
+  - through **fal.ai** (your fal key, no Topaz account needed): *Topaz Precision* (Standard, High Fidelity, Low
+    Resolution, CGI, Text Refine, Faces), *Topaz Bloom*, *Topaz Wonder / Redefine*, *Clarity Upscaler* (your prompt
+    guides the added detail), *SeedVR2*, *Recraft Crisp* and *Recraft Creative*;
+  - through **Magnific** (a new key row under *Settings › API providers*): *Magnific Precision* (2 to 16 times) and
+    *Magnific Creative* (2, 4, 8 or 16 times, your prompt as guidance). Every Magnific API call costs credits, even
+    on a web plan that says "unlimited";
+  - *Magnific Precision*, *Magnific Creative*, *Recraft Crisp* and *Recraft Creative* also run on **Comfy Cloud**,
+    billed in Comfy credits.
+  Each model's own settings (model, sharpen, denoise, creativity, ...) are in the Settings panel as for any recipe.
+  **Topaz can take several minutes** on a large picture; the status line says so, and the window stays usable.
+  None of the upscalers has run against a live API yet.
+- **For agents and the assistant:** a new `upscale` command and MCP tool (`scope` selection or document, `factor`);
+  `list_recipes` names each recipe's task and factors. The assistant asks before it upscales, as before it
+  generates.
+
 ## 0.1.23 — 2026-09-21
 
 - **Layer names are visible again, and can be renamed.** A layer row was a little wider than the panel, so the

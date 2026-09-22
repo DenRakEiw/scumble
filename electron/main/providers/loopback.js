@@ -101,6 +101,30 @@ module.exports = {
         if (transparent(req)) return { bytes: discPng(req.width, req.height, req.seed || 0), mime: "image/png", seed: req.seed, info };
         return { bytes: req.image, mime: "image/png", seed: req.seed, info };
     },
+    // kind "upscale": the picture scaled by the factor (2 when the variant picks its own), resampled by Electron,
+    // with a 4 px magenta frame as the marker that it went through the upscaler (tools/upscale_test.py)
+    async upscale(req, ctx) {
+        const delay = Math.max(0, +req.params.delay_ms || 0);
+        if (delay) await new Promise((r) => setTimeout(r, delay));
+        if (req.params.fail) throw new Error("loopback failure requested");
+        const { nativeImage } = require("electron");
+        const img = nativeImage.createFromBuffer(Buffer.from(req.image));
+        if (img.isEmpty()) throw new Error("loopback: the picture does not decode");
+        const f = req.factor != null ? +req.factor : 2;
+        const { width, height } = img.getSize();
+        const w = Math.max(1, Math.round(width * f)), h = Math.max(1, Math.round(height * f));
+        const big = img.resize({ width: w, height: h, quality: "good" });
+        const px = big.toBitmap();   // BGRA
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                if (x >= 4 && y >= 4 && x < w - 4 && y < h - 4) continue;
+                const i = (y * w + x) * 4;
+                px[i] = 255; px[i + 1] = 0; px[i + 2] = 255; px[i + 3] = 255;
+            }
+        }
+        const out = nativeImage.createFromBitmap(px, { width: w, height: h });
+        return { bytes: out.toPNG(), mime: "image/png", seed: req.seed, info: { width: w, height: h, factor: f, from: [width, height], prompt: req.prompt || "", references: (req.references || []).length, mask: !!req.mask } };
+    },
     async generate(req, ctx) {
         const delay = Math.max(0, +req.params.delay_ms || 0);
         if (delay) await new Promise((r) => setTimeout(r, delay));

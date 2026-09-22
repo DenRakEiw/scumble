@@ -843,7 +843,7 @@ class Assistant {
                 facts.busy = !!(entry && entry.busy);
             } catch (_) { /* the renderer checks again just before the command */ }
         }
-        if (call.name === "generate" || call.name === "generate_new") {
+        if (call.name === "generate" || call.name === "generate_new" || call.name === "upscale") {
             facts.recipe = chat.recipe || null;
             facts.changedByChat = [...(chat.changedSettings || [])];
         }
@@ -940,7 +940,7 @@ function idsNamedBy(name, result) {
     const out = [];
     const add = (v) => { if (typeof v === "string" && v) out.push(v); };
     if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "duplicate_layer", "film_apply_look"].includes(name)) add(result.id);
-    if (name === "generate" || name === "glb_place") { add(result.layer && result.layer.id); add(result.depthLayer && result.depthLayer.id); }
+    if (name === "generate" || name === "upscale" || name === "glb_place") { add(result.layer && result.layer.id); add(result.depthLayer && result.depthLayer.id); }
     if (name === "film_add_point") add(result.layer);
     return out;
 }

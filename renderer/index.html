@@ -219,6 +219,24 @@
     <div class="shell-row shell-right"><span id="gen-state" class="shell-note"></span><button id="gen-cancel" type="submit" formnovalidate>Cancel</button><button id="gen-go" type="button">Generate</button></div>
   </form>
 </dialog>
+<dialog id="up-dialog">
+  <form method="dialog">
+    <h2>Upscale</h2>
+    <p class="shell-help">An upscale model makes the picture larger and sharper. On the selection the answer comes back into it at the document's resolution, as a detail pass on a new layer. On the whole picture the base image is replaced by the upscaled one and every layer, mask and the selection are scaled along (one undo step).</p>
+    <div class="shell-grid">
+      <label class="shell-field">Model <select id="up-recipe"></select></label>
+      <label class="shell-field" id="up-provider-row">Provider <select id="up-provider"></select></label>
+    </div>
+    <p id="up-note" class="shell-note"></p>
+    <div class="shell-row">
+      <label class="shell-check"><input type="radio" name="up-scope" id="up-scope-sel" value="selection"> the selection</label>
+      <label class="shell-check"><input type="radio" name="up-scope" id="up-scope-doc" value="document"> the whole picture</label>
+      <label class="shell-field" id="up-factor-row">Factor <select id="up-factor"></select></label>
+    </div>
+    <p id="up-size-note" class="shell-note"></p>
+    <div class="shell-row shell-right"><span id="up-state" class="shell-note"></span><button id="up-cancel" type="submit" formnovalidate>Cancel</button><button id="up-go" type="button">Upscale</button></div>
+  </form>
+</dialog>
 <script type="module" src="shell.js"></script>
 </body>
 </html>

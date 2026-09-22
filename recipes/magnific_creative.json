@@ -1,0 +1,224 @@
+{
+  "id": "magnific_creative",
+  "kind": "provider",
+  "task": "upscale",
+  "name": "Magnific Creative (upscale)",
+  "family": "Upscale",
+  "description": "The Magnific upscaler: adds detail guided by the prompt, 2, 4, 8 or 16 times, at most 25.3 MP out. Every API call costs Magnific credits, whatever the web plan says. Written from the provider's schema and not run against the live API yet. Also on Comfy Cloud.",
+  "default": "magnific",
+  "factor": {
+    "default": 2,
+    "min": 2,
+    "max": 16,
+    "steps": [
+      2,
+      4,
+      8,
+      16
+    ]
+  },
+  "usesPrompt": true,
+  "providers": {
+    "magnific": {
+      "model": "image-upscaler",
+      "options": {
+        "factor": "x"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "optimized_for",
+          "label": "Optimized for",
+          "spec": [
+            [
+              "standard",
+              "soft_portraits",
+              "hard_portraits",
+              "art_n_illustration",
+              "videogame_assets",
+              "nature_n_landscapes",
+              "films_n_photography",
+              "3d_renders",
+              "science_fiction_n_horror"
+            ],
+            {
+              "default": "standard"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "engine",
+          "label": "Engine",
+          "spec": [
+            [
+              "automatic",
+              "magnific_illusio",
+              "magnific_sharpy",
+              "magnific_sparkle"
+            ],
+            {
+              "default": "automatic"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "creativity",
+          "label": "Creativity",
+          "spec": [
+            "INT",
+            {
+              "default": 0,
+              "min": -10,
+              "max": 10
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "key": "hdr",
+          "label": "HDR",
+          "spec": [
+            "INT",
+            {
+              "default": 0,
+              "min": -10,
+              "max": 10
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "key": "resemblance",
+          "label": "Resemblance",
+          "spec": [
+            "INT",
+            {
+              "default": 0,
+              "min": -10,
+              "max": 10
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "key": "fractality",
+          "label": "Fractality",
+          "spec": [
+            "INT",
+            {
+              "default": 0,
+              "min": -10,
+              "max": 10
+            }
+          ]
+        }
+      ],
+      "note": "POST /v1/ai/image-upscaler, an asynchronous task polled until it is done; the tab's prompt goes along as guidance, the picture as base64 to Magnific (Freepik, Spain). Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    },
+    "comfycloud": {
+      "model": "MagnificImageUpscalerCreativeNode",
+      "options": {
+        "node": "MagnificImageUpscalerCreativeNode"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "optimized_for",
+          "label": "Optimized for",
+          "spec": [
+            [
+              "standard",
+              "soft_portraits",
+              "hard_portraits",
+              "art_n_illustration",
+              "videogame_assets",
+              "nature_n_landscapes",
+              "films_n_photography",
+              "3d_renders",
+              "science_fiction_n_horror"
+            ],
+            {
+              "default": "standard"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "engine",
+          "label": "Engine",
+          "spec": [
+            [
+              "automatic",
+              "magnific_illusio",
+              "magnific_sharpy",
+              "magnific_sparkle"
+            ],
+            {
+              "default": "automatic"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "creativity",
+          "label": "Creativity",
+          "spec": [
+            "INT",
+            {
+              "default": 0,
+              "min": -10,
+              "max": 10
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "key": "hdr",
+          "label": "HDR",
+          "spec": [
+            "INT",
+            {
+              "default": 0,
+              "min": -10,
+              "max": 10
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "key": "resemblance",
+          "label": "Resemblance",
+          "spec": [
+            "INT",
+            {
+              "default": 0,
+              "min": -10,
+              "max": 10
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "key": "fractality",
+          "label": "Fractality",
+          "spec": [
+            "INT",
+            {
+              "default": 0,
+              "min": -10,
+              "max": 10
+            }
+          ]
+        }
+      ],
+      "note": "Runs as a Partner Node on Comfy Cloud (one Comfy key, billed in Comfy credits); not run against the live API yet. The tab's prompt goes along as guidance. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    }
+  },
+  "limits": {
+    "min": 32,
+    "max": 4096,
+    "step": 1
+  }
+}

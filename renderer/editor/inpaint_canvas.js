@@ -3077,9 +3077,10 @@ class InpaintEditor {
     }
 
     /** Scale the whole image (base, layers, selection) to a new size. */
-    resizeImage(nw, nh) { return this.trackEdit(this.resizeImageNow(nw, nh)); }   // undo waits for the upload (see extendCanvas)
+    resizeImage(nw, nh, opts) { return this.trackEdit(this.resizeImageNow(nw, nh, opts)); }   // undo waits for the upload (see extendCanvas)
 
-    async resizeImageNow(nw, nh) {
+    /** `base`: the new base's pixels at nw x nh (an upscaler's answer) instead of the old base resampled. */
+    async resizeImageNow(nw, nh, { base = null } = {}) {
         if (!this.base) return;
         nw = Math.round(nw); nh = Math.round(nh);
         if (!(nw >= 8 && nh >= 8) || (nw === this.width && nh === this.height)) { this.setStatus("Enter a new size."); return; }
@@ -3096,7 +3097,8 @@ class InpaintEditor {
             // C6 (d): from a canvas of the pixels, not the <img> they were decoded from (which is not kept). A scaled draw of
             // an image element and of a canvas go through different resamplers in Chromium: measured on four photos at
             // 0.37 / 0.5 / 0.8 / 1.6, 0.2 to 0.7 levels mean, at most 22, 0 to 3 % of bytes over 2 (identical at 0.5 on tiles)
-            this.drawBaseInto(nctx, 0, 0, nw, nh);
+            if (base) nctx.drawImage(base, 0, 0, nw, nh);
+            else this.drawBaseInto(nctx, 0, 0, nw, nh);
             const { ref } = await uploadCanvas(nb, `n${this.node.id}_base`);
             const px = this.pixels.Layer.fromCanvas(nb);
             for (const l of this.layers) {
@@ -3122,7 +3124,7 @@ class InpaintEditor {
             this.selectionDirty = true; this.selectionLoose = false;
             this.selectionDataUrl = null; this.selectionEncoded = false;
             this.renderLayers(); this.renderInfo(); this.fitView(); this.drawThumb(); this.notifyChanged();
-            this.setStatus(`Image resized to ${nw} × ${nh} (Ctrl+Z takes it back). Layers keep their own resolution.`);
+            this.setStatus(`Image ${base ? "upscaled" : "resized"} to ${nw} × ${nh} (Ctrl+Z takes it back). Layers keep their own resolution.`);
         } catch (err) {
             if (!pushed) this.releaseSnapshot(before);
             console.error(err);

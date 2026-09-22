@@ -73,9 +73,10 @@ a command that has started runs on in the editor. Your next message continues th
 Everything that can cost money, queue on your ComfyUI, or cannot be taken back asks first, with a
 card that says why:
 
-- **`generate`, `generate_new`, `select_by_text`, `cutout_layer`, `upsample_prompt`** - they cost
+- **`generate`, `generate_new`, `upscale`, `select_by_text`, `cutout_layer`, `upsample_prompt`** - they cost
   money or queue on your server. The card names the recipe and, for a local run, what is in your
-  queue.
+  queue. An `upscale` of the selection adds a layer Ctrl+Z takes back like `generate`'s; one of the
+  whole picture is one undo step of its own, as *Resize* is.
 - **`flatten`, `extend_canvas`, `new_canvas`, `load_image`** - they clear the undo stack or bake
   every layer into the base.
 - **Removing, merging or editing a layer that is not the assistant's own**, unlocking a layer you
@@ -176,6 +177,6 @@ context was read from the provider's cache. The prices come from each provider's
 on 2026-09-19 and are marked with that date; OpenRouter reports the real cost per request, so
 there the number is the provider's own. A local server costs nothing and says "local".
 
-One turn sends the tool list (about 66 tools), the state note and the chat so far; a screenshot
+One turn sends the tool list (about 67 tools), the state note and the chat so far; a screenshot
 is about 900 to 1,400 image tokens at the default 1024 px. A turn of a few steps on Claude Sonnet
 5 is a few cents.

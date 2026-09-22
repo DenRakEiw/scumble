@@ -1,6 +1,10 @@
 // API rendering providers. Each adapter turns one edit request into one image:
 //
 //   edit(request, ctx) -> { bytes: Buffer, mime, width?, height?, seed?, info? }
+//   generate(request, ctx)   the same answer for kind "text" (Generate new)
+//   upscale(request, ctx)    the same answer for kind "upscale": `image` the picture, `factor` how many
+//                            times larger it should come back (null when the model picks), `prompt` when
+//                            the variant takes one as guidance (docs/RECIPES.md "Upscale recipes")
 //
 //   request: { model, kind ("fill" = image + mask, "edit" = instruction on the image),
 //              prompt, negative, seed, image (PNG bytes of the crop), mask (PNG, white =
@@ -32,6 +36,7 @@ const PROVIDERS = {
     comfycloud: require("./comfycloud"),
     openrouter: require("./openrouter"),
     ark: require("./ark"),
+    magnific: require("./magnific"),
     anthropic: require("./anthropic"),   // key row only: prompt upsampling (llm.js)
     deepseek: require("./deepseek"),     // key row only: the assistant
     moonshot: require("./moonshot"),     // key row only: the assistant
@@ -54,6 +59,11 @@ function toBuffer(v) {
     return Buffer.from(v);
 }
 
+/** Which providers have an upscaler (the recipes' `task: "upscale"` variants). */
+function upscaleProviders() {
+    return Object.entries(PROVIDERS).filter(([, p]) => typeof p.upscale === "function").map(([id]) => id);
+}
+
 /** Which providers can make an image from the prompt alone (Generate new). */
 function textProviders() {
     return Object.entries(PROVIDERS).filter(([, p]) => typeof p.generate === "function").map(([id]) => id);
@@ -64,7 +74,10 @@ async function edit(request) {
     const p = PROVIDERS[id];
     if (!p) throw new Error("Unknown provider: " + id);
     const text = request.kind === "text";
+    const upscale = request.kind === "upscale";
     if (text && typeof p.generate !== "function") throw new Error(`${p.label} has no text-to-image endpoint in Scumble; pick another provider for this model.`);
+    if (upscale && typeof p.upscale !== "function") throw new Error(`${p.label} has no upscaler in Scumble; pick another provider for this model.`);
+    const verb = text ? "generate" : upscale ? "upscale" : "edit";
     const key = p.needsKey === false ? "" : keys.get(id);
     if (p.needsKey !== false && !key) throw new Error(`No API key for ${p.label}. Add it under Settings › API providers.`);
     const req = {
@@ -80,16 +93,16 @@ async function edit(request) {
     const t0 = Date.now();
     const ctx = contextFor(id, p, key);
     // the request's shape for the log: never the key, never the pixels
-    const shape = () => ({ model: req.model, kind: text ? "text" : "edit", image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, 200) });
+    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, 200) });
     let out;
     try {
-        out = text ? await p.generate(req, ctx) : await p.edit(req, ctx);
+        out = text ? await p.generate(req, ctx) : upscale ? await p.upscale(req, ctx) : await p.edit(req, ctx);
     } catch (err) {
-        log.record({ level: "error", source: id, message: `${p.label} ${text ? "generate" : "edit"} failed after ${((Date.now() - t0) / 1000).toFixed(1)} s: ${err && err.message || err}`, detail: { request: shape(), stack: err && err.stack } });
+        log.record({ level: "error", source: id, message: `${p.label} ${verb} failed after ${((Date.now() - t0) / 1000).toFixed(1)} s: ${err && err.message || err}`, detail: { request: shape(), stack: err && err.stack } });
         throw err;
     }
     if (!out || !out.bytes) { log.record({ level: "error", source: id, message: p.label + " returned no image.", detail: shape() }); throw new Error(p.label + " returned no image."); }
-    log.record({ source: id, message: `${p.label} ${text ? "generate" : "edit"} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info } });
+    log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info } });
     const bytes = toBuffer(out.bytes);
     return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000 };
 }
@@ -140,4 +153,4 @@ async function balance(id) {
     }
 }
 
-module.exports = { edit, balance, describeAll, textProviders, PROVIDERS };
+module.exports = { edit, balance, describeAll, textProviders, upscaleProviders, PROVIDERS };

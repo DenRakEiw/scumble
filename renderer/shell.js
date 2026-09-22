@@ -56,6 +56,9 @@ const ui = {
     genAlpha: $("gen-alpha"), genAlphaRow: $("gen-alpha-row"),
     genState: $("gen-state"), genGo: $("gen-go"), genCancel: $("gen-cancel"),
     genTemplate: $("gen-template"), genTemplateNote: $("gen-template-note"),
+    up: $("up-dialog"), upRecipe: $("up-recipe"), upProvider: $("up-provider"), upProviderRow: $("up-provider-row"),
+    upNote: $("up-note"), upScopeSel: $("up-scope-sel"), upScopeDoc: $("up-scope-doc"), upFactor: $("up-factor"),
+    upFactorRow: $("up-factor-row"), upSizeNote: $("up-size-note"), upState: $("up-state"), upGo: $("up-go"),
     promptList: $("set-prompts"), promptImport: $("set-prompt-import"), promptFolder: $("set-prompt-folder"), promptNote: $("set-prompt-note"),
     compatUrl: $("set-compat-url"), compatModel: $("set-compat-model"), compatModels: $("set-compat-models"),
     compatKey: $("set-compat-key"), compatKeySave: $("set-compat-key-save"), compatKeyClear: $("set-compat-key-clear"),
@@ -180,7 +183,7 @@ function openInto(file) {
 host.createDocument = (id) => newDocument(id);
 host.onDocsChanged = () => renderTabs();
 // the command core (renderer/commands.js) reaches the shell through this
-host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, openSettings, openGenerateNew: (ed) => openGenerateNew(ed) };
+host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, openSettings, openGenerateNew: (ed) => openGenerateNew(ed), openUpscale: (ed) => openUpscale(ed) };
 ui.tabAdd.addEventListener("click", () => activate(newDocument()));
 
 // ---- connection --------------------------------------------------------------------------
@@ -339,7 +342,7 @@ function resolveRecipe(r) {
     const pid = chosenProvider(r);
     if (!pid) return r;
     const v = r.providers[pid] || {};
-    return { ...r, provider: pid, providerLabel: providerLabel(pid), model: v.model || "", input: v.input || "fill", fields: v.fields || null, fixed: v.fixed || null, settings: v.settings || [], options: v.options || null, note: v.note || "", text: v.text || null, limits: v.limits || null, edit: v.edit !== false };
+    return { ...r, provider: pid, providerLabel: providerLabel(pid), model: v.model || "", input: v.input || "fill", fields: v.fields || null, fixed: v.fixed || null, settings: v.settings || [], options: v.options || null, note: v.note || "", text: v.text || null, limits: v.limits || null, edit: v.edit !== false, task: r.task || "edit", factor: v.factor || null, usesPrompt: !!v.usesPrompt };
 }
 
 function providerKeyState(r) {
@@ -1042,6 +1045,156 @@ ui.genGo.addEventListener("click", async () => {
         ui.genState.textContent = String(err.message || err);
     } finally {
         ui.genGo.disabled = false;
+    }
+});
+
+// ---- Upscale: the selection or the whole picture through an upscale recipe -----------
+
+let upEditor = null;
+
+/** The upscale recipes (`task: "upscale"`), in the recipe list's order. */
+function upRecipes() {
+    return recipes.filter((r) => r.kind === "provider" && r.task === "upscale");
+}
+
+/** The factors a variant offers: its `steps`, else whole numbers min..max; none when the model picks. */
+export function upFactors(v) {
+    const f = (v && v.factor) || { default: 2, min: 1, max: 4 };
+    if (f.fixed) return [];
+    if (Array.isArray(f.steps) && f.steps.length) return f.steps.slice();
+    const out = [];
+    for (let x = Math.ceil(f.min); x <= Math.floor(f.max); x++) out.push(x);
+    return out.length ? out : [f.default];
+}
+
+function upVariant() {
+    const r = recipes.find((x) => x.id === ui.upRecipe.value);
+    return { r, v: (r && r.providers && r.providers[ui.upProvider.value]) || null };
+}
+
+function upFillRecipes() {
+    const list = upRecipes();
+    const keep = ui.upRecipe.value;
+    ui.upRecipe.innerHTML = "";
+    for (const r of list) {
+        const o = document.createElement("option");
+        o.value = r.id;
+        o.textContent = r.name || r.id;
+        ui.upRecipe.appendChild(o);
+    }
+    if (!list.length) {
+        const o = document.createElement("option");
+        o.value = "";
+        o.textContent = "no upscale recipe installed";
+        ui.upRecipe.appendChild(o);
+    }
+    const cur = host.recipe && host.recipe.task === "upscale" ? host.recipe.id : settings.upscaleRecipe;
+    if (list.some((r) => r.id === cur)) ui.upRecipe.value = cur;
+    else if (list.some((r) => r.id === keep)) ui.upRecipe.value = keep;
+    upFillProviders();
+}
+
+function upFillProviders() {
+    const r = recipes.find((x) => x.id === ui.upRecipe.value);
+    const ids = (r && r.providerIds) || [];
+    ui.upProviderRow.hidden = ids.length < 2;
+    const keep = ui.upProvider.value;
+    ui.upProvider.innerHTML = "";
+    for (const pid of ids) {
+        const o = document.createElement("option");
+        o.value = pid;
+        o.textContent = providerOptionLabel(pid);
+        ui.upProvider.appendChild(o);
+    }
+    if (r && ids.includes(chosenProvider(r))) ui.upProvider.value = chosenProvider(r);
+    else if (ids.includes(keep)) ui.upProvider.value = keep;
+    upFillFactors();
+}
+
+function upFillFactors() {
+    const { v } = upVariant();
+    const list = upFactors(v);
+    const keep = +ui.upFactor.value || 0;
+    ui.upFactor.innerHTML = "";
+    for (const f of list) {
+        const o = document.createElement("option");
+        o.value = String(f);
+        o.textContent = `${f}×`;
+        ui.upFactor.appendChild(o);
+    }
+    ui.upFactorRow.hidden = !list.length;
+    if (list.length) ui.upFactor.value = String(list.includes(keep) ? keep : (list.includes(v.factor.default) ? v.factor.default : list[0]));
+    upSyncNote();
+}
+
+/** What the run will send and get back, and why the whole-picture mode may be refused. */
+function upSyncNote() {
+    const ed = upEditor || host.editor;
+    const { r, v } = upVariant();
+    if (!r || !v) { ui.upNote.textContent = ""; ui.upSizeNote.textContent = ""; ui.upGo.disabled = true; return; }
+    const pid = ui.upProvider.value;
+    const key = (providers.find((p) => p.id === pid) || {}).key;
+    const missing = pid === "loopback" || (key && key.set) ? "" : ` No ${providerLabel(pid)} key stored yet: Settings › API providers.`;
+    ui.upNote.textContent = (r.description || "") + missing;
+    const doc = ui.upScopeDoc.checked;
+    const f = v.factor && !v.factor.fixed ? +ui.upFactor.value || v.factor.default : null;
+    const max = (v.limits && v.limits.max) || 2048;
+    let text = "", ok = true;
+    if (ed && ed.width) {
+        if (doc) {
+            const long = Math.max(ed.width, ed.height);
+            if (long > max) { ok = false; text = `The picture is ${ed.width} × ${ed.height}; this model takes at most ${max} px on the long side. Upscale a selection instead.`; }
+            else text = f ? `${ed.width} × ${ed.height} goes out, about ${Math.round(ed.width * f)} × ${Math.round(ed.height * f)} comes back and becomes the picture.` : `${ed.width} × ${ed.height} goes out; the model picks the size that comes back.`;
+        } else {
+            text = `The selection's box (with its context) goes out at its own size, up to ${max} px on the long side, and the sharper answer is fitted back into it.`;
+        }
+    }
+    ui.upSizeNote.textContent = text;
+    ui.upGo.disabled = !ok;
+}
+
+/**
+ * The dialog. Nothing changes until Upscale is pressed; then the recipe (and provider) is selected, so its
+ * settings stay in the Settings panel afterwards, and the `upscale` command runs, the path agents take too.
+ */
+export function openUpscale(editor) {
+    upEditor = editor || host.editor;
+    if (!upEditor) return;
+    upFillRecipes();
+    const hasSel = !!(upEditor.getBounds && upEditor.getBounds());
+    (hasSel ? ui.upScopeSel : ui.upScopeDoc).checked = true;
+    ui.upState.textContent = "";
+    upSyncNote();
+    ui.up.showModal();
+}
+
+ui.upRecipe.addEventListener("change", upFillProviders);
+ui.upProvider.addEventListener("change", upFillFactors);
+ui.upFactor.addEventListener("change", upSyncNote);
+ui.upScopeSel.addEventListener("change", upSyncNote);
+ui.upScopeDoc.addEventListener("change", upSyncNote);
+ui.up.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopPropagation(); });
+
+ui.upGo.addEventListener("click", async () => {
+    const ed = upEditor || host.editor;
+    if (!ed) return;
+    const id = ui.upRecipe.value;
+    if (!id) { ui.upState.textContent = "No upscale recipe to run."; return; }
+    ui.upGo.disabled = true;
+    try {
+        selectRecipe(id, ui.upProvider.value || undefined);
+        if (settings.upscaleRecipe !== id) window.scumble.settings.set({ upscaleRecipe: id }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
+        const args = { doc: ed.node.id, scope: ui.upScopeDoc.checked ? "document" : "selection", timeout: 1800 };
+        if (!ui.upFactorRow.hidden) args.factor = +ui.upFactor.value;
+        // the dialog closes as soon as the run starts; the status line and the busy marker follow it
+        const run = commands.run("upscale", args);
+        ui.up.close();
+        activate(ed);
+        console.log("[upscale]", await run);
+    } catch (err) {
+        ed.setStatus(String(err.message || err));
+    } finally {
+        ui.upGo.disabled = false;
     }
 });
 

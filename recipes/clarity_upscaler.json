@@ -1,0 +1,89 @@
+{
+  "id": "clarity_upscaler",
+  "kind": "provider",
+  "task": "upscale",
+  "name": "Clarity Upscaler (upscale)",
+  "family": "Upscale",
+  "description": "The open Clarity upscaler (Stable Diffusion with a tile ControlNet) through fal.ai; the prompt guides the added detail. Written from the provider's schema and not run against the live API yet.",
+  "default": "fal",
+  "factor": {
+    "default": 2,
+    "min": 1,
+    "max": 4
+  },
+  "usesPrompt": true,
+  "providers": {
+    "fal": {
+      "model": "fal-ai/clarity-upscaler",
+      "options": {
+        "omit": [
+          "output_format"
+        ],
+        "seed": true
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "creativity",
+          "label": "Creativity",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 0.35,
+              "min": 0,
+              "max": 1,
+              "step": 0.05
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "resemblance",
+          "label": "Resemblance",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 0.6,
+              "min": 0,
+              "max": 1,
+              "step": 0.05
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "num_inference_steps",
+          "label": "Steps",
+          "spec": [
+            "INT",
+            {
+              "default": 18,
+              "min": 4,
+              "max": 50
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "key": "guidance_scale",
+          "label": "Guidance",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 4,
+              "min": 0,
+              "max": 20,
+              "step": 0.5
+            }
+          ]
+        }
+      ],
+      "note": "fal-ai/clarity-upscaler: 1 to 4 times; the tab's prompt and negative prompt go along (fal's own defaults when they are empty), and the seed. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    }
+  },
+  "limits": {
+    "min": 32,
+    "max": 4096,
+    "step": 1
+  }
+}

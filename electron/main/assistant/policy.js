@@ -18,7 +18,7 @@ const READS = new Set([
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
-const RUNS = new Set(["generate", "generate_new", "select_by_text", "cutout_layer", "upsample_prompt"]);
+const RUNS = new Set(["generate", "generate_new", "upscale", "select_by_text", "cutout_layer", "upsample_prompt"]);
 
 /** The fields of `set_layer` that the editor records no undo step for (§5). */
 const SET_LAYER_SOFT = ["name", "visible", "opacity", "blend", "role", "match", "match_source", "alpha_lock"];
@@ -100,6 +100,9 @@ const POLICY = {
     upsample_prompt: () => ASK("rewrites the prompt on a paid model or your ComfyUI"),
     generate: (call, facts) => ASK("renders: this costs money, or queues on your ComfyUI", renderCard(call, facts)),
     generate_new: (call, facts) => ASK("renders a new base image, and clears the undo history", renderCard(call, facts)),
+    upscale: (call, facts) => ASK(call.args && call.args.scope === "document"
+        ? "upscales the whole picture on a paid model: every layer is scaled along"
+        : "upscales the selection on a paid model", renderCard(call, facts)),
 
     // ---- replace, close, tabs -----------------------------------------------------------
     load_image: () => ASK("replaces the image and clears the undo history"),
@@ -216,7 +219,7 @@ function clampInt(value, min, max, fallback) {
 }
 
 /** The command's own default `timeout`, filled in so the Bridge's timer is long enough (§5). */
-const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, generate: 600, generate_new: 600 };
+const TIMEOUT_DEFAULTS = { select_by_text: 300, upsample_prompt: 300, cutout_layer: 300, generate: 600, generate_new: 600, upscale: 1800 };
 
 /**
  * The arguments as they are sent: a screenshot small enough to be cheap, a log page bounded, and
@@ -289,6 +292,8 @@ function undoStep(call, facts = {}) {
     if (READS.has(name)) return null;
     if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "duplicate_layer", "generate", "glb_place"].includes(name)) return "layers";
     if (name === "film_apply_look") return addsLayer(facts) ? "layers" : null;
+    // the selection's upscale adds a result layer as generate does; the whole picture's pushes its own `canvas` step
+    if (name === "upscale") return args.scope === "document" ? null : "layers";
     if (name === "set_filter") return hasParams(call) && !args.type ? "filter" : null;
     if (name === "set_text") return "text";
     if (name === "set_layer") {

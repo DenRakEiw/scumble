@@ -99,6 +99,28 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-22)
 
+**2026-09-22: U1 is built - upscaling through the providers, for 0.1.24** (`package.json` 0.1.24, CHANGELOG "0.1.24 -
+unreleased"; `docs/PLAN_0_1_24.md` "U1 as built", `docs/RECIPES.md` "Upscale recipes" and "Magnific"). An *Upscale*
+button next to *Generate new* (the app host's `buildUpscaleButton`, so the node needs nothing) opens `#up-dialog`
+(model, provider, the selection or the whole picture, the factor) and runs the new command `upscale` (`scope`,
+`factor`; the assistant asks, 30 min timeout, a `layers` undo step for the selection, none for the whole picture).
+`host.runUpscale`: the selection's crop box (with context) at its own size, no fill, no references, the answer fitted
+back by the stitch as a result layer; the whole picture sends the base alone and the answer becomes the base through
+`resizeImage(nw, nh, { base })` (layers, masks, selection scaled, one `canvas` step), refused above `limits.max`.
+*Generate* with an upscale recipe selected upscales the selection. Recipe format: `task: "upscale"`, `factor { default,
+min, max, steps, fixed }`, `usesPrompt` (normalized in `recipes.js`, family *Upscale*). Nine recipes: Topaz Precision /
+Bloom / Wonder, Clarity, SeedVR2, Recraft Crisp / Creative (fal, `fal.js` `upscale`, 30 min queue wait), Magnific
+Precision (V2, 2-16) and Creative (2/4/8/16, 25.3 MP cap) through the new `providers/magnific.js` (async tasks on
+`api.magnific.com`, `x-magnific-api-key`, base64, host and `test-` key rules as ModelArk) and, **not in the plan**,
+Comfy Cloud as the last variant of both Magnific and both Recraft recipes (Partner Nodes, `comfycloud.js` `upscale`).
+**The survey** could only read keyless lists: this install stores a BFL key only (no fal, Magnific, Replicate,
+WaveSpeed, ToAPIs, OpenRouter key); findings in `docs/RECIPES.md`. Tests: `node tools/upscale_test.js` (84 checks) and
+the gate `upscale` (`tools/upscale_test.py`, 10 steps, loopback upscaler with a magenta frame marker); mutation rounds
+**64 of 64** (Node, on a copy of the tree) and **17 of 17** (app, fresh instance each; four survivors of the first run
+were each answered with a check or a change). **Not done: the checkpoint.** Nothing has run against a live API; it
+needs the user's fal key (one `topaz_precision` run: a small selection and a 2 MP picture) and a Magnific key (one
+task per route) before 0.1.24 is released, then the dev blog post.
+
 **2026-09-22: the plan for the next sessions is `docs/PLAN_0_1_24.md`** - seven sessions with a `/clear` after each
 larger one: U1 upscaling through the providers (fal already hosts Topaz precision / creative / generative, Clarity,
 SeedVR2, Recraft behind the existing adapter and key; selection mode on the existing run path, a whole-picture mode

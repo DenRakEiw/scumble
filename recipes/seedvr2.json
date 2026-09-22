@@ -1,0 +1,47 @@
+{
+  "id": "seedvr2",
+  "kind": "provider",
+  "task": "upscale",
+  "name": "SeedVR2 (upscale)",
+  "family": "Upscale",
+  "description": "ByteDance's SeedVR2 restoration upscaler through fal.ai: one step, faithful, fast. Written from the provider's schema and not run against the live API yet.",
+  "default": "fal",
+  "factor": {
+    "default": 2,
+    "min": 1,
+    "max": 8
+  },
+  "providers": {
+    "fal": {
+      "model": "fal-ai/seedvr/upscale/image",
+      "options": {
+        "seed": true
+      },
+      "fixed": {
+        "upscale_mode": "factor"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "noise_scale",
+          "label": "Noise",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 0.1,
+              "min": 0,
+              "max": 1,
+              "step": 0.05
+            }
+          ]
+        }
+      ],
+      "note": "fal-ai/seedvr/upscale/image in factor mode: 1 to 8 times here (the model takes up to 10). Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    }
+  },
+  "limits": {
+    "min": 32,
+    "max": 4096,
+    "step": 1
+  }
+}

@@ -13,7 +13,7 @@
 //           that asked: results by prompt id, helper masks / texts by the canvas_node id
 //           the helper prompt carried (= editor.node.id).
 
-import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels } from "./stitch.js";
+import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, canvasBytes } from "./stitch.js";
 import { glReleasePool } from "./inpaint_filters_gl.js";
 
 const PROXY = "/comfy";
@@ -205,6 +205,7 @@ export const host = {
     editorBuilt(editor) {
         try { this.buildExportSize(editor); } catch (err) { console.warn("export size row", err); }
         try { this.hookStatus(editor); } catch (err) { console.warn("status hook", err); }
+        try { this.buildUpscaleButton(editor); } catch (err) { console.warn("upscale button", err); }
         this.emit("built", { editor });
     },
 
@@ -897,6 +898,125 @@ export const host = {
     },
 
     /**
+     * The factor a run asks for: null when the model picks its own (Recraft), else `want` held to what the
+     * variant offers (its `steps`, or min..max), its default when nothing was asked.
+     */
+    upscaleFactorFor(r, want) {
+        const f = r && r.factor;
+        if (!f || f.fixed) return null;
+        const n = want == null || want === "" ? f.default : +want;
+        if (!Number.isFinite(n)) throw new Error(`"${want}" is no factor.`);
+        if (Array.isArray(f.steps) && f.steps.length) {
+            if (!f.steps.includes(n)) throw new Error(`${r.name || r.id} upscales by ${f.steps.join(", ")}, not ${n}.`);
+            return n;
+        }
+        if (n < f.min || n > f.max) throw new Error(`${r.name || r.id} upscales by ${f.min} to ${f.max}, not ${n}.`);
+        return n;
+    },
+
+    /**
+     * An upscale through the selected upscale recipe (`task: "upscale"`, docs/RECIPES.md "Upscale recipes").
+     * `scope` "selection": the selection's box goes out at its own size (no fill, no references) and the larger
+     * answer is fitted back into it by the stitch, a result layer like Generate's: a detail pass at the
+     * document's resolution. `scope` "document": the base image alone goes out, the answer becomes the new base
+     * at its own size, and every layer, mask and the selection are scaled along (`resizeImage` with the new base,
+     * one `canvas` undo step); a picture above the variant's `limits.max` is refused.
+     */
+    async runUpscale(editor, opts = {}) {
+        const r = this.recipe;
+        if (!r || r.kind !== "provider" || r.task !== "upscale") throw new Error("Pick an upscale recipe first (Upscale shows them).");
+        if (!editor.base) throw new Error("Load an image first.");
+        const scope = opts.scope === "document" ? "document" : "selection";
+        const label = r.providerLabel || r.provider;
+        const factor = this.upscaleFactorFor(r, opts.factor);
+        const max = (r.limits && r.limits.max) || 2048;
+        if (scope === "selection" && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first, or upscale the whole picture.");
+        if (scope === "document" && Math.max(editor.width, editor.height) > max) {
+            throw new Error(`The picture is ${editor.width} × ${editor.height}; ${r.name || r.id} on ${label} takes at most ${max} px on the long side. Upscale a selection instead.`);
+        }
+        const params = this.providerParams(editor);
+        const slow = /topaz/i.test(`${r.id} ${r.model}`) ? " Topaz can take several minutes; the window stays usable." : "";
+        const by = factor ? `${factor}×` : "the model's own factor";
+        const token = { provider: r.provider, label, started: Date.now(), editor };
+        editor.providerPending = token;
+        this._providerRuns.add(token);
+        this.notifyProviderRuns();
+        let res, prep = null, W = editor.width, H = editor.height;
+        try {
+            const request = {
+                provider: r.provider, model: r.model, kind: "upscale", fields: r.fields || null, options: r.options || null,
+                factor, params, seed: editor.genSettings.seed,
+                prompt: r.usesPrompt ? String(editor.promptText || "") : "",
+                negative: r.usesPrompt ? String(editor.negativeText || "") : "",
+                mask: null, maskAlpha: null, references: [],
+            };
+            if (scope === "selection") {
+                // the crop as it is (mode "crop", up to the model's max), without a fill or the reference layers
+                prep = await prepareCropAsync(editor, this.nodeParams, { ...r.limits, mode: "crop" }, { crop: { fill: "none", withOriginal: false }, references: false });
+                const [x, y, w, h] = prep.info.bbox;
+                Object.assign(request, { image: prep.image, width: prep.width, height: prep.height, references: prep.references });
+                editor.setStatus(`Upscaling the selection's box ${w} × ${h} at ${x}, ${y} (${prep.width} × ${prep.height} sent) by ${by} on ${label} ...${slow}`);
+            } else {
+                const c = document.createElement("canvas");
+                c.width = W; c.height = H;
+                editor.drawBaseInto(c.getContext("2d"), 0, 0, W, H);
+                const image = await canvasBytes(c);
+                c.width = c.height = 0;
+                Object.assign(request, { image, width: W, height: H });
+                editor.setStatus(`Upscaling the picture ${W} × ${H} by ${by} on ${label} ...${slow}`);
+            }
+            res = await window.scumble.providers.edit(request);
+        } finally {
+            if (editor.providerPending === token) editor.providerPending = null;
+            this._providerRuns.delete(token);
+            this.notifyProviderRuns();
+        }
+        if (scope === "selection") {
+            const info = prep.info;
+            const [x, y, w, h] = info.bbox;
+            const fin = await finishResultAsync(editor, info, prep.sel, res.bytes, res.mime);
+            const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+            const ref = await this.uploadResult(fin.blob, `n${editor.node.id}_upscale_${stamp}.png`);
+            await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider }]);
+            const got = res.info && res.info.width ? ` (${res.info.width} × ${res.info.height} came back)` : "";
+            editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.`);
+            return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null };
+        }
+        // the whole picture: the answer at its own size, stretched to the document's aspect if the model rounded
+        const img = await bytesToImage(res.bytes, res.mime);
+        const aw = img.naturalWidth || img.width, ah = img.naturalHeight || img.height;
+        if (!(aw > 0 && ah > 0)) throw new Error(`${label} answered with an empty picture.`);
+        const nw = aw, nh = Math.max(1, Math.round(H * aw / W));
+        if (nw === W && nh === H) throw new Error(`${label} answered at the picture's own size (${aw} × ${ah}); nothing to do.`);
+        const nb = document.createElement("canvas");
+        nb.width = nw; nb.height = nh;
+        const nctx = nb.getContext("2d");
+        nctx.imageSmoothingEnabled = true;
+        nctx.imageSmoothingQuality = "high";
+        nctx.drawImage(img, 0, 0, nw, nh);
+        await editor.resizeImage(nw, nh, { base: nb });
+        nb.width = nb.height = 0;
+        if (editor.width !== nw || editor.height !== nh) throw new Error(editor.status || "the upscaled picture could not be taken");
+        editor.setStatus(`${label} upscaled the picture in ${Math.round(res.seconds)} s: ${W} × ${H} is now ${nw} × ${nh}, every layer scaled along (Ctrl+Z takes it back).`);
+        return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: nw, height: nh, answered: [aw, ah], info: res.info || null };
+    },
+
+    /** The Upscale button in the editor's top bar, next to Generate new (the app's, so the node's host needs none). */
+    buildUpscaleButton(editor) {
+        const top = editor.root && editor.root.querySelector(".ipc-top");
+        if (!top || top.querySelector(".ipc-upscale") || !this.shell || !this.shell.openUpscale) return;
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "ipc-ib ipc-upscale";
+        b.title = "Upscale: the selection comes back sharper at the document's resolution, or the whole picture becomes 2, 4 ... times larger with every layer scaled along. Topaz, Clarity, SeedVR2, Recraft and Magnific models.";
+        b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-7 7"/><path d="M10 20H4v-6"/><path d="M4 20l7-7"/></svg><span>Upscale</span>';
+        b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); this.shell.openUpscale(editor); });
+        const after = Array.from(top.querySelectorAll(".ipc-ib")).find((x) => /^Generate new/.test(x.title || ""));
+        if (after) after.after(b);
+        else top.insertBefore(b, top.querySelector(".ipc-grow"));
+    },
+
+    /**
      * "Generate new": one call to the provider with the prompt alone, no crop, no mask and
      * no references, and the answer becomes the document's base image. The recipe variant's
      * `text` shape says which model id does that at this provider (docs/RECIPES.md).
@@ -1074,6 +1194,7 @@ export const host = {
     async queueGenerate(editor) {
         const r = this.recipe;
         if (!r) throw new Error("No recipe selected.");
+        if (r.kind === "provider" && r.task === "upscale") return this.runUpscale(editor, { scope: "selection" });
         if (r.kind === "provider") return this.runProvider(editor);
         if (!r.prompt) throw new Error("No recipe selected.");
         if (!this.connected) throw new Error("Not connected to ComfyUI.");

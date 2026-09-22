@@ -300,6 +300,82 @@ resampler is used), the Navier-Stokes "border" fill (behaves like "blur").
 A hidden `loopback` provider returns the crop unchanged (no key); `tools/smoke_test.py`
 uses it to check the crop / stitch path.
 
+### Upscale recipes (`task: "upscale"`)
+
+An upscale recipe is a provider recipe with `"task": "upscale"` (the default task is `edit`). It runs through the
+*Upscale* button next to *Generate new* (a dialog: model, provider, the selection or the whole picture, the
+factor), the `upscale` command (`docs/COMMANDS.md`; the assistant asks before it, as for `generate`), or *Generate*
+while the recipe is selected (then on the selection). The recipe select lists these recipes in the family
+*Upscale*. `normalize()` gives every variant of such a recipe:
+
+- `factor: { default, min, max, steps, fixed }` from the recipe's or the variant's `factor` block (without one:
+  2, 1 to 4). `steps` lists the only factors a model takes (Magnific Creative and both Magnific nodes on Comfy
+  Cloud: 2, 4, 8, 16); `fixed: true` marks a model that picks its own (Recraft's upscalers), and no factor is sent.
+  The host refuses a factor outside what the variant offers before anything is sent.
+- `usesPrompt`: only then do the tab's prompt and negative prompt go along, as guidance (Clarity, Magnific
+  Creative). Every other upscaler gets no prompt.
+- `text: null` (an upscaler has no *Generate new* shape) and its `limits` as any variant. The shipped recipes set
+  `limits: { min: 32, max: 4096, step: 1 }`: the crop goes out at its own size (the size mode `crop`, whatever the
+  *Highres fix* select says), never pushed up to the model's maximum and never rounded to a multiple.
+
+The two modes (`host.runUpscale(editor, { scope, factor })` in `renderer/editor/host.js`):
+
+- **The selection** (a detail pass): `prepareCropAsync` makes the crop as for any provider run but with no fill
+  and without the reference layers; the request is `kind: "upscale"` with `factor`; the answer, N times larger,
+  goes through `finishResultAsync`, which fits any answer back into the crop box (stretched when the aspect
+  matches), and lands as a result layer. The selection comes back sharper at the document's resolution; nothing
+  gets bigger.
+- **The whole picture**: the base image alone goes out (the layers stay layers). The answer becomes the new base
+  at its own size (stretched to the document's aspect if the model rounded a side), and every layer, filter mask
+  and the selection are scaled by the same factor through `resizeImage(nw, nh, { base })`, the path of *Resize*,
+  as one `canvas` undo step. A picture whose long side is above the variant's `limits.max` is refused with its size
+  in the message (the dialog greys *Upscale* out); a banded upscale of a larger picture is session U3's
+  (`docs/PLAN_0_1_24.md`).
+
+The adapters: `upscale(req, ctx)` beside `edit` / `generate`; `providers/index.js` sends `kind: "upscale"` there
+and refuses a provider without one by name. **fal** (`fal.js`): `{ image_url, upscale_factor, output_format:
+"png", the variant's settings }` to the variant's `model` through the queue, waiting up to 30 minutes (Topaz takes
+minutes on a large picture; the recipe description and the status line say so). `fields.factor` renames the
+factor (or `false` leaves it out, Recraft), `options.omit` drops fields a strict endpoint refuses (Clarity and
+Recraft take no `output_format`), `options.seed` sends the seed (Clarity, SeedVR2), `options.numbers` names rows
+whose choices are numbers written as a list, and a row set to `auto` is left out so the model's own default holds
+(Topaz: Sharpen, Denoise, Fix compression; its defaults differ per model). **Magnific** (`magnific.js`, below).
+**Comfy Cloud** (`comfycloud.js`): LoadImage -> one of `MagnificImageUpscalerPreciseV2Node`,
+`MagnificImageUpscalerCreativeNode`, `RecraftCrispUpscaleNode`, `RecraftCreativeUpscaleNode` -> SaveImage, the
+Magnific factor as `"4x"` and `auto_downscale: false` (Scumble refuses an oversized picture itself), the settings by
+input key; their inputs were read from a ComfyUI's `/object_info` on 2026-09-22. The hidden **loopback** answers the
+picture resampled by the factor (2 when the model picks) with a 4 px magenta frame, which is what
+`tools/upscale_test.py` looks for.
+
+The shipped recipes (all written from the providers' schemas and not run against a live API yet):
+
+| Recipe | Providers (default first) | Factor | Rows |
+| --- | --- | --- | --- |
+| `topaz_precision` Topaz Precision | fal `topaz/upscale/image/precision` | 1 to 4 | Model (Standard V2, High Fidelity V3 / V2, Low Resolution V2, CGI, Text Refine, Faces), Face enhancement, Sharpen, Denoise, Fix compression |
+| `topaz_creative` Topaz Bloom | fal `topaz/upscale/image/creative` | 1 to 4 | Model (Bloom 2, Bloom, Bloom Realism), Creativity 1 to 9 (Bloom 2) |
+| `topaz_generative` Topaz Wonder / Redefine | fal `topaz/upscale/image/generative` | 1 to 4 | Model (Wonder 3.5 ... Recovery), Face enhancement |
+| `clarity_upscaler` Clarity | fal `fal-ai/clarity-upscaler` | 1 to 4 | Creativity, Resemblance, Steps, Guidance; prompt, negative and seed go along |
+| `seedvr2` SeedVR2 | fal `fal-ai/seedvr/upscale/image` (factor mode) | 1 to 8 | Noise; the seed goes along |
+| `recraft_crisp` Recraft Crisp | fal `fal-ai/recraft/upscale/crisp`, Comfy Cloud | the model's | none |
+| `recraft_creative` Recraft Creative | fal `fal-ai/recraft/upscale/creative`, Comfy Cloud | the model's | none |
+| `magnific_precision` Magnific Precision | Magnific `image-upscaler-precision-v2`, Comfy Cloud | 2 to 16 (Comfy Cloud 2, 4, 8, 16) | Flavor, Sharpen, Smart grain, Ultra detail |
+| `magnific_creative` Magnific Creative | Magnific `image-upscaler`, Comfy Cloud | 2, 4, 8, 16 (at most 25.3 MP out) | Optimized for, Engine, Creativity, HDR, Resemblance, Fractality; the prompt goes along |
+
+**Who else serves an upscaler** (the survey of 2026-09-22; only lists that answer without a key could be read, and
+**no key but BFL's is stored in this install**, so Replicate, WaveSpeed and ToAPIs stay open): OpenRouter's
+`GET /api/v1/images/models` lists no upscaler. Oxen.ai's `/models` lists `topazlabs-image-upscale`,
+`topazlabs-bloom-image`, `topazlabs-bloom-2-image`, `topazlabs-wonder-3-image`, `topazlabs-wonder-3-5-image` and
+`flux-image-upscaler` (session O1 decides their variants). The ComfyUI Partner Nodes (a ComfyUI's `/object_info`)
+have, besides the four above, `TopazImageEnhanceV2` (Reimagine, Bloom 2, Wonder 3.5, a dynamic combo with many
+required sub-inputs and an output size instead of a factor: not wired yet) and `WavespeedImageUpscaleNode`
+(SeedVR2 or Ultimate to a 2K / 4K / 8K target, no factor: not wired). Replicate's `collections/super-resolution`
+and WaveSpeed's model list answered 401 without a key.
+
+What only a real key can verify: that each endpoint takes a data URI (fal) or base64 (Magnific) of the crop's size,
+that the answer comes back at the factor (Recraft's is unknown), fal's Topaz limits at 4x on a 4 MP input (they
+decide `limits.max`), Magnific's task routes and status names as read, and the Comfy Cloud nodes' inputs on the
+cloud's own node versions.
+
 ### ToAPIs (`toapis`)
 
 [ToAPIs](https://toapis.com) is a reseller on a New API gateway: one key for GPT Image 2 and 2.5,
@@ -1222,3 +1298,37 @@ as JPEG, the mask sent, a region that is no region or a host from a recipe, the 
 retry for `QuotaExceeded`, before `Retry-After` or a third time, the key left in a message or its head left at the
 300-character cut, the error words of every code, lite's `limits.max` back at 4096, and a variant's default,
 model id or place in the list.
+
+### Magnific (`magnific`)
+
+[Magnific](https://www.magnific.com) (Freepik) sells the Magnific upscalers through its own API; the reference is
+at https://docs.magnific.com (the same pages as docs.freepik.com; the magnific.com page answers 403 to a script),
+read 2026-09-22. `electron/main/providers/magnific.js` covers the two upscalers; session M1 of
+`docs/PLAN_0_1_24.md` grows it into a full provider (Mystic, FLUX, Seedream 4.5, Image Expand).
+
+- `POST https://api.magnific.com/v1/ai/image-upscaler-precision-v2` with `{ image, scale_factor, sharpen,
+  smart_grain, ultra_detail, flavor }`: Precision V2, the factor an integer 2 to 16. (The older
+  `image-upscaler-precision` has no factor at all and is not used.)
+- `POST https://api.magnific.com/v1/ai/image-upscaler` with `{ image, scale_factor, prompt, creativity, hdr,
+  resemblance, fractality, optimized_for, engine }`: Creative, the factor `"2x"`, `"4x"`, `"8x"` or `"16x"`, the
+  answer at most 25.3 million pixels (the adapter refuses a request that would pass it, before sending).
+- Header `x-magnific-api-key`; `image` is plain base64 (no `data:` prefix; the docs warn that re-encoding or
+  resizing costs quality, so the crop goes as the PNG it is). Every call is an asynchronous task: the POST answers
+  `{ data: { task_id, status: "CREATED" } }`, `GET <route>/<task_id>` is polled every 3 s until `COMPLETED` (at
+  most 30 minutes; `FAILED` ends the run) and the picture is fetched from the first URL in `generated`, without
+  the key. No webhook: the app has no public address. A task id that is not an id is never put into a URL.
+- A 429 or 503 is sent once more after its `Retry-After` (5 s without one), not at all when that is more than a
+  minute ("try again in N s"); a network error is never retried. 401 reads "key refused", 402 "no credits left",
+  400 names the invalid parameters from `problem.invalid_params`; the key is taken out of every message.
+- The host is `api.magnific.com`, never a URL from a recipe; `settings.magnific.base` may name a loopback mock for
+  tests, and then only a key starting `test-` goes there, while such a key never goes to Magnific.
+- **Every API call costs credits, whatever the web plan says** (Magnific's pricing page: "Unlimited" allowances
+  cover the web app only). The price follows the output's area (their FAQ: 640 × 480 at 2x EUR 0.10, at 4x
+  EUR 0.20).
+- Where the picture goes: to Magnific / Freepik (Freepik Company S.L., Málaga, Spain). Their terms were not read
+  for retention; the key row's note says the picture goes to Magnific.
+
+The key row is *Magnific* in Settings › API providers (the key from Magnific's organisation settings). The same
+two upscalers also run as Comfy Cloud Partner Nodes (a Comfy key, billed in Comfy credits), the second variant of
+both recipes. Not run against the live API: one task per route with the user's key is the checkpoint before it
+ships as tested.
