@@ -117,6 +117,15 @@ instance each). Checked against the user's `/object_info` (read only, the queue 
 `smoke` with a real model file waits for the user's ComfyUI. **Next: U3** (in-app ONNX upscaling, whole picture in
 bands), then the 0.1.25 release with U2.
 
+**2026-09-22: PSD and ORA open with their layers, for 0.1.25** (the user's bug report the same day; `docs/BUGS.md`
+"A PSD saved with layers cannot be opened with them"). New `renderer/editor/inpaint_layered.js` (`readPsd` /
+`readOra`, no DOM, in `build_node.py` FILES and `docs/BUILD_NODE.md`), the editor's `readLayered` / `loadLayered`
+(`loadFile` sniffs the first bytes; `addImageLayers` adds a dropped file's layers), `.psd` / `.ora` in the open
+dialog's filters. Found and fixed on the way: **the PSD export lost every non-ASCII layer name** (a `luni` block in
+both writers now). New gate **`layered`** (`node tools/layered_test.js` 44 checks, then 7 app steps); mutation round
+18 of 18 red; gates `--offline` on both backends (`layered export editor commands mcp upscale`, tiles also
+`nodecopy`) ALL PASS; checked on the user's real Photoshop files (read only, locally).
+
 **2026-09-22: the U1 checkpoint ran** with the user's fal and Magnific keys (entered in a dev instance on the scratch
 profile `dist/live-keys`, which keeps them; `docs/RECIPES.md` "The checkpoint, 2026-09-22"): Topaz Precision on fal (a
 selection 25 s, a 1907 x 1073 picture to 3814 x 2146 in 24 s), Magnific Precision V2 (the same box in **311 s**) and
@@ -1025,7 +1034,7 @@ their own 15k file.
 port 9555 with its own profile (with `test_base.png`), runs each gate with a timeout, and writes logs and `summary.txt` under
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
-mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
 forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and

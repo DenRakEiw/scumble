@@ -11,6 +11,26 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### A PSD saved with layers cannot be opened with them - fixed for 0.1.25
+
+Reported by the user on 2026-09-22 ("man kann zwar als .psd speichern aber keine .psd mit den ebenen laden").
+Measured: not a broken path but a missing one. The open dialog listed no `.psd` / `.ora`, and a PSD reached the
+browser's image decoder, which cannot read it. **Built:** `renderer/editor/inpaint_layered.js` (`readPsd`, `readOra`,
+plain data, no DOM) and the editor's `readLayered` / `loadLayered`: `loadFile` (Open, `load_image`, a drop on an empty
+tab) opens a PSD or ORA with its layers, decided by the file's first bytes, not its name; a drop on an open document
+adds its layers where the file has them. The bottom layer becomes the base when it covers the picture, visible,
+opaque and normal (Photoshop's Background, the editor's own export); otherwise the base is transparent. A layer mask
+is multiplied into the layer's alpha, a group's visibility and opacity into its layers; adjustment and fill layers,
+clipping masks and blend modes the editor lacks are named in the status line. RGB and grayscale, 8 and 16 bit, RLE,
+raw and ZIP; PSB, CMYK, Lab and 32 bit are refused by name. **Found on the way and fixed:** the editor's own PSD
+export wrote every layer name through an ASCII-only Pascal string, so "Gürtel" came back as "G_rtel" in Photoshop too;
+both PSD writers (`inpaint_export.js`, `inpaint_bands.js`) now also write the `luni` block with the full name.
+Checked on real files of the user's (Photoshop PSDs with groups, masks and a gradient fill; the editor's own PSD and
+ORA exports): the layers composited again match the file's merged picture to 0.00 to 0.14 levels, except where a
+left-out fill layer is the background (named in the notes). Tests: `node tools/layered_test.js` (44 checks on files
+built byte by byte), the gate `layered` (`tools/layered_test.py`, 7 steps: the round trip through the editor's own
+PSD and ORA export, a transparent base, a drop, a file named .png, a truncated file); mutation round 18 of 18 red.
+
 ### Layer names cannot be edited (GitHub issue #1) - fixed for 0.1.23
 
 Measured on 2026-09-21 in a fresh instance: the side panel was 291 px, a layer row 259 px, its content 274 px, and

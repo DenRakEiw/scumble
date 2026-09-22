@@ -222,6 +222,23 @@ function pascal(name, pad) {
 }
 
 /**
+ * The layer's full name as Photoshop reads it: an additional layer info block `luni` (a count, then UTF-16 code
+ * units, padded to 4 bytes). The Pascal name beside it holds ASCII only, so without this block every name with an
+ * umlaut came back as "___".
+ */
+function luni(name) {
+    const s = String(name || "Layer");
+    const len = 4 + 2 * s.length, padded = Math.ceil(len / 4) * 4;
+    const out = new Uint8Array(12 + padded);
+    const v = new DataView(out.buffer);
+    out.set([0x38, 0x42, 0x49, 0x4d, 0x6c, 0x75, 0x6e, 0x69], 0);   // "8BIM" "luni"
+    v.setUint32(8, padded);
+    v.setUint32(12, s.length);
+    for (let i = 0; i < s.length; i++) v.setUint16(16 + 2 * i, s.charCodeAt(i));
+    return out;
+}
+
+/**
  * The PSD of inpaint_export.js `PsdWriter`, byte for byte, from row sources: a layer is packed as soon as it is handed
  * over and kept packed (a 15000 x 10000 layer's four channels are a fraction of its 600 MB), the file is a Blob of the
  * pieces. PSD (not PSB): 30,000 px a side and 4 GB a section at most.
@@ -252,10 +269,11 @@ export class PsdBandWriter {
         rec.u8(0);
         rec.u8(L.visible === false ? 2 : 0);
         rec.u8(0);
-        const name = pascal(L.name, 4);
-        rec.u32(4 + 4 + name.length);
+        const name = pascal(L.name, 4), uni = luni(L.name);
+        rec.u32(4 + 4 + name.length + uni.length);
         rec.u32(0); rec.u32(0);
         rec.push(name);
+        rec.push(uni);
         // the layer's channels as one Blob right away: the packed rows of a large layer are hundreds of megabytes in
         // thousands of buffers, which a Blob made at the end copied in one go (a second of blocked window at 30000 x 20000)
         const pieces = [];

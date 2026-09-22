@@ -14,6 +14,16 @@ the section for its version; `docs/` and the commit history hold the technical d
   ComfyUI yet.
 - The assistant's question before an upscale of the selection now says that it costs money **or queues on your
   ComfyUI**.
+- **PSD and ORA files open with their layers.** *Open*, drag and drop and the `load_image` command read a
+  Photoshop PSD or an OpenRaster ORA as layers: names, positions, opacity, visibility and blend modes. The bottom
+  layer becomes the picture when it covers it (Photoshop's *Background*, or a file Scumble saved); otherwise the
+  picture is transparent and every layer stays a layer. Layer masks are applied to the layer's transparency, groups
+  are flattened into their layers (their visibility and opacity carried along). What Scumble has no place for is
+  named in the status line: adjustment and fill layers are left out, clipping masks and blend modes Scumble lacks
+  are not kept. RGB and grayscale, 8 and 16 bit; PSB, CMYK and 32-bit files are refused with a reason. Dropping a
+  PSD on an open picture adds its layers to it.
+- **PSD export keeps layer names with umlauts and other non-ASCII letters.** They were written as underscores
+  ("G_rtel"); Photoshop and Scumble now read the full name.
 - **The upscalers have run for real now:** Topaz Precision through fal (a selection and a whole 2 MP picture, about
   25 s each), Magnific Precision and Magnific Creative through Magnific (a selection each). Magnific Precision is
   slow, five minutes for a small box; the status line now says so while it runs, as it does for Topaz.

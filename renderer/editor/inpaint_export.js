@@ -84,6 +84,23 @@ function pascal(name, pad) {
 }
 
 /**
+ * The layer's full name as Photoshop reads it: an additional layer info block `luni` (a count, then UTF-16 code
+ * units, padded to 4 bytes). The Pascal name beside it holds ASCII only, so without this block every name with an
+ * umlaut came back as "___".
+ */
+function luni(name) {
+    const s = String(name || "Layer");
+    const len = 4 + 2 * s.length, padded = Math.ceil(len / 4) * 4;
+    const out = new Uint8Array(12 + padded);
+    const v = new DataView(out.buffer);
+    out.set([0x38, 0x42, 0x49, 0x4d, 0x6c, 0x75, 0x6e, 0x69], 0);   // "8BIM" "luni"
+    v.setUint32(8, padded);
+    v.setUint32(12, s.length);
+    for (let i = 0; i < s.length; i++) v.setUint16(16 + 2 * i, s.charCodeAt(i));
+    return out;
+}
+
+/**
  * PSD writer that takes its layers one at a time (bottom first), so a worker can pack a
  * layer as soon as its pixels arrive and never holds the whole document at once.
  */
@@ -111,10 +128,11 @@ export class PsdWriter {
         records.u8(0);
         records.u8(L.visible === false ? 2 : 0);
         records.u8(0);
-        const name = pascal(L.name, 4);
-        records.u32(4 + 4 + name.length);
+        const name = pascal(L.name, 4), uni = luni(L.name);
+        records.u32(4 + 4 + name.length + uni.length);
         records.u32(0); records.u32(0);
         records.push(name);
+        records.push(uni);
         for (const [, pk] of packed) {
             channelData.u16(1);
             for (const row of pk.rows) channelData.u16(row.length);

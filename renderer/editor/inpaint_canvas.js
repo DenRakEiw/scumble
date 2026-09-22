@@ -30,6 +30,7 @@ import { JOB_TIMINGS, editorWorker, workerCall, editorPool, buildLayered } from 
 import { buildEditorModal } from "./inpaint_modal.js";
 import { encodeCanvas, canvasToBlob, partsUsable, partsRun, partsFlights, bandPause, partsFailed, nextPartsSeq, encodeTilePixels, encodeBands, encodeRows } from "./inpaint_encode.js";
 import { SUBFOLDER, uploadBlob, uploadCanvas, uploadPixels } from "./inpaint_upload.js";
+import { LAYERED_EXT, isPsd, isOra, readPsd, readOra } from "./inpaint_layered.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -115,6 +116,19 @@ function loadImageEl(src) {
 // file that needs a size again. An <img> would render a sizeless SVG at 300 x 150.
 const SVG_RE = /\.svg$/i;
 function isSvgFile(file) { return !!file && (file.type === "image/svg+xml" || SVG_RE.test(file.name || "")); }
+
+/** "psd" or "ora" when the file is one (by its first bytes, whatever its name or type says), else null. */
+async function layeredKind(file) {
+    if (!file || typeof file.slice !== "function") return null;
+    const head = new Uint8Array(await file.slice(0, 64).arrayBuffer());
+    return isPsd(head) ? "psd" : isOra(head) ? "ora" : null;
+}
+
+/** zlib ("deflate") or raw ("deflate-raw") bytes inflated by the browser. */
+async function inflateBytes(bytes, format) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+}
 
 /** The size an SVG declares: width / height attributes (px, pt, mm, cm, in, pc at 96 dpi), else the viewBox. */
 function svgSize(text) {
@@ -2047,7 +2061,7 @@ class InpaintEditor {
         this.viewEl.addEventListener("drop", (e) => {
             e.preventDefault(); e.stopPropagation();
             this.viewEl.classList.remove("ipc-dropping");
-            const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter((f) => f.type.startsWith("image/"));
+            const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter((f) => f.type.startsWith("image/") || LAYERED_EXT.test(f.name || ""));
             if (!files.length) return;
             // No image yet, or Ctrl held: the file becomes (replaces) the base. Otherwise each file is a new
             // image layer centred on the drop point (Shift: reference layers), like dropping into Krita.
@@ -7953,16 +7967,26 @@ class InpaintEditor {
 
     /** Upload image files and add each as a layer (role "reference" by default). */
     async addImageLayers(files, role = "reference", { place = "cascade", at = null } = {}) {
-        files = Array.from(files || []).filter((f) => f && f.type && f.type.startsWith("image/"));
+        files = Array.from(files || []).filter((f) => f && ((f.type && f.type.startsWith("image/")) || LAYERED_EXT.test(f.name || "")));
         if (!files.length) return;
         if (!this.width) {
             await this.loadFile(files.shift());
             if (!files.length || !this.width) return;
         }
         let n = this.layers.filter((l) => this.isReference(l)).length;
-        let last = null;
+        let last = null, layeredFiles = 0;
         for (let file of files) {
             try {
+                const layered = await layeredKind(file);
+                if (layered) {
+                    // a PSD / ORA dropped on a document: every layer of it, where the file has it, the bottom one included
+                    const doc = await this.readLayered(file, layered);
+                    for (const L of doc.layers) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true }, { activate: false });
+                    if (last) this.activeLayerId = last.id;
+                    this.setStatus(`${doc.layers.length} layer${doc.layers.length === 1 ? "" : "s"} of ${file.name || "the file"} added.${doc.notes.length ? " " + doc.notes.join("; ") + "." : ""}`);
+                    layeredFiles++;
+                    continue;
+                }
                 if (isSvgFile(file)) {
                     // rasterised to fit the document, so the layer is sharp at 1:1 and the transform tool only ever scales it down
                     const target = await this.svgTarget(file, { ask: false, fit: [this.width, this.height] });
@@ -7997,7 +8021,7 @@ class InpaintEditor {
                 this.setStatus(String(err.message || err));
             }
         }
-        if (last) {
+        if (last && layeredFiles < files.length) {
             const refs = this.referenceLayers().length;
             this.setStatus(role === "reference" ? `${files.length} reference image${files.length > 1 ? "s" : ""} added (${refs} will travel with crop_image). They are not part of the image.` : `${files.length} image layer${files.length > 1 ? "s" : ""} added. Move or scale with T; the role select can turn it into a reference.`);
         }
@@ -9023,6 +9047,8 @@ class InpaintEditor {
         const token = (this._openToken = (this._openToken || 0) + 1);
         const later = () => this._openToken !== token;
         try {
+            const layered = await layeredKind(file);
+            if (layered) { await this.loadLayered(file, layered, later); return; }
             if (isSvgFile(file)) {
                 const target = await this.svgTarget(file, { size, ask });
                 if (!target) { this.setStatus("Import cancelled."); return; }
@@ -9051,6 +9077,56 @@ class InpaintEditor {
             console.error(err);
             this.setStatus(String(err.message || err));
         }
+    }
+
+    /**
+     * A PSD or ORA file read into pixels (inpaint_layered.js): `{ width, height, layers, composite, notes }`, each
+     * layer with `px` (this backend's pixels) in place of its bytes, bottom first.
+     */
+    async readLayered(file, kind) {
+        this.setStatus(`Reading the layers of ${file.name || "the file"} ...`);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const doc = kind === "psd" ? await readPsd(bytes, { inflate: (b) => inflateBytes(b, "deflate") }) : await readOra(bytes, { inflateRaw: (b) => inflateBytes(b, "deflate-raw") });
+        this.checkBaseSize(doc.width, doc.height);
+        if (doc.width * doc.height > CANVAS_MAX_PIXELS) throw new Error(`${doc.width} × ${doc.height} px is larger than a layered file can be opened at (268 MP); save it as PNG`);
+        for (const L of doc.layers) {
+            if (L.rgba) { L.px = this.pixels.Layer.fromImageData(new ImageData(L.rgba, L.w, L.h)); L.rgba = null; continue; }
+            const bmp = await createImageBitmap(new Blob([L.png], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+            L.w = bmp.width; L.h = bmp.height;
+            L.px = this.pixels.Layer.fromImage(bmp, bmp.width, bmp.height);
+            bmp.close();
+            L.png = null;
+        }
+        return doc;
+    }
+
+    /**
+     * Open a PSD or ORA with its layers. The bottom layer becomes the base when it covers the whole picture, is
+     * visible, opaque in the normal mode (what Photoshop's Background and the editor's own export are); otherwise the
+     * base is transparent and every layer stays a layer. A flat PSD opens from its merged picture.
+     */
+    async loadLayered(file, kind, later = () => false) {
+        const doc = await this.readLayered(file, kind);
+        if (later()) return;
+        const W = doc.width, H = doc.height;
+        const layers = doc.layers.slice();
+        let basePx = null;
+        const b = layers[0];
+        if (b && b.x === 0 && b.y === 0 && b.w === W && b.h === H && b.visible && b.opacity >= 0.999 && b.blend === "normal") { basePx = b.px; layers.shift(); }
+        else if (!layers.length && doc.composite) basePx = this.pixels.Layer.fromImageData(new ImageData(doc.composite, W, H));
+        else basePx = this.pixels.Layer.empty(W, H);
+        const stem = (file.name || "layered").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "layered";
+        this.setStatus(`Storing ${file.name || "the file"} ...`);
+        const { ref } = await uploadPixels(basePx, stem);
+        if (later()) return;
+        await this.setBasePixels(ref, basePx, { keepLayers: false });
+        let top = null;
+        for (const L of layers) top = this.addLayer({ name: L.name, kind: "image", ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true }, { activate: false });
+        if (top) this.activeLayerId = top.id;
+        this.renderLayers();
+        this.draw();
+        const n = layers.length;
+        this.setStatus(`Opened ${file.name || "the file"}: ${W} × ${H}, ${n} layer${n === 1 ? "" : "s"}${basePx === b?.px ? ` over "${b.name}" as the base` : ""}.${doc.notes.length ? " " + doc.notes.join("; ") + "." : ""}`);
     }
 
     /** The pixel size an SVG is rasterised at: the caller's `size` ([w, h], one of them may be 0 for

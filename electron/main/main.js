@@ -390,7 +390,7 @@ function copyMcpRegistration(kind) {
 
 // ---- dialogs -------------------------------------------------------------------------
 
-const IMAGE_FILTERS = [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "svg"] }, { name: "All files", extensions: ["*"] }];
+const IMAGE_FILTERS = [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "svg", "psd", "ora"] }, { name: "Layered (PSD, ORA)", extensions: ["psd", "ora"] }, { name: "All files", extensions: ["*"] }];
 
 async function openImage() {
     needWindow("Open image");
