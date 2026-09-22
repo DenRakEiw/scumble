@@ -99,6 +99,24 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-22)
 
+**2026-09-22, evening: B1 + B2 are built - the smaller Windows installer and the Linux build, for 0.1.26**
+(`docs/PLAN_0_1_24.md` "B1 + B2 as built", CHANGELOG "0.1.26 — unreleased"; `package.json` is still 0.1.25). **B1:**
+`build.win.files` drops `onnxruntime-node`'s darwin, linux and win32/arm64 folders, `electronLanguages` keeps en-US
+and de: installer **188.1 -> 133.6 MB**, installed 676 -> 421 MB; DML and CPU sessions load from the package (the
+exe in Node mode on the user's SAM2 tiny decoder, read only). Exe gates `--offline` on that package: `b1-exe`
+(tiles: layered upscale log pixels editor composite commands mcp recipes llm export assistant) and `b1-exe-canvas`
+(tiles off: layered upscale pixels editor composite film export assistant) ALL PASS. **B2:** `build.yml` has a
+`draft` job (tag check, draft from the CHANGELOG) that `windows` and a new `linux` job need; `linux` builds AppImage,
+.deb and `latest-linux.yml` with `ONNXRUNTIME_NODE_INSTALL=skip` (**helpers on the CPU on Linux**, no CUDA provider
+shipped). `electron/main/mcp/registration.js` (an AppImage registers `"$APPIMAGE" --mcp`, no launcher; Windows' text
+byte for byte as before), `keysNote` / `showKeysNote` in `shell.js` (amber warning for `basic_text`). New gate
+**`platform`** (9 Node checks, 2 app steps); mutations 9 of 9 (Node) and 4 of 4 (app, fresh instance each) red; dev
+gates `--offline` on both backends (`platform mcp commands llm editor`) ALL PASS. **Nothing has run on Linux** (no
+WSL / Docker here; `docs/BUGS.md` "Linux: built, never run"); the first Linux CI build is the push of this commit.
+**Trap:** editing `tools/run_gates.sh` while a run of it is going breaks that run (bash reads the script as it goes:
+`syntax error near unexpected token fi`). **Next:** read the Linux job's result; then B3 (macOS, needs the 1024 px
+icon source) or the 0.1.26 release, on the user's word.
+
 **2026-09-22: 0.1.25 is built and tagged** (`package.json` 0.1.25, CHANGELOG "0.1.25 — 2026-09-22": PSD / ORA open with
 their layers, the PSD export's non-ASCII names, U2, the upscalers' live runs). **U3 moved out of it** on the user's word
 ("mach den release fertig"): in-app ONNX upscaling is optional now, not planned for a release. `npm run dist` built
@@ -1044,7 +1062,7 @@ their own 15k file.
 port 9555 with its own profile (with `test_base.png`), runs each gate with a timeout, and writes logs and `summary.txt` under
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
-mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
 forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and

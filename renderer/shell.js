@@ -555,9 +555,28 @@ async function renderProviders() {
         row.appendChild(state);
         ui.providers.appendChild(row);
     }
-    ui.keysNote.textContent = info.available
-        ? `Keys are encrypted with the system credential store (${info.backend}) and stored in secrets.json; they never leave this machine except in the request to the provider itself.`
-        : "This system offers no credential store (safeStorage unavailable): keys cannot be saved.";
+    showKeysNote(info);
+}
+
+/** Writes keysNote(info) into the API keys section. */
+export function showKeysNote(info) {
+    const note = keysNote(info);
+    ui.keysNote.textContent = note.text;
+    ui.keysNote.classList.toggle("shell-warn", note.warn);
+    return note;
+}
+
+/**
+ * What the API keys section says about the credential store. On Linux Chromium falls back to
+ * `basic_text` when no keyring (GNOME Keyring, KWallet) answers: safeStorage still "works", but
+ * with a fixed key, so the keys are obfuscated, not encrypted, and the user has to be told.
+ */
+export function keysNote(info) {
+    if (!info || !info.available) return { warn: true, text: "This system offers no credential store (safeStorage unavailable): keys cannot be saved." };
+    if (info.backend === "basic_text") {
+        return { warn: true, text: "No keyring answered (basic_text): keys in secrets.json are only obfuscated, not encrypted, and anyone who can read your profile folder can read them. Install and unlock a keyring (GNOME Keyring or KWallet), then restart Scumble (a key that reads as unset afterwards has to be entered again)." };
+    }
+    return { warn: false, text: `Keys are encrypted with the system credential store (${info.backend}) and stored in secrets.json; they never leave this machine except in the request to the provider itself.` };
 }
 
 // ---- local / OpenAI-compatible endpoint (prompt upsampling, electron/main/llm.js) ----------

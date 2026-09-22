@@ -24,7 +24,7 @@ run inside the app through ONNX Runtime (SAM2, BiRefNet, RMBG). The editor is th
 code as the ComfyUI node [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas);
 Scumble is the standalone window around it, plus recipes, plugins, an MCP server and the assistant.
 
-Windows first (installer below), Linux and macOS builds are planned. Free software, GPL-3.0.
+Windows first (installer below), a Linux build (AppImage, .deb) that has not been tried on Linux yet, macOS is planned. Free software, GPL-3.0.
 What has been verified so far: local rendering through ComfyUI, the in-app helper models,
 the film pack, the command core, the MCP server, the tile engine on large documents and
 auto-update; the API providers and the assistant's model calls are untested against the live
@@ -143,6 +143,17 @@ upsampling (Anthropic, OpenAI, Google, OpenRouter, DeepSeek, Moonshot, Z.ai, ToA
 WaveSpeed), plus a local OpenAI-compatible endpoint that needs no key. The *get a key* links
 of ToAPIs and WaveSpeedAI carry the author's referral code.
 
+## Install (Linux)
+
+The same release carries `scumble-<version>.AppImage` and `scumble-<version>.deb` (x64). **The Linux build is built
+by CI and has not been run by the author; reports are welcome** in the
+[issues](https://github.com/DenRakEiw/scumble/issues). The AppImage: `chmod +x` it and start it; it updates itself
+like the Windows app (the .deb does not, install the next one over it). On Ubuntu 23.10 and later AppArmor's limit on
+unprivileged user namespaces may keep Electron's sandbox, and so the AppImage, from starting; the .deb installs
+the sandbox helper properly. The
+helper models (SAM2, background removal) run on the CPU on Linux. API keys go into the desktop's keyring (GNOME
+Keyring, KWallet); without one Settings › API providers says the keys are only obfuscated.
+
 ## First steps
 
 Type the ComfyUI URL in the top bar (default `http://127.0.0.1:8188`), Connect, open an
@@ -209,7 +220,7 @@ docker/runpod/     Dockerfile + provision.sh for a ComfyUI box on RunPod (draft,
 tools/             build_node.py (the node's editor), build_px.py (the kernels), cdp.py (DevTools driver), the tests, run_gates.sh
 docs/              BRIEF.md (vision, decisions, phases), ASSISTANT.md, COMMANDS.md, PLUGINS.md, FILM.md, MCP.md, RECIPES.md,
                    HELPERS.md, PROMPTS.md, BRUSHES.md, GLB.md, PERFORMANCE.md, BUILD_NODE.md, CODE_SIGNING_POLICY.md, images/
-.github/workflows/ build.yml (Windows installer, draft release on a version tag)
+.github/workflows/ build.yml (Windows installer, Linux AppImage and .deb, draft release on a version tag)
 ```
 
 ## Licence

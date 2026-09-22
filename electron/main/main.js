@@ -25,6 +25,7 @@ const { LocalServer, LocalClient } = require("./local");
 const { Updater } = require("./updater");
 const { resolveTileMode, DEFAULT_ON: TILES_DEFAULT_ON } = require("./tilemode");
 const { restartPlan } = require("./restart");
+const registration = require("./mcp/registration");
 
 // ---- command line -------------------------------------------------------------------------
 //
@@ -367,20 +368,19 @@ function buildMenu() {
 }
 
 /**
- * The registration line for an MCP client, with the paths of this installation. Clients get
- * the Node-mode launcher (electron/main/mcp/launch.js), never the exe with `--mcp`: Electron
- * writes a CR LF to stdout before any of our code runs and strict clients reject it.
- * Nobody types an asar path by hand, hence the menu entry.
+ * The registration line for an MCP client, with the paths of this installation
+ * (electron/main/mcp/registration.js says which). Nobody types an asar path by hand, hence
+ * the menu entry.
  */
 function mcpRegistration(kind) {
-    const exe = app.isPackaged ? app.getPath("exe") : process.execPath;
-    const launcher = app.isPackaged
-        ? path.join(process.resourcesPath, "app.asar", "electron", "main", "mcp", "launch.js")
-        : path.join(ROOT, "electron", "main", "mcp", "launch.js");
-    if (kind === "desktop") {
-        return JSON.stringify({ mcpServers: { scumble: { command: exe, args: [launcher, "--mcp"], env: { ELECTRON_RUN_AS_NODE: "1" } } } }, null, 2);
-    }
-    return `claude mcp add scumble -e ELECTRON_RUN_AS_NODE=1 -- "${exe}" "${launcher}" --mcp`;
+    return registration.registration(kind, {
+        platform: process.platform,
+        exe: app.isPackaged ? app.getPath("exe") : process.execPath,
+        launcher: app.isPackaged
+            ? path.join(process.resourcesPath, "app.asar", "electron", "main", "mcp", "launch.js")
+            : path.join(ROOT, "electron", "main", "mcp", "launch.js"),
+        appImage: app.isPackaged ? process.env.APPIMAGE : "",
+    });
 }
 
 function copyMcpRegistration(kind) {

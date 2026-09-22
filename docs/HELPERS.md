@@ -274,6 +274,9 @@ and checks that the shapes come out as distinct objects.
 
 - fp16 model variants (half the download) once their input dtype is verified.
 - Box prompts in the object tool (the decoder supports them, `segment` accepts `box`).
-- The CUDA provider on Linux needs the CUDA 12 libraries that `onnxruntime-node`
-  downloads at install time; untested.
+- The CUDA provider on Linux: the Linux build (CI, `ONNXRUNTIME_NODE_INSTALL=skip`) does **not**
+  carry `onnxruntime-node`'s CUDA provider, which its install script would fetch from NuGet on
+  linux/x64 (hundreds of MB, and it needs the user's CUDA 12 libraries anyway), so `runtime.js`'s
+  `cuda` attempt fails on the first session and the helpers run on the CPU. Shipping it, or
+  downloading it on demand like a model, is open; untested either way.
 - WebGPU EP (`webgpu`, experimental in onnxruntime-node) as a DirectML alternative.

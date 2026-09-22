@@ -21,6 +21,8 @@
 # (tools/assistant_test.py) runs tools/assistant_test.js in plain Node first, then the in-app assistant against
 # tools/assistant_mock.py (every model family through the mock, the asks, the pin, the user-activity wait); it needs
 # no key, refuses a profile that holds one, refuses an instance connected to ComfyUI, and goes last in a list.
+# Gate "platform" (tools/platform_test.py) runs tools/platform_test.js in plain Node first (the MCP registration of
+# every platform, the files each installer leaves out), then the API keys note in the app.
 # Logs and summary.txt go to $SCUMBLE_GATES/gates/<label>/. Exit code 0 only when every gate passed.
 # Logs, profiles and the node copy go under $SCUMBLE_GATES (default F:/canvas/dist/gates, ignored by git).
 SP="${SCUMBLE_GATES:-/f/canvas/dist/gates}"

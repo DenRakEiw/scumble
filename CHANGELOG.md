@@ -3,6 +3,18 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.26 — unreleased
+
+- **A smaller Windows installer:** 134 MB instead of 188 MB (421 MB installed instead of 676 MB). It carried the
+  helper models' runtime for macOS, Linux and Windows on ARM, which a Windows x64 install never loads, and Chromium's
+  interface texts in 55 languages; it keeps English and German now (the menus, the dialogs and the editor are
+  English either way).
+- **A Linux build:** an AppImage and a .deb beside the Windows installer on every release, and the AppImage updates
+  itself like the Windows app. **It has not been tried by the author on Linux** (reports welcome). The helper models
+  (SAM2, background removal) run on the CPU there. *Settings › API providers* warns when the system offers no
+  keyring (`basic_text`): the keys are then only obfuscated, not encrypted. *Help › Copy MCP registration* names the
+  AppImage file itself, not a path inside it that changes with every start.
+
 ## 0.1.25 — 2026-09-22
 
 - **PSD and ORA files open with their layers.** *Open*, drag and drop and the `load_image` command read a

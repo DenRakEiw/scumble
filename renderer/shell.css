@@ -52,6 +52,7 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 .shell-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .shell-row.shell-right { justify-content: flex-end; margin-top: 4px; }
 .shell-help { color: #888; margin: 6px 0 0; font-size: 12px; }
+.shell-help.shell-warn { color: #f0c674; }
 #shell-progress.indeterminate #shell-progress-bar { width: 40%; animation: shell-slide 1.2s ease-in-out infinite alternate; background: #8a6fb5; }
 @keyframes shell-slide { from { left: 0; } to { left: 60%; } }
 #shell-settings { max-height: 92vh; overflow-y: auto; }

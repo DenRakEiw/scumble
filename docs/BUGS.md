@@ -138,7 +138,27 @@ An entry here leaves the file when the release named in it is published.
 
 ## Open
 
-### What planning the assistant found on the way
+### Linux: built, never run (B2, 2026-09-22)
+
+**Written** 2026-09-22 with the Linux job of `.github/workflows/build.yml` (AppImage and .deb, `latest-linux.yml`).
+This machine has no WSL and no Docker, so the Linux build has been **built by CI and run nowhere**: no gate, no
+start, no helper, no update. What is known to need a look on a real Linux desktop:
+
+- **Gates:** they are Python + CDP and `tools/run_gates.sh` is bash, so they should run; `--exe` takes the AppImage
+  (`mcp_test.py` and `assistant_test.py` take `--exe` too). Not one has run.
+- **The MCP registration** of an AppImage is `"$APPIMAGE" --mcp`, **without** the Node-mode launcher (a path inside
+  the AppImage changes with every start). That assumes Electron writes nothing to stdout on Linux before our code
+  runs (the stray CR LF the launcher exists for is Windows' console code). Unmeasured; `mcp_test.py --exe
+  <AppImage> --direct` is the check. A .deb install keeps the launcher (its paths are stable).
+- **The sandbox:** on Ubuntu 23.10+ AppArmor's user-namespace limit can keep an AppImage's Electron from starting
+  (the README says so). No `--no-sandbox` is added by the app.
+- **Keys:** `safeStorage` on a desktop without a keyring falls back to `basic_text`; *Settings › API providers*
+  warns then (`keysNote` in `renderer/shell.js`, gate `platform`). Whether `isEncryptionAvailable()` answers true
+  or false in that case decides which of the two warnings the user sees; both are covered, neither observed.
+- **Helpers:** CPU only (no CUDA provider in the build, `docs/HELPERS.md`); the first session logs a failed `cuda`
+  attempt before it falls back.
+- **The single-instance lock and the named pipe** become a unix socket (`local.js`); never exercised.
+
 
 **Written** 2026-09-19 while planning the in-app assistant (`docs/PLAN_ASSISTANT.md`). Found by reading
 the code and checked line by line, not reported and not run; none is fixed. The user decided on 2026-09-19

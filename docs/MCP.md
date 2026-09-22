@@ -39,6 +39,14 @@ Claude Code, packaged app:
 claude mcp add scumble -e ELECTRON_RUN_AS_NODE=1 -- "C:\Users\<you>\AppData\Local\Programs\Scumble\Scumble.exe" "C:\Users\<you>\AppData\Local\Programs\Scumble\resources\app.asar\electron\main\mcp\launch.js" --mcp
 ```
 
+Linux, AppImage (untested; `electron/main/mcp/registration.js`): the file itself with `--mcp`, no launcher, because
+every path inside an AppImage lives on a mount that changes with each start. A .deb install registers the launcher
+under `/opt/Scumble/` like Windows.
+
+```bash
+claude mcp add scumble -- "/home/<you>/Applications/scumble-<version>.AppImage" --mcp
+```
+
 Claude Code, dev checkout (`.mcp.json` in the repo does this for the project scope):
 
 ```bash

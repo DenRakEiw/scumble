@@ -1,6 +1,8 @@
-# Builds the Windows installer. On a version tag (v0.1.0) it uploads the installer, its
-# blockmap and latest.yml to a draft GitHub release (electron-builder --publish); on other
-# pushes and pull requests the installer is kept as a workflow artifact only.
+# Builds the Windows installer and the Linux AppImage and .deb. On a version tag (v0.1.0) the
+# `draft` job creates the draft GitHub release from CHANGELOG.md and both builds upload to it
+# (electron-builder --publish: the installer, its blockmap and latest.yml; the AppImage, the .deb
+# and latest-linux.yml); on other pushes and pull requests the files are kept as workflow
+# artifacts only.
 name: build
 
 on:
@@ -14,7 +16,39 @@ permissions:
   contents: write
 
 jobs:
+  # electron-builder runs one publisher per file and races itself (and the other platform's job)
+  # into several draft releases when none exists yet; creating the draft first makes all find it
+  draft:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the version tag matches package.json
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version")
+          [ "refs/tags/v$v" = "$GITHUB_REF" ] || { echo "tag $GITHUB_REF but package.json says $v"; exit 1; }
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          tag=${GITHUB_REF#refs/tags/}
+          # the release body is that version's section of CHANGELOG.md (tools/release_notes.py);
+          # a missing section stops the release rather than shipping someone else's notes
+          python tools/release_notes.py "$tag" > release_notes.md
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "Scumble ${tag#v}" --notes-file release_notes.md
+
   windows:
+    needs: draft
+    # runs when the draft job succeeded or was skipped (not a tag), never after it failed
+    if: ${{ !failure() && !cancelled() }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +58,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      # tools/release_notes.py turns CHANGELOG.md into the release body
+      # tools/build_px.py below is a Python script
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -37,27 +71,6 @@ jobs:
       - name: Check the Rust kernels against their source
         shell: bash
         run: python tools/build_px.py --check
-
-      - name: Check the version tag matches package.json
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: |
-          v=$(node -p "require('./package.json').version")
-          [ "refs/tags/v$v" = "$GITHUB_REF" ] || { echo "tag $GITHUB_REF but package.json says $v"; exit 1; }
-
-      # electron-builder runs one publisher per file and races itself into two draft releases
-      # when none exists yet; creating the draft first makes both find it
-      - name: Create the draft release
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          tag=${GITHUB_REF#refs/tags/}
-          # the release body is that version's section of CHANGELOG.md; a missing section
-          # stops the release rather than shipping someone else's notes
-          python tools/release_notes.py "$tag" > release_notes.md
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "Scumble ${tag#v}" --notes-file release_notes.md
 
       - name: Build installer
         env:
@@ -75,4 +88,42 @@ jobs:
             dist/*.exe
             dist/*.blockmap
             dist/latest.yml
+          if-no-files-found: error
+
+  linux:
+    needs: draft
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # onnxruntime-node would fetch its CUDA provider (hundreds of MB) from NuGet on linux/x64;
+      # the Linux build runs the helpers on the CPU (docs/HELPERS.md), so it is not fetched.
+      # The Rust kernels are checked once, in the Windows job.
+      - name: Install
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+        run: npm ci
+
+      - name: Build AppImage and deb
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then npx electron-builder --linux --publish always
+          else npx electron-builder --linux --publish never; fi
+
+      - uses: actions/upload-artifact@v4
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        with:
+          name: Scumble-linux
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/latest-linux.yml
           if-no-files-found: error
