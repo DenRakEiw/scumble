@@ -121,7 +121,8 @@ bands), then the 0.1.25 release with U2.
 profile `dist/live-keys`, which keeps them; `docs/RECIPES.md` "The checkpoint, 2026-09-22"): Topaz Precision on fal (a
 selection 25 s, a 1907 x 1073 picture to 3814 x 2146 in 24 s), Magnific Precision V2 (the same box in **311 s**) and
 Magnific Creative (13 s), all 2x, every answer aligned. The status line now warns that Magnific Precision is slow.
-Not run live: the other fal upscalers, Comfy Cloud, factors above 2, `limits.max`.
+One 4x run too (Topaz, the whole picture to 7628 x 4292 in 34 s). Not run live, on the user's word ("koennen die user
+testen"): the other fal upscalers, Comfy Cloud, other factors, `limits.max`.
 
 **2026-09-22: U1 is built - upscaling through the providers, for 0.1.24** (`package.json` 0.1.24, CHANGELOG "0.1.24 — 2026-09-22"; `docs/PLAN_0_1_24.md` "U1 as built", `docs/RECIPES.md` "Upscale recipes" and "Magnific"). An *Upscale*
 button next to *Generate new* (the app host's `buildUpscaleButton`, so the node needs nothing) opens `#up-dialog`

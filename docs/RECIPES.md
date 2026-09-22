@@ -370,10 +370,11 @@ picture resampled by the factor (2 when the model picks) with a 4 px magenta fra
 
 **The checkpoint, 2026-09-22** (the user's fal and Magnific keys, a scratch profile, a 1907 x 1073 photo, one call
 each, factor 2): *Topaz Precision* on fal, a 538 x 512 selection box in 25 s and the whole picture to 3814 x 2146 in
-24 s; *Magnific Precision* (V2) on Magnific, the same box in **311 s**; *Magnific Creative* on Magnific, the same box in
+24 s, and once at **4 times** (the one run above 2: 3814 wide became 7628 x 4292, 33 MP, in 34 s, the answer
+read and taken as the new base without trouble); *Magnific Precision* (V2) on Magnific, the same box in **311 s**; *Magnific Creative* on Magnific, the same box in
 13 s. Every answer came back aligned with its box (checked by eye against the original), the whole picture became the
-base at twice the size. The request bodies, the fal queue and the Magnific task poll are right as written. Not run:
-the other fal upscalers, both routes on Comfy Cloud, factors above 2, and the size limits (`limits.max` 4096 stays
+base at twice the size. The request bodies, the fal queue and the Magnific task poll are right as written. Not run (the user, 2026-09-22: the users will try them):
+the other fal upscalers, both routes on Comfy Cloud, factors above 2 except that one 4x, and the size limits (`limits.max` 4096 stays
 until a larger picture is tried). The fal answer's size is not read back (`info` carries no width), which the status
 line would show.
 
