@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.24 - unreleased
+## 0.1.24 — 2026-09-22
 
 - **Upscale.** A new *Upscale* button next to *Generate new* opens a small dialog: pick the model, then either
   **the selection** or **the whole picture**, and the factor.

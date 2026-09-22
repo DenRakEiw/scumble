@@ -99,8 +99,7 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-22)
 
-**2026-09-22: U1 is built - upscaling through the providers, for 0.1.24** (`package.json` 0.1.24, CHANGELOG "0.1.24 -
-unreleased"; `docs/PLAN_0_1_24.md` "U1 as built", `docs/RECIPES.md` "Upscale recipes" and "Magnific"). An *Upscale*
+**2026-09-22: U1 is built - upscaling through the providers, for 0.1.24** (`package.json` 0.1.24, CHANGELOG "0.1.24 — 2026-09-22"; `docs/PLAN_0_1_24.md` "U1 as built", `docs/RECIPES.md` "Upscale recipes" and "Magnific"). An *Upscale*
 button next to *Generate new* (the app host's `buildUpscaleButton`, so the node needs nothing) opens `#up-dialog`
 (model, provider, the selection or the whole picture, the factor) and runs the new command `upscale` (`scope`,
 `factor`; the assistant asks, 30 min timeout, a `layers` undo step for the selection, none for the whole picture).
@@ -117,9 +116,11 @@ Comfy Cloud as the last variant of both Magnific and both Recraft recipes (Partn
 WaveSpeed, ToAPIs, OpenRouter key); findings in `docs/RECIPES.md`. Tests: `node tools/upscale_test.js` (84 checks) and
 the gate `upscale` (`tools/upscale_test.py`, 10 steps, loopback upscaler with a magenta frame marker); mutation rounds
 **64 of 64** (Node, on a copy of the tree) and **17 of 17** (app, fresh instance each; four survivors of the first run
-were each answered with a check or a change). **Not done: the checkpoint.** Nothing has run against a live API; it
-needs the user's fal key (one `topaz_precision` run: a small selection and a 2 MP picture) and a Magnific key (one
-task per route) before 0.1.24 is released, then the dev blog post.
+were each answered with a check or a change). **The checkpoint was skipped on the user's word** ("also push"; the fal key the user named is not in this
+machine's `%APPDATA%/Scumble/secrets.json`, which holds BFL only; the Magnific key comes after the update): nothing
+has run against a live API. Exe gates `--offline` against `dist/win-unpacked/Scumble.exe`: `rel24-exe` (tiles: upscale
+log pixels editor composite commands mcp recipes llm export assistant) and `rel24-exe-canvas` (tiles off: upscale
+pixels editor composite film export assistant) ALL PASS at the first try. Tag `v0.1.24` pushed.
 
 **2026-09-22: the plan for the next sessions is `docs/PLAN_0_1_24.md`** - seven sessions with a `/clear` after each
 larger one: U1 upscaling through the providers (fal already hosts Topaz precision / creative / generative, Clarity,
