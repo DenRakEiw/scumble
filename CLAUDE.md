@@ -104,7 +104,9 @@ creative upscalers seem to take no prompt", CHANGELOG "0.1.27 — unreleased"). 
 sent the Generate tab's prompt, invisibly; the dialog now shows a Prompt row for `usesPrompt` recipes (prefilled from
 the tab, sent as the `upscale` command's new `prompt`, the tab's prompt untouched), `list_recipes` has `usesPrompt`.
 Gate step in `upscale_test.py`, 6 of 6 mutations red, gates `--offline` on both backends (`upscale recipes mcp commands
-assistant`, canvas also `editor`) ALL PASS. Not released.
+assistant`, canvas also `editor`) ALL PASS. Not released. **The same evening the logo was drawn and is in 0.1.27 too**
+(item 18 of "What comes next": `build/icon.svg` and the new `icon.png` / `icon.ico`; the user's word, "kommt aber
+erst mit naechstem release rein" - no release for the icon alone).
 
 **2026-09-22: 0.1.26 is published** (Latest since 18:04 German time, on the user's word "kannst du es pushen";
 `package.json` 0.1.26, CHANGELOG "0.1.26 — 2026-09-22": the smaller installer and the Linux build). `npm run dist`
