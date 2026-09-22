@@ -116,7 +116,8 @@ WSL / Docker here; `docs/BUGS.md` "Linux: built, never run"); **the first Linux 
 35744363504 on `c1e23da`: `linux` 1 min 12 s, AppImage + .deb artifact 289 MB; `windows` 133.5 MB).
 **Trap:** editing `tools/run_gates.sh` while a run of it is going breaks that run (bash reads the script as it goes:
 `syntax error near unexpected token fi`). **Next:** B3 (macOS, needs the 1024 px
-icon source) or the 0.1.26 release, on the user's word.
+icon source) or the 0.1.26 release, on the user's word. **The user (2026-09-22): B3 is postponed, and a logo has to
+be designed first** (item 18 of "What comes next"; B3 needs its 1024 px master).
 
 **2026-09-22: 0.1.25 is built and tagged** (`package.json` 0.1.25, CHANGELOG "0.1.25 — 2026-09-22": PSD / ORA open with
 their layers, the PSD export's non-ASCII names, U2, the upscalers' live runs). **U3 moved out of it** on the user's word
@@ -1024,6 +1025,14 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    editor code, so `build_node.py --check` and `nodecopy`, and a step in `editor_test.py` (drag, width kept after a
    reload, view refitted, no horizontal scrollbar at the default width). **Independent of it and smaller:** the
    expanded row could wrap or shrink its controls so no horizontal scrollbar appears at 290 px at all.
+18. **A logo for Scumble, to be designed (asked for by the user on 2026-09-22; on the list only, not started).**
+   Today's `build/icon.png` is 512 x 512 and `build/icon.ico` is made from it; there is no vector source and no
+   1024 px master. A logo means: a mark that reads at 16 px (taskbar, tab, tray) and at 1024 px (macOS icns,
+   the website), a vector source (SVG) committed under `build/`, the exports electron-builder needs (`icon.png` at
+   1024, `icon.ico` with 16 to 256, later `icon.icns`), the About dialog, the README and the website
+   (`F:\portfolio_web`, the Scumble pages). The name's idea (a thin semi-opaque layer over a dry one) is the obvious
+   starting point. Who designs it, and whether a draft comes from here first, is the user's call. **B3 waits for
+   it** (the macOS icon needs the 1024 px master).
 
 **Decision (b) of 7c is made (the user, 2026-09-18): exports and runs of a colour-matched layer may move.** They may
 take their statistics from tiles instead of from the whole flatten, with **point samples** (measured mean 0.56, max 8
