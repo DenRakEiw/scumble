@@ -99,6 +99,17 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-22)
 
+**2026-09-22: 0.1.26 is published** (Latest since 18:04 German time, on the user's word "kannst du es pushen";
+`package.json` 0.1.26, CHANGELOG "0.1.26 — 2026-09-22": the smaller installer and the Linux build). `npm run dist`
+built `Scumble Setup 0.1.26.exe` (133.6 MB); exe gates `--offline`: `rel26-exe` (tiles: platform layered upscale log
+pixels editor composite commands mcp recipes llm export assistant) and `rel26-exe-canvas` (tiles off: platform layered
+upscale pixels editor composite film export assistant) ALL PASS at the first try. **The first tag through the new
+`draft` job worked:** one draft, both builds attached (`Scumble-Setup-0.1.26.exe` 133 MB, `scumble-0.1.26.AppImage`
+162 MB, `scumble-0.1.26.deb` 128 MB, `latest.yml` and `latest-linux.yml` both answer 0.1.26). The dev blog post
+"Smaller, and on Linux" went up first as a post without a release (portfolio `cee23e7`) and became the 0.1.26 post
+(`v0-1-26`, `99d111a`, `hub.version` 0.1.26), both live by CLI deploy (the git deploy blocked again). The Linux build
+has still run nowhere.
+
 **2026-09-22, evening: B1 + B2 are built - the smaller Windows installer and the Linux build, for 0.1.26**
 (`docs/PLAN_0_1_24.md` "B1 + B2 as built", CHANGELOG "0.1.26 — unreleased"; `package.json` is still 0.1.25). **B1:**
 `build.win.files` drops `onnxruntime-node`'s darwin, linux and win32/arm64 folders, `electronLanguages` keeps en-US
