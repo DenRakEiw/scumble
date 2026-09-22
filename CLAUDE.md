@@ -120,7 +120,10 @@ were each answered with a check or a change). **The checkpoint was skipped on th
 machine's `%APPDATA%/Scumble/secrets.json`, which holds BFL only; the Magnific key comes after the update): nothing
 has run against a live API. Exe gates `--offline` against `dist/win-unpacked/Scumble.exe`: `rel24-exe` (tiles: upscale
 log pixels editor composite commands mcp recipes llm export assistant) and `rel24-exe-canvas` (tiles off: upscale
-pixels editor composite film export assistant) ALL PASS at the first try. Tag `v0.1.24` pushed.
+pixels editor composite film export assistant) ALL PASS at the first try. Tag `v0.1.24` pushed, CI built the draft, and
+**0.1.24 is Latest since 2026-09-22** (published from this session on the user's word; `latest.yml` answers
+`version: 0.1.24`). The dev blog post "Make it bigger" (`v0-1-24`, portfolio commit `cf92b73`) went live by CLI deploy
+(the git deploy was blocked again).
 
 **2026-09-22: the plan for the next sessions is `docs/PLAN_0_1_24.md`** - seven sessions with a `/clear` after each
 larger one: U1 upscaling through the providers (fal already hosts Topaz precision / creative / generative, Clarity,
