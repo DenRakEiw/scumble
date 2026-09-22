@@ -97,6 +97,22 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-16) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
+## Where things stand (2026-09-22)
+
+**2026-09-22: the plan for the next sessions is `docs/PLAN_0_1_24.md`** - six sessions with a `/clear` after each
+larger one: U1 upscaling through the providers (fal already hosts Topaz precision / creative / generative, Clarity,
+SeedVR2, Recraft behind the existing adapter and key; selection mode on the existing run path, a whole-picture mode
+that replaces the base like *Resize*; release 0.1.24), U2 an upscale recipe on the user's ComfyUI, U3 in-app ONNX
+upscaling with the whole picture in bands (0.1.25), O1 Oxen.ai (0.1.26; three probes with a key first, a data URL in
+`input_image` decides the edit route), B1 + B2 the smaller Windows installer (151 MB of foreign ONNX binaries) and
+the Linux CI build, B3 macOS prepared without the developer account (mac block, entitlements, `cmdKey`, an unsigned
+CI artifact, nothing released). U4 (Topaz / Magnific direct, a local Topaz) only on the user's word; **no Topaz photo
+product is installed here** (Topaz Video only), so a local route cannot be tested. **What the user said the same
+day:** the assistant has run against a real key and works (so the checkpoint of `docs/PLAN_ASSISTANT.md` is
+answered by use); Qwen Image Edit 2.1 has no API yet, item 15's API side is closed; the Qwen local recipe is still
+untested (the models are not downloaded); the website stays on CLI deploys for now. **Start the next session with
+U1** (the plan's section says what to read and what the checkpoint needs: the fal key for one live Topaz run).
+
 ## Where things stand (2026-09-21)
 
 **2026-09-21: 0.1.23, a small patch** (`package.json` 0.1.23, CHANGELOG "0.1.23 - 2026-09-21"). (1) **Layer names
@@ -936,8 +952,8 @@ then `buildModal`, "und den assistent"): ~~the two defects of the OpenRouter ses
 (both 2026-09-20, see the top of this section); ~~the assistant~~ (item 13, A0 to A9, shipped in 0.1.21 the same
 day, the release of its own the user asked for: "agent als letztes, wird ein seperates release"); then, on the
 user's word of the same evening, ~~the user's own language models in the Settings and the end of the "not tried"
-marks~~ (0.1.22, unreleased, see the top of this section); **next is SignPath**, last ("assistant kommt vor
-codesignierung"). Waiting on the user's ComfyUI, whenever it is free: one
+marks~~ (0.1.22, unreleased, see the top of this section); then, on the user's word of 2026-09-22, **the six sessions of `docs/PLAN_0_1_24.md`** (upscaling, Oxen.ai, the
+three builds); **SignPath** after them ("assistant kommt vor codesignierung"). Waiting on the user's ComfyUI, whenever it is free: one
 local run on a large document with the node's stitch fix (`fba1fd8`), and the node in a real ComfyUI tab and in
 Firefox when a node version is meant to ship. Nothing else stands before them, unless the user names something else
 first.
