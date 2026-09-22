@@ -4,7 +4,7 @@
   "task": "upscale",
   "name": "Topaz Precision (upscale)",
   "family": "Upscale",
-  "description": "Topaz Labs' faithful upscalers (Standard, High Fidelity, Low Resolution, CGI, Text Refine, Faces) through fal.ai, no Topaz account needed. Topaz can take several minutes on a large picture; the window stays usable while it runs. Written from the provider's schema and not run against the live API yet.",
+  "description": "Topaz Labs' faithful upscalers (Standard, High Fidelity, Low Resolution, CGI, Text Refine, Faces) through fal.ai, no Topaz account needed. Topaz can take several minutes on a large picture; the window stays usable while it runs. Run live on fal on 2026-09-22 (a selection and a 2 MP picture, 2 times).",
   "default": "fal",
   "factor": {
     "default": 2,

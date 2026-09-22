@@ -368,7 +368,16 @@ input key; their inputs were read from a ComfyUI's `/object_info` on 2026-09-22.
 picture resampled by the factor (2 when the model picks) with a 4 px magenta frame, which is what
 `tools/upscale_test.py` looks for.
 
-The shipped recipes (all written from the providers' schemas and not run against a live API yet):
+**The checkpoint, 2026-09-22** (the user's fal and Magnific keys, a scratch profile, a 1907 x 1073 photo, one call
+each, factor 2): *Topaz Precision* on fal, a 538 x 512 selection box in 25 s and the whole picture to 3814 x 2146 in
+24 s; *Magnific Precision* (V2) on Magnific, the same box in **311 s**; *Magnific Creative* on Magnific, the same box in
+13 s. Every answer came back aligned with its box (checked by eye against the original), the whole picture became the
+base at twice the size. The request bodies, the fal queue and the Magnific task poll are right as written. Not run:
+the other fal upscalers, both routes on Comfy Cloud, factors above 2, and the size limits (`limits.max` 4096 stays
+until a larger picture is tried). The fal answer's size is not read back (`info` carries no width), which the status
+line would show.
+
+The shipped recipes (written from the providers' schemas; the three named above have run live):
 
 | Recipe | Providers (default first) | Factor | Rows |
 | --- | --- | --- | --- |

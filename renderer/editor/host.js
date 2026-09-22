@@ -935,7 +935,8 @@ export const host = {
             throw new Error(`The picture is ${editor.width} × ${editor.height}; ${r.name || r.id} on ${label} takes at most ${max} px on the long side. Upscale a selection instead.`);
         }
         const params = this.providerParams(editor);
-        const slow = /topaz/i.test(`${r.id} ${r.model}`) ? " Topaz can take several minutes; the window stays usable." : "";
+        const slow = /topaz/i.test(`${r.id} ${r.model}`) ? " Topaz can take several minutes; the window stays usable."
+            : /precision/i.test(r.model || "") && r.provider === "magnific" ? " Magnific Precision can take several minutes; the window stays usable." : "";
         const by = factor ? `${factor}×` : "the model's own factor";
         const token = { provider: r.provider, label, started: Date.now(), editor };
         editor.providerPending = token;

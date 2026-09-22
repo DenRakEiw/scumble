@@ -4,7 +4,7 @@
   "task": "upscale",
   "name": "Magnific Precision (upscale)",
   "family": "Upscale",
-  "description": "Magnific's faithful upscaler (Precision V2): sharper, no invented content, 2 to 16 times. Every API call costs Magnific credits, whatever the web plan says. Written from the provider's schema and not run against the live API yet. Also on Comfy Cloud.",
+  "description": "Magnific's faithful upscaler (Precision V2): sharper, no invented content, 2 to 16 times. Every API call costs Magnific credits, whatever the web plan says. Slow: a 538 x 512 box took five minutes on 2026-09-22 (run live on Magnific, 2 times); the window stays usable. Also on Comfy Cloud.",
   "default": "magnific",
   "factor": {
     "default": 2,

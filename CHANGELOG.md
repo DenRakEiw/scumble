@@ -14,6 +14,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   ComfyUI yet.
 - The assistant's question before an upscale of the selection now says that it costs money **or queues on your
   ComfyUI**.
+- **The upscalers have run for real now:** Topaz Precision through fal (a selection and a whole 2 MP picture, about
+  25 s each), Magnific Precision and Magnific Creative through Magnific (a selection each). Magnific Precision is
+  slow, five minutes for a small box; the status line now says so while it runs, as it does for Topaz.
 
 ## 0.1.24 — 2026-09-22
 
