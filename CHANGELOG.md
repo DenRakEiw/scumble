@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.26 — unreleased
+## 0.1.26 — 2026-09-22
 
 - **A smaller Windows installer:** 134 MB instead of 188 MB (421 MB installed instead of 676 MB). It carried the
   helper models' runtime for macOS, Linux and Windows on ARM, which a Windows x64 install never loads, and Chromium's
