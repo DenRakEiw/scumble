@@ -99,6 +99,15 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-22)
 
+**2026-09-22: 0.1.25 is built and tagged** (`package.json` 0.1.25, CHANGELOG "0.1.25 — 2026-09-22": PSD / ORA open with
+their layers, the PSD export's non-ASCII names, U2, the upscalers' live runs). **U3 moved out of it** on the user's word
+("mach den release fertig"): in-app ONNX upscaling is optional now, not planned for a release. `npm run dist` built
+`Scumble Setup 0.1.25.exe`; exe gates `--offline` against `dist/win-unpacked/Scumble.exe`: `rel25-exe` (tiles: layered
+upscale log pixels editor composite commands mcp recipes llm export assistant) and `rel25-exe-canvas` (tiles off:
+layered upscale pixels editor composite film export assistant) ALL PASS at the first try. No `smoke` (U2 has not run
+on a server; the release notes say so). Tag `v0.1.25` pushed; check `gh release list` for whether the draft is
+published. **Next:** B1 + B2 (the smaller Windows installer and the Linux build), which the user asked about.
+
 **2026-09-22, later: U2 is built - an upscale model on the user's ComfyUI, for 0.1.25** (`CHANGELOG.md` "0.1.25 -
 unreleased", `docs/PLAN_0_1_24.md` "U2 as built", `docs/RECIPES.md` "The shipped ComfyUI recipes" and "On the user's
 ComfyUI"; `package.json` is still 0.1.24). `recipes/upscale_model_local.json`: `InpaintCanvas` -> `ImageFromBatch` ->

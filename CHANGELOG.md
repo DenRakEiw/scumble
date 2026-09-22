@@ -3,17 +3,8 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.25 — unreleased
+## 0.1.25 — 2026-09-22
 
-- **Upscale on your own ComfyUI.** A new recipe, *Upscale model (ComfyUI)*, runs any upscale model from your
-  server's `models/upscale_models` folder (ESRGAN, UltraSharp, DAT, ...); pick the model under *Settings* as for
-  any recipe. It works on **the selection**: the box goes out at its own size, without a fill or the reference
-  layers, and the model's larger answer is fitted back into it, a sharper detail pass at the document's
-  resolution. The whole picture is not offered on this route (the *Upscale* dialog greys it out); an API
-  upscaler still does that. *Generate* with this recipe selected does the same. It has not run on a real
-  ComfyUI yet.
-- The assistant's question before an upscale of the selection now says that it costs money **or queues on your
-  ComfyUI**.
 - **PSD and ORA files open with their layers.** *Open*, drag and drop and the `load_image` command read a
   Photoshop PSD or an OpenRaster ORA as layers: names, positions, opacity, visibility and blend modes. The bottom
   layer becomes the picture when it covers it (Photoshop's *Background*, or a file Scumble saved); otherwise the
@@ -24,9 +15,18 @@ the section for its version; `docs/` and the commit history hold the technical d
   PSD on an open picture adds its layers to it.
 - **PSD export keeps layer names with umlauts and other non-ASCII letters.** They were written as underscores
   ("G_rtel"); Photoshop and Scumble now read the full name.
+- **Upscale on your own ComfyUI.** A new recipe, *Upscale model (ComfyUI)*, runs any upscale model from your
+  server's `models/upscale_models` folder (ESRGAN, UltraSharp, DAT, ...); pick the model under *Settings* as for
+  any recipe. It works on **the selection**: the box goes out at its own size, without a fill or the reference
+  layers, and the model's larger answer is fitted back into it, a sharper detail pass at the document's
+  resolution. The whole picture is not offered on this route (the *Upscale* dialog greys it out); an API
+  upscaler still does that. *Generate* with this recipe selected does the same. It has not run on a real
+  ComfyUI yet.
 - **The upscalers have run for real now:** Topaz Precision through fal (a selection and a whole 2 MP picture, about
-  25 s each), Magnific Precision and Magnific Creative through Magnific (a selection each). Magnific Precision is
+  25 s each, and once 4 times larger to 33 MP in 34 s), Magnific Precision and Magnific Creative through Magnific (a selection each). Magnific Precision is
   slow, five minutes for a small box; the status line now says so while it runs, as it does for Topaz.
+- The assistant's question before an upscale of the selection now says that it costs money **or queues on your
+  ComfyUI**.
 
 ## 0.1.24 — 2026-09-22
 
