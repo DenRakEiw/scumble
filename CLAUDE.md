@@ -112,9 +112,10 @@ shipped). `electron/main/mcp/registration.js` (an AppImage registers `"$APPIMAGE
 byte for byte as before), `keysNote` / `showKeysNote` in `shell.js` (amber warning for `basic_text`). New gate
 **`platform`** (9 Node checks, 2 app steps); mutations 9 of 9 (Node) and 4 of 4 (app, fresh instance each) red; dev
 gates `--offline` on both backends (`platform mcp commands llm editor`) ALL PASS. **Nothing has run on Linux** (no
-WSL / Docker here; `docs/BUGS.md` "Linux: built, never run"); the first Linux CI build is the push of this commit.
+WSL / Docker here; `docs/BUGS.md` "Linux: built, never run"); **the first Linux CI build is green** (run
+35744363504 on `c1e23da`: `linux` 1 min 12 s, AppImage + .deb artifact 289 MB; `windows` 133.5 MB).
 **Trap:** editing `tools/run_gates.sh` while a run of it is going breaks that run (bash reads the script as it goes:
-`syntax error near unexpected token fi`). **Next:** read the Linux job's result; then B3 (macOS, needs the 1024 px
+`syntax error near unexpected token fi`). **Next:** B3 (macOS, needs the 1024 px
 icon source) or the 0.1.26 release, on the user's word.
 
 **2026-09-22: 0.1.25 is built and tagged** (`package.json` 0.1.25, CHANGELOG "0.1.25 — 2026-09-22": PSD / ORA open with
