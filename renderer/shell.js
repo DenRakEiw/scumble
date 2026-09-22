@@ -1052,9 +1052,9 @@ ui.genGo.addEventListener("click", async () => {
 
 let upEditor = null;
 
-/** The upscale recipes (`task: "upscale"`), in the recipe list's order. */
+/** The upscale recipes (`task: "upscale"`: API models and upscale models on ComfyUI), in the recipe list's order. */
 function upRecipes() {
-    return recipes.filter((r) => r.kind === "provider" && r.task === "upscale");
+    return recipes.filter((r) => r.task === "upscale");
 }
 
 /** The factors a variant offers: its `steps`, else whole numbers min..max; none when the model picks. */
@@ -1113,7 +1113,8 @@ function upFillProviders() {
 
 function upFillFactors() {
     const { v } = upVariant();
-    const list = upFactors(v);
+    // a ComfyUI upscaler has no variant: its model picks the factor, and the stitch fits the answer to the box
+    const list = v ? upFactors(v) : [];
     const keep = +ui.upFactor.value || 0;
     ui.upFactor.innerHTML = "";
     for (const f of list) {
@@ -1131,6 +1132,22 @@ function upFillFactors() {
 function upSyncNote() {
     const ed = upEditor || host.editor;
     const { r, v } = upVariant();
+    const comfy = !!r && r.kind !== "provider";
+    ui.upScopeDoc.disabled = comfy;
+    if (comfy) {
+        // the node's stitch fits any answer back into the selection's box: no whole-picture mode on ComfyUI
+        if (ui.upScopeDoc.checked) ui.upScopeSel.checked = true;
+        const lacks = host.connected ? (r.needs || []).filter((n) => host.objectInfo && !host.objectInfo[n]) : [];
+        const why = !host.connected ? " Not connected to ComfyUI: Settings › ComfyUI."
+            : lacks.length ? ` The server lacks these node types: ${lacks.join(", ")}.` : "";
+        ui.upNote.textContent = (r.description || "") + why;
+        const sel = !!(ed && ed.getBounds && ed.getBounds());
+        ui.upSizeNote.textContent = sel
+            ? "The selection's box (with its context) goes out at its own size; the model's larger answer is fitted back into it by the node's stitch. The whole picture is not upscaled on ComfyUI."
+            : "Select an area first: on ComfyUI an upscale model sharpens the selection's box. The whole picture needs an API upscaler.";
+        ui.upGo.disabled = !sel || !!why;
+        return;
+    }
     if (!r || !v) { ui.upNote.textContent = ""; ui.upSizeNote.textContent = ""; ui.upGo.disabled = true; return; }
     const pid = ui.upProvider.value;
     const key = (providers.find((p) => p.id === pid) || {}).key;

@@ -99,6 +99,24 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-22)
 
+**2026-09-22, later: U2 is built - an upscale model on the user's ComfyUI, for 0.1.25** (`CHANGELOG.md` "0.1.25 -
+unreleased", `docs/PLAN_0_1_24.md` "U2 as built", `docs/RECIPES.md` "The shipped ComfyUI recipes" and "On the user's
+ComfyUI"; `package.json` is still 0.1.24). `recipes/upscale_model_local.json`: `InpaintCanvas` -> `ImageFromBatch` ->
+`UpscaleModelLoader` (*Model*, slot 1, default `4x-UltraSharp.pth`) -> `ImageUpscaleWithModel` -> `result_local`,
+`"task": "upscale"` on a ComfyUI recipe (`normalize()` gives it `factor.fixed`, any other task becomes `edit`).
+**Selection only**: the node's stitch fits the model's larger answer back into the box. `host.queueGenerate` refuses
+without a selection, sends `host.upscaleState(state)` (no fill, no Original copy, no references, no refine; the
+document's crop settings untouched) and forces `target_size: 0` after merging the user's node params (the recipe's own
+value would lose to them). The `upscale` command refuses `scope: "document"` by name and runs the selection through
+`generate`'s path; the dialog lists the recipe, greys the whole picture out, hides factor and provider, and disables
+*Upscale* without a selection, a connection or one of the `needs`. The assistant's question now says "costs money, or
+queues on your ComfyUI". No editor change (no `nodecopy`). Tests: `node tools/upscale_test.js` **95 checks** (a
+section for the recipe file), gate `upscale` step `a_comfy_upscale_recipe_queues_the_crop_as_it_is_and_only_the_selection`
+(catches `api.queuePrompt` in the window: **nothing is queued anywhere**); mutation round **15 of 15 red** (fresh
+instance each). Checked against the user's `/object_info` (read only, the queue untouched). **Not run on a server**:
+`smoke` with a real model file waits for the user's ComfyUI. **Next: U3** (in-app ONNX upscaling, whole picture in
+bands), then the 0.1.25 release with U2.
+
 **2026-09-22: U1 is built - upscaling through the providers, for 0.1.24** (`package.json` 0.1.24, CHANGELOG "0.1.24 — 2026-09-22"; `docs/PLAN_0_1_24.md` "U1 as built", `docs/RECIPES.md` "Upscale recipes" and "Magnific"). An *Upscale*
 button next to *Generate new* (the app host's `buildUpscaleButton`, so the node needs nothing) opens `#up-dialog`
 (model, provider, the selection or the whole picture, the factor) and runs the new command `upscale` (`scope`,

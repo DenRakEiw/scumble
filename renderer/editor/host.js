@@ -1200,12 +1200,16 @@ export const host = {
         if (!this.connected) throw new Error("Not connected to ComfyUI.");
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
-        const state = await editor.serializeForPrompt();
+        const upscale = r.task === "upscale";
+        if (upscale && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
+        const state = upscale ? this.upscaleState(await editor.serializeForPrompt()) : await editor.serializeForPrompt();
         await this.ensureOnServer(state, editor);
         const prompt = JSON.parse(JSON.stringify(r.prompt));
         const canvas = prompt[r.canvas];
         if (!canvas) throw new Error(`Recipe "${r.id}" has no canvas node "${r.canvas}".`);
         canvas.inputs = { ...(canvas.inputs || {}), ...this.nodeParams, canvas_state: state };
+        // an upscaler sees the crop at its native size: the node grows the box to a multiple instead of scaling it
+        if (upscale) canvas.inputs.target_size = 0;
         delete canvas.inputs.result; delete canvas.inputs.result_local;
         delete canvas.inputs.result_source; delete canvas.inputs.result_source_local;
         canvas.inputs[r.mode === "api" ? "result_source" : "result_source_local"] = r.result;
@@ -1217,6 +1221,19 @@ export const host = {
         const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowForPng(editor) });
         editor.lastPromptId = res && res.prompt_id;
         return res;
+    },
+
+    /**
+     * The canvas state an upscale recipe on ComfyUI gets: the crop as it is (no fill, so no second "Original"
+     * picture either), no reference layers and no refine pass; everything else (context, feather, paste,
+     * colour match) stays the user's.
+     */
+    upscaleState(stateJson) {
+        const s = typeof stateJson === "string" ? JSON.parse(stateJson) : { ...(stateJson || {}) };
+        s.crop = { ...(s.crop || {}), fill: "none", withOriginal: false };
+        s.references = [];
+        if (s.gen) s.gen = { ...s.gen, refine: false };
+        return JSON.stringify(s);
     },
 
     /** The file refs a canvas_state JSON makes the node read: base, mask, control, references. */

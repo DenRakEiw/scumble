@@ -1,0 +1,22 @@
+{
+  "id": "upscale_model_local",
+  "name": "Upscale model (ComfyUI)",
+  "task": "upscale",
+  "description": "An upscale model from the server's models/upscale_models folder (ESRGAN, UltraSharp, DAT, ...), picked under Settings as Model. The selection's box goes out at its own size, without a fill or the reference layers, the model enlarges it by its own factor, and the node's stitch fits the answer back into the box: a sharper detail pass at the document's resolution. The whole picture is not upscaled on this route (the node's stitch has no way to replace the base).",
+  "mode": "local",
+  "canvas": "canvas",
+  "result": "up:0",
+  "needs": ["InpaintCanvas", "ImageFromBatch", "UpscaleModelLoader", "ImageUpscaleWithModel"],
+  "settings": [
+    { "index": 1, "node": "loader", "input": "model_name", "label": "Model" }
+  ],
+  "models": {
+    "upscale_models": ["4x-UltraSharp.pth (https://huggingface.co/Kim2091/UltraSharp)"]
+  },
+  "prompt": {
+    "canvas": { "class_type": "InpaintCanvas", "inputs": { "padding": 64, "target_size": 0, "feather": 16, "multiple_of": 8 } },
+    "img0": { "class_type": "ImageFromBatch", "inputs": { "image": ["canvas", 0], "batch_index": 0, "length": 1 } },
+    "loader": { "class_type": "UpscaleModelLoader", "inputs": { "model_name": "4x-UltraSharp.pth" } },
+    "up": { "class_type": "ImageUpscaleWithModel", "inputs": { "upscale_model": ["loader", 0], "image": ["img0", 0] } }
+  }
+}

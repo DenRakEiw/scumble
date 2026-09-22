@@ -105,6 +105,33 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         check("without a factor block: 2, 1 to 4", eq({ d: def.providers.fal.factor.default, a: def.providers.fal.factor.min, b: def.providers.fal.factor.max }, { d: 2, a: 1, b: 4 }));
     });
 
+    await section("the ComfyUI upscale recipe (recipes/upscale_model_local.json)", async () => {
+        const raw = rawOf("upscale_model_local");
+        const r = recipes._normalize(JSON.parse(JSON.stringify(raw)));
+        check("it is a ComfyUI recipe (no kind), task upscale, local mode", r.kind === undefined && r.task === "upscale" && r.mode === "local", short({ kind: r.kind, task: r.task, mode: r.mode }));
+        check("its model picks the factor: fixed, so the dialog offers none", r.factor && r.factor.fixed === true, short(r.factor));
+        check("no providers map was made for it", r.providers === undefined && r.providerIds === undefined);
+        const P_ = r.prompt;
+        const canvas = P_[r.canvas];
+        check("the canvas node is an InpaintCanvas with target_size 0 (the crop at its native size)", canvas && canvas.class_type === "InpaintCanvas" && canvas.inputs.target_size === 0, short(canvas));
+        const [rid, rslot] = String(r.result).split(":");
+        check("the result is the upscaler's IMAGE", P_[rid] && P_[rid].class_type === "ImageUpscaleWithModel" && rslot === "0", r.result);
+        const up = P_[rid];
+        check("the upscaler reads the loader's model and the crop's first picture",
+            eq(up.inputs.upscale_model, ["loader", 0]) && P_.loader.class_type === "UpscaleModelLoader" && eq(up.inputs.image, ["img0", 0])
+            && P_.img0.class_type === "ImageFromBatch" && eq(P_.img0.inputs.image, [r.canvas, 0]) && P_.img0.inputs.batch_index === 0 && P_.img0.inputs.length === 1, short(P_));
+        const links = [];
+        for (const [id, n] of Object.entries(P_)) for (const [k, v] of Object.entries(n.inputs || {})) if (Array.isArray(v)) links.push([id, k, v[0]]);
+        check("every link names a node of the prompt", links.every(([, , to]) => P_[to]), short(links.filter(([, , to]) => !P_[to])));
+        const classes = [...new Set(Object.values(P_).map((n) => n.class_type))].sort();
+        check("needs lists exactly the node types of the prompt", eq([...r.needs].sort(), classes), short({ needs: r.needs, classes }));
+        check("one setting, slot 1: the loader's model_name as Model", r.settings.length === 1 && r.settings[0].index === 1 && r.settings[0].node === "loader" && r.settings[0].input === "model_name" && P_.loader.inputs.model_name === "4x-UltraSharp.pth", short(r.settings));
+        const odd = recipes._normalize({ task: "sharpen", prompt: {} });
+        check("a ComfyUI recipe with another task is an edit recipe", odd.task === "edit" && odd.factor === undefined, short(odd));
+        const none = recipes._normalize({ prompt: {} });
+        check("a ComfyUI recipe without a task stays as it was", none.task === undefined && none.factor === undefined, short(none));
+    });
+
     const fal = require(P("electron", "main", "providers", "fal.js"));
     const IMG = pngOf(100, 80, "crop");
     const URI = "data:image/png;base64," + IMG.toString("base64");

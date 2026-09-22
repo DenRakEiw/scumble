@@ -54,6 +54,14 @@ input spec format: `["INT", {default, min, max}]`, `[["a", "b"], {}]` for a comb
   `TextEncodeQwenImage21` and `QwenImage21Cache` and the three model files the recipe's `models` names. Checked
   against the user's `/object_info` on 2026-09-21 (every class, input and link); **not run** (the model files were
   not on that server yet).
+- `upscale_model_local`, **Upscale model (ComfyUI)** (added for 0.1.25, session U2): `InpaintCanvas` ->
+  `ImageFromBatch` (the crop only) -> `UpscaleModelLoader` (`model_name` as *Model*, slot 1, the server's
+  `models/upscale_models` list from `/object_info`; default `4x-UltraSharp.pth`) -> `ImageUpscaleWithModel` ->
+  `result_local`. `"task": "upscale"` on a ComfyUI recipe (see "Upscale recipes" below): the *Upscale* dialog lists
+  it, the selection is its only mode, and the node's stitch fits the model's larger answer back into the box
+  (`nodes.py` `InpaintCanvasStitch`, `_resize_image(src, w, h)`), so it is a sharper detail pass at the document's
+  resolution. Checked against the user's `/object_info` on 2026-09-22 (both classes, their inputs and outputs);
+  **not run** (the user's ComfyUI was not free).
 
 ### Presets
 
@@ -331,6 +339,19 @@ The two modes (`host.runUpscale(editor, { scope, factor })` in `renderer/editor/
   as one `canvas` undo step. A picture whose long side is above the variant's `limits.max` is refused with its size
   in the message (the dialog greys *Upscale* out); a banded upscale of a larger picture is session U3's
   (`docs/PLAN_0_1_24.md`).
+
+**On the user's ComfyUI** (`kind: "comfy"` with `"task": "upscale"`, e.g. `upscale_model_local`): `normalize()`
+gives the recipe `factor: { ..., fixed: true }` (the model picks its factor, the dialog shows none) and turns any
+other `task` into `edit`. There is **only the selection mode**: the node's stitch resizes every answer to the
+crop box and has no way to replace the base (that would need the node to hand back the raw result, a node
+change). `host.queueGenerate` runs it like any ComfyUI recipe with three differences: it refuses without a
+selection, the canvas state it sends is `host.upscaleState(...)` (crop `fill: "none"` and `withOriginal: false`,
+`references: []`, no refine pass; the document's own crop settings are untouched), and the canvas node gets
+`target_size: 0`, so the node grows the box to `multiple_of` instead of scaling the crop before the model sees
+it. The `upscale` command refuses `scope: "document"` for such a recipe by name and runs the selection through
+the `generate` command's path (queue, wait for the result layer); the dialog greys *the whole picture* out,
+hides the factor and the provider row, and disables *Upscale* without a selection, without a server connection
+or when the server lacks one of the recipe's `needs` (named in the note).
 
 The adapters: `upscale(req, ctx)` beside `edit` / `generate`; `providers/index.js` sends `kind: "upscale"` there
 and refuses a provider without one by name. **fal** (`fal.js`): `{ image_url, upscale_factor, output_format:

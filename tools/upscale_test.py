@@ -162,7 +162,7 @@ return { layer: out.layer.id, status: ed.status };
     ("the_shipped_recipes_are_listed_with_their_task_and_factors", """
 const list = await run("list_recipes");
 const ups = list.recipes.filter((r) => r.task === "upscale");
-const want = ["clarity_upscaler", "magnific_creative", "magnific_precision", "recraft_creative", "recraft_crisp", "seedvr2", "topaz_creative", "topaz_generative", "topaz_precision"];
+const want = ["clarity_upscaler", "magnific_creative", "magnific_precision", "recraft_creative", "recraft_crisp", "seedvr2", "topaz_creative", "topaz_generative", "topaz_precision", "upscale_model_local"];
 const ids = ups.map((r) => r.id).sort();
 if (JSON.stringify(ids) !== JSON.stringify(want)) throw new Error("upscale recipes: " + ids.join(", "));
 const mc = ups.find((r) => r.id === "magnific_creative");
@@ -207,7 +207,7 @@ await wait(60);
 const dlg = document.getElementById("up-dialog");
 if (!dlg.open) throw new Error("the dialog did not open");
 const recs = Array.from(document.getElementById("up-recipe").options).map((o) => o.value);
-if (recs.length !== 9) throw new Error("the dialog lists " + recs.length + " recipes: " + recs.join(", "));
+if (recs.length !== 10) throw new Error("the dialog lists " + recs.length + " recipes: " + recs.join(", "));
 if (document.getElementById("up-recipe").value !== "topaz_precision") throw new Error("the selected upscale recipe is not preselected");
 if (!document.getElementById("up-scope-sel").checked) throw new Error("with a selection the dialog does not start on it");
 const pick = (id) => { const s = document.getElementById("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); };
@@ -260,6 +260,94 @@ try {
     return { status: ed.status };
 } finally {
     list.splice(list.indexOf(fake), 1);
+}
+"""),
+    ("a_comfy_upscale_recipe_queues_the_crop_as_it_is_and_only_the_selection", """
+// the shipped ComfyUI recipe, with the prompt caught before it leaves: nothing is queued on any server
+const ed = ednow(window.__u);
+const { api } = await import("./editor/host.js");
+const r0 = host.shell.recipes().find((x) => x.id === "upscale_model_local");
+if (!r0) throw new Error("the shipped ComfyUI upscale recipe is not listed");
+if (r0.task !== "upscale" || r0.kind === "provider" || !r0.factor || r0.factor.fixed !== true) throw new Error("not a ComfyUI upscaler: " + JSON.stringify({ task: r0.task, kind: r0.kind, factor: r0.factor }));
+const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, np: host.nodeParams, crop: { ...ed.cropSettings } };
+let sent = null, ref = null;
+const out = {};
+try {
+    host.connected = true;
+    const oi = {};
+    for (const n of r0.needs) oi[n] = { input: { required: {} } };
+    oi.UpscaleModelLoader = { input: { required: { model_name: [["4x-UltraSharp.pth", "2xESRGAN.pth"], {}] } } };
+    host.objectInfo = oi;
+    host.ensureOnServer = async () => null;
+    api.queuePrompt = async (n, body) => { sent = body; return { prompt_id: "gate-upscale" }; };
+    host.nodeParams = { ...saved.np, target_size: 1024 };
+    host.shell.selectRecipe("upscale_model_local");
+    if (host.recipe.id !== "upscale_model_local") throw new Error("the recipe was not selected");
+    const t = host.settingTargets(ed);
+    if (t.length !== 1 || t[0].node.title !== "Model" || t[0].inputName !== "model_name") throw new Error("the Settings rows: " + JSON.stringify(t.map((x) => x.node.title)));
+    // what a Generate would send and an upscaler must not: a green fill with the Original after it, a reference layer
+    await run("set_crop", { doc: window.__u, context: 0, feather: 0, fill: "green", withOriginal: true });
+    ref = await run("add_paint_layer", { doc: window.__u, name: "a reference" });
+    await run("set_layer", { doc: window.__u, layer: ref.id, role: "reference" });
+    await run("select_rect", { doc: window.__u, x: 64, y: 64, w: 120, h: 90 });
+    ed.settings["1"] = { value: "2xESRGAN.pth" };
+    await host.queueGenerate(ed);
+    if (!sent) throw new Error("nothing was queued");
+    const P_ = sent.output, cv = P_.canvas.inputs, st = JSON.parse(cv.canvas_state);
+    if (cv.target_size !== 0) throw new Error("the crop is scaled before the model sees it: target_size " + cv.target_size);
+    if (st.crop.fill !== "none" || st.crop.withOriginal !== false) throw new Error("the crop goes out filled: " + JSON.stringify(st.crop));
+    if ((st.references || []).length) throw new Error("reference layers went along: " + st.references.length);
+    if (cv.result_source_local !== "up:0" || cv.result_source !== undefined) throw new Error("the result input: " + JSON.stringify({ local: cv.result_source_local, api: cv.result_source }));
+    if (P_.loader.inputs.model_name !== "2xESRGAN.pth") throw new Error("the Model setting did not reach the loader: " + P_.loader.inputs.model_name);
+    if (ed.cropSettings.fill !== "green" || ed.cropSettings.withOriginal !== true) throw new Error("the crop settings of the document were changed: " + JSON.stringify(ed.cropSettings));
+    if (host.nodeParams.target_size !== 1024) throw new Error("the node params were changed: " + JSON.stringify(host.nodeParams));
+    out.sent = { target_size: cv.target_size, crop: st.crop, model: P_.loader.inputs.model_name, result: cv.result_source_local };
+    // the dialog lists it, offers no factor and no whole picture
+    host.shell.openUpscale(ed);
+    const pick = (id) => { const s = document.getElementById("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); };
+    const recs = Array.from(document.getElementById("up-recipe").options).map((o) => o.value);
+    if (!recs.includes("upscale_model_local")) throw new Error("the dialog does not list it: " + recs.join(", "));
+    pick("upscale_model_local");
+    const docRadio = document.getElementById("up-scope-doc"), go = document.getElementById("up-go");
+    if (!docRadio.disabled || docRadio.checked) throw new Error("the whole picture is offered on ComfyUI");
+    if (!document.getElementById("up-factor-row").hidden) throw new Error("a factor is offered for a model that picks its own");
+    if (!document.getElementById("up-provider-row").hidden) throw new Error("a provider row for a ComfyUI recipe");
+    if (go.disabled) throw new Error("Go is disabled with a selection and a server: " + document.getElementById("up-size-note").textContent);
+    host.connected = false;
+    docRadio.dispatchEvent(new Event("change"));
+    const offline = document.getElementById("up-note").textContent;
+    if (!go.disabled || !/Not connected to ComfyUI/.test(offline)) throw new Error("not connected, and the dialog would run: " + offline);
+    host.connected = true;
+    host.objectInfo = { ...oi, ImageUpscaleWithModel: undefined };
+    docRadio.dispatchEvent(new Event("change"));
+    const lacks = document.getElementById("up-note").textContent;
+    if (!go.disabled || !/lacks these node types: ImageUpscaleWithModel/.test(lacks)) throw new Error("a missing node type is not named: " + lacks);
+    host.objectInfo = oi;
+    pick("topaz_precision");
+    if (docRadio.disabled) throw new Error("an API upscaler lost its whole-picture mode");
+    pick("upscale_model_local");
+    document.getElementById("up-cancel").click();
+    await wait(60);
+    // the command: the whole picture is refused by name, and so is no selection
+    const refused = async (args, re) => {
+        try { await run("upscale", { doc: window.__u, ...args }); } catch (err) { const m = String(err.message || err); if (!re.test(m)) throw new Error("wrong refusal for " + JSON.stringify(args) + ": " + m); return m; }
+        throw new Error("not refused: " + JSON.stringify(args));
+    };
+    sent = null;
+    // a short timeout: a refusal that lets the call through would wait for a result that never comes
+    out.document = await refused({ scope: "document", timeout: 8 }, /cannot enlarge the whole picture/);
+    await run("select_none", { doc: window.__u });
+    out.noSelection = await refused({ scope: "selection", timeout: 8 }, /Select an area first/);
+    try { await host.queueGenerate(ed); throw new Error("Generate queued without a selection"); }
+    catch (err) { if (!/Select an area first/.test(String(err.message))) throw err; }
+    if (sent) throw new Error("a refusal queued a prompt");
+    if (ed.width !== 640) throw new Error("a refusal changed the picture");
+    return out;
+} finally {
+    host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; host.nodeParams = saved.np;
+    if (document.getElementById("up-dialog").open) document.getElementById("up-cancel").click();
+    await run("set_crop", { doc: window.__u, fill: saved.crop.fill || "none", withOriginal: !!saved.crop.withOriginal });
+    if (ref) { try { await run("remove_layer", { doc: window.__u, layer: ref.id }); } catch (_) { /* gone */ } }
 }
 """),
     ("cleanup", """

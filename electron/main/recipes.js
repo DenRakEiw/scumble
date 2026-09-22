@@ -126,7 +126,13 @@ function textVariant(providerId, v) {
  * `text` shape filled in, which is what "Generate new" uses.
  */
 function normalize(r) {
-    if (r.kind !== "provider") return r;
+    if (r.kind !== "provider") {
+        // a ComfyUI recipe may be an upscaler too (recipes/upscale_model_local.json): the model picks its own
+        // factor, and only the selection mode exists (the node's stitch fits the answer back into the box)
+        if (r.task === "upscale") r.factor = { ...FACTOR_DEFAULT, fixed: true };
+        else if (r.task !== undefined) r.task = "edit";
+        return r;
+    }
     if (!r.providers || typeof r.providers !== "object" || !Object.keys(r.providers).length) {
         const id = r.provider || "loopback";
         r.providers = { [id]: { model: r.model || "", input: r.input || "fill", fields: r.fields || null, fixed: r.fixed || null, settings: r.settings || [], options: r.options || null, note: r.note || "" } };

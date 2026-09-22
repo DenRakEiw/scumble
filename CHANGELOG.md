@@ -3,6 +3,18 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.25 — unreleased
+
+- **Upscale on your own ComfyUI.** A new recipe, *Upscale model (ComfyUI)*, runs any upscale model from your
+  server's `models/upscale_models` folder (ESRGAN, UltraSharp, DAT, ...); pick the model under *Settings* as for
+  any recipe. It works on **the selection**: the box goes out at its own size, without a fill or the reference
+  layers, and the model's larger answer is fitted back into it, a sharper detail pass at the document's
+  resolution. The whole picture is not offered on this route (the *Upscale* dialog greys it out); an API
+  upscaler still does that. *Generate* with this recipe selected does the same. It has not run on a real
+  ComfyUI yet.
+- The assistant's question before an upscale of the selection now says that it costs money **or queues on your
+  ComfyUI**.
+
 ## 0.1.24 — 2026-09-22
 
 - **Upscale.** A new *Upscale* button next to *Generate new* opens a small dialog: pick the model, then either

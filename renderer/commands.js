@@ -555,7 +555,7 @@ const COMMANDS = {
         },
     },
     upscale: {
-        needsImage: true, description: "Upscale with the selected upscale recipe (list_recipes: task \"upscale\"; select_recipe picks one). scope \"selection\": the selection's box goes to the upscaler at its own size and the sharper answer comes back into it at the document's resolution, as a result layer. scope \"document\": the base image goes out, the answer becomes the new base N times larger, and every layer, mask and the selection are scaled along (one undo step). Waits for the answer; Topaz can take several minutes.",
+        needsImage: true, description: "Upscale with the selected upscale recipe (list_recipes: task \"upscale\"; select_recipe picks one). scope \"selection\": the selection's box goes to the upscaler at its own size and the sharper answer comes back into it at the document's resolution, as a result layer. scope \"document\": the base image goes out, the answer becomes the new base N times larger, and every layer, mask and the selection are scaled along (one undo step); an upscale recipe on ComfyUI takes the selection only. Waits for the answer; Topaz can take several minutes.",
         params: {
             scope: P.str("selection (a detail pass) or document (the whole picture larger)", { enum: ["selection", "document"], default: "selection" }),
             factor: P.num("how many times larger; the recipe's default when left out (list_recipes shows each recipe's factors); ignored by a model that picks its own"),
@@ -563,9 +563,18 @@ const COMMANDS = {
         },
         async run(ed, a) {
             const r = host.recipe;
-            if (!r || r.kind !== "provider" || r.task !== "upscale") throw new Error(`the selected recipe is no upscaler: select_recipe one with task "upscale" (${host.shell.recipes().filter((x) => x.task === "upscale").map((x) => x.id).join(", ") || "none installed"})`);
+            if (!r || r.task !== "upscale") throw new Error(`the selected recipe is no upscaler: select_recipe one with task "upscale" (${host.shell.recipes().filter((x) => x.task === "upscale").map((x) => x.id).join(", ") || "none installed"})`);
             if (ed.providerPending) throw new Error("a run is still going on this document");
             const scope = a.scope === "document" ? "document" : "selection";
+            if (r.kind !== "provider") {
+                // an upscale model on the user's ComfyUI: the node's stitch fits the answer back into the box, so
+                // there is only the selection mode, and it is a Generate with the crop at its native size
+                if (scope === "document") throw new Error(`${r.name || r.id} runs on ComfyUI, where the answer is fitted back into the selection's box: it cannot enlarge the whole picture. Select an area, or pick an API upscaler for the whole picture.`);
+                if (!(ed.getBounds && ed.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
+                const g = await COMMANDS.generate.run(ed, { timeout: clampInt(a.timeout, 5, 3600, 1800) });
+                const l = g.layer;
+                return { scope, recipe: r.id, provider: null, factor: null, box: l ? { x: l.x, y: l.y, w: l.w, h: l.h } : null, layer: l, seconds: g.seconds, info: null, status: ed.status };
+            }
             const n0 = ed.history.length;
             const limit = clampInt(a.timeout, 5, 3600, 1800) * 1000;
             let timer = null;
