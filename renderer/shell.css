@@ -161,6 +161,8 @@ html, body { margin: 0; height: 100%; background: #181818; color: #ddd; font: 13
 #gen-dialog.gen-free-size #gen-res-row { display: none; }
 #up-dialog .shell-check { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 #up-dialog .shell-note, #up-dialog .shell-help { white-space: normal; overflow: visible; text-overflow: clip; }
+#up-dialog .up-wide { display: flex; flex-direction: column; align-items: stretch; margin-top: 6px; }
+#up-dialog .up-wide textarea { width: 100%; box-sizing: border-box; resize: vertical; }
 #up-dialog #up-note { color: #9a9a9a; }
 #up-dialog select { max-width: 360px; }
 

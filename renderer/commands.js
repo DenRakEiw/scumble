@@ -270,7 +270,7 @@ const COMMANDS = {
             const cur = host.recipe;
             return { selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null, recipes: host.shell.recipes().map((r) => {
                 const v = host.shell.resolveRecipe(r);
-                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: r.mode || (r.kind === "provider" ? "api" : "local"), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, description: r.description || "", source: r.source || "builtin" };
+                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: r.mode || (r.kind === "provider" ? "api" : "local"), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, description: r.description || "", source: r.source || "builtin" };
             }) };
         },
     },
@@ -559,6 +559,7 @@ const COMMANDS = {
         params: {
             scope: P.str("selection (a detail pass) or document (the whole picture larger)", { enum: ["selection", "document"], default: "selection" }),
             factor: P.num("how many times larger; the recipe's default when left out (list_recipes shows each recipe's factors); ignored by a model that picks its own"),
+            prompt: P.str("guidance for the added detail, for an upscaler that takes one (list_recipes: usesPrompt true, e.g. Clarity, Magnific Creative); the document's prompt when left out, ignored by the others"),
             timeout: P.timeout(1800),
         },
         async run(ed, a) {
@@ -579,7 +580,7 @@ const COMMANDS = {
             const limit = clampInt(a.timeout, 5, 3600, 1800) * 1000;
             let timer = null;
             const out = await Promise.race([
-                host.runUpscale(ed, { scope, factor: a.factor }),
+                host.runUpscale(ed, { scope, factor: a.factor, prompt: a.prompt }),
                 new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("the upscale timed out: " + ed.status)), limit); }),
             ]).finally(() => clearTimeout(timer));
             ed.notifyChanged();

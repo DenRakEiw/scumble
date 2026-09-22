@@ -58,7 +58,7 @@ const ui = {
     genTemplate: $("gen-template"), genTemplateNote: $("gen-template-note"),
     up: $("up-dialog"), upRecipe: $("up-recipe"), upProvider: $("up-provider"), upProviderRow: $("up-provider-row"),
     upNote: $("up-note"), upScopeSel: $("up-scope-sel"), upScopeDoc: $("up-scope-doc"), upFactor: $("up-factor"),
-    upFactorRow: $("up-factor-row"), upSizeNote: $("up-size-note"), upState: $("up-state"), upGo: $("up-go"),
+    upFactorRow: $("up-factor-row"), upSizeNote: $("up-size-note"), upPromptRow: $("up-prompt-row"), upPrompt: $("up-prompt"), upState: $("up-state"), upGo: $("up-go"),
     promptList: $("set-prompts"), promptImport: $("set-prompt-import"), promptFolder: $("set-prompt-folder"), promptNote: $("set-prompt-note"),
     compatUrl: $("set-compat-url"), compatModel: $("set-compat-model"), compatModels: $("set-compat-models"),
     compatKey: $("set-compat-key"), compatKeySave: $("set-compat-key-save"), compatKeyClear: $("set-compat-key-clear"),
@@ -1153,6 +1153,8 @@ function upSyncNote() {
     const { r, v } = upVariant();
     const comfy = !!r && r.kind !== "provider";
     ui.upScopeDoc.disabled = comfy;
+    // only an upscaler that takes guidance (Clarity, Magnific Creative: `usesPrompt`) shows the prompt
+    ui.upPromptRow.hidden = !(v && v.usesPrompt);
     if (comfy) {
         // the node's stitch fits any answer back into the selection's box: no whole-picture mode on ComfyUI
         if (ui.upScopeDoc.checked) ui.upScopeSel.checked = true;
@@ -1200,6 +1202,7 @@ export function openUpscale(editor) {
     const hasSel = !!(upEditor.getBounds && upEditor.getBounds());
     (hasSel ? ui.upScopeSel : ui.upScopeDoc).checked = true;
     ui.upState.textContent = "";
+    ui.upPrompt.value = upEditor.promptText || "";
     upSyncNote();
     ui.up.showModal();
 }
@@ -1222,6 +1225,7 @@ ui.upGo.addEventListener("click", async () => {
         if (settings.upscaleRecipe !== id) window.scumble.settings.set({ upscaleRecipe: id }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
         const args = { doc: ed.node.id, scope: ui.upScopeDoc.checked ? "document" : "selection", timeout: 1800 };
         if (!ui.upFactorRow.hidden) args.factor = +ui.upFactor.value;
+        if (!ui.upPromptRow.hidden) args.prompt = (ui.upPrompt.value || "").trim();
         // the dialog closes as soon as the run starts; the status line and the busy marker follow it
         const run = commands.run("upscale", args);
         ui.up.close();

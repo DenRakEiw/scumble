@@ -262,6 +262,54 @@ try {
     list.splice(list.indexOf(fake), 1);
 }
 """),
+    ("the_dialog_sends_its_own_prompt_to_an_upscaler_that_takes_one", """
+const ed = ednow(window.__u);
+const list = host.shell.recipes();
+const lb = (usesPrompt) => ({ model: "loopback", settings: [], factor: { default: 2, min: 1, max: 4, steps: null, fixed: false }, limits: { min: 32, max: 4096, step: 1, pixels: 0, minPixels: 0, ratio: 0 }, text: null, edit: true, usesPrompt });
+const fake = { id: "loopback_upscale_prompt", kind: "provider", task: "upscale", name: "Loopback upscale with a prompt (gate)", family: "Upscale", default: "loopback", providerIds: ["loopback"], usesPrompt: true, providers: { loopback: lb(true) } };
+list.push(fake);
+const orig = commands.run;
+const seen = [];
+commands.run = async (n, a) => { const out = await orig.call(commands, n, a); if (n === "upscale") seen.push({ args: a, out }); return out; };
+try {
+    await run("set_prompt", { doc: window.__u, text: "tab words" });
+    await run("select_rect", { doc: window.__u, x: 100, y: 100, w: 60, h: 40 });
+    host.shell.openUpscale(ed);
+    const row = document.getElementById("up-prompt-row"), box = document.getElementById("up-prompt");
+    if (box.value !== "tab words") throw new Error("the dialog's prompt does not start as the document's: " + JSON.stringify(box.value));
+    const pick = (id) => { const s = document.getElementById("up-recipe"); s.value = id; s.dispatchEvent(new Event("change")); return !row.hidden; };
+    const shown = { recraft_crisp: pick("recraft_crisp"), topaz_precision: pick("topaz_precision"), clarity_upscaler: pick("clarity_upscaler"), magnific_creative: pick("magnific_creative"), gate: pick(fake.id) };
+    if (JSON.stringify(shown) !== JSON.stringify({ recraft_crisp: false, topaz_precision: false, clarity_upscaler: true, magnific_creative: true, gate: true })) throw new Error("the prompt row: " + JSON.stringify(shown));
+    box.value = "  dialog words  ";
+    document.getElementById("up-scope-sel").checked = true;
+    const n = ed.layers.length;
+    document.getElementById("up-go").click();
+    const t0 = Date.now();
+    while (!seen.length && Date.now() - t0 < 20000) await wait(100);
+    if (!seen.length) throw new Error("the dialog ran no upscale: " + ed.status);
+    const got = seen[0];
+    if (got.args.prompt !== "dialog words") throw new Error("the command got " + JSON.stringify(got.args.prompt));
+    if (!got.out.info || got.out.info.prompt !== "dialog words") throw new Error("the upscaler got " + JSON.stringify(got.out.info));
+    if (ed.layers.length !== n + 1) throw new Error("no layer came back");
+    if (ed.promptText !== "tab words") throw new Error("the dialog changed the document's prompt: " + ed.promptText);
+    // the command without a prompt takes the document's; an upscaler without usesPrompt gets none, whatever is passed
+    const plain = await orig.call(commands, "upscale", { doc: window.__u, scope: "selection" });
+    if (plain.info.prompt !== "tab words") throw new Error("without a prompt argument: " + JSON.stringify(plain.info.prompt));
+    const listed = (await orig.call(commands, "list_recipes", {})).recipes || (await orig.call(commands, "list_recipes", {}));
+    const arr = Array.isArray(listed) ? listed : listed.recipes;
+    const flags = Object.fromEntries(arr.filter((r) => r.task === "upscale").map((r) => [r.id, r.usesPrompt]));
+    if (flags.magnific_creative !== true || flags.clarity_upscaler !== true || flags.topaz_precision !== false) throw new Error("list_recipes usesPrompt: " + JSON.stringify(flags));
+    fake.providers.loopback = lb(false);
+    host.shell.selectRecipe(fake.id, "loopback");
+    const none = await orig.call(commands, "upscale", { doc: window.__u, scope: "selection", prompt: "ignored" });
+    if (none.info.prompt !== "") throw new Error("an upscaler without usesPrompt got " + JSON.stringify(none.info.prompt));
+    return { shown, sent: got.out.info.prompt, plain: plain.info.prompt };
+} finally {
+    commands.run = orig;
+    list.splice(list.indexOf(fake), 1);
+    try { await run("set_prompt", { doc: window.__u, text: "" }); } catch (_) { /* gone */ }
+}
+"""),
     ("a_comfy_upscale_recipe_queues_the_crop_as_it_is_and_only_the_selection", """
 // the shipped ComfyUI recipe, with the prompt caught before it leaves: nothing is queued on any server
 const ed = ednow(window.__u);

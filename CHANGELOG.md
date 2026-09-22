@@ -3,6 +3,14 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.27 — unreleased
+
+- **The Upscale dialog has a prompt field** for the upscalers that take one (Clarity, Magnific Creative). They always
+  followed the prompt of the Generate tab, but the dialog did not show it, so it looked as if no prompt could go
+  along. The field starts with the tab's prompt; what you type there goes to the upscaler and leaves the tab's
+  prompt as it was. Agents pass it as `prompt` to the `upscale` command, and `list_recipes` says which upscalers
+  use one.
+
 ## 0.1.26 — 2026-09-22
 
 - **A smaller Windows installer:** 134 MB instead of 188 MB (421 MB installed instead of 676 MB). It carried the

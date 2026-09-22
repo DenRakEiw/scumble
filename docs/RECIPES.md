@@ -320,8 +320,11 @@ while the recipe is selected (then on the selection). The recipe select lists th
   2, 1 to 4). `steps` lists the only factors a model takes (Magnific Creative and both Magnific nodes on Comfy
   Cloud: 2, 4, 8, 16); `fixed: true` marks a model that picks its own (Recraft's upscalers), and no factor is sent.
   The host refuses a factor outside what the variant offers before anything is sent.
-- `usesPrompt`: only then do the tab's prompt and negative prompt go along, as guidance (Clarity, Magnific
-  Creative). Every other upscaler gets no prompt.
+- `usesPrompt`: only then does a prompt go along, as guidance (Clarity, Magnific Creative): the Upscale dialog shows a
+  Prompt field for such a recipe, filled with the tab's prompt and sent as the `upscale` command's `prompt` (the
+  tab's own prompt stays as it was); without that argument (Generate with an upscale recipe, an agent that leaves it
+  out) the tab's prompt goes. The negative prompt is always the tab's. `list_recipes` says `usesPrompt` per upscale
+  recipe. Every other upscaler gets no prompt.
 - `text: null` (an upscaler has no *Generate new* shape) and its `limits` as any variant. The shipped recipes set
   `limits: { min: 32, max: 4096, step: 1 }`: the crop goes out at its own size (the size mode `crop`, whatever the
   *Highres fix* select says), never pushed up to the model's maximum and never rounded to a multiple.

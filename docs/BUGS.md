@@ -11,6 +11,17 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### The creative upscalers seem to take no prompt - fixed for 0.1.27
+
+**Reported** by the user on 2026-09-22 ("beim creative upscale muss man auch einen prompt mitsenden koennen").
+Clarity and Magnific Creative (`usesPrompt`) did send a prompt, but only the Generate tab's, and the Upscale dialog
+showed nothing of it. The dialog has a Prompt field for such a recipe now (`#up-prompt`, prefilled from the tab), the
+`upscale` command a `prompt` argument, `list_recipes` a `usesPrompt` flag. Gate step
+`the_dialog_sends_its_own_prompt_to_an_upscaler_that_takes_one` (`tools/upscale_test.py`), 6 of 6 mutations red.
+**Not changed, and only a key could decide it:** Topaz Wonder's *Redefine* model takes a `prompt` on fal (its schema
+says so), Topaz Bloom only `autoprompt`; neither recipe sends a prompt, because it is unknown whether the other Wonder
+models refuse one.
+
 ### A PSD saved with layers cannot be opened with them - fixed for 0.1.25
 
 Reported by the user on 2026-09-22 ("man kann zwar als .psd speichern aber keine .psd mit den ebenen laden").

@@ -947,7 +947,8 @@ export const host = {
             const request = {
                 provider: r.provider, model: r.model, kind: "upscale", fields: r.fields || null, options: r.options || null,
                 factor, params, seed: editor.genSettings.seed,
-                prompt: r.usesPrompt ? String(editor.promptText || "") : "",
+                // the Upscale dialog's (or the command's) own prompt, else the document's
+                prompt: r.usesPrompt ? String(opts.prompt != null ? opts.prompt : editor.promptText || "") : "",
                 negative: r.usesPrompt ? String(editor.negativeText || "") : "",
                 mask: null, maskAlpha: null, references: [],
             };
