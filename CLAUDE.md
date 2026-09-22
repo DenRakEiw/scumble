@@ -99,11 +99,12 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 
 ## Where things stand (2026-09-22)
 
-**2026-09-22: the plan for the next sessions is `docs/PLAN_0_1_24.md`** - six sessions with a `/clear` after each
+**2026-09-22: the plan for the next sessions is `docs/PLAN_0_1_24.md`** - seven sessions with a `/clear` after each
 larger one: U1 upscaling through the providers (fal already hosts Topaz precision / creative / generative, Clarity,
 SeedVR2, Recraft behind the existing adapter and key; selection mode on the existing run path, a whole-picture mode
 that replaces the base like *Resize*; release 0.1.24), U2 an upscale recipe on the user's ComfyUI, U3 in-app ONNX
-upscaling with the whole picture in bands (0.1.25), O1 Oxen.ai (0.1.26; three probes with a key first, a data URL in
+upscaling with the whole picture in bands (0.1.25), M1 Magnific as a full provider (Mystic, FLUX, Seedream 4.5,
+Z-Image, Image Expand; async tasks on `api.magnific.com`, docs readable at docs.freepik.com), O1 Oxen.ai (0.1.26; three probes with a key first, a data URL in
 `input_image` decides the edit route), B1 + B2 the smaller Windows installer (151 MB of foreign ONNX binaries) and
 the Linux CI build, B3 macOS prepared without the developer account (mac block, entitlements, `cmdKey`, an unsigned
 CI artifact, nothing released). U4 (Topaz / Magnific direct, a local Topaz) only on the user's word; **no Topaz photo
