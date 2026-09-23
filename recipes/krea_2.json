@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Krea 2 [large]",
   "family": "Krea",
-  "description": "Krea's own model, aimed at photographic realism. Text to image only on fal, so it works in \"Generate new\", not in Generate. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on OpenRouter.",
+  "description": "Krea's own model, aimed at photographic realism. Text to image only on fal, so it works in \"Generate new\", not in Generate. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on OpenRouter. Also on Comfy Router.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -66,6 +66,46 @@
         ]
       },
       "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. Only the prompt goes to OpenRouter, which passes it to Krea. OpenRouter lists one input picture for this model but does not say whether it is edited or only used as a style reference, so this variant makes images from the prompt alone: it works in \"Generate new\", not in Generate; the dialog's aspect is sent as the closest preset. 1K only. OpenRouter listed no price for it on 2026-09-19."
+    },
+    "comfyrouter": {
+      "model": "krea/krea-2-large",
+      "edit": false,
+      "options": {
+        "ratios": [
+          "1:1",
+          "4:3",
+          "3:2",
+          "16:9",
+          "2.35:1",
+          "4:5",
+          "2:3",
+          "9:16"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "creativity",
+          "label": "Creativity",
+          "spec": [
+            [
+              "raw",
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024
+        ]
+      },
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. Only the prompt goes to Comfy, which passes it to Krea. The dialog's aspect is sent as the closest of Krea's eight presets; 1K only."
     }
   }
 }

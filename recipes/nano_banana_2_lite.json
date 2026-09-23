@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Nano Banana 2 Lite (Gemini 3.1 Flash-Lite Image)",
   "family": "Google",
-  "description": "Google's fastest and cheapest image model, 1K only. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Google's fastest and cheapest image model, 1K only. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Comfy Router. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {
     "toapis": {
@@ -167,6 +167,58 @@
         ]
       },
       "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. The pictures go inline in the request to OpenRouter, which passes them to Google (AI Studio, which keeps data 55 days, or Vertex AI, which keeps none; OpenRouter picks). No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. 1K only: a crop larger than that comes back at 1K and is scaled to the selection."
+    },
+    "comfyrouter": {
+      "model": "vertexai/gemini-3.1-flash-lite-image",
+      "input": "fill",
+      "options": {
+        "max_images": 14,
+        "tiers": {
+          "1K": 1024
+        }
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "aspect_ratio",
+          "label": "Aspect",
+          "spec": [
+            [
+              "auto",
+              "1:1",
+              "3:2",
+              "2:3",
+              "4:3",
+              "3:4",
+              "16:9",
+              "9:16"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "image_size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto",
+              "1K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024
+        ]
+      },
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The pictures go inline in the request to Comfy, which passes them to Google's Vertex AI. No mask input: the crop and the mask go along and the prompt tells the model to change the white area only; the stitch keeps the selection. Size takes 1K, 2K or 4K (the Router's schema lists no 0.5K). At most fourteen pictures go in besides the mask."
     }
   }
 }

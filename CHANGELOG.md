@@ -3,6 +3,17 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.28 — unreleased
+
+- **Comfy Router as a provider.** Comfy's direct model API runs sixteen of the recipes on the Comfy key you may
+  already have in the Comfy Cloud row, billed in Comfy credits and **without a paid Comfy Cloud plan**: GPT Image 2
+  and 2.5 (Flare, Sunburst) with the selection as mask, Nano Banana 2, 2 Lite and Pro, FLUX.2 [pro] and [max],
+  FLUX.1 Fill, Seedream 5.0 Lite and Pro, Qwen Image 3.0, Magnific Precision as an upscaler, and Grok Imagine 2.0,
+  Ideogram 4 and Krea 2 in Generate new. It is the last choice in each recipe's provider list; no default changed.
+  A run goes into Comfy's queue and is collected when it is done, and a request that has to be sent again (a lost
+  answer, a busy moment) is never billed twice. Written from Comfy's documentation and each model's published
+  schema; **it has not run against the live API yet**, so the first runs are yours.
+
 ## 0.1.27 — 2026-09-23
 
 - **Help, in the app (F1).** The manual opens in a column beside the picture: every chapter, searchable,

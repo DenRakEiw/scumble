@@ -37,6 +37,7 @@ const PROVIDERS = {
     openrouter: require("./openrouter"),
     ark: require("./ark"),
     magnific: require("./magnific"),
+    comfyrouter: require("./comfyrouter"),   // no key row: the Comfy Cloud key (keyName)
     anthropic: require("./anthropic"),   // key row only: prompt upsampling (llm.js)
     deepseek: require("./deepseek"),     // key row only: the assistant
     moonshot: require("./moonshot"),     // key row only: the assistant
@@ -45,10 +46,18 @@ const PROVIDERS = {
     loopback: require("./loopback"),
 };
 
-/** What the settings dialog shows: id, label, key name, where to get a key. */
+/** The name a provider's key is stored under: its own id, or the row it shares (Comfy Router uses Comfy Cloud's key). */
+function keyNameOf(id, p) {
+    return p && p.keyName ? p.keyName : id;
+}
+
+/**
+ * What the settings dialog shows: id, label, key name, where to get a key. A provider that shares another's key
+ * (`sharesKey`) is listed for its label and key state but gets no key row of its own.
+ */
 function describeAll() {
     // loopback is the smoke test's own provider, compat has its own settings section (URL, model, key)
-    return Object.entries(PROVIDERS).filter(([id]) => id !== "loopback" && id !== "compat").map(([id, p]) => ({ id, label: p.label, keyUrl: p.keyUrl, keyHint: p.keyHint || "", key: keys.describe(id), balance: typeof p.balance === "function" }));
+    return Object.entries(PROVIDERS).filter(([id]) => id !== "loopback" && id !== "compat").map(([id, p]) => ({ id, label: p.label, keyUrl: p.keyUrl, keyHint: p.keyHint || "", key: keys.describe(keyNameOf(id, p)), balance: typeof p.balance === "function", sharesKey: p.keyName || null }));
 }
 
 function toBuffer(v) {
@@ -78,7 +87,7 @@ async function edit(request) {
     if (text && typeof p.generate !== "function") throw new Error(`${p.label} has no text-to-image endpoint in Scumble; pick another provider for this model.`);
     if (upscale && typeof p.upscale !== "function") throw new Error(`${p.label} has no upscaler in Scumble; pick another provider for this model.`);
     const verb = text ? "generate" : upscale ? "upscale" : "edit";
-    const key = p.needsKey === false ? "" : keys.get(id);
+    const key = p.needsKey === false ? "" : keys.get(keyNameOf(id, p));
     if (p.needsKey !== false && !key) throw new Error(`No API key for ${p.label}. Add it under Settings › API providers.`);
     const req = {
         ...request,
@@ -143,7 +152,7 @@ function contextFor(id, p, key) {
 async function balance(id) {
     const p = PROVIDERS[String(id || "")];
     if (!p || typeof p.balance !== "function") throw new Error(`${(p && p.label) || id} cannot report a balance.`);
-    const key = keys.get(id);
+    const key = keys.get(keyNameOf(id, p));
     if (!key) throw new Error(`No API key for ${p.label}. Add it under Settings › API providers.`);
     try {
         return await p.balance(contextFor(id, p, key));

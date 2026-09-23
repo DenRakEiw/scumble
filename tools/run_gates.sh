@@ -10,12 +10,14 @@
 # ($SCUMBLE_GATES/nodecopy), so the real node repo is never written.
 #
 # A gate is a tools/ script name without .py (editor, composite, pixels, shape, brush, commands,
-# film, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, recipes, assistant, mcp, smoke,
+# film, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, recipes, assistant, mcp, smoke,
 # node, perf:<args>).
 # Gate "toapis" (tools/toapis_test.py) runs tools/toapis_test.js in plain Node first, then the app against
 # tools/toapis_mock.py; it needs no ToAPIs key and refuses a profile that holds one. Gate "openrouter"
 # (tools/openrouter_test.py) does the same with tools/openrouter_test.js and tools/openrouter_mock.py, and gate
-# "ark" (tools/ark_test.py, BytePlus ModelArk) with tools/ark_test.js and tools/ark_mock.py. Gate "recipes"
+# "ark" (tools/ark_test.py, BytePlus ModelArk) with tools/ark_test.js and tools/ark_mock.py, and gate "comfyrouter"
+# (tools/comfyrouter_test.py) with tools/comfyrouter_test.js and tools/comfyrouter_mock.py (it refuses a profile that
+# holds a Comfy Cloud key, the key Comfy Router runs on). Gate "recipes"
 # (tools/recipes_test.py) runs tools/recipes_test.js in plain Node first (the shipped recipes' settings slots and
 # the importer), then the import through the app's Settings dialog; it needs no key and no ComfyUI. Gate "assistant"
 # (tools/assistant_test.py) runs tools/assistant_test.js in plain Node first, then the in-app assistant against

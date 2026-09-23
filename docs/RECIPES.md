@@ -243,8 +243,8 @@ the editing one with a trailing `/edit`, `/inpaint` or `/fill` removed (fal and 
 put the editing model under such a path, the others use the same id without the image
 field). A variant overrides it with `"text": { "model": "...", "sizes": [...], "fixed": {} }`
 or switches it off with `"text": false`. Providers that can do it at all: ToAPIs, OpenAI, Gemini,
-BFL, fal, Replicate, WaveSpeed, OpenRouter, ModelArk (`TEXT_PROVIDERS`; OpenRouter uses the same model id and
-leaves out `input_references`, ModelArk the same id without `image`). Comfy Cloud builds a graph around a
+BFL, fal, Replicate, WaveSpeed, OpenRouter, ModelArk, Comfy Router (`TEXT_PROVIDERS`; OpenRouter uses the same model id and
+leaves out `input_references`, ModelArk the same id without `image`, Comfy Router the same model without a picture). Comfy Cloud builds a graph around a
 partner node and has none. The other way round exists too: a variant with `"edit": false` has **only** the text
 shape (Krea 2, Recraft V4 and Z-Image base are text-to-image endpoints on fal; the OpenRouter variants of Krea 2
 and Recraft V4 are text-only by choice, since OpenRouter lists one input picture for each but not whether it is edited
@@ -393,7 +393,7 @@ The shipped recipes (written from the providers' schemas; the three named above 
 | `seedvr2` SeedVR2 | fal `fal-ai/seedvr/upscale/image` (factor mode) | 1 to 8 | Noise; the seed goes along |
 | `recraft_crisp` Recraft Crisp | fal `fal-ai/recraft/upscale/crisp`, Comfy Cloud | the model's | none |
 | `recraft_creative` Recraft Creative | fal `fal-ai/recraft/upscale/creative`, Comfy Cloud | the model's | none |
-| `magnific_precision` Magnific Precision | Magnific `image-upscaler-precision-v2`, Comfy Cloud | 2 to 16 (Comfy Cloud 2, 4, 8, 16) | Flavor, Sharpen, Smart grain, Ultra detail |
+| `magnific_precision` Magnific Precision | Magnific `image-upscaler-precision-v2`, Comfy Cloud, Comfy Router `freepik/ai-image-upscaler-precision-v2` | 2 to 16 (Comfy Cloud 2, 4, 8, 16) | Flavor, Sharpen, Smart grain, Ultra detail |
 | `magnific_creative` Magnific Creative | Magnific `image-upscaler`, Comfy Cloud | 2, 4, 8, 16 (at most 25.3 MP out) | Optimized for, Engine, Creativity, HDR, Resemblance, Fractality; the prompt goes along |
 
 **Who else serves an upscaler** (the survey of 2026-09-22; only lists that answer without a key could be read, and
@@ -1342,6 +1342,107 @@ as JPEG, the mask sent, a region that is no region or a host from a recipe, the 
 retry for `QuotaExceeded`, before `Retry-After` or a third time, the key left in a message or its head left at the
 300-character cut, the error words of every code, lite's `limits.max` back at 4096, and a variant's default,
 model id or place in the list.
+
+### Comfy Router (`comfyrouter`)
+
+Comfy Router is Comfy's direct model API: `api.comfy.org` runs a partner model from its **own native request
+body** and answers with the model's own native output. It is not the Comfy Cloud route above, which builds a
+ComfyUI workflow around a Partner Node on `cloud.comfy.org`. Both take the same `comfyui-...` key from
+platform.comfy.org and bill the same Comfy credits, but **the Router needs no paid Comfy Cloud plan**. The adapter
+`electron/main/providers/comfyrouter.js` is written from docs.comfy.org read on 2026-09-23: the Router's
+quickstart, queue, providers and API reference pages (as Markdown, `<page>.md`), the live OpenAPI document at
+`api.comfy.org/openapi` for the field names of the queue and error bodies, and **the published input schema of
+every model it sends to** (`docs.comfy.org/router-schemas/<provider>/<model>.json`, copied into
+`tools/refs/comfyrouter/`). It **has not run against the live API**, and every variant's note says so. No Comfy key
+is stored on this machine.
+
+**Where it shows up.**
+
+- **No key row of its own.** The adapter says `keyName: "comfycloud"`; `providers/index.js` reads the key under that
+  name (`keyNameOf`), `describeAll()` lists Comfy Router with `sharesKey: "comfycloud"` and the Comfy Cloud key's
+  state, and Settings › API providers skips it. The Comfy Cloud row's hint says the Router runs on the same key with
+  credits only. There is no *check balance* (`GET /customers/balance` exists in the API document; not wired).
+- **The recipes.** Sixteen recipes carry a `comfyrouter` variant, always **last**, and no default changed. Their
+  descriptions say "Also on Comfy Router." `comfyrouter` is in `TEXT_PROVIDERS`: Generate new sends the same model
+  id without a picture.
+
+| Recipe | Router model | Kind | What goes in |
+|---|---|---|---|
+| `gpt_image_2`, `gpt_image_2_5_flare`, `_sunburst` | `openai/gpt-image-2`, `-2.5-flare`, `-2.5-sunburst` | fill | OpenAI's body: `image` (data URLs, crop first, at most 16), `mask` (the RGBA mask, at most 4 MB), `size`, `n: 1`, the OpenAI variant's settings (`openai._common`) |
+| `nano_banana_2`, `_lite`, `nano_banana_pro` | `vertexai/gemini-3.1-flash-image`, `-3.1-flash-lite-image`, `gemini-3-pro-image` | fill | Gemini's `generateContent`: the instruction, the crop, the mask as a second picture, the references, all as camelCase `inlineData` (the schema's spelling); `responseModalities: ["IMAGE"]`, `imageConfig` (1K / 2K / 4K; no 0.5K in the schema) |
+| `flux2_pro`, `flux2_max` | `bfl/flux-2-pro`, `bfl/flux-2-max` | edit | `input_image` .. `input_image_9` (plain base64), `width` / `height` held to 256..2048 in 16 px steps, the seed, `output_format: "png"`, *Prompt upsampling* off (the Router's default is on), Max's *Safety tolerance* 0..5 |
+| `flux1_fill` | `bfl/flux-pro-1.0-fill` | fill | `image`, `mask` (white = repaint), steps, guidance, safety tolerance; no text shape |
+| `seedream_5_lite`, `seedream_5_pro` | `byteplus/seedream-5-0-260128`, `-5-0-pro-260628` | edit | ModelArk's body (`ark._size`): `image` data URLs, `size` "WxH" in the crop's shape, `watermark: false`, `response_format: "b64_json"`, `output_format: "png"`, the seed. **The Router's schema gives other pixel ranges than ModelArk's docs**: lite 3,686,400 to ~9,437,184 (ModelArk: to 16.8 MP), pro 1,048,576 to 4,194,304; lite takes pictures of at most 10 MB |
+| `qwen_image_edit` | `qwen/qwen-image-3.0` | edit | `input.messages[0].content`: the pictures (at most three) then the text; `parameters`: `size` "W*H" (0.26 to 6.55 MP, no steeper than 8:1), `prompt_extend: false`, `watermark: false`, seed, negative prompt |
+| `magnific_precision` | `freepik/ai-image-upscaler-precision-v2` | upscale | `image` (plain base64), `scale_factor` 2..16, the four Magnific settings |
+| `grok_imagine`, `ideogram_4`, `krea_2` | `xai/grok-imagine-image-2.0`, `ideogram/ideogram-v4`, `krea/krea-2-large` | text only (`edit: false`) | The Router's schemas for these take **no input picture**, so the variants work in Generate new only: the closest preset aspect (Grok's 13, Krea's 8), Ideogram's closest of its 21 2K sizes, Grok's tier 1k / 2k |
+
+An edit without a mask input starts its prompt with "Edit the first image and keep its size and framing." and says
+what the other pictures are, as the ModelArk and OpenRouter adapters do. `model` is never in a body: the Router
+splices in the model the path names.
+
+**Not wired, and why:** Recraft V4 (`recraft/recraftv4`: text only, and its schema documents no size list), SeedVR2
+(`wavespeed/seedvr2`: its `image` is a URL and its size a target resolution, not a factor), FLUX.2 [flex] and
+[klein] (the Router lists `bfl/flux-2-pro` and `-max` only), the Topaz and Recraft upscalers (not served), and every
+video, 3D and audio model.
+
+**The protocol: the queue.**
+
+1. `POST https://api.comfy.org/v2/models/{provider}/{model}/requests` with `X-API-Key`, `Content-Type:
+   application/json` and an `Idempotency-Key` (one UUID per run). The answer is `201 { request_id, status:
+   "IN_QUEUE", queue_position, status_url, response_url, cancel_url }`. The adapter **composes the three URLs
+   itself** from the host, the model id and the request id (a UUID, checked), never from the answer.
+2. `GET .../requests/{id}/status` until `status` is `COMPLETED`, waiting the `Retry-After` each answer names
+   (2 s without one, at least 1 s, at most 15 s: the docs call it a hint). Up to four failed reads in a row (a 5xx,
+   a 429, a dropped connection) are outlasted; the fifth ends the run.
+3. `GET .../requests/{id}`: `200` is the model's native output; `202` means not collectable yet and goes back to
+   polling; an error is the run's failure (a run that `COMPLETED` with an `error_type` answers its error here).
+4. After 15 minutes (30 for an upscale) the run is given up and `PUT .../cancel` is sent. The docs: a partner run
+   that completes anyway is billed.
+
+**Resends.** A submit answered `409 concurrency_limit_exceeded`, `429` or `503`, or lost on the way, is sent again
+**under the same Idempotency-Key** after its `Retry-After`, three submits in all; the docs say the same key returns
+the first run instead of queueing and billing a second. A `Retry-After` over 60 s is not waited out ("try again in
+N s"). `402 insufficient_credits` and `409 invalid_input` are never sent again.
+
+**The synchronous route as fallback.** The queue answers `403 not_enabled` for "a key with no workspace behind it
+(legacy keys that predate workspaces)". The adapter then sends the same body once to `POST
+/v2/models/{provider}/{model}` under a new Idempotency-Key (the docs: a key reused on another path is
+`invalid_input`). That route holds the connection up to 660 s; Node's fetch gives up on headers after 300 s, so a
+very slow model can fail there.
+
+**The answers.** OpenAI and Seedream come back as `b64_json`; Gemini as `inlineData` (the last part that is not a
+`thought`: a thinking model sends drafts); FLUX as a `result.sample` link on Comfy's storage (24 hours); Qwen,
+Freepik, Grok, Ideogram and Krea as links on the partner's storage. **A link is fetched without the key** and only
+when it is `https://` (or the test mock's own host). A native answer without a picture says why where it can: the
+Seedream error code, Gemini's finish or block reason, Grok's `block_reason`, the text Qwen sent instead. The log's
+`info` carries the Router's request id, `X-Comfy-Credits-Used` and `X-Comfy-Router-Dropped-Params`.
+
+**Errors.** The body is `{ detail, error_type, upstream_detail }` (a 422: `{ detail: [{ loc, msg, type, ctx, input
+}] }`), the bucket also in `X-Comfy-Error-Type`. Each of the eighteen documented buckets reads as words
+(`insufficient_credits`: "the Comfy account has no credits left: add credits at platform.comfy.org";
+`not_enabled`: "make a key in a workspace"), then the server's detail, a 422's fields by name, and
+`upstream_detail` as "the provider said". An unknown bucket reads as `internal_error` with its name (the reference
+says the set will grow). The key is taken out of every message.
+
+**Pictures before any call.** Every picture at most 25 MB and all of them 64 MB (the Router's media caps), the
+whole body at most 100 MB; per variant `options.max_images`, `max_bytes` (Seedream lite 10 MB, pro 25 MB) and
+`max_ratio`. An opaque picture over its limit goes as JPEG; one with transparency is refused.
+
+**Hosts and keys.** The host is `api.comfy.org`, never a URL from a recipe. `settings.comfyrouter.base` may name a
+loopback mock (`http://127.0.0.1:<port>`), and then only a key starting `test-` goes there, while such a key never
+goes to Comfy.
+
+**Where the pictures go.** To Comfy, which passes them to the model's own provider: OpenAI, Google's Vertex AI,
+Black Forest Labs, ByteDance's BytePlus ModelArk, Alibaba Cloud (Qwen; the docs name no region), Magnific / Freepik,
+xAI, Ideogram, Krea. FLUX and Grok answers are copied onto Comfy's storage for 24 hours; Comfy keeps a finished
+queued request 24 hours. Comfy's own retention and training terms were not read.
+
+**Only a real key can verify:** that the queue takes the user's key (or answers `not_enabled`), every body against
+the live validation (the schemas are what the server enforces, the docs say, but only for fields it knows), whether
+the OpenAI mask and the Gemini mask-as-picture reach the model as an edit, the output sizes, `Retry-After` in
+practice, what a content-policy refusal costs per model (`GET /v2/models/{id}` has `billing.charges_on_policy_rejection`),
+and the prices (`X-Comfy-Credits-Used`).
 
 ### Magnific (`magnific`)
 

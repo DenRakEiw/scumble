@@ -502,6 +502,7 @@ async function renderProviders() {
     const info = await window.scumble.keys.list();
     ui.providers.innerHTML = "";
     for (const p of providers) {
+        if (p.sharesKey) continue;   // Comfy Router runs on the Comfy Cloud row's key
         const row = document.createElement("div");
         row.className = "shell-provider";
         const label = document.createElement("span");

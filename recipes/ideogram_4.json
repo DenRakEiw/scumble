@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Ideogram 4",
   "family": "Ideogram",
-  "description": "Ideogram V4.0q, strong at typography and layout. Image to image without a mask: the crop goes in whole and the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet.",
+  "description": "Ideogram V4.0q, strong at typography and layout. Image to image without a mask: the crop goes in whole and the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on Comfy Router.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -62,6 +62,58 @@
         }
       ],
       "note": "No mask input: the whole crop is rewritten at Strength and the stitch keeps the selection. Lower Strength to hold the composition. Ideogram 4 has no masked edit endpoint; fal-ai/ideogram/v3/edit is the older model that does."
+    },
+    "comfyrouter": {
+      "model": "ideogram/ideogram-v4",
+      "edit": false,
+      "options": {
+        "resolutions": [
+          "2048x2048",
+          "1440x2880",
+          "2880x1440",
+          "1664x2496",
+          "2496x1664",
+          "1792x2240",
+          "2240x1792",
+          "1440x2560",
+          "2560x1440",
+          "1600x2560",
+          "2560x1600",
+          "1728x2304",
+          "2304x1728",
+          "1296x3168",
+          "3168x1296",
+          "1152x2944",
+          "2944x1152",
+          "1248x3328",
+          "3328x1248",
+          "1280x3072",
+          "3072x1280"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "rendering_speed",
+          "label": "Rendering",
+          "spec": [
+            [
+              "DEFAULT",
+              "TURBO",
+              "QUALITY"
+            ],
+            {
+              "default": "DEFAULT"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          2048
+        ]
+      },
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. Only the prompt goes to Comfy, which passes it to Ideogram. The Router's schema for this model takes no input picture, so this variant makes images from the prompt alone: it works in \"Generate new\", not in Generate. The picture comes back at the one of Ideogram's 21 2K sizes closest to the dialog's aspect; Magic Prompt is on (the Router's schema switches it on for a text prompt)."
     }
   }
 }

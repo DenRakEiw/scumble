@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "GPT Image 2.5 Sunburst",
   "family": "OpenAI",
-  "description": "OpenAI's high-fidelity image model (September 2026) for detail-rich edits; slower than Flare. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Run against the live API through OpenRouter since 2026-09-21; the other providers' adapters are written from their docs and not run live yet.",
+  "description": "OpenAI's high-fidelity image model (September 2026) for detail-rich edits; slower than Flare. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Run against the live API through OpenRouter since 2026-09-21; the other providers' adapters are written from their docs and not run live yet. Also on Comfy Router.",
   "default": "openai",
   "providers": {
     "toapis": {
@@ -411,6 +411,124 @@
         ]
       },
       "note": "Runs on OpenRouter (one key for many models); run against the live API since 2026-09-21. The pictures go inline in the request to OpenRouter, which passes them to OpenAI. No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. There is no size parameter: the host picks the output size (OpenRouter's one example is GPT Image 2 at 16:9 and high quality: 1536 x 864; no size is stated for other models or qualities)."
+    },
+    "comfyrouter": {
+      "model": "openai/gpt-image-2.5-sunburst",
+      "input": "fill",
+      "options": {
+        "max_images": 16
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto",
+              "1024x1024",
+              "1536x1024",
+              "1024x1536"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "key": "background",
+          "label": "Background",
+          "spec": [
+            [
+              "auto",
+              "opaque",
+              "transparent"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 6,
+          "key": "output_format",
+          "label": "File format",
+          "spec": [
+            [
+              "png",
+              "webp",
+              "jpeg"
+            ],
+            {
+              "default": "png"
+            }
+          ]
+        },
+        {
+          "index": 7,
+          "key": "output_compression",
+          "label": "Compression",
+          "spec": [
+            "INT",
+            {
+              "default": 85,
+              "min": 0,
+              "max": 100,
+              "step": 5
+            }
+          ]
+        },
+        {
+          "index": 8,
+          "key": "moderation",
+          "label": "Moderation",
+          "spec": [
+            [
+              "auto",
+              "low"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 3840,
+        "step": 16,
+        "pixels": 8294400,
+        "minPixels": 655360
+      },
+      "text": {
+        "sizes": [
+          1024,
+          1536,
+          2048,
+          2560,
+          3072,
+          3840
+        ]
+      },
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The pictures go inline in the request to Comfy, which passes them to OpenAI. The Router takes OpenAI's own request: an edit with the selection as mask (transparent = repaint), Background \"transparent\" for a cut-out with a real alpha channel (PNG or WebP only). The mask may be 4 MB at most, at most sixteen pictures go in (the crop, Original and the reference layers)."
     }
   },
   "limits": {

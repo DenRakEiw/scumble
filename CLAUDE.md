@@ -235,26 +235,38 @@ STORE.md's nine-point list (ComfyUI over loopback, the redirected data and keys,
 folders, the MCP alias with `ELECTRON_RUN_AS_NODE` through it, `app.relaunch`, DirectML, uninstall, the
 App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for the installer's users).
 
-**NEXT, in this order (the user, 2026-09-23 evening, before a `/clear`): 1. Comfy Router as a provider, 2. the macOS
-build (B3) with the logo.** The paragraphs below say where each stands.
+**NEXT, in this order (the user, 2026-09-23 evening, before a `/clear`): ~~1. Comfy Router as a provider~~ (built, the
+paragraph below), 2. the macOS build (B3) with the logo.**
 
-**Comfy Router (asked for by the user 2026-09-23; researched, not built).** A new Comfy product, *not* our Comfy
-Cloud route: a direct model API, `POST https://api.comfy.org/v2/models/{provider}/{model}` (synchronous, blocks up to
-660 s) or `.../requests` (queued: answers `request_id`, poll `GET .../requests/{request_id}`), headers `X-API-Key`
-(the same `comfyui-...` key as Comfy Cloud, from platform.comfy.org), `Idempotency-Key: <uuid>` (no double billing on
-a retry), `Content-Type: application/json`; the body is **model-specific JSON**, input images as URLs or base64
-depending on the model, the answer the model's raw output. Billed in the same Comfy credits as Partner Nodes and
-Comfy Cloud, **but no paid Comfy Cloud plan needed** (our `comfycloud` route needs one). 200+ models (image, video,
-3D, audio: Nano Banana Pro, GPT Image 2.5, Flux 3, Seedance, Kling ...). Docs: docs.comfy.org/development/comfy-router
-(`quickstart`, `models` = the per-model parameters, `providers`, `queue`), index at docs.comfy.org/llms.txt. Read on
-2026-09-23 through a summarising fetch, so **read the pages yourself before building**. Our `comfycloud` adapter
-(`electron/main/providers/comfycloud.js`) is a different thing: it builds a ComfyUI workflow around a Partner Node on
-`cloud.comfy.org` (upload, `/api/prompt`, poll, `/api/view`). The plan the user agreed to: a new adapter
-`providers/comfyrouter.js` and a `comfyrouter` variant (last, no default changed, as OpenRouter) in the recipes whose
-models the Router serves, **reusing the `comfycloud` key row** (same key), Comfy Cloud kept as it is; the usual pieces
-(docs/RECIPES.md section, a plain-Node request-shape test, a loopback mock and a gate, the `recipes` gate rows).
-**No Comfy key is stored on this machine** (secrets.json holds bfl and openrouter only): a live run needs the
-user's key with some credit.
+**Comfy Router is built, for 0.1.28 (2026-09-23; CHANGELOG "0.1.28 — unreleased", `docs/RECIPES.md` "Comfy Router";
+`package.json` still 0.1.27). Not run against the live API: no Comfy key is stored on this machine.**
+`electron/main/providers/comfyrouter.js`, written from the Router's pages read as Markdown (`<page>.md`: quickstart,
+queue, providers, reference), `api.comfy.org/openapi` for the queue and error field names, and **each model's
+published input schema** (`docs.comfy.org/router-schemas/<p>/<m>.json`, copied into `tools/refs/comfyrouter/`, 16
+files). It uses **the queue** (submit with `X-API-Key` + one UUID `Idempotency-Key` per run, resent under the same key
+on a lost answer / 409 concurrency / 429 / 503 up to three submits; status polls on `Retry-After`, 1 to 15 s; the
+result read, 202 = poll again; `PUT .../cancel` after 15 min, 30 for upscale; the status / result URLs composed from
+host + model + UUID, never from the answer) and falls back to the **synchronous route** under a new key when the
+queue answers `403 not_enabled` (a legacy key without a workspace). The body is the partner's native schema, one
+**dialect** per provider segment: `openai` (reuses `openai._common` / `_sizeFor`, the RGBA mask), `vertexai`
+(camelCase `inlineData`, the mask as a second picture, the last non-`thought` picture of the answer), `bfl` (FLUX.2
+`input_image..9`, 256..2048; FLUX.1 Fill), `byteplus` (reuses `ark._size`; **the Router's schema gives Seedream
+other pixel ranges than ModelArk's docs**: lite to ~9.4 MP, pro 1 to 4.2 MP), `qwen`, `freepik` (upscale), and
+text-only `xai`, `ideogram`, `krea` (their Router schemas take no picture). **No key row:** the adapter's
+`keyName: "comfycloud"`; `providers/index.js` has `keyNameOf()` and `describeAll()` a `sharesKey` field, and
+`renderProviders()` in `shell.js` skips such an entry (the Comfy Cloud row's hint names the Router). **Sixteen
+recipes** got a `comfyrouter` variant, last, no default changed ("Also on Comfy Router."); `comfyrouter` is in
+`TEXT_PROVIDERS`. Not wired: Recraft V4 (no size list), SeedVR2 (URL input, target resolution), FLUX.2 flex / klein
+(not served). **Tests:** `node tools/comfyrouter_test.js` (68 checks; every body of every variant validated against
+its published schema), the new gate **`comfyrouter`** (`tools/comfyrouter_test.py` + `tools/comfyrouter_mock.py`, 13
+steps, refuses a profile holding a Comfy Cloud key); `openrouter_test.js` / `.py` and `upscale_test.js` now allow
+Comfy Router after their provider. Mutations: **52 of 52** Node red (the first round's two survivors got checks: an
+OpenAI `kind: "edit"` sends no mask, `constructor/x` is refused), 1 of 1 app (the skipped key row). Gates `--offline`
+on both backends (`comfyrouter recipes openrouter ark toapis upscale generate size transparent mcp commands`, tiles
+also `lint types`): **ALL PASS** (`cr-tiles2` + `cr-tiles3` for openrouter after its fix, `cr-canvas`). **What only a
+real key can settle** is listed at the end of the RECIPES section (the queue with the user's key, the live
+validation, whether the masks reach the model as edits, output sizes, prices via `X-Comfy-Credits-Used`). Not done:
+*check balance* on the Comfy Cloud row (`GET /customers/balance` exists, unwired).
 
 **SEO and GEO for the Scumble pages are done and live (item 3, 2026-09-23; portfolio `f72a510`, CLI deploy).** Found and
 fixed: the root layout's `alternates.canonical: "/"` was inherited by every page, so `/scumble`, `/manual` and `/blog`

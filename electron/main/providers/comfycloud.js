@@ -211,7 +211,7 @@ const UPSCALE_WAIT_MS = 30 * 60 * 1000;
 module.exports = {
     label: "Comfy Cloud",
     keyUrl: "https://platform.comfy.org/profile/api-keys",
-    keyHint: "API key from platform.comfy.org (needs a paid Comfy Cloud plan; Partner Nodes are billed in credits)",
+    keyHint: "API key from platform.comfy.org (Comfy Cloud needs a paid plan; Comfy Router runs on the same key with credits only)",
     edit(req, ctx) { return run(req, ctx, EDIT_WAIT_MS); },
     upscale(req, ctx) {
         if (!req.image) return Promise.reject(new Error("Comfy Cloud: no picture to upscale."));

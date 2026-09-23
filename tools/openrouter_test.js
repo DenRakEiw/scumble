@@ -632,7 +632,9 @@ async function main() {
             const v = r.providers.openrouter;
             const o = v.options || {};
             const accepts = Array.isArray(o.accepts) ? o.accepts : [];
-            if (r.providerIds[r.providerIds.length - 1] !== "openrouter") bad.push(r.id + ": openrouter is not the last provider (" + r.providerIds.join(",") + ")");
+            // Comfy Router (added later) may follow it
+            const before = r.providerIds.filter((x) => x !== "comfyrouter");
+            if (before[before.length - 1] !== "openrouter") bad.push(r.id + ": openrouter is not the last provider before comfyrouter (" + r.providerIds.join(",") + ")");
             if (r.default !== raw.default) bad.push(r.id + ": the default moved from " + raw.default + " to " + r.default);
             if (r.default === "openrouter") bad.push(r.id + ": openrouter became the home provider");
             if (raw.providers.toapis && r.providerIds[0] !== "toapis") bad.push(r.id + ": toapis is not first");

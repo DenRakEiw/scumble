@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Seedream 5.0 Lite",
   "family": "ByteDance",
-  "description": "ByteDance's fast Seedream 5 with built-in reasoning, up to 3K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on BytePlus ModelArk (ByteDance's own API). Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "ByteDance's fast Seedream 5 with built-in reasoning, up to 3K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on BytePlus ModelArk (ByteDance's own API). Also on Comfy Router. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {
     "toapis": {
@@ -268,6 +268,35 @@
         ]
       },
       "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. The pictures go inline in the request to OpenRouter, which passes them to ByteDance's Seed (Singapore). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. Resolution auto takes the smallest tier that covers the crop. A picture steeper than 16:1 (the input range ByteDance's ModelArk documents; not verified through OpenRouter) is refused before anything is sent; a thinner selection gets more context instead."
+    },
+    "comfyrouter": {
+      "model": "byteplus/seedream-5-0-260128",
+      "input": "edit",
+      "options": {
+        "pixels": [
+          3686400,
+          9437184
+        ],
+        "max_images": 14,
+        "max_bytes": 10000000,
+        "max_ratio": 16
+      },
+      "settings": [],
+      "limits": {
+        "max": 7680,
+        "step": 16,
+        "pixels": 9437184,
+        "minPixels": 3686400,
+        "ratio": 16
+      },
+      "text": {
+        "sizes": [
+          2048,
+          2560,
+          3072
+        ]
+      },
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The pictures go inline in the request to Comfy, which passes them to ByteDance's BytePlus ModelArk. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The answer is the crop's own shape at a pixel size inside the range the Router's schema gives this model (3.7 to 9.4 megapixels; ModelArk's own docs say up to 16.8), without a watermark. At most fourteen pictures go in, none steeper than 16:1 and none over 10 MB (an opaque one goes as JPEG)."
     }
   }
 }

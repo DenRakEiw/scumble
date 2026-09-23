@@ -4,7 +4,7 @@
   "task": "upscale",
   "name": "Magnific Precision (upscale)",
   "family": "Upscale",
-  "description": "Magnific's faithful upscaler (Precision V2): sharper, no invented content, 2 to 16 times. Every API call costs Magnific credits, whatever the web plan says. Slow: a 538 x 512 box took five minutes on 2026-09-22 (run live on Magnific, 2 times); the window stays usable. Also on Comfy Cloud.",
+  "description": "Magnific's faithful upscaler (Precision V2): sharper, no invented content, 2 to 16 times. Every API call costs Magnific credits, whatever the web plan says. Slow: a 538 x 512 box took five minutes on 2026-09-22 (run live on Magnific, 2 times); the window stays usable. Also on Comfy Cloud. Also on Comfy Router.",
   "default": "magnific",
   "factor": {
     "default": 2,
@@ -148,6 +148,71 @@
           16
         ]
       }
+    },
+    "comfyrouter": {
+      "model": "freepik/ai-image-upscaler-precision-v2",
+      "settings": [
+        {
+          "index": 1,
+          "key": "flavor",
+          "label": "Flavor",
+          "spec": [
+            [
+              "photo",
+              "sublime",
+              "photo_denoiser"
+            ],
+            {
+              "default": "photo"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "sharpen",
+          "label": "Sharpen",
+          "spec": [
+            "INT",
+            {
+              "default": 7,
+              "min": 0,
+              "max": 100
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "smart_grain",
+          "label": "Smart grain",
+          "spec": [
+            "INT",
+            {
+              "default": 7,
+              "min": 0,
+              "max": 100
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "key": "ultra_detail",
+          "label": "Ultra detail",
+          "spec": [
+            "INT",
+            {
+              "default": 30,
+              "min": 0,
+              "max": 100
+            }
+          ]
+        }
+      ],
+      "factor": {
+        "default": 2,
+        "min": 2,
+        "max": 16
+      },
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The picture goes as base64 in the request to Comfy, which passes it to Magnific (Freepik, Spain); the answer is a link on Freepik's own storage. 2 to 16 times. At most 25 MB a picture. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
     }
   },
   "limits": {
