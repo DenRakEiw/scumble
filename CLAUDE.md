@@ -234,6 +234,14 @@ STORE.md's nine-point list (ComfyUI over loopback, the redirected data and keys,
 folders, the MCP alias with `ELECTRON_RUN_AS_NODE` through it, `app.relaunch`, DirectML, uninstall, the
 App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for the installer's users).
 
+**The order changed later the same day (the user: "also bauen wir erst weiter den hilfe assistent und danach
+machen wir ein ms store release"):** item 5 (Help) next, then the 0.1.27 release with item 4's OpenRouter line
+in it, and the **first Microsoft Store submission** with the same version (`npm run dist:store`, uploaded by
+the user in Partner Center by hand; the listing texts and screenshots can come from the manual); then, if the
+user wants it, the GitHub-release-to-Store coupling (`msstore` CLI in `build.yml`, which needs an Entra ID app
+linked to Partner Center; only submissions after the first can go through the API). SEO (item 3) after that.
+The list below is the order as it stood before:
+
 **Next, in this order** (the user, 2026-09-23, each after a `/clear`):
 
 1. ~~**Stage 2 of `docs/PLAN_TYPES.md`**~~ - **built on 2026-09-23**, see the paragraph above.
