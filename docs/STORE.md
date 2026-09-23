@@ -84,7 +84,8 @@ An unsigned MSIX cannot be installed with an app in it: `Add-AppxPackage -AllowU
 with the publisher OID Windows 11 asks for unsigned packages, which `build_store.js --test` puts
 in). Two ways remain, both a system setting only the user changes:
 
-- **Developer Mode** (*Settings › System › For developers*), then register the unpacked layout.
+- **Developer Mode** (*Settings › System › Advanced › For developers* on Windows 11 build 26200;
+  `start ms-settings:developers` opens it), then register the unpacked layout.
   The app runs with its package identity, its alias and the AppData redirection, from the
   layout's folder instead of `WindowsApps`:
 
