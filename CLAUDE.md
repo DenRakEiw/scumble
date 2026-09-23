@@ -194,7 +194,8 @@ showed itself:** the typedef was written from the app's implementations, and a s
 call sites found two members where the editor passes more - `exportCanvas(editor, fmt)` and
 `saveExport(blob, name, { editor, download })`; both typedef lines were wrong and no checker would have
 said so. Gates `--offline` on both backends (`lint types recipes commands editor export mcp`):
-**ALL PASS** (`s2-tiles`, `s2-canvas`). **Next in stage 3, and it is the fourth contract:**
+**ALL PASS** (`s2-tiles`, `s2-canvas`), and **CI green on `7758a96`** with the new Types step
+(both jobs, the gate 3 s). **Next in stage 3, and it is the fourth contract:**
 `electron/preload.js` - `window.scumble` is declared `any` in `types/globals.d.ts`, so every
 `window.scumble.*` in a checked file is unjudged.
 

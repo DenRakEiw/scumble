@@ -169,8 +169,9 @@ node's copy of the host, any file not on the list, an implementation that grew a
 and every value that only exists at run time - a recipe file's JSON, an editor's state, a
 provider's answer. Those are the gates' business, and they stay.
 
-**Gates.** `npm run lint` 0 errors and the same 18 warnings as before stage 2, `npm run types`
-clean, `tools/build_node.py --check` unchanged (its only complaints are the known
+**Gates.** `--offline` on both backends (`lint types recipes commands editor export mcp`): **ALL
+PASS** (`s2-tiles`, `s2-canvas`), and CI green on `7758a96` with the Types step in it. `npm run
+lint` 0 errors and the same 18 warnings as before stage 2, `npm run types` clean, `tools/build_node.py --check` unchanged (its only complaints are the known
 "the node repo is behind" file diffs), `node tools/recipes_test.js` 22 of 22 and
 `node tools/upscale_test.js` 95 of 95.
 
