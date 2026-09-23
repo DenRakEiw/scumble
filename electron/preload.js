@@ -159,6 +159,17 @@ contextBridge.exposeInMainWorld("scumble", {
         turnUndone: (turn, docs) => ipcRenderer.invoke("assistant:turnUndone", { turn, docs }),
         onEvent: (cb) => on("assistant:event", cb),
     },
+    // Help (electron/main/assistant/help.js): the manual and its chat, which can change nothing
+    help: {
+        manual: () => ipcRenderer.invoke("help:manual"),
+        models: () => ipcRenderer.invoke("help:models"),
+        send: (text, model) => ipcRenderer.invoke("help:send", { text, model }),
+        stop: () => ipcRenderer.invoke("help:stop"),
+        reset: () => ipcRenderer.invoke("help:reset"),
+        state: () => ipcRenderer.invoke("help:state"),
+        setModel: (value) => ipcRenderer.invoke("help:setModel", value),
+        onEvent: (cb) => on("help:event", cb),
+    },
     updates: {
         status: () => ipcRenderer.invoke("update:status"),
         check: () => ipcRenderer.invoke("update:check"),

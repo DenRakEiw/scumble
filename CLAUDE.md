@@ -93,7 +93,8 @@ code.
   `lib/scumble-posts.ts` (slug `v0-1-NN`, `version`, `date`, `time` = the release's `publishedAt` from
   `gh release view` in German time with its offset, `release` link, title, summary, `body` paragraphs): the
   CHANGELOG section retold in a loose, personal first-person voice, in English like the rest of the site, no
-  markdown in the strings; `hub.version` in `lib/scumble.ts` follows the release. `npx tsc --noEmit -p .` and
+  markdown in the strings; `hub.version` in `lib/scumble.ts` follows the release. Before the post, `node tools/manual_sync.js` (the manual and its reader, docs/PLAN_HELP.md), committed
+  with it. `npx tsc --noEmit -p .` and
   `npx next build` before committing. **Who pushes matters: Vercel runs on a free (Hobby) account, which deploys
   only commits of its one owner.** Commit only as `git -c user.name="Dennis Schöneberg" -c
   user.email=dennis.schoeneberg@me.com` (the identity of every deploy that went through), never as the
@@ -234,6 +235,23 @@ STORE.md's nine-point list (ComfyUI over loopback, the redirected data and keys,
 folders, the MCP alias with `ELECTRON_RUN_AS_NODE` through it, `app.relaunch`, DirectML, uninstall, the
 App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for the installer's users).
 
+**Help is built (2026-09-23, for 0.1.27; `docs/PLAN_HELP.md` "As built", CHANGELOG 0.1.27).**
+**`docs/MANUAL.md` is now the manual's one source** (17 chapters; a new one on Help, and F1 in the
+shortcuts), `renderer/help/manual.js` its one reader, and **the website builds `/scumble/manual` from
+copies of both** (`node tools/manual_sync.js [--check]` copies them into `F:\portfolio_web`,
+`content/scumble/MANUAL.md` and `lib/scumble-manual-reader.js`; portfolio `f5329db`, live by CLI deploy).
+**So a manual change is made here and synced, never on the website**, and every release runs the sync
+before its blog post. The app: *Help* button and **F1** (*Help › Scumble help* replaces *Editor guide*),
+a `<dialog id="help">` column (`renderer/help.js`, `help.css`) with the searchable manual and a chat above
+it that answers from it (`electron/main/assistant/help.js`: the assistant's four adapters with no tools,
+every *Language models* row, `settings.help.model`; chats are not kept). Tests: `tools/manual_test.js`
+(7, with **drift checks**: every menu accelerator in the shortcuts chapter, every `Settings › X` and
+`<Menu> › X` an existing section or item), the `help` section of `tools/assistant_test.js` (12, 238 in
+all), the new gate **`help`** (six app steps against the mock); mutations 15 of 16 red (the green one is a
+guarantee the editor gives twice). Gates `--offline` tiles ALL PASS (`help-tiles`), canvas ALL PASS on
+the rerun. **Not done:** the live invention check of PLAN_HELP §5 (one real question the manual does not
+answer, on the user's key) and a screenshot of the panel for the manual.
+
 **The order changed later the same day (the user: "also bauen wir erst weiter den hilfe assistent und danach
 machen wir ein ms store release"):** item 5 (Help) next, then the 0.1.27 release with item 4's OpenRouter line
 in it, and the **first Microsoft Store submission** with the same version (`npm run dist:store`, uploaded by
@@ -256,7 +274,8 @@ The list below is the order as it stood before:
    lever - it is the only page with real prose about "AI inpainting editor", "ComfyUI desktop app",
    "PSD export".
 4. **The stale "not run against the live API" line for OpenRouter**, above.
-5. **Help: the manual in the app, with a chat on top** (the user, 2026-09-23; `docs/PLAN_HELP.md`).
+5. ~~**Help: the manual in the app, with a chat on top**~~ - **built on 2026-09-23, for 0.1.27** (the
+   paragraph "Help is built" above the order; `docs/PLAN_HELP.md` "As built"). The plan as it stood:
    A Help button whose panel **renders the manual itself**, searchable, with no key and no network,
    and a chat above it that answers from the same text on whichever model the user has a key for.
    The chat is the assistant's loop **with an empty tool set** - no MCP client, no policy, no undo,
@@ -1289,7 +1308,7 @@ their own 15k file.
 port 9555 with its own profile (with `test_base.png`), runs each gate with a timeout, and writes logs and `summary.txt` under
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
-mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
 forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and
@@ -1311,6 +1330,8 @@ Known flakes; **re-run before believing any of these**:
 - `node tools/brush_test.js` hung once at exit under load after printing every PASS.
 - `editor_test.py` `closed_tabs_are_collected` failed twice in five runs of the editor gate alone on the canvas backend
   (`--tiles off`, 2026-09-17, B item 2) and passed on the rerun each time; the code under it had not changed.
+- `editor_test.py` `selection_keeps_its_bounds_through_a_restore_above_1mp` failed once with no message on the canvas
+  backend (2026-09-23, after `help` and `assistant` in the same instance) and passed on the rerun in the same order.
 - `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed once with `requested: 0` in some twenty
   runs since the mip chains go through the pool; not reproduced.
 - The first exe instance of the 0.1.18 gates failed `a_settled_read_builds_its_levels_in_the_worker_not_here`

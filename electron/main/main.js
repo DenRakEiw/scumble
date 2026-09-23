@@ -302,6 +302,29 @@ function getAssistant() {
     return assistant;
 }
 
+// ---- Help (electron/main/assistant/help.js, docs/PLAN_HELP.md) --------------------------------
+//
+// The manual (docs/MANUAL.md, shipped with the app) for the Help panel, and its chat: the
+// assistant's adapters with no tools, so nothing here reaches the editor. Made at the first question.
+const MANUAL_FILE = path.join(ROOT, "docs", "MANUAL.md");
+let help = null;
+
+function readManual() {
+    return fs.readFileSync(MANUAL_FILE, "utf8");
+}
+
+function getHelp() {
+    if (help) return help;
+    const { Help } = require("./assistant/help.js");
+    help = new Help({
+        keys, settings,
+        manual: readManual,
+        emit: (event) => send("help:event", event),
+        log: (line) => log.record({ source: "help", message: String(line) }),
+    });
+    return help;
+}
+
 let pluginActions = [];   // [{id, label, accelerator}] from renderer/plugins.js
 const updater = new Updater();
 updater.on("status", (s) => send("update:status", s));
@@ -354,7 +377,7 @@ function buildMenu() {
         {
             label: "&Help",
             submenu: [
-                { label: "Editor guide", click: () => send("menu", "guide") },
+                { label: "Scumble help", accelerator: "F1", click: () => send("menu", "help") },
                 { label: "Console (log)", accelerator: "CmdOrCtrl+Shift+L", click: () => send("menu", "console") },
                 { label: "Scumble on GitHub", click: () => shell.openExternal("https://github.com/DenRakEiw/scumble") },
                 { label: "Inpaint Canvas node on GitHub", click: () => shell.openExternal("https://github.com/DenRakEiw/ComfyUI-InpaintCanvas") },
@@ -574,6 +597,18 @@ function installIpc() {
     ipcMain.handle("assistant:delete", (_e, req) => getAssistant().deleteChat(String(req && req.id)));
     ipcMain.handle("assistant:resetAll", () => getAssistant().resetAll());
     ipcMain.handle("assistant:turnUndone", (_e, req) => getAssistant().turnUndone(req || {}));
+    // Help (docs/PLAN_HELP.md): the manual's text for the panel, and the chat that answers from it;
+    // `send` resolves when the answer is in, the text streams through `help:event` before that
+    ipcMain.handle("help:manual", () => readManual());
+    ipcMain.handle("help:models", () => getHelp().models());
+    ipcMain.handle("help:send", (_e, req) => getHelp().send(String(req && req.text != null ? req.text : ""), req && req.model ? String(req.model) : ""));
+    ipcMain.handle("help:stop", () => getHelp().stop());
+    ipcMain.handle("help:reset", () => getHelp().reset());
+    ipcMain.handle("help:state", () => (help ? help.state() : { busy: false, model: null, events: [] }));
+    ipcMain.handle("help:setModel", (_e, value) => {
+        settings.set({ help: { ...(settings.get().help || {}), model: String(value || "") } });
+        return true;
+    });
     ipcMain.handle("assistant:noticed", (_e, req) => {
         // the privacy notice was shown for this provider: the date, in the whole merged object (settings.js)
         const a = { ...settings.DEFAULTS.assistant, ...(settings.get().assistant || {}) };
@@ -639,7 +674,7 @@ function startApp() {
     local.listen(app.getPath("userData"));
     local.on("clients", (n) => { showAgents(); maybeQuit(); send("assistant:event", { type: "agents", n: local.clients.size + (agentMode ? 1 : 0), at: Date.now() }); });
     // a running assistant turn ends with the app; a relaunch between turns is refused while one runs (app:relaunch)
-    app.on("before-quit", () => { if (assistant) assistant.stop(); });
+    app.on("before-quit", () => { if (assistant) assistant.stop(); if (help) help.stop(); });
     // --no-comfy: a test instance that stays off the server (no connect at start, so no upload is forwarded to it)
     const url = !process.argv.includes("--no-comfy") && settings.get().comfy && settings.get().comfy.url;
     if (url) connectComfy().catch((err) => console.warn("connect at start:", err.message));

@@ -3066,6 +3066,12 @@ async function main() {
         check("the_panel_builds_its_nodes",
             /createElement\(/.test(src) && /textContent/.test(src) && /createTextNode/.test(src),
             "createElement, textContent and createTextNode are how it builds");
+        // the Help panel shows the manual and a model's answers the same way (docs/PLAN_HELP.md §7)
+        for (const file of ["help.js", path.join("help", "manual.js")]) {
+            const text = fs.readFileSync(path.join(ROOT, "renderer", file), "utf8");
+            const found = banned.filter((re) => re.test(text)).map((re) => String(re));
+            check("no_markup_writes_in_" + file.replace(/\W/g, "_"), !found.length, found.join(", ") || `${text.length} bytes, none of them markup`);
+        }
     });
 
 
@@ -3137,6 +3143,139 @@ async function main() {
         await store.removeAll();
         check("the_reset_takes_the_whole_folder", !fs.existsSync(path.join(dir, "assistant")), path.join(dir, "assistant"));
         fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    // ---- Help: the manual's chat, the loop with no tools (docs/PLAN_HELP.md §3) --------------
+    await section("help", async () => {
+        const fs = require("node:fs");
+        const { Help, systemText, manualText } = require(path.join(ROOT, "electron", "main", "assistant", "help.js"));
+        const { PROVIDERS } = require(path.join(ROOT, "electron", "main", "assistant", "providers.js"));
+        const MANUAL = fs.readFileSync(path.join(ROOT, "docs", "MANUAL.md"), "utf8");
+        const helpOn = (streams, opts = {}) => {
+            const events = [];
+            const fetchImpl = typeof streams === "function" ? streams : scriptedFetch(streams, opts.gets);
+            const h = new Help({
+                keys: { get: (row) => (opts.keys || {})[row] || "" },
+                settings: { get: () => ({ ...(opts.settings || {}), assistant: { base: "http://127.0.0.1:5599", ...(opts.assistant || {}) }, help: opts.help || {} }) },
+                manual: () => MANUAL,
+                emit: (e) => events.push(e),
+                fetchImpl,
+                sleep: async () => {},
+                customModels: () => opts.custom || [],
+            });
+            return { h, events, fetchImpl };
+        };
+        const ANSWER = "Hold Alt while you paint with the selection brush.\nChapter: Selecting: brush, shapes, wand, objects, words";
+        const families = [
+            ["anthropic", anthropicStream([{ type: "text", text: ANSWER }]), (b) => b.system && b.system[0].text],
+            ["openai", responsesStream([{ type: "text", text: ANSWER }]), (b) => b.instructions],
+            ["gemini", geminiStream([{ type: "text", text: ANSWER }]), (b) => b.systemInstruction && b.systemInstruction.parts[0].text],
+            ["openrouter", chatStream([{ type: "text", text: ANSWER }]), (b) => b.messages && b.messages[0].role === "system" && b.messages[0].content],
+        ];
+        for (const [provider, stream, systemOf] of families) {
+            const model = `${provider}:${PROVIDERS[provider].models[0].id}`;
+            const { h, events, fetchImpl } = helpOn([stream], { keys: { [PROVIDERS[provider].key]: `test-${provider}-0000` } });
+            const m = await h.models();
+            const done = await h.send("How do I take something out of a selection?");
+            const body = fetchImpl.sent[0] && fetchImpl.sent[0].body;
+            const system = body ? String(systemOf(body) || "") : "";
+            check(`help_${provider}_answers_from_the_manual_with_no_tools`,
+                m.current === model && done.reason === "end" && body && !("tools" in body)
+                    && system.includes("<manual>") && system.includes("## Selecting: brush, shapes, wand, objects, words")
+                    && !system.includes("<!--") && system.includes("Answer only from the manual")
+                    && events.some((e) => e.type === "answer" && e.text === ANSWER),
+                `${m.current}, ${done.reason}, tools ${body && "tools" in body}, system ${system.length} chars`);
+        }
+
+        // a second question keeps the chat and the system text byte for byte (the prompt cache holds)
+        {
+            const { h, fetchImpl } = helpOn([anthropicStream([{ type: "text", text: "one" }]), anthropicStream([{ type: "text", text: "two" }])], { keys: { anthropic: "test-anthropic-0000" } });
+            await h.send("first");
+            await h.send("second");
+            const [a, b] = fetchImpl.sent.map((x) => x.body);
+            check("help_keeps_the_chat_and_its_system_text",
+                a.system[0].text === b.system[0].text && b.messages.length === 3 && b.messages[1].role === "assistant"
+                    && JSON.stringify(b.messages[2]).includes("second"),
+                `${b.messages.length} messages`);
+            h.reset();
+            check("help_reset_starts_over", h.chat === null && h.events.length === 0, "");
+        }
+
+        // no key anywhere: a manual without a chat, and a sentence instead of a request
+        {
+            const { h, fetchImpl } = helpOn([]);
+            const m = await h.models();
+            let err = "";
+            try { await h.send("anything"); } catch (e) { err = e.message; }
+            check("help_without_a_key_offers_no_model_and_sends_nothing",
+                m.current === "" && m.ready === false && /No model/.test(err) && fetchImpl.sent.length === 0, err);
+        }
+
+        // the choice: its own, else the assistant's model when ready, else the first ready one
+        {
+            const keys = { anthropic: "test-anthropic-0000", openrouter: "test-openrouter-0000" };
+            const own = `openrouter:${PROVIDERS.openrouter.models[1].id}`;
+            const a = await helpOn([], { keys, assistant: { model: `openrouter:${PROVIDERS.openrouter.models[0].id}` } }).h.models();
+            const b = await helpOn([], { keys, help: { model: own } }).h.models();
+            const c = await helpOn([], { keys: { openrouter: "test-openrouter-0000" }, assistant: { model: "anthropic:claude-sonnet-5" } }).h.models();
+            const d = await helpOn([], { keys, help: { model: "gemini:gone" } }).h.models();
+            check("help_picks_its_own_model_then_the_assistants_then_the_first_ready",
+                a.current === `openrouter:${PROVIDERS.openrouter.models[0].id}` && b.current === own
+                    && c.current.startsWith("openrouter:") && d.current === "anthropic:claude-sonnet-5",
+                [a.current, b.current, c.current, d.current].join(" | "));
+        }
+
+        // a text-only row the user added serves Help (the assistant's picker would mark it blind)
+        {
+            const custom = [{ provider: "openrouter", model: "mistralai/mistral-small-4", label: "Mistral Small 4", upsample: true, assistant: false, vision: false }];
+            const { h, fetchImpl } = helpOn([chatStream([{ type: "text", text: "ok" }])], { keys: { openrouter: "test-openrouter-0000" }, custom, help: { model: "openrouter:mistralai/mistral-small-4" } });
+            const m = await h.models();
+            const done = await h.send("hello");
+            check("help_takes_a_text_only_row_marked_for_upsampling",
+                m.current === "openrouter:mistralai/mistral-small-4" && done.reason === "end" && fetchImpl.sent[0].body.model === "mistralai/mistral-small-4",
+                `${m.current} ${done.reason}`);
+        }
+
+        // a tool call nobody offered stays out of the history; a second question while one runs is refused
+        {
+            let release;
+            const gate = new Promise((r) => { release = r; });
+            const { h } = helpOn([
+                anthropicStream([{ type: "text", text: "let me" }, { type: "tool_use", id: "tu1", name: "screenshot", input: {} }]),
+                async () => { await gate; return sseResponse(anthropicStream([{ type: "text", text: "late" }])); },
+            ], { keys: { anthropic: "test-anthropic-0000" } });
+            await h.send("first");
+            const kept = h.chat.history.length;
+            const running = h.send("second");
+            let err = "";
+            try { await h.send("third"); } catch (e) { err = e.message; }
+            release();
+            await running;
+            check("help_drops_an_unoffered_tool_call_and_refuses_a_second_question",
+                kept === 1 && /still coming/.test(err) && h.chat.history.length === 2,
+                `${kept} then ${h.chat.history.length}, ${err}`);
+        }
+
+        // Stop ends the answer and the next question replaces the one left without an answer
+        {
+            const { h, events } = helpOn([
+                (req, n) => new Promise((resolve, reject) => { const t = setTimeout(() => resolve(sseResponse(anthropicStream([{ type: "text", text: "slow" }]))), 2000); h.onStopHook = () => { clearTimeout(t); const e = new Error("aborted"); e.name = "AbortError"; reject(e); }; }),
+                anthropicStream([{ type: "text", text: "ok" }]),
+            ], { keys: { anthropic: "test-anthropic-0000" } });
+            const running = h.send("first");
+            await new Promise((r) => setTimeout(r, 20));
+            h.stop();
+            if (h.onStopHook) h.onStopHook();
+            const first = await running;
+            await h.send("second");
+            const texts = JSON.stringify(h.chat.history);
+            check("help_stop_ends_the_answer_and_the_next_question_replaces_it",
+                first.reason === "stopped" && !texts.includes("first") && texts.includes("second") && h.chat.history.length === 2,
+                `${first.reason}, ${h.chat.history.length} messages`);
+        }
+
+        check("help_manual_text_drops_the_writers_comments",
+            !manualText(MANUAL).includes("<!--") && manualText(MANUAL).includes("# Scumble manual") && systemText(MANUAL).endsWith("</manual>"), "");
     });
 
     const failed = results.filter((x) => !x).length;

@@ -133,6 +133,7 @@ function bodyFor(chat, history) {
         include: ["reasoning.encrypted_content"],
     };
     if (chat.effort) body.reasoning = { effort: chat.effort };
+    if (!body.tools || !body.tools.length) delete body.tools;   // Help offers none (help.js), and an empty list is refused
     return body;
 }
 

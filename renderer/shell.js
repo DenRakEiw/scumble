@@ -10,6 +10,7 @@ import * as plugins from "./plugins.js";
 import { waitForUser, editorOf } from "./assistant_wait.js";
 import { beforeCall as snapshotTurn, watchUserEdits, forgetDocument } from "./assistant_turns.js";
 import { initAssistant, toggleAssistant, resetAssistant, refreshAssistantModels } from "./assistant.js";
+import { initHelp, toggleHelp } from "./help.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -1890,7 +1891,7 @@ window.scumble.onMenu((cmd) => {
     if (cmd === "save") host.editor && host.editor.exportImage();
     else if (cmd === "settings") openSettings();
     else if (cmd === "console") openConsole();
-    else if (cmd === "guide") window.scumble.openExternal("https://github.com/DenRakEiw/ComfyUI-InpaintCanvas#readme");
+    else if (cmd === "help") toggleHelp();
     else if (cmd === "new-tab") activate(newDocument());
     else if (cmd === "close-tab") closeDocument(host.editor);
     else if (cmd === "next-tab") cycleTab(1);
@@ -1976,6 +1977,10 @@ initAssistant({ openSettings });
 watchUserEdits();
 const assistantButton = $("shell-assistant");
 if (assistantButton) assistantButton.addEventListener("click", () => toggleAssistant());
+// Help (docs/PLAN_HELP.md): the manual and its chat, beside the assistant's column
+initHelp({ openSettings }).catch((err) => console.warn("help:", err.message));
+const helpButton = $("shell-help");
+if (helpButton) helpButton.addEventListener("click", () => toggleHelp());
 
 // ---- the console dialog: the log's ring buffer, filtered, growing live ----------------------
 

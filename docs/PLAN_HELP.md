@@ -2,8 +2,8 @@
 
 Asked for by the user on 2026-09-23: a **Help button** that opens a chat which answers questions
 about using the app, with a Markdown file holding everything about Scumble as its context, on a
-model picked from the ones the user has keys for. Not built. This file is the design and what it
-would cost.
+model picked from the ones the user has keys for. **Built the same day** (the last section, "As
+built"); the sections before it are the design as it was written.
 
 What exists today under Help is **`Editor guide`, which opens the ComfyUI node's README on GitHub**
 (`renderer/shell.js`, the `guide` command). For a desktop app that is the wrong file in the wrong
@@ -120,3 +120,63 @@ follows.
   policy question ("can Help do things?") reappear. F1 opens it.
 - **Chats kept or thrown away?** Recommendation: kept like the assistant's, but fewer (five), and
   cleared by the same *Delete all assistant data* button.
+
+## As built (2026-09-23)
+
+**§1 and §2, the source.** `docs/MANUAL.md` is the manual: one `##` per chapter, the slug in an HTML
+comment, the one-line summary in underscores, paragraphs, then `### Steps`, `### Keys` (`####` groups over
+two-column tables) and `### Notes`; screenshots are images with the website's URL and their size as the
+title (they render on GitHub, and the app shows none: they live on the website). It was converted from
+the website's `lib/scumble-manual.ts` by a one-off script, and the page built from the Markdown was
+**character for character the live page** (34,857 characters) before anything was added.
+`renderer/help/manual.js` is its **one reader** (no DOM, no imports): `parseManual`, `inline` (spans, never
+HTML: backslash escapes, `code`, **bold**), `plain`, `chapterText`; it throws with a line number on
+anything outside the shape. **The website holds copies of both files**, made by `node tools/manual_sync.js`
+(`--check` compares, line endings aside): `content/scumble/MANUAL.md` and `lib/scumble-manual-reader.js`,
+read at build time by `lib/scumble-manual.ts`, and the page renders the inline Markdown through
+`components/scumble-inline.tsx`. Portfolio commit `f5329db`, deployed by CLI (the git deploy blocked as
+always). `docs/MANUAL.md` is in the package (`build.files`), read by main (`help:manual`).
+**The drift checks** (`node tools/manual_test.js`): every menu accelerator in `main.js` is a row of the
+shortcuts chapter (it caught F1 on its first run), every `Settings › X` starts with a section heading of
+the settings dialog, every `<Menu> › X` with a menu label (it caught a note of this work naming the
+removed *Editor guide*).
+
+**§3, the chat.** `electron/main/assistant/help.js`, class `Help`: the assistant's four adapters with
+`tools: []` (the four `bodyFor`s now leave an empty `tools` out, so the assistant's bodies are byte for
+byte what they were: 224 checks unchanged), the registry through an `Assistant` instance used only for
+`target()` / `models()` / `addUsage()` / `costOf()`, with **every** row of *Settings › Language models*
+(also the ones marked for upsampling only: Help needs no eyes and no tools). The system text is the rules
+of §5 plus the manual without its comments, 40,390 characters (about 10,000 tokens), byte-stable for the
+chat. The model is `settings.help.model`, else the assistant's when it is ready, else the first ready
+one. A second question while one runs is refused (a `starting` guard over the model lookup too); a
+stopped question's unanswered user message is replaced by the next; a tool call nobody offered stays out
+of the history. The test-key rule is the assistant's. IPC `help:manual|models|send|stop|reset|state|
+setModel`, events on `help:event`, `window.scumble.help`, log lines tagged `help`.
+
+**§7, the panel.** `renderer/help.js` + `help.css`: a `<dialog id="help">` column left of the assistant's,
+**F1** (menu *Help › Scumble help*, which replaces *Editor guide*) and a *Help* button in the bar. The
+search narrows to chapters holding every word (two letters and more) and marks them; Enter jumps to the
+first, Escape clears it, Escape again closes. The chat sits above the manual when a model is ready, else
+one line and a *Settings* button; an answer's last `Chapter:` line becomes a *Read:* link. One window
+capture `keydown` listener as in the assistant; no markup written (`no_markup_writes` covers `help.js` and
+`help/manual.js`).
+
+**§8, decided without asking, both the plan's recommendation or simpler:** its own dialog; **chats are not
+kept** (the plan said five; a help chat is throwaway, and no store means nothing to delete).
+
+**Tests.** `tools/assistant_test.js` section `help` (12 checks: all four families send no `tools` and the
+manual, the chat and its system text across two questions, reset, no key, the model choice, a text-only
+row, an unoffered tool call, the second-question guard, Stop); `tools/manual_test.js` (7 checks); the new
+gate **`help`** (`tools/help_test.py`, the manual test and six app steps against `tools/assistant_mock.py`:
+the panel without a key, the search, keys never reaching the editor, a question answered with its
+*Read:* link, a second question and *New chat*, a 401 as words without the key). **Mutations: 15 of 16
+red**; the green one takes the panel's own `stopImmediatePropagation` out, and the editor's key handler
+still ignores every key inside an open `<dialog>`, so that guarantee exists twice and no step can tell
+them apart. Gates `--offline`: tiles `help assistant llm mcp commands platform editor types` ALL PASS
+(`help-tiles`), canvas `help assistant editor` ALL PASS on the rerun (`help-canvas2`; the first run's
+`editor` failed `selection_keeps_its_bounds_through_a_restore_above_1mp` with no message, a timing flake).
+
+**Not done.** §5's invention check against a **live** model: the mock can only prove the rule is in the
+system text, not that a model keeps it; that needs one real question the manual does not answer, on the
+user's key. No screenshot of the panel in the manual yet (the chapter has none).
+

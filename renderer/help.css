@@ -1,0 +1,82 @@
+/* The Help panel (renderer/help.js, docs/PLAN_HELP.md): a column beside the editor like the
+   assistant's, a <dialog> shown with show(). The same UA-sheet overrides as #assistant[open], and
+   the same reason for the [open] in the selector. */
+#help[open] {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 400px;
+    position: static;
+    inset: auto;
+    margin: 0;
+    width: 400px;
+    height: auto;
+    align-self: stretch;
+    max-width: none;
+    max-height: none;
+    padding: 0;
+    border: 0;
+    border-left: 1px solid #444;
+    background: #1f1f1f;
+    color: #ddd;
+    font: 13px/1.5 system-ui, sans-serif;
+    overflow: hidden;
+}
+#help:focus { outline: none; }
+#help button { background: #2d2d2d; color: #ddd; border: 1px solid #444; border-radius: 3px; padding: 3px 8px; font: inherit; cursor: pointer; }
+#help button:hover { background: #3a3a3a; }
+
+.hp-head { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #333; background: #1c1c1c; flex: 0 0 auto; }
+.hp-row { display: flex; align-items: center; gap: 6px; }
+.hp-spacer { flex: 1; }
+.hp-name { font-size: 14px; color: #eee; }
+.hp-search, .hp-model, .hp-text { background: #111; color: #ddd; border: 1px solid #333; border-radius: 3px; padding: 4px 6px; font: inherit; min-width: 0; }
+.hp-search { width: 100%; box-sizing: border-box; }
+.hp-count { color: #888; font-size: 12px; }
+.hp-count:empty { display: none; }
+
+/* ---- the chat ---------------------------------------------------------------------------- */
+.hp-chat { flex: 0 1 auto; max-height: 48%; display: flex; flex-direction: column; border-bottom: 1px solid #333; background: #1c1c1c; }
+.hp-ask { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; min-height: 0; }
+.hp-ask[hidden], .hp-none[hidden], .hp-list[hidden] { display: none; }
+.hp-model { flex: 1; }
+.hp-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.hp-write { align-items: stretch; }
+.hp-text { flex: 1; resize: vertical; }
+.hp-send { flex: 0 0 auto; }
+.hp-note { color: #888; font-size: 11.5px; }
+.hp-none { padding: 8px 10px; color: #bbb; font-size: 12px; }
+.hp-bubble { border-radius: 6px; padding: 6px 8px; overflow-wrap: anywhere; }
+.hp-user { background: #2a3550; color: #e8ecf5; align-self: flex-end; max-width: 92%; }
+.hp-model { }
+.hp-bubble.hp-model { background: #262626; }
+.hp-bubble p { margin: 0 0 6px; }
+.hp-bubble p:last-child { margin-bottom: 0; }
+.hp-bubble ul, .hp-bubble ol { margin: 0 0 6px; padding-left: 18px; }
+.hp-bubble code { background: #1a1a1a; border: 1px solid #333; border-radius: 3px; padding: 0 3px; font: 12px/1.4 ui-monospace, Consolas, monospace; }
+.hp-error { background: #3a1f1c; color: #f0b8ae; }
+.hp-quiet { color: #888; font-style: italic; padding: 2px 8px; }
+#help .hp-read { display: block; margin-top: 6px; background: none; border: 0; padding: 0; color: #8fb4ff; text-align: left; }
+#help .hp-read:hover { text-decoration: underline; background: none; }
+
+/* ---- the manual -------------------------------------------------------------------------- */
+.hp-doc { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px 14px 24px; }
+.hp-contents { list-style: none; margin: 0 0 8px; padding: 0 0 8px; border-bottom: 1px solid #333; }
+#help .hp-link { display: flex; gap: 8px; width: 100%; background: none; border: 0; padding: 2px 0; text-align: left; color: #cfd8e8; }
+#help .hp-link:hover { background: none; color: #fff; text-decoration: underline; }
+.hp-num { color: #c4643a; font: 11px/1.9 ui-monospace, Consolas, monospace; }
+.hp-chapter { padding: 12px 0 14px; border-bottom: 1px solid #2c2c2c; transition: background 0.4s; }
+.hp-chapter.hp-flash { background: #2a2620; }
+.hp-title { display: flex; gap: 8px; align-items: baseline; margin: 0 0 2px; font-size: 16px; color: #f2f2f2; }
+.hp-summary { margin: 0 0 8px; color: #999; }
+.hp-chapter p { margin: 0 0 8px; color: #d6d6d6; }
+.hp-chapter code { background: #161616; border: 1px solid #333; border-radius: 3px; padding: 0 3px; font: 12px/1.4 ui-monospace, Consolas, monospace; }
+.hp-steps { margin: 4px 0 8px; padding-left: 20px; }
+.hp-steps li { margin-bottom: 4px; }
+.hp-group { margin: 10px 0 4px; font: 11px/1.4 ui-monospace, Consolas, monospace; text-transform: uppercase; letter-spacing: 0.06em; color: #c4643a; }
+.hp-keys { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+.hp-keys td { padding: 3px 4px; border-bottom: 1px solid #2c2c2c; vertical-align: top; }
+.hp-key { white-space: nowrap; font: 12px/1.5 ui-monospace, Consolas, monospace; color: #f2f2f2; padding-right: 10px !important; }
+.hp-notes { margin: 4px 0 0; padding-left: 18px; color: #aaa; font-size: 12.5px; }
+.hp-hit { background: #5a4a1a; color: #fff; border-radius: 2px; }
+
+#shell-help.hp-on { background: #3a3a3a; border-color: #666; }

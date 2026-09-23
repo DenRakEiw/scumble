@@ -5,6 +5,14 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## 0.1.27 — unreleased
 
+- **Help, in the app (F1).** The manual opens in a column beside the picture: every chapter, searchable,
+  offline, and the same text as on the website, now kept next to the code it describes. Above it sits a
+  chat that answers questions about Scumble from that manual and from nothing else, names the chapter
+  its answer comes from, and says so when the manual does not cover something instead of guessing. It
+  runs on any model you have a key for, small text-only ones included, and it cannot change anything in
+  the app (that is the assistant's job). What goes to the provider is your question and the manual, no
+  picture and no file. *Help › Editor guide*, which opened the ComfyUI node's README, is gone.
+
 - **Scumble has a logo.** A small creature made of paint, with a chalk brush stroke behind it that shows through
   its body: that is what a scumble is, a thin semi-opaque layer over a dry one. It replaces the first icon from the
   project's opening week. The window, the taskbar, the installer and the shortcut carry it. At 16 and 24 pixels the

@@ -55,6 +55,7 @@
       "recipes/**/*",
       "prompts/**/*",
       "plugins/**/*",
+      "docs/MANUAL.md",
       "build/icon.png",
       "build/icon.ico",
       "package.json",

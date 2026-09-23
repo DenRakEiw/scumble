@@ -153,6 +153,7 @@ function bodyFor(chat, history) {
     if (d.sessionId) body.session_id = chat.id;
     if (d.ignoreHosts) body.provider = { data_collection: d.dataCollection || "deny", ignore: [...(chat.ignore || [])] };
     if (d.cacheControlFor && d.cacheControlFor.test(String(chat.model))) body.cache_control = { type: "ephemeral" };
+    if (!body.tools || !body.tools.length) delete body.tools;   // Help offers none (help.js), and an empty list is refused
     return body;
 }
 

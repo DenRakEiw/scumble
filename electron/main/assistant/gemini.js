@@ -140,12 +140,14 @@ function prune(history, keep) {
 function bodyFor(chat, history) {
     const generationConfig = { maxOutputTokens: chat.maxTokens };
     if (chat.effort) generationConfig.thinkingConfig = { thinkingLevel: chat.effort };
-    return {
+    const body = {
         systemInstruction: { parts: [{ text: chat.system }] },
         contents: history,
         tools: chat.tools,
         generationConfig,
     };
+    if (!body.tools || !body.tools.length) delete body.tools;   // Help offers none (help.js), and an empty list is refused
+    return body;
 }
 
 function requestBytes(chat, history) {

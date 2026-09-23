@@ -1000,4 +1000,4 @@ function stopError() {
     return err;
 }
 
-module.exports = { Assistant, DEFAULTS, callTimeout, _findLayer: findLayer, _idsNamedBy: idsNamedBy, _resolveLayer: resolveLayer, _appendUserText: appendUserText };
+module.exports = { Assistant, ADAPTERS, DEFAULTS, callTimeout, _findLayer: findLayer, _idsNamedBy: idsNamedBy, _resolveLayer: resolveLayer, _appendUserText: appendUserText };

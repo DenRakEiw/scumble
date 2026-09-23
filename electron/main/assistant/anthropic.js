@@ -110,6 +110,7 @@ function bodyFor(chat, history) {
         cache_control: { type: "ephemeral" },
     };
     if (chat.effort) body.output_config = { effort: chat.effort };
+    if (!body.tools || !body.tools.length) delete body.tools;   // Help offers none (help.js), and an empty list is refused
     return body;
 }
 
