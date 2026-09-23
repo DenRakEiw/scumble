@@ -188,6 +188,16 @@ crash.** CI green on `adee77a`, the `lint` gate 3 s.
    lever - it is the only page with real prose about "AI inpainting editor", "ComfyUI desktop app",
    "PSD export".
 4. **The stale "not run against the live API" line for OpenRouter**, above.
+5. **Help: the manual in the app, with a chat on top** (the user, 2026-09-23; `docs/PLAN_HELP.md`).
+   A Help button whose panel **renders the manual itself**, searchable, with no key and no network,
+   and a chat above it that answers from the same text on whichever model the user has a key for.
+   The chat is the assistant's loop **with an empty tool set** - no MCP client, no policy, no undo,
+   no screenshots, and therefore **any model, including the cheap text-only ones the assistant
+   cannot use**. Half the work is §2 of that plan and it pays on its own: **the manual lives only in
+   the website repository today** and will drift from the code it describes, so it moves to
+   `docs/MANUAL.md` here and the website generates its chapters from it. Today's
+   `Help > Editor guide` opens the ComfyUI node's README, which is the wrong file in the wrong
+   repository; this replaces it (F1). About two days.
 
 **Open on the manual, none of it blocking:** the assistant's screenshot is an empty panel (a real
 turn would cost a few cents on the user's OpenRouter key and make the strongest picture in the
