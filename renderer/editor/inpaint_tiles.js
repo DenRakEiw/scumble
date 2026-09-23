@@ -697,6 +697,7 @@ const sizeClass = (n) => { let s = 64; while (s < n) s <<= 1; return s; };
 /** Clear a scratch and give its context a fresh context's state, save stack and path included. */
 function resetScratch(s) {
     if (typeof s.ctx.reset === "function") s.ctx.reset();
+    // eslint-disable-next-line no-self-assign -- assigning the width is how a canvas is reset
     else { s.canvas.width = s.canvas.width; }   // assigning the width resets bitmap and state
 }
 

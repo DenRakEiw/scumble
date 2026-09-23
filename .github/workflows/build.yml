@@ -66,6 +66,12 @@ jobs:
       - name: Install
         run: npm ci
 
+      # a name that does not exist, a write to an imported binding or to a const: things that
+      # parse fine and throw at run time (eslint.config.mjs says what is checked and why)
+      - name: Lint
+        shell: bash
+        run: npx eslint .
+
       # the committed renderer/editor/px/*.wasm must be what crates/px builds; rustup installs the compiler
       # crates/px/rust-toolchain.toml pins, with its wasm target, on the first cargo call
       - name: Check the Rust kernels against their source

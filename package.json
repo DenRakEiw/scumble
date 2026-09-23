@@ -23,7 +23,8 @@
     "helpers-test": "node tools/helpers_test.js",
     "commands-test": "python tools/commands_test.py",
     "mcp-test": "python tools/mcp_test.py",
-    "mcp": "electron . --mcp"
+    "mcp": "electron . --mcp",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -33,7 +34,9 @@
   },
   "devDependencies": {
     "electron": "^44.2.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0"
   },
   "build": {
     "appId": "app.scumble.desktop",
