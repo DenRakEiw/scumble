@@ -45,6 +45,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE_TEST = os.path.join(ROOT, "tools", "comfyrouter_test.js")
 KEY = "test-comfyrouter-gate-0123456789"
 REAL_KEY = "comfyui-0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd"   # the shape of a Comfy key; never a real one
+OTHER_RECIPES = ["hy_image_3_5"]   # put back by the cleanup too
 RECIPES = ["flux1_fill", "flux2_max", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "grok_imagine", "ideogram_4",
            "krea_2", "magnific_precision", "nano_banana_2", "nano_banana_2_lite", "nano_banana_pro", "qwen_image_edit", "seedream_5_lite", "seedream_5_pro"]
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -96,7 +97,8 @@ LISTS_BEFORE_THE_KEY = """
 const list = await window.scumble.providers.list();
 const row = list.find((p) => p.id === "comfyrouter");
 if (!row || row.label !== "Comfy Router" || row.sharesKey !== "comfycloud" || (row.key && row.key.set)) throw new Error("the Comfy Router provider entry: " + JSON.stringify(row));
-if (list.filter((p) => p.sharesKey).length !== 1) throw new Error("other entries share a key: " + list.filter((p) => p.sharesKey).map((p) => p.id));
+const shared = list.filter((p) => p.sharesKey).map((p) => p.id + ":" + p.sharesKey).sort();
+if (JSON.stringify(shared) !== JSON.stringify(["comfypartner:comfycloud", "comfyrouter:comfycloud"])) throw new Error("the entries that share a key: " + shared);
 const remembered = (await window.scumble.settings.get()).recipeProviders || {};
 const rl = await run("list_recipes");
 const withIt = rl.recipes.filter((r) => (r.providers || []).includes("comfyrouter"));
@@ -114,7 +116,7 @@ const rows = Array.from(document.querySelectorAll(".shell-provider")).map((x) =>
 const cloud = rowOf(/^Comfy Cloud/);
 const options = {};
 try {
-    if (rows.some((t) => /^Comfy Router/.test(t))) throw new Error("a Comfy Router key row: " + rows.filter((t) => /Router/.test(t)));
+    if (rows.some((t) => /^Comfy (Router|Partner)/.test(t))) throw new Error("a Comfy Router or Partner API key row: " + rows.filter((t) => /^Comfy/.test(t)));
     if (!cloud || !/no key/.test(cloud.textContent) || !/Comfy Router/.test(cloud.querySelector("input").placeholder)) throw new Error("the Comfy Cloud row: " + (cloud ? cloud.textContent + " / " + cloud.querySelector("input").placeholder : "missing"));
     for (const id of ids) {
         const sel = document.querySelector('.shell-recipe[data-id="' + id + '"] select');
@@ -202,6 +204,34 @@ const t0 = Date.now();
 try { await run("generate", { doc: window.__crDoc, timeout: 120 }); } catch (err) { msg = String(err.message || err); }
 const all = await logSince(mark);
 return { error: msg, status: ed.status, layers: ed.layers.length - before, seconds: (Date.now() - t0) / 1000, log: all.filter((e) => e.source === "comfyrouter"), logText: JSON.stringify(all) };
+"""
+
+# HY Image 3.5 through the Partner API: an edit on the selection, then Generate new
+HY_EDIT = """
+const ed = await fresh();
+await run("set_prompt", { doc: window.__crDoc, text: __PROMPT__ });
+await run("select_recipe", { id: "hy_image_3_5", provider: "comfypartner" });
+const r = host.recipe;
+if (!r || r.provider !== "comfypartner" || r.model !== "hy-image-v3.5-preview") throw new Error("select_recipe gave " + (r && [r.id, r.provider, r.model].join(" ")));
+const stitch = await import("./editor/stitch.js");
+const info = stitch.prepareCrop(ed, host.nodeParams, host.cropLimits()).info;
+const mark = await logMark();
+const before = ed.layers.length;
+let err = "";
+try { await run("generate", { doc: window.__crDoc, timeout: 120 }); } catch (e) { err = String(e.message || e); }
+const log = (await logSince(mark)).filter((e) => e.source === "comfypartner");
+await run("set_prompt", { doc: window.__crDoc, text: __BASEPROMPT__ });
+return { emitted: info.emitted, err, status: ed.status, layers: ed.layers.length - before, log };
+"""
+
+HY_TEXT = """
+const ed = ednow(window.__crDoc);
+host.shell.activate(ed);
+await run("select_recipe", { id: "hy_image_3_5", provider: "comfypartner" });
+const mark = await logMark();
+await run("generate_new", { doc: window.__crDoc, prompt: __TEXT__, aspect: "16:9", resolution: 2048, timeout: 120 });
+const log = (await logSince(mark)).filter((e) => e.source === "comfypartner");
+return { size: [ed.width, ed.height], status: ed.status, log };
 """
 
 REAL_KEY_REFUSED = """
@@ -474,6 +504,80 @@ async def run_all(c):
             done("a_refused_run_says_so", {"error": res["error"][:200]})
         await step("a_refused_run_says_so", refused)
 
+        def partner_calls(snap):
+            out = {"storage": [], "upload": [], "hy": [], "stored": [], "asset": [], "other": []}
+            for cl in snap["calls"]:
+                p = cl["path"].split("?")[0]
+                if cl["method"] == "POST" and p == "/customers/storage":
+                    out["storage"].append(cl)
+                elif cl["method"] == "PUT" and p.startswith("/upload/"):
+                    out["upload"].append(cl)
+                elif cl["method"] == "POST" and p == "/proxy/tencent/v1/wand/hunyuan-image/v35-generation":
+                    out["hy"].append(cl)
+                elif cl["method"] == "GET" and p.startswith("/stored/"):
+                    out["stored"].append(cl)
+                elif cl["method"] == "GET" and p.startswith("/asset/"):
+                    out["asset"].append(cl)
+                else:
+                    out["other"].append(cl)
+            return out
+
+        async def hy_edit():
+            mock.reset()
+            res = await ev(HY_EDIT, __PROMPT__=json.dumps(PROMPT), __BASEPROMPT__=json.dumps(PROMPT))
+            q = partner_calls(mock.snapshot())
+            if res["err"] or res["layers"] != 1:
+                raise Exception("no result layer: %s" % json.dumps({k: res[k] for k in ("err", "status")})[:400])
+            n = len(q["storage"])
+            if n < 1 or len(q["upload"]) != n or len(q["hy"]) != 1 or q["other"] or len(q["asset"]) != 1:
+                raise Exception("the mock saw %s" % {k: [(c["method"], c["path"][:60]) for c in v] for k, v in q.items() if v})
+            ew, eh = res["emitted"]
+            up = q["upload"][0]
+            if up["pictures"][0]["dims"] != [ew, eh] or "x-api-key" in up["headers"] or q["asset"][0]["headers"].get("x-api-key"):
+                raise Exception("the upload %s (the crop %dx%d), headers %s" % (up["pictures"], ew, eh, list(up["headers"])))
+            for cl in q["storage"] + q["hy"]:
+                if cl["headers"].get("x-api-key") != KEY:
+                    raise Exception("a call without the test key: %s" % cl["path"])
+            b = q["hy"][0]["json"]
+            content = b["messages"][0]["content"]
+            urls = [c["image_url"]["url"] for c in content if c.get("type") == "image_url"]
+            if b.get("model") != "hy-image-v3.5-preview" or b.get("size") != "%dx%d" % (ew, eh) or len(urls) != n or b.get("logo_add") != 0 or b.get("resize_max_pixels") != 1048576:
+                raise Exception("the HY request: %s" % json.dumps(b)[:500])
+            if not content[0]["text"].startswith("Edit Image 1 and keep its size and framing.") or PROMPT not in content[0]["text"]:
+                raise Exception("the text: %s" % content[0]["text"])
+            ok = [e for e in res["log"] if e.get("level") == "info" and "Comfy Partner API edit ok" in str(e.get("message"))]
+            if len(ok) != 1:
+                raise Exception("the log: %s" % [e.get("message") for e in res["log"]])
+            check_key_absent([json.dumps(res["log"]), res["status"]], "the log or the status line")
+            done("hy_image_edits_through_the_partner_api", {"crop": [ew, eh], "pictures": n, "size": b["size"], "log": ok[0]["message"]})
+        await step("hy_image_edits_through_the_partner_api", hy_edit)
+
+        async def hy_text():
+            mock.reset()
+            res = await ev(HY_TEXT, __TEXT__=json.dumps(TEXT_PROMPT))
+            q = partner_calls(mock.snapshot())
+            b = q["hy"][0]["json"] if len(q["hy"]) == 1 else {}
+            m = re.match(r"^(\d+)x(\d+)$", str(b.get("size")))
+            if q["storage"] or q["upload"] or not m or "resize_max_pixels" in b or b["messages"][0]["content"] != [{"type": "text", "text": TEXT_PROMPT}]:
+                raise Exception("the text run: %s, %s" % ({k: len(v) for k, v in q.items()}, json.dumps(b)[:300]))
+            w, h = int(m.group(1)), int(m.group(2))
+            if res["size"] != [w, h] or abs(w / h - 16 / 9) > 0.02:
+                raise Exception("asked %s, the base is %s" % (b["size"], res["size"]))
+            done("hy_image_generate_new", {"size": b["size"], "base": res["size"]})
+        await step("hy_image_generate_new", hy_text)
+
+        async def hy_retry():
+            mock.reset()
+            res = await ev(HY_EDIT, __PROMPT__=json.dumps(PROMPT + " mock-download-failed"), __BASEPROMPT__=json.dumps(PROMPT))
+            q = partner_calls(mock.snapshot())
+            if res["err"] or res["layers"] != 1 or len(q["hy"]) != 2:
+                raise Exception("download image failed: %s, %d HY requests" % (json.dumps({k: res[k] for k in ("err", "status", "layers")})[:300], len(q["hy"])))
+            keys = [cl["headers"].get("idempotency-key") for cl in q["hy"]]
+            if len(set(keys)) != 2:
+                raise Exception("the resend reused its key: %s" % keys)
+            done("hy_image_sends_again_when_the_service_could_not_fetch_a_picture", {"requests": 2})
+        await step("hy_image_sends_again_when_the_service_could_not_fetch_a_picture", hy_retry)
+
         async def real_key():
             mock.reset()
             res = await ev(REAL_KEY_REFUSED, __REALKEY__=json.dumps(REAL_KEY), __KEY__=json.dumps(KEY))
@@ -497,7 +601,7 @@ async def run_all(c):
         print("[FAIL]", err)
     finally:
         try:
-            res = await c.eval(PRE % CLEANUP.replace("__RECIPES__", recipes), timeout=60)
+            res = await c.eval(PRE % CLEANUP.replace("__RECIPES__", json.dumps(RECIPES + OTHER_RECIPES)), timeout=60)
             print("[ok] cleanup: %s" % json.dumps(res))
         except Exception as err:  # noqa: BLE001
             ok = False

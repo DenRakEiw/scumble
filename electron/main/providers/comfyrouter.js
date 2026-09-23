@@ -199,26 +199,27 @@ function pngSize(b) {
  */
 async function picturesFor(req, o, ctx, model) {
     if (req.kind === "text" || !req.image) return [];
+    const who = ctx.who || `Comfy Router ${model}`;
     const pics = [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png" }];
     (req.references || []).forEach((r, i) => pics.push({ what: `reference ${i + 1}`, bytes: Buffer.from(r), mime: "image/png" }));
     const max = +o.max_images > 0 ? +o.max_images : 1;
     if (pics.length > max) {
         const refs = pics.length - 1;
-        throw new Error(`Comfy Router ${model} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${pics.length} (the crop, ${refs} reference${refs === 1 ? "" : "s"}): turn Original off or hide reference layers.`);
+        throw new Error(`${who} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${pics.length} (the crop, ${refs} reference${refs === 1 ? "" : "s"}): turn Original off or hide reference layers.`);
     }
     const limit = Math.min(+o.max_bytes > 0 ? +o.max_bytes : PICTURE_BYTES_MAX, PICTURE_BYTES_MAX);
     for (const p of pics) {
         const s = pngSize(p.bytes);
         if (s && +o.max_ratio > 0) {
             const [w, h] = s;
-            if (Math.max(w, h) > +o.max_ratio * Math.min(w, h)) throw new Error(`Comfy Router ${model} takes pictures no steeper than ${o.max_ratio}:1; the ${p.what} is ${w} × ${h}. Use a less narrow selection or reference layer.`);
+            if (Math.max(w, h) > +o.max_ratio * Math.min(w, h)) throw new Error(`${who} takes pictures no steeper than ${o.max_ratio}:1; the ${p.what} is ${w} × ${h}. Use a less narrow selection or reference layer.`);
         }
         if (p.bytes.length > limit) {
             const opaque = typeof ctx.opaque === "function" && (await ctx.opaque(p.bytes));
             const jpeg = opaque && typeof ctx.toJpeg === "function" ? await ctx.toJpeg(p.bytes, JPEG_QUALITY) : null;
             const mb = (limit / 1024 / 1024).toFixed(0);
             if (!jpeg || !jpeg.length || jpeg.length > limit) {
-                throw new Error(`Comfy Router ${model}: the ${p.what} is ${(p.bytes.length / 1024 / 1024).toFixed(1)} MB, more than the ${mb} MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. Set Highres fix lower or use a smaller reference layer.`);
+                throw new Error(`${who}: the ${p.what} is ${(p.bytes.length / 1024 / 1024).toFixed(1)} MB, more than the ${mb} MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. Set Highres fix lower or use a smaller reference layer.`);
             }
             ctx.log(`${p.what} ${p.bytes.length} bytes as JPEG ${jpeg.length} bytes`);
             p.bytes = Buffer.from(jpeg);
@@ -226,7 +227,7 @@ async function picturesFor(req, o, ctx, model) {
         }
     }
     const total = pics.reduce((n, p) => n + p.bytes.length, 0);
-    if (total > PICTURES_BYTES_MAX) throw new Error(`Comfy Router ${model}: the pictures are ${(total / 1024 / 1024).toFixed(1)} MB together, more than the 64 MB one request may carry. Set Highres fix lower or hide reference layers.`);
+    if (total > PICTURES_BYTES_MAX) throw new Error(`${who}: the pictures are ${(total / 1024 / 1024).toFixed(1)} MB together, more than the 64 MB one request may carry. Set Highres fix lower or hide reference layers.`);
     return pics;
 }
 
@@ -580,7 +581,7 @@ async function answerOf(r, id) {
 async function download(url, ctx, test, modelId) {
     const s = String(url || "");
     const ok = /^https:\/\//i.test(s) || /^data:image\//i.test(s) || (test && s.startsWith(test + "/"));
-    if (!ok) throw new Error(`Comfy Router ${modelId}: the answer points to "${s.slice(0, 80)}", which Scumble does not fetch.`);
+    if (!ok) throw new Error(`${ctx.who || "Comfy Router " + modelId}: the answer points to "${s.slice(0, 80)}", which Scumble does not fetch.`);
     return fetchImage(s, ctx.fetch);
 }
 
@@ -646,4 +647,6 @@ module.exports = {
     _tierFor: tierFor,
     DIALECTS,
     BASE,
+    // shared with comfypartner.js, which talks to the same host with the same key
+    _shared: { testBase, checkKey, scrub, picturesFor, download, sniff, retryAfterMs, pngSize },
 };

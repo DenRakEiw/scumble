@@ -12,7 +12,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   Ideogram 4 and Krea 2 in Generate new. It is the last choice in each recipe's provider list; no default changed.
   A run goes into Comfy's queue and is collected when it is done, and a request that has to be sent again (a lost
   answer, a busy moment) is never billed twice. Written from Comfy's documentation and each model's published
-  schema; **it has not run against the live API yet**, so the first runs are yours.
+  schema. GPT Image 2 and Nano Banana 2 ran against the live Router before the release; the rest has not yet.
+
+- **HY Image 3.5 Preview**, Tencent's new image model, as a recipe of its own: edits with up to five pictures (the
+  crop, Original and reference layers; name them @Image1, @Image2 in the prompt) and Generate new. It runs through
+  Comfy's Partner API, the route ComfyUI's own HY Image nodes use, on the same Comfy key and credits (about $0.03 an
+  image). That route is not a published API, so a change on Comfy's side can break it until Scumble follows.
 
 ## 0.1.27 — 2026-09-23
 

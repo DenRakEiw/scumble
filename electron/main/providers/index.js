@@ -38,6 +38,7 @@ const PROVIDERS = {
     ark: require("./ark"),
     magnific: require("./magnific"),
     comfyrouter: require("./comfyrouter"),   // no key row: the Comfy Cloud key (keyName)
+    comfypartner: require("./comfypartner"), // no key row either: HY Image 3.5 through Comfy's Partner Node proxy
     anthropic: require("./anthropic"),   // key row only: prompt upsampling (llm.js)
     deepseek: require("./deepseek"),     // key row only: the assistant
     moonshot: require("./moonshot"),     // key row only: the assistant

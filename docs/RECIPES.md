@@ -243,7 +243,7 @@ the editing one with a trailing `/edit`, `/inpaint` or `/fill` removed (fal and 
 put the editing model under such a path, the others use the same id without the image
 field). A variant overrides it with `"text": { "model": "...", "sizes": [...], "fixed": {} }`
 or switches it off with `"text": false`. Providers that can do it at all: ToAPIs, OpenAI, Gemini,
-BFL, fal, Replicate, WaveSpeed, OpenRouter, ModelArk, Comfy Router (`TEXT_PROVIDERS`; OpenRouter uses the same model id and
+BFL, fal, Replicate, WaveSpeed, OpenRouter, ModelArk, Comfy Router, the Comfy Partner API (`TEXT_PROVIDERS`; OpenRouter uses the same model id and
 leaves out `input_references`, ModelArk the same id without `image`, Comfy Router the same model without a picture). Comfy Cloud builds a graph around a
 partner node and has none. The other way round exists too: a variant with `"edit": false` has **only** the text
 shape (Krea 2, Recraft V4 and Z-Image base are text-to-image endpoints on fal; the OpenRouter variants of Krea 2
@@ -1353,8 +1353,14 @@ platform.comfy.org and bill the same Comfy credits, but **the Router needs no pa
 quickstart, queue, providers and API reference pages (as Markdown, `<page>.md`), the live OpenAPI document at
 `api.comfy.org/openapi` for the field names of the queue and error bodies, and **the published input schema of
 every model it sends to** (`docs.comfy.org/router-schemas/<provider>/<model>.json`, copied into
-`tools/refs/comfyrouter/`). It **has not run against the live API**, and every variant's note says so. No Comfy key
-is stored on this machine.
+`tools/refs/comfyrouter/`). **Run against the live API on 2026-09-23** with the user's key, on a scratch profile:
+GPT Image 2 (an inpaint with the mask at Quality low, 23.6 s) and Nano Banana 2 (at Size 1K, 15.8 s), each a result
+layer in the selection; the queue, the shared key and the OpenAI and Gemini bodies held. The other variants have
+not run; their notes say so. **The balance's unit:** `GET /customers/balance` answers `amount_micros`, and it fell by
+exactly 3.432 for an HY Image run whose price ComfyUI's node states as $0.03432, so the field counts **cents**,
+whatever its name says (GPT Image 2 low at 2048 x 2048 cost 2.9, Nano Banana 2 at 1K 8.2). **The queue's result read
+carries no `X-Comfy-Credits-Used`** (the reference lists it on the synchronous route only), so `info.credits` is null
+on a queued run.
 
 **Where it shows up.**
 
@@ -1443,6 +1449,51 @@ the live validation (the schemas are what the server enforces, the docs say, but
 the OpenAI mask and the Gemini mask-as-picture reach the model as an edit, the output sizes, `Retry-After` in
 practice, what a content-policy refusal costs per model (`GET /v2/models/{id}` has `billing.charges_on_policy_rejection`),
 and the prices (`X-Comfy-Credits-Used`).
+
+### Comfy Partner API (`comfypartner`)
+
+Some models Comfy serves only as **Partner Nodes**, not through the Router. ComfyUI's Partner Nodes call proxy
+routes on `api.comfy.org`, and Scumble calls the same routes with the same Comfy key. **These routes are not a
+documented public API**: they are what ComfyUI itself sends, and Comfy can change them with a ComfyUI release. The
+recipe's note says so, and a 404 reads "Comfy no longer serves this route". One model uses them today:
+
+- **HY Image 3.5 Preview** (Tencent), recipe `hy_image_3_5`. The adapter `electron/main/providers/comfypartner.js`
+  is written from ComfyUI's `comfy_api_nodes/nodes_hunyuan_image.py` (nodes `HunyuanImageEditApi` and
+  `HunyuanImageTextToImageApi`, added 2026-09-22 in ComfyUI PR #16462) and ComfyUI's API client (`util/client.py`,
+  `upload_helpers.py`, `_helpers.py`), read on 2026-09-23. The user's ComfyUI 0.37.0 does not have these nodes yet.
+  The Router's catalog (240 models on 2026-09-23) has no HY Image. **Run against the live API on 2026-09-23:** an
+  edit of one picture at 2048 x 2048 in 27.9 s, the balance down by $0.03432, the price the node states.
+
+**Where it shows up.** Like Comfy Router, it has no key row: `keyName: "comfycloud"`, `sharesKey` in
+`describeAll()`. It is the recipe's only provider and its default. `comfypartner` is in `TEXT_PROVIDERS`: Generate
+new runs the same model without pictures. The loopback mock is the one of Comfy Router (`settings.comfyrouter.base`,
+`tools/comfyrouter_mock.py`), because both talk to `api.comfy.org`.
+
+**The protocol.**
+
+1. For every picture of an edit (the crop first, then *Original* and the reference layers, at most five):
+   `POST /customers/storage { file_name, content_type }` with `X-API-Key` answers `{ upload_url, download_url }`.
+   The bytes go by `PUT <upload_url>` with only `Content-Type`, never the key (a signed URL). Both URLs must be
+   `https://` (or the mock's own host). A picture with transparency goes as JPEG, because the node sends no alpha.
+2. `POST /proxy/tencent/v1/wand/hunyuan-image/v35-generation` with `X-API-Key`, `Content-Type` and an
+   `Idempotency-Key`: `{ model: "hy-image-v3.5-preview", messages: [{ role: "user", content: [{ type: "text", text },
+   { type: "image_url", image_url: { url: <download_url> } } ...] }], size: "WxH", seed, logo_add: 0,
+   resize_max_pixels }`. `size` is the crop's own size, both sides in 16 px steps, at most 4096 x 4096 in area.
+   `resize_max_pixels` is *Detail* (standard 1,048,576, high 4,194,304: how much of each picture the model sees);
+   a text run sends none. The text of an edit starts "Edit Image 1 and keep its size and framing." and names the
+   references ("Image 2 is reference material."). `@Image2` in the user's prompt becomes "Image 2", as the node does,
+   and a number past the pictures sent is refused before any call.
+3. The answer is `{ choices: [{ delta: { image: { url, width, height } } }], error, request_id }` in the same
+   request, nothing is polled. The picture is fetched from its link without the key. An `error` in the answer reads
+   as its text after `msg:`. "download image failed" (the service could not fetch an uploaded picture yet) is sent
+   again twice under a new key each time, as the node does.
+
+**Sizes and prices.** The recipe holds a crop to 2048 px a side and 4,194,304 pixels: the 2K class the model renders
+itself, $0.034 an image by ComfyUI's price badge. Generate new may ask up to 4096 x 4096, which the model renders at
+2K and upscales ($0.046). No mask input: an instruction edit, and the stitch keeps the selection.
+
+**Where the pictures go.** Into Comfy's storage (signed URLs), from where Tencent fetches them. Where Tencent runs
+the model and what it keeps was not read.
 
 ### Magnific (`magnific`)
 

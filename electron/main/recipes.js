@@ -151,7 +151,7 @@ async function readDir(dir, source) {
 // from the editing one. fal and WaveSpeed put the editing model under an /edit path, the
 // others (OpenRouter, ModelArk and Comfy Router too) use the same id without the image field. A variant overrides this with
 // `text: { model, sizes }`, or switches it off with `text: false`.
-const TEXT_PROVIDERS = new Set(["toapis", "openai", "gemini", "bfl", "fal", "replicate", "wavespeed", "openrouter", "ark", "comfyrouter", "loopback"]);
+const TEXT_PROVIDERS = new Set(["toapis", "openai", "gemini", "bfl", "fal", "replicate", "wavespeed", "openrouter", "ark", "comfyrouter", "comfypartner", "loopback"]);
 
 // The long sides a provider documents for a generated image. Gemini's image models take
 // 1K, 2K or 4K (imageConfig.imageSize), OpenAI's the three standard shapes at 1024 and 1536;

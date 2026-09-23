@@ -1,0 +1,49 @@
+{
+  "id": "hy_image_3_5",
+  "kind": "provider",
+  "name": "HY Image 3.5 Preview (Tencent)",
+  "family": "Tencent",
+  "description": "Tencent's Hunyuan image model, edits with up to five pictures and text to image. Through Comfy's Partner API (the route ComfyUI's own Partner Nodes use) on the Comfy key; run against the live API on 2026-09-23.",
+  "default": "comfypartner",
+  "providers": {
+    "comfypartner": {
+      "model": "hy-image-v3.5-preview",
+      "input": "edit",
+      "options": {
+        "max_images": 5
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "reference_detail",
+          "label": "Detail",
+          "spec": [
+            [
+              "standard",
+              "high"
+            ],
+            {
+              "default": "standard"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "min": 256,
+        "max": 2048,
+        "step": 16,
+        "pixels": 4194304
+      },
+      "text": {
+        "sizes": [
+          1024,
+          1536,
+          2048,
+          3072,
+          4096
+        ]
+      },
+      "note": "Runs through Comfy's Partner API (api.comfy.org, the proxy route ComfyUI's HY Image nodes call) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; run against the live API on 2026-09-23 (an edit, 28 s, $0.034). That route is not a documented public API, so a change on Comfy's side can break it before Scumble follows. The pictures are uploaded to Comfy's storage and fetched from there by Tencent. Instruction edit of the crop (Image 1) plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". @Image1, @Image2 in the prompt name the pictures in order. The crop goes at its own size, at most 2048 px a side and 4.2 megapixels (the 2K class the model renders natively, $0.034 an image per ComfyUI's price badge); Generate new may ask for up to 4096 x 4096, which the model renders at 2K and upscales ($0.046). Detail high lets the model see the pictures at up to 4.2 megapixels instead of 1 (slower, keeps small text). At most five pictures go in."
+    }
+  }
+}

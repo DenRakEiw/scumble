@@ -16,6 +16,7 @@ const Module = require("node:module");
 
 const ROOT = path.join(__dirname, "..");
 const router = require(path.join(ROOT, "electron", "main", "providers", "comfyrouter.js"));
+const partner = require(path.join(ROOT, "electron", "main", "providers", "comfypartner.js"));
 
 const KEY = "test-comfyrouter-0123456789";
 const REAL_KEY = "comfyui-0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd";   // the shape of a Comfy key; never a real one
@@ -143,7 +144,8 @@ function nativeAnswer(prov, body, host) {
  */
 function fakeServer(opts = {}) {
     const calls = [], submits = [], syncs = [], statuses = [], reads = [], cancels = [], assets = [];
-    const q = { submit: [...(opts.submit || [])], status: [...(opts.status || [])], result: [...(opts.result || [])], sync: [...(opts.sync || [])] };
+    const storage = [], uploads = [], hy = [];   // the Partner API: storage requests, signed uploads, HY Image runs
+    const q = { submit: [...(opts.submit || [])], status: [...(opts.status || [])], result: [...(opts.result || [])], sync: [...(opts.sync || [])], storage: [...(opts.storage || [])], hy: [...(opts.hy || [])] };
     let polled = 0;
     const bodies = new Map();
     async function fetch(url, init = {}) {
@@ -154,6 +156,22 @@ function fakeServer(opts = {}) {
         const u = new URL(String(url));
         const host = `${u.protocol}//${u.host}`;
         if (u.pathname.startsWith("/asset/")) { assets.push(call); return opts.asset ? opts.asset(call) : new Response(ASSET, { status: 200, headers: { "content-type": "image/png" } }); }
+        if (method === "POST" && u.pathname === "/customers/storage") {
+            const body = JSON.parse(init.body);
+            storage.push({ ...call, body });
+            const a = q.storage.shift();
+            if (a) return a(body, call);
+            const n = storage.length;
+            return json(200, { upload_url: `${host}/upload/${n}?sig=abc`, download_url: `${host}/stored/${n}.png?sig=def` });
+        }
+        if (method === "PUT" && u.pathname.startsWith("/upload/")) { uploads.push({ ...call, bytes: Buffer.from(init.body) }); return new Response(null, { status: 200 }); }
+        if (method === "POST" && u.pathname === partner.HY_PATH) {
+            const body = JSON.parse(init.body);
+            hy.push({ ...call, body });
+            const a = q.hy.shift();
+            if (a) return a(body, call);
+            return json(200, { choices: [{ delta: { image: { url: `${host}/asset/hy.png`, width: 1024, height: 768 } }, finish_reason: "stop" }], request_id: "hy-1" });
+        }
         const m = /^\/v2\/models\/([^/]+)\/([^/]+)(\/requests(?:\/([^/]+)(\/status|\/cancel)?)?)?$/.exec(u.pathname);
         if (!m) return routerError(404, "model_not_found", "no route " + u.pathname);
         const [, prov, model, queue, id, tail] = m;
@@ -190,7 +208,7 @@ function fakeServer(opts = {}) {
         if (method === "PUT" && tail === "/cancel") { cancels.push(call); return json(202, { request_id: id, status: "CANCELLATION_REQUESTED" }); }
         return routerError(404, "request_not_found", "no such request");
     }
-    return { fetch, calls, submits, syncs, statuses, reads, cancels, assets };
+    return { fetch, calls, submits, syncs, statuses, reads, cancels, assets, storage, uploads, hy };
 }
 
 function ctxFor(server, extra = {}) {
@@ -439,7 +457,10 @@ async function main() {
             if (r.providerIds[r.providerIds.length - 1] !== "comfyrouter") bad.push(`${r.id}: not the last provider (${r.providerIds})`);
             if (r.default !== raw.default || r.default === "comfyrouter") bad.push(`${r.id}: the default moved to ${r.default}`);
             if (!/Also on Comfy Router\./.test(r.description || "")) bad.push(`${r.id}: the description does not say Also on Comfy Router`);
-            if (!/^Runs on Comfy Router \(api\.comfy\.org\) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet\./.test(v.note || "")) bad.push(`${r.id}: the note lacks the opening sentence`);
+            // the live status, true per model: GPT Image 2 and Nano Banana 2 ran through the Router on 2026-09-23, the rest not
+            const ranLive = ["gpt_image_2", "nano_banana_2"].includes(r.id);
+            const opening = ranLive ? /^Runs on Comfy Router \(api\.comfy\.org\) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; run against the live API on 2026-09-23 / : /^Runs on Comfy Router \(api\.comfy\.org\) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet\./;
+            if (!opening.test(v.note || "")) bad.push(`${r.id}: the note's opening sentence does not say ${ranLive ? "that it ran live" : "that it has not run live"}`);
             if (!/passes (them|it) to /.test(v.note || "")) bad.push(`${r.id}: the note does not say where the pictures go`);
             const prov = v.model.split("/")[0];
             const d = router.DIALECTS[prov];
@@ -554,8 +575,8 @@ async function main() {
         try { index = require(idxPath); } finally { Module._load = orig; }
         const rows = index.describeAll();
         const cr = rows.find((x) => x.id === "comfyrouter"), cc = rows.find((x) => x.id === "comfycloud");
-        check("describeAll: Comfy Router listed with sharesKey comfycloud and the Comfy Cloud key's state; every other row shares nothing", cr && cr.sharesKey === "comfycloud" && cr.key.name === "comfycloud" && cr.key.set === true && cc && cc.sharesKey === null && rows.filter((x) => x.sharesKey).length === 1, short(cr));
-        check("Comfy Router is a text and an upscale provider", index.textProviders().includes("comfyrouter") && index.upscaleProviders().includes("comfyrouter"));
+        check("describeAll: Comfy Router listed with sharesKey comfycloud and the Comfy Cloud key's state; every other row shares nothing", cr && cr.sharesKey === "comfycloud" && cr.key.name === "comfycloud" && cr.key.set === true && cc && cc.sharesKey === null && rows.filter((x) => x.sharesKey).length === 2 && rows.find((x) => x.id === "comfypartner").sharesKey === "comfycloud", short(cr));
+        check("Comfy Router is a text and an upscale provider, the Partner API a text provider and no upscaler", index.textProviders().includes("comfyrouter") && index.upscaleProviders().includes("comfyrouter") && index.textProviders().includes("comfypartner") && !index.upscaleProviders().includes("comfypartner"));
         const realFetch = globalThis.fetch;
         const v = variant("gpt_image_2");
         async function viaIndex(request) {
@@ -578,15 +599,90 @@ async function main() {
         check("index.js logged no key", !JSON.stringify(logged).includes(KEY), `${logged.length} records`);
     });
 
+    // ---- 10. HY Image 3.5 through the Partner API ----
+    await section("10. HY Image through the Partner API", async () => {
+        const recipe = loadRecipes().find((r) => r.id === "hy_image_3_5");
+        const v = recipe && recipe.providers.comfypartner;
+        check("the recipe: one comfypartner variant, its default, an instruction edit, a text shape of the same model, crops held to 2048 px and 4.2 MP", !!v && recipe.default === "comfypartner" && eq(recipe.providerIds, ["comfypartner"]) && v.model === "hy-image-v3.5-preview" && v.input === "edit" && v.text && v.text.model === v.model && v.limits.max === 2048 && v.limits.pixels === 4194304 && /run against the live API on 2026-09-23/.test(v.note) && /not a documented public API/.test(v.note), short(v && { limits: v.limits, text: v.text }));
+        const req = (extra = {}) => ({ provider: "comfypartner", model: v.model, kind: "edit", options: v.options, prompt: "put @image2 on the table", negative: "", seed: 42, image: pngOf(1024, 768, 96, "CROP"), mask: null, maskAlpha: null, width: 1024, height: 768, references: [pngOf(512, 512, 64, "REF1")], params: defaults(v), ...extra });
+        const s = fakeServer();
+        const ctx = ctxFor(s);
+        const out = await partner.edit(req(), ctx);
+        const b = s.hy[0] && s.hy[0].body;
+        const content = b ? b.messages[0].content : [];
+        check("an edit: one storage request per picture with the key and its type, the bytes PUT to the signed URL without the key, in order", s.storage.length === 2 && s.storage.every((c) => c.headers["x-api-key"] === KEY && c.body.content_type === "image/png" && /\.png$/.test(c.body.file_name)) && s.uploads.length === 2 && tagOf(s.uploads[0].bytes) === "CROP" && tagOf(s.uploads[1].bytes) === "REF1" && s.uploads.every((c) => !c.headers["x-api-key"] && c.headers["content-type"] === "image/png"), short(s.calls.map((c) => c.method + " " + c.url)));
+        check("then one generation request: the model, a user message of the text and the two download URLs, the crop's size, resize_max_pixels for Detail standard, the seed, no watermark", !!b && b.model === "hy-image-v3.5-preview" && b.messages.length === 1 && b.messages[0].role === "user" && content[0].type === "text" && content[1].image_url.url === `${BASE}/stored/1.png?sig=def` && content[2].image_url.url === `${BASE}/stored/2.png?sig=def` && b.size === "1024x768" && b.resize_max_pixels === 1048576 && b.seed === 42 && b.logo_add === 0 && eq(Object.keys(b).sort(), ["logo_add", "messages", "model", "resize_max_pixels", "seed", "size"]), short(b && { ...b, messages: content.map((x) => x.type) }));
+        check("the text: the crop is Image 1, @image2 became Image 2, the reference is named", !!b && content[0].text === "Edit Image 1 and keep its size and framing. put Image 2 on the table Image 2 is reference material.", content[0] && content[0].text);
+        check("the generation request carries the key, a UUID Idempotency-Key and JSON; the answer's picture is fetched without the key", s.hy[0].headers["x-api-key"] === KEY && s.hy[0].headers["idempotency-key"] === ctx.uuids[0] && s.assets.length === 1 && eq(Object.keys(s.assets[0].headers), []) && tagOf(out.bytes) === "ASSET" && out.info.answered === "1024x768" && out.info.detail === "standard" && out.seed === 42, short(out.info));
+
+        const s2 = fakeServer();
+        await partner.edit(req({ params: { reference_detail: "high" }, references: [], prompt: "make it night" }), ctxFor(s2));
+        check("Detail high: resize_max_pixels 4194304; one picture, no reference sentence", s2.hy[0].body.resize_max_pixels === 4194304 && s2.hy[0].body.messages[0].content.length === 2 && s2.hy[0].body.messages[0].content[0].text === "Edit Image 1 and keep its size and framing. make it night", short(s2.hy[0].body.messages[0].content[0]));
+        const s3 = fakeServer();
+        const o3 = await partner.generate({ ...req({ kind: "text", image: null, references: [], prompt: "a lighthouse at dusk" }), width: 4096, height: 2304 }, ctxFor(s3));
+        check("Generate new: no storage request, no upload, the prompt alone, the asked size, no resize_max_pixels", s3.storage.length === 0 && s3.uploads.length === 0 && s3.hy[0].body.messages[0].content.length === 1 && s3.hy[0].body.messages[0].content[0].text === "a lighthouse at dusk" && s3.hy[0].body.size === "4096x2304" && !("resize_max_pixels" in s3.hy[0].body) && tagOf(o3.bytes) === "ASSET", short(s3.hy[0].body));
+        check("sizes: multiples of 16, at most 4096 x 4096 in area", partner._sizeFor(1000, 750) === "1008x752" && partner._sizeFor(8000, 4000) === "5792x2896" && partner._sizeFor(100, 100) === "256x256", short([partner._sizeFor(1000, 750), partner._sizeFor(8000, 4000), partner._sizeFor(100, 100)]));
+
+        const s4 = fakeServer();
+        const e4 = await throws(() => partner.edit(req({ prompt: "use @Image3" }), ctxFor(s4)));
+        check("@Image3 with two pictures: refused before any call", /names @Image3, but only 2 pictures go in/.test(e4 || "") && s4.calls.length === 0, e4);
+        const s5 = fakeServer();
+        const refs = Array.from({ length: 5 }, (_, i) => pngOf(64, 64, 64, "R" + i));
+        const e5 = await throws(() => partner.edit(req({ references: refs }), ctxFor(s5)));
+        check("six pictures: refused before any call", /HY Image 3\.5 takes at most 5 pictures; this run has 6/.test(e5 || "") && s5.calls.length === 0, e5);
+        const s6 = fakeServer();
+        await partner.edit(req({ references: [], prompt: "make it night" }), ctxFor(s6, { opaque: () => false }));
+        check("a crop with transparency goes as JPEG (the node sends no alpha)", s6.storage[0].body.content_type === "image/jpeg" && /\.jpg$/.test(s6.storage[0].body.file_name) && s6.uploads[0].headers["content-type"] === "image/jpeg" && tagOf(s6.uploads[0].bytes) === "JPEG", short(s6.storage[0].body));
+
+        const flaky = () => json(200, { error: { message: "code: 400, msg: download image failed", code: 400 } });
+        const s7 = fakeServer({ hy: [flaky, flaky] });
+        const c7 = ctxFor(s7);
+        const o7 = await partner.edit(req(), c7);
+        check("\"download image failed\" is sent again (twice, each under a new key), as the node does", tagOf(o7.bytes) === "ASSET" && s7.hy.length === 3 && new Set(s7.hy.map((c) => c.headers["idempotency-key"])).size === 3 && s7.storage.length === 2, short({ runs: s7.hy.length, storage: s7.storage.length }));
+        const s8 = fakeServer({ hy: [flaky, flaky, flaky] });
+        const e8 = await throws(() => partner.edit(req(), ctxFor(s8)));
+        check("a third time it is the error, with the message after msg:", s8.hy.length === 3 && /HY Image 3\.5: download image failed$/.test(e8 || ""), e8);
+        const s7b = fakeServer({ hy: [() => json(400, { error: { message: "code: 400, msg: download image failed" } })] });
+        const o7b = await partner.edit(req(), ctxFor(s7b));
+        check("the same when it comes as an HTTP 400", tagOf(o7b.bytes) === "ASSET" && s7b.hy.length === 2, String(s7b.hy.length));
+        const s9 = fakeServer({ hy: [() => json(402, { error: "insufficient_credits", message: "Payment required" })] });
+        const e9 = await throws(() => partner.edit(req(), ctxFor(s9)));
+        check("402: the credits in words, not sent again", s9.hy.length === 1 && /no credits left/.test(e9 || "") && /Payment required/.test(e9 || ""), e9);
+        const s10 = fakeServer({ hy: [() => json(404, { detail: "Not Found" })] });
+        const e10 = await throws(() => partner.edit(req(), ctxFor(s10)));
+        check("404: says the route is gone and why that can happen", /no longer serves this route/.test(e10 || "") && /not a public contract/.test(e10 || ""), e10);
+        const s11 = fakeServer({ hy: [() => json(401, { error: { message: `bad key ${KEY}`, type: "auth" } })] });
+        const e11 = await throws(() => partner.edit(req(), ctxFor(s11)));
+        check("401: key refused, the echoed key taken out", /key refused/.test(e11 || "") && !(e11 || "").includes(KEY), e11);
+        const s12 = fakeServer({ storage: [() => json(200, { upload_url: "http://evil.example/up", download_url: "https://x/y" })] });
+        const e12 = await throws(() => partner.edit(req(), ctxFor(s12)));
+        check("an upload URL that is not https is not used", /without usable URLs/.test(e12 || "") && s12.uploads.length === 0 && s12.hy.length === 0, e12);
+        const s13 = fakeServer({ hy: [() => json(200, { choices: [{ delta: {} }], request_id: "x" })] });
+        const e13 = await throws(() => partner.edit(req(), ctxFor(s13)));
+        check("an answer without a picture says so", /answer holds no picture/.test(e13 || ""), e13);
+
+        const s14 = fakeServer();
+        const e14 = await throws(() => partner.edit(req(), ctxFor(s14, { key: REAL_KEY })));
+        const s15 = fakeServer();
+        const e15 = await throws(() => partner.edit(req(), ctxFor(s15, { base: undefined })));
+        const s16 = fakeServer();
+        const e16 = await throws(() => partner.edit(req({ model: "hy-image-v9" }), ctxFor(s16)));
+        const s17 = fakeServer();
+        await partner.generate({ ...req({ kind: "text", image: null, references: [], prompt: "a lighthouse" }) }, ctxFor(s17, { key: REAL_KEY, base: undefined }));
+        check("a real key never to the mock, a test key never to api.comfy.org, an unknown model refused, all before any call; a real key goes to https://api.comfy.org", /only a test key goes there/.test(e14 || "") && /test key is never sent/.test(e15 || "") && /knows no model "hy-image-v9"/.test(e16 || "") && s14.calls.length + s15.calls.length + s16.calls.length === 0 && s17.hy[0].url === LIVE + partner.HY_PATH && s17.hy[0].headers["x-api-key"] === REAL_KEY, short([e14, e15, e16]));
+    });
+
     // ---- 9. the whole run ----
     const okHeaders = (c) => {
         const k = Object.keys(c.headers).sort();
         if (/\/asset\//.test(c.url)) return k.length === 0;
+        if (/\/customers\/storage$/.test(c.url)) return eq(k, ["content-type", "x-api-key"]);
+        if (c.method === "PUT" && /\/upload\//.test(c.url)) return eq(k, ["content-type"]);
         if (c.method === "POST") return eq(k, ["content-type", "idempotency-key", "x-api-key"]);
         return eq(k, ["x-api-key"]);
     };
     const extra = ALL_CALLS.filter((c) => !okHeaders(c));
-    check("no call of the whole run carried a header beyond X-API-Key, Content-Type and Idempotency-Key (the reads the key alone, the asset downloads nothing)", ALL_CALLS.length > 150 && !extra.length, extra.length ? short(extra.map((c) => c.method + " " + c.url + " " + Object.keys(c.headers).join(","))) : `${ALL_CALLS.length} calls`);
+    check("no call of the whole run carried a header beyond X-API-Key, Content-Type and Idempotency-Key (the reads the key alone, a storage request no Idempotency-Key, a signed upload only its Content-Type, the asset downloads nothing)", ALL_CALLS.length > 150 && !extra.length, extra.length ? short(extra.map((c) => c.method + " " + c.url + " " + Object.keys(c.headers).join(","))) : `${ALL_CALLS.length} calls`);
     const keyed = ALL_CALLS.filter((c) => c.headers["x-api-key"] && !(c.headers["x-api-key"] === KEY && c.url.startsWith(BASE + "/")) && !(c.headers["x-api-key"] === REAL_KEY && c.url.startsWith(LIVE + "/")));
     check("the test key went to the mock only, the real key to api.comfy.org only", !keyed.length, short(keyed.map((c) => c.url)));
     check("neither key appears in any error of the run", ERRORS.length > 30 && !ERRORS.some((x) => x.includes(KEY) || x.includes(REAL_KEY)), `${ERRORS.length} errors`);

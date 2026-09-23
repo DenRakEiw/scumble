@@ -238,8 +238,34 @@ App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for th
 **NEXT, in this order (the user, 2026-09-23 evening, before a `/clear`): ~~1. Comfy Router as a provider~~ (built, the
 paragraph below), 2. the macOS build (B3) with the logo.**
 
+**Live, the same evening (the user's key, entered in the dev instance on the scratch profile `dist/live-keys`, which
+keeps it; the user's first key was not a Comfy key - 64 hex characters, refused on every route - the second,
+`comfyui-...`, works):** GPT Image 2 through the Router (inpaint with the mask, Quality low, 23.6 s) and Nano Banana 2
+(1K, 15.8 s) each gave a result layer in the selection; the notes of those two variants say so, the rest of the
+Router variants are still unrun (FLUX.2, Seedream, Magnific offered to the user, not run). **`GET
+/customers/balance`'s `amount_micros` counts cents** (it fell by exactly 3.432 for an HY run the node prices at
+$0.03432; the account held about $243). The queue's result read carries no `X-Comfy-Credits-Used`, so `info.credits`
+is null on a queued run. A probe that reads the key from the scratch profile through `safeStorage` and asks the free
+routes (model list, `/customers/me`, balance) without printing the key is in that session's scratchpad
+(`router/probe/`).
+
+**HY Image 3.5 Preview is built too, for 0.1.28, and ran live** (the user asked for it before the release, route
+chosen by the user: "Direkt über den Proxy"). It is **not on the Router** (240 models, Tencent only 3D) but only a
+Partner Node pair (`HunyuanImageEditApi`, `HunyuanImageTextToImageApi`, ComfyUI PR #16462 of 2026-09-22; the user's
+ComfyUI 0.37.0 lacks them). New provider **`comfypartner`** ("Comfy Partner API", `providers/comfypartner.js`,
+`keyName: "comfycloud"`, helpers shared from `comfyrouter.js` `_shared`): `POST /customers/storage` -> signed
+`upload_url` / `download_url`, `PUT` the picture without the key, then `POST
+/proxy/tencent/v1/wand/hunyuan-image/v35-generation` (synchronous) -> `choices[0].delta.image.url`; "download image
+failed" is sent twice more under new keys (the node's rule); `@ImageN` becomes "Image N". **Not a documented public
+API** - the note, the docs and a 404's words say so. Recipe `hy_image_3_5` (family Tencent, edit up to 5 pictures,
+Detail standard / high, crops to 2048 px and 4.2 MP, Generate new up to 4096). Live: one edit at 2048 x 2048 in
+27.9 s, $0.03432. Tests: `tools/comfyrouter_test.js` section 10 (now 88 checks), the `comfyrouter` gate three more
+steps (mock routes for storage, upload, the proxy); mutations 17 of 17 red after one check was added (the one green
+left out is an equivalent mutation: `readFailure` already scrubs the key). Gates `--offline` (`comfyrouter recipes
+generate`, tiles also `lint types`): ALL PASS on both backends (`hy-tiles`, `hy-canvas`).
+
 **Comfy Router is built, for 0.1.28 (2026-09-23; CHANGELOG "0.1.28 — unreleased", `docs/RECIPES.md` "Comfy Router";
-`package.json` still 0.1.27). Not run against the live API: no Comfy key is stored on this machine.**
+`package.json` still 0.1.27). Written without a key; the live runs are in the paragraph above.**
 `electron/main/providers/comfyrouter.js`, written from the Router's pages read as Markdown (`<page>.md`: quickstart,
 queue, providers, reference), `api.comfy.org/openapi` for the queue and error field names, and **each model's
 published input schema** (`docs.comfy.org/router-schemas/<p>/<m>.json`, copied into `tools/refs/comfyrouter/`, 16
@@ -1340,6 +1366,19 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    (`F:\portfolio_web`, the Scumble pages). The name's idea (a thin semi-opaque layer over a dry one) is the obvious
    starting point. Who designs it, and whether a draft comes from here first, is the user's call. **B3 waits for
    it** (the macOS icon needs the 1024 px master).
+19. **3D layers from AI models (asked for by the user on 2026-09-23; on the list only, not planned, not built).**
+   Scumble already has 3D layers: the `glb` plugin (`plugins/glb/`, `glb.place` / `glb.edit` / `glb.info`,
+   `docs/COMMANDS.md`) renders a `.glb` / `.gltf` into a layer by position, distance, rotation and scale and keeps it
+   editable. The idea: make the model itself with an image-to-3D (or text-to-3D) model, from a selection or a layer
+   (a cut-out object) or a prompt, and place the answer as a glb layer, so an object can be turned, relit and put back
+   into the picture; the inpainting models then blend it in. Routes to check: the **Comfy Router** serves Meshy
+   (`meshy/meshy-5` .. `meshy-7.1`, `remesh`, `rigging`, `animations`) and Tencent Hunyuan 3D (`hunyuan-3d-part`,
+   `-smart-topology`, `-texture-edit`, `-uv`; no plain image-to-3D there on 2026-09-23), all on the same Comfy key
+   (`comfyrouter.js`, one more dialect); fal and Replicate host TRELLIS / Hunyuan3D / Tripo-style image-to-3D; a local
+   ComfyUI recipe (Hunyuan3D 2.x nodes) is a third way. **To find out before planning:** which models take one image
+   and answer a textured GLB (not only a mesh), the answer's size and format (GLB or a zip of OBJ + textures), the time
+   (minutes: the queue and its 30-minute wait fit), the price, and whether the glb plugin's renderer shows the
+   answer's PBR materials well enough that the result is worth inpainting over.
 
 **Decision (b) of 7c is made (the user, 2026-09-18): exports and runs of a colour-matched layer may move.** They may
 take their statistics from tiles instead of from the whole flatten, with **point samples** (measured mean 0.56, max 8

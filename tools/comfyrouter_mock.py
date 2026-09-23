@@ -13,6 +13,16 @@ that the adapter accepts, through settings.comfyrouter.base, and the only one a 
     POST /v2/models/{provider}/{model}                the synchronous route: the native answer at once
     GET  /asset/{n}.png                               a picture an answer links to
 
+and the Partner API routes electron/main/providers/comfypartner.js uses for HY Image 3.5:
+
+    POST /customers/storage                           { upload_url: <mock>/upload/<id>, download_url: <mock>/stored/<id> }
+    PUT  /upload/{id}                                 keeps the bytes (a signed URL: no key expected)
+    POST /proxy/tencent/v1/wand/hunyuan-image/v35-generation
+                                                      checks every image_url was uploaded here, answers
+                                                      choices[0].delta.image.url = a picture of the asked size; a
+                                                      prompt holding "mock-download-failed" gets one answer
+                                                      { error: { message: "code: 400, msg: download image failed" } }
+
 The native answers follow the per-model schemas (tools/refs/comfyrouter/): OpenAI and Seedream answer data[0].b64_json,
 Gemini candidates[0].content.parts[].inlineData, FLUX a result.sample link, Qwen output.choices[0].message.content
 [].image, Freepik data.generated[0], xAI data[0].url, Ideogram data[0].url, Krea result.urls[0]. An edit gets its
@@ -38,6 +48,7 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PNG_SIGNATURE = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+HY_PATH = "/proxy/tencent/v1/wand/hunyuan-image/v35-generation"
 ROUTE = re.compile(r"^/v2/models/([a-z0-9_-]+)/([a-z0-9._-]+)(/requests(?:/([0-9a-f-]{36})(/status|/cancel)?)?)?$")
 
 
@@ -116,6 +127,8 @@ class Mock(ThreadingHTTPServer):
         self.every_call = []
         self.runs = {}        # request_id -> { prov, model, body, polled }
         self.busy = set()
+        self.stored = {}      # upload id -> { mime, bytes }
+        self.hy_failed = set()
         self._thread = None
 
     @property
@@ -146,6 +159,8 @@ class Mock(ThreadingHTTPServer):
             self.calls.clear()
             self.runs.clear()
             self.busy.clear()
+            self.stored.clear()
+            self.hy_failed.clear()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -188,6 +203,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         self._record()
+        if path.startswith("/stored/"):
+            with self.server.lock:
+                item = self.server.stored.get(path.split("/")[-1])
+            if not item:
+                self._error(404, "request_not_found", "no such stored file")
+            else:
+                self._send(200, item["bytes"], ctype=item["mime"])
+            return
         if path.startswith("/asset/"):
             m = re.match(r"^/asset/(\d+)x(\d+)\.png$", path)
             w, h = (int(m.group(1)), int(m.group(2))) if m else (64, 64)
@@ -222,6 +245,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         path = self.path.split("?")[0]
+        if path.startswith("/upload/"):
+            raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            self._record(None, [{"field": "upload", "mime": self.headers.get("Content-Type"), "size": len(raw), "dims": png_size(raw)}])
+            with self.server.lock:
+                self.server.stored[path.split("/")[-1]] = {"mime": self.headers.get("Content-Type") or "application/octet-stream", "bytes": raw}
+            self._send(200, b"", ctype="text/plain")
+            return
         self._record()
         m = ROUTE.match(path)
         if not m or m.group(5) != "/cancel":
@@ -233,6 +263,9 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         m = ROUTE.match(path)
+        if path in ("/customers/storage", HY_PATH):
+            self._partner(path, raw)
+            return
         try:
             body = json.loads(raw.decode("utf-8"))
         except ValueError:
@@ -272,6 +305,43 @@ class Handler(BaseHTTPRequestHandler):
         other = "https://elsewhere.invalid/v2/models/%s/%s/requests/%s" % (prov, model, rid)
         self._send(201, {"request_id": rid, "status": "IN_QUEUE", "queue_position": 0, "status_url": other + "/status", "response_url": other, "cancel_url": other + "/cancel"},
                    headers={"X-Comfy-Request-Id": rid, "Retry-After": "1"})
+
+    def _partner(self, path, raw):
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            body = None
+        self._record(self._shown(body) if isinstance(body, dict) else {"size": len(raw)})
+        if not isinstance(body, dict):
+            self._send(400, {"error": "invalid_request", "message": "The body is not JSON."})
+            return
+        if not (self.headers.get("X-API-Key") or "").strip():
+            self._send(401, {"error": "unauthorized", "message": "Unauthorized"})
+            return
+        if path == "/customers/storage":
+            uid = uuid.uuid4().hex + (".jpg" if body.get("content_type") == "image/jpeg" else ".png")
+            self._send(200, {"upload_url": "%s/upload/%s?sig=mock" % (self.server.url, uid), "download_url": "%s/stored/%s?sig=mock" % (self.server.url, uid)})
+            return
+        content = ((body.get("messages") or [{}])[0].get("content")) or []
+        text = " ".join(c.get("text") or "" for c in content if c.get("type") == "text")
+        for c in content:
+            if c.get("type") == "image_url":
+                url = (c.get("image_url") or {}).get("url") or ""
+                uid = url.split("?")[0].split("/")[-1]
+                with self.server.lock:
+                    known = uid in self.server.stored
+                if not known:
+                    self._send(200, {"error": {"message": "code: 400, msg: download image failed", "code": 400}})
+                    return
+        if "mock-download-failed" in text:
+            with self.server.lock:
+                first = "hy" not in self.server.hy_failed
+                self.server.hy_failed.add("hy")
+            if first:
+                self._send(200, {"error": {"message": "code: 400, msg: download image failed", "code": 400}})
+                return
+        w, h = wxh(body.get("size")) or (1024, 1024)
+        self._send(200, {"choices": [{"delta": {"image": {"url": "%s/asset/%dx%d.png" % (self.server.url, w, h), "width": w, "height": h}}, "finish_reason": "stop"}], "request_id": "hy-mock"})
 
     @staticmethod
     def _shown(body):
