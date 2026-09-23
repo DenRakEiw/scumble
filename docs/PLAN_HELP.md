@@ -176,7 +176,20 @@ them apart. Gates `--offline`: tiles `help assistant llm mcp commands platform e
 (`help-tiles`), canvas `help assistant editor` ALL PASS on the rerun (`help-canvas2`; the first run's
 `editor` failed `selection_keeps_its_bounds_through_a_restore_above_1mp` with no message, a timing flake).
 
-**Not done.** §5's invention check against a **live** model: the mock can only prove the rule is in the
-system text, not that a model keeps it; that needs one real question the manual does not answer, on the
-user's key. No screenshot of the panel in the manual yet (the chapter has none).
+**The live check of §5 ran the same day** (the user's word: "ja, mach den model test"), in the app on the
+user's OpenRouter key (a scratch profile holding copies of `secrets.json` and `Local State`, deleted
+afterwards), model **Gemini 3.8 Flash through OpenRouter**:
+
+- *"How do I sync my Scumble settings and API keys between two computers?"*, which the manual does not
+  answer: "The manual does not cover syncing settings or API keys between two computers", with the docs
+  and issues links, **nothing invented**.
+- *"How do I take a part out of my selection?"*: both ways the manual gives (Alt with the selection brush,
+  the Deselect tool D), `Chapter: Keyboard shortcuts`, and the *Read:* link opened it.
+- **Cost, measured: 0.9 and 1.0 cents a question** (9,928 / 9,922 input tokens, 449 / 776 output of which
+  386 / 715 reasoning, as OpenRouter reported it), not the "fractions of a cent" of §4: the reasoning
+  tokens at `effort: "low"` and no cache read (each question was the first of its chat). A second
+  question in one chat was not measured live.
+
+The second answer is the manual's screenshot (`help.jpg` on the website, 1600 x 946 like the others,
+checked for key fragments: none).
 

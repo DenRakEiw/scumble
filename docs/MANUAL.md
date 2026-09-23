@@ -275,6 +275,8 @@ And it can be taken back. Ctrl+Z undoes its steps one at a time like your own, a
 <!-- slug: help -->
 _F1 opens this manual beside the picture, searchable and offline, and with any API key a chat that answers from it._
 
+![The Help column beside the picture: the search field, the model picker set to Gemini 3.8 Flash, the question how to take a part out of a selection and its answer with a link to the chapter it came from, and the manual's contents below](https://www.denrakeiw.com/projects/scumble/manual/help.jpg "1600x946")
+
 F1, the Help button in the top bar or Help › Scumble help opens this manual in a column beside the canvas. It is the same text as on the website, shipped with the app, so it works offline and describes the version you are running. Type into the search field and the chapters narrow down to the ones that mention every word you typed, with the words marked; Enter jumps to the first of them.
 
 Above the manual sits a chat. Ask it how to do something, "how do I take a piece out of a selection?", and it answers from this manual and from nothing else, and ends with the chapter it took the answer from; a click on that line opens the chapter. When the manual does not cover a question, it is told to say so and point you to the docs on GitHub instead of inventing a menu item.
@@ -289,7 +291,7 @@ The chat runs on any model you have a key for, including small text-only ones: i
 
 ### Notes
 
-- What goes to the provider: your question and this manual, about 10,000 tokens, which most providers read from their cache after the first question. No picture, no file, no setting.
+- What goes to the provider: your question and this manual, about 10,000 tokens. With a small model through OpenRouter that came to about one cent a question when it was measured; providers that cache prompts charge less for the manual from the second question of a chat on. No picture, no file, no setting.
 - New in 0.1.27. Earlier versions had only a link to a README on GitHub in the Help menu.
 - The chat is not saved: New chat or closing the app ends it.
 - The answer is only as good as the manual. If it says something the app does not do, the manual is wrong; please report it.

@@ -249,8 +249,11 @@ every *Language models* row, `settings.help.model`; chats are not kept). Tests: 
 `<Menu> › X` an existing section or item), the `help` section of `tools/assistant_test.js` (12, 238 in
 all), the new gate **`help`** (six app steps against the mock); mutations 15 of 16 red (the green one is a
 guarantee the editor gives twice). Gates `--offline` tiles ALL PASS (`help-tiles`), canvas ALL PASS on
-the rerun. **Not done:** the live invention check of PLAN_HELP §5 (one real question the manual does not
-answer, on the user's key) and a screenshot of the panel for the manual.
+the rerun. **The live check of §5 ran** on the user's OpenRouter key (Gemini 3.8 Flash, a scratch profile deleted
+afterwards): a question the manual does not answer got "the manual does not cover" with the docs links,
+nothing invented; a covered one the right answer and its chapter. **About one cent a question**, measured
+(10k input, 400 to 700 reasoning tokens), not the plan's "fractions of a cent". Its answer is the
+chapter's screenshot (`help.jpg`, portfolio `f116061`, live by CLI).
 
 **The order changed later the same day (the user: "also bauen wir erst weiter den hilfe assistent und danach
 machen wir ein ms store release"):** item 5 (Help) next, then the 0.1.27 release with item 4's OpenRouter line
