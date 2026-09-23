@@ -110,6 +110,101 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-16) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
+## Where things stand (2026-09-23)
+
+**The manual is written and live, and it is the website's, not this repo's.** 16 chapters in
+`F:\portfolio_web`, `lib/scumble-manual.ts`, rendered by `app/scumble/manual/page.tsx`: a contents
+list with anchors, per chapter a screenshot, the steps that need doing as a numbered list, and short
+notes. Order: install, where it renders (the API keys), the first edit, selecting, recipes, layers
+and colour match, filters, text / shapes / objects, upscaling, export, the assistant, agents and
+plugins, large pictures, **under the hood** (the crop, the Highres fix and the stitch, written from
+`stitch.js` and `docs/RECIPES.md`), **keyboard shortcuts** (44 rows in six groups, read out of
+`inpaint_canvas.js`'s key handler and the menu in `main.js`; the `keys` field of the `Chapter` type),
+settings and trouble. **The hub card stopped saying "In preparation" for the dev blog** - all three
+cards had that line hard-coded; it comes from the data now (`sectionState()` in `lib/scumble.ts`),
+and manual and blog joined the sitemap. **A click on a screenshot opens it full size**
+(`components/scumble-shot.tsx`, a native `<dialog>`: Escape, backdrop and a button close it; on a
+phone it keeps its 1600 px and scrolls, because fitting it to the screen would not enlarge it).
+Website commits `8d6c2f7`, `a917753`, `8e10581`, each deployed **by CLI from a clean export** (the
+git deploy is blocked as always).
+
+**The 14 screenshots were taken from the running dev app over CDP** at 1600 x 946, into
+`public/projects/scumble/manual/`. **Trap worth keeping:** the *Settings > API providers* shot
+showed `key set (...qOPM)` and `(...b662)` - the last four characters of the user's real keys. They
+were masked in the DOM before the shot and the dialog checked afterwards for any fragment (0). Check
+every settings screenshot for that before it goes on the web.
+
+**The tutorial material is `docs/TUTORIAL.md` and `docs/images/tutorial/`.** All three pictures are
+**the user's own** (2026-09-23), so no licence stands in the way: `scene.jpg` (the woman in front of
+the blue Porsche, 16:9) carries the tutorial because it is the only one that teaches every chapter in
+one frame, `skin.jpg` goes to the filter and retouch chapter, `titlecard.jpg` to the video. The four
+brand marks in the scene - the Balmain band on the shirt, the Chanel double-C on the necklace, the
+lettering on both socks - were removed **in the app**, four runs of GPT Image 2.5 Flare through
+OpenRouter, **$0.22 and about two minutes**, no colour match needed and no patch edge findable at
+1:1; the result is `scene-clean.jpg` and the selections and times are in the file. The video script
+(a Q&A between two voices, about three minutes) is in there too.
+
+**Found on the way and not yet fixed - it is the next session's item 4.** The OpenRouter image
+adapter **has been running live since 2026-09-21**: the user's log holds about 40 successful runs,
+most of them on 2026-09-22 between 14:47 and 15:37. So `docs/RECIPES.md` ("has not run against the
+live API", the OpenRouter section) and, worse, the **recipe descriptions the user reads in the
+picker** ("Adapter written from the provider's docs, not run against the live API yet") are stale for
+OpenRouter. Also measured on the way: a crop whose context reaches bare legs is **refused by
+OpenAI's safety system** through OpenRouter (`safety_violations=[sexu...]`); a tighter
+`set_crop { context: "24" }` went through. Worth a line in `docs/RECIPES.md` when that section is
+touched.
+
+**Signing: the Microsoft Store comes before SignPath** (the user, 2026-09-23). Qualifying for the
+SignPath Foundation needs visible use and takes as long as it takes; an **MSIX** submitted to the
+Store is **re-signed by Microsoft** after certification, and a developer account has been free since
+2025-09 for individuals and 2026-05 for companies. **It signs only the Store copy** - the GitHub
+installer stays unsigned and keeps its SmartScreen paragraph, and submitting the `.exe` instead would
+want it signed first. The whole decision with its conditions is in `docs/CODE_SIGNING_POLICY.md` and
+in the release-channel block above.
+
+**A linter is in the repository** (`eslint.config.mjs`, `npm run lint`, the gate `lint`, a step in
+CI; `docs/PLAN_TYPES.md` §"Stage 1"). Eleven correctness rules, no style rules, unused names as
+warnings, five environments. The first run: 55 errors, 52 of them the config not yet knowing those
+environments; what was left over 41,333 lines was **one** deliberate canvas reset (annotated now,
+the only source line this changed) and 18 unused names, all left standing as warnings. **No latent
+crash.** CI green on `adee77a`, the `lint` gate 3 s.
+
+**Next, in this order** (the user, 2026-09-23, each after a `/clear`):
+
+1. **Stage 2 of `docs/PLAN_TYPES.md`**: `@ts-check` on the three contracts - the host contract (whose
+   agreement `tools/build_node.py --check` enforces today by grepping for calls), the command
+   descriptors in `renderer/commands.js`, the recipe shape in `electron/main/recipes.js`. A
+   `tsconfig.check.json` with `noEmit` and an `include` list that only grows, a `types` gate,
+   TypeScript as a devDependency. **Nothing that ships may change** - the editor's `.js` files are
+   the delivered artefact. About half a day.
+2. **The MSIX package for the Microsoft Store** (`docs/CODE_SIGNING_POLICY.md` for the conditions):
+   `runFullTrust` or the package cannot reach `127.0.0.1` and loses the user's ComfyUI; no
+   self-update in that build; MCP registered by the execution alias, not a versioned `WindowsApps`
+   path; and the single-instance pipe, the plugin folder and every `%APPDATA%` path to be tested
+   under the packaging, not assumed.
+3. **SEO for the four Scumble pages** (`/scumble`, `/manual`, `/blog`, `/videos`): titles and
+   descriptions by search intent, JSON-LD (`SoftwareApplication`, `HowTo`, `BlogPosting`), an
+   OpenGraph image per page, heading hierarchy, internal links, sitemap priorities. The manual is the
+   lever - it is the only page with real prose about "AI inpainting editor", "ComfyUI desktop app",
+   "PSD export".
+4. **The stale "not run against the live API" line for OpenRouter**, above.
+
+**Open on the manual, none of it blocking:** the assistant's screenshot is an empty panel (a real
+turn would cost a few cents on the user's OpenRouter key and make the strongest picture in the
+manual); there is no colour-match figure, because it was measured and the obvious candidate teaches
+the wrong thing - Match 100 on the red handbag pulls it toward the blue car and the paving, so that
+figure needs a result that is *unintentionally* off, a piece of wall or paving; and the log
+screenshot is empty, because the safety-system error was cleared out of it before the shot.
+
+**New idea, parked** (the user asked on 2026-09-23 whether Kotlin / Swift would make sense): **a
+mobile companion, not a mobile editor.** A WebView wrapper of the editor fails on memory - iOS ends
+an app at a few hundred MB to about a gigabyte and a 15k document needs multiples of that - and a
+native rewrite is a second product; the one asset that ports cleanly is the **Rust kernels** (JNI /
+uniffi), and ONNX has mobile builds. The shape that would make sense: look at the picture, mark a
+place with a finger, say the prompt, the run happens on the desktop Scumble or through an API, the
+result lands there. It would be the fourth platform before the first three are done (Windows
+unsigned, Linux never run, macOS not built), so it is an idea, not a plan.
+
 ## Where things stand (2026-09-22)
 
 **2026-09-22, after 0.1.26: the Upscale dialog's prompt field, for 0.1.27** (the user's report; `docs/BUGS.md` "The
