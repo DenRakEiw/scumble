@@ -236,7 +236,16 @@ folders, the MCP alias with `ELECTRON_RUN_AS_NODE` through it, `app.relaunch`, D
 App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for the installer's users).
 
 **NEXT, in this order (the user, 2026-09-23 evening, before a `/clear`): ~~1. Comfy Router as a provider~~ (built, the
-paragraph below), 2. the macOS build (B3) with the logo.**
+paragraph below), 2. the macOS build (B3) with the logo.** State at the second `/clear` of that evening: Comfy Router
+and HY Image 3.5 are in **0.1.28, published**. Open, none of it started: (a) the live runs of FLUX.2, Seedream and
+Magnific through the Router (offered, not asked for; the key is in `dist/live-keys`, about $243 of credit); (b) the
+Store package for 0.1.28 (`npm run dist:store`; the first submission is the user's, in Partner Center); (c) **the
+headless MCP instance of this repo's `.mcp.json` intercepts the installed app**: it runs the dev tree on the default
+profile, so a Start-menu Scumble handed over to it and the user saw the dev window (0.1.27 by its `package.json` at
+start, no updater, "check for updates" did nothing). The installed app was still **0.1.25** and had not checked for
+updates since 2026-09-22; the MCP instance was stopped on the user's word so the installed app could update to
+0.1.28. A fix (a profile of its own for the MCP registration, `docs/BUGS.md` "A headless MCP instance can block the
+app from starting") was offered and not yet decided.
 
 **Live, the same evening (the user's key, entered in the dev instance on the scratch profile `dist/live-keys`, which
 keeps it; the user's first key was not a Comfy key - 64 hex characters, refused on every route - the second,
