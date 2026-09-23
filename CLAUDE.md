@@ -201,9 +201,10 @@ said so. Gates `--offline` on both backends (`lint types recipes commands editor
 
 **The MSIX package for the Microsoft Store is built, and has not run installed** (`docs/STORE.md`).
 `npm run dist:store:test` (`tools/build_store.js --test`) makes `dist/Scumble-<version>-test.msix` (195 MB
-for 0.1.26) with a test identity; `npm run dist:store` refuses until `package.json` `build.appx` has the
-Partner Center identity (`identityName`, `publisher` = `CN=<GUID>`, `publisherDisplayName`), which only
-the user can reserve. `build/AppxManifest.xml` is electron-builder's template plus an **execution alias**
+for 0.1.26) with a test identity; `npm run dist:store` builds the package for Partner Center with the identity the
+user reserved the same day (`DenRakEiw.Scumble`, `CN=F2BCAA24-...`; the family name
+`DenRakEiw.Scumble_eh52rqbjjrbdj` Partner Center showed is what `msix.publisherId()` computes, and a check
+holds it). **Not submitted:** the installed test comes first. `build/AppxManifest.xml` is electron-builder's template plus an **execution alias**
 (`scumble.exe`) and full trust; `build/appx/` holds the tile artwork rendered from the logo SVGs by
 `tools/appx_assets.js`. **`electron/main/msix.js`** is everything the Store copy does differently, switched
 by `process.windowsStore`: its own data folder **`%APPDATA%\Scumble Store`** (Windows lets a package change
@@ -232,7 +233,8 @@ App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for th
 2. **The MSIX package for the Microsoft Store** - **built on 2026-09-23, not yet run installed**
    (`docs/STORE.md` is the whole of it; the paragraph below). What is left needs the user: Developer
    Mode (or a trusted test certificate) to install the test package and run STORE.md's nine-point
-   list, and the Partner Center identity for the real build.
+   list. **The Partner Center identity is in** (2026-09-23: `DenRakEiw.Scumble`, family
+   `DenRakEiw.Scumble_eh52rqbjjrbdj`, Store ID `9NDBTNNMXF2R`; `npm run dist:store` builds the real package).
 3. **SEO for the four Scumble pages** (`/scumble`, `/manual`, `/blog`, `/videos`): titles and
    descriptions by search intent, JSON-LD (`SoftwareApplication`, `HowTo`, `BlogPosting`), an
    OpenGraph image per page, heading hierarchy, internal links, sitemap priorities. The manual is the

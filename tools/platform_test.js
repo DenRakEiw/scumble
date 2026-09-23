@@ -102,6 +102,13 @@ check("the_publisher_id_is_the_one_windows_computes", () => {
     ]) eq(msix.publisherId(pub), id, pub);
 });
 
+check("the_store_identity_is_the_one_partner_center_assigned", () => {
+    // Partner Center, Scumble > Product identity (2026-09-23): the family name it computed from these values
+    const appx = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).build.appx;
+    eq([appx.identityName, appx.publisher, appx.publisherDisplayName], ["DenRakEiw.Scumble", "CN=F2BCAA24-8A1E-43F6-9DFA-1E11616630F1", "DenRakEiw"], "identity");
+    eq(`${appx.identityName}_${msix.publisherId(appx.publisher)}`, "DenRakEiw.Scumble_eh52rqbjjrbdj", "package family name");
+});
+
 check("the_package_is_read_from_the_manifest_next_to_the_app", () => {
     const tpl = fs.readFileSync(path.join(ROOT, "build", "AppxManifest.xml"), "utf8");
     const pub = "CN=\"Slack Technologies, LLC\", O=\"Slack Technologies, LLC\", L=San Francisco, S=California, C=US";

@@ -26,8 +26,8 @@ block of `package.json`. Two things are not electron-builder's defaults:
   it); the same files ran from a folder on `F:`. `makepri.exe` from the cache ran. Not looked into
   further.
 
-`npm run dist:store` refuses to run until `package.json` has the package identity Partner Center
-assigns (below). The package is never signed by us: the test one is installed another way, the
+`npm run dist:store` refuses to run without the package identity Partner Center assigned; it is in
+`package.json` since 2026-09-23 (below). The package is never signed by us: the test one is installed another way, the
 Store one is signed by Microsoft.
 
 What goes in: the same `win-unpacked` app the NSIS installer carries (the same `build.win.files`
@@ -121,16 +121,31 @@ Each of these is written from Microsoft's documentation and has to be run, not a
 9. The Windows App Certification Kit (`appcert.exe`, part of the Windows SDK) passes the package
    before the first submission.
 
+## The Store identity
+
+Reserved by the user on 2026-09-23 in Partner Center (*Scumble > Product identity*), and in
+`package.json` `build.appx`:
+
+| | |
+| --- | --- |
+| Package/Identity/Name | `DenRakEiw.Scumble` |
+| Package/Identity/Publisher | `CN=F2BCAA24-8A1E-43F6-9DFA-1E11616630F1` |
+| PublisherDisplayName | `DenRakEiw` |
+| Package family name | `DenRakEiw.Scumble_eh52rqbjjrbdj` |
+| Store ID | `9NDBTNNMXF2R` (https://apps.microsoft.com/detail/9NDBTNNMXF2R) |
+
+The family name is Partner Center's; `msix.publisherId()` computes the same `eh52rqbjjrbdj`
+from the publisher, and `the_store_identity_is_the_one_partner_center_assigned` holds both.
+Every submission needs a higher package version than the last (`0.1.26.0` from `package.json`;
+the fourth part stays 0, the Store reserves it).
+
 ## For the Store submission (the user's part)
 
-1. A Partner Center developer account (free for individuals since September 2025; an identity
-   check instead of the fee).
-2. Reserve the name **Scumble** for a new app.
-3. *Product identity* shows three values; they go into `package.json` `build.appx`:
-   `identityName` (Package/Identity/Name), `publisher` (Package/Identity/Publisher,
-   `CN=<GUID>`), `publisherDisplayName`.
-4. `npm run dist:store`, then upload `dist/Scumble-<version>.msix`. The listing needs its own
+1. ~~A Partner Center developer account, the name reserved, the identity in `package.json`~~ - done
+   2026-09-23.
+2. Not before STORE.md's nine points have run on an installed package.
+3. `npm run dist:store`, then upload `dist/Scumble-<version>.msix`. The listing needs its own
    texts and screenshots; the `runFullTrust` capability asks for a sentence why (a desktop editor
    that talks to a local ComfyUI server and reads and writes the user's files).
-5. The privacy policy URL can be the policy section of
+4. The privacy policy URL can be the policy section of
    [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md#privacy-policy) (or a page on the website).

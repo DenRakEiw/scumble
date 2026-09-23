@@ -95,6 +95,9 @@
       "perMachine": false
     },
     "appx": {
+      "identityName": "DenRakEiw.Scumble",
+      "publisher": "CN=F2BCAA24-8A1E-43F6-9DFA-1E11616630F1",
+      "publisherDisplayName": "DenRakEiw",
       "applicationId": "Scumble",
       "displayName": "Scumble",
       "backgroundColor": "#1B1714",
