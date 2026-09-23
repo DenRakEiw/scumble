@@ -1,0 +1,38 @@
+// Types, as a check and nothing else (docs/PLAN_TYPES.md, stage 2).
+//
+//   npm run types        (or: npx tsc --noEmit -p tsconfig.check.json, the gate `types`)
+//
+// Nothing is compiled and nothing is emitted: the .js files in renderer/editor are both the
+// source and the delivered artefact - tools/build_node.py copies them into the ComfyUI node,
+// where a browser loads them as they are - so no compiler may stand between the file that is
+// edited and the file that runs. What this does instead is read the JSDoc typedefs that write
+// down the three agreements the app has with itself:
+//
+//   renderer/editor/host.js      what the editor may ask of its host (the app here, the node
+//                                there); tools/build_node.py --check greps the node's copy
+//   renderer/commands.js         the command descriptors the MCP server, the assistant's
+//                                policy and docs/COMMANDS.md are all built from
+//   electron/main/recipes.js     the shape normalize() promises every reader of a recipe
+//
+// `checkJs` is deliberately off. A checked file says `// @ts-check` at the top, so this list
+// is the whole of what is checked; the files those three import are read for their types and
+// not judged. The list only grows, and a file joins it when it is clean, never before.
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": [
+    "types/**/*",
+    "electron/main/recipes.js",
+    "renderer/commands.js",
+    "renderer/editor/host.js"
+  ]
+}

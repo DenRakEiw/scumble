@@ -169,14 +169,38 @@ environments; what was left over 41,333 lines was **one** deliberate canvas rese
 the only source line this changed) and 18 unused names, all left standing as warnings. **No latent
 crash.** CI green on `adee77a`, the `lint` gate 3 s.
 
+**Stage 2 of `docs/PLAN_TYPES.md` is built: the three contracts are typedefs now, and `npm run types`
+checks them** (`tsconfig.check.json`, the gate `types`, a **Types** step in CI after Lint, `typescript`
+and `@types/node` as devDependencies; `docs/PLAN_TYPES.md` §"Stage 2 - as built"). `EditorApi` and
+`EditorHost` (the **40** members the editor modules call, which is what `build_node.py --check` greps
+for) in `renderer/editor/host.js`; `CommandParam` / `Command` / `CommandDescriptor` / `CommandCore` in
+`renderer/commands.js`; `Recipe` / `ProviderVariant` / `EditLimits` / `UpscaleFactor` / `TextShape` /
+`SettingRow` in `electron/main/recipes.js`. **`checkJs` is off on purpose**: with it on the first run
+said 534 errors, almost all of them in `inpaint_canvas.js`, `inpaint_tiles.js` and `px/` - a file is
+checked because it carries `// @ts-check`, so the `include` list is the whole truth. **Not the plan's
+word:** `@satisfies` on the `host` object does not work (it checks excess properties on the literal and
+re-types `this` inside every method, so the shell's ~110 members would have to stand in the contract);
+the check is an assignment in the new, never-loaded `types/contracts.js` instead. The node's own
+`js/host.js` still cannot be reached from here - another repository, no tsconfig - so the grep stays.
+**What changed in files that ship: seven lines**, all of them DOM properties that were being handed
+numbers (`i.min = 1` -> `"1"`, `input.value = v` -> `String(v)`; the DOM coerced them anyway) plus one
+cast for `document.activeElement.blur()`. **No defect was found**, as in stage 1; what the typedefs did
+find is three shapes the prose never stated (`text: false` in a variant, the old one-provider shape's
+top-level `note`, the optional fields of the helper status). **Teeth: 15 mutations, 12 red.** The three
+green ones are the tool's limit and are written down: in a `.js` file TypeScript treats every parameter
+as implicitly optional, so an implementation that *grew* a parameter is still assignable (two of them),
+and the command table's type is circular, so `names()`'s answer cannot be judged. **A blind spot that
+showed itself:** the typedef was written from the app's implementations, and a scan of the editor's
+call sites found two members where the editor passes more - `exportCanvas(editor, fmt)` and
+`saveExport(blob, name, { editor, download })`; both typedef lines were wrong and no checker would have
+said so. Gates `--offline` on both backends (`lint types recipes commands editor export mcp`):
+**ALL PASS** (`s2-tiles`, `s2-canvas`). **Next in stage 3, and it is the fourth contract:**
+`electron/preload.js` - `window.scumble` is declared `any` in `types/globals.d.ts`, so every
+`window.scumble.*` in a checked file is unjudged.
+
 **Next, in this order** (the user, 2026-09-23, each after a `/clear`):
 
-1. **Stage 2 of `docs/PLAN_TYPES.md`**: `@ts-check` on the three contracts - the host contract (whose
-   agreement `tools/build_node.py --check` enforces today by grepping for calls), the command
-   descriptors in `renderer/commands.js`, the recipe shape in `electron/main/recipes.js`. A
-   `tsconfig.check.json` with `noEmit` and an `include` list that only grows, a `types` gate,
-   TypeScript as a devDependency. **Nothing that ships may change** - the editor's `.js` files are
-   the delivered artefact. About half a day.
+1. ~~**Stage 2 of `docs/PLAN_TYPES.md`**~~ - **built on 2026-09-23**, see the paragraph above.
 2. **The MSIX package for the Microsoft Store** (`docs/CODE_SIGNING_POLICY.md` for the conditions):
    `runFullTrust` or the package cannot reach `127.0.0.1` and loses the user's ComfyUI; no
    self-update in that build; MCP registered by the execution alias, not a versioned `WindowsApps`
@@ -1221,7 +1245,7 @@ their own 15k file.
 port 9555 with its own profile (with `test_base.png`), runs each gate with a timeout, and writes logs and `summary.txt` under
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
-mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
 forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and

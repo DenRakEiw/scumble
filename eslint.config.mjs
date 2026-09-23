@@ -107,6 +107,17 @@ export default [
         rules: CORRECTNESS,
     },
 
+    // types/: not shipped and never loaded - contracts.js exists so that the type checker
+    // has the real objects in front of it (docs/PLAN_TYPES.md, stage 2).
+    {
+        files: ["types/**/*.js"],
+        languageOptions: {
+            ...ECMA,
+            sourceType: "module",
+        },
+        rules: CORRECTNESS,
+    },
+
     // The preload runs in both worlds.
     {
         files: ["electron/preload.js"],

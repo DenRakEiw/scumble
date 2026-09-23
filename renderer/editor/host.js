@@ -1,3 +1,4 @@
+// @ts-check
 // What the editor needs from its surroundings. The editor (renderer/editor/inpaint_*.js) is
 // shared with the ComfyUI node, whose own js/host.js answers the same members with `app`,
 // `api` and the litegraph node; here it is one object backed by the main process.
@@ -93,6 +94,76 @@ export const api = {
     },
 };
 
+// ---- the contract ------------------------------------------------------------------------
+//
+// The editor modules (inpaint_*.js) are shared with the ComfyUI node, so every member the
+// editor asks for has to exist in *this* file and in the node's own js/host.js.
+// tools/build_node.py --check enforces that by grepping both files for the names the editor
+// uses; the two typedefs below are the same statement in a form a type checker reads, and
+// types/contracts.js is where this side of it is checked against them. The node repository
+// has no tsconfig, so the grep stays: it is the only check that reaches over there.
+//
+// A member belongs here when an editor module calls it. Nothing else is the contract - the
+// shell talks to this object too, and those members are deliberately absent.
+
+/**
+ * ComfyUI's client API surface. The editor modules call the first three; `addEventListener`
+ * is in the surface because the host wires the server's events with it (the header above).
+ *
+ * @typedef {Object} EditorApi
+ * @property {(path: string) => string} apiURL
+ * @property {(path: string, init?: RequestInit) => Promise<Response>} fetchApi
+ * @property {(number: number, prompt: { output: any, workflow?: any }) => Promise<any>} queuePrompt
+ * @property {(type: string, fn: (ev: { detail: any }) => void) => void} addEventListener
+ */
+
+/**
+ * The document-level services. `editor` is one InpaintEditor instance; it is `any` here
+ * because the class is 12,000 lines of its own and typing it is not this stage's business.
+ *
+ * @typedef {Object} EditorHost
+ * @property {boolean} connected                         is a ComfyUI server connected
+ * @property {boolean} overlay                           node: a modal over the graph; app: the window
+ * @property {Record<string, string> | null} text        node-specific wording, null = the editor's own
+ * @property {(rootEl: any) => void} mount               where the editor's DOM goes
+ * @property {(editor: any) => void} editorBuilt         the modal is built
+ * @property {(editor: any) => void} changed             state changed: autosave
+ * @property {(editor: any) => boolean} isActive         is this the editor the user is looking at
+ * @property {() => any[]} editors                       every open editor
+ * @property {() => any} graph                           the litegraph graph (node) or null (app)
+ * @property {() => string[]} referencedTexts            file names outside the editors to keep
+ * @property {(editor: any) => void} onEscape            Escape: close the overlay (node) or nothing
+ * @property {(editor: any, tool: string, prev: string) => void} toolChanged
+ * @property {(editor: any, mode: string) => void} modeChanged
+ * @property {(editor: any, phase: string, e: any, ix: number, iy: number, p: any) => boolean} pluginPointer
+ * @property {(editor: any, e: any, k: string) => boolean} pluginKey
+ * @property {(editor: any, ctx: any) => void} pluginOverlay
+ * @property {() => any} nodeTypes                       the server's node classes, for the settings rows
+ * @property {(editor: any) => any[]} settingTargets     the recipe's settings rows for this editor
+ * @property {(editor: any, list: any, targets: any) => void} renderPresets
+ * @property {(editor: any, name: string, fallback?: any) => any} widgetValue
+ * @property {(editor: any) => any} resultInputState     which result input the recipe writes to
+ * @property {(editor: any) => any} workflowForPng       the workflow to embed in a saved PNG
+ * @property {(editor: any, sec: any) => void} buildGenerateExtras   the extra rows under Generate
+ * @property {(editor: any) => Promise<any>} queueGenerate           run the recipe
+ * @property {() => boolean} generateNewAvailable
+ * @property {(editor: any) => void} openGenerateNew
+ * @property {(editor: any, fmt?: string) => any} exportCanvas
+ * @property {(editor: any) => boolean} exportIsPlain
+ * @property {(editor: any) => number} exportQuality
+ * @property {(blob: Blob, name: string, opts?: { editor?: any, download?: boolean }) => Promise<any>} saveExport   the node takes `opts`, the app ignores it
+ * @property {() => any[]} upsampleBackends
+ * @property {(editor: any, backend: any, instruction: string) => Promise<any>} upsampleInApp
+ * @property {(ctx: any) => string} upsampleInstruction
+ * @property {(backend: any, instruction: string, canvas: any) => Promise<any>} askLLM
+ * @property {() => any[]} cutoutBackends
+ * @property {(editor: any, layer: any, backend: any) => Promise<any>} cutoutInApp
+ * @property {() => boolean} objectsInApp
+ * @property {(editor: any, pending: any) => Promise<any>} findObjects
+ * @property {(editor: any, ix: number, iy: number, p?: any) => Promise<any>} selectPoint
+ * @property {() => Promise<any>} freeHelpers
+ */
+
 // ---- host --------------------------------------------------------------------------------
 
 export const host = {
@@ -116,7 +187,10 @@ export const host = {
     _saveTimer: null,
     _types: {},
 
-    /** Shell setup: where editors mount and the persisted node params. */
+    /**
+     * Shell setup: where editors mount and the persisted node params.
+     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string }} [opts]
+     */
     configure({ mount, nodeParams, apiSize } = {}) {
         this.mountEl = mount || document.body;
         if (nodeParams) this.nodeParams = { ...this.nodeParams, ...nodeParams };
@@ -332,6 +406,10 @@ export const host = {
      * Set the export size from the row, a command or a script. A width or a height alone
      * keeps the aspect ratio; `percent` clears a free size again.
      */
+    /**
+     * @param {any} editor
+     * @param {{ percent?: number, width?: number, height?: number, quality?: number, canvasWidth?: number, canvasHeight?: number, anchor?: string, fill?: string }} [size]
+     */
     setExportSize(editor, { percent, width, height, quality, canvasWidth, canvasHeight, anchor, fill } = {}) {
         const e = this.exportState(editor);
         if (quality != null) e.quality = Math.min(1, Math.max(0.1, +quality || 0.92));
@@ -402,7 +480,7 @@ export const host = {
         const num = (title) => {
             const i = document.createElement("input");
             i.type = "number"; i.className = "ipc-num"; i.style.width = "58px"; i.style.minWidth = "0";
-            i.min = 1; i.max = MAX_EXPORT_SIDE; i.step = 1; i.title = title;
+            i.min = "1"; i.max = String(MAX_EXPORT_SIDE); i.step = "1"; i.title = title;
             i.addEventListener("keydown", (ev) => ev.stopPropagation());
             return i;
         };
@@ -425,7 +503,7 @@ export const host = {
         qLab.title = "JPEG / WebP quality, 1 is the best";
         const q = document.createElement("input");
         q.type = "number"; q.className = "ipc-num"; q.style.width = "60px";
-        q.min = 0.1; q.max = 1; q.step = 0.02; q.title = qLab.title;
+        q.min = "0.1"; q.max = "1"; q.step = "0.02"; q.title = qLab.title;
         q.addEventListener("keydown", (ev) => ev.stopPropagation());
         q.addEventListener("change", () => this.setExportSize(editor, { quality: +q.value }));
         qRow.appendChild(qLab);
@@ -442,7 +520,7 @@ export const host = {
         cRow.appendChild(cLab);
         const cw = num("Frame width in pixels; empty = the picture's size");
         const ch = num("Frame height in pixels; empty = the picture's size");
-        cw.min = 0; ch.min = 0; cw.placeholder = "auto"; ch.placeholder = "auto";
+        cw.min = "0"; ch.min = "0"; cw.placeholder = "auto"; ch.placeholder = "auto";
         cw.addEventListener("change", () => this.setExportSize(editor, { canvasWidth: +cw.value || 0, canvasHeight: +ch.value || 0 }));
         ch.addEventListener("change", () => this.setExportSize(editor, { canvasWidth: +cw.value || 0, canvasHeight: +ch.value || 0 }));
         cRow.appendChild(cw);
@@ -1278,6 +1356,7 @@ export const host = {
     buildGenerateExtras(editor, sec) {
         const grid = document.createElement("div");
         grid.className = "ipc-row4 scumble-node-params";
+        /** @type {[key: string, label: string, min: number, max: number, step: number, title: string][]} */
         const fields = [
             ["padding", "Padding", 0, 4096, 8, "Pixels of context around the selection that go into the crop (ignored when Crop is set to auto context)"],
             ["target_size", "Target", 0, 8192, 8, "Long side of the crop sent to the model; 0 keeps the crop at its own size"],
@@ -1291,12 +1370,12 @@ export const host = {
             grid.appendChild(lab);
             const input = document.createElement("input");
             input.type = "number"; input.className = "ipc-num"; input.style.width = "64px";
-            input.min = min; input.max = max; input.step = step; input.title = title;
-            input.value = this.nodeParams[key];
+            input.min = String(min); input.max = String(max); input.step = String(step); input.title = title;
+            input.value = String(this.nodeParams[key]);
             input.addEventListener("keydown", (e) => e.stopPropagation());
             input.addEventListener("change", () => {
                 const v = Math.min(max, Math.max(min, Math.round(+input.value || 0)));
-                input.value = v;
+                input.value = String(v);
                 this.setNodeParam(key, v);
             });
             grid.appendChild(input);
@@ -1393,6 +1472,7 @@ export const host = {
     // availableCutoutBackends() / cutoutLayer(); when
     // no in-app model is present, the ComfyUI helper prompts run as in the node.
 
+    /** @type {{ models: any[], sam2?: any, matting?: any, runtime?: any }} */
     helpers: { models: [], sam2: null, matting: null, runtime: null },
     onHelpersChanged: null,   // set by the shell: (status) => void
 

@@ -50,6 +50,13 @@ implementation:
   `upsampleInstruction` null, the plugin hooks no-ops, `exportCanvas` the full-size flatten and
   `exportQuality` 0.92.
 
+Since 2026-09-23 the same contract also stands as a typedef, `EditorHost` in
+`renderer/editor/host.js` (with `EditorApi` beside it): the 40 members and what they take and
+answer. `npm run types` checks **this repository's** host against it (`types/contracts.js`,
+`docs/PLAN_TYPES.md`); the node's `js/host.js` is in another repository with no tsconfig, so
+`--check`'s grep stays the only check that reaches it. A new member goes in both files **and**
+in the typedef.
+
 A new `host.*` call in the editor needs a member in both files; `--check` names the missing one.
 The import check walks every module under `js/`, subfolders included (ComfyUI loads them too), and
 resolves each relative import against the importing module's folder.

@@ -54,7 +54,7 @@ if curl -s -m 2 http://127.0.0.1:9555/json/version > /dev/null; then
 fi
 
 needs_app=0
-for g in "$@"; do case "$g" in node|nodecopy|lint) ;; *) needs_app=1 ;; esac; done
+for g in "$@"; do case "$g" in node|nodecopy|lint|types) ;; *) needs_app=1 ;; esac; done
 TILEARG=""
 case "$TILES" in
   on) export SCUMBLE_TILES=1; TILEARG="--tiles" ;;
@@ -90,6 +90,8 @@ for g in "$@"; do
     perf:*) $T python tools/perf_test.py ${g#perf:} > "$OUT/perf.log" 2>&1; rc=$? ;;
     # no app and no Python: the four rules that catch what `node --check` cannot see
     lint) timeout 600 npx eslint . > "$OUT/lint.log" 2>&1; rc=$? ;;
+    # no app and no Python either: the three contracts, checked by tsc (docs/PLAN_TYPES.md)
+    types) timeout 600 npx tsc --noEmit -p tsconfig.check.json > "$OUT/types.log" 2>&1; rc=$? ;;
     pxjobs) timeout 1200 python tools/px_jobs.py --check > "$OUT/pxjobs.log" 2>&1; rc=$? ;;
     huge:*) timeout 3000 python tools/huge_test.py ${g#huge:} > "$OUT/huge.log" 2>&1; rc=$? ;;
     exportperf:*) timeout 1800 python tools/export_test.py --perf $(echo "${g#exportperf:}" | tr ',' ' ') > "$OUT/exportperf.log" 2>&1; rc=$? ;;

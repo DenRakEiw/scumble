@@ -1,3 +1,4 @@
+// @ts-check
 // Recipes: the shipped ones in <app>/recipes, the user's in <userData>/recipes. A recipe
 // is an API-format prompt with a fixed canvas node id (ComfyUI recipes) or a provider
 // call (API recipes); see docs/RECIPES.md. This file lists them and imports a user's
@@ -8,6 +9,116 @@
 const path = require("node:path");
 const fsp = require("node:fs/promises");
 const { app } = require("electron");
+
+// ---- the shape of a recipe -------------------------------------------------------------
+//
+// docs/RECIPES.md describes this in prose, tools/recipes_test.js checks the shipped files at
+// run time, and the typedefs below are the same agreement in a form a type checker reads.
+// What `normalize()` guarantees to everything downstream - the editor's provider select,
+// the Upscale dialog, `list_recipes`, the adapters - is `providers`, `providerIds`,
+// `default` and `task` on a provider recipe, and per variant `limits`, `edit`, and either
+// `text` (an edit recipe) or `factor` (an upscaler).
+
+/**
+ * One Settings-panel control. `index` is the slot (1-8) the ComfyUI node's `setting_n`
+ * output carries; a provider variant uses `key` instead: the parameter the adapter sends.
+ *
+ * @typedef {Object} SettingRow
+ * @property {number} [index]
+ * @property {string} [node]
+ * @property {string} [input]
+ * @property {string} [key]
+ * @property {string} [label]
+ * @property {any} [spec]
+ */
+
+/**
+ * The biggest crop an edit variant takes, filled in for every variant by editLimits().
+ *
+ * @typedef {Object} EditLimits
+ * @property {number} min
+ * @property {number} max         the long side
+ * @property {number} step        both sides are rounded to a multiple of this
+ * @property {number} pixels      area cap, 0 = none
+ * @property {number} minPixels   area floor, 0 = none
+ * @property {number} ratio       the steepest crop the model takes, 0 = any
+ */
+
+/**
+ * What an upscale variant does with the factor, filled in by upscaleFactor().
+ *
+ * @typedef {Object} UpscaleFactor
+ * @property {number} default
+ * @property {number} min
+ * @property {number} max
+ * @property {number[] | null} steps   the only values the model takes, null = a free range
+ * @property {boolean} fixed           the model picks its own factor
+ */
+
+/**
+ * The text-to-image shape of a variant ("Generate new"), null when it has none.
+ *
+ * @typedef {Object} TextShape
+ * @property {string} model
+ * @property {number[]} sizes
+ * @property {any} fixed
+ * @property {SettingRow[]} settings
+ * @property {string} note
+ */
+
+/**
+ * One provider's way to the model. Everything below `note` is filled in by normalize().
+ *
+ * @typedef {Object} ProviderVariant
+ * @property {string} [model]
+ * @property {string} [input]                 "fill" (crop + mask) or "edit" (instruction)
+ * @property {SettingRow[]} [settings]
+ * @property {Record<string, any>} [fixed]    parameters sent as they are
+ * @property {Record<string, string> | null} [fields]   input names for Replicate and fal
+ * @property {Record<string, any> | null} [options]     adapter switches
+ * @property {string} [note]
+ * @property {EditLimits} [limits]
+ * @property {boolean} [edit]                 false = from the prompt alone only
+ * @property {TextShape | false | null} [text]   `false` in a file switches "Generate new" off; normalize() leaves a shape or null
+ * @property {UpscaleFactor} [factor]         upscalers only
+ * @property {boolean} [usesPrompt]           upscalers only: the tab's prompt goes along
+ */
+
+/**
+ * A recipe as it leaves this file. A ComfyUI recipe carries `prompt`, `canvas` and
+ * `result`; a provider recipe carries `providers`.
+ *
+ * @typedef {Object} Recipe
+ * @property {string} id
+ * @property {string} [name]
+ * @property {string} [description]
+ * @property {string} [family]
+ * @property {"comfy" | "provider"} [kind]
+ * @property {string} [file]
+ * @property {"builtin" | "user"} [source]
+ * @property {"edit" | "upscale"} [task]
+ * @property {Record<string, ProviderVariant>} [providers]
+ * @property {string[]} [providerIds]
+ * @property {string} [default]               the provider id a run takes without a choice
+ * @property {string} [provider]              the old one-provider shape
+ * @property {EditLimits} [limits]
+ * @property {Partial<UpscaleFactor>} [factor]
+ * @property {boolean} [usesPrompt]
+ * @property {"local" | "api"} [mode]         ComfyUI recipes
+ * @property {string} [canvas]
+ * @property {string} [result]
+ * @property {string[]} [needs]
+ * @property {SettingRow[]} [settings]
+ * @property {Record<string, any>} [models]
+ * @property {Record<string, any>} [prompt]
+ * @property {any} [text]
+ * @property {any} [fixed]
+ * @property {any} [fields]
+ * @property {any} [options]
+ * @property {string} [model]
+ * @property {string} [input]
+ * @property {string} [note]
+ */
 
 const FIXED_OUTPUTS = 13;   // InpaintCanvas outputs before setting_1 (nodes.py RETURN_NAMES)
 const WIDGET_TYPES = new Set(["INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"]);
@@ -63,6 +174,11 @@ const TEXT_SIZES_DEFAULT = [768, 1024, 1280, 1536, 2048, 3072, 4096];
 // source, not a guess.
 const LIMITS_DEFAULT = { min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0 };
 
+/**
+ * @param {Recipe} r
+ * @param {ProviderVariant} v
+ * @returns {EditLimits}
+ */
 function editLimits(r, v) {
     const l = { ...LIMITS_DEFAULT, ...(r.limits || {}), ...(v.limits || {}) };
     const n = (x, d) => (Number.isFinite(+x) && +x > 0 ? Math.round(+x) : d);
@@ -83,6 +199,11 @@ function editLimits(r, v) {
 // its own factor (Recraft's upscalers). Without it: 2, 1 to 4.
 const FACTOR_DEFAULT = { default: 2, min: 1, max: 4, steps: null, fixed: false };
 
+/**
+ * @param {Recipe} r
+ * @param {ProviderVariant} v
+ * @returns {UpscaleFactor}
+ */
 function upscaleFactor(r, v) {
     const f = { ...FACTOR_DEFAULT, ...(r.factor || {}), ...(v.factor || {}) };
     const n = (x, d) => (Number.isFinite(+x) && +x >= 1 ? +x : d);
@@ -102,7 +223,12 @@ function textModelOf(providerId, model) {
     return m;
 }
 
-/** The text-to-image shape of one provider variant, or null when it has none. */
+/**
+ * The text-to-image shape of one provider variant, or null when it has none.
+ * @param {string} providerId
+ * @param {ProviderVariant} v
+ * @returns {TextShape | null}
+ */
 function textVariant(providerId, v) {
     if (v.text === false) return null;
     if (!TEXT_PROVIDERS.has(providerId)) return null;
@@ -124,6 +250,12 @@ function textVariant(providerId, v) {
  * `default` names the home provider. A recipe with a top-level `provider` (the old shape,
  * the smoke test's loopback) becomes a one-provider recipe. Every variant also gets its
  * `text` shape filled in, which is what "Generate new" uses.
+ */
+/**
+ * Fill in everything the rest of the app is allowed to rely on. Runs on every recipe that
+ * is read from disk or imported; the shape it answers is the typedef above.
+ * @param {Recipe} r
+ * @returns {Recipe}
  */
 function normalize(r) {
     if (r.kind !== "provider") {

@@ -1,3 +1,4 @@
+// @ts-check
 // The command core: every operation the editor offers as a plain, documented function
 // (name, args) -> JSON. Ported from the node's MCP bridge (ComfyUI-InpaintCanvas
 // js/inpaint_bridge.js, COMMANDS + TAB_COMMANDS); the node addressed graph nodes, the app
@@ -211,6 +212,10 @@ async function memoryMB() {
 
 // ---- parameter schema helpers ---------------------------------------------------------------
 
+/**
+ * @typedef {(description?: string, extra?: Partial<CommandParam>) => CommandParam} ParamFn
+ * @type {{ layer: ParamFn, timeout: (seconds: number) => CommandParam, num: ParamFn, int: ParamFn, str: ParamFn, bool: ParamFn, obj: ParamFn }}
+ */
 const P = {
     layer: (d, extra = {}) => ({ type: "string", description: d || "the layer: id, name, a unique part of the name, or \"active\"", default: "active", ...extra }),
     timeout: (d) => ({ type: "integer", description: `seconds to wait for the result (default ${d})`, default: d }),
@@ -227,10 +232,71 @@ const FILE_PARAMS = {
     type: P.str("folder type of `filename`: input, output or temp", { enum: ["input", "output", "temp"], default: "input" }),
 };
 
+// ---- the shape of a command ------------------------------------------------------------------
+//
+// Three consumers read this table and have to agree with it: the MCP server
+// (electron/main/mcp/server.js turns every descriptor into a tool with a JSON schema), the
+// assistant's policy (electron/main/assistant/policy.js decides per command name and
+// parameter), and docs/COMMANDS.md. The typedefs below are that agreement written down;
+// types/contracts.js is where it is checked.
+
+/**
+ * One parameter, in the subset of JSON Schema the MCP server emits.
+ *
+ * @typedef {Object} CommandParam
+ * @property {"string" | "number" | "integer" | "boolean" | "object"} type
+ * @property {string} [description]
+ * @property {any} [default]
+ * @property {boolean} [required]
+ * @property {any[]} [enum]
+ * @property {any} [items]
+ */
+
+/**
+ * One command. `scope: "app"` means it takes no document; every other command gets the
+ * editor of `args.doc`, or the active tab, as its first argument.
+ *
+ * @typedef {Object} Command
+ * @property {string} description
+ * @property {Record<string, CommandParam>} params
+ * @property {"app" | "doc"} [scope]
+ * @property {boolean} [needsImage]     refuse when the document has no picture
+ * @property {string} [owner]           the plugin that registered it, unset for the built-ins
+ * @property {(ed: any, args: any) => any} run
+ */
+
+/**
+ * The table as data: what a tool list, a help page or a policy table is built from.
+ *
+ * @typedef {Object} CommandDescriptor
+ * @property {string} name
+ * @property {string} description
+ * @property {"app" | "doc"} scope
+ * @property {boolean} needsImage
+ * @property {string | null} plugin
+ * @property {Record<string, CommandParam>} params
+ */
+
+/**
+ * What the shell publishes as `commands` (and the bridge, the plugins and the MCP server
+ * call). `call` never throws; `run` throws with a readable message.
+ *
+ * @typedef {Object} CommandCore
+ * @property {number} version
+ * @property {() => string[]} names
+ * @property {(name: string) => boolean} has
+ * @property {() => CommandDescriptor[]} describe
+ * @property {(name: string, args?: any) => Promise<any>} run
+ * @property {(name: string, args?: any) => Promise<{ ok: boolean, result?: any, error?: string }>} call
+ * @property {(name: string, def: Command, owner?: string) => void} register
+ * @property {(name: string, owner?: string) => void} unregister
+ */
+
 // ---- the commands ----------------------------------------------------------------------------
 //
 // { description, params, scope?: "app" | "doc" (default doc), needsImage?, run(ed, args) }
 
+/** @satisfies {Record<string, Command>} */
 const COMMANDS = {
     // -- app --
     ping: {
@@ -755,7 +821,7 @@ const COMMANDS = {
             if (a.name) l.name = String(a.name);
             await ed.renderTextLayer(l, { keepScale: false });
             if (ed.textEdit) ed.endTextEdit(true);
-            try { document.activeElement && document.activeElement.blur(); } catch (_) { /* ignore */ }
+            try { const focused = /** @type {HTMLElement | null} */ (document.activeElement); if (focused) focused.blur(); } catch (_) { /* ignore */ }
             touch(ed);
             return layerSummary(ed, l);
         },
@@ -933,7 +999,10 @@ function appInfo() {
     return { app: "scumble", commands: VERSION, documents: host.editors().map(docSummary), active: host.editor ? host.editor.node.id : null, recipe: r ? r.id : null, connected: !!host.connected, plugins: host.plugins ? host.plugins.list().filter((p) => p.loaded).map((p) => p.id) : [] };
 }
 
-/** The command table as data: [{name, description, scope, params: {name: {type, description, default, required, enum}}}]. */
+/**
+ * The command table as data: [{name, description, scope, params: {name: {type, description, default, required, enum}}}].
+ * @returns {CommandDescriptor[]}
+ */
 export function describe() {
     return Object.entries(COMMANDS).map(([name, c]) => ({
         name, description: c.description, scope: c.scope || "doc", needsImage: !!c.needsImage, plugin: c.owner || null,
@@ -965,6 +1034,7 @@ function sizeForAspect(aspect, longSide) {
     return aw >= ah ? [round16(longSide), round16(longSide * ah / aw)] : [round16(longSide * aw / ah), round16(longSide)];
 }
 
+/** @type {CommandCore} */
 export const commands = {
     version: VERSION,
     names: () => Object.keys(COMMANDS),

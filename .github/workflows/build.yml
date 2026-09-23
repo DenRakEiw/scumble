@@ -72,6 +72,12 @@ jobs:
         shell: bash
         run: npx eslint .
 
+      # the three contracts (the editor host, the command descriptors, the recipe shape) against
+      # their typedefs; nothing is compiled, tsconfig.check.json says what is checked and why
+      - name: Types
+        shell: bash
+        run: npx tsc --noEmit -p tsconfig.check.json
+
       # the committed renderer/editor/px/*.wasm must be what crates/px builds; rustup installs the compiler
       # crates/px/rust-toolchain.toml pins, with its wasm target, on the first cargo call
       - name: Check the Rust kernels against their source
