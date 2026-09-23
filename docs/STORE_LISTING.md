@@ -101,6 +101,17 @@ order, with these captions:
 Leave out every screenshot of *Settings › API providers*: it shows the last characters of a stored key
 (the manual's own shot was masked before it was taken).
 
+## Store logos
+
+| Field | File in `dist/store-listing/` | Made from |
+| --- | --- | --- |
+| Poster art 9:16 (720 x 1080), Xbox only | `poster-720x1080.png` | the glossy mascot draft of 2026-09-22 (the stroke shows through its body), on its own background `#1F120D`, the wordmark in Segoe UI Semibold |
+| Box art 1:1 (1080 x 1080) | `box-art-1080x1080.png` | the same draft at its own 1024 px, centred on that background, not scaled |
+| App tile icon 1:1 (300, 150, 71) | `store-logo-300x300.png` / `-150x150` / `-71x71` | `build/icon.svg`, the app's own icon, by `tools/store_art.js` |
+
+The drafts are AI-generated pictures the user made; they are not in the repository. The icon stays the
+flat SVG: glosses, drips and bristles die below 48 px.
+
 ## After the first submission
 
 - Certification takes hours to a few days; the result arrives by mail.

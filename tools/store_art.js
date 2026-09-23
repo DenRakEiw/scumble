@@ -1,6 +1,5 @@
 // Renders the Microsoft Store listing's logo and art (docs/STORE_LISTING.md) from the logo's SVGs into
-// dist/store-listing/: the 1:1 Store logo (300 px), the 1:1 box art (2160 px), the poster (1440 x 2160) and the
-// 16:9 hero (1920 x 1080). PNG, as Partner Center takes it.
+// dist/store-listing/: the 1:1 Store logos (300, 150 and 71 px) and the 16:9 hero (1920 x 1080). PNG, as Partner Center takes it.
 //
 //   ./node_modules/.bin/electron tools/store_art.js
 "use strict";
@@ -19,9 +18,9 @@ const INK = "#EFE7DA";
 // [file, width, height, source, mark size as a share of the smaller side, mark centre y as a share of the height, wordmark]
 const ART = [
     ["store-logo-300x300.png", 300, 300, "full", 1, 0.5, false],
-    // Partner Center's "Verpackungsgrafik 1:1" (box art: 1080 or 2160) and "Postergrafik" (poster: 720 x 1080 or 1440 x 2160)
-    ["box-art-2160x2160.png", 2160, 2160, "full", 1, 0.5, false],
-    ["poster-1440x2160.png", 1440, 2160, "plain", 0.72, 0.42, true],
+    ["store-logo-150x150.png", 150, 150, "full", 1, 0.5, false],
+    ["store-logo-71x71.png", 71, 71, "full", 1, 0.5, false],
+    // the box art and the poster are made from the mascot drafts instead (docs/STORE_LISTING.md), not here
     ["hero-1920x1080.png", 1920, 1080, "plain", 0.5, 0.42, true],
 ];
 
