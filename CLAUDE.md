@@ -235,6 +235,28 @@ STORE.md's nine-point list (ComfyUI over loopback, the redirected data and keys,
 folders, the MCP alias with `ELECTRON_RUN_AS_NODE` through it, `app.relaunch`, DirectML, uninstall, the
 App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for the installer's users).
 
+**0.1.27 is published** (Latest since 2026-09-23 15:52, on the user's word "mach den release"; `package.json` 0.1.27, CHANGELOG
+"0.1.27 — 2026-09-23": Help, the logo, the upscale prompt, OpenRouter's live notes, the clean package). **Found while
+building it and fixed:** `build.win.files` / `build.linux.files` held only the onnxruntime exclusions since B1, and
+electron-builder takes a platform list as the whole list, so **0.1.26 shipped the whole project folder** (docs,
+tools, crates, docker, types, `.claude/`, CLAUDE.md; nothing private: `.claude/` held a launch config with a temp
+path and the MCP switch); both lists carry the top-level list now, `platform_test.js`
+`a_platform_file_list_is_never_exclusions_alone` holds them to it (red on the 0.1.26 list) and
+`the_built_package_holds_the_app_and_nothing_of_the_repository` reads `dist/win-unpacked`'s asar when there is one.
+Installer **128.4 MB** (0.1.26: 133.6), installed 410 MB. **OpenRouter (item 4) is done in it:** the notes of GPT
+Image 2.5 Flare and Sunburst say they ran live (the user's log: about 44 and 112 edits since 2026-09-21), the other
+twelve OpenRouter variants that the adapter ran live but that model not; `docs/RECIPES.md` has the safety-refusal
+finding. Exe gates `--offline`: `rel27-exe` (tiles: platform layered upscale log pixels editor composite commands mcp
+recipes llm export assistant help) and `rel27-exe-canvas` (tiles off: platform layered upscale pixels editor
+composite film export assistant help) ALL PASS but `editor`, each a known flake
+(`helper_inputs_read_levels_and_upload_nothing`, `closed_tabs_are_collected`), green on the reruns `rel27-exe-ed` and
+`rel27-exe-canvas-ed`; the final package (rebuilt for the manual's size line) `rel27-exe-final` (platform help)
+PASS. No `smoke`. Dev blog post "Ask the manual" (`v0-1-27`, portfolio `9aecf75`), live by CLI deploy.
+**The Store is prepared, not submitted:** `dist/Scumble-0.1.27.msix` (186.6 MB, `DenRakEiw.Scumble`, English only:
+`build.appx.languages` lost `de-DE`, because every declared language needs a full listing), the listing texts in
+`docs/STORE_LISTING.md` (description, features, keywords, the `runFullTrust` sentence, the privacy URL, the age
+rating answers) and seven screenshots in `dist/store-listing/`. **The upload in Partner Center is the user's.**
+
 **Help is built (2026-09-23, for 0.1.27; `docs/PLAN_HELP.md` "As built", CHANGELOG 0.1.27).**
 **`docs/MANUAL.md` is now the manual's one source** (17 chapters; a new one on Help, and F1 in the
 shortcuts), `renderer/help/manual.js` its one reader, and **the website builds `/scumble/manual` from
@@ -276,7 +298,7 @@ The list below is the order as it stood before:
    OpenGraph image per page, heading hierarchy, internal links, sitemap priorities. The manual is the
    lever - it is the only page with real prose about "AI inpainting editor", "ComfyUI desktop app",
    "PSD export".
-4. **The stale "not run against the live API" line for OpenRouter**, above.
+4. ~~**The stale "not run against the live API" line for OpenRouter**~~ - **done in 0.1.27** (2026-09-23).
 5. ~~**Help: the manual in the app, with a chat on top**~~ - **built on 2026-09-23, for 0.1.27** (the
    paragraph "Help is built" above the order; `docs/PLAN_HELP.md` "As built"). The plan as it stood:
    A Help button whose panel **renders the manual itself**, searchable, with no key and no network,
