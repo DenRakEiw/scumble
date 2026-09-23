@@ -264,6 +264,15 @@ steps (mock routes for storage, upload, the proxy); mutations 17 of 17 red after
 left out is an equivalent mutation: `readFailure` already scrubs the key). Gates `--offline` (`comfyrouter recipes
 generate`, tiles also `lint types`): ALL PASS on both backends (`hy-tiles`, `hy-canvas`).
 
+**0.1.28 is built, not tagged** (2026-09-23, `package.json` 0.1.28, CHANGELOG "0.1.28 — 2026-09-23": Comfy Router,
+HY Image 3.5). `npm run dist` made `Scumble Setup 0.1.28.exe` (128.4 MB). Exe gates `--offline`: `rel28-exe` (tiles:
+platform layered upscale log pixels editor composite commands mcp recipes llm export assistant help comfyrouter) ALL
+PASS but `comfyrouter`, whose steps all passed and whose cleanup failed after `upscale` had remembered a provider (its
+restore ran before `selectRecipe`'s unawaited writes; the order is fixed, `rel28-exe-cr` = upscale recipes comfyrouter
+ALL PASS); `rel28-exe-canvas` (tiles off: platform layered upscale pixels editor composite film export assistant help
+comfyrouter) ALL PASS but `editor` (the live-stroke flake, "a real mouse over the window?"), green on the rerun
+`rel28-exe-canvas-ed`. Tag, publish, the manual sync and the blog post wait for the user's word.
+
 **Comfy Router is built, for 0.1.28 (2026-09-23; CHANGELOG "0.1.28 — unreleased", `docs/RECIPES.md` "Comfy Router";
 `package.json` still 0.1.27). Written without a key; the live runs are in the paragraph above.**
 `electron/main/providers/comfyrouter.js`, written from the Router's pages read as Markdown (`<page>.md`: quickstart,

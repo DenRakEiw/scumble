@@ -256,13 +256,16 @@ if (t && t.stored) { await window.scumble.keys.clear("comfycloud"); out.keyClear
 for (const d of document.querySelectorAll("dialog[open]")) d.close();
 if (t) {
     const s = t.saved;
-    await window.scumble.settings.set({ comfyrouter: s.comfyrouter, recipeProviders: s.recipeProviders, recipe: s.recipe, recipeByMode: s.recipeByMode });
-    // the shell keeps its own copy of the settings: openSettings re-reads it, and every recipe goes back through selectRecipe
-    await shell.openSettings();
-    document.getElementById("shell-settings").close();
+    // every recipe goes back through selectRecipe first (the window's own view of the providers); selectRecipe writes
+    // the settings file without waiting, so the saved settings are written last, after those writes have landed, and
+    // openSettings then re-reads the shell's copy
     for (const id of __RECIPES__) { const want = (s.recipeProviders || {})[id]; if (want) host.shell.selectRecipe(id, want); }
     if (t.recipe && t.recipe.id === s.recipe) host.shell.selectRecipe(t.recipe.id);
     else if (t.recipe) host.setRecipe(t.recipe);
+    await wait(800);
+    await window.scumble.settings.set({ comfyrouter: s.comfyrouter, recipeProviders: s.recipeProviders, recipe: s.recipe, recipeByMode: s.recipeByMode });
+    await shell.openSettings();
+    document.getElementById("shell-settings").close();
 }
 if (window.__crDoc) { try { await run("close_document", { doc: window.__crDoc, force: true }); } catch (_) { /* gone */ } }
 const k = await window.scumble.keys.list();

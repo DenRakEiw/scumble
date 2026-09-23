@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.28 — unreleased
+## 0.1.28 — 2026-09-23
 
 - **Comfy Router as a provider.** Comfy's direct model API runs sixteen of the recipes on the Comfy key you may
   already have in the Comfy Cloud row, billed in Comfy credits and **without a paid Comfy Cloud plan**: GPT Image 2
