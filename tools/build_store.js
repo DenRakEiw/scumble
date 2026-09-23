@@ -4,9 +4,9 @@
 //   node tools/build_store.js          the package for Partner Center: its identity has to be in
 //                                      package.json (build.appx.identityName / publisher /
 //                                      publisherDisplayName, from the app's Product identity page)
-//   node tools/build_store.js --test   a package to install here: a test identity whose publisher
-//                                      carries Windows' "unsigned" OID, so
-//                                      Add-AppxPackage -AllowUnsigned takes it without a certificate
+//   node tools/build_store.js --test   a package to try here under a test identity: with Developer
+//                                      Mode on, its unpacked layout is registered with
+//                                      Add-AppxPackage -Register (docs/STORE.md)
 //
 // The package is not signed by us either way; the Store signs its copy after certification.
 "use strict";
@@ -23,11 +23,11 @@ const TEST = process.argv.includes("--test");
 // makeappx from 2019
 const WIN_CODE_SIGN = "1.1.0";
 
-// Windows 11 installs a package unsigned when its publisher holds this OID (Add-AppxPackage -AllowUnsigned).
-const UNSIGNED_OID = "OID.2.25.311729368913984317654407730594956997722=1";
 const TEST_IDENTITY = {
     identityName: "DenRakEiw.ScumbleTest",
-    publisher: `CN=Scumble Test Build, ${UNSIGNED_OID}`,
+    // a plain name: a registered layout refuses Windows' "unsigned" OID (0x80073D2D), and -AllowUnsigned
+    // refuses a package with an app in it (0x80073D2B), so the OID buys nothing
+    publisher: "CN=Scumble Test Build",
     publisherDisplayName: "DenRakEiw",
     artifactName: "Scumble-${version}-test.msix",
 };

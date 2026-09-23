@@ -7,6 +7,11 @@ filter (WebGL2 in the hidden window), a screenshot (image content), an export to
 path and an error case.
 
     python tools/mcp_test.py [--exe <Scumble.exe | electron.exe>] [--direct] [--user-data-dir <dir>] [out_dir]
+    python tools/mcp_test.py --store [out_dir]
+
+`--store` starts the server the way Help > Copy MCP registration tells a client to in the Microsoft Store
+copy (docs/STORE.md): the execution alias scumble.exe in Node mode with the launch code of
+electron/main/mcp/registration.js. Its default profile is the Store copy's own.
 
 The server is started through `electron/main/mcp/launch.js` in Node mode, which is how
 clients register it (docs/MCP.md): Electron prints a CR LF to stdout before any JavaScript
@@ -39,6 +44,9 @@ if "--exe" in args:
 DIRECT = "--direct" in args
 if DIRECT:
     args.remove("--direct")
+STORE = "--store" in args
+if STORE:
+    args.remove("--store")
 # an own profile for the server's instance (the launcher forwards it), so a test never touches the
 # user's running app, which holds the default profile's single-instance lock
 USER_DATA = None
@@ -54,6 +62,11 @@ EXE = os.path.abspath(EXE) if EXE else DEV_EXE
 IS_ELECTRON = "electron" in os.path.basename(EXE).lower()
 # The launcher lives beside the sources in a dev checkout and inside the asar in a package.
 LAUNCHER = os.path.join(ROOT, "electron", "main", "mcp", "launch.js") if IS_ELECTRON else     os.path.join(os.path.dirname(EXE), "resources", "app.asar", "electron", "main", "mcp", "launch.js")
+if STORE:
+    # what the registration names: the alias and the -e code, read from registration.js itself
+    _store = json.loads(subprocess.run(["node", "-e", "const r=require('./electron/main/mcp/registration');process.stdout.write(JSON.stringify(r.server({platform:'win32',storeAlias:require('./electron/main/msix').aliasPath(process.env.LOCALAPPDATA)})))"], cwd=ROOT, capture_output=True, text=True, check=True).stdout)
+    EXE = _store["command"]
+    IS_ELECTRON = False
 
 
 def server_args(mode):
@@ -62,6 +75,8 @@ def server_args(mode):
     # the profile switch goes first: "--cmd <name> [json]" would take it for its JSON argument
     if DIRECT:
         return ([ROOT] if IS_ELECTRON else []) + extra + mode, dict(os.environ)
+    if STORE:
+        return _store["args"] + ["--"] + extra + mode, {**os.environ, **_store["env"]}
     return [LAUNCHER] + extra + mode, {**os.environ, "ELECTRON_RUN_AS_NODE": "1"}
 
 
@@ -81,6 +96,9 @@ def raw_check():
 
 # the profile the app runs on holds the image: the one --user-data-dir names, else the default profile
 TEST_IMAGE = os.path.join(USER_DATA or os.path.join(os.environ.get("APPDATA", os.path.expanduser("~/.config")), "Scumble"), "files", "input", "inpaint_canvas", "test_base.png")
+if STORE and not USER_DATA:
+    # the Store copy reads files outside its package like any app; its own folder is redirected
+    TEST_IMAGE = os.path.join(ROOT, "tools", "refs", "composite_full.png")
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 

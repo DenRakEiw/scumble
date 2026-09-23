@@ -79,48 +79,60 @@ turned a check red.
 
 ## Installing the test package on this machine
 
-An unsigned MSIX cannot be installed with an app in it: `Add-AppxPackage -AllowUnsigned` answers
-0x80073D2B, "an unsigned package cannot contain executable activations" (measured 2026-09-23, even
-with the publisher OID Windows 11 asks for unsigned packages, which `build_store.js --test` puts
-in). Two ways remain, both a system setting only the user changes:
+`Add-AppxPackage -AllowUnsigned` does not take a package with an app in it (0x80073D2B, "an unsigned
+package cannot contain executable activations"), and a registered layout refuses Windows' "unsigned"
+publisher OID (0x80073D2D), so the test identity's publisher is a plain `CN=Scumble Test Build`. The
+way that works: **Developer Mode** (*Settings › System › Advanced › For developers* on Windows 11
+build 26200; `start ms-settings:developers` opens it), then register the unpacked layout. The app
+runs with its package identity, its alias and the AppData redirection, from the layout's folder
+instead of `WindowsApps`:
 
-- **Developer Mode** (*Settings › System › Advanced › For developers* on Windows 11 build 26200;
-  `start ms-settings:developers` opens it), then register the unpacked layout.
-  The app runs with its package identity, its alias and the AppData redirection, from the
-  layout's folder instead of `WindowsApps`:
+```
+Copy-Item dist\Scumble-0.1.26-test.msix dist\store-layout.zip    # a .msix is a zip; Expand-Archive wants the name
+Expand-Archive dist\store-layout.zip dist\store-layout
+Remove-Item -LiteralPath dist\store-layout\AppxBlockMap.xml, 'dist\store-layout\[Content_Types].xml'
+Add-AppxPackage -Register dist\store-layout\AppxManifest.xml
+```
 
-  ```
-  Copy-Item dist\Scumble-0.1.26-test.msix dist\store-layout.zip    # a .msix is a zip; Expand-Archive wants the name
-  Expand-Archive dist\store-layout.zip dist\store-layout
-  Add-AppxPackage -Register dist\store-layout\AppxManifest.xml
-  ```
+`Remove-AppxPackage (Get-AppxPackage DenRakEiw.ScumbleTest).PackageFullName` takes it out again.
+The test family is `DenRakEiw.ScumbleTest_r0pjrwezqb27y` (Windows' and `msix.publisherId()`'s answer
+agree). A test certificate trusted in the machine's *Trusted People* store would be the other way,
+closer to a Store install and more to undo.
 
-- **A test certificate** trusted in the machine's *Trusted People* store (administrator), and the
-  package signed with it (`signtool sign /fd SHA256 /f test.pfx ...`). Closer to a Store install
-  (it lands in `WindowsApps`), more to undo afterwards.
+## Run on the installed test package (2026-09-23)
 
-`Remove-AppxPackage (Get-AppxPackage DenRakEiw.ScumbleTest).PackageFullName` takes either out
-again, its `LocalCache` with it.
+Developer Mode on, the layout registered, the app started through `scumble.exe` with
+`--remote-debugging-port=9556` and driven over CDP (the scripts were throwaway; `tools/mcp_test.py
+--store` stays):
 
-## Not tested yet (needs the package installed)
+1. **Starts from the alias and reaches ComfyUI over loopback:** `comfy.status()` connected to
+   `http://127.0.0.1:8188` (ComfyUI 0.37.0, the node found). Full trust does what it should.
+2. **The data is redirected whole:** everything under `%APPDATA%\Scumble Store` exists only in
+   `%LOCALAPPDATA%\Packages\DenRakEiw.ScumbleTest_r0pjrwezqb27y\LocalCache\Roaming\Scumble Store`,
+   nothing in the real `%APPDATA%`. A key set through safeStorage (DPAPI) was listed and decrypted
+   after a restart. The About line names the `LocalCache` folder.
+3. **A second start through the alias** exits at once (0) and leaves the same processes: the running
+   window takes over.
+4. **Open plugin folder** opened Explorer at the `LocalCache` path, and a plugin written there from
+   outside the package loaded after *Reload plugins* (`source: user`) and ran its command.
+5. **MCP through the alias:** `python tools/mcp_test.py --store` PASS in proxy mode (the window open,
+   73 tools) and in headless mode (no window: 74 tools, the hand-written plugin among them, so the
+   headless app ran inside the package on the Store profile; it quit afterwards). So
+   `ELECTRON_RUN_AS_NODE` reaches the process the alias starts and the launcher's child keeps the
+   package identity. On the way: with `-e` there is no script in `process.argv`, so every argument
+   the launcher got was one slot early; the launch code now puts a placeholder in
+   (`process.argv.splice(1,0,'-e')`), and `-- <args>` reach the launcher where a file start puts them.
+6. **Settings › Rendering › Restart** (`app.relaunch`) came back inside the package (`store: true`,
+   the key still there).
+7. **ONNX Runtime 1.29 with DirectML** loaded from the package's unpacked resources: SAM2 base plus,
+   read from the ComfyUI models folder, found the objects of a 1024² picture on `dml`.
+8. **Uninstalling** removed the registration, the whole `LocalCache` and the alias.
+9. **Not run:** the Windows App Certification Kit. It comes with the Windows SDK, which is not
+   installed here; Partner Center runs its own certification on submission.
 
-Each of these is written from Microsoft's documentation and has to be run, not assumed:
-
-1. The app starts from the Start menu and from `scumble.exe`, and connects to ComfyUI on
-   `127.0.0.1:8188` (full trust).
-2. `%APPDATA%\Scumble Store` lands in `LocalCache\Roaming`, keys saved through safeStorage decrypt
-   after a restart, the autosave comes back.
-3. A second start (Start menu or alias) shows the running window instead of a second app.
-4. *Open plugin folder* and the other folder buttons open the `LocalCache` folder in Explorer, and
-   a plugin copied there by hand loads.
-5. The MCP registration: `ELECTRON_RUN_AS_NODE` reaches the process the alias starts, the
-   launcher's child runs inside the package (same data folder, same pipe), `tools/mcp_test.py`
-   against it in proxy mode (the window open) and headless.
-6. *Settings › Rendering › Restart now* (`app.relaunch`) comes back inside the package.
-7. The helpers' ONNX Runtime (DirectML) loads from the package's unpacked resources.
-8. Uninstalling removes the data folder and the alias.
-9. The Windows App Certification Kit (`appcert.exe`, part of the Windows SDK) passes the package
-   before the first submission.
+The first run found one defect of this work, not of Windows: the package was built before
+`packageOf()` read the manifest, so the About line and the folders showed the virtual path; the
+rebuilt package was right.
 
 ## The Store identity
 
@@ -144,7 +156,7 @@ the fourth part stays 0, the Store reserves it).
 
 1. ~~A Partner Center developer account, the name reserved, the identity in `package.json`~~ - done
    2026-09-23.
-2. Not before STORE.md's nine points have run on an installed package.
+2. ~~The nine points on an installed package~~ - run 2026-09-23 (above), all but the certification kit.
 3. `npm run dist:store`, then upload `dist/Scumble-<version>.msix`. The listing needs its own
    texts and screenshots; the `runFullTrust` capability asks for a sentence why (a desktop editor
    that talks to a local ComfyUI server and reads and writes the user's files).

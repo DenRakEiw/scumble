@@ -81,11 +81,16 @@ check("the_store_launch_code_loads_the_launcher_from_the_resources", () => {
         fs.mkdirSync(at, { recursive: true });
         fs.writeFileSync(path.join(at, "launch.js"), "process.stdout.write(JSON.stringify({ at: __filename, argv: process.argv.slice(2) }));");
         fs.writeFileSync(path.join(dir, "pre.js"), `process.resourcesPath = ${JSON.stringify(dir)};`);   // Electron sets it; plain node does not
-        const r = spawnSync(process.execPath, ["-r", path.join(dir, "pre.js"), ...server(STORE).args], { encoding: "utf8" });
-        if (r.status !== 0) throw new Error("exit " + r.status + ": " + r.stderr);
-        const out = JSON.parse(r.stdout);
+        const run = (extra) => {
+            const r = spawnSync(process.execPath, ["-r", path.join(dir, "pre.js"), ...server(STORE).args, ...extra], { encoding: "utf8" });
+            if (r.status !== 0) throw new Error("exit " + r.status + ": " + r.stderr);
+            return JSON.parse(r.stdout);
+        };
+        const out = run([]);
         eq(path.relative(dir, out.at), path.join("app.asar", "electron", "main", "mcp", "launch.js"), "launcher");
         eq(out.argv, [], "argv");
+        // arguments after a -- reach the launcher where a file start puts them (tools/mcp_test.py --store)
+        eq(run(["--", "--user-data-dir=x", "--cmd", "ping"]).argv, ["--user-data-dir=x", "--cmd", "ping"], "forwarded");
         if (!fs.readFileSync(path.join(ROOT, "electron", "main", "mcp", "launch.js"), "utf8").includes("FORWARD.length ? FORWARD : [\"--mcp\"]")) throw new Error("the launcher lost its --mcp default");
     } finally {
         fs.rmSync(dir, { recursive: true, force: true });

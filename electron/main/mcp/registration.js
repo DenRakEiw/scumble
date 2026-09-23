@@ -14,8 +14,12 @@
 // whichever version the alias starts (electron/main/msix.js).
 "use strict";
 
-/** Node-mode code that loads the launcher from the resources of the exe it runs in. */
-const STORE_LAUNCH = "require(require('path').join(process.resourcesPath,'app.asar','electron','main','mcp','launch.js'))";
+/**
+ * Node-mode code that loads the launcher from the resources of the exe it runs in. With `-e` there is
+ * no script path in process.argv, so the code puts one in: the launcher reads its arguments from
+ * argv[2] on, as when it is started as a file (arguments go after a `--`).
+ */
+const STORE_LAUNCH = "process.argv.splice(1,0,'-e');require(require('path').join(process.resourcesPath,'app.asar','electron','main','mcp','launch.js'))";
 
 /**
  * { command, args, env } for this installation.

@@ -199,7 +199,14 @@ said so. Gates `--offline` on both backends (`lint types recipes commands editor
 `electron/preload.js` - `window.scumble` is declared `any` in `types/globals.d.ts`, so every
 `window.scumble.*` in a checked file is unjudged.
 
-**The MSIX package for the Microsoft Store is built, and has not run installed** (`docs/STORE.md`).
+**The MSIX package for the Microsoft Store is built and ran installed** (`docs/STORE.md`, "Run on the
+installed test package": ComfyUI over loopback, the redirected data and a DPAPI key across a restart, the
+single instance through the alias, the plugin folder in Explorer and a plugin written there from outside,
+MCP through the alias in proxy and headless mode, `app.relaunch`, SAM2 on DirectML, a clean uninstall; the
+App Certification Kit not run, no Windows SDK here). The user switched Developer Mode on for it; the test
+package is uninstalled again. **`python tools/mcp_test.py --store`** runs the MCP test the way the Store
+copy's registration starts it; the launch code now splices a placeholder into `process.argv`, because with
+`-e` the launcher's arguments sat one slot early.
 `npm run dist:store:test` (`tools/build_store.js --test`) makes `dist/Scumble-<version>-test.msix` (195 MB
 for 0.1.26) with a test identity; `npm run dist:store` builds the package for Partner Center with the identity the
 user reserved the same day (`DenRakEiw.Scumble`, `CN=F2BCAA24-...`; the family name
@@ -230,10 +237,10 @@ App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for th
 **Next, in this order** (the user, 2026-09-23, each after a `/clear`):
 
 1. ~~**Stage 2 of `docs/PLAN_TYPES.md`**~~ - **built on 2026-09-23**, see the paragraph above.
-2. **The MSIX package for the Microsoft Store** - **built on 2026-09-23, not yet run installed**
-   (`docs/STORE.md` is the whole of it; the paragraph below). What is left needs the user: Developer
-   Mode (or a trusted test certificate) to install the test package and run STORE.md's nine-point
-   list. **The Partner Center identity is in** (2026-09-23: `DenRakEiw.Scumble`, family
+2. **The MSIX package for the Microsoft Store** - **built and run installed on 2026-09-23**
+   (`docs/STORE.md` is the whole of it; the paragraph below). Eight of STORE.md's nine points held on the
+   registered test package (the certification kit needs the Windows SDK); what is left is the user's
+   submission in Partner Center. **The Partner Center identity is in** (2026-09-23: `DenRakEiw.Scumble`, family
    `DenRakEiw.Scumble_eh52rqbjjrbdj`, Store ID `9NDBTNNMXF2R`; `npm run dist:store` builds the real package).
 3. **SEO for the four Scumble pages** (`/scumble`, `/manual`, `/blog`, `/videos`): titles and
    descriptions by search intent, JSON-LD (`SoftwareApplication`, `HowTo`, `BlogPosting`), an
@@ -1341,7 +1348,8 @@ Known flakes; **re-run before believing any of these**:
 - Electron has no `window.prompt`; the editor has its own `ask()` modal.
 - Only one instance runs at a time (single-instance lock and named pipe), including headless `--mcp` instances.
 - An unsigned MSIX cannot be installed when it holds an app (0x80073D2B), whatever `-AllowUnsigned` and the
-  publisher OID say; a test install needs Developer Mode or a trusted certificate (`docs/STORE.md`).
+  publisher OID say, and a registered layout refuses that OID (0x80073D2D); a test install is Developer Mode plus
+  `Add-AppxPackage -Register` of the unpacked layout with a plain test publisher (`docs/STORE.md`).
 - `makeappx.exe` started from electron-builder's cache under `%LOCALAPPDATA%` fails with "side-by-side
   configuration is invalid" (from Node and PowerShell; Git Bash ran it), the same files from `F:` run.
 - With `ELECTRON_RUN_AS_NODE` and `-e`, a switch after the code is taken for a Node option ("bad option:
