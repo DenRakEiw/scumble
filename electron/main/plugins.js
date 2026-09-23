@@ -89,7 +89,7 @@ function resolve(id, rel) {
 async function openFolder() {
     const dir = userDir();
     await fsp.mkdir(dir, { recursive: true });
-    return shell.openPath(dir);
+    return shell.openPath(require("./msix").forExplorer(dir));
 }
 
 /** Per-plugin persistent data (settings.json, pluginData[id]); small things only. */

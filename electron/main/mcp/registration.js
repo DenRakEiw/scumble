@@ -8,13 +8,23 @@
 // changes with every start (/tmp/.mount_XXXX), so no path inside it - the launcher's included -
 // survives until the client uses it. Only the AppImage file itself ($APPIMAGE) stays put, and
 // Linux has no Windows console code to write the stray line, so it is registered with `--mcp`.
+// The Microsoft Store package is the Windows version of the same problem: it runs from a
+// WindowsApps folder named after its version, so the client gets the package's execution alias
+// (which stays) in Node mode, and the launcher is found at run time in the resources folder of
+// whichever version the alias starts (electron/main/msix.js).
 "use strict";
+
+/** Node-mode code that loads the launcher from the resources of the exe it runs in. */
+const STORE_LAUNCH = "require(require('path').join(process.resourcesPath,'app.asar','electron','main','mcp','launch.js'))";
 
 /**
  * { command, args, env } for this installation.
- * @param {{ platform: string, exe: string, launcher: string, appImage?: string }} where
+ * @param {{ platform: string, exe: string, launcher: string, appImage?: string, storeAlias?: string }} where
  */
 function server(where) {
+    if (where.platform === "win32" && where.storeAlias) {
+        return { command: String(where.storeAlias), args: ["-e", STORE_LAUNCH], env: { ELECTRON_RUN_AS_NODE: "1" } };   // the launcher starts the app with --mcp when it is given nothing
+    }
     const appImage = where.platform === "linux" && where.appImage ? String(where.appImage) : "";
     if (appImage) return { command: appImage, args: ["--mcp"], env: {} };
     return { command: where.exe, args: [where.launcher, "--mcp"], env: { ELECTRON_RUN_AS_NODE: "1" } };
@@ -29,7 +39,11 @@ function registration(kind, where) {
         return JSON.stringify({ mcpServers: { scumble: entry } }, null, 2);
     }
     const env = Object.entries(s.env).map(([k, v]) => `-e ${k}=${v} `).join("");
-    return `claude mcp add scumble ${env}-- ${[s.command, ...s.args.slice(0, -1)].map((a) => `"${a}"`).join(" ")} ${s.args[s.args.length - 1]}`;
+    // every argument quoted but a last one that is a plain switch (--mcp), as the line has always read
+    const last = s.args[s.args.length - 1];
+    const bare = /^--[a-z-]+$/.test(last);
+    const quoted = [s.command, ...(bare ? s.args.slice(0, -1) : s.args)].map((a) => `"${a}"`).join(" ");
+    return `claude mcp add scumble ${env}-- ${quoted}${bare ? " " + last : ""}`;
 }
 
-module.exports = { server, registration };
+module.exports = { server, registration, STORE_LAUNCH };

@@ -100,7 +100,7 @@ async function browseDir(win) {
 async function openFolder() {
     const d = models.downloadDir(modelsDir());
     await fsp.mkdir(d, { recursive: true });
-    return shell.openPath(d);
+    return shell.openPath(require("../msix").forExplorer(d));
 }
 
 async function download(id) {

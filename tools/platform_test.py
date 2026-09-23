@@ -5,7 +5,9 @@ installer leaves out), then the app:
 
 - what the API keys section says for every credential store: the Windows and macOS stores and a Linux keyring
   plainly, no store at all and Linux' `basic_text` fallback (obfuscated, not encrypted) as a warning;
-- the Settings dialog shows the note for this machine's real store, and on Windows that is DPAPI, not a warning.
+- the Settings dialog shows the note for this machine's real store, and on Windows that is DPAPI, not a warning;
+- the Updates section of the Microsoft Store copy (electron/main/msix.js) offers no check, no switch and no GitHub
+  text, and the installer's section comes back unchanged; this instance is not the Store copy.
 
     python tools/platform_test.py
 
@@ -63,6 +65,29 @@ if (JSON.stringify(back) !== JSON.stringify({ text: res.text, warn: res.warn, co
 return { ...res, basic_text: bad.colour };
 """),
 ]
+
+STEPS.append(("the_store_copy_leaves_its_updates_to_the_store", """
+const info = await window.scumble.info();
+if (info.store !== false) throw new Error("a dev instance reads as the Store copy: " + JSON.stringify(info));
+await shell.openSettings();
+await wait(300);
+const ids = ["set-update-check", "set-update-help"];
+const read = () => ({
+    note: document.getElementById("set-update-note").textContent,
+    hidden: ids.map((id) => document.getElementById(id).hidden).concat(document.getElementById("set-update-auto").parentElement.hidden),
+});
+const before = await window.scumble.updates.status();
+const own = read();
+shell.renderUpdate({ state: "store", current: "0.1.27", version: null, percent: null, error: null, manual: false });
+const store = read();
+shell.renderUpdate(before);
+const back = read();
+document.getElementById("shell-settings").close();
+if (JSON.stringify(own.hidden) !== "[false,false,false]") throw new Error("this instance hides its updates: " + JSON.stringify(own));
+if (JSON.stringify(store.hidden) !== "[true,true,true]" || !/Microsoft Store/.test(store.note) || /GitHub/.test(store.note)) throw new Error("the Store copy still offers GitHub updates: " + JSON.stringify(store));
+if (JSON.stringify(back) !== JSON.stringify(own)) throw new Error("the section did not come back: " + JSON.stringify(back) + " against " + JSON.stringify(own));
+return { state: before.state, store: store.note };
+"""))
 
 PRE = """(async () => {
     const shell = window.__shell;

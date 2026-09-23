@@ -89,7 +89,7 @@ async function remove(id) {
 
 function openFolder() {
     fs.mkdirSync(userDir(), { recursive: true });
-    shell.openPath(userDir());
+    shell.openPath(require("./msix").forExplorer(userDir()));
     return userDir();
 }
 

@@ -6,6 +6,10 @@ const path = require("node:path");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const { app, BrowserWindow, protocol, net, ipcMain, dialog, Menu, shell, clipboard } = require("electron");
+const msix = require("./msix");
+// the Store package keeps its data apart from a GitHub copy's (electron/main/msix.js); before anything reads
+// the folder, and never over a --user-data-dir (the gates' profiles)
+if (msix.isStore() && !app.commandLine.hasSwitch("user-data-dir")) app.setPath("userData", msix.storeUserData(app.getPath("appData")));
 const settings = require("./settings");
 const log = require("./log");
 log.install(require("node:path").join(app.getPath("userData"), "logs"));   // first: the console patch has to be in place before anything logs
@@ -358,8 +362,11 @@ function buildMenu() {
                 { label: "Copy MCP registration (Claude Code)", click: () => copyMcpRegistration("code") },
                 { label: "Copy MCP registration (Claude Desktop JSON)", click: () => copyMcpRegistration("desktop") },
                 { type: "separator" },
-                { label: "Check for updates...", click: () => { updater.check({ manual: true }); send("menu", "settings-updates"); } },
-                { type: "separator" },
+                // the Store copy is updated by the Store (electron/main/msix.js)
+                ...(msix.isStore() ? [] : [
+                    { label: "Check for updates...", click: () => { updater.check({ manual: true }); send("menu", "settings-updates"); } },
+                    { type: "separator" },
+                ]),
                 { label: `Scumble ${app.getVersion()} · Electron ${process.versions.electron} · GPL-3.0`, enabled: false },
             ],
         },
@@ -380,6 +387,7 @@ function mcpRegistration(kind) {
             ? path.join(process.resourcesPath, "app.asar", "electron", "main", "mcp", "launch.js")
             : path.join(ROOT, "electron", "main", "mcp", "launch.js"),
         appImage: app.isPackaged ? process.env.APPIMAGE : "",
+        storeAlias: msix.isStore() ? msix.aliasPath(process.env.LOCALAPPDATA || "") : "",
     });
 }
 
@@ -490,14 +498,14 @@ function installIpc() {
     ipcMain.handle("comfy:ensure", (_e, refs) => mirror.ensureOnServer(refs));
     ipcMain.handle("files:stats", () => mirror.stats());
     ipcMain.handle("files:prune", (_e, args) => mirror.prune(args || {}));
-    ipcMain.handle("files:openFolder", async () => { const r = mirror.root(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(r); });
+    ipcMain.handle("files:openFolder", async () => { const r = mirror.root(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(msix.forExplorer(r)); });
     ipcMain.handle("file:open", () => openImage());
     ipcMain.handle("file:save", (_e, args) => saveFile(args));
     ipcMain.handle("file:read", (_e, file) => readFile(String(file)));
     ipcMain.handle("recipes:list", () => listRecipes());
     ipcMain.handle("recipes:import", (_e, file) => importRecipe(file));
     ipcMain.handle("recipes:remove", (_e, id) => recipes.remove(id));
-    ipcMain.handle("recipes:openFolder", async () => { const r = recipes.userDir(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(r); });
+    ipcMain.handle("recipes:openFolder", async () => { const r = recipes.userDir(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(msix.forExplorer(r)); });
     ipcMain.handle("keys:list", () => keys.list());
     ipcMain.handle("keys:set", (_e, { name, value }) => keys.set(name, value));
     ipcMain.handle("keys:clear", (_e, name) => keys.clear(name));
@@ -514,7 +522,7 @@ function installIpc() {
     ipcMain.handle("log:add", (_e, entry) => { const e = entry && typeof entry === "object" ? entry : { message: String(entry) }; return log.record({ level: e.level, source: e.source || "renderer", message: e.message, detail: e.detail }).id; });
     ipcMain.handle("log:list", (_e, q) => log.list(q || {}));
     ipcMain.handle("log:clear", () => { log.clear(); return true; });
-    ipcMain.handle("log:open", async () => { const f = log.file(); if (!f) return null; await require("node:fs/promises").mkdir(require("node:path").dirname(f), { recursive: true }); return shell.openPath(require("node:path").dirname(f)); });
+    ipcMain.handle("log:open", async () => { const f = log.file(); if (!f) return null; await require("node:fs/promises").mkdir(require("node:path").dirname(f), { recursive: true }); return shell.openPath(msix.forExplorer(require("node:path").dirname(f))); });
     ipcMain.handle("log:file", () => log.file());
     log.onEntry((e) => send("log:entry", e));
     ipcMain.handle("brushes:list", () => brushes.list());
@@ -573,7 +581,7 @@ function installIpc() {
         settings.set({ assistant: a });
         return a.noticed;
     });
-    ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: app.getPath("userData"), pluginDir: plugins.userDir() }));
+    ipcMain.handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform, userData: msix.forExplorer(app.getPath("userData")), pluginDir: msix.forExplorer(plugins.userDir()), store: msix.isStore() }));
     ipcMain.handle("app:openExternal", (_e, url) => { if (/^https?:\/\//.test(String(url))) shell.openExternal(url); });
     // memory (docs/PHASE6_PLAN.md step 1a): the bytes that matter live in the GPU process, and
     // only the main process can see them. Sizes are KB, as Electron reports them.

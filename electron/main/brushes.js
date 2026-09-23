@@ -61,7 +61,7 @@ async function save(tips) {
 
 async function openFolder() {
     await fsp.mkdir(dir(), { recursive: true });
-    return shell.openPath(dir());
+    return shell.openPath(require("./msix").forExplorer(dir()));
 }
 
 module.exports = { list, save, dir, openFolder };

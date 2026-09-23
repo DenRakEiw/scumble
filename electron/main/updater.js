@@ -3,12 +3,14 @@
 // from the newest release, downloads the installer in the background and installs it when
 // the user asks (or silently when the app quits). Only the windowed, packaged app checks on
 // its own; headless and agent-started instances and the dev electron never download anything.
+// The Microsoft Store package never does either: the Store updates its copy (electron/main/msix.js).
 "use strict";
 
 const { app } = require("electron");
+const { isStore } = require("./msix");
 const { EventEmitter } = require("node:events");
 
-/** States: dev (not packaged), idle, checking, latest, downloading, downloaded, error. */
+/** States: dev (not packaged), store (the Store updates it), idle, checking, latest, downloading, downloaded, error. */
 
 /**
  * What changed in the offered version, as plain text for the Updates section.
@@ -58,7 +60,7 @@ class Updater extends EventEmitter {
     constructor() {
         super();
         this.au = null;
-        this.status = { state: app.isPackaged ? "idle" : "dev", current: app.getVersion(), version: null, percent: null, error: null, manual: false };
+        this.status = { state: !app.isPackaged ? "dev" : isStore() ? "store" : "idle", current: app.getVersion(), version: null, percent: null, error: null, manual: false };
     }
 
     _load() {
@@ -90,6 +92,7 @@ class Updater extends EventEmitter {
     /** Check the feed; `manual` marks a check the user asked for (the UI reports "up to date"). */
     async check({ manual = false } = {}) {
         if (!app.isPackaged) { this._set({ state: "dev", manual }); return this.status; }
+        if (this.status.state === "store") { this._set({ manual }); return this.status; }
         if (this.status.state === "checking" || this.status.state === "downloading") return this.status;
         if (this.status.state === "downloaded") { this._set({ manual }); return this.status; }
         this._set({ manual });

@@ -32,7 +32,7 @@ What that does and does not do:
 - So the Store is a second channel, not a replacement for SignPath, and it does not change
   anything written below.
 
-What the MSIX build has to get right (none of it built yet):
+What the MSIX build has to get right (built on 2026-09-23 and checked without an install; [STORE.md](STORE.md) has how, and what still has to run on an installed package):
 
 - **`runFullTrust`.** An AppContainer package cannot reach `127.0.0.1`, which would cut the
   app off from the user's ComfyUI. Full trust keeps loopback, the file mirror and the helper
@@ -100,11 +100,14 @@ In detail, Scumble talks to these systems, and to nothing else:
 - **GitHub Releases**, for the update check: the packaged app checks for a new version once,
   8 seconds after start, and downloads it in the background when one exists. This check can
   be switched off in Settings › Updates (*Check for updates at start*); *Check now* and
-  *Restart and install* only run when you click them.
+  *Restart and install* only run when you click them. The Microsoft Store copy never asks
+  GitHub: the Store updates it.
 - **Links you click** (Help menu, "get a key" next to a provider) open in your browser.
 
 Scumble collects no usage data, has no telemetry and no crash reporting. Your images,
-documents, autosaves and settings stay in `%APPDATA%\Scumble` on your machine.
+documents, autosaves and settings stay in `%APPDATA%\Scumble` on your machine (the Microsoft
+Store copy keeps them in `%LOCALAPPDATA%\Packages\<its package>\LocalCache\Roaming\Scumble Store`,
+which Windows removes when the app is uninstalled).
 
 ## Licence
 

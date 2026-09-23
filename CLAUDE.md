@@ -199,14 +199,40 @@ said so. Gates `--offline` on both backends (`lint types recipes commands editor
 `electron/preload.js` - `window.scumble` is declared `any` in `types/globals.d.ts`, so every
 `window.scumble.*` in a checked file is unjudged.
 
+**The MSIX package for the Microsoft Store is built, and has not run installed** (`docs/STORE.md`).
+`npm run dist:store:test` (`tools/build_store.js --test`) makes `dist/Scumble-<version>-test.msix` (195 MB
+for 0.1.26) with a test identity; `npm run dist:store` refuses until `package.json` `build.appx` has the
+Partner Center identity (`identityName`, `publisher` = `CN=<GUID>`, `publisherDisplayName`), which only
+the user can reserve. `build/AppxManifest.xml` is electron-builder's template plus an **execution alias**
+(`scumble.exe`) and full trust; `build/appx/` holds the tile artwork rendered from the logo SVGs by
+`tools/appx_assets.js`. **`electron/main/msix.js`** is everything the Store copy does differently, switched
+by `process.windowsStore`: its own data folder **`%APPDATA%\Scumble Store`** (Windows lets a package change
+files that exist outside but puts new ones in its private `LocalCache`, so sharing `Scumble` with a GitHub
+copy would split the data), every Explorer folder translated to the real `LocalCache` path (the family name
+from the package's `AppxManifest.xml` and Windows' publisher-id hash, verified against four installed
+packages), the updater in a state `store` (no electron-updater, no menu entry, the Updates section says the
+Store updates it), and the MCP registration as the alias in Node mode with `-e` code that loads the
+launcher from `process.resourcesPath` (`mcp/registration.js`; the last argument of the `claude mcp add`
+line is quoted now unless it is a bare switch, so the old lines are byte for byte the same). Tests:
+`node tools/platform_test.js` 18 checks (9 new), the `platform` gate a new app step; **15 of 15** Node
+mutations and 1 of 1 renderer mutation red; gates `--offline` (`platform mcp commands lint types`) ALL
+PASS (`store-dev`). **Two findings that decide the next step:** an unsigned MSIX **cannot hold an app**
+(`Add-AppxPackage -AllowUnsigned`: 0x80073D2B, "cannot contain executable activations", even with the
+unsigned-publisher OID), so installing the test package needs **Developer Mode** (register the unpacked
+layout) or a trusted test certificate - a system setting, the user's call; and electron-builder's legacy
+`makeappx.exe` (2019) does not start here, the 1.1.0 toolset's does only from a copy outside `%LOCALAPPDATA%`
+(`build_store.js` stages it in `dist/.store-kit`). **Next for this item:** with Developer Mode on, run
+STORE.md's nine-point list (ComfyUI over loopback, the redirected data and keys, the single instance, the
+folders, the MCP alias with `ELECTRON_RUN_AS_NODE` through it, `app.relaunch`, DirectML, uninstall, the
+App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for the installer's users).
+
 **Next, in this order** (the user, 2026-09-23, each after a `/clear`):
 
 1. ~~**Stage 2 of `docs/PLAN_TYPES.md`**~~ - **built on 2026-09-23**, see the paragraph above.
-2. **The MSIX package for the Microsoft Store** (`docs/CODE_SIGNING_POLICY.md` for the conditions):
-   `runFullTrust` or the package cannot reach `127.0.0.1` and loses the user's ComfyUI; no
-   self-update in that build; MCP registered by the execution alias, not a versioned `WindowsApps`
-   path; and the single-instance pipe, the plugin folder and every `%APPDATA%` path to be tested
-   under the packaging, not assumed.
+2. **The MSIX package for the Microsoft Store** - **built on 2026-09-23, not yet run installed**
+   (`docs/STORE.md` is the whole of it; the paragraph below). What is left needs the user: Developer
+   Mode (or a trusted test certificate) to install the test package and run STORE.md's nine-point
+   list, and the Partner Center identity for the real build.
 3. **SEO for the four Scumble pages** (`/scumble`, `/manual`, `/blog`, `/videos`): titles and
    descriptions by search intent, JSON-LD (`SoftwareApplication`, `HowTo`, `BlogPosting`), an
    OpenGraph image per page, heading hierarchy, internal links, sitemap priorities. The manual is the
@@ -1312,6 +1338,12 @@ Known flakes; **re-run before believing any of these**:
   `restore()` brings it up.
 - Electron has no `window.prompt`; the editor has its own `ask()` modal.
 - Only one instance runs at a time (single-instance lock and named pipe), including headless `--mcp` instances.
+- An unsigned MSIX cannot be installed when it holds an app (0x80073D2B), whatever `-AllowUnsigned` and the
+  publisher OID say; a test install needs Developer Mode or a trusted certificate (`docs/STORE.md`).
+- `makeappx.exe` started from electron-builder's cache under `%LOCALAPPDATA%` fails with "side-by-side
+  configuration is invalid" (from Node and PowerShell; Git Bash ran it), the same files from `F:` run.
+- With `ELECTRON_RUN_AS_NODE` and `-e`, a switch after the code is taken for a Node option ("bad option:
+  --mcp"); after `--` it lands in `process.argv[1]`, not `[2]`.
 - `mcp_test.py --user-data-dir` must come before `--cmd`, which otherwise takes it for its JSON.
 
 **Tooling, shell, git**

@@ -71,7 +71,7 @@ const ui = {
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
     setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
-    updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateNotes: $("set-update-notes"),
+    updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateHelp: $("set-update-help"), updateNotes: $("set-update-notes"),
     helpersDevice: $("set-helpers-device"), helpersSam2: $("set-helpers-sam2"), helpersDir: $("set-helpers-dir"), helpersBrowse: $("set-helpers-browse"), helpersDefault: $("set-helpers-default"), helpersOpen: $("set-helpers-open"), helpersScan: $("set-helpers-scan"), helpersScanNote: $("set-helpers-scan-note"),
     helpersModels: $("set-helpers-models"), helpersNote: $("set-helpers-note"), hfToken: $("set-hf-token"), hfSave: $("set-hf-save"), hfClear: $("set-hf-clear"), hfState: $("set-hf-state"),
 };
@@ -1712,6 +1712,7 @@ ui.setPrune.addEventListener("click", async () => {
 function updateText(s) {
     if (!s) return "";
     if (s.state === "dev") return "Not packaged: updates are checked in the installed app only.";
+    if (s.state === "store") return `Scumble ${s.current} from the Microsoft Store: the Store installs its updates.`;
     if (s.state === "checking") return "Checking for updates ...";
     if (s.state === "latest") return s.manual ? `Scumble ${s.current} is up to date.` : "";
     if (s.state === "downloading") return `Downloading Scumble ${s.version} ... ${s.percent == null ? "" : s.percent + "%"}`;
@@ -1720,7 +1721,7 @@ function updateText(s) {
     return "";
 }
 
-function renderUpdate(s) {
+export function renderUpdate(s) {
     ui.updateNote.textContent = updateText(s);
     // the release notes of the offered version, as text: they come from GitHub, so they
     // never touch innerHTML
@@ -1729,6 +1730,11 @@ function renderUpdate(s) {
     ui.updateNotes.hidden = !notes;
     ui.updateInstall.hidden = !(s && s.state === "downloaded");
     ui.updateCheck.disabled = !!(s && (s.state === "checking" || s.state === "downloading"));
+    // the Store copy is updated by the Store: no feed to check, nothing to switch off
+    const store = !!(s && s.state === "store");
+    ui.updateCheck.hidden = store;
+    ui.updateAuto.parentElement.hidden = store;
+    ui.updateHelp.hidden = store;
     ui.updateBar.hidden = !(s && s.state === "downloaded");
     if (s && s.state === "downloaded") ui.updateBar.textContent = `Update to ${s.version}`;
 }

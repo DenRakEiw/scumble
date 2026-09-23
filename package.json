@@ -15,6 +15,8 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win nsis",
+    "dist:store": "node tools/build_store.js",
+    "dist:store:test": "node tools/build_store.js --test",
     "dist:linux": "electron-builder --linux",
     "release": "electron-builder --win nsis --publish always",
     "dist:dir": "electron-builder --dir",
@@ -91,6 +93,19 @@
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "Scumble",
       "perMachine": false
+    },
+    "appx": {
+      "applicationId": "Scumble",
+      "displayName": "Scumble",
+      "backgroundColor": "#1B1714",
+      "languages": [
+        "en-US",
+        "de-DE"
+      ],
+      "customManifestPath": "AppxManifest.xml",
+      "minVersion": "10.0.17763.0",
+      "maxVersionTested": "10.0.26100.0",
+      "artifactName": "Scumble-${version}.msix"
     },
     "linux": {
       "target": [
