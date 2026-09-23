@@ -235,6 +235,42 @@ STORE.md's nine-point list (ComfyUI over loopback, the redirected data and keys,
 folders, the MCP alias with `ELECTRON_RUN_AS_NODE` through it, `app.relaunch`, DirectML, uninstall, the
 App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for the installer's users).
 
+**NEXT, in this order (the user, 2026-09-23 evening, before a `/clear`): 1. Comfy Router as a provider, 2. the macOS
+build (B3) with the logo.** The paragraphs below say where each stands.
+
+**Comfy Router (asked for by the user 2026-09-23; researched, not built).** A new Comfy product, *not* our Comfy
+Cloud route: a direct model API, `POST https://api.comfy.org/v2/models/{provider}/{model}` (synchronous, blocks up to
+660 s) or `.../requests` (queued: answers `request_id`, poll `GET .../requests/{request_id}`), headers `X-API-Key`
+(the same `comfyui-...` key as Comfy Cloud, from platform.comfy.org), `Idempotency-Key: <uuid>` (no double billing on
+a retry), `Content-Type: application/json`; the body is **model-specific JSON**, input images as URLs or base64
+depending on the model, the answer the model's raw output. Billed in the same Comfy credits as Partner Nodes and
+Comfy Cloud, **but no paid Comfy Cloud plan needed** (our `comfycloud` route needs one). 200+ models (image, video,
+3D, audio: Nano Banana Pro, GPT Image 2.5, Flux 3, Seedance, Kling ...). Docs: docs.comfy.org/development/comfy-router
+(`quickstart`, `models` = the per-model parameters, `providers`, `queue`), index at docs.comfy.org/llms.txt. Read on
+2026-09-23 through a summarising fetch, so **read the pages yourself before building**. Our `comfycloud` adapter
+(`electron/main/providers/comfycloud.js`) is a different thing: it builds a ComfyUI workflow around a Partner Node on
+`cloud.comfy.org` (upload, `/api/prompt`, poll, `/api/view`). The plan the user agreed to: a new adapter
+`providers/comfyrouter.js` and a `comfyrouter` variant (last, no default changed, as OpenRouter) in the recipes whose
+models the Router serves, **reusing the `comfycloud` key row** (same key), Comfy Cloud kept as it is; the usual pieces
+(docs/RECIPES.md section, a plain-Node request-shape test, a loopback mock and a gate, the `recipes` gate rows).
+**No Comfy key is stored on this machine** (secrets.json holds bfl and openrouter only): a live run needs the
+user's key with some credit.
+
+**SEO and GEO for the Scumble pages are done and live (item 3, 2026-09-23; portfolio `f72a510`, CLI deploy).** Found and
+fixed: the root layout's `alternates.canonical: "/"` was inherited by every page, so `/scumble`, `/manual` and `/blog`
+each declared the home page their canonical; the layout has none now and every page states its own (home `/`,
+imprint `/impressum`). `lib/scumble-seo.ts` in the website: `scumbleMeta()` (canonical, title by search intent with
+`absolute`, description, OpenGraph/Twitter card naming the page), the `facts` and the 8-question `faq` (shown on the
+hub and marked up with the same words), JSON-LD `SoftwareApplication` + `FAQPage` (hub), `TechArticle` with its 17
+chapters as `hasPart` (manual), `Blog` with every `BlogPosting` (blog), `BreadcrumbList` everywhere, the Person got
+`@id` `/#person`. Share images 1200 x 630 per page (`app/scumble/**/opengraph-image.png` and `twitter-image.png`,
+the mascot draft + the page's title). GEO: the hub opens with a definition sentence and a facts list, `/llms.txt`
+(route, built from the same data) and the whole manual as `/scumble/manual.md`. Headings "Scumble manual" / "Scumble
+dev blog", a nav at the foot of every subpage (the other doors and the download), blog titles are permalinks, the
+sitemap has the release date and priorities (hub 0.9, manual 0.8, blog 0.6). `robots.ts` already allowed every
+crawler, AI bots included. **The Store listing** was submitted by the user the same day (publish right after
+certification); when it is live, the Store link goes onto the hub, README and a blog post.
+
 **0.1.27 is published** (Latest since 2026-09-23 15:52, on the user's word "mach den release"; `package.json` 0.1.27, CHANGELOG
 "0.1.27 — 2026-09-23": Help, the logo, the upscale prompt, OpenRouter's live notes, the clean package). **Found while
 building it and fixed:** `build.win.files` / `build.linux.files` held only the onnxruntime exclusions since B1, and
@@ -293,7 +329,7 @@ The list below is the order as it stood before:
    registered test package (the certification kit needs the Windows SDK); what is left is the user's
    submission in Partner Center. **The Partner Center identity is in** (2026-09-23: `DenRakEiw.Scumble`, family
    `DenRakEiw.Scumble_eh52rqbjjrbdj`, Store ID `9NDBTNNMXF2R`; `npm run dist:store` builds the real package).
-3. **SEO for the four Scumble pages** (`/scumble`, `/manual`, `/blog`, `/videos`): titles and
+3. ~~**SEO for the four Scumble pages**~~ - **done 2026-09-23, with GEO** (the paragraph at the top). The plan was: titles and
    descriptions by search intent, JSON-LD (`SoftwareApplication`, `HowTo`, `BlogPosting`), an
    OpenGraph image per page, heading hierarchy, internal links, sitemap priorities. The manual is the
    lever - it is the only page with real prose about "AI inpainting editor", "ComfyUI desktop app",
