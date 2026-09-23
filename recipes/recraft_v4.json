@@ -42,7 +42,7 @@
           1024
         ]
       },
-      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. Only the prompt goes to OpenRouter, which passes it to Recraft. OpenRouter lists one input picture for this model but does not say whether it is edited or only used as a style reference, so this variant makes images from the prompt alone: it works in \"Generate new\", not in Generate; the dialog's aspect is sent as the closest preset. No seed and no size: the host picks the output size from the aspect. recraft/recraft-v4-pro is the pro tier of the same model."
+      "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. Only the prompt goes to OpenRouter, which passes it to Recraft. OpenRouter lists one input picture for this model but does not say whether it is edited or only used as a style reference, so this variant makes images from the prompt alone: it works in \"Generate new\", not in Generate; the dialog's aspect is sent as the closest preset. No seed and no size: the host picks the output size from the aspect. recraft/recraft-v4-pro is the pro tier of the same model."
     }
   }
 }

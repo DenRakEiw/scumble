@@ -1,7 +1,7 @@
 {
   "name": "scumble",
   "productName": "Scumble",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Desktop editor for AI inpainting: layers, selection by text, retouch, filters, rendered through your own ComfyUI or API providers.",
   "author": "DenRakEiw",
   "license": "GPL-3.0",
@@ -84,6 +84,16 @@
       ],
       "artifactName": "Scumble Setup ${version}.${ext}",
       "files": [
+        "electron/**/*",
+        "renderer/**/*",
+        "recipes/**/*",
+        "prompts/**/*",
+        "plugins/**/*",
+        "docs/MANUAL.md",
+        "build/icon.png",
+        "build/icon.ico",
+        "package.json",
+        "LICENSE",
         "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
         "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
         "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
@@ -103,8 +113,7 @@
       "displayName": "Scumble",
       "backgroundColor": "#1B1714",
       "languages": [
-        "en-US",
-        "de-DE"
+        "en-US"
       ],
       "customManifestPath": "AppxManifest.xml",
       "minVersion": "10.0.17763.0",
@@ -122,6 +131,16 @@
       "executableName": "scumble",
       "artifactName": "scumble-${version}.${ext}",
       "files": [
+        "electron/**/*",
+        "renderer/**/*",
+        "recipes/**/*",
+        "prompts/**/*",
+        "plugins/**/*",
+        "docs/MANUAL.md",
+        "build/icon.png",
+        "build/icon.ico",
+        "package.json",
+        "LICENSE",
         "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
         "!node_modules/onnxruntime-node/bin/napi-v6/win32/**"
       ]

@@ -267,7 +267,7 @@
           4096
         ]
       },
-      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. The pictures go inline in the request to OpenRouter, which passes them to ByteDance's Seed (Singapore). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. Resolution auto takes the smallest tier that covers the crop. A picture steeper than 16:1 (the input range ByteDance's ModelArk documents; not verified through OpenRouter) is refused before anything is sent; a thinner selection gets more context instead."
+      "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. The pictures go inline in the request to OpenRouter, which passes them to ByteDance's Seed (Singapore). Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. Resolution auto takes the smallest tier that covers the crop. A picture steeper than 16:1 (the input range ByteDance's ModelArk documents; not verified through OpenRouter) is refused before anything is sent; a thinner selection gets more context instead."
     }
   }
 }

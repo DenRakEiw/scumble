@@ -192,7 +192,7 @@ function kept(files) {
 
 check("the_onnxruntime_package_still_has_the_layout_the_patterns_name", () => {
     for (const d of ["win32/x64", "linux/x64", "darwin/arm64"]) if (!dirs.includes(d)) throw new Error("no " + d + " in " + ORT + ": " + dirs.join(", "));
-    for (const f of [...(pkg.build.win.files || []), ...(pkg.build.linux.files || [])]) {
+    for (const f of [...(pkg.build.win.files || []), ...(pkg.build.linux.files || [])].filter((x) => typeof x === "string" && x.startsWith("!"))) {
         const m = /^!node_modules\/onnxruntime-node\/bin\/napi-v6\/(.+)\/\*\*$/.exec(f);
         if (!m) throw new Error("a pattern this test does not read: " + f);
         if (!fs.existsSync(path.join(ROOT, ORT, m[1]))) throw new Error("a pattern for a folder that does not exist: " + f);
@@ -210,6 +210,30 @@ check("the_linux_build_carries_the_linux_binaries_and_no_other", () => {
 
 check("the_unpacked_binaries_are_still_unpacked", () => {
     if (!pkg.build.asarUnpack.includes(ORT.replace(/\/napi-v6$/, "") + "/**")) throw new Error("asarUnpack: " + pkg.build.asarUnpack.join(", "));
+});
+
+check("a_platform_file_list_is_never_exclusions_alone", () => {
+    // electron-builder takes a platform's `files` as the whole list: one that only excludes starts from
+    // "everything" and shipped the repository (.claude/, CLAUDE.md, tools/, crates/, docs/) in 0.1.26
+    const top = pkg.build.files;
+    for (const plat of ["win", "linux"]) {
+        const files = pkg.build[plat].files || [];
+        const positive = files.filter((f) => typeof f !== "string" || !f.startsWith("!"));
+        eq(positive, top, `${plat}.files carries the top-level list`);
+    }
+    if (!top.includes("docs/MANUAL.md") || top.some((f) => typeof f === "string" && /^docs\/\*|^docs\/\*\*/.test(f))) throw new Error("docs/: the manual alone");
+});
+
+check("the_built_package_holds_the_app_and_nothing_of_the_repository", () => {
+    // only when a package was built here (npm run dist); CI's own build is checked by the same list
+    const asar = path.join(ROOT, "dist", "win-unpacked", "resources", "app.asar");
+    if (!fs.existsSync(asar)) return "no dist/win-unpacked here, skipped";
+    let list;
+    try { list = require("@electron/asar").listPackage(asar); } catch (err) { return "cannot read the asar (" + err.message + "), skipped"; }
+    const top = [...new Set(list.map((f) => f.split(/[\\/]/)[1]))].sort();
+    eq(top, ["LICENSE", "build", "docs", "electron", "node_modules", "package.json", "plugins", "prompts", "recipes", "renderer"], "top level");
+    eq(list.filter((f) => /^[\\/]docs[\\/]/.test(f)).map((f) => f.replace(/\\/g, "/")), ["/docs/MANUAL.md"], "docs");
+    return `${list.length} entries`;
 });
 
 check("chromium_keeps_english_and_german", () => {

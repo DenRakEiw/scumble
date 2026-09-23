@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "GPT Image 2.5 Flare",
   "family": "OpenAI",
-  "description": "OpenAI's fast image model (September 2026): custom sizes in multiples of 16 up to 3840 px an edge, quality up to max. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "OpenAI's fast image model (September 2026): custom sizes in multiples of 16 up to 3840 px an edge, quality up to max. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Run against the live API through OpenRouter since 2026-09-21; the other providers' adapters are written from their docs and not run live yet.",
   "default": "openai",
   "providers": {
     "toapis": {
@@ -410,7 +410,7 @@
           1536
         ]
       },
-      "note": "Runs on OpenRouter (one key for many models); not run against the live API yet. The pictures go inline in the request to OpenRouter, which passes them to OpenAI. No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. There is no size parameter: the host picks the output size (OpenRouter's one example is GPT Image 2 at 16:9 and high quality: 1536 x 864; no size is stated for other models or qualities)."
+      "note": "Runs on OpenRouter (one key for many models); run against the live API since 2026-09-21. The pictures go inline in the request to OpenRouter, which passes them to OpenAI. No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. There is no size parameter: the host picks the output size (OpenRouter's one example is GPT Image 2 at 16:9 and high quality: 1536 x 864; no size is stated for other models or qualities)."
     }
   },
   "limits": {

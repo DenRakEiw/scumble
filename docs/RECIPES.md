@@ -290,7 +290,8 @@ adapter does; only the parameters `options.accepts` names; tiers and aspect pres
 ByteDance's own API for Seedream: `POST /api/v3/images/generations` on the host of the *Region* row, one
 synchronous request with the pictures inline as data URLs and the image back as base64; always a pixel `size`
 in the crop's shape, `watermark: false`; no mask input; see "BytePlus ModelArk" below). Every adapter is written
-from the provider's documentation and has not run against the live API yet; the recipe descriptions say so.
+from the provider's documentation and has not run against the live API yet; the recipe descriptions say so
+(OpenRouter with GPT Image 2.5 is the exception, below).
 The key of the provider comes from the credential store (Settings › API providers).
 
 What a provider run does: `prepareCrop` builds the crop like the node (selection bbox
@@ -572,8 +573,17 @@ and in Generate new only Krea 2 and Recraft V4) and its Chat Completions for pro
 "Through the OpenRouter key"). The adapter `electron/main/providers/openrouter.js` is written from OpenRouter's
 docs (the `.md` twins of `openrouter.ai/docs/...`, `openapi.json`, the per-model guides at
 `openrouter.ai/<id>/llms.txt`) and its public lists (`GET /api/v1/images/models`, `.../<id>/endpoints`,
-`GET /api/v1/providers`), all read on 2026-09-19, and **has not run against the live API**; every OpenRouter
-variant's note says so and names the company the pictures go on to.
+`GET /api/v1/providers`), all read on 2026-09-19. **It has run against the live API since 2026-09-21** with
+GPT Image 2.5 Flare and Sunburst (the user's log up to 2026-09-23: about 44 and 112 edits that came back, one
+host error that charged nothing, one refusal by OpenAI's safety system); no other model has run through it yet.
+Every OpenRouter variant's note says which of the two it is and names the company the pictures go on to.
+
+**What the live runs showed.** GPT Image 2.5 edits the picture in `input_references`, it does not merely take it
+as a reference: the four brand marks of the tutorial picture were removed in the app this way (docs/TUTORIAL.md).
+**A crop whose context reaches bare skin can be refused** by OpenAI's safety system through OpenRouter
+(`safety_violations=[sexual]` for a crop of a handbag that took in the legs around it); the same selection with
+a tighter context (`set_crop { context: "24" }`, or *Context* in the Crop panel) went through. The refusal
+reaches the user as the provider's own sentence.
 
 **Where it shows up.** The key row comes after Comfy Cloud in Settings › API providers (`PROVIDERS` in
 `providers/index.js`, before Anthropic's key-only row), with the hint `sk-or-v1-...`, *get a key*

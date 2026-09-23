@@ -647,7 +647,10 @@ async function main() {
                 const row = (v.settings || []).find((st) => st.key === "resolution");
                 if (row && !row.spec[0].filter((x) => x !== "auto").every((x) => x in tiers)) bad.push(r.id + ": a Resolution option is no tier");
             }
-            if (!/not run against the live API yet/.test(String(v.note || ""))) bad.push(r.id + ": the note lacks the live-test sentence");
+            // the live status, true per model: GPT Image 2.5 ran through OpenRouter from 2026-09-21 (docs/RECIPES.md), the rest not
+            const ranLive = ["gpt_image_2_5_flare", "gpt_image_2_5_sunburst"].includes(r.id);
+            const status = ranLive ? /run against the live API since 2026-09-21/ : /the adapter has run against the live API with GPT Image 2\.5, this model not yet/;
+            if (!status.test(String(v.note || ""))) bad.push(r.id + ": the note does not say " + (ranLive ? "that it ran live" : "that this model has not run live"));
             if (!/Also on OpenRouter\./.test(String(r.description || ""))) bad.push(r.id + ": the description does not say Also on OpenRouter");
             const allowed = (k, kind) => ["model", "prompt", "provider"].includes(k) || (k === "input_references" && kind !== "text") || accepts.includes(k);
             if (v.edit !== false) {

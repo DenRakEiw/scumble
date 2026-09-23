@@ -34,7 +34,7 @@ The app alone can do a great deal — open, paint, select, layer, filter, export
 ### Notes
 
 - Windows 10 and 11, 64-bit. A GPU is not required for the editor itself: filters run on the GPU when there is one and fall back to the processor when there is not.
-- The installer is about 134 MB, the installed app about 421 MB, most of which is Chromium and the helper models' runtime.
+- The installer is about 128 MB, the installed app about 410 MB, most of which is Chromium and the helper models' runtime.
 - Updates: Settings › Updates shows what changed before you restart into the new version. You are never updated behind your back.
 
 ## Where it renders: your ComfyUI, or an API key

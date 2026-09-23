@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.27 — unreleased
+## 0.1.27 — 2026-09-23
 
 - **Help, in the app (F1).** The manual opens in a column beside the picture: every chapter, searchable,
   offline, and the same text as on the website, now kept next to the code it describes. Above it sits a
@@ -23,6 +23,16 @@ the section for its version; `docs/` and the commit history hold the technical d
   along. The field starts with the tab's prompt; what you type there goes to the upscaler and leaves the tab's
   prompt as it was. Agents pass it as `prompt` to the `upscale` command, and `list_recipes` says which upscalers
   use one.
+
+- **A smaller installer again: 128 MB** (0.1.26: 134 MB; 410 MB installed instead of 421). 0.1.26 packed the whole
+  project folder by mistake: the development docs, the tests, the build scripts and the Rust sources went into every
+  install, where nothing ever read them. Nothing in them was private, and the app did not change with them.
+
+- **OpenRouter's notes say what has really run.** GPT Image 2.5 Flare and Sunburst have run through OpenRouter since
+  2026-09-21, and their recipes no longer call the route untested; the other models behind OpenRouter say that the
+  route works but that model has not been tried yet. Found on the way: OpenAI's safety system can refuse a crop whose
+  context takes in bare skin even when the selection itself is harmless; a tighter *Context* in the Crop panel helps
+  (docs/RECIPES.md, "OpenRouter").
 
 ## 0.1.26 — 2026-09-22
 
