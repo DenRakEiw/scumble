@@ -74,6 +74,19 @@ code.
   First releases are **unsigned**; code signing goes through the SignPath Foundation
   (free for OSS) once the project has a public release and some use, fallback Certum
   Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
+  **Before SignPath comes the Microsoft Store** (the user, 2026-09-23: qualifying for SignPath takes
+  time, and a user who needs a signed installer should have one meanwhile). An **MSIX** submitted to
+  the Store is **re-signed by Microsoft** after certification - no certificate to buy or hold - and a
+  developer account has been free since 2025-09 for individuals and 2026-05 for companies (an identity
+  check replaces the fee). **It signs only the Store copy: the GitHub installer stays unsigned** and
+  keeps its SmartScreen paragraph, and submitting the `.exe` to the Store instead would require the
+  publisher to sign it first, so this is a second channel, not a replacement. The build has to be
+  `runFullTrust` (an AppContainer package cannot reach `127.0.0.1`, which would cut the app off from
+  the user's ComfyUI), must not self-update (the Store updates its copy), and must register MCP by the
+  execution alias rather than the versioned `WindowsApps` path, as the AppImage does. To be tested,
+  not assumed: the single-instance pipe, the plugin folder and every `%APPDATA%` path (keys, autosave,
+  file mirror) under a packaged app's redirection. GPL-3.0 is no obstacle (VLC and Krita are in the
+  Store). `docs/CODE_SIGNING_POLICY.md` holds the whole decision.
 - **Every published release also gets a post in the dev blog on the user's website**
   (https://www.denrakeiw.com/scumble/blog; the user, 2026-09-21). The site is the repo `F:\portfolio_web`
   (GitHub `DenRakEiw/Portfolio_vercel`, Next.js, deployed by Vercel). A post is one entry at the top of `devlog` in
@@ -1081,7 +1094,9 @@ then `buildModal`, "und den assistent"): ~~the two defects of the OpenRouter ses
 day, the release of its own the user asked for: "agent als letztes, wird ein seperates release"); then, on the
 user's word of the same evening, ~~the user's own language models in the Settings and the end of the "not tried"
 marks~~ (0.1.22, unreleased, see the top of this section); then, on the user's word of 2026-09-22, **the six sessions of `docs/PLAN_0_1_24.md`** (upscaling, Oxen.ai, the
-three builds); **SignPath** after them ("assistant kommt vor codesignierung"). Waiting on the user's ComfyUI, whenever it is free: one
+three builds); then the **Microsoft Store package** (MSIX, the interim signed channel, decided
+2026-09-23 - see the release-channel decision above and `docs/CODE_SIGNING_POLICY.md`) and **SignPath**
+after it ("assistant kommt vor codesignierung"). Waiting on the user's ComfyUI, whenever it is free: one
 local run on a large document with the node's stitch fix (`fba1fd8`), and the node in a real ComfyUI tab and in
 Firefox when a node version is meant to ship. Nothing else stands before them, unless the user names something else
 first.

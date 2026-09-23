@@ -9,10 +9,44 @@ what the program sends over the network.
 
 **Status.** Releases up to 0.1.x are **not signed**. Once the project has visible use, the
 maintainer applies at the SignPath Foundation; from the first signed release on, the
-attribution below applies and the SmartScreen paragraph in the README goes away.
+attribution below applies and the SmartScreen paragraph in the README goes away. A Microsoft
+Store package is planned before that, as the signed way in for whoever needs one (below).
 
 > Free code signing provided by [SignPath.io](https://signpath.io), certificate by
 > [SignPath Foundation](https://signpath.org).
+
+**Until then, the Microsoft Store is the signed way in** (decided 2026-09-23 with the user).
+The SignPath Foundation wants a project with visible use behind it, which takes as long as it
+takes; a user who needs a signed installer today should not have to wait for that. A package
+submitted to the Microsoft Store as **MSIX** is **re-signed by Microsoft** after certification,
+so no certificate has to be bought or held, and since September 2025 for individuals (May 2026
+for companies) a developer account costs nothing - an identity check replaces the fee.
+
+What that does and does not do:
+
+- The Store copy is signed by Microsoft and installs without a SmartScreen warning.
+- **The installer on GitHub stays unsigned**, and its SmartScreen paragraph in the README
+  stays with it. The Store signature belongs to the Store package alone.
+- Submitting the Win32 installer to the Store instead of an MSIX does not help: that route
+  requires the `.exe` to be signed by the publisher before submission.
+- So the Store is a second channel, not a replacement for SignPath, and it does not change
+  anything written below.
+
+What the MSIX build has to get right (none of it built yet):
+
+- **`runFullTrust`.** An AppContainer package cannot reach `127.0.0.1`, which would cut the
+  app off from the user's ComfyUI. Full trust keeps loopback, the file mirror and the helper
+  models' runtime working.
+- **No self-update in that build.** The Store updates its own copy; `electron-updater` and
+  the Updates section have to know they are not in charge there.
+- **The MCP registration** must name the execution alias, not the install path: a Store
+  install lives under `WindowsApps` in a folder that carries the version and changes with
+  every update. The AppImage needed the same treatment in 0.1.26.
+- **To be tested, not assumed:** the single-instance named pipe, the plugin folder, and every
+  path under `%APPDATA%` (the keys through safeStorage, the autosave, the local file mirror)
+  under a packaged app's path redirection.
+- **The licence is not an obstacle.** GPL-3.0 apps are in the Store (VLC, Krita); the
+  publisher supplies their own licence terms, and the source is public either way.
 
 ## Roles
 
