@@ -87,7 +87,8 @@ from it, a logo, a prompt field for the upscalers that take one, and a smaller i
 ## Screenshots (1366 x 768 or larger, up to 10)
 
 The manual's pictures, 1600 x 946, from the website's `public/projects/scumble/manual/`; copied into
-`dist/store-listing/` by the release session, in this order, with these captions:
+`dist/store-listing/` by the release session and **converted to PNG** (Partner Center takes PNG only), in this
+order, with these captions:
 
 1. `first-edit.jpg` - Select a part of the picture, describe what should be there, generate.
 2. `selection.jpg` - Selection by brush, wand, object or words.
