@@ -12,6 +12,11 @@ OpenRaster. Or open the assistant and say what you want: it drives the same edit
 the same commands an external agent gets, one card per step, and asks before anything costs
 money.
 
+[![Scumble, explained by someone who did not ask: the video, 4:40](https://www.denrakeiw.com/scumble/videos/scumble-explained.jpg)](https://www.denrakeiw.com/scumble/videos)
+
+**[Watch: Scumble, explained by someone who did not ask](https://www.denrakeiw.com/scumble/videos)** (4:40): two
+voices, one sceptic, the whole app recorded in the app.
+
 ![The editor with a picture open: the tool column, the canvas, the layer stack and the selection panel](docs/images/editor.jpg)
 
 Rendering happens on your own [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
