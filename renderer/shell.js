@@ -2,7 +2,7 @@
 // per document), the settings dialog (ComfyUI connection with auth, API provider keys,
 // recipes, local files) and the menu commands.
 import { host, api } from "./editor/host.js";
-import { InpaintEditor } from "./editor/inpaint_canvas.js";
+import { InpaintEditor, STYLE as EDITOR_STYLE } from "./editor/inpaint_canvas.js";
 import { glFiltersAvailable } from "./editor/inpaint_filters_gl.js";
 import { setPixelsOptions } from "./editor/inpaint_pixels.js";
 import { commands, docSummary } from "./commands.js";
@@ -11,6 +11,16 @@ import { waitForUser, editorOf } from "./assistant_wait.js";
 import { beforeCall as snapshotTurn, watchUserEdits, forgetDocument } from "./assistant_turns.js";
 import { initAssistant, toggleAssistant, resetAssistant, refreshAssistantModels } from "./assistant.js";
 import { initHelp, toggleHelp } from "./help.js";
+import { initSkins, applySkin, reloadSkins, renderAppearance } from "./skins.js";
+
+// the editor's style, in the app's cascade layer (docs/SKINS.md): created here before the first editor, so the
+// editor's own injectStyle() finds it and adds nothing; a skin's rules then beat it as they beat shell.css
+if (!document.getElementById("ipc-style")) {
+    const s = document.createElement("style");
+    s.id = "ipc-style";
+    s.textContent = "@layer app {\n" + EDITOR_STYLE + "\n}";
+    document.head.appendChild(s);
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -69,6 +79,7 @@ const ui = {
     lmAdd: $("set-lm-add"), lmState: $("set-lm-state"), lmList: $("set-lm-list"),
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
+    skins: $("set-skins"), skinsReload: $("set-skins-reload"), skinsFolder: $("set-skins-folder"), skinsNote: $("set-skins-note"),
     setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
     setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
@@ -372,7 +383,7 @@ function selectRecipe(id, providerId) {
     const via = r.kind === "provider" ? ` (via ${r.providerLabel}${r.model ? ", " + r.model : ""})` : "";
     ui.recipeNote.textContent = ks && !ks.ok ? ks.text : (r.description || "") + via;
     ui.recipeNote.title = [r.description, r.note].filter(Boolean).join("\n") + via;
-    ui.recipeNote.style.color = ks && !ks.ok ? "#e0a05a" : "";
+    ui.recipeNote.style.color = ks && !ks.ok ? "var(--sc-warn, #e0a05a)" : "";
     host.setRecipe(r);
     const byMode = { ...(settings.recipeByMode || {}), [modeOf(raw)]: raw.id };
     if (settings.recipe !== r.id || (settings.recipeByMode || {})[modeOf(raw)] !== raw.id) window.scumble.settings.set({ recipe: r.id, recipeByMode: byMode }).then((s) => { settings = s; });
@@ -1459,7 +1470,8 @@ host.onHelpersChanged = (st) => { if (ui.settings.open) renderHelpers(st); };
 // ---- plugins (Settings › Plugins) -------------------------------------------------------------
 
 function renderPlugins() {
-    const list = plugins.listPlugins();
+    // skins are listed under Settings › Appearance (renderer/skins.js), not here
+    const list = plugins.listPlugins().filter((p) => p.kind !== "skin");
     ui.plugins.innerHTML = "";
     if (!list.length) ui.plugins.appendChild(Object.assign(document.createElement("p"), { className: "shell-help", textContent: "No plugins found." }));
     for (const p of list) {
@@ -1506,9 +1518,11 @@ plugins.setOnChanged(() => { if (ui.settings.open) renderPlugins(); window.scumb
 ui.pluginsReload.addEventListener("click", async () => {
     ui.pluginsReload.disabled = true;
     ui.pluginsNote.textContent = "reloading ...";
-    try { const list = await plugins.reloadPlugins(); ui.pluginsNote.textContent = `${list.filter((p) => p.loaded).length} of ${list.length} loaded.`; }
+    try { const list = (await plugins.reloadPlugins()).filter((p) => p.kind !== "skin"); ui.pluginsNote.textContent = `${list.filter((p) => p.loaded).length} of ${list.length} loaded.`; }
     catch (err) { ui.pluginsNote.textContent = String(err.message || err); }
     finally { ui.pluginsReload.disabled = false; renderPlugins(); }
+    // a skin's folder may have changed too (docs/SKINS.md)
+    try { await reloadSkins(); } catch (err) { console.warn("skins", err); }
 });
 ui.pluginsFolder.addEventListener("click", () => window.scumble.plugins.openFolder());
 
@@ -1689,6 +1703,7 @@ async function openSettings() {
     try { await plugins.fetchList(); } catch (_) { /* ignore */ }
     ui.pluginsNote.textContent = "";
     renderPlugins();
+    try { await renderAppearance(ui); } catch (err) { ui.skinsNote.textContent = String(err.message || err); }
     if (!ui.settings.open) ui.settings.showModal();
 }
 
@@ -1898,11 +1913,13 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "next-tab") cycleTab(1);
     else if (cmd === "prev-tab") cycleTab(-1);
     else if (cmd === "import-recipe") importRecipe();
-    else if (cmd === "reload-plugins") plugins.reloadPlugins().then((list) => { if (host.editor) host.editor.setStatus(`Plugins reloaded: ${list.filter((p) => p.loaded).length} of ${list.length} loaded.`); });
+    else if (cmd === "reload-plugins") plugins.reloadPlugins().then(async (all) => { const list = all.filter((p) => p.kind !== "skin"); try { await reloadSkins(); } catch (err) { console.warn("skins", err); } if (host.editor) host.editor.setStatus(`Plugins reloaded: ${list.filter((p) => p.loaded).length} of ${list.length} loaded.`); });
+    else if (cmd.startsWith("skin:")) applySkin(cmd.slice(5)).catch(() => { /* the Appearance note says why */ });
     else if (cmd === "assistant") toggleAssistant();
     else if (cmd === "mcp-copied") host.editor && host.editor.setStatus("MCP registration copied. Paste it into your client; see docs/MCP.md.");
     else if (cmd === "settings-updates") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Updates"); if (h) h.scrollIntoView(); });
     else if (cmd === "settings-plugins") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Plugins"); if (h) h.scrollIntoView(); });
+    else if (cmd === "settings-appearance") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Appearance"); if (h) h.scrollIntoView(); });
     else if (cmd.startsWith("plugin:")) plugins.runAction(cmd.slice(7)).catch(() => { /* reported by the plugin host */ });
 });
 
@@ -1948,8 +1965,10 @@ window.scumble.commands.onRequest(async ({ id, name, args, meta }) => {
     reply(await commands.call(name, args || {}));
 });
 
-// ---- start: plugins, restore the last session, then connect -------------------------------
+// ---- start: the skin, plugins, restore the last session, then connect ----------------------
 
+// before any editor: the canvas colours that follow the skin are read once here (renderer/skins.js)
+try { await initSkins(); } catch (err) { console.warn("skins", err); }
 try {
     await plugins.loadPlugins();
 } catch (err) {

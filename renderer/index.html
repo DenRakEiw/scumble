@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' scumble://app blob: data:; img-src 'self' scumble://app blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self' scumble://app blob: data:; connect-src 'self' scumble://app blob: data:; script-src 'self' 'wasm-unsafe-eval'">
 <title>Scumble</title>
+<link rel="stylesheet" href="protect.css">
 <link rel="stylesheet" href="shell.css">
 <link rel="stylesheet" href="assistant.css">
 <link rel="stylesheet" href="help.css">
+<link id="skin-css" rel="stylesheet" href="skin.css">
 </head>
 <body>
 <div id="shell">
@@ -134,6 +136,12 @@
       </div>
       <div class="shell-row"><button id="set-as-reset" type="button">Delete all assistant data ...</button><span id="set-as-note" class="shell-note"></span></div>
       <p class="shell-help">The chat assistant keeps its chats and their screenshots under <code>assistant/</code> in the app data folder, one file per chat. Deleting removes every chat and its screenshots, the dates of the privacy notices, the assistant's settings and its lines in the app log. <strong>Your API keys stay</strong>: they belong to <em>API providers</em> above.</p>
+    </section>
+    <section id="set-appearance">
+      <h3>Appearance</h3>
+      <div id="set-skins"></div>
+      <div class="shell-row"><button id="set-skins-reload" type="button">Reload skins</button><button id="set-skins-folder" type="button">Open folder</button><span id="set-skins-note" class="shell-note"></span></div>
+      <p class="shell-help">A skin changes the app's colours, fonts and shapes; the picture never changes. A skin is a folder with a <code>plugin.json</code> and a <code>skin.css</code> in the plugin folder, no code (docs/SKINS.md). The assistant's questions, the picture's surround and the selection outline look the same in every skin. If a skin makes the app hard to read, View › Skin › Default brings the default look back; <code>--no-skin</code> on the command line starts without one.</p>
     </section>
     <section>
       <h3>Plugins</h3>

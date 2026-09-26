@@ -1,0 +1,1 @@
+{ "name": "Fixture escaper", "version": "1.0.0", "author": "skins gate", "registers": ["skin"], "description": "Squeezes the assistant chat to nothing, which protect.css does not pin; guardAsk must switch it off." }

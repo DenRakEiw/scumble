@@ -1,0 +1,13 @@
+{
+  "name": "Duck",
+  "version": "1.0.0",
+  "description": "Warm cream panels, lavender bars and an orange accent in soft, rounded shapes.",
+  "author": "Scumble",
+  "registers": ["skin"],
+  "skin": {
+    "css": "skin.css",
+    "background": "#e9dcc3",
+    "swatch": ["#f7e6cb", "#e2d4ec", "#a9dbe8", "#e8742f", "#1d1b22"],
+    "tokens": 1
+  }
+}

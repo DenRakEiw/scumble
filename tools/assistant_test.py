@@ -939,18 +939,20 @@ const a = await import("./assistant.js");
 a.toggleAssistant(false);
 await wait(150);
 const d = document.getElementById("assistant");
+const parts = (card) => card.shadowRoot || card;          // renderer/skins.js protectAsk draws the parts in a shadow root
 await window.scumble.assistant.send("mach die leinwand kleiner");
 let card = null;
 for (let i = 0; i < 80; i++) {
     await wait(250);
     const cards = Array.from(d.querySelectorAll(".as-card.as-ask"));
     card = cards.length ? cards[cards.length - 1] : null;
-    if (card && (card.querySelector(".as-card-state") || {}).textContent === "waiting for you") break;
+    if (card && (parts(card).querySelector(".as-card-state") || {}).textContent === "waiting for you") break;
     card = null;
 }
 const openedItself = d.open;
+const inTopLayer = !!(card && card.matches(":popover-open"));
 const before = [ednow(DOC).width, ednow(DOC).height];
-const allow = card ? Array.from(card.querySelectorAll("button")).find((b) => b.textContent === "Allow") : null;
+const allow = card ? Array.from(parts(card).querySelectorAll("button")).find((b) => b.textContent === "Allow") : null;
 if (allow) allow.click();
 for (let i = 0; i < 80; i++) {
     await wait(250);
@@ -960,10 +962,12 @@ for (let i = 0; i < 80; i++) {
 await wait(200);
 return {
     openedItself,
+    inTopLayer,
+    released: !!(card && !card.hasAttribute("popover") && !d.querySelector(".as-ask-spacer")),
     card: !!card,
-    name: card ? (card.querySelector(".as-card-name") || {}).textContent : null,
-    reason: card ? (card.querySelector(".as-reason") || {}).textContent : null,
-    state: card ? (card.querySelector(".as-card-state") || {}).textContent : null,
+    name: card ? (parts(card).querySelector(".as-card-name") || {}).textContent : null,
+    reason: card ? (parts(card).querySelector(".as-reason") || {}).textContent : null,
+    state: card ? (parts(card).querySelector(".as-card-state") || {}).textContent : null,
     before,
     after: [ednow(DOC).width, ednow(DOC).height],
 };""", timeout=120)
@@ -971,6 +975,8 @@ return {
             raise RuntimeError("the ask card did not open the panel: " + json.dumps(out))
         if out["name"] != "new_canvas" or not out["reason"]:
             raise RuntimeError("the ask card is not the call's: " + json.dumps(out))
+        if not out["inTopLayer"] or not out["released"]:
+            raise RuntimeError("the open question is not in the top layer, or was not released after the answer: " + json.dumps(out))
         if out["after"] == out["before"] or out["after"] != [320, 240]:
             raise RuntimeError("Allow did not let the call run: " + json.dumps(out))
         return f"the panel opened itself, {out['name']} asked ({out['state']}), Allow ran it"

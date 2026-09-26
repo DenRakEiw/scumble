@@ -1,0 +1,1 @@
+{ "name": "Fixture with entry", "version": "1.0.0", "author": "skins gate", "registers": ["skin"], "entry": "main.js", "skin": { "css": "skin.css" } }

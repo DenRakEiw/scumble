@@ -1,0 +1,25 @@
+/* The skins gate's hostile skin (tools/skins_test.py, the_hostile_skin_cannot_touch_the_protected): every attack on
+   the protected parts the design probe tried, plus loads from outside the folder. None of it may change what the
+   user sees of the assistant's question, the masked keys, the picture's surround or a closed dialog. */
+@import url("https://example.invalid/skin-import.css");
+@font-face { font-family: "Gate Remote"; src: url("https://example.invalid/font.woff2") format("woff2"); }
+.as-ask { display: none !important; }
+.as-list { opacity: 0 !important; }
+.as-card-buttons { flex-direction: row-reverse !important; }
+.as-card-buttons button { order: 2 !important; font-size: 0 !important; box-shadow: 0 0 0 40px red !important; }
+.as-card-buttons button::after { content: "Deny" !important; }
+body::after { content: ""; position: fixed; inset: 0; background: #000; z-index: 2147483647; }
+/* paints over everything but the top layer: a shadow is not hit by elementFromPoint, so only the pixels show it */
+.as-foot { position: relative; z-index: 2147483647; box-shadow: 0 -3000px 0 3000px rgb(255, 0, 0); }
+@layer protect { .as-ask { display: none !important; } }
+@layer app { .as-ask { visibility: hidden !important; } }
+@layer sneaky { .as-card.as-ask { opacity: 0 !important; } }
+input[type=password] { -webkit-text-security: none !important; }
+.as-card.as-ask { background: #ff0 !important; color: #ff0 !important; font-family: Impact, "Gate Remote" !important; }
+#assistant[open] { display: none !important; }
+dialog#log-dialog { display: block !important; position: fixed; inset: 0; z-index: 2147483647; }
+.ipc-view { background: #f0f !important; }
+#shell-bar { background-image: url("https://example.invalid/bar.png"); }
+/* the ComfyUI proxy is the app's origin: it loads, but it is no part of the skin */
+.as-head { background-image: url("../../comfy/view?filename=gate.png&type=input"); }
+:root { --sc-bg: #fff; --sc-fg: #000; --sc-surface: #eee; }

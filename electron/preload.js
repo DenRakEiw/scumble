@@ -131,6 +131,12 @@ contextBridge.exposeInMainWorld("scumble", {
         getData: (id) => ipcRenderer.invoke("plugins:getData", id),
         setData: (id, patch) => ipcRenderer.invoke("plugins:setData", { id, patch }),
     },
+    // the skin in use (electron/main/skins.js, docs/SKINS.md); renderer/skins.js applies it in the window
+    appearance: {
+        get: () => ipcRenderer.invoke("appearance:get"),
+        set: (id) => ipcRenderer.invoke("appearance:set", id),
+        refuse: (id, reason) => ipcRenderer.invoke("appearance:refuse", { id, reason }),
+    },
     // the command bridge (electron/main/bridge.js): main asks, the renderer runs commands.call
     commands: {
         onRequest: (cb) => on("commands:request", cb),

@@ -1,0 +1,1 @@
+{ "name": "Fixture latecomer", "version": "1.0.0", "author": "skins gate", "registers": ["skin"], "description": "Lets the question appear, then shrinks the chat after a delay; the check that repeats while a question is open must switch it off." }

@@ -17,6 +17,7 @@
 //   become HTML. `no_markup_writes` in tools/assistant_test.js holds this file to it.
 import { host } from "./editor/host.js";
 import { turnState, restoreTurn, forgetTurns } from "./assistant_turns.js";
+import { protectAsk, releaseAsk } from "./skins.js";
 
 const OPEN_KEY = "shell.assistant.open";
 const THUMB_MAX = 240;
@@ -431,6 +432,7 @@ function askCard(e) {
     add(card);
     if (!ui.dialog.open) toggleAssistant(true);        // an ask opens the panel
     syncButton();
+    protectAsk(card);                                   // drawn out of any skin's reach, and checked (docs/SKINS.md §5)
     return card;
 }
 
@@ -457,9 +459,11 @@ function cardLines(e) {
 
 function answer(call, allow, card, word) {
     openAsk = null;
-    const state = card.querySelector(".as-card-state");
+    const parts = card.shadowRoot || card;                 // skins.js protectAsk moved them into the card's shadow root
+    const state = parts.querySelector(".as-card-state");
     if (state) state.textContent = word;
-    for (const b of card.querySelectorAll("button")) b.disabled = true;
+    for (const b of parts.querySelectorAll("button")) b.disabled = true;
+    releaseAsk(card);
     api().answer(call, allow).catch(() => {});
     syncButton();
 }
@@ -515,6 +519,7 @@ function onEvent(e) {
         case "turn:done":
             busy = false;
             openAsk = null;
+            for (const c of ui.list.querySelectorAll(".as-card.as-ask")) releaseAsk(c);   // no question is open after a turn
             ui.send.textContent = "Send";
             endStream(e.reason === "stopped");
             if (e.reason && e.reason !== "end") note(doneWords(e), e.reason === "error" ? "as-bad" : "");

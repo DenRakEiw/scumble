@@ -34,9 +34,11 @@ plugin id (letters, digits, `-`, `_`); every registered thing is prefixed with i
 }
 ```
 
-`entry` (default `main.js`) is an ES module inside the folder. `registers` is informational.
-`enabledByDefault: false` ships a plugin switched off. The enabled state lives in
-`settings.json` (`plugins.enabled` / `plugins.disabled`).
+`entry` (default `main.js`) is an ES module inside the folder. `registers` is informational,
+with one exception: `"registers": ["skin"]` makes the folder a **skin**, a stylesheet and no
+module (no `entry`), chosen under *Settings › Appearance* instead of enabled here
+(docs/SKINS.md). `enabledByDefault: false` ships a plugin switched off. The enabled state lives
+in `settings.json` (`plugins.enabled` / `plugins.disabled`).
 
 ## The module
 
@@ -74,7 +76,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `panels.register(def)` / `unregister(id)` | side panels |
 | `actions.register(def)` / `unregister(id)` / `run(id)` | Plugins menu entries |
 | `tools.register(def)` / `unregister(id)` | tools in the tool column |
-| `events.on(type, fn)` | `built`, `activate`, `changed`, `tool`, `removed`; `fn({ doc, ... })`; returns `off()` |
+| `events.on(type, fn)` | `built`, `activate`, `changed`, `tool`, `removed`, `theme` (a skin was switched: `fn({ doc: null, skin })`, `skin` the id or `""`; read the tokens with `getComputedStyle(document.documentElement)`, docs/SKINS.md); `fn({ doc, ... })`; returns `off()` |
 | `storage.get()` / `storage.set(patch)` | a small persistent object per plugin (`settings.json`): `get()` returns a copy synchronously (loaded before `activate`), `set(patch)` merges at once and writes through in the background |
 | `ui.status(text)` | the status bar of the active tab |
 | `ui.el(tag, cls, text)`, `ui.icon(name)`, `ui.button(label, title, onClick)`, `ui.slider(label, {min, max, step, value, unit}, onChange)` | DOM helpers in the editor's style |
@@ -387,6 +389,10 @@ the relative imports inside plugin modules to carry it, so submodules reload too
 *Plugins* menu has the same entries. Runtime errors from callbacks
 are collected per plugin (the last eight) and shown there too.
 
+Skins are not in this list: *Settings › Appearance* lists them (docs/SKINS.md), and *Reload
+plugins* reloads them too. The `list_plugins` command returns every folder with a `kind`
+field, `"plugin"` or `"skin"`; a skin is always `enabled: false` and never `loaded`.
+
 ## Testing
 
 `python tools/commands_test.py` (app running with `--remote-debugging-port=9555`) exercises the
@@ -408,6 +414,8 @@ both paths, the commands, the control point tool with undo, the overlay, the pan
   (label, style, ground, size, position, opacity), two Plugins-menu actions, the commands
   `ailabel.add` / `ailabel.remove` / `ailabel.info`. Adding again replaces the label. About
   200 lines on the plain API, no editor patch; `tools/ailabel_test.py` is its gate.
+- `plugins/skin_90s` and `plugins/skin_duck`: the two built-in skins, **90s** and **Duck**
+  (docs/SKINS.md): a `plugin.json` and a `skin.css` each, no code.
 - `plugins/glb`: a 3D object (.glb / .gltf) placed in the picture through a dialog and
   rendered into a layer, with an optional depth layer for a ControlNet, re-editable
   (`docs/GLB.md`). three.js vendored under `vendor/` by `tools/vendor_three.py`; a panel, two

@@ -1,0 +1,203 @@
+/* 90s - a late-90s media player look for Scumble: bevelled slate panels, black LCD readouts with green
+   segment text, small type. A built-in skin and an example of the format (docs/SKINS.md): the tokens below
+   are the stable part, the free CSS after them reads the app's ids and classes and may need care when the
+   app changes. Every picture here is a CSS gradient of our own; the fonts are system fonts. */
+
+:root {
+  --sc-bg: #2a2c3a;
+  --sc-chrome: #3c3f52;
+  --sc-chrome-edge: #0b0c10;
+  --sc-surface: #3c3f52;
+  --sc-raised: #454859;
+  --sc-selected: #1d3c7a;
+  --sc-well: #0a0d0a;
+  --sc-field: #101318;
+  --sc-btn: #4a4e62;
+  --sc-btn-hover: #5a5f76;
+  --sc-border: #0b0c10;
+  --sc-line: #23252f;
+  --sc-fg-strong: #ffffff;
+  --sc-fg: #e2e2e2;
+  --sc-fg-2: #cdd1dd;
+  --sc-muted: #b4bacf;
+  --sc-faint: #9298b0;
+  --sc-accent: #3ee03e;
+  --sc-active: #7fb4ff;
+  --sc-active-bg: #1d3c7a;
+  --sc-on-active: #ffffff;
+  --sc-go: #1e6e1e;
+  --sc-warn: #f0c800;
+  --sc-ok: #3ee03e;
+  --sc-error: #ff9a82;
+  --sc-error-bg: #4a1414;
+  --sc-link: #8fd4ff;
+  --sc-backdrop: rgba(10, 12, 20, 0.6);
+  --sc-shadow: 2px 2px 0 #0b0c10;
+  --sc-scheme: dark;
+  --sc-control: #3ee03e;
+  /* stays auto: any other value switches the ::-webkit-scrollbar styling below off */
+  --sc-scrollbar: auto;
+  --sc-font: Tahoma, Verdana, "DejaVu Sans", "Liberation Sans", sans-serif;
+  --sc-font-mono: "Lucida Console", Monaco, Menlo, "DejaVu Sans Mono", "Liberation Mono", monospace;
+  --sc-radius-sm: 0px;
+  --sc-radius: 0px;
+  --sc-radius-lg: 0px;
+}
+
+/* ---- 1. small type: Tahoma at 12 is about the default font at 13, so the layer rows still fit ---------- */
+.ipc-modal, #shell-settings, #gen-dialog, #up-dialog, #log-dialog { font-size: 12px; }
+
+/* ---- 2. raised panels ------------------------------------------------------------------------------------ */
+#shell-bar, .ipc-top, .ipc-tools, .ipc-side, .as-head, .as-foot, .hp-head, .hp-chat {
+  box-shadow: inset 1px 1px 0 #8a8fa8, inset -1px -1px 0 #0b0c10;
+}
+
+/* ---- 3. bevelled buttons: pressed while held, and for a tool or a toggle that is on ----------------------- */
+#shell-bar button, #shell-settings button, #gen-dialog button, #up-dialog button, #log-dialog button,
+.as-head button:not(.as-chat-open):not(.as-chat-del), .as-foot button,
+#help button:not(.hp-link):not(.hp-read), .ipc-ib, input[type=color] {
+  box-shadow: inset -1px -1px #0b0c10, inset 1px 1px #8a8fa8, inset -2px -2px #23252f, inset 2px 2px #5a5f76;
+}
+#shell-bar button:active:not(:disabled), #shell-settings button:active:not(:disabled), #gen-dialog button:active:not(:disabled),
+#up-dialog button:active:not(:disabled), #log-dialog button:active:not(:disabled),
+.as-head button:not(.as-chat-open):not(.as-chat-del):active:not(:disabled), .as-foot button:active:not(:disabled),
+#help button:not(.hp-link):not(.hp-read):active:not(:disabled), .ipc-ib:active:not(:disabled), input[type=color]:active {
+  box-shadow: inset 1px 1px #0b0c10, inset -1px -1px #8a8fa8, inset 2px 2px #23252f, inset -2px -2px #5a5f76;
+  transform: translate(1px, 1px);
+}
+.ipc-ib.ipc-active, .ipc-ib.ipc-toggle-on, #shell-help.hp-on {
+  box-shadow: inset 1px 1px #0b0c10, inset -1px -1px #8a8fa8, inset 2px 2px #23252f, inset -2px -2px #5a5f76;
+}
+/* the saved chats are a list, not a row of buttons: they sit on the list's own black */
+.as-head .as-chat-open, .as-head .as-chat-del { background: transparent; }
+.as-head .as-chat-open:hover:not(:disabled) { background: #1d3c7a; }
+.as-head .as-chat-del:hover { background: #4a1414; }
+/* a menu entry is flat, as in a menu of the time */
+.ipc-flyout .ipc-ib { background: transparent; box-shadow: none; border-color: transparent; }
+.ipc-flyout .ipc-ib:hover { background: #1d3c7a; color: #ffffff; }
+
+/* ---- 4. sunken fields ------------------------------------------------------------------------------------ */
+.shell-field select, .shell-field input:not([type=checkbox]):not([type=radio]), .shell-provider input,
+#shell-settings select, #shell-settings textarea, #gen-dialog select, #gen-dialog textarea,
+#up-dialog select, #up-dialog textarea, #log-dialog select, #log-dialog .log-bar input,
+.as-head select, .as-free input, .as-foot textarea, .hp-search, select.hp-model, .hp-text,
+.ipc-num, .ipc-sel, .ipc-sec .ipc-seg input[type=text], .ipc-askbox .ipc-askinput, .ipc-askfield input,
+.ipc-text textarea, .ipc-prompt textarea, .ipc-layer .ipc-name input, .ipc-layer select.ipc-kindsel {
+  box-shadow: inset 1px 1px #0b0c10, inset -1px -1px #5a5f76;
+}
+
+/* ---- 5. LCD readouts: black glass, green segment text, faint scanlines ----------------------------------- */
+#shell-status, #shell-progress, .shell-report, #log-list, .ipc-bottom, .shell-notes {
+  background-color: #0a0d0a;
+  background-image: repeating-linear-gradient(to bottom, transparent 0 1px, rgba(0, 0, 0, 0.35) 1px 2px);
+  color: #00d000;
+  font: 12px/1.4 "MS Gothic", "MS UI Gothic", "Lucida Console", monospace;
+  text-shadow: 0 0 2px rgba(0, 255, 0, 0.45);
+  box-shadow: inset 1px 1px #0b0c10, inset -1px -1px #5a5f76;
+}
+#shell-status { padding: 3px 8px; }
+.ipc-bottom { border-top-color: #0b0c10; }
+.ipc-bottom .ipc-kbd { color: #1f9f1f; }
+.log-entry:hover { background: #16261a; }
+
+/* ---- 6. the logo: a small LCD with a still spectrum beside the name --------------------------------------- */
+#shell-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  background: #0a0d0a;
+  color: #3ee03e;
+  font: bold 13px "Lucida Console", Monaco, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 3px rgba(62, 224, 62, 0.7);
+  box-shadow: inset 1px 1px #0b0c10, inset -1px -1px #5a5f76;
+}
+#shell-logo::after {
+  content: "";
+  flex: none;
+  width: 30px;
+  height: 11px;
+  background:
+    repeating-linear-gradient(to top, transparent 0 2px, #0a0d0a 2px 3px),
+    linear-gradient(to top, #2cc814 0 50%, #d4b422 50% 78%, #e8340f 78%);
+  mask:
+    linear-gradient(#000 0 0) 0 100% / 4px 55% no-repeat,
+    linear-gradient(#000 0 0) 6px 100% / 4px 91% no-repeat,
+    linear-gradient(#000 0 0) 12px 100% / 4px 100% no-repeat,
+    linear-gradient(#000 0 0) 18px 100% / 4px 73% no-repeat,
+    linear-gradient(#000 0 0) 24px 100% / 4px 36% no-repeat;
+}
+
+/* ---- 7. an LED meter for the progress bar -------------------------------------------------------------- */
+#shell-progress-bar {
+  background: linear-gradient(to right, #1a8a0a, #2cc814 45%, #d4b422 75%, #e8340f);
+  mask: repeating-linear-gradient(to right, #000 0 3px, transparent 3px 4px);
+}
+#shell-progress-text { color: #ffffff; text-shadow: 1px 1px 0 #000000, 0 0 2px #000000; }
+
+/* ---- 8. title bars and hard frames on the dialogs ------------------------------------------------------ */
+#shell-settings, #gen-dialog, #up-dialog, #log-dialog {
+  border: 2px solid #0b0c10;
+  box-shadow: inset 1px 1px 0 #8a8fa8, inset -1px -1px 0 #0b0c10, 3px 3px 0 rgba(0, 0, 0, 0.5);
+}
+#shell-settings h2, #gen-dialog h2, #up-dialog h2, #log-dialog h2 {
+  margin: -16px -20px 8px;
+  padding: 3px 8px;
+  background: linear-gradient(90deg, #14286e, #1f7a8c);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.02em;
+}
+#log-dialog h2 { margin: -14px -18px 4px; }
+#shell-settings h3 { color: #3ee03e; }
+.ipc-askbox { border: 2px solid #0b0c10; }
+.ipc-askbox .ipc-asktitle {
+  margin: -16px -16px 0;
+  padding: 3px 8px;
+  background: linear-gradient(90deg, #14286e, #1f7a8c);
+  color: #ffffff;
+  font-size: 12px;
+}
+
+/* a long model id in Settings > Recipes may break anywhere, so its row never runs past the dialog (the
+   skin's font is wider than the default one) */
+#shell-settings .shell-recipe-name, #shell-settings .shell-recipe-meta { overflow-wrap: anywhere; }
+/* a key field fits its column instead of running under its Save button (its own frame shows here) */
+.shell-provider input { box-sizing: border-box; }
+
+/* ---- 9. scrollbars: a slate groove with a bevelled thumb ----------------------------------------------- */
+::-webkit-scrollbar { width: 14px; height: 14px; background: #23252f; }
+::-webkit-scrollbar-thumb {
+  background: #4a4e62;
+  box-shadow: inset -1px -1px #0b0c10, inset 1px 1px #8a8fa8, inset -2px -2px #23252f, inset 2px 2px #5a5f76;
+}
+::-webkit-scrollbar-thumb:hover { background: #5a5f76; }
+::-webkit-scrollbar-corner { background: #23252f; }
+
+/* ---- 10. range sliders: a sunken groove and a bevelled block ------------------------------------------- */
+input[type=range] { -webkit-appearance: none; appearance: none; height: 16px; background: transparent; }
+input[type=range]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #0a0d0a;
+  box-shadow: inset 1px 1px #0b0c10, inset -1px -1px #5a5f76;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 14px;
+  margin-top: -5px;
+  border: 0;
+  background: #4a4e62;
+  box-shadow: inset -1px -1px #0b0c10, inset 1px 1px #8a8fa8, inset -2px -2px #23252f, inset 2px 2px #5a5f76;
+}
+input[type=range]:disabled { opacity: 0.5; }
+
+/* ---- 11. selection and keyboard focus ------------------------------------------------------------------ */
+::selection { background: #1d3c7a; color: #ffffff; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 1px dotted #e2e2e2;
+  outline-offset: -3px;
+}

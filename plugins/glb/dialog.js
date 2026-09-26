@@ -18,21 +18,21 @@ const SLIDERS = [
 ];
 
 const CSS = `
-.glb-dialog { background:#232323; color:#ddd; border:1px solid #444; border-radius:8px; padding:0; max-width:calc(100vw - 40px); font:12px system-ui, sans-serif; }
-.glb-dialog::backdrop { background:rgba(0,0,0,0.6); }
+.glb-dialog { background:var(--sc-surface, #232323); color:var(--sc-fg, #ddd); border:1px solid var(--sc-border, #444); border-radius:var(--sc-radius-lg, 8px); padding:0; max-width:calc(100vw - 40px); font:12px var(--sc-font, system-ui, sans-serif); }
+.glb-dialog::backdrop { background:var(--sc-backdrop, rgba(0,0,0,0.6)); }
 .glb-body { display:flex; gap:12px; padding:12px; }
 .glb-stage { position:relative; background:#111 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Crect width='8' height='8' fill='%23333'/%3E%3Crect x='8' y='8' width='8' height='8' fill='%23333'/%3E%3C/svg%3E"); cursor:grab; user-select:none; touch-action:none; }
 .glb-stage canvas { display:block; }
 .glb-side { width:250px; display:flex; flex-direction:column; gap:4px; overflow:auto; max-height:80vh; }
 .glb-side label { display:grid; grid-template-columns:78px 1fr 48px; align-items:center; gap:6px; }
-.glb-side label span:last-child { text-align:right; color:#aaa; font-variant-numeric:tabular-nums; }
+.glb-side label span:last-child { text-align:right; color:var(--sc-fg-2, #aaa); font-variant-numeric:tabular-nums; }
 .glb-side input[type=range] { width:100%; min-width:0; }
 .glb-side .glb-tick { display:flex; gap:6px; align-items:center; }
 .glb-title { padding:10px 12px 0; font-weight:600; }
-.glb-hint { color:#999; margin:2px 0 6px; }
+.glb-hint { color:var(--sc-muted, #999); margin:2px 0 6px; }
 .glb-buttons { display:flex; gap:8px; justify-content:flex-end; padding:0 12px 12px; }
-.glb-buttons button { font:inherit; padding:5px 14px; border-radius:4px; border:1px solid #555; background:#333; color:#ddd; cursor:pointer; }
-.glb-buttons button.glb-primary { background:#2b7a3d; border-color:#2b7a3d; color:#fff; }
+.glb-buttons button { font:inherit; padding:5px 14px; border-radius:var(--sc-radius, 4px); border:1px solid var(--sc-border, #555); background:var(--sc-btn, #333); color:var(--sc-fg, #ddd); cursor:pointer; }
+.glb-buttons button.glb-primary { background:var(--sc-go, #2b7a3d); border-color:var(--sc-go, #2b7a3d); color:var(--sc-on-active, #fff); }
 `;
 
 let cssDone = false;

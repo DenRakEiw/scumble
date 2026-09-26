@@ -1,0 +1,122 @@
+/* Duck - warm cream panels, lavender bars, a sky blue for what is selected and an orange accent, in soft,
+   rounded shapes. A built-in skin and an example of a light skin (docs/SKINS.md): the tokens below are the
+   stable part, the free CSS after them reads the app's ids and classes. No pictures, only CSS of our own;
+   the fonts are system fonts. The assistant's questions keep their dark default look here on purpose:
+   they are protected in every skin. */
+
+:root {
+  --sc-bg: #e9dcc3;
+  --sc-chrome: #e2d4ec;
+  --sc-chrome-edge: #b9a6c9;
+  --sc-surface: #f7e6cb;
+  --sc-raised: #fdf5e6;
+  --sc-selected: #a9dbe8;
+  --sc-well: #fcf7ee;
+  --sc-field: #fffdf8;
+  --sc-btn: #fdf5e6;
+  --sc-btn-hover: #f3dcb6;
+  --sc-border: #3a3542;
+  --sc-line: #d5c1a0;
+  --sc-fg-strong: #101018;
+  --sc-fg: #1d1b22;
+  --sc-fg-2: #3f3c45;
+  --sc-muted: #5b5856;
+  --sc-faint: #6f6b67;
+  --sc-accent: #9a3d0c;
+  --sc-active: #1f6f8b;
+  --sc-active-bg: #e8742f;
+  --sc-on-active: #101018;
+  --sc-go: #f5b82e;
+  --sc-warn: #7a5200;
+  --sc-ok: #2e6b31;
+  --sc-error: #b3261e;
+  --sc-error-bg: #f6d5cf;
+  --sc-link: #1f6f8b;
+  --sc-backdrop: rgba(29, 27, 34, 0.45);
+  --sc-shadow: 0 6px 18px rgba(58, 53, 66, 0.25);
+  --sc-scheme: light;
+  --sc-control: #e8742f;
+  --sc-scrollbar: #6c6a68 #efe2c8;
+  --sc-font: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  --sc-font-mono: ui-monospace, Consolas, monospace;
+  --sc-radius-sm: 6px;
+  --sc-radius: 10px;
+  --sc-radius-lg: 14px;
+}
+
+/* ---- 1. a dark face plate for the top bar; its buttons and fields keep their cream and white ----------- */
+#shell-bar { background: #4a4846; border-bottom: 2px solid #1d1b22; }
+#shell-bar .shell-field, #shell-status { color: #f7e6cb; }
+#shell-bar .shell-note { color: #e4d6c0; }
+/* the recipe's missing-key note sets its colour inline; on the plate it needs a lighter warning colour */
+#shell-bar .shell-note[style*="color"] { color: #ffc46b !important; }
+#shell-bar .dot { background: #b8ab98; }
+#shell-bar .dot.connected { background: #7fd67f; }
+#shell-bar .dot.connecting { background: #ffb070; }
+#shell-bar .dot.error, #shell-bar .dot.missing-node { background: #ff8a7a; }
+
+/* ---- 2. the logo: a small orange bill of our own beside the name ---------------------------------------- */
+#shell-logo { display: inline-flex; align-items: center; color: #ffb070; }
+#shell-logo::before {
+  content: "";
+  flex: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 8px;
+  margin-right: 6px;
+  background: #e8742f;
+  border: 1.5px solid #1d1b22;
+  border-radius: 2px 8px 8px 2px;
+}
+
+/* ---- 3. rounded tabs ------------------------------------------------------------------------------------ */
+.shell-tab { border-radius: 10px 10px 0 0; margin-top: 3px; }
+
+/* ---- 4. dialogs: a firmer frame and a soft shadow (no hard offset shadows anywhere) ----------------------- */
+#shell-settings, #gen-dialog, #up-dialog, #log-dialog { border-width: 2px; box-shadow: 0 10px 30px rgba(58, 53, 66, 0.3); }
+
+/* ---- 5. field borders that stay visible on cream and white ---------------------------------------------- */
+.shell-field select, .shell-field input:not([type=checkbox]):not([type=radio]), .shell-provider input,
+#shell-settings select, #shell-settings textarea, #gen-dialog select, #gen-dialog textarea,
+#up-dialog select, #up-dialog textarea, #log-dialog select, #log-dialog .log-bar input,
+.as-head select, .as-free input, .as-foot textarea, .hp-search, select.hp-model, .hp-text,
+.ipc-num, .ipc-sel, .ipc-sec .ipc-seg input[type=text], .ipc-askbox .ipc-askinput, .ipc-askfield input,
+.ipc-text textarea, .ipc-prompt textarea, .ipc-layer select.ipc-kindsel {
+  border-color: #8f7b5c;
+}
+.shell-field select:focus, .shell-field input:focus, .shell-provider input:focus, #shell-settings select:focus,
+#gen-dialog select:focus, #gen-dialog textarea:focus, #up-dialog select:focus, #up-dialog textarea:focus,
+#log-dialog .log-bar input:focus, .as-head select:focus, .as-free input:focus, .as-foot textarea:focus,
+.hp-search:focus, select.hp-model:focus, .hp-text:focus, .ipc-num:focus, .ipc-sel:focus,
+.ipc-sec .ipc-seg input[type=text]:focus, .ipc-askbox .ipc-askinput:focus, .ipc-askfield input:focus,
+.ipc-text textarea:focus, .ipc-prompt textarea:focus {
+  border-color: #1f6f8b;
+}
+
+/* a long model id in Settings > Recipes may break anywhere, so its row never runs past the dialog (the
+   skin's font is wider than the default one) */
+#shell-settings .shell-recipe-name, #shell-settings .shell-recipe-meta { overflow-wrap: anywhere; }
+/* a key field fits its column instead of running under its Save button (its own frame shows here) */
+.shell-provider input { box-sizing: border-box; }
+
+/* ---- 6. a small round lens on the buttons that start a run --------------------------------------------- */
+#gen-go, #up-go, .ipc-ib.ipc-primary {
+  padding-left: 26px;
+  font-weight: 700;
+  background-image: radial-gradient(circle at 12px 50%, #1d1b22 0 4px, #69c2eb 4.5px 7px, #1d1b22 7.5px 8.5px, transparent 9px);
+  background-repeat: no-repeat;
+}
+
+/* ---- 7. chat bubbles with an ink edge ------------------------------------------------------------------- */
+.as-bubble, .hp-bubble { border: 1px solid #3a3542; box-shadow: 0 2px 6px rgba(58, 53, 66, 0.18); }
+
+/* ---- 8. a button lifts a pixel under the mouse and sinks while pressed ---------------------------------- */
+button:hover:not(:disabled):not(.hp-link):not(.hp-read):not(.as-chat-open), .ipc-ib:hover { transform: translateY(-1px); }
+button:active:not(:disabled):not(.hp-link):not(.hp-read):not(.as-chat-open), .ipc-ib:active { transform: translateY(1px); }
+
+/* ---- 9. selection and keyboard focus ------------------------------------------------------------------- */
+::selection { background: #a9dbe8; color: #101018; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible {
+  outline: 2px dashed #1f6f8b;
+  outline-offset: 2px;
+}

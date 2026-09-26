@@ -1,0 +1,1 @@
+{ "name": "Fixture missing css", "version": "1.0.0", "author": "skins gate", "registers": ["skin"], "skin": { "css": "skin.css" } }

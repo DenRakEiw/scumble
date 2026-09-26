@@ -24,6 +24,7 @@ const brushes = require("./brushes");
 const helpers = require("./onnx");
 const gpumem = require("./gpumem");
 const plugins = require("./plugins");
+const skins = require("./skins");
 const { Bridge } = require("./bridge");
 const { LocalServer, LocalClient } = require("./local");
 const { Updater } = require("./updater");
@@ -71,7 +72,7 @@ const ORIGIN = `${SCHEME}://app`;
 const MIME = {
     ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg",
-    ".svg": "image/svg+xml", ".ttf": "font/ttf", ".otf": "font/otf", ".woff": "font/woff", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8",
+    ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".svg": "image/svg+xml", ".ttf": "font/ttf", ".otf": "font/otf", ".woff": "font/woff", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8",
     ".ico": "image/x-icon", ".cube": "text/plain",
 };
 
@@ -143,6 +144,11 @@ function installProtocol() {
 async function serveScheme(request) {
     const url = new URL(request.url);
     if (url.host !== "app") return new Response("unknown host", { status: 404 });
+    // the skin in use (docs/SKINS.md): index.html links this sheet after the app's own; it imports the skin's
+    // stylesheet from its folder, or is empty in the default look. Never cached: a switch loads it again
+    if (url.pathname === "/skin.css") {
+        return new Response(skins.sheetFor(currentSkin(), Date.now()), { status: 200, headers: { "content-type": "text/css; charset=utf-8", "cache-control": "no-store" } });
+    }
     if (url.pathname.startsWith("/comfy/")) {
         const rel = url.pathname.slice("/comfy".length);
         try {
@@ -156,6 +162,42 @@ async function serveScheme(request) {
         return comfy.proxy(request, rel + url.search);
     }
     return serveFile(url.pathname, url.search);
+}
+
+// ---- skins (electron/main/skins.js, docs/SKINS.md) ------------------------------------------
+
+/** The settings' appearance object, whole (settings.js merges only the top level). */
+function appearanceSettings() {
+    return { ...settings.DEFAULTS.appearance, ...(settings.get().appearance || {}) };
+}
+
+/** The skin in use (a plugins.list() entry), or null for the default look; --no-skin is read here only. */
+function currentSkin() {
+    return skins.activeSkin({ argv: process.argv, appearance: appearanceSettings(), list: plugins.list() });
+}
+
+/** What Settings › Appearance and renderer/skins.js need: the choice, what is in use, and every skin folder. */
+function appearanceState() {
+    const a = appearanceSettings();
+    const list = plugins.list().filter((p) => p.kind === "skin");
+    const active = skins.activeSkin({ argv: process.argv, appearance: a, list });
+    return {
+        skin: a.skin || "",
+        refused: a.refused || null,
+        active: active ? active.id : null,
+        background: skins.backgroundFor(active),
+        noSkinFlag: process.argv.includes("--no-skin"),
+        tokens: skins.SKIN_TOKENS_VERSION,
+        skins: list.map((p) => ({
+            id: p.id, name: p.name || p.id, version: p.version || "", description: p.description || "", author: p.author || "",
+            source: p.source, dir: p.dir, error: p.error || null, warnings: p.warnings || [], skin: p.skin || null,
+        })),
+    };
+}
+
+/** The window's own background follows the skin, so a resize or a reload shows no default-grey flash. */
+function applySkinBackground() {
+    if (win && !win.isDestroyed()) win.setBackgroundColor(skins.backgroundFor(currentSkin()));
 }
 
 // ---- window ---------------------------------------------------------------------------
@@ -182,7 +224,7 @@ function createWindow() {
         height: saved.height || 1000,
         x: saved.x, y: saved.y,
         minWidth: 1100, minHeight: 700,
-        backgroundColor: "#181818",
+        backgroundColor: skins.backgroundFor(currentSkin()),
         title: "Scumble",
         icon: fs.existsSync(ICON) ? ICON : undefined,
         show: false,
@@ -329,6 +371,22 @@ let pluginActions = [];   // [{id, label, accelerator}] from renderer/plugins.js
 const updater = new Updater();
 updater.on("status", (s) => send("update:status", s));
 
+/** View › Skin: the default look, one radio per usable skin, and the way to Settings › Appearance. */
+function skinMenu() {
+    let active = null;
+    let usable = [];
+    try {
+        active = currentSkin();
+        usable = plugins.list().filter((p) => p.kind === "skin" && !p.error);
+    } catch (err) { console.warn("skins menu:", err.message); }
+    return [
+        { label: "Default", type: "radio", checked: !active, click: () => send("menu", "skin:") },
+        ...usable.map((p) => ({ label: String(p.name || p.id).replace(/&/g, "&&"), type: "radio", checked: !!active && active.id === p.id, click: () => send("menu", "skin:" + p.id) })),
+        { type: "separator" },
+        { label: "Appearance settings...", click: () => send("menu", "settings-appearance") },
+    ];
+}
+
 function buildMenu() {
     const isMac = process.platform === "darwin";
     const pluginMenu = {
@@ -371,6 +429,9 @@ function buildMenu() {
                 { role: "togglefullscreen" },
                 { type: "separator" },
                 { label: "Assistant", accelerator: "CmdOrCtrl+Shift+A", click: () => send("menu", "assistant") },
+                { type: "separator" },
+                // the native menu is out of any skin's reach: Default always brings the default look back
+                { label: "Skin", submenu: skinMenu() },
             ],
         },
         pluginMenu,
@@ -581,6 +642,28 @@ function installIpc() {
     ipcMain.handle("plugins:menu", (_e, actions) => { pluginActions = Array.isArray(actions) ? actions.map((a) => ({ id: String(a.id), label: String(a.label || a.id), accelerator: a.accelerator ? String(a.accelerator) : null })) : []; buildMenu(); return true; });
     ipcMain.handle("plugins:getData", (_e, id) => plugins.getData(String(id)));
     ipcMain.handle("plugins:setData", (_e, { id, patch }) => plugins.setData(String(id), patch));
+    // skins (docs/SKINS.md): main keeps the choice and answers skin.css; renderer/skins.js swaps the sheet
+    // read afresh from the folders each time (Reload skins, Settings › Appearance): View › Skin follows what is there
+    ipcMain.handle("appearance:get", () => { buildMenu(); return appearanceState(); });
+    ipcMain.handle("appearance:set", (_e, id) => {
+        const skin = String(id == null ? "" : id);
+        if (skin && !plugins.list().some((p) => p.id === skin && p.kind === "skin" && !p.error)) throw new Error(`no skin "${skin}"`);
+        const { refused } = appearanceSettings();
+        // choosing a skin again that was switched off gives it another chance
+        settings.set({ appearance: { skin, refused: refused && refused.id === skin ? null : refused || null } });
+        applySkinBackground();
+        buildMenu();
+        return appearanceState();
+    });
+    ipcMain.handle("appearance:refuse", (_e, req) => {
+        const id = String((req && req.id) || "");
+        const reason = String((req && req.reason) || "").slice(0, 300);
+        settings.set({ appearance: { skin: "", refused: { id, reason, at: Date.now() } } });
+        applySkinBackground();
+        buildMenu();
+        log.record({ level: "warn", source: "skins", message: `the skin "${id}" was switched off: ${reason}` });
+        return appearanceState();
+    });
     // the in-app assistant (docs/PLAN_ASSISTANT.md §4 A4): `send` starts a turn that runs on in the
     // background and reports through `assistant:event`; `state` rebuilds the panel after a reload
     ipcMain.handle("assistant:send", (_e, req) => getAssistant().begin(String(req && req.text != null ? req.text : "")));

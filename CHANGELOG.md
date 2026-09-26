@@ -21,6 +21,11 @@ the section for its version; `docs/` and the commit history hold the technical d
   assistant models. Oxen.ai comes after Comfy Router in each recipe's provider list (Magnific stays last); no default
   changed. The pictures go to Oxen inline, and Oxen saves every generated image in your Oxen account. Written from
   Oxen's documentation and model list; **nothing has run against the live API yet**.
+- **Skins.** Settings › Appearance and View › Skin switch the app's look: the default, **90s** (a late-90s media
+  player: bevelled slate panels, green LCD readouts, small type) or **Duck** (warm cream, lavender and orange,
+  rounded). A skin is a folder with a `plugin.json` and a `skin.css`, no code, so you can make your own
+  (docs/SKINS.md). The assistant's questions, the picture's surround and the selection outline look the same in
+  every skin.
 
 ## 0.1.28 — 2026-09-23
 

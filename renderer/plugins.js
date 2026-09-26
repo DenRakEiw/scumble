@@ -623,7 +623,7 @@ function makeApi(entry) {
         tools: { register: (def) => registerTool(entry, def), unregister: (id) => unregisterTool(entry, id.includes(".") ? id : `${entry.id}.${id}`) },
 
         events: {
-            /** built, activate, changed, tool, removed: fn({ doc, ... }); returns the off() function. */
+            /** built, activate, changed, tool, removed, theme (a skin was switched; doc is null): fn({ doc, ... }); returns the off() function. */
             on(type, fn) {
                 const wrapped = (data) => { try { fn({ ...data, doc: docOf(data.editor) }); } catch (err) { report(entry, `on ${type}`, err); } };
                 const off = host.on(type, wrapped);
@@ -751,6 +751,8 @@ export function listPlugins(fresh) {
         const entry = plugins.get(p.id);
         out.push({
             id: p.id, name: p.name || p.id, version: p.version || "", description: p.description || "", author: p.author || "", homepage: p.homepage || "",
+            // "skin": a folder with a stylesheet and no module (docs/SKINS.md), never loaded here; Settings › Appearance lists it
+            kind: p.kind || "plugin",
             source: p.source, dir: p.dir, enabled: !!p.enabled, loaded: !!(entry && entry.loaded), error: (entry && entry.error) || p.error || null, errors: entry ? entry.errors.slice() : [],
             registered: entry ? {
                 filters: Array.from(entry.regs.filters), panels: Array.from(entry.regs.panels.keys()), actions: Array.from(entry.regs.actions.keys()).map((id) => ({ id, label: entry.regs.actions.get(id).def.label })),

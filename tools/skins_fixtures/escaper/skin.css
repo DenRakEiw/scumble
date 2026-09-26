@@ -1,0 +1,5 @@
+/* The skins gate's escaper (tools/skins_test.py, a_skin_that_escapes_is_switched_off): nothing here touches what
+   protect.css pins, but the chat that holds the assistant's question is squeezed to nothing. guardAsk() has to see
+   that the buttons cannot be reached and switch the skin off. */
+:root { --sc-bg: #202a20; }
+#assistant[open] .as-list { height: 0 !important; min-height: 0 !important; flex: 0 0 0 !important; overflow: hidden !important; }

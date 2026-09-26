@@ -267,8 +267,8 @@ The numbered list the user adds to. Items 1 to 13 are built and their text is in
    and answer a textured GLB (not only a mesh), the answer's size and format (GLB or a zip of OBJ + textures), the time
    (minutes: the queue and its 30-minute wait fit), the price, and whether the glb plugin's renderer shows the
    answer's PBR materials well enough that the result is worth inpainting over.
-20. **Skins: a docking point for custom app looks (asked for by the user on 2026-09-25; BEING BUILT from 2026-09-26,
-   `docs/PLAN_0_1_29.md` §1; the example skins are named "90s" and "Duck" by the user).** Developers drop a skin into a folder and the app wears it. **The user's
+20. **Skins: a docking point for custom app looks (asked for by the user on 2026-09-25; BUILT on 2026-09-26,
+   `docs/SKINS.md`, `docs/PLAN_0_1_29.md` §1; the example skins are named "90s" and "Duck" by the user).** Developers drop a skin into a folder and the app wears it. **The user's
    answers:** the app only (not the ComfyUI node, so `build_node.py` / `nodecopy` stay out of it except where the
    editor's shared `STYLE` is touched), and ship example skins from the start - a **Winamp-like** look and a look after
    Pollen Robotics' / Hugging Face's **Microduck** robot (palette from https://pollen-robotics.com/microduck/press-kit/).
@@ -367,7 +367,8 @@ The numbered list the user adds to. Items 1 to 13 are built and their text is in
 port 9555 with its own profile (with `test_base.png`), runs each gate with a timeout, and writes logs and `summary.txt` under
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
-mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
+magnific oxen`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
 forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and

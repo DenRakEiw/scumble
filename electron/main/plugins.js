@@ -2,7 +2,8 @@
 // (<userData>/plugins). Each plugin is a folder with a plugin.json manifest and a
 // JavaScript module; the renderer loads the module through scumble://app/plugins/<id>/...
 // (served by main.js from resolve()). This module only knows folders, manifests and the
-// enabled flags; what a plugin registers lives in renderer/plugins.js.
+// enabled flags; what a plugin registers lives in renderer/plugins.js. A skin is a plugin folder
+// with a stylesheet and no module (skins.js, docs/SKINS.md): listed here, never loaded as code.
 "use strict";
 
 const fs = require("node:fs");
@@ -10,6 +11,7 @@ const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { app, shell } = require("electron");
 const settings = require("./settings");
+const skins = require("./skins");
 
 const BUILTIN_DIR = path.join(__dirname, "..", "..", "plugins");
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
@@ -23,6 +25,18 @@ function readManifest(dir) {
     let m;
     try { m = JSON.parse(fs.readFileSync(file, "utf8")); } catch (err) { return { error: `plugin.json: ${err.message}` }; }
     if (!m || typeof m !== "object") return { error: "plugin.json is not an object" };
+    // a skin (docs/SKINS.md): no module, only a stylesheet; skins.js checks the rest of its manifest
+    if (Array.isArray(m.registers) && m.registers.map(String).includes("skin")) {
+        return {
+            name: typeof m.name === "string" ? m.name : path.basename(dir),
+            version: m.version != null ? String(m.version) : "",
+            description: typeof m.description === "string" ? m.description : "",
+            author: typeof m.author === "string" ? m.author : "",
+            homepage: typeof m.homepage === "string" ? m.homepage : "",
+            registers: m.registers.map(String),
+            ...skins.readSkinManifest(m, dir),
+        };
+    }
     const entry = typeof m.entry === "string" && m.entry ? m.entry.replace(/\\/g, "/") : "main.js";
     if (entry.startsWith("/") || entry.includes("..")) return { error: `entry "${entry}" must be a relative path inside the plugin folder` };
     if (!fs.existsSync(path.join(dir, entry))) return { error: `entry file "${entry}" not found` };
@@ -48,7 +62,7 @@ function scan(root, source) {
         if (!fs.existsSync(path.join(dir, "plugin.json"))) continue;
         const id = d.name;
         const m = readManifest(dir);
-        if (!ID_RE.test(id)) { out.push({ id, source, dir, name: id, error: `folder name "${id}" is not a valid plugin id (letters, digits, - and _)` }); continue; }
+        if (!ID_RE.test(id)) { out.push({ id, source, dir, name: id, kind: m.kind, error: `folder name "${id}" is not a valid plugin id (letters, digits, - and _)` }); continue; }
         out.push({ id, source, dir, ...m });
     }
     return out;
@@ -64,11 +78,14 @@ function list() {
     const enabled = new Set(prefs.enabled || []);
     return Array.from(byId.values()).map((p) => ({
         ...p,
-        enabled: !p.error && (enabled.has(p.id) || (!disabled.has(p.id) && p.enabledByDefault !== false)),
+        // a skin is never loaded as a module: it is chosen under Settings › Appearance (skins.js activeSkin)
+        enabled: p.kind === "skin" ? false : !p.error && (enabled.has(p.id) || (!disabled.has(p.id) && p.enabledByDefault !== false)),
     }));
 }
 
 function setEnabled(id, on) {
+    const p = list().find((x) => x.id === id);
+    if (p && p.kind === "skin") throw new Error("a skin is chosen under Settings › Appearance");
     const prefs = settings.get().plugins || {};
     const disabled = new Set(prefs.disabled || []);
     const enabled = new Set(prefs.enabled || []);
@@ -81,6 +98,8 @@ function setEnabled(id, on) {
 function resolve(id, rel) {
     const p = list().find((x) => x.id === id);
     if (!p) return null;
+    // a skin's folder serves its stylesheet, pictures and fonts, not its manifest or anything else
+    if (p.kind === "skin" && !skins.SKIN_FILE_RE.test(rel)) return null;
     const abs = path.normalize(path.join(p.dir, rel));
     if (!abs.startsWith(p.dir + path.sep)) return null;
     return abs;

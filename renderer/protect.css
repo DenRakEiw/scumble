@@ -1,0 +1,44 @@
+/* What no skin can change (docs/SKINS.md "What a skin cannot change"). This sheet is linked first, and its rules sit
+   in an anonymous cascade layer: nothing can join a layer without a name, and the !important of the first layer beats
+   the !important of every later layer and of every unlayered sheet - a skin's included. Every value below is the
+   value the default look already computes (assistant.css, the editor's STYLE), so the default look does not change.
+   The assistant's question itself is out of reach of every sheet here (renderer/skins.js protectAsk); this sheet
+   keeps the chain it sits in. tools/skins_test.py holds it to that. */
+@layer {
+    /* the chain from the window down to the assistant's list: nothing on it may hide, fade, move or clip it */
+    html, body, #shell, #shell-main, #assistant[open], #assistant[open] .as-list {
+        visibility: visible !important; opacity: 1 !important; filter: none !important; transform: none !important;
+        clip-path: none !important; mask: none !important; content-visibility: visible !important;
+        mix-blend-mode: normal !important; isolation: auto !important; backdrop-filter: none !important;
+        perspective: none !important; contain: none !important; will-change: auto !important; zoom: 1 !important;
+    }
+    html, body { display: block !important; }
+    #shell, #shell-main, #assistant[open], #assistant[open] .as-list { display: flex !important; }
+    html::before, html::after, body::before, body::after, #shell::before, #shell::after, #shell-main::before, #shell-main::after,
+    #assistant::before, #assistant::after, #assistant .as-list::before, #assistant .as-list::after { content: none !important; }
+    /* nothing later in the page may be put over the card: closed dialogs and the page's own machinery stay out */
+    dialog:not([open]) { display: none !important; }
+    head, script, style, link, template { display: none !important; }
+
+    /* the assistant's question draws itself in a shadow root, in the top layer while it is open (renderer/skins.js
+       protectAsk); the spacer that holds its place in the chat keeps the height protectAsk gives it */
+    #assistant .as-ask-spacer {
+        display: block !important; visibility: hidden !important; box-sizing: border-box !important;
+        margin: 0 !important; padding: 0 !important; border: 0 !important; min-height: 0 !important; max-height: none !important;
+        flex: 0 0 auto !important; order: 0 !important; position: static !important; float: none !important;
+        align-self: stretch !important; width: auto !important; min-width: 0 !important; max-width: none !important;
+    }
+    #assistant .as-ask-spacer::before, #assistant .as-ask-spacer::after { content: none !important; }
+
+    /* the picture's surround stays a neutral grey checker in every skin (the editor's STYLE, .ipc-view) */
+    .ipc-view {
+        background-color: #2b2b2b !important;
+        background-image: linear-gradient(45deg,#333 25%,transparent 25%),linear-gradient(-45deg,#333 25%,transparent 25%),
+            linear-gradient(45deg,transparent 75%,#333 75%),linear-gradient(-45deg,transparent 75%,#333 75%) !important;
+        background-size: 16px 16px !important; background-position: 0 0,0 8px,8px -8px,-8px 0 !important;
+    }
+    /* the editor's own question keeps its buttons in their order */
+    .ipc-askbox .ipc-askrow { flex-direction: row !important; }
+    .ipc-askbox .ipc-askrow > * { order: 0 !important; }
+}
+@layer app;

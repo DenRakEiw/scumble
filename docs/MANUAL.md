@@ -459,7 +459,9 @@ _What is in the settings dialog, how updates work, and the three things to check
 
 ![The console window over the editor, with the filter by level and text and the path of the log file](https://www.denrakeiw.com/projects/scumble/manual/settings-and-trouble.jpg "1600x946")
 
-Ctrl+, opens the settings: the ComfyUI server and its authentication, API providers, language models, recipes, helper models, the assistant, plugins, local files, rendering and updates. Most of it you set once.
+Ctrl+, opens the settings: the ComfyUI server and its authentication, API providers, language models, recipes, helper models, the assistant, the appearance, plugins, local files, rendering and updates. Most of it you set once.
+
+Settings › Appearance switches the app's look: the default, 90s, Duck or a skin you add (docs/SKINS.md); View › Skin does the same from the menu, and View › Skin › Default brings the default back if a skin makes the app hard to read.
 
 Updates come from GitHub releases. The app checks, downloads, and shows you the release notes before you restart into the new version. Nothing is installed while you are working.
 

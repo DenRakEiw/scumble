@@ -1,0 +1,13 @@
+{
+  "name": "90s",
+  "version": "1.0.0",
+  "description": "A late-90s media player look: bevelled slate panels, black LCD readouts with green segment text, small type.",
+  "author": "Scumble",
+  "registers": ["skin"],
+  "skin": {
+    "css": "skin.css",
+    "background": "#2a2c3a",
+    "swatch": ["#3c3f52", "#0a0d0a", "#3ee03e", "#1d3c7a", "#e2e2e2"],
+    "tokens": 1
+  }
+}

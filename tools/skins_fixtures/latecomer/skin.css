@@ -1,0 +1,6 @@
+/* The skins gate's latecomer (tools/skins_test.py, a_skin_that_hides_the_question_later_is_switched_off): the question
+   passes its first check, and three seconds after the skin is applied an animation squeezes the chat to nothing.
+   The check that repeats while a question is open (renderer/skins.js tick) has to see it and switch the skin off. */
+:root { --sc-bg: #1a1a24; }
+@keyframes gate-shut { to { max-height: 0px; flex-grow: 0; } }
+#assistant[open] .as-list { animation: gate-shut 0s 3s forwards; }
