@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run from F:/canvas with Git Bash. Never touches port 9557 (the preview) or the real node repo.
+# Run with Git Bash; it runs the checkout it lives in (F:/canvas, or a worktree of it). Never touches port 9557 (the
+# preview) or the real node repo.
 # Gates on a fresh dev instance with its own profile (docs/PLAN_BCE.md §0).
 #
 #   bash tools/run_gates.sh <label> [--copy] [--strict] [--tiles on|off] [--offline] [--exe PATH] gate [gate ...]
@@ -28,6 +29,8 @@
 # no key, refuses a profile that holds one, refuses an instance connected to ComfyUI, and goes last in a list.
 # Gate "platform" (tools/platform_test.py) runs tools/platform_test.js in plain Node first (the MCP registration of
 # every platform, the files each installer leaves out), then the API keys note in the app.
+# Gate "document" (tools/document_test.py) runs tools/document_test.js in plain Node first, then saves and opens
+# .scumble documents in instances of its own (a fresh profile, a kill mid-save, a close during a save, newer files).
 # Logs and summary.txt go to $SCUMBLE_GATES/gates/<label>/. Exit code 0 only when every gate passed.
 # Logs, profiles and the node copy go under $SCUMBLE_GATES (default F:/canvas/dist/gates, ignored by git).
 SP="${SCUMBLE_GATES:-/f/canvas/dist/gates}"
@@ -49,7 +52,7 @@ while [ $# -gt 0 ]; do
 done
 OUT="$SP/gates/$LABEL"
 PROFILE="$SP/profiles/$LABEL"
-cd /f/canvas || exit 1
+cd "$(dirname "$0")/.." || exit 1
 rm -rf "$OUT" "$PROFILE"
 mkdir -p "$OUT" "$PROFILE/files/input/inpaint_canvas"
 cp "/f/Comfyui/ComfyUI_windows_portable_nvidia/ComfyUI/input/inpaint_canvas/test_base.png" "$PROFILE/files/input/inpaint_canvas/"
@@ -63,7 +66,7 @@ if curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null; then
 fi
 
 needs_app=0
-for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*) ;; *) needs_app=1 ;; esac; done
+for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*|document) ;; *) needs_app=1 ;; esac; done
 TILEARG=""
 case "$TILES" in
   on) export SCUMBLE_TILES=1; TILEARG="--tiles" ;;
@@ -107,6 +110,9 @@ for g in "$@"; do
     # quit:15000x10000 is the 15k measurement of the close alone
     quit) timeout 900 python tools/quit_test.py ${EXE:+--exe "$EXE"} --out "$OUT/quit" > "$OUT/quit.log" 2>&1; rc=$? ;;
     quit:*) timeout 1800 python tools/quit_test.py ${EXE:+--exe "$EXE"} --size ${g#quit:} --only close --out "$OUT/quit" > "$OUT/quit.log" 2>&1; rc=$? ;;
+    # .scumble documents (docs/PLAN_DOCUMENTS.md D5): like quit, it starts, kills and ends its own instances (port +17,
+    # profiles under $OUT/document); runs tools/document_test.js first
+    document) timeout 1500 python tools/document_test.py ${EXE:+--exe "$EXE"} --out "$OUT/document" > "$OUT/document.log" 2>&1; rc=$? ;;
     exportperf:*) timeout 1800 python tools/export_test.py --perf $(echo "${g#exportperf:}" | tr ',' ' ') > "$OUT/exportperf.log" 2>&1; rc=$? ;;
     # mem:15000x10000,--rounds,4 (commas for spaces); four rounds at 15k take longer than the other gates' 420 s
     mem:*) timeout 2400 python tools/mem_test.py $(echo "${g#mem:}" | tr ',' ' ') > "$OUT/mem.log" 2>&1; rc=$? ;;
