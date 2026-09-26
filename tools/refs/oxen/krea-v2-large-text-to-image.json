@@ -1,0 +1,92 @@
+{
+  "id": "krea-v2-large-text-to-image",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.06,
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "image_style_references"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "1:1",
+        "enum": [
+          "1:1",
+          "4:3",
+          "3:2",
+          "16:9",
+          "2.35:1",
+          "4:5",
+          "2:3",
+          "9:16"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-order": 2
+      },
+      "creativity": {
+        "default": "medium",
+        "description": "Controls how loosely the model interprets the prompt. Higher means more creative results that may drift from the prompt; low or raw values stay closer to the prompt.",
+        "enum": [
+          "raw",
+          "low",
+          "medium",
+          "high"
+        ],
+        "title": "Creativity",
+        "type": "string",
+        "x-order": 3
+      },
+      "image_style_references": {
+        "description": "Optional list of reference image URLs that guide the style of the generated image. At most 10 entries.",
+        "items": {
+          "properties": {
+            "image_url": {
+              "description": "Publicly accessible URL of a reference image.",
+              "format": "uri",
+              "title": "Image URL",
+              "type": "string"
+            },
+            "strength": {
+              "default": 1,
+              "description": "How strongly the reference steers the style, from -1 to 1. Around 0.6 is balanced: 0.3-0.5 adds subtle character, 0.8-1 lets the reference dominate, and negative values push away from it.",
+              "maximum": 1,
+              "minimum": -1,
+              "title": "Strength",
+              "type": "number"
+            }
+          },
+          "required": [
+            "image_url"
+          ],
+          "type": "object"
+        },
+        "nullable": true,
+        "title": "Image Style References",
+        "type": "array",
+        "x-order": 1
+      },
+      "prompt": {
+        "description": "Text description of the image to generate.",
+        "title": "Prompt",
+        "type": "string",
+        "x-order": 0,
+        "x-workbench-default": "A Van Gogh-tinged Provençal farmhouse under starry nights."
+      },
+      "seed": {
+        "description": "Random seed for reproducible generation.",
+        "nullable": true,
+        "title": "Seed",
+        "type": "integer",
+        "x-order": 4
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

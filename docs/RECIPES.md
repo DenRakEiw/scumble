@@ -115,12 +115,13 @@ A provider recipe is **one model** with one variant per provider that hosts it; 
 picks the provider in Settings › Recipes (a select per row, remembered in
 `settings.recipeProviders`) or through `select_recipe(id, provider)`. The home provider
 (`default`) is the model's own API: Google for the Nano Banana family, OpenAI for GPT
-Image, Black Forest Labs for FLUX; ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud and
-OpenRouter carry most models as well. Seedream is the exception: its own API, BytePlus ModelArk, came
+Image, Black Forest Labs for FLUX; ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud,
+OpenRouter and Oxen.ai carry most models as well. Seedream is the exception: its own API, BytePlus ModelArk, came
 later, and the two Seedream recipes keep fal as their `default` (see "BytePlus ModelArk" below). The order
 of a recipe's `providers` is the order of its provider select, of Generate new and of `list_recipes`;
 ToAPIs comes first wherever it serves the model (see "ToAPIs" below), ModelArk right after it in the two
-Seedream recipes, OpenRouter last (see "OpenRouter" below), and `default` stays the home provider.
+Seedream recipes, OpenRouter after the older hosts (see "OpenRouter" below), then Comfy Router, Oxen.ai and
+**Magnific last** where they serve the model (see "Magnific" below), and `default` stays the home provider.
 
 ```
 {
@@ -146,9 +147,13 @@ an image-to-image endpoint that has no mask, such as Ideogram 4), `options` (ada
 switches: fal `sizing: "none"` for endpoints without a free `image_size`, fal
 `omit: ["output_format", ...]` for an endpoint that refuses the fields the other models
 take; ToAPIs' channels, sizes and tiers, below; OpenRouter's accepted parameters, presets, tiers and
-picture limits, below; ModelArk's pixel range, picture count, PNG switch and regions, below),
+picture limits, below; ModelArk's pixel range, picture count, PNG switch and regions, below; Oxen.ai's accepted
+parameters, picture field, mask convention, aspect rule, tiers and presets, below; Magnific takes
+none, its route table knows each route's rules),
 `limits` (the size ceiling, below), `edit: false` (the variant makes images from
-the prompt alone and the Generate button says so), `note` (shown as the tooltip). `family`
+the prompt alone and the Generate button says so), `text` (the Generate new shape, below; **required on every
+`magnific` variant**, as `{ "model": "<text route>", ... }` or `false`, because Magnific's edit routes end in `-edit`
+and `normalize()` would otherwise hand an edit route to Generate new), `note` (shown as the tooltip). `family`
 groups the top-bar list. A recipe with a top-level `provider` instead of `providers` (the
 old shape, the smoke test's loopback) is read as a one-provider recipe.
 
@@ -167,7 +172,12 @@ side the endpoint accepts, `pixels` an area cap and `minPixels` an area *floor* 
 for both), and `ratio` the steepest crop the model takes (3 = at most 3:1, 0 = any): a crop
 steeper than that gets more context on its short side, so a thin selection is not refused
 (Seedream on ToAPIs, whose pages say [1/3, 3]; Seedream on ModelArk and OpenRouter 16, ModelArk's
-[1/16, 16]). Without either, the conservative
+[1/16, 16]). `aspects` lists the only shapes a model renders, as `"W:H"` (Seedream and GPT Image 2 on
+Magnific, whose edit routes take an `aspect_ratio` preset and no free size): `planCrop` widens the crop's context
+to the nearest preset the picture can give (on the short side, as for `ratio`, sets `info.aspect`), so the answer
+comes back in the crop's own shape and the adapter tells the stitch to stretch it (`info.fit`, "Magnific" below);
+a preset the picture cannot give (the whole picture at another shape) leaves the crop as it is, and the answer is
+centre-cropped as before. `[]`, the default, is any shape. Without either, the conservative
 `{ min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0 }` applies - raise one with a
 source, not with a guess. Today: **FLUX.2 and FLUX.1 Fill 1440** (2048 answers with an
 error), **GPT Image 2.5 Flare and Sunburst 3840 with an 8,294,400 px budget and a 655,360 px
@@ -243,7 +253,9 @@ the editing one with a trailing `/edit`, `/inpaint` or `/fill` removed (fal and 
 put the editing model under such a path, the others use the same id without the image
 field). A variant overrides it with `"text": { "model": "...", "sizes": [...], "fixed": {} }`
 or switches it off with `"text": false`. Providers that can do it at all: ToAPIs, OpenAI, Gemini,
-BFL, fal, Replicate, WaveSpeed, OpenRouter, ModelArk, Comfy Router, the Comfy Partner API (`TEXT_PROVIDERS`; OpenRouter uses the same model id and
+BFL, fal, Replicate, WaveSpeed, OpenRouter, ModelArk, Comfy Router, the Comfy Partner API, Oxen.ai, Magnific (`TEXT_PROVIDERS`; Magnific's variants name their
+text route, see "Magnific" below; Oxen.ai posts the same id to `/images/generate`, Grok Imagine's variant names its
+text model; OpenRouter uses the same model id and
 leaves out `input_references`, ModelArk the same id without `image`, Comfy Router the same model without a picture). Comfy Cloud builds a graph around a
 partner node and has none. The other way round exists too: a variant with `"edit": false` has **only** the text
 shape (Krea 2, Recraft V4 and Z-Image base are text-to-image endpoints on fal; the OpenRouter variants of Krea 2
@@ -289,7 +301,13 @@ adapter does; only the parameters `options.accepts` names; tiers and aspect pres
 `options`; `provider.ignore` with the hosts in China; see "OpenRouter" below), **ark** (BytePlus ModelArk,
 ByteDance's own API for Seedream: `POST /api/v3/images/generations` on the host of the *Region* row, one
 synchronous request with the pictures inline as data URLs and the image back as base64; always a pixel `size`
-in the crop's shape, `watermark: false`; no mask input; see "BytePlus ModelArk" below). Every adapter is written
+in the crop's shape, `watermark: false`; no mask input; see "BytePlus ModelArk" below), **oxen** (Oxen.ai: `POST
+/api/ai/images/edit` or `/images/generate`, one synchronous request built to each model's own schema, the pictures
+inline as data URLs and the image back as base64; GPT Image's selection as `mask_url`, Nano Banana's as a second
+picture; see "Oxen.ai" below), **magnific** (an
+asynchronous task per run on `api.magnific.com`, one dialect per route: Ideogram's mask inpainting with the mask
+inverted, Image Expand from the mask's geometry, instruction edits with aspect presets, Mystic and Z-Image text
+only; see "Magnific" below). Every adapter is written
 from the provider's documentation and has not run against the live API yet; the recipe descriptions say so
 (OpenRouter with GPT Image 2.5 is the exception, below).
 The key of the provider comes from the credential store (Settings › API providers).
@@ -1497,34 +1515,343 @@ the model and what it keeps was not read.
 
 ### Magnific (`magnific`)
 
-[Magnific](https://www.magnific.com) (Freepik) sells the Magnific upscalers through its own API; the reference is
-at https://docs.magnific.com (the same pages as docs.freepik.com; the magnific.com page answers 403 to a script),
-read 2026-09-22. `electron/main/providers/magnific.js` covers the two upscalers; session M1 of
-`docs/PLAN_0_1_24.md` grows it into a full provider (Mystic, FLUX, Seedream 4.5, Image Expand).
+[Magnific](https://www.magnific.com) (Freepik) sells its upscalers and, through the same key, most of the image
+models Scumble offers, its own Mystic, Ideogram's mask inpainting and Image Expand (outpainting). Sources, read on
+2026-09-22 (the upscalers) and 2026-09-26 (the rest): the reference at https://docs.magnific.com (the same pages as
+docs.freepik.com; each page also as Markdown at `https://docs.magnific.com/api-reference/<path>.md`; the
+magnific.com pages answer 403 to a script), the whole OpenAPI document
+(https://storage.googleapis.com/fc-freepik-pro-rev1-eu-api-specs/magnific-api-v1-openapi.yaml, linked from
+https://docs.magnific.com/authentication; its only server is `https://api.magnific.com`), the prices at
+https://www.magnific.com/api/pricing (EUR, read in a browser) and the terms at
+https://www.magnific.com/legal/terms-of-use. `electron/main/providers/magnific.js` is the adapter; the request
+schemas of every route it uses are copied, resolved, into `tools/refs/magnific/`. **Only the two upscalers have run
+against the live API** (2026-09-22, "Upscale recipes" above); everything else is written from the docs and tested
+against a mock.
 
-- `POST https://api.magnific.com/v1/ai/image-upscaler-precision-v2` with `{ image, scale_factor, sharpen,
-  smart_grain, ultra_detail, flavor }`: Precision V2, the factor an integer 2 to 16. (The older
-  `image-upscaler-precision` has no factor at all and is not used.)
-- `POST https://api.magnific.com/v1/ai/image-upscaler` with `{ image, scale_factor, prompt, creativity, hdr,
-  resemblance, fractality, optimized_for, engine }`: Creative, the factor `"2x"`, `"4x"`, `"8x"` or `"16x"`, the
-  answer at most 25.3 million pixels (the adapter refuses a request that would pass it, before sending).
-- Header `x-magnific-api-key`; `image` is plain base64 (no `data:` prefix; the docs warn that re-encoding or
-  resizing costs quality, so the crop goes as the PNG it is). Every call is an asynchronous task: the POST answers
-  `{ data: { task_id, status: "CREATED" } }`, `GET <route>/<task_id>` is polled every 3 s until `COMPLETED` (at
-  most 30 minutes; `FAILED` ends the run) and the picture is fetched from the first URL in `generated`, without
-  the key. No webhook: the app has no public address. A task id that is not an id is never put into a URL.
-- A 429 or 503 is sent once more after its `Retry-After` (5 s without one), not at all when that is more than a
-  minute ("try again in N s"); a network error is never retried. 401 reads "key refused", 402 "no credits left",
-  400 names the invalid parameters from `problem.invalid_params`; the key is taken out of every message.
-- The host is `api.magnific.com`, never a URL from a recipe; `settings.magnific.base` may name a loopback mock for
-  tests, and then only a key starting `test-` goes there, while such a key never goes to Magnific.
-- **Every API call costs credits, whatever the web plan says** (Magnific's pricing page: "Unlimited" allowances
-  cover the web app only). The price follows the output's area (their FAQ: 640 × 480 at 2x EUR 0.10, at 4x
-  EUR 0.20).
-- Where the picture goes: to Magnific / Freepik (Freepik Company S.L., Málaga, Spain). Their terms were not read
-  for retention; the key row's note says the picture goes to Magnific.
+**Where it shows up.** A `magnific` variant, **last** in the recipe's providers and no default changed, in:
 
-The key row is *Magnific* in Settings › API providers (the key from Magnific's organisation settings). The same
-two upscalers also run as Comfy Cloud Partner Nodes (a Comfy key, billed in Comfy credits), the second variant of
-both recipes. Not run against the live API: one task per route with the user's key is the checkpoint before it
-ships as tested.
+| Recipe | Edit route (`model`) | Generate new route (`text.model`) | Pictures |
+|---|---|---|---|
+| `flux2_pro` | `text-to-image/flux-2-pro` | the same | 4 (`input_image`, `input_image_2..4`), 256 to 1440 px a side |
+| `flux2_flex` | `text-to-image/flux-2-flex` | the same | 4, 256 to 1920 px a side |
+| `gpt_image_2` | `text-to-image/gpt-image-2-edit` | `text-to-image/gpt-image-2` | 16, 20 MiB each, 64 MiB together |
+| `gpt_image_2_5_flare` / `_sunburst` | `text-to-image/gpt-image-2-5-edit` (`variant` fixed) | `text-to-image/gpt-image-2-5` | 16, as above |
+| `seedream_5_pro` | `text-to-image/seedream-v5-pro-edit` | `text-to-image/seedream-v5-pro` | 10, each 256 × 256 to 10 MB |
+| `seedream_5_lite` | `text-to-image/seedream-v5-lite-edit` | `text-to-image/seedream-v5-lite` | 5, as above |
+| `z_image_turbo` | none (`edit: false`: Magnific has no Z-Image edit) | `text-to-image/z-image` | – |
+
+and six recipes of its own, `default: "magnific"`: **`mystic`** (family *Magnific*, Generate new only),
+**`seedream_4_5`** (family *ByteDance*, `…/seedream-v4-5-edit` and `…/seedream-v4-5`, 5 pictures),
+**`ideogram_inpaint`** (family *Ideogram*, `ideogram-image-edit`, `input: "fill"`, `text: false`) and the three
+**Outpaint** recipes `expand_flux_pro`, `expand_ideogram`, `expand_seedream_4_5` (`image-expand/flux-pro`,
+`…/ideogram`, `…/seedream-v4-5`, `input: "fill"`, `text: false`). The upscalers `magnific_precision` and
+`magnific_creative` keep Magnific as their home. `magnific` is in `TEXT_PROVIDERS`, and every variant names its
+`text` shape (the model id of a text route, or `false`): the edit routes end in `-edit` and differ in more than the
+name, and `tools/magnific_test.js` holds every variant to it.
+
+**The protocol.** `POST https://api.magnific.com/v1/ai/<route>` with the header `x-magnific-api-key` and the
+route's own JSON body answers `{ data: { task_id, status: "CREATED", generated: [] } }`; `GET <route>/<task_id>` is
+read every 3 s until `COMPLETED` (`FAILED` ends the run; the spec confirms a status route for every route used) and
+the picture is downloaded from the first URL in `generated`, **without the key**, only when it is https, a `data:`
+picture or the test mock's own host. The status URL is composed from the host, the route and the task id, never
+taken from an answer, and a task id that is not `[A-Za-z0-9-]{1,80}` is never put into a URL. No webhook: the app
+has no public address. `webhook_url` and `filter_nsfw` are never sent, `num_images` is always 1. An edit waits at
+most 15 minutes, an upscale 30. A route is looked up in the adapter's own table (`ROUTES`, an own-property lookup,
+after `/v1/ai/` and slashes are taken off), and a settings key reaches the body **only when the route's `accepts`
+names it**: the table is the allowlist, and the settings rows and `fixed` of every shipped variant are checked
+against it.
+
+**Per route.**
+
+- **Ideogram Inpaint** (`ideogram-image-edit`, the only mask inpainting on Magnific): `{ prompt, image, mask, seed,
+  rendering_speed, magic_prompt, style_type, style_reference_images }`. Scumble's mask is white where to repaint;
+  Ideogram's is "a black and white image of the same size as the image being edited. Black regions indicate where
+  to edit", so the adapter inverts it in the main process (channel 0 at 128 or above becomes black, the rest white,
+  always PNG, through Electron's `nativeImage`) and refuses a mask of another size. The prompt goes as written
+  (*Magic prompt* defaults to OFF: the spec gives no default), reference layers go as `style_reference_images` (10 MB
+  together, the docs' limit), the picture at most 10 MB (an opaque one as JPEG), the seed held to 2^31 − 1. Turn
+  *Original* off: it would go as a style reference. The docs name no Ideogram version (the fields are version 3's).
+- **Instruction edits** (FLUX.2, Seedream, GPT Image): the crop first, then Original and the reference layers, as
+  plain base64 (no `data:` prefix), and the prompt with the sentence the other instruction-edit adapters use ("Edit
+  the first image and keep its size and framing. … The remaining images are reference material."). No mask field:
+  the stitch keeps the selection. FLUX.2 takes `width` / `height` (the emitted size, 256 to 1440 px on [pro] and 1920
+  on [flex], in 16s) and answers that size. **Seedream and GPT Image 2 take only an `aspect_ratio` preset** (eight
+  and ten shapes): their variants carry the presets as `limits.aspects`, `planCrop` widens the crop's context to the
+  nearest one the picture can give ("How big the crop goes out" above), the adapter sends the preset closest to the
+  emitted size, and when that is within 3 % of the crop (`|ln(w/h) − ln(preset)| ≤ 0.03`) the answer is stretched
+  onto the crop (`info.fit = "stretch"`, copied by `host.runProvider` into the stitch's `info`); beyond that it is
+  centre-cropped as before. **GPT Image 2.5** takes `aspect_ratio: "auto"`, which keeps the reference's shape, but
+  "only `1k` leaves the size to the model; `2k` and `4k` render a square", so an edit always sends `auto` at `1k`
+  and is stretched only when the crop is its only picture (with Original or reference layers on, whose shape wins
+  is not documented). GPT Image 2 has no transparent background (`opaque` / `auto` only), so its variant has no
+  *Background* row; 2.5's does, and a transparent answer lands as a cut-out.
+- **Text runs** (Generate new): the preset closest to the asked aspect (the dialog's `aspect`, else the size) and
+  the tier covering the asked long side (`resolution` 1k / 2k / 4k, Seedream 5.0 Pro 1.5k / 2k), not the edit's
+  *Resolution* row. **Mystic** (`mystic`): `{ prompt, resolution, aspect_ratio, model, engine, creative_detailing,
+  fixed_generation }`; the *fluid* model takes five shapes only (1:1, 9:16, 16:9, 3:4, 4:3, the field's
+  description), the others twelve (the spec's thirteenth, `social_post_4_5'`, carries a stray quote and waits for a
+  live check); no seed (*Fixed generation* repeats a result); its NSFW filter cannot be switched off, and an answer
+  it flags (`has_nsfw[0]`) is still used, with a log line and `info.nsfw`. **Z-Image** (`text-to-image/z-image`):
+  one of six `image_size` presets (512 × 512 only for a square of 512 or less, else the nearest of 1024 × 1024,
+  768 × 1024, 576 × 1024, 1024 × 768, 1024 × 576), steps, the safety checker, PNG.
+
+**Image Expand as outpainting.** No editor change: *Image › Extend canvas* bakes the picture into a larger canvas and
+selects the new frame (over MCP: `extend_canvas`, `select_recipe expand_flux_pro magnific`, `generate`), and the run is
+an ordinary `fill` run. The adapter reads the geometry from the mask: the pixels outside the selection (channel 0
+under 128) are the kept part, their bounding box is sent as `image` (cut out of the crop with `nativeImage.crop`),
+and the distance from that box to each edge of the crop is `left`, `right`, `top` and `bottom`, at the emitted size.
+**All four edges always go out**: FLUX Pro puts 512 / 512 / 256 / 256 on an edge that is left out. Refused before
+anything is sent, with the rule in the words ("Image Expand extends a picture outward: select only the new border
+around it (Image › Extend canvas selects it for you); for other selections use an edit recipe."): a crop with
+nothing kept, a selection that covers more than 2 % of the kept box (a blob, a notch, a hole; a pixel counts when it
+is selected above 3/4, because *Feather* on auto rounds the kept box's inner corners up to 3/4 - 2.7 % of the box at
+128 and over after *Extend canvas*, none above 190), a selection that reaches no edge; FLUX Pro also a kept part
+under 256 px a side or over 20 MP, every route a margin over 2048 px at the size it is sent; Seedream 4.5 sends a
+kept part over 10 MB as JPEG when it is opaque. The prompt goes only when there is one (Ideogram and Seedream then
+write their own), the seed on Ideogram and Seedream, reference layers not at all (a log line says so). The answer
+is the whole canvas at the model's own size (the docs: FLUX Pro "capped at
+roughly 1.6 megapixels", sides in 16s; Ideogram "approximately 1 megapixel", sides in 32s, only the aspect kept;
+Seedream 4.5 "between 3,686,400 and 16,777,216 pixels"), so the recipes' `limits` send the crop at that size and
+the answer is always stretched onto the crop (`fit`): the docs' own Ideogram examples drift up to about 2 % in
+aspect, which the stitch's 1 % rule would otherwise centre-crop. The stitch then blends only the selection. With
+*Feather* on auto the mask that goes out is the grown one (as for every fill run), so the kept part loses the
+grow band (about 52 px on a 768 × 608 canvas) and the model redraws it too; *Feather* manual sends the old picture
+exactly.
+
+**Two renderer changes, both app-only** (`stitch.js` and `host.js` are not built into the node): `limits.aspects`
+in `planCrop` (the widening, `info.aspect`) and `info.fit === "stretch"` in `finishPixels`, which `host.runProvider`
+copies from the adapter's answer. **Trap:** `nativeImage.crop()` goes through Skia's premultiplied pixels, so a
+half-transparent pixel of the kept part may move by a level; only Scumble's own PNGs (the crop, the mask) are
+decoded in the main process, never an answer (which may be WebP).
+
+**Sizes and limits**, as the variants carry them: FLUX.2 [pro] 1440 (the recipe's own), [flex] 1920 (the spec's
+range), Seedream and GPT Image 2 the recipe's 2048 with their presets as `aspects`, GPT Image 2.5 the recipe's 2048,
+Ideogram Inpaint the default 2048 (the docs give only the 10 MB), `expand_flux_pro` 2048 in 16s with 1,600,000 px,
+`expand_ideogram` 2048 in 32s with 1,048,576 px, `expand_seedream_4_5` 4096 in 16s with 3,686,400 to 16,777,216 px.
+
+**Errors and retries.** 401 reads "key refused", 402 "no credits left on the Magnific account", 403 "access
+refused", 404 "Magnific does not know this route or task (the API may have changed; an update of Scumble may be
+needed)", 400 names the invalid parameters from `problem.invalid_params` (the spec's `application/problem+json`) or
+the `message`, 5xx "the service failed"; the prefix is `Magnific <route>: ` and the key is taken out of every
+message. **No AI route documents 402 or 429** (429 appears only on the stock downloads), so those words are
+assumptions until a live run. A 429 or 503 on the POST is sent once more after its `Retry-After` (5 s without one),
+not at all when that is more than a minute ("try again in N s"); a network error on the POST is never sent again
+(the task may exist and be billed). Up to five failed status reads in a row (a 5xx, a dropped line) are waited
+through, the count starting again after a good read; a 4xx on a status read ends the run. `FAILED` names no reason
+("a safety filter, a picture it could not read, or a fault on its side"). A download that fails on the server's
+side or the line is tried three times (the task is paid for by then); a 403 there reads "the result link was
+refused (expired?)".
+
+**Host and key.** The host is `api.magnific.com`, never a URL from a recipe; `settings.magnific.base` may name a
+loopback mock for the tests (`http://127.0.0.1:<port>`, nothing else), and then only a key starting `test-` goes
+there, while such a key never goes to Magnific. There is **no balance**: Magnific has no credits route for normal
+plans (`POST /v1/analytics/team-credit-usage` is for Business and Enterprise), so the key row has no *check
+balance*.
+
+**Privacy and terms.** The pictures go inline (base64) to Magnific / Freepik (Freepik Company S.L., Málaga, Spain),
+which hosts inputs and outputs "on platforms managed by Magnific or its providers", uses them "for security
+purposes and to improve Magnific products", and "will not use Inputs … or Outputs to train its own AI models"; the
+docs do not say where a model runs (FLUX, Seedream, GPT Image and Ideogram are other companies' models). For the
+user to settle before a release: the terms' section "API Services" says the customer "should never request that
+End Users register and provide their own API Keys", which is how Scumble works; it applies to the upscalers shipped
+in 0.1.24 as well.
+
+**Prices** (EUR per image, Magnific's price list read 2026-09-26; the page is partly stale, it still lists the
+removed Imagen models): FLUX.2 [pro] 0.03, Seedream 5.0 Lite and 4.5 0.034, Z-Image 0.017, Mystic 0.058 / 0.10 /
+0.32 at 1k / 2k / 4k, Ideogram Inpaint 0.025 / 0.05 / 0.076 (Turbo / Default / Quality), FLUX Pro Expand 0.07,
+Ideogram Expand 0.025, Seedream 4.5 Expand 0.034; not listed: FLUX.2 [flex], Seedream 5.0 Pro, GPT Image 2 and 2.5
+(GPT Image 2 is billed by quality and, for a text run, resolution; an edit by quality alone). Every API call costs
+credits, whatever the web plan says ("Unlimited" allowances cover the web app only).
+
+**Not built, and why.**
+
+| Route | Why |
+|---|---|
+| Nano Banana Pro and Pro Flash (Nano Banana 2) on Magnific (the M1b step) | Their references are URLs only, so the pictures would go through Magnific's uploads API first: a file stays on Magnific's Google Cloud storage for about seven days, anyone with its token URL can fetch it for about a day, and the API has **no delete route**. Nano Banana runs on the other providers of its recipes without that. |
+| FLUX.2 Klein | The docs name neither 4B nor 9B, and `recipes/flux2_klein.json` is the 9B |
+| FLUX Kontext Pro and Max | URL input only, and Scumble has no Kontext recipe |
+| FLUX.2 Turbo, Runway Gen4, HyperFlux, FLUX Pro 1.1, FLUX Dev, "Classic fast" | Text only, and Scumble has no recipe for them |
+| Mystic's structure / style references and LoRA styling | Generate new sends no pictures |
+| Relight, style transfer, change camera, skin enhancer, remove background, reimagine, improve-prompt | Out of scope |
+| A balance query | No route for normal plans (above) |
+
+**Only a real key can verify** (each costs credits; waits for the user's word): one task per route with a base64 PNG
+where the schema says base64; the real 402 and 429 answers; what a FAILED task and a safety block look like (a
+black picture, `has_nsfw`?); Ideogram's mask polarity, how it treats a grey feather, its output size and version;
+Image Expand's output sizes against the docs' tables and the seam of the kept part; that Seedream and GPT Image 2
+keep the framing of a crop sent at a preset shape; GPT Image 2's edit output sizes per tier; GPT Image 2.5's `auto`
+with several pictures (whose shape wins); how long result URLs stay valid; Mystic's `social_post_4_5`; the prices
+of Flex, Seedream 5.0 Pro and GPT Image 2 / 2.5; whether a JPEG answer (the docs' examples are `.jpg`) stitches
+without trouble.
+
+**Tests.** `node tools/magnific_test.js` (plain Node, a scripted fetch and a fake codec: the route table, every
+body of every shipped variant against its route's schema in `tools/refs/magnific/`, the instruction edits and their
+presets, the text runs and tiers, the inverted mask byte for byte, `keptRect` on built masks and the Image Expand
+geometry, the task client, the error words, the host and key rule, the recipes, the wiring in `index.js`, and that
+the key went only to `/v1/ai/`). The gate `magnific` (`tools/magnific_test.py` against `tools/magnific_mock.py`,
+which checks every body against the same schemas) runs it first, then the app: the lists and the key row, an
+instruction edit widened to a preset, Ideogram's inverted mask, Image Expand after *Extend canvas* (an answer
+1.024 times wider is stretched, not centre-cropped), a selection that is no border refused before anything is
+sent, Generate new through Mystic and Z-Image, and a real key never reaching the mock. `tools/size_test.py` has two
+steps for `aspects`; `tools/upscale_test.js` and `.py` still cover the upscalers unchanged.
+
+### Oxen.ai (`oxen`)
+
+[Oxen.ai](https://www.oxen.ai) runs many image and chat models behind one key. Sources, read on 2026-09-26: the docs
+index https://docs.oxen.ai/llms.txt and the pages it lists (inference overview, image editing, image generation,
+chat completions, async queue, model references), and the model list `GET https://hub.oxen.ai/api/ai/models`, which
+answers without a key and carries each model's `request_schema` and price; the schemas of the 21 models Scumble uses
+are copied into `tools/refs/oxen/` (`{ id, endpoint, pricing, request_schema }`). `electron/main/providers/oxen.js`
+is the adapter. **Nothing here has run against the live API**: there is no Oxen key (the user, 2026-09-26), so every
+variant is written from the docs and the model list and tested against a mock.
+
+**Where it shows up.** An `oxen` variant in twenty recipes, **after Comfy Router and before Magnific** (Magnific
+stays last), no default changed and "Also on Oxen.ai." in each description; one key row in Settings › API providers
+(between ModelArk and Magnific, no *check balance*); three prompt-upsampling rows and three assistant models on the
+same key (below). One recipe is new and runs on Oxen alone: **Qwen Image 2.1** (`recipes/qwen_image_2_1.json`,
+`default: "oxen"`), Alibaba's 2.1 as an API model. Oxen runs it on fal (its schema names fal's endpoint,
+`fal-ai/qwen-image-2.1/edit`, and says the pixel size is "sent to fal"), so a fal variant can follow once fal's own
+schema for it has been read. It answers the API side of CLAUDE.md's item 15 ("Qwen Image Edit 2.1 has no API"):
+Oxen serves `qwen-image-2-1`. Whether it is the same 2.1 as the local recipe's open weights is for a live key to say.
+
+| Recipe | Oxen model | Input | Aspect of an edit | Tiers (`options.tiers`) | Pictures | List price (2026-09-26) |
+|---|---|---|---|---|---|---|
+| `gpt_image_2` | `gpt-image-2` | fill, `mask_url` white = repaint | `auto` | 1K / 2K / 4K (1024 / 2048 / 3840) | 16 | $0.004 to $1.13 by quality and resolution |
+| `gpt_image_2_5_flare`, `_sunburst` | `gpt-image-2-5-flare`, `-sunburst` | fill, `mask_url` RGBA, transparent = repaint | `auto` | as above | 16 | $0.0517 at 2K high ($0.0041 to $0.5203) |
+| `nano_banana_2` | `nano-banana-2` | fill, the mask as a second picture | `auto` | 512 / 1K / 2K / 4K | 14 | $0.0585 (512) to $0.1963 (4K) |
+| `nano_banana_2_lite` | `nano-banana-2-lite` | edit | `auto` | 1K only | 14 (not stated) | $0.0442 |
+| `nano_banana_pro` | `google-nano-banana-pro` | fill, the mask as a second picture | `auto` | 1K / 2K / 4K | 14 | $0.15 |
+| `seedream_5_pro` | `bytedance-seedream-5-pro` | edit | the closest of 8 presets (no `auto`) | `size` 1K / 2K | 10, none steeper than 16:1 | $0.045 |
+| `seedream_5_lite` | `bytedance-seedream-5-lite` | edit | none (no aspect field) | `size` 2K / 3K / 4K | 14, 16:1 | $0.04 |
+| `flux2_pro` | `flux-2-pro` | edit | `match_input_image` | 0.5 / 1 / 2 MP by area | 8 (BFL's number) | $0.10 |
+| `flux2_flex` | `flux-2-flex` | edit, steps and guidance | `match_input_image` | as above | 8 | $0.12 |
+| `flux2_klein` | `black-forest-labs-flux-2-klein-9b` | edit, steps, output quality | the closest of 5 presets | none | not stated | $0.02 |
+| `qwen_image_edit` | `qwen-image-3` (Qwen Image 3.0) | edit, `input_images`, negative prompt | `auto` with the crop alone, else the closest preset | 1K / 2K | 3 | $0.039 |
+| `qwen_image_2_1` | `qwen-image-2-1` | edit, `input_images`, negative prompt | the closest of 7 presets | 1K / 2K | 10 | $0.109 |
+| `grok_imagine` | `xai-grok-imagine-image-edit`; Generate new `xai-grok-imagine-image` | edit, one picture only | none | Generate new 1k / 2k | 1 | $0.022 edit, $0.02 text |
+| `krea_2` | `krea-v2-large-text-to-image` | Generate new only | - | - | - | $0.06 |
+| `ideogram_4` | `ideogram-v4` | Generate new only, `image_size` preset | - | - | - | $0.06 |
+| `z_image_turbo` | `z-image-turbo` | Generate new only, no size field | - | - | - | $0.01 |
+| `topaz_precision` | `topazlabs-image-upscale` | upscale 2x / 4x | - | - | 1 | $0.05 |
+| `topaz_creative` | `topazlabs-bloom-2-image` (Bloom 2) | upscale, the model's own factor, the prompt as guidance | - | - | 1 | per Topaz credit ($0.08), credits per image not stated |
+| `topaz_generative` | `topazlabs-wonder-3-5-image` (Wonder 3.5) | upscale 1x / 2x / 4x / 6x | - | - | 1 | per Topaz credit |
+
+**The protocol.** Two synchronous routes on `https://hub.oxen.ai/api/ai`, a Bearer key:
+
+```
+POST /images/edit      { model, prompt, input_image | input_images, mask_url?, <model params>, response_format: "b64_json" }
+POST /images/generate  { model, prompt, <model params>, response_format: "b64_json" }
+  -> { model, created, images: [{ b64_json } | { url }] }
+errors: { error: { type, title, detail }, status: "error", status_message } | { error: { message } }
+```
+
+Every run that carries a picture (edit, fill, upscale) goes to `/images/edit`, Generate new to `/images/generate`.
+The model list names `/images/generate` as every image model's endpoint, including the editors and the upscalers; the
+image-editing reference names `/images/edit` for a run with a picture, which is what Scumble follows (a live key
+settles it). The request is built to each model's own `request_schema`, not to the hub OpenAPI's OpenAI-shaped
+`ImageEditRequest` and not to the example page's `image_url` field, both of which are older than the schemas.
+`response_format` is always `b64_json`; an answer that carries only a `url` is downloaded (without the key first; on
+a 401 or 403 from the API's own origin once more with it, never to another host; a 5xx or a lost connection is tried
+three times, the run is paid by then). **Not built:** the async queue (it stores every job's request parameters,
+the crop's data URL included, answers result URLs only and checks the parameters only when the job runs), and a
+balance: the hub API has no credits route, so the key row has no *check balance*.
+
+**Pictures go inline as data URLs.** The image-editing reference says "Data URIs (`data:image/...;base64,...`) work
+as an alternative but aren't recommended for production" (https://docs.oxen.ai/inference-api/reference/image_editing.md),
+and every schema types `input_image`, `input_images` and `mask_url` as `format: uri`, which a data URL is. The
+pictures of one request (mask included) stay under 18 MB of base64: Oxen states no limit for images, its chat
+reference caps an inline audio part at 20 MB, and Gemini (behind the Nano Banana models) an inline request at 20 MB.
+Over it the opaque pictures go as JPEG, largest first; a mask or a transparent crop never; still over it the run is
+refused before anything is sent. **The upload route is not built**: a picture must be reachable by the model, so it
+would go into a *public* Oxen repository, and a deletion there is only a commit, so every crop would stay in the
+repository's history until the whole repository is deleted. **If a live key shows that data URLs are refused**
+(the adapter puts "Oxen could not read the picture" in front of Oxen's "Client Error ... for url"), the edit and
+upscale variants go and the Generate-new-only variants and the chat rows stay; an upload route needs the user's word.
+
+**Fill and edit.** GPT Image 2 takes the selection as `mask_url` with white = repaint (`options.mask: "white"`,
+`req.mask`); GPT Image 2.5 as an RGBA mask whose transparent pixels are repainted (`"alpha"`, `req.maskAlpha`); the
+2.5 schema says the mask must match the first picture's size, which the crop's mask always does. Nano Banana 2 and
+Pro have no mask field: a `fill` variant without `options.mask` sends the mask as the second picture and the prompt
+says what it means (the sentences of the OpenRouter adapter, `openrouter.promptFor`, which ran live there). Every
+other variant is an instruction edit of the crop plus the reference layers; the stitch keeps the selection either way.
+
+**Sizes.** No model takes a pixel size: a Resolution (or Size) row left on *auto* takes the smallest tier that covers
+the crop's long side (FLUX: its area, "0.5 MP" / "1 MP" / "2 MP"), else the largest. The aspect of an edit follows
+`options.edit_aspect`: `auto` (GPT Image, Nano Banana), `match_input_image` (FLUX.2 pro and flex), the closest preset
+(Seedream 5.0 Pro and Qwen 2.1 take no `auto`, Klein no "match"), or `auto-single` for Qwen Image 3.0, whose `auto`
+keeps "the aspect ratio of the last image" (with references the closest preset goes out instead). None of these is
+verified to keep the crop's shape; an answer of another shape is centre-cropped by the stitch. Seedream 5.0 Lite has
+no aspect field at all, so its variant has no Generate new (`text: false`); Z-Image's schema has no size field, so
+the host picks the size and Generate new takes the answer's size. Ideogram's size is a named preset
+(`image_size`: square_hd, portrait / landscape 4:3 and 16:9), the one closest to the dialog's aspect.
+
+**The option keys** (`options` of an `oxen` variant; each checked against `tools/refs/oxen/` by `tools/oxen_test.js`):
+`accepts` (the parameters sent; a settings row or a `fixed` value outside it never goes out, nor does `random_seed`,
+an empty value or an "auto" not in `keep_auto`), `image_field` (`input_image`, or `input_images` for Qwen), `single`
+(the picture field is one string: Grok's edit, the upscalers; one picture only), `mask` (`white` / `alpha`),
+`edit_aspect`, `ratios`, `tiers` / `tier_key` (default `resolution`; Seedream's is `size`) / `tier_unit` (`area`),
+`presets` / `preset_key` (Ideogram), `keep_auto` (Moderation's "auto" is a real value), `numbers` (Bloom's
+creativity goes as a number), `max_images` (crop, mask picture and references; more are refused before sending),
+`max_ratio` (Seedream: 16), `factor_key` / `factor_form` (`upscale_factor: "4x"`, `scale: "6x"`), `prompt_max`
+(Bloom: 1024 characters, cut with a log line), and `text` (options that replace these for Generate new: Grok's text
+model takes `aspect_ratio` and `resolution`, its edit model neither). A `seed` goes out where the schema takes one,
+reduced to 0..2147483647 (Qwen's range); `negative_prompt` where it takes one and it is not empty. Never sent:
+`target_namespace`, `n`, `num_generations`, attribution headers.
+
+**Errors and retries.** Oxen's envelope is read for `detail` (else `title`, else `message`) and its `type`, and the
+words go in front: "Oxen could not read the picture ..." for a "Client Error ... for url" (the data-URL case),
+"not enough Oxen credits" for a 402 or a message about credits, "Oxen does not serve this model (any more)" for a
+404 or "Model not found", then by status (401 key refused, 400 request refused, 403 refused, 408 / 504 / 524 timed
+out, 413 request too large, 429 rate limited, 500 the service failed, 502 the model's host failed, 503 the service
+is busy). The key is taken out of every message. A 429 or 503 is sent once more, never before `Retry-After`
+(seconds or a date, 5 s without one), and not at all past 60 s ("try again in N s"); a 502, any other 5xx and a lost
+connection are never retried, because the image may be billed already. Node's own limit of 300 s before an answer's
+headers ends a run that takes longer with "no answer within 5 minutes; the run may still be billed and saved in your
+Oxen account" (GPT Image at xhigh / max and 4K, or Topaz on a large picture, may come close; a live key will tell).
+
+**Host and key.** The host is `https://hub.oxen.ai`, never a URL from a recipe; `settings.oxen.base` may name a
+loopback mock (`http://127.0.0.1:<port>`, nothing else), and then only a key that starts with `test-` goes there,
+while such a key never goes to hub.oxen.ai. The same rule holds for the upsampling rows.
+
+**Privacy.** The pictures go inline to Oxen.ai, which runs the model or passes it on (some schemas name fal as the
+host behind it). **Oxen keeps every generated image in the user's Oxen account** (results "automatically get saved to
+a dataset", https://docs.oxen.ai/examples/inference/image_editing.md). Its terms and privacy policy could not be read
+(www.oxen.ai/legal/* answered a bot check), so how long it keeps what is sent is not stated; every variant's note says
+so.
+
+**Chat on the Oxen key.** Oxen's Chat Completions are OpenAI-compatible at `/api/ai/chat/completions`, **with no
+`/v1`** (`llm.js` takes the base as it is, the `exact` switch of `askCompatible`). Prompt upsampling has three rows
+(`llm.js` `MODELS`, per million tokens in / out on 2026-09-26): Gemini 3.8 Flash ($0.75 / $3.75), GPT-5.6 Luna
+($1 / $6), Gemma 4 31B ($0.14 / $0.40); the crop goes as a data URL, as Oxen's vision example sends it (the chat
+reference's "must be publicly accessible" contradicts that page; a live key settles it). A row the user adds under
+Settings › Language models with the provider Oxen.ai goes through the same client. The assistant has an `oxen` entry
+(`assistant/providers.js`, after WaveSpeedAI): Claude Sonnet 5, GPT-5.6 Terra and Gemini 3.8 Flash, without
+`stream_options` (Oxen documents none; leaving it out only loses the cost line) and with the 402 read as final.
+
+**Offered by Oxen and not wired:** flux-2-dev, flux-kontext-dev, flux-2-klein-4b; qwen-image-edit, -2511, -plus,
+-max, qwen-image-2, -2-pro, -3-pro; bytedance-seedream-4, -4-5; muse-image-1-0; topazlabs-bloom-image,
+-wonder-3-image; flux-image-upscaler (not Clarity); sam-3-image (a candidate backend for *select by text*); qwen-image,
+-2512, flux-1-dev, xai-grok-imagine-image as an edit. No Oxen equivalent exists for FLUX.2 [max], FLUX.1 Fill, Reve,
+Recraft, HY Image 3.5, the Magnific upscalers, SeedVR2, Clarity or Z-Image base.
+
+**Only a real key can verify:** that `input_image` takes a data URL for a 1 to 4 MP crop on `/images/edit`, and at
+what size a request fails; that `mask_url` takes one, and the mask conventions (white for GPT Image 2, transparent for
+2.5); that `b64_json` works on both routes (else whether a result URL needs the key and how long it lives); that the
+editors and upscalers take `/images/edit` (the model list says `/images/generate` for all); whether `auto` and
+`match_input_image` keep the crop's shape, what shape Seedream 5.0 Lite answers, Qwen 3.0's "last image" rule; the
+output sizes per tier, Bloom 2's factor, Wonder at 1x and 6x; the status and shape of the credits error, 401 and 429,
+the rate limits; whether failed runs are billed and the charged prices against the list; where results and inputs are
+kept in the account and how to delete them; whether a run goes past 300 s; in chat, data URLs, tool-call deltas, usage
+in the stream, reasoning fields and which models take tools; the picture counts of Nano Banana 2 Lite and FLUX.2
+klein; the key's format; whether `qwen-image-2-1` is the local recipe's model.
+
+**Tests.** `node tools/oxen_test.js` (plain Node, a scripted fetch: the host and key rule, golden bodies of every
+kind of variant, **every body of every shipped variant against its model's schema** in `tools/refs/oxen/` (every
+enum value of every setting, 0 to the most references, seed on and off), the picture count, steepness and inline cap,
+both mask conventions, tiers and aspects, answers by `b64_json` and by URL, the error words and the scrubbed key,
+retries and the 5-minute limit, the upscalers, the wiring in `index.js`, the recipes, the upsampling rows through
+`llm.js` and the assistant entry, and over the whole run that the key went only in `Authorization` toward the API).
+The gate `oxen` (`tools/oxen_test.py` against `tools/oxen_mock.py`, which checks every body against the same schemas
+and refuses a picture that is not a PNG or JPEG data URL) runs it first, then the app: the lists and the key row, an
+instruction edit with the crop as a data URL, an alpha mask on GPT Image 2.5 Flare, Generate new on Nano Banana 2, an
+upsampling row, and a real key never reaching the mock.

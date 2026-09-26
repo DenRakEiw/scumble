@@ -1,0 +1,52 @@
+{
+  "id": "topazlabs-bloom-2-image",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_credit": 0.08,
+    "method": "per_provider_credit"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image",
+      "prompt",
+      "creativity"
+    ],
+    "properties": {
+      "autoprompt": {
+        "default": true,
+        "description": "Let the model write its own prompt from the image when no prompt is given.",
+        "title": "Auto Prompt",
+        "type": "boolean",
+        "x-order": 3
+      },
+      "creativity": {
+        "default": 3,
+        "description": "How much new creative detail to add (1 faithful, 9 most creative).",
+        "maximum": 9,
+        "minimum": 1,
+        "title": "Creativity",
+        "type": "integer",
+        "x-order": 2
+      },
+      "input_image": {
+        "description": "Image to enhance and upscale (URL or file path). jpeg, png, gif, or webp.",
+        "format": "uri",
+        "title": "Input Image",
+        "type": "string",
+        "x-order": 0
+      },
+      "prompt": {
+        "default": "",
+        "description": "Optional prompt to guide the added detail (max 1024 characters).",
+        "title": "Prompt",
+        "type": "string",
+        "x-order": 1
+      }
+    },
+    "required": [
+      "input_image"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

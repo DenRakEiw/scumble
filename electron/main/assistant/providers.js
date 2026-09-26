@@ -176,6 +176,23 @@ const PROVIDERS = {
         ],
         dialect: { reasoningField: "any", lengthField: "max_tokens", imagesInToolMessage: false, streamOptions: true },
     },
+    oxen: {
+        label: "Oxen.ai",
+        family: "chat",
+        key: "oxen",
+        base: "https://hub.oxen.ai/api/ai",   // no /v1: Oxen's chat route is /api/ai/chat/completions
+        where: "Oxen.ai, which runs the model or passes it on to its maker or another host; its terms could not be read, so where the pictures go and how long they are kept is not stated",
+        // from GET https://hub.oxen.ai/api/ai/models on 2026-09-26; all three take images
+        models: [
+            { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
+            { id: "gpt-5-6-terra", label: "GPT-5.6 Terra" },
+            { id: "gemini-3-8-flash", label: "Gemini 3.8 Flash" },
+        ],
+        // Oxen documents no stream_options (an unknown field refused would break every turn; leaving it out only loses the
+        // cost line) and no common thinking switch (reasoning_effort's values differ per model)
+        dialect: { reasoningField: "any", lengthField: "max_tokens", imagesInToolMessage: false, streamOptions: false,
+                   finalStatus: { 402: "the Oxen credits are used up" } },
+    },
     compat: {
         label: "Local / OpenAI-compatible endpoint",
         family: "chat",
@@ -194,7 +211,7 @@ const PROVIDERS = {
 };
 
 /** The picker's order (§2 row 33). */
-const ORDER = ["openrouter", "openai", "anthropic", "gemini", "deepseek", "moonshot", "zai", "toapis", "wavespeed", "compat"];
+const ORDER = ["openrouter", "openai", "anthropic", "gemini", "deepseek", "moonshot", "zai", "toapis", "wavespeed", "oxen", "compat"];
 
 /** The model a fresh install starts on (§2 row 6). */
 const DEFAULT_MODEL = "anthropic:claude-sonnet-5";

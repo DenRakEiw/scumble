@@ -1,0 +1,64 @@
+{
+  "id": "topazlabs-image-upscale",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.05,
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image"
+    ],
+    "properties": {
+      "enhance_model": {
+        "default": "High Fidelity V2",
+        "description": "Models to Use: Standard V2 (general purpose), Low Resolution V2 (for low-res images), CGI (for digital art), High Fidelity V2 (preserves details), Text Refine (optimized for text)",
+        "enum": [
+          "Standard V2",
+          "Low Resolution V2",
+          "CGI",
+          "High Fidelity V2",
+          "Text Refine"
+        ],
+        "title": "Enhance Model",
+        "type": "string",
+        "x-order": 1
+      },
+      "input_image": {
+        "description": "Image to use as reference. Must be jpeg, png, gif, or webp.",
+        "format": "uri",
+        "title": "Input Image",
+        "type": "string",
+        "x-order": 0,
+        "x-workbench-default": "https://hub.oxen.ai/api/repos/ox/Oxen-Character-Simple-Vector-Graphic/file/main/images/reference/bloxy_white_bg.png"
+      },
+      "output_format": {
+        "default": "png",
+        "description": "Format of the output images",
+        "enum": [
+          "jpg",
+          "png"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-order": 3
+      },
+      "upscale_factor": {
+        "default": "2x",
+        "description": "How much to upscale the image",
+        "enum": [
+          "4x",
+          "2x"
+        ],
+        "title": "Upscale Factor",
+        "type": "string",
+        "x-order": 2
+      }
+    },
+    "required": [
+      "input_image"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

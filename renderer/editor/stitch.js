@@ -376,6 +376,7 @@ export function planCrop(s, sel) {
 
     const bb = selectionBbox(sel, padUsed);
     let x0 = bb.x0, y0 = bb.y0, x1 = bb.x1, y1 = bb.y1;
+    let aspect = null;
     if (autoContext && hasSelection) {
         [x0, x1] = ensureMinSpan(x0, x1, width, MIN_AUTO_CROP);
         [y0, y1] = ensureMinSpan(y0, y1, height, MIN_AUTO_CROP);
@@ -387,6 +388,18 @@ export function planCrop(s, sel) {
         const need = (long) => Math.ceil(long / limits.ratio);
         if (x1 - x0 > (y1 - y0) * limits.ratio) [y0, y1] = ensureMinSpan(y0, y1, height, need(x1 - x0));
         else if (y1 - y0 > (x1 - x0) * limits.ratio) [x0, x1] = ensureMinSpan(x0, x1, width, need(y1 - y0));
+    }
+    if (limits && Array.isArray(limits.aspects) && limits.aspects.length && hasSelection) {
+        // a model that renders preset shapes only (Seedream and GPT Image 2 on Magnific): widen the crop's context to the
+        // nearest preset it can reach, so the answer comes back in the crop's own shape and the stitch stretches it
+        // exactly; a preset the picture cannot give (the whole picture at another shape) leaves the crop as it is
+        const cw0 = x1 - x0, ch0 = y1 - y0, cur = cw0 / ch0;
+        const presets = limits.aspects.map((s) => String(s).split(":").map(Number)).filter(([a, b]) => a > 0 && b > 0)
+            .map(([a, b]) => ({ t: a / b, s: `${a}:${b}` })).sort((p, q) => Math.abs(Math.log(p.t / cur)) - Math.abs(Math.log(q.t / cur)));
+        for (const p of presets) {
+            if (p.t >= cur) { const need = Math.ceil(ch0 * p.t); if (need <= width) { [x0, x1] = ensureMinSpan(x0, x1, width, need); aspect = p.s; break; } }
+            else { const need = Math.ceil(cw0 / p.t); if (need <= height) { [y0, y1] = ensureMinSpan(y0, y1, height, need); aspect = p.s; break; } }
+        }
     }
     if (!limits && fixedSize <= 0) {
         [x0, x1] = fitSpanToMultiple(x0, x1, width, m);
@@ -424,7 +437,7 @@ export function planCrop(s, sel) {
         align: cs.align !== false, paste: cs.paste === "crop" ? "crop" : "selection",
         feather: featherUsed, grow: growUsed, blend: blendUsed,
         auto_feather: !!((autoFeather || refine) && hasSelection), color_match: !!cs.colorMatch,
-        width, height, has_selection: hasSelection,
+        width, height, has_selection: hasSelection, aspect,
     };
     return { x0, y0, cw, ch, ew, eh, resize: targetSize > 0, growUsed, featherUsed, fillMode, withOriginal, autoFeather, hasSelection, info };
 }
@@ -535,7 +548,8 @@ export function finishPixels(info, sel, resultImage, region) {
     const feather = info.feather | 0;
     const sw = resultImage.width || resultImage.naturalWidth, sh = resultImage.height || resultImage.naturalHeight;
     const emitted = info.emitted;
-    const sameAspect = !!emitted && Math.abs(sw / sh - emitted[0] / emitted[1]) < 0.01;
+    // `fit` "stretch": the adapter knows its answer covers the crop exactly (a preset shape, Image Expand's own size)
+    const sameAspect = info.fit === "stretch" || (!!emitted && Math.abs(sw / sh - emitted[0] / emitted[1]) < 0.01);
     let patch = drawResized(resultImage, w, h, { crop: sameAspect ? "disabled" : "center" });
 
     // full-size composite mask, computed on a window around the region (the blur tails end there)

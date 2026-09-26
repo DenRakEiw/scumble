@@ -1,0 +1,130 @@
+{
+  "id": "flux-2-flex",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.12,
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "16:9",
+        "enum": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "match_input_image"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-order": 8
+      },
+      "disable_safety_checker": {
+        "default": false,
+        "description": "Disable safety checker for generated images.",
+        "title": "Disable Safety Checker",
+        "type": "boolean",
+        "x-order": 16
+      },
+      "guidance": {
+        "default": 2,
+        "description": "Guidance for generated image. Lower values can give more realistic images. Good values to try are 2, 2.5, 3 and 3.5",
+        "maximum": 10,
+        "minimum": 0,
+        "title": "Guidance",
+        "type": "number",
+        "x-order": 12
+      },
+      "input_image": {
+        "description": "Input images to transform or use as reference. Reference them in the prompt as @Image1, @Image2, etc.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "nullable": true,
+        "title": "Reference Images",
+        "type": "array",
+        "x-order": 1,
+        "x-workbench-default": [
+          "https://hub.oxen.ai/api/repos/elau/assets/file/main/bloxy/bloxy_cropped_512x512.png"
+        ]
+      },
+      "num_inference_steps": {
+        "default": 30,
+        "description": "Number of denoising steps. Recommended range is 28-50, and lower number of steps produce lower quality outputs, faster.",
+        "maximum": 50,
+        "minimum": 1,
+        "title": "Num Inference Steps",
+        "type": "integer",
+        "x-order": 11
+      },
+      "output_format": {
+        "default": "webp",
+        "description": "Format of the output images",
+        "enum": [
+          "webp",
+          "jpg",
+          "png"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-order": 14
+      },
+      "output_quality": {
+        "default": 80,
+        "description": "Quality when saving the output images, from 0 to 100. 100 is best quality, 0 is lowest quality. Not relevant for .png outputs",
+        "maximum": 100,
+        "minimum": 0,
+        "title": "Output Quality",
+        "type": "integer",
+        "x-order": 15
+      },
+      "prompt": {
+        "description": "Prompt for generated image. Use @Image1, @Image2, etc. to reference the input images.",
+        "title": "Prompt",
+        "type": "string",
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_image",
+              "pattern": "image {n}"
+            }
+          ]
+        },
+        "x-order": 0,
+        "x-workbench-default": "Draw a parody of the Mona Lisa by Leonardo da Vinci with Bloxy, the cartoon ox in @Image1, as Lisa del Giocondo. Keep Bloxy in the original style of @Image1 with the cartoon ox, but adapt its pose to the pose depicted in the Mona Lisa. Don't include its arms or legs in the painting."
+      },
+      "resolution": {
+        "default": "1 MP",
+        "enum": [
+          "1 MP",
+          "2 MP",
+          "0.5 MP"
+        ],
+        "title": "Resolution",
+        "type": "string",
+        "x-next-to": "aspect_ratio",
+        "x-order": 9
+      },
+      "seed": {
+        "description": "Random seed. Set for reproducible generation",
+        "nullable": true,
+        "title": "Seed",
+        "type": "integer",
+        "x-order": 13
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

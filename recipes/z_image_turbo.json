@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Z-Image Turbo",
   "family": "Tongyi",
-  "description": "Alibaba Tongyi's Z-Image Turbo, an 8-step model with a real mask inpainting endpoint on fal. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet.",
+  "description": "Alibaba Tongyi's Z-Image Turbo, an 8-step model with a real mask inpainting endpoint on fal. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on Oxen.ai. Also on Magnific.",
   "default": "fal",
   "limits": {
     "max": 2048,
@@ -75,6 +75,84 @@
         }
       ],
       "note": "Mask inpainting: the crop and the selection mask go to the model (mask_image_url), the stitch blends the answer back."
+    },
+    "oxen": {
+      "model": "z-image-turbo",
+      "edit": false,
+      "options": {
+        "accepts": [
+          "num_inference_steps",
+          "seed",
+          "output_format"
+        ]
+      },
+      "fixed": {
+        "output_format": "png"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "num_inference_steps",
+          "label": "Steps",
+          "spec": [
+            "INT",
+            {
+              "default": 8,
+              "min": 1,
+              "max": 50,
+              "step": 1
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). Text to image only on Oxen: it works in \"Generate new\", not in Generate. Oxen keeps every generated image in your Oxen account. Oxen's schema has no size field: the host picks the size, and \"Generate new\" takes the answer at its own size. List price $0.01 (2026-09-26)."
+    },
+    "magnific": {
+      "model": "text-to-image/z-image",
+      "input": "edit",
+      "edit": false,
+      "fixed": {
+        "output_format": "png"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "num_inference_steps",
+          "label": "Steps",
+          "spec": [
+            "INT",
+            {
+              "default": 8,
+              "min": 1,
+              "max": 50
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "enable_safety_checker",
+          "label": "Safety checker",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": true
+            }
+          ]
+        }
+      ],
+      "text": {
+        "model": "text-to-image/z-image",
+        "sizes": [
+          512,
+          1024
+        ]
+      },
+      "note": "Runs on Magnific (Freepik's API, api.magnific.com) with the Magnific key; every API call costs credits, whatever the web plan says; not run against the live API yet. Only the prompt goes to Magnific / Freepik (Freepik Company S.L., Málaga, Spain), which hosts inputs and outputs on its own or its providers' platforms, uses them for security and to improve its products and not to train its own models; the docs do not say where the model runs. Generate new only (Magnific has no Z-Image edit): six preset sizes, 512 or 1024 px on the long side. EUR 0.017 an image (Magnific's price list, 2026-09-26)."
     }
   }
 }

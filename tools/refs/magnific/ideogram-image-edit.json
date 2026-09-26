@@ -1,0 +1,114 @@
+{
+ "$comment": "The request body of POST /v1/ai/ideogram-image-edit, resolved from https://storage.googleapis.com/fc-freepik-pro-rev1-eu-api-specs/magnific-api-v1-openapi.yaml (read 2026-09-26); descriptions and examples dropped.",
+ "route": "ideogram-image-edit",
+ "schema": {
+  "properties": {
+   "prompt": {
+    "type": "string"
+   },
+   "image": {
+    "type": "string"
+   },
+   "mask": {
+    "type": "string"
+   },
+   "seed": {
+    "maximum": 2147483647,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "rendering_speed": {
+    "default": "DEFAULT",
+    "enum": [
+     "TURBO",
+     "DEFAULT",
+     "QUALITY"
+    ],
+    "type": "string"
+   },
+   "magic_prompt": {
+    "enum": [
+     "AUTO",
+     "ON",
+     "OFF"
+    ],
+    "type": "string"
+   },
+   "color_palette": {
+    "properties": {
+     "name": {
+      "enum": [
+       "EMBER",
+       "FRESH",
+       "JUNGLE",
+       "MAGIC",
+       "MELON",
+       "MOSAIC",
+       "PASTEL",
+       "ULTRAMARINE"
+      ],
+      "type": "string"
+     },
+     "members": {
+      "items": {
+       "properties": {
+        "color_hex": {
+         "pattern": "^#(?:[0-9a-fA-F]{3}){1,2}$",
+         "type": "string"
+        },
+        "color_weight": {
+         "maximum": 1.0,
+         "minimum": 0.05,
+         "type": "number"
+        }
+       },
+       "required": [
+        "color_hex"
+       ],
+       "type": "object"
+      },
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "style_codes": {
+    "items": {
+     "type": "string"
+    },
+    "type": "array"
+   },
+   "style_type": {
+    "enum": [
+     "AUTO",
+     "GENERAL",
+     "REALISTIC",
+     "DESIGN"
+    ],
+    "type": "string"
+   },
+   "style_reference_images": {
+    "items": {
+     "type": "string"
+    },
+    "type": "array"
+   },
+   "character_reference_images": {
+    "items": {
+     "type": "string"
+    },
+    "type": "array"
+   },
+   "webhook_url": {
+    "format": "uri",
+    "type": "string"
+   }
+  },
+  "required": [
+   "image",
+   "mask",
+   "prompt"
+  ],
+  "type": "object"
+ }
+}

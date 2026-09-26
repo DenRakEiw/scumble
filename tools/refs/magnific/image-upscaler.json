@@ -1,0 +1,86 @@
+{
+ "$comment": "The request body of POST /v1/ai/image-upscaler, resolved from https://storage.googleapis.com/fc-freepik-pro-rev1-eu-api-specs/magnific-api-v1-openapi.yaml (read 2026-09-26); descriptions and examples dropped.",
+ "route": "image-upscaler",
+ "schema": {
+  "properties": {
+   "image": {
+    "format": "byte",
+    "type": "string"
+   },
+   "webhook_url": {
+    "format": "uri",
+    "type": "string"
+   },
+   "scale_factor": {
+    "default": "2x",
+    "enum": [
+     "2x",
+     "4x",
+     "8x",
+     "16x"
+    ],
+    "type": "string"
+   },
+   "optimized_for": {
+    "default": "standard",
+    "enum": [
+     "standard",
+     "soft_portraits",
+     "hard_portraits",
+     "art_n_illustration",
+     "videogame_assets",
+     "nature_n_landscapes",
+     "films_n_photography",
+     "3d_renders",
+     "science_fiction_n_horror"
+    ],
+    "type": "string"
+   },
+   "prompt": {
+    "type": "string"
+   },
+   "creativity": {
+    "default": 0,
+    "maximum": 10,
+    "minimum": -10,
+    "type": "integer"
+   },
+   "hdr": {
+    "default": 0,
+    "maximum": 10,
+    "minimum": -10,
+    "type": "integer"
+   },
+   "resemblance": {
+    "default": 0,
+    "maximum": 10,
+    "minimum": -10,
+    "type": "integer"
+   },
+   "fractality": {
+    "default": 0,
+    "maximum": 10,
+    "minimum": -10,
+    "type": "integer"
+   },
+   "engine": {
+    "default": "automatic",
+    "enum": [
+     "automatic",
+     "magnific_illusio",
+     "magnific_sharpy",
+     "magnific_sparkle"
+    ],
+    "type": "string"
+   },
+   "filter_nsfw": {
+    "default": false,
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "image"
+  ],
+  "type": "object"
+ }
+}

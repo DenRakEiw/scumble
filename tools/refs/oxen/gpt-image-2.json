@@ -1,0 +1,125 @@
+{
+  "id": "gpt-image-2",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": null,
+    "cost_per_image_grid": {
+      "high": {
+        "1K": 0.13,
+        "2K": 0.29,
+        "4K": 1.13
+      },
+      "low": {
+        "1K": 0.004,
+        "2K": 0.009,
+        "4K": 0.035
+      },
+      "medium": {
+        "1K": 0.031,
+        "2K": 0.071,
+        "4K": 0.281
+      }
+    },
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "16:9",
+        "enum": [
+          "auto",
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "21:9",
+          "9:21"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-order": 3
+      },
+      "input_image": {
+        "description": "Optional reference image(s) to edit. Leave empty to generate from the prompt alone.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "nullable": true,
+        "title": "Reference Images",
+        "type": "array",
+        "x-order": 1
+      },
+      "mask_url": {
+        "description": "Optional mask image URL. White pixels mark regions to edit; black pixels are preserved. Leave empty to edit the whole image.",
+        "format": "uri",
+        "nullable": true,
+        "title": "Mask",
+        "type": "string",
+        "x-order": 2
+      },
+      "output_format": {
+        "default": "png",
+        "description": "File format for the generated image.",
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-order": 6
+      },
+      "prompt": {
+        "description": "Text description of the image to generate.",
+        "title": "Prompt",
+        "type": "string",
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_image",
+              "pattern": "Image {n}"
+            }
+          ]
+        },
+        "x-order": 0,
+        "x-workbench-default": "An ox standing in the middle of a long open road at sunset, cinematic lighting, photorealistic, centered and staring at the camera."
+      },
+      "quality": {
+        "default": "high",
+        "description": "Output quality tier: low, medium, or high. Higher quality renders more detail and costs more.",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "title": "Quality",
+        "type": "string",
+        "x-order": 5
+      },
+      "resolution": {
+        "default": "2K",
+        "enum": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "title": "Resolution",
+        "type": "string",
+        "x-next-to": "aspect_ratio",
+        "x-order": 4
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

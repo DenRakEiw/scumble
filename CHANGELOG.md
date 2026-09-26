@@ -3,6 +3,25 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.29 — unreleased
+
+- **Magnific as a full provider.** Beyond its two upscalers, your Magnific key now runs FLUX.2 [pro] and [flex],
+  Seedream 5.0 Pro and Lite, GPT Image 2 and 2.5 (Flare, Sunburst) and Z-Image Turbo, each as the last choice in its
+  recipe (no default changed), and new recipes of its own: **Mystic**, Magnific's own model, in Generate new;
+  **Seedream 4.5**; and **Ideogram Inpaint**, real mask inpainting, where the model repaints only the selection.
+  **Outpainting with Image Expand** (FLUX Pro, Ideogram or Seedream 4.5): extend the canvas, keep the new border
+  selected, pick an Outpaint recipe and Generate; the model draws the border around what you keep. Models that only
+  render preset shapes get the crop's context widened to the nearest one, so their answer lines up with the picture.
+  Every Magnific API call costs credits, whatever your web plan says. Written from Magnific's documentation; none of
+  it has run against the live API yet.
+- **Oxen.ai as a provider.** One Oxen key runs twenty recipes: GPT Image 2 and 2.5 (Flare, Sunburst) with the
+  selection as mask, Nano Banana 2, 2 Lite and Pro, Seedream 5.0 Pro and Lite, FLUX.2 [pro], [flex] and [klein], Qwen
+  Image 3.0, Grok Imagine, Krea 2, Ideogram 4 and Z-Image Turbo in Generate new, the three Topaz upscalers, and
+  **Qwen Image 2.1**, a new recipe that runs only on Oxen. The same key gives three prompt-upsampling models and three
+  assistant models. Oxen.ai comes after Comfy Router in each recipe's provider list (Magnific stays last); no default
+  changed. The pictures go to Oxen inline, and Oxen saves every generated image in your Oxen account. Written from
+  Oxen's documentation and model list; **nothing has run against the live API yet**.
+
 ## 0.1.28 — 2026-09-23
 
 - **Comfy Router as a provider.** Comfy's direct model API runs sixteen of the recipes on the Comfy key you may

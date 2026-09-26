@@ -1,0 +1,64 @@
+{
+  "id": "ideogram_inpaint",
+  "kind": "provider",
+  "name": "Ideogram Inpaint",
+  "family": "Ideogram",
+  "description": "Ideogram's mask inpainting on Magnific: the selection goes as the mask and the model repaints only there. Written from Magnific's documentation; not run against the live API yet.",
+  "default": "magnific",
+  "providers": {
+    "magnific": {
+      "model": "ideogram-image-edit",
+      "input": "fill",
+      "text": false,
+      "settings": [
+        {
+          "index": 1,
+          "key": "rendering_speed",
+          "label": "Rendering speed",
+          "spec": [
+            [
+              "TURBO",
+              "DEFAULT",
+              "QUALITY"
+            ],
+            {
+              "default": "DEFAULT"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "magic_prompt",
+          "label": "Magic prompt",
+          "spec": [
+            [
+              "AUTO",
+              "ON",
+              "OFF"
+            ],
+            {
+              "default": "OFF"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "style_type",
+          "label": "Style",
+          "spec": [
+            [
+              "AUTO",
+              "GENERAL",
+              "REALISTIC",
+              "DESIGN"
+            ],
+            {
+              "default": "AUTO"
+            }
+          ]
+        }
+      ],
+      "note": "Runs on Magnific (Freepik's API, api.magnific.com) with the Magnific key; every API call costs credits, whatever the web plan says; not run against the live API yet. The pictures go inline (base64) to Magnific / Freepik (Freepik Company S.L., Málaga, Spain), which hosts inputs and outputs on its own or its providers' platforms, uses them for security and to improve its products and not to train its own models; the docs do not say where the model runs. Real mask inpainting: the selection goes as the mask (inverted to Ideogram's black = repaint), the picture at most 10 MB (an opaque one goes as JPEG). Reference layers go as style references (10 MB together); turn Original off. Magic prompt is off, so the prompt goes as written. The docs name no Ideogram version. EUR 0.025 / 0.05 / 0.076 for Turbo / Default / Quality (Magnific's price list, 2026-09-26)."
+    }
+  }
+}

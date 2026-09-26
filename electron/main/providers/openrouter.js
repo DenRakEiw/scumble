@@ -419,6 +419,8 @@ module.exports = {
     // llm.js: a failed chat request on the OpenRouter key is read and put in the same words
     explain,
     readFailure,
+    // providers/oxen.js: the same mask and reference sentences for a model without a mask input
+    promptFor,
     // exported for tools/openrouter_test.js
     _allowedBase: allowedBase,
     _body: bodyFor,

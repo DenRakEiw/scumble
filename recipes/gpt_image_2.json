@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "GPT Image 2",
   "family": "OpenAI",
-  "description": "OpenAI's April 2026 image model; custom sizes in multiples of 16. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Comfy Router. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "OpenAI's April 2026 image model; custom sizes in multiples of 16. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Comfy Router. Also on Oxen.ai. Also on Magnific. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "openai",
   "providers": {
     "toapis": {
@@ -582,6 +582,191 @@
         ]
       },
       "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; run against the live API on 2026-09-23 (an inpaint with the mask at Quality low, 24 s, about $0.03). The pictures go inline in the request to Comfy, which passes them to OpenAI. The Router takes OpenAI's own request: an edit with the selection as mask (transparent = repaint), Background \"transparent\" for a cut-out with a real alpha channel (PNG or WebP only). The mask may be 4 MB at most, at most sixteen pictures go in (the crop, Original and the reference layers)."
+    },
+    "oxen": {
+      "model": "gpt-image-2",
+      "input": "fill",
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "resolution",
+          "quality",
+          "output_format"
+        ],
+        "mask": "white",
+        "edit_aspect": "auto",
+        "ratios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "21:9",
+          "9:21"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048,
+          "4K": 3840
+        },
+        "max_images": 16
+      },
+      "fixed": {
+        "output_format": "png"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 2048,
+        "step": 16,
+        "pixels": 0,
+        "minPixels": 0
+      },
+      "text": {
+        "sizes": [
+          1024,
+          2048,
+          3840
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Inpainting with the selection as mask (mask_url, white = repaint; it must match the crop's size). The edit asks for aspect \"auto\", which should keep the crop's shape (not verified). An answer of another shape is centre-cropped. Resolution is the answer's tier; on auto the smallest that covers the crop. At most sixteen pictures (the crop, Original and the reference layers). List price $0.004 to $1.13 by quality and resolution (2026-09-26)."
+    },
+    "magnific": {
+      "model": "text-to-image/gpt-image-2-edit",
+      "input": "edit",
+      "settings": [
+        {
+          "index": 1,
+          "key": "quality",
+          "label": "Quality",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1k",
+              "2k",
+              "4k"
+            ],
+            {
+              "default": "2k"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "moderation",
+          "label": "Moderation",
+          "spec": [
+            [
+              "auto",
+              "low"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "aspects": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "21:9",
+          "3:2",
+          "2:3",
+          "2:1",
+          "3:1"
+        ]
+      },
+      "text": {
+        "model": "text-to-image/gpt-image-2",
+        "sizes": [
+          1024,
+          2048,
+          4096
+        ],
+        "settings": [
+          {
+            "index": 1,
+            "key": "quality",
+            "label": "Quality",
+            "spec": [
+              [
+                "low",
+                "medium",
+                "high"
+              ],
+              {
+                "default": "high"
+              }
+            ]
+          },
+          {
+            "index": 3,
+            "key": "moderation",
+            "label": "Moderation",
+            "spec": [
+              [
+                "auto",
+                "low"
+              ],
+              {
+                "default": "auto"
+              }
+            ]
+          }
+        ]
+      },
+      "note": "Runs on Magnific (Freepik's API, api.magnific.com) with the Magnific key; every API call costs credits, whatever the web plan says; not run against the live API yet. The pictures go inline (base64) to Magnific / Freepik (Freepik Company S.L., Málaga, Spain), which hosts inputs and outputs on its own or its providers' platforms, uses them for security and to improve its products and not to train its own models; the docs do not say where the model runs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". GPT Image 2 on Magnific renders ten preset shapes only: the crop's context is widened to the nearest one the picture can give, so the answer lines up with it (a crop that cannot be widened is centre-cropped). Resolution is the answer's tier. At most sixteen pictures, 20 MiB each and 64 MiB together. No transparent background on this route (opaque or auto only). Magnific's price list gives no EUR price; an edit is billed by quality alone."
     }
   },
   "limits": {

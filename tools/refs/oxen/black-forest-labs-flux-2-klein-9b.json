@@ -1,0 +1,105 @@
+{
+  "id": "black-forest-labs-flux-2-klein-9b",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.02,
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "16:9",
+        "enum": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-order": 2
+      },
+      "guidance_scale": {
+        "default": 2,
+        "description": "Scale for classifier-free guidance",
+        "maximum": 10,
+        "minimum": 0,
+        "title": "Guidance Scale",
+        "type": "number",
+        "x-order": 7
+      },
+      "input_image": {
+        "description": "Input images to transform or use as reference. Reference them in the prompt as @Image1, @Image2, etc.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "nullable": true,
+        "title": "Reference Images",
+        "type": "array",
+        "x-order": 1
+      },
+      "num_inference_steps": {
+        "default": 28,
+        "description": "Number of denoising steps",
+        "maximum": 50,
+        "minimum": 1,
+        "title": "Num Inference Steps",
+        "type": "integer",
+        "x-order": 6
+      },
+      "output_format": {
+        "default": "png",
+        "description": "Format of the output image",
+        "enum": [
+          "png",
+          "jpg",
+          "webp"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-order": 4
+      },
+      "output_quality": {
+        "default": "standard",
+        "description": "Quality setting for output image",
+        "enum": [
+          "standard",
+          "high"
+        ],
+        "title": "Output Quality",
+        "type": "string",
+        "x-order": 3
+      },
+      "prompt": {
+        "description": "Text description of the image to generate. Use @Image1, @Image2, etc. to reference the input images.",
+        "title": "Prompt",
+        "type": "string",
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_image",
+              "pattern": "image {n}"
+            }
+          ]
+        },
+        "x-order": 0
+      },
+      "seed": {
+        "description": "Random seed. Leave blank to randomize",
+        "title": "Seed",
+        "type": "integer",
+        "x-order": 5
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

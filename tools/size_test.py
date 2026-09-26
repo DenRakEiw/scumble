@@ -117,6 +117,34 @@ if (ew * eh > 4194304) throw new Error("over the 4 MP budget: " + ew + "x" + eh)
 await run("select_rect", { doc: window.__s, x: 900, y: 700, width: 300, height: 200 });
 return { emitted: [ew, eh], pixels: ew * eh };
 """),
+    ("aspects_widen_the_crop_to_a_preset", """
+// a model that renders preset shapes only (Seedream and GPT Image 2 on Magnific): the crop's context is widened to the
+// nearest preset the picture can give, so the answer comes back in the crop's own shape
+const ed = ednow(window.__s);
+await run("select_rect", { doc: window.__s, x: 1200, y: 800, width: 400, height: 400 });
+const lim = { min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0, aspects: ["16:9"], mode: "max" };
+const info = window.__stitch.prepareCrop(ed, host.nodeParams, lim).info;
+const plain = window.__stitch.prepareCrop(ed, host.nodeParams, { ...lim, aspects: [] }).info;
+await run("select_rect", { doc: window.__s, x: 900, y: 700, width: 300, height: 200 });
+const [ew, eh] = info.emitted, [, , cw, ch] = info.bbox;
+if (info.aspect !== "16:9" || plain.aspect !== null) throw new Error("info.aspect " + info.aspect + " / without presets " + plain.aspect);
+if (Math.abs(ew / eh / (16 / 9) - 1) > 0.01) throw new Error("emitted " + ew + "x" + eh + " is not within 1 % of 16:9");
+if (Math.abs(cw / ch / (16 / 9) - 1) > 0.01) throw new Error("the crop " + cw + "x" + ch + " is not within 1 % of 16:9");
+if (cw <= plain.bbox[2] || ch !== plain.bbox[3]) throw new Error("not widened on its short side: " + JSON.stringify([info.bbox, plain.bbox]));
+return { crop: [cw, ch], without: plain.bbox.slice(2), emitted: [ew, eh], aspect: info.aspect };
+"""),
+    ("aspects_that_cannot_be_reached_leave_the_crop", """
+// the whole picture (3:2) cannot become 16:9: the crop stays, and the adapter's nearest preset is centre-cropped as before
+const ed = ednow(window.__s);
+await run("select_rect", { doc: window.__s, x: 0, y: 0, width: 3000, height: 2000 });
+const lim = { min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0, aspects: ["16:9"], mode: "max" };
+const info = window.__stitch.prepareCrop(ed, host.nodeParams, lim).info;
+const plain = window.__stitch.prepareCrop(ed, host.nodeParams, { ...lim, aspects: [] }).info;
+await run("select_rect", { doc: window.__s, x: 900, y: 700, width: 300, height: 200 });
+if (info.aspect !== null) throw new Error("an unreachable preset was taken: " + info.aspect);
+if (JSON.stringify(info.bbox) !== JSON.stringify(plain.bbox) || JSON.stringify(info.emitted) !== JSON.stringify(plain.emitted)) throw new Error("the crop moved: " + JSON.stringify([info.bbox, info.emitted, plain.bbox, plain.emitted]));
+return { crop: info.bbox, emitted: info.emitted };
+"""),
     ("a_text_only_recipe_refuses_generate", """
 const prev = host.recipe;
 host.setRecipe({ id: "krea_test", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", edit: false, name: "Krea 2", settings: [] });

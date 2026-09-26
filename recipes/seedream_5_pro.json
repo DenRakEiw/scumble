@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Seedream 5.0 Pro",
   "family": "ByteDance",
-  "description": "ByteDance's full Seedream 5, 1K or 2K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on BytePlus ModelArk (ByteDance's own API). Also on Comfy Router. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "ByteDance's full Seedream 5, 1K or 2K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on BytePlus ModelArk (ByteDance's own API). Also on Comfy Router. Also on Oxen.ai. Also on Magnific. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {
     "toapis": {
@@ -275,6 +275,108 @@
         ]
       },
       "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The pictures go inline in the request to Comfy, which passes them to ByteDance's BytePlus ModelArk. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The answer is the crop's own shape at 1 to 4.2 megapixels (the range the Router's schema gives this model), without a watermark. At most ten pictures go in, none steeper than 16:1 and none over 25 MB, the Router's own cap per picture (an opaque one goes as JPEG)."
+    },
+    "oxen": {
+      "model": "bytedance-seedream-5-pro",
+      "input": "edit",
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "size",
+          "watermark",
+          "output_format"
+        ],
+        "edit_aspect": "closest",
+        "ratios": [
+          "1:1",
+          "4:3",
+          "3:4",
+          "16:9",
+          "9:16",
+          "3:2",
+          "2:3",
+          "21:9"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048
+        },
+        "tier_key": "size",
+        "max_images": 10,
+        "max_ratio": 16
+      },
+      "fixed": {
+        "watermark": false,
+        "output_format": "png"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "size",
+          "label": "Size",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "ratio": 16
+      },
+      "text": {
+        "sizes": [
+          1024,
+          2048
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. Seedream 5.0 Pro on Oxen takes no \"auto\" aspect: the preset closest to the crop is sent (eight of them). An answer of another shape is centre-cropped. Size 1K or 2K, on auto the smallest that covers the crop; up to ten pictures, none steeper than 16:1; no watermark. List price $0.045 (2026-09-26)."
+    },
+    "magnific": {
+      "model": "text-to-image/seedream-v5-pro-edit",
+      "input": "edit",
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "1.5k",
+              "2k"
+            ],
+            {
+              "default": "2k"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "aspects": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "2:3",
+          "3:4",
+          "3:2",
+          "4:3",
+          "21:9"
+        ]
+      },
+      "text": {
+        "model": "text-to-image/seedream-v5-pro",
+        "sizes": [
+          1536,
+          2048
+        ],
+        "settings": []
+      },
+      "note": "Runs on Magnific (Freepik's API, api.magnific.com) with the Magnific key; every API call costs credits, whatever the web plan says; not run against the live API yet. The pictures go inline (base64) to Magnific / Freepik (Freepik Company S.L., Málaga, Spain), which hosts inputs and outputs on its own or its providers' platforms, uses them for security and to improve its products and not to train its own models; the docs do not say where the model runs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". Seedream 5.0 Pro on Magnific renders eight preset shapes only: the crop's context is widened to the nearest one the picture can give, so the answer lines up with it (a crop that cannot be widened is centre-cropped). At most ten pictures go in (the crop, Original and the reference layers), each at least 256 × 256 and at most 10 MB (an opaque one goes as JPEG). Resolution 1.5k or 2k. Magnific's price list names no price for 5.0 Pro."
     }
   }
 }

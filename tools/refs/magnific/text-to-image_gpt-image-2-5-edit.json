@@ -1,0 +1,111 @@
+{
+ "$comment": "The request body of POST /v1/ai/text-to-image/gpt-image-2-5-edit, resolved from https://storage.googleapis.com/fc-freepik-pro-rev1-eu-api-specs/magnific-api-v1-openapi.yaml (read 2026-09-26); descriptions and examples dropped.",
+ "route": "text-to-image/gpt-image-2-5-edit",
+ "schema": {
+  "properties": {
+   "prompt": {
+    "maxLength": 32000,
+    "minLength": 1,
+    "type": "string"
+   },
+   "reference_images": {
+    "items": {
+     "type": "string"
+    },
+    "maxItems": 16,
+    "minItems": 1,
+    "type": "array"
+   },
+   "webhook_url": {
+    "format": "uri",
+    "type": "string"
+   },
+   "num_images": {
+    "default": 1,
+    "maximum": 10,
+    "minimum": 1,
+    "type": "integer"
+   },
+   "variant": {
+    "default": "flare",
+    "enum": [
+     "flare",
+     "sunburst"
+    ],
+    "type": "string"
+   },
+   "resolution": {
+    "default": "1k",
+    "enum": [
+     "1k",
+     "2k",
+     "4k"
+    ],
+    "type": "string"
+   },
+   "aspect_ratio": {
+    "default": "auto",
+    "enum": [
+     "auto",
+     "square_1_1",
+     "classic_4_3",
+     "traditional_3_4",
+     "widescreen_16_9",
+     "social_story_9_16",
+     "film_horizontal_21_9",
+     "standard_3_2",
+     "portrait_2_3",
+     "horizontal_2_1",
+     "banner_3_1"
+    ],
+    "type": "string"
+   },
+   "quality": {
+    "default": "medium",
+    "enum": [
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max"
+    ],
+    "type": "string"
+   },
+   "output_format": {
+    "default": "png",
+    "enum": [
+     "png",
+     "jpeg",
+     "webp"
+    ],
+    "type": "string"
+   },
+   "background": {
+    "enum": [
+     "transparent",
+     "opaque",
+     "auto"
+    ],
+    "type": "string"
+   },
+   "output_compression": {
+    "maximum": 100,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "moderation": {
+    "default": "auto",
+    "enum": [
+     "auto",
+     "low"
+    ],
+    "type": "string"
+   }
+  },
+  "required": [
+   "prompt",
+   "reference_images"
+  ],
+  "type": "object"
+ }
+}

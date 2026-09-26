@@ -1,0 +1,176 @@
+{
+ "$comment": "The request body of POST /v1/ai/mystic, resolved from https://storage.googleapis.com/fc-freepik-pro-rev1-eu-api-specs/magnific-api-v1-openapi.yaml (read 2026-09-26); descriptions and examples dropped.",
+ "route": "mystic",
+ "schema": {
+  "properties": {
+   "prompt": {
+    "type": "string"
+   },
+   "webhook_url": {
+    "format": "uri",
+    "type": "string"
+   },
+   "structure_reference": {
+    "format": "byte",
+    "type": "string"
+   },
+   "structure_strength": {
+    "default": 50,
+    "maximum": 100,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "style_reference": {
+    "format": "byte",
+    "type": "string"
+   },
+   "adherence": {
+    "default": 50,
+    "maximum": 100,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "hdr": {
+    "default": 50,
+    "maximum": 100,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "resolution": {
+    "default": "2k",
+    "enum": [
+     "1k",
+     "2k",
+     "4k"
+    ],
+    "type": "string"
+   },
+   "aspect_ratio": {
+    "default": "square_1_1",
+    "enum": [
+     "square_1_1",
+     "classic_4_3",
+     "traditional_3_4",
+     "widescreen_16_9",
+     "social_story_9_16",
+     "smartphone_horizontal_20_9",
+     "smartphone_vertical_9_20",
+     "standard_3_2",
+     "portrait_2_3",
+     "horizontal_2_1",
+     "vertical_1_2",
+     "social_5_4",
+     "social_post_4_5'"
+    ],
+    "type": "string"
+   },
+   "model": {
+    "default": "realism",
+    "enum": [
+     "realism",
+     "fluid",
+     "zen",
+     "flexible",
+     "super_real",
+     "editorial_portraits"
+    ],
+    "type": "string"
+   },
+   "creative_detailing": {
+    "default": 33,
+    "maximum": 100,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "engine": {
+    "default": "automatic",
+    "enum": [
+     "automatic",
+     "magnific_illusio",
+     "magnific_sharpy",
+     "magnific_sparkle"
+    ],
+    "type": "string"
+   },
+   "fixed_generation": {
+    "default": false,
+    "type": "boolean"
+   },
+   "filter_nsfw": {
+    "default": true,
+    "type": "boolean"
+   },
+   "styling": {
+    "properties": {
+     "styles": {
+      "items": {
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "strength": {
+         "default": 100,
+         "maximum": 200,
+         "minimum": 0,
+         "type": "number"
+        }
+       },
+       "required": [
+        "name"
+       ],
+       "type": "object"
+      },
+      "maxItems": 1,
+      "type": "array"
+     },
+     "characters": {
+      "items": {
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "strength": {
+         "default": 100,
+         "maximum": 200,
+         "minimum": 0,
+         "type": "number"
+        }
+       },
+       "required": [
+        "strength"
+       ],
+       "type": "object"
+      },
+      "maxItems": 1,
+      "type": "array"
+     },
+     "colors": {
+      "items": {
+       "properties": {
+        "color": {
+         "pattern": "^#[0-9A-F]{6}$",
+         "type": "string"
+        },
+        "weight": {
+         "maximum": 1,
+         "minimum": 0.05,
+         "type": "number"
+        }
+       },
+       "required": [
+        "color",
+        "weight"
+       ],
+       "type": "object"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "type": "array"
+     }
+    },
+    "type": "object"
+   }
+  },
+  "type": "object"
+ }
+}

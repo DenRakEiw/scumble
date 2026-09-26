@@ -4,7 +4,7 @@
   "task": "upscale",
   "name": "Topaz Bloom (upscale)",
   "family": "Upscale",
-  "description": "Topaz Labs' creative upscalers (Bloom 2, Bloom, Bloom Realism) through fal.ai: adds detail, may change small things. Topaz can take several minutes on a large picture; the window stays usable while it runs. Written from the provider's schema and not run against the live API yet.",
+  "description": "Topaz Labs' creative upscalers (Bloom 2, Bloom, Bloom Realism) through fal.ai: adds detail, may change small things. Topaz can take several minutes on a large picture; the window stays usable while it runs. Written from the provider's schema and not run against the live API yet. Also on Oxen.ai.",
   "default": "fal",
   "factor": {
     "default": 2,
@@ -59,6 +59,60 @@
         }
       ],
       "note": "topaz/upscale/image/creative on fal: 1 to 4 times; Creativity (1 to 9) applies to Bloom 2 only. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    },
+    "oxen": {
+      "model": "topazlabs-bloom-2-image",
+      "options": {
+        "accepts": [
+          "creativity",
+          "autoprompt",
+          "prompt"
+        ],
+        "numbers": [
+          "creativity"
+        ],
+        "prompt_max": 1024
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "creativity",
+          "label": "Creativity",
+          "spec": [
+            [
+              "auto",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "7",
+              "8",
+              "9"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "autoprompt",
+          "label": "Auto prompt",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": true
+            }
+          ]
+        }
+      ],
+      "factor": {
+        "fixed": true
+      },
+      "usesPrompt": true,
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Bloom 2 on Oxen: its schema has no factor, so the model picks the size (not verified). The tab's prompt goes along as guidance (up to 1024 characters). Priced per Topaz credit ($0.08 a credit); how many credits an image takes is not stated."
     }
   },
   "limits": {

@@ -4,7 +4,7 @@
   "task": "upscale",
   "name": "Topaz Precision (upscale)",
   "family": "Upscale",
-  "description": "Topaz Labs' faithful upscalers (Standard, High Fidelity, Low Resolution, CGI, Text Refine, Faces) through fal.ai, no Topaz account needed. Topaz can take several minutes on a large picture; the window stays usable while it runs. Run live on fal on 2026-09-22 (a selection and a 2 MP picture, 2 times).",
+  "description": "Topaz Labs' faithful upscalers (Standard, High Fidelity, Low Resolution, CGI, Text Refine, Faces) through fal.ai, no Topaz account needed. Topaz can take several minutes on a large picture; the window stays usable while it runs. Run live on fal on 2026-09-22 (a selection and a 2 MP picture, 2 times). Also on Oxen.ai.",
   "default": "fal",
   "factor": {
     "default": 2,
@@ -126,6 +126,49 @@
         }
       ],
       "note": "topaz/upscale/image/precision on fal: 1 to 4 times. \"auto\" leaves the value to the model (its default differs per model); Fix compression does not apply to CGI. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    },
+    "oxen": {
+      "model": "topazlabs-image-upscale",
+      "options": {
+        "accepts": [
+          "enhance_model",
+          "output_format"
+        ],
+        "factor_key": "upscale_factor",
+        "factor_form": "x"
+      },
+      "fixed": {
+        "output_format": "png"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "enhance_model",
+          "label": "Model",
+          "spec": [
+            [
+              "Standard V2",
+              "High Fidelity V2",
+              "Low Resolution V2",
+              "CGI",
+              "Text Refine"
+            ],
+            {
+              "default": "Standard V2"
+            }
+          ]
+        }
+      ],
+      "factor": {
+        "default": 2,
+        "min": 2,
+        "max": 4,
+        "steps": [
+          2,
+          4
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Topaz's faithful upscaler on Oxen: 2x or 4x, five models. List price $0.05 an image (2026-09-26)."
     }
   },
   "limits": {

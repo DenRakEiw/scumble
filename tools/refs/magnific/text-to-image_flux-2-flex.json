@@ -1,0 +1,86 @@
+{
+ "$comment": "The request body of POST /v1/ai/text-to-image/flux-2-flex, resolved from https://storage.googleapis.com/fc-freepik-pro-rev1-eu-api-specs/magnific-api-v1-openapi.yaml (read 2026-09-26); descriptions and examples dropped.",
+ "route": "text-to-image/flux-2-flex",
+ "schema": {
+  "properties": {
+   "prompt": {
+    "type": "string"
+   },
+   "width": {
+    "default": 1024,
+    "maximum": 1920,
+    "minimum": 256,
+    "type": "integer"
+   },
+   "height": {
+    "default": 768,
+    "maximum": 1920,
+    "minimum": 256,
+    "type": "integer"
+   },
+   "seed": {
+    "maximum": 4294967295,
+    "minimum": 0,
+    "nullable": true,
+    "type": "integer"
+   },
+   "guidance": {
+    "default": 3.0,
+    "maximum": 10.0,
+    "minimum": 1.5,
+    "nullable": true,
+    "type": "number"
+   },
+   "steps": {
+    "default": 50,
+    "maximum": 50,
+    "minimum": 1,
+    "nullable": true,
+    "type": "integer"
+   },
+   "safety_tolerance": {
+    "default": 5,
+    "maximum": 5,
+    "minimum": 0,
+    "nullable": true,
+    "type": "integer"
+   },
+   "prompt_upsampling": {
+    "default": false,
+    "type": "boolean"
+   },
+   "output_format": {
+    "enum": [
+     "jpeg",
+     "png"
+    ],
+    "nullable": true,
+    "type": "string"
+   },
+   "input_image": {
+    "nullable": true,
+    "type": "string"
+   },
+   "input_image_2": {
+    "nullable": true,
+    "type": "string"
+   },
+   "input_image_3": {
+    "nullable": true,
+    "type": "string"
+   },
+   "input_image_4": {
+    "nullable": true,
+    "type": "string"
+   },
+   "webhook_url": {
+    "format": "uri",
+    "type": "string"
+   }
+  },
+  "required": [
+   "prompt"
+  ],
+  "type": "object"
+ }
+}

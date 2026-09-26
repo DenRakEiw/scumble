@@ -1,0 +1,48 @@
+{
+  "id": "xai-grok-imagine-image-edit",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.022,
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image"
+    ],
+    "properties": {
+      "input_image": {
+        "description": "Image you want to edit.",
+        "format": "uri",
+        "title": "Input Image",
+        "type": "string",
+        "x-order": 1,
+        "x-workbench-default": "https://hub.oxen.ai/api/repos/ox/Oxen-Character-Simple-Vector-Graphic/file/main/images/reference/bloxy_white_bg.png"
+      },
+      "output_format": {
+        "default": "webp",
+        "description": "Format of the output images",
+        "enum": [
+          "webp",
+          "jpeg",
+          "png"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-order": 2
+      },
+      "prompt": {
+        "description": "Prompt for generated image",
+        "title": "Prompt",
+        "type": "string",
+        "x-order": 0,
+        "x-workbench-default": "Place the ox in a neon-lit cyberpunk city at night, rain-slick streets reflecting pink and cyan signs, cinematic lighting"
+      }
+    },
+    "required": [
+      "prompt",
+      "input_image"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

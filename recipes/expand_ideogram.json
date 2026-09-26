@@ -1,0 +1,22 @@
+{
+  "id": "expand_ideogram",
+  "kind": "provider",
+  "name": "Ideogram Expand",
+  "family": "Outpaint",
+  "description": "Outpainting with Ideogram on Magnific (Image Expand): extend the canvas, keep the new border selected and Generate; the model draws the border around what is kept. Written from Magnific's documentation; not run against the live API yet.",
+  "default": "magnific",
+  "providers": {
+    "magnific": {
+      "model": "image-expand/ideogram",
+      "input": "fill",
+      "text": false,
+      "settings": [],
+      "limits": {
+        "max": 2048,
+        "step": 32,
+        "pixels": 1048576
+      },
+      "note": "Runs on Magnific (Freepik's API, api.magnific.com) with the Magnific key; every API call costs credits, whatever the web plan says; not run against the live API yet. The pictures go inline (base64) to Magnific / Freepik (Freepik Company S.L., Málaga, Spain), which hosts inputs and outputs on its own or its providers' platforms, uses them for security and to improve its products and not to train its own models; the docs do not say where the model runs. Outpainting: after Image › Extend canvas, generate with the new border selected; the kept picture goes out, the model draws the border, the stitch blends only the selection. A selection that is not a border around the kept picture is refused before anything is sent; reference layers are not used. Each margin at most 2048 px at the size it is sent; the answer is about 1 megapixel in sides of 32 (only its shape follows the request), so the crop goes out at that size. EUR 0.025 an image (Magnific's price list, 2026-09-26)."
+    }
+  }
+}

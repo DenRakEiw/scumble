@@ -1,0 +1,47 @@
+{
+ "$comment": "The request body of POST /v1/ai/text-to-image/seedream-v5-pro, resolved from https://storage.googleapis.com/fc-freepik-pro-rev1-eu-api-specs/magnific-api-v1-openapi.yaml (read 2026-09-26); descriptions and examples dropped.",
+ "route": "text-to-image/seedream-v5-pro",
+ "schema": {
+  "properties": {
+   "prompt": {
+    "maxLength": 4096,
+    "type": "string"
+   },
+   "webhook_url": {
+    "format": "uri",
+    "type": "string"
+   },
+   "resolution": {
+    "default": "2k",
+    "enum": [
+     "1.5k",
+     "2k"
+    ],
+    "type": "string"
+   },
+   "aspect_ratio": {
+    "default": "square_1_1",
+    "enum": [
+     "square_1_1",
+     "widescreen_16_9",
+     "social_story_9_16",
+     "portrait_2_3",
+     "traditional_3_4",
+     "standard_3_2",
+     "classic_4_3",
+     "cinematic_21_9"
+    ],
+    "type": "string"
+   },
+   "seed": {
+    "maximum": 4294967295,
+    "minimum": 0,
+    "type": "integer"
+   }
+  },
+  "required": [
+   "prompt"
+  ],
+  "type": "object"
+ }
+}

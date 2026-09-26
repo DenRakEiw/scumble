@@ -1,0 +1,107 @@
+{
+  "id": "ideogram-v4",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.06,
+    "method": "per_image"
+  },
+  "request_schema": {
+    "properties": {
+      "acceleration": {
+        "default": "none",
+        "description": "The acceleration level to use for the image generation.",
+        "enum": [
+          "none",
+          "low",
+          "regular",
+          "high"
+        ],
+        "title": "Acceleration",
+        "type": "string",
+        "x-order": 4
+      },
+      "enable_safety_checker": {
+        "default": true,
+        "description": "If set to true, the safety checker will be enabled.",
+        "title": "Enable Safety Checker",
+        "type": "boolean",
+        "x-order": 7
+      },
+      "expansion_model": {
+        "default": "Medium",
+        "description": "Which model expands the prompt. 'Medium' is fast; 'Large' uses Ideogram's Magic Prompt for the highest quality.",
+        "enum": [
+          "Medium",
+          "Large"
+        ],
+        "title": "Expansion Model",
+        "type": "string",
+        "x-order": 3
+      },
+      "image_size": {
+        "default": "square_hd",
+        "description": "The resolution of the generated image.",
+        "enum": [
+          "square_hd",
+          "square",
+          "portrait_4_3",
+          "portrait_16_9",
+          "landscape_4_3",
+          "landscape_16_9"
+        ],
+        "title": "Image Size",
+        "type": "string",
+        "x-order": 1
+      },
+      "num_images": {
+        "default": 1,
+        "description": "Number of images to generate.",
+        "title": "Num Images",
+        "type": "integer",
+        "x-order": 5
+      },
+      "output_format": {
+        "default": "jpeg",
+        "description": "The format of the generated image.",
+        "enum": [
+          "jpeg",
+          "png"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-order": 8
+      },
+      "prompt": {
+        "description": "The prompt to generate an image from.",
+        "title": "Prompt",
+        "type": "string",
+        "x-order": 0,
+        "x-workbench-default": "A red panda perched on a mossy branch in a misty forest at sunrise"
+      },
+      "rendering_speed": {
+        "default": "BALANCED",
+        "description": "The rendering speed to use. Faster speeds use fewer denoising steps.",
+        "enum": [
+          "TURBO",
+          "BALANCED",
+          "QUALITY"
+        ],
+        "title": "Rendering Speed",
+        "type": "string",
+        "x-order": 2
+      },
+      "seed": {
+        "description": "The seed to use for generation. If not provided, a random seed will be used.",
+        "nullable": true,
+        "title": "Seed",
+        "type": "integer",
+        "x-order": 6
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

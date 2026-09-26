@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "FLUX.2 [flex]",
   "family": "Black Forest Labs",
-  "description": "FLUX.2 with exposed steps and guidance, up to ten references. Also on WaveSpeedAI. Also on ToAPIs. Also on OpenRouter. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "FLUX.2 with exposed steps and guidance, up to ten references. Also on WaveSpeedAI. Also on ToAPIs. Also on OpenRouter. Also on Oxen.ai. Also on Magnific. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "bfl",
   "providers": {
     "toapis": {
@@ -259,6 +259,154 @@
         ]
       },
       "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. The pictures go inline in the request to OpenRouter, which passes them to Black Forest Labs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. There is no size parameter: the host picks the output size. At most eight pictures go in (the crop, Original and the reference layers)."
+    },
+    "oxen": {
+      "model": "flux-2-flex",
+      "input": "edit",
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "resolution",
+          "seed",
+          "output_format",
+          "num_inference_steps",
+          "guidance"
+        ],
+        "edit_aspect": "match_input_image",
+        "ratios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3"
+        ],
+        "tiers": {
+          "0.5 MP": 500000,
+          "1 MP": 1000000,
+          "2 MP": 2000000
+        },
+        "tier_unit": "area",
+        "max_images": 8
+      },
+      "fixed": {
+        "output_format": "png"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "0.5 MP",
+              "1 MP",
+              "2 MP"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "num_inference_steps",
+          "label": "Steps",
+          "spec": [
+            "INT",
+            {
+              "default": 30,
+              "min": 1,
+              "max": 50,
+              "step": 1
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "guidance",
+          "label": "Guidance",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 2,
+              "min": 0,
+              "max": 10,
+              "step": 0.5
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024,
+          1440
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. The edit asks for aspect \"match_input_image\" (not verified). An answer of another shape is centre-cropped. Resolution 0.5, 1 or 2 MP, on auto the smallest that covers the crop's area; steps 1 to 50, guidance 0 to 10; at most eight pictures (BFL's number). List price $0.12 (2026-09-26)."
+    },
+    "magnific": {
+      "model": "text-to-image/flux-2-flex",
+      "input": "edit",
+      "fixed": {
+        "output_format": "png"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "steps",
+          "label": "Steps",
+          "spec": [
+            "INT",
+            {
+              "default": 50,
+              "min": 1,
+              "max": 50
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "guidance",
+          "label": "Guidance",
+          "spec": [
+            "FLOAT",
+            {
+              "default": 2.5,
+              "min": 1.5,
+              "max": 10,
+              "step": 0.1
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "safety_tolerance",
+          "label": "Safety tolerance",
+          "spec": [
+            "INT",
+            {
+              "default": 2,
+              "min": 0,
+              "max": 5
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 1920
+      },
+      "text": {
+        "model": "text-to-image/flux-2-flex",
+        "sizes": [
+          1024,
+          1440,
+          1920
+        ]
+      },
+      "note": "Runs on Magnific (Freepik's API, api.magnific.com) with the Magnific key; every API call costs credits, whatever the web plan says; not run against the live API yet. The pictures go inline (base64) to Magnific / Freepik (Freepik Company S.L., Málaga, Spain), which hosts inputs and outputs on its own or its providers' platforms, uses them for security and to improve its products and not to train its own models; the docs do not say where the model runs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". At most four pictures go in (the crop, Original and three reference layers), 256 to 1920 px a side; the answer is the size sent. Magnific's price list names no price for Flex."
     }
   },
   "limits": {

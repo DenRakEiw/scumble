@@ -9,7 +9,8 @@
 // image key, at the host providers/toapis.js allows (settings.toapis.base, else toapis.com).
 // OpenRouter's rows take the same client on the OpenRouter key, with its reasoning switch per row
 // and a routing object that leaves out hosts that train on the data and hosts in China
-// (providers/openrouter.js has the host rule, the key rule and the list).
+// (providers/openrouter.js has the host rule, the key rule and the list). Oxen.ai's rows take it on the Oxen key, at
+// /api/ai/chat/completions (no /v1), at the host providers/oxen.js allows (settings.oxen.base: the loopback mock only).
 //
 //   list()            -> [{ id, provider, model, label, key: bool }]
 //   ask({ id, instruction, image, maxTokens }) -> { text, seconds, model, note }
@@ -23,6 +24,7 @@ const settings = require("./settings");
 const { b64, dataUri, readError } = require("./providers/util");
 const toapis = require("./providers/toapis");
 const openrouter = require("./providers/openrouter");
+const oxen = require("./providers/oxen");
 const custom = require("./llm_custom");
 
 // ToAPIs first, as in every provider list. Prices from its catalogue on 2026-09-15 (per million tokens
@@ -46,10 +48,15 @@ const MODELS = [
     { provider: "openrouter", model: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna (OpenRouter key)", reasoning: { effort: "low", exclude: true } },
     { provider: "openrouter", model: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5 (OpenRouter key)" },
     { provider: "openrouter", model: "mistralai/mistral-small-2603", label: "Mistral Small 4 (OpenRouter key)" },
+    // Oxen.ai, from GET https://hub.oxen.ai/api/ai/models on 2026-09-26 (per million tokens in / out): Gemini 3.8 Flash
+    // $0.75 / $3.75, GPT-5.6 Luna $1 / $6, Gemma 4 31B $0.14 / $0.40. Not run against the live API.
+    { provider: "oxen", model: "gemini-3-8-flash", label: "Gemini 3.8 Flash (Oxen key)" },
+    { provider: "oxen", model: "gpt-5-6-luna", label: "GPT-5.6 Luna (Oxen key)" },
+    { provider: "oxen", model: "gemma-4-31b-it", label: "Gemma 4 31B (Oxen key)" },
 ];
 
 const PROVIDER_LABEL = {
-    toapis: "ToAPIs", openai: "OpenAI", gemini: "Google Gemini", anthropic: "Anthropic", openrouter: "OpenRouter",
+    toapis: "ToAPIs", openai: "OpenAI", gemini: "Google Gemini", anthropic: "Anthropic", openrouter: "OpenRouter", oxen: "Oxen.ai",
     deepseek: "DeepSeek", moonshot: "Moonshot (Kimi)", zai: "Z.ai (GLM)", wavespeed: "WaveSpeedAI",
     compat: "OpenAI-compatible endpoint",
 };
@@ -217,10 +224,11 @@ async function askAnthropic({ model, key, instruction, image, maxTokens }) {
  * limit or a server error, which a second request cannot fix; `explain(status, message)` puts
  * plain words in front of the server's message and gets the error's metadata when `readFailure(r)`
  * ({ message, meta }) reads it (OpenRouter). `extra` goes into the body as it is (OpenRouter: reasoning
- * and provider). The key is taken out of a failed answer's text, whatever the server echoed.
+ * and provider). `exact`: the URL is the base as it is, without the /v1 compatBase adds (Oxen.ai's /api/ai). The key
+ * is taken out of a failed answer's text, whatever the server echoed.
  */
-async function askCompatible({ model, key, instruction, image, maxTokens, url, label, strict, explain, extra, readFailure }) {
-    const base = compatBase(url);
+async function askCompatible({ model, key, instruction, image, maxTokens, url, label, strict, explain, extra, readFailure, exact }) {
+    const base = exact ? String(url || "").trim().replace(/\/+$/, "") : compatBase(url);
     const endpoint = base + "/chat/completions";
     const headers = { "Content-Type": "application/json", ...(key ? { Authorization: "Bearer " + key } : {}) };
 
@@ -304,6 +312,17 @@ async function askOpenRouter(a) {
 }
 
 /**
+ * Oxen.ai's /api/ai/chat/completions: the OpenAI-compatible client on the Oxen key, at the host providers/oxen.js allows
+ * (settings.oxen.base: the loopback mock only), with Oxen's words for a failure. The base has no /v1, so it is taken as
+ * it is. The picture goes as a data URL, as Oxen's vision example sends it.
+ */
+async function askOxen(a) {
+    const origin = oxen.baseUrl(settings.get());
+    oxen.checkKey(origin, a.key);
+    return await askCompatible({ ...a, url: origin + oxen.API, exact: true, label: "Oxen.ai", strict: true, explain: oxen.explain, readFailure: oxen.readFailure });
+}
+
+/**
  * The Chat Completions providers that have no upsample adapter of their own (DeepSeek, Moonshot,
  * Z.ai, WaveSpeedAI): the OpenAI-compatible client on that provider's own key and base URL, as
  * the registry (assistant/providers.js) has them. Only a model the user added by hand reaches
@@ -316,7 +335,7 @@ async function askChat(a) {
 }
 
 const ADAPTERS = {
-    toapis: askToAPIs, openai: askOpenAI, gemini: askGemini, anthropic: askAnthropic, openrouter: askOpenRouter,
+    toapis: askToAPIs, openai: askOpenAI, gemini: askGemini, anthropic: askAnthropic, openrouter: askOpenRouter, oxen: askOxen,
     deepseek: askChat, moonshot: askChat, zai: askChat, wavespeed: askChat,
 };
 

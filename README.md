@@ -22,9 +22,10 @@ voices, one sceptic, the whole app recorded in the app.
 Rendering happens on your own [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
 (local or remote, for example on RunPod) or through API providers: Google (Nano Banana
 2 / 2 Lite / Pro), OpenAI (GPT Image 2.5 Flare / Sunburst, 2), Black Forest Labs
-(FLUX.2 max / pro / flex / klein, FLUX.1 Fill), ByteDance Seedream 5, Qwen Image Edit,
+(FLUX.2 max / pro / flex / klein, FLUX.1 Fill), ByteDance Seedream 5 and 4.5, Qwen Image Edit and Qwen Image 2.1,
+Magnific's Mystic, Ideogram's mask inpainting and Image Expand outpainting (FLUX Pro, Ideogram, Seedream 4.5),
 each through the model's own API where Scumble has one (for Seedream that is ByteDance's BytePlus ModelArk) or
-through ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud and OpenRouter. Object masks and background removal
+through ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud, OpenRouter, Oxen.ai and Magnific. Object masks and background removal
 run inside the app through ONNX Runtime (SAM2, BiRefNet, RMBG). The editor is the same
 code as the ComfyUI node [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas);
 Scumble is the standalone window around it, plus recipes, plugins, an MCP server and the assistant.
@@ -50,14 +51,14 @@ press Generate. The recipe decides where it runs: your ComfyUI, or a provider wi
   selections.
 - Recipes instead of node graphs: pick a model ("FLUX.2 [max]", "Nano Banana 2") and the
   provider it runs on (ToAPIs, its own API such as BytePlus ModelArk for Seedream, fal.ai, Replicate, WaveSpeedAI,
-  Comfy Cloud, OpenRouter); import your own ComfyUI
+  Comfy Cloud, OpenRouter, Oxen.ai, Magnific); import your own ComfyUI
   workflow as a recipe if it holds an Inpaint Canvas node, or a copy of a shipped model recipe with
   a variant of your own.
 - API runs go out at the size the provider really takes (*Highres fix* picks the tier), with
   reference layers, and transparent results from the OpenAI image models land as cut-outs.
 - Start from nothing: *Generate new* makes the base image from the prompt alone, locally
   or through a provider, and you edit it from there.
-- Prompt upsampling through a stored API key, an OpenRouter or ToAPIs key, or a local Ollama /
+- Prompt upsampling through a stored API key, an OpenRouter, Oxen.ai or ToAPIs key, or a local Ollama /
   LM Studio, with your own prompt-writing rules as Markdown templates.
 
 ### Layers, filters, text
@@ -90,7 +91,7 @@ blend mode, put filter layers and text on top. Nothing is baked in until you fla
 
 A chat column next to the canvas. It runs on your own API key, on Anthropic, OpenAI, Google
 or any OpenAI-compatible endpoint (OpenRouter, DeepSeek, Moonshot / Kimi, Z.ai / GLM,
-ToAPIs, WaveSpeed, or a local server), and drives the editor through the same 60+ commands
+ToAPIs, WaveSpeed, Oxen.ai, or a local server), and drives the editor through the same 60+ commands
 an external MCP client gets. Every call is a card you can open; everything that costs money,
 queues on your ComfyUI, clears the undo stack or touches a layer that is not its own asks
 first.
@@ -145,7 +146,7 @@ the models of the recipe you pick (the shipped Flux.2 Klein recipe wants the Flu
 you choose the file names you have). For an API provider put the key into Settings > API
 providers; no ComfyUI is needed then. The same key rows serve the assistant and prompt
 upsampling (Anthropic, OpenAI, Google, OpenRouter, DeepSeek, Moonshot, Z.ai, ToAPIs,
-WaveSpeed), plus a local OpenAI-compatible endpoint that needs no key. The *get a key* links
+WaveSpeed, Oxen.ai), plus a local OpenAI-compatible endpoint that needs no key. The *get a key* links
 of ToAPIs and WaveSpeedAI carry the author's referral code.
 
 ## Install (Linux)
@@ -193,7 +194,7 @@ the sample plugin), `film_test.py` (GPU and CPU paths of the film pack), `mcp_te
 (the MCP server over stdio), `assistant_test.py` (the assistant against a scripted mock of
 all four model families, with `assistant_test.js` for the loop in plain Node),
 `llm_test.py` (the OpenAI-compatible upsample endpoint against a mock server, and the
-user's own model rows), `toapis_test.py`, `openrouter_test.py` and `ark_test.py` (each
+user's own model rows), `toapis_test.py`, `openrouter_test.py`, `ark_test.py`, `oxen_test.py` and `magnific_test.py` (each
 adapter in plain Node, then the app against a mock of the service), `recipes_test.py`
 (every shipped recipe's settings rows and the importer), `editor_test.py` (editor
 behaviour that is easy to break again), `composite_test.py` (the GPU compositor against
@@ -208,7 +209,7 @@ them on a fresh instance. See `CLAUDE.md` for the development notes.
 ```
 electron/main/     main process: window, scumble:// scheme with the ComfyUI proxy, websocket, menu, dialogs, settings,
                    file mirror, keys.js (safeStorage), recipes.js, llm.js + llm_custom.js (prompt upsampling, the user's
-                   own models), providers/ (toapis, fal, replicate, bfl, openai, gemini, wavespeed, comfycloud, openrouter, ark),
+                   own models), providers/ (toapis, fal, replicate, bfl, openai, gemini, wavespeed, comfycloud, openrouter, ark, oxen, magnific),
                    onnx/ (SAM2, matting), plugins.js, updater.js (GitHub releases), bridge.js + local.js + mcp/ (agents),
                    assistant/ (the loop, the policy, the four model adapters, the chat store)
 electron/preload.js

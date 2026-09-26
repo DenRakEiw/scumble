@@ -105,7 +105,9 @@ const withIt = rl.recipes.filter((r) => (r.providers || []).includes("comfyroute
 const ids = withIt.map((r) => r.id).sort();
 if (JSON.stringify(ids) !== JSON.stringify(__RECIPES__)) throw new Error("recipes that list comfyrouter: " + ids.join(", "));
 for (const r of withIt) {
-    if (r.providers[r.providers.length - 1] !== "comfyrouter") throw new Error(r.id + ": comfyrouter is not last: " + r.providers.join(", "));
+    // Oxen.ai and Magnific (added later) may follow it
+    const upTo = r.providers.filter((x) => x !== "oxen" && x !== "magnific");
+    if (upTo[upTo.length - 1] !== "comfyrouter") throw new Error(r.id + ": comfyrouter is not last before oxen / magnific: " + r.providers.join(", "));
     const raw = host.shell.recipes().find((x) => x.id === r.id);
     if (raw.default === "comfyrouter") throw new Error(r.id + ": the file's default is comfyrouter");
     if (!remembered[r.id] && r.provider !== raw.default) throw new Error(r.id + ": the default moved to " + r.provider);

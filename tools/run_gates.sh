@@ -10,14 +10,17 @@
 # ($SCUMBLE_GATES/nodecopy), so the real node repo is never written.
 #
 # A gate is a tools/ script name without .py (editor, composite, pixels, shape, brush, commands,
-# film, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, recipes, assistant, mcp, smoke,
+# film, glb, ailabel, size, transparent, generate, log, llm, toapis, openrouter, ark, comfyrouter, oxen, magnific, recipes, assistant, mcp, smoke,
 # node, perf:<args>).
 # Gate "toapis" (tools/toapis_test.py) runs tools/toapis_test.js in plain Node first, then the app against
 # tools/toapis_mock.py; it needs no ToAPIs key and refuses a profile that holds one. Gate "openrouter"
 # (tools/openrouter_test.py) does the same with tools/openrouter_test.js and tools/openrouter_mock.py, and gate
 # "ark" (tools/ark_test.py, BytePlus ModelArk) with tools/ark_test.js and tools/ark_mock.py, and gate "comfyrouter"
 # (tools/comfyrouter_test.py) with tools/comfyrouter_test.js and tools/comfyrouter_mock.py (it refuses a profile that
-# holds a Comfy Cloud key, the key Comfy Router runs on). Gate "recipes"
+# holds a Comfy Cloud key, the key Comfy Router runs on), and gate "oxen" (tools/oxen_test.py, Oxen.ai) with
+# tools/oxen_test.js and tools/oxen_mock.py (it refuses a profile that holds an Oxen key), and gate "magnific"
+# (tools/magnific_test.py) with tools/magnific_test.js and tools/magnific_mock.py (it refuses a profile that holds a
+# Magnific key). Gate "recipes"
 # (tools/recipes_test.py) runs tools/recipes_test.js in plain Node first (the shipped recipes' settings slots and
 # the importer), then the import through the app's Settings dialog; it needs no key and no ComfyUI. Gate "assistant"
 # (tools/assistant_test.py) runs tools/assistant_test.js in plain Node first, then the in-app assistant against
@@ -28,6 +31,10 @@
 # Logs and summary.txt go to $SCUMBLE_GATES/gates/<label>/. Exit code 0 only when every gate passed.
 # Logs, profiles and the node copy go under $SCUMBLE_GATES (default F:/canvas/dist/gates, ignored by git).
 SP="${SCUMBLE_GATES:-/f/canvas/dist/gates}"
+# SCUMBLE_CDP_PORT picks the DevTools port (default 9555), so two runs with different labels can go side by side;
+# tools/cdp.py and tools/close_app.py read the same variable.
+PORT="${SCUMBLE_CDP_PORT:-9555}"
+export SCUMBLE_CDP_PORT="$PORT"
 LABEL="$1"; shift
 COPY=""; STRICT="0"; EXE=""; TILES=""; OFFLINE=""
 while [ $# -gt 0 ]; do
@@ -50,8 +57,8 @@ export PYTHONIOENCODING=utf-8
 export PYTHONUNBUFFERED=1
 T="timeout 420"
 
-if curl -s -m 2 http://127.0.0.1:9555/json/version > /dev/null; then
-  echo "an instance already listens on 9555, closing it" | tee -a "$OUT/summary.txt"
+if curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null; then
+  echo "an instance already listens on $PORT, closing it" | tee -a "$OUT/summary.txt"
   python tools/close_app.py; sleep 4
 fi
 
@@ -66,13 +73,13 @@ esac
 
 if [ "$needs_app" = 1 ]; then
   if [ -n "$EXE" ]; then
-    "$EXE" --remote-debugging-port=9555 --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE > "$OUT/app.log" 2>&1 &
+    "$EXE" --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $TILEARG $OFFLINE > "$OUT/app.log" 2>&1 &
   else
     if [ "$STRICT" = 1 ]; then export SCUMBLE_STRICT=1; else export SCUMBLE_STRICT=0; fi
-    ./node_modules/electron/dist/electron.exe . --remote-debugging-port=9555 --user-data-dir="$PROFILE" $COPY $OFFLINE > "$OUT/app.log" 2>&1 &
+    ./node_modules/electron/dist/electron.exe . --remote-debugging-port=$PORT --user-data-dir="$PROFILE" $COPY $OFFLINE > "$OUT/app.log" 2>&1 &
   fi
   for i in $(seq 1 90); do
-    curl -s -m 2 http://127.0.0.1:9555/json/version > /dev/null && break
+    curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null && break
     sleep 1
   done
   sleep 8

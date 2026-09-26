@@ -44,6 +44,11 @@ const PRICES = {
         "anthropic/claude-opus-5": [5, 25, 0.50, null],
         "google/gemini-3.8-flash": [0.75, 3.75, 0.075, null],
     },
+    oxen: {                                              // GET https://hub.oxen.ai/api/ai/models, 2026-09-26; no cache price listed
+        "claude-sonnet-5": [3.5, 18, null, null],
+        "gpt-5-6-terra": [2.5, 15, null, null],
+        "gemini-3-8-flash": [0.75, 3.75, null, null],
+    },
 };
 
 /** Where a long request is billed at another rate (§3). */

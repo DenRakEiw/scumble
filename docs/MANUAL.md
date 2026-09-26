@@ -48,11 +48,11 @@ Scumble does not generate anything itself. It sends your selection somewhere and
 
 Your own ComfyUI is free to run, keeps every pixel on your machine, and gives you the models you already downloaded. It needs the node pack ComfyUI-InpaintCanvas installed there, and the models the recipe asks for. Type the server's address into the top bar — http://127.0.0.1:8188 for a local one, or the address of a rented box, RunPod included — and press Connect. If the node pack is missing, Scumble notices and offers to install it through the ComfyUI Manager.
 
-An API provider needs no server at all. Put a key into Settings › API providers and the models behind it appear in the recipe picker: Google's Nano Banana, OpenAI's GPT Image, Black Forest Labs' FLUX.2, ByteDance's Seedream, Qwen Image Edit, and the same models through aggregators like fal.ai, Replicate, WaveSpeedAI, ToAPIs, Comfy Cloud, Comfy Router and OpenRouter. You pay that provider directly; Scumble takes no cut and sees no invoice. Comfy Router has no key row of its own: it runs on the Comfy Cloud key, with credits and without a paid Comfy plan. The same key runs HY Image 3.5 through Comfy's Partner API.
+An API provider needs no server at all. Put a key into Settings › API providers and the models behind it appear in the recipe picker: Google's Nano Banana, OpenAI's GPT Image, Black Forest Labs' FLUX.2, ByteDance's Seedream, Qwen Image Edit, and the same models through aggregators like fal.ai, Replicate, WaveSpeedAI, ToAPIs, Comfy Cloud, Comfy Router, OpenRouter and Oxen.ai. You pay that provider directly; Scumble takes no cut and sees no invoice. Comfy Router has no key row of its own: it runs on the Comfy Cloud key, with credits and without a paid Comfy plan. The same key runs HY Image 3.5 through Comfy's Partner API.
 
 Keys are stored in the operating system's own credential store through Electron's safeStorage, never in a settings file you might share by accident. On Linux that is the desktop keyring; if the system has none, the settings say so in plain words rather than pretending the key is encrypted when it is only obfuscated.
 
-The same key rows also feed two other things: the assistant, and prompt upsampling. If you already have an OpenRouter key, one key covers a lot of ground at once.
+The same key rows also feed two other things: the assistant, and prompt upsampling. If you already have an OpenRouter or an Oxen.ai key, one key covers a lot of ground at once.
 
 ### Steps
 
@@ -140,7 +140,7 @@ Local recipes are ComfyUI workflows in API format with an Inpaint Canvas node in
 
 Provider recipes go out over HTTPS with your key. Scumble crops the selection with context, sends it at a size the provider really accepts — the Highres fix setting picks the tier — and stitches the answer back at full resolution with the surrounding pixels preserved. Models that take a mask get one; models that do not get an instruction edit and Scumble's own composite mask does the blending afterwards. Reference layers are sent along for the models that take references.
 
-Generate new makes the base picture from the prompt alone, locally or through a provider, when you want to start from nothing rather than from a photo. And prompt upsampling turns a short prompt into a long one through a language model — your own key, an OpenRouter or ToAPIs key, or a local Ollama or LM Studio that needs no key at all. Your own prompt-writing rules can be stored as Markdown templates, so upsampling follows your house style and not a generic one.
+Generate new makes the base picture from the prompt alone, locally or through a provider, when you want to start from nothing rather than from a photo; Mystic, Magnific's own model, lives only there. And prompt upsampling turns a short prompt into a long one through a language model — your own key, an OpenRouter, Oxen.ai or ToAPIs key, or a local Ollama or LM Studio that needs no key at all. Your own prompt-writing rules can be stored as Markdown templates, so upsampling follows your house style and not a generic one.
 
 ### Notes
 
@@ -162,7 +162,7 @@ Colour match is the feature I would keep if I had to throw the rest away. A gene
 
 Masks do the rest of the fitting. Every layer can have one, painted with the normal brush; erasing into a result layer with the eraser writes the mask, not the pixels, so an over-eager erase is one Ctrl+Z away. For photographic repairs there are clone, heal and smudge tools that work like the ones you know.
 
-Around all this sit transform (move, scale, rotate, flip, with a perspective mesh), crop, and extend canvas — which is how outpainting starts: extend the canvas, select the new empty part, prompt, generate.
+Around all this sit transform (move, scale, rotate, flip, with a perspective mesh), crop, and extend canvas — which is how outpainting starts: extend the canvas, select the new empty part, prompt, generate. Or pick an Outpaint recipe (Image Expand on Magnific), which extends the picture outward from what is kept: after Extend canvas the new border is already selected, so Generate is the only step left.
 
 ### Notes
 
@@ -221,7 +221,7 @@ The Upscale button sits next to Generate new and opens a small dialog: which ups
 
 The selection goes out at its own size and comes back sharper at the document's resolution — a detail pass on a face, a label, a piece of texture, landing as a layer like any other result. The whole picture goes out alone and the answer becomes the new base: the document is resized, layers, masks and the selection scale with it, and that is one undo step.
 
-Through a provider you get Topaz (Precision, Bloom, Wonder), Clarity, SeedVR2, Recraft and Magnific (Precision and Creative), each on its own key or through fal. Times differ wildly and the status line warns you about the slow ones — Magnific Precision took five minutes for a small box in my own test, Topaz about twenty-five seconds for the same kind of job.
+Through a provider you get Topaz (Precision, Bloom, Wonder), Clarity, SeedVR2, Recraft and Magnific (Precision and Creative), each on its own key or through fal; the three Topaz models also through Oxen.ai. Times differ wildly and the status line warns you about the slow ones — Magnific Precision took five minutes for a small box in my own test, Topaz about twenty-five seconds for the same kind of job.
 
 On your own ComfyUI, the Upscale model recipe runs any model in your server's upscale\_models folder — ESRGAN, UltraSharp, DAT, whatever you have. That route works on the selection only. Two of the upscalers, Clarity and Magnific Creative, also take a prompt; since 0.1.27 the dialog shows a prompt field for those, filled from the Generate tab but sent separately.
 
@@ -258,7 +258,7 @@ _A chat column that drives the editor for you — on your key, with a card per s
 
 Ctrl+Shift+A opens a chat column next to the canvas. Tell it what you want — "remove the bollard on the left and match it to its surroundings" — and it does it by calling the same commands an external agent would: select, prompt, generate, match, layer by layer. Every call is a card you can open to see exactly what it did.
 
-It runs on your own API key. Anthropic, OpenAI and Google directly, or anything OpenAI-compatible: OpenRouter, DeepSeek, Moonshot, Z.ai, ToAPIs, WaveSpeed, or a local server that needs no key at all. The picker groups models by provider and greys out the ones you have no key for. Your own model ids can be added in Settings › Language models, so a model released after this version of Scumble still works.
+It runs on your own API key. Anthropic, OpenAI and Google directly, or anything OpenAI-compatible: OpenRouter, DeepSeek, Moonshot, Z.ai, ToAPIs, WaveSpeed, Oxen.ai, or a local server that needs no key at all. The picker groups models by provider and greys out the ones you have no key for. Your own model ids can be added in Settings › Language models, so a model released after this version of Scumble still works.
 
 It asks before it does anything expensive or irreversible: generating, upscaling, selecting by text, anything that queues on your ComfyUI or costs a provider call, anything that clears the undo stack, anything that touches a layer that is not its own. The question card shows the reason, the file, the recipe and the old and new values, and neither button is the default one.
 

@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Ideogram 4",
   "family": "Ideogram",
-  "description": "Ideogram V4.0q, strong at typography and layout. Image to image without a mask: the crop goes in whole and the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on Comfy Router.",
+  "description": "Ideogram V4.0q, strong at typography and layout. Image to image without a mask: the crop goes in whole and the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on Comfy Router. Also on Oxen.ai.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -114,6 +114,69 @@
         ]
       },
       "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. Only the prompt goes to Comfy, which passes it to Ideogram. The Router's schema for this model takes no input picture, so this variant makes images from the prompt alone: it works in \"Generate new\", not in Generate. The picture comes back at the one of Ideogram's 21 2K sizes closest to the dialog's aspect; Magic Prompt is on (the Router's schema switches it on for a text prompt)."
+    },
+    "oxen": {
+      "model": "ideogram-v4",
+      "edit": false,
+      "options": {
+        "accepts": [
+          "image_size",
+          "rendering_speed",
+          "expansion_model",
+          "seed",
+          "output_format",
+          "num_images"
+        ],
+        "presets": {
+          "1:1": "square_hd",
+          "3:4": "portrait_4_3",
+          "9:16": "portrait_16_9",
+          "4:3": "landscape_4_3",
+          "16:9": "landscape_16_9"
+        },
+        "preset_key": "image_size"
+      },
+      "fixed": {
+        "output_format": "png",
+        "num_images": 1
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "rendering_speed",
+          "label": "Rendering speed",
+          "spec": [
+            [
+              "TURBO",
+              "BALANCED",
+              "QUALITY"
+            ],
+            {
+              "default": "BALANCED"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "expansion_model",
+          "label": "Prompt expansion",
+          "spec": [
+            [
+              "Medium",
+              "Large"
+            ],
+            {
+              "default": "Medium"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). Text to image only on Oxen: it works in \"Generate new\", not in Generate. Oxen keeps every generated image in your Oxen account. The dialog's aspect goes as the closest of five size presets (square, 4:3 and 16:9 either way). List price $0.06 (2026-09-26)."
     }
   }
 }

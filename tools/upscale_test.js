@@ -234,7 +234,7 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         check("Magnific on Comfy Cloud refuses 3x before anything is sent", bad.ok, bad.msg);
         check("the Comfy Cloud variants offer 2, 4, 8, 16 for both Magnific recipes", eq(norm("magnific_precision").providers.comfycloud.factor.steps, [2, 4, 8, 16]) && eq(norm("magnific_creative").providers.comfycloud.factor.steps, [2, 4, 8, 16]));
         // Comfy Router (added later) comes after it where it serves the model: Magnific Precision
-        check("Comfy Cloud is the last variant before Comfy Router and the default stays", ["magnific_precision", "magnific_creative", "recraft_crisp", "recraft_creative"].every((id) => { const r = norm(id); const ids = r.providerIds.filter((x) => x !== "comfyrouter"); return ids[ids.length - 1] === "comfycloud" && r.default !== "comfycloud" && r.default !== "comfyrouter"; }));
+        check("Comfy Cloud is the last variant before Comfy Router and the default stays", ["magnific_precision", "magnific_creative", "recraft_crisp", "recraft_creative"].every((id) => { const r = norm(id); const ids = r.providerIds.filter((x) => x !== "comfyrouter" && x !== "oxen"); return ids[ids.length - 1] === "comfycloud" && r.default !== "comfycloud" && r.default !== "comfyrouter"; }));
         check("Comfy Router is the last variant of Magnific Precision, and of no other upscaler", ["magnific_precision", "magnific_creative", "recraft_crisp", "recraft_creative", "topaz_precision", "clarity_upscaler", "seedvr2"].every((id) => { const r = norm(id); return (r.providerIds[r.providerIds.length - 1] === "comfyrouter") === (id === "magnific_precision"); }));
     });
 
@@ -362,7 +362,7 @@ const png = (bytes) => new Response(bytes, { status: 200, headers: { "content-ty
         const logged = [];
         require.cache[logPath] = { id: logPath, filename: logPath, loaded: true, exports: { record: (e) => logged.push(e) } };
         const index = withElectron(() => require(P("electron", "main", "providers", "index.js")));
-        check("fal, Magnific, Comfy Cloud, Comfy Router and loopback have an upscaler, nothing else", eq(index.upscaleProviders().sort(), ["comfycloud", "comfyrouter", "fal", "loopback", "magnific"]), short(index.upscaleProviders()));
+        check("fal, Magnific, Comfy Cloud, Comfy Router, Oxen.ai and loopback have an upscaler, nothing else", eq(index.upscaleProviders().sort(), ["comfycloud", "comfyrouter", "fal", "loopback", "magnific", "oxen"]), short(index.upscaleProviders()));
         const t = await throwsWith(() => index.edit({ provider: "bfl", kind: "upscale", model: "x", image: IMG }), /has no upscaler/);
         check("a provider without an upscaler is refused by name", t.ok, t.msg);
         const k = await throwsWith(() => index.edit({ provider: "magnific", kind: "upscale", model: "image-upscaler", image: IMG, factor: 2 }), /No API key for Magnific/);

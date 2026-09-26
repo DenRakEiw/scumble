@@ -962,6 +962,8 @@ export const host = {
             this._providerRuns.delete(token);
             this.notifyProviderRuns();
         }
+        // an adapter that knows its answer covers the crop exactly (Magnific's preset shapes, Image Expand) says so
+        if (res && res.info && res.info.fit === "stretch") info.fit = "stretch";
         // the answer decoded and stitched in the stitch worker, the region (for a colour match) from the tile workers
         const fin = await finishResultAsync(editor, info, sel, res.bytes, res.mime);
         const { blob, align } = fin;

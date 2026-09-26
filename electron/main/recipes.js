@@ -42,6 +42,7 @@ const { app } = require("electron");
  * @property {number} pixels      area cap, 0 = none
  * @property {number} minPixels   area floor, 0 = none
  * @property {number} ratio       the steepest crop the model takes, 0 = any
+ * @property {string[]} aspects   aspect presets the model renders ("W:H"); the crop's context is widened to the nearest one, [] = any
  */
 
 /**
@@ -150,8 +151,10 @@ async function readDir(dir, source) {
 // Which providers can make an image from the prompt alone, and how the model id differs
 // from the editing one. fal and WaveSpeed put the editing model under an /edit path, the
 // others (OpenRouter, ModelArk and Comfy Router too) use the same id without the image field. A variant overrides this with
-// `text: { model, sizes }`, or switches it off with `text: false`.
-const TEXT_PROVIDERS = new Set(["toapis", "openai", "gemini", "bfl", "fal", "replicate", "wavespeed", "openrouter", "ark", "comfyrouter", "comfypartner", "loopback"]);
+// `text: { model, sizes }`, or switches it off with `text: false`. Magnific's edit routes end in "-edit" and differ in
+// more than the name, so every magnific variant names its text route (or `text: false`); tools/magnific_test.js holds them to it.
+// Oxen.ai uses the same id on /images/generate (Grok Imagine's text model is another id: its variant names it).
+const TEXT_PROVIDERS = new Set(["toapis", "openai", "gemini", "bfl", "fal", "replicate", "wavespeed", "openrouter", "ark", "comfyrouter", "comfypartner", "oxen", "magnific", "loopback"]);
 
 // The long sides a provider documents for a generated image. Gemini's image models take
 // 1K, 2K or 4K (imageConfig.imageSize), OpenAI's the three standard shapes at 1024 and 1536;
@@ -172,7 +175,7 @@ const TEXT_SIZES_DEFAULT = [768, 1024, 1280, 1536, 2048, 3072, 4096];
 // entry below applies. The numbers are the providers' own, and where a provider stays silent
 // the conservative 2048 stands - raising one is a two-line recipe change, so do it with a
 // source, not a guess.
-const LIMITS_DEFAULT = { min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0 };
+const LIMITS_DEFAULT = { min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0, aspects: /** @type {string[]} */ ([]) };
 
 /**
  * @param {Recipe} r
@@ -190,6 +193,8 @@ function editLimits(r, v) {
     if (l.pixels && l.minPixels > l.pixels) l.minPixels = 0;
     // `ratio`: the steepest crop the model takes (Seedream on ToAPIs: 3, i.e. 3:1); 0 = any
     l.ratio = Number.isFinite(+l.ratio) && +l.ratio >= 1 ? +l.ratio : 0;
+    // `aspects`: the only shapes the model renders (Seedream and GPT Image 2 on Magnific), as "W:H"; [] = any
+    l.aspects = Array.isArray(l.aspects) ? [...new Set(l.aspects.filter((x) => /^\d+(\.\d+)?:\d+(\.\d+)?$/.test(String(x))).map(String))] : [];
     return l;
 }
 

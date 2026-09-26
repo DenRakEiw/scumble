@@ -1,0 +1,118 @@
+{
+  "id": "qwen-image-3",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.039,
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_images"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "auto",
+        "enum": [
+          "auto",
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-order": 2
+      },
+      "enable_prompt_expansion": {
+        "default": true,
+        "description": "Let the model rewrite the prompt with more detail before rendering. Turn off for tighter control over the wording.",
+        "title": "Prompt Expansion",
+        "type": "boolean",
+        "x-order": 5
+      },
+      "enable_thinking": {
+        "default": true,
+        "description": "Reason about the prompt before rendering. Improves quality on complex layouts and long prompts at the cost of generation time. Requires prompt expansion.",
+        "title": "Thinking",
+        "type": "boolean",
+        "x-order": 6
+      },
+      "input_images": {
+        "description": "Optional input images to edit or combine. The output keeps the aspect ratio of the last image unless an aspect ratio is chosen. Reference them in the prompt as @Image1, @Image2, etc. Up to 3 images.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "maxItems": 3,
+        "nullable": true,
+        "title": "Input Images",
+        "type": "array",
+        "x-order": 1
+      },
+      "negative_prompt": {
+        "description": "What to keep out of the image.",
+        "title": "Negative Prompt",
+        "type": "string",
+        "x-order": 7
+      },
+      "num_images": {
+        "default": 1,
+        "description": "Number of images to generate, 1 to 6. Only the first is returned; all are billed.",
+        "maximum": 6,
+        "minimum": 1,
+        "title": "Number of Images",
+        "type": "integer",
+        "x-hidden": true,
+        "x-order": 4
+      },
+      "prompt": {
+        "description": "Text prompt describing the image to generate, or the edit to apply. Up to 4,500 tokens. Use @Image1, @Image2, etc. to reference the input images.",
+        "title": "Prompt",
+        "type": "string",
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_images",
+              "pattern": "Image {n}"
+            }
+          ]
+        },
+        "x-order": 0,
+        "x-workbench-default": "A retro travel poster reading \"OXEN\" in bold condensed type, an ox on a mountain ridge at golden hour, clean vector illustration with a balanced layout"
+      },
+      "resolution": {
+        "default": "2K",
+        "enum": [
+          "1K",
+          "2K"
+        ],
+        "title": "Resolution",
+        "type": "string",
+        "x-next-to": "aspect_ratio",
+        "x-order": 3
+      },
+      "seed": {
+        "description": "Seed for reproducible generation, 0 to 2147483647.",
+        "nullable": true,
+        "title": "Seed",
+        "type": "integer",
+        "x-hidden": true,
+        "x-order": 8
+      },
+      "watermark": {
+        "default": false,
+        "description": "Add an AI-generated watermark in the bottom-right corner.",
+        "title": "Watermark",
+        "type": "boolean",
+        "x-hidden": true,
+        "x-order": 9
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

@@ -7,7 +7,7 @@
 // settings.llm.models. It comes from a file the user can edit, so it is normalised here and
 // never trusted as it is: an unknown provider, an empty id, a duplicate and everything above
 // MAX_ROWS is dropped. The provider registry is the assistant's (assistant/providers.js):
-// the same ten providers, the same key rows and base URLs.
+// the same eleven providers (Oxen.ai joined in 0.1.29), the same key rows and base URLs.
 "use strict";
 
 const { PROVIDERS, ORDER } = require("./assistant/providers.js");

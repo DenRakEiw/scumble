@@ -1,0 +1,109 @@
+{
+  "id": "qwen-image-2-1",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.109,
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_images"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "16:9",
+        "enum": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-order": 2
+      },
+      "guidance_scale": {
+        "default": 1,
+        "description": "Classifier-free guidance strength, 1 to 10. 1 is the provider default with no guidance; raise it for sharper, more literal results. The negative prompt only applies above 1.",
+        "maximum": 10,
+        "minimum": 1,
+        "title": "Guidance Scale",
+        "type": "number",
+        "x-hidden": true,
+        "x-order": 4
+      },
+      "image_size": {
+        "description": "Pixel dimensions sent to fal, derived from aspect_ratio and resolution.",
+        "title": "Image Size",
+        "type": "object",
+        "x-hidden": true,
+        "x-order": 6
+      },
+      "input_images": {
+        "description": "Optional reference images to edit or combine, in order. Reference them in the prompt as @Image1, @Image2, etc. Up to 10 images.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "maxItems": 10,
+        "nullable": true,
+        "title": "Input Images",
+        "type": "array",
+        "x-order": 1
+      },
+      "negative_prompt": {
+        "description": "What to keep out of the image. Only applies when guidance scale is above 1.",
+        "title": "Negative Prompt",
+        "type": "string",
+        "x-order": 5
+      },
+      "output_format": {
+        "default": "png",
+        "description": "Output format. PNG and WebP preserve transparency; JPEG fills it with white.",
+        "enum": [
+          "png",
+          "jpeg",
+          "webp"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-order": 7
+      },
+      "prompt": {
+        "description": "Text prompt describing the image to generate, or the edit to apply. Use @Image1, @Image2, etc. to reference the input images. Ask for a transparent background to get an RGBA cutout.",
+        "title": "Prompt",
+        "type": "string",
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_images",
+              "pattern": "Image {n}"
+            }
+          ]
+        },
+        "x-order": 0,
+        "x-workbench-default": "A retro travel poster reading \"OXEN\" in bold condensed type, an ox on a mountain ridge at golden hour, clean vector illustration with a balanced layout"
+      },
+      "resolution": {
+        "default": "2K",
+        "enum": [
+          "1K",
+          "2K"
+        ],
+        "title": "Resolution",
+        "type": "string",
+        "x-next-to": "aspect_ratio",
+        "x-order": 3
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object",
+    "x-image-to-image-endpoint": "fal-ai/qwen-image-2.1/edit"
+  }
+}

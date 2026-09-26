@@ -632,8 +632,8 @@ async function main() {
             const v = r.providers.openrouter;
             const o = v.options || {};
             const accepts = Array.isArray(o.accepts) ? o.accepts : [];
-            // Comfy Router (added later) may follow it
-            const before = r.providerIds.filter((x) => x !== "comfyrouter");
+            // Comfy Router, Oxen.ai and Magnific (added later) may follow it
+            const before = r.providerIds.filter((x) => x !== "comfyrouter" && x !== "oxen" && x !== "magnific");
             if (before[before.length - 1] !== "openrouter") bad.push(r.id + ": openrouter is not the last provider before comfyrouter (" + r.providerIds.join(",") + ")");
             if (r.default !== raw.default) bad.push(r.id + ": the default moved from " + raw.default + " to " + r.default);
             if (r.default === "openrouter") bad.push(r.id + ": openrouter became the home provider");
@@ -708,8 +708,10 @@ async function main() {
 
         const rows = llm.list();
         const orRows = rows.filter((r) => r.provider === "openrouter");
-        const firstOr = rows.findIndex((r) => r.provider === "openrouter");
-        check("llm.list(): four openrouter rows, after every other row, each with key true", orRows.length === 4 && firstOr === rows.length - 4 && orRows.every((r) => r.key === true) && rows.filter((r) => r.provider !== "openrouter").every((r) => r.key === false), short(rows.map((r) => `${r.id}:${r.key}`)));
+        // Oxen.ai's rows (0.1.29) follow OpenRouter's
+        const beforeOxen = rows.filter((r) => r.provider !== "oxen");
+        const firstOr = beforeOxen.findIndex((r) => r.provider === "openrouter");
+        check("llm.list(): four openrouter rows, after every other row but Oxen.ai's, each with key true", orRows.length === 4 && firstOr === beforeOxen.length - 4 && rows.findIndex((r) => r.provider === "oxen") > rows.indexOf(orRows[3]) && orRows.every((r) => r.key === true) && rows.filter((r) => r.provider !== "openrouter").every((r) => r.key === false), short(rows.map((r) => `${r.id}:${r.key}`)));
         check("no listed row carries a reasoning field (list() names id, provider, model, label, key)", rows.every((r) => !("reasoning" in r)) && eq(Object.keys(orRows[0] || {}).sort(), ["id", "key", "label", "model", "provider"]), short(orRows[0]));
         check("the rows are the curated ids", eq(orRows.map((r) => r.id), ["openrouter:google/gemini-3.8-flash", "openrouter:openai/gpt-5.6-luna", "openrouter:anthropic/claude-haiku-4.5", "openrouter:mistralai/mistral-small-2603"]), short(orRows.map((r) => r.id)));
 

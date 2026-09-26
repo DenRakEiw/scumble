@@ -454,7 +454,9 @@ async function main() {
             const raw = rawRecipe(r.id);
             const v = r.providers.comfyrouter;
             if (v.model !== VARIANTS[r.id]) bad.push(`${r.id}: model ${v.model}`);
-            if (r.providerIds[r.providerIds.length - 1] !== "comfyrouter") bad.push(`${r.id}: not the last provider (${r.providerIds})`);
+            // Oxen.ai and Magnific (added later) may follow it, in that order
+            const upToRouter = r.providerIds.filter((x) => x !== "oxen" && x !== "magnific");
+            if (upToRouter[upToRouter.length - 1] !== "comfyrouter") bad.push(`${r.id}: not the last provider before oxen / magnific (${r.providerIds})`);
             if (r.default !== raw.default || r.default === "comfyrouter") bad.push(`${r.id}: the default moved to ${r.default}`);
             if (!/Also on Comfy Router\./.test(r.description || "")) bad.push(`${r.id}: the description does not say Also on Comfy Router`);
             // the live status, true per model: GPT Image 2 and Nano Banana 2 ran through the Router on 2026-09-23, the rest not

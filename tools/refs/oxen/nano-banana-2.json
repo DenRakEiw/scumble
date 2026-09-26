@@ -1,0 +1,107 @@
+{
+  "id": "nano-banana-2",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.1313,
+    "cost_per_image_grid": {
+      "high": {
+        "512": 0.0585,
+        "1K": 0.0871,
+        "2K": 0.1313,
+        "4K": 0.1963
+      }
+    },
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image"
+    ],
+    "properties": {
+      "aspect_ratio": {
+        "default": "16:9",
+        "enum": [
+          "auto",
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "4:5",
+          "5:4",
+          "21:9",
+          "4:1",
+          "1:4",
+          "8:1",
+          "1:8"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-order": 2
+      },
+      "google_search": {
+        "default": false,
+        "description": "Ground the image in real-time web search results, useful for factual or current-events content like charts, maps, and recent events.",
+        "title": "Web Search",
+        "type": "boolean",
+        "x-order": 4
+      },
+      "input_image": {
+        "description": "Optional reference image(s) to edit. Leave empty to generate from the prompt alone. Reference them in the prompt as @Image1, @Image2, etc.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "nullable": true,
+        "title": "Reference Images",
+        "type": "array",
+        "x-order": 1
+      },
+      "prompt": {
+        "description": "Text description of what you want to generate, or the instruction on how to edit the given image. Use @Image1, @Image2, etc. to reference the input images.",
+        "title": "Prompt",
+        "type": "string",
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_image",
+              "pattern": "Image {n}"
+            }
+          ]
+        },
+        "x-order": 0
+      },
+      "resolution": {
+        "default": "2K",
+        "enum": [
+          "512",
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "title": "Resolution",
+        "type": "string",
+        "x-next-to": "aspect_ratio",
+        "x-order": 3
+      },
+      "thinking_level": {
+        "default": "minimal",
+        "description": "How much the model reasons before generating. 'high' improves complex compositions at higher latency. It does not change the price, which is set by resolution alone.",
+        "enum": [
+          "minimal",
+          "high"
+        ],
+        "title": "Thinking Level",
+        "type": "string",
+        "x-order": 5
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

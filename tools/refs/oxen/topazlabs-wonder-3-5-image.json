@@ -1,0 +1,54 @@
+{
+  "id": "topazlabs-wonder-3-5-image",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_credit": 0.08,
+    "method": "per_provider_credit"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image",
+      "enhancement_strength",
+      "scale"
+    ],
+    "properties": {
+      "enhancement_strength": {
+        "default": "high",
+        "description": "Overall enhancement strength.",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "title": "Enhancement Strength",
+        "type": "string",
+        "x-order": 1
+      },
+      "input_image": {
+        "description": "Image to enhance and upscale (URL or file path). jpeg, png, gif, or webp.",
+        "format": "uri",
+        "title": "Input Image",
+        "type": "string",
+        "x-order": 0
+      },
+      "scale": {
+        "default": "1x",
+        "description": "Upscale factor. 1x enhances at the original size; 2x, 4x, or 6x enlarge the image by that multiple (Topaz supports up to 6x).",
+        "enum": [
+          "1x",
+          "2x",
+          "4x",
+          "6x"
+        ],
+        "title": "Scale",
+        "type": "string",
+        "x-order": 2
+      }
+    },
+    "required": [
+      "input_image"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

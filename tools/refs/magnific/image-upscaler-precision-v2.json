@@ -1,0 +1,62 @@
+{
+ "$comment": "The request body of POST /v1/ai/image-upscaler-precision-v2, resolved from https://storage.googleapis.com/fc-freepik-pro-rev1-eu-api-specs/magnific-api-v1-openapi.yaml (read 2026-09-26); descriptions and examples dropped.",
+ "route": "image-upscaler-precision-v2",
+ "schema": {
+  "properties": {
+   "image": {
+    "type": "string"
+   },
+   "webhook_url": {
+    "format": "uri",
+    "type": "string"
+   },
+   "sharpen": {
+    "default": 7,
+    "maximum": 100,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "smart_grain": {
+    "default": 7,
+    "maximum": 100,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "ultra_detail": {
+    "default": 30,
+    "maximum": 100,
+    "minimum": 0,
+    "type": "integer"
+   },
+   "flavor": {
+    "enum": [
+     "sublime",
+     "photo",
+     "photo_denoiser"
+    ],
+    "type": "string"
+   },
+   "scale_factor": {
+    "oneOf": [
+     {
+      "maximum": 16,
+      "minimum": 2,
+      "type": "integer"
+     },
+     {
+      "pattern": "^(2|3|4|5|6|7|8|9|1[0-6])$",
+      "type": "string"
+     }
+    ]
+   },
+   "filter_nsfw": {
+    "default": false,
+    "type": "boolean"
+   }
+  },
+  "required": [
+   "image"
+  ],
+  "type": "object"
+ }
+}

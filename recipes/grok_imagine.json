@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Grok Imagine 2.0",
   "family": "xAI",
-  "description": "xAI's image model. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on OpenRouter. Also on Comfy Router.",
+  "description": "xAI's image model. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on OpenRouter. Also on Comfy Router. Also on Oxen.ai.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -179,6 +179,72 @@
         ]
       },
       "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. Only the prompt goes to Comfy, which passes it to xAI; the answer comes back through Comfy's storage. The Router's schema for this model takes no input picture, so this variant makes images from the prompt alone: it works in \"Generate new\", not in Generate. The dialog's aspect is sent as the closest of xAI's presets; Resolution auto takes the smallest tier that covers the asked size."
+    },
+    "oxen": {
+      "model": "xai-grok-imagine-image-edit",
+      "input": "edit",
+      "options": {
+        "single": true,
+        "max_images": 1,
+        "accepts": [
+          "output_format"
+        ],
+        "text": {
+          "accepts": [
+            "aspect_ratio",
+            "resolution",
+            "output_format"
+          ],
+          "ratios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "4:3",
+            "3:4",
+            "3:2",
+            "2:3",
+            "2:1",
+            "20:9",
+            "19.5:9",
+            "9:19.5",
+            "9:20",
+            "1:2"
+          ],
+          "tiers": {
+            "1k": 1024,
+            "2k": 2048
+          }
+        }
+      },
+      "fixed": {
+        "output_format": "png"
+      },
+      "settings": [],
+      "text": {
+        "model": "xai-grok-imagine-image",
+        "sizes": [
+          1024,
+          2048
+        ],
+        "settings": [
+          {
+            "index": 1,
+            "key": "resolution",
+            "label": "Resolution",
+            "spec": [
+              [
+                "auto",
+                "1k",
+                "2k"
+              ],
+              {
+                "default": "auto"
+              }
+            ]
+          }
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. One picture only: the edit takes the crop and nothing else, so turn Original off and hide the reference layers. Instruction edit, no mask: the stitch keeps the selection. An answer of another shape is centre-cropped. \"Generate new\" runs Oxen's text model (xai-grok-imagine-image) at 1k or 2k. Oxen names no Grok Imagine version. List price $0.022 an edit, $0.02 a new image (2026-09-26)."
     }
   }
 }

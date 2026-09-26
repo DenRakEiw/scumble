@@ -1,0 +1,68 @@
+{
+  "id": "xai-grok-imagine-image",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.02,
+    "method": "per_image"
+  },
+  "request_schema": {
+    "properties": {
+      "aspect_ratio": {
+        "default": "16:9",
+        "enum": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "2:1",
+          "20:9",
+          "19.5:9",
+          "9:19.5",
+          "9:20",
+          "1:2"
+        ],
+        "title": "Aspect Ratio",
+        "type": "string",
+        "x-order": 8
+      },
+      "output_format": {
+        "default": "webp",
+        "description": "Format of the output images",
+        "enum": [
+          "webp",
+          "jpeg",
+          "png"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-order": 14
+      },
+      "prompt": {
+        "description": "Prompt for generated image",
+        "title": "Prompt",
+        "type": "string",
+        "x-order": 0,
+        "x-workbench-default": "Minimalist ox silhouette dissolving into golden particle streams, sumi-e brushwork meets generative art, zen simplicity with data-driven particle flow, lunar new year energy captured in motion"
+      },
+      "resolution": {
+        "default": "2k",
+        "enum": [
+          "1k",
+          "2k"
+        ],
+        "title": "Resolution",
+        "type": "string",
+        "x-next-to": "aspect_ratio",
+        "x-order": 9
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

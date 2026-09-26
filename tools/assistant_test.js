@@ -1485,6 +1485,8 @@ async function main() {
         { provider: "toapis", model: "claude-sonnet-5", key: "test-toapis-0000", path: "/v1/chat/completions" },
         { provider: "wavespeed", model: "anthropic/claude-sonnet-5", key: "test-ws-0000", path: "/v1/chat/completions" },
         { provider: "compat", model: "llama3.2-vision", key: "", path: "/v1/chat/completions" },
+        // last, so the indices above stay: Oxen's base has no /v1
+        { provider: "oxen", model: "claude-sonnet-5", key: "test-oxen-0000", path: "/api/ai/chat/completions" },
     ];
     const LOCAL = { llm: { compat: { url: "http://127.0.0.1:11434" } } };
     /** An Assistant on one Chat Completions provider, the test base in front of it. */
@@ -1565,6 +1567,7 @@ async function main() {
                 toapis: { model: "claude-sonnet-5", messages, tools: chat.tools, stream: true, max_tokens: 32000, stream_options: { include_usage: true } },
                 wavespeed: { model: "anthropic/claude-sonnet-5", messages, tools: chat.tools, stream: true, max_tokens: 32000, stream_options: { include_usage: true } },
                 compat: { model: "llama3.2-vision", messages, tools: chat.tools, stream: true, max_tokens: 32000, stream_options: { include_usage: true } },
+                oxen: { model: "claude-sonnet-5", messages, tools: chat.tools, stream: true, max_tokens: 32000 },
             };
             const body = chat.adapter._bodyFor(chat, history);
             check(`${p.provider}_history_with_a_screenshot_has_the_golden_shape`, eq(body, TOP[p.provider]), short(diffOf(body, TOP[p.provider])));
@@ -2214,7 +2217,7 @@ async function main() {
     // ---- 14. keys and hosts on Chat Completions -------------------------------------------
     await section("14. keys and hosts on Chat Completions", async () => {
         const http = require(path.join(ROOT, "electron", "main", "assistant", "http.js"));
-        const KEYS = { anthropic: "test-ant-1", openrouter: "test-or-1", deepseek: "test-ds-1", moonshot: "test-ms-1", zai: "test-zai-1", toapis: "test-toapis-1", wavespeed: "test-ws-1", compat: "test-compat-1" };
+        const KEYS = { anthropic: "test-ant-1", openrouter: "test-or-1", deepseek: "test-ds-1", moonshot: "test-ms-1", zai: "test-zai-1", toapis: "test-toapis-1", wavespeed: "test-ws-1", compat: "test-compat-1", oxen: "test-oxen-1" };
         {
             const wrong = [];
             for (const p of CHAT) {

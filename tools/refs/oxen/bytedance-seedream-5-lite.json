@@ -1,0 +1,75 @@
+{
+  "id": "bytedance-seedream-5-lite",
+  "endpoint": "/images/generate",
+  "pricing": {
+    "cost_per_image": 0.04,
+    "method": "per_image"
+  },
+  "request_schema": {
+    "basic": [
+      "input_image"
+    ],
+    "properties": {
+      "input_image": {
+        "description": "Optional reference image URLs for image-to-image editing. Provide one image for single-image editing or multiple for multi-reference fusion; reference them in the prompt as @Image1, @Image2, etc. Up to 14 images.",
+        "items": {
+          "format": "uri",
+          "type": "string"
+        },
+        "maxItems": 14,
+        "title": "Reference Images",
+        "type": "array",
+        "x-order": 1
+      },
+      "output_format": {
+        "default": "png",
+        "description": "Output image format.",
+        "enum": [
+          "png",
+          "jpeg"
+        ],
+        "title": "Output Format",
+        "type": "string",
+        "x-order": 4
+      },
+      "prompt": {
+        "description": "Text prompt for image generation. Use @Image1, @Image2, etc. to reference the input images.",
+        "title": "Prompt",
+        "type": "string",
+        "x-media-references": {
+          "groups": [
+            {
+              "field": "input_image",
+              "pattern": "Image {n}"
+            }
+          ]
+        },
+        "x-order": 0
+      },
+      "size": {
+        "default": "2K",
+        "description": "Image resolution.",
+        "enum": [
+          "2K",
+          "3K",
+          "4K"
+        ],
+        "title": "Size",
+        "type": "string",
+        "x-order": 3
+      },
+      "watermark": {
+        "default": false,
+        "description": "Whether to add an 'AI generated' watermark.",
+        "title": "Watermark",
+        "type": "boolean",
+        "x-order": 5
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "Input",
+    "type": "object"
+  }
+}

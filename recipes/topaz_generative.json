@@ -4,7 +4,7 @@
   "task": "upscale",
   "name": "Topaz Wonder / Redefine (upscale)",
   "family": "Upscale",
-  "description": "Topaz Labs' generative upscalers (Wonder, Recover, Redefine, Recovery) through fal.ai, for small or damaged pictures. Topaz can take several minutes on a large picture; the window stays usable while it runs. Written from the provider's schema and not run against the live API yet.",
+  "description": "Topaz Labs' generative upscalers (Wonder, Recover, Redefine, Recovery) through fal.ai, for small or damaged pictures. Topaz can take several minutes on a large picture; the window stays usable while it runs. Written from the provider's schema and not run against the live API yet. Also on Oxen.ai.",
   "default": "fal",
   "factor": {
     "default": 2,
@@ -49,6 +49,45 @@
         }
       ],
       "note": "topaz/upscale/image/generative on fal: 1 to 4 times. Upscale (the button next to Generate) runs it on the selection, which comes back sharper at the document's resolution, or on the whole picture, which becomes N times larger with every layer scaled along."
+    },
+    "oxen": {
+      "model": "topazlabs-wonder-3-5-image",
+      "options": {
+        "accepts": [
+          "enhancement_strength"
+        ],
+        "factor_key": "scale",
+        "factor_form": "x"
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "enhancement_strength",
+          "label": "Strength",
+          "spec": [
+            [
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "high"
+            }
+          ]
+        }
+      ],
+      "factor": {
+        "default": 2,
+        "min": 1,
+        "max": 6,
+        "steps": [
+          1,
+          2,
+          4,
+          6
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Wonder 3.5 on Oxen: 1x (a clean-up at the same size), 2x, 4x or 6x. Priced per Topaz credit ($0.08 a credit); how many credits an image takes is not stated."
     }
   },
   "limits": {

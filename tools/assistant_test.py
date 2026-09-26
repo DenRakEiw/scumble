@@ -58,7 +58,7 @@ LAUNCHER = os.path.join(ROOT, "electron", "main", "mcp", "launch.js") if IS_ELEC
     os.path.join(os.path.dirname(EXE), "resources", "app.asar", "electron", "main", "mcp", "launch.js")
 
 # every key row the assistant reads (electron/main/assistant/providers.js); each gets a test key
-ROWS = ["anthropic", "openai", "gemini", "openrouter", "deepseek", "moonshot", "zai", "toapis", "wavespeed", "compat"]
+ROWS = ["anthropic", "openai", "gemini", "openrouter", "deepseek", "moonshot", "zai", "toapis", "wavespeed", "oxen", "compat"]
 EXCLUDED = ["list_commands", "run_action", "set_status", "ailabel_add", "ailabel_remove", "ailabel_info"]
 # one curated model per built family and dialect, with the path its requests keep under the loopback base
 FAMILIES = [
@@ -71,6 +71,7 @@ FAMILIES = [
     ("zai", "glm-5.3-flash", "/api/paas/v4/chat/completions"),
     ("toapis", "claude-sonnet-5", "/v1/chat/completions"),
     ("wavespeed", "anthropic/claude-sonnet-5", "/v1/chat/completions"),
+    ("oxen", "claude-sonnet-5", "/api/ai/chat/completions"),
     ("compat", "mock-agent", "/v1/chat/completions"),
 ]
 

@@ -111,6 +111,24 @@ rule against a scripted fetch; the gate `openrouter` (docs/RECIPES.md "OpenRoute
 come with the key, after the ToAPIs rows, and upsamples on the Gemini row against `tools/openrouter_mock.py`,
 which answers the four ids on `/api/v1/chat/completions`.
 
+### Through the Oxen key
+
+A stored Oxen.ai key (the image provider, docs/RECIPES.md "Oxen.ai") adds three rows **after the OpenRouter
+rows**: Gemini 3.8 Flash (`gemini-3-8-flash`), GPT-5.6 Luna (`gpt-5-6-luna`) and Gemma 4 31B
+(`gemma-4-31b-it`), each labelled "(Oxen key)", ids `oxen:<model>`. From `GET https://hub.oxen.ai/api/ai/models`
+on 2026-09-26, per million tokens in / out: $0.75 / $3.75, $1 / $6 and $0.14 / $0.40. They go through
+`askOxen`, the same `askCompatible` client as the ToAPIs and OpenRouter rows (strict retry: once more without the
+picture only for a 400 / 413 / 415 / 422 that names the image; 120 s timeout; `<think>` stripped), to
+`https://hub.oxen.ai/api/ai/chat/completions` - **no `/v1`** in the path, so the base is taken as it is (the
+`exact` switch). The crop goes as an `image_url` data URL, as Oxen's vision example sends it; its chat reference
+says an image URL "must be publicly accessible", so whether a data URL is taken is for a live key to say. Oxen's
+words for a failure (`oxen.explain`: "key refused", "not enough Oxen credits", "Oxen does not serve this model")
+go in front of its message, and the key is taken out of every error. The key rule of the image adapter holds (a
+`test-` key only to the loopback mock named in `settings.oxen.base`, any other key never there). A row the user
+adds under Settings › Language models with the provider Oxen.ai goes through `askOxen` too. **Not run against the
+live API.** Section 11 of `node tools/oxen_test.js` checks the rows, the path, the body, the retry rule and the key
+rule; the gate `oxen` upsamples on the Gemini row against `tools/oxen_mock.py`.
+
 ### Rows the user adds (Settings › Language models)
 
 `electron/main/llm_custom.js` holds the list in `settings.llm.models`, one row
@@ -118,7 +136,7 @@ which answers the four ids on `/api/v1/chat/completions`.
 appends the rows marked `upsample` after the built-in ones (label "<name> (<provider>)", `key` from that
 provider's own row, or for the local endpoint from its URL), and `picker()` in
 `electron/main/assistant/providers.js` appends the rows marked `assistant` to their provider group, after
-the curated models and never repeating one. The provider registry is the assistant's, so the ten providers,
+the curated models and never repeating one. The provider registry is the assistant's, so the eleven providers,
 their key rows and their base URLs are the same list in both features; `vision: false` means the model gets
 no crop and, in the assistant, no `screenshot` tool.
 
@@ -126,7 +144,8 @@ A row of a Chat Completions provider that has no upsample adapter of its own - *
 WaveSpeedAI** - goes through `askChat`, the same `askCompatible` client as the ToAPIs and OpenRouter rows
 (strict retry, `<think>` stripping, 120 s timeout), to the base `llm_custom.endpoint(provider)` reads from
 the registry. ToAPIs and the local endpoint keep their own paths (their host comes from the settings). A
-row whose provider has no key is listed but not selectable, exactly as a keyless built-in row.
+row whose provider has no key is listed but not selectable, exactly as a keyless built-in row. An Oxen.ai row
+goes through `askOxen` (above), which knows Oxen's path without `/v1`.
 
 The list is normalised on every read: an unknown provider, an empty id and a duplicate are dropped, an id
 is cut at 200 characters and a name at 120, and at most 50 rows are kept. Nothing checks that the id exists
@@ -148,6 +167,8 @@ balance** exists for DeepSeek (`GET https://api.deepseek.com/user/balance`, the 
 other currencies and "not available" in the note) and Moonshot (`GET https://api.moonshot.ai/v1/users/me/balance`,
 `available_balance`, with cash and vouchers in the note); Z.ai documents none. A `test-` key (what the gates
 store) is refused before any request. Written from the docs on 2026-09-20, **not run against the live APIs.**
+The Oxen.ai key row (an image provider, docs/RECIPES.md "Oxen.ai") is read by the assistant as well: Claude
+Sonnet 5, GPT-5.6 Terra and Gemini 3.8 Flash on `https://hub.oxen.ai/api/ai` (docs/ASSISTANT.md).
 
 ### A local or self-hosted OpenAI-compatible endpoint
 

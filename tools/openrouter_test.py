@@ -111,8 +111,8 @@ const files = __RECIPES__;
 const served = [];
 for (const r of rl.recipes) {
     if (!(r.providers || []).includes("openrouter")) continue;
-    // Comfy Router (added later) may follow it
-    const before = r.providers.filter((x) => x !== "comfyrouter");
+    // Comfy Router, Oxen.ai and Magnific (added later) may follow it
+    const before = r.providers.filter((x) => !["comfyrouter", "oxen", "magnific"].includes(x));
     if (before[before.length - 1] !== "openrouter") throw new Error(r.id + ": openrouter is not the last provider before comfyrouter: " + r.providers.join(", "));
     const f = files[r.id];
     if (!f) throw new Error(r.id + " lists openrouter but no shipped recipe file has that variant");
@@ -132,7 +132,7 @@ const options = {};
 for (const id of served) {
     const sel = document.querySelector('.shell-recipe[data-id="' + id + '"] select');
     if (!sel) throw new Error("no provider select for " + id);
-    const opts = Array.from(sel.options).filter((o) => o.value !== "comfyrouter");
+    const opts = Array.from(sel.options).filter((o) => !["comfyrouter", "oxen", "magnific"].includes(o.value));
     const last = opts[opts.length - 1];
     options[id] = last.textContent;
     if (last.value !== "openrouter" || last.textContent !== "OpenRouter (no key)") throw new Error(id + ": the last option is " + last.value + " / " + last.textContent);
@@ -161,7 +161,7 @@ if (!link) throw new Error("no check balance link on the OpenRouter row with a k
 link.click();
 const text = await until(() => { const o = row.querySelector(".shell-balance-out"); return o && !/checking/.test(o.textContent) && o.textContent.trim() ? o.textContent : null; }, 15000);
 const sel = document.querySelector('.shell-recipe[data-id="nano_banana_2"] select');
-const option = sel && Array.from(sel.options).filter((o) => o.value !== "comfyrouter").pop().textContent;
+const option = sel && Array.from(sel.options).filter((o) => !["comfyrouter", "oxen", "magnific"].includes(o.value)).pop().textContent;
 document.getElementById("shell-settings").close();
 if (!text || !text.includes("$12.50 left") || !text.includes("$20.00")) throw new Error("the balance reads " + text);
 if (option !== "OpenRouter") throw new Error("with a key the option still reads " + option);

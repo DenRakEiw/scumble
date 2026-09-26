@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Nano Banana 2 (Gemini 3.1 Flash Image)",
   "family": "Google",
-  "description": "Google's generalist image model, 0.5K to 4K. Keys: Google AI Studio, fal.ai or Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Comfy Router. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Google's generalist image model, 0.5K to 4K. Keys: Google AI Studio, fal.ai or Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Comfy Router. Also on Oxen.ai. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {
     "toapis": {
@@ -416,6 +416,82 @@
         ]
       },
       "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; run against the live API on 2026-09-23 (an inpaint at Size 1K, 16 s, about $0.08). The pictures go inline in the request to Comfy, which passes them to Google's Vertex AI. No mask input: the crop and the mask go along and the prompt tells the model to change the white area only; the stitch keeps the selection. Size takes 1K, 2K or 4K (the Router's schema lists no 0.5K). At most fourteen pictures go in besides the mask."
+    },
+    "oxen": {
+      "model": "nano-banana-2",
+      "input": "fill",
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "resolution",
+          "thinking_level"
+        ],
+        "edit_aspect": "auto",
+        "ratios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "4:5",
+          "5:4",
+          "21:9",
+          "4:1",
+          "1:4",
+          "8:1",
+          "1:8"
+        ],
+        "tiers": {
+          "512": 512,
+          "1K": 1024,
+          "2K": 2048,
+          "4K": 4096
+        },
+        "max_images": 14
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "512",
+              "1K",
+              "2K",
+              "4K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "thinking_level",
+          "label": "Thinking",
+          "spec": [
+            [
+              "minimal",
+              "high"
+            ],
+            {
+              "default": "minimal"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024,
+          2048,
+          4096
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. No mask input for this model on Oxen: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. The edit asks for aspect \"auto\" (not verified to keep the crop's shape). An answer of another shape is centre-cropped. Resolution 512 to 4K, on auto the smallest that covers the crop; at most fourteen pictures. List price $0.0585 (512) to $0.1963 (4K), 2026-09-26."
     }
   }
 }

@@ -1,0 +1,46 @@
+{
+  "id": "seedream_4_5",
+  "kind": "provider",
+  "name": "Seedream 4.5",
+  "family": "ByteDance",
+  "description": "ByteDance's Seedream 4.5 on Magnific: instruction edits with up to five pictures, and Generate new. Written from Magnific's documentation; not run against the live API yet.",
+  "default": "magnific",
+  "providers": {
+    "magnific": {
+      "model": "text-to-image/seedream-v4-5-edit",
+      "input": "edit",
+      "settings": [
+        {
+          "index": 1,
+          "key": "enable_safety_checker",
+          "label": "Safety checker",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": true
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "aspects": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "2:3",
+          "3:4",
+          "3:2",
+          "4:3",
+          "21:9"
+        ]
+      },
+      "text": {
+        "model": "text-to-image/seedream-v4-5",
+        "sizes": [
+          2048
+        ]
+      },
+      "note": "Runs on Magnific (Freepik's API, api.magnific.com) with the Magnific key; every API call costs credits, whatever the web plan says; not run against the live API yet. The pictures go inline (base64) to Magnific / Freepik (Freepik Company S.L., Málaga, Spain), which hosts inputs and outputs on its own or its providers' platforms, uses them for security and to improve its products and not to train its own models; the docs do not say where the model runs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". Seedream 4.5 on Magnific renders eight preset shapes only: the crop's context is widened to the nearest one the picture can give, so the answer lines up with it (a crop that cannot be widened is centre-cropped). At most five pictures go in (the crop, Original and the reference layers), each at least 256 × 256 and at most 10 MB (an opaque one goes as JPEG). EUR 0.034 an image (Magnific's price list, 2026-09-26)."
+    }
+  }
+}

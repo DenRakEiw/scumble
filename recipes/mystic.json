@@ -1,0 +1,84 @@
+{
+  "id": "mystic",
+  "kind": "provider",
+  "name": "Mystic",
+  "family": "Magnific",
+  "description": "Magnific's own text-to-image model, in Generate new only: six model styles (realism, fluid, zen, flexible, super real, editorial portraits), 1K to 4K. Written from Magnific's documentation; not run against the live API yet.",
+  "default": "magnific",
+  "providers": {
+    "magnific": {
+      "model": "mystic",
+      "input": "edit",
+      "edit": false,
+      "settings": [
+        {
+          "index": 1,
+          "key": "model",
+          "label": "Model",
+          "spec": [
+            [
+              "realism",
+              "fluid",
+              "zen",
+              "flexible",
+              "super_real",
+              "editorial_portraits"
+            ],
+            {
+              "default": "realism"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "key": "engine",
+          "label": "Engine",
+          "spec": [
+            [
+              "automatic",
+              "magnific_illusio",
+              "magnific_sharpy",
+              "magnific_sparkle"
+            ],
+            {
+              "default": "automatic"
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "key": "creative_detailing",
+          "label": "Creative detailing",
+          "spec": [
+            "INT",
+            {
+              "default": 33,
+              "min": 0,
+              "max": 100
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "key": "fixed_generation",
+          "label": "Fixed generation",
+          "spec": [
+            "BOOLEAN",
+            {
+              "default": false
+            }
+          ]
+        }
+      ],
+      "text": {
+        "model": "mystic",
+        "sizes": [
+          1024,
+          2048,
+          4096
+        ]
+      },
+      "note": "Runs on Magnific (Freepik's API, api.magnific.com) with the Magnific key; every API call costs credits, whatever the web plan says; not run against the live API yet. Only the prompt goes to Magnific / Freepik (Freepik Company S.L., Málaga, Spain), which hosts inputs and outputs on its own or its providers' platforms, uses them for security and to improve its products and not to train its own models; the docs do not say where the model runs. Magnific's own model, Generate new only; its safety filter cannot be switched off, and an answer it flags is still used (the log says so). The fluid model takes five shapes (1:1, 9:16, 16:9, 3:4, 4:3), the others twelve; the size is the nearest of 1k, 2k and 4k. No seed: Fixed generation repeats a result. EUR 0.058 / 0.10 / 0.32 at 1k / 2k / 4k (Magnific's price list, 2026-09-26)."
+    }
+  }
+}

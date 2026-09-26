@@ -1,0 +1,57 @@
+{
+ "$comment": "The request body of POST /v1/ai/text-to-image/flux-2-pro, resolved from https://storage.googleapis.com/fc-freepik-pro-rev1-eu-api-specs/magnific-api-v1-openapi.yaml (read 2026-09-26); descriptions and examples dropped.",
+ "route": "text-to-image/flux-2-pro",
+ "schema": {
+  "properties": {
+   "prompt": {
+    "type": "string"
+   },
+   "width": {
+    "default": 1024,
+    "maximum": 1440,
+    "minimum": 256,
+    "type": "integer"
+   },
+   "height": {
+    "default": 768,
+    "maximum": 1440,
+    "minimum": 256,
+    "type": "integer"
+   },
+   "seed": {
+    "maximum": 4294967295,
+    "minimum": 0,
+    "nullable": true,
+    "type": "integer"
+   },
+   "prompt_upsampling": {
+    "default": false,
+    "type": "boolean"
+   },
+   "input_image": {
+    "nullable": true,
+    "type": "string"
+   },
+   "input_image_2": {
+    "nullable": true,
+    "type": "string"
+   },
+   "input_image_3": {
+    "nullable": true,
+    "type": "string"
+   },
+   "input_image_4": {
+    "nullable": true,
+    "type": "string"
+   },
+   "webhook_url": {
+    "format": "uri",
+    "type": "string"
+   }
+  },
+  "required": [
+   "prompt"
+  ],
+  "type": "object"
+ }
+}

@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Qwen Image Edit",
   "family": "Qwen",
-  "description": "Alibaba's Qwen image editor; fal's inpaint endpoint takes the mask, Replicate's edits the whole crop. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on Comfy Router. Adapter written from the provider's docs, not run against the live API yet.",
+  "description": "Alibaba's Qwen image editor; fal's inpaint endpoint takes the mask, Replicate's edits the whole crop. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on Comfy Router. Also on Oxen.ai. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {
     "toapis": {
@@ -189,6 +189,68 @@
         ]
       },
       "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The pictures go inline in the request to Comfy, which passes them to Alibaba Cloud (Qwen); the Router's docs do not say in which region it runs. Qwen Image 3.0, not the inpaint model: Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The crop goes at its own size (0.26 to 6.5 megapixels, no steeper than 8:1), with the seed and the negative prompt; the model's own prompt rewriting is switched off. At most two reference layers (three pictures in all)."
+    },
+    "oxen": {
+      "model": "qwen-image-3",
+      "input": "edit",
+      "options": {
+        "image_field": "input_images",
+        "accepts": [
+          "aspect_ratio",
+          "resolution",
+          "negative_prompt",
+          "seed",
+          "enable_prompt_expansion",
+          "watermark"
+        ],
+        "edit_aspect": "auto-single",
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4"
+        ],
+        "tiers": {
+          "1K": 1024,
+          "2K": 2048
+        },
+        "max_images": 3
+      },
+      "fixed": {
+        "enable_prompt_expansion": false,
+        "watermark": false
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "resolution",
+          "label": "Resolution",
+          "spec": [
+            [
+              "auto",
+              "1K",
+              "2K"
+            ],
+            {
+              "default": "auto"
+            }
+          ]
+        }
+      ],
+      "limits": {
+        "max": 2048,
+        "step": 16,
+        "minPixels": 262144,
+        "ratio": 8
+      },
+      "text": {
+        "sizes": [
+          1024,
+          2048
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Qwen Image 3.0 on Oxen. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. With the crop alone the edit asks for aspect \"auto\" (Oxen: the aspect of the last picture); with references the preset closest to the crop. An answer of another shape is centre-cropped. Resolution 1K or 2K, on auto the smallest that covers the crop; at most three pictures; the negative prompt goes along; prompt expansion and the watermark are off. List price $0.039 (2026-09-26)."
     }
   }
 }

@@ -41,7 +41,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 CHUNK_SIZES = [1, 3, 7, 40, 200, 5]     # the stream is written in chunks of these sizes, cycled
-CHAT_DIALECTS = ("openrouter", "deepseek", "moonshot", "zai", "toapis", "wavespeed", "compat")
+CHAT_DIALECTS = ("openrouter", "deepseek", "moonshot", "zai", "toapis", "wavespeed", "oxen", "compat")
 DIALECTS = ("anthropic",) + CHAT_DIALECTS + ("responses", "gemini")
 FAMILY_OF_DIALECT = {"anthropic": "messages", "responses": "responses", "gemini": "gemini"}   # the rest: "chat"
 

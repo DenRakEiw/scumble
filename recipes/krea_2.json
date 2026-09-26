@@ -3,7 +3,7 @@
   "kind": "provider",
   "name": "Krea 2 [large]",
   "family": "Krea",
-  "description": "Krea's own model, aimed at photographic realism. Text to image only on fal, so it works in \"Generate new\", not in Generate. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on OpenRouter. Also on Comfy Router.",
+  "description": "Krea's own model, aimed at photographic realism. Text to image only on fal, so it works in \"Generate new\", not in Generate. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on OpenRouter. Also on Comfy Router. Also on Oxen.ai.",
   "default": "fal",
   "providers": {
     "fal": {
@@ -106,6 +106,51 @@
         ]
       },
       "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. Only the prompt goes to Comfy, which passes it to Krea. The dialog's aspect is sent as the closest of Krea's eight presets; 1K only."
+    },
+    "oxen": {
+      "model": "krea-v2-large-text-to-image",
+      "edit": false,
+      "options": {
+        "accepts": [
+          "aspect_ratio",
+          "creativity",
+          "seed"
+        ],
+        "ratios": [
+          "1:1",
+          "4:3",
+          "3:2",
+          "16:9",
+          "2.35:1",
+          "4:5",
+          "2:3",
+          "9:16"
+        ]
+      },
+      "settings": [
+        {
+          "index": 1,
+          "key": "creativity",
+          "label": "Creativity",
+          "spec": [
+            [
+              "raw",
+              "low",
+              "medium",
+              "high"
+            ],
+            {
+              "default": "medium"
+            }
+          ]
+        }
+      ],
+      "text": {
+        "sizes": [
+          1024
+        ]
+      },
+      "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). Text to image only on Oxen: it works in \"Generate new\", not in Generate. Oxen keeps every generated image in your Oxen account. The dialog's aspect goes as the closest of eight presets; Oxen picks the size. List price $0.06 (2026-09-26)."
     }
   }
 }

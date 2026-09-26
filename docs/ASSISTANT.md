@@ -25,6 +25,7 @@ its last four characters.
 | Z.ai (GLM) | `zai` | GLM-5.3-Flash, FlashX |
 | ToAPIs | `toapis` | Claude Sonnet 5 / Opus 5, Gemini 3.8 Flash |
 | WaveSpeed | `wavespeed` | Claude Sonnet 5 / Opus 5, Gemini 3.8 Flash |
+| Oxen.ai | `oxen` | Claude Sonnet 5, GPT-5.6 Terra, Gemini 3.8 Flash |
 | Local / OpenAI-compatible server | none (a saved URL) | whatever its `/models` lists |
 
 A provider without a key is greyed out in the picker. A model carries a mark only where
@@ -141,6 +142,7 @@ panel shows a one-line notice per provider the first time you send to it.
 | Moonshot (Kimi) | Singapore (platform.kimi.ai) |
 | Z.ai (GLM) | Singapore; the GLM-5.3-Flash cluster's region is not stated |
 | ToAPIs, WaveSpeed | not stated |
+| Oxen.ai | Oxen.ai, which runs the model or passes it on to its maker or another host; its terms could not be read, so where the pictures go and how long they are kept is not stated |
 | Local server | your own machine, or wherever you pointed the URL |
 
 ## What it cannot do
@@ -154,7 +156,10 @@ panel shows a one-line notice per provider the first time you send to it.
 - It is not a prompt template: templates are one call with no tools (`docs/PROMPTS.md`).
 - It has **not been tried against a live API** in this release. The wiring was proven against the
   real hosts - every family built its request, reached its host with the real key and read the
-  answer - but no model has completed a task here yet; the picker says so per provider.
+  answer - but no model has completed a task here yet; the picker says so per provider. The Oxen.ai
+  entry (0.1.29) is written from Oxen's docs and model list and has not been tried with a real key at
+  all: its chat route is `/api/ai/chat/completions` (no `/v1`), and it is sent without `stream_options`,
+  which Oxen does not document, so a turn may show no cost line.
 
 ## Keys, focus and the editor
 

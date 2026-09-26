@@ -9,9 +9,11 @@
 //   request: { model, kind ("fill" = image + mask, "edit" = instruction on the image),
 //              prompt, negative, seed, image (PNG bytes of the crop), mask (PNG, white =
 //              repaint), width, height (of the crop), references: [PNG bytes], params }
-//   ctx:     { key, fetch, log, base, toJpeg, opaque }   base: the adapter's own allowlisted host from
-//            settings (ToAPIs, OpenRouter; ModelArk's loopback mock; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
-//            nativeImage, opaque(png): whether it has no transparent pixel
+//   ctx:     { key, fetch, log, base, toJpeg, opaque, bitmap, fromBitmap, cropPng }   base: the adapter's own allowlisted host from
+//            settings (ToAPIs, OpenRouter; ModelArk's and Oxen.ai's loopback mock; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
+//            nativeImage, opaque(png): whether it has no transparent pixel; bitmap(png): { width, height, data } (BGRA),
+//            fromBitmap({ width, height, data }): a PNG of it, cropPng(png, { x, y, width, height }): a part of a PNG as PNG
+//            (Magnific's Ideogram mask and Image Expand; only Scumble's own PNGs go through them, never an answer)
 //
 // The crop and the stitch happen in the renderer (renderer/editor/stitch.js); the
 // adapters only speak HTTP. Keys come from keys.js by the provider's name.
@@ -36,6 +38,7 @@ const PROVIDERS = {
     comfycloud: require("./comfycloud"),
     openrouter: require("./openrouter"),
     ark: require("./ark"),
+    oxen: require("./oxen"),
     magnific: require("./magnific"),
     comfyrouter: require("./comfyrouter"),   // no key row: the Comfy Cloud key (keyName)
     comfypartner: require("./comfypartner"), // no key row either: HY Image 3.5 through Comfy's Partner Node proxy
@@ -81,7 +84,7 @@ function textProviders() {
 
 async function edit(request) {
     const id = String(request.provider || "");
-    const p = PROVIDERS[id];
+    const p = Object.prototype.hasOwnProperty.call(PROVIDERS, id) ? PROVIDERS[id] : null;
     if (!p) throw new Error("Unknown provider: " + id);
     const text = request.kind === "text";
     const upscale = request.kind === "upscale";
@@ -142,9 +145,32 @@ function opaque(png) {
     return true;
 }
 
+/** A PNG's pixels ({ width, height, data } in BGRA, as nativeImage keeps them); null when it cannot be decoded. */
+function bitmap(png) {
+    const img = nativeImage.createFromBuffer(Buffer.from(png));
+    if (img.isEmpty()) return null;
+    const { width, height } = img.getSize();
+    return { width, height, data: img.toBitmap() };
+}
+
+/** A PNG of raw pixels (the order bitmap() gives; a grey picture is the same either way). */
+function fromBitmap(b) {
+    return nativeImage.createFromBitmap(Buffer.from(b.data), { width: b.width, height: b.height }).toPNG();
+}
+
+/**
+ * A rectangle of a PNG as PNG; null when it cannot be decoded. nativeImage crops through Skia's premultiplied pixels,
+ * so a half-transparent pixel may move by a level (docs/RECIPES.md "Magnific").
+ */
+function cropPng(png, r) {
+    const img = nativeImage.createFromBuffer(Buffer.from(png));
+    if (img.isEmpty()) return null;
+    return img.crop({ x: r.x, y: r.y, width: r.width, height: r.height }).toPNG();
+}
+
 function contextFor(id, p, key) {
     return {
-        key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a), toJpeg, opaque,
+        key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a), toJpeg, opaque, bitmap, fromBitmap, cropPng,
         base: typeof p.baseUrl === "function" ? p.baseUrl(settings.get()) : undefined,
     };
 }
