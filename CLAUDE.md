@@ -109,29 +109,30 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-23) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
-## Where things stand (2026-09-26, late evening)
+## Where things stand (2026-09-26, night)
 
 The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).
 
-**Released:** 0.1.29 is Latest (2026-09-26: the skins "90s" and "Duck", Magnific and Oxen.ai built from the docs, quit
-safety 3a). Check `gh release list` before believing any release state written down anywhere.
+**Released:** 0.1.29 is Latest. Check `gh release list` before believing any release state written down anywhere.
 
-**Built since, pushed to main (`8793d41`), not released: package 3b, the `.scumble` document format.** Ctrl+S saves the
-document (Save As Ctrl+Shift+S; the picture export moved to Ctrl+Shift+E), the dirty "*", close asks, Reopen Closed Tab
-(Ctrl+Shift+T), Open Recent, the history question on Save As, the drop, a progress chip, the file association (NSIS +
-MSIX) and argv, `save_document` / `open_document`, plugin API 2 `documents.data`. Read `docs/PLAN_DOCUMENTS.md` ("D1
-built" to "D5 built": what was checked) and the spec `docs/DOCUMENTS.md`. Gates `document`, `docux`, `docperf:WxH` on
-both backends; mutation rounds 18/18 (Node), 10/10 (`document`), 6/6 (`docux` / `docperf`). Not checked by anyone: a
-double click in Explorer (needs an installed build: the user's word), a key on a real keyboard. **The next release
-(0.1.30) needs its CHANGELOG section first; none is written yet.**
+**Built, committed locally, NOT pushed (3f, 3d and the version commit are ahead of `origin/main`; 3b was pushed): 0.1.30 =
+3b + 3f + 3d** (the user, 2026-09-26: "3f/3d noch in den 0.130 release"). `8793d41` and before: 3b, the `.scumble` format.
+`ee26661`: **3f**, PNG exports carry the prompt / seed / recipe only on the Export section's switch *Prompt and recipe in
+the PNG* (`settings.embedRecipe`, **off by default**, a decision taken in the build: say so if the user wants it on) or
+`export { metadata }`; an `sRGB` chunk on every PNG export; source EXIF / XMP and ICC in PSD / TIFF deferred (not
+cheap). `2271df0`: **3d**, TIFF open and save (`renderer/editor/inpaint_tiff.js`, own streaming reader and strip
+writer, gates `tiff` and `tiffperf:WxH`), plus a fix of `canvasRows` (smoothing with `copy` moved bytes by up to 2).
+`package.json` says 0.1.30 (committed), the CHANGELOG section "0.1.30 - unreleased" is written (3b, 3f, 3d),
+`dist/Scumble Setup 0.1.30.exe` (128.5 MB) is built, and the exe gates `--offline` passed on both backends (`rel30-exe`
+with `docux` rerun as `rel30-exe-docux` after a test fix: the runner's relative exe path, `rel30-exe-canvas`,
+`rel30-exe-canvas-docux`). **The release waits for the user's word** (push, tag `v0.1.30`,
+publish the draft, then the manual sync and the dev blog post: a draft of the post is in the session scratchpad and
+in the answer of the session of 2026-09-26 night). The CHANGELOG header needs the date when it is published.
 
-**The build in progress is `docs/PLAN_0_1_29.md`** (decided by the user on 2026-09-26; read it first). Done: 1 skins,
-2 providers, 3a quit safety, 3b documents. **Left, and the user said "wir bauen alles" (2026-09-26):** **3c** the
-history panel, **3d** TIFF open and save (the Open dialog offers TIFF today and fails), **3e** editable PSD masks,
-**3f** the switch for the PNG metadata (every PNG export carries the prompt, the seed and the recipe graph today);
-then **4** brushes (10-16 d), **5** repair / remove / liquify (14-24 d), **6** layers pro (8.5-13 d, groups 7-9 d
-more). Proposed and not answered yet: 3f and 3d first (both fix bugs), then release 0.1.30, then 3c and 3e. Still open
-for the user: LaMa shipped or downloaded (package 5), releases per package or bundled.
+**The build in progress is `docs/PLAN_0_1_29.md`** (read it first). Done: 1 skins, 2 providers, 3a, 3b, 3d, 3f. **Left,
+"wir bauen alles":** **3c** the history panel, **3e** editable PSD masks; then **4** brushes, **5** repair / remove /
+liquify, **6** layers pro. Still open for the user: LaMa shipped or downloaded (package 5), releases per package or
+bundled, and whether the PNG switch should default to on.
 
 **How the work goes (the user, 2026-09-26):** tests by risk (Working rules); few agents - the main loop builds, one or
 two background agents take separate files (a gate in an isolated worktree, docs), one package at a time, a local
@@ -142,10 +143,11 @@ to 80 %.
 
 The full hand-over blocks of those days are in `docs/HISTORY.md`, verbatim. What still matters from them:
 
-**Releases.** 0.1.29 is Latest (published 2026-09-26: skins, Magnific, Oxen.ai, quit safety). Package 3b is in main;
-the next CHANGELOG section, "0.1.30", is not written yet. Check `gh release list` before believing any release state
-written down anywhere. Every release: the CHANGELOG section first, `npm run dist`, exe gates `--offline` on both
-backends, the manual sync (`node tools/manual_sync.js`) and a dev blog post (the decisions block above).
+**Releases.** 0.1.29 is Latest (published 2026-09-26: skins, Magnific, Oxen.ai, quit safety). 0.1.30 (3b, 3f, 3d) is
+built and committed locally, its CHANGELOG section written, waiting for the user's word ("Where things stand"). Check
+`gh release list` before believing any release state written down anywhere. Every release: the CHANGELOG section first,
+`npm run dist`, exe gates `--offline` on both backends, the manual sync (`node tools/manual_sync.js`) and a dev blog post
+(the decisions block above).
 
 **Open, from before 2026-09-26 (none started):**
 - **B3, the macOS build** (`docs/PLAN_0_1_24.md` "Session B3"): unblocked since the logo exists (`build/icon.png`

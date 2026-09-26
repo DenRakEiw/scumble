@@ -6,6 +6,37 @@ The blocks of 2026-09-19 to 2026-09-23 were moved here on 2026-09-26 (CLAUDE.md 
 
 The block of 2026-09-26 (evening) and the full text of the list were moved here late on 2026-09-26, when package 3b was built (CLAUDE.md keeps a short "Where things stand" and a condensed list).
 
+The block of 2026-09-26 (late evening) was moved here that night, when 3f and 3d were built.
+
+## Where things stand (2026-09-26, late evening)
+
+The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).
+
+**Released:** 0.1.29 is Latest (2026-09-26: the skins "90s" and "Duck", Magnific and Oxen.ai built from the docs, quit
+safety 3a). Check `gh release list` before believing any release state written down anywhere.
+
+**Built since, pushed to main (`8793d41`), not released: package 3b, the `.scumble` document format.** Ctrl+S saves the
+document (Save As Ctrl+Shift+S; the picture export moved to Ctrl+Shift+E), the dirty "*", close asks, Reopen Closed Tab
+(Ctrl+Shift+T), Open Recent, the history question on Save As, the drop, a progress chip, the file association (NSIS +
+MSIX) and argv, `save_document` / `open_document`, plugin API 2 `documents.data`. Read `docs/PLAN_DOCUMENTS.md` ("D1
+built" to "D5 built": what was checked) and the spec `docs/DOCUMENTS.md`. Gates `document`, `docux`, `docperf:WxH` on
+both backends; mutation rounds 18/18 (Node), 10/10 (`document`), 6/6 (`docux` / `docperf`). Not checked by anyone: a
+double click in Explorer (needs an installed build: the user's word), a key on a real keyboard. **The next release
+(0.1.30) needs its CHANGELOG section first; none is written yet.**
+
+**The build in progress is `docs/PLAN_0_1_29.md`** (decided by the user on 2026-09-26; read it first). Done: 1 skins,
+2 providers, 3a quit safety, 3b documents. **Left, and the user said "wir bauen alles" (2026-09-26):** **3c** the
+history panel, **3d** TIFF open and save (the Open dialog offers TIFF today and fails), **3e** editable PSD masks,
+**3f** the switch for the PNG metadata (every PNG export carries the prompt, the seed and the recipe graph today);
+then **4** brushes (10-16 d), **5** repair / remove / liquify (14-24 d), **6** layers pro (8.5-13 d, groups 7-9 d
+more). Proposed and not answered yet: 3f and 3d first (both fix bugs), then release 0.1.30, then 3c and 3e. Still open
+for the user: LaMa shipped or downloaded (package 5), releases per package or bundled.
+
+**How the work goes (the user, 2026-09-26):** tests by risk (Working rules); few agents - the main loop builds, one or
+two background agents take separate files (a gate in an isolated worktree, docs), one package at a time, a local
+commit per step; check the 5-hour window (`mcp__ccd_session_mgmt__get_usage`) and stop at a committed state around 70
+to 80 %.
+
 ## Where things stand (2026-09-26, evening)
 
 **0.1.29 is Latest** (published 2026-09-26 18:07 German time on the user's word "3a und dann release"): skins,

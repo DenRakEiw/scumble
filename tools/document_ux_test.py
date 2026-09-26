@@ -200,8 +200,8 @@ async def run(c):
 
     # a second start with a path: close ux_b first so the open is new, then start the app again on this profile
     await c.eval("(async () => { const sh = await import('./shell.js'); const { host } = await import('./editor/host.js'); for (const e of host.editors().filter((x) => x.docFile && x.docFile.name === 'ux_b.scumble')) await sh.closeDocument(e, { force: true }); return 1; })()")
-    exe = os.environ.get("SCUMBLE_EXE")
-    cmd = ([exe] if exe else [ELECTRON, "."]) + [f"--user-data-dir={user_data}", os.path.join(OUT, "ux_b.scumble")]
+    exe = os.environ.get("SCUMBLE_EXE")   # absolute: CreateProcess does not find the runner's relative "dist/..." path
+    cmd = ([os.path.abspath(exe)] if exe else [ELECTRON, "."]) + [f"--user-data-dir={user_data}", os.path.join(OUT, "ux_b.scumble")]
     p = subprocess.run(cmd, cwd=ROOT, capture_output=True, timeout=60)
     r = await ev(AFTER_ARGV)
     step(results, "a_second_start_with_a_path_opens_it_here", p.returncode == 0 and r["opened"] and r["active"], {**r, "exit": p.returncode})
