@@ -121,8 +121,10 @@ files, file association), then the history panel, TIFF, PSD masks, the metadata 
 design pass of package 3 of the morning died with the usage limit; **3b's design is `docs/PLAN_DOCUMENTS.md`** (read it
 first), with the user's answers of 2026-09-26 (§9: Ctrl+S saves the document, Ctrl+Shift+S Save As, Ctrl+Shift+E
 exports; the result history goes in the file with a switch in Save As; fonts the user added travel; no question on
-quit). **Step D1 is built** (`ec01d08`, `electron/main/docfile.js`, `tools/document_test.js`, local only); **next D2**
-(save and open in the app), then D3 to D5. The session stopped at 68 % of the 5-hour window before D2 on purpose.
+quit). **Steps D1 and D2 are built** (D1 `ec01d08`, `electron/main/docfile.js`; D2 `e959cda`, `electron/main/documents.js`,
+save / open / Save As in the app, plugin API 2 `documents.data`, the glb plugin per document, an unknown filter id kept;
+local only, not pushed; `docs/PLAN_DOCUMENTS.md` "D2 built" says what was checked and what is left). **Next D3** (tab
+name and dirty marker, close asks, reopen closed tab, recent files, the Save As history switch, the drop), then D4, D5.
 Still open for the user: Ctrl+S as "save the document" (plan, open questions), LaMa shipped or downloaded, releases
 per package or bundled (0.1.29 was one release for three packages).
 
