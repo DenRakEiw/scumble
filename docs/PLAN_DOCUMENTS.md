@@ -494,6 +494,30 @@ split out of `saveBeforeRestart`, `host.saveDocument(ed, { as, copy, path })`, `
 `renderer/plugins.js`, the glb plugin moved onto it, trap 1's fix in `setValue`, the menu entries (with the
 accelerators of whichever variant the user picked; B until then). `build_node.py --check`, `nodecopy`, `lint`, `types`.
 
+**D2 built 2026-09-26** (local, not pushed). Main: `electron/main/documents.js` (plain Node: the job per request, the
+lock per path, cancel, `idle()`, `abortAll()`, the pending queue, `documentArgs` for D4, the selection fields of an
+opened file checked, a history file that is gone leaves its entry out with a note, a missing required file refuses
+the save), IPC `documents:choosePath / write / open / cancel / takePending / stat` and `documents:progress` /
+`documents:openRequest`, the close, the update install and View > Reload wait for `documents.idle()` inside the
+guard, "Quit now" and a crashed renderer abort, `will-quit` sweeps, the start sweeps, pruning is refused while a job
+runs and keeps the jobs' keys, Open routes a `.scumble` (by name or first bytes) to the document path, the File menu
+is variant A (Save Ctrl+S, Save As Ctrl+Shift+S, Export Image Ctrl+Shift+E). Renderer: `host.flushEditor` is a
+sibling of `saveBeforeRestart` with the same steps for one editor (the 3a function is untouched, so the quit gate
+keeps testing what it tested; an upload that fails throws here), `host.saveDocument` / `openDocument` /
+`documentProgress` / `docSavesIdle`, `docFile` / `pluginData` / `docExtra` in `bundle()` and `restore()`, the
+walkers (`referencedFileKeys`, `autosave.referencedKeys`) read `plugins`, the flush answer waits for the saves in
+flight, a shell capture listener takes Ctrl+S, Ctrl+Shift+S and Ctrl+Shift+E before the editor. Plugin API 2:
+`documents.data(doc)`; the glb plugin keeps its objects there (the global store is read once as a fallback and the
+entry moved). Trap 1: `setValue` keeps an unknown filter id and its params, the panel shows "missing: <id>", reach
+counts it as 0, `set_filter` on it says why it refuses. **Checked in the app** (a scratch profile, `--no-comfy`, not
+a gate yet): a round trip with a text layer, a filter layer, a selection and plugin data (state equal, `zipfile`
+testzip clean); a painted layer is uploaded before the write; a second save during one is refused; a cancel leaves
+the file and the tab's key; the tab's file survives a restart; a 3D object and an unknown filter id round-trip and
+`glb.edit` works on the reopened file. **Measured on the way:** a Ctrl+S and a Ctrl+Shift+E sent through CDP's input
+pipeline fired once each (the capture listener's `preventDefault` kept the menu accelerators from firing a second
+time); a real keyboard is D3's check. **Left for D3:** the Save As switch for the history, recent files, the tab
+name and dirty marker, the drop, closed tabs in the walkers.
+
 ### D3. Document UX (1.5 to 2.5 d)
 
 Tab name and tooltip, the dirty marker and title, the close question, reopen closed tab, recent files and the jump

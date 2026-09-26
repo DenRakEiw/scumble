@@ -74,6 +74,17 @@ contextBridge.exposeInMainWorld("scumble", {
         read: (file) => ipcRenderer.invoke("file:read", file),
         onOpened: (cb) => on("file:opened", cb),
     },
+    // .scumble documents (electron/main/documents.js): main writes and reads the file, streamed into the mirror
+    documents: {
+        choosePath: (args) => ipcRenderer.invoke("documents:choosePath", args),
+        write: (req) => ipcRenderer.invoke("documents:write", req),
+        open: (req) => ipcRenderer.invoke("documents:open", req),
+        cancel: (reqId) => ipcRenderer.invoke("documents:cancel", reqId),
+        takePending: () => ipcRenderer.invoke("documents:takePending"),
+        stat: (file) => ipcRenderer.invoke("documents:stat", file),
+        onProgress: (cb) => on("documents:progress", cb),
+        onOpenRequest: (cb) => on("documents:openRequest", cb),
+    },
     files: {
         stats: () => ipcRenderer.invoke("files:stats"),
         prune: (args) => ipcRenderer.invoke("files:prune", args),

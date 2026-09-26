@@ -78,6 +78,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `tools.register(def)` / `unregister(id)` | tools in the tool column |
 | `events.on(type, fn)` | `built`, `activate`, `changed`, `tool`, `removed`, `theme` (a skin was switched: `fn({ doc: null, skin })`, `skin` the id or `""`; read the tokens with `getComputedStyle(document.documentElement)`, docs/SKINS.md); `fn({ doc, ... })`; returns `off()` |
 | `storage.get()` / `storage.set(patch)` | a small persistent object per plugin (`settings.json`): `get()` returns a copy synchronously (loaded before `activate`), `set(patch)` merges at once and writes through in the background |
+| `documents.data(doc).get()` / `.set(patch)` | (API 2) a JSON object per plugin **and per document**: saved with the document in the session and in its `.scumble` file, where every file ref inside it (`{ filename, subfolder, type }`) is packed and comes back renamed if it had to be; `get()` returns a copy, `set(patch)` merges and marks the document changed. Data of a plugin that is off or missing rides along unchanged |
 | `ui.status(text)` | the status bar of the active tab |
 | `ui.el(tag, cls, text)`, `ui.icon(name)`, `ui.button(label, title, onClick)`, `ui.slider(label, {min, max, step, value, unit}, onChange)` | DOM helpers in the editor's style |
 | `ui.confirm(text)` | a yes / no dialog |

@@ -1,8 +1,8 @@
 // GLB layer plugin, stage 1: a 3D object (.glb / .gltf) placed in the picture through a dialog
 // that shows the picture as the backdrop, rendered with alpha into an ordinary paint layer,
 // optionally with a depth layer (role control) for a depth ControlNet. The object stays
-// editable: the file lives in the local file store, the parameters in the plugin's storage
-// keyed by the layer id, and "Edit 3D object" re-renders into the same layer.
+// editable: the file lives in the local file store, the parameters in the document's plugin data
+// (scumble.documents.data) keyed by the layer id, and "Edit 3D object" re-renders into the same layer.
 //
 //   panel    "3D object" in the Image pane: place, the objects of this document, edit
 //   actions  Place 3D object (.glb), Edit 3D object (Plugins menu)
@@ -27,18 +27,29 @@ export function activate(scumble) {
     const { ui } = scumble;
     const R = () => renderer || (renderer = new GlbRenderer());
 
-    // ---- storage: { objects: { [layerId]: { ref, name, params, depthId } }, last: params } ---------
+    // ---- storage ----------------------------------------------------------------------------------
+    // per document (scumble.documents.data, saved with the document and in its .scumble file together with the model
+    // file its ref names): { objects: { [layerId]: { ref, name, params, depthId } } }; global (scumble.storage): the
+    // last parameters, and the objects of sessions from before 0.1.30, which move into their document when it asks
     const store = () => scumble.storage.get() || {};
-    const objects = () => ({ ...(store().objects || {}) });
-    function remember(layerId, entry) {
-        const all = objects();
+    const legacyObjects = () => ({ ...(store().objects || {}) });
+    const docObjects = (doc) => ({ ...(scumble.documents.data(doc).get().objects || {}) });
+    function remember(doc, layerId, entry, { last = true } = {}) {
+        const all = docObjects(doc);
         all[layerId] = entry;
-        const keys = Object.keys(all);
-        if (keys.length > 200) for (const k of keys.slice(0, keys.length - 200)) delete all[k];   // the oldest go
-        scumble.storage.set({ objects: all, last: entry.params });
+        scumble.documents.data(doc).set({ objects: all });
+        if (last) scumble.storage.set({ last: entry.params });
+        const legacy = legacyObjects();
+        if (legacy[layerId]) { delete legacy[layerId]; scumble.storage.set({ objects: legacy }); }
     }
-    function forget(layerId) { const all = objects(); delete all[layerId]; scumble.storage.set({ objects: all }); }
-    const entryOf = (layerId) => objects()[layerId] || null;
+    function entryOf(doc, layerId) {
+        const own = docObjects(doc)[layerId];
+        if (own) return own;
+        const legacy = legacyObjects()[layerId];
+        if (!legacy || !doc.layers().some((l) => l.id === layerId)) return null;
+        remember(doc, layerId, legacy, { last: false });
+        return legacy;
+    }
 
     // ---- the file: into the local store like layer pixels, so a reload finds it -------------------
     async function storeFile(bytes, name) {
@@ -102,7 +113,7 @@ export function activate(scumble) {
         } else {
             layer = doc.addLayer(r.canvas, { name: layerName, x: r.x, y: r.y, w: r.w, h: r.h });
         }
-        const prev = entryOf(layer.id);
+        const prev = entryOf(doc, layer.id);
         let depthLayer = null;
         const prevDepth = prev && prev.depthId && doc.layers().find((l) => l.id === prev.depthId);
         if (r.depth) {
@@ -116,15 +127,14 @@ export function activate(scumble) {
         } else if (prevDepth) {
             await doc.run("remove_layer", { layer: prevDepth.id });
         }
-        remember(layer.id, { ref, name: layerName, params: p, depthId: depthLayer ? depthLayer.id : null });
+        remember(doc, layer.id, { ref, name: layerName, params: p, depthId: depthLayer ? depthLayer.id : null });
         doc.status(`${layerName}: ${Math.round(r.w)} × ${Math.round(r.h)} at ${Math.round(r.x)}, ${Math.round(r.y)}${r.depth ? ", depth layer updated" : ""}. Edit it again under 3D object; T moves and scales it.`);
         return { layer: doc.layer(layer.id), depthLayer: depthLayer ? doc.layer(depthLayer.id) : null, params: p, ref, render: r.render };
     }
 
     /** The 3D layers of a document: those the storage knows, in layer order. */
     function objectsOf(doc) {
-        const all = objects();
-        return doc.layers().filter((l) => all[l.id]).map((l) => ({ layer: l, entry: all[l.id] }));
+        return doc.layers().map((l) => ({ layer: l, entry: entryOf(doc, l.id) })).filter((x) => x.entry);
     }
     function pickFile() {
         return new Promise((resolve) => {
@@ -146,7 +156,7 @@ export function activate(scumble) {
         if (!doc.loaded) { doc.status("Load an image first."); return null; }
         let ref, params, name;
         if (layerId) {
-            const e = entryOf(layerId);
+            const e = entryOf(doc, layerId);
             if (!e) { doc.status("This layer was not made by the 3D object plugin (or its settings are gone)."); return null; }
             ref = e.ref; params = e.params; name = e.name;
         } else {
@@ -229,7 +239,7 @@ export function activate(scumble) {
         scope: "doc",
         async run(doc, a) {
             const l = doc.layer(a.layer || "active");
-            const e = entryOf(l.id);
+            const e = entryOf(doc, l.id);
             if (!e) throw new Error(`${l.name} is not a 3D object layer of this plugin`);
             const merged = { ...e.params };
             for (const k of ["depth", "scale", "fov", "shadow", "depth_layer"]) if (a[k] != null) merged[k === "depth_layer" ? "depthLayer" : k] = a[k];

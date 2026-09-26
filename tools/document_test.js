@@ -278,6 +278,70 @@ function listTree(dir) {
             assert(doc.isScumble(head) && !doc.isScumble(ora) && !doc.isScumble(Buffer.from("PNG....")), "isScumble");
             return "yes for .scumble, no for ORA and PNG";
         });
+        // ---- electron/main/documents.js: the app's service around the container (step D2) ----
+        const { Documents, cleanDocument, documentArgs } = require(path.join(ROOT, "electron", "main", "documents.js"));
+        await check("the_service_saves_opens_and_leaves_out_a_gone_history_file", async () => {
+            const M = mirror("S1"), M2 = mirror("S2");
+            const f = fixture(M);
+            const sent = [];
+            const svc = new Documents({ mirrorRoot: M, registry: path.join(scratch, "svc-temps.json"), send: (c, p) => sent.push([c, p]), app: "0.1.30" });
+            fs.unlinkSync(f.paths.result);                                     // the only history file is gone
+            const target = path.join(scratch, "svc.scumble");
+            const r = await svc.write({ reqId: "s1", path: target, document: JSON.stringify(f.document), plugins: f.plugins, extra: { future: 1 } });
+            assert(r.notes.length === 1 && /1 result/.test(r.notes[0]), "notes " + JSON.stringify(r.notes));
+            assert(!svc.busy && svc.keepKeys().length === 0, "a job was left behind");
+            assert(sent.some(([c, p]) => c === "documents:progress" && p.reqId === "s1"), "no progress was sent");
+            const o = await new Documents({ mirrorRoot: M2 }).open({ reqId: "o1", path: target });
+            assert(o.document.history.length === 0, "the history entry of the gone file was kept");
+            assert(o.document.future === 1 && o.extra.future === 1, "the extra field did not travel");
+            assert(same(o.plugins, f.plugins) && o.document.layers.length === 2, "the document or its plugin data changed");
+            assert(sha(doc.mirrorPath(M2, "input", "inpaint_canvas", "cube.glb")) === sha(f.paths.glb), "the plugin's file did not come along");
+            return `${r.entries} entries, note: ${r.notes[0]}`;
+        });
+        await check("the_service_refuses_a_missing_required_file_and_a_second_job_on_one_path", async () => {
+            const M = mirror("S3");
+            const f = fixture(M);
+            const svc = new Documents({ mirrorRoot: M });
+            const target = path.join(scratch, "svc2.scumble");
+            fs.unlinkSync(f.paths.mask);
+            let err = null;
+            try { await svc.write({ path: target, document: f.document, plugins: f.plugins }); } catch (e) { err = e.message; }
+            assert(err && /n3_lmask_9f8e7d\.png is not in the local store/.test(err) && !fs.existsSync(target), "a missing mask: " + err);
+            put(M, f.refs.mask, rnd(50000, 3));
+            // a slow fetch keeps the first job open while the second asks for the same path (another spelling of it)
+            let release;
+            const gate = new Promise((res) => { release = res; });
+            const slow = new Documents({ mirrorRoot: M, fetchMissing: async () => { await gate; return false; } });
+            fs.unlinkSync(f.paths.result);
+            const first = slow.write({ reqId: "a", path: target, document: f.document, plugins: f.plugins });
+            await new Promise((res) => setTimeout(res, 50));
+            let second = null;
+            try { await slow.write({ reqId: "b", path: target.toUpperCase(), document: f.document, plugins: f.plugins }); } catch (e) { second = e.message; }
+            const idle = slow.idle();
+            release();
+            await first; await idle;
+            if (process.platform === "win32") assert(second && /already being saved/.test(second), "a second job on the path: " + second);
+            assert(!slow.busy, "idle() resolved while a job ran");
+            return "missing mask refused; second job: " + (second || "(case-sensitive platform)");
+        });
+        await check("the_service_cancel_leaves_the_target_and_cleans_the_selection_fields", async () => {
+            const M = mirror("S4");
+            const f = fixture(M);
+            const target = path.join(scratch, "svc3.scumble");
+            fs.writeFileSync(target, "old bytes");
+            const svc = new Documents({ mirrorRoot: M, send: (c, p) => { if (c === "documents:progress") svc.cancel(p.reqId); } });
+            let err = null;
+            try { await svc.write({ reqId: "c", path: target, document: f.document, plugins: f.plugins }); } catch (e) { err = e.message; }
+            assert(err && /cancelled/.test(err), "cancel: " + err);
+            assert(fs.readFileSync(target, "utf8") === "old bytes", "the target changed");
+            assert(!fs.readdirSync(scratch).some((n) => n.startsWith("svc3.scumble.saving-")), "a temporary file was left");
+            const notes = [];
+            const d = cleanDocument({ selection: "javascript:alert(1)", selectionBox: [0, 0, 1, 1], selections: [{ name: "a", url: "data:image/png;base64,AA==" }, { url: "http://x/y.png" }, null] }, notes);
+            assert(d.selection === undefined && d.selectionBox === undefined && d.selections.length === 1 && notes.length === 2, "cleanDocument " + JSON.stringify(d));
+            const argv = documentArgs(["--flag", "x.png", target, path.join(scratch, "nope.scumble")], scratch);
+            assert(argv.length === 1 && argv[0] === target, "documentArgs " + JSON.stringify(argv));
+            return "target kept; 2 selection fields dropped; argv found 1 of 4";
+        });
         if (BIG) {
             await check("a_real_zip64_file_above_4_GiB", async () => {
                 const M = mirror("BIG");

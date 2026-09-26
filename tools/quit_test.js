@@ -174,23 +174,26 @@ function bundle(tag, pics, empty = 0) {
         await check("main_prevents_a_close_until_the_window_saved", () => {
             const b = bodyAfter(main, /win\.on\("close", \(e\) => /);
             assert(b, "the close handler is not there");
-            const agent = b.indexOf("if (agentMode)"), guard = b.indexOf("quitGuard.onClose()"), prevent = b.indexOf("e.preventDefault();", guard), flush = b.indexOf('quitGuard.run(() => flushWindow("quit"))'), close = b.indexOf("win.close()", flush);
+            const agent = b.indexOf("if (agentMode)"), guard = b.indexOf("quitGuard.onClose()"), prevent = b.indexOf("e.preventDefault();", guard), flush = b.indexOf('quitGuard.run(() => flushAll("quit"))'), close = b.indexOf("win.close()", flush);
             assert(agent >= 0 && guard > agent, "the guard is not asked after the agent branch");
             assert(prevent > guard && flush > prevent && close > flush, "the close is not prevented, saved, then closed again");
             assert(/if \(what === "allow"\) return;/.test(b), "an allowed close does not go through");
             assert(b.indexOf("mirror.localOnly = true") > prevent && b.indexOf("mirror.localOnly = true") < flush, "the close does not keep uploads local while it saves");
             assert(/if \(forAgents && \(agentMode \|\| local\.clients\.size \|\| windowVisible\(\)\)\) \{[^}]*quitGuard\.reset\(\); return; \}/.test(b), "an agent's quit does not re-check after the save");
+            // flushAll: the window's save, then the .scumble saves in flight (docs/PLAN_DOCUMENTS.md §4.5)
+            const fa = bodyAfter(main, /async function flushAll\(reason\) /);
+            assert(fa && fa.indexOf("await flushWindow(reason)") >= 0 && fa.indexOf("await documents.idle()") > fa.indexOf("await flushWindow(reason)"), "the close does not wait for the document saves after the window's save");
             const files = read("electron/main/files.js");
             assert((files.match(/if \(this\.serverUp\(\) && !this\.localOnly\)/g) || []).length === 2, "the mirror's two upload routes do not stay local while the app quits");
             const rl = bodyAfter(main, /async function reloadWindow\(ignoreCache\) /);
-            assert(rl && rl.indexOf('flushWindow("reload")') >= 0 && rl.indexOf('flushWindow("reload")') < rl.indexOf("webContents.reload()"), "View > Reload does not save first");
+            assert(rl && rl.indexOf('flushAll("reload")') >= 0 && rl.indexOf('flushAll("reload")') < rl.indexOf("webContents.reload()"), "View > Reload does not save first");
             assert(!/role: "reload"|role: "forceReload"/.test(main), "a menu role reloads without saving");
             return "agent, guard, prevent, local uploads, flush, re-check, close; reload saves first";
         });
         await check("an_update_installs_only_after_the_save", () => {
             const b = bodyAfter(main, /ipcMain\.handle\("update:install", async \(\) => /);
             assert(b, "update:install is not an async handler");
-            const run = b.indexOf('await quitGuard.run(() => flushWindow("update"))'), install = b.indexOf("installOrReset()");
+            const run = b.indexOf('await quitGuard.run(() => flushAll("update"))'), install = b.indexOf("installOrReset()");
             assert(run >= 0 && install > run, "the install does not come after the awaited save");
             const io = bodyAfter(main, /function installOrReset\(\) /);
             assert(io && /const ok = updater\.install\(\);/.test(io) && /if \(!ok\) \{[^}]*quitGuard\.reset\(\)/.test(io) && /if \(!quitting\) \{[^}]*quitGuard\.reset\(\)/.test(io), "an install that does not quit leaves the guard latched");

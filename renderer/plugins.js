@@ -13,7 +13,7 @@ import { registerGLFilter, unregisterGLFilter, runShader, glFiltersAvailable, gl
 import { el, icon, makeCanvas } from "./editor/inpaint_canvas.js";
 import { LayerPixels } from "./editor/inpaint_pixels.js";
 
-export const API_VERSION = 1;
+export const API_VERSION = 2;   // 2: documents.data(doc), per-document plugin data (docs/PLAN_DOCUMENTS.md §3.6)
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 
 const plugins = new Map();   // id -> entry { id, manifest, module, api, regs, loaded, error, errors: [] }
@@ -587,6 +587,23 @@ function makeApi(entry) {
             active: () => docOf(host.editor),
             all: () => host.editors().map(docOf),
             byId: (id) => docOf(host.editorById(id)),
+            /**
+             * This plugin's JSON object for one document: it is saved with the document (the session's autosave and a
+             * .scumble file, whose refs inside it travel as files) and comes back with it; data of a plugin that is not
+             * installed rides along untouched. get() returns a copy, set(patch) merges and marks the document changed.
+             */
+            data(doc) {
+                const ed = doc && doc.editor;
+                if (!ed) throw new Error("documents.data needs a document");
+                return {
+                    get: () => JSON.parse(JSON.stringify((ed.pluginData && ed.pluginData[entry.id]) || {})),
+                    set(patch) {
+                        if (!ed.pluginData || typeof ed.pluginData !== "object") ed.pluginData = {};
+                        ed.pluginData[entry.id] = JSON.parse(JSON.stringify({ ...(ed.pluginData[entry.id] || {}), ...(patch || {}) }));
+                        host.changed(ed);
+                    },
+                };
+            },
         },
 
         filters: {

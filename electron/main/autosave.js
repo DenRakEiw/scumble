@@ -158,6 +158,7 @@ function referencedKeys(dir) {
         for (const d of docs) {
             if (!d || typeof d.state !== "string") continue;
             try { walkRefs(JSON.parse(d.state), keys); } catch (_) { /* an empty document */ }
+            walkRefs(d.plugins, keys);        // per-document plugin data (a 3D layer's model file), docs/PLAN_DOCUMENTS.md §3.6
         }
     }
     return Array.from(keys);

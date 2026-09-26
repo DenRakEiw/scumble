@@ -132,7 +132,7 @@ function docName(editor) {
 }
 
 function busy(editor) {
-    return !!(editor.pending || editor.segmentPending || editor.cutoutPending || editor.upsamplePending || editor.objectsPending || editor._loading || editor.providerPending);
+    return !!(editor.pending || editor.segmentPending || editor.cutoutPending || editor.upsamplePending || editor.objectsPending || editor._loading || editor.providerPending || editor._docSaving);
 }
 
 let tabSignature = "";
@@ -1917,6 +1917,8 @@ ui.setTilesRestart.addEventListener("click", async () => {
 window.scumble.state.onFlush(async (reason) => {
     const when = reason === "update" ? "the update" : "closing";
     const say = (text) => { try { if (host.editor) host.editor.setStatus(text); } catch (_) { /* no editor */ } };
+    // a document save in flight first, the whole flow up to main's write (docs/PLAN_DOCUMENTS.md §4.5)
+    await host.docSavesIdle();
     await saveBeforeRestart(say, when);
 });
 
@@ -1970,8 +1972,63 @@ window.scumble.file.onOpened(({ name, data }) => {
     const type = /\.jpe?g$/i.test(name) ? "image/jpeg" : /\.webp$/i.test(name) ? "image/webp" : "image/png";
     openInto(new File([data], name, { type }));
 });
+// ---- .scumble documents (docs/PLAN_DOCUMENTS.md): save, save as, open ------------------------------------------
+
+/** An error of a main-process call without Electron's "Error invoking remote method ..." prefix. */
+const ipcMessage = (err) => String((err && err.message) || err).replace(/^Error invoking remote method '[^']*':\s*(Error:\s*)?/, "");
+
+/** Save the active (or given) document; a failure goes to its status line and leaves the tab as it was. */
+async function saveDocumentFromUi(ed, opts = {}) {
+    if (!ed) return null;
+    if (!ed.base) { ed.setStatus("Nothing to save yet: load or create a picture first."); return null; }
+    try {
+        const r = await host.saveDocument(ed, opts);
+        renderTabs();
+        return r;
+    } catch (err) {
+        ed.setStatus("Not saved: " + ipcMessage(err));
+        return null;
+    }
+}
+
+async function openDocumentFromUi(file) {
+    try {
+        const r = await host.openDocument(file);
+        renderTabs();
+        return r;
+    } catch (err) {
+        const name = String(file).split(/[\\/]/).pop();
+        if (host.editor) host.editor.setStatus(`Could not open ${name}: ${ipcMessage(err)}`);
+        return null;
+    }
+}
+
+window.scumble.documents.onProgress((p) => host.documentProgress(p));
+window.scumble.documents.onOpenRequest(async (paths) => { for (const p of paths || []) await openDocumentFromUi(p); });
+
+// Ctrl+S saves the document, Ctrl+Shift+S is Save As, Ctrl+Shift+E exports the picture (the user, 2026-09-26, §9).
+// The editor binds Ctrl+S to the picture export and Ctrl+E (Shift ignored) to merge down, and the ComfyUI node keeps
+// that; in the app this capture listener runs first (it is registered before any editor opens) and keeps the keys
+// from it. preventDefault also keeps the menu's accelerators for the same keys from firing a second time.
+window.addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = String(e.key || "").toLowerCase();
+    if (k !== "s" && !(k === "e" && e.shiftKey)) return;
+    const t = e.target;
+    if (t && t.closest && t.closest("dialog[open]")) return;       // a dialog's own keys
+    const ed = host.editor;
+    if (ed && ed.askOpen) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (!ed || e.repeat) return;
+    if (k === "e") ed.exportImage();
+    else saveDocumentFromUi(ed, { as: e.shiftKey });
+}, true);
+
 window.scumble.onMenu((cmd) => {
     if (cmd === "save") host.editor && host.editor.exportImage();
+    else if (cmd === "save-document") saveDocumentFromUi(host.editor);
+    else if (cmd === "save-document-as") saveDocumentFromUi(host.editor, { as: true });
     else if (cmd === "settings") openSettings();
     else if (cmd === "console") openConsole();
     else if (cmd === "help") toggleHelp();
@@ -2055,6 +2112,8 @@ try {
 if (!host.editors().length) newDocument();
 activate(host.editor);
 if (startMode === "safe") host.editor.setStatus("The window crashed twice while it restored your documents: they are kept, Settings › Local files › Earlier states opens them.");
+// documents named at the start (a double click, a second start), after the session's tabs are back
+try { for (const p of await window.scumble.documents.takePending()) await openDocumentFromUi(p); } catch (err) { console.warn("documents to open", err); }
 await loadProviders();
 await loadRecipes();
 host.presets = settings.recipePresets || {};

@@ -972,6 +972,7 @@ const COMMANDS = {
 };
 
 function applyParams(ed, l, params) {
+    if (!FILTERS[l.filter]) throw new Error(`filter "${l.filter}" is not installed (its plugin is off or missing): its settings are kept as they are`);
     const spec = FILTERS[l.filter].params || [];
     for (const [k, v] of Object.entries(params)) {
         const p = spec.find((x) => x.key === k);

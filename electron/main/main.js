@@ -32,6 +32,8 @@ const { resolveTileMode, DEFAULT_ON: TILES_DEFAULT_ON } = require("./tilemode");
 const { restartPlan } = require("./restart");
 const autosave = require("./autosave");
 const { QuitGuard, CrashGuard, isCrash } = require("./quit");
+const { Documents, isDocumentPath } = require("./documents");
+const docfile = require("./docfile");
 const registration = require("./mcp/registration");
 
 // ---- command line -------------------------------------------------------------------------
@@ -94,6 +96,24 @@ const mirror = new FileMirror(comfy);
 // quit safety (electron/main/quit.js): a close waits for the window to save, a crashed window comes back
 const quitGuard = new QuitGuard();
 const crashGuard = new CrashGuard();
+// .scumble documents (electron/main/documents.js, docs/PLAN_DOCUMENTS.md): the writes and opens run here, streamed
+const documents = new Documents({
+    mirrorRoot: mirror.root(),
+    registry: path.join(app.getPath("userData"), "document-temps.json"),
+    send: (channel, payload) => send(channel, payload),
+    // a file the mirror lacks comes from ComfyUI's /view when it is connected (handleView keeps a copy)
+    fetchMissing: async (ref) => {
+        if (!mirror.serverUp() || mirror.localOnly) return false;
+        const r = await mirror.handleView(new URLSearchParams({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" }).toString());
+        return r.status === 200;
+    },
+    app: app.getVersion(),
+    // the gate's disk-full hook: SCUMBLE_DOC_FAULT=enospc@<bytes>, dev builds only
+    fault: () => {
+        const f = process.env.SCUMBLE_DOC_FAULT || "";
+        return !app.isPackaged && /^enospc@\d+$/.test(f) ? { enospcAt: +f.slice(7) } : null;
+    },
+});
 const flushWaits = new Map();   // id -> resolve, while the window saves (app:flush / app:flushed)
 let flushSeq = 0;
 let startMode = "normal";       // "safe": the window came back after a second crash and must not restore
@@ -275,7 +295,7 @@ function createWindow() {
         if (what === "ask") { askWhileSaving(); return; }
         const forAgents = agentsLeft;       // maybeQuit: the last agent left a headless instance
         mirror.localOnly = true;            // a close must not wait on a slow or remote ComfyUI (files.js)
-        quitGuard.run(() => flushWindow("quit")).then((r) => {
+        quitGuard.run(() => flushAll("quit")).then((r) => {
             if (!r.ok || r.ms > 5000) log.record({ level: r.ok ? "info" : "warn", source: "main", message: r.ok ? `saved before closing in ${(r.ms / 1000).toFixed(1)} s` : `closed without saving everything: ${r.timedOut ? "the window did not finish in time" : r.error || "the window did not answer"}` });
             // an agent that connected, or a window shown by a new start, while it saved: this instance is in use again
             if (forAgents && (agentMode || local.clients.size || windowVisible())) { agentsLeft = false; mirror.localOnly = false; quitGuard.reset(); return; }
@@ -290,6 +310,7 @@ function createWindow() {
     // a window whose renderer ended (a crash, out of memory) comes back and restores the autosave (quit.js CrashGuard)
     win.webContents.on("render-process-gone", (_e, d) => {
         for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window's renderer ended" });
+        documents.abortAll();   // its saves: the temporary files go, the targets stay; the reload restores the session
         if (quitGuard.done || quitGuard.flushing || !isCrash(d) || win.isDestroyed()) return;   // not while it closes
         const plan = crashGuard.record();
         const what = plan === "reload" ? "reloaded; the documents come back from the autosave"
@@ -335,12 +356,22 @@ function flushWindow(reason) {
     }).finally(() => flushWaits.delete(id));
 }
 
+/**
+ * flushWindow, then the .scumble saves in flight (documents.js): a save the window started, or whose request arrived
+ * during the flush, finishes before the close, the update install or the reload goes on.
+ */
+async function flushAll(reason) {
+    const r = await flushWindow(reason);
+    await documents.idle();
+    return r;
+}
+
 /** View › Reload: the window saves first (a reload drops what is not uploaded, like a close), then reloads. */
 async function reloadWindow(ignoreCache) {
     if (!win || win.isDestroyed()) return;
     if (!quitGuard.flushing) {
         mirror.localOnly = true;        // like a close: not waiting on a slow ComfyUI (files.js)
-        try { await flushWindow("reload"); } finally { mirror.localOnly = false; }
+        try { await flushAll("reload"); } finally { mirror.localOnly = false; }
     }
     if (!win || win.isDestroyed()) return;
     if (ignoreCache) win.webContents.reloadIgnoringCache(); else win.webContents.reload();
@@ -358,6 +389,7 @@ function askWhileSaving() {
         askingToQuit = false;
         if (response !== 1 || quitGuard.done) return;
         log.record({ level: "warn", source: "main", message: "closed without waiting for the save: the user chose Quit now" });
+        documents.abortAll();   // a document save stops; its target stays as it was
         quitGuard.release();
         if (win && !win.isDestroyed()) win.close();
     }, () => { askingToQuit = false; });
@@ -499,8 +531,14 @@ function buildMenu() {
             label: "&File",
             submenu: [
                 { label: "New Tab", accelerator: "CmdOrCtrl+T", click: () => send("menu", "new-tab") },
-                { label: "Open Image...", accelerator: "CmdOrCtrl+O", click: () => openImage() },
-                { label: "Save Image...", accelerator: "CmdOrCtrl+S", click: () => send("menu", "save") },
+                { label: "Open...", accelerator: "CmdOrCtrl+O", click: () => openImage() },
+                { type: "separator" },
+                // docs/PLAN_DOCUMENTS.md §9: Ctrl+S saves the document, the picture export moved to Ctrl+Shift+E; the
+                // shell catches the keys before the editor (renderer/shell.js), so these fire from the menu only
+                { label: "Save", accelerator: "CmdOrCtrl+S", click: () => send("menu", "save-document") },
+                { label: "Save As...", accelerator: "CmdOrCtrl+Shift+S", click: () => send("menu", "save-document-as") },
+                { label: "Export Image...", accelerator: "CmdOrCtrl+Shift+E", click: () => send("menu", "save") },
+                { type: "separator" },
                 { label: "Close Tab", accelerator: "CmdOrCtrl+W", click: () => send("menu", "close-tab") },
                 { type: "separator" },
                 { label: "Import Workflow as Recipe...", click: () => send("menu", "import-recipe") },
@@ -578,13 +616,28 @@ function copyMcpRegistration(kind) {
 
 // ---- dialogs -------------------------------------------------------------------------
 
-const IMAGE_FILTERS = [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "svg", "psd", "ora"] }, { name: "Layered (PSD, ORA)", extensions: ["psd", "ora"] }, { name: "All files", extensions: ["*"] }];
+const IMAGE_FILTERS = [{ name: "Images and documents", extensions: ["scumble", "png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "svg", "psd", "ora"] }, { name: "Scumble documents", extensions: ["scumble"] }, { name: "Layered (PSD, ORA)", extensions: ["psd", "ora"] }, { name: "All files", extensions: ["*"] }];
+const DOCUMENT_FILTERS = [{ name: "Scumble document", extensions: ["scumble"] }];
+
+/** Is this file a .scumble document (by its name, or by its first bytes when it was renamed)? */
+async function isDocumentFile(file) {
+    if (isDocumentPath(file)) return true;
+    let fh = null;
+    try {
+        fh = await fsp.open(file, "r");
+        const head = Buffer.alloc(64);
+        const { bytesRead } = await fh.read(head, 0, 64, 0);
+        return docfile.isScumble(head.subarray(0, bytesRead));
+    } catch (_) { return false; } finally { if (fh) await fh.close().catch(() => {}); }
+}
 
 async function openImage() {
     needWindow("Open image");
-    const r = await dialog.showOpenDialog(win, { title: "Open image", properties: ["openFile"], filters: IMAGE_FILTERS });
+    const r = await dialog.showOpenDialog(win, { title: "Open", properties: ["openFile"], filters: IMAGE_FILTERS });
     if (r.canceled || !r.filePaths.length) return null;
     const file = r.filePaths[0];
+    // a document is not read here: the window opens it through documents:open, streamed into the mirror
+    if (await isDocumentFile(file)) { send("documents:openRequest", [file]); return { document: file }; }
     const data = await fsp.readFile(file);
     const payload = { name: path.basename(file), path: file, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
     send("file:opened", payload);
@@ -614,6 +667,22 @@ async function saveFile({ name, data, filters, path: target }) {
     }
     await fsp.writeFile(filePath, Buffer.from(data.buffer, data.byteOffset, data.byteLength));
     return { path: filePath, name: path.basename(filePath), bytes: data.byteLength };
+}
+
+/** Save As: where a document goes (null when cancelled); the folder is remembered apart from the picture exports. */
+async function chooseDocumentPath({ name } = {}) {
+    needWindow("Save As");
+    const stem = String(name || "Untitled").replace(/\.scumble$/i, "").replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").trim() || "Untitled";
+    const r = await dialog.showSaveDialog(win, {
+        title: "Save document",
+        defaultPath: path.join(settings.get().lastDocumentDir || app.getPath("documents"), stem + ".scumble"),
+        filters: DOCUMENT_FILTERS,
+    });
+    if (r.canceled || !r.filePath) return null;
+    let file = r.filePath;
+    if (!isDocumentPath(file)) file += ".scumble";
+    settings.set({ lastDocumentDir: path.dirname(file) });
+    return file;
 }
 
 // ---- recipes -------------------------------------------------------------------------
@@ -683,10 +752,19 @@ function installIpc() {
     // the files the earlier autosave generations name stay too (autosave.js): they are what those states open
     ipcMain.handle("files:prune", (_e, args) => {
         const a = args || {};
+        // a document being saved or opened reads and writes mirror files that no state names yet
+        if (documents.busy && !a.dryRun) throw new Error("A document is being saved or opened; clean up when that is done.");
         let kept = [];
         try { kept = autosave.referencedKeys(app.getPath("userData")); } catch (err) { console.warn("autosave: generations", err.message); }
-        return mirror.prune({ ...a, keep: [...(Array.isArray(a.keep) ? a.keep : []), ...kept] });
+        return mirror.prune({ ...a, keep: [...(Array.isArray(a.keep) ? a.keep : []), ...kept, ...documents.keepKeys()] });
     });
+    // .scumble documents (electron/main/documents.js)
+    ipcMain.handle("documents:choosePath", (_e, a) => chooseDocumentPath(a || {}));
+    ipcMain.handle("documents:write", (_e, req) => documents.write(req || {}));
+    ipcMain.handle("documents:open", (_e, req) => documents.open(req || {}));
+    ipcMain.handle("documents:cancel", (_e, reqId) => documents.cancel(reqId));
+    ipcMain.handle("documents:takePending", () => documents.takePending());
+    ipcMain.handle("documents:stat", async (_e, file) => { try { const st = await fsp.stat(String(file)); return { exists: st.isFile(), mtime: st.mtimeMs, size: st.size }; } catch (_) { return { exists: false }; } });
     ipcMain.handle("files:openFolder", async () => { const r = mirror.root(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(msix.forExplorer(r)); });
     ipcMain.handle("file:open", () => openImage());
     ipcMain.handle("file:save", (_e, args) => saveFile(args));
@@ -859,7 +937,7 @@ function installIpc() {
     ipcMain.handle("update:install", async () => {
         if (updater.status.state !== "downloaded") return false;
         mirror.localOnly = true;
-        const r = await quitGuard.run(() => flushWindow("update"));
+        const r = await quitGuard.run(() => flushAll("update"));
         if (!r.ok) log.record({ level: "warn", source: "main", message: `installing the update without saving everything: ${r.timedOut ? "the window did not finish in time" : r.error || "the window did not answer"}` });
         return installOrReset();
     });
@@ -883,6 +961,9 @@ function startApp() {
     // the last session's state becomes an earlier generation (autosave.js), also when an agent starts the app: what it
     // changes then never replaces the user's last state (the rotation moves only when the files differ)
     try { autosave.rotate(app.getPath("userData")); } catch (err) { console.warn("autosave: rotate", err.message); }
+    // the temporary files of a document save the last session did not finish (killed): the targets were never touched
+    try { const gone = documents.sweep(); if (gone.length) log.record({ source: "main", message: `removed ${gone.length} unfinished document save${gone.length === 1 ? "" : "s"} of the last session` }); } catch (err) { console.warn("documents: sweep", err.message); }
+    app.on("will-quit", () => { if (documents.busy) { documents.abortAll(); try { documents.sweep(); } catch (_) { /* the next start sweeps */ } } });
     installProtocol();
     installIpc();
     buildMenu();

@@ -42,6 +42,42 @@ const API_SIZES = [
 
 const listeners = new Map();
 
+// the top-level fields the editor's getValue() writes (renderer/editor/inpaint_canvas.js); anything else in an opened
+// document came from a newer Scumble and rides along in `extra` (docs/PLAN_DOCUMENTS.md §6)
+const STATE_KEYS = new Set(["width", "height", "base", "prompt", "layers", "history", "selection", "selectionBox", "selections", "guides", "seen", "crop", "upsample", "gen", "negative", "settings", "refs", "cutout"]);
+
+/** A 53-bit hash of a string (cyrb53): the saved state's key, to tell a changed document from a saved one. */
+function hashString(s) {
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i);
+        h1 = Math.imul(h1 ^ c, 2654435761);
+        h2 = Math.imul(h2 ^ c, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+function fmtMB(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(2) + " GB" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB"; }
+
+/** A path as documents are compared (main's pathKey): separators unified; Windows paths case-folded. */
+function normPath(p) {
+    const s = String(p || "").replace(/\//g, "\\");
+    return /^[a-z]:\\|^\\\\/i.test(s) ? s.toLowerCase() : String(p || "");
+}
+
+/** What a bundle entry keeps beside the state: the tab's file, its plugin data, the unknown fields of a newer document. */
+function docMeta(ed) {
+    const out = {};
+    if (ed.docFile && ed.docFile.path) out.file = { ...ed.docFile };
+    if (ed.pluginData && Object.keys(ed.pluginData).length) out.plugins = ed.pluginData;
+    if (ed.docExtra && Object.keys(ed.docExtra).length) out.extra = ed.docExtra;
+    return out;
+}
+
+const plainObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
+
 export const api = {
     clientId: null,
 
@@ -230,6 +266,7 @@ export const host = {
 
     addEditor(editor) {
         if (!this._editors.includes(editor)) this._editors.push(editor);
+        if (!plainObject(editor.pluginData)) editor.pluginData = {};   // per-document plugin data (renderer/plugins.js)
         // the app-only GPU path behind releaseCaches({ deep: true }); the node has none
         editor.releaseGpu = glReleasePool;
         const id = +editor.node.id;
@@ -721,6 +758,11 @@ export const host = {
                 let ed = this.editorById(doc.id);
                 if (!ed) ed = this.createDocument ? this.createDocument(+doc.id || this.nextId++) : this.editor;
                 if (!ed) continue;
+                // the tab's .scumble file, its plugin data and a newer document's unknown fields (bundle(), docMeta)
+                const f = plainObject(doc.file);
+                ed.docFile = f && typeof f.path === "string" ? { ...f } : null;
+                ed.pluginData = plainObject(doc.plugins) ? JSON.parse(JSON.stringify(doc.plugins)) : {};
+                ed.docExtra = plainObject(doc.extra) ? { ...doc.extra } : {};
                 try { await ed.setValue(doc.state); } catch (err) { console.warn("restore from the mirror failed", err); }
                 if (ed.base) { ed.setStatus("Last session restored."); any = true; }
                 else if (!this.connected) { this._pendingStates.push({ editor: ed, state: doc.state }); this._rawStates.set(ed, doc.state); ed.setStatus("This document will be restored once ComfyUI is connected (its files are not in the local store)."); }
@@ -1450,16 +1492,20 @@ export const host = {
         this.emit("changed", { editor });
     },
 
-    /** The autosave bundle: every open document's state, the active one, the id counter. */
+    /**
+     * The autosave bundle: every open document's state, the active one, the id counter. A document's entry also keeps
+     * its .scumble file (`file`), its per-document plugin data (`plugins`) and the fields of an opened newer document
+     * this app does not know (`extra`); an older app reads `id` and `state` only (docs/PLAN_DOCUMENTS.md §5.2).
+     */
     bundle() {
         const docs = [];
         for (const ed of this._editors) {
             let state = "{}";
             const raw = this._rawStates.get(ed);
             if (raw != null && ed.base) this._rawStates.delete(ed);        // it holds a picture of its own now
-            else if (raw != null) { docs.push({ id: ed.node.id, state: raw }); continue; }
+            else if (raw != null) { docs.push({ id: ed.node.id, state: raw, ...docMeta(ed) }); continue; }
             try { state = ed.getValue(); } catch (err) { console.warn("getValue", err); }
-            docs.push({ id: ed.node.id, state });
+            docs.push({ id: ed.node.id, state, ...docMeta(ed) });
         }
         return { version: 2, active: this.editor ? this.editor.node.id : null, nextId: this.nextId, docs };
     },
@@ -1483,8 +1529,147 @@ export const host = {
         for (const ed of this._editors) {
             try { walk(JSON.parse(ed.getValue())); } catch (_) { /* empty document */ }
             if (ed.base && ed.base.ref) walk(ed.base.ref);
+            walk(ed.pluginData);          // a 3D layer's model file (glb plugin), and whatever else a plugin keeps per document
         }
         return Array.from(keys);
+    },
+
+    // ---- .scumble documents (docs/PLAN_DOCUMENTS.md; the file is written and read in main, documents.js) -----------
+
+    _docSaves: new Set(),
+    _docSeq: 0,
+    _docJobs: new Map(),      // reqId -> { editor, name, kind } for the progress line
+
+    /** Resolves when no document save of this window is in flight (the close and the update wait for it). */
+    async docSavesIdle() {
+        while (this._docSaves.size) await Promise.allSettled(Array.from(this._docSaves));
+    },
+
+    /**
+     * Everything one document's file must hold, uploaded now: the edited layers and masks (up to three rounds, for a
+     * stroke that lands during one) and the selection's PNG (encoded in the background above 16 MP). The same steps
+     * as saveBeforeRestart (renderer/shell.js), for one editor, and an upload that fails throws: a file with the
+     * layer's old pixels under a new save would lose work without a word.
+     * @param {any} ed
+     * @param {(text: string) => void} [say]
+     * @param {string} [when]
+     */
+    async flushEditor(ed, say = (_text) => {}, when = "saving") {
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        for (const until = Date.now() + 60000; this._restoring && Date.now() < until;) await sleep(100);
+        for (const until = Date.now() + 10000; ed.pointer && Date.now() < until;) await sleep(50);   // a stroke still down
+        const edited = () => ed.base && ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx));
+        if (edited()) say(`Saving the edited layers before ${when}...`);
+        for (let round = 0; round < 3 && edited(); round++) await ed.syncLayers();
+        const pending = () => ed.base && ed.sel && (ed._selEncoding || !ed.selectionEncoded || !ed.selectionDataUrl);
+        for (const until = Date.now() + 60000; pending() && Date.now() < until;) {
+            if (!ed._selEncoding) {
+                try { ed.getValue(); } catch (_) { /* reported by the save */ }
+                if (pending() && !ed._selEncoding) break;      // an encode that cannot start (above the canvas limit)
+            }
+            say(`Saving the selection before ${when}...`);
+            await sleep(100);
+        }
+    },
+
+    /** The file's 256 px picture (PNG bytes), from the settled pyramid; null when it cannot be made. */
+    async documentThumbnail(ed) {
+        const W = ed.width, H = ed.height;
+        const small = await ed.sampleRegionSettled("image", [0, 0, W, H], Math.min(1, 256 / Math.max(W, H)), { forRun: true });
+        const blob = small.convertToBlob ? await small.convertToBlob({ type: "image/png" }) : await new Promise((r) => small.toBlob(r, "image/png"));
+        return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+    },
+
+    /** The name a document is saved and shown under: its file's stem, else the picture's file name. */
+    documentName(ed) {
+        if (ed && ed.docFile && ed.docFile.name) return String(ed.docFile.name).replace(/\.scumble$/i, "");
+        if (!ed || !ed.base || !ed.base.ref) return "Untitled";
+        return String(ed.base.ref.filename || "image").replace(/\.[a-z0-9]+$/i, "");
+    },
+
+    /**
+     * Save a document to a .scumble file. `as` asks for a path (Save As), `path` gives one (commands), `copy` writes
+     * the file without making it the tab's file, `history: false` leaves the result history out. Resolves with main's
+     * answer ({ path, bytes, entries, ms, notes }), or null when the Save As dialog was cancelled. Throws with the reason.
+     */
+    async saveDocument(ed, { as = false, copy = false, path = null, history = true } = {}) {
+        if (!ed || !ed.base) throw new Error("There is nothing to save yet: the document holds no picture.");
+        if (ed._docSaving) throw new Error(`${this.documentName(ed)} is already being saved.`);
+        let target = path || (!as && !copy && ed.docFile && ed.docFile.path) || null;
+        ed._docSaving = true;      // from here: a second Ctrl+S during the dialog is "already being saved"
+        const job = (async () => {
+            if (!target) {
+                target = await window.scumble.documents.choosePath({ name: this.documentName(ed) });
+                if (!target) return null;
+            }
+            const reqId = `save-${ed.node.id}-${++this._docSeq}`;
+            const name = String(target).split(/[\\/]/).pop();
+            this._docJobs.set(reqId, { editor: ed, name, kind: "save" });
+            try {
+                ed.setStatus(`Saving ${name}...`);
+                await this.flushEditor(ed, (t) => ed.setStatus(t), "saving the document");
+                const state = ed.getValue();       // a stroke after this is not in the file and leaves the tab changed
+                let thumbnail = null;
+                try { thumbnail = await this.documentThumbnail(ed); } catch (err) { console.warn("document thumbnail", err); }
+                const r = this.recipe;
+                const res = await window.scumble.documents.write({
+                    reqId, path: target, document: state, plugins: ed.pluginData || {}, extra: ed.docExtra || {}, thumbnail, history,
+                    summary: { name: this.documentName(ed), width: ed.width, height: ed.height, layers: ed.layers.length },
+                    recipe: r ? { id: r.id || null, provider: r.provider || null } : null,
+                });
+                if (!copy) {
+                    ed.docFile = { path: res.path, name: res.name, key: hashString(state), mtime: res.mtime, size: res.size };
+                    this.saveAll();                // the session keeps the tab's file
+                }
+                ed.setStatus(`${copy ? "Saved a copy as" : "Saved"} ${res.name} (${fmtMB(res.bytes)}, ${(res.ms / 1000).toFixed(1)} s).${res.notes && res.notes.length ? " " + res.notes.join("; ") + "." : ""}`);
+                return res;
+            } finally {
+                this._docJobs.delete(reqId);
+            }
+        })();
+        this._docSaves.add(job);
+        try { return await job; } finally { this._docSaves.delete(job); ed._docSaving = false; }
+    },
+
+    /**
+     * Open a .scumble file: the tab that holds it is activated, else it opens into the active tab when that is empty,
+     * or a new one. The files go into the mirror in main; the state is restored like the session's (restore()).
+     * Resolves with { editor, already, notes }. Throws with the reason (nothing is opened then).
+     */
+    async openDocument(file) {
+        const key = normPath(file);
+        const open = this._editors.find((ed) => ed.docFile && normPath(ed.docFile.path) === key);
+        if (open) { if (this.shell) this.shell.activate(open); return { editor: open, already: true, notes: [] }; }
+        const reqId = `open-${++this._docSeq}`;
+        const name = String(file).split(/[\\/]/).pop();
+        const cur = this.editor;
+        if (cur) cur.setStatus(`Opening ${name}...`);
+        this._docJobs.set(reqId, { editor: cur, name, kind: "open" });
+        let r;
+        try { r = await window.scumble.documents.open({ reqId, path: file }); } finally { this._docJobs.delete(reqId); }
+        const doc = r.document;
+        // top-level fields this app does not write travel in `extra` and go back into the next save (§6)
+        const extra = { ...(r.extra || {}) };
+        for (const k of Object.keys(doc)) if (!STATE_KEYS.has(k)) extra[k] = doc[k];
+        const reuse = cur && !cur.base && !cur._loading && !this._rawStates.has(cur) && !cur.docFile;
+        const id = reuse ? cur.node.id : this.nextId++;
+        const fileMeta = { path: r.path, name: r.name, key: null, mtime: r.mtime, size: r.size, ...(r.newer ? { newer: true } : {}) };
+        await this.restore(JSON.stringify({ version: 2, active: id, nextId: this.nextId, docs: [{ id, state: JSON.stringify(doc), file: fileMeta, plugins: r.plugins, extra }] }));
+        const ed = this.editorById(id);
+        if (!ed) throw new Error(`${name} could not be opened in a tab`);
+        if (this.shell) this.shell.activate(ed);      // the tab bar and window.editor follow (restore() activates in here only)
+        const notes = r.notes || [];
+        if (ed.base) ed.setStatus(`Opened ${r.name}.${notes.length ? " " + notes.join("; ") + "." : ""}`);
+        this.saveAll();
+        return { editor: ed, already: false, notes };
+    },
+
+    /** Main's progress of a save or an open, as the status line of the document it is for. */
+    documentProgress({ reqId, done, total }) {
+        const j = this._docJobs.get(reqId);
+        if (!j || !j.editor || !total) return;
+        const pct = Math.min(100, Math.floor((done / total) * 100));
+        j.editor.setStatus(`${j.kind === "save" ? "Saving" : "Opening"} ${j.name}: ${pct} %`);
     },
 
     // ---- in-app helpers: SAM2 objects and background removal through ONNX Runtime -----------

@@ -4143,7 +4143,7 @@ class InpaintEditor {
             if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
             if (l.kind === "filter") {
                 const def = FILTERS[l.filter];
-                let r = def ? def.reach : undefined;
+                let r = def ? def.reach : 0;      // a filter that is not installed hands the picture on (applyFilter)
                 if (typeof r === "function") { try { r = r(l.params || {}, { width: this.width, height: this.height }); } catch (_) { r = undefined; } }
                 // `loose` (E5, a document larger than any canvas: there is no whole flatten to fall back to): a filter
                 // that names no reach counts as pointwise, and the layers below are taken as a region pass draws them
@@ -9544,12 +9544,20 @@ class InpaintEditor {
         typeSel.className = "ipc-sel";
         typeSel.title = "Filter type";
         for (const id of FILTER_IDS) { const o = document.createElement("option"); o.value = id; o.textContent = FILTERS[id].label; typeSel.appendChild(o); }
-        typeSel.value = FILTERS[layer.filter] ? layer.filter : "grain";
+        // a filter whose plugin is off or missing keeps its id and settings and passes the picture through; picking a
+        // type replaces it
+        const missing = !FILTERS[layer.filter];
+        if (missing) { const o = document.createElement("option"); o.value = ""; o.textContent = `missing: ${layer.filter}`; o.disabled = true; typeSel.insertBefore(o, typeSel.firstChild); }
+        typeSel.value = missing ? "" : layer.filter;
         typeSel.addEventListener("click", stop);
         typeSel.addEventListener("keydown", stop);
         typeSel.addEventListener("change", () => this.setFilterType(layer, typeSel.value));
         box.appendChild(typeSel);
-        const def = FILTERS[layer.filter] || FILTERS.grain;
+        if (missing) {
+            box.appendChild(el("div", "ipc-hint", `The filter "${layer.filter}" is not installed (its plugin is off or missing). The layer passes the picture through and keeps its settings.`));
+            return box;
+        }
+        const def = FILTERS[layer.filter];
         if (def.needsLut) {
             const lr = el("div", "ipc-lutrow");
             const input = document.createElement("input");
@@ -11992,12 +12000,14 @@ class InpaintEditor {
                             try { plateImg = await loadImageEl(viewUrl(l.plate.ref)); } catch (err) { console.warn("Inpaint Canvas: grain plate missing", l.plate, err); }
                             if (stale()) return;
                         }
-                        const fid = FILTERS[l.filter] ? l.filter : "grain";
+                        // an id that is not installed here (a plugin switched off, a document from elsewhere) is kept with
+                        // its params: applyFilter passes the picture through, and the next save writes it back unchanged
+                        const fid = typeof l.filter === "string" && l.filter ? l.filter : "grain";
                         this.layers.push(installLayerAliases({
                             id: l.id, name: l.name, kind: "filter", role: "none", blend: l.blend || "normal", ref: null, px: pixels,
                             x: 0, y: 0, w: this.width, h: this.height, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked,
                             maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false,
-                            filter: fid, params: { ...filterDefaults(fid), ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,
+                            filter: fid, params: FILTERS[fid] ? { ...filterDefaults(fid), ...(l.params || {}) } : { ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,
                             plate: plateImg ? l.plate : null, _plateImg: plateImg,
                         }, this.pixels));
                         this.filterCounter += 1;
