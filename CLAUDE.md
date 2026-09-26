@@ -118,7 +118,11 @@ Done of the plan below: **1 skins** (`2471831`, the review's ask-card bypasses f
 (`7425173`), **3a quit safety** (`9d81033`, gate `quit`, `electron/main/quit.js` and `autosave.js`). **Next, the
 user's order: 3b to 3f** - the `.scumble` format first (the biggest: save / save as, dirty marker, close asks, recent
 files, file association), then the history panel, TIFF, PSD masks, the metadata switch; then packages 4 to 6. The
-design pass of package 3 of the morning died with the usage limit (every agent failed): 3b starts with a fresh one.
+design pass of package 3 of the morning died with the usage limit; **3b's design is `docs/PLAN_DOCUMENTS.md`** (read it
+first), with the user's answers of 2026-09-26 (§9: Ctrl+S saves the document, Ctrl+Shift+S Save As, Ctrl+Shift+E
+exports; the result history goes in the file with a switch in Save As; fonts the user added travel; no question on
+quit). **Step D1 is built** (`ec01d08`, `electron/main/docfile.js`, `tools/document_test.js`, local only); **next D2**
+(save and open in the app), then D3 to D5. The session stopped at 68 % of the 5-hour window before D2 on purpose.
 Still open for the user: Ctrl+S as "save the document" (plan, open questions), LaMa shipped or downloaded, releases
 per package or bundled (0.1.29 was one release for three packages).
 
