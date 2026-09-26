@@ -1,10 +1,11 @@
-// Settings and the autosaved editor state, both plain JSON files in the user data folder.
+// Settings and the autosaved editor state (autosave.js), both plain JSON files in the user data folder.
 // Secrets (API keys, remote auth) never go here: they belong to keys.js (safeStorage).
 "use strict";
 
 const fs = require("node:fs");
 const path = require("node:path");
 const { app } = require("electron");
+const autosave = require("./autosave");
 
 const DEFAULTS = {
     // auth: { type: "none" | "basic" | "bearer" | "header", user, header }; the secret is in keys.js
@@ -67,14 +68,13 @@ function set(patch) {
     return cache;
 }
 
-/** The editor's canvas_state JSON of the last session (a string, or null). */
-function loadState() {
-    const s = readJson("autosave.json", null);
-    return s && typeof s.state === "string" ? s.state : null;
+/** The editor's autosave bundle of the last session (a string, or null), or of an earlier generation (autosave.js). */
+function loadState(gen) {
+    return autosave.load(app.getPath("userData"), gen);
 }
 
 function saveState(state) {
-    writeJson("autosave.json", { state: String(state || ""), time: Date.now() });
+    autosave.save(app.getPath("userData"), state);
 }
 
 module.exports = { get, set, loadState, saveState, DEFAULTS };

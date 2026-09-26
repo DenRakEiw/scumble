@@ -184,6 +184,12 @@ export const host = {
     apiSize: "max",        // how big the crop goes to an API provider: max | x2 | x4 | target | crop
     connected: false,
     _pendingStates: [],
+    // quit safety (docs/PLAN_0_1_29.md §3): while documents are restored, an autosave would write only those restored so
+    // far (a later one not created yet, the one loading with part of its layers) over the whole state. Saves wait.
+    _restoring: 0,
+    // editor -> the state it waits to be restored from (a document whose files wait for ComfyUI): bundle() saves that
+    // instead of the empty editor, until the editor holds a picture of its own
+    _rawStates: new Map(),
     _saveTimer: null,
     _types: {},
 
@@ -682,9 +688,15 @@ export const host = {
         }
         const pending = this._pendingStates;
         this._pendingStates = [];
-        for (const { editor: ed, state } of pending) {
-            if (!this._editors.includes(ed)) continue;
-            try { await ed.setValue(state); if (ed.base) ed.setStatus("Last session restored."); } catch (err) { console.warn("restore failed", err); }
+        this._restoring++;
+        try {
+            for (const { editor: ed, state } of pending) {
+                if (!this._editors.includes(ed)) continue;
+                try { await ed.setValue(state); if (ed.base) ed.setStatus("Last session restored."); } catch (err) { console.warn("restore failed", err); }
+                if (ed.base) this._rawStates.delete(ed);
+            }
+        } finally {
+            this._restoring--;
         }
     },
 
@@ -702,14 +714,19 @@ export const host = {
         const docs = bundle && Array.isArray(bundle.docs) ? bundle.docs : [{ id: this.nextId, state: saved }];
         if (bundle && +bundle.nextId > this.nextId) this.nextId = +bundle.nextId;
         let any = false;
-        for (const doc of docs) {
-            if (!doc || typeof doc.state !== "string" || doc.state.length < 3) continue;
-            let ed = this.editorById(doc.id);
-            if (!ed) ed = this.createDocument ? this.createDocument(+doc.id || this.nextId++) : this.editor;
-            if (!ed) continue;
-            try { await ed.setValue(doc.state); } catch (err) { console.warn("restore from the mirror failed", err); }
-            if (ed.base) { ed.setStatus("Last session restored."); any = true; }
-            else if (!this.connected) { this._pendingStates.push({ editor: ed, state: doc.state }); ed.setStatus("This document will be restored once ComfyUI is connected (its files are not in the local store)."); }
+        this._restoring++;
+        try {
+            for (const doc of docs) {
+                if (!doc || typeof doc.state !== "string" || doc.state.length < 3) continue;
+                let ed = this.editorById(doc.id);
+                if (!ed) ed = this.createDocument ? this.createDocument(+doc.id || this.nextId++) : this.editor;
+                if (!ed) continue;
+                try { await ed.setValue(doc.state); } catch (err) { console.warn("restore from the mirror failed", err); }
+                if (ed.base) { ed.setStatus("Last session restored."); any = true; }
+                else if (!this.connected) { this._pendingStates.push({ editor: ed, state: doc.state }); this._rawStates.set(ed, doc.state); ed.setStatus("This document will be restored once ComfyUI is connected (its files are not in the local store)."); }
+            }
+        } finally {
+            this._restoring--;
         }
         const active = bundle && this.editorById(bundle.active);
         if (active) this.activate(active);
@@ -1438,6 +1455,9 @@ export const host = {
         const docs = [];
         for (const ed of this._editors) {
             let state = "{}";
+            const raw = this._rawStates.get(ed);
+            if (raw != null && ed.base) this._rawStates.delete(ed);        // it holds a picture of its own now
+            else if (raw != null) { docs.push({ id: ed.node.id, state: raw }); continue; }
             try { state = ed.getValue(); } catch (err) { console.warn("getValue", err); }
             docs.push({ id: ed.node.id, state });
         }
@@ -1446,6 +1466,7 @@ export const host = {
 
     saveAll() {
         clearTimeout(this._saveTimer);
+        if (this._restoring) { this._saveTimer = setTimeout(() => this.saveAll(), 1500); return; }   // see _restoring
         try { window.scumble.state.save(JSON.stringify(this.bundle())).catch(() => {}); } catch (err) { console.warn("autosave", err); }
         if (this.onDocsChanged) { try { this.onDocsChanged(); } catch (err) { console.warn(err); } }
     },

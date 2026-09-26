@@ -26,6 +26,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   rounded). A skin is a folder with a `plugin.json` and a `skin.css`, no code, so you can make your own
   (docs/SKINS.md). The assistant's questions, the picture's surround and the selection outline look the same in
   every skin.
+- **Closing no longer loses your last strokes.** Edited layers used to be saved 15 seconds after the last change,
+  and closing the window or installing an update did not wait for that: the last strokes, or a layer made in those
+  seconds, could be gone at the next start. Now closing waits until everything is saved (about a second, a few on a
+  very large picture; closing again while it saves asks whether to wait), an update's installer starts only after
+  it, and View › Reload saves first too. If Scumble's window crashes, it comes back by itself with your documents.
+  If it crashes again right away, it starts empty and keeps them aside. **Settings › Local files › Earlier states**
+  opens the documents of the last two sessions, or those kept aside, as new tabs.
 
 ## 0.1.28 — 2026-09-23
 

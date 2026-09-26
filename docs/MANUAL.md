@@ -243,6 +243,8 @@ The AI label panel writes the EU AI Act's disclosure into the file's metadata, f
 
 Every document is a tab, and tabs come back. The session is autosaved and restored at the next start, with no server needed for it, because every image the editor sends or receives is kept locally under %APPDATA%/Scumble/files/ in folders that mirror ComfyUI's own input and output. That is also why a restarted or freshly rented ComfyUI just works: before a run the app uploads what the server does not have.
 
+Closing Scumble waits until your last changes are saved; on a very large picture that can take a few seconds, and closing again meanwhile asks whether to wait. If the window crashes, it comes back with your documents. Settings › Local files › Earlier states opens the documents of the last two sessions as new tabs, for the day a start did not bring back what you expected.
+
 ### Notes
 
 - Large PNGs beyond the browser's canvas limit — up to 65,535 px a side — are opened and written in strips, so they do not need to fit into one canvas.
@@ -445,6 +447,7 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | Ctrl+Shift+A | The assistant |
 | Ctrl+Shift+L | The console and the log |
 | F11 | Full screen |
+| Ctrl+R | Reload the window: it saves your last changes first, and the documents come back |
 
 ### Notes
 

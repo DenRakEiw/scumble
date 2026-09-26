@@ -63,7 +63,7 @@ if curl -s -m 2 http://127.0.0.1:$PORT/json/version > /dev/null; then
 fi
 
 needs_app=0
-for g in "$@"; do case "$g" in node|nodecopy|lint|types) ;; *) needs_app=1 ;; esac; done
+for g in "$@"; do case "$g" in node|nodecopy|lint|types|quit|quit:*) ;; *) needs_app=1 ;; esac; done
 TILEARG=""
 case "$TILES" in
   on) export SCUMBLE_TILES=1; TILEARG="--tiles" ;;
@@ -103,6 +103,10 @@ for g in "$@"; do
     types) timeout 600 npx tsc --noEmit -p tsconfig.check.json > "$OUT/types.log" 2>&1; rc=$? ;;
     pxjobs) timeout 1200 python tools/px_jobs.py --check > "$OUT/pxjobs.log" 2>&1; rc=$? ;;
     huge:*) timeout 3000 python tools/huge_test.py ${g#huge:} > "$OUT/huge.log" 2>&1; rc=$? ;;
+    # quit safety: it starts and ends its own instances (port +17, a profile under $OUT/quit), so no app of the runner's;
+    # quit:15000x10000 is the 15k measurement of the close alone
+    quit) timeout 900 python tools/quit_test.py ${EXE:+--exe "$EXE"} --out "$OUT/quit" > "$OUT/quit.log" 2>&1; rc=$? ;;
+    quit:*) timeout 1800 python tools/quit_test.py ${EXE:+--exe "$EXE"} --size ${g#quit:} --only close --out "$OUT/quit" > "$OUT/quit.log" 2>&1; rc=$? ;;
     exportperf:*) timeout 1800 python tools/export_test.py --perf $(echo "${g#exportperf:}" | tr ',' ' ') > "$OUT/exportperf.log" 2>&1; rc=$? ;;
     # mem:15000x10000,--rounds,4 (commas for spaces); four rounds at 15k take longer than the other gates' 420 s
     mem:*) timeout 2400 python tools/mem_test.py $(echo "${g#mem:}" | tr ',' ' ') > "$OUT/mem.log" 2>&1; rc=$? ;;

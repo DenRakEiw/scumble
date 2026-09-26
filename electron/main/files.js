@@ -58,6 +58,13 @@ class FileMirror {
         return this.known.get(u);
     }
 
+    /**
+     * While the app saves to quit (electron/main/quit.js), uploads land in the mirror only: a close must not wait on a
+     * slow or remote ComfyUI, and ensureOnServer uploads what a run needs anyway.
+     */
+    get localOnly() { return !!this._localOnly; }
+    set localOnly(on) { this._localOnly = !!on; }
+
     serverUp() {
         const s = this.comfy.status || {};
         return !!this.comfy.url && (s.state === "connected" || s.state === "missing-node");
@@ -80,7 +87,7 @@ class FileMirror {
         if (!overwrite) { filename = await freeName(dir, filename); target = path.join(dir, filename); }
         const buf = Buffer.from(await file.arrayBuffer());
         if (overwrite || !fs.existsSync(target)) await fsp.writeFile(target, buf);
-        if (this.serverUp()) {
+        if (this.serverUp() && !this.localOnly) {
             try {
                 await this.pushToServer(type, subfolder, filename, buf, file.type || mimeOf(filename));
             } catch (err) {
@@ -112,7 +119,7 @@ class FileMirror {
         const buf = Buffer.from(await request.arrayBuffer());
         if (!buf.length) return Response.json({ error: "empty body" }, { status: 400 });
         if (overwrite || !fs.existsSync(target)) await fsp.writeFile(target, buf);
-        if (this.serverUp()) {
+        if (this.serverUp() && !this.localOnly) {
             try {
                 await this.pushToServer(type, subfolder, filename, buf, mimeOf(filename));
             } catch (err) {

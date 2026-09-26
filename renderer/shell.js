@@ -80,7 +80,7 @@ const ui = {
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
     skins: $("set-skins"), skinsReload: $("set-skins-reload"), skinsFolder: $("set-skins-folder"), skinsNote: $("set-skins-note"),
-    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
+    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGens: $("set-gens"), setGensOpen: $("set-gens-open"), setGensNote: $("set-gens-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
     setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateHelp: $("set-update-help"), updateNotes: $("set-update-notes"),
@@ -1652,6 +1652,53 @@ async function refreshFileStats() {
     } catch (err) { ui.setFiles.textContent = String(err.message || err); }
 }
 
+// ---- earlier states (electron/main/autosave.js) ------------------------------------------
+
+async function renderGenerations() {
+    ui.setGensNote.textContent = "";
+    let list = [];
+    try { list = await window.scumble.state.generations(); } catch (err) { ui.setGensNote.textContent = String(err.message || err); }
+    ui.setGens.replaceChildren();
+    for (const g of list) {
+        const o = document.createElement("option");
+        o.value = g.id;
+        o.textContent = `${g.label}: ${g.docs} document${g.docs === 1 ? "" : "s"}, ${new Date(g.time).toLocaleString()}`;
+        ui.setGens.appendChild(o);
+    }
+    ui.setGens.disabled = ui.setGensOpen.disabled = !list.length;
+    if (!list.length) {
+        const o = document.createElement("option");
+        o.textContent = "none yet";
+        ui.setGens.appendChild(o);
+    }
+}
+
+/** Open the documents of an earlier state as new tabs, beside the ones that are open. */
+async function openGeneration(id) {
+    const saved = await window.scumble.state.loadGeneration(id);
+    let bundle = null;
+    try { bundle = JSON.parse(saved); } catch (_) { bundle = null; }
+    const docs = bundle && Array.isArray(bundle.docs) ? bundle.docs.filter((d) => d && typeof d.state === "string" && d.state.length > 2) : [];
+    if (!docs.length) return 0;
+    // new ids, so no open tab is overwritten (host.restore puts a state into the tab with its id)
+    const fresh = docs.map((d) => ({ id: host.nextId++, state: d.state }));
+    const before = host.editors().length;
+    await host.restore(JSON.stringify({ version: 2, active: fresh[fresh.length - 1].id, nextId: host.nextId, docs: fresh }));
+    return host.editors().length - before;
+}
+
+ui.setGensOpen.addEventListener("click", async () => {
+    ui.setGensOpen.disabled = true;
+    try {
+        const n = await openGeneration(ui.setGens.value);
+        ui.setGensNote.textContent = n ? `${n} document${n === 1 ? "" : "s"} opened as tabs.` : "That state holds no document.";
+    } catch (err) {
+        ui.setGensNote.textContent = String(err.message || err);
+    } finally {
+        ui.setGensOpen.disabled = false;
+    }
+});
+
 async function openSettings() {
     settings = await window.scumble.settings.get();
     ui.setUrl.value = (settings.comfy && settings.comfy.url) || ui.url.value;
@@ -1691,6 +1738,7 @@ async function openSettings() {
     ui.updateAuto.checked = !(settings.updates && settings.updates.check === false);
     try { renderUpdate(await window.scumble.updates.status()); } catch (_) { /* ignore */ }
     refreshFileStats();
+    renderGenerations();
     await loadProviders();
     await renderProviders();
     await renderCompat();
@@ -1865,6 +1913,13 @@ ui.setTilesRestart.addEventListener("click", async () => {
     }
 });
 
+// main asks for the same before the window closes or an update's installer starts (electron/main/quit.js)
+window.scumble.state.onFlush(async (reason) => {
+    const when = reason === "update" ? "the update" : "closing";
+    const say = (text) => { try { if (host.editor) host.editor.setStatus(text); } catch (_) { /* no editor */ } };
+    await saveBeforeRestart(say, when);
+});
+
 /**
  * Everything a restart must not lose, saved now. The autosave bundle holds each layer's uploaded file,
  * and a layer is uploaded only 15 s after its last change (scheduleAutosave): saving the bundle alone
@@ -1873,10 +1928,22 @@ ui.setTilesRestart.addEventListener("click", async () => {
  * the spot gets its selection PNG in the background (encodeSelectionSoon), so that is waited for too
  * (at most a minute), or the saved selection would be the one before. `say` gets a status line.
  */
-async function saveBeforeRestart(say = () => {}) {
+async function saveBeforeRestart(say = () => {}, when = "the restart") {
+    // a restore in progress (Earlier states, a document that waited for ComfyUI) has only part of its documents in
+    // the editors: the bundle waits for it (host.js _restoring)
+    for (const until = Date.now() + 60000; host._restoring && Date.now() < until;) await new Promise((r) => setTimeout(r, 100));
     const eds = host.editors();
-    if (eds.some((ed) => ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx)))) say("Saving the edited layers before the restart...");
-    for (const ed of eds) if (ed.base && typeof ed.syncLayers === "function") await ed.syncLayers();
+    const edited = (ed) => ed.base && ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx));
+    if (eds.some(edited)) say(`Saving the edited layers before ${when}...`);
+    // each document's layers, then the bundle, so a save cut short still keeps the documents done so far; again for
+    // what changed while a pass ran (a stroke during the save), three passes at most
+    for (let round = 0; round < 3 && eds.some(edited); round++) {
+        for (const ed of eds) {
+            if (!edited(ed) || typeof ed.syncLayers !== "function") continue;
+            try { await ed.syncLayers(); } catch (err) { console.warn("saving a document's layers", err); }
+            await window.scumble.state.save(JSON.stringify(host.bundle()));
+        }
+    }
     const selectionPending = (ed) => ed.base && ed.sel && (ed._selEncoding || !ed.selectionEncoded || !ed.selectionDataUrl);
     const failed = new Set();   // an encode that could not start (toCanvas throws above the canvas limit)
     const until = Date.now() + 60000;
@@ -1887,7 +1954,7 @@ async function saveBeforeRestart(say = () => {}) {
             if (selectionPending(ed) && !ed._selEncoding) failed.add(ed);
         }
         if (!eds.some((ed) => selectionPending(ed) && !failed.has(ed)) || Date.now() > until) break;
-        say("Saving the selection before the restart...");
+        say(`Saving the selection before ${when}...`);
         await new Promise((r) => setTimeout(r, 100));
     }
     await window.scumble.state.save(JSON.stringify(host.bundle()));
@@ -1974,8 +2041,12 @@ try {
 } catch (err) {
     console.warn("plugins", err);
 }
+// "safe": the window came back after a second crash in a row (electron/main/quit.js): the state it was restoring is
+// set aside as an earlier state, and this start does not try it a third time
+let startMode = "normal";
+try { startMode = await window.scumble.state.startMode(); } catch (_) { /* an older main */ }
 try {
-    const saved = await window.scumble.state.load();
+    const saved = startMode === "safe" ? null : await window.scumble.state.load();
     await host.loadBrushTips();
     if (saved) await host.restore(saved);
 } catch (err) {
@@ -1983,6 +2054,7 @@ try {
 }
 if (!host.editors().length) newDocument();
 activate(host.editor);
+if (startMode === "safe") host.editor.setStatus("The window crashed twice while it restored your documents: they are kept, Settings › Local files › Earlier states opens them.");
 await loadProviders();
 await loadRecipes();
 host.presets = settings.recipePresets || {};

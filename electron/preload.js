@@ -45,6 +45,18 @@ contextBridge.exposeInMainWorld("scumble", {
     state: {
         load: () => ipcRenderer.invoke("state:load"),
         save: (state) => ipcRenderer.invoke("state:save", state),
+        // earlier states (electron/main/autosave.js): [{ id, label, time, docs, pictures, bytes }] and one of them
+        generations: () => ipcRenderer.invoke("state:generations"),
+        loadGeneration: (id) => ipcRenderer.invoke("state:load", id),
+        // quit safety (electron/main/quit.js): main asks the window to save before it closes or installs an update;
+        // `cb(reason)` returns a promise, and main hears when it settled
+        onFlush: (cb) => on("app:flush", async ({ id, reason }) => {
+            let r = { ok: true };
+            try { await cb(reason); } catch (err) { r = { ok: false, error: String((err && err.message) || err) }; }
+            ipcRenderer.send("app:flushed", { id, ...r });
+        }),
+        // "safe": the window came back after a second crash and must not restore (main set the state aside)
+        startMode: () => ipcRenderer.invoke("state:startMode"),
     },
     comfy: {
         connect: (conn) => ipcRenderer.invoke("comfy:connect", conn),

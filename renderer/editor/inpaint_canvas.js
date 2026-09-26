@@ -10934,17 +10934,39 @@ class InpaintEditor {
      * Upload every edited layer so its pixels survive a reload. Only dirty pixels are
      * materialised (autosave calls this for every tab); the file name is the PNG's hash.
      */
-    async syncLayers() {
+    /**
+     * Upload every edited layer and mask. One pass at a time per document (the 15 s autosave and a save before closing
+     * can ask at once: the second waits for the first, so it never finds a layer "clean" whose upload is still running).
+     * A layer counts as clean from the start of its upload, so a change during the upload marks it again for the next
+     * pass; a failed upload marks it again too.
+     */
+    syncLayers() {
+        const pass = (this._syncing || Promise.resolve()).catch(() => {}).then(() => this.syncLayersOnce());
+        this._syncing = pass;
+        return pass;
+    }
+
+    async syncLayersOnce() {
         for (const layer of this.layers) {
             if (layer.dirty && layer.px) {
-                const { ref } = await uploadPixels(layer.px, `n${this.node.id}_layer`);
-                layer.ref = ref;
                 layer.dirty = false;
+                try {
+                    const { ref } = await uploadPixels(layer.px, `n${this.node.id}_layer`);
+                    layer.ref = ref;
+                } catch (err) {
+                    layer.dirty = true;
+                    throw err;
+                }
             }
             if (layer.maskDirty && layer.maskPx) {
-                const { ref } = await uploadPixels(layer.maskPx, `n${this.node.id}_lmask`);
-                layer.maskRef = ref;
                 layer.maskDirty = false;
+                try {
+                    const { ref } = await uploadPixels(layer.maskPx, `n${this.node.id}_lmask`);
+                    layer.maskRef = ref;
+                } catch (err) {
+                    layer.maskDirty = true;
+                    throw err;
+                }
             }
         }
         this.notifyChanged();

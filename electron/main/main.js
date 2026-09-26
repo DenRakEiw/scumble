@@ -30,6 +30,8 @@ const { LocalServer, LocalClient } = require("./local");
 const { Updater } = require("./updater");
 const { resolveTileMode, DEFAULT_ON: TILES_DEFAULT_ON } = require("./tilemode");
 const { restartPlan } = require("./restart");
+const autosave = require("./autosave");
+const { QuitGuard, CrashGuard, isCrash } = require("./quit");
 const registration = require("./mcp/registration");
 
 // ---- command line -------------------------------------------------------------------------
@@ -89,6 +91,15 @@ const comfy = new ComfyClient({
 // Every upload and view goes through the local file mirror: the document lives on
 // this machine, the server only gets copies (electron/main/files.js).
 const mirror = new FileMirror(comfy);
+// quit safety (electron/main/quit.js): a close waits for the window to save, a crashed window comes back
+const quitGuard = new QuitGuard();
+const crashGuard = new CrashGuard();
+const flushWaits = new Map();   // id -> resolve, while the window saves (app:flush / app:flushed)
+let flushSeq = 0;
+let startMode = "normal";       // "safe": the window came back after a second crash and must not restore
+let askingToQuit = false;
+let agentsLeft = false;         // the quit under way is maybeQuit's (the last agent left): it re-checks after the save
+let quitting = false;           // before-quit fired
 
 protocol.registerSchemesAsPrivileged([
     { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } },
@@ -256,7 +267,48 @@ function createWindow() {
         settings.set({ window: { ...b, maximized: win.isMaximized() } });
         // while an agent drives the app, closing the window only hides it; the app ends
         // with the MCP session (or stays when a script still talks to the socket)
-        if (agentMode) { e.preventDefault(); win.hide(); headless = true; }
+        if (agentMode) { e.preventDefault(); win.hide(); headless = true; return; }
+        // the window saves its last changes first (quit.js): the edited layers, the selection, the autosave
+        const what = quitGuard.onClose();
+        if (what === "allow") return;
+        e.preventDefault();
+        if (what === "ask") { askWhileSaving(); return; }
+        const forAgents = agentsLeft;       // maybeQuit: the last agent left a headless instance
+        mirror.localOnly = true;            // a close must not wait on a slow or remote ComfyUI (files.js)
+        quitGuard.run(() => flushWindow("quit")).then((r) => {
+            if (!r.ok || r.ms > 5000) log.record({ level: r.ok ? "info" : "warn", source: "main", message: r.ok ? `saved before closing in ${(r.ms / 1000).toFixed(1)} s` : `closed without saving everything: ${r.timedOut ? "the window did not finish in time" : r.error || "the window did not answer"}` });
+            // an agent that connected, or a window shown by a new start, while it saved: this instance is in use again
+            if (forAgents && (agentMode || local.clients.size || windowVisible())) { agentsLeft = false; mirror.localOnly = false; quitGuard.reset(); return; }
+            if (win && !win.isDestroyed()) win.close();
+        });
+    });
+    // a page that goes away (a reload) answers no save any more
+    win.webContents.on("did-start-navigation", (details) => {
+        if (!details || details.isSameDocument || !details.isMainFrame) return;
+        for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window reloaded" });
+    });
+    // a window whose renderer ended (a crash, out of memory) comes back and restores the autosave (quit.js CrashGuard)
+    win.webContents.on("render-process-gone", (_e, d) => {
+        for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window's renderer ended" });
+        if (quitGuard.done || quitGuard.flushing || !isCrash(d) || win.isDestroyed()) return;   // not while it closes
+        const plan = crashGuard.record();
+        const what = plan === "reload" ? "reloaded; the documents come back from the autosave"
+            : plan === "safe" ? "it ended again right after a reload: started without the documents, which are kept under Settings › Local files › Earlier states"
+            : "it keeps ending: Scumble closes";
+        log.record({ level: "error", source: "main", message: `the window's renderer ended (${d.reason}, exit code ${d.exitCode}): ${what}` });
+        if (plan === "reload" || plan === "safe") {
+            if (plan === "safe") { try { autosave.setAside(app.getPath("userData")); } catch (err) { console.warn("autosave: set aside", err.message); } }
+            startMode = plan === "safe" ? "safe" : "normal";
+            win.loadURL(ORIGIN + "/index.html");
+            return;
+        }
+        const done = () => { quitGuard.release(); if (win && !win.isDestroyed()) win.destroy(); app.quit(); };
+        if (!windowVisible()) { done(); return; }
+        dialog.showMessageBox(win, {
+            type: "error", buttons: ["Close Scumble"], defaultId: 0, noLink: true,
+            message: "Scumble's window keeps crashing.",
+            detail: "It ended three times in two minutes. Your documents of before the crashes are kept: Settings › Local files › Earlier states opens them at the next start.",
+        }).then(done, done);
     });
     win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
     // an unhandled file drop (the shell bar, the tabs, a panel) would navigate the window to the file:
@@ -270,6 +322,47 @@ function createWindow() {
 }
 
 /** Show the (headless or hidden) window: a second start of Scumble, or macOS activate. */
+/**
+ * Ask the window to save what a close would lose (renderer/shell.js saveBeforeRestart); resolves with its answer
+ * ({ ok, error }), or { ok: true, skipped: true } when there is no window that could (none, crashed, still starting).
+ */
+function flushWindow(reason) {
+    if (!win || win.isDestroyed() || win.webContents.isCrashed() || !bridge.ready) return Promise.resolve({ ok: true, skipped: true });
+    const id = ++flushSeq;
+    return new Promise((resolve) => {
+        flushWaits.set(id, resolve);
+        win.webContents.send("app:flush", { id, reason });
+    }).finally(() => flushWaits.delete(id));
+}
+
+/** View › Reload: the window saves first (a reload drops what is not uploaded, like a close), then reloads. */
+async function reloadWindow(ignoreCache) {
+    if (!win || win.isDestroyed()) return;
+    if (!quitGuard.flushing) {
+        mirror.localOnly = true;        // like a close: not waiting on a slow ComfyUI (files.js)
+        try { await flushWindow("reload"); } finally { mirror.localOnly = false; }
+    }
+    if (!win || win.isDestroyed()) return;
+    if (ignoreCache) win.webContents.reloadIgnoringCache(); else win.webContents.reload();
+}
+
+/** A second close while the window saves: wait, or quit now and lose the last seconds. */
+function askWhileSaving() {
+    if (askingToQuit || !windowVisible()) return;
+    askingToQuit = true;
+    dialog.showMessageBox(win, {
+        type: "question", buttons: ["Keep waiting", "Quit now"], defaultId: 0, cancelId: 0, noLink: true,
+        message: "Scumble is still saving your last changes.",
+        detail: "Quit now loses what changed in the last seconds.",
+    }).then(({ response }) => {
+        askingToQuit = false;
+        if (response !== 1 || quitGuard.done) return;
+        log.record({ level: "warn", source: "main", message: "closed without waiting for the save: the user chose Quit now" });
+        quitGuard.release();
+        if (win && !win.isDestroyed()) win.close();
+    }, () => { askingToQuit = false; });
+}
+
 function showWindow() {
     headless = false;
     if (!win || win.isDestroyed()) { createWindow(); return; }
@@ -292,7 +385,8 @@ function needWindow(what) {
 }
 
 function send(channel, payload) {
-    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+    // a crashed or reloading window has no frame to send to, and Electron logs the failed send as an error
+    if (win && !win.isDestroyed() && !win.webContents.isCrashed()) win.webContents.send(channel, payload);
 }
 
 /** Title suffix and a status line while agents (MCP, --cmd, scripts) are connected. */
@@ -422,7 +516,9 @@ function buildMenu() {
         {
             label: "&View",
             submenu: [
-                { role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" },
+                { label: "Reload", accelerator: "CmdOrCtrl+R", click: () => reloadWindow(false) },
+                { label: "Force Reload", click: () => reloadWindow(true) },   // Ctrl+Shift+R is the editor's rulers
+                { role: "toggleDevTools" },
                 { type: "separator" },
                 { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" },
                 { type: "separator" },
@@ -572,7 +668,10 @@ async function probeComfy(conn) {
 function installIpc() {
     ipcMain.handle("settings:get", () => settings.get());
     ipcMain.handle("settings:set", (_e, patch) => settings.set(patch));
-    ipcMain.handle("state:load", () => settings.loadState());
+    ipcMain.handle("state:load", (_e, gen) => settings.loadState(gen));
+    ipcMain.handle("state:generations", () => autosave.generations(app.getPath("userData")));
+    ipcMain.handle("state:startMode", () => { const m = startMode; startMode = "normal"; return m; });
+    ipcMain.on("app:flushed", (_e, r) => { const resolve = r && flushWaits.get(r.id); if (resolve) resolve(r); });
     ipcMain.handle("state:save", (_e, state) => { settings.saveState(state); return true; });
     ipcMain.handle("comfy:connect", (_e, conn) => connectComfy(conn));
     ipcMain.handle("comfy:probe", (_e, conn) => probeComfy(conn));
@@ -581,7 +680,13 @@ function installIpc() {
     ipcMain.handle("comfy:clientId", () => comfy.clientId);
     ipcMain.handle("comfy:ensure", (_e, refs) => mirror.ensureOnServer(refs));
     ipcMain.handle("files:stats", () => mirror.stats());
-    ipcMain.handle("files:prune", (_e, args) => mirror.prune(args || {}));
+    // the files the earlier autosave generations name stay too (autosave.js): they are what those states open
+    ipcMain.handle("files:prune", (_e, args) => {
+        const a = args || {};
+        let kept = [];
+        try { kept = autosave.referencedKeys(app.getPath("userData")); } catch (err) { console.warn("autosave: generations", err.message); }
+        return mirror.prune({ ...a, keep: [...(Array.isArray(a.keep) ? a.keep : []), ...kept] });
+    });
     ipcMain.handle("files:openFolder", async () => { const r = mirror.root(); await fsp.mkdir(r, { recursive: true }); return shell.openPath(msix.forExplorer(r)); });
     ipcMain.handle("file:open", () => openImage());
     ipcMain.handle("file:save", (_e, args) => saveFile(args));
@@ -608,7 +713,13 @@ function installIpc() {
     ipcMain.handle("log:clear", () => { log.clear(); return true; });
     ipcMain.handle("log:open", async () => { const f = log.file(); if (!f) return null; await require("node:fs/promises").mkdir(require("node:path").dirname(f), { recursive: true }); return shell.openPath(msix.forExplorer(require("node:path").dirname(f))); });
     ipcMain.handle("log:file", () => log.file());
-    log.onEntry((e) => send("log:entry", e));
+    // not re-entered: a send that fails logs an error (Electron's own console.error), which would be sent again
+    let forwarding = false;
+    log.onEntry((e) => {
+        if (forwarding) return;
+        forwarding = true;
+        try { send("log:entry", e); } finally { forwarding = false; }
+    });
     ipcMain.handle("brushes:list", () => brushes.list());
     ipcMain.handle("brushes:save", (_e, tips) => brushes.save(tips));
     ipcMain.handle("brushes:open", () => brushes.openFolder());
@@ -735,7 +846,8 @@ function installIpc() {
         if (agentMode || local.clients.size) throw new Error("An agent is connected to Scumble; restart it after the agent is done.");
         if (assistant && assistant.busy()) throw new Error("The assistant is working; stop it first.");
         const plan = restartPlan({ argv: process.argv.slice(1), updateState: updater.status.state });
-        if (plan.install && updater.install()) return { installing: updater.status.version };
+        quitGuard.release();   // the window saved before it asked (renderer/shell.js saveBeforeRestart)
+        if (plan.install && installOrReset()) return { installing: updater.status.version };
         app.relaunch({ args: restartPlan({ argv: process.argv.slice(1) }).args });
         setImmediate(() => app.quit());
         return { relaunching: true };
@@ -743,13 +855,34 @@ function installIpc() {
     // updates (electron/main/updater.js): GitHub Releases feed, checked at start unless switched off
     ipcMain.handle("update:status", () => updater.status);
     ipcMain.handle("update:check", () => updater.check({ manual: true }));
-    ipcMain.handle("update:install", () => updater.install());
+    // the installer ends every Scumble process as soon as it starts: the window saves first (quit.js)
+    ipcMain.handle("update:install", async () => {
+        if (updater.status.state !== "downloaded") return false;
+        mirror.localOnly = true;
+        const r = await quitGuard.run(() => flushWindow("update"));
+        if (!r.ok) log.record({ level: "warn", source: "main", message: `installing the update without saving everything: ${r.timedOut ? "the window did not finish in time" : r.error || "the window did not answer"}` });
+        return installOrReset();
+    });
+}
+
+/**
+ * Install the downloaded update (the window has saved). electron-updater may still decline it after this returns (an
+ * install already called, no installer file): when no quit has begun ten seconds later, the next close saves again.
+ */
+function installOrReset() {
+    const ok = updater.install();
+    if (!ok) { mirror.localOnly = false; quitGuard.reset(); return false; }
+    setTimeout(() => { if (!quitting) { mirror.localOnly = false; quitGuard.reset(); } }, 10000);
+    return true;
 }
 
 // ---- lifecycle ------------------------------------------------------------------------
 
 /** The app proper (after whenReady, holding the single-instance lock): window, socket, ComfyUI. */
 function startApp() {
+    // the last session's state becomes an earlier generation (autosave.js), also when an agent starts the app: what it
+    // changes then never replaces the user's last state (the rotation moves only when the files differ)
+    try { autosave.rotate(app.getPath("userData")); } catch (err) { console.warn("autosave: rotate", err.message); }
     installProtocol();
     installIpc();
     buildMenu();
@@ -757,7 +890,7 @@ function startApp() {
     local.listen(app.getPath("userData"));
     local.on("clients", (n) => { showAgents(); maybeQuit(); send("assistant:event", { type: "agents", n: local.clients.size + (agentMode ? 1 : 0), at: Date.now() }); });
     // a running assistant turn ends with the app; a relaunch between turns is refused while one runs (app:relaunch)
-    app.on("before-quit", () => { if (assistant) assistant.stop(); if (help) help.stop(); });
+    app.on("before-quit", () => { quitting = true; if (assistant) assistant.stop(); if (help) help.stop(); });
     // --no-comfy: a test instance that stays off the server (no connect at start, so no upload is forwarded to it)
     const url = !process.argv.includes("--no-comfy") && settings.get().comfy && settings.get().comfy.url;
     if (url) connectComfy().catch((err) => console.warn("connect at start:", err.message));
@@ -769,7 +902,7 @@ function startApp() {
 
 /** An agent-started app ends when nobody talks to it any more and no window is shown. */
 function maybeQuit() {
-    if (ARGS.mcp && !agentMode && !windowVisible() && local.clients.size === 0) { comfy.disconnect(); app.quit(); }
+    if (ARGS.mcp && !agentMode && !windowVisible() && local.clients.size === 0) { agentsLeft = true; comfy.disconnect(); app.quit(); }
 }
 
 /**

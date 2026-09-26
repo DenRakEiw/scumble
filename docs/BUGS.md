@@ -11,6 +11,15 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### A quit or an update install skipped the pixel flush - fixed for 0.1.29
+
+**Found** by the gap review of 2026-09-26. Layer pixels reach the file mirror 15 s after the last change, and neither a
+close nor `quitAndInstall` waited for them: the last strokes, or a layer made in those seconds, came back without
+their pixels. Now a close waits for the window's save and the update's installer starts after it
+(`electron/main/quit.js`); a crashed window reloads. On the way: a send to a crashed window failed, Electron logged the
+failure and the log sent it again, 1.4 MB of log over two crashes (`main.js` `send` and the log forwarding). Gate
+`quit` (`tools/quit_test.py`, `tools/quit_test.js`), 11 of 11 mutations red.
+
 ### The creative upscalers seem to take no prompt - fixed for 0.1.27
 
 **Reported** by the user on 2026-09-22 ("beim creative upscale muss man auch einen prompt mitsenden koennen").
@@ -152,13 +161,9 @@ An entry here leaves the file when the release named in it is published.
 ### Found by reading on 2026-09-26 (not yet measured)
 
 **Written** 2026-09-26 by a gap review of the whole app (read, not run). Each has to be measured before it is fixed.
-The first three are part of `docs/PLAN_0_1_29.md` §3 (documents and safety) and are fixed there.
+The first two are part of `docs/PLAN_0_1_29.md` §3 (documents and safety) and are fixed there (the third, the skipped
+flush on quit, is fixed: "Fixed, waiting for its release").
 
-- **A quit or an update install skips the pixel flush.** Layer pixels upload 15 s after the last change
-  (`inpaint_canvas.js` ~7477-7485); `saveBeforeRestart` (`renderer/shell.js` ~1861), which flushes them, is only
-  called from the tiles restart button (~1845). `before-quit` in `electron/main/main.js` (~677) stops the assistant
-  and the help chat only, and `updater.js` calls `quitAndInstall` directly. So the last strokes can come back without
-  their pixels after a restart.
 - **TIFF is offered and cannot be read.** The Open dialog lists `tif` / `tiff` (`electron/main/main.js` ~424); no
   decoder exists and Chromium has none. The file is uploaded to the mirror (and a connected ComfyUI) first and then
   fails to load.
