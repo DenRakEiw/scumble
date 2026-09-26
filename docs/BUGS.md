@@ -11,6 +11,15 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### Every PNG export carried the prompt, the seed and the recipe - fixed for 0.1.30
+
+**Found** by the gap review of 2026-09-26: two tEXt chunks in every PNG export, the recipe (for an imported workflow
+every widget value of it, paths and third-party key widgets included) and the prompt fields. Now only when the Export
+section's switch *Prompt and recipe in the PNG* (`settings.embedRecipe`, off by default) or the `export` command's
+`metadata` says so (`host.workflowForPng` answers null otherwise; the node keeps embedding its graph). Every PNG export
+also carries an `sRGB` chunk on both paths (not the uploads, whose names are their hash). Gate `metadata`
+(`tools/metadata_test.py`) on both backends, 12 of 12 mutations red.
+
 ### A quit or an update install skipped the pixel flush - fixed for 0.1.29
 
 **Found** by the gap review of 2026-09-26. Layer pixels reach the file mirror 15 s after the last change, and neither a
@@ -167,16 +176,12 @@ flush on quit, is fixed: "Fixed, waiting for its release").
 - **TIFF is offered and cannot be read.** The Open dialog lists `tif` / `tiff` (`electron/main/main.js` ~424); no
   decoder exists and Chromium has none. The file is uploaded to the mirror (and a connected ComfyUI) first and then
   fails to load.
-- **Every PNG export carries the prompt, the seed and the recipe graph**, with no switch (`inpaint_canvas.js` ~8672,
-  `host.workflowForPng`). For a local recipe that is its whole API graph with model and LoRA names.
 - **Rotate, distort and warp bake the layer mask into the pixels** without a word (`inpaint_canvas.js` ~1909).
 - **Saved selections load misaligned after Resize or Extend canvas** (`inpaint_canvas.js` ~4845).
 - **A rotated text layer probably loses its rotation on the next text edit** (`inpaint_canvas.js` ~8321-8337).
 - **The film look "None (adjustments only)" still adds grain**: `plugins/film/filters.js` ~387 falls back to
   `{ amount: 25, ... }` when there is no stock.
 - **At the typed-array cap (15.5 GB) the editor throws a `RangeError`** instead of refusing the operation.
-- **Two wrong lines in the manual:** `docs/MANUAL.md` ~242 says the AI label writes metadata (it stamps a layer);
-  ~163 says erasing a result layer writes its mask (it writes pixels).
 
 ### Found in the .scumble review (2026-09-26, read, not run)
 

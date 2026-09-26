@@ -153,9 +153,9 @@ async function forParts(source, each) {
     }
 }
 
-/** A PNG of a row source: a Blob. `texts`: tEXt chunks; `progress(fraction)` as the rows go out. */
-export async function writePng(source, run, { texts = null, flights = 8, progress = null, pause = null } = {}) {
-    const writer = new PngStreamWriter(source.width, source.height, { texts, flights, run: (args, transfer) => run("png_part", args, transfer) });
+/** A PNG of a row source: a Blob. `texts`: tEXt chunks, `chunks`: others before them; `progress(fraction)` as the rows go out. */
+export async function writePng(source, run, { texts = null, chunks = null, flights = 8, progress = null, pause = null } = {}) {
+    const writer = new PngStreamWriter(source.width, source.height, { texts, chunks, flights, run: (args, transfer) => run("png_part", args, transfer) });
     await forParts(source, async (y, n) => {
         await writer.room();
         const { args, transfer } = await source.part(y, n, true);

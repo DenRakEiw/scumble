@@ -3,6 +3,31 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.30 — unreleased
+
+- **Documents: save your work as a `.scumble` file.** A document file keeps everything the way you left it: every
+  layer with its mask, text that stays editable, shapes, filter layers, colour match, the selection and the saved
+  selections, guides, the crop, the prompts, the recipe and its settings, 3D objects, and the result history. Open it
+  again, on this machine or another, and you carry on where you stopped; fonts you added travel inside it.
+  **Ctrl+S saves the document** (the first time it asks where), **Ctrl+Shift+S** is Save As, and the picture export
+  that was on Ctrl+S moved to **Ctrl+Shift+E** (File › Export Image). A tab with unsaved changes shows a "*" in its
+  name and in the window title; closing it asks Save / Don't Save / Cancel, while a saved one closes without a
+  question. **File › Reopen Closed Tab** (Ctrl+Shift+T) brings back the last ten closed tabs, **File › Open Recent**
+  lists the last ten documents. Save As on a document with results asks whether the history (and the prompts of
+  earlier runs) goes along, for when you pass the file on. A `.scumble` opens by double click (the installer
+  registers the file type), by dropping it on the window or from the Open dialog. A save writes a new file and swaps
+  it in only when it is complete, so a crash or a full disk during a save leaves the old file as it was. A 15000 ×
+  10000 picture with four layers saves in about half a second once its layers are stored. Agents get
+  `save_document` and `open_document`, and plugins can keep their own data in the document. Quitting still asks
+  nothing: the next start brings every tab back, unsaved ones still marked.
+- **Exported PNGs no longer carry your prompt.** Until now every PNG export held the prompt, the negative prompt, the
+  seed and the recipe as text inside the file, readable by anyone you sent it to, and for a recipe imported from your
+  own ComfyUI workflow every setting of that workflow. Now that happens only when you tick **Prompt and recipe in the
+  PNG** in the Export panel (it stays as you set it, for every document); agents pass `metadata` to `export`. JPEG,
+  WebP, PSD and ORA never carried any of it.
+- **PNG exports are marked as sRGB**, which their colours are, so other programs show them the way Scumble does. JPEG
+  and WebP exports already carried an sRGB profile.
+
 ## 0.1.29 — 2026-09-26
 
 - **Magnific as a full provider.** Beyond its two upscalers, your Magnific key now runs FLUX.2 [pro] and [flex],

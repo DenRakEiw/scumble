@@ -160,7 +160,7 @@ Scumble is a layered editor that happens to generate, not a generator with an un
 
 Colour match is the feature I would keep if I had to throw the rest away. A generated patch almost always comes back a little off: a shade cooler, a touch brighter, a different contrast to its surroundings. The Match slider in the layer row corrects that by matching the layer's statistics to what lies around it — or to what lies below it, your choice in the same row — and it is non-destructive, so you can move it any time.
 
-Masks do the rest of the fitting. Every layer can have one, painted with the normal brush; erasing into a result layer with the eraser writes the mask, not the pixels, so an over-eager erase is one Ctrl+Z away. For photographic repairs there are clone, heal and smudge tools that work like the ones you know.
+Masks do the rest of the fitting. Every layer can have one, painted with the normal brush, and what a mask hides comes back when you paint the mask again. The eraser removes a layer's pixels themselves; an over-eager erase is one Ctrl+Z away. For photographic repairs there are clone, heal and smudge tools that work like the ones you know.
 
 Around all this sit transform (move, scale, rotate, flip, with a perspective mesh), crop, and extend canvas — which is how outpainting starts: extend the canvas, select the new empty part, prompt, generate. Or pick an Outpaint recipe (Image Expand on Magnific), which extends the picture outward from what is kept: after Extend canvas the new border is already selected, so Generate is the only step left.
 
@@ -275,7 +275,9 @@ _PNG, JPEG, WebP, PSD and ORA with layers, the AI label, tabs that come back, an
 
 Ctrl+Shift+E, File › Export Image, writes the visible picture in the format the Export panel is set to: PNG, JPEG or WebP for a flat result, PSD or OpenRaster when you want the layers, masks and selections to survive into Photoshop, Krita or GIMP. Ctrl+S used to do this; it saves the .scumble document now (the chapter before). You can export at a percentage, at a pixel size, or into a frame of a given size with a background of your choosing, and a single layer or the mask on its own.
 
-The AI label panel writes the EU AI Act's disclosure into the file's metadata, for the day you need to say in the file itself that a model was involved.
+A PNG export can carry the prompt, the negative prompt, the seed and the recipe as text inside the file: tick **Prompt and recipe in the PNG** in the Export panel (it is off unless you turn it on, and it stays as you set it for every document). Anyone who gets the file can read what it carries, and a recipe you imported from your own ComfyUI workflow carries every setting of that workflow. JPEG, WebP, PSD and ORA never carry them. Every PNG export is marked as sRGB, which it is; JPEG and WebP exports carry an sRGB profile.
+
+The AI label panel stamps the EU's icon for AI-generated or AI-modified content onto the picture as a layer of its own, for the day you need to show that a model was involved: move and scale it like any layer, and every export shows it while it is visible.
 
 Every document is a tab, and tabs come back, saved as a .scumble file or not. The session is autosaved and restored at the next start, with no server needed for it, because every image the editor sends or receives is kept locally under %APPDATA%/Scumble/files/ in folders that mirror ComfyUI's own input and output. That is also why a restarted or freshly rented ComfyUI just works: before a run the app uploads what the server does not have.
 

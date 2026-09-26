@@ -70,13 +70,54 @@ export function asciiJson(obj) {
     return JSON.stringify(obj).replace(/[\u0080-\uffff]/g, (ch) => "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0"));
 }
 
+/**
+ * The `sRGB` chunk (rendering intent 0, perceptual) an exported PNG carries: its pixels are sRGB, since every decode
+ * converts to it. Alone, without gAMA / cHRM / iCCP, so `pngIsPlainSrgb` still sends the file to the stream reader.
+ * Never on uploads: their names are the hash of their bytes.
+ */
+export const SRGB_CHUNK = Object.freeze(["sRGB", Uint8Array.of(0)]);
+
+/** The chunks after IHDR in the order a file takes them: `chunks` ([type, bytes] pairs, before IDAT), then one tEXt per text. */
+function extraChunks(texts, chunks) {
+    const out = [];
+    for (const [type, data] of chunks || []) out.push(pngChunk(type, data));
+    const enc = new TextEncoder();
+    for (const [key, value] of Object.entries(texts || {})) out.push(pngChunk("tEXt", enc.encode(key + "\0" + value)));   // ASCII in, ASCII out (asciiJson)
+    return out;
+}
+
+/**
+ * A finished PNG (another encoder's) with `chunks` and tEXt `texts` put in right after IHDR, the way ComfyUI's SaveImage
+ * stores prompt and workflow. A chunk whose type the file already has (an encoder's own sRGB), or a colour chunk
+ * where the file says otherwise (iCCP, cICP, gAMA, cHRM), is left out.
+ */
+export function pngWithChunks(buffer, { texts = null, chunks = null } = {}) {
+    const src = new Uint8Array(buffer);
+    const dv = new DataView(src.buffer, src.byteOffset, src.byteLength);
+    const typeAt = (p) => String.fromCharCode(src[p + 4], src[p + 5], src[p + 6], src[p + 7]);
+    if (src.length < 33 || typeAt(8) !== "IHDR") throw new Error("not a PNG with IHDR first");
+    const have = new Set();
+    for (let p = 8; p + 12 <= src.length;) {
+        const type = typeAt(p);
+        if (type === "IDAT" || type === "IEND") break;
+        have.add(type);
+        p += 12 + dv.getUint32(p);
+    }
+    const colour = ["sRGB", "iCCP", "cICP", "gAMA", "cHRM"];
+    const keep = (chunks || []).filter(([type]) => !have.has(type) && !(colour.includes(type) && colour.some((t) => have.has(t))));
+    const extra = extraChunks(texts, keep);
+    const ihdrEnd = 8 + 12 + 13;
+    return new Blob([src.subarray(0, ihdrEnd), ...extra, src.subarray(ihdrEnd)], { type: "image/png" });
+}
+
 export class PngStreamWriter {
     /**
      * `run(args, transfer)` runs one `png_part` job and resolves to its reply (`{ chunk, adler, raw }`); `texts`:
-     * keyword -> text for tEXt chunks (ASCII; `asciiJson`). `flights`: parts in the workers at once, which bounds the
-     * memory a fast producer takes (each part is its raw bytes here, in flight, and three times in its worker).
+     * keyword -> text for tEXt chunks (ASCII; `asciiJson`); `chunks`: [type, bytes] pairs before them (`SRGB_CHUNK`).
+     * `flights`: parts in the workers at once, which bounds the memory a fast producer takes (each part is its raw
+     * bytes here, in flight, and three times in its worker).
      */
-    constructor(width, height, { run, texts = null, level = PNG_LEVEL, flights = 8 } = {}) {
+    constructor(width, height, { run, texts = null, chunks = null, level = PNG_LEVEL, flights = 8 } = {}) {
         if (!(width > 0) || !(height > 0)) throw new Error("a PNG of no size");
         this.width = width | 0;
         this.height = height | 0;
@@ -84,6 +125,7 @@ export class PngStreamWriter {
         this.level = level;
         this.flights = Math.max(1, flights | 0);
         this.texts = texts;
+        this.chunks = chunks;
         this.rows = 0;               // rows handed over so far
         this.parts = [];             // promises of replies, in the order of their rows
         this.inFlight = new Set();
@@ -121,9 +163,7 @@ export class PngStreamWriter {
         const dv = new DataView(ihdr.buffer);
         dv.setUint32(0, this.width); dv.setUint32(4, this.height);
         ihdr[8] = 8; ihdr[9] = 6;   // 8 bits, RGBA; deflate, adaptive filtering, no interlace
-        const pieces = [new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]), pngChunk("IHDR", ihdr)];
-        const enc = new TextEncoder();
-        for (const [key, value] of Object.entries(this.texts || {})) pieces.push(pngChunk("tEXt", enc.encode(key + "\0" + value)));
+        const pieces = [new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]), pngChunk("IHDR", ihdr), ...extraChunks(this.texts, this.chunks)];
         // zlib: deflate with a 32K window, no dictionary; the level bits are a hint (0x9C: the default), FCHECK makes it a multiple of 31
         pieces.push(pngChunk("IDAT", new Uint8Array([0x78, 0x9C])));
         let adler = 1;

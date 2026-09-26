@@ -558,7 +558,7 @@ function buildExport(ed, section) {
         ed.saveNameInput.spellcheck = false;
         ed.saveNameInput.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") ed.exportImage(); });
         exp.appendChild(ed.saveNameInput);
-        ed.saveFormatSel = selectInput(["png", "jpg", "webp", "psd", "ora"], "png", "PNG keeps the workflow inside the file (drop it onto ComfyUI to load it again), JPEG and WebP are smaller. PSD and ORA (OpenRaster, for GIMP and others) keep the layers: name, position, opacity, visibility, blend mode; filter layers are baked into the merged image only.");
+        ed.saveFormatSel = selectInput(["png", "jpg", "webp", "psd", "ora"], "png", "PNG is lossless and can carry the workflow and prompt in the file, JPEG and WebP are smaller. PSD and ORA (OpenRaster, for GIMP and others) keep the layers: name, position, opacity, visibility, blend mode; filter layers are baked into the merged image only.");
         exp.appendChild(ed.saveFormatSel);
         const dl = iconButton("download", hostText("downloadTip", "Save the image to a file (Ctrl+S)"), () => ed.exportImage({ download: true }), hostText("downloadLabel", "Save as"));
         dl.classList.add("ipc-small");

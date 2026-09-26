@@ -796,15 +796,18 @@ return out;
     ("export_png_through_the_editor", """
 const ed = ednow(window.__ex);
 let saved = null;
-const was = host.saveExport;
+const was = host.saveExport, embedWas = host.embedRecipe;
 host.saveExport = async (blob, name) => { saved = { blob, name }; return { path: "memory:" + name }; };
+host.setEmbedRecipe(true);   // 3f: off by default (tools/metadata_test.py); on here, so the bands carry the texts
 try {
     if (ed.saveFormatSel) ed.saveFormatSel.value = "png";
     const out = await ed.exportImage({ download: false });
     if (!out || !saved) throw new Error("exportImage saved nothing: " + ed.status);
-} finally { host.saveExport = was; }
+} finally { host.saveExport = was; host.setEmbedRecipe(embedWas); }
 const a = await decode(saved.blob);
 if (!a.texts.workflow || !a.texts.inpaint_canvas) throw new Error("the recipe is not embedded: " + Object.keys(a.texts));
+const head = new Uint8Array(await saved.blob.slice(33, 46).arrayBuffer());
+if (String.fromCharCode(...head.subarray(4, 8)) !== "sRGB" || head[8] !== 0) throw new Error("no sRGB chunk right after IHDR: " + Array.from(head));
 const d = diff(a.data, window.__exRef, ed.width);
 if (d.bytes) throw new Error("the exported PNG differs from the flatten: " + JSON.stringify(d));
 if (!/ms\\)/.test(ed.status)) throw new Error("the export did not go through the bands: " + ed.status);

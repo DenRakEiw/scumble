@@ -102,16 +102,16 @@ async function encodeTilePixels(px, { hash = false, texts = null } = {}) {
  * array of its own. `{ blob, hash }`, or null when parts cannot be used. Bands are asked for one after the other, each
  * only when the workers have room, with a task's pause between them.
  */
-async function encodeBands(width, height, band, { hash = false, texts = null, rows = TILE_SIZE, progress = null } = {}) {
-    return encodeRows(bandRows(width, height, band, rows), { hash, texts, progress });
+async function encodeBands(width, height, band, { hash = false, texts = null, chunks = null, rows = TILE_SIZE, progress = null } = {}) {
+    return encodeRows(bandRows(width, height, band, rows), { hash, texts, chunks, progress });
 }
 
 /** PNG of any row source (inpaint_bands.js): `{ blob, hash }`, or null when parts cannot be used. */
-async function encodeRows(source, { hash = false, texts = null, progress = null } = {}) {
+async function encodeRows(source, { hash = false, texts = null, chunks = null, progress = null } = {}) {
     if (!partsUsable()) return null;
     const group = "png" + (++partsSeq);
     try {
-        const blob = await writePng(source, partsRun(group), { texts, flights: partsFlights(), progress, pause: bandPause });
+        const blob = await writePng(source, partsRun(group), { texts, chunks, flights: partsFlights(), progress, pause: bandPause });
         return { blob, hash: hash ? await hashInPool(blob) : null };
     } catch (err) {
         editorPool().cancel(group);

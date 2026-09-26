@@ -22,7 +22,7 @@ import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, 
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { INTERACTIVE, EXPORT } from "./inpaint_pool.js";
-import { pngHeader } from "./inpaint_png.js";
+import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.js";
 import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter } from "./inpaint_bands.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
@@ -344,47 +344,6 @@ async function pixelsFromImageFile(blob, Cls, progress = null) {
     }
     if (!px) throw new Error("the image gave no pixels");
     return px;
-}
-
-const CRC_TABLE = (() => {
-    const t = new Uint32Array(256);
-    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
-    return t;
-})();
-
-function crc32(bytes) {
-    let c = 0xFFFFFFFF;
-    for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
-    return (c ^ 0xFFFFFFFF) >>> 0;
-}
-
-/** JSON with every non-ASCII character escaped, so it fits a Latin-1 tEXt chunk unchanged. */
-function asciiJson(obj) {
-    return JSON.stringify(obj).replace(/[\u0080-\uffff]/g, (ch) => "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0"));
-}
-
-/** Insert tEXt chunks (keyword -> text) right after IHDR, the way ComfyUI's SaveImage stores prompt and workflow. */
-function pngWithText(buffer, texts) {
-    const src = new Uint8Array(buffer);
-    const ihdrEnd = 8 + 4 + 4 + 13 + 4;
-    const chunks = [];
-    for (const [key, value] of Object.entries(texts)) {
-        const payload = new TextEncoder().encode(key + "\0" + value);   // ASCII in, ASCII out (asciiJson)
-        const chunk = new Uint8Array(12 + payload.length);
-        const dv = new DataView(chunk.buffer);
-        dv.setUint32(0, payload.length);
-        chunk.set([0x74, 0x45, 0x58, 0x74], 4);   // tEXt
-        chunk.set(payload, 8);
-        dv.setUint32(8 + payload.length, crc32(chunk.subarray(4, 8 + payload.length)));
-        chunks.push(chunk);
-    }
-    const total = src.length + chunks.reduce((n, c) => n + c.length, 0);
-    const out = new Uint8Array(total);
-    out.set(src.subarray(0, ihdrEnd), 0);
-    let pos = ihdrEnd;
-    for (const c of chunks) { out.set(c, pos); pos += c.length; }
-    out.set(src.subarray(ihdrEnd), pos);
-    return new Blob([out], { type: "image/png" });
 }
 
 /**
@@ -8665,19 +8624,22 @@ class InpaintEditor {
         const stem = ((this.saveNameInput && this.saveNameInput.value) || "inpaint_canvas").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._ -]/gi, "_") || "inpaint_canvas";
         try {
             this.setStatus("Saving ...");
-            let blob, note = "", embedded = false;
+            let blob, note = "", embedded = false, banded = false;
             let pngTexts = null;
+            const pngChunks = fmt === "png" ? [SRGB_CHUNK] : null;   // 3f: the pixels are sRGB, and the file says so
             if (fmt === "png") {
-                // Same metadata as SaveImage: the workflow (and the canvas prompt), so the file loads back into ComfyUI.
+                // Same metadata as SaveImage: the workflow (and the canvas prompt), so the file loads back into ComfyUI. The
+                // host answers null when it is not to be embedded (the app's switch, off by default: docs/PLAN_0_1_29.md 3f).
                 try {
-                    pngTexts = { workflow: asciiJson(host.workflowForPng(this)), inpaint_canvas: asciiJson({ prompt: this.promptText, negative: this.negativeText, width: this.width, height: this.height, seed: this.genSettings.seed, mode: this.genSettings.mode }) };
+                    const workflow = host.workflowForPng(this);
+                    if (workflow) pngTexts = { workflow: asciiJson(workflow), inpaint_canvas: asciiJson({ prompt: this.promptText, negative: this.negativeText, width: this.width, height: this.height, seed: this.genSettings.seed, mode: this.genSettings.mode }) };
                 } catch (err) { console.warn("Inpaint Canvas: could not embed the workflow", err); }
             }
             // E2: a PNG of the picture as it is is written in bands by the worker pool, without a canvas of the picture
             if (fmt === "png" && host.exportIsPlain(this)) {
                 const t0 = performance.now();
-                const r = await this.encodeComposite({ forRun: true }, { texts: pngTexts, progress: (f) => this.setStatus(`Saving ... ${Math.round(f * 100)} %`) });
-                if (r) { blob = r.blob; embedded = !!pngTexts; note = `, ${Math.round(performance.now() - t0)} ms`; }
+                const r = await this.encodeComposite({ forRun: true }, { texts: pngTexts, chunks: pngChunks, progress: (f) => this.setStatus(`Saving ... ${Math.round(f * 100)} %`) });
+                if (r) { blob = r.blob; banded = true; embedded = !!pngTexts; note = `, ${Math.round(performance.now() - t0)} ms`; }
             }
             // E4: a layered file from the layers' own tiles and the composite's bands, packed by the worker pool
             if (fmt === "psd" || fmt === "ora") {
@@ -8695,8 +8657,8 @@ class InpaintEditor {
             } else {
                 blob = await new Promise((r) => canvas.toBlob(r, fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png", host.exportQuality(this)));
             }
-            if (fmt === "png" && !embedded && pngTexts) {
-                try { blob = pngWithText(await blob.arrayBuffer(), pngTexts); embedded = true; } catch (err) { console.warn("Inpaint Canvas: could not embed the workflow", err); }
+            if (fmt === "png" && !banded) {
+                try { blob = pngWithChunks(await blob.arrayBuffer(), { texts: pngTexts, chunks: pngChunks }); embedded = !!pngTexts; } catch (err) { console.warn("Inpaint Canvas: could not embed the workflow", err); }
             }
             const saved = await host.saveExport(blob, `${stem}.${fmt}`, { editor: this, download });
             if (!saved) { this.setStatus("Save cancelled."); return null; }
@@ -10787,12 +10749,12 @@ class InpaintEditor {
      * flatten writes its new base from them). The picture must not change while its bands are read: a change restarts
      * the read once, a second one fails it.
      */
-    async encodeComposite(opts = { forRun: true }, { hash = false, texts = null, each = null, progress = null } = {}) {
+    async encodeComposite(opts = { forRun: true }, { hash = false, texts = null, chunks = null, each = null, progress = null } = {}) {
         // B item 1: a plain stack is composited by the workers that pack it, from the tiles; `each` wants the rows here
         const stack = each ? null : await this.stackSource(opts);
         if (stack) {
             try {
-                const r = await encodeRows(stack.source, { hash, texts, progress });
+                const r = await encodeRows(stack.source, { hash, texts, chunks, progress });
                 if (r) return { ...r, width: this.width, height: this.height, stack: stack.layers };
             } finally { stack.release(); }
         }
@@ -10811,7 +10773,7 @@ class InpaintEditor {
                     const data = await bands.read(y0, y1);
                     if (each) each(data, y0, y1);
                     return data;
-                }, { hash, texts, progress, rows: bands.rows });
+                }, { hash, texts, chunks, progress, rows: bands.rows });
                 if (!r) return null;
                 if (changed()) throw new Error("the picture changed");
                 return { ...r, width: this.width, height: this.height, program: bands.program(), programTiming: bands.timing() };

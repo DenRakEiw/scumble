@@ -184,7 +184,7 @@ export const api = {
  * @property {(editor: any, list: any, targets: any) => void} renderPresets
  * @property {(editor: any, name: string, fallback?: any) => any} widgetValue
  * @property {(editor: any) => any} resultInputState     which result input the recipe writes to
- * @property {(editor: any) => any} workflowForPng       the workflow to embed in a saved PNG
+ * @property {(editor: any) => any} workflowForPng       the workflow to embed in a saved PNG, null = embed nothing
  * @property {(editor: any, sec: any) => void} buildGenerateExtras   the extra rows under Generate
  * @property {(editor: any) => Promise<any>} queueGenerate           run the recipe
  * @property {() => boolean} generateNewAvailable
@@ -223,6 +223,7 @@ export const host = {
     objectInfo: null,
     nodeParams: { padding: 64, target_size: 1024, feather: 16, multiple_of: 64 },
     apiSize: "max",        // how big the crop goes to an API provider: max | x2 | x4 | target | crop
+    embedRecipe: false,    // settings.embedRecipe: exported PNGs carry the prompt, seed and recipe (docs/PLAN_0_1_29.md 3f)
     connected: false,
     _pendingStates: [],
     // quit safety (docs/PLAN_0_1_29.md §3): while documents are restored, an autosave would write only those restored so
@@ -236,12 +237,13 @@ export const host = {
 
     /**
      * Shell setup: where editors mount and the persisted node params.
-     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string }} [opts]
+     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string, embedRecipe?: boolean }} [opts]
      */
-    configure({ mount, nodeParams, apiSize } = {}) {
+    configure({ mount, nodeParams, apiSize, embedRecipe } = {}) {
         this.mountEl = mount || document.body;
         if (nodeParams) this.nodeParams = { ...this.nodeParams, ...nodeParams };
         if (API_SIZES.some(([id]) => id === apiSize)) this.apiSize = apiSize;
+        if (typeof embedRecipe === "boolean") this.embedRecipe = embedRecipe;
     },
 
     /**
@@ -260,6 +262,13 @@ export const host = {
         this.apiSize = mode;
         window.scumble.settings.set({ apiSize: mode }).catch((err) => console.warn("apiSize not saved", err));
         for (const ed of this._editors) if (ed._apiSizeSelect) ed._apiSizeSelect.value = mode;
+    },
+
+    /** The Export section's switch: one value for every open editor, kept in the settings. */
+    setEmbedRecipe(on) {
+        this.embedRecipe = !!on;
+        window.scumble.settings.set({ embedRecipe: this.embedRecipe }).catch((err) => console.warn("embedRecipe not saved", err));
+        for (const ed of this._editors) this.syncExportRow(ed);
     },
 
     /** Compatibility with the single-editor shell: configure + addEditor + activate. */
@@ -364,7 +373,8 @@ export const host = {
 
     /** The per-document export settings, made on first use. */
     exportState(editor) {
-        if (!editor._export) editor._export = { percent: 100, width: 0, height: 0, quality: 0.92, canvasW: 0, canvasH: 0, anchor: "mc", fill: "transparent" };
+        // metadata: null = the app's switch (embedRecipe), true / false = this export's own answer (the export command)
+        if (!editor._export) editor._export = { percent: 100, width: 0, height: 0, quality: 0.92, canvasW: 0, canvasH: 0, anchor: "mc", fill: "transparent", metadata: null };
         return editor._export;
     },
 
@@ -557,8 +567,24 @@ export const host = {
         qRow.appendChild(qLab);
         qRow.appendChild(q);
 
+        // 3f: the prompt, seed and recipe in a PNG's text chunks; off unless the user wants them there, since anyone the
+        // file reaches can read them (an imported recipe carries every widget value of its workflow)
+        const mRow = document.createElement("div");
+        mRow.className = "ipc-seg scumble-export-metadata";
+        const mLab = document.createElement("label");
+        mLab.style.display = "flex"; mLab.style.alignItems = "center"; mLab.style.gap = "6px"; mLab.style.cursor = "pointer";
+        mLab.title = "Write the prompt, the negative prompt, the seed and the recipe into the PNG (as text chunks). Anyone who gets the file can read them. For every document.";
+        const meta = document.createElement("input");
+        meta.type = "checkbox";
+        meta.addEventListener("keydown", (ev) => ev.stopPropagation());
+        meta.addEventListener("change", () => this.setEmbedRecipe(meta.checked));
+        mLab.appendChild(meta);
+        mLab.appendChild(document.createTextNode("Prompt and recipe in the PNG"));
+        mRow.appendChild(mLab);
+
         anchor.insertAdjacentElement("afterend", row);
         row.insertAdjacentElement("afterend", qRow);
+        qRow.insertAdjacentElement("afterend", mRow);
         // the canvas: a frame around the (scaled) picture, for a fixed output format or a margin
         const cRow = document.createElement("div");
         cRow.className = "ipc-seg scumble-export-canvas";
@@ -595,7 +621,7 @@ export const host = {
         fillSel.addEventListener("change", () => this.setExportSize(editor, { fill: fillSel.value }));
         cRow.appendChild(fillSel);
         qRow.parentElement ? qRow.parentElement.insertBefore(cRow, qRow.nextSibling) : anchor.parentElement.insertBefore(cRow, anchor.nextSibling);
-        editor._exportRow = { row, qRow, cRow, sel, wIn, hIn, q, qLab, cw, ch, anchorSel, fillSel, doc: "" };
+        editor._exportRow = { row, qRow, cRow, mRow, meta, sel, wIn, hIn, q, qLab, cw, ch, anchorSel, fillSel, doc: "" };
         editor.saveFormatSel.addEventListener("change", () => this.syncExportRow(editor));
         // the numbers follow the document: a new image, a crop or an extended canvas changes
         // them. Only a changed document size refreshes the row, so a number being typed in is
@@ -635,6 +661,7 @@ export const host = {
         for (const el of [r.sel, r.wIn, r.hIn, ...(r.cw ? [r.cw, r.ch, r.anchorSel, r.fillSel] : [])]) el.disabled = layered;
         r.row.title = layered ? "PSD and ORA always keep the full size" : "";
         r.qRow.hidden = !(fmt === "jpg" || fmt === "webp");
+        if (r.mRow) { r.mRow.hidden = fmt !== "png"; r.meta.checked = this.embedRecipe; }
     },
 
     toolChanged(editor, tool, prev) {
@@ -1369,7 +1396,7 @@ export const host = {
             const node = prompt[s.node];
             if (entry && entry.value != null && node && node.inputs) node.inputs[s.input] = entry.value;
         }
-        const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowForPng(editor) });
+        const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo() });
         editor.lastPromptId = res && res.prompt_id;
         return res;
     },
@@ -1412,8 +1439,14 @@ export const host = {
         return report;
     },
 
-    /** What goes into the PNG's tEXt chunk in place of the litegraph workflow. */
+    /** What goes into an exported PNG's tEXt chunk in place of the litegraph workflow, or null when nothing is to go in (3f). */
     workflowForPng(editor) {
+        const own = editor && editor._export ? editor._export.metadata : null;
+        return (own == null ? this.embedRecipe : own) ? this.workflowInfo() : null;
+    },
+
+    /** The recipe as the app describes it: the export's tEXt chunk, and a local run's `extra_pnginfo` for a SaveImage in it. */
+    workflowInfo() {
         const r = this.recipe;
         return { app: "scumble", recipe: r ? r.id : null, kind: r ? r.kind || "comfy" : null, provider: (r && r.provider) || null, model: (r && r.model) || null, prompt: r ? r.prompt || null : null, nodeParams: this.nodeParams };
     },
