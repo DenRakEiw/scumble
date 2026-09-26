@@ -28,6 +28,10 @@ const CHUNK = 8 * 1024 * 1024;
 const SAFE_NAME = /^[^\\/:*?"<>|\x00-\x1f]+$/;          // electron/main/files.js, the mirror's own rule
 const TYPES = ["input", "output", "temp"];
 const TEMP_RE = /\.saving-\d+-\d+$/;
+// names Windows maps to devices whatever the folder or extension, and names Windows strips a trailing dot or space from:
+// a file someone else made must not name them (an entry is written into the mirror under its name)
+const RESERVED = /^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(\..*)?$/i;
+const badPart = (s) => !SAFE_NAME.test(s) || RESERVED.test(s) || /[. ]$/.test(s);
 const BUSY = new Set(["EPERM", "EBUSY", "EACCES"]);
 
 // the zip32 / entry-count thresholds; a test lowers them to take the zip64 paths with small files
@@ -41,15 +45,15 @@ let tempSeq = 0;
 
 /** The mirror path of a ref (files.js mirrorPath, with the mirror's root passed in). Throws on a name it refuses. */
 function mirrorPath(root, type, subfolder, filename) {
-    if (typeof filename !== "string" || !SAFE_NAME.test(filename) || filename === "." || filename === "..") throw new Error("bad file name: " + filename);
+    if (typeof filename !== "string" || filename === "." || filename === ".." || badPart(filename)) throw new Error("bad file name: " + filename);
     const sub = String(subfolder || "").replace(/\\/g, "/").split("/").filter((s) => s && s !== "." && s !== "..");
-    for (const s of sub) if (!SAFE_NAME.test(s)) throw new Error("bad folder name: " + s);
+    for (const s of sub) if (badPart(s)) throw new Error("bad folder name: " + s);
     if (!TYPES.includes(type)) throw new Error("bad file type: " + type);
     return path.join(root, type, ...sub, filename);
 }
 
-/** The mirror key (files.js key) and the zip entry name of a ref. */
-function keyOf(ref) { return `${ref.type || "input"}/${ref.subfolder || ""}/${ref.filename}`; }
+/** The mirror key (files.js key) and the zip entry name of a ref; the key's subfolder normalised as the entry's is. */
+function keyOf(ref) { return `${ref.type || "input"}/${String(ref.subfolder || "").replace(/\\/g, "/").split("/").filter(Boolean).join("/")}/${ref.filename}`; }
 function entryOf(ref) {
     const sub = String(ref.subfolder || "").replace(/\\/g, "/").split("/").filter(Boolean);
     return ["files", ref.type || "input", ...sub, ref.filename].join("/");
@@ -331,13 +335,14 @@ async function writeDocument({ target, header, thumbnail = null, files = [], reg
         } catch (err) {
             throw BUSY.has(err.code) ? failure(`${path.basename(target)} is in use by another program`, err.code) : err;
         }
-        unregisterTemp(registry, temp);
+        // the file is saved: a registry that cannot be written now only leaves a name the next sweep finds gone
+        try { unregisterTemp(registry, temp); } catch (err) { console.warn("document temps:", err.message); }
         if (onProgress) onProgress({ done: total, total });
         return { bytes: pos, entries: written.length, ms: Date.now() - t0 };
     } catch (err) {
         if (fh) { try { await fh.close(); } catch (_) { /* closed */ } }
         try { await fsp.unlink(temp); } catch (_) { /* never made */ }
-        unregisterTemp(registry, temp);
+        try { unregisterTemp(registry, temp); } catch (_) { /* the sweep deletes it; the error below is the one that counts */ }
         throw err;
     }
 }
@@ -516,6 +521,21 @@ async function openDocument({ file, mirrorRoot, signal = null, onProgress = null
             if (en.size !== f.size) throw failure(`"${f.entry}" is ${en.size} bytes, the header says ${f.size}`);
             listed.push({ ref, en });
         }
+        // every ref of the state, the plugin data and `extra` must name a file the document carries: a crafted document must
+        // not point at files this mirror happens to hold (a later save would pack them). A result of the history whose file
+        // is not in the document leaves the history; any other such ref refuses the open. Nothing is written before this.
+        const carried = new Set(listed.map((x) => keyOf(x.ref)));
+        const history = Array.isArray(header.document.history) ? header.document.history : [];
+        const inHistory = collectRefs(history);
+        const outside = collectRefs({ document: { ...header.document, history: undefined }, plugins: header.plugins, extra: header.extra });
+        for (const k of outside.keys()) if (!carried.has(k)) throw failure(`the document names a file it does not carry: ${k.split("/").pop()}`);
+        const dropped = new Set(Array.from(inHistory.keys()).filter((k) => !carried.has(k)));
+        if (dropped.size) {
+            const before = history.length;
+            header.document.history = history.filter((h) => !(h && h.ref && dropped.has(keyOf(h.ref))));
+            const n = before - header.document.history.length;
+            notes.push(`${n} result${n === 1 ? "" : "s"} of the history left out: not in the file`);
+        }
         const total = listed.reduce((n, x) => n + x.en.size, 0);
         let done = 0;
         const imported = [], reused = [], renamed = new Map();
@@ -537,7 +557,7 @@ async function openDocument({ file, mirrorRoot, signal = null, onProgress = null
             done += en.size;
             if (onProgress) onProgress({ done, total });
         }
-        if (renamed.size) { renameRefs(header.document, renamed); renameRefs(header.plugins, renamed); }
+        if (renamed.size) { renameRefs(header.document, renamed); renameRefs(header.plugins, renamed); renameRefs(header.extra, renamed); }
         return { header, notes, imported, reused, renamed: Object.fromEntries(renamed), thumbnail };
     } finally {
         await fh.close();

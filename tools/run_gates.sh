@@ -110,6 +110,8 @@ for g in "$@"; do
     exportperf:*) timeout 1800 python tools/export_test.py --perf $(echo "${g#exportperf:}" | tr ',' ' ') > "$OUT/exportperf.log" 2>&1; rc=$? ;;
     # mem:15000x10000,--rounds,4 (commas for spaces); four rounds at 15k take longer than the other gates' 420 s
     mem:*) timeout 2400 python tools/mem_test.py $(echo "${g#mem:}" | tr ',' ' ') > "$OUT/mem.log" 2>&1; rc=$? ;;
+    # docperf:15000x10000: a .scumble save and open at size against the runner's app (docs/PLAN_DOCUMENTS.md §7 D5)
+    docperf:*) timeout 3600 python tools/document_perf.py ${g#docperf:} --out "$OUT/docperf" > "$OUT/docperf.log" 2>&1; rc=$? ;;
     *) $T python "tools/${g}_test.py" > "$OUT/$g.log" 2>&1; rc=$? ;;
   esac
   verdict=$(grep -aE "(^PASS|^FAIL|^RESULT)" "$OUT/${g%%:*}.log" | tail -1)

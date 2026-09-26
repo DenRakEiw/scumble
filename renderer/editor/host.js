@@ -1542,11 +1542,13 @@ export const host = {
             try { walk(JSON.parse(ed.getValue())); } catch (_) { /* empty document */ }
             if (ed.base && ed.base.ref) walk(ed.base.ref);
             walk(ed.pluginData);          // a 3D layer's model file (glb plugin), and whatever else a plugin keeps per document
+            walk(ed.docExtra);            // the fields of a newer document this app does not know may name files too
         }
         // the closed tabs Reopen Closed Tab can bring back
         for (const c of this.closed) {
             try { walk(JSON.parse(c.state)); } catch (_) { /* an empty state */ }
             walk(c.plugins);
+            walk(c.extra);
         }
         return Array.from(keys);
     },
@@ -1716,7 +1718,7 @@ export const host = {
                 ed._docProgress.reqId = reqId;
                 const res = await window.scumble.documents.write({
                     reqId, path: target, document: state, plugins: ed.pluginData || {}, extra: ed.docExtra || {}, thumbnail, history: keep, recent: !copy,
-                    summary: { name: this.documentName(ed), width: ed.width, height: ed.height, layers: ed.layers.length },
+                    summary: { name: name.replace(/\.scumble$/i, ""), width: ed.width, height: ed.height, layers: ed.layers.length },
                     recipe: r ? { id: r.id || null, provider: r.provider || null } : null,
                 });
                 if (!copy) {
@@ -1758,7 +1760,8 @@ export const host = {
         }
         const doc = r.document;
         // top-level fields this app does not write travel in `extra` and go back into the next save (§6)
-        const extra = { ...(r.extra || {}) };
+        const extra = {};
+        for (const [k, v] of Object.entries(r.extra || {})) if (!STATE_KEYS.has(k)) extra[k] = v;
         for (const k of Object.keys(doc)) if (!STATE_KEYS.has(k)) extra[k] = doc[k];
         const reuse = cur && !cur.base && !cur._loading && !this._rawStates.has(cur) && !cur.docFile;
         const id = reuse ? cur.node.id : this.nextId++;

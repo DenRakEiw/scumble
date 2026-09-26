@@ -59,7 +59,7 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 
 | member | what |
 |---|---|
-| `version` | API version, `1` |
+| `version` | API version, `2` (2 added `documents.data`; a plugin that needs it checks `scumble.version >= 2`) |
 | `id`, `name`, `manifest` | from `plugin.json` |
 | `url(rel)` | URL of a file in the plugin folder |
 | `log(...)`, `warn(...)` | console with the plugin id |

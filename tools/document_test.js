@@ -101,6 +101,30 @@ async function save(root, target, extra = {}) {
     return { r, f, header, files };
 }
 
+/** What a zip reader that walks the local headers sees: each entry's local CRC, version and zip64 extra, and whether
+ * the zip64 end record is there (readers that use only the central directory would not notice a missing local CRC). */
+async function localFacts(file) {
+    const fh = await fs.promises.open(file, "r");
+    try {
+        const d = await doc.readDirectory(fh);
+        const entries = [];
+        for (const en of d.entries) {
+            const lh = Buffer.alloc(30);
+            await fh.read(lh, 0, 30, en.offset);
+            const nlen = lh.readUInt16LE(26), xlen = lh.readUInt16LE(28);
+            const extra = Buffer.alloc(xlen);
+            if (xlen) await fh.read(extra, 0, xlen, en.offset + 30 + nlen);
+            entries.push({ name: en.name, size: en.size, crc: en.crc, localCrc: lh.readUInt32LE(14) >>> 0, version: lh.readUInt16LE(4), zip64: xlen >= 4 && extra.readUInt16LE(0) === 0x0001 });
+        }
+        const { size } = await fh.stat();
+        const tail = Buffer.alloc(Math.min(size, 200));
+        await fh.read(tail, 0, tail.length, size - tail.length);
+        return { entries, zip64End: tail.indexOf(Buffer.from([0x50, 0x4b, 0x06, 0x06])) >= 0 };
+    } finally {
+        await fh.close();
+    }
+}
+
 function python(code, ...args) {
     const r = spawnSync("python", ["-c", code, ...args], { encoding: "utf8" });
     if (r.status !== 0) throw new Error("python: " + (r.stderr || r.stdout).slice(-600));
@@ -157,12 +181,20 @@ function listTree(dir) {
             assert(before === after, "the mirror changed");
             return "6 reused";
         });
+        await check("every_local_header_carries_its_crc", async () => {
+            const lf = await localFacts(file);
+            const bad = lf.entries.filter((e) => e.localCrc !== e.crc);
+            assert(!bad.length, "local CRC differs from the directory's: " + bad.map((e) => e.name).join(", "));
+            return `${lf.entries.length} entries`;
+        });
         await check("other_bytes_under_the_same_name_go_under_a_free_name", async () => {
             const C = mirror("C");
             put(C, saved.f.refs.base, rnd(300000, 99));                   // the same size, other bytes
+            put(C, saved.f.refs.glb, rnd(90000, 98));                     // the plugin's file too: its ref is renamed as well
             const o = await doc.openDocument({ file, mirrorRoot: C });
             assert(o.renamed["input/inpaint_canvas/photo.png"] === "photo (1).png", "renamed " + JSON.stringify(o.renamed));
             assert(o.header.document.base.ref.filename === "photo (1).png", "the ref was not renamed");
+            assert(o.header.plugins.glb.objects.L1.ref.filename === "cube (1).glb", "the plugin's ref was not renamed: " + JSON.stringify(o.header.plugins));
             const p = doc.mirrorPath(C, "input", "inpaint_canvas", "photo (1).png");
             assert(sha(p) === sha(saved.f.paths.base), "the imported file is not the document's");
             assert(sha(doc.mirrorPath(C, "input", "inpaint_canvas", "photo.png")) !== sha(saved.f.paths.base), "the mirror's own file was overwritten");
@@ -178,6 +210,28 @@ function listTree(dir) {
             assert(py.bad === null && py.names.length === s.r.entries, "python on zip64: " + JSON.stringify(py.names));
             for (const f of s.files) assert(py.sha[doc.entryOf(f.ref)] === sha(f.path), "python reads other bytes for " + doc.entryOf(f.ref));
             return `${s.r.entries} entries with zip64 records and extra fields`;
+        });
+        await check("zip64_starts_at_the_limit_itself", async () => {
+            // 0xFFFFFFFF and 0xFFFF are the markers that say "look in the zip64 fields": a size or count equal to the
+            // limit must go there already (the limits lowered so a small file reaches them exactly)
+            doc.setLimits({ u32: 300000, u16: 9 });
+            const f64 = path.join(scratch, "zip64edge.scumble");
+            const s = await save(mirror("E64"), f64);
+            assert(s.r.entries === 9, "the fixture has " + s.r.entries + " entries, the test needs 9");
+            const lf = await localFacts(f64);
+            const base = lf.entries.find((e) => e.name === "files/input/inpaint_canvas/photo.png");
+            assert(base && base.size === 300000 && base.zip64 && base.version === 45, "an entry of exactly the limit has no zip64 extra: " + JSON.stringify(base));
+            assert(lf.zip64End, "an entry count of exactly the limit wrote no zip64 end record");
+            const py = JSON.parse(python(PY_READ, f64));
+            assert(py.bad === null && py.names.length === 9, "python on the edge file");
+            doc.resetLimits();
+            doc.setLimits({ u16: 9 });                                   // the count alone at the limit, sizes and offsets far below
+            const fc = path.join(scratch, "zip64count.scumble");
+            const sc = await save(mirror("C64"), fc);
+            const lc = await localFacts(fc);
+            assert(sc.r.entries === 9 && lc.zip64End && !lc.entries.some((e) => e.zip64), "an entry count of exactly the limit alone wrote no zip64 end record");
+            assert(JSON.parse(python(PY_READ, fc)).bad === null, "python on the count edge file");
+            return "size and count at the limit take the zip64 fields";
         });
         await check("a_damaged_or_truncated_file_is_refused_and_writes_nothing", async () => {
             const buf = fs.readFileSync(file);
@@ -201,7 +255,8 @@ function listTree(dir) {
         });
         await check("a_crafted_name_is_refused_before_anything_is_written", async () => {
             const out = [];
-            for (const entry of ["files/input/../../escaped.png", "files/input//../escaped.png", "/abs/escaped.png", "files/other/x.png", "files/input/a:b.png"]) {
+            for (const entry of ["files/input/../../escaped.png", "files/input//../escaped.png", "/abs/escaped.png", "files/other/x.png", "files/input/a:b.png",
+                "files/input/inpaint_canvas/CON.png", "files/input/nul", "files/input/LPT1.txt", "files/input/x/a.png.", "files/input/x /a.png"]) {
                 const p = path.join(scratch, "crafted.scumble");
                 const hdr = JSON.stringify({ format: "scumble", version: 1, minReader: 1, document: { base: null }, plugins: {}, files: [{ entry, size: 3, required: true }] });
                 python(["import sys, zipfile", "z = zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_STORED)",
@@ -215,6 +270,35 @@ function listTree(dir) {
                 out.push(entry);
             }
             return `${out.length} names refused`;
+        });
+        await check("a_ref_to_a_file_the_document_does_not_carry", async () => {
+            // a crafted document whose state names a file it does not carry: refused before anything is written, so it
+            // cannot pick up a file this mirror holds under that name; one in the result history only leaves the history
+            const M = mirror("U"), f = fixture(M);
+            const files = filesOf(M, f.document, f.plugins);
+            const craft = async (mutate, name) => {
+                const header = doc.buildHeader({ document: JSON.parse(JSON.stringify(f.document)), plugins: f.plugins, files });
+                mutate(header);
+                const p = path.join(scratch, name);
+                await doc.writeDocument({ target: p, header, files });
+                return p;
+            };
+            const secret = { filename: "secret.png", subfolder: "inpaint_canvas", type: "input" };
+            const T = mirror("U2");
+            put(T, secret, Buffer.from("this profile's own file"));
+            const pLayer = await craft((h) => { h.document.layers.push({ id: "L9", kind: "paint", ref: { ...secret } }); }, "unlisted.scumble");
+            let err = null;
+            try { await doc.openDocument({ file: pLayer, mirrorRoot: T }); } catch (e) { err = e.message; }
+            assert(err && /does not carry: secret\.png/.test(err), "an unlisted layer ref: " + err);
+            assert(listTree(T).length === 1, "files were written before the refusal: " + listTree(T).join(", "));
+            const pPlug = await craft((h) => { h.plugins = { x: { ref: { ...secret } } }; }, "unlisted_plugin.scumble");
+            err = null;
+            try { await doc.openDocument({ file: pPlug, mirrorRoot: T }); } catch (e) { err = e.message; }
+            assert(err && /does not carry/.test(err), "an unlisted plugin ref: " + err);
+            const pHist = await craft((h) => { h.document.history.push({ prompt: "x", ref: { filename: "gone.png", subfolder: "inpaint_canvas", type: "output" } }); }, "unlisted_history.scumble");
+            const o = await doc.openDocument({ file: pHist, mirrorRoot: mirror("U3") });
+            assert(o.header.document.history.length === 1 && o.notes.some((n) => /1 result of the history left out/.test(n)), "an unlisted history ref: " + JSON.stringify(o.notes));
+            return "layer and plugin refs refused, the history entry left out";
         });
         await check("a_newer_reader_is_refused_a_newer_version_opens_with_a_note", async () => {
             const f = fixture(mirror("V"));

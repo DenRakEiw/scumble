@@ -178,6 +178,19 @@ flush on quit, is fixed: "Fixed, waiting for its release").
 - **Two wrong lines in the manual:** `docs/MANUAL.md` ~242 says the AI label writes metadata (it stamps a layer);
   ~163 says erasing a result layer writes its mask (it writes pixels).
 
+### Found in the .scumble review (2026-09-26, read, not run)
+
+**Written** 2026-09-26 when `docs/DOCUMENTS.md` was written from the code (package 3b). The other findings of that
+review are fixed (reserved Windows names, refs the document does not carry, `extra` in the ref walkers and the renames,
+the temp registry after the rename, `summary.name`); these two touch the shared editor code and wait:
+
+- **A layer of an unknown kind without a `ref` is dropped on open without a note** (`inpaint_canvas.js` `setValue`,
+  `if (!l.ref) continue;`); the plan wanted a note. Only a document from a newer Scumble can hold one.
+- **A user font renamed on open can lose to a local font of the same family** (`renderer/editor/inpaint_text.js`
+  `ensureFont`: the user font list is searched by family before the layer's `fontRef`). When an open imported the
+  document's font as "MyFont (1).ttf" because another file of that name was in the mirror, a re-render may use the
+  local file. Probably rare (the same family in two different files); a fix prefers `fontRef` when it names a file.
+
 ### Linux: built, never run (B2, 2026-09-22)
 
 **Written** 2026-09-22 with the Linux job of `.github/workflows/build.yml` (AppImage and .deb, `latest-linux.yml`).
