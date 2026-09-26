@@ -109,52 +109,41 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-23) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
-## Where things stand (2026-09-26, evening)
+## Where things stand (2026-09-26, late evening)
 
-**0.1.29 is Latest** (published 2026-09-26 18:07 German time on the user's word "3a und dann release"): skins,
-Magnific, Oxen.ai and quit safety (3a); exe gates `--offline` ALL PASS on both backends (`rel29-exe`,
-`rel29-exe-canvas`); dev blog post "Close it, it waits now" (`v0-1-29`, portfolio `db4197d`, with the manual sync).
-Done of the plan below: **1 skins** (`2471831`, the review's ask-card bypasses fixed: `protectAsk`), **2 providers**
-(`7425173`), **3a quit safety** (`9d81033`, gate `quit`, `electron/main/quit.js` and `autosave.js`). **Next, the
-user's order: 3b to 3f** - the `.scumble` format first (the biggest: save / save as, dirty marker, close asks, recent
-files, file association), then the history panel, TIFF, PSD masks, the metadata switch; then packages 4 to 6. The
-design pass of package 3 of the morning died with the usage limit; **3b's design is `docs/PLAN_DOCUMENTS.md`** (read it
-first), with the user's answers of 2026-09-26 (§9: Ctrl+S saves the document, Ctrl+Shift+S Save As, Ctrl+Shift+E
-exports; the result history goes in the file with a switch in Save As; fonts the user added travel; no question on
-quit). **Package 3b (the `.scumble` format) is built, D1 to D5** (all local, not pushed, not released;
-`docs/PLAN_DOCUMENTS.md` "D1 built" to "D5 built" say what was checked): D1 `ec01d08` the container (`electron/main/docfile.js`); D2 `e959cda` save / open / Save As
-(`electron/main/documents.js`, plugin API 2 `documents.data`, the glb plugin per document, an unknown filter id kept);
-D3 `a6b38df` the dirty "*", close asks, Reopen Closed Tab (Ctrl+Shift+T), Open Recent, the history question on Save
-As, the drop, the progress chip, the manual chapter "Documents"; D4 `b2804a1` the file association (NSIS + MSIX), argv
-and the second start, `save_document` / `open_document` and their policy rows; D5 `1159345` + `01f06cf` + the commit
-after it: the format spec `docs/DOCUMENTS.md`, hardening from its review, the gates `document` (steps 1-8, 11),
-`docux` (9, 10, 12) and `docperf:WxH` (15k: a 457 MB file written in 0.4 s, opened in 5 s on tiles), both backends,
-mutation rounds 18/18 (Node), 10/10 (`document`), 6/6 (`docux` / `docperf`). Not checked by anyone: a double click in
-Explorer (needs an installed build: the user's word), a key on a real keyboard. **Next, the user's order: 3c** (the
-history panel), then 3d TIFF, 3e editable PSD masks, 3f the PNG metadata switch; whether 3b ships as a release of its
-own is the user's call.
-Still open for the user: Ctrl+S as "save the document" (plan, open questions), LaMa shipped or downloaded, releases
-per package or bundled (0.1.29 was one release for three packages).
+The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).
 
-**The user decided a large build on 2026-09-26, and it is `docs/PLAN_0_1_29.md`** (read it first): (1) skins
-(item 20) with two example skins named **"90s"** (a late-90s media-player look, own artwork, no Winamp marks) and
-**"Duck"** (after Pollen Robotics' Microduck, its press-kit palette); (2) **Magnific as a full provider** (M1) and
-**Oxen.ai** (O1, item 16); (3) **documents and safety** - an own document format (`.scumble` proposed) that reopens
-fully editable, quit safety (a quit or update install skips the pixel flush today), a history panel, **TIFF** open
-and save, editable PSD masks, a switch for the PNG metadata; (4) **brushes** - smudge / clone / heal fast at 15k, a
-pro smudge, flow, pressure curves, a larger size cap, frequency separation with the linear light mode, dodge and
-burn; (5) **repair, remove, liquify** - a Poisson healing brush, an in-app LaMa remove brush, patch, liquify;
-(6) **layers pro** - multi-selection with align, clipping, mask operations, groups. Built in that order, each with
-gates on both backends and a checkpoint commit; about 60 to 100 working days by the review's estimates. Moved to the
-later list the same day: the masks-and-selections and grading-and-panels packages (into item 22) and rotating the
-document (item 23). The review's findings that are bugs went to `docs/BUGS.md` ("Found by reading on 2026-09-26").
+**Released:** 0.1.29 is Latest (2026-09-26: the skins "90s" and "Duck", Magnific and Oxen.ai built from the docs, quit
+safety 3a). Check `gh release list` before believing any release state written down anywhere.
+
+**Built since, pushed to main (`8793d41`), not released: package 3b, the `.scumble` document format.** Ctrl+S saves the
+document (Save As Ctrl+Shift+S; the picture export moved to Ctrl+Shift+E), the dirty "*", close asks, Reopen Closed Tab
+(Ctrl+Shift+T), Open Recent, the history question on Save As, the drop, a progress chip, the file association (NSIS +
+MSIX) and argv, `save_document` / `open_document`, plugin API 2 `documents.data`. Read `docs/PLAN_DOCUMENTS.md` ("D1
+built" to "D5 built": what was checked) and the spec `docs/DOCUMENTS.md`. Gates `document`, `docux`, `docperf:WxH` on
+both backends; mutation rounds 18/18 (Node), 10/10 (`document`), 6/6 (`docux` / `docperf`). Not checked by anyone: a
+double click in Explorer (needs an installed build: the user's word), a key on a real keyboard. **The next release
+(0.1.30) needs its CHANGELOG section first; none is written yet.**
+
+**The build in progress is `docs/PLAN_0_1_29.md`** (decided by the user on 2026-09-26; read it first). Done: 1 skins,
+2 providers, 3a quit safety, 3b documents. **Left, and the user said "wir bauen alles" (2026-09-26):** **3c** the
+history panel, **3d** TIFF open and save (the Open dialog offers TIFF today and fails), **3e** editable PSD masks,
+**3f** the switch for the PNG metadata (every PNG export carries the prompt, the seed and the recipe graph today);
+then **4** brushes (10-16 d), **5** repair / remove / liquify (14-24 d), **6** layers pro (8.5-13 d, groups 7-9 d
+more). Proposed and not answered yet: 3f and 3d first (both fix bugs), then release 0.1.30, then 3c and 3e. Still open
+for the user: LaMa shipped or downloaded (package 5), releases per package or bundled.
+
+**How the work goes (the user, 2026-09-26):** tests by risk (Working rules); few agents - the main loop builds, one or
+two background agents take separate files (a gate in an isolated worktree, docs), one package at a time, a local
+commit per step; check the 5-hour window (`mcp__ccd_session_mgmt__get_usage`) and stop at a committed state around 70
+to 80 %.
 
 ## Open threads (condensed on 2026-09-26 from the hand-overs of 2026-09-19 to 2026-09-23)
 
 The full hand-over blocks of those days are in `docs/HISTORY.md`, verbatim. What still matters from them:
 
-**Releases.** 0.1.29 is Latest (published 2026-09-26: skins, Magnific, Oxen.ai, quit safety). The next CHANGELOG
-section is "0.1.30 — unreleased" once something lands. Check `gh release list` before believing any release state
+**Releases.** 0.1.29 is Latest (published 2026-09-26: skins, Magnific, Oxen.ai, quit safety). Package 3b is in main;
+the next CHANGELOG section, "0.1.30", is not written yet. Check `gh release list` before believing any release state
 written down anywhere. Every release: the CHANGELOG section first, `npm run dist`, exe gates `--offline` on both
 backends, the manual sync (`node tools/manual_sync.js`) and a dev blog post (the decisions block above).
 
@@ -201,188 +190,37 @@ has not run in the app on the slice 6 code; the user has not reported back on th
 
 ## What comes next (the list)
 
-The numbered list the user adds to. Items 1 to 13 are built and their text is in `docs/HISTORY.md` (the block of
-2026-09-19); the numbers are kept because other documents cite them.
+The numbered list the user adds to; the numbers stay because other documents cite them. Items 1 to 13 are built (their
+text is in `docs/HISTORY.md`, the block of 2026-09-19); the full text of every item below, with the research of 14,
+15, 19 and 21, is in `docs/HISTORY.md` "What comes next (the list, as of 2026-09-26, full text)" - read it before
+planning one of them.
 
-5. **The object tool's bigger change A** (`dist/c6map/c/objects.md` §7 to §9: the image-size label map, the per-object
-   shape canvases): parked by the user on 2026-09-18 (if the coarse outlines at 15k turn out to matter, compute the
-   label map only in the hovered object's box, on demand).
-14. **Upscaling, a future feature (asked for by the user on 2026-09-21; parked: only on the to-do list, not planned
-   in detail, not built, nothing below verified).** Upscale the document, a layer or the selection by a model, in
-   three routes the user named: (a) **through the user's ComfyUI**, as a recipe with `UpscaleModelLoader` +
-   `ImageUpscaleWithModel` (`comfy.js` already lists `UpscaleModelLoader` models for the recipe settings), the models
-   the user already has in `models/upscale_models`; (b) **in the app**, on the ONNX Runtime the helpers already use,
-   with upscale models downloaded or read from the linked ComfyUI `models/` folder (only ONNX files load there; the
-   usual `.pth` / `.safetensors` upscalers need an ONNX export, as the helper scan of 2026-09-12 found for SAM2 /
-   RMBG), tiled for large pictures; (c) **API upscaling**, e.g. Topaz Labs and Magnific, as provider adapters with
-   key rows like the other providers. **Asked, to be checked before planning:** whether a **locally installed
-   Topaz** (Gigapixel / Photo AI) can be driven from Scumble, e.g. through a command-line interface of the desktop
-   app (which products and licences offer one, what it takes and returns), and whether it can go **over MCP**:
-   either an external agent chains Scumble's own tools (`export` -> Topaz -> `load_image` / `add_image_layer`), or
-   Scumble calls a Topaz-side MCP server or CLI itself. Also to decide: where the result lands (the whole document
-   resized, which clears undo like *Resize*, or a new layer), the size limits (a 4x of a 15k picture is past the
-   65,535 px side and the gigapixel cap), and whether the assistant's policy asks before an upscale (it costs money
-   on an API and queues on ComfyUI, so yes by the existing rule).
-15. **Qwen Image Edit 2.1, a model to support (asked for by the user on 2026-09-21). The local ComfyUI recipe is
-   BUILT and shipped in 0.1.23 (`recipes/qwen_image_edit_2_1_local.json`, not run yet); the API side below is open.** Today `recipes/qwen_image_edit.json` runs older Qwen edit endpoints (fal
-   `fal-ai/qwen-image-edit/inpaint` with a mask, Replicate `qwen/qwen-image-edit`, WaveSpeed
-   `wavespeed-ai/qwen-image/edit-plus`) and, on ToAPIs and Comfy Cloud, Qwen Image 3.0; there is no local Qwen recipe.
-   **To find out before building:** which providers serve 2.1 and under which ids (fal, Replicate, WaveSpeed,
-   OpenRouter, ToAPIs, ModelArk is ByteDance only), whether any of them takes a mask, its size limits and input count
-   (the `limits` block needs a source, not the 2048 default), its price; whether it is a new variant in
-   `qwen_image_edit.json` or a recipe of its own; and whether open weights exist for a **local ComfyUI recipe**
-   (which nodes, text encoder and VAE). Each new variant gets its row in the `recipes` gate.
-16. **Oxen.ai as an API provider (asked for by the user on 2026-09-21, https://www.oxen.ai/ai/models; on the list only,
-   not built, not run against the live API).** An aggregator of "200+ models through one API", like fal or OpenRouter.
-   What its docs said on 2026-09-21 (`https://docs.oxen.ai/llms.txt`; the models page itself sits behind a Vercel
-   browser check and could not be read by script): base `https://hub.oxen.ai/api/ai`, a Bearer key; **image edit**
-   `POST /images/edit` with `model` (e.g. `qwen-image-edit`, `nano-banana-2-edit`, `gpt-image-2-edit`,
-   `xai-grok-imagine-image-edit`), `prompt`, `input_image` (a URL or, for some models, an array of URLs) and
-   `response_format` `url` / `b64_json`, answered in the same request (`images[0].url`); **image generation** for
-   "Generate new" at `/images/generate`; an **async queue** for long jobs; `GET /models` and `/models/search` list the
-   models; per-model parameters on a "model references" page; **chat completions** OpenAI-compatible at the same base
-   (streaming, vision, tool calling), so it can also be a row of the LLM / assistant registry (`providers.js`,
-   `llm_custom.js`) for prompt upsampling and the assistant. **To find out before building:** whether `input_image`
-   takes a data URL or needs a hosted file (then an upload step and a privacy note like ToAPIs'), whether any edit
-   model takes a mask, the per-model size limits and input counts (the `limits` block needs a source), prices and
-   balance endpoint, where the data goes and what is kept, and which of the recipes' models it serves (an `oxen`
-   variant in each, last, no default changed, like OpenRouter). Pieces as for every provider: an adapter in
-   `electron/main/providers/`, a key row, `docs/RECIPES.md`, a plain-Node test of the request shape, a loopback mock
-   and a gate.
-17. **A side panel of adjustable width (asked for by the user on 2026-09-21, with a screenshot). The horizontal
-   scrollbar is gone since 0.1.23 (panel 320 px, rows that fit); the drag handle below is still open.** The panel right of the canvas (Image / Generate tabs, the layer list) is a fixed `.ipc-side { width:290px }`
-   in the editor's `STYLE` (`renderer/editor/inpaint_canvas.js`), and an expanded layer row (Opacity, Match with its
-   *surroundings* select, Blend, Role, the cutout row) is wider than that, so the layer list and the reference list
-   get a horizontal scrollbar. The wish: drag the panel's left edge to make it wider or narrower. Assessed as small
-   (about half a day with a gate step): a drag handle on the left edge that sets the width (a CSS variable, clamped,
-   e.g. 240 px to half the window), the width kept per install (the app's settings; the node could keep it in
-   `localStorage`), and `resizeCanvas()` called while dragging, which already refits the view when its size changes;
-   editor code, so `build_node.py --check` and `nodecopy`, and a step in `editor_test.py` (drag, width kept after a
-   reload, view refitted, no horizontal scrollbar at the default width). **Independent of it and smaller:** the
-   expanded row could wrap or shrink its controls so no horizontal scrollbar appears at 290 px at all.
-18. **A logo for Scumble: DRAWN on 2026-09-22 (for 0.1.27), the mascot is open.** `build/icon.svg` is the source
-   (plus `icon-small.svg` for 16 / 24 px, `icon-tile.svg` for macOS, `icon-plain.svg` without a background),
-   `build/icon.png` is 1024 px and `build/icon.ico` holds 16 to 256 with **the small sizes drawn separately**
-   (PNG entries, written by hand because PIL resamples one picture for every size). It is a creature made of
-   sienna paint (`#C4643A`) over a chalk stroke (`#EFE7DA`) on near-black brown (`#1B1714`), the stroke showing
-   through its body as `#D08967`: the name's meaning as a figure. The colours came from a survey of the field
-   (Photoshop owns `#001E36` / `#31A8FF`, Affinity purple, Krita magenta / cyan), the legibility from measuring
-   every candidate at 16, 24, 32 and 48 px: an S mark read best at 16 but the user chose the creature
-   ("Der Klecks ueberall"), which holds to 24 px and below that is a coloured blob with a light band. The old icon
-   is kept as `build/icon-0.1.26.png`. **Open:** the mascot's other poses (a six-expression sheet exists as
-   generated drafts only), the website and the About dialog. The original wording of this item:
-   there was no vector source and no 1024 px master. A logo means: a mark that reads at 16 px (taskbar, tab, tray) and at 1024 px (macOS icns,
-   the website), a vector source (SVG) committed under `build/`, the exports electron-builder needs (`icon.png` at
-   1024, `icon.ico` with 16 to 256, later `icon.icns`), the About dialog, the README and the website
-   (`F:\portfolio_web`, the Scumble pages). The name's idea (a thin semi-opaque layer over a dry one) is the obvious
-   starting point. Who designs it, and whether a draft comes from here first, is the user's call. **B3 waits for
-   it** (the macOS icon needs the 1024 px master).
-19. **3D layers from AI models (asked for by the user on 2026-09-23; on the list only, not planned, not built).**
-   Scumble already has 3D layers: the `glb` plugin (`plugins/glb/`, `glb.place` / `glb.edit` / `glb.info`,
-   `docs/COMMANDS.md`) renders a `.glb` / `.gltf` into a layer by position, distance, rotation and scale and keeps it
-   editable. The idea: make the model itself with an image-to-3D (or text-to-3D) model, from a selection or a layer
-   (a cut-out object) or a prompt, and place the answer as a glb layer, so an object can be turned, relit and put back
-   into the picture; the inpainting models then blend it in. Routes to check: the **Comfy Router** serves Meshy
-   (`meshy/meshy-5` .. `meshy-7.1`, `remesh`, `rigging`, `animations`) and Tencent Hunyuan 3D (`hunyuan-3d-part`,
-   `-smart-topology`, `-texture-edit`, `-uv`; no plain image-to-3D there on 2026-09-23), all on the same Comfy key
-   (`comfyrouter.js`, one more dialect); fal and Replicate host TRELLIS / Hunyuan3D / Tripo-style image-to-3D; a local
-   ComfyUI recipe (Hunyuan3D 2.x nodes) is a third way. **To find out before planning:** which models take one image
-   and answer a textured GLB (not only a mesh), the answer's size and format (GLB or a zip of OBJ + textures), the time
-   (minutes: the queue and its 30-minute wait fit), the price, and whether the glb plugin's renderer shows the
-   answer's PBR materials well enough that the result is worth inpainting over.
-20. **Skins: a docking point for custom app looks (asked for by the user on 2026-09-25; BUILT on 2026-09-26,
-   `docs/SKINS.md`, `docs/PLAN_0_1_29.md` §1; the example skins are named "90s" and "Duck" by the user).** Developers drop a skin into a folder and the app wears it. **The user's
-   answers:** the app only (not the ComfyUI node, so `build_node.py` / `nodecopy` stay out of it except where the
-   editor's shared `STYLE` is touched), and ship example skins from the start - a **Winamp-like** look and a look after
-   Pollen Robotics' / Hugging Face's **Microduck** robot (palette from https://pollen-robotics.com/microduck/press-kit/).
-   **What the code has today (2026-09-25):** not one CSS custom property. 89 distinct colours are hard-coded in four
-   places: `renderer/shell.css` (151 colour values), `assistant.css` (67), `help.css` (46) and the editor's `STYLE`
-   string in `renderer/editor/inpaint_canvas.js` (lines 929 to 1128); on top, 68 `fillStyle` / `strokeStyle` colours
-   drawn on canvas (the selection blue `#7cc7ff`, rulers, labels), 22 inline styles set from JS in the editor and
-   `inpaint_modal.js`, 4 in `shell.js`, and `backgroundColor: "#181818"` in `main.js`. The icons are SVG with
-   `currentColor` and follow by themselves. The CSP (`renderer/index.html`) allows inline styles and keeps `url()` to
-   `'self'` / `scumble://app`, so a skin cannot phone home. **The shape agreed in the brainstorm:** (1) **tokens
-   first** - about 25 to 30 CSS variables (`--sc-bg`, `--sc-surface`, `--sc-fg`, `--sc-muted`, `--sc-accent`,
-   `--sc-danger`, `--sc-selection`, `--sc-border`, `--sc-radius`, `--sc-font`, ...) replacing the 89 colours, the
-   default theme pixel-identical to today (a screenshot gate on both backends), canvas overlays reading the tokens
-   through `getComputedStyle` once per theme change; worth it on its own (a light mode, contrast, Store screenshots).
-   (2) **a skin is a plugin without JS**: a folder with `plugin.json` (`"registers": ["skin"]`), a `skin.css` and its
-   own images and fonts, picked in a *Settings > Appearance* section and switched live through the existing *Reload
-   plugins* path. The tokens are the stable contract (a `docs/SKINS.md`, versioned, a gate that every token exists);
-   **free CSS on top is allowed** (a Winamp look needs gradients, bevels, an LCD panel, a pixel font, bitmaps - tokens
-   alone cannot do it) and marked unstable, like app modules for user plugins. No JS in a skin. **Protected from
-   skins:** the assistant's ask cards (a skin must not hide a question before a paid run), the masked API keys, and
-   the selection outline's contrast on white (`editor_test.py` has that case). (3) optional later: a theme editor in
-   the Settings (a colour picker per token, export as a skin folder), light / dark after the OS (`nativeTheme`), a
-   compact density, icon sets. **Open, the user's call:** the names of the two example skins - "Winamp" and
-   "Microduck" are other people's marks and a shipped skin under that name reads as an endorsement, so the brainstorm
-   suggested the look without logos or original artwork under own names (e.g. "Amp '98", "Duckling"), the same rule
-   as the film names (real names only in the film presets); for Microduck, asking Pollen Robotics / Hugging Face
-   whether an official skin is fine is an option. **Rough effort (not measured):** 4 to 5 days - tokens 1.5 to 2, the
-   docking point with assets about 1.5, the two example skins about 1; the theme editor extra. **Order:** after B3
-   (macOS), not before.
-21. **Lens flares, "something like Flarecore" (asked for by the user on 2026-09-25; brainstormed only, OPTIONAL, not
-   planned in detail, not built).** https://github.com/cyco-creates/Flarecore is a ComfyUI node pack (Apache-2.0,
-   PyTorch in linear light, one author, 0.2.0 beta 1 at `5e8f2bb` of 2026-09-18). **The user's reason:** rarely used
-   ("eher nicht so oft"), it is feature completeness for a pro tool. **What a 10-agent brainstorm found (read through
-   the GitHub API, nothing cloned or run):** the engine is a sum of analytic per-pixel fields along the axis from the
-   light P to a movable anchor E (`P + t(E-P)`; `flare/elements.py` 146-525: glow (Moffat), iris (n-gon by angular
-   folding, roundness, hollow, coma, crescent), streak, ring, hoop, glint rays, orbs, spectral, texture); no FFT, no
-   model. 72 presets (not the README's 74), 732 elements: glow 271, iris 211, streak 74, glint 74 (86 % together),
-   texture 49 (using only 10 of the 197 PNGs). The 197 PNGs (78.1 MB) are AI-generated (3 carry OpenAI C2PA, against
-   the repo's own "nothing from third-party tools"); 30 presets carry lens brand names (ARRI, Cooke, Zeiss, Panavision
-   ...), partly fitted to screenshots from the login-gated Cineflares; `schema_version` stayed 1 through 15 schema
-   commits. Most of it is video (tracking, image visibility across frames, flicker) or experimental (Lens Lab).
-   **Rejected:** a port that reads Flarecore's preset format (a moving, unversioned target, brand names) and a bridge
-   that runs FlareRender on the user's ComfyUI (not installed there, not on the Comfy Registry, no live preview - every
-   slider change a queue run on the production machine; its `flare_pass` is sRGB and clamped, so Screen over it is
-   about 16 levels brighter in the midtones than its linear add). **The shape, a compact version, about 7 to 9 days:**
-   a built-in plugin `plugins/flare/`, one filter type `flare.lens` with `reach: 0` like `film.light_leak` (normal
-   blend; the shader decodes to linear, adds the flare accumulated in float, encodes again, a +-0.5 LSB dither hashed on
-   the picture pixel - `BLEND_MODES` has no add and needs none then); five element kinds translated from Flarecore
-   (glow, iris / ghost, streak, glint, ring) with the Apache-2.0 header per translated file, a NOTICE and a credit in
-   About; a tool with two handles (light, anchor) after `film/points.js`, the light's colour sampled on the click;
-   8 to 10 own presets with neutral names (a Node check that fails on a brand name; the preset select gets its own
-   `title`, or the film-stock tooltip shows); occlusion through the filter layer's existing mask; **coordinates
-   relative to the picture** (`resizeImageNow` does not move filter params); the assistant and MCP through `add_filter`
-   / `set_filter` (both AUTO in `policy.js`), no new commands; the renderer validates and clamps every value, because
-   `applyParams` (`commands.js` 974-989) assigns a `custom` value raw and sets a preset select's id only. Gates on both
-   backends: GPU vs CPU within 2 levels, bands equal to the whole flatten, drag and undo, an
-   `exportperf:15000x10000,--filter=flare.lens` row. The open-ended part is the look tuning: a build on the user's own
-   pictures after about 4 days, before the rest. **Only on the user's word, later:** several lights per layer, detect
-   the light, occlusion from a SAM2 selection or depth (Depth Anything V2 Small ONNX, Apache-2.0, 50 MB fp16; the
-   user's ComfyUI holds only the Large model, CC-BY-NC), a Flarecore JSON importer pinned at `5e8f2bb`, textures (after
-   a core fix: plugin samplers are re-uploaded every pass and units 6 / 7 collide with the framework's), "bake to
-   layer" for PSD (layered exports skip filter layers). **Known traps:** a generate after the flare bakes it into the
-   result (results go on top; film layers have the same problem); a plugin never reaches the ComfyUI node. **Order:**
-   optional, no place in the order until the user names one.
-22. **Nik 9 parity: depth masks and the rest of DxO Nik Collection 9's feature set (asked for by the user on
-   2026-09-25; brainstormed, not planned into sessions, not built; an update of its own, NOT optional).** The whole
-   research and shape is **`docs/PLAN_NIK9.md`**; read it before planning, do not research it again. **The user's
-   answers:** it is for editing the finished picture after inpainting (adjustments by distance: grading, haze,
-   halation), the edges are to be done properly ("besser richtig umsetzen"), and the scope is all of Nik 9 that
-   Scumble lacks ("wenn dann alles"). **The shape, four releases:** (1) masks - an in-app Depth Anything V2 Small
-   helper (Apache-2.0; the onnx-community repo is deprecated and its successor uses external data, so pin commit
-   `4472b73...` or teach the registry a data file), the depth map a **document** resource (working map up to 4096 px,
-   guided in a pool worker, u16 PNG mirror ref), *Select by depth* and *Limit by depth* live on filter layers (a
-   post-stage in `applyFilter`), luminosity and colour-range sources on the same range bar, an Intersect selection
-   mode, the Object tool's box drag, a layer-mask overlay; (2) edges (a tiled detail pass, a guided snap of the mask
-   at full resolution in the depth-edge band, SAM2 / BiRefNet snap, a refine brush) and depth filters (haze, dehaze;
-   lens blur on the user's word); (3) filters and control points (HSL 8 channels, chromatic shift, the grading wheel,
-   glass, elliptical / polygonal / line points, diffusion); (4) the 18 missing blend modes (core: GL, Rust kernel and
-   ABI, Canvas 2D, PSD / ORA, the node). **About 34 to 46 working days in all, inferred.** A checkpoint on the user's
-   pictures once the model runs decides how much edge work release 2 needs. **Order:** not fixed yet; suggested
-   after B3 (macOS). **Folded in on 2026-09-26 (the user: "kommt später, zusammen mit Nik"):** the masks-and-selections
-   package - refine edge for any selection (hair, fur, colour decontamination, output to a mask), a soft selection
-   from a layer's alpha (`selectionFromLayer` cuts at 127 today, `inpaint_canvas.js` ~6196) with add / subtract /
-   intersect, a Bezier selection and stored paths, commands for saved selections, a black-and-white mask view - and
-   the grading-and-panels package - a dither at the filter chain's final 8-bit write, a histogram / info panel, a
-   navigator, own presets for filter layers with .cube export, colour match on luminance only or against a chosen
-   reference region, vibrance, selective colour, a channel mixer, a gradient map, surface blur and median. Estimates
-   from the review: 6.5-12.5 and 11-19.5 days.
-23. **Rotate and straighten the whole document (on the later list, the user, 2026-09-26).** Rotate 90 / 180, flip the
-   document, straighten by a drawn line, crop presets with overlays. Estimate 2 to 3.5 days (crop presets 1 to 2
-   more). Every layer, mask, selection and saved selection has to follow, like *Resize*.
+5. **The object tool's change A** (the image-size label map, `dist/c6map/c/objects.md` §7-§9): parked by the user on
+   2026-09-18.
+14. **Upscaling** (parked, only listed): through the user's ComfyUI (`UpscaleModelLoader`), in the app on ONNX Runtime,
+   or by API (Topaz, Magnific; Magnific's two upscalers exist since 0.1.24). To check first: driving a locally installed
+   Topaz by CLI or MCP, where the result lands, the size limits.
+15. **Qwen Image Edit 2.1:** the local ComfyUI recipe is built (0.1.23, never run: the models are not downloaded); the
+   API side (providers, ids, masks, limits, prices) is open.
+16. **Oxen.ai:** built on 2026-09-26 from the docs (`docs/RECIPES.md` "Oxen.ai"), never run live (the user has no key).
+17. **A side panel of adjustable width:** the horizontal scrollbar is gone since 0.1.23; the drag handle on the left
+   edge is open (about half a day, a gate step in `editor_test.py`).
+18. **The logo:** drawn for 0.1.27 (`build/icon.svg` and its exports); open: the mascot's other poses, the About dialog,
+   the website.
+19. **3D layers from AI models** (only listed): image-to-3D (Comfy Router's Meshy / Hunyuan 3D, fal / Replicate TRELLIS,
+   a local Hunyuan3D recipe) into the glb plugin's layers. To check first: which models answer a textured GLB, the
+   time, the price.
+20. **Skins:** built on 2026-09-26 (`docs/SKINS.md`); later, on the user's word: a theme editor, light / dark after the
+   OS, a compact density, icon sets.
+21. **Lens flares like Flarecore** (optional, rarely used; brainstormed only): a built-in plugin `flare.lens` with five
+   element kinds translated from Flarecore (Apache-2.0) and own presets, about 7 to 9 days; no place in the order
+   until the user names one.
+22. **Nik 9 parity** (not optional; an update of its own): `docs/PLAN_NIK9.md` has the research and the shape (depth
+   masks, edges, filters and control points, the 18 missing blend modes; 34-46 days), plus the masks-and-selections and
+   the grading-and-panels packages folded in on 2026-09-26 (6.5-12.5 and 11-19.5 days). Suggested after B3.
+23. **Rotate and straighten the whole document** (on the later list, the user, 2026-09-26): rotate 90 / 180, flip,
+   straighten by a drawn line, crop presets; 2 to 3.5 days, crop presets 1 to 2 more; every layer, mask and selection
+   follows, like *Resize*.
 
 ## Gate runner and flakes
 
@@ -570,6 +408,10 @@ Known flakes; **re-run before believing any of these**:
   over `InMemoryTransport` -> the same `createServer` external agents get -> `bridge.js` with
   `meta` (the user-activity wait, the busy check, the turn and its undo step) -> `commands.call`.
   Chats under `<userData>/assistant/`, `docs/ASSISTANT.md`, the plan in `docs/PLAN_ASSISTANT.md`.
+- Documents (`.scumble`): `host.saveDocument` / `openDocument` (`renderer/editor/host.js`: `flushEditor` uploads the
+  edited layers first, `documentDirty` / `settleKey` keep the "*", `rememberClosed` / `reopenClosed` the closed tabs)
+  -> IPC `documents:*` -> `electron/main/documents.js` (a job per request, a lock per path, `idle()` for the quit) ->
+  `electron/main/docfile.js` (the stored zip, temp file and rename, the mirror import). `docs/DOCUMENTS.md`.
 - Provider runs: `host.runProvider` (the recipe resolved to the chosen provider's variant by
   `shell.js`) → `renderer/editor/stitch.js` (crop) → IPC `provider:edit` →
   `electron/main/providers/index.js` picks the adapter and the key (`keys.js`) →
