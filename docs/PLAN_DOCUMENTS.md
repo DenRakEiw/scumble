@@ -480,6 +480,11 @@ every written file read back by Python's `zipfile.testzip()` as an independent r
 `../` and absolute entry names, a directory past the file end, a newer `minReader`; ENOSPC and EBUSY injected into a
 fake fs; the sweep never deleting a file that does not match its pattern.
 
+**D1 built 2026-09-26** (`electron/main/docfile.js`, `tools/document_test.js`, 11 checks plus `--big`, every file read
+back by Python's zipfile too). The temp registry, the sweep and the free-space check are in the module; main calls
+them in D2. The 4 GiB case wrote 4.00 GiB in 3.2 s (a sparse source, so the read is nearly free; the real speed is
+D5's measurement).
+
 ### D2. Save and open in the app (2.5 to 3.5 d)
 
 Main: IPC `documents:choosePath / write / open / cancel / progress / takePending`, the lock map, the quit and update
