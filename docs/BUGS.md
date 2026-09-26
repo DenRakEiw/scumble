@@ -190,6 +190,11 @@ the temp registry after the rename, `summary.name`); these two touch the shared 
   `ensureFont`: the user font list is searched by family before the layer's `fontRef`). When an open imported the
   document's font as "MyFont (1).ttf" because another file of that name was in the mirror, a re-render may use the
   local file. Probably rare (the same family in two different files); a fix prefers `fontRef` when it names a file.
+- **Canvas backend only: an undo back to the saved state leaves the tab's "*"** (measured by `docux`, 2026-09-26). The
+  layer's upload name is a hash of its PNG, encoded through `createImageBitmap` of a GPU canvas; fully transparent
+  pixels can come back with other colour bytes, so the same visible pixels (0 differ) get another name and the state
+  another hash. Tiles (the default) is exact. A fix would hash the pixels with transparent colour zeroed, or zero it
+  before the encode.
 
 ### Linux: built, never run (B2, 2026-09-22)
 

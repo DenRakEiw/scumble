@@ -625,6 +625,36 @@ missing); no wait for the selection encode above 16 MP (the 15k run with a selec
 the close not waiting (8); no sweep at start (7); the unknown filter back to grain (11); masks or plugin refs not
 walked (1, 2); the dirty key taken before the flush (9). Each must fail its step; the untouched tree must pass first.
 
+**D5 built 2026-09-26** (local, not pushed). Three gates and two mutation rounds:
+- **`document`** (`tools/document_test.py`, written by an agent in a worktree, commit `01f06cf`): steps 1 to 8 and 11
+  as listed above, on both backends (about 35 s each), `node tools/document_test.js` first. Step 1 is a 13-layer
+  document (no LUT from a `.cube` and no grain plate: both go through UI flows); it compares the opened document exactly
+  with a restore of the saved state and allows the live document one level on partly transparent pixels (the restore
+  rounds such pixels by a level, and on the canvas backend the first readback of a GPU canvas differs by one: both
+  older than the format, the autosave restore does the same).
+- **`docux`** (`tools/document_ux_test.py`, against the runner's app): steps 9, 10, 12 plus the history question: the
+  dirty marker, close questions, Reopen Closed Tab, the history question and "changed on disk", `save_document` /
+  `open_document`, a second start with a path. Both backends. **On the canvas backend an undo back to the saved state
+  leaves the "*"**: the layer is encoded through `createImageBitmap`, fully transparent pixels can come back with other
+  colour bytes, so the same visible pixels hash to another file name (counted: 0 visible pixels differ). The gate
+  requires the clean-after-undo only on tiles; the default backend.
+- **`docperf:WxH`** (`tools/document_perf.py`): at 15000 x 10000 (a 453 MB noise base, three full paint layers, a
+  filter): the flush of the three layers 2.5 s (tiles) / 2.2 s (canvas); the write of the 457 / 467 MB file 0.33 to
+  0.41 s (about 1.1 to 1.4 GB/s, this machine's SSD with the files cached); a clean Ctrl+S 0.4 to 0.6 s; a save right
+  after a selection change of 6000 x 3000 at 15k 0.76 s (the background encode waited for); the open 5.0 to 5.9 s
+  (tiles) and 9.8 s (canvas) against 4.8 to 6.3 s and 10.5 s for the restore of the same state alone; the main process
+  grew by 0 to 20 MB during a save; `zipfile.testzip` clean. §4.1's expectation holds as measured.
+- **Mutation rounds.** Plain Node on a copy of `docfile.js` / `documents.js`: 18 of 18 caught (it first found four gaps
+  in `document_test.js`: a local header without its CRC, the zip64 size and count boundaries at equality, a plugin ref
+  not renamed; all closed). The `document` gate on a copy: 10 of 10 (the agent's round: onto the target, no CRC,
+  dedupe by size, refs not renamed, the close not waiting, no sweep, unknown filter to grain, plugin refs not packed,
+  `getValue()` before the flush, cancel ignored). `docux` / `docperf` on a copy: 6 of 6 (the dirty key taken before
+  the flush, the close not asking, a second start ignored, the history answer not remembered, reopen losing the file,
+  the selection encode not waited for; the last survived until the selection change moved to a save with nothing else
+  to upload, where the layer uploads could not hide the missing wait).
+- **Not done:** a double click in Explorer (an installed build registers `.scumble` on this machine: the user's word),
+  a key on a real keyboard, the exe gates (once per release), `npm run dist:store` for the MSIX manifest.
+
 **Estimate for 3b: 8.5 to 13 working days** (D1 1.5-2, D2 2.5-3.5, D3 1.5-2.5, D4 1-2, D5 2-3), more than the share
 of package 3's 14 to 24 days the review had in mind for it; the full tier and the kill and collision cases are most of
 the difference.

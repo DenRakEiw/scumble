@@ -121,10 +121,18 @@ files, file association), then the history panel, TIFF, PSD masks, the metadata 
 design pass of package 3 of the morning died with the usage limit; **3b's design is `docs/PLAN_DOCUMENTS.md`** (read it
 first), with the user's answers of 2026-09-26 (§9: Ctrl+S saves the document, Ctrl+Shift+S Save As, Ctrl+Shift+E
 exports; the result history goes in the file with a switch in Save As; fonts the user added travel; no question on
-quit). **Steps D1 and D2 are built** (D1 `ec01d08`, `electron/main/docfile.js`; D2 `e959cda`, `electron/main/documents.js`,
-save / open / Save As in the app, plugin API 2 `documents.data`, the glb plugin per document, an unknown filter id kept;
-local only, not pushed; `docs/PLAN_DOCUMENTS.md` "D2 built" says what was checked and what is left). **Next D3** (tab
-name and dirty marker, close asks, reopen closed tab, recent files, the Save As history switch, the drop), then D4, D5.
+quit). **Package 3b (the `.scumble` format) is built, D1 to D5** (all local, not pushed, not released;
+`docs/PLAN_DOCUMENTS.md` "D1 built" to "D5 built" say what was checked): D1 `ec01d08` the container (`electron/main/docfile.js`); D2 `e959cda` save / open / Save As
+(`electron/main/documents.js`, plugin API 2 `documents.data`, the glb plugin per document, an unknown filter id kept);
+D3 `a6b38df` the dirty "*", close asks, Reopen Closed Tab (Ctrl+Shift+T), Open Recent, the history question on Save
+As, the drop, the progress chip, the manual chapter "Documents"; D4 `b2804a1` the file association (NSIS + MSIX), argv
+and the second start, `save_document` / `open_document` and their policy rows; D5 `1159345` + `01f06cf` + the commit
+after it: the format spec `docs/DOCUMENTS.md`, hardening from its review, the gates `document` (steps 1-8, 11),
+`docux` (9, 10, 12) and `docperf:WxH` (15k: a 457 MB file written in 0.4 s, opened in 5 s on tiles), both backends,
+mutation rounds 18/18 (Node), 10/10 (`document`), 6/6 (`docux` / `docperf`). Not checked by anyone: a double click in
+Explorer (needs an installed build: the user's word), a key on a real keyboard. **Next, the user's order: 3c** (the
+history panel), then 3d TIFF, 3e editable PSD masks, 3f the PNG metadata switch; whether 3b ships as a release of its
+own is the user's call.
 Still open for the user: Ctrl+S as "save the document" (plan, open questions), LaMa shipped or downloaded, releases
 per package or bundled (0.1.29 was one release for three packages).
 
@@ -383,7 +391,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit`, plus `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is

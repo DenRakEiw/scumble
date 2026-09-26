@@ -84,6 +84,7 @@ SAVE = r"""
 (async () => {
     const { host } = await import("./editor/host.js");
     const ed = window.__docperf;
+    const shell = await import("./shell.js");
     const t0 = performance.now();
     await host.flushEditor(ed);
     const t1 = performance.now();
@@ -92,7 +93,14 @@ SAVE = r"""
     const again0 = performance.now();
     const r2 = await host.saveDocument(ed, {});
     const again = performance.now() - again0;
-    return { flushMs: Math.round(t1 - t0), saveMs: Math.round(t2 - t1), writeMs: r.ms, bytes: r.bytes, entries: r.entries, cleanSaveMs: Math.round(again), cleanWriteMs: r2.ms, state: ed.getValue() };
+    // a selection changed right before a save with nothing else to upload: above 16 MP its PNG is encoded in the
+    // background, and the save has to wait for it (flushEditor), or the file keeps the selection of before
+    await shell.commands.call("select_rect", { doc: ed.node.id, x: 1000, y: 800, w: Math.round(ed.width * 0.4), h: Math.round(ed.height * 0.3) });
+    const selBefore = (await shell.commands.call("status", { doc: ed.node.id })).result.selection;
+    const sel0 = performance.now();
+    await host.saveDocument(ed, {});
+    const selSaveMs = Math.round(performance.now() - sel0);
+    return { flushMs: Math.round(t1 - t0), saveMs: Math.round(t2 - t1), writeMs: r.ms, bytes: r.bytes, entries: r.entries, cleanSaveMs: Math.round(again), cleanWriteMs: r2.ms, selBefore, selSaveMs, state: ed.getValue() };
 })()
 """
 
@@ -119,7 +127,8 @@ OPEN = r"""
     await settle(o.editor);
     const openMs = performance.now() - b0;
     const same = JSON.stringify(JSON.parse(o.editor.getValue()).layers.map((l) => l.ref && l.ref.filename)) === JSON.stringify(JSON.parse(state).layers.map((l) => l.ref && l.ref.filename));
-    return { restoreMs: Math.round(restoreMs), openMs: Math.round(openMs), sameRefs: same, dirty: host.documentDirty(o.editor) };
+    const selAfter = (await shell.commands.call("status", { doc: o.editor.node.id })).result.selection;
+    return { restoreMs: Math.round(restoreMs), openMs: Math.round(openMs), sameRefs: same, dirty: host.documentDirty(o.editor), selAfter };
 })()
 """
 
@@ -174,7 +183,9 @@ async def run(c):
     print(f"zipfile: testzip {'clean' if bad is None else 'BAD ' + bad}, mimetype first and stored: {ok_zip}, {time.time() - t:.1f} s", flush=True)
     opened = await c.eval(OPEN.replace("__PATH__", json.dumps(doc)), timeout=1800)
     print("open:", json.dumps(opened), flush=True)
-    ok = ok_zip and opened.get("sameRefs") and not opened.get("dirty")
+    same_sel = json.dumps(saved.get("selBefore"), sort_keys=True) == json.dumps(opened.get("selAfter"), sort_keys=True)
+    print(f"selection changed right before the save came back: {same_sel} ({saved.get('selBefore')} -> {opened.get('selAfter')})", flush=True)
+    ok = ok_zip and opened.get("sameRefs") and not opened.get("dirty") and same_sel
     print("PASS" if ok else "FAIL", flush=True)
     return ok
 
