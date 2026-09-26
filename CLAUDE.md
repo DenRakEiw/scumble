@@ -96,22 +96,31 @@ code.
   markdown in the strings; `hub.version` in `lib/scumble.ts` follows the release. Before the post, `node tools/manual_sync.js` (the manual and its reader, docs/PLAN_HELP.md), committed
   with it. `npx tsc --noEmit -p .` and
   `npx next build` before committing. **Who pushes matters: Vercel runs on a free (Hobby) account, which deploys
-  only commits of its one owner.** Commit only as `git -c user.name="Dennis Schöneberg" -c
-  user.email=dennis.schoeneberg@me.com` (the identity of every deploy that went through), never as the
-  `DenRakEiw` noreply address this repo uses, and **no `Co-Authored-By` trailer** (a second author blocks a Hobby
-  deploy); stage only the files of the post (the tree holds untracked files of the user's that must not go out,
-  e.g. a portrait under `public/`). **Since 2026-09-20 Vercel blocks every git deploy of this repo anyway**
-  ("Deployment was blocked", the same metadata as the last one that went through on 2026-08-29; the Vercel user
-  `schoenebergde-4863` shows no GitHub login connection, the likely cause, which only the user can reconnect). Until
-  the user fixes that, read the commit's status (`gh api repos/DenRakEiw/Portfolio_vercel/commits/<sha>/status`)
-  and, when it says blocked, deploy exactly that commit with the CLI from a clean export, never from the working
+  only commits of its one owner.** Commit with the website repo's own identity (its local `user.email` is
+  `schoenebergde@gmail.com` since 2026-09-25, when the user reconnected the Git account to Vercel: the deploys of
+  that address go through, one of `dennis.schoeneberg@me.com` was blocked the same day), never as the `DenRakEiw`
+  noreply address this repo uses, and **no `Co-Authored-By` trailer** (a second author blocks a Hobby deploy);
+  stage only the files of the post. **Git deploys work again since 2026-09-25** (0.1.29's post went live by git,
+  `db4197d`). Read the commit's status afterwards (`gh api repos/DenRakEiw/Portfolio_vercel/commits/<sha>/status`);
+  should it say blocked again, deploy exactly that commit with the CLI from a clean export, never from the working
   tree: `git archive <sha> | tar -x -C <scratch>`, copy `.vercel/project.json` into it, `vercel --prod --yes`
-  there; then check the live page.
+  there. Then check the live page (posts are anchors on `/scumble/blog`, `#v0-1-NN`, not pages of their own).
 
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-23) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
-## Where things stand (2026-09-26)
+## Where things stand (2026-09-26, evening)
+
+**0.1.29 is Latest** (published 2026-09-26 18:07 German time on the user's word "3a und dann release"): skins,
+Magnific, Oxen.ai and quit safety (3a); exe gates `--offline` ALL PASS on both backends (`rel29-exe`,
+`rel29-exe-canvas`); dev blog post "Close it, it waits now" (`v0-1-29`, portfolio `db4197d`, with the manual sync).
+Done of the plan below: **1 skins** (`2471831`, the review's ask-card bypasses fixed: `protectAsk`), **2 providers**
+(`7425173`), **3a quit safety** (`9d81033`, gate `quit`, `electron/main/quit.js` and `autosave.js`). **Next, the
+user's order: 3b to 3f** - the `.scumble` format first (the biggest: save / save as, dirty marker, close asks, recent
+files, file association), then the history panel, TIFF, PSD masks, the metadata switch; then packages 4 to 6. The
+design pass of package 3 of the morning died with the usage limit (every agent failed): 3b starts with a fresh one.
+Still open for the user: Ctrl+S as "save the document" (plan, open questions), LaMa shipped or downloaded, releases
+per package or bundled (0.1.29 was one release for three packages).
 
 **The user decided a large build on 2026-09-26, and it is `docs/PLAN_0_1_29.md`** (read it first): (1) skins
 (item 20) with two example skins named **"90s"** (a late-90s media-player look, own artwork, no Winamp marks) and
@@ -130,9 +139,9 @@ document (item 23). The review's findings that are bugs went to `docs/BUGS.md` (
 
 The full hand-over blocks of those days are in `docs/HISTORY.md`, verbatim. What still matters from them:
 
-**Releases.** 0.1.28 is Latest (published 2026-09-23: Comfy Router, HY Image 3.5). `CHANGELOG.md` "0.1.29 —
-unreleased" collects today's build (`docs/PLAN_0_1_29.md`). Check `gh release list` before believing any release
-state written down anywhere. Every release: the CHANGELOG section first, `npm run dist`, exe gates `--offline` on both
+**Releases.** 0.1.29 is Latest (published 2026-09-26: skins, Magnific, Oxen.ai, quit safety). The next CHANGELOG
+section is "0.1.30 — unreleased" once something lands. Check `gh release list` before believing any release state
+written down anywhere. Every release: the CHANGELOG section first, `npm run dist`, exe gates `--offline` on both
 backends, the manual sync (`node tools/manual_sync.js`) and a dev blog post (the decisions block above).
 
 **Open, from before 2026-09-26 (none started):**
