@@ -2,7 +2,7 @@
 // see host.js for how the editor uses it.
 "use strict";
 
-const { contextBridge, ipcRenderer, webFrame } = require("electron");
+const { contextBridge, ipcRenderer, webFrame, webUtils } = require("electron");
 
 function on(channel, cb) {
     const handler = (_e, payload) => cb(payload);
@@ -82,9 +82,15 @@ contextBridge.exposeInMainWorld("scumble", {
         cancel: (reqId) => ipcRenderer.invoke("documents:cancel", reqId),
         takePending: () => ipcRenderer.invoke("documents:takePending"),
         stat: (file) => ipcRenderer.invoke("documents:stat", file),
+        // a question in a native dialog (close, changed on disk, newer, history): the answer's word (documents.js askDocument)
+        ask: (q) => ipcRenderer.invoke("documents:ask", q),
         onProgress: (cb) => on("documents:progress", cb),
         onOpenRequest: (cb) => on("documents:openRequest", cb),
+        // the path of a dropped File (a .scumble dropped on the window)
+        pathOf: (file) => { try { return webUtils.getPathForFile(file) || null; } catch (_) { return null; } },
     },
+    // the window title's document part ("portrait *"); main adds "Scumble" and the agents line
+    setTitle: (text) => ipcRenderer.send("app:title", String(text || "")),
     files: {
         stats: () => ipcRenderer.invoke("files:stats"),
         prune: (args) => ipcRenderer.invoke("files:prune", args),

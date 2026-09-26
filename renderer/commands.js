@@ -39,16 +39,19 @@ function clampInt(v, lo, hi, dflt) {
 // ---- summaries -----------------------------------------------------------------------------
 
 export function docSummary(ed) {
-    return { id: ed.node.id, name: docName(ed), active: host.isActive(ed), width: ed.width || 0, height: ed.height || 0, layers: ed.layers.length, loaded: !!ed.base, busy: busy(ed) };
+    return {
+        id: ed.node.id, name: docName(ed), active: host.isActive(ed), width: ed.width || 0, height: ed.height || 0, layers: ed.layers.length, loaded: !!ed.base, busy: busy(ed),
+        // its .scumble file (null: not saved as a document) and whether the tab has changes that are not in it
+        file: ed.docFile && ed.docFile.path ? ed.docFile.path : null, dirty: host.documentDirty(ed),
+    };
 }
 
 function docName(ed) {
-    if (!ed.base || !ed.base.ref) return "Untitled";
-    return String(ed.base.ref.filename || "image").replace(/\.[a-z0-9]+$/i, "");
+    return host.documentName(ed);
 }
 
 function busy(ed) {
-    return !!(ed.pending || ed.segmentPending || ed.cutoutPending || ed.upsamplePending || ed.objectsPending || ed._loading || ed.providerPending);
+    return !!(ed.pending || ed.segmentPending || ed.cutoutPending || ed.upsamplePending || ed.objectsPending || ed._loading || ed.providerPending || ed._docSaving);
 }
 
 export function layerSummary(ed, l) {
@@ -325,7 +328,7 @@ const COMMANDS = {
         async run(ed) { host.shell.activate(ed); return docSummary(ed); },
     },
     close_document: {
-        description: "Close a tab without asking. The document's files stay in the local store.",
+        description: "Close a tab without asking (unsaved changes are not written to its .scumble file). File › Reopen Closed Tab brings it back in this session; the document's files stay in the local store.",
         params: {},
         async run(ed) { const id = ed.node.id; host.shell.closeDocument(ed, { force: true }); return { closed: id, documents: host.editors().map(docSummary) }; },
     },

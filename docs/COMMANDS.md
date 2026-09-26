@@ -60,7 +60,7 @@ Bring a tab to the front.
 
 ### `close_document`
 
-Close a tab without asking. The document's files stay in the local store.
+Close a tab without asking (unsaved changes are not written to its .scumble file). File › Reopen Closed Tab brings it back in this session; the document's files stay in the local store.
 
 | param | type | description |
 |---|---|---|
@@ -360,6 +360,7 @@ Upscale with the selected upscale recipe (list_recipes: task "upscale"; select_r
 | `doc` | integer | document id (default the active tab) |
 | `scope` | string | selection (a detail pass) or document (the whole picture larger) (default `"selection"`; one of `selection`, `document`) |
 | `factor` | number | how many times larger; the recipe's default when left out (list_recipes shows each recipe's factors); ignored by a model that picks its own |
+| `prompt` | string | guidance for the added detail, for an upscaler that takes one (list_recipes: usesPrompt true, e.g. Clarity, Magnific Creative); the document's prompt when left out, ignored by the others |
 | `timeout` | integer | seconds to wait for the result (default 1800) (default `1800`) |
 
 ## Layers

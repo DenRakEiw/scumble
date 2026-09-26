@@ -23,7 +23,7 @@ The installer is not code-signed yet, so Windows shows "Windows protected your P
 
 On Linux the same release carries an AppImage and a .deb. Fair warning: they are built by CI and have not been run by me, because I have no Linux machine here. If you try one, tell me what breaks. macOS is prepared but not released.
 
-The app alone can do a great deal — open, paint, select, layer, filter, export — but it generates nothing until it has somewhere to render. That is the next chapter.
+The app alone can do a great deal — open, paint, select, layer, filter, save, export — but it generates nothing until it has somewhere to render. That is the next chapter.
 
 ### Steps
 
@@ -64,7 +64,7 @@ The same key rows also feed two other things: the assistant, and prompt upsampli
 
 - A provider recipe with no key is shown greyed out with the reason, not hidden — so you can see what would be available.
 - A remote ComfyUI behind basic auth or a token: the fields are in Settings › ComfyUI, and the app proxies everything through its own origin, so images from the server never taint the canvas.
-- Nothing is uploaded to a provider until you press Generate. Opening, painting, selecting, filtering and exporting all happen on your machine.
+- Nothing is uploaded to a provider until you press Generate. Opening, painting, selecting, filtering, saving and exporting all happen on your machine.
 
 ## Your first edit
 
@@ -75,13 +75,13 @@ _Open a picture, select something, describe what should be there instead, genera
 
 The loop is always the same, whatever the model behind it: select an area, write what should be in it, press Generate. What comes back is a layer sitting over the selection, not a new picture — which is the point of the whole app. If you do not like it, you delete the layer and the original is untouched underneath.
 
-Open a picture with Ctrl+O, by dropping it on the window, or by pasting from the clipboard. PNG, JPEG and WebP, and since 0.1.25 also PSD and ORA files with their layers intact. Then paint over the thing you want changed with the selection brush — the default tool, size with the bracket keys, Alt to erase what you painted too much of.
+Open a picture with Ctrl+O, by dropping it on the window, or by pasting from the clipboard. PNG, JPEG and WebP, and since 0.1.25 also PSD and ORA files with their layers intact; a .scumble document you saved earlier opens the same way. Then paint over the thing you want changed with the selection brush — the default tool, size with the bracket keys, Alt to erase what you painted too much of.
 
 The prompt goes into the Generate tab on the right. Describe what should be in the selected area, not what is there now: "a red leather handbag" and not "change the bag to red leather". Then Generate, or Ctrl+Enter. A run on a local ComfyUI takes as long as your card needs; an API run is usually ten to thirty seconds. While it runs you can keep working, even in another tab.
 
 The result arrives as a layer over the selection, and the layer row has a Match slider. That slider is the small feature that saves most results: it matches the colours of the generated patch to what surrounds it, so the piece stops looking pasted in. Start at 100 %, pull it back when the model's own tone is worth keeping.
 
-Happy with it? Ctrl+S saves the visible picture. Not happy? Press Generate again — a new seed, a new layer, and you can compare the two by toggling their eyes.
+Happy with it? Ctrl+Shift+E exports the visible picture, and Ctrl+S keeps the whole document, every layer still editable, as a .scumble file. Not happy? Press Generate again — a new seed, a new layer, and you can compare the two by toggling their eyes.
 
 ### Steps
 
@@ -90,12 +90,12 @@ Happy with it? Ctrl+S saves the visible picture. Not happy? Press Generate again
 3. **Prompt.** Generate tab on the right: describe what should be there. Leave it empty for a pure cleanup with an inpainting model.
 4. **Generate.** Ctrl+Enter. The status line says where it runs and how long it has been running.
 5. **Blend.** In the new layer's row, pull Match up until the patch sits in the picture.
-6. **Save.** Ctrl+S for the visible picture, or the Export panel for PSD and ORA with all layers.
+6. **Save.** Ctrl+S saves the document as a .scumble file you can come back to. Ctrl+Shift+E exports the picture in the format the Export panel is set to: PNG, JPEG or WebP, or PSD and ORA with all layers.
 
 ### Notes
 
 - Feather the selection by a few pixels (Selection panel) before a generate and the edge gets easier for both the model and the stitch.
-- Every document is a tab: Ctrl+T new, Ctrl+W close, Ctrl+Tab next. A run keeps going while another tab is in front.
+- Every document is a tab: Ctrl+T new, Ctrl+W close, Ctrl+Shift+T reopen the last one closed, Ctrl+Tab next. A run keeps going while another tab is in front.
 - Ctrl+Z is a real undo stack, not a single step, and it covers the assistant's work too.
 
 ## Selecting: brush, shapes, wand, objects, words
@@ -111,7 +111,7 @@ Object hover is the one people like: move the pointer over the picture and Scumb
 
 Selection by text is the other one: type "the handbag" or "her sunglasses" into the Selection panel and press Go. That route runs on your connected ComfyUI (SAM3 there), so it needs a server, unlike object hover.
 
-Once you have a selection, the Selection panel does the rest: grow and shrink it by a pixel count, feather its edge, invert it, take it from a layer's transparency, or save it under a name to come back to later. Selections survive a restart with the document.
+Once you have a selection, the Selection panel does the rest: grow and shrink it by a pixel count, feather its edge, invert it, take it from a layer's transparency, or save it under a name to come back to later. Selections survive a restart with the document, and the selection and the saved ones travel in its .scumble file.
 
 ### Steps
 
@@ -230,20 +230,56 @@ On your own ComfyUI, the Upscale model recipe runs any model in your server's up
 - Upscaling the whole picture has a ceiling: the document can go to 65,535 pixels a side and about a gigapixel, and a factor that would pass it is refused before it costs you anything.
 - An upscale of the selection is a layer, so it can be masked back in partly — often nicer than a uniformly sharpened picture.
 
-## Saving, exporting and where your files live
+## Documents: your work as a .scumble file
+
+<!-- slug: documents -->
+_Ctrl+S keeps the whole document in one file — layers, filters, text, 3D objects, prompts and results — and it opens again as editable as you left it._
+
+An exported picture is the end of the road. PSD and ORA keep the layers for other programs, but a filter layer survives there only in the merged picture, and the prompts and the results stay behind. A .scumble file is Scumble's own document: Ctrl+S writes the tab into one, and opening it next week, or on another machine, brings the document back with every part of it still editable.
+
+What goes in is everything the document is. Every layer with its pixels, its mask, blend mode, opacity, role, lock and alpha lock. Filter layers with their settings, LUTs and grain plates included. Text layers as text: a font you added yourself travels in the file, a system font is only named and falls back to another one on a machine that lacks it. 3D objects with their model file, so Edit 3D object still works after reopening, on another machine too. The selection and the saved selections, the guides and the crop, the prompt, the negative prompt and the generation settings. And the result history: the results and the prompts of earlier runs.
+
+What stays out is what belongs to you or to this machine rather than to the picture: API keys, the ComfyUI connection, the app's settings, the undo history, and the view — zoom and pan. The recipe choice stays yours as well; the file only notes which recipe it was saved with.
+
+The first Ctrl+S asks where; after that it writes to the same file, and Ctrl+Shift+S (Save As) writes a new one, which the tab follows from then on. The tab carries the file's name and shows its path in the tooltip. A * after the name, in the window title too, means the tab has changes that are not in its file, or has no file yet. The picture export that used to be on Ctrl+S is on Ctrl+Shift+E now (the next chapter).
+
+The result history is work you paid for, in money or in GPU time, so it goes into the file. A Save As of a document that holds results asks once — Save with History, Save without History, or Cancel — and leaving it out is for sharing a picture without how it was made. The tab's file remembers the answer, so the next Ctrl+S does the same.
+
+Closing a tab with changes, or with a picture that was never saved, asks: Save, Don't Save or Cancel. A tab whose file holds everything closes without a question. Either way Ctrl+Shift+T brings back the last ten tabs closed in this session, also after Don't Save. Quitting Scumble asks nothing: the session keeps every open document, the unsaved ones still marked with *, and they come back at the next start.
+
+A save cannot leave half a file behind. It is written beside the target under a temporary name and only then renamed over it, so a crash, a full disk or a killed process leaves the old file as it was. A long save or open shows a chip on the tab, "Saving 43 %", with a cross that cancels it; a cancelled or failed save leaves the old file alone too. Closing the app or installing an update waits for a save in progress.
+
+### Steps
+
+1. **Save.** Ctrl+S. The first time it asks for a name and a folder.
+2. **Save under a new name.** Ctrl+Shift+S, File › Save As. The tab follows the new file; the old one stays as it was.
+3. **Open.** Ctrl+O, File › Open Recent for the last ten documents, or drop the .scumble on the window. Opening a file that is already open brings its tab to the front.
+4. **Undo a close.** Ctrl+Shift+T, File › Reopen Closed Tab: one tab per press, up to the last ten of the session.
+
+### Notes
+
+- Saving over a file that changed on disk since you opened or saved it asks first: Overwrite, Save As or Cancel.
+- A file made by a newer Scumble opens with a note: what this version does not know is kept, not dropped. Saving over it asks first and proposes Save As.
+- Without the history, the results and the prompts of earlier runs stay out; the prompt and the settings in the Generate tab are part of the document and still go in.
+- A font you added travels in the file, so check its licence before you pass a document on.
+- File › Open Recent › Clear Recently Opened empties the list; a document that was moved or deleted leaves it when it fails to open.
+- The format is a plain zip with stored entries: rename a copy to .zip and any zip tool shows ordinary PNGs inside. Opening a document someone else made is safe — entry names are checked, and nothing is written outside the app's local file store (the next chapter).
+- Documents are the app's. The ComfyUI node Inpaint Canvas keeps Ctrl+S for its picture export; its document is the workflow.
+
+## Exporting and where your files live
 
 <!-- slug: export -->
 _PNG, JPEG, WebP, PSD and ORA with layers, the AI label, tabs that come back, and the folder that holds it all._
 
 ![The Export panel with PSD chosen, next to the size and canvas fields and the buttons for a single layer or the mask](https://www.denrakeiw.com/projects/scumble/manual/export.jpg "1600x946")
 
-Ctrl+S saves the visible picture. The Export panel does the rest: PNG, JPEG or WebP for a flat result, PSD or OpenRaster when you want the layers, masks and selections to survive into Photoshop, Krita or GIMP. You can export at a percentage, at a pixel size, or into a frame of a given size with a background of your choosing, and a single layer or the mask on its own.
+Ctrl+Shift+E, File › Export Image, writes the visible picture in the format the Export panel is set to: PNG, JPEG or WebP for a flat result, PSD or OpenRaster when you want the layers, masks and selections to survive into Photoshop, Krita or GIMP. Ctrl+S used to do this; it saves the .scumble document now (the chapter before). You can export at a percentage, at a pixel size, or into a frame of a given size with a background of your choosing, and a single layer or the mask on its own.
 
 The AI label panel writes the EU AI Act's disclosure into the file's metadata, for the day you need to say in the file itself that a model was involved.
 
-Every document is a tab, and tabs come back. The session is autosaved and restored at the next start, with no server needed for it, because every image the editor sends or receives is kept locally under %APPDATA%/Scumble/files/ in folders that mirror ComfyUI's own input and output. That is also why a restarted or freshly rented ComfyUI just works: before a run the app uploads what the server does not have.
+Every document is a tab, and tabs come back, saved as a .scumble file or not. The session is autosaved and restored at the next start, with no server needed for it, because every image the editor sends or receives is kept locally under %APPDATA%/Scumble/files/ in folders that mirror ComfyUI's own input and output. That is also why a restarted or freshly rented ComfyUI just works: before a run the app uploads what the server does not have.
 
-Closing Scumble waits until your last changes are saved; on a very large picture that can take a few seconds, and closing again meanwhile asks whether to wait. If the window crashes, it comes back with your documents. Settings › Local files › Earlier states opens the documents of the last two sessions as new tabs, for the day a start did not bring back what you expected.
+Closing Scumble asks nothing about unsaved documents. It waits until your last changes are in the session, and for a document save that is still running; on a very large picture that can take a few seconds, and closing again meanwhile asks whether to wait. If the window crashes, it comes back with your documents. Settings › Local files › Earlier states opens the documents of the last two sessions as new tabs, for the day a start did not bring back what you expected.
 
 ### Notes
 
@@ -439,21 +475,25 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 
 | Key | What it does |
 | --- | --- |
-| Ctrl+O  ·  Ctrl+S | Open an image · save the visible picture |
+| Ctrl+O | Open a picture or a .scumble document |
+| Ctrl+S  ·  Ctrl+Shift+S | Save the document · save it as a new file |
+| Ctrl+Shift+E | Export the visible picture (PNG, JPEG, WebP, PSD or ORA) |
 | Ctrl+T  ·  Ctrl+W | New tab · close tab |
+| Ctrl+Shift+T | Reopen the last closed tab |
 | Ctrl+Tab  ·  Ctrl+Shift+Tab | Next tab · previous tab |
 | Ctrl+, | Settings |
 | F1 | This manual, and the chat on it |
 | Ctrl+Shift+A | The assistant |
 | Ctrl+Shift+L | The console and the log |
 | F11 | Full screen |
-| Ctrl+R | Reload the window: it saves your last changes first, and the documents come back |
+| Ctrl+R | Reload the window: your last changes go into the session first, and the documents come back |
 
 ### Notes
 
 - On macOS every Ctrl here is Cmd.
-- A shortcut does nothing while you are typing in a field — the editor only listens when the canvas has the focus.
+- A shortcut does nothing while you are typing in a field — the editor only listens when the canvas has the focus. The File menu's keys, Ctrl+S among them, work from a text field too.
 - Plugins can add shortcuts of their own; the Plugins menu shows what each one bound.
+- The same editor in the ComfyUI node Inpaint Canvas keeps its old keys: Ctrl+S exports the picture there, and Ctrl+Shift+E merges down like Ctrl+E.
 
 ## Settings, updates and when something goes wrong
 

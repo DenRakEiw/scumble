@@ -525,6 +525,32 @@ list, a file already open activates its tab, "changed on disk", the progress chi
 (and the measurement of which handler fires for a doubly claimed key), the drop of a `.scumble`, the manual
 (`docs/MANUAL.md`: Save, Open, Recent, Reopen, double click; the shortcut table).
 
+**D3 built 2026-09-26** (local, not pushed). The tab shows the file's stem (`host.documentName`, used by the shell and
+`commands.js`), the path in its tooltip, a " *" when `host.documentDirty` says so, and the window title follows
+(`app:title`, main composes it with the agents line). Dirty = a picture and no file, an edited layer or mask not
+uploaded, a selection not encoded, a change since the last autosave (`host.changed` drops `_stateKey`), or the
+autosaved state's hash not the file's; `bundle()` computes the hash where it calls `getValue()` anyway and stores
+`file.clean`, so a restart (and an open, `settleKey`) takes the restored state as the saved one once its selection
+is re-encoded: a clean tab stays clean across a restart even where the state serialises a little differently. The
+close asks Save / Don't Save / Cancel in main's dialog (`documents:ask`, behind `host.askDocument` so a test can
+answer); a clean tab with a file closes silently. Every closed tab goes on `host.closed` (10, in the bundle as
+`closed`, walked by both ref walkers) first as it is, then again after its layers are uploaded (30 s at most); File >
+Reopen Closed Tab (Ctrl+Shift+T, a menu accelerator; the editor leaves the key alone) restores the newest. Save in
+place asks when the file's size or mtime moved (`changed`) or a newer Scumble made it (`newer`); a Save As of a
+document with results asks with or without the history (buttons, not a checkbox: the native save dialog has no
+custom controls on Windows), and the tab's file remembers "without" for the next Ctrl+S. File > Open Recent (10,
+main's `settings.recentDocuments`, `app.addRecentDocument`; a file that is gone leaves the list when it fails to
+open). A `.scumble` dropped on the window opens (a capture listener before the editor's, the path through
+`webUtils.getPathForFile`). The tab shows a progress chip with a cancel cross during a save or an open. Opening a
+document saved with another recipe says so. `list_documents` has `file` and `dirty`; `close_document`'s policy
+reason names the reopen. The manual has a chapter "Documents" and the new keys. **Checked in the app** (scratch
+profile, `--no-comfy`): dirty after a change, clean after Save and after an undo back; a clean tab closes without a
+question and reopens clean with its file; a dirty one asks, Cancel keeps it, Don't Save closes it and it reopens
+dirty; the history question on Save As, remembered by Ctrl+S; the changed-on-disk question; after a restart a dirty
+tab is still dirty and a clean one still clean, title "d3b * - Scumble"; Open Recent lists both files; a real file
+drop through CDP's drag events opens the document; the chip during an 80 MB save (5000 x 4000 noise, 0.9 s). **Not
+checked:** a key pressed on a real keyboard (CDP input only); the chip's look by eye.
+
 ### D4. Double click and commands (1 to 2 d)
 
 `fileAssociations`, the MSIX extension, argv on the first start and from the second instance, the pending queue,

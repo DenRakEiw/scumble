@@ -30,6 +30,10 @@ html, body { margin: 0; height: 100%; background: var(--sc-bg, #181818); color: 
 .shell-tab-busy { color: var(--sc-accent, #f0c674); }
 .shell-tab-close { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--sc-radius-sm, 3px); color: var(--sc-faint, #777); font-size: 14px; line-height: 1; }
 .shell-tab-close:hover { background: var(--sc-btn-hover, #3a3a3a); color: var(--sc-fg-strong, #fff); }
+/* a document save's or open's progress on its tab, with a cross that cancels it (docs/PLAN_DOCUMENTS.md §4.4) */
+.shell-tab-progress { display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 0 2px 0 5px; border-radius: var(--sc-radius-sm, 3px); background: var(--sc-btn-hover, #3a3a3a); color: var(--sc-accent, #f0c674); font-size: 11px; white-space: nowrap; }
+.shell-tab-progress-cancel { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: var(--sc-radius-sm, 3px); color: var(--sc-faint, #777); cursor: pointer; }
+.shell-tab-progress-cancel:hover { color: var(--sc-fg-strong, #fff); }
 #shell-tab-add { background: none; color: var(--sc-muted, #999); border: 0; border-right: 1px solid var(--sc-chrome-edge, #000); width: 28px; font-size: 16px; cursor: pointer; }
 #shell-tab-add:hover { background: var(--sc-raised, #1e1e1e); color: var(--sc-fg-strong, #eee); }
 /* the editor and the assistant's column side by side; the panel is a non-modal dialog, so it

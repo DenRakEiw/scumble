@@ -107,7 +107,7 @@ const POLICY = {
     // ---- replace, close, tabs -----------------------------------------------------------
     load_image: () => ASK("replaces the image and clears the undo history"),
     new_canvas: () => ASK("replaces the image and clears the undo history"),
-    close_document: () => ASK("closes the tab; there is no reopen"),
+    close_document: () => ASK("closes the tab without saving it to its file; File › Reopen Closed Tab brings it back"),
     new_document: AUTO, activate_document: AUTO,
 
     // ---- shared history, global settings, the brush --------------------------------------

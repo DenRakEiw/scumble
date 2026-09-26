@@ -67,16 +67,21 @@ function normPath(p) {
     return /^[a-z]:\\|^\\\\/i.test(s) ? s.toLowerCase() : String(p || "");
 }
 
-/** What a bundle entry keeps beside the state: the tab's file, its plugin data, the unknown fields of a newer document. */
-function docMeta(ed) {
+/**
+ * What a bundle entry keeps beside the state: the tab's file (with `clean`: whether the tab matched it, so a restart can
+ * take the restored state as the saved one), its plugin data, the unknown fields of a newer document.
+ */
+function docMeta(ed, clean = false) {
     const out = {};
-    if (ed.docFile && ed.docFile.path) out.file = { ...ed.docFile };
+    if (ed.docFile && ed.docFile.path) out.file = { ...ed.docFile, clean: !!clean };
     if (ed.pluginData && Object.keys(ed.pluginData).length) out.plugins = ed.pluginData;
     if (ed.docExtra && Object.keys(ed.docExtra).length) out.extra = ed.docExtra;
     return out;
 }
 
 const plainObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
+
+const CLOSED_MAX = 10;    // closed tabs kept for Reopen Closed Tab (docs/PLAN_DOCUMENTS.md §5.4)
 
 export const api = {
     clientId: null,
@@ -750,7 +755,10 @@ export const host = {
         try { bundle = JSON.parse(saved); } catch (_) { bundle = null; }
         const docs = bundle && Array.isArray(bundle.docs) ? bundle.docs : [{ id: this.nextId, state: saved }];
         if (bundle && +bundle.nextId > this.nextId) this.nextId = +bundle.nextId;
+        // the session's closed tabs (Reopen Closed Tab); only a session bundle carries them
+        if (bundle && Array.isArray(bundle.closed)) this.closed = bundle.closed.filter((c) => c && typeof c.state === "string" && c.state.length > 2).slice(-CLOSED_MAX);
         let any = false;
+        const settle = [];
         this._restoring++;
         try {
             for (const doc of docs) {
@@ -764,12 +772,14 @@ export const host = {
                 ed.pluginData = plainObject(doc.plugins) ? JSON.parse(JSON.stringify(doc.plugins)) : {};
                 ed.docExtra = plainObject(doc.extra) ? { ...doc.extra } : {};
                 try { await ed.setValue(doc.state); } catch (err) { console.warn("restore from the mirror failed", err); }
+                if (ed.base && ed.docFile) settle.push(ed);
                 if (ed.base) { ed.setStatus("Last session restored."); any = true; }
                 else if (!this.connected) { this._pendingStates.push({ editor: ed, state: doc.state }); this._rawStates.set(ed, doc.state); ed.setStatus("This document will be restored once ComfyUI is connected (its files are not in the local store)."); }
             }
         } finally {
             this._restoring--;
         }
+        for (const ed of settle) this.settleKey(ed).catch((err) => console.warn("document key", err));
         const active = bundle && this.editorById(bundle.active);
         if (active) this.activate(active);
         if (this.onDocsChanged) this.onDocsChanged();
@@ -1487,6 +1497,7 @@ export const host = {
 
     /** An editor changed: autosave every open document (debounced) and refresh the tabs. */
     changed(editor) {
+        if (editor) editor._stateKey = null;      // changed since the last autosave: counts as changed until it runs (documentDirty)
         clearTimeout(this._saveTimer);
         this._saveTimer = setTimeout(() => this.saveAll(), 1500);
         this.emit("changed", { editor });
@@ -1503,11 +1514,12 @@ export const host = {
             let state = "{}";
             const raw = this._rawStates.get(ed);
             if (raw != null && ed.base) this._rawStates.delete(ed);        // it holds a picture of its own now
-            else if (raw != null) { docs.push({ id: ed.node.id, state: raw, ...docMeta(ed) }); continue; }
+            else if (raw != null) { docs.push({ id: ed.node.id, state: raw, ...docMeta(ed, !!(ed.docFile && ed.docFile.clean)) }); continue; }
             try { state = ed.getValue(); } catch (err) { console.warn("getValue", err); }
-            docs.push({ id: ed.node.id, state, ...docMeta(ed) });
+            if (ed.base) ed._stateKey = hashString(state);      // the dirty marker compares it with the file's (documentDirty)
+            docs.push({ id: ed.node.id, state, ...docMeta(ed, !this.documentDirty(ed)) });
         }
-        return { version: 2, active: this.editor ? this.editor.node.id : null, nextId: this.nextId, docs };
+        return { version: 2, active: this.editor ? this.editor.node.id : null, nextId: this.nextId, docs, closed: this.closed.slice(-CLOSED_MAX) };
     },
 
     saveAll() {
@@ -1530,6 +1542,11 @@ export const host = {
             try { walk(JSON.parse(ed.getValue())); } catch (_) { /* empty document */ }
             if (ed.base && ed.base.ref) walk(ed.base.ref);
             walk(ed.pluginData);          // a 3D layer's model file (glb plugin), and whatever else a plugin keeps per document
+        }
+        // the closed tabs Reopen Closed Tab can bring back
+        for (const c of this.closed) {
+            try { walk(JSON.parse(c.state)); } catch (_) { /* an empty state */ }
+            walk(c.plugins);
         }
         return Array.from(keys);
     },
@@ -1588,53 +1605,141 @@ export const host = {
     },
 
     /**
-     * Save a document to a .scumble file. `as` asks for a path (Save As), `path` gives one (commands), `copy` writes
-     * the file without making it the tab's file, `history: false` leaves the result history out. Resolves with main's
-     * answer ({ path, bytes, entries, ms, notes }), or null when the Save As dialog was cancelled. Throws with the reason.
+     * Is the tab changed against its .scumble file (the "*" on the tab and in the title)? A document with a picture and
+     * no file counts as changed; so does one with an edited layer or mask not uploaded yet, a selection not encoded
+     * yet, a change since the last autosave, or an autosaved state whose hash is not the file's (bundle() keeps it).
      */
-    async saveDocument(ed, { as = false, copy = false, path = null, history = true } = {}) {
+    documentDirty(ed) {
+        if (!ed || !ed.base) return false;
+        if (!ed.docFile || !ed.docFile.key) return true;
+        if (ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx))) return true;
+        if (ed.sel && !ed.selectionEncoded) return true;
+        if (ed._stateKey == null) return true;
+        return ed._stateKey !== ed.docFile.key;
+    },
+
+    /**
+     * After a restore or an open: the state's key once the selection is encoded again (setValue re-encodes it). A file
+     * without a key yet (just opened) or one the tab matched when the session was saved (`clean`) takes it as the saved
+     * one, so the tab starts clean even where the restored state serialises a little differently.
+     */
+    async settleKey(ed) {
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        for (const until = Date.now() + 60000; this._restoring && Date.now() < until;) await sleep(100);
+        await this.flushEditor(ed, () => {}, "saving");
+        if (!ed.base || !ed.docFile || !this._editors.includes(ed)) return;
+        const key = hashString(ed.getValue());
+        ed._stateKey = key;
+        if (!ed.docFile.key || ed.docFile.clean) ed.docFile.key = key;
+        delete ed.docFile.clean;
+        if (this.onDocsChanged) this.onDocsChanged();
+    },
+
+    /**
+     * A question about a document, answered in a dialog of main (documents:ask): `close` -> "save" | "discard" | "cancel",
+     * `changed` and `newer` -> "overwrite" | "saveas" | "cancel", `history` -> "with" | "without" | "cancel". A test
+     * replaces this method in the page.
+     */
+    async askDocument(q) {
+        return window.scumble.documents.ask(q);
+    },
+
+    /** Save As: the path from main's dialog, or null when cancelled (a test replaces this method in the page). */
+    async chooseDocumentPath(name) {
+        return window.scumble.documents.choosePath({ name });
+    },
+
+    /** Stop a save or an open of this document: before the write, the capture stops; during it, main deletes its temporary file. */
+    cancelDocumentJob(ed) {
+        const p = ed && ed._docProgress;
+        if (!p) return false;
+        ed._docCancel = true;
+        if (p.reqId) window.scumble.documents.cancel(p.reqId).catch(() => {});
+        return true;
+    },
+
+    /**
+     * Save a document to a .scumble file. `as` asks for a path (Save As), `path` gives one (commands), `copy` writes
+     * the file without making it the tab's file, `history` true / false keeps or leaves the result history (and the
+     * prompts of earlier runs) out; unset, a Save As of a document with results asks, and the tab's file remembers the
+     * answer for the next Ctrl+S. `ask: false` (commands) asks nothing. Resolves with main's answer ({ path, bytes,
+     * entries, ms, notes }), or null when a dialog was cancelled. Throws with the reason.
+     */
+    async saveDocument(ed, { as = false, copy = false, path = null, history = null, ask = true } = {}) {
         if (!ed || !ed.base) throw new Error("There is nothing to save yet: the document holds no picture.");
         if (ed._docSaving) throw new Error(`${this.documentName(ed)} is already being saved.`);
         let target = path || (!as && !copy && ed.docFile && ed.docFile.path) || null;
-        ed._docSaving = true;      // from here: a second Ctrl+S during the dialog is "already being saved"
+        ed._docSaving = true;      // from here: a second Ctrl+S during a dialog is "already being saved"
+        ed._docCancel = false;
         const job = (async () => {
-            if (!target) {
-                target = await window.scumble.documents.choosePath({ name: this.documentName(ed) });
-                if (!target) return null;
+            const inPlace = !!(target && ed.docFile && normPath(target) === normPath(ed.docFile.path));
+            if (inPlace && ask) {
+                // the file changed on disk since it was opened or saved here, or a newer Scumble made it: ask first
+                const st = await window.scumble.documents.stat(target);
+                const moved = st.exists && (Math.abs(st.mtime - (ed.docFile.mtime || 0)) > 1 || st.size !== ed.docFile.size);
+                for (const kind of [moved && "changed", ed.docFile.newer && "newer"].filter(Boolean)) {
+                    const a = await this.askDocument({ kind, name: ed.docFile.name });
+                    if (a === "cancel") return null;
+                    if (a === "saveas") { target = null; break; }
+                }
             }
-            const reqId = `save-${ed.node.id}-${++this._docSeq}`;
+            let chosen = false;
+            if (!target) {
+                target = await this.chooseDocumentPath(this.documentName(ed));
+                if (!target) return null;
+                chosen = true;
+            }
             const name = String(target).split(/[\\/]/).pop();
+            // the result history: the caller's word, else the answer the tab's file remembers, else (a Save As of a
+            // document with results) a question
+            let keep = history;
+            if (keep == null && !chosen && ed.docFile && normPath(target) === normPath(ed.docFile.path) && ed.docFile.history === false) keep = false;
+            if (keep == null && chosen && ask && ed.history && ed.history.length) {
+                const a = await this.askDocument({ kind: "history", name, count: Math.min(100, ed.history.length) });
+                if (a === "cancel") return null;
+                keep = a !== "without";
+            }
+            if (keep == null) keep = true;
+            const reqId = `save-${ed.node.id}-${++this._docSeq}`;
             this._docJobs.set(reqId, { editor: ed, name, kind: "save" });
+            ed._docProgress = { kind: "save", name, pct: null, reqId: null };
+            if (this.onDocsChanged) this.onDocsChanged();
             try {
                 ed.setStatus(`Saving ${name}...`);
                 await this.flushEditor(ed, (t) => ed.setStatus(t), "saving the document");
+                if (ed._docCancel) throw new Error("the save was cancelled");
                 const state = ed.getValue();       // a stroke after this is not in the file and leaves the tab changed
                 let thumbnail = null;
                 try { thumbnail = await this.documentThumbnail(ed); } catch (err) { console.warn("document thumbnail", err); }
+                if (ed._docCancel) throw new Error("the save was cancelled");
                 const r = this.recipe;
+                ed._docProgress.reqId = reqId;
                 const res = await window.scumble.documents.write({
-                    reqId, path: target, document: state, plugins: ed.pluginData || {}, extra: ed.docExtra || {}, thumbnail, history,
+                    reqId, path: target, document: state, plugins: ed.pluginData || {}, extra: ed.docExtra || {}, thumbnail, history: keep, recent: !copy,
                     summary: { name: this.documentName(ed), width: ed.width, height: ed.height, layers: ed.layers.length },
                     recipe: r ? { id: r.id || null, provider: r.provider || null } : null,
                 });
                 if (!copy) {
-                    ed.docFile = { path: res.path, name: res.name, key: hashString(state), mtime: res.mtime, size: res.size };
-                    this.saveAll();                // the session keeps the tab's file
+                    ed.docFile = { path: res.path, name: res.name, key: hashString(state), mtime: res.mtime, size: res.size, ...(keep ? {} : { history: false }) };
+                    this.saveAll();                // the session keeps the tab's file (and bundle() the state's key)
                 }
-                ed.setStatus(`${copy ? "Saved a copy as" : "Saved"} ${res.name} (${fmtMB(res.bytes)}, ${(res.ms / 1000).toFixed(1)} s).${res.notes && res.notes.length ? " " + res.notes.join("; ") + "." : ""}`);
+                ed.setStatus(`${copy ? "Saved a copy as" : "Saved"} ${res.name} (${fmtMB(res.bytes)}, ${(res.ms / 1000).toFixed(1)} s)${keep ? "" : ", without the result history"}.${res.notes && res.notes.length ? " " + res.notes.join("; ") + "." : ""}`);
                 return res;
             } finally {
                 this._docJobs.delete(reqId);
+                ed._docProgress = null;
+                if (this.onDocsChanged) this.onDocsChanged();
             }
         })();
         this._docSaves.add(job);
-        try { return await job; } finally { this._docSaves.delete(job); ed._docSaving = false; }
+        try { return await job; } finally { this._docSaves.delete(job); ed._docSaving = false; ed._docCancel = false; }
     },
 
     /**
      * Open a .scumble file: the tab that holds it is activated, else it opens into the active tab when that is empty,
-     * or a new one. The files go into the mirror in main; the state is restored like the session's (restore()).
-     * Resolves with { editor, already, notes }. Throws with the reason (nothing is opened then).
+     * or a new one. The files go into the mirror in main; the state is restored like the session's (restore()), and the
+     * tab starts clean once its key has settled (settleKey). Resolves with { editor, already, notes }. Throws with the
+     * reason (nothing is opened then).
      */
     async openDocument(file) {
         const key = normPath(file);
@@ -1645,8 +1750,12 @@ export const host = {
         const cur = this.editor;
         if (cur) cur.setStatus(`Opening ${name}...`);
         this._docJobs.set(reqId, { editor: cur, name, kind: "open" });
+        if (cur && !cur._docProgress) { cur._docProgress = { kind: "open", name, pct: null, reqId }; if (this.onDocsChanged) this.onDocsChanged(); }
         let r;
-        try { r = await window.scumble.documents.open({ reqId, path: file }); } finally { this._docJobs.delete(reqId); }
+        try { r = await window.scumble.documents.open({ reqId, path: file }); } finally {
+            this._docJobs.delete(reqId);
+            if (cur && cur._docProgress && cur._docProgress.reqId === reqId) { cur._docProgress = null; if (this.onDocsChanged) this.onDocsChanged(); }
+        }
         const doc = r.document;
         // top-level fields this app does not write travel in `extra` and go back into the next save (§6)
         const extra = { ...(r.extra || {}) };
@@ -1658,18 +1767,72 @@ export const host = {
         const ed = this.editorById(id);
         if (!ed) throw new Error(`${name} could not be opened in a tab`);
         if (this.shell) this.shell.activate(ed);      // the tab bar and window.editor follow (restore() activates in here only)
-        const notes = r.notes || [];
+        const notes = [...(r.notes || [])];
+        // the recipe is global (every tab uses it), so opening a document does not switch it; it says when they differ
+        const now = this.recipe;
+        if (r.recipe && r.recipe.id && (!now || now.id !== r.recipe.id)) {
+            const list = this.shell && this.shell.recipes ? this.shell.recipes() || [] : [];
+            const named = (id) => { const x = list.find((q) => q.id === id); return x ? x.name || id : id; };
+            notes.push(`saved with the recipe ${named(r.recipe.id)}; the current one is ${now ? named(now.id) : "none"}`);
+        }
         if (ed.base) ed.setStatus(`Opened ${r.name}.${notes.length ? " " + notes.join("; ") + "." : ""}`);
         this.saveAll();
         return { editor: ed, already: false, notes };
     },
 
-    /** Main's progress of a save or an open, as the status line of the document it is for. */
+    /** Main's progress of a save or an open: the chip on the document's tab (renderer/shell.js renderTabs). */
     documentProgress({ reqId, done, total }) {
         const j = this._docJobs.get(reqId);
         if (!j || !j.editor || !total) return;
         const pct = Math.min(100, Math.floor((done / total) * 100));
-        j.editor.setStatus(`${j.kind === "save" ? "Saving" : "Opening"} ${j.name}: ${pct} %`);
+        const p = j.editor._docProgress;
+        if (p && (p.reqId === reqId || p.reqId == null)) { p.pct = pct; p.reqId = reqId; }
+        if (this.onDocsChanged) this.onDocsChanged();
+    },
+
+    // ---- closed tabs (docs/PLAN_DOCUMENTS.md §5.4) ------------------------------------------------------------------
+
+    closed: [],          // [{ id, name, time, state, file?, plugins?, extra? }], the newest last, CLOSED_MAX at most
+
+    /**
+     * A tab that was closed (and already left the tab bar): its state goes on the closed list at once, then again after
+     * its edited layers are uploaded (at most 30 s), so Reopen Closed Tab brings back what it showed. The caller
+     * destroys the editor afterwards.
+     */
+    async rememberClosed(ed) {
+        if (!ed || !ed.base) return;
+        const capture = () => {
+            let state = null;
+            try { state = ed.getValue(); } catch (err) { console.warn("closed tab", err); }
+            if (ed.base) ed._stateKey = state ? hashString(state) : null;
+            return { id: ed.node.id, name: this.documentName(ed), time: Date.now(), state, ...docMeta(ed, !this.documentDirty(ed)) };
+        };
+        let entry = capture();
+        if (!entry.state) return;
+        this.closed.push(entry);
+        while (this.closed.length > CLOSED_MAX) this.closed.shift();
+        this.saveAll();
+        try {
+            await Promise.race([this.flushEditor(ed, () => {}, "closing"), new Promise((r) => setTimeout(r, 30000))]);
+            const again = capture();
+            const i = this.closed.indexOf(entry);
+            if (again.state && i >= 0) { this.closed[i] = again; entry = again; this.saveAll(); }
+        } catch (err) { console.warn("closed tab: its layers were not all uploaded", err); }
+    },
+
+    /** Reopen Closed Tab: the newest closed tab comes back in a new tab. Resolves with the editor, or null. */
+    async reopenClosed() {
+        const e = this.closed.pop();
+        if (!e) return null;
+        const id = this.nextId++;
+        // a file that is open in another tab by now stays with that tab
+        const file = e.file && !this._editors.some((x) => x.docFile && normPath(x.docFile.path) === normPath(e.file.path)) ? e.file : null;
+        await this.restore(JSON.stringify({ version: 2, active: id, nextId: this.nextId, docs: [{ id, state: e.state, file, plugins: e.plugins, extra: e.extra }] }));
+        const ed = this.editorById(id);
+        if (ed && this.shell) this.shell.activate(ed);
+        if (ed && ed.base) ed.setStatus(`Reopened ${e.name}.`);
+        this.saveAll();
+        return ed || null;
     },
 
     // ---- in-app helpers: SAM2 objects and background removal through ONNX Runtime -----------

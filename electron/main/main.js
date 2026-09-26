@@ -32,7 +32,7 @@ const { resolveTileMode, DEFAULT_ON: TILES_DEFAULT_ON } = require("./tilemode");
 const { restartPlan } = require("./restart");
 const autosave = require("./autosave");
 const { QuitGuard, CrashGuard, isCrash } = require("./quit");
-const { Documents, isDocumentPath } = require("./documents");
+const { Documents, isDocumentPath, pathKey } = require("./documents");
 const docfile = require("./docfile");
 const registration = require("./mcp/registration");
 
@@ -422,9 +422,11 @@ function send(channel, payload) {
 }
 
 /** Title suffix and a status line while agents (MCP, --cmd, scripts) are connected. */
+let docTitle = "";   // the active document and its "*" (renderer/shell.js syncTitle)
 function showAgents() {
     const n = local.clients.size + (agentMode ? 1 : 0);
-    if (win && !win.isDestroyed()) win.setTitle(n ? `Scumble · ${n} agent${n > 1 ? "s" : ""} connected` : "Scumble");
+    const base = docTitle ? `${docTitle} - Scumble` : "Scumble";
+    if (win && !win.isDestroyed()) win.setTitle(n ? `${base} · ${n} agent${n > 1 ? "s" : ""} connected` : base);
 }
 
 // ---- the in-app assistant (electron/main/assistant/index.js, docs/PLAN_ASSISTANT.md) -----
@@ -532,6 +534,9 @@ function buildMenu() {
             submenu: [
                 { label: "New Tab", accelerator: "CmdOrCtrl+T", click: () => send("menu", "new-tab") },
                 { label: "Open...", accelerator: "CmdOrCtrl+O", click: () => openImage() },
+                { label: "Open Recent", submenu: recentMenu() },
+                // the editor leaves Ctrl+Shift+T alone (its Ctrl check returns first), so the accelerator fires
+                { label: "Reopen Closed Tab", accelerator: "CmdOrCtrl+Shift+T", click: () => send("menu", "reopen-closed") },
                 { type: "separator" },
                 // docs/PLAN_DOCUMENTS.md §9: Ctrl+S saves the document, the picture export moved to Ctrl+Shift+E; the
                 // shell catches the keys before the editor (renderer/shell.js), so these fire from the menu only
@@ -669,6 +674,85 @@ async function saveFile({ name, data, filters, path: target }) {
     return { path: filePath, name: path.basename(filePath), bytes: data.byteLength };
 }
 
+// ---- recent documents (docs/PLAN_DOCUMENTS.md §5.5): main owns the list, the renderer never keeps a copy ----------
+
+const RECENT_MAX = 10;
+
+function recentDocuments() {
+    const list = settings.get().recentDocuments;
+    return Array.isArray(list) ? list.filter((r) => r && typeof r.path === "string") : [];
+}
+
+function addRecent(file) {
+    const list = recentDocuments().filter((r) => pathKey(r.path) !== pathKey(file));
+    list.unshift({ path: file, name: path.basename(file), time: Date.now() });
+    settings.set({ recentDocuments: list.slice(0, RECENT_MAX) });
+    try { app.addRecentDocument(file); } catch (_) { /* the jump list shows it once the file type is registered */ }
+    buildMenu();
+}
+
+function dropRecent(file) {
+    const list = recentDocuments();
+    const kept = list.filter((r) => pathKey(r.path) !== pathKey(file));
+    if (kept.length !== list.length) { settings.set({ recentDocuments: kept }); buildMenu(); }
+}
+
+/** File › Open Recent: the documents, then Clear Recently Opened. */
+function recentMenu() {
+    const list = recentDocuments();
+    if (!list.length) return [{ label: "No recent documents", enabled: false }];
+    return [
+        ...list.map((r, i) => ({ label: `${i < 9 ? "&" + (i + 1) + " " : ""}${String(r.name || path.basename(r.path)).replace(/&/g, "&&")}`, toolTip: r.path, click: () => send("documents:openRequest", [r.path]) })),
+        { type: "separator" },
+        { label: "Clear Recently Opened", click: () => { settings.set({ recentDocuments: [] }); try { app.clearRecentDocuments(); } catch (_) { /* no jump list */ } buildMenu(); } },
+    ];
+}
+
+/**
+ * A question about a document in a native dialog (host.askDocument): the answer as a word. `close` Save / Don't Save /
+ * Cancel; `changed` (the file changed on disk) and `newer` (made by a newer Scumble) Overwrite / Save As / Cancel;
+ * `history` (a Save As of a document with results) with / without the result history / Cancel.
+ */
+async function askDocument(q) {
+    needWindow("A question about the document");
+    const name = String((q && q.name) || "the document");
+    const box = (o) => dialog.showMessageBox(win, { type: "question", noLink: true, ...o });
+    if (q && q.kind === "close") {
+        const { response } = await box({
+            buttons: [q.hasFile ? "Save" : "Save...", "Don't Save", "Cancel"], defaultId: 0, cancelId: 2,
+            message: q.hasFile ? `Save the changes to ${name}?` : `Save ${name} as a document?`,
+            detail: "Don't Save closes the tab; File › Reopen Closed Tab (Ctrl+Shift+T) brings it back in this session.",
+        });
+        return ["save", "discard", "cancel"][response] || "cancel";
+    }
+    if (q && q.kind === "changed") {
+        const { response } = await box({
+            buttons: ["Overwrite", "Save As...", "Cancel"], defaultId: 1, cancelId: 2,
+            message: `${name} changed on disk since it was opened or saved here.`,
+            detail: "Overwrite replaces the file on disk with this document; Save As keeps it and writes a new file.",
+        });
+        return ["overwrite", "saveas", "cancel"][response] || "cancel";
+    }
+    if (q && q.kind === "newer") {
+        const { response } = await box({
+            buttons: ["Save As...", "Overwrite", "Cancel"], defaultId: 0, cancelId: 2,
+            message: `${name} was made by a newer Scumble.`,
+            detail: "This version keeps what it does not know, but cannot show or check it. Save As leaves the original file as it is.",
+        });
+        return ["saveas", "overwrite", "cancel"][response] || "cancel";
+    }
+    if (q && q.kind === "history") {
+        const n = Math.max(0, Math.round(+q.count || 0));
+        const { response } = await box({
+            buttons: ["Save with History", "Save without History", "Cancel"], defaultId: 0, cancelId: 2,
+            message: `Save ${name} with its result history?`,
+            detail: `The history holds ${n} result${n === 1 ? "" : "s"} with the prompts and settings of the runs. Without it, the file shows the picture and its layers but not how it was made (for sharing). Ctrl+S keeps this choice for this file.`,
+        });
+        return ["with", "without", "cancel"][response] || "cancel";
+    }
+    throw new Error("unknown question: " + (q && q.kind));
+}
+
 /** Save As: where a document goes (null when cancelled); the folder is remembered apart from the picture exports. */
 async function chooseDocumentPath({ name } = {}) {
     needWindow("Save As");
@@ -760,8 +844,23 @@ function installIpc() {
     });
     // .scumble documents (electron/main/documents.js)
     ipcMain.handle("documents:choosePath", (_e, a) => chooseDocumentPath(a || {}));
-    ipcMain.handle("documents:write", (_e, req) => documents.write(req || {}));
-    ipcMain.handle("documents:open", (_e, req) => documents.open(req || {}));
+    ipcMain.handle("documents:write", async (_e, req) => {
+        const r = await documents.write(req || {});
+        if (req && req.recent !== false) addRecent(r.path);      // a copy (save_document copy) is not the tab's file
+        return r;
+    });
+    ipcMain.handle("documents:open", async (_e, req) => {
+        try {
+            const r = await documents.open(req || {});
+            addRecent(r.path);
+            return r;
+        } catch (err) {
+            if (err && err.code === "ENOENT" && req && req.path) { dropRecent(req.path); throw new Error(`${path.basename(req.path)} is not there any more (moved or deleted); it left Open Recent`); }
+            throw err;
+        }
+    });
+    ipcMain.handle("documents:ask", (_e, q) => askDocument(q || {}));
+    ipcMain.on("app:title", (_e, t) => { docTitle = String(t || "").slice(0, 200); showAgents(); });
     ipcMain.handle("documents:cancel", (_e, reqId) => documents.cancel(reqId));
     ipcMain.handle("documents:takePending", () => documents.takePending());
     ipcMain.handle("documents:stat", async (_e, file) => { try { const st = await fsp.stat(String(file)); return { exists: st.isFile(), mtime: st.mtimeMs, size: st.size }; } catch (_) { return { exists: false }; } });

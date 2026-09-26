@@ -160,6 +160,12 @@ function referencedKeys(dir) {
             try { walkRefs(JSON.parse(d.state), keys); } catch (_) { /* an empty document */ }
             walkRefs(d.plugins, keys);        // per-document plugin data (a 3D layer's model file), docs/PLAN_DOCUMENTS.md §3.6
         }
+        // the closed tabs of that session (Reopen Closed Tab, docs/PLAN_DOCUMENTS.md §5.4)
+        for (const c of bundle && Array.isArray(bundle.closed) ? bundle.closed : []) {
+            if (!c || typeof c.state !== "string") continue;
+            try { walkRefs(JSON.parse(c.state), keys); } catch (_) { /* an empty state */ }
+            walkRefs(c.plugins, keys);
+        }
     }
     return Array.from(keys);
 }

@@ -126,9 +126,9 @@ function activate(editor) {
     renderTabs();
 }
 
+/** The tab's name: its .scumble file's stem, else the picture's file name (host.documentName). */
 function docName(editor) {
-    if (!editor.base || !editor.base.ref) return "Untitled";
-    return String(editor.base.ref.filename || "image").replace(/\.[a-z0-9]+$/i, "");
+    return host.documentName(editor);
 }
 
 function busy(editor) {
@@ -137,24 +137,52 @@ function busy(editor) {
 
 let tabSignature = "";
 
-/** Cheap poll for the busy marker: a run or helper in a background tab shows a dot. */
+/** What the tab bar shows of a tab: busy dot, name, the "*" of unsaved changes, a save's or an open's progress. */
+function tabKey(ed) {
+    const p = ed._docProgress;
+    return (busy(ed) ? "1" : "0") + (host.documentDirty(ed) ? "*" : "") + docName(ed) + (p ? `#${p.kind}${p.pct == null ? "" : p.pct}` : "") + (host.isActive(ed) ? "!" : "");
+}
+
+/** Cheap poll for the busy and the unsaved marker: a run or helper in a background tab shows a dot, a change a "*". */
 setInterval(() => {
-    const sig = host.editors().map((ed) => (busy(ed) ? "1" : "0") + docName(ed)).join("|");
+    const sig = host.editors().map(tabKey).join("|");
     if (sig !== tabSignature) renderTabs();
 }, 1000);
+
+let lastTitle = null;
+/** The window title: the active document and its "*" (main adds the agents line, main.js showAgents). */
+function syncTitle() {
+    const ed = host.editor;
+    const t = ed && ed.base ? `${docName(ed)}${host.documentDirty(ed) ? " *" : ""}` : "";
+    if (t !== lastTitle) { lastTitle = t; try { window.scumble.setTitle(t); } catch (_) { /* an older preload */ } }
+}
 
 function renderTabs() {
     const list = ui.tabs;
     list.innerHTML = "";
-    tabSignature = host.editors().map((ed) => (busy(ed) ? "1" : "0") + docName(ed)).join("|");
+    tabSignature = host.editors().map(tabKey).join("|");
     for (const ed of host.editors()) {
         const tab = document.createElement("div");
         tab.className = "shell-tab" + (host.isActive(ed) ? " active" : "");
-        tab.title = ed.base ? `${docName(ed)} · ${ed.width} × ${ed.height} · ${ed.layers.length} layer${ed.layers.length === 1 ? "" : "s"}` : "Empty document";
+        const where = ed.docFile && ed.docFile.path ? `\n${ed.docFile.path}` : ed.base ? "\nnot saved as a document yet" : "";
+        tab.title = ed.base ? `${docName(ed)} · ${ed.width} × ${ed.height} · ${ed.layers.length} layer${ed.layers.length === 1 ? "" : "s"}${where}` : "Empty document";
+        const dirty = host.documentDirty(ed);
         const name = document.createElement("span");
         name.className = "shell-tab-name" + (busy(ed) ? " shell-tab-busy" : "");
-        name.textContent = (busy(ed) ? "● " : "") + docName(ed);
+        name.textContent = (busy(ed) ? "● " : "") + docName(ed) + (dirty ? " *" : "");
         tab.appendChild(name);
+        const p = ed._docProgress;
+        if (p) {
+            // a save's or an open's progress, with a cross that cancels it (the old file stays as it was)
+            const chip = document.createElement("span");
+            chip.className = "shell-tab-progress";
+            chip.textContent = `${p.kind === "open" ? "Opening" : "Saving"}${p.pct == null ? "..." : ` ${p.pct} %`}`;
+            const stop = document.createElement("span");
+            stop.className = "shell-tab-progress-cancel"; stop.textContent = "×"; stop.title = p.kind === "open" ? "Cancel the open" : "Cancel the save (the file stays as it was)";
+            stop.addEventListener("click", (e) => { e.stopPropagation(); host.cancelDocumentJob(ed); });
+            chip.appendChild(stop);
+            tab.appendChild(chip);
+        }
         const close = document.createElement("span");
         close.className = "shell-tab-close"; close.textContent = "×"; close.title = "Close tab (Ctrl+W)";
         close.addEventListener("click", (e) => { e.stopPropagation(); closeDocument(ed); });
@@ -163,19 +191,48 @@ function renderTabs() {
         tab.addEventListener("auxclick", (e) => { if (e.button === 1) { e.preventDefault(); closeDocument(ed); } });
         list.appendChild(tab);
     }
+    syncTitle();
 }
 
-function closeDocument(editor, { force = false } = {}) {
-    if (!editor) return;
-    if (!force && editor.base && busy(editor) && !window.confirm(`${docName(editor)} is still working. Close it anyway?`)) return;
-    if (!force && editor.base && !window.confirm(`Close ${docName(editor)}? The document stays in the local file store, but it leaves the tab bar.`)) return;
+/**
+ * Close a tab (docs/PLAN_DOCUMENTS.md §5.3): one with changes, or a picture never saved as a document, asks Save /
+ * Don't Save / Cancel; one its file holds closes without a question; `force` (the close_document command) asks nothing.
+ * The tab leaves the bar at once and goes on the closed list (Reopen Closed Tab) with its layers uploaded, then the
+ * editor is destroyed. Resolves true when it closed.
+ */
+async function closeDocument(editor, { force = false } = {}) {
+    if (!editor || !host.editors().includes(editor)) return false;
+    if (!force && editor.base && busy(editor) && !window.confirm(`${docName(editor)} is still working${editor._docSaving ? " (saving)" : ""}. Close it anyway?`)) return false;
+    if (!force && editor.base && !editor._docSaving && host.documentDirty(editor)) {
+        const choice = await host.askDocument({ kind: "close", name: editor.docFile ? editor.docFile.name : docName(editor), hasFile: !!editor.docFile });
+        if (choice === "cancel" || !host.editors().includes(editor)) return false;
+        if (choice === "save") {
+            const r = await saveDocumentFromUi(editor);
+            if (!r || !host.editors().includes(editor)) return false;      // cancelled or failed: the tab stays
+        }
+    }
+    if (editor._docSaving) host.cancelDocumentJob(editor);        // closing anyway cancels its save; the file stays as it was
     // a turn snapshot of this document goes with the tab (A7): its clones hold tiles
     try { forgetDocument(editor.node && editor.node.id); } catch (err) { console.warn(err); }
     host.removeEditor(editor);
-    try { editor.destroy(); } catch (err) { console.warn(err); }
+    editor.root.classList.add("shell-hidden");
     if (!host.editors().length) newDocument();
     activate(host.editor);
     host.saveAll();
+    try { await host.rememberClosed(editor); } catch (err) { console.warn("closed tab", err); }
+    try { editor.destroy(); } catch (err) { console.warn(err); }
+    return true;
+}
+
+/** File › Reopen Closed Tab (Ctrl+Shift+T). */
+async function reopenClosedTab() {
+    try {
+        const ed = await host.reopenClosed();
+        if (!ed && host.editor) host.editor.setStatus("No closed tab to reopen.");
+        renderTabs();
+    } catch (err) {
+        if (host.editor) host.editor.setStatus("Could not reopen the tab: " + String((err && err.message) || err));
+    }
 }
 
 function cycleTab(dir) {
@@ -2004,6 +2061,25 @@ async function openDocumentFromUi(file) {
 }
 
 window.scumble.documents.onProgress((p) => host.documentProgress(p));
+
+// a .scumble dropped anywhere on the window opens as a document; the capture phase runs before the editor's own drop
+// handler, which would load it as a picture (images dropped with it are left out)
+window.addEventListener("dragover", (e) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) e.preventDefault();
+}, true);
+window.addEventListener("drop", (e) => {
+    const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter((f) => /\.scumble$/i.test(f.name));
+    if (!files.length) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    (async () => {
+        for (const f of files) {
+            const p = window.scumble.documents.pathOf(f);
+            if (p) await openDocumentFromUi(p);
+            else if (host.editor) host.editor.setStatus(`${f.name} has no path on disk; open it with File › Open.`);
+        }
+    })();
+}, true);
 window.scumble.documents.onOpenRequest(async (paths) => { for (const p of paths || []) await openDocumentFromUi(p); });
 
 // Ctrl+S saves the document, Ctrl+Shift+S is Save As, Ctrl+Shift+E exports the picture (the user, 2026-09-26, §9).
@@ -2029,6 +2105,7 @@ window.scumble.onMenu((cmd) => {
     if (cmd === "save") host.editor && host.editor.exportImage();
     else if (cmd === "save-document") saveDocumentFromUi(host.editor);
     else if (cmd === "save-document-as") saveDocumentFromUi(host.editor, { as: true });
+    else if (cmd === "reopen-closed") reopenClosedTab();
     else if (cmd === "settings") openSettings();
     else if (cmd === "console") openConsole();
     else if (cmd === "help") toggleHelp();
