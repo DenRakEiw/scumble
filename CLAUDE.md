@@ -109,1211 +109,81 @@ code.
   there; then check the live page.
 
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
-2026-09-16) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
+2026-09-23) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
-## Where things stand (2026-09-23)
+## Where things stand (2026-09-26)
 
-**The manual is written and live, and it is the website's, not this repo's.** 16 chapters in
-`F:\portfolio_web`, `lib/scumble-manual.ts`, rendered by `app/scumble/manual/page.tsx`: a contents
-list with anchors, per chapter a screenshot, the steps that need doing as a numbered list, and short
-notes. Order: install, where it renders (the API keys), the first edit, selecting, recipes, layers
-and colour match, filters, text / shapes / objects, upscaling, export, the assistant, agents and
-plugins, large pictures, **under the hood** (the crop, the Highres fix and the stitch, written from
-`stitch.js` and `docs/RECIPES.md`), **keyboard shortcuts** (44 rows in six groups, read out of
-`inpaint_canvas.js`'s key handler and the menu in `main.js`; the `keys` field of the `Chapter` type),
-settings and trouble. **The hub card stopped saying "In preparation" for the dev blog** - all three
-cards had that line hard-coded; it comes from the data now (`sectionState()` in `lib/scumble.ts`),
-and manual and blog joined the sitemap. **A click on a screenshot opens it full size**
-(`components/scumble-shot.tsx`, a native `<dialog>`: Escape, backdrop and a button close it; on a
-phone it keeps its 1600 px and scrolls, because fitting it to the screen would not enlarge it).
-Website commits `8d6c2f7`, `a917753`, `8e10581`, each deployed **by CLI from a clean export** (the
-git deploy is blocked as always).
+**The user decided a large build on 2026-09-26, and it is `docs/PLAN_0_1_29.md`** (read it first): (1) skins
+(item 20) with two example skins named **"90s"** (a late-90s media-player look, own artwork, no Winamp marks) and
+**"Duck"** (after Pollen Robotics' Microduck, its press-kit palette); (2) **Magnific as a full provider** (M1) and
+**Oxen.ai** (O1, item 16); (3) **documents and safety** - an own document format (`.scumble` proposed) that reopens
+fully editable, quit safety (a quit or update install skips the pixel flush today), a history panel, **TIFF** open
+and save, editable PSD masks, a switch for the PNG metadata; (4) **brushes** - smudge / clone / heal fast at 15k, a
+pro smudge, flow, pressure curves, a larger size cap, frequency separation with the linear light mode, dodge and
+burn; (5) **repair, remove, liquify** - a Poisson healing brush, an in-app LaMa remove brush, patch, liquify;
+(6) **layers pro** - multi-selection with align, clipping, mask operations, groups. Built in that order, each with
+gates on both backends and a checkpoint commit; about 60 to 100 working days by the review's estimates. Moved to the
+later list the same day: the masks-and-selections and grading-and-panels packages (into item 22) and rotating the
+document (item 23). The review's findings that are bugs went to `docs/BUGS.md` ("Found by reading on 2026-09-26").
 
-**The 14 screenshots were taken from the running dev app over CDP** at 1600 x 946, into
-`public/projects/scumble/manual/`. **Trap worth keeping:** the *Settings > API providers* shot
-showed `key set (...qOPM)` and `(...b662)` - the last four characters of the user's real keys. They
-were masked in the DOM before the shot and the dialog checked afterwards for any fragment (0). Check
-every settings screenshot for that before it goes on the web.
+## Open threads (condensed on 2026-09-26 from the hand-overs of 2026-09-19 to 2026-09-23)
 
-**The tutorial material is `docs/TUTORIAL.md` and `docs/images/tutorial/`.** All three pictures are
-**the user's own** (2026-09-23), so no licence stands in the way: `scene.jpg` (the woman in front of
-the blue Porsche, 16:9) carries the tutorial because it is the only one that teaches every chapter in
-one frame, `skin.jpg` goes to the filter and retouch chapter, `titlecard.jpg` to the video. The four
-brand marks in the scene - the Balmain band on the shirt, the Chanel double-C on the necklace, the
-lettering on both socks - were removed **in the app**, four runs of GPT Image 2.5 Flare through
-OpenRouter, **$0.22 and about two minutes**, no colour match needed and no patch edge findable at
-1:1; the result is `scene-clean.jpg` and the selections and times are in the file. The video script
-(a Q&A between two voices, about three minutes) is in there too.
+The full hand-over blocks of those days are in `docs/HISTORY.md`, verbatim. What still matters from them:
 
-**Found on the way and not yet fixed - it is the next session's item 4.** The OpenRouter image
-adapter **has been running live since 2026-09-21**: the user's log holds about 40 successful runs,
-most of them on 2026-09-22 between 14:47 and 15:37. So `docs/RECIPES.md` ("has not run against the
-live API", the OpenRouter section) and, worse, the **recipe descriptions the user reads in the
-picker** ("Adapter written from the provider's docs, not run against the live API yet") are stale for
-OpenRouter. Also measured on the way: a crop whose context reaches bare legs is **refused by
-OpenAI's safety system** through OpenRouter (`safety_violations=[sexu...]`); a tighter
-`set_crop { context: "24" }` went through. Worth a line in `docs/RECIPES.md` when that section is
-touched.
+**Releases.** 0.1.28 is Latest (published 2026-09-23: Comfy Router, HY Image 3.5). `CHANGELOG.md` "0.1.29 —
+unreleased" collects today's build (`docs/PLAN_0_1_29.md`). Check `gh release list` before believing any release
+state written down anywhere. Every release: the CHANGELOG section first, `npm run dist`, exe gates `--offline` on both
+backends, the manual sync (`node tools/manual_sync.js`) and a dev blog post (the decisions block above).
 
-**Signing: the Microsoft Store comes before SignPath** (the user, 2026-09-23). Qualifying for the
-SignPath Foundation needs visible use and takes as long as it takes; an **MSIX** submitted to the
-Store is **re-signed by Microsoft** after certification, and a developer account has been free since
-2025-09 for individuals and 2026-05 for companies. **It signs only the Store copy** - the GitHub
-installer stays unsigned and keeps its SmartScreen paragraph, and submitting the `.exe` instead would
-want it signed first. The whole decision with its conditions is in `docs/CODE_SIGNING_POLICY.md` and
-in the release-channel block above.
+**Open, from before 2026-09-26 (none started):**
+- **B3, the macOS build** (`docs/PLAN_0_1_24.md` "Session B3"): unblocked since the logo exists (`build/icon.png`
+  1024 px); was next in the user's order of 2026-09-23 before the build of 2026-09-26 took over.
+- **The Store package per release** (`npm run dist:store`; `docs/STORE.md`, `docs/STORE_LISTING.md`). The user
+  submitted the listing on 2026-09-23 (publish after certification); identity `DenRakEiw.Scumble`, Store ID
+  `9NDBTNNMXF2R`. When it is live, the Store link goes onto the website hub, README and a blog post. The coupling of
+  GitHub releases to the Store (`msstore` CLI in `build.yml`) only on the user's word. **Signing: the Store first, then
+  SignPath.**
+- **The headless MCP instance of this repo's `.mcp.json` intercepts the installed app** (it runs the dev tree on the
+  default profile; a Start-menu Scumble hands over to it). A fix (a profile of its own for the MCP registration,
+  `docs/BUGS.md` "A headless MCP instance can block the app from starting") was offered, not decided.
+- **Comfy Router live runs** of FLUX.2, Seedream and Magnific (offered, not asked for; the key is in the scratch
+  profile `dist/live-keys`, about $243 of credit then). `GET /customers/balance`'s `amount_micros` counts cents.
+- **Linux: built by CI, never run** (`docs/BUGS.md`).
+- **Types stage 3** (`docs/PLAN_TYPES.md`): `electron/preload.js`'s `window.scumble` is `any` in `types/globals.d.ts`.
+- **The manual** (`docs/MANUAL.md` is its one source; the website builds `/scumble/manual` from copies made by
+  `tools/manual_sync.js` - never edit it on the website): the assistant's screenshot is an empty panel, there is no
+  colour-match figure (it needs a result that is *unintentionally* off), the log screenshot is empty.
+- **Screenshot trap:** *Settings > API providers* shows the last four characters of stored keys; mask them before any
+  settings screenshot goes on the web.
+- **Tutorial material** (`docs/TUTORIAL.md`, `docs/images/tutorial/`, `docs/images/video/`) stays uncommitted until
+  the user says so.
+- **The node repo is behind** (its `js/` is built from 7f01699; master is fba1fd8). `nodecopy` builds and tests it in a
+  scratch copy; build it into the real repo only when a node version is meant to ship.
+- **The assistant:** A10 (a budget, "allow for this chat") and A11 (its own undo steps) only on the user's word.
 
-**A linter is in the repository** (`eslint.config.mjs`, `npm run lint`, the gate `lint`, a step in
-CI; `docs/PLAN_TYPES.md` §"Stage 1"). Eleven correctness rules, no style rules, unused names as
-warnings, five environments. The first run: 55 errors, 52 of them the config not yet knowing those
-environments; what was left over 41,333 lines was **one** deliberate canvas reset (annotated now,
-the only source line this changed) and 18 unused names, all left standing as warnings. **No latent
-crash.** CI green on `adee77a`, the `lint` gate 3 s.
+**Standing constraints and decisions (still valid):**
+- **The user's ComfyUI (8188) is a production machine:** no `smoke` and no gate that forwards to it unless the user
+  says it is free; gates run `--offline`.
+- The user works up to about 15k; 30k is not the size to tune for. B item 6 (one-channel masks) stays on ice; no stage
+  2 split of `inpaint_canvas.js` (a subject is split out only when it is reworked anyway); the object tool's change A
+  (image-size label map) is parked. §C7's memory gate (300 MB of GPU process per document) is not met; tiles stay the
+  default anyway, the canvas backend is the escape hatch.
+- **A parked idea, not a plan:** a mobile companion (mark a place, say the prompt, the run happens on the desktop or an
+  API), not a mobile editor.
 
-**Stage 2 of `docs/PLAN_TYPES.md` is built: the three contracts are typedefs now, and `npm run types`
-checks them** (`tsconfig.check.json`, the gate `types`, a **Types** step in CI after Lint, `typescript`
-and `@types/node` as devDependencies; `docs/PLAN_TYPES.md` §"Stage 2 - as built"). `EditorApi` and
-`EditorHost` (the **40** members the editor modules call, which is what `build_node.py --check` greps
-for) in `renderer/editor/host.js`; `CommandParam` / `Command` / `CommandDescriptor` / `CommandCore` in
-`renderer/commands.js`; `Recipe` / `ProviderVariant` / `EditLimits` / `UpscaleFactor` / `TextShape` /
-`SettingRow` in `electron/main/recipes.js`. **`checkJs` is off on purpose**: with it on the first run
-said 534 errors, almost all of them in `inpaint_canvas.js`, `inpaint_tiles.js` and `px/` - a file is
-checked because it carries `// @ts-check`, so the `include` list is the whole truth. **Not the plan's
-word:** `@satisfies` on the `host` object does not work (it checks excess properties on the literal and
-re-types `this` inside every method, so the shell's ~110 members would have to stand in the contract);
-the check is an assignment in the new, never-loaded `types/contracts.js` instead. The node's own
-`js/host.js` still cannot be reached from here - another repository, no tsconfig - so the grep stays.
-**What changed in files that ship: seven lines**, all of them DOM properties that were being handed
-numbers (`i.min = 1` -> `"1"`, `input.value = v` -> `String(v)`; the DOM coerced them anyway) plus one
-cast for `document.activeElement.blur()`. **No defect was found**, as in stage 1; what the typedefs did
-find is three shapes the prose never stated (`text: false` in a variant, the old one-provider shape's
-top-level `note`, the optional fields of the helper status). **Teeth: 15 mutations, 12 red.** The three
-green ones are the tool's limit and are written down: in a `.js` file TypeScript treats every parameter
-as implicitly optional, so an implementation that *grew* a parameter is still assignable (two of them),
-and the command table's type is circular, so `names()`'s answer cannot be judged. **A blind spot that
-showed itself:** the typedef was written from the app's implementations, and a scan of the editor's
-call sites found two members where the editor passes more - `exportCanvas(editor, fmt)` and
-`saveExport(blob, name, { editor, download })`; both typedef lines were wrong and no checker would have
-said so. Gates `--offline` on both backends (`lint types recipes commands editor export mcp`):
-**ALL PASS** (`s2-tiles`, `s2-canvas`), and **CI green on `7758a96`** with the new Types step
-(both jobs, the gate 3 s). **Next in stage 3, and it is the fourth contract:**
-`electron/preload.js` - `window.scumble` is declared `any` in `types/globals.d.ts`, so every
-`window.scumble.*` in a checked file is unjudged.
+**Still unverified:** the ToAPIs and ModelArk adapters never ran against the live API; OpenRouter ran live for GPT
+Image 2.5 Flare and Sunburst only (0.1.27); Magnific (beyond the two upscalers) and Oxen are built from the docs only
+(2026-09-26); the Qwen Image Edit 2.1 local recipe never ran (the models are not downloaded); a real SAM2 / RMBG model
+has not run in the app on the slice 6 code; the user has not reported back on their own 15k file.
 
-**The MSIX package for the Microsoft Store is built and ran installed** (`docs/STORE.md`, "Run on the
-installed test package": ComfyUI over loopback, the redirected data and a DPAPI key across a restart, the
-single instance through the alias, the plugin folder in Explorer and a plugin written there from outside,
-MCP through the alias in proxy and headless mode, `app.relaunch`, SAM2 on DirectML, a clean uninstall; the
-App Certification Kit not run, no Windows SDK here). The user switched Developer Mode on for it; the test
-package is uninstalled again. **`python tools/mcp_test.py --store`** runs the MCP test the way the Store
-copy's registration starts it; the launch code now splices a placeholder into `process.argv`, because with
-`-e` the launcher's arguments sat one slot early.
-`npm run dist:store:test` (`tools/build_store.js --test`) makes `dist/Scumble-<version>-test.msix` (195 MB
-for 0.1.26) with a test identity; `npm run dist:store` builds the package for Partner Center with the identity the
-user reserved the same day (`DenRakEiw.Scumble`, `CN=F2BCAA24-...`; the family name
-`DenRakEiw.Scumble_eh52rqbjjrbdj` Partner Center showed is what `msix.publisherId()` computes, and a check
-holds it). **Not submitted:** the installed test comes first. `build/AppxManifest.xml` is electron-builder's template plus an **execution alias**
-(`scumble.exe`) and full trust; `build/appx/` holds the tile artwork rendered from the logo SVGs by
-`tools/appx_assets.js`. **`electron/main/msix.js`** is everything the Store copy does differently, switched
-by `process.windowsStore`: its own data folder **`%APPDATA%\Scumble Store`** (Windows lets a package change
-files that exist outside but puts new ones in its private `LocalCache`, so sharing `Scumble` with a GitHub
-copy would split the data), every Explorer folder translated to the real `LocalCache` path (the family name
-from the package's `AppxManifest.xml` and Windows' publisher-id hash, verified against four installed
-packages), the updater in a state `store` (no electron-updater, no menu entry, the Updates section says the
-Store updates it), and the MCP registration as the alias in Node mode with `-e` code that loads the
-launcher from `process.resourcesPath` (`mcp/registration.js`; the last argument of the `claude mcp add`
-line is quoted now unless it is a bare switch, so the old lines are byte for byte the same). Tests:
-`node tools/platform_test.js` 18 checks (9 new), the `platform` gate a new app step; **15 of 15** Node
-mutations and 1 of 1 renderer mutation red; gates `--offline` (`platform mcp commands lint types`) ALL
-PASS (`store-dev`). **Two findings that decide the next step:** an unsigned MSIX **cannot hold an app**
-(`Add-AppxPackage -AllowUnsigned`: 0x80073D2B, "cannot contain executable activations", even with the
-unsigned-publisher OID), so installing the test package needs **Developer Mode** (register the unpacked
-layout) or a trusted test certificate - a system setting, the user's call; and electron-builder's legacy
-`makeappx.exe` (2019) does not start here, the 1.1.0 toolset's does only from a copy outside `%LOCALAPPDATA%`
-(`build_store.js` stages it in `dist/.store-kit`). **Next for this item:** with Developer Mode on, run
-STORE.md's nine-point list (ComfyUI over loopback, the redirected data and keys, the single instance, the
-folders, the MCP alias with `ELECTRON_RUN_AS_NODE` through it, `app.relaunch`, DirectML, uninstall, the
-App Certification Kit). Not in CI yet; no CHANGELOG line (nothing changes for the installer's users).
+## What comes next (the list)
 
-**NEXT, in this order (the user, 2026-09-23 evening, before a `/clear`): ~~1. Comfy Router as a provider~~ (built, the
-paragraph below), 2. the macOS build (B3) with the logo.** State at the second `/clear` of that evening: Comfy Router
-and HY Image 3.5 are in **0.1.28, published**. Open, none of it started: (a) the live runs of FLUX.2, Seedream and
-Magnific through the Router (offered, not asked for; the key is in `dist/live-keys`, about $243 of credit); (b) the
-Store package for 0.1.28 (`npm run dist:store`; the first submission is the user's, in Partner Center); (c) **the
-headless MCP instance of this repo's `.mcp.json` intercepts the installed app**: it runs the dev tree on the default
-profile, so a Start-menu Scumble handed over to it and the user saw the dev window (0.1.27 by its `package.json` at
-start, no updater, "check for updates" did nothing). The installed app was still **0.1.25** and had not checked for
-updates since 2026-09-22; the MCP instance was stopped on the user's word so the installed app could update to
-0.1.28. A fix (a profile of its own for the MCP registration, `docs/BUGS.md` "A headless MCP instance can block the
-app from starting") was offered and not yet decided.
+The numbered list the user adds to. Items 1 to 13 are built and their text is in `docs/HISTORY.md` (the block of
+2026-09-19); the numbers are kept because other documents cite them.
 
-**Live, the same evening (the user's key, entered in the dev instance on the scratch profile `dist/live-keys`, which
-keeps it; the user's first key was not a Comfy key - 64 hex characters, refused on every route - the second,
-`comfyui-...`, works):** GPT Image 2 through the Router (inpaint with the mask, Quality low, 23.6 s) and Nano Banana 2
-(1K, 15.8 s) each gave a result layer in the selection; the notes of those two variants say so, the rest of the
-Router variants are still unrun (FLUX.2, Seedream, Magnific offered to the user, not run). **`GET
-/customers/balance`'s `amount_micros` counts cents** (it fell by exactly 3.432 for an HY run the node prices at
-$0.03432; the account held about $243). The queue's result read carries no `X-Comfy-Credits-Used`, so `info.credits`
-is null on a queued run. A probe that reads the key from the scratch profile through `safeStorage` and asks the free
-routes (model list, `/customers/me`, balance) without printing the key is in that session's scratchpad
-(`router/probe/`).
-
-**HY Image 3.5 Preview is built too, for 0.1.28, and ran live** (the user asked for it before the release, route
-chosen by the user: "Direkt über den Proxy"). It is **not on the Router** (240 models, Tencent only 3D) but only a
-Partner Node pair (`HunyuanImageEditApi`, `HunyuanImageTextToImageApi`, ComfyUI PR #16462 of 2026-09-22; the user's
-ComfyUI 0.37.0 lacks them). New provider **`comfypartner`** ("Comfy Partner API", `providers/comfypartner.js`,
-`keyName: "comfycloud"`, helpers shared from `comfyrouter.js` `_shared`): `POST /customers/storage` -> signed
-`upload_url` / `download_url`, `PUT` the picture without the key, then `POST
-/proxy/tencent/v1/wand/hunyuan-image/v35-generation` (synchronous) -> `choices[0].delta.image.url`; "download image
-failed" is sent twice more under new keys (the node's rule); `@ImageN` becomes "Image N". **Not a documented public
-API** - the note, the docs and a 404's words say so. Recipe `hy_image_3_5` (family Tencent, edit up to 5 pictures,
-Detail standard / high, crops to 2048 px and 4.2 MP, Generate new up to 4096). Live: one edit at 2048 x 2048 in
-27.9 s, $0.03432. Tests: `tools/comfyrouter_test.js` section 10 (now 88 checks), the `comfyrouter` gate three more
-steps (mock routes for storage, upload, the proxy); mutations 17 of 17 red after one check was added (the one green
-left out is an equivalent mutation: `readFailure` already scrubs the key). Gates `--offline` (`comfyrouter recipes
-generate`, tiles also `lint types`): ALL PASS on both backends (`hy-tiles`, `hy-canvas`).
-
-**0.1.28 is published** (Latest since 2026-09-23 21:24 German time, on the user's word "ja go go go"; CI built the draft: windows, linux, both `latest*.yml`; dev blog post "One key, sixteen models" (`v0-1-28`, portfolio `73c8e5f`, with the manual sync), live by CLI deploy, the git deploy blocked as always). Built on 2026-09-23 ( `package.json` 0.1.28, CHANGELOG "0.1.28 — 2026-09-23": Comfy Router,
-HY Image 3.5). `npm run dist` made `Scumble Setup 0.1.28.exe` (128.4 MB). Exe gates `--offline`: `rel28-exe` (tiles:
-platform layered upscale log pixels editor composite commands mcp recipes llm export assistant help comfyrouter) ALL
-PASS but `comfyrouter`, whose steps all passed and whose cleanup failed after `upscale` had remembered a provider (its
-restore ran before `selectRecipe`'s unawaited writes; the order is fixed, `rel28-exe-cr` = upscale recipes comfyrouter
-ALL PASS); `rel28-exe-canvas` (tiles off: platform layered upscale pixels editor composite film export assistant help
-comfyrouter) ALL PASS but `editor` (the live-stroke flake, "a real mouse over the window?"), green on the rerun
-`rel28-exe-canvas-ed`.
-
-**Comfy Router is built, for 0.1.28 (2026-09-23; CHANGELOG "0.1.28 — unreleased", `docs/RECIPES.md` "Comfy Router";
-`package.json` still 0.1.27). Written without a key; the live runs are in the paragraph above.**
-`electron/main/providers/comfyrouter.js`, written from the Router's pages read as Markdown (`<page>.md`: quickstart,
-queue, providers, reference), `api.comfy.org/openapi` for the queue and error field names, and **each model's
-published input schema** (`docs.comfy.org/router-schemas/<p>/<m>.json`, copied into `tools/refs/comfyrouter/`, 16
-files). It uses **the queue** (submit with `X-API-Key` + one UUID `Idempotency-Key` per run, resent under the same key
-on a lost answer / 409 concurrency / 429 / 503 up to three submits; status polls on `Retry-After`, 1 to 15 s; the
-result read, 202 = poll again; `PUT .../cancel` after 15 min, 30 for upscale; the status / result URLs composed from
-host + model + UUID, never from the answer) and falls back to the **synchronous route** under a new key when the
-queue answers `403 not_enabled` (a legacy key without a workspace). The body is the partner's native schema, one
-**dialect** per provider segment: `openai` (reuses `openai._common` / `_sizeFor`, the RGBA mask), `vertexai`
-(camelCase `inlineData`, the mask as a second picture, the last non-`thought` picture of the answer), `bfl` (FLUX.2
-`input_image..9`, 256..2048; FLUX.1 Fill), `byteplus` (reuses `ark._size`; **the Router's schema gives Seedream
-other pixel ranges than ModelArk's docs**: lite to ~9.4 MP, pro 1 to 4.2 MP), `qwen`, `freepik` (upscale), and
-text-only `xai`, `ideogram`, `krea` (their Router schemas take no picture). **No key row:** the adapter's
-`keyName: "comfycloud"`; `providers/index.js` has `keyNameOf()` and `describeAll()` a `sharesKey` field, and
-`renderProviders()` in `shell.js` skips such an entry (the Comfy Cloud row's hint names the Router). **Sixteen
-recipes** got a `comfyrouter` variant, last, no default changed ("Also on Comfy Router."); `comfyrouter` is in
-`TEXT_PROVIDERS`. Not wired: Recraft V4 (no size list), SeedVR2 (URL input, target resolution), FLUX.2 flex / klein
-(not served). **Tests:** `node tools/comfyrouter_test.js` (68 checks; every body of every variant validated against
-its published schema), the new gate **`comfyrouter`** (`tools/comfyrouter_test.py` + `tools/comfyrouter_mock.py`, 13
-steps, refuses a profile holding a Comfy Cloud key); `openrouter_test.js` / `.py` and `upscale_test.js` now allow
-Comfy Router after their provider. Mutations: **52 of 52** Node red (the first round's two survivors got checks: an
-OpenAI `kind: "edit"` sends no mask, `constructor/x` is refused), 1 of 1 app (the skipped key row). Gates `--offline`
-on both backends (`comfyrouter recipes openrouter ark toapis upscale generate size transparent mcp commands`, tiles
-also `lint types`): **ALL PASS** (`cr-tiles2` + `cr-tiles3` for openrouter after its fix, `cr-canvas`). **What only a
-real key can settle** is listed at the end of the RECIPES section (the queue with the user's key, the live
-validation, whether the masks reach the model as edits, output sizes, prices via `X-Comfy-Credits-Used`). Not done:
-*check balance* on the Comfy Cloud row (`GET /customers/balance` exists, unwired).
-
-**SEO and GEO for the Scumble pages are done and live (item 3, 2026-09-23; portfolio `f72a510`, CLI deploy).** Found and
-fixed: the root layout's `alternates.canonical: "/"` was inherited by every page, so `/scumble`, `/manual` and `/blog`
-each declared the home page their canonical; the layout has none now and every page states its own (home `/`,
-imprint `/impressum`). `lib/scumble-seo.ts` in the website: `scumbleMeta()` (canonical, title by search intent with
-`absolute`, description, OpenGraph/Twitter card naming the page), the `facts` and the 8-question `faq` (shown on the
-hub and marked up with the same words), JSON-LD `SoftwareApplication` + `FAQPage` (hub), `TechArticle` with its 17
-chapters as `hasPart` (manual), `Blog` with every `BlogPosting` (blog), `BreadcrumbList` everywhere, the Person got
-`@id` `/#person`. Share images 1200 x 630 per page (`app/scumble/**/opengraph-image.png` and `twitter-image.png`,
-the mascot draft + the page's title). GEO: the hub opens with a definition sentence and a facts list, `/llms.txt`
-(route, built from the same data) and the whole manual as `/scumble/manual.md`. Headings "Scumble manual" / "Scumble
-dev blog", a nav at the foot of every subpage (the other doors and the download), blog titles are permalinks, the
-sitemap has the release date and priorities (hub 0.9, manual 0.8, blog 0.6). `robots.ts` already allowed every
-crawler, AI bots included. **The Store listing** was submitted by the user the same day (publish right after
-certification); when it is live, the Store link goes onto the hub, README and a blog post.
-
-**0.1.27 is published** (Latest since 2026-09-23 15:52, on the user's word "mach den release"; `package.json` 0.1.27, CHANGELOG
-"0.1.27 — 2026-09-23": Help, the logo, the upscale prompt, OpenRouter's live notes, the clean package). **Found while
-building it and fixed:** `build.win.files` / `build.linux.files` held only the onnxruntime exclusions since B1, and
-electron-builder takes a platform list as the whole list, so **0.1.26 shipped the whole project folder** (docs,
-tools, crates, docker, types, `.claude/`, CLAUDE.md; nothing private: `.claude/` held a launch config with a temp
-path and the MCP switch); both lists carry the top-level list now, `platform_test.js`
-`a_platform_file_list_is_never_exclusions_alone` holds them to it (red on the 0.1.26 list) and
-`the_built_package_holds_the_app_and_nothing_of_the_repository` reads `dist/win-unpacked`'s asar when there is one.
-Installer **128.4 MB** (0.1.26: 133.6), installed 410 MB. **OpenRouter (item 4) is done in it:** the notes of GPT
-Image 2.5 Flare and Sunburst say they ran live (the user's log: about 44 and 112 edits since 2026-09-21), the other
-twelve OpenRouter variants that the adapter ran live but that model not; `docs/RECIPES.md` has the safety-refusal
-finding. Exe gates `--offline`: `rel27-exe` (tiles: platform layered upscale log pixels editor composite commands mcp
-recipes llm export assistant help) and `rel27-exe-canvas` (tiles off: platform layered upscale pixels editor
-composite film export assistant help) ALL PASS but `editor`, each a known flake
-(`helper_inputs_read_levels_and_upload_nothing`, `closed_tabs_are_collected`), green on the reruns `rel27-exe-ed` and
-`rel27-exe-canvas-ed`; the final package (rebuilt for the manual's size line) `rel27-exe-final` (platform help)
-PASS. No `smoke`. Dev blog post "Ask the manual" (`v0-1-27`, portfolio `9aecf75`), live by CLI deploy.
-**The Store is prepared, not submitted:** `dist/Scumble-0.1.27.msix` (186.6 MB, `DenRakEiw.Scumble`, English only:
-`build.appx.languages` lost `de-DE`, because every declared language needs a full listing), the listing texts in
-`docs/STORE_LISTING.md` (description, features, keywords, the `runFullTrust` sentence, the privacy URL, the age
-rating answers) and seven screenshots in `dist/store-listing/`. **The upload in Partner Center is the user's.**
-
-**Help is built (2026-09-23, for 0.1.27; `docs/PLAN_HELP.md` "As built", CHANGELOG 0.1.27).**
-**`docs/MANUAL.md` is now the manual's one source** (17 chapters; a new one on Help, and F1 in the
-shortcuts), `renderer/help/manual.js` its one reader, and **the website builds `/scumble/manual` from
-copies of both** (`node tools/manual_sync.js [--check]` copies them into `F:\portfolio_web`,
-`content/scumble/MANUAL.md` and `lib/scumble-manual-reader.js`; portfolio `f5329db`, live by CLI deploy).
-**So a manual change is made here and synced, never on the website**, and every release runs the sync
-before its blog post. The app: *Help* button and **F1** (*Help › Scumble help* replaces *Editor guide*),
-a `<dialog id="help">` column (`renderer/help.js`, `help.css`) with the searchable manual and a chat above
-it that answers from it (`electron/main/assistant/help.js`: the assistant's four adapters with no tools,
-every *Language models* row, `settings.help.model`; chats are not kept). Tests: `tools/manual_test.js`
-(7, with **drift checks**: every menu accelerator in the shortcuts chapter, every `Settings › X` and
-`<Menu> › X` an existing section or item), the `help` section of `tools/assistant_test.js` (12, 238 in
-all), the new gate **`help`** (six app steps against the mock); mutations 15 of 16 red (the green one is a
-guarantee the editor gives twice). Gates `--offline` tiles ALL PASS (`help-tiles`), canvas ALL PASS on
-the rerun. **The live check of §5 ran** on the user's OpenRouter key (Gemini 3.8 Flash, a scratch profile deleted
-afterwards): a question the manual does not answer got "the manual does not cover" with the docs links,
-nothing invented; a covered one the right answer and its chapter. **About one cent a question**, measured
-(10k input, 400 to 700 reasoning tokens), not the plan's "fractions of a cent". Its answer is the
-chapter's screenshot (`help.jpg`, portfolio `f116061`, live by CLI).
-
-**The order changed later the same day (the user: "also bauen wir erst weiter den hilfe assistent und danach
-machen wir ein ms store release"):** item 5 (Help) next, then the 0.1.27 release with item 4's OpenRouter line
-in it, and the **first Microsoft Store submission** with the same version (`npm run dist:store`, uploaded by
-the user in Partner Center by hand; the listing texts and screenshots can come from the manual); then, if the
-user wants it, the GitHub-release-to-Store coupling (`msstore` CLI in `build.yml`, which needs an Entra ID app
-linked to Partner Center; only submissions after the first can go through the API). SEO (item 3) after that.
-The list below is the order as it stood before:
-
-**Next, in this order** (the user, 2026-09-23, each after a `/clear`):
-
-1. ~~**Stage 2 of `docs/PLAN_TYPES.md`**~~ - **built on 2026-09-23**, see the paragraph above.
-2. **The MSIX package for the Microsoft Store** - **built and run installed on 2026-09-23**
-   (`docs/STORE.md` is the whole of it; the paragraph below). Eight of STORE.md's nine points held on the
-   registered test package (the certification kit needs the Windows SDK); what is left is the user's
-   submission in Partner Center. **The Partner Center identity is in** (2026-09-23: `DenRakEiw.Scumble`, family
-   `DenRakEiw.Scumble_eh52rqbjjrbdj`, Store ID `9NDBTNNMXF2R`; `npm run dist:store` builds the real package).
-3. ~~**SEO for the four Scumble pages**~~ - **done 2026-09-23, with GEO** (the paragraph at the top). The plan was: titles and
-   descriptions by search intent, JSON-LD (`SoftwareApplication`, `HowTo`, `BlogPosting`), an
-   OpenGraph image per page, heading hierarchy, internal links, sitemap priorities. The manual is the
-   lever - it is the only page with real prose about "AI inpainting editor", "ComfyUI desktop app",
-   "PSD export".
-4. ~~**The stale "not run against the live API" line for OpenRouter**~~ - **done in 0.1.27** (2026-09-23).
-5. ~~**Help: the manual in the app, with a chat on top**~~ - **built on 2026-09-23, for 0.1.27** (the
-   paragraph "Help is built" above the order; `docs/PLAN_HELP.md` "As built"). The plan as it stood:
-   A Help button whose panel **renders the manual itself**, searchable, with no key and no network,
-   and a chat above it that answers from the same text on whichever model the user has a key for.
-   The chat is the assistant's loop **with an empty tool set** - no MCP client, no policy, no undo,
-   no screenshots, and therefore **any model, including the cheap text-only ones the assistant
-   cannot use**. Half the work is §2 of that plan and it pays on its own: **the manual lives only in
-   the website repository today** and will drift from the code it describes, so it moves to
-   `docs/MANUAL.md` here and the website generates its chapters from it. Today's
-   `Help > Editor guide` opens the ComfyUI node's README, which is the wrong file in the wrong
-   repository; this replaces it (F1). About two days.
-
-**Open on the manual, none of it blocking:** the assistant's screenshot is an empty panel (a real
-turn would cost a few cents on the user's OpenRouter key and make the strongest picture in the
-manual); there is no colour-match figure, because it was measured and the obvious candidate teaches
-the wrong thing - Match 100 on the red handbag pulls it toward the blue car and the paving, so that
-figure needs a result that is *unintentionally* off, a piece of wall or paving; and the log
-screenshot is empty, because the safety-system error was cleared out of it before the shot.
-
-**New idea, parked** (the user asked on 2026-09-23 whether Kotlin / Swift would make sense): **a
-mobile companion, not a mobile editor.** A WebView wrapper of the editor fails on memory - iOS ends
-an app at a few hundred MB to about a gigabyte and a 15k document needs multiples of that - and a
-native rewrite is a second product; the one asset that ports cleanly is the **Rust kernels** (JNI /
-uniffi), and ONNX has mobile builds. The shape that would make sense: look at the picture, mark a
-place with a finger, say the prompt, the run happens on the desktop Scumble or through an API, the
-result lands there. It would be the fourth platform before the first three are done (Windows
-unsigned, Linux never run, macOS not built), so it is an idea, not a plan.
-
-## Where things stand (2026-09-22)
-
-**2026-09-22, after 0.1.26: the Upscale dialog's prompt field, for 0.1.27** (the user's report; `docs/BUGS.md` "The
-creative upscalers seem to take no prompt", CHANGELOG "0.1.27 — unreleased"). Clarity and Magnific Creative always
-sent the Generate tab's prompt, invisibly; the dialog now shows a Prompt row for `usesPrompt` recipes (prefilled from
-the tab, sent as the `upscale` command's new `prompt`, the tab's prompt untouched), `list_recipes` has `usesPrompt`.
-Gate step in `upscale_test.py`, 6 of 6 mutations red, gates `--offline` on both backends (`upscale recipes mcp commands
-assistant`, canvas also `editor`) ALL PASS. Not released. **The same evening the logo was drawn and is in 0.1.27 too**
-(item 18 of "What comes next": `build/icon.svg` and the new `icon.png` / `icon.ico`; the user's word, "kommt aber
-erst mit naechstem release rein" - no release for the icon alone).
-
-**2026-09-22: 0.1.26 is published** (Latest since 18:04 German time, on the user's word "kannst du es pushen";
-`package.json` 0.1.26, CHANGELOG "0.1.26 — 2026-09-22": the smaller installer and the Linux build). `npm run dist`
-built `Scumble Setup 0.1.26.exe` (133.6 MB); exe gates `--offline`: `rel26-exe` (tiles: platform layered upscale log
-pixels editor composite commands mcp recipes llm export assistant) and `rel26-exe-canvas` (tiles off: platform layered
-upscale pixels editor composite film export assistant) ALL PASS at the first try. **The first tag through the new
-`draft` job worked:** one draft, both builds attached (`Scumble-Setup-0.1.26.exe` 133 MB, `scumble-0.1.26.AppImage`
-162 MB, `scumble-0.1.26.deb` 128 MB, `latest.yml` and `latest-linux.yml` both answer 0.1.26). The dev blog post
-"Smaller, and on Linux" went up first as a post without a release (portfolio `cee23e7`) and became the 0.1.26 post
-(`v0-1-26`, `99d111a`, `hub.version` 0.1.26), both live by CLI deploy (the git deploy blocked again). The Linux build
-has still run nowhere.
-
-**2026-09-22, evening: B1 + B2 are built - the smaller Windows installer and the Linux build, for 0.1.26**
-(`docs/PLAN_0_1_24.md` "B1 + B2 as built", CHANGELOG "0.1.26 — unreleased"; `package.json` is still 0.1.25). **B1:**
-`build.win.files` drops `onnxruntime-node`'s darwin, linux and win32/arm64 folders, `electronLanguages` keeps en-US
-and de: installer **188.1 -> 133.6 MB**, installed 676 -> 421 MB; DML and CPU sessions load from the package (the
-exe in Node mode on the user's SAM2 tiny decoder, read only). Exe gates `--offline` on that package: `b1-exe`
-(tiles: layered upscale log pixels editor composite commands mcp recipes llm export assistant) and `b1-exe-canvas`
-(tiles off: layered upscale pixels editor composite film export assistant) ALL PASS. **B2:** `build.yml` has a
-`draft` job (tag check, draft from the CHANGELOG) that `windows` and a new `linux` job need; `linux` builds AppImage,
-.deb and `latest-linux.yml` with `ONNXRUNTIME_NODE_INSTALL=skip` (**helpers on the CPU on Linux**, no CUDA provider
-shipped). `electron/main/mcp/registration.js` (an AppImage registers `"$APPIMAGE" --mcp`, no launcher; Windows' text
-byte for byte as before), `keysNote` / `showKeysNote` in `shell.js` (amber warning for `basic_text`). New gate
-**`platform`** (9 Node checks, 2 app steps); mutations 9 of 9 (Node) and 4 of 4 (app, fresh instance each) red; dev
-gates `--offline` on both backends (`platform mcp commands llm editor`) ALL PASS. **Nothing has run on Linux** (no
-WSL / Docker here; `docs/BUGS.md` "Linux: built, never run"); **the first Linux CI build is green** (run
-35744363504 on `c1e23da`: `linux` 1 min 12 s, AppImage + .deb artifact 289 MB; `windows` 133.5 MB).
-**Trap:** editing `tools/run_gates.sh` while a run of it is going breaks that run (bash reads the script as it goes:
-`syntax error near unexpected token fi`). **Next:** B3 (macOS, needs the 1024 px
-icon source) or the 0.1.26 release, on the user's word. **The user (2026-09-22): B3 is postponed, and a logo has to
-be designed first** (item 18 of "What comes next"; B3 needs its 1024 px master).
-
-**2026-09-22: 0.1.25 is built and tagged** (`package.json` 0.1.25, CHANGELOG "0.1.25 — 2026-09-22": PSD / ORA open with
-their layers, the PSD export's non-ASCII names, U2, the upscalers' live runs). **U3 moved out of it** on the user's word
-("mach den release fertig"): in-app ONNX upscaling is optional now, not planned for a release. `npm run dist` built
-`Scumble Setup 0.1.25.exe`; exe gates `--offline` against `dist/win-unpacked/Scumble.exe`: `rel25-exe` (tiles: layered
-upscale log pixels editor composite commands mcp recipes llm export assistant) and `rel25-exe-canvas` (tiles off:
-layered upscale pixels editor composite film export assistant) ALL PASS at the first try. No `smoke` (U2 has not run
-on a server; the release notes say so). Tag `v0.1.25` pushed, CI built the draft, and **0.1.25 is Latest since
-2026-09-22** (published on the user's word; `latest.yml` answers `version: 0.1.25`). The dev blog post "Layers in, layers
-out" (`v0-1-25`, portfolio commit `65afaec`) went live by CLI deploy (the git deploy was blocked again). **Next:** B1 + B2 (the smaller Windows installer and the Linux build), which the user asked about.
-
-**2026-09-22, later: U2 is built - an upscale model on the user's ComfyUI, for 0.1.25** (`CHANGELOG.md` "0.1.25 -
-unreleased", `docs/PLAN_0_1_24.md` "U2 as built", `docs/RECIPES.md` "The shipped ComfyUI recipes" and "On the user's
-ComfyUI"; `package.json` is still 0.1.24). `recipes/upscale_model_local.json`: `InpaintCanvas` -> `ImageFromBatch` ->
-`UpscaleModelLoader` (*Model*, slot 1, default `4x-UltraSharp.pth`) -> `ImageUpscaleWithModel` -> `result_local`,
-`"task": "upscale"` on a ComfyUI recipe (`normalize()` gives it `factor.fixed`, any other task becomes `edit`).
-**Selection only**: the node's stitch fits the model's larger answer back into the box. `host.queueGenerate` refuses
-without a selection, sends `host.upscaleState(state)` (no fill, no Original copy, no references, no refine; the
-document's crop settings untouched) and forces `target_size: 0` after merging the user's node params (the recipe's own
-value would lose to them). The `upscale` command refuses `scope: "document"` by name and runs the selection through
-`generate`'s path; the dialog lists the recipe, greys the whole picture out, hides factor and provider, and disables
-*Upscale* without a selection, a connection or one of the `needs`. The assistant's question now says "costs money, or
-queues on your ComfyUI". No editor change (no `nodecopy`). Tests: `node tools/upscale_test.js` **95 checks** (a
-section for the recipe file), gate `upscale` step `a_comfy_upscale_recipe_queues_the_crop_as_it_is_and_only_the_selection`
-(catches `api.queuePrompt` in the window: **nothing is queued anywhere**); mutation round **15 of 15 red** (fresh
-instance each). Checked against the user's `/object_info` (read only, the queue untouched). **Not run on a server**:
-`smoke` with a real model file waits for the user's ComfyUI. **Next: U3** (in-app ONNX upscaling, whole picture in
-bands), then the 0.1.25 release with U2.
-
-**2026-09-22: PSD and ORA open with their layers, for 0.1.25** (the user's bug report the same day; `docs/BUGS.md`
-"A PSD saved with layers cannot be opened with them"). New `renderer/editor/inpaint_layered.js` (`readPsd` /
-`readOra`, no DOM, in `build_node.py` FILES and `docs/BUILD_NODE.md`), the editor's `readLayered` / `loadLayered`
-(`loadFile` sniffs the first bytes; `addImageLayers` adds a dropped file's layers), `.psd` / `.ora` in the open
-dialog's filters. Found and fixed on the way: **the PSD export lost every non-ASCII layer name** (a `luni` block in
-both writers now). New gate **`layered`** (`node tools/layered_test.js` 44 checks, then 7 app steps); mutation round
-18 of 18 red; gates `--offline` on both backends (`layered export editor commands mcp upscale`, tiles also
-`nodecopy`) ALL PASS; checked on the user's real Photoshop files (read only, locally).
-
-**2026-09-22: the U1 checkpoint ran** with the user's fal and Magnific keys (entered in a dev instance on the scratch
-profile `dist/live-keys`, which keeps them; `docs/RECIPES.md` "The checkpoint, 2026-09-22"): Topaz Precision on fal (a
-selection 25 s, a 1907 x 1073 picture to 3814 x 2146 in 24 s), Magnific Precision V2 (the same box in **311 s**) and
-Magnific Creative (13 s), all 2x, every answer aligned. The status line now warns that Magnific Precision is slow.
-One 4x run too (Topaz, the whole picture to 7628 x 4292 in 34 s). Not run live, on the user's word ("koennen die user
-testen"): the other fal upscalers, Comfy Cloud, other factors, `limits.max`.
-
-**2026-09-22: U1 is built - upscaling through the providers, for 0.1.24** (`package.json` 0.1.24, CHANGELOG "0.1.24 — 2026-09-22"; `docs/PLAN_0_1_24.md` "U1 as built", `docs/RECIPES.md` "Upscale recipes" and "Magnific"). An *Upscale*
-button next to *Generate new* (the app host's `buildUpscaleButton`, so the node needs nothing) opens `#up-dialog`
-(model, provider, the selection or the whole picture, the factor) and runs the new command `upscale` (`scope`,
-`factor`; the assistant asks, 30 min timeout, a `layers` undo step for the selection, none for the whole picture).
-`host.runUpscale`: the selection's crop box (with context) at its own size, no fill, no references, the answer fitted
-back by the stitch as a result layer; the whole picture sends the base alone and the answer becomes the base through
-`resizeImage(nw, nh, { base })` (layers, masks, selection scaled, one `canvas` step), refused above `limits.max`.
-*Generate* with an upscale recipe selected upscales the selection. Recipe format: `task: "upscale"`, `factor { default,
-min, max, steps, fixed }`, `usesPrompt` (normalized in `recipes.js`, family *Upscale*). Nine recipes: Topaz Precision /
-Bloom / Wonder, Clarity, SeedVR2, Recraft Crisp / Creative (fal, `fal.js` `upscale`, 30 min queue wait), Magnific
-Precision (V2, 2-16) and Creative (2/4/8/16, 25.3 MP cap) through the new `providers/magnific.js` (async tasks on
-`api.magnific.com`, `x-magnific-api-key`, base64, host and `test-` key rules as ModelArk) and, **not in the plan**,
-Comfy Cloud as the last variant of both Magnific and both Recraft recipes (Partner Nodes, `comfycloud.js` `upscale`).
-**The survey** could only read keyless lists: this install stores a BFL key only (no fal, Magnific, Replicate,
-WaveSpeed, ToAPIs, OpenRouter key); findings in `docs/RECIPES.md`. Tests: `node tools/upscale_test.js` (84 checks) and
-the gate `upscale` (`tools/upscale_test.py`, 10 steps, loopback upscaler with a magenta frame marker); mutation rounds
-**64 of 64** (Node, on a copy of the tree) and **17 of 17** (app, fresh instance each; four survivors of the first run
-were each answered with a check or a change). **The checkpoint was skipped on the user's word** ("also push"; the fal key the user named is not in this
-machine's `%APPDATA%/Scumble/secrets.json`, which holds BFL only; the Magnific key comes after the update): nothing
-has run against a live API. Exe gates `--offline` against `dist/win-unpacked/Scumble.exe`: `rel24-exe` (tiles: upscale
-log pixels editor composite commands mcp recipes llm export assistant) and `rel24-exe-canvas` (tiles off: upscale
-pixels editor composite film export assistant) ALL PASS at the first try. Tag `v0.1.24` pushed, CI built the draft, and
-**0.1.24 is Latest since 2026-09-22** (published from this session on the user's word; `latest.yml` answers
-`version: 0.1.24`). The dev blog post "Make it bigger" (`v0-1-24`, portfolio commit `cf92b73`) went live by CLI deploy
-(the git deploy was blocked again).
-
-**2026-09-22: the plan for the next sessions is `docs/PLAN_0_1_24.md`** - seven sessions with a `/clear` after each
-larger one: U1 upscaling through the providers (fal already hosts Topaz precision / creative / generative, Clarity,
-SeedVR2, Recraft behind the existing adapter and key; selection mode on the existing run path, a whole-picture mode
-that replaces the base like *Resize*; release 0.1.24), U2 an upscale recipe on the user's ComfyUI, U3 in-app ONNX
-upscaling with the whole picture in bands (0.1.25), M1 Magnific as a full provider (Mystic, FLUX, Seedream 4.5,
-Z-Image, Image Expand; async tasks on `api.magnific.com`, docs readable at docs.freepik.com), O1 Oxen.ai (0.1.26; three probes with a key first, a data URL in
-`input_image` decides the edit route), B1 + B2 the smaller Windows installer (151 MB of foreign ONNX binaries) and
-the Linux CI build, B3 macOS prepared without the developer account (mac block, entitlements, `cmdKey`, an unsigned
-CI artifact, nothing released). U4 (Topaz / Magnific direct, a local Topaz) only on the user's word; **no Topaz photo
-product is installed here** (Topaz Video only), so a local route cannot be tested. **What the user said the same
-day:** the assistant has run against a real key and works (so the checkpoint of `docs/PLAN_ASSISTANT.md` is
-answered by use); Qwen Image Edit 2.1 has no API yet, item 15's API side is closed; the Qwen local recipe is still
-untested (the models are not downloaded); the website stays on CLI deploys for now. **Start the next session with
-U1** (the plan's section says what to read and what the checkpoint needs: the fal key for one live Topaz run).
-
-## Where things stand (2026-09-21)
-
-**2026-09-21: 0.1.23, a small patch** (`package.json` 0.1.23, CHANGELOG "0.1.23 - 2026-09-21"). (1) **Layer names
-were invisible** (GitHub issue #1, `docs/BUGS.md` "Fixed, waiting for its release"): measured in a fresh instance, the
-panel 291 px, a row 259 px (247 with the list's scrollbar), its content 274 px, the name of every layer with the full
-button set 0 px - the name was the only element that gave in, so nothing could be double-clicked and the list
-scrolled sideways; the rename itself was never broken. `.ipc-side` is **320 px** now, the row's minis 22 px with a
-3 px gap, `.ipc-name` `min-width:48px`, the kind select shrinks (44 to 84 px), the expanded rows' selects shrink, a
-text layer's rows wrap, and a rename pushes a `layers` undo step. Gate step `editor_test.py`
-`layer_rows_fit_the_panel_and_names_can_be_renamed` (17 layers, the active row of each kind, nothing past the list's
-edge, a real `dblclick` + Enter + undo), red on the 0.1.22 code and red without the undo step. **What the wider panel
-moved:** `a_colour_matched_layer_draws_from_its_own_tiles`' flip check went red on the canvas backend only (an A/B:
-green at 290 px with every other change in); two fresh matches of one state differ by 2 levels on 12,402 of 8.7 M
-bytes there at the new geometry, and that backend has no provisional statistics, so its bound is 2 and the tiles
-bound stays 1 (a mutation that keeps the provisional entry is red at 1 and green at 2 - a blanket 2 would have
-blinded the step). (2) **`recipes/qwen_image_edit_2_1_local.json`**, from the user's ComfyUI template
-(`image_qwen_image_2_1_image_edit.json`): subgraph flattened, save / compare nodes dropped, the crop batch split by
-`ImageFromBatch` into `images.image_1..3` because `TextEncodeQwenImage21` reads `image[:1]` per input (an autogrow
-input is a flat dotted key in an API prompt); `docs/RECIPES.md` "The shipped ComfyUI recipes". Checked against the
-user's `/object_info` (every class, input, link and setting target); **not run** - the three Qwen 2.1 model files
-were not on that server. (3) The *upscale* upsample use case (committed earlier the same day, `c0df448`).
-Gates `--offline`: tiles `p23-tiles` (pixels editor composite commands shape brush film recipes llm generate mcp log
-nodecopy assistant) ALL PASS, canvas `p23-canvas` ALL PASS after the bound (editor rerun `p23-canvas-ed3`). `npm run dist`
-built `Scumble Setup 0.1.23.exe`; exe gates `--offline` against `dist/win-unpacked/Scumble.exe`: `rel23-exe` (tiles: log
-pixels editor composite commands mcp recipes llm export assistant) and `rel23-exe-canvas` (tiles off: pixels editor
-composite film export assistant) ALL PASS at the first try. No `smoke` (the user's ComfyUI). Tag `v0.1.23` pushed, CI
-built the draft, and **0.1.23 is Latest since 2026-09-21** on the user's word; `latest.yml` on the feed answers
-`version: 0.1.23` (check `gh release list` before believing any release state written down anywhere).
-
-## Where things stand (2026-09-20)
-
-**2026-09-20, after 0.1.21: the language models are the user's own list now, and the picker stopped warning about
-itself, for 0.1.22** (`package.json` 0.1.22, CHANGELOG "0.1.22 - unreleased"; the user: "fuer die llm's im agent und
-prompt upsampling sollen auch anbieter wie openrouter verwendet werden koennen, also brauchen wir settings in
-einstellungen um das umzusetzen. Ausserdem entferne die 'not tested' hinweise"). OpenRouter was already both a
-provider of the assistant and an upsampling backend since 0.1.21; what was missing is a place in the Settings and the
-freedom to name **any** model. **New: `electron/main/llm_custom.js`** (plain Node, no Electron) holds
-`settings.llm.models`, a list of `{ provider, model, label, upsample, assistant, vision }`, normalised on every read
-(unknown provider, empty id and duplicates dropped, id cut at 200 and name at 120, at most 50 rows, prototype keys
-are not providers). **One registry for both features:** it reads the assistant's `providers.js`, so the ten providers,
-their key rows and their base URLs are the same list for the assistant and for prompt upsampling. `llm.list()`
-appends the rows marked *upsample* after the built-in ones (`key` from that provider's own credential row, the local
-endpoint from its URL) and `ask()` resolves them; `picker()` appends the rows marked *assistant* to their provider
-group, after the curated models and never repeating one, and `providerOf(value, custom)` gives the loop the row's own
-name and `vision` (a row marked blind loses `screenshot`, like any blind model). **New for upsampling: `askChat`** -
-DeepSeek, Moonshot, Z.ai and WaveSpeedAI had key rows for the assistant only; a row of theirs now goes through the
-same `askCompatible` client as the ToAPIs and OpenRouter rows, to the base `llm_custom.endpoint()` reads from the
-registry (ToAPIs and the local endpoint keep their own paths, their host comes from the settings). **UI:**
-*Settings > Language models* (provider select, model id with OpenRouter's live tool-model list as suggestions, name,
-three checkboxes, Add, a row list with Remove), `llm:providers` as the one new IPC channel, and
-`refreshAssistantModels()` so a new row reaches the panel's cached picker. **The dialog reads the settings file, not
-the window's cached copy** (the endpoint above writes `settings.llm` without touching that cache; the trap is in
-"Testing and benchmarking"). **The "not tried with a real key" mark is gone** with the `tried` flag of every registry
-entry and the field `picker()` and `noticeFor()` carried: a row says only what is true of that model. The honest
-sentence stays in `docs/ASSISTANT.md` ("What it cannot do") and in the release notes - `docs/BUGS.md` moved the
-report to "Fixed, waiting for its release". **Tests:** `node tools/models_test.js` (29 checks, plain Node, the first
-step of the `llm` gate), `tools/llm_test.py` step 5 (the dialog writes the row, both pickers take it, the request
-reaches the provider on its own key, Remove takes it out again) and `tools/assistant_test.py`
-`the_picker_carries_the_users_own_models_and_no_warning_about_itself` (37 steps now). **Mutations: 15 of 16 on the
-Node side** (the green one takes the `hasOwnProperty` guard out of `endpoint()`, which no check can see because no
-prototype member has a `.base`; written down, not papered over) **and 5 of 5 against the two app gates** (the rows
-dropped from `list()`, from `ask()`, from the Add button, from `picker()`, and the mark put back). Gates `--offline`
-on both backends (`llm toapis openrouter generate log mcp commands editor assistant`): **ALL PASS** (`lm-tiles`,
-`lm-canvas`), each at the first try. **Not covered by any gate, and it is the old line:** no row has run against a
-live API - the four new upsampling hosts (DeepSeek, Moonshot, Z.ai, WaveSpeed) are written from the registry's base
-URLs, and nothing checks that a model id exists at its provider or that it takes tools; the provider's own error is
-what the user sees. **The release:** `npm run dist` built `Scumble Setup 0.1.22.exe`, the CHANGELOG section is dated
-2026-09-20, and the exe gates ran `--offline` against `dist/win-unpacked/Scumble.exe` - `rel22-exe` (tiles: log pixels
-editor composite commands mcp toapis llm openrouter export assistant) **ALL PASS at the first try**, `rel22-exe-canvas`
-(tiles off: pixels editor composite film export assistant) with `editor` and `composite` red and **both green on the
-rerun `rel22-exe-canvas-b`**, each a known flake (the live stroke says "a real mouse over the window?", composite's
-source windows the same shape as the 0.1.19 release). **No `smoke`** (it needs the user's ComfyUI), and no model has
-run against a live API. The tag `v0.1.22` is pushed, CI built the draft, and **0.1.22 is Latest since 2026-09-20**
-on the user's word ("machen wir klar", the same evening); `latest.yml` on the feed answers `version: 0.1.22` (check
-`gh release list` before believing any release state written down anywhere).
-
-**2026-09-20: the two defects the OpenRouter session found are fixed, for 0.1.21** (`docs/BUGS.md` "Fixed, waiting
-for its release"; CHANGELOG 0.1.21; `docs/RECIPES.md` "Import"). (1) **FLUX.2 [flex] on fal** carried
-`num_inference_steps` and `safety_tolerance` both at `"index": 1`; measured in the app on the old file before the fix,
-the panel showed two rows instead of three (no *Steps* at all) and the request went out as
-`num_inference_steps: "2", guidance_scale: 2.5, safety_tolerance: "2"` - 2 steps instead of 50, and as a string. The
-row is slot 3 now. (2) **A recipe with a `providers` map could not be imported** (`importFile` took only the old
-one-provider shape): `hasVariants` takes either shape, an empty map and an array count as no provider and get a
-message of their own, and `importFile` answers the **normalized** recipe as `list()` serves it - two defects of the
-same path that came with it, because the Settings note read "Imported ... (undefined, 0 nodes, 0 settings)" for a
-provider recipe (it names the providers now) and the refusal carried the IPC prefix (stripped, as the file's three
-other handlers do). **New gate `recipes`** (`tools/recipes_test.js` in plain Node, then `tools/recipes_test.py` in
-the app): every settings row of every shipped recipe owns its slot (1 to 8) and its key - 138 rows in 91 provider
-variants plus the comfy recipes, the only shared slot in the tree was the FLUX one - and the importer in both shapes,
-what stays refused, and the import through the Settings dialog end to end. A mutation round of **19 turned a check
-red, all 19** (17 in Node, 2 in the renderer against a restarted app). Gates `--offline` on both backends
-(`recipes pixels editor composite commands size transparent generate log mcp toapis openrouter ark llm`):
-**ALL PASS on tiles and on the canvas backend**, each at the first try. **Found on the way and fixed:** the `toapis`
-gate left the *window's* view of `gpt_image_2` on toapis while restoring the stored settings, which made the
-`openrouter` gate red when it ran after it (`openrouter` alone on a fresh profile passed); its cleanup now puts every
-recipe it switched back through `selectRecipe`, and the trap is in "Testing and benchmarking" below. **0.1.21 is
-still unreleased** (0.1.20 is Latest); ComfyUI (8188) did not answer in this session, so the two points that need it
-are still open.
-
-**2026-09-20: the `buildModal` split (item 11) is built** (`docs/BUILD_NODE.md`, its file table and the module-cycle
-note). `renderer/editor/inpaint_modal.js` (758 lines) holds `buildEditorModal(ed)` and one function per part -
-`buildTopBar`, `buildTools`, `buildView`, `buildSidePanel`, `buildLayers`, `buildReferences`, `buildSelection`,
-`buildCanvasPanel`, `buildExport`, `buildPrompt`, `buildGenerate`, `buildSettings`, `buildHistory`, `buildCrop` -
-and the class keeps a four-line `buildModal()` that calls it; `inpaint_canvas.js` is 12,808 lines down to 12,126.
-**The move is proven**, by a verifier written against the untouched copy (the session's scratchpad,
-`verify_modal.js`): the module taken apart, `ed` read back as `this`, the indentation level put back, the pieces
-returned to the method's order - **654 of 654 non-empty lines identical, 0 different**. What changed: `this` -> `ed`
-at **524 places, in code only** (a scanner that knows strings, template holes, comments and regex literals, 14 tests
-of its own; the 6 `this` in tooltip text - "Everything in this editor" - are untouched), one indentation level, 72
-frame lines (heads, doc comments, calls, braces), and **one line that is not a pure move**: `pane = this.panes.gen;`
-became `toGenPane()`, because `pane` is a closure of the side panel and the Generate tab is filled after it.
-`inpaint_modal.js` imports the DOM helpers and `hostText`, `REF_FITS`, `REF_DEFAULTS`, `UPSAMPLE_CASES`,
-`randomSeed` back from `inpaint_canvas.js` (now exported) and reads all of them inside functions only: the same
-cycle rule as stage 1. **That one translated line had no gate**, so `editor_test.py` got
-`every_panel_sits_in_the_tab_it_belongs_to` (Selection / Canvas / Export in the Image tab, Prompt / Generate /
-Settings / History / Crop in the Generate tab, neither in the other, and the lists and bars present); four
-mutations against a restarted app (no `toGenPane`, no Crop panel, no tool column, no reference list) all turn it
-red. Gates `--offline` on both backends (`pixels editor composite commands shape brush film glb ailabel size
-transparent generate log mcp recipes`, tiles also `nodecopy`): **ALL PASS**, at the first try. The dialog was also
-looked at in a running app (no console error, every panel in its tab, the plugins' sections still arriving through
-`ed.addSection`).
-
-**2026-09-20: the assistant (item 13) is started - A0, the server split, is built** (`docs/PLAN_ASSISTANT.md`
-"A0 as built", `docs/MCP.md`). `electron/main/mcp/server.js` now has `createServer(backend, opts)` beside
-`serve(backend, opts)` (= `createServer` plus the stdio transport), exports `{ serve, createServer, toTool,
-toolName, textOf, INSTRUCTIONS }`, and takes its `changed` listener off the backend again when the server closes
-(the Bridge outlives an in-memory session; Node warns after ten). **Nothing an external agent sees changed, and it
-is proven:** the server's info, capabilities, instructions and all 72 tools (62 core, 10 plugin) read through
-`mcp_test.py`'s own client, in proxy and in headless mode, before and after the split - four reads, one md5
-(`05837058b7b253f9156769bd89b9f14f`). **Not the plan in one point:** its `onclose` chain is gone, because nothing
-sets `server.onclose` before `createServer` does (an unreachable branch; its mutation was the only one to survive).
-`tools/assistant_test.js` is the new plain-Node test (section 1, 11 checks, including the listener over 20 sessions
-and a child process that runs the real `serve()` on stdio and lists the same tools); 8 of 8 mutations red. Gates:
-`node tools/assistant_test.js` PASS, `mcp` headless PASS, `mcp commands` on both backends ALL PASS. `--exe` was not
-run: the package in `dist/win-unpacked` is 0.1.20, so that run belongs to the assistant's own release (A9).
-
-**2026-09-20: A1 is built too - the loop, the policy, the registry and the Anthropic adapter, in plain Node**
-(`docs/PLAN_ASSISTANT.md` "A1 as built"). Eight modules under `electron/main/assistant/`, none of which requires
-Electron: `http.js` (the streamed POST, the retries only before the first byte, `scrub`, the test-key rule both
-ways, and `loopbackBase` / `compatBase` / `refusesImage` written again from code that does not export them),
-`sse.js`, `providers.js` (the ten providers, all marked "not tried with a real key"), `models.js` (the prices of
-2026-09-19), `prompt.js`, `policy.js` (the whole §5 table as data, `clamp`, `undoStep`), `anthropic.js` and
-`index.js` (the turn: pin, canonical arguments, policy, ask, the call through the in-process MCP client,
-ownership by all three rules, the caps, Stop). **Two things the plan did not have, both found by the mutation
-round:** a tool that takes a layer but no `doc` had its layer references sent unresolved (now `takesDoc ||
-takesLayer`), and the pinned document closed **by the user** mid-turn is answered and ends the turn (the
-assistant closing it itself only drops the pin). `node tools/assistant_test.js` is **98 checks** (sections 1 to
-10 in their Anthropic shape, the policy table as 54 rows, the leading example, the golden request body); the
-mutation round is **36 of 36 red**, after four survivors were each answered with a check or with the removal of
-a branch `decide` already covered. Gates: the node test PASS, and `toapis llm mcp commands` re-run, which is what
-proves `llm.js` and the command core are untouched. **Nothing is wired into the app yet** (that is A4): no IPC,
-no panel, `bridge.run` still takes two arguments, so the assistant cannot be used from the window. **A2 followed the same day** (the next paragraph).
-
-**2026-09-20: A2 is built - Chat Completions and its seven providers, in plain Node** (`docs/PLAN_ASSISTANT.md` "A2 as
-built"). `electron/main/assistant/chat.js` is the one adapter; OpenRouter, DeepSeek, Moonshot (Kimi), Z.ai (GLM), ToAPIs,
-WaveSpeed and the local endpoint differ only in the dialect data of `providers.js` (the reasoning field, the thinking
-switch, the length field, where a screenshot goes, `stream_options` / `tool_stream` / `session_id` / `provider` /
-`cache_control`, `strict: false` on Moonshot's tools, the final error codes with their plain words). Tool calls are
-rebuilt by `index` and parsed at the end (a whole call in one delta and an `arguments` object too), one `tool` message
-per call with an `Error: ` prefix on an error result, a screenshot inline on Moonshot and as one follow-up `user` message
-elsewhere, the assistant message replayed as rebuilt with `reasoning_content` on every message (`""` when none came)
-and OpenRouter's `reasoning_details` concatenated unmodified; usage read from either last chunk; the seven final
-answers (the 402s, Moonshot's quota and daily limit, Z.ai's 1113 / 1261 / 1301) never retried, the overloads and rate
-limits retried like any 429. **Not the plan's word:** `openrouterIgnore()` delegates to the image adapter's
-`chinaHosts` (one fetch of the host list per session for both, its seven-host dated list); `checkKey` got `localOk`
-for the local server's own key, which goes to a loopback URL by nature; `index.js` reads the tool schema from a
-family-neutral `chat.schemas` map (A1's lookup used the Anthropic tool shape, so on any other family `doc` would never
-have been injected and no layer reference resolved: a latent A1 defect, caught by the first chat-family run); the 18 MB
-cap holds for `google/*` and `gemini-*` ids on any provider; an answer that is not an event stream and a stream that
-ends empty are errors, not empty turns. **Tests:** `node tools/assistant_test.js` is **179 checks** (sections 11 to 15
-new: the golden body of every provider, the loop per dialect, the reasoning replay across turns, images in both
-places, the local server's image fallback, keys and hosts, the final answers, cost, and the same answer cut at every
-one of its 1,857 byte offsets); a mutation round of **95 against a copy of the tree** (the scratchpad's `mutate_a2.js`),
-**all 95 red** (77 of the first 80 at the first run; the three survivors and the review's gaps each got a check).
-**A review of four lenses with two refuters per finding (27 findings, 22 held, 5 fell) fixed ten things, four of them
-A1's:** a stream that ends before its `finish_reason` pushed its half answer as the answer (on Anthropic too; now an
-error that pushes nothing); pruning ran at every new user message once more than `keepImages` were attached instead of
-above twice that (the plan's batches); `refusesImage` was wider than `llm.js`'s rule, so a local server's 400 about an
-unsupported parameter would have stripped every screenshot and turned `screenshot` off; the "(stopped)" line stood
-twice in a pending user message. A2's own: a refusal with calls left them unanswered (every later request a 400), a
-server without `index` merged or split its calls, an `arguments` array ran as a tool's arguments, two error paths in
-the adapter were unscrubbed, a failed host-list read was asked again before every call. Rejected: `reasoning` for
-every curated OpenRouter model (kept; the live list is A4's), the truncated error body (`err.body` is whole), the
-`localOk` gap (already red in the mutation round). Gates: the node test PASS, `toapis llm` `--offline` ALL PASS
-(`a2-node`, and `a2-node2` after the fixes). **Nothing is wired into the app yet** (A4), and no dialect has run against a
-live key. **Next was A3** in the plan; the user asked for A4 first ("jetzt a4 verdrahten"), which is the next paragraph.
-
-**2026-09-20: A4 is built - the door between the window and the loop, with its review worked through**
-(`docs/PLAN_ASSISTANT.md` "A4 as built" and "A4, the review and what it changed"). Built **before A3**, on the
-user's word ("jetzt a4 verdrahten"), for the two families that exist; OpenAI and Gemini stand in the picker as
-"not built yet" until A3 lands. **IPC** in `main.js` (`assistant:send` / `stop` / `answer` / `reset` /
-`state` / `models` / `openrouterModels` / `tools` / `noticed`, the instance made at the first call so the SDK is
-not loaded at start, every event of the loop on `assistant:event`), `window.scumble.assistant.*` and
-`commands.onCancel` in the preload, **`bridge.run(name, args, meta)`** with `commands:cancel` for a request the
-turn abandoned while it waited, the shell's handler reading `meta` (a request without `meta` takes the old path
-byte for byte), **`renderer/assistant_wait.js`** (the user-activity wait), `DEFAULTS.assistant` in `settings.js`,
-the relaunch refusal and `before-quit`, and **three key rows** (DeepSeek, Moonshot / Kimi, Z.ai / GLM; `docs/HELPERS.md`).
-**`tools/assistant_mock.py`** plays all four families (Responses and Gemini already, for A3) and
-**`tools/assistant_test.py`** is the new gate `assistant`, which refuses a profile that holds a key and an instance
-connected to ComfyUI, and goes last in a list. **The review** (six lenses, two refuters per finding) was cut short
-by the other session's usage limit - 36 findings, 16 of 72 verdicts - and this session read the workflow's journal
-and judged the rest by reading. **Fixed:** the non-atomic "a turn is running" guard (two sends in the
-`connect()` / `newChat()` window started two loops on one chat, the first unstoppable); **a file drop left the
-Bridge dead for the whole session** (Chromium announces the navigation before `will-navigate` can prevent it, the
-Bridge dropped `ready`, and no `commands:ready` ever came again: measured, an external `--cmd ping` then timed out
-at 40 s; `attach()` takes the same rule now); the two plugin reads taking the user-activity wait (the Bridge is
-called with command names, the policy's sets hold tool names); `state()` blocking up to 120 s on a renderer that
-is not ready; **every assistant log line written empty** (`text` where `log.record` reads `message`, and the test's
-own stub had the same typo); `lastTurn` set for read-only turns; the stale tool diff after `reset()`; OpenRouter's
-live list cached across a change of base; the local server's key ignoring the test-key rule; and in the wait, a
-closed tab's editor kept alive, the wrong document judged, and `upsample_prompt` overwriting a prompt the user was
-typing. **The gate's own three:** its cleanup deleted **every key row even when the setup had refused to run on a
-profile holding the user's real keys**; the reload step wiped the state the cleanup relies on (it is in Python now,
-and the cleanup brings the window back to the app when a step took it off); `Mock.reset()` cleared the failures the
-runner reads, so after the first failure every later one was invisible. `node tools/assistant_test.js` is **192
-checks**, the gate **19 steps**, the mutation rounds **17 (the build) and 16 (the fixes), all red**. Gates
-`--offline` on both backends (`llm toapis log generate mcp commands editor assistant`): **ALL PASS**
-(`a4b-tiles`, `a4b-canvas`). **Trap worth keeping:** a page on a custom scheme cannot navigate itself to a `file:`
-URL, so a `file:` probe proves nothing about a drop; the probe is an `https` URL on a dead local port.
-**A3 followed the same day** (the next paragraph).
-
-**2026-09-20: A3 is built too - OpenAI Responses and Gemini, the last two families**
-(`docs/PLAN_ASSISTANT.md` "A3 as built"). Built **after A4**, so both adapters went into a loop the app
-already drives: the picker's "not built yet" is gone for OpenAI and Google, and the gate runs a turn on
-**all four families** (`every_family_runs_a_turn_in_the_app`: anthropic, openai, gemini, openrouter,
-deepseek, moonshot, zai, toapis, wavespeed, compat). **`responses.js`**: the history is a list of input
-*items*, not messages; items are taken whole from `response.output_item.done` and never rebuilt from the
-deltas, `store: false`, a screenshot in the parts form of `output` (`input_text` + `input_image`), an
-error result prefixed `Error: `, `response.incomplete` a cut, a `refusal` part a refusal, a stream
-without a terminal event pushes nothing. **Not the plan's word:** the request also asks for
-`include: ["reasoning.encrypted_content"]` (the plan says `store:false` returns it by itself and §7 lists
-that as unverified; asking costs nothing if it does and is what makes the replay work if it does not).
-**`gemini.js`**: `generateContent` with `x-goog-api-key`, the model's parts sent back in their order and
-**never merged** (a `thoughtSignature` stays on its part), tool results one user content of
-`functionResponse` parts, a screenshot an `inlineData` part inside that response with the JSON answer
-pointing at it by `displayName`, `MAX_TOKENS` a cut, the block reasons refusals, no `toolConfig`, and the
-registry's 18 MB cap. **Three things the plan did not have:** `appendUserText` per adapter (the loop adds
-a stopped turn's text to the pending user message, and A1's helper writes Anthropic-shaped parts, which
-neither new family takes); a `functionCall` without an `id` must not be answered with the loop's own id
-(`rawId`); and a `functionResponse.response` is a struct, so an array or scalar result goes in under a
-name. `node tools/assistant_test.js` is **214 checks** (section 17), the mutation round **26 of 26 red**,
-gates `--offline` on both backends (`llm toapis log generate mcp commands editor assistant`) **ALL PASS**
-(`a3-tiles`, `a3-canvas`). **Nothing has run against a live key.**
-**The checkpoint ran the same day** (the next paragraph).
-
-**2026-09-20: the checkpoint ran, in the short form the user asked for** (`docs/PLAN_ASSISTANT.md`
-"Checkpoint as run"; the user: "so viele tests brauchen wir nicht nur ganz kurz die funktion ... nur ein
-kurzer call je modell maximal um verdrahtung zu testen"). One live turn per model against the real hosts,
-on a scratch profile. **The keys the user holds are Anthropic, OpenAI and Google** (plus bfl, fal,
-replicate, comfycloud for the image providers); **no key for the Chat Completions family**, which stays
-"not tried with a real key". What the hosts answered: Anthropic **401 `authentication_error`** on both
-models, OpenAI **401 `invalid_api_key`** (the stored key does not have OpenAI's `sk-` shape), Google
-**429 `RESOURCE_EXHAUSTED`, "Your project has exceeded its monthly spending cap"** - which means that
-request **authenticated**. So every family builds its request from the settings, reaches its real host
-over the real key, reads the answer, keeps the key out of the error and ends the turn cleanly; **no
-model could pay for a task, so there is no go or no-go per model yet.** **Found and fixed on the spot:**
-a 429 that will never clear was retried (15.3 s of four identical refusals, and raw JSON as the error);
-`gemini.js`, `responses.js` and `anthropic.js` now have `finalWords(status, body)` like `chat.js`'s
-dialects - a spending cap, an empty account, an invalid key and a model the provider does not serve are
-final and **read as a sentence**, a plain rate limit is still retried; measured live again, all four
-rows answer in **0.5 to 0.6 s**. `a_final_answer_is_not_retried_and_reads_as_words` is the check (four
-mutations red), the node test is **215 checks**, gates `--offline` on both backends (`llm toapis mcp
-commands assistant`) **ALL PASS**. **Trap worth keeping:** on Windows `safeStorage` encrypts with a key
-that lives in `<userData>/Local State`, so a scratch profile holding a copy of `secrets.json` alone
-decrypts nothing and every row reads "no API key" - copy both. **What the user has to decide:** a
-working key (Anthropic, OpenAI, Google - or an OpenRouter key, which would also cover the Chat
-Completions family), then the five-task form of the checkpoint costs well under a dollar. **The user's
-word (2026-09-20): "hab gerade keinen key, lass uns das testing ueberspringen, machen wir nach release
-mach dann eh extreme bug suchen"** - so the model-by-model verdicts wait for the release and the user's own
-bug hunt, and building went on with A5.
-
-**2026-09-20: A5 is built - the panel** (`docs/PLAN_ASSISTANT.md` "A5 as built"). `renderer/assistant.js`
-(about 600 lines) and `assistant.css`, a `<dialog id="assistant">` in a new `#shell-main` row of
-`index.html`, a bar button, **View > Assistant (Ctrl+Shift+A)**, and **`tool_end`** as a new event of the
-loop. The plan's three rules hold: a non-modal `show()` (the canvas stays usable, the panel stays out of the
-top layer), **one window capture `keydown` listener** registered at shell start so it runs before any editor
-question's, and **no markup written anywhere** (`renderText` builds with `createElement` and `textContent`;
-the Node check `no_markup_writes` holds the file to it). The picker is grouped by provider, a provider
-without a key greyed out, models marked ("cannot look at the picture", "not tried with a real key"), a free
-OpenRouter id from the live list; the chat shows bubbles, streamed text rendered once when the block ends,
-tool cards (`running`, `done in N s`, the result in a `<details>`, a screenshot thumbnail) and ask cards
-with the policy's reason, the file, the recipe and old > new values, **neither button a default**; an ask
-opens the panel by itself. **Three things the plan did not have and one it had wrong:** `tool_end` (the
-panel cannot say what a call did without it; `state()` strips its data URL so a reloaded panel carries no
-base64 over IPC); **a call id is unique inside its turn, not the chat** (every family numbers per request,
-so `tool_end` found an older turn's card - the cards live in a `Map` the turn empties; the gate found it);
-**Escape and the focus guard fought each other**; and the plan's `keepFocus` flag is set by a focus event
-**a window in the back never gets** - the guard reads the `focusout` instead. Gate: **five new steps, 24 in
-all**; a mutation round of **13, 10 red** (the three green ones are each a rule a second rule already
-covers, written down). Gates `--offline` on both backends (`editor composite generate transparent size log
-mcp commands assistant`): **ALL PASS** (`a5-tiles`, `a5-canvas`). **Trap worth keeping:** Chromium delivers
-**no focus or blur events at all** to a window that is not focused, and a gate runs behind the terminal:
-`focus()` moves `activeElement` silently, so a focus test has to dispatch the `focusout` the real app would
-fire. **A6 followed the same day** (the next paragraph).
-
-**2026-09-20: A6 is built - the chats on disk and the reset** (`docs/PLAN_ASSISTANT.md` "A6 as built").
-`electron/main/assistant/store.js`, four channels (`assistant:chats` / `:open` / `:delete` /
-`:resetAll`), **`log.forget(source)`**, the panel's *Chats* list and a **Settings > Assistant** section
-(how many chats to keep, the step cap, *Delete all assistant data*). A chat is written at the end of
-**every** turn to `<userData>/assistant/chats/<id>.json` through a temporary file that is renamed, its
-screenshots beside it. **The pictures are taken out of the JSON and the way they go back is the point:**
-the marker `$image:<n>.jpg|<prefix>` carries the prefix the family's own shape had, so the history comes
-back **byte for byte** - Gemini and DeepSeek answer 400 on a history that was edited. `store.js` knows no
-family: it walks the JSON and replaces what looks like image bytes. **Reopening** goes on only on the
-provider and model the chat was saved with and only with a key for them, else **read-only** (the field and
-Send disabled, `_start` refuses); ownership (`owned`, `seen`) is not restored, so the policy asks again
-before a layer of an earlier session is touched. A file that does not parse is a row with a delete button,
-a picture whose file is gone becomes a line. **The reset** removes `<userData>/assistant/` whole, writes
-the defaults back, calls `log.forget("assistant")` (the ring **and** `scumble.log` / `scumble.1.log`) and
-closes the panel - **no key row is touched**, and the gate checks that. **What the mutation round found,
-and it is the plan's own:** the **one line per turn in the app log** (A1's, the one the reset takes out)
-**had never been written**, so "no assistant line left in the log" was a check that could not fail;
-`recordTurn()` writes it now and the gate proves the lines were there first. Node **224 checks**
-(section 19), the gate **29 steps**, a mutation round of **14, 13 red** (the green one writes the file
-without the rename, which only a crash mid-write would show). Gates `--offline` on both backends
-(`editor log mcp commands assistant`): **ALL PASS** (`a6-tiles` after two known start-of-instance flakes
-of `editor` - `a_settled_read...` and `erase_stroke...`, the third run 68 of 68 -, `a6-canvas` at the
-first try). **A7 followed the same day** (the next paragraph).
-
-**2026-09-20: A7 is built - Ctrl+Z for every step, and "Undo this turn"** (`docs/PLAN_ASSISTANT.md`
-"A7 as built"). **Per step:** `policy.undoStep` names the editor's own step kind for the call about to go
-out, `backendFor` sends it as `meta.undo` with the layer it is about, and the shell's handler calls
-`ed.pushUndo()` right before `commands.call` - no command and no editor behaviour changes for it.
-**Per turn:** `turnSnapshot()` / `restoreTurn()` in `inpaint_canvas.js` (a `canvas` step **plus a
-copy-on-write clone of every layer's pixels and mask** - a `canvas` step keeps the layers by reference,
-which a row of edits that write in place would lose - **plus what no undo step holds**: prompt, negative
-prompt, generation and crop settings, the recipe's setting values), `applySnapshot`'s new `turn` branch and
-`releaseSnapshot` releasing the clones. `renderer/assistant_turns.js` keeps the last changing turn's
-snapshots, **one per document, taken at that turn's first change there**, holds no editor, and a closed tab
-takes its snapshot with it. The restore pushes the present as one `turn` step, so **Ctrl+Z takes the
-restore back**; the snapshot sits outside the stack, so **a turn of 35 steps comes back whole** although
-the stack trimmed to 30. **The user's own edits** during a turn are watched as **trusted** pointer, key and
-input events inside an editor root, and the button asks before it discards them. After a restore
-`assistant:turnUndone` sets `chat.undone`, so the next state note says so. **Canvas backend:** no snapshot
-(600 MB per full layer at 15k), and the gate's four turn steps skip there,
-`turn_undo_is_refused_on_the_canvas_backend` being the check instead. Gate **36 steps**, a mutation round
-of **13, 12 red** (the green one takes the per-layer clones out: every auto call that writes pixels in
-place asks first, so only the selection's clone is covered by a step - written down, not papered over).
-Gates `--offline` on both backends (`editor composite pixels nodecopy mcp commands assistant`): **ALL
-PASS** (`a7-tiles`, `a7-canvas` / `a7-canvas2`). **Traps worth keeping:** a test cannot fake the user -
-`dispatchEvent(new KeyboardEvent(...))` is never trusted, which is the point of the rule; the gate uses CDP
-`Input.insertText` into the editor's own prompt field. And a mutation that breaks a gate run leaves the
-gate's test keys in the profile, so every later run dies in `setup` - a runner that counts that as red
-proves nothing. **A8 and A9 followed the same day** (the next paragraph).
-
-**2026-09-20: A8 (the documentation) and A9 (the release) - the assistant is in 0.1.21.**
-**A8** is its documentation, not its measurements: `docs/ASSISTANT.md` (the whole feature for the user - the
-key rows and the providers, what a turn is, what asks before it acts, **how to take it back**, the chats and
-the reset, **where the picture goes** per provider, what it cannot do, the keys and the focus rules, what it
-costs), one sentence in `docs/PROMPTS.md`, the in-process client in `docs/MCP.md`, the assistant's path in
-this file's "How the app is put together". **Not done and written into the plan** (`docs/PLAN_ASSISTANT.md`
-"A8, as far as the user asked for it"): the 15k measurement and the rule it would decide (a screenshot cap
-on the canvas backend), the remaining §6 gate steps and the plan's twenty-one-mutation round - what exists
-instead is **36 gate steps and 66 mutations across A4 to A7**. **A9:** `npm run dist` built
-`Scumble Setup 0.1.21.exe`; **exe gates against the package, `--offline`, ALL PASS at the first try** -
-`rel21-exe` (tiles: log pixels editor composite commands mcp assistant toapis llm export) and
-`rel21-exe-canvas` (tiles off: pixels editor composite film export assistant), the assistant gate **36 of 36
-on both**. The CHANGELOG's 0.1.21 section is dated 2026-09-20 and its assistant part rewritten (it is in this
-version, not "coming"); the tag **`v0.1.21`** is pushed, CI built the draft, and **the user published it the
-same evening: 0.1.21 is Latest since 2026-09-20** (`latest.yml` on the feed answers `version: 0.1.21`; check
-`gh release list` before believing any release state written down anywhere). **No `smoke`** (the user's
-ComfyUI was not free), and **no model has completed a task against a live API** - the picker marks every
-provider "not tried with a real key", and that is what the user's own bug hunt after the release is for.
-
-**Where the assistant stands after 0.1.21, for whoever comes next.** Built and shipped: A0 to A9 of
-`docs/PLAN_ASSISTANT.md` (each with its own "as built" section there). **What is not done, and why:** the
-checkpoint's model-by-model verdicts and A8's measurements at 15k, both on the user's word ("lass uns das
-testing ueberspringen, machen wir nach release mach dann eh extreme bug suchen"); the remaining gate steps
-of §6 and the plan's twenty-one-mutation round (36 gate steps and 66 mutations exist instead); the per-layer
-clone of a turn snapshot has no check of its own (every auto call that writes pixels in place asks first,
-so no gate turn reaches it). **What the user has to bring:** a key that can pay - Anthropic, OpenAI or
-Google (their stored ones were invalid or capped on 2026-09-20), or an OpenRouter key, which would also
-cover the seven Chat Completions providers and the route comparison. **Optional and only on the user's
-word:** A10 (a budget, "allow for this chat", a basic tool set) and A11 (the assistant's own undo steps).
-**Reported by the user the same evening, on the list, not fixed:** the picker marks **every** model "not
-tried with a real key" and so reads as a warning about the app (`docs/BUGS.md`, "The assistant's picker
-warns about itself"); what the mark should be instead is the user's call, and the honest sentence belongs
-in `docs/ASSISTANT.md`, not on every row. **After the assistant comes SignPath** (the user, 2026-09-19:
-"assistant kommt vor codesignierung").
-
-## Where things stand (2026-09-19)
-
-**2026-09-19, evening: OpenRouter (item 12) is built, for 0.1.21** (`package.json` 0.1.21, `CHANGELOG.md` "0.1.21 —
-unreleased"; `docs/RECIPES.md` "OpenRouter", `docs/HELPERS.md` "Through the OpenRouter key"). **Not the item's plan:**
-the image adapter (`electron/main/providers/openrouter.js`) uses OpenRouter's unified Image API, `POST /api/v1/images`
-(`input_references` as data URLs, `b64_json` back, `usage.cost`), because the current docs describe only that route
-for images; the chat `modalities` route has no guide any more. Only the parameters each model's endpoints list in
-`GET /api/v1/images/models` go out (`options.accepts`), no pixel size (no model lists `size`), an edit sends no
-`aspect_ratio`, *Resolution* auto takes the smallest tier covering the crop; no mask field exists, so GPT Image and Nano
-Banana get the mask as a second picture (as the Gemini adapter), FLUX.2 / Seedream / Grok an instruction edit, Krea 2
-and Recraft V4 are text only. `openrouter` is a variant in 14 recipes, **last** in each (no default changed), the key
-row after Comfy Cloud, `TEXT_PROVIDERS` has it. Four upsampling rows (Gemini 3.8 Flash, GPT-5.6 Luna, Claude Haiku 4.5,
-Mistral Small 4) with a per-row `reasoning` switch and `provider: { data_collection: "deny", ignore }`. **Privacy:** no
-attribution header on any request (the trademark check); every image and chat request carries `provider.ignore` with the
-hosts OpenRouter lists in China (`GET /api/v1/providers`, once per session, a dated fallback list), so **Qwen Image 3 is
-not offered** (its only host, Alibaba, has a CN datacentre); Nano Banana Pro's 4K goes only to Google AI Studio
-(`options.only_for` -> `provider.only`). Host rule: `settings.openrouter.base` is openrouter.ai or a loopback mock only,
-a `test-` key goes only to the mock and a real key never there. *check balance* reads `GET /api/v1/key` (the key's own
-limit, the period's use; the account's credits need a management key). Retries: 429, 529, an overloaded 503 and the
-in-flight 402 once, never before `Retry-After`, not at all past 60 s ("try again in N s"). **On the way, for every
-provider:** `llm.ask()` takes the key out of every upsampling error (it was left in on the direct OpenAI / Gemini /
-Anthropic adapters and in ToAPIs' errors), and the OpenAI-compatible client throws on a refusal (`content_filter` /
-`message.refusal`) and on `finish_reason: "error"` instead of returning partial text. **Tests:** `node
-tools/openrouter_test.js` (12 sections, 168 checks), gate `openrouter` (`tools/openrouter_test.py` against
-`tools/openrouter_mock.py`); a final mutation round of 95 mutations (the scratchpad's `or_mutate3.js`) turned a test red
-for every one. Gates `--offline` on both backends: `openrouter toapis llm generate size transparent mcp log` ALL PASS
-(after the last code change `openrouter toapis llm mcp` again). Two reviews (four lenses, then three, two refuters per
-finding) found 13 and 8 defects, all fixed or written down. **Not run against the live API**: the user's key decides
-what `docs/RECIPES.md` "Only a real key can verify" lists. Found on the way and filed, not fixed (`docs/BUGS.md` "What
-OpenRouter (item 12) found on the way"): FLUX.2 [flex] on fal has two settings rows at index 1; a model recipe with a
-`providers` map cannot be imported.
-
-**2026-09-19, later the same evening: BytePlus ModelArk (item 12b) is built, for 0.1.21 too** (`docs/RECIPES.md`
-"BytePlus ModelArk", CHANGELOG 0.1.21). `electron/main/providers/ark.js`: `POST <host>/api/v3/images/generations`,
-synchronous, `image` as lowercase data URLs, **`size` always `WxH`** (the crop's own shape inside the model's
-method-2 pixel range; a text run exactly the dialog's aspect), **`watermark: false`** (the default is true),
-`response_format: "b64_json"`, `output_format: "png"`; no mask (instruction edit), no seed, no `n`. An `ark` variant
-right after `toapis` in `seedream_5_pro` (`dola-seedream-5-0-pro-260628`, 0.92 to 4.6 MP, 10 pictures, Johor only)
-and `seedream_5_lite` (`seedream-5-0-260128`, 3.7 to 16.8 MP, 14 pictures, a *Region* row ap-southeast Johor /
-eu-west Dublin, `limits.max` 7680 so a 16:1 crop reaches the floor); **fal stays the default** of both. The host
-comes only from the region (two fixed hosts, own-property lookup), `settings.ark.base` is a loopback mock only,
-with the same `test-` key rule as OpenRouter. Pictures checked before sending (16:1, > 14 px, 36 MP, 30 MB with a
-JPEG fallback for opaque ones); retries only for `ModelAccountIpmRateLimitExceeded` / `ServerOverloaded`, never
-before `Retry-After`, not past 60 s. **Not run against the live API**; a model must be activated in the console, a key
-works only in its region, some accounts need an endpoint id (not supported). **BytePlus' country list (21 April
-2026) has Germany and the EU but not the United States** (the user said "bin eu / usa"). Tests: `node
-tools/ark_test.js` (161 checks), gate `ark` (`tools/ark_test.py`, `tools/ark_mock.py`); a mutation round of 117
-(the scratchpad's `ark_mutate.js`) all red. One review round (three lenses, two refuters each): 10 findings, the 7
-that held fixed (the 401 / `InvalidAccountStatus` / `QuotaExceeded` words, the exact text-run aspect, the pro note's
-Dublin sentence and input fee, the privacy wording with Indonesia, lite's 16:1 floor, `select_recipe`'s list).
-Gates `--offline` on both backends: `ark openrouter toapis llm generate size transparent mcp log` ALL PASS.
-
-**0.1.20 is published** (Latest since 2026-09-19, on the user's word; `latest.yml` on the feed says 0.1.20, the release
-body is the CHANGELOG section): `package.json` 0.1.20, `CHANGELOG.md` "0.1.20 — 2026-09-19", `npm run dist` built
-`Scumble Setup 0.1.20.exe`, the tag `v0.1.20`, CI's draft published (check `gh release list` before believing any
-release state written down anywhere). Exe gates,
-all `--offline` against `dist/win-unpacked/Scumble.exe`, each on its own profile: `rel20-exe` (tiles: log pixels editor
-composite commands shape brush film glb ailabel size transparent generate mcp toapis llm export pxjobs), `rel20-exe-canvas`
-(tiles off: pixels editor composite commands shape brush film size transparent generate) and `rel20-exe-huge`
-(`huge:30000x20000`) ALL PASS at the first try. On a huge document the provider crop still takes the canvas fallback
-(`readBoxBytes` skips the stack above the canvas limit): 552 ms blocked at 30k in `huge_test`, not the user's size.
-
-**2026-09-19, the session after 0.1.19 (what 0.1.20 carries).** Three of the four daily-use bugs are fixed, each
-with a gate step, mutations and both backends' gates ALL PASS (`docs/BUGS.md` "Fixed, waiting for its release"):
-large JPEG / WebP / profiled PNG files open through a pool worker (`image_read`; the block at 15k 0.95 to 4.4 s down to
-34 to 98 ms, the same bytes), a provider run's crop and stitch run in a stitch worker of their own with the box from the
-tile workers (`prepareCropAsync` / `finishResultAsync`, `readBoxBytes`, `stitch_worker.js`; 0.67 / 1.47 / 6.28 s blocked
-on a plain / matched / matched-and-filmed 15k document down to 24 / 22 / 51 ms), and on tiles a stroke is committed a
-tile at a time through the compositing kernel (`commitStrokeTiles`, `compositeStroke`; the release 70 to 288 ms down
-to 34 to 66 ms, `tools/release_test.py` is the new measurement with real mouse events). The fourth ("erasing switches
-the active layer to the base") is closed on the user's word (2026-09-19: "bug ist beim letzten test nicht
-aufgetreten"): the report's recordings pointed at the display bug fixed in 0.1.8. **`smoke` ran** (the user freed ComfyUI for an hour): on the dev
-tree with the three fixes in, tiles and canvas backend with `--no-helpers`, and once in full with every helper (SAM3,
-RMBG, Qwen-VL, SAM2 on the server; the in-app SAM2 / RMBG were skipped: no model in a fresh profile), ALL PASS; and a
-local run on a 6000 x 4000 document with a soft, a matched and a levels layer: the base went up in bands through the
-filter program and reached the node byte for byte (its hash recomputed), the result landed at the crop box. **Found
-there:** the node's own stitch spent 15 of the run's 19 minutes on one CPU core (a square `max_pool2d` over the whole
-picture's mask); a byte-equal fix (separable dilation, masks on a window) is prepared and tested in that session's
-scratchpad and, on the user's word, **committed and pushed in the node repo (`fba1fd8` on master); it goes live in the
-user's ComfyUI with its next restart, which the user does** (`docs/BUGS.md` "A local run on a large document spends minutes in the node's
-stitch"). Not done: the node in a real ComfyUI tab and in
-Firefox (the node repo is behind; building the editor into it is a node release).
-
-**Releases.** **0.1.19 is published** (Latest since 2026-09-18, `v0.1.19`, the CI draft published from this session on the user's
-word; `latest.yml` on the feed says 0.1.19, the release body is the CHANGELOG section; no `smoke`; exe gates, all `--offline` against `dist/win-unpacked/Scumble.exe`: `rel19-exe` (tiles, the full list with pxjobs) ALL
-PASS, `rel19-exe-huge` (`huge:30000x20000`) PASS, `rel19-exe-canvas` (tiles off: pixels editor composite film export)
-ALL PASS on the rerun `rel19-exe-canvas-b` of editor and film, whose first run failed on the live stroke's pointer
-message and the film panel's thumbnails (0 of 5 rendered) while the user was at the machine; no `smoke`, on the user's
-word). **0.1.18 is published** (Latest since 2026-09-18, published by the user's word at the end of the part 3
-session; `latest.yml` on the feed says 0.1.18, the release body is the CHANGELOG section). **`package.json` is 0.1.19
-and `CHANGELOG.md` has the 0.1.19 section**, with B item 7 part 3 (item 10 below; committed, pushed, CI green on
-2026-09-18) and the `set_layer match_source` fix. 0.1.18 carries B items 1 to 5 and item 7 parts 1 and 2. Exe gates for 0.1.18, all `--offline`: `rel18-exe` (log pixels editor
-composite brush film export toapis mcp pxjobs), `rel18-exe-canvas` (tiles off: pixels editor composite film export) and
-`rel18-exe-huge` (`huge:30000x20000`) ALL PASS, three of them on a rerun, each a known flake (the settled-read step and
-the 1200 x 794 composite canvas together in the first seconds of one exe instance; the live stroke step on the canvas
-backend). **`smoke` was not run** (the user's ComfyUI). **0.1.17** (published 2026-09-17) carries phase E
-(E1 to E5). Exe gates for 0.1.17, all `--offline`:
-`rel17-exe` (log pixels editor composite brush film export toapis mcp pxjobs), `rel17-exe-huge` (`huge:30000x20000`) and
-`rel17-exe-canvas` (tiles off: pixels editor composite film export) ALL PASS; CI's `build_px.py --check` passed with the
-crate's new dependency (miniz_oxide). **`smoke` was not run** (the user's ComfyUI was busy); instead Pillow 12.2 from the
-ComfyUI's own Python read a PNG joined from parts (pixels exact, tEXt intact, `verify()` ok). Check `gh release list`
-before believing any release state written down anywhere.
-
-**Phase E is built** (2026-09-17, `docs/PLAN_BCE.md` §3 "E1 as built" and "E2 to E5 as built", CHANGELOG 0.1.17).
-What it is, because it is **not the plan's design**: there is no second compositor in the workers. A band of an export is a
-**region pass at full resolution** (`sampleRegion` at scale 1 with `boxReach`'s margin, `readBand`), and the worker pool
-(`renderer/editor/inpaint_pool.js`, up to 8 workers started on demand, priorities, `cancel(group)`, `progress` replies) does
-everything that is not compositing: PNG parts (a Rust deflate with a sync flush per part, joined into one zlib stream:
-`inpaint_png.js`), PackBits for PSD, CRCs for ORA, hashes, PNG decoding as a stream, the mip chains. Tiles live in a
-SharedArrayBuffer arena (`inpaint_arena.js`) and workers read them by (chunk, slot). `inpaint_bands.js` holds the row sources
-and the PNG / PSD / ORA writers. Filters of the whole picture take `info.full` / `info.origin` / `info.stats`. A document
-may be larger than any canvas (268 MP): up to 65,535 px a side and a gigapixel, PNG only, opened through the stream reader;
-`tools/huge_test.py` is its gate (30000 × 20000: open 9.6 s, PNG 10.5 s, PSD 13.7 s). **Not met and written down in
-`docs/BUGS.md`**: an export in bands is slower in wall time than the whole flatten was (6.2 s against 3.4 s at 15k, the
-window stays usable), the halation on huge documents, invert at 30k, the 5 ms of the mip refresh. **`smoke` ran on it on
-2026-09-19** (see the top of this section): the base upload in bands and a real run met the user's server, PASS.
-
-**Built.** C6 (c) slices 3 to 7a, each with its gates, mutations and measurements in `docs/PLAN_BCE.md` §C6 ("C6 (c3) and
-slice 4 as built", "slice 5 / 6 / 7a as built"). The tile engine is on by default in the installed app since 0.1.13, with a
-switch in Settings › Rendering; the canvas backend is the escape hatch.
-
-**Constraints right now.**
-- **The user needs their ComfyUI instance** (2026-09-16; freed for one hour on 2026-09-19, when `smoke` ran): no `smoke`,
-  and no gate that forwards to it (`commands`' `large_upload_route` uploads through the mirror to a connected ComfyUI),
-  until the user says it is free.
-- **A headless MCP instance can block the app from starting** (`docs/BUGS.md`): this repo's `.mcp.json` starts the dev app
-  with `--mcp`, which holds the default profile's single-instance lock, and Scumble then shows no window. Stopping the
-  `electron.exe ... --mcp` processes fixes it; the missing hand-over is not measured.
-- **§C7's memory gate is not met** (at most 300 MB of GPU process per document); the default went on anyway, on the user's
-  decision.
-- **The node repo is behind** (its `js/` is built from 7f01699, before C3; master is fba1fd8 since 2026-09-19, pushed:
-  1f37ad0, `exportIsPlain` in the node's own `js/host.js`, which the editor asks for since E2 and `build_node.py --check`
-  insists on, and fba1fd8, the stitch's masks on a window and a separable dilation, live in the user's ComfyUI after a
-  restart; `pyproject.toml` unchanged, so no registry publish ran). `nodecopy` builds and tests it in a scratch copy; build it into
-  the real repo only when a node version is meant to ship.
-
-**What comes next, in order** (`dist/c6map/c/` holds the maps; they are older than the code):
-1. **7b is built** (2026-09-16, `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7b as built", CHANGELOG 0.1.16): a matched layer on
-   tiles is matched in the part a pass shows from its tiles; 1144 MB of mirrors and 837 ms of first frame at 1:1 gone at 15k.
-2. **7c is built** (2026-09-16, `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"): one statistics entry per layer for every
-   pass, provisional while chains are in the worker. **The (b) numbers are measured and not yet shown to the user**
-   (same section): box means 0.81 levels mean over 32 cases, 5.45 / p99 12 on one textured photo; point samples 0.56, max 8.
-3. **7d is built** (2026-09-16, `docs/PLAN_BCE.md` §C6 "C6 (c) slice 7d as built"): the match in the atlas shader.
-4. **C6 (d) is built** (2026-09-16, `docs/PLAN_BCE.md` §C6 "C6 (d) as built"): the base is `{ ref, px }`, no <img>.
 5. **The object tool's bigger change A** (`dist/c6map/c/objects.md` §7 to §9: the image-size label map, the per-object
-   shape canvases): ask the user where it goes.
-6. **C4 is built** (2026-09-16, `docs/PLAN_BCE.md` §C4 "C4 as built"): steps on whole tiles, `release()`, exact redo boxes.
-7. **The rest of §C7 went as far as it could** (2026-09-16, `docs/PLAN_BCE.md` §C7 "The rest of §C7, as far as it went"):
-   docs, `--disable-gpu`, the memory walk (not met: +0.6 to +1.4 GB of GPU process per open 15k document on tiles), the exe
-   gates (PASS). **Open, needing the user's ComfyUI:** the node in a real ComfyUI tab and in Firefox, `smoke`, `commands`.
-   **Open, needing E5:** the 30k gate. **Next, when the user says so:** a release (0.1.16 has its CHANGELOG section).
-8. **Phase R is built** (2026-09-17, `docs/PLAN_BCE.md` §2b "Phase R as built", `docs/PERFORMANCE.md` §12 and §12.1):
-   **the user's rule is Rust wherever it is faster, however little** (the 3× rule is gone). Every pixel kernel runs from
-   `renderer/editor/px/px.wasm` through `px/kernels.js` in the window and both workers, grow / shrink and the flood as one
-   whole-job call each; the JS twins are the fallback (`InpaintEditor.kernels = "js"`). `python tools/build_px.py` rebuilds
-   the binaries (commit them; `build.yml` checks them), `node tools/px_test.js` and `python tools/px_jobs.py --check` are the
-   gates.
-9. **Phase E is built** (2026-09-17, see above). Its open ends are in `docs/BUGS.md` ("What phase E left open").
-10. **Phase N is measured and decided** (2026-09-17, `docs/PLAN_BCE.md` §3b "N1 as measured, N2 costed, N3's
-   recommendation", `docs/PERFORMANCE.md` §14; `tools/native_test.py` and `tools/native_limits.py` are the tools, run on a
-   fresh `--no-comfy` instance). At 15k the browser's share of the wall is a half to 85 % on five rows (open, grow /
-   shrink, the wand, PNG and PSD export) and nothing on pan, zoom and stroke frames; all of it is the editor moving tiles
-   through canvases, which workers over the arena can do without (option B, about 3 weeks, six items in order). Typed
-   arrays end at **15.5 GB** in the renderer (18 full 15k layers), not 8. **The user's decision (2026-09-17): stay on
-   Electron and build B; no native tile store, no native editor. The user works up to about 15k**, so B's item 6
-   (one-channel masks) goes last and 30k is not the size to tune for. **B item 4 is built** (2026-09-17, same
-   section, "B item 4 as built"): `dilateMask` / `boxBlurs` as kernels (ABI 7, `crates/px/src/maskf.rs`), a provider run's
-   crop 2.5 s to 0.57 s with the same floats; `node tools/stitch_test.js` is its gate beside `px_test.js`. **B item 1 is built** (2026-09-17, "B item 1 as
-   built"): a plain stack (no filter layer, blend mode or colour match) is composited by the pool's workers from the
-   arena while they pack it (`stackPlan` / `stackSource` next to `boxReach`, `stackRows` in `inpaint_bands.js`,
-   `rowsOfStack` in the worker); 15k PNG 3.5 s to 1.7 s, PSD 3.9 s to 1.3 s, within two levels of the flatten
-   (`export_test.py`). `InpaintEditor.stacks = false` forces the bands. **B item 2 is built** ("B item 2 as built"): the
-   wand and the bucket on a plain stack flood a `SharedArrayBuffer` the pool composited from the tiles (`floodStack`,
-   `floodOverTiles`, worker `stack_into` and `flood` with `sab`), and the wand's answer comes back as selection tiles
-   (`applyTilesToSelection`); 15k wand 4.2 s to 1.4 s, the block 1.6 s to 0.18 s, the same selection bytes
-   (`editor_test.py` `the_flood_over_tiles_is_the_flood_over_canvases`). **B item 3 is built** ("B item 3 as built"): grow,
-   shrink and feather read the selection's box from its tiles in a pool worker and send back the tiles that changed
-   (`selectionOverTiles`); 15k grow 0.72 s to 0.51 s, shrink 0.60 s to 0.32 s, the blocks 0.2 s to 0.09 / 0.02 s; grow
-   and shrink the same bytes, feather within 5 levels of alpha (the GPU blur). Invert stays on the main thread (0.2 s).
-   **B item 5 is built** ("B item 5 as built"): `png_unfilter_rows` (ABI 8) undoes a band of PNG row filters in one
-   call, and every plain 8-bit PNG of 32 MP and more (no `iCCP` / `gAMA` / `cHRM`) opens through the stream reader
-   (`InpaintEditor.pngStreamFrom`); 15k open 3.2 s to 2.7 s, the block 2.1 s to 0.12 s. The reader is bound by the
-   browser's inflater, not by JS as N1 said. **Item 6 (one-channel masks) is set aside by the user
-   (2026-09-17): it is the 30k item, the user works up to 15k. Next instead, agreed the same day: B item 7, the worker
-   path for the stacks it turns away today, in this order: blend modes in `composite_tile`, filter layers over
-   worker-composited bands, a colour-matched layer** (`docs/PLAN_BCE.md` §3b "B item 7"). **Parts 1 and 2 are built**
-   (2026-09-18, the night before the release, on the user's standing instruction to build up to 0.1.18 without asking
-   again; same section, "B item 7, part 1 / part 2 as built"). Part 1: the eight blend modes in `composite_tile` (ABI 9),
-   **rounded once per channel** (exact 16-bit products; within half a level of the exact value, where three rounded
-   products were 1.45 off and moved the wand's edge): 15k with a multiply layer PNG 3.4 s to 1.6 s, PSD 3.8 s to 1.1 s,
-   the wand 3.9 s to 1.1 s with the same pixels selected. Part 2: **a stack with filter layers anywhere in it is a
-   program** (`stackPlan({ filters: true })`, `holdStack`, `programStart` / `programFinish`, `bandSource`): the pool
-   composites a band with the filters' reach into a `SharedArrayBuffer`, the bytes go to the GPU as a texture
-   (`surfaceFromBytes`), the filters run as in a pass at full resolution, the rows come back once (`readSurfaceBytes`),
-   layers above a filter and a filter at an opacity, in a blend mode or through a mask are composited over the result by
-   the pool again (a stack layer may be bytes, `sab`); the next band is composited while this one is filtered. Three
-   paint layers and a levels layer at 15k: 6.2 s to 1.4 s; with the film look 9.1 s to 5.0 s (block 1.2 s to 0.13 s); the
-   wand on a filtered document 3.3 s to 1.5 s. The region pass is the fallback (`NO_PROGRAM`) and keeps its own gate
-   (`InpaintEditor.stackFilters = false`, `stackBlends = false` are the A/B switches). Against the flatten: one level on
-   1.1 % of the bytes below a filter, a filter never more than one level above what the pass shows. **Part 3 is built**
-   (2026-09-18, after the 0.1.18 tag, for 0.1.19; same section, "B item 7, part 3 as built"): a colour-matched layer
-   is an entry of `stackPlan` (`match: layer`); `holdStack` is async and takes its statistics from **point samples of
-   the tiles** (`stackMatches` / `stackMatchOf`, worker job `stack_points`, the grid of `matchGeometry`, the unchanged
-   `statsOfMatch`; kept in `_mstatsStack[Run]`), and the worker matches the rows before `composite_tile`
-   (`match_pixels`, ABI 10, `crates/px/src/cmatch.rs`, bit for bit with its twin). 15k with a 5,000 × 3,500 matched
-   layer: PNG 6.4 s to 1.8 s (block 1.45 s to 84 ms), PSD 1.8 to 1.0 s, wand 2.5 to 0.9 s. Against the whole
-   flatten's statistics on four of the user's photos: mean 0.1 to 2.0 levels, max 7 (the textured landscape); with
-   the same statistics the two paths are within 2 levels. Turned away still (the whole flatten as before): a matched
-   layer above a filter layer, `readBox` (a provider run's crop), JPEG and WebP, the flatten into the base of a plain
-   matched stack; `InpaintEditor.stackMatch = false` is the A/B switch. A design review (three lenses, 12 confirmed
-   objections) made the grid integers, stamped the statistics with the clones' version, took the layer's own samples
-   over the picture's edge, and gave the job a byte-exact gate (`stack_points_gathers_the_samples_it_names`); the
-   same section, "After the design review". A scaled or a fractional layer still saves the old way. Not done
-   in part 2: the longest block (0.15 s against the plan's 0.05), an asynchronous read, a mask folded into the alpha
-   (a filter at an opacity through a mask is a level off on 18 % of the bytes). Each item is measured
-   against its row in `tools/native_test.py` before and after, bytes equal to the path it replaces. What N found on
-   the way (the 2.5 s `dilate` of a provider crop, the wand at 30k, the `RangeError` at the cap) is in `docs/BUGS.md`.
-
-11. **Split of `renderer/editor/inpaint_canvas.js`, agreed with the user on 2026-09-17** (over 12,000 lines, one class;
-   only that file; **moves only: no behaviour change, no renaming, no tidying on the way**; stage 1 the loose functions at
-   the top of the file into modules of their own, then decide with the user whether stage 2 pays: the class's methods
-   by subject into files that are hung into the class). **Stage 1 is built** (2026-09-18, after the 0.1.19 state was
-   pushed; the design came from a panel the user's second account had started and its usage limit cut short; that
-   account's workflow journal and scratchpad were read, nothing re-run that had finished): the
-   three groups the agreement names went into three modules, moved byte for byte by line ranges (an independent proof,
-   `verify_moves.js` in that session's scratchpad: 40 top-level statements moved, 84 stayed, every one of the 1,176
-   comments once). `inpaint_jobs.js` (the worker and pool plumbing: the shared worker and `workerCall`, the mips worker,
-   the pool, the tile store's chain transport with its three import-time statements, `buildLayered`, `JOB_TIMINGS`;
-   21 names, old lines 64, 160 to 310, 336 to 359), `inpaint_encode.js` (the PNG encoders and the two hash functions:
-   `encodeCanvas`, `canvasToBlob`, `encodeTilePixels`, `encodeBands`, `encodeRows`, `partsUsable` and the parts state;
-   14 names, old lines 312 to 334, 361 to 369, 407 to 413, 417 to 480) and `inpaint_upload.js` (`SUBFOLDER`,
-   `LARGE_UPLOAD`, `uploadBlob`, `uploadCanvas`, `uploadPixels`; old lines 54, 371 to 405, 555 to 565). **The one
-   glue:** `nextPartsSeq()` in `inpaint_encode.js`, because the class incremented `partsSeq` at two sites and an
-   imported binding is read-only (those two class lines are the only statement whose text changed). `inpaint_jobs.js`
-   and `inpaint_encode.js` import `InpaintEditor` back from `inpaint_canvas.js` for the switches on the class
-   (`mipsOnPool`, `mipsOnSharedWorker`, `pngParts`), read inside functions only: no module of the cycle touches another
-   one's binding while it is evaluated (a scope walk, `toplevel.js`), all four entry orders give the same answers in
-   Node (a Chromium page that imports each new module first was not run; ComfyUI imports every file of the node in its
-   own order), and `setChainTransport(mipsTransport)` now runs when `inpaint_jobs.js` evaluates (before the class when the
-   app enters through `inpaint_canvas.js`, after it when a new module is the entry; nothing reads the scheduler while
-   the class file evaluates, its only static initialiser is a number). `inpaint_canvas.js` exports its 22 names as
-   before (`uploadBlob` and `uploadCanvas` re-exported as imported bindings; the node's `host.js` and `inpaint_node.js`
-   keep working). `tools/build_node.py` FILES and the file table of `docs/BUILD_NODE.md` carry the three names (the
-   table also got the six older modules it lacked); ESLint with no-undef / no-import-assign / no-const-assign /
-   no-unused-vars over the four files: 0 errors and the original's 3 warnings (a later `++partsSeq` in the class would
-   pass `node --check` and throw at run time; only that lint sees it, the config is in the session's scratchpad, not
-   in the repo). The three switches no gate sets were checked by hand on a fresh tiles instance (`switch_check.py` in the
-   session's scratchpad): the transport is `mipsTransport` with `flights` = `poolSize()` (8) and `arena` true;
-   `mipsOnPool = false` and `mipsOnSharedWorker = true` each settle a whole change with `chainScheduler().failure`
-   null and `arena` false / back to true; `pngParts = false` makes `parts.usable()` false and an upload of a layer
-   still lands in the mirror (the canvas way), true again afterwards. **Gates:** tiles, `--offline`, `split1-tiles` (pixels editor composite commands shape brush film glb ailabel size transparent generate log
-   mcp nodecopy toapis llm export pxjobs): all PASS but `editor`, whose four full runs on the split tree failed at four
-   different timing-bound steps (the live stroke with its pointer message while the browser pane was in use;
-   `closed_tabs_are_collected` twice with the last two tabs alive, a step that passed 3 of 3 alone on both trees and in
-   the unchanged tree's full run; `helper_inputs_read_levels_and_upload_nothing` with one upload counted), every step
-   of the gate green on the split tree at least once (steps 60 to 65 in a run of their own); **the fifth run,
-   `split1-tiles-editor5`, PASS in full** (65 steps, 120 s). Canvas backend, `--offline --tiles off`, `split1-canvas`
-   (the same list without pxjobs, which needs tiles): ALL PASS (19 gates, the editor gate in full at the first try). The checkpoint commit before this one
-   (`1d5ce8e`) was made on the user's word while the gates ran; its message says a Chromium page check was run, which
-   it was not (only the Node runs; this paragraph is right). **Open for the user, the scope:** the design panel (three
-   partitions, three judges, four hazard hunts with two refuters per finding; all three partitions mechanically
-   equal: same glue, same cycle, all checks green) read the agreement's parenthesis as the whole list (this build,
-   "narrow"). The judges' 2:1 favourite is "whole-head": every loose function of the head, into six more leaf modules
-   with no new cycle, each rejectable on its own: `inpaint_dom.js` (makeCanvas, el, numberInput, selectInput, icon,
-   iconButton, miniButton, STYLE, injectStyle), `inpaint_images.js` (viewUrl, loadImageEl, snapImage, needImage, the
-   SVG helpers), `inpaint_stroke.js` (StrokeBuffer, STROKE_BAND), `inpaint_geometry.js` (clampRect, tileDiffBox,
-   homography, drawMesh, autoSelectionParams, ensureMinSpan), `inpaint_backends.js` (the segment / upsample / cutout /
-   object backend tables and their functions), `inpaint_hosts.js` (editorTileMode, hostText, isSettingOutput,
-   settingIndex, linkOf); with it `inpaint_encode.js` would also take canvasRows, hugePngSize, pngIsPlainSrgb,
-   pixelsFromPngStream, CRC_TABLE, crc32, asciiJson and pngWithText, and `inpaint_upload.js` UploadCache. The third
-   reading ("stage2-ready": the constants out too, into an `inpaint_common.js`) pre-empts the stage 2 decision and was
-   scored lowest. Whether the six leaf modules follow, and whether stage 2 comes at all, is the user's call. Kept as
-   it was, no tidying: the section title in `inpaint_jobs.js` still reads "PNG encoding, upload hashes and the layered
-   export writers" and names `js/inpaint_worker.js`; the class file's header comment (lines 1 to 13) is untouched.
-   **The class, measured (2026-09-18, `classmap.js` in that session's scratchpad, espree over the class body):** 11,385
-   lines (1194 to 12578), 413 methods with 9,879 lines in them, 264 methods of 20 lines or fewer, 118 of 21 to 50, 21
-   of 51 to 100, 10 above 100; 269 `this.*` fields assigned; 33 section banners. So it is not tangled logic but a
-   god class: the coupling is the 269 fields every method reaches through `this`, and files hung into the class would
-   share them just the same (navigation, not decoupling). The three real blocks: `buildModal` (686 lines, the whole
-   UI), `drawSceneOverlays` (246), `onPointerDown` / `onPointerMove` / `onPointerUp` (206 / 139 / 115, the dispatch by
-   tool). **Decided by the user on 2026-09-18: the next split step is `buildModal` alone**, into a module of its own
-   with one build function per panel (toolbar, layers, settings, filters), pure construction and no state, the
-   editor / composite / commands gates checking the surface; about half a day, 6 % of the class and its least
-   readable place. Not the whole class, not the pointer handlers (the heart of the live-stroke gates; by tool only when
-   a tool is reworked), not the 269 fields into state objects (weeks, and behaviour can move quietly). It comes in a
-   session of its own after `smoke` and the node test, under the same rule as stage 1: moves, the byte-for-byte proof,
-   both backends, `nodecopy`. **BUILT on 2026-09-20** (see the top of this section): `renderer/editor/inpaint_modal.js`,
-   654 of 654 lines proven identical, one line translated (`pane = this.panes.gen` -> `toGenPane()`), a gate step of
-   its own for it, both backends ALL PASS. **Not the plan's word in one respect:** "pure construction and no state"
-   cannot hold - the method writes 101 fields onto the editor, so every function takes `ed` and writes onto it, as the
-   method wrote onto `this`. That is navigation, not decoupling, which is what the class measurement said it would be.
-
-12. **OpenRouter as a provider: BUILT on 2026-09-19 (see the top of this section; the plan below is what was asked,
-   not what was built: the image route is `/api/v1/images`, and no `HTTP-Referer` / `X-Title` goes out).** OpenRouter
-   (`https://openrouter.ai/api/v1`) is an OpenAI-compatible aggregator with one key for most hosted models. Two uses in
-   Scumble, both to be written from the docs and verified only with a real key, like every other adapter:
-   (a) **prompt upsampling**: a backend beside the API ones and `settings.llm.compat`, the chat completions endpoint
-   with a Bearer key from the credential store (`keys.js`), the model chosen by its id (`openai/...`, `google/...`,
-   `anthropic/...`), the optional `HTTP-Referer` / `X-Title` headers; (b) **image edit and "Generate new"**: an adapter
-   in `electron/main/providers/` next to the OpenAI and Gemini ones, through chat completions with
-   `modalities: ["image", "text"]`, the input picture as an `image_url` data URL, the answer read from
-   `message.images[0].image_url.url` (a data URL); one variant per image-capable model id with its `limits`, no mask
-   parameter on that API (Scumble's own composite mask and stitch apply, as for Gemini). Settings › API keys gets an
-   OpenRouter row, recipes an `openrouter` provider variant, `docs/RECIPES.md` the format, and a plain-Node test of
-   the request shape (as `transparent_test.py` does for OpenAI) plus the loopback stand-in in the gates. **To verify
-   against the live API before anything ships:** which image models OpenRouter serves at the time (Gemini image,
-   gpt-image, Flux), whether an input picture reaches them as an edit, the size and count limits, and the shape of an
-   image answer; the docs may have moved since this was written.
-12b. **BytePlus ModelArk as a direct Seedream provider: BUILT on 2026-09-19 (see the top of this section; the plan
-   below is what was asked, the research paragraph after it corrects it).** Seedream runs today through fal, ToAPIs, WaveSpeed and the ComfyUI API node
-   (`ByteDanceSeedreamNodeV3`); ModelArk is ByteDance's own API for it. What was found on 2026-09-19 (the docs,
-   `https://docs.byteplus.com/en/docs/ModelArk/1541523`, are rendered by script and could not be read field by field):
-   `POST https://ark.ap-southeast.bytepluses.com/api/v3/images/generations` (Singapore; also `ark.eu-west.bytepluses.com`),
-   an API key from the ModelArk console, model ids such as `seedream-5-0-pro`, `seedream-5-0-lite`, `seedream-4-5`,
-   `seedream-4-0`, a request of `model`, `prompt` (at most 300 tokens) and optional `image` (a URL or base64, one or
-   several: single- and multi-image edit and fusion). An adapter in `electron/main/providers/` next to `toapis.js`,
-   a key row in Settings › API keys (credential store), an `ark` provider variant in the recipes with its `limits`
-   (Seedream's 3:1 `ratio` as on ToAPIs), no mask (Scumble's own composite mask and stitch, as for Gemini), "Generate new"
-   through the same endpoint without an image, `docs/RECIPES.md` and a plain-Node test of the request shape plus the
-   loopback stand-in. **To verify with a real key before anything ships:** the exact field names (`size` format and
-   limits, `seed`, `response_format` `url` / `b64_json`, `watermark`, multi-image fields), the answer's shape, whether an
-   input picture is edited or only referenced, the size and count limits, and which region the user's key serves (the
-   privacy note: ByteDance, Singapore or the EU endpoint).
-   **Researched on 2026-09-19 (the field-level docs are in the served HTML, `window._ROUTER_DATA...MDContent`; the
-   session scratchpad's `rep_modelark.md` and `ark/` hold them), correcting the lines above:** the AP region is
-   **Johor, Malaysia** (`ark.ap-southeast.bytepluses.com/api/v3`), the EU one Dublin (`ark.eu-west...`), keys are bound
-   to a region and requests "may be routed" across regions; model ids carry a date: `dola-seedream-5-0-pro-260628`,
-   `seedream-5-0-260128` (also `seedream-5-0-lite-260128`), `seedream-4-5-251128`, `seedream-4-0-250828`, and a model
-   must be activated first (404 `ModelNotOpen`; some accounts need an endpoint id); the prompt's 300 is a recommendation;
-   `image` is a URL or a `data:image/<fmt>;base64,` string or an array (pro 10, the others 14; each [1/16, 16], at most
-   30 MB and 36 MP), **`watermark` defaults to true (send `false`)**, `response_format` `url` (24 h) or `b64_json`,
-   `size` a tier (pro 1K / 1.5K / 2K, lite 2K / 3K / 4K) or `WxH` by area (pro 921,600 to 4,624,220 px, lite 3,686,400 to
-   16,777,216), ratio [1/16, 16] (not ToAPIs' 3:1), `output_format` png only on 5.0 pro / lite, no mask, no `n`, `seed`
-   not in the reference (the SDK sends it); errors `{ error: { code, message, param, type } }`; prices per image (pro
-   $0.045 up to 2.61 MP, $0.09 above; lite $0.035); data centres in Malaysia, Indonesia and the EU, no training without
-   authorisation, filtered content kept 180 days.
-13. **The assistant, a chat agent that drives Scumble over MCP (asked for by the user on 2026-09-18, planned that day
-   and revised on 2026-09-19 after the user's answers; not built: about twenty-three and a half working days for its
-   one release, twenty-four and a half with the two optional steps).** The plan is `docs/PLAN_ASSISTANT.md`; every
-   point of its §8 is decided (2026-09-19). It comes last in the order below but before SignPath (the user,
-   2026-09-19: "assistant kommt vor codesignierung"), and ships as a release of its own. The MCP server stays primarily for external agents: the assistant changes no command, parameter,
-   annotation or `INSTRUCTIONS` line (splitting `createServer` out of `serve()` is internal, its tool list proven
-   byte-equal), and the four defects its planning found (`remove_layer` on a locked layer, `flip_layer`'s axis, the
-   `llm:models` compat key, the annotations) are filed in `docs/BUGS.md`, not fixed by it. A collapsible chat column
-   right of `#editor-host` (`<dialog id="assistant">` shown with `show()`, open state remembered; shell only); the
-   loop in main (`electron/main/assistant/`) with raw `fetch`, every call streamed, four adapters: Anthropic Messages,
-   OpenAI Responses (`store:false`), Gemini `generateContent`, and Chat Completions for OpenRouter (item 12's key
-   row), DeepSeek, Moonshot (Kimi) and Z.ai (GLM) (three new key rows), ToAPIs, WaveSpeed and the local compat
-   endpoint. A picker grouped by provider, only ready providers selectable (a stored key; for the local server, which
-   needs none, a saved URL), curated vision models (Claude Sonnet 5, the default, and Opus 5; GPT-5.6 Terra, Sol and
-   Luna; Gemini 3.8 Flash, 3.1 Pro preview and 3.5 Flash-Lite; DeepSeek V4.1 Flash; Kimi K3 and K2.6; GLM-5.3-Flash
-   and FlashX) plus a free OpenRouter id checked against its live list; a privacy notice per provider saying where the
-   pictures go as far as its own terms say (the US, Singapore or the PRC, "any region" for Anthropic's inference and
-   for Google, "not stated" for OpenAI's default region, Z.ai's GLM-5.3-Flash cluster and, until their terms are read,
-   ToAPIs and WaveSpeed). Through OpenRouter the pictures go on to a host it picks: Scumble sends
-   `data_collection: "deny"` (hosts that train are excluded, hosts that keep the data are not) and `provider.ignore`
-   with every host OpenRouter lists in China, because on 2026-09-19 StreamLake, Baidu and Alibaba served the curated
-   GLM, Kimi and DeepSeek models. It reaches the editor only through an in-process MCP `Client` over
-   `InMemoryTransport` and sees the 72 tools minus an exclusion set of six (`list_commands`, `run_action`,
-   `set_status` and the three `ailabel_*`), so 66, and 65 for a model without vision; its requests carry `meta` and
-   wait up to 20 s for the user's stroke, transform, text edit or question. The policy, decided by the planner for the
-   user: everything that can cost money or queue on ComfyUI asks (`generate`, `generate_new`, `select_by_text`,
-   `cutout_layer`, `upsample_prompt`), and so do the calls that clear undo, `flatten`, `extend_canvas`, unlocking a
-   layer or moving or retexting a locked one, `undo` / `redo`, file reads, exports with a path and global settings;
-   removing, merging and the edits the commands record no undo step for run without asking only on the chat's own
-   layers; exports without a path or with a wrong extension are refused. Its leading use is the user's own: inpaint
-   regions, each on its own result layer, and colour-match them (`generate` asks, `set_layer` `match` on the chat's
-   own result runs). Chats are saved under `<userData>/assistant/` (20 kept), and Settings › Assistant has a reset
-   that deletes all assistant data, its lines in the app log included, but the keys. Undo: every step on the normal
-   stack, on both backends; where a command records none (an added layer, `generate`'s result included, `set_layer`'s
-   colour match and other non-geometry fields, `set_filter`'s params, `set_text`) the shell pushes the editor's own
-   step kind before the assistant's call (`meta.undo`; no command and no editor change); plus "Undo this turn" on
-   tiles (a turn snapshot in `inpaint_canvas.js`, hence `build_node.py --check` and `nodecopy`; refused on the canvas
-   backend). Steps (PLAN_ASSISTANT's A0 to A9): A0 the server split; A1 the loop, the policy, the registry and
-   Anthropic in plain Node; A2 Chat Completions with its seven providers; A3 OpenAI Responses and Gemini; A4 in the
-   app with the key rows and the first gate; a checkpoint with the user's keys on several models across providers,
-   before any UI (a ceiling of about $10, set by the user); A5 the panel; A6 chats on disk and the reset; A7 per-step
-   undo and turn undo; A8 the whole `assistant` gate (76 steps, twenty-one mutations, `tools/assistant_mock.py` for
-   all four families) and the docs; A9 a live check on the packaged app and the release. Optional, only on the user's
-   word: A10 a budget, "allow for this chat" and a basic tool set; A11 the assistant's own undo steps. **To verify
-   against the live APIs before it ships** (§7): per family the reasoning replay (signatures, encrypted items, thought
-   signatures, `reasoning_content` on every assistant message), a JPEG in a tool result where the family takes one
-   (Moonshot's `tool` message included: its schema allows one, its only example is a video) and in a follow-up user
-   message elsewhere, pruning, the streamed rebuild, cache reads, the tool list's real token count and the error
-   shapes; Gemini's request limit (its docs say 20 MB and 100 MB; the cap is 18 MB until then); that OpenRouter still
-   routes each model with `data_collection: "deny"` and the hosts in China ignored, and whether it does with
-   `zdr: true` (then the user decides); that ToAPIs and WaveSpeed pass tools at all, and where they are and what they
-   keep. No OpenRouter attribution headers go out before the trademark check (they make a public app page).
+   shape canvases): parked by the user on 2026-09-18 (if the coarse outlines at 15k turn out to matter, compute the
+   label map only in the hovered object's box, on demand).
 14. **Upscaling, a future feature (asked for by the user on 2026-09-21; parked: only on the to-do list, not planned
    in detail, not built, nothing below verified).** Upscale the document, a layer or the selection by a model, in
    three routes the user named: (a) **through the user's ComfyUI**, as a recipe with `UpscaleModelLoader` +
@@ -1397,40 +267,99 @@ switch in Settings › Rendering; the canvas backend is the escape hatch.
    and answer a textured GLB (not only a mesh), the answer's size and format (GLB or a zip of OBJ + textures), the time
    (minutes: the queue and its 30-minute wait fit), the price, and whether the glb plugin's renderer shows the
    answer's PBR materials well enough that the result is worth inpainting over.
-
-**Decision (b) of 7c is made (the user, 2026-09-18): exports and runs of a colour-matched layer may move.** They may
-take their statistics from tiles instead of from the whole flatten, with **point samples** (measured mean 0.56, max 8
-to 9 levels against the full-resolution statistics; not box means, which were 5.45 / p99 12 on a textured photo;
-`docs/PLAN_BCE.md` §C6 "C6 (c) slice 7c as built"). **B item 7 part 3 is built on it** (2026-09-18, item 10 above;
-CHANGELOG 0.1.19 says a matched layer's export can move by a few levels). **Stage 1 of the split of
-`inpaint_canvas.js` is built** (item 11, 2026-09-18) and **0.1.19 is published**. **Decided by the user on 2026-09-18,
-on that session's recommendation:** (1) **no stage 2 for now, and no six leaf modules**: hanging methods into the class
-is an eager access to it (it would have to stand in `inpaint_canvas.js` below the `class` statement for ComfyUI's
-import order), and twelve sites in four subjects read switches on the class name, so a subject is split out only when
-that subject is reworked anyway, as the prelude of that work; (2) **the object tool's change A is parked**: if the coarse
-outlines at 15k turn out to matter, compute the image-size label map only in the hovered object's box, on demand,
-never for the whole picture; (3) **B item 6 stays on ice** (it saves memory, not time; 97 GB of RAM and the 15.5 GB cap
-are not the limit at 15k). **Next, in this order** (the user, 2026-09-20, on this session's plan: the two defects,
-then `buildModal`, "und den assistent"): ~~the two defects of the OpenRouter session~~ and ~~the `buildModal` split~~
-(both 2026-09-20, see the top of this section); ~~the assistant~~ (item 13, A0 to A9, shipped in 0.1.21 the same
-day, the release of its own the user asked for: "agent als letztes, wird ein seperates release"); then, on the
-user's word of the same evening, ~~the user's own language models in the Settings and the end of the "not tried"
-marks~~ (0.1.22, unreleased, see the top of this section); then, on the user's word of 2026-09-22, **the six sessions of `docs/PLAN_0_1_24.md`** (upscaling, Oxen.ai, the
-three builds); then the **Microsoft Store package** (MSIX, the interim signed channel, decided
-2026-09-23 - see the release-channel decision above and `docs/CODE_SIGNING_POLICY.md`) and **SignPath**
-after it ("assistant kommt vor codesignierung"). Waiting on the user's ComfyUI, whenever it is free: one
-local run on a large document with the node's stitch fix (`fba1fd8`), and the node in a real ComfyUI tab and in
-Firefox when a node version is meant to ship. Nothing else stands before them, unless the user names something else
-first.
-
-**Housekeeping done on 2026-09-16.** The merged branches `c0-editor-source`, `c2-tiles`, `fix-mask-undo` and `px-spike`
-are deleted locally and on origin; the v0.1.11 draft release and its tag are deleted; `dist/` is cleaned (old installers,
-gate profiles, `dist/ab`, `composite`, `smoke`). `tools/run_gates.sh` recreates the profiles it needs.
-
-**Still unverified or open:** the ToAPIs, OpenRouter and ModelArk adapters have never run against the live API (`docs/RECIPES.md` "Only a real key can verify", in each section); a real SAM2 / RMBG
-model has not run in the app on the slice 6 code (the full `smoke` of 2026-09-19 ran the server's helpers only; a profile
-with the models downloaded or the ComfyUI `models/` folder linked would run them); the user has not reported back on
-their own 15k file.
+20. **Skins: a docking point for custom app looks (asked for by the user on 2026-09-25; BEING BUILT from 2026-09-26,
+   `docs/PLAN_0_1_29.md` §1; the example skins are named "90s" and "Duck" by the user).** Developers drop a skin into a folder and the app wears it. **The user's
+   answers:** the app only (not the ComfyUI node, so `build_node.py` / `nodecopy` stay out of it except where the
+   editor's shared `STYLE` is touched), and ship example skins from the start - a **Winamp-like** look and a look after
+   Pollen Robotics' / Hugging Face's **Microduck** robot (palette from https://pollen-robotics.com/microduck/press-kit/).
+   **What the code has today (2026-09-25):** not one CSS custom property. 89 distinct colours are hard-coded in four
+   places: `renderer/shell.css` (151 colour values), `assistant.css` (67), `help.css` (46) and the editor's `STYLE`
+   string in `renderer/editor/inpaint_canvas.js` (lines 929 to 1128); on top, 68 `fillStyle` / `strokeStyle` colours
+   drawn on canvas (the selection blue `#7cc7ff`, rulers, labels), 22 inline styles set from JS in the editor and
+   `inpaint_modal.js`, 4 in `shell.js`, and `backgroundColor: "#181818"` in `main.js`. The icons are SVG with
+   `currentColor` and follow by themselves. The CSP (`renderer/index.html`) allows inline styles and keeps `url()` to
+   `'self'` / `scumble://app`, so a skin cannot phone home. **The shape agreed in the brainstorm:** (1) **tokens
+   first** - about 25 to 30 CSS variables (`--sc-bg`, `--sc-surface`, `--sc-fg`, `--sc-muted`, `--sc-accent`,
+   `--sc-danger`, `--sc-selection`, `--sc-border`, `--sc-radius`, `--sc-font`, ...) replacing the 89 colours, the
+   default theme pixel-identical to today (a screenshot gate on both backends), canvas overlays reading the tokens
+   through `getComputedStyle` once per theme change; worth it on its own (a light mode, contrast, Store screenshots).
+   (2) **a skin is a plugin without JS**: a folder with `plugin.json` (`"registers": ["skin"]`), a `skin.css` and its
+   own images and fonts, picked in a *Settings > Appearance* section and switched live through the existing *Reload
+   plugins* path. The tokens are the stable contract (a `docs/SKINS.md`, versioned, a gate that every token exists);
+   **free CSS on top is allowed** (a Winamp look needs gradients, bevels, an LCD panel, a pixel font, bitmaps - tokens
+   alone cannot do it) and marked unstable, like app modules for user plugins. No JS in a skin. **Protected from
+   skins:** the assistant's ask cards (a skin must not hide a question before a paid run), the masked API keys, and
+   the selection outline's contrast on white (`editor_test.py` has that case). (3) optional later: a theme editor in
+   the Settings (a colour picker per token, export as a skin folder), light / dark after the OS (`nativeTheme`), a
+   compact density, icon sets. **Open, the user's call:** the names of the two example skins - "Winamp" and
+   "Microduck" are other people's marks and a shipped skin under that name reads as an endorsement, so the brainstorm
+   suggested the look without logos or original artwork under own names (e.g. "Amp '98", "Duckling"), the same rule
+   as the film names (real names only in the film presets); for Microduck, asking Pollen Robotics / Hugging Face
+   whether an official skin is fine is an option. **Rough effort (not measured):** 4 to 5 days - tokens 1.5 to 2, the
+   docking point with assets about 1.5, the two example skins about 1; the theme editor extra. **Order:** after B3
+   (macOS), not before.
+21. **Lens flares, "something like Flarecore" (asked for by the user on 2026-09-25; brainstormed only, OPTIONAL, not
+   planned in detail, not built).** https://github.com/cyco-creates/Flarecore is a ComfyUI node pack (Apache-2.0,
+   PyTorch in linear light, one author, 0.2.0 beta 1 at `5e8f2bb` of 2026-09-18). **The user's reason:** rarely used
+   ("eher nicht so oft"), it is feature completeness for a pro tool. **What a 10-agent brainstorm found (read through
+   the GitHub API, nothing cloned or run):** the engine is a sum of analytic per-pixel fields along the axis from the
+   light P to a movable anchor E (`P + t(E-P)`; `flare/elements.py` 146-525: glow (Moffat), iris (n-gon by angular
+   folding, roundness, hollow, coma, crescent), streak, ring, hoop, glint rays, orbs, spectral, texture); no FFT, no
+   model. 72 presets (not the README's 74), 732 elements: glow 271, iris 211, streak 74, glint 74 (86 % together),
+   texture 49 (using only 10 of the 197 PNGs). The 197 PNGs (78.1 MB) are AI-generated (3 carry OpenAI C2PA, against
+   the repo's own "nothing from third-party tools"); 30 presets carry lens brand names (ARRI, Cooke, Zeiss, Panavision
+   ...), partly fitted to screenshots from the login-gated Cineflares; `schema_version` stayed 1 through 15 schema
+   commits. Most of it is video (tracking, image visibility across frames, flicker) or experimental (Lens Lab).
+   **Rejected:** a port that reads Flarecore's preset format (a moving, unversioned target, brand names) and a bridge
+   that runs FlareRender on the user's ComfyUI (not installed there, not on the Comfy Registry, no live preview - every
+   slider change a queue run on the production machine; its `flare_pass` is sRGB and clamped, so Screen over it is
+   about 16 levels brighter in the midtones than its linear add). **The shape, a compact version, about 7 to 9 days:**
+   a built-in plugin `plugins/flare/`, one filter type `flare.lens` with `reach: 0` like `film.light_leak` (normal
+   blend; the shader decodes to linear, adds the flare accumulated in float, encodes again, a +-0.5 LSB dither hashed on
+   the picture pixel - `BLEND_MODES` has no add and needs none then); five element kinds translated from Flarecore
+   (glow, iris / ghost, streak, glint, ring) with the Apache-2.0 header per translated file, a NOTICE and a credit in
+   About; a tool with two handles (light, anchor) after `film/points.js`, the light's colour sampled on the click;
+   8 to 10 own presets with neutral names (a Node check that fails on a brand name; the preset select gets its own
+   `title`, or the film-stock tooltip shows); occlusion through the filter layer's existing mask; **coordinates
+   relative to the picture** (`resizeImageNow` does not move filter params); the assistant and MCP through `add_filter`
+   / `set_filter` (both AUTO in `policy.js`), no new commands; the renderer validates and clamps every value, because
+   `applyParams` (`commands.js` 974-989) assigns a `custom` value raw and sets a preset select's id only. Gates on both
+   backends: GPU vs CPU within 2 levels, bands equal to the whole flatten, drag and undo, an
+   `exportperf:15000x10000,--filter=flare.lens` row. The open-ended part is the look tuning: a build on the user's own
+   pictures after about 4 days, before the rest. **Only on the user's word, later:** several lights per layer, detect
+   the light, occlusion from a SAM2 selection or depth (Depth Anything V2 Small ONNX, Apache-2.0, 50 MB fp16; the
+   user's ComfyUI holds only the Large model, CC-BY-NC), a Flarecore JSON importer pinned at `5e8f2bb`, textures (after
+   a core fix: plugin samplers are re-uploaded every pass and units 6 / 7 collide with the framework's), "bake to
+   layer" for PSD (layered exports skip filter layers). **Known traps:** a generate after the flare bakes it into the
+   result (results go on top; film layers have the same problem); a plugin never reaches the ComfyUI node. **Order:**
+   optional, no place in the order until the user names one.
+22. **Nik 9 parity: depth masks and the rest of DxO Nik Collection 9's feature set (asked for by the user on
+   2026-09-25; brainstormed, not planned into sessions, not built; an update of its own, NOT optional).** The whole
+   research and shape is **`docs/PLAN_NIK9.md`**; read it before planning, do not research it again. **The user's
+   answers:** it is for editing the finished picture after inpainting (adjustments by distance: grading, haze,
+   halation), the edges are to be done properly ("besser richtig umsetzen"), and the scope is all of Nik 9 that
+   Scumble lacks ("wenn dann alles"). **The shape, four releases:** (1) masks - an in-app Depth Anything V2 Small
+   helper (Apache-2.0; the onnx-community repo is deprecated and its successor uses external data, so pin commit
+   `4472b73...` or teach the registry a data file), the depth map a **document** resource (working map up to 4096 px,
+   guided in a pool worker, u16 PNG mirror ref), *Select by depth* and *Limit by depth* live on filter layers (a
+   post-stage in `applyFilter`), luminosity and colour-range sources on the same range bar, an Intersect selection
+   mode, the Object tool's box drag, a layer-mask overlay; (2) edges (a tiled detail pass, a guided snap of the mask
+   at full resolution in the depth-edge band, SAM2 / BiRefNet snap, a refine brush) and depth filters (haze, dehaze;
+   lens blur on the user's word); (3) filters and control points (HSL 8 channels, chromatic shift, the grading wheel,
+   glass, elliptical / polygonal / line points, diffusion); (4) the 18 missing blend modes (core: GL, Rust kernel and
+   ABI, Canvas 2D, PSD / ORA, the node). **About 34 to 46 working days in all, inferred.** A checkpoint on the user's
+   pictures once the model runs decides how much edge work release 2 needs. **Order:** not fixed yet; suggested
+   after B3 (macOS). **Folded in on 2026-09-26 (the user: "kommt später, zusammen mit Nik"):** the masks-and-selections
+   package - refine edge for any selection (hair, fur, colour decontamination, output to a mask), a soft selection
+   from a layer's alpha (`selectionFromLayer` cuts at 127 today, `inpaint_canvas.js` ~6196) with add / subtract /
+   intersect, a Bezier selection and stored paths, commands for saved selections, a black-and-white mask view - and
+   the grading-and-panels package - a dither at the filter chain's final 8-bit write, a histogram / info panel, a
+   navigator, own presets for filter layers with .cube export, colour match on luminance only or against a chosen
+   reference region, vibrance, selective colour, a channel mixer, a gradient map, surface blur and median. Estimates
+   from the review: 6.5-12.5 and 11-19.5 days.
+23. **Rotate and straighten the whole document (on the later list, the user, 2026-09-26).** Rotate 90 / 180, flip the
+   document, straighten by a drawn line, crop presets with overlays. Estimate 2 to 3.5 days (crop presets 1 to 2
+   more). Every layer, mask, selection and saved selection has to follow, like *Resize*.
 
 ## Gate runner and flakes
 
@@ -1624,6 +553,15 @@ Known flakes; **re-run before believing any of these**:
 
 ## Working rules
 
+- **Test by risk, not by habit (the user, 2026-09-26: "weniger tests").** The user found the testing too heavy and
+  decided three tiers; this overrides the "both backends, mutation round, measurement for everything" habit of the
+  sessions before. **Full** (both backends, a mutation round, a 15k measurement where it applies): only what can lose
+  or corrupt pixels or data - document save / restore and the `.scumble` format, autosave and quit safety, Rust
+  kernels, the compositor (blend modes, clipping, groups), export writers. **Normal** (one gate step per new feature on
+  the tiles backend plus the existing gates the change directly touches; the canvas backend only when a pixel path
+  changed; no mutation round): tools and features - brushes, heal, remove, liquify, layer UI. **Light** (plain-Node
+  tests of request shapes, `lint`, `types`, one look in the app; the user judges looks by eye): skins, providers built
+  against docs, docs and the manual. Exe gates once per release, not per package. No screenshot gates for looks.
 - Development folder is `F:\canvas`. Scratch files go to the session scratchpad, not here.
 - Commit as DenRakEiw: `git -c user.name=DenRakEiw -c user.email=89697885+DenRakEiw@users.noreply.github.com`,
   no Claude trailer in commit messages. Push with `-c credential.helper='!gh auth git-credential'`.
