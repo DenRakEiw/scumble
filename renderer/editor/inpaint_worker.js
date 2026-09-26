@@ -41,7 +41,8 @@
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
 import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge } from "./px/kernels.js";
+import { readTiff, tiffPart } from "./inpaint_tiff.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate } from "./px/kernels.js";
 
 const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
 const now = () => performance.now();
@@ -355,6 +356,34 @@ async function psdPart(msg) {
     return { channels, transfer: channels.flatMap((c) => [c.lens, c.data]), timing: { op: "psd_part", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0 } };
 }
 
+/**
+ * One strip of a TIFF (inpaint_tiff.js `tiffPart`, docs/PLAN_0_1_29.md 3d): rows as bytes, a stack or tiles (as
+ * `png_part` takes them), differenced and deflated into a zlib stream by the Rust kernels (the JS twin without them).
+ */
+async function tiffPartJob(msg) {
+    const t0 = now();
+    const rgba = partRowsOf(msg);
+    const p = rustPx();
+    const level = msg.level === undefined ? PNG_LEVEL : msg.level;
+    const r = await tiffPart({ rgba, w: msg.w, rows: msg.rows, predictor: msg.predictor }, (bytes) => (p ? p.zlib(bytes, level) : deflate(bytes)));
+    releaseIfLarge();
+    return { chunk: r.chunk, raw: r.raw, transfer: [r.chunk], timing: { op: "tiff_part", kernels: kernelsInUse(), pixels: msg.w * msg.rows, kernel: now() - t0 } };
+}
+
+/**
+ * A TIFF read as a stream (inpaint_tiff.js `readTiff`), like `png_read`: `progress` messages `{ header }`, then
+ * `{ rgba, y0, rows }` transferred; the reply carries what the reader found (`info`, with its notes).
+ */
+async function tiffRead(msg) {
+    const t0 = now();
+    const info = await readTiff(msg.blob, {
+        rowsPerBand: msg.rowsPerBand || TILE,
+        onHeader: (h) => { self.postMessage({ id: msg.id, progress: true, header: { width: h.width, height: h.height } }); },
+        onRows: (rgba, y0, rows) => { self.postMessage({ id: msg.id, progress: true, rgba: rgba.buffer, y0, rows }, [rgba.buffer]); },
+    });
+    return { info, timing: { op: "tiff_read", kernels: "js", pixels: info.width * info.height, kernel: now() - t0 } };
+}
+
 /** CRC-32 and size of a blob (a zip entry of an ORA file). */
 async function crcJob(msg) {
     const bytes = new Uint8Array(await msg.blob.arrayBuffer());
@@ -658,6 +687,8 @@ async function run(msg) {
     if (msg.op === "psd_part") return psdPart(msg);
     if (msg.op === "png_read") return pngRead(msg);
     if (msg.op === "image_read") return imageRead(msg);
+    if (msg.op === "tiff_read") return tiffRead(msg);
+    if (msg.op === "tiff_part") return tiffPartJob(msg);
     if (msg.op === "crc") return crcJob(msg);
     if (msg.op === "export_begin") {
         const opts = { width: msg.width, height: msg.height };

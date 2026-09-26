@@ -639,7 +639,7 @@ function copyMcpRegistration(kind) {
 
 // ---- dialogs -------------------------------------------------------------------------
 
-const IMAGE_FILTERS = [{ name: "Images and documents", extensions: ["scumble", "png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "svg", "psd", "ora"] }, { name: "Scumble documents", extensions: ["scumble"] }, { name: "Layered (PSD, ORA)", extensions: ["psd", "ora"] }, { name: "All files", extensions: ["*"] }];
+const IMAGE_FILTERS = [{ name: "Images and documents", extensions: ["scumble", "png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff", "svg", "psd", "ora"] }, { name: "Scumble documents", extensions: ["scumble"] }, { name: "Layered (PSD, ORA)", extensions: ["psd", "ora"] }, { name: "TIFF", extensions: ["tif", "tiff"] }, { name: "All files", extensions: ["*"] }];
 const DOCUMENT_FILTERS = [{ name: "Scumble document", extensions: ["scumble"] }];
 
 /** Is this file a .scumble document (by its name, or by its first bytes when it was renamed)? */
@@ -682,7 +682,7 @@ async function saveFile({ name, data, filters, path: target }) {
         const r = await dialog.showSaveDialog(win, {
             title: "Save image",
             defaultPath: path.join(settings.get().lastSaveDir || app.getPath("pictures"), name || "scumble.png"),
-            filters: filters || (ext ? [{ name: ext.toUpperCase(), extensions: [ext] }, { name: "All files", extensions: ["*"] }] : [{ name: "All files", extensions: ["*"] }]),
+            filters: filters || (ext ? [{ name: ext === "tif" ? "TIFF" : ext.toUpperCase(), extensions: ext === "tif" ? ["tif", "tiff"] : [ext] }, { name: "All files", extensions: ["*"] }] : [{ name: "All files", extensions: ["*"] }]),
         });
         if (r.canceled || !r.filePath) return null;
         filePath = r.filePath;

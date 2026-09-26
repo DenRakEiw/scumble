@@ -11,6 +11,13 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### TIFF was offered and could not be read - fixed for 0.1.30
+
+**Found** by the gap review of 2026-09-26: the Open dialog listed `tif` / `tiff`, the file was uploaded to the mirror
+(and a connected ComfyUI) and then failed in an `<img>`. Now `renderer/editor/inpaint_tiff.js` reads it as a stream
+(and writes TIFF exports); a TIFF never reaches the local store. Gate `tiff` on both backends, `tools/tiff_test.js`;
+mutation rounds 22 of 22 (the module) and 10 of 10 (the app side).
+
 ### Every PNG export carried the prompt, the seed and the recipe - fixed for 0.1.30
 
 **Found** by the gap review of 2026-09-26: two tEXt chunks in every PNG export, the recipe (for an imported workflow
@@ -170,12 +177,9 @@ An entry here leaves the file when the release named in it is published.
 ### Found by reading on 2026-09-26 (not yet measured)
 
 **Written** 2026-09-26 by a gap review of the whole app (read, not run). Each has to be measured before it is fixed.
-The first two are part of `docs/PLAN_0_1_29.md` §3 (documents and safety) and are fixed there (the third, the skipped
-flush on quit, is fixed: "Fixed, waiting for its release").
+The ones that were part of `docs/PLAN_0_1_29.md` §3 (the skipped flush on quit, TIFF, the PNG metadata) are fixed:
+"Fixed, waiting for its release".
 
-- **TIFF is offered and cannot be read.** The Open dialog lists `tif` / `tiff` (`electron/main/main.js` ~424); no
-  decoder exists and Chromium has none. The file is uploaded to the mirror (and a connected ComfyUI) first and then
-  fails to load.
 - **Rotate, distort and warp bake the layer mask into the pixels** without a word (`inpaint_canvas.js` ~1909).
 - **Saved selections load misaligned after Resize or Extend canvas** (`inpaint_canvas.js` ~4845).
 - **A rotated text layer probably loses its rotation on the next text edit** (`inpaint_canvas.js` ~8321-8337).

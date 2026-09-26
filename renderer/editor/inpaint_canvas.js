@@ -17,13 +17,14 @@ import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromC
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
-import { setKernels, kernelsMode, OPS } from "./px/kernels.js";
+import { setKernels, kernelsMode, OPS, deflate } from "./px/kernels.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { INTERACTIVE, EXPORT } from "./inpaint_pool.js";
 import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.js";
-import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter } from "./inpaint_bands.js";
+import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter, writeTiff } from "./inpaint_bands.js";
+import { isTiff, TIFF_EXT, tiffInfo, readTiff, tiffPart } from "./inpaint_tiff.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
 import { JOB_TIMINGS, editorWorker, workerCall, editorPool, buildLayered } from "./inpaint_jobs.js";
@@ -125,6 +126,53 @@ async function layeredKind(file) {
     return isPsd(head) ? "psd" : isOra(head) ? "ora" : null;
 }
 
+/**
+ * The extension a file is stored under: its own, except for a file named as a TIFF that is none (a PNG, JPEG or WebP
+ * renamed), which goes under what its bytes are, so the local store holds no ".tif" (3d). A file named as a TIFF that
+ * is no picture the editor reads is refused here, before anything is stored.
+ */
+async function storedExt(file) {
+    const ext = ((file.name || "").match(/\.[a-z0-9]+$/i) || [".png"])[0];
+    if (!TIFF_EXT.test(ext)) return ext;
+    const kind = await imageFileSize(file);
+    if (!kind) throw new Error(`${file.name} is not a TIFF file, nor another picture Scumble reads`);
+    return kind.type === "jpeg" ? ".jpg" : "." + kind.type;
+}
+
+/** Is the file a TIFF (by its first bytes, whatever its name or type says)? */
+async function isTiffFile(file) {
+    if (!file || typeof file.slice !== "function") return false;
+    return isTiff(new Uint8Array(await file.slice(0, 8).arrayBuffer()));
+}
+
+/**
+ * The pixels of a TIFF (inpaint_tiff.js `readTiff`, docs/PLAN_0_1_29.md 3d), decoded as a stream in a pool worker (in
+ * the window without one) and written into this backend's pixels band by band: `{ px, info }`. The caller has read the
+ * header (`tiffInfo`) and checked the size, so a file that is refused allocates nothing.
+ */
+async function pixelsFromTiff(blob, Cls, progress = null) {
+    let px = null, W = 0, H = 0, info = null;
+    const header = (h) => { W = h.width; H = h.height; px = Cls.empty(W, H); };
+    const rows = (rgba, y0, n) => {
+        px.writeRect({ data: new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, n * W * 4), width: W, height: n }, 0, y0);
+        if (progress) progress((y0 + n) / H);
+    };
+    try {
+        if (partsUsable()) {
+            const r = await editorPool().run("tiff_read", { blob }, [], {
+                timeout: 600000,
+                onProgress: (m) => { if (m.header) header(m.header); else rows(new Uint8Array(m.rgba), m.y0, m.rows); },
+            });
+            info = r.info;
+        } else info = await readTiff(blob, { onHeader: header, onRows: rows });
+    } catch (err) {
+        if (px) px.release();
+        throw err;
+    }
+    if (!px) throw new Error("the TIFF gave no pixels");
+    return { px, info };
+}
+
 /** zlib ("deflate") or raw ("deflate-raw") bytes inflated by the browser. */
 async function inflateBytes(bytes, format) {
     const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
@@ -193,6 +241,9 @@ function canvasRows(canvas) {
     c.width = w; c.height = TILE_SIZE;
     const ctx = c.getContext("2d", { willReadFrequently: true });
     ctx.globalCompositeOperation = "copy";
+    // measured (3d, 2026-09-26): "copy" with smoothing on moves a quarter of the bytes by up to 2 levels even at the same
+    // size (a 15000 px GPU canvas into this CPU one); without smoothing the band is the canvas's bytes
+    ctx.imageSmoothingEnabled = false;
     return bandRows(w, h, (y0, y1) => {
         ctx.drawImage(canvas, 0, y0, w, y1 - y0, 0, 0, w, y1 - y0);
         return ctx.getImageData(0, 0, w, y1 - y0).data;
@@ -1413,7 +1464,7 @@ class InpaintEditor {
         root.addEventListener("dragover", (e) => { e.preventDefault(); e.stopPropagation(); });
         root.addEventListener("drop", (e) => {
             e.preventDefault(); e.stopPropagation();
-            const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter((f) => f.type.startsWith("image/"));
+            const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter((f) => f.type.startsWith("image/") || TIFF_EXT.test(f.name || ""));
             if (!files.length) return;
             // no base yet or Ctrl held: (re)load the base; otherwise every file becomes a new image layer
             if (!this.width || e.ctrlKey) this.loadFile(files[0]);
@@ -2021,7 +2072,7 @@ class InpaintEditor {
         this.viewEl.addEventListener("drop", (e) => {
             e.preventDefault(); e.stopPropagation();
             this.viewEl.classList.remove("ipc-dropping");
-            const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter((f) => f.type.startsWith("image/") || LAYERED_EXT.test(f.name || ""));
+            const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter((f) => f.type.startsWith("image/") || LAYERED_EXT.test(f.name || "") || TIFF_EXT.test(f.name || ""));
             if (!files.length) return;
             // No image yet, or Ctrl held: the file becomes (replaces) the base. Otherwise each file is a new
             // image layer centred on the drop point (Shift: reference layers), like dropping into Krita.
@@ -7927,7 +7978,7 @@ class InpaintEditor {
 
     /** Upload image files and add each as a layer (role "reference" by default). */
     async addImageLayers(files, role = "reference", { place = "cascade", at = null } = {}) {
-        files = Array.from(files || []).filter((f) => f && ((f.type && f.type.startsWith("image/")) || LAYERED_EXT.test(f.name || "")));
+        files = Array.from(files || []).filter((f) => f && ((f.type && f.type.startsWith("image/")) || LAYERED_EXT.test(f.name || "") || TIFF_EXT.test(f.name || "")));
         if (!files.length) return;
         if (!this.width) {
             await this.loadFile(files.shift());
@@ -7953,12 +8004,20 @@ class InpaintEditor {
                     this.setStatus(`Rasterising ${file.name || "the SVG"} at ${target.width} × ${target.height} ...`);
                     file = await rasterizeSvg(file, target);
                 }
-                this.setStatus(`Uploading ${file.name || "image"} ...`);
-                const ext = ((file.name || "").match(/\.[a-z0-9]+$/i) || [".png"])[0];
-                const stem = (file.name || "image").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
-                const ref = await uploadBlob(file, stem + ext, { overwrite: false });
-                // a large file is decoded in a pool worker (`pixelsOffThread`), a small one through an <img>
-                const px = (this.tileMode ? await pixelsOffThread(file, this.pixels.Layer) : null) || this.pixels.Layer.fromImage(await loadImageEl(viewUrl(ref)));
+                let ref = null, px = null;
+                if (await isTiffFile(file)) {
+                    // 3d: a TIFF is decoded here; its layer is stored with the others as a PNG (dirty), never as the TIFF
+                    const info = await tiffInfo(file);
+                    this.setStatus(`Reading ${file.name || "the TIFF"} (${info.width} × ${info.height}) ...`);
+                    ({ px } = await pixelsFromTiff(file, this.pixels.Layer));
+                } else {
+                    const ext = await storedExt(file);
+                    this.setStatus(`Uploading ${file.name || "image"} ...`);
+                    const stem = (file.name || "image").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
+                    ref = await uploadBlob(file, stem + ext, { overwrite: false });
+                    // a large file is decoded in a pool worker (`pixelsOffThread`), a small one through an <img>
+                    px = (this.tileMode ? await pixelsOffThread(file, this.pixels.Layer) : null) || this.pixels.Layer.fromImage(await loadImageEl(viewUrl(ref)));
+                }
                 const nw = px.width, nh = px.height;
                 // Shown at a third of the canvas, cascaded from the top left; the file itself stays the reference.
                 const s = Math.min(1, (Math.max(this.width, this.height) / 3) / Math.max(nw, nh));
@@ -7974,7 +8033,7 @@ class InpaintEditor {
                     ly = Math.round(Math.min(Math.max(0, at[1] - lh / 2), Math.max(0, this.height - lh)));
                     at = [at[0] + 24, at[1] + 24];
                 }
-                last = this.addLayer({ name: (file.name || "image").replace(/\.[a-z0-9]+$/i, ""), kind: "image", role, ref, px, x: lx, y: ly, w: lw, h: lh, dirty: false });
+                last = this.addLayer({ name: (file.name || "image").replace(/\.[a-z0-9]+$/i, ""), kind: "image", role, ref, px, x: lx, y: ly, w: lw, h: lh, dirty: !ref });
                 n++;
             } catch (err) {
                 console.error(err);
@@ -8589,6 +8648,52 @@ class InpaintEditor {
         }
     }
 
+    /**
+     * The picture as a TIFF (docs/PLAN_0_1_29.md 3d): `{ blob, width, height }`. As it is (no Size or Canvas row), from
+     * the row sources the PNG and PSD exports read: a plain stack composited by the workers, bands, or one flatten;
+     * scaled or framed, from the export canvas. The strips are compressed by the pool, or here when there is none.
+     */
+    async encodeTiff(progress = null, { flatOnly = false } = {}) {
+        const plain = host.exportIsPlain(this);
+        const pooled = partsUsable();
+        const group = "tiff" + nextPartsSeq();
+        const held = [];
+        let flat = null;
+        try {
+            let source = null;
+            if (plain && pooled && this.tileMode && !flatOnly) {
+                const stack = await this.stackSource({ forRun: true });
+                if (stack) { held.push({ release: () => stack.release() }); source = stack.source; }
+                else {
+                    const plan = this.bandPlan({ forRun: true });
+                    const bands = plan ? await this.bandSource({ forRun: true }, plan) : null;
+                    if (bands) {
+                        held.push(bands);
+                        const version = this.compositeVersion;
+                        source = bandRows(this.width, this.height, (y0, y1) => {
+                            if (this.compositeVersion !== version) throw new Error("the picture changed while it was written; try again");
+                            return bands.read(y0, y1);
+                        }, bands.rows);
+                    }
+                }
+            }
+            if (!source) {
+                flat = plain ? this.flattenToCanvas({ forRun: true }) : host.exportCanvas(this, "tiff");
+                source = canvasRows(flat);
+            }
+            const run = pooled ? partsRun(group) : (op, args) => tiffPart(args, deflate);
+            const blob = await writeTiff(source, run, { flights: pooled ? partsFlights() : 1, progress, pause: bandPause });
+            return { blob, width: source.width, height: source.height };
+        } catch (err) {
+            if (pooled) editorPool().cancel(group);
+            if (!flatOnly && !this.huge && String(err && err.message).includes(NO_PROGRAM)) return this.encodeTiff(progress, { flatOnly: true });   // a matched stack without its program: one flatten
+            throw err;
+        } finally {
+            for (const h of held) h.release();
+            if (flat) { flat.width = 1; flat.height = 1; }
+        }
+    }
+
     /** The active layer alone as a PNG with transparency, into the output folder. */
     async exportLayerPng() {
         const l = this.activeLayer();
@@ -8620,11 +8725,11 @@ class InpaintEditor {
 
     async exportImage({ download = false } = {}) {
         if (!this.base) { this.setStatus("Nothing to save yet."); return null; }
-        const fmt = ["png", "jpg", "webp", "psd", "ora"].includes(this.saveFormatSel && this.saveFormatSel.value) ? this.saveFormatSel.value : "png";
+        const fmt = ["png", "jpg", "webp", "tiff", "psd", "ora"].includes(this.saveFormatSel && this.saveFormatSel.value) ? this.saveFormatSel.value : "png";
         const stem = ((this.saveNameInput && this.saveNameInput.value) || "inpaint_canvas").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._ -]/gi, "_") || "inpaint_canvas";
         try {
             this.setStatus("Saving ...");
-            let blob, note = "", embedded = false, banded = false;
+            let blob, note = "", embedded = false, banded = false, size = null;
             let pngTexts = null;
             const pngChunks = fmt === "png" ? [SRGB_CHUNK] : null;   // 3f: the pixels are sRGB, and the file says so
             if (fmt === "png") {
@@ -8647,7 +8752,13 @@ class InpaintEditor {
                 const r = await this.exportLayeredBands(fmt, (f) => this.setStatus(`Saving ... ${Math.round(f * 100)} %`));
                 if (r) { blob = r.blob; note = `, ${r.layers} layers${r.skipped ? `, ${r.skipped} filter layer${r.skipped > 1 ? "s" : ""} only in the merged image` : ""}, ${Math.round(performance.now() - t0)} ms`; }
             }
-            const canvas = blob ? { width: this.width, height: this.height } : host.exportCanvas(this, fmt);
+            // 3d: a TIFF is written in strips from the picture's rows (scaled or framed from the export canvas)
+            if (fmt === "tiff") {
+                const t0 = performance.now();
+                const r = await this.encodeTiff((f) => this.setStatus(`Saving ... ${Math.round(f * 100)} %`));
+                blob = r.blob; size = [r.width, r.height]; note = `, ${Math.round(performance.now() - t0)} ms`;
+            }
+            const canvas = blob ? { width: size ? size[0] : this.width, height: size ? size[1] : this.height } : host.exportCanvas(this, fmt);
             if (blob) { /* written in bands */ }
             else if (fmt === "psd" || fmt === "ora") {
                 const t0 = performance.now();
@@ -8660,7 +8771,7 @@ class InpaintEditor {
             if (fmt === "png" && !banded) {
                 try { blob = pngWithChunks(await blob.arrayBuffer(), { texts: pngTexts, chunks: pngChunks }); embedded = !!pngTexts; } catch (err) { console.warn("Inpaint Canvas: could not embed the workflow", err); }
             }
-            const saved = await host.saveExport(blob, `${stem}.${fmt}`, { editor: this, download });
+            const saved = await host.saveExport(blob, `${stem}.${fmt === "tiff" ? "tif" : fmt}`, { editor: this, download });
             if (!saved) { this.setStatus("Save cancelled."); return null; }
             const kb = Math.round(blob.size / 1024);
             this.setStatus(`Saved ${saved.path} (${canvas.width} × ${canvas.height}, ${kb >= 1024 ? (kb / 1024).toFixed(1) + " MB" : kb + " kB"}${fmt === "png" && embedded ? ", " + hostText("pngEmbedded", "recipe embedded") : ""}${note}).`);
@@ -8932,6 +9043,16 @@ class InpaintEditor {
 
     /** A new base from a file in the mirror (`ref`), all else dropped: a large one decoded off the window on tiles. */
     async setBaseFromRef(ref) {
+        if (TIFF_EXT.test(ref.filename || "")) {
+            const blob = await (await fetch(viewUrl(ref))).blob();
+            if (await isTiffFile(blob)) {
+                const info = await tiffInfo(blob);
+                this.checkBaseSize(info.width, info.height);
+                const { px } = await pixelsFromTiff(blob, this.pixels.Layer);
+                const up = await uploadPixels(px, String(ref.filename).replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image");
+                return this.setBasePixels(up.ref, px, { keepLayers: false });
+            }
+        }
         if (this.tileMode) {
             const blob = await (await fetch(viewUrl(ref))).blob();
             const big = (await hugePngSize(blob)) || (await imageFileSize(blob));
@@ -9012,14 +9133,15 @@ class InpaintEditor {
         try {
             const layered = await layeredKind(file);
             if (layered) { await this.loadLayered(file, layered, later); return; }
+            if (await isTiffFile(file)) { await this.loadTiff(file, later); return; }
             if (isSvgFile(file)) {
                 const target = await this.svgTarget(file, { size, ask });
                 if (!target) { this.setStatus("Import cancelled."); return; }
                 this.setStatus(`Rasterising ${file.name || "the SVG"} at ${target.width} × ${target.height} ...`);
                 file = await rasterizeSvg(file, target);
             }
+            const ext = await storedExt(file);
             this.setStatus("Uploading " + (file.name || "image") + " ...");
-            const ext = ((file.name || "").match(/\.[a-z0-9]+$/i) || [".png"])[0];
             const stem = (file.name || "pasted").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
             const ref = await uploadBlob(file, stem + ext, { overwrite: false });
             // E5: a PNG larger than any canvas is decoded as a stream into tiles (the browser's decoder has nowhere to put
@@ -9040,6 +9162,27 @@ class InpaintEditor {
             console.error(err);
             this.setStatus(String(err.message || err));
         }
+    }
+
+    /**
+     * Open a TIFF (inpaint_tiff.js, docs/PLAN_0_1_29.md 3d). The header first, so a file that is not read, or is too
+     * large, is refused before anything is stored; then the pixels as a stream. The base goes to the local store as a
+     * PNG, so the autosave, a document and ComfyUI never see the TIFF.
+     */
+    async loadTiff(file, later = () => false) {
+        const name = file.name || "the TIFF";
+        const info = await tiffInfo(file);
+        this.checkBaseSize(info.width, info.height);
+        if (later()) return;
+        const { px, info: got } = await pixelsFromTiff(file, this.pixels.Layer, (f) => { if (!later()) this.setStatus(`Reading ${info.width} × ${info.height} px ... ${Math.round(f * 100)} %`); });
+        if (later()) { px.release(); return; }
+        const stem = (file.name || "image").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "image";
+        this.setStatus(`Storing ${name} ...`);
+        const { ref } = await uploadPixels(px, stem);
+        if (later()) { px.release(); return; }
+        await this.setBasePixels(ref, px, { keepLayers: false });
+        const notes = ((got && got.notes) || info.notes || []).filter(Boolean);
+        this.setStatus(`Opened ${name}: ${info.width} × ${info.height}${notes.length ? "; " + notes.join("; ") : ""}.`);
     }
 
     /**

@@ -614,12 +614,12 @@ Extend (positive) or crop (negative) the canvas on each side, in pixels.
 
 ### `export` *(image)*
 
-Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; `canvas_width` / `canvas_height` put it in a frame of that size (bigger: a margin of `fill`, smaller: cropped) at `anchor`; PSD and ORA always keep the full size. A PNG carries the prompt, seed and recipe only when `metadata` is true, or when it is left out and the Export section's switch is on (off by default).
+Save the flattened image (png, jpg, webp, tiff, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; `canvas_width` / `canvas_height` put it in a frame of that size (bigger: a margin of `fill`, smaller: cropped) at `anchor`; PSD and ORA always keep the full size. A PNG carries the prompt, seed and recipe only when `metadata` is true, or when it is left out and the Export section's switch is on (off by default).
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `format` | string | png, jpg, webp, psd or ora (default `"png"`; one of `png`, `jpg`, `webp`, `psd`, `ora`) |
+| `format` | string | png, jpg, webp, tiff, psd or ora (default `"png"`; one of `png`, `jpg`, `webp`, `tiff`, `psd`, `ora`) |
 | `name` | string | file name stem for the dialog |
 | `path` | string | absolute target path (no dialog) |
 | `scale` | number | percent of the document size, 1..400 |

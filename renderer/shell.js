@@ -2026,7 +2026,7 @@ ui.settings.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopP
 // ---- menu and files ----------------------------------------------------------------------
 
 window.scumble.file.onOpened(({ name, data }) => {
-    const type = /\.jpe?g$/i.test(name) ? "image/jpeg" : /\.webp$/i.test(name) ? "image/webp" : "image/png";
+    const type = /\.jpe?g$/i.test(name) ? "image/jpeg" : /\.webp$/i.test(name) ? "image/webp" : /\.tiff?$/i.test(name) ? "image/tiff" : "image/png";
     openInto(new File([data], name, { type }));
 });
 // ---- .scumble documents (docs/PLAN_DOCUMENTS.md): save, save as, open ------------------------------------------

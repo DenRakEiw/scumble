@@ -65,7 +65,7 @@ function buildTopBar(ed, root) {
     if (host.overlay) top.appendChild(el("span", "ipc-title", "Inpaint Canvas"));
     ed.fileInput = document.createElement("input");
     ed.fileInput.type = "file";
-    ed.fileInput.accept = "image/*";
+    ed.fileInput.accept = "image/*,.tif,.tiff";
     ed.fileInput.style.display = "none";
     ed.fileInput.addEventListener("change", () => {
         const f = ed.fileInput.files && ed.fileInput.files[0];
@@ -328,7 +328,7 @@ function buildLayers(ed) {
     layersHead.appendChild(el("span", "ipc-grow"));
     const fileInput = (onFiles) => {
         const inp = document.createElement("input");
-        inp.type = "file"; inp.accept = "image/*"; inp.multiple = true; inp.style.display = "none";
+        inp.type = "file"; inp.accept = "image/*,.tif,.tiff"; inp.multiple = true; inp.style.display = "none";
         inp.addEventListener("change", () => { const files = Array.from(inp.files || []); inp.value = ""; if (files.length) onFiles(files); });
         layersHead.appendChild(inp);
         return inp;
@@ -558,7 +558,7 @@ function buildExport(ed, section) {
         ed.saveNameInput.spellcheck = false;
         ed.saveNameInput.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") ed.exportImage(); });
         exp.appendChild(ed.saveNameInput);
-        ed.saveFormatSel = selectInput(["png", "jpg", "webp", "psd", "ora"], "png", "PNG is lossless and can carry the workflow and prompt in the file, JPEG and WebP are smaller. PSD and ORA (OpenRaster, for GIMP and others) keep the layers: name, position, opacity, visibility, blend mode; filter layers are baked into the merged image only.");
+        ed.saveFormatSel = selectInput(["png", "jpg", "webp", "tiff", "psd", "ora"], "png", "PNG is lossless and can carry the workflow and prompt in the file, JPEG and WebP are smaller, TIFF (8 bits, ZIP compression) is for print and photo programs. PSD and ORA (OpenRaster, for GIMP and others) keep the layers: name, position, opacity, visibility, blend mode; filter layers are baked into the merged image only.");
         exp.appendChild(ed.saveFormatSel);
         const dl = iconButton("download", hostText("downloadTip", "Save the image to a file (Ctrl+S)"), () => ed.exportImage({ download: true }), hostText("downloadLabel", "Save as"));
         dl.classList.add("ipc-small");

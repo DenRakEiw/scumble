@@ -318,6 +318,28 @@ export class Px {
      * deflate stream when written one after the other. `{ bytes, adler, raw }`: the deflated part (a copy), the
      * Adler-32 of its `raw` filtered bytes alone (joined by `adlerCombine`).
      */
+    /** A whole zlib stream of `bytes` (a TIFF strip, inpaint_tiff.js): `78 9C`, one final deflate part, the Adler-32. */
+    zlib(bytes, level) {
+        const a = this.job, n = bytes.length;
+        try {
+            const pi = this._in(a, bytes, n);
+            const adler = this.exports.adler32(pi, n, 1) >>> 0;
+            let cap = n + Math.ceil(n / 65535) * 5 + 64;
+            for (;;) {
+                const po = a.take(cap);
+                const written = this.exports.deflate_part(pi, n, level, 1, po, cap);
+                if (written >= 0) {
+                    const out = new Uint8Array(written + 6);
+                    out[0] = 0x78; out[1] = 0x9C;
+                    out.set(this.u8().subarray(po, po + written), 2);
+                    out[written + 2] = adler >>> 24; out[written + 3] = (adler >>> 16) & 255; out[written + 4] = (adler >>> 8) & 255; out[written + 5] = adler & 255;
+                    return out;
+                }
+                cap *= 2;
+            }
+        } finally { a.reset(); }
+    }
+
     pngPart(rgba, w, rows, prev, level, last) {
         const a = this.job, n = rows * (1 + 4 * w);
         try {

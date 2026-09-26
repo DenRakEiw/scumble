@@ -16,6 +16,7 @@
  * transfer)` is the pool. Nothing here touches a canvas; the editor makes the sources.
  */
 import { PngStreamWriter, partRows } from "./inpaint_png.js";
+import { TiffStreamWriter, tiffStripRows } from "./inpaint_tiff.js";
 
 const TILE = 256;
 
@@ -163,6 +164,25 @@ export async function writePng(source, run, { texts = null, chunks = null, fligh
         if (progress) progress((y + n) / source.height);
         if (pause && args.rgba) await pause();
     });
+    return writer.finish();
+}
+
+/**
+ * A TIFF of a row source (inpaint_tiff.js, docs/PLAN_0_1_29.md 3d): a Blob. Strips of one height, a power of two that
+ * divides the source's alignment, compressed by `tiff_part` jobs, a bounded number at once.
+ */
+export async function writeTiff(source, run, { flights = 8, progress = null, pause = null, predictor = 2 } = {}) {
+    let rps = tiffStripRows(source.width);
+    while (rps > 1 && source.align % rps) rps >>= 1;
+    const writer = new TiffStreamWriter(source.width, source.height, { flights, predictor, rowsPerStrip: rps, run: (args, transfer) => run("tiff_part", args, transfer) });
+    for (let y = 0; y < source.height; y += rps) {
+        const n = Math.min(rps, source.height - y);
+        await writer.room();
+        const { args, transfer } = await source.part(y, n, false);
+        writer.add(n, args, transfer);
+        if (progress) progress((y + n) / source.height);
+        if (pause && args.rgba) await pause();
+    }
     return writer.finish();
 }
 

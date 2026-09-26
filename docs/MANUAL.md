@@ -75,7 +75,7 @@ _Open a picture, select something, describe what should be there instead, genera
 
 The loop is always the same, whatever the model behind it: select an area, write what should be in it, press Generate. What comes back is a layer sitting over the selection, not a new picture — which is the point of the whole app. If you do not like it, you delete the layer and the original is untouched underneath.
 
-Open a picture with Ctrl+O, by dropping it on the window, or by pasting from the clipboard. PNG, JPEG and WebP, and since 0.1.25 also PSD and ORA files with their layers intact; a .scumble document you saved earlier opens the same way. Then paint over the thing you want changed with the selection brush — the default tool, size with the bracket keys, Alt to erase what you painted too much of.
+Open a picture with Ctrl+O, by dropping it on the window, or by pasting from the clipboard. PNG, JPEG, WebP and TIFF, and since 0.1.25 also PSD and ORA files with their layers intact; a .scumble document you saved earlier opens the same way. Then paint over the thing you want changed with the selection brush — the default tool, size with the bracket keys, Alt to erase what you painted too much of.
 
 The prompt goes into the Generate tab on the right. Describe what should be in the selected area, not what is there now: "a red leather handbag" and not "change the bag to red leather". Then Generate, or Ctrl+Enter. A run on a local ComfyUI takes as long as your card needs; an API run is usually ten to thirty seconds. While it runs you can keep working, even in another tab.
 
@@ -90,7 +90,7 @@ Happy with it? Ctrl+Shift+E exports the visible picture, and Ctrl+S keeps the wh
 3. **Prompt.** Generate tab on the right: describe what should be there. Leave it empty for a pure cleanup with an inpainting model.
 4. **Generate.** Ctrl+Enter. The status line says where it runs and how long it has been running.
 5. **Blend.** In the new layer's row, pull Match up until the patch sits in the picture.
-6. **Save.** Ctrl+S saves the document as a .scumble file you can come back to. Ctrl+Shift+E exports the picture in the format the Export panel is set to: PNG, JPEG or WebP, or PSD and ORA with all layers.
+6. **Save.** Ctrl+S saves the document as a .scumble file you can come back to. Ctrl+Shift+E exports the picture in the format the Export panel is set to: PNG, JPEG, WebP or TIFF, or PSD and ORA with all layers.
 
 ### Notes
 
@@ -273,7 +273,7 @@ _PNG, JPEG, WebP, PSD and ORA with layers, the AI label, tabs that come back, an
 
 ![The Export panel with PSD chosen, next to the size and canvas fields and the buttons for a single layer or the mask](https://www.denrakeiw.com/projects/scumble/manual/export.jpg "1600x946")
 
-Ctrl+Shift+E, File › Export Image, writes the visible picture in the format the Export panel is set to: PNG, JPEG or WebP for a flat result, PSD or OpenRaster when you want the layers, masks and selections to survive into Photoshop, Krita or GIMP. Ctrl+S used to do this; it saves the .scumble document now (the chapter before). You can export at a percentage, at a pixel size, or into a frame of a given size with a background of your choosing, and a single layer or the mask on its own.
+Ctrl+Shift+E, File › Export Image, writes the visible picture in the format the Export panel is set to: PNG, JPEG, WebP or TIFF for a flat result, PSD or OpenRaster when you want the layers, masks and selections to survive into Photoshop, Krita or GIMP. Ctrl+S used to do this; it saves the .scumble document now (the chapter before). You can export at a percentage, at a pixel size, or into a frame of a given size with a background of your choosing, and a single layer or the mask on its own.
 
 A PNG export can carry the prompt, the negative prompt, the seed and the recipe as text inside the file: tick **Prompt and recipe in the PNG** in the Export panel (it is off unless you turn it on, and it stays as you set it for every document). Anyone who gets the file can read what it carries, and a recipe you imported from your own ComfyUI workflow carries every setting of that workflow. JPEG, WebP, PSD and ORA never carry them. Every PNG export is marked as sRGB, which it is; JPEG and WebP exports carry an sRGB profile.
 
@@ -287,6 +287,7 @@ Closing Scumble asks nothing about unsaved documents. It waits until your last c
 
 - Large PNGs beyond the browser's canvas limit — up to 65,535 px a side — are opened and written in strips, so they do not need to fit into one canvas.
 - PSD export keeps layer names with umlauts and other non-ASCII letters since 0.1.25; before that they became underscores.
+- TIFF files open in 8 and 16 bits per channel (16 is rounded to 8), in RGB, grayscale or with a palette, uncompressed or with LZW, ZIP or PackBits compression, stored in strips or tiles; a transparent one keeps its transparency. The first picture of a file with several pages opens. Colour profiles and the orientation tag are not applied, and a layered TIFF from Photoshop opens as its merged picture; the status line says so when it happens. CMYK, floating-point, 32-bit and JPEG-compressed TIFFs are refused with a message saying how to save them instead. A TIFF export is 8 bits per channel, RGB with its transparency as an alpha channel, ZIP compressed; a picture that could pass 4 GB (more than about a gigapixel) has to go out as PNG instead.
 - The export runs in worker threads, so the window stays usable while a 15,000 pixel PSD is being written.
 
 ## The assistant
@@ -479,7 +480,7 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | --- | --- |
 | Ctrl+O | Open a picture or a .scumble document |
 | Ctrl+S  ·  Ctrl+Shift+S | Save the document · save it as a new file |
-| Ctrl+Shift+E | Export the visible picture (PNG, JPEG, WebP, PSD or ORA) |
+| Ctrl+Shift+E | Export the visible picture (PNG, JPEG, WebP, TIFF, PSD or ORA) |
 | Ctrl+T  ·  Ctrl+W | New tab · close tab |
 | Ctrl+Shift+T | Reopen the last closed tab |
 | Ctrl+Tab  ·  Ctrl+Shift+Tab | Next tab · previous tab |

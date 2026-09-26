@@ -27,6 +27,15 @@ the section for its version; `docs/` and the commit history hold the technical d
   WebP, PSD and ORA never carried any of it.
 - **PNG exports are marked as sRGB**, which their colours are, so other programs show them the way Scumble does. JPEG
   and WebP exports already carried an sRGB profile.
+- **TIFF opens and saves.** The Open dialog offered TIFF files and then failed on every one. Now they open in 8 and 16
+  bits per channel (16 rounded to 8), RGB, grayscale or with a palette, uncompressed or with LZW, ZIP or PackBits
+  compression, in strips or tiles, with their transparency; by Open, drop, as a layer (Layers › Import) and for agents
+  through `load_image` and `add_image_layer`. A file with several pages opens its first picture; a colour profile, the
+  orientation tag and Photoshop's layers inside a TIFF are not applied, and the status line says so. CMYK,
+  floating-point, 32-bit and JPEG-compressed TIFFs are refused with a message that says how to save them instead.
+  **TIFF is an export format** too (8 bits RGBA, ZIP compression), at any size the Export panel allows, written in
+  strips by the worker threads like PNG; agents pass `format: "tiff"` to `export`. Large files are read and written as
+  a stream, so a 15,000 pixel TIFF never has to fit into memory as one piece.
 
 ## 0.1.29 — 2026-09-26
 

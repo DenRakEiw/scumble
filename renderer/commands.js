@@ -167,7 +167,7 @@ function rectMask(ed, x, y, w, h) {
 async function fileFrom(a, fallbackName) {
     if (a.path) {
         const r = await window.scumble.file.read(String(a.path));
-        const type = /\.jpe?g$/i.test(r.name) ? "image/jpeg" : /\.webp$/i.test(r.name) ? "image/webp" : /\.svg$/i.test(r.name) ? "image/svg+xml" : "image/png";
+        const type = /\.jpe?g$/i.test(r.name) ? "image/jpeg" : /\.webp$/i.test(r.name) ? "image/webp" : /\.svg$/i.test(r.name) ? "image/svg+xml" : /\.tiff?$/i.test(r.name) ? "image/tiff" : "image/png";
         return new File([r.data], a.name || r.name, { type });
     }
     if (!a.filename) throw new Error("pass path (a local file) or filename (a file in the local store / ComfyUI input folder)");
@@ -895,12 +895,12 @@ const COMMANDS = {
 
     // -- export --
     export: {
-        needsImage: true, description: "Save the flattened image (png, jpg, webp, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; `canvas_width` / `canvas_height` put it in a frame of that size (bigger: a margin of `fill`, smaller: cropped) at `anchor`; PSD and ORA always keep the full size. A PNG carries the prompt, seed and recipe only when `metadata` is true, or when it is left out and the Export section's switch is on (off by default).",
-        params: { format: P.str("png, jpg, webp, psd or ora", { enum: ["png", "jpg", "webp", "psd", "ora"], default: "png" }), name: P.str("file name stem for the dialog"), path: P.str("absolute target path (no dialog)"), scale: P.num("percent of the document size, 1..400"), width: P.int("width in pixels (the height follows the aspect ratio)"), height: P.int("height in pixels (the width follows the aspect ratio)"), quality: P.num("JPEG / WebP quality 0.1..1", { default: 0.92 }),
+        needsImage: true, description: "Save the flattened image (png, jpg, webp, tiff, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; `canvas_width` / `canvas_height` put it in a frame of that size (bigger: a margin of `fill`, smaller: cropped) at `anchor`; PSD and ORA always keep the full size. A PNG carries the prompt, seed and recipe only when `metadata` is true, or when it is left out and the Export section's switch is on (off by default).",
+        params: { format: P.str("png, jpg, webp, tiff, psd or ora", { enum: ["png", "jpg", "webp", "tiff", "psd", "ora"], default: "png" }), name: P.str("file name stem for the dialog"), path: P.str("absolute target path (no dialog)"), scale: P.num("percent of the document size, 1..400"), width: P.int("width in pixels (the height follows the aspect ratio)"), height: P.int("height in pixels (the width follows the aspect ratio)"), quality: P.num("JPEG / WebP quality 0.1..1", { default: 0.92 }),
             canvas_width: P.int("frame width in pixels (default the picture's)"), canvas_height: P.int("frame height in pixels"), anchor: P.str("where the picture sits in the frame: tl, tc, tr, ml, mc, mr, bl, bc, br", { default: "mc" }), fill: P.str("transparent, white, black or #rrggbb around the picture", { default: "transparent" }),
             metadata: P.bool("PNG: write the prompt, seed and recipe into the file (default: the Export section's switch)") },
         async run(ed, a) {
-            const fmt = ["png", "jpg", "webp", "psd", "ora"].includes(a.format) ? a.format : "png";
+            const fmt = ["png", "jpg", "webp", "tiff", "psd", "ora"].includes(a.format) ? a.format : "png";
             if (ed.saveFormatSel) ed.saveFormatSel.value = fmt;
             if (ed.saveNameInput) ed.saveNameInput.value = String(a.name || docName(ed) || "scumble");
             const before = { ...host.exportState(ed) };
