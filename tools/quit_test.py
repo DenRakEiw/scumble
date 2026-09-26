@@ -380,6 +380,8 @@ def main():
     p.add_argument("--no-node", action="store_true", help="skip tools/quit_test.js (a mutation round checks the app steps alone)")
     args = p.parse_args()
     args.size = [int(v) for v in args.size.lower().split("x")]
+    if args.exe:
+        args.exe = os.path.abspath(args.exe)   # Windows resolves a relative program against this process, not cwd
     os.makedirs(args.out, exist_ok=True)
     args.profile = os.path.join(args.out, "profile")
     appdata = os.environ.get("APPDATA", "")

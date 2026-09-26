@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.29 — unreleased
+## 0.1.29 — 2026-09-26
 
 - **Magnific as a full provider.** Beyond its two upscalers, your Magnific key now runs FLUX.2 [pro] and [flex],
   Seedream 5.0 Pro and Lite, GPT Image 2 and 2.5 (Flare, Sunburst) and Z-Image Turbo, each as the last choice in its
