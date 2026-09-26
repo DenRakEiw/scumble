@@ -559,6 +559,22 @@ checked:** a key pressed on a real keyboard (CDP input only); the chip's look by
 as built). Checking a real double click needs an installed build, which registers `.scumble` on this machine: only on
 the user's word (open question 7).
 
+**D4 built 2026-09-26** (local, not pushed). `build.fileAssociations` in `package.json` (NSIS: `.scumble`, "Scumble
+document", `application/x-scumble`, `build/icon.ico`) and a `windows.fileTypeAssociation` in `build/AppxManifest.xml`.
+A first start queues the `.scumble` paths of its command line (`documentArgs`), a second start (`onSecondInstance`,
+in both lock holders: the window app and an agent-started headless one) shows the window and queues its paths with a
+`documents:pending` nudge; the window takes the queue once its session is restored and the recipe chosen, and a nudge
+before that is left for the start to take. `save_document { doc, path?, copy?, history? }` (no dialogs: `ask: false`)
+and `open_document { path, activate? }` (app scope; waits until the tab's key has settled, so a `list_documents`
+right after reads it clean); the assistant's policy refuses a save without a file or a path, a path not ending in
+`.scumble` and a copy without a path, asks every save with the file and "overwrites" on the card (the in-place case
+included, the tab's file read from `list_documents`), asks every open; `tools/assistant_test.js` has the row.
+`docs/COMMANDS.md` regenerated (75 commands). **Checked in the app:** the command errors, a Save As, a copy that
+leaves the tab's file, a save in place, an open of a file already open (activates) and of another (`activate: false`
+keeps the active tab); a second start with a path opens it in the running instance and exits at once; a first start
+with a path restores the session first, then opens the file. **Not checked:** a double click in Explorer (needs an
+installed build), the MSIX manifest in a packaged build (`npm run dist:store`).
+
 ### D5. The full tier (2 to 3 d)
 
 **`tools/document_test.py`** (app gate `document`, in `tools/run_gates.sh`; like `quit_test.py` it starts and ends its

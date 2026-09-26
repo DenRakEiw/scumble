@@ -50,6 +50,15 @@
             <desktop:ExecutionAlias Alias="scumble.exe" />
           </uap3:AppExecutionAlias>
         </uap3:Extension>
+        <!-- .scumble documents (docs/PLAN_DOCUMENTS.md §5.6): a full-trust app gets the file's path on its command line -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="scumble">
+            <uap:DisplayName>Scumble document</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType ContentType="application/x-scumble">.scumble</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
       </Extensions>
     </Application>
   </Applications>

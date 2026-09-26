@@ -850,6 +850,15 @@ class Assistant {
         if (/^export/.test(call.name) && call.args.path && this.deps.statFile) {
             facts.file = this.deps.statFile(String(call.args.path));
         }
+        if (call.name === "save_document") {
+            // the tab's own file (a save in place overwrites it) and whether a given path exists
+            try {
+                const answer = await this.read("list_documents");
+                const entry = ((answer && answer.documents) || []).find((d) => d.id === doc);
+                facts.docFile = (entry && entry.file) || null;
+            } catch (_) { facts.docFile = null; }
+            if (call.args.path && this.deps.statFile) facts.file = this.deps.statFile(String(call.args.path));
+        }
         return facts;
     }
 

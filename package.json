@@ -62,6 +62,16 @@
       "LICENSE"
     ],
     "icon": "build/icon.png",
+    "fileAssociations": [
+      {
+        "ext": "scumble",
+        "name": "Scumble document",
+        "description": "Scumble document",
+        "role": "Editor",
+        "mimeType": "application/x-scumble",
+        "icon": "icon.ico"
+      }
+    ],
     "publish": {
       "provider": "github",
       "owner": "DenRakEiw",

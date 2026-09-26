@@ -86,6 +86,8 @@ contextBridge.exposeInMainWorld("scumble", {
         ask: (q) => ipcRenderer.invoke("documents:ask", q),
         onProgress: (cb) => on("documents:progress", cb),
         onOpenRequest: (cb) => on("documents:openRequest", cb),
+        // documents from a command line are waiting (takePending): a second start of Scumble named them
+        onPending: (cb) => on("documents:pending", cb),
         // the path of a dropped File (a .scumble dropped on the window)
         pathOf: (file) => { try { return webUtils.getPathForFile(file) || null; } catch (_) { return null; } },
     },

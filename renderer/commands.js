@@ -327,6 +327,37 @@ const COMMANDS = {
         params: { doc: P.int("the document id (from list_documents)", { required: true }) },
         async run(ed) { host.shell.activate(ed); return docSummary(ed); },
     },
+    save_document: {
+        needsImage: true,
+        description: "Save the document as a .scumble file that reopens fully editable (layers, masks, filters, text, 3D objects, selection, prompts, result history). Without `path` it saves to the tab's file (an error when it has none); with `path` it is Save As, and the tab follows the new file unless `copy` is true. Nothing is asked: a file changed on disk is overwritten.",
+        params: {
+            path: P.str("absolute path ending in .scumble (Save As); omit to save to the tab's file"),
+            copy: P.bool("write the file without making it the tab's file (a snapshot)", { default: false }),
+            history: P.bool("include the result history and the prompts of earlier runs (default true)", { default: true }),
+        },
+        async run(ed, a) {
+            const path = a.path != null && String(a.path).trim() ? String(a.path).trim() : null;
+            if (path && !/\.scumble$/i.test(path)) throw new Error("the path must end in .scumble");
+            if (!path && !(ed.docFile && ed.docFile.path)) throw new Error("this tab has no .scumble file yet: pass path");
+            if (!path && a.copy) throw new Error("a copy needs a path");
+            const r = await host.saveDocument(ed, { path, copy: !!a.copy, history: a.history !== false, ask: false });
+            if (!r) throw new Error("the save was cancelled");
+            return { path: r.path, bytes: r.bytes, entries: r.entries, ms: r.ms, notes: r.notes || [], document: docSummary(ed) };
+        },
+    },
+    open_document: {
+        scope: "app",
+        description: "Open a .scumble file as a tab (the tab that already holds it is activated instead). Returns the document and notes (a newer format, a renamed file, another recipe).",
+        params: { path: P.str("absolute path of a .scumble file", { required: true }), activate: P.bool("make it the active tab (default true)", { default: true }) },
+        async run(_, a) {
+            const path = String(a.path || "").trim();
+            if (!/\.scumble$/i.test(path)) throw new Error("the path must end in .scumble");
+            const before = host.editor;
+            const r = await host.openDocument(path);
+            if (a.activate === false && before && before !== r.editor && host.editors().includes(before)) host.shell.activate(before);
+            return { ...docSummary(r.editor), already: !!r.already, notes: r.notes || [] };
+        },
+    },
     close_document: {
         description: "Close a tab without asking (unsaved changes are not written to its .scumble file). File › Reopen Closed Tab brings it back in this session; the document's files stay in the local store.",
         params: {},

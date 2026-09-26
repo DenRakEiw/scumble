@@ -32,7 +32,7 @@ const { resolveTileMode, DEFAULT_ON: TILES_DEFAULT_ON } = require("./tilemode");
 const { restartPlan } = require("./restart");
 const autosave = require("./autosave");
 const { QuitGuard, CrashGuard, isCrash } = require("./quit");
-const { Documents, isDocumentPath, pathKey } = require("./documents");
+const { Documents, isDocumentPath, pathKey, documentArgs } = require("./documents");
 const docfile = require("./docfile");
 const registration = require("./mcp/registration");
 
@@ -340,6 +340,24 @@ function createWindow() {
     win.webContents.on("will-navigate", (e, url) => { if (!staysInApp(url)) e.preventDefault(); });
     bridge.attach(win.webContents, { navigates: staysInApp });
     win.loadURL(ORIGIN + "/index.html");
+}
+
+/**
+ * .scumble files named on a command line (a double click in Explorer starts Scumble with the path; a running Scumble
+ * gets it from the second start): queued, and the window takes them once its session is restored (shell.js), so no
+ * restore races the open. An agent start (--mcp, --cmd) never opens a document from its own command line.
+ */
+function openDocumentArgs(argv, cwd) {
+    const paths = documentArgs(argv, cwd);
+    if (!paths.length) return;
+    documents.queue(paths);
+    send("documents:pending");
+}
+
+/** A second start of Scumble: the window comes up, and the documents it names open (a double click on a .scumble). */
+function onSecondInstance(_e, argv, workingDirectory) {
+    showWindow();
+    try { openDocumentArgs(Array.isArray(argv) ? argv.slice(1) : [], workingDirectory); } catch (err) { console.warn("documents from the second start:", err.message); }
 }
 
 /** Show the (headless or hidden) window: a second start of Scumble, or macOS activate. */
@@ -1105,7 +1123,7 @@ class AgentBackend extends require("node:events").EventEmitter {
                 return this.client;
             } catch (_) { /* nobody listens */ }
             if (app.requestSingleInstanceLock()) {
-                app.on("second-instance", () => showWindow());
+                app.on("second-instance", onSecondInstance);
                 await app.whenReady();
                 headless = true;
                 startApp();
@@ -1158,6 +1176,7 @@ if (ARGS.mcp || ARGS.cmd) {
 } else if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
-    app.on("second-instance", () => showWindow());
+    app.on("second-instance", onSecondInstance);
+    documents.queue(documentArgs(process.argv.slice(1), process.cwd()));   // a double click that started Scumble
     app.whenReady().then(startApp);
 }

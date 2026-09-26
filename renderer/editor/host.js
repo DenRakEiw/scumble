@@ -1767,6 +1767,8 @@ export const host = {
         const ed = this.editorById(id);
         if (!ed) throw new Error(`${name} could not be opened in a tab`);
         if (this.shell) this.shell.activate(ed);      // the tab bar and window.editor follow (restore() activates in here only)
+        // the tab is clean when this resolves (a command's list_documents right after reads it so)
+        try { if (ed.base) await this.settleKey(ed); } catch (err) { console.warn("document key", err); }
         const notes = [...(r.notes || [])];
         // the recipe is global (every tab uses it), so opening a document does not switch it; it says when they differ
         const now = this.recipe;

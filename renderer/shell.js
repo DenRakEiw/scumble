@@ -2081,6 +2081,13 @@ window.addEventListener("drop", (e) => {
     })();
 }, true);
 window.scumble.documents.onOpenRequest(async (paths) => { for (const p of paths || []) await openDocumentFromUi(p); });
+// documents named by a second start (a double click on a .scumble); the start takes the first ones itself, after the
+// session's tabs are back
+let takesPending = false;
+window.scumble.documents.onPending(async () => { if (takesPending) await openPendingDocuments(); });
+async function openPendingDocuments() {
+    try { for (const p of await window.scumble.documents.takePending()) await openDocumentFromUi(p); } catch (err) { console.warn("documents to open", err); }
+}
 
 // Ctrl+S saves the document, Ctrl+Shift+S is Save As, Ctrl+Shift+E exports the picture (the user, 2026-09-26, §9).
 // The editor binds Ctrl+S to the picture export and Ctrl+E (Shift ignored) to merge down, and the ComfyUI node keeps
@@ -2189,14 +2196,16 @@ try {
 if (!host.editors().length) newDocument();
 activate(host.editor);
 if (startMode === "safe") host.editor.setStatus("The window crashed twice while it restored your documents: they are kept, Settings › Local files › Earlier states opens them.");
-// documents named at the start (a double click, a second start), after the session's tabs are back
-try { for (const p of await window.scumble.documents.takePending()) await openDocumentFromUi(p); } catch (err) { console.warn("documents to open", err); }
 await loadProviders();
 await loadRecipes();
 host.presets = settings.recipePresets || {};
 await host.refreshHelpers();
 await host.refreshLLMs();
 selectRecipe(settings.recipe);
+// documents named at the start (a double click, a second start): after the session's tabs are back and the recipe is
+// chosen (an open compares the document's recipe with it)
+takesPending = true;
+await openPendingDocuments();
 showStatus(await window.scumble.comfy.status());
 window.scumble.commands.ready();
 // the assistant's column (docs/PLAN_ASSISTANT.md A5): built last, so its window key listener is

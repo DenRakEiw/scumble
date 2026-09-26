@@ -1176,6 +1176,27 @@ async function main() {
         check("an_export_whose_extension_disagrees_is_refused",
             policy.decide({ name: "export", args: { path: "C:/a.jpg", format: "png" } }, facts({ file: { ext: ".jpg", exists: false } })).action === "refuse"
             && policy.decide({ name: "export", args: { path: "C:/a.png", format: "png" } }, facts({ file: { ext: ".png", exists: false } })).action === "ask");
+        {
+            // .scumble documents (docs/PLAN_DOCUMENTS.md §5.7): no file and no path refuses, a wrong extension refuses,
+            // every save asks (in place included) and names the file on the card, an open asks
+            const d = (args, extra) => policy.decide({ name: "save_document", args }, facts({ tools: null, ...extra }));
+            const noFile = d({}, { docFile: null });
+            const inPlace = d({}, { docFile: "C:/work/portrait.scumble" });
+            const fresh = d({ path: "C:/work/new.scumble" }, { docFile: null, file: { ext: ".scumble", exists: false } });
+            const over = d({ path: "C:/work/old.scumble" }, { docFile: null, file: { ext: ".scumble", exists: true } });
+            const wrongExt = d({ path: "C:/work/new.png" }, { docFile: null, file: { ext: ".png", exists: false } });
+            const copyNoPath = d({ copy: true }, { docFile: "C:/work/portrait.scumble" });
+            const open = policy.decide({ name: "open_document", args: { path: "C:/work/portrait.scumble" } }, facts({ tools: null }));
+            const openBad = policy.decide({ name: "open_document", args: { path: "C:/work/portrait.png" } }, facts({ tools: null }));
+            check("save_and_open_document_rows",
+                noFile.action === "refuse" && wrongExt.action === "refuse" && copyNoPath.action === "refuse"
+                && inPlace.action === "ask" && inPlace.card && inPlace.card.path === "C:/work/portrait.scumble" && inPlace.card.exists === true
+                && fresh.action === "ask" && fresh.card && fresh.card.exists === false
+                && over.action === "ask" && /overwrites/.test(over.reason)
+                && open.action === "ask" && openBad.action === "refuse"
+                && policy.undoStep({ name: "save_document", args: {} }) === null && policy.undoStep({ name: "open_document", args: {} }) === null,
+                `${noFile.action} ${inPlace.action}:${inPlace.reason} ${fresh.action} ${over.action} ${wrongExt.action} ${copyNoPath.action} open ${open.action}/${openBad.action}`);
+        }
         check("screenshot_max_size_is_clamped", eq(policy.clamp({ name: "screenshot", args: { max_size: 4096, quality: 0.99 } }).args, { max_size: 1024, quality: 0.85 }));
         {
             const readOnly = ["ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips", "status", "get_state", "filter_types", "screenshot"];

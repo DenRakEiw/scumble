@@ -91,6 +91,12 @@ const POLICY = {
         ? ASK("reads a file from your disk", { path: String(call.args.path) })
         : AUTO()),
 
+    // .scumble documents (docs/PLAN_DOCUMENTS.md §5.7): every save writes to your disk, and asks, the save in place too
+    save_document: (call, facts) => saveDocumentRow(call, facts),
+    open_document: (call) => (call.args && call.args.path && /\.scumble$/i.test(String(call.args.path))
+        ? ASK("reads a file from your disk and opens it as a tab", { path: String(call.args.path) })
+        : REFUSE("pass an absolute path to a .scumble file")),
+
     export: (call, facts) => exportRow(call, facts, "png"),
     export_layer: (call, facts) => exportRow(call, facts, "png", true),
     export_mask: (call, facts) => exportRow(call, facts, "png", true),
@@ -189,6 +195,21 @@ function exportRow(call, facts, fallback, fixedPng) {
     const exists = !!(facts && facts.file && facts.file.exists);
     return ASK(exists ? "writes a file that exists and will be overwritten" : "writes a new file to your disk",
         { path, format, exists });
+}
+
+/** save_document: a path or the tab's own file; the card names the file and whether it is overwritten. */
+function saveDocumentRow(call, facts) {
+    const args = call.args || {};
+    const path = args.path === undefined || args.path === null ? "" : String(args.path).trim();
+    const own = facts && facts.docFile ? String(facts.docFile) : "";
+    if (!path && !own) return REFUSE("this tab has no .scumble file yet: pass an absolute path ending in .scumble (the save dialog would hold the turn)");
+    if (path && !/\.scumble$/i.test(path)) return REFUSE("a document is saved to a path ending in .scumble");
+    if (!path && args.copy) return REFUSE("a copy needs a path");
+    const target = path || own;
+    const exists = path ? !!(facts && facts.file && facts.file.exists) : true;
+    const what = args.copy ? "writes a copy of the document" : "saves the document";
+    return ASK(exists ? `${what} and overwrites ${target}` : `${what} to a new file`,
+        { path: target, exists, copy: !!args.copy, history: args.history !== false });
 }
 
 function extMatches(ext, format) {

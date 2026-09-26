@@ -66,6 +66,15 @@ Close a tab without asking (unsaved changes are not written to its .scumble file
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 
+### `open_document` *(app)*
+
+Open a .scumble file as a tab (the tab that already holds it is activated instead). Returns the document and notes (a newer format, a renamed file, another recipe).
+
+| param | type | description |
+|---|---|---|
+| `path` | string | absolute path of a .scumble file (required) |
+| `activate` | boolean | make it the active tab (default true) (default `true`) |
+
 ### `list_recipes` *(app)*
 
 The recipes (ComfyUI workflows and API providers) and which one is selected.
@@ -164,6 +173,17 @@ Add an image file as a new layer. role "none": part of the picture (fitted to th
 | `y` | integer | top edge |
 | `width` | integer | width; without height the aspect is kept |
 | `height` | integer | height |
+
+### `save_document` *(image)*
+
+Save the document as a .scumble file that reopens fully editable (layers, masks, filters, text, 3D objects, selection, prompts, result history). Without `path` it saves to the tab's file (an error when it has none); with `path` it is Save As, and the tab follows the new file unless `copy` is true. Nothing is asked: a file changed on disk is overwritten.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `path` | string | absolute path ending in .scumble (Save As); omit to save to the tab's file |
+| `copy` | boolean | write the file without making it the tab's file (a snapshot) (default `false`) |
+| `history` | boolean | include the result history and the prompts of earlier runs (default true) (default `true`) |
 
 ### `get_state`
 
