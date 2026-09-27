@@ -10,6 +10,146 @@ The block of 2026-09-27 (morning) was moved here the same morning, after the 0.1
 
 The block of 2026-09-27 (evening, after the 0.1.31 release) was moved here the same night, when 23b was built.
 
+The block of 2026-09-27 (night), the open threads and the full list were moved here the same night, when CLAUDE.md was
+compressed (the user: the context ran full); the release procedure went to `docs/RELEASING.md`.
+
+## Where things stand (2026-09-27, night)
+
+The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).
+
+**Released:** 0.1.31 is Latest (published 2026-09-27 17:10 CEST; dev blog post `v0-1-31` live). Check `gh release list`
+before believing any release state written down anywhere. The 0.1.31 packages (canvas-only view, Undo history, PSD
+masks and the mask switch, mask operations, the side panel's width, 23a rotate / flip) are described in the plan's
+"Built" paragraphs and in HISTORY.md's block of 2026-09-27 evening.
+
+**The build in progress is 0.1.32 = 23b + package 4 (brushes)**, the user's word of 2026-09-27 ("baue Paket 4 und
+23b"); package 5 is 0.1.33. The plan is `docs/PLAN_0_1_31.md` (§7 for 23b with its "23b built" paragraph, §4 for the
+brushes). **23b is built and committed locally, not pushed** (CHANGELOG "Unreleased" has it):
+- 1b61e27 **the resampler** `renderer/editor/inpaint_resample.js` (pure, integer maths, Catmull-Rom / bilinear,
+  `transformed()` on both backends; `tools/resample_test.js` plain Node; `pixels` case `transformed`);
+- 47f884e **the pool path** `transformedAsync` (a `resample` worker job per row of destination tiles; 15k store 1.6 s);
+- d72925e **one map for the geometry** (`docXf` replaces `docOrient`; guides held by the snapshots; saved selections and
+  history entries get `xf`; crop / extend / resize follow; the plugin `geometry` event carries `kind` and `m`; film and
+  glb on it) and **text with a free angle** (`text.angle` / `text.box`, `setTextAngle`, the transform tool keeps text);
+- e26519f **the straighten** `straightenDocument` / command `straighten_canvas` (one step; 15k with four layers 9.6 s);
+- 36afbcd **the pending canvas frame** (`canvasFrame`: Enter / Apply / double click, Esc, aspect presets, lines, the
+  straighten line, the tilt preview in the scene draw only).
+Gates at 36afbcd: `editor` 82 of 82 on both backends, `glb`, `film`, `mcp`, `commands`, `pixels`, `document`,
+`canvasonly`, `lint`, `types`, `node tools/assistant_test.js`, `node tools/resample_test.js`, `node
+tools/manual_test.js`. Docs of step 7 (MANUAL, CHANGELOG, DOCUMENTS.md, COMMANDS.md, BUGS.md, the plan) are written.
+After the user's answers (Rust kernel yes, the size label stays, 4.10 "weiss ich nicht": build it last and let them
+judge it): 725ed72 **the Rust resample kernel** (ABI 11; the straighten at 15k with four layers 5.3 s, was 9.6), and
+**the review of 23b** (24 findings confirmed, all fixed in the commit after it; the plan lists them).
+**Next:** package 4, brushes (plan §4: measure first, then regional sources, pro smudge with a Rust kernel, clone,
+flow / pressure / stabiliser, blur / sharpen, the size cap, frequency separation, dodge and burn; 4.10 the optional
+brush panel is still the user's question). Open for the user: whether the Rust resample kernel is worth building (the
+straighten's 9.6 s at 15k would drop to about 4 to 5), the size label above the frame that hides under the options bar
+when the frame touches the top (judged by eye), LaMa shipped or downloaded (package 5), the PNG switch default, item
+25's look and timing. Deferred from 3f: the source's EXIF / XMP in exports, an ICC profile in PSD and TIFF. Not
+checked: a double click in Explorer on an installed build, TIFFs from Photoshop / Affinity / Lightroom.
+
+## Open threads (as of 2026-09-27 night; condensed on 2026-09-26 from the hand-overs of 2026-09-19 to 2026-09-23)
+
+The full hand-over blocks of those days are in `docs/HISTORY.md`, verbatim. What still matters from them:
+
+**Every release:** the CHANGELOG section first, the version in `package.json`, `npm run dist`, exe gates `--offline` on
+both backends (0.1.30's list: `dist/gates/gates/rel30-exe*/summary.txt`), push, tag `v<version>`, `gh run watch` the
+tag's build, `gh release edit v<version> --draft=false`, then the manual sync (`node tools/manual_sync.js`) and the dev
+blog post (the decisions block above; `time` is the release's `published_at` in German time).
+
+**Open, from before 2026-09-26 (none started):**
+- **B3, the macOS build** (`docs/PLAN_0_1_24.md` "Session B3"): unblocked since the logo exists (`build/icon.png`
+  1024 px); was next in the user's order of 2026-09-23 before the build of 2026-09-26 took over.
+- **The Store package per release** (`npm run dist:store`; `docs/STORE.md`, `docs/STORE_LISTING.md`). The user
+  submitted the listing on 2026-09-23 (publish after certification); identity `DenRakEiw.Scumble`, Store ID
+  `9NDBTNNMXF2R`. When it is live, the Store link goes onto the website hub, README and a blog post. The coupling of
+  GitHub releases to the Store (`msstore` CLI in `build.yml`) only on the user's word. **Signing: the Store first, then
+  SignPath.**
+- **The headless MCP instance of this repo's `.mcp.json` intercepts the installed app** (it runs the dev tree on the
+  default profile; a Start-menu Scumble hands over to it). A fix (a profile of its own for the MCP registration,
+  `docs/BUGS.md` "A headless MCP instance can block the app from starting") was offered, not decided.
+- **Comfy Router live runs** of FLUX.2, Seedream and Magnific (offered, not asked for; the key is in the scratch
+  profile `dist/live-keys`, about $243 of credit then). `GET /customers/balance`'s `amount_micros` counts cents.
+- **Linux: built by CI, never run** (`docs/BUGS.md`).
+- **Types stage 3** (`docs/PLAN_TYPES.md`): `electron/preload.js`'s `window.scumble` is `any` in `types/globals.d.ts`.
+- **The manual** (`docs/MANUAL.md` is its one source; the website builds `/scumble/manual` from copies made by
+  `tools/manual_sync.js` - never edit it on the website): the assistant's screenshot is an empty panel, there is no
+  colour-match figure (it needs a result that is *unintentionally* off), the log screenshot is empty.
+- **Screenshot trap:** *Settings > API providers* shows the last four characters of stored keys; mask them before any
+  settings screenshot goes on the web.
+- **Tutorial material** (`docs/TUTORIAL.md`, `docs/images/tutorial/`, `docs/images/video/`) stays uncommitted until
+  the user says so.
+- **The node repo is behind** (its `js/` is built from 7f01699; master is fba1fd8). `nodecopy` builds and tests it in a
+  scratch copy; build it into the real repo only when a node version is meant to ship.
+- **The assistant:** A10 (a budget, "allow for this chat") and A11 (its own undo steps) only on the user's word.
+
+**Standing constraints and decisions (still valid):**
+- **The user's ComfyUI (8188) is a production machine:** no `smoke` and no gate that forwards to it unless the user
+  says it is free; gates run `--offline`.
+- The user works up to about 15k; 30k is not the size to tune for. B item 6 (one-channel masks) stays on ice; no stage
+  2 split of `inpaint_canvas.js` (a subject is split out only when it is reworked anyway); the object tool's change A
+  (image-size label map) is parked. §C7's memory gate (300 MB of GPU process per document) is not met; tiles stay the
+  default anyway, the canvas backend is the escape hatch.
+- **A parked idea, not a plan:** a mobile companion (mark a place, say the prompt, the run happens on the desktop or an
+  API), not a mobile editor.
+
+**Still unverified:** the ToAPIs and ModelArk adapters never ran against the live API; OpenRouter ran live for GPT
+Image 2.5 Flare and Sunburst only (0.1.27); Magnific (beyond the two upscalers) and Oxen are built from the docs only
+(2026-09-26); the Qwen Image Edit 2.1 local recipe never ran (the models are not downloaded); a real SAM2 / RMBG model
+has not run in the app on the slice 6 code; the user has not reported back on their own 15k file.
+
+## What comes next (the list, as of 2026-09-27 night, full text)
+
+The numbered list the user adds to; the numbers stay because other documents cite them. Items 1 to 13 are built (their
+text is in `docs/HISTORY.md`, the block of 2026-09-19); the full text of every item below, with the research of 14,
+15, 19 and 21, is in `docs/HISTORY.md` "What comes next (the list, as of 2026-09-26, full text)" - read it before
+planning one of them.
+
+5. **The object tool's change A** (the image-size label map, `dist/c6map/c/objects.md` §7-§9): parked by the user on
+   2026-09-18.
+14. **Upscaling** (parked, only listed): through the user's ComfyUI (`UpscaleModelLoader`), in the app on ONNX Runtime,
+   or by API (Topaz, Magnific; Magnific's two upscalers exist since 0.1.24). To check first: driving a locally installed
+   Topaz by CLI or MCP, where the result lands, the size limits.
+15. **Qwen Image Edit 2.1:** the local ComfyUI recipe is built (0.1.23, never run: the models are not downloaded); the
+   API side (providers, ids, masks, limits, prices) is open.
+16. **Oxen.ai:** built on 2026-09-26 from the docs (`docs/RECIPES.md` "Oxen.ai"), never run live (the user has no key).
+17. **A side panel of adjustable width:** built 2026-09-27 (e1791c2): a grip on the left edge, 310 px to 60 % of the
+   window, kept per install.
+18. **The logo:** drawn for 0.1.27 (`build/icon.svg` and its exports); open: the mascot's other poses, the About dialog,
+   the website.
+19. **3D layers from AI models** (only listed): image-to-3D (Comfy Router's Meshy / Hunyuan 3D, fal / Replicate TRELLIS,
+   a local Hunyuan3D recipe) into the glb plugin's layers. To check first: which models answer a textured GLB, the
+   time, the price.
+20. **Skins:** built on 2026-09-26 (`docs/SKINS.md`); later, on the user's word: a theme editor, light / dark after the
+   OS, a compact density, icon sets.
+21. **Lens flares like Flarecore** (optional, rarely used; brainstormed only): a built-in plugin `flare.lens` with five
+   element kinds translated from Flarecore (Apache-2.0) and own presets, about 7 to 9 days; no place in the order
+   until the user names one.
+22. **Nik 9 parity** (not optional; an update of its own): `docs/PLAN_NIK9.md` has the research and the shape (depth
+   masks, edges, filters and control points, the 18 missing blend modes; 34-46 days), plus the masks-and-selections and
+   the grading-and-panels packages folded in on 2026-09-26 (6.5-12.5 and 11-19.5 days). Suggested after B3.
+23. **Rotate and straighten the whole document** (on the later list, the user, 2026-09-26): **23a built 2026-09-27**
+   (rotate 90 / 180, flip; `docs/PLAN_0_1_31.md` §7), released in 0.1.31. **23b built 2026-09-27** (straighten by any
+   angle with a drawn line, crop presets with lines, the pending frame, text with a free angle; for 0.1.32).
+24. **A canvas-only view** (the user, 2026-09-27): **built 2026-09-27** (package 1 of `docs/PLAN_0_1_31.md`). As designed: **Tab** (free in the editor's `onKey`, Photoshop's and Krita's key; F11 stays the
+   plain window full screen of the View menu's `togglefullscreen`), Tab again or Escape returns (Escape only when the
+   editor has nothing pending: `pending`, `polyPoints`, `shapePoints`). App-only, in `renderer/shell.js` (a capture
+   keydown listener like the one for Ctrl+S, not in a text field, not while a dialog is open), so the editor source
+   and the node stay as they are: a class on the body hides `#shell-bar`, `#shell-tabs`, the help and assistant
+   columns and the editor's chrome (`.ipc-top`, `.ipc-tools`, `.ipc-side`, `.ipc-bottom`, the rulers), `.ipc-view`
+   fills the window; the window goes full screen over IPC (remember whether it already was; a `leave-full-screen`
+   from F11 or the OS ends the mode); the picture is fitted (a view the user had zoomed is put back on the way out);
+   a hint "Tab or Esc to return" fades after a few seconds. A View menu entry "Canvas Only" with `registerAccelerator:
+   false` (a registered Tab would reach text fields). Normal tier: a gate step (the chrome hidden, the view the window's
+   size, full screen on and back, Tab in a text field ignored, Escape with a pending transform cancels only that).
+25. **The app's own dialogs** (asked 2026-09-27; the user's answers open): the native message boxes (`askDocument`
+   in `electron/main/main.js`: close / changed / newer / history; `askWhileSaving`) and the eight `window.confirm`
+   calls of the renderer as one in-app dialog on the editor's `ask()` modal, main asking the window over IPC with the
+   native box as the fallback when it does not answer (a busy or hung renderer). Proposed: the skin's colours, the
+   structure protected like the assistant's ask card (`protectAsk`: shadow root, top layer), a new async
+   `dialogs.ask()` for plugins beside the old `confirm`. Stay native: the file pickers, the crash dialog. About 1 to
+   1.5 days.
+
 ## Where things stand (2026-09-27, evening)
 
 The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).

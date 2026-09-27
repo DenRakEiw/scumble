@@ -64,86 +64,39 @@ code.
 - Licence: **GPL-3.0** (decided 2026-09-09; `LICENSE`, `package.json`, About, README).
   The same licence as the node, no CLA, no dual licensing (that is also what the free
   SignPath Foundation signing requires). Only MIT/Apache/BSD/OFL dependencies in the app.
-- Release channel: **GitHub Releases** of `DenRakEiw/scumble` (public since 2026-09-09).
-  `electron-updater` reads `latest.yml` there; `.github/workflows/build.yml` builds the
-  installer on `windows-latest` and publishes a **draft** release on a `v<version>` tag
-  (the tag must match `package.json`); publishing the draft makes it visible to the app.
-  **Every release needs its section in `CHANGELOG.md` first**: the workflow builds the
-  release body from it through `tools/release_notes.py` and fails the tag build when the
-  section is missing, and the app shows the same text in Settings › Updates before you
-  restart into the new version.
-  First releases are **unsigned**; code signing goes through the SignPath Foundation
-  (free for OSS) once the project has a public release and some use, fallback Certum
-  Open Source. Azure Trusted Signing is paid and not for individuals in the EU.
-  **Before SignPath comes the Microsoft Store** (the user, 2026-09-23: qualifying for SignPath takes
-  time, and a user who needs a signed installer should have one meanwhile). An **MSIX** submitted to
-  the Store is **re-signed by Microsoft** after certification - no certificate to buy or hold - and a
-  developer account has been free since 2025-09 for individuals and 2026-05 for companies (an identity
-  check replaces the fee). **It signs only the Store copy: the GitHub installer stays unsigned** and
-  keeps its SmartScreen paragraph, and submitting the `.exe` to the Store instead would require the
-  publisher to sign it first, so this is a second channel, not a replacement. The build has to be
-  `runFullTrust` (an AppContainer package cannot reach `127.0.0.1`, which would cut the app off from
-  the user's ComfyUI), must not self-update (the Store updates its copy), and must register MCP by the
-  execution alias rather than the versioned `WindowsApps` path, as the AppImage does. To be tested,
-  not assumed: the single-instance pipe, the plugin folder and every `%APPDATA%` path (keys, autosave,
-  file mirror) under a packaged app's redirection. GPL-3.0 is no obstacle (VLC and Krita are in the
-  Store). `docs/CODE_SIGNING_POLICY.md` holds the whole decision.
-- **Every published release also gets a post in the dev blog on the user's website**
-  (https://www.denrakeiw.com/scumble/blog; the user, 2026-09-21). The site is the repo `F:\portfolio_web`
-  (GitHub `DenRakEiw/Portfolio_vercel`, Next.js, deployed by Vercel). A post is one entry at the top of `devlog` in
-  `lib/scumble-posts.ts` (slug `v0-1-NN`, `version`, `date`, `time` = the release's `publishedAt` from
-  `gh release view` in German time with its offset, `release` link, title, summary, `body` paragraphs): the
-  CHANGELOG section retold in a loose, personal first-person voice, in English like the rest of the site, no
-  markdown in the strings; `hub.version` in `lib/scumble.ts` follows the release. Before the post, `node tools/manual_sync.js` (the manual and its reader, docs/PLAN_HELP.md), committed
-  with it. `npx tsc --noEmit -p .` and
-  `npx next build` before committing. **Who pushes matters: Vercel runs on a free (Hobby) account, which deploys
-  only commits of its one owner.** Commit with the website repo's own identity (its local `user.email` is
-  `schoenebergde@gmail.com` since 2026-09-25, when the user reconnected the Git account to Vercel: the deploys of
-  that address go through, one of `dennis.schoeneberg@me.com` was blocked the same day), never as the `DenRakEiw`
-  noreply address this repo uses, and **no `Co-Authored-By` trailer** (a second author blocks a Hobby deploy);
-  stage only the files of the post. **Git deploys work again since 2026-09-25** (0.1.29's post went live by git,
-  `db4197d`). Read the commit's status afterwards (`gh api repos/DenRakEiw/Portfolio_vercel/commits/<sha>/status`);
-  should it say blocked again, deploy exactly that commit with the CLI from a clean export, never from the working
-  tree: `git archive <sha> | tar -x -C <scratch>`, copy `.vercel/project.json` into it, `vercel --prod --yes`
-  there. Then check the live page (posts are anchors on `/scumble/blog`, `#v0-1-NN`, not pages of their own).
-
-The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
-2026-09-23) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
+- Release channel: **GitHub Releases** of `DenRakEiw/scumble` (public); `electron-updater` reads `latest.yml`; a
+  `v<version>` tag (matching `package.json`) builds a **draft** release in CI, and publishing it makes it visible.
+  **Every release needs its CHANGELOG section first** (the tag build fails without it; the app shows the same text).
+  Installers are **unsigned**; signing goes **the Microsoft Store first** (an MSIX re-signed by Microsoft; the GitHub
+  installer stays unsigned; `runFullTrust`, no self-update, MCP by the execution alias), **then the SignPath
+  Foundation** (free for OSS; fallback Certum; Azure Trusted Signing is paid and not for EU individuals).
+  `docs/CODE_SIGNING_POLICY.md`, `docs/STORE.md`.
+- **Every published release also gets a dev blog post** on https://www.denrakeiw.com/scumble/blog (repo
+  `F:\portfolio_web`, deployed by a Vercel Hobby account). **Read `docs/RELEASING.md` before a release**: the whole
+  chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
+  noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
 ## Where things stand (2026-09-27, night)
 
-The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).
+Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
+verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**Released:** 0.1.31 is Latest (published 2026-09-27 17:10 CEST; dev blog post `v0-1-31` live). Check `gh release list`
-before believing any release state written down anywhere. The 0.1.31 packages (canvas-only view, Undo history, PSD
-masks and the mask switch, mask operations, the side panel's width, 23a rotate / flip) are described in the plan's
-"Built" paragraphs and in HISTORY.md's block of 2026-09-27 evening.
+**Released:** 0.1.31 is Latest (2026-09-27, dev blog post live). `main` has local commits after it, not pushed.
 
-**The build in progress is 0.1.32 = 23b + package 4 (brushes)**, the user's word of 2026-09-27 ("baue Paket 4 und
-23b"); package 5 is 0.1.33. The plan is `docs/PLAN_0_1_31.md` (§7 for 23b with its "23b built" paragraph, §4 for the
-brushes). **23b is built and committed locally, not pushed** (CHANGELOG "Unreleased" has it):
-- 1b61e27 **the resampler** `renderer/editor/inpaint_resample.js` (pure, integer maths, Catmull-Rom / bilinear,
-  `transformed()` on both backends; `tools/resample_test.js` plain Node; `pixels` case `transformed`);
-- 47f884e **the pool path** `transformedAsync` (a `resample` worker job per row of destination tiles; 15k store 1.6 s);
-- d72925e **one map for the geometry** (`docXf` replaces `docOrient`; guides held by the snapshots; saved selections and
-  history entries get `xf`; crop / extend / resize follow; the plugin `geometry` event carries `kind` and `m`; film and
-  glb on it) and **text with a free angle** (`text.angle` / `text.box`, `setTextAngle`, the transform tool keeps text);
-- e26519f **the straighten** `straightenDocument` / command `straighten_canvas` (one step; 15k with four layers 9.6 s);
-- 36afbcd **the pending canvas frame** (`canvasFrame`: Enter / Apply / double click, Esc, aspect presets, lines, the
-  straighten line, the tilt preview in the scene draw only).
-Gates at 36afbcd: `editor` 82 of 82 on both backends, `glb`, `film`, `mcp`, `commands`, `pixels`, `document`,
-`canvasonly`, `lint`, `types`, `node tools/assistant_test.js`, `node tools/resample_test.js`, `node
-tools/manual_test.js`. Docs of step 7 (MANUAL, CHANGELOG, DOCUMENTS.md, COMMANDS.md, BUGS.md, the plan) are written.
-After the user's answers (Rust kernel yes, the size label stays, 4.10 "weiss ich nicht": build it last and let them
-judge it): 725ed72 **the Rust resample kernel** (ABI 11; the straighten at 15k with four layers 5.3 s, was 9.6), and
-**the review of 23b** (24 findings confirmed, all fixed in the commit after it; the plan lists them).
-**Next:** package 4, brushes (plan §4: measure first, then regional sources, pro smudge with a Rust kernel, clone,
-flow / pressure / stabiliser, blur / sharpen, the size cap, frequency separation, dodge and burn; 4.10 the optional
-brush panel is still the user's question). Open for the user: whether the Rust resample kernel is worth building (the
-straighten's 9.6 s at 15k would drop to about 4 to 5), the size label above the frame that hides under the options bar
-when the frame touches the top (judged by eye), LaMa shipped or downloaded (package 5), the PNG switch default, item
-25's look and timing. Deferred from 3f: the source's EXIF / XMP in exports, an ICC profile in PSD and TIFF. Not
-checked: a double click in Explorer on an installed build, TIFFs from Photoshop / Affinity / Lightroom.
+**In progress: 0.1.32 = 23b + package 4 (brushes)** (the user, 2026-09-27); package 5 is 0.1.33. The plan is
+`docs/PLAN_0_1_31.md` (§7 23b with its "built" paragraphs, §4 the brushes).
+- **23b is done** (local, 1b61e27..b85e867; CHANGELOG "Unreleased", MANUAL, DOCUMENTS.md, COMMANDS.md written): the
+  resampler (`renderer/editor/inpaint_resample.js`, `transformed` / `transformedAsync` on both backends, the Rust kernel
+  `resample_block`, px ABI 11), one geometry map (`docXf`; saved selections and history entries with `xf`; guides held
+  by the snapshots; the plugin `geometry` event with `kind` and `m`), text with a free angle (`text.angle` / `box`,
+  `setTextAngle`), `straightenDocument` / `straighten_canvas`, the pending canvas frame (`canvasFrame`), and the fixes
+  of a four-lens review.
+- **Next: package 4, step 1** (measure smudge, clone and heal at 15k on tiles), then plan §4's steps in order. A
+  read-only map of the brush code (four agents, 2026-09-27) is in `dist/map4/` (`engine.md`, `sources.md`,
+  `blend.md`, `tests.md`; `tests.md` holds the measurement script): read it before touching the brushes. 4.10 (the
+  brush panel): build it last and let the user judge it in the app.
+- Open for the user: LaMa shipped or downloaded (package 5), the PNG metadata switch's default, item 25's look and
+  timing.
 
 **How the work goes (the user, 2026-09-26):** tests by risk (Working rules); few agents - the main loop builds, one or
 two background agents take separate files (a gate, tests against a stated API, docs), one package at a time, a local
@@ -151,107 +104,45 @@ commit per step; check the 5-hour window (`mcp__ccd_session_mgmt__get_usage`) an
 to 80 %. A release only on the user's word; everything before it (CHANGELOG, `npm run dist`, exe gates) may be
 prepared locally.
 
-## Open threads (condensed on 2026-09-26 from the hand-overs of 2026-09-19 to 2026-09-23)
+## Open threads
 
-The full hand-over blocks of those days are in `docs/HISTORY.md`, verbatim. What still matters from them:
-
-**Every release:** the CHANGELOG section first, the version in `package.json`, `npm run dist`, exe gates `--offline` on
-both backends (0.1.30's list: `dist/gates/gates/rel30-exe*/summary.txt`), push, tag `v<version>`, `gh run watch` the
-tag's build, `gh release edit v<version> --draft=false`, then the manual sync (`node tools/manual_sync.js`) and the dev
-blog post (the decisions block above; `time` is the release's `published_at` in German time).
-
-**Open, from before 2026-09-26 (none started):**
-- **B3, the macOS build** (`docs/PLAN_0_1_24.md` "Session B3"): unblocked since the logo exists (`build/icon.png`
-  1024 px); was next in the user's order of 2026-09-23 before the build of 2026-09-26 took over.
-- **The Store package per release** (`npm run dist:store`; `docs/STORE.md`, `docs/STORE_LISTING.md`). The user
-  submitted the listing on 2026-09-23 (publish after certification); identity `DenRakEiw.Scumble`, Store ID
-  `9NDBTNNMXF2R`. When it is live, the Store link goes onto the website hub, README and a blog post. The coupling of
-  GitHub releases to the Store (`msstore` CLI in `build.yml`) only on the user's word. **Signing: the Store first, then
-  SignPath.**
-- **The headless MCP instance of this repo's `.mcp.json` intercepts the installed app** (it runs the dev tree on the
-  default profile; a Start-menu Scumble hands over to it). A fix (a profile of its own for the MCP registration,
-  `docs/BUGS.md` "A headless MCP instance can block the app from starting") was offered, not decided.
-- **Comfy Router live runs** of FLUX.2, Seedream and Magnific (offered, not asked for; the key is in the scratch
-  profile `dist/live-keys`, about $243 of credit then). `GET /customers/balance`'s `amount_micros` counts cents.
-- **Linux: built by CI, never run** (`docs/BUGS.md`).
-- **Types stage 3** (`docs/PLAN_TYPES.md`): `electron/preload.js`'s `window.scumble` is `any` in `types/globals.d.ts`.
-- **The manual** (`docs/MANUAL.md` is its one source; the website builds `/scumble/manual` from copies made by
-  `tools/manual_sync.js` - never edit it on the website): the assistant's screenshot is an empty panel, there is no
-  colour-match figure (it needs a result that is *unintentionally* off), the log screenshot is empty.
-- **Screenshot trap:** *Settings > API providers* shows the last four characters of stored keys; mask them before any
-  settings screenshot goes on the web.
-- **Tutorial material** (`docs/TUTORIAL.md`, `docs/images/tutorial/`, `docs/images/video/`) stays uncommitted until
-  the user says so.
-- **The node repo is behind** (its `js/` is built from 7f01699; master is fba1fd8). `nodecopy` builds and tests it in a
-  scratch copy; build it into the real repo only when a node version is meant to ship.
-- **The assistant:** A10 (a budget, "allow for this chat") and A11 (its own undo steps) only on the user's word.
-
-**Standing constraints and decisions (still valid):**
-- **The user's ComfyUI (8188) is a production machine:** no `smoke` and no gate that forwards to it unless the user
-  says it is free; gates run `--offline`.
-- The user works up to about 15k; 30k is not the size to tune for. B item 6 (one-channel masks) stays on ice; no stage
-  2 split of `inpaint_canvas.js` (a subject is split out only when it is reworked anyway); the object tool's change A
-  (image-size label map) is parked. §C7's memory gate (300 MB of GPU process per document) is not met; tiles stay the
-  default anyway, the canvas backend is the escape hatch.
-- **A parked idea, not a plan:** a mobile companion (mark a place, say the prompt, the run happens on the desktop or an
-  API), not a mobile editor.
-
-**Still unverified:** the ToAPIs and ModelArk adapters never ran against the live API; OpenRouter ran live for GPT
-Image 2.5 Flare and Sunburst only (0.1.27); Magnific (beyond the two upscalers) and Oxen are built from the docs only
-(2026-09-26); the Qwen Image Edit 2.1 local recipe never ran (the models are not downloaded); a real SAM2 / RMBG model
-has not run in the app on the slice 6 code; the user has not reported back on their own 15k file.
+The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27 night).
+- **Not started:** B3, the macOS build (`docs/PLAN_0_1_24.md`); the Store package per release (`npm run dist:store`,
+  `docs/STORE.md`; listing submitted 2026-09-23, identity `DenRakEiw.Scumble`, Store ID `9NDBTNNMXF2R`; when it is live
+  the link goes on the website hub, the README and a post; coupling it to GitHub releases only on the user's word); the
+  headless MCP instance of this repo's `.mcp.json` intercepts the installed app (a fix offered, BUGS.md); Comfy Router
+  live runs (offered; the key in `dist/live-keys`); Linux built by CI, never run; types stage 3 (`docs/PLAN_TYPES.md`);
+  the manual's empty assistant and log screenshots and a missing colour-match figure (`docs/MANUAL.md` is the one
+  source, the website copies it via `tools/manual_sync.js`); the node repo is behind (build it only when a node version
+  ships; `nodecopy` tests it); the assistant's A10 / A11 only on the user's word.
+- **Material:** *Settings > API providers* shows the last four characters of stored keys: mask them in any screenshot
+  for the web. The tutorial material (`docs/TUTORIAL.md`, `docs/images/tutorial/`, `docs/images/video/`) stays
+  uncommitted until the user says so.
+- **Standing:** the user's ComfyUI (8188) is a production machine (no `smoke` and no forwarding gate unless the user
+  says it is free; gates run `--offline`). Tune for 15k, not 30k. One-channel masks on ice; `inpaint_canvas.js` is
+  split only where a subject is reworked anyway; the object tool's change A parked; tiles are the default, the canvas
+  backend the escape hatch. A parked idea, not a plan: a mobile companion.
+- **Unverified:** ToAPIs and ModelArk live; OpenRouter beyond GPT Image 2.5 Flare / Sunburst; Magnific beyond the two
+  upscalers and Oxen (docs only); the Qwen Image Edit 2.1 local recipe (models not downloaded); a real SAM2 / RMBG model
+  on the slice 6 code; the user's own 15k file. Deferred from 3f: the source's EXIF / XMP in exports, an ICC profile in
+  PSD and TIFF. Not checked: a double click in Explorer on an installed build, TIFFs from Photoshop / Affinity /
+  Lightroom.
 
 ## What comes next (the list)
 
-The numbered list the user adds to; the numbers stay because other documents cite them. Items 1 to 13 are built (their
-text is in `docs/HISTORY.md`, the block of 2026-09-19); the full text of every item below, with the research of 14,
-15, 19 and 21, is in `docs/HISTORY.md` "What comes next (the list, as of 2026-09-26, full text)" - read it before
-planning one of them.
-
-5. **The object tool's change A** (the image-size label map, `dist/c6map/c/objects.md` §7-§9): parked by the user on
-   2026-09-18.
-14. **Upscaling** (parked, only listed): through the user's ComfyUI (`UpscaleModelLoader`), in the app on ONNX Runtime,
-   or by API (Topaz, Magnific; Magnific's two upscalers exist since 0.1.24). To check first: driving a locally installed
-   Topaz by CLI or MCP, where the result lands, the size limits.
-15. **Qwen Image Edit 2.1:** the local ComfyUI recipe is built (0.1.23, never run: the models are not downloaded); the
-   API side (providers, ids, masks, limits, prices) is open.
-16. **Oxen.ai:** built on 2026-09-26 from the docs (`docs/RECIPES.md` "Oxen.ai"), never run live (the user has no key).
-17. **A side panel of adjustable width:** built 2026-09-27 (e1791c2): a grip on the left edge, 310 px to 60 % of the
-   window, kept per install.
-18. **The logo:** drawn for 0.1.27 (`build/icon.svg` and its exports); open: the mascot's other poses, the About dialog,
-   the website.
-19. **3D layers from AI models** (only listed): image-to-3D (Comfy Router's Meshy / Hunyuan 3D, fal / Replicate TRELLIS,
-   a local Hunyuan3D recipe) into the glb plugin's layers. To check first: which models answer a textured GLB, the
-   time, the price.
-20. **Skins:** built on 2026-09-26 (`docs/SKINS.md`); later, on the user's word: a theme editor, light / dark after the
-   OS, a compact density, icon sets.
-21. **Lens flares like Flarecore** (optional, rarely used; brainstormed only): a built-in plugin `flare.lens` with five
-   element kinds translated from Flarecore (Apache-2.0) and own presets, about 7 to 9 days; no place in the order
-   until the user names one.
-22. **Nik 9 parity** (not optional; an update of its own): `docs/PLAN_NIK9.md` has the research and the shape (depth
-   masks, edges, filters and control points, the 18 missing blend modes; 34-46 days), plus the masks-and-selections and
-   the grading-and-panels packages folded in on 2026-09-26 (6.5-12.5 and 11-19.5 days). Suggested after B3.
-23. **Rotate and straighten the whole document** (on the later list, the user, 2026-09-26): **23a built 2026-09-27**
-   (rotate 90 / 180, flip; `docs/PLAN_0_1_31.md` §7), released in 0.1.31. **23b built 2026-09-27** (straighten by any
-   angle with a drawn line, crop presets with lines, the pending frame, text with a free angle; for 0.1.32).
-24. **A canvas-only view** (the user, 2026-09-27): **built 2026-09-27** (package 1 of `docs/PLAN_0_1_31.md`). As designed: **Tab** (free in the editor's `onKey`, Photoshop's and Krita's key; F11 stays the
-   plain window full screen of the View menu's `togglefullscreen`), Tab again or Escape returns (Escape only when the
-   editor has nothing pending: `pending`, `polyPoints`, `shapePoints`). App-only, in `renderer/shell.js` (a capture
-   keydown listener like the one for Ctrl+S, not in a text field, not while a dialog is open), so the editor source
-   and the node stay as they are: a class on the body hides `#shell-bar`, `#shell-tabs`, the help and assistant
-   columns and the editor's chrome (`.ipc-top`, `.ipc-tools`, `.ipc-side`, `.ipc-bottom`, the rulers), `.ipc-view`
-   fills the window; the window goes full screen over IPC (remember whether it already was; a `leave-full-screen`
-   from F11 or the OS ends the mode); the picture is fitted (a view the user had zoomed is put back on the way out);
-   a hint "Tab or Esc to return" fades after a few seconds. A View menu entry "Canvas Only" with `registerAccelerator:
-   false` (a registered Tab would reach text fields). Normal tier: a gate step (the chrome hidden, the view the window's
-   size, full screen on and back, Tab in a text field ignored, Escape with a pending transform cancels only that).
-25. **The app's own dialogs** (asked 2026-09-27; the user's answers open): the native message boxes (`askDocument`
-   in `electron/main/main.js`: close / changed / newer / history; `askWhileSaving`) and the eight `window.confirm`
-   calls of the renderer as one in-app dialog on the editor's `ask()` modal, main asking the window over IPC with the
-   native box as the fallback when it does not answer (a busy or hung renderer). Proposed: the skin's colours, the
-   structure protected like the assistant's ask card (`protectAsk`: shadow root, top layer), a new async
-   `dialogs.ask()` for plugins beside the old `confirm`. Stay native: the file pickers, the crash dialog. About 1 to
-   1.5 days.
+The numbered list the user adds to (the numbers are cited elsewhere). The full text and research of every item is in
+`docs/HISTORY.md` "What comes next" (the latest full copy): read it before planning one of them.
+- Built: 1-13, 17 (the side panel's width), 18 (the logo; open: the mascot's other poses, the About dialog, the
+  website), 20 (skins; later on the user's word: a theme editor, light / dark after the OS, density, icon sets), 23
+  (23a in 0.1.31, 23b for 0.1.32), 24 (the canvas-only view).
+- 5: the object tool's change A (the image-size label map, `dist/c6map/c/objects.md` §7-§9), parked.
+- 14: upscaling beyond Magnific (ComfyUI, ONNX, Topaz by CLI / MCP), parked, only listed.
+- 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
+- 16: Oxen.ai: built from the docs, never run (no key).
+- 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
+- 21: lens flares like Flarecore (an optional plugin, 7-9 days), no place in the order yet.
+- 22: Nik 9 parity (an update of its own; `docs/PLAN_NIK9.md`, 34-46 days plus two folded packages), suggested after B3.
+- 25: the app's own dialogs instead of the native boxes (about 1-1.5 days), the user's answers open.
 
 ## Gate runner and flakes
 
