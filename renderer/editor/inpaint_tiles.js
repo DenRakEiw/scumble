@@ -35,7 +35,7 @@
  */
 
 import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN, reentrantPixels } from "./inpaint_pixels.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, resampleBlock } from "./px/kernels.js";
 import { allocTileBytes, isShared } from "./inpaint_arena.js";
 import { canvasRoundTrip, resampleOptions, resampleStore, toFixed, preimage } from "./inpaint_resample.js";
 
@@ -1821,7 +1821,7 @@ const tiled = (Base) => class extends Base {
             // a new store: its tiles are fresh (zero), and the kernel writes every pixel of the tile's valid part
             tile: (tx, ty) => [out.writable(tx, ty).data, 0, TILE_SIZE * 4],
             done: (tx, ty, count) => { if (!count) out._dropTile((ty << 16) | tx); },
-        }, list);
+        }, list, resampleBlock);
     }
 
     // -- canvases out --

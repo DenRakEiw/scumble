@@ -13,6 +13,7 @@
  */
 import * as J from "./kernels_js.js";
 import { loadPx, Px } from "./px.js";
+import { resampleBlock as resampleBlockJS, resampleTable } from "../inpaint_resample.js";
 
 export { OPS, mipChainBytes, deflate } from "./kernels_js.js";
 
@@ -47,6 +48,14 @@ export function rustPx() { return MODE === "rust" ? PX : null; }
 /** After a call on a large buffer: let go of the grown memory. */
 export function releaseIfLarge() {
     if (PX && PX.byteLength > RELEASE_BYTES) PX = new Px(new WebAssembly.Instance(PX.module, {}), PX.module);
+}
+
+/** The resampler's kernel (inpaint_resample.js `resampleBlock`, its twin): Rust once loaded, the same bytes either way. */
+export function resampleBlock(block, bw, bh, bx, by, fx, filter, alpha, rgb, rt, out, off, stride, X0, Y0, vw, vh) {
+    const p = rustPx();
+    if (!p) return resampleBlockJS(block, bw, bh, bx, by, fx, filter, alpha, rgb, rt, out, off, stride, X0, Y0, vw, vh);
+    const w = resampleTable(filter);
+    return p.resampleBlock(block, bw, bh, bx, by, fx, filter, alpha, rgb, rt, out, off, stride, X0, Y0, vw, vh, w.table, w.taps);
 }
 
 export function mipHalf(src, sw, sh, dst = null) {

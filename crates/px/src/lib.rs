@@ -27,6 +27,7 @@ mod maskf;
 mod mip;
 mod png;
 mod psd;
+mod resample;
 
 /// dlmalloc hands out a page start plus its 8-byte header, while a JS ArrayBuffer of tile
 /// size starts on a page. A copy between the two then has its destination 8 bytes past the
@@ -39,7 +40,7 @@ fn align_for(bytes: usize) -> usize {
 /// Bumped whenever an export changes its signature; `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    10
+    11
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -214,6 +215,29 @@ pub unsafe extern "C" fn flood_shape(
         slice::from_raw_parts_mut(stack, stack_pairs * 2),
         slice::from_raw_parts_mut(info, 5),
     )
+}
+
+// ---- resample (PLAN_0_1_31 §7, 23b) -----------------------------------------------------------
+
+/// One block of destination pixels through an affine map (`resampleBlock` in `renderer/editor/inpaint_resample.js`):
+/// `block` is bw x bh RGBA8 at (bx, by) in source pixels, `map` six f64 holding the map at 2^32 as exact integers,
+/// `weights` the caller's table (`taps` integers per phase, 256 phases), `alpha` 1 for a mask (the alpha alone in
+/// `rgb`, 0xBBGGRR), `rt` the canvas round-trip table or null. Writes vw x vh packed pixels to `out` for the
+/// destination pixels from (x0, y0); returns how many have an alpha above 0.
+#[no_mangle]
+pub unsafe extern "C" fn resample_block(block: *const u8, bw: u32, bh: u32, bx: i32, by: i32, map: *const f64, weights: *const i32, taps: u32,
+                                        alpha: u32, rgb: u32, rt: *const u8, out: *mut u8, x0: i32, y0: i32, vw: u32, vh: u32) -> u32 {
+    let (bw, bh, vw, vh, taps) = (bw as usize, bh as usize, vw as usize, vh as usize, taps as usize);
+    if bw < taps || bh < taps || vw == 0 || vh == 0 {
+        return 0;
+    }
+    let m = slice::from_raw_parts(map, 6);
+    let map = resample::Map { a: m[0] as i64, b: m[1] as i64, c: m[2] as i64, d: m[3] as i64, e: m[4] as i64, f: m[5] as i64 };
+    let block = resample::Block { data: slice::from_raw_parts(block, bw * bh * 4), w: bw, h: bh, x: bx as i64, y: by as i64 };
+    let weights = slice::from_raw_parts(weights, 256 * taps);
+    let rt = if rt.is_null() { None } else { Some(slice::from_raw_parts(rt, 65536)) };
+    let mut out = resample::Out { data: slice::from_raw_parts_mut(out, vw * vh * 4), x0: x0 as i64, y0: y0 as i64, w: vw, h: vh };
+    resample::resample(&block, &map, weights, taps, alpha != 0, rgb, rt, &mut out)
 }
 
 // ---- composite --------------------------------------------------------------------------

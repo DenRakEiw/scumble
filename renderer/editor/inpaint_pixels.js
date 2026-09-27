@@ -43,6 +43,7 @@
  */
 
 import { canvasRoundTrip, resampleOptions, resampleStore } from "./inpaint_resample.js";
+import { resampleBlock } from "./px/kernels.js";
 
 let OPTIONS = { strict: false, copy: false, software: false, tiles: null, tilesFrom: null };
 const warned = new Set();
@@ -451,7 +452,7 @@ export class LayerPixels {
         }, map, outW, outH, o, canvasRoundTrip(), {
             tile: (tx, ty) => [img.data, (ty * 256 * img.width + tx * 256) * 4, stride],
             done: () => {},
-        });
+        }, null, resampleBlock);
         return this.constructor.fromImageData(img);
     }
 

@@ -754,8 +754,73 @@ const reference = {
     },
 };
 
+/**
+ * The resampler's kernel (PLAN_0_1_31 §7, 23b): the Rust build against its twin `resampleBlock` in
+ * inpaint_resample.js, byte for byte, through the same `resampleStore` walk: bicubic and bilinear, colour and mask,
+ * opaque and transparent blocks, transparent and clamped edges, with and without a round-trip table, maps that turn,
+ * scale, mirror and shift (tools/resample_test.js holds the twin to its arithmetic and to doubles).
+ */
+async function resampleCases(px, label, R) {
+    let seed = 7;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    const image = (W, H, kind) => {
+        const d = new Uint8Array(W * H * 4);
+        for (let i = 0; i < d.length; i += 4) {
+            const a = kind === "opaque" ? 255 : rand() < 0.2 ? 0 : Math.floor(rand() * 256);
+            d[i + 3] = a;
+            if (a) { d[i] = Math.floor(rand() * 256); d[i + 1] = Math.floor(rand() * 256); d[i + 2] = Math.floor(rand() * 256); }
+        }
+        return { W, H, d };
+    };
+    // a round-trip table like a canvas's: premultiplied to 8 bits and back
+    const rt = new Uint8Array(65536);
+    for (let a = 1; a < 256; a++) for (let c = 0; c < 256; c++) { const p = Math.floor((c * a + 127) / 255); rt[(a << 8) | c] = Math.min(255, Math.floor((p * 255 + (a >> 1)) / a)); }
+    const rust = (block, bw, bh, bx, by, fx, filter, alpha, rgb, t, out, off, stride, X0, Y0, vw, vh) => {
+        const w = R.resampleTable(filter);
+        return px.resampleBlock(block, bw, bh, bx, by, fx, filter, alpha, rgb, t, out, off, stride, X0, Y0, vw, vh, w.table, w.taps);
+    };
+    const run = (img, map, outW, outH, opts, mask, table, kernel) => {
+        const out = new Uint8Array(outW * outH * 4);
+        let count = 0;
+        R.resampleStore({ width: img.W, height: img.H, has: () => true, copyRun: (sy, x0, x1, dst, off) => dst.set(img.d.subarray((sy * img.W + x0) * 4, (sy * img.W + x1) * 4), off) },
+            map, outW, outH, R.resampleOptions(opts, mask), table, { tile: (tx, ty) => [out, (ty * 256 * outW + tx * 256) * 4, outW * 4], done: (tx, ty, n) => { count += n; } }, null, kernel);
+        return { out, count };
+    };
+    let bad = "";
+    const cases = [];
+    for (const kind of ["opaque", "mixed"]) {
+        for (const [deg, sx, sy, flip] of [[3, 1, 1, 1], [-31, 1, 1, 1], [12, 0.6, 0.8, 1], [0, 1.7, 1.3, 1], [45, 1, 1, -1], [90, 1, 1, 1]]) {
+            for (const [opts, mask] of [[{}, false], [{ filter: "bilinear" }, false], [{ edge: "clamp" }, false], [{ color: [255, 255, 255] }, true]]) {
+                cases.push({ kind, deg, sx, sy, flip, opts, mask });
+            }
+        }
+    }
+    for (const c of cases) {
+        const img = image(300 + Math.floor(rand() * 200), 200 + Math.floor(rand() * 150), c.kind);
+        const fwd = R.xfMul(R.xfRotate(c.deg, img.W / 2, img.H / 2), [c.sx * c.flip, 0, 0, c.sy, c.flip < 0 ? img.W : 0, 0]);
+        const map = R.pixelMap(R.xfInv(fwd));
+        const outW = 280 + Math.floor(rand() * 300), outH = 240 + Math.floor(rand() * 200);
+        for (const table of [null, rt]) {
+            const a = run(img, map, outW, outH, c.opts, c.mask, table, R.resampleBlock);
+            const b = run(img, map, outW, outH, c.opts, c.mask, table, rust);
+            let i = 0;
+            while (i < a.out.length && a.out[i] === b.out[i]) i++;
+            if (i < a.out.length || a.count !== b.count) { bad = `${JSON.stringify({ ...c, rt: !!table })}: byte ${i} is ${b.out[i]}, the twin has ${a.out[i]} (counts ${b.count}, ${a.count})`; break; }
+        }
+        if (bad) break;
+    }
+    check(`${label} resample_block equals its twin (${cases.length * 2} maps: turns, scales, a mirror, bicubic / bilinear, masks, clamped edges, round trip)`, !bad, bad);
+    // how fast: a 2048 x 2048 opaque picture turned by 3 degrees, bicubic
+    const big = image(2048, 2048, "opaque");
+    const map = R.pixelMap(R.xfInv(R.xfRotate(3, 1024, 1024)));
+    const time = (kernel) => { const t0 = performance.now(); run(big, map, 2048, 2048, {}, false, null, kernel); return performance.now() - t0; };
+    const tr = Math.min(time(rust), time(rust)), tj = Math.min(time(R.resampleBlock), time(R.resampleBlock));
+    console.log(`       2048 x 2048 turned 3 degrees, bicubic: ${label} ${tr.toFixed(0)} ms (${(tr * 1e6 / 2048 / 2048).toFixed(1)} ns/px), twin ${tj.toFixed(0)} ms (${(tj * 1e6 / 2048 / 2048).toFixed(1)} ns/px)`);
+}
+
 async function main() {
     const js = await import(pathToFileURL(path.join(PX_DIR, "kernels_js.js")).href);
+    const resample = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_resample.js")).href);
     const raster = await import(pathToFileURL(path.join(ROOT, "renderer", "editor", "inpaint_raster.js")).href);
     const { loadPx } = await import(pathToFileURL(path.join(PX_DIR, "px.js")).href);
     const ref = {
@@ -789,6 +854,7 @@ async function main() {
         await pngCases(px, label, js);
         await pngPartCases(px, label);
         await psdCases(px, label, js);
+        await resampleCases(px, label, resample);
         await memoryCases(px, label);
     }
     console.log(failures ? `FAIL (${failures})` : "PASS");

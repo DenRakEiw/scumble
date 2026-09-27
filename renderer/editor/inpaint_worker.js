@@ -45,7 +45,7 @@ import { floodMask, maskToColorCanvas, clipMaskToSelection, growMaskBounds, inve
 import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
 import { readTiff, tiffPart } from "./inpaint_tiff.js";
 import { resampleStore } from "./inpaint_resample.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock } from "./px/kernels.js";
 
 const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
 const now = () => performance.now();
@@ -681,9 +681,16 @@ async function floodOverTiles(msg) {
  * fixed-point map, `o` the options, `rt` the canvas round trip measured on the main thread, `txs` the tiles of row `ty`
  * to make. Each comes back as a new buffer, transferred; a tile that came out empty does not come back.
  */
+// the canvas round trip of the last resample job: every job brings a copy, and the Rust kernel keeps a table resident by
+// its identity, so one copy is kept for as long as the bytes are the same
+let RESAMPLE_RT = null;
+
 function resampleJob(msg) {
     const t0 = now();
-    const { src, outW, outH, o, rt, ty } = msg;
+    const { src, outW, outH, o, ty } = msg;
+    let rt = msg.rt;
+    if (rt && RESAMPLE_RT && RESAMPLE_RT.length === rt.length && RESAMPLE_RT.every((v, i) => v === rt[i])) rt = RESAMPLE_RT;
+    else RESAMPLE_RT = rt;
     const views = new Map();
     const view = (t) => {
         const k = t.data ? t : t.chunk * 65536 + t.slot;
@@ -706,8 +713,8 @@ function resampleJob(msg) {
     resampleStore({ width: src.w, height: src.h, copyRun, has: () => true }, Float64Array.from(msg.fx), outW, outH, o, rt, {
         tile: () => { current = new Uint8Array(TILE_BYTES); return [current, 0, TILE * 4]; },
         done: (tx, _ty, count) => { if (count) { tiles.push({ tx, data: current.buffer }); transfer.push(current.buffer); } },
-    }, msg.txs.map((tx) => [tx, ty]));
-    return { tiles, transfer, timing: { op: "resample", tiles: msg.txs.length, total: now() - t0 } };
+    }, msg.txs.map((tx) => [tx, ty]), resampleBlock);
+    return { tiles, transfer, timing: { op: "resample", kernels: kernelsInUse(), tiles: msg.txs.length, total: now() - t0 } };
 }
 
 async function run(msg) {

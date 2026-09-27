@@ -69,6 +69,11 @@ export function resampleWeights(filter) {
     return { taps: TAPS[filter], table: TABLES[filter].slice() };
 }
 
+/** The same table itself, not a copy (the Rust kernel keeps it in its memory, keyed by the array). */
+export function resampleTable(filter) {
+    return { taps: TAPS[filter], table: TABLES[filter] };
+}
+
 // ---- affine maps ----------------------------------------------------------------------------------
 
 /** m after n: the map that applies n first. Both are canvas matrices [a, b, c, d, e, f]. */
@@ -365,9 +370,10 @@ export function resampleOptions(opts, mask) {
  * `src = { width, height, copyRun(sy, sx0, sx1, dst, off), has(x0, y0, x1, y1) }` (`has`: does any source pixel of
  * that box, inside the source, exist at all), `target = { tile(tx, ty, vw, vh) -> [out, off, stride], done(tx, ty,
  * count) }`. `o` is `resampleOptions`'s answer, `rt` the round-trip table or null. `tiles` limits the walk to a list
- * of [tx, ty] (a job's share); all of them by default.
+ * of [tx, ty] (a job's share); all of them by default. `kernel` is `resampleBlock` here; the editor and the pool's workers
+ * pass px/kernels.js's, which is the Rust build of it once that has loaded (the same bytes).
  */
-export function resampleStore(src, map, outW, outH, o, rt, target, tiles = null) {
+export function resampleStore(src, map, outW, outH, o, rt, target, tiles = null, kernel = resampleBlock) {
     const fx = map instanceof Float64Array ? map : toFixed(map, outW, outH);
     const cols = Math.ceil(outW / 256), rows = Math.ceil(outH / 256);
     const list = tiles || (function* () { for (let ty = 0; ty < rows; ty++) for (let tx = 0; tx < cols; tx++) yield [tx, ty]; })();
@@ -386,7 +392,7 @@ export function resampleStore(src, map, outW, outH, o, rt, target, tiles = null)
         const block = scratchOf(bw * bh * 4);
         gather(src.copyRun, box, src.width, src.height, o.clamp, block);
         const [out, off, stride] = target.tile(tx, ty, vw, vh);
-        const count = resampleBlock(block, bw, bh, box[0], box[1], fx, o.filter, o.alpha, o.rgb, rt, out, off, stride, X0, Y0, vw, vh);
+        const count = kernel(block, bw, bh, box[0], box[1], fx, o.filter, o.alpha, o.rgb, rt, out, off, stride, X0, Y0, vw, vh);
         target.done(tx, ty, count);
     }
 }

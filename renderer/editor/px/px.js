@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 10;
+export const PX_ABI = 11;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -258,6 +258,41 @@ export class Px {
             const info = this.view(Int32Array, pi, 5);
             const bounds = info[3] < 0 ? null : [info[1], info[2], info[3], info[4]];
             return use(new Uint8ClampedArray(this.memory.buffer, pr, bytes), info[0], bounds);
+        } finally { a.reset(); }
+    }
+
+    /**
+     * A table that stays in this instance's memory while the instance lives (the resampler's weights and the canvas
+     * round trip): copied in on first use, keyed by the array itself.
+     */
+    _resident(data) {
+        const kept = this._kept || (this._kept = new Map());
+        let ptr = kept.get(data);
+        if (!ptr) {
+            ptr = this.alloc(data.byteLength);
+            this.put(ptr, data);
+            kept.set(data, ptr);
+        }
+        return ptr;
+    }
+
+    /**
+     * `resampleBlock` of inpaint_resample.js (the same arguments and bytes): the block and the map in, `vw` x `vh`
+     * pixels out into `out` at `off` with `stride` bytes a row; the weight table and the round trip stay resident.
+     */
+    resampleBlock(block, bw, bh, bx, by, fx, filter, alpha, rgb, rt, out, off, stride, X0, Y0, vw, vh, weights, taps) {
+        const a = this.job;
+        try {
+            const pb = this._in(a, block, bw * bh * 4);
+            const pm = a.take(48);
+            this.view(Float64Array, pm, 6).set(fx);
+            const pw = this._resident(weights), prt = rt ? this._resident(rt) : 0;
+            const n = vw * vh * 4, po = a.take(n);
+            const count = this.exports.resample_block(pb, bw, bh, bx, by, pm, pw, taps, alpha ? 1 : 0, rgb >>> 0, prt, po, X0, Y0, vw, vh) >>> 0;
+            const src = this.view(Uint8Array, po, n), row = vw * 4;
+            if (stride === row) out.set(src, off);
+            else for (let j = 0; j < vh; j++) out.set(src.subarray(j * row, j * row + row), off + j * stride);
+            return count;
         } finally { a.reset(); }
     }
 
