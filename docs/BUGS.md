@@ -181,8 +181,12 @@ The ones that were part of `docs/PLAN_0_1_29.md` §3 (the skipped flush on quit,
 "Fixed, waiting for its release".
 
 - **Rotate, distort and warp bake the layer mask into the pixels** without a word (`inpaint_canvas.js` ~1909).
-- **Saved selections load misaligned after Resize or Extend canvas** (`inpaint_canvas.js` ~4845).
-- **A rotated text layer probably loses its rotation on the next text edit** (`inpaint_canvas.js` ~8321-8337).
+- **Saved selections load misaligned after Resize, Crop or Extend canvas** (`inpaint_canvas.js` `loadSelection`). A
+  quarter turn or a flip of the document keeps them aligned since 2026-09-27 (their `orient`, PLAN_0_1_31 §7); crop,
+  resize and extend could go through the same mechanism with a general matrix instead of an orientation.
+- **A text layer rotated by the transform tool loses its rotation on the next text edit** (`renderTextLayer`). The
+  90° buttons, the layer flip and the document's turns keep it since 2026-09-27 (`text.turn` / `text.flip`); an
+  arbitrary angle has no field in the text description yet (the same question as 23b's straighten).
 - **The film look "None (adjustments only)" still adds grain**: `plugins/film/filters.js` ~387 falls back to
   `{ amount: 25, ... }` when there is no stock.
 - **At the typed-array cap (15.5 GB) the editor throws a `RangeError`** instead of refusing the operation.

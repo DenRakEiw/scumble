@@ -152,8 +152,12 @@ of them):
 
 **The user's cut for 0.1.31 (2026-09-27): 1 + 2 + 3e + mask operations (6.4) + the side panel's width (item 17), and
 item 23 (rotate / straighten the document) if a session has room.** All of it is built except **23b** (straighten by any
-angle, crop presets with overlays: needs a block-wise resampler, plan §7). **Next:** ask the user whether 0.1.31 goes
-out now (then the release chain, CLAUDE.md "Every release", on the user's word) or waits for 23b. Brushes (package 4) are 0.1.32. The
+angle, crop presets with overlays: needs a block-wise resampler, plan §7). **0.1.31 is prepared locally** (93c0604:
+the CHANGELOG section dated 2026-09-27, `package.json` 0.1.31, `npm run dist` built `Scumble Setup 0.1.31.exe`, exe gates
+`--offline` on both backends passed: `dist/gates/gates/rel31-exe*/summary.txt`). **Next:** ask the user whether it
+goes out now (then push, tag `v0.1.31`, `gh run watch`, publish the draft, manual sync, dev blog post: CLAUDE.md "Every
+release") or waits for 23b (then re-date the section, `npm run dist` and the exe gates again). The open questions for
+23b are in the plan's last section. Brushes (package 4) are 0.1.32. The
 user's order after that: **4** brushes, **5** repair / remove / liquify, **6** layers pro (plan sections 4-6; the
 package text of before is in `docs/PLAN_0_1_29.md`). Open for the user (the plan's last section): LaMa shipped or
 downloaded, the PNG switch default, item 25's look and timing, the optional brush panel; the Undo history section sits
