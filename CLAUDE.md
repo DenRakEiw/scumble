@@ -109,25 +109,19 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-23) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
-## Where things stand (2026-09-26, night)
+## Where things stand (2026-09-27, morning)
 
 The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).
 
-**Released:** 0.1.29 is Latest. Check `gh release list` before believing any release state written down anywhere.
-
-**Built, committed locally, NOT pushed (3f, 3d and the version commit are ahead of `origin/main`; 3b was pushed): 0.1.30 =
-3b + 3f + 3d** (the user, 2026-09-26: "3f/3d noch in den 0.130 release"). `8793d41` and before: 3b, the `.scumble` format.
-`ee26661`: **3f**, PNG exports carry the prompt / seed / recipe only on the Export section's switch *Prompt and recipe in
-the PNG* (`settings.embedRecipe`, **off by default**, a decision taken in the build: say so if the user wants it on) or
-`export { metadata }`; an `sRGB` chunk on every PNG export; source EXIF / XMP and ICC in PSD / TIFF deferred (not
-cheap). `2271df0`: **3d**, TIFF open and save (`renderer/editor/inpaint_tiff.js`, own streaming reader and strip
-writer, gates `tiff` and `tiffperf:WxH`), plus a fix of `canvasRows` (smoothing with `copy` moved bytes by up to 2).
-`package.json` says 0.1.30 (committed), the CHANGELOG section "0.1.30 - unreleased" is written (3b, 3f, 3d),
-`dist/Scumble Setup 0.1.30.exe` (128.5 MB) is built, and the exe gates `--offline` passed on both backends (`rel30-exe`
-with `docux` rerun as `rel30-exe-docux` after a test fix: the runner's relative exe path, `rel30-exe-canvas`,
-`rel30-exe-canvas-docux`). **The release waits for the user's word** (push, tag `v0.1.30`,
-publish the draft, then the manual sync and the dev blog post: a draft of the post is in the session scratchpad and
-in the answer of the session of 2026-09-26 night). The CHANGELOG header needs the date when it is published.
+**Released:** **0.1.30 is Latest** (published 2026-09-27 08:58 German time on the user's word "ok, pushe und schreibe
+dev log auf der webseite"): 3b `.scumble` documents, 3f the PNG metadata switch (`settings.embedRecipe`, **off by
+default**, a decision taken in the build: say so if the user wants it on) with an `sRGB` chunk on every PNG export, 3d
+TIFF open and save (`renderer/editor/inpaint_tiff.js`, gates `tiff` and `tiffperf:WxH`) and the `canvasRows` smoothing
+fix. Exe gates `--offline` ALL PASS on both backends (`rel30-exe` with `docux` rerun as `rel30-exe-docux` after a test
+fix, `rel30-exe-canvas`, `rel30-exe-canvas-docux`); dev blog post "Save it, and it stays" (`v0-1-30`, portfolio
+`e0ce4fd`, with the manual sync). Check `gh release list` before believing any release state written down anywhere.
+Deferred from 3f (not cheap): the source's EXIF / XMP in exports, an ICC profile in PSD and TIFF. Not checked: a
+double click in Explorer on an installed build, TIFFs from Photoshop / Affinity / Lightroom.
 
 **The build in progress is `docs/PLAN_0_1_29.md`** (read it first). Done: 1 skins, 2 providers, 3a, 3b, 3d, 3f. **Left,
 "wir bauen alles":** **3c** the history panel, **3e** editable PSD masks; then **4** brushes, **5** repair / remove /
@@ -143,11 +137,10 @@ to 80 %.
 
 The full hand-over blocks of those days are in `docs/HISTORY.md`, verbatim. What still matters from them:
 
-**Releases.** 0.1.29 is Latest (published 2026-09-26: skins, Magnific, Oxen.ai, quit safety). 0.1.30 (3b, 3f, 3d) is
-built and committed locally, its CHANGELOG section written, waiting for the user's word ("Where things stand"). Check
-`gh release list` before believing any release state written down anywhere. Every release: the CHANGELOG section first,
-`npm run dist`, exe gates `--offline` on both backends, the manual sync (`node tools/manual_sync.js`) and a dev blog post
-(the decisions block above).
+**Releases.** 0.1.30 is Latest (published 2026-09-27: documents, the PNG metadata switch, TIFF). Check `gh release
+list` before believing any release state written down anywhere. Every release: the CHANGELOG section first, `npm run
+dist`, exe gates `--offline` on both backends, the manual sync (`node tools/manual_sync.js`) and a dev blog post (the
+decisions block above).
 
 **Open, from before 2026-09-26 (none started):**
 - **B3, the macOS build** (`docs/PLAN_0_1_24.md` "Session B3"): unblocked since the logo exists (`build/icon.png`
