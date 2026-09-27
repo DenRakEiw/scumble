@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## 0.1.30 — unreleased
+## 0.1.30 — 2026-09-27
 
 - **Documents: save your work as a `.scumble` file.** A document file keeps everything the way you left it: every
   layer with its mask, text that stays editable, shapes, filter layers, colour match, the selection and the saved
