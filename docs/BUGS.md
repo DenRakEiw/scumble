@@ -184,6 +184,10 @@ The ones that were part of `docs/PLAN_0_1_29.md` §3 (the skipped flush on quit,
 - **Saved selections load misaligned after Resize, Crop or Extend canvas** (`inpaint_canvas.js` `loadSelection`). A
   quarter turn or a flip of the document keeps them aligned since 2026-09-27 (their `orient`, PLAN_0_1_31 §7); crop,
   resize and extend could go through the same mechanism with a general matrix instead of an orientation.
+- **Guides stay where they were after Crop, Extend or Resize canvas** (found 2026-09-27 by reading `cropCanvasNow`,
+  `extendCanvasNow`, `resizeImageNow`: none of them touches `this.guides`). Cropping 500 px off the left leaves a guide
+  500 px right of the content it was set on. Planned with 23b (PLAN_0_1_31 §7, the user's answer of 2026-09-27): shifted
+  by the crop / extend offset, scaled by a resize, dropped when they leave the canvas, put back by undo.
 - **A text layer rotated by the transform tool loses its rotation on the next text edit** (`renderTextLayer`). The
   90° buttons, the layer flip and the document's turns keep it since 2026-09-27 (`text.turn` / `text.flip`); an
   arbitrary angle has no field in the text description yet (the same question as 23b's straighten).
