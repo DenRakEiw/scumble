@@ -1144,6 +1144,8 @@ async function main() {
             ["set_filter", { layer: "Lyours", params: { amount: 3 } }, "auto"],
             ["remove_layer", { layer: "Lmine" }, "auto"],
             ["remove_layer", { layer: "Lyours" }, "ask"],
+            ["set_mask", { layer: "Lmine", op: "invert" }, "auto"],
+            ["set_mask", { layer: "Lyours", op: "hide" }, "ask"],
             ["merge_down", { layer: "Lmine" }, "ask"],
             ["flatten", {}, "ask"],
             ["extend_canvas", { left: 100 }, "ask"],
@@ -1171,6 +1173,19 @@ async function main() {
         }
         check("every_row_of_the_table", !wrong.length, wrong.join("; ") || `${rows.length} rows`);
 
+        {
+            // set_mask on the user's layer: the card says what the mask is now and what the call does to it; the editor
+            // pushes the step itself, so the shell pushes none
+            const f = facts();
+            f.tools.add("set_mask");
+            f.layers[1] = { ...f.layers[1], mask: true, mask_off: true };
+            const d = policy.decide({ name: "set_mask", args: { layer: "Lyours", op: "enable" } }, f);
+            const ch = d.card && d.card.changes && d.card.changes[0];
+            check("set_mask_card_names_the_mask_and_the_operation",
+                d.action === "ask" && ch && ch.field === "mask" && ch.from === "switched off" && ch.to === "enable" && d.card.layer && d.card.layer.id === "Lyours"
+                && policy.undoStep({ name: "set_mask", args: { layer: "Lmine", op: "invert" } }) === null,
+                JSON.stringify(d));
+        }
         check("a_busy_document_refuses_a_run", policy.decide({ name: "generate", args: {} }, facts({ busy: true })).action === "refuse");
         check("export_without_a_path_is_refused", policy.decide({ name: "export", args: {} }, facts()).action === "refuse");
         check("an_export_whose_extension_disagrees_is_refused",

@@ -66,6 +66,7 @@ const UNDO_LABELS = {
     mask: "Layer mask", match: "Colour match", filter: "Filter", text: "Text", layers: "Layers", canvas: "Canvas",
     turn: "Assistant turn taken back",
 };
+const MASK_RGB = [255, 255, 255];           // a layer mask's colour where it lets through (the selection's is red)
 const PYRAMID_MIN_PX = 1 << 20;             // sources below 1 MP are drawn straight, no levels
 const PYRAMID_LEVELS = 8;
 const FLOOD_COARSE_PX = 2048;               // the wand's and the bucket's first pass runs on a composite this large
@@ -910,6 +911,7 @@ const ICONS = {
     refImage: '<rect x="3" y="5" width="18" height="14" rx="2" stroke-dasharray="3 2"/><circle cx="8.5" cy="10" r="1.6" fill="currentColor" stroke="none"/><path d="M21 16l-5-5-8 8"/>',
     image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6" fill="currentColor" stroke="none"/><path d="M21 16l-5-5-8 8"/>',
     mask: '<rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="12" cy="12" r="4.5" fill="currentColor" stroke="none"/>',
+    more: '<circle cx="6" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
     maskEdit: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 16l6-6 2 2-6 6H8z" fill="currentColor" stroke="none"/><path d="M15 9l1-1 2 2-1 1"/>',
     fx: '<path d="M4 6h9"/><path d="M19 6h1"/><circle cx="16" cy="6" r="2"/><path d="M4 12h2"/><path d="M12 12h8"/><circle cx="9" cy="12" r="2"/><path d="M4 18h11"/><circle cx="18" cy="18" r="2"/>',
     save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/><rect x="8" y="14" width="8" height="6"/>',
@@ -1003,6 +1005,7 @@ const STYLE = `
 .ipc-flyout .ipc-ib { justify-content:flex-start; padding:5px 10px; width:auto; height:auto; text-align:left; white-space:nowrap; }
 .ipc-flyout .ipc-key { margin-left:auto; padding-left:14px; color:var(--sc-muted, #8a8a8a); font-size:11px; }
 .ipc-flyout .ipc-sep { height:1px; background:var(--sc-line, #3a3a3a); margin:3px 2px; }
+.ipc-flyout .ipc-ib:disabled, .ipc-flyout .ipc-ib:disabled:hover { opacity:.4; cursor:default; background:var(--sc-btn, #333); color:var(--sc-fg, #ddd); }
 .ipc-view { flex:1; position:relative; overflow:hidden; min-width:0; cursor:crosshair;
   background-color:#2b2b2b;
   background-image: linear-gradient(45deg,#333 25%,transparent 25%),linear-gradient(-45deg,#333 25%,transparent 25%),
@@ -2637,17 +2640,22 @@ class InpaintEditor {
         for (const it of g.items) add(it.tool, it.label, it.key, it.title, () => { this.setTool(it.tool); this.closeFlyout(); }, this.tool === it.tool, false);
         if (g.items.length && g.actions.length) fly.appendChild(el("div", "ipc-sep"));
         for (const a of g.actions) {
+            if (a.sep) { fly.appendChild(el("div", "ipc-sep")); continue; }
             const b = add(a.icon, a.label, a.key, a.title, () => {
                 a.onClick();
                 if (a.toggle) b.classList.toggle("ipc-toggle-on", !!a.toggle()); else this.closeFlyout();
             }, false, a.toggle ? !!a.toggle() : false);
+            if (a.disabled) b.disabled = true;
         }
         fly.addEventListener("pointerenter", () => clearTimeout(this._flyClose));
         fly.addEventListener("pointerleave", (e) => { if (!(g.btn && g.btn.contains(e.relatedTarget))) this.scheduleFlyoutClose(); });
         for (const type of ["pointerdown", "pointerup", "click", "wheel", "contextmenu"]) fly.addEventListener(type, (e) => e.stopPropagation());
         this.root.appendChild(fly);
         const r = anchor.getBoundingClientRect(), rr = this.root.getBoundingClientRect();
-        fly.style.left = `${r.right - rr.left + 6}px`;
+        let left = r.right - rr.left + 6;
+        // an anchor at the right edge (a row of the side panel): the flyout opens to its left
+        if (left + fly.offsetWidth > rr.width - 4) left = Math.max(4, r.left - rr.left - fly.offsetWidth - 6);
+        fly.style.left = `${left}px`;
         const top = Math.min(r.top - rr.top, rr.height - fly.offsetHeight - 8);
         fly.style.top = `${Math.max(4, top)}px`;
         this.flyout = { el: fly, group: g };
@@ -8097,11 +8105,16 @@ class InpaintEditor {
         }
     }
 
-    /** Transparency mask from the selection (Krita: "add transparency mask" from selection). */
-    maskFromSelection(layer) {
-        if (!layer || !this.sel) return;
-        if (!this.getBounds()) { this.setStatus("Select the area to keep first."); return; }
-        this.pushUndo({ kind: "mask", id: layer.id, label: "Mask from selection" });
+    /**
+     * Transparency mask from the selection (Krita: "add transparency mask" from selection); `hide`: the inverse, the
+     * selected part is hidden (Photoshop's Hide Selection). Replaces a mask the layer has; one undo step. False when
+     * nothing is selected.
+     */
+    maskFromSelection(layer, { hide = false } = {}) {
+        if (!layer || !this.sel) return false;
+        if (this.maskBlocked(layer)) return false;
+        if (!this.getBounds()) { this.setStatus(hide ? "Select the area to hide first." : "Select the area to keep first."); return false; }
+        this.pushUndo({ kind: "mask", id: layer.id, label: hide ? "Mask hides selection" : "Mask from selection" });
         // a new mask at the layer's own resolution (the mask undo step holds the old one): the
         // selection under the layer, turned white with its coverage kept in alpha
         const m = this.pixels.Mask.empty(layer.px.width, layer.px.height);
@@ -8125,13 +8138,114 @@ class InpaintEditor {
         } finally {
             if (part) { part.width = 1; part.height = 1; }
         }
+        if (hide) m.invert(MASK_RGB);
         layer.maskPx = m;
         layer.maskOff = false;
         layer.maskEdit = false;
         this.markMaskChanged(layer);
         this.renderLayers();
         this.draw();
-        this.setStatus(`${layer.name}: mask from selection. Only the selected part stays visible.`);
+        this.setStatus(hide ? `${layer.name}: the mask hides the selected part.` : `${layer.name}: mask from selection. Only the selected part stays visible.`);
+        return true;
+    }
+
+    /**
+     * A mask operation can not run on a layer under a pending transform (the transform bakes the mask it had when it
+     * started); true with a status line then.
+     */
+    maskBlocked(layer) {
+        if (!(this.pending && this.pending.layer === layer)) return false;
+        this.setStatus("Apply or cancel the transform first (Enter / Escape).");
+        return true;
+    }
+
+    /** The mask inverted: what it showed is hidden and the other way round. One undo step; switches the mask on. */
+    invertLayerMask(layer) {
+        if (!layer || !layer.maskPx) { if (layer) this.setStatus(`${layer.name} has no mask to invert.`); return false; }
+        if (this.maskBlocked(layer)) return false;
+        this.pushUndo({ kind: "mask", id: layer.id, label: "Invert mask" });
+        // new pixels (a copy-on-write clone on tiles), not a write into the old ones: the undo step holds those
+        const m = layer.maskPx.clone();
+        m.invert(MASK_RGB);
+        layer.maskPx = m;
+        layer.maskOff = false;
+        this.markMaskChanged(layer);
+        this.renderLayers();
+        this.draw();
+        this.setStatus(`${layer.name}: mask inverted.`);
+        return true;
+    }
+
+    /**
+     * Reveal all (`reveal`: a white mask, the whole layer shows) or hide all (a black mask, nothing shows; paint the
+     * mask to bring parts back). Adds a mask to a layer without one, replaces the one it has. One undo step.
+     */
+    fillLayerMask(layer, reveal) {
+        if (!layer || !layer.px) return false;
+        if (this.maskBlocked(layer)) return false;
+        this.pushUndo({ kind: "mask", id: layer.id, label: reveal ? "Mask reveals all" : "Mask hides all" });
+        const had = !!layer.maskPx;
+        const m = this.pixels.Mask.empty(layer.px.width, layer.px.height);
+        if (reveal) m.fill(null, "#ffffff");
+        layer.maskPx = m;
+        layer.maskOff = false;
+        if (!had) layer.maskEdit = false;
+        this.markMaskChanged(layer);
+        this.renderLayers();
+        this.draw();
+        this.setStatus(reveal
+            ? `${layer.name}: the mask reveals the whole layer. Edit the mask and erase (E) to hide parts.`
+            : `${layer.name}: the mask hides the whole layer. Edit the mask and paint (P) to bring parts back.`);
+        return true;
+    }
+
+    /**
+     * A mask operation by name, for the mask row's menu and `set_mask`: invert, reveal (all), hide (all), from_selection,
+     * hide_selection, enable, disable, apply, remove. True when it changed the layer; false with a status line when it
+     * could not (no mask, no selection, a pending transform) or when the switch already stood that way.
+     */
+    maskOp(layer, op) {
+        if (!layer) return false;
+        const need = () => { if (!layer.maskPx) this.setStatus(`${layer.name} has no mask.`); return !!layer.maskPx; };
+        switch (op) {
+            case "invert": return this.invertLayerMask(layer);
+            case "reveal": return this.fillLayerMask(layer, true);
+            case "hide": return this.fillLayerMask(layer, false);
+            case "from_selection": return this.maskFromSelection(layer);
+            case "hide_selection": return this.maskFromSelection(layer, { hide: true });
+            case "enable": case "disable": return need() && this.setMaskOff(layer, op === "disable");
+            case "apply":
+                if (!need() || this.maskBlocked(layer)) return false;
+                // a filter layer's pixels are never drawn: its mask is all that limits the filter
+                if (layer.kind === "filter") { this.setStatus(`${layer.name} is a filter layer: it has no pixels to bake the mask into.`); return false; }
+                this.applyMask(layer);
+                return true;
+            case "remove": if (!need() || this.maskBlocked(layer)) return false; this.removeMask(layer); return true;
+            default: throw new Error(`unknown mask operation "${op}"`);
+        }
+    }
+
+    /** The mask row's menu (the "..." button, or a right click on the mask's label): the whole-mask operations. */
+    openMaskMenu(layer, anchor) {
+        if (this.flyout && this.flyout.group.btn === anchor) { this.closeFlyout(); return; }
+        const has = !!layer.maskPx, id = layer.id;
+        // the layer looked up at the click: an undo while the menu is open puts copies of the layers back
+        const act = (icon, label, op, title, disabled = false) => ({ icon, label, title, disabled, onClick: () => {
+            const l = this.layers.find((x) => x.id === id);
+            if (l) this.maskOp(l, op); else this.setStatus("That layer is gone.");
+        } });
+        this.openFlyout({
+            btn: anchor, items: [],
+            actions: [
+                act("eye", "Reveal all", "reveal", has ? "Replace the mask with a white one: the whole layer shows" : "Add a white mask: the whole layer shows, erase on the mask to hide parts"),
+                act("eyeOff", "Hide all", "hide", has ? "Replace the mask with a black one: nothing of the layer shows" : "Add a black mask: nothing of the layer shows, paint on the mask to bring parts back"),
+                { sep: true },
+                act("mask", "Reveal selection", "from_selection", "A mask from the selection: only the selected part shows"),
+                act("mask", "Hide selection", "hide_selection", "A mask from the selection, inverted: the selected part is hidden"),
+                { sep: true },
+                act("invert", "Invert mask", "invert", "What the mask shows is hidden and the other way round", !has),
+            ],
+        }, anchor);
     }
 
     /** Bake the mask into the layer's alpha. */
@@ -9637,6 +9751,8 @@ class InpaintEditor {
     renderLayers() {
         if (!this.layerList) return;
         const list = this.layerList;
+        // a menu opened from a row (the mask row's) belongs to the row that is about to be rebuilt
+        if (this.flyout && this.flyout.group.btn && list.contains(this.flyout.group.btn)) this.closeFlyout();
         list.innerHTML = "";
         for (let i = this.layers.length - 1; i >= 0; i--) {
             const layer = this.layers[i];
@@ -9835,12 +9951,15 @@ class InpaintEditor {
             maskRow.appendChild(sel);
         }
         maskRow.appendChild(miniButton("mask", "Mask from selection: only the selected part of the layer stays visible", () => this.maskFromSelection(layer)));
+        const more = miniButton("more", "More mask operations: reveal all, hide all, hide the selection, invert (right-click on the mask label opens them too)", () => this.openMaskMenu(layer, more), "ipc-mask-more");
+        maskRow.appendChild(more);
         maskRow.appendChild(el("span", "ipc-grow"));
         const maskLabel = el("span", layer.maskOff ? "ipc-mask-off" : null, layer.maskPx ? (layer.maskOff ? "mask off" : layer.maskEdit ? "mask ✎" : "mask") : "no mask");
         if (layer.maskPx) {
-            maskLabel.title = "Shift+click switches the mask off and on (it stays with the layer)";
+            maskLabel.title = "Shift+click switches the mask off and on (it stays with the layer); right-click for the mask operations";
             maskLabel.addEventListener("click", (e) => { if (!e.shiftKey) return; e.preventDefault(); e.stopPropagation(); this.setMaskOff(layer); });
         }
+        maskLabel.addEventListener("contextmenu", (e) => { e.preventDefault(); e.stopPropagation(); this.openMaskMenu(layer, more); });
         maskRow.appendChild(maskLabel);
         const offBtn = miniButton(layer.maskOff ? "eyeOff" : "eye", layer.maskOff ? "The mask is switched off: switch it on" : "Switch the mask off (it stays with the layer; Shift+click on the label does the same)", () => this.setMaskOff(layer), layer.maskOff ? "ipc-on" : "");
         offBtn.disabled = !layer.maskPx;
@@ -9849,7 +9968,7 @@ class InpaintEditor {
         editBtn.disabled = !layer.maskPx;
         maskRow.appendChild(editBtn);
         const applyBtn = miniButton("check", "Apply the mask to the pixels", () => this.applyMask(layer));
-        applyBtn.disabled = !layer.maskPx;
+        applyBtn.disabled = !layer.maskPx || isFx;
         maskRow.appendChild(applyBtn);
         const delMask = miniButton("trash", "Remove the mask (the pixels stay)", () => this.removeMask(layer), "ipc-del");
         delMask.disabled = !layer.maskPx;

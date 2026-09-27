@@ -229,6 +229,8 @@ const P = {
     bool: (description, extra = {}) => ({ type: "boolean", description, ...extra }),
     obj: (description, extra = {}) => ({ type: "object", description, ...extra }),
 };
+/** The operations of `set_mask` (the editor's `maskOp`). */
+const MASK_OPS = ["invert", "reveal", "hide", "from_selection", "hide_selection", "enable", "disable", "apply", "remove"];
 const FILE_PARAMS = {
     path: P.str("absolute path of a local image file"),
     filename: P.str("instead of path: a file name in the local store / ComfyUI input folder (with subfolder and type)"),
@@ -800,6 +802,27 @@ const COMMANDS = {
             if (!ok) throw new Error("background removal timed out: " + ed.status);
             if (/failed/i.test(ed.status)) throw new Error(ed.status);
             return layerSummary(ed, l);
+        },
+    },
+    set_mask: {
+        description: "Change a layer's mask (white = the layer shows): invert it; reveal (all) or hide (all) - a white or a black mask, added when the layer has none, else replacing it; from_selection (the selection shows) or hide_selection (the selection is hidden); disable / enable (the mask stays with the layer but is not drawn, PSD's \"disabled\"); apply (baked into the pixels; not on a filter layer) or remove. One undo step; every operation but disable switches the mask on.",
+        params: {
+            layer: P.layer(),
+            op: P.str("what to do", { required: true, enum: MASK_OPS }),
+        },
+        async run(ed, a) {
+            const l = findLayer(ed, a.layer);
+            const op = String(a.op || "");
+            if (!MASK_OPS.includes(op)) throw new Error(`op must be one of ${MASK_OPS.join(", ")}`);
+            if (!l.maskPx && ["invert", "enable", "disable", "apply", "remove"].includes(op)) throw new Error(`${l.name} has no mask`);
+            if ((op === "from_selection" || op === "hide_selection") && !ed.getBounds()) throw new Error("nothing is selected");
+            // the switch standing that way already is no error: nothing changes, no step is pushed, the tab stays as it was
+            if ((op === "enable" && !l.maskOff) || (op === "disable" && !!l.maskOff)) {
+                return { ...layerSummary(ed, l), changed: false, status: `${l.name}: the mask is already ${op === "disable" ? "switched off" : "on"}.` };
+            }
+            if (!ed.maskOp(l, op)) throw new Error(ed.status || `the mask operation ${op} did nothing`);
+            touch(ed);
+            return { ...layerSummary(ed, l), changed: true, status: ed.status };
         },
     },
 

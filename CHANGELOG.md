@@ -24,6 +24,10 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **A mask can be switched off** without deleting it: the eye button in the layer's mask row, or Shift+click on the
   word "mask" as in Photoshop. The layer shows whole, the mask stays and follows moves, crops and saves, and
   painting the mask switches it on again. PSD files carry the switch both ways.
+- **Mask operations.** The "..." button in a layer's mask row (or a right click on the word "mask") opens
+  Reveal all and Hide all (a white or a black mask, added when the layer has none), Reveal selection and Hide
+  selection, and Invert mask. Each is one undo step. Agents get `set_mask` with the same operations plus
+  enable / disable, apply and remove.
 
 ## 0.1.30 — 2026-09-27
 

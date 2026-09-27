@@ -66,6 +66,11 @@ const POLICY = {
         ? AUTO()
         : ASK("removes a layer you made", card(call, facts, []))),
 
+    // every operation is one undo step of the editor's own; on a layer the user made it changes what of it shows
+    set_mask: (call, facts) => (owns(call, facts)
+        ? AUTO()
+        : ASK("changes the mask of a layer you made", maskCard(call, facts))),
+
     merge_down: (call, facts) => {
         const target = layerOf(call, facts);
         const below = layerBelow(target, facts);
@@ -177,6 +182,16 @@ function card(call, facts, fields) {
         out.changes.push({ field: k, from: target ? target[k] : undefined, to: v });
     }
     return out;
+}
+
+/** `set_mask`'s card: the layer's mask as `list_layers` shows it, and the operation. */
+function maskCard(call, facts) {
+    const target = layerOf(call, facts);
+    const now = !target ? undefined : !target.mask ? "none" : target.mask_off ? "switched off" : "on";
+    return {
+        layer: target ? { id: target.id, name: target.name } : null,
+        changes: [{ field: "mask", from: now, to: String((call.args && call.args.op) || "") }],
+    };
 }
 
 /** The render card: the recipe, the document's settings and the ones this chat changed (§5). */

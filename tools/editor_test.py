@@ -6673,6 +6673,102 @@ try {
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;
 """),
+    ("mask_operations_are_one_step_each", """
+// PLAN_0_1_31 6.4: set_mask's operations, each one undo step, the mask white where it shows, and the mask row's menu
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+try {
+    await run("new_canvas", { width: 400, height: 300, doc: d.id });
+    const L = ed.addPaintLayer();
+    const id = L.id;
+    const lay = () => ed.layers.find((l) => l.id === id);   // a "layers" step puts copies back: looked up each time
+    L.px.fill([0, 0, 400, 300], "#2060c0"); ed.markLayerChanged(L);
+    const mask = (op) => run("set_mask", { layer: id, op, doc: d.id });
+    const alpha = (x, y) => lay().maskPx.readRect(x, y, 1, 1).data;
+    const fails = async (op, re) => { try { await mask(op); } catch (e) { if (re.test(String(e.message || e))) return; throw new Error(op + " failed with " + e.message); } throw new Error(op + " did not fail"); };
+    // what needs a mask or a selection says so, and pushes nothing
+    const n0 = ed.undo.length;
+    await fails("invert", /has no mask/);
+    await fails("enable", /has no mask/);
+    await fails("from_selection", /nothing is selected/);
+    if (ed.undo.length !== n0) throw new Error("a refused operation pushed a step");
+    // hide all adds a black mask; invert makes it white (a layer mask's colour, not the selection's red)
+    let r = await mask("hide");
+    if (!r.changed || !r.mask || r.mask_off || alpha(200, 150)[3] !== 0) throw new Error("hide did not add a black mask: " + JSON.stringify(r));
+    r = await mask("invert");
+    const px = alpha(200, 150);
+    if (px[3] !== 255 || px[0] !== 255 || px[1] !== 255 || px[2] !== 255) throw new Error("the inverted mask is not white: " + Array.from(px));
+    // reveal replaces the mask; the selection ones keep or hide the selected part
+    await mask("hide"); await mask("reveal");
+    if (alpha(10, 10)[3] !== 255 || alpha(390, 290)[3] !== 255) throw new Error("reveal did not make the mask white everywhere");
+    await run("select_rect", { x: 100, y: 100, w: 100, h: 50, doc: d.id });
+    await mask("hide_selection");
+    if (alpha(150, 120)[3] !== 0 || alpha(10, 10)[3] !== 255) throw new Error("hide_selection: inside " + alpha(150, 120)[3] + ", outside " + alpha(10, 10)[3]);
+    // what the picture shows: the base where the mask hides, the layer around it
+    const flat = ed.flattenToCanvas().getContext("2d");
+    const inside = flat.getImageData(150, 120, 1, 1).data, outside = flat.getImageData(10, 10, 1, 1).data;
+    if (inside[2] > 200 && inside[0] < 60) throw new Error("the hidden part still shows the layer: " + Array.from(inside));
+    if (!(outside[0] < 60 && outside[2] > 150)) throw new Error("the layer does not show around the hidden part: " + Array.from(outside));
+    await mask("from_selection");
+    if (alpha(150, 120)[3] !== 255 || alpha(10, 10)[3] !== 0) throw new Error("from_selection: inside " + alpha(150, 120)[3] + ", outside " + alpha(10, 10)[3]);
+    // one labelled step each, and undo walks them back
+    out.labels = ed.undoList().filter((x) => x.label && /^Mask|mask/.test(x.label)).map((x) => x.label);
+    const maskSteps = ed.undo.slice(n0).filter((x) => x.kind === "mask").length;
+    if (maskSteps !== 6) throw new Error("six operations pushed " + maskSteps + " mask steps");
+    await ed.undoStep();
+    if (alpha(150, 120)[3] !== 0 || alpha(10, 10)[3] !== 255) throw new Error("the undo of from_selection did not bring back the hide_selection mask");
+    // the switch: off, off again (no change, no step), and an operation on a switched-off mask switches it on
+    r = await mask("disable");
+    if (!r.changed || !r.mask_off) throw new Error("disable: " + JSON.stringify(r));
+    const n1 = ed.undo.length;
+    r = await mask("disable");
+    if (r.changed || ed.undo.length !== n1) throw new Error("disabling a switched-off mask changed something");
+    if (!/already/.test(r.status)) throw new Error("a disable that changed nothing says: " + r.status);
+    r = await mask("invert");
+    if (r.mask_off || lay().maskOff) throw new Error("invert left the mask switched off");
+    await ed.undoStep();
+    if (!lay().maskOff) throw new Error("the undo of the invert did not switch the mask off again");
+    // a menu open over an undo that puts copies of the layers back closes with the rows it was opened from
+    ed.activeLayerId = id; ed.renderLayers();
+    ed.root.querySelector(".ipc-mask-more").click();
+    if (!ed.root.querySelector(".ipc-flyout")) throw new Error("the mask menu did not open");
+    await ed.undoStep();
+    if (ed.root.querySelector(".ipc-flyout")) throw new Error("the mask menu stayed open over an undo that replaced the layers");
+    await ed.redoStep();
+    if (!lay().maskOff) throw new Error("the redo did not switch the mask off again");
+    // the mask row's menu: opened by its button, to the left of it (the side panel sits at the right edge), invert
+    // disabled without a mask, an entry runs its operation
+    await mask("remove");
+    if (lay().maskPx) throw new Error("remove left the mask");
+    ed.activeLayerId = id; ed.renderLayers();
+    // the mask row belongs to the active layer's row
+    const btn = ed.root.querySelector(".ipc-mask-more");
+    if (!btn) throw new Error("no mask menu button in the active layer's row");
+    btn.click();
+    const fly = ed.root.querySelector(".ipc-flyout");
+    if (!fly) throw new Error("the mask menu did not open");
+    const items = [...fly.querySelectorAll("button")];
+    out.menu = items.map((b) => b.textContent.trim() + (b.disabled ? " (disabled)" : ""));
+    const inv = items.find((b) => /Invert/.test(b.textContent));
+    if (!inv || !inv.disabled) throw new Error("invert is not disabled without a mask: " + out.menu.join(", "));
+    const fr = fly.getBoundingClientRect(), rr = ed.root.getBoundingClientRect();
+    if (fr.right > rr.right + 1 || fr.left < rr.left - 1) throw new Error("the menu leaves the editor: " + JSON.stringify([fr.left, fr.right, rr.left, rr.right]));
+    items.find((b) => /Hide all/.test(b.textContent)).click();
+    if (ed.root.querySelector(".ipc-flyout")) throw new Error("the menu stayed open after its entry ran");
+    if (!lay().maskPx || alpha(10, 10)[3] !== 0) throw new Error("the menu's Hide all did not add a black mask");
+    // a filter layer has no pixels to bake a mask into: apply is refused and the mask stays
+    const fx = await run("add_filter", { type: "grain", doc: d.id });
+    await run("set_mask", { layer: fx.id, op: "from_selection", doc: d.id });
+    let refused = "";
+    try { await run("set_mask", { layer: fx.id, op: "apply", doc: d.id }); } catch (e) { refused = String(e.message || e); }
+    if (!/filter layer/.test(refused)) throw new Error("apply on a filter layer was not refused: " + (refused || "it ran"));
+    if (!ed.layers.find((l) => l.id === fx.id).maskPx) throw new Error("the refused apply dropped the filter layer's mask");
+    out.ok = true;
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

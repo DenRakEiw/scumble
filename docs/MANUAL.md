@@ -170,6 +170,7 @@ Around all this sit transform (move, scale, rotate, flip, with a perspective mes
 - Layer names can be renamed by double-clicking them, and a rename is an undo step like anything else.
 - Copy and paste move whole layers between tabs, pixels, mask and settings included.
 - A mask can be switched off without losing it: the eye button in the mask row, or Shift+click on the word "mask" as in Photoshop. The layer then shows whole, the mask stays with it through moves, crops and saves, and editing the mask switches it back on.
+- The "..." button in the mask row, or a right click on the word "mask", holds the whole-mask operations: Reveal all and Hide all put a white or a black mask on the layer (Hide all, then paint the mask where the layer should show, is the quickest way to bring in a small part of a result), Reveal selection and Hide selection make the mask from the selection, and Invert mask swaps what shows and what is hidden. Each is one undo step.
 - SVG files can be loaded as layers, and PSD or ORA files arrive with their own layers since 0.1.25.
 
 ## Filter layers and the film pack

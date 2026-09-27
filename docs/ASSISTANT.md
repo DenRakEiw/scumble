@@ -80,7 +80,7 @@ card that says why:
   whole picture is one undo step of its own, as *Resize* is.
 - **`flatten`, `extend_canvas`, `new_canvas`, `load_image`** - they clear the undo stack or bake
   every layer into the base.
-- **Removing, merging or editing a layer that is not the assistant's own**, unlocking a layer you
+- **Removing, merging or editing a layer (or its mask) that is not the assistant's own**, unlocking a layer you
   locked, moving or retexting a locked one, `undo` / `redo`, reading a file, an export with a
   path, and the global settings.
 - Editing a layer the assistant made itself, and the per-document fields (prompt, generation

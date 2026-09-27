@@ -2155,6 +2155,29 @@ function pixelsCases(P, T) {
             return { tiles: B.tiles ? m.tileCount : null, worst, alphaBack: diff };
         })],
 
+        // A layer mask inverts in its own white (set_mask invert, hide_selection): the colour passed, 255 - alpha, and a
+        // pixel left fully transparent without colour on both backends, compared byte for byte like the red case.
+        ["mask_invert_white", both(async ({ B, Mask, snap }) => {
+            const W = 300, H = 280;
+            const m = Mask.empty(W, H);
+            m.fill([20, 20, 290, 150], "#ffffff");
+            m.drawInto([0, 160, 300, 280], (ctx) => {
+                for (let k = 0; k < 5; k++) { ctx.fillStyle = `rgba(255,255,255,${(k + 1) / 6})`; ctx.fillRect(k * 60, 160, 60, 120); }
+            });
+            const before = m.readRect(0, 0, W, H).data.slice();
+            m.invert([255, 255, 255]);
+            const d = m.readRect(0, 0, W, H).data;
+            let worst = 0;
+            for (let i = 0; i < d.length; i += 4) {
+                worst = Math.max(worst, Math.abs(d[i + 3] - (255 - before[i + 3])));
+                if (d[i + 3] > 0) worst = Math.max(worst, 255 - d[i], 255 - d[i + 1], 255 - d[i + 2]);
+                else if (d[i] || d[i + 1] || d[i + 2]) worst = 255;
+            }
+            if (worst > 1) throw new Error("the white invert is off by " + worst);
+            snap(m, "a mask inverted in white");
+            return { tiles: B.tiles ? m.tileCount : null, worst };
+        })],
+
         ["tiles_blit_mixed_backends", both(async ({ B, Layer, mk, paint, pair, snap }) => {
             const Other = B.tiles ? P.LayerPixels : T.TileLayerPixels;   // the other backend
             const c = mk(400, 300); paint(c.getContext("2d"), 400, 300);

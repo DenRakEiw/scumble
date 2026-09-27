@@ -182,6 +182,16 @@ async def main():
             if f.get("filter") != fid:
                 raise RuntimeError("add_filter: " + json.dumps(f)[:200])
             report["filter"] = fid
+            # set_mask (docs/PLAN_0_1_31.md 6.4): the operations are an enum in the tool's schema; a white mask switched
+            # off changes nothing in the picture, so the checks below see the document they always saw
+            sm = next((t for t in tools if t.name == "set_mask"), None)
+            if sm is None or "reveal" not in ((sm.inputSchema["properties"].get("op") or {}).get("enum") or []):
+                raise RuntimeError("set_mask schema: " + json.dumps(sm.inputSchema if sm else None)[:300])
+            m1 = data_of(await call(session, "set_mask", {"layer": f["id"], "op": "reveal", "doc": doc}))
+            m2 = data_of(await call(session, "set_mask", {"layer": f["id"], "op": "disable", "doc": doc}))
+            if not (m1.get("mask") and m1.get("changed") and m2.get("mask_off") and m2.get("changed")):
+                raise RuntimeError("set_mask: " + json.dumps([m1, m2])[:300])
+            report["set_mask"] = "reveal, disable"
             mean = data_of(await call(session, "sample_mean_color", {"doc": doc}))
             report["mean_color"] = mean
 

@@ -2198,12 +2198,15 @@ export class TileMaskPixels extends tiled(MaskPixels) {
      * ImageBitmap and a scratch of 600 MB each on the way through the worker either
      * (docs/PLAN_BCE.md §C5). Only the part of a tile that is inside the image is touched: the rest
      * is what `edgeCopy` clamps from, and a selected padding would bleed into the tile's mips.
+     * `color` [r, g, b] is what a covered pixel gets: the selection's red, a layer mask's white.
      */
-    invert() {
+    invert(color = [255, 0, 0]) {
         this._guard();
         const cols = Math.ceil(this._w / TILE_SIZE), rows = Math.ceil(this._h / TILE_SIZE);
-        // the selection's own red at full alpha, as one word (little-endian: R is the low byte)
-        const SEL = 0xFF0000FF;
+        const [cr, cg, cb] = color;
+        // the colour without alpha and at full alpha, as words (little-endian: R is the low byte)
+        const RGB = ((cb << 16) | (cg << 8) | cr) >>> 0;
+        const SEL = (0xFF000000 | RGB) >>> 0;
         for (let ty = 0; ty < rows; ty++) {
             const bh = Math.min(TILE_SIZE, this._h - (ty << 8));
             for (let tx = 0; tx < cols; tx++) {
@@ -2225,7 +2228,7 @@ export class TileMaskPixels extends tiled(MaskPixels) {
                             // a pixel the invert leaves fully transparent carries no colour: a canvas
                             // stores premultiplied and un-premultiplies such a pixel to 0, 0, 0, and the
                             // two backends have to agree byte for byte (tools/pixels_test.js)
-                            w[o] = a ? ((a << 24) | 0x0000FF) >>> 0 : 0;
+                            w[o] = a ? ((a << 24) | RGB) >>> 0 : 0;
                         }
                     }
                 } else {
@@ -2234,7 +2237,7 @@ export class TileMaskPixels extends tiled(MaskPixels) {
                         let o = y * TILE_SIZE * 4;
                         for (let x = 0; x < bw; x++, o += 4) {
                             const a = 255 - d[o + 3];
-                            d[o] = a ? 255 : 0; d[o + 1] = 0; d[o + 2] = 0; d[o + 3] = a;
+                            d[o] = a ? cr : 0; d[o + 1] = a ? cg : 0; d[o + 2] = a ? cb : 0; d[o + 3] = a;
                         }
                     }
                 }

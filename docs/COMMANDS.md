@@ -509,6 +509,16 @@ Remove the background of a layer with the cutout model the editor is set to (in-
 | `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
 | `timeout` | integer | seconds to wait for the result (default 300) (default `300`) |
 
+### `set_mask`
+
+Change a layer's mask (white = the layer shows): invert it; reveal (all) or hide (all) - a white or a black mask, added when the layer has none, else replacing it; from_selection (the selection shows) or hide_selection (the selection is hidden); disable / enable (the mask stays with the layer but is not drawn, PSD's "disabled"); apply (baked into the pixels; not on a filter layer) or remove. One undo step; every operation but disable switches the mask on.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
+| `op` | string | what to do (required; one of `invert`, `reveal`, `hide`, `from_selection`, `hide_selection`, `enable`, `disable`, `apply`, `remove`) |
+
 ## Filters and text
 
 ### `add_filter` *(image)*
@@ -590,6 +600,42 @@ Redo the last undone step, or `steps` of them.
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `steps` | integer | how many steps (default 1) (default `1`) |
+
+### `list_history`
+
+The undo history, oldest first: one row per state, named by the edit that led to it; `current` is the picture now, `future` rows are undone steps a redo brings back. `steps` is what undo (negative) or redo (positive) takes to get to a row. Also the named snapshots and the history's depth.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `take_snapshot` *(image)*
+
+Keep the whole document as it is now under a name (layers, masks, the selection, the prompt and settings), to come back to with restore_snapshot. Up to 8 per document; not saved with the document. Needs the tile backend. A name already taken gets a number.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `name` | string | a name for it (default "Snapshot N") |
+| `drop_oldest` | boolean | when the document holds 8 already: drop the oldest for good (else this is refused) |
+
+### `restore_snapshot` *(image)*
+
+Put the document back as it was in a named snapshot (take_snapshot). One undo step: undo takes it back; the snapshot stays.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `name` | string | the snapshot's name (required) |
+
+### `delete_snapshot`
+
+Delete a named snapshot. The picture does not change.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `name` | string | the snapshot's name (required) |
 
 ### `compare`
 
@@ -685,41 +731,6 @@ Make this tab's base image from the prompt alone, no image needed. A local recip
 | `seed` | integer | seed; a new random one when left out |
 | `background` | string | transparent asks an API model that supports it (the OpenAI image models) for a cut-out on a transparent ground; the base image then keeps its alpha channel (one of `auto`, `opaque`, `transparent`) |
 | `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
-
-### `list_history`
-
-The undo history, oldest first: one row per state, named by the edit that led to it; `current` is the picture now, `future` rows are undone steps a redo brings back. `steps` is what undo (negative) or redo (positive) takes to get to a row. Also the named snapshots and the history's depth.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-
-### `take_snapshot` *(image)*
-
-Keep the whole document as it is now under a name (layers, masks, the selection, the prompt and settings), to come back to with restore_snapshot. Up to 8 per document, the oldest goes first; not saved with the document. Needs the tile backend.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `name` | string | a name for it (default "Snapshot N") |
-
-### `restore_snapshot` *(image)*
-
-Put the document back as it was in a named snapshot (take_snapshot). One undo step: undo takes it back; the snapshot stays.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `name` | string | the snapshot's name (required) |
-
-### `delete_snapshot`
-
-Delete a named snapshot. The picture does not change.
-
-| param | type | description |
-|---|---|---|
-| `doc` | integer | document id (default the active tab) |
-| `name` | string | the snapshot's name (required) |
 
 ### `read_log` *(app)*
 

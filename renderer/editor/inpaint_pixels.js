@@ -433,13 +433,15 @@ export class LayerPixels {
 export class MaskPixels extends LayerPixels {
     /**
      * The selection inverted: every pixel's alpha becomes 255 - alpha and its colour the
-     * selection's red. A per-pixel rule, so no pixel needs its neighbours (docs/PLAN_BCE.md §C5);
-     * the tile backend overrides it to walk its own tiles instead of the whole canvas.
+     * selection's red (`color` [r, g, b]: a layer mask passes its white). A per-pixel rule, so no
+     * pixel needs its neighbours (docs/PLAN_BCE.md §C5); the tile backend overrides it to walk its
+     * own tiles instead of the whole canvas.
      */
-    invert() {
+    invert(color = [255, 0, 0]) {
+        const [cr, cg, cb] = color;
         const img = this.readRect(0, 0, this.width, this.height);
         const d = img.data;
-        for (let i = 0; i < d.length; i += 4) { d[i] = 255; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 255 - d[i + 3]; }
+        for (let i = 0; i < d.length; i += 4) { d[i] = cr; d[i + 1] = cg; d[i + 2] = cb; d[i + 3] = 255 - d[i + 3]; }
         this.writeRect(img, 0, 0);
     }
 }
