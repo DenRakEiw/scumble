@@ -7277,6 +7277,181 @@ try {
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;
 """),
+    ("the_document_straightens_and_crops_in_one_step", """
+// PLAN_0_1_31 §7 (23b step 5): straighten_canvas turns the whole document by any angle and crops it in one step. Every store
+// is the resampler's answer for the document's map (the kernel itself is tools/resample_test.js's), text turns by its
+// description, a reference layer moves, the extras follow, and undo / redo give the bytes back
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+const RS = await import("./editor/inpaint_resample.js");
+const W = 601, H = 357, DEG = 5;
+const words = (px) => { const a = px.readRect(0, 0, px.width, px.height).data; return new Uint32Array(a.buffer, a.byteOffset, a.length >> 2).slice(); };
+const same = (a, b, what) => { if (a.length !== b.length) throw new Error(what + ": " + a.length + " against " + b.length + " pixels"); for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) throw new Error(what + ": pixel " + i + " differs (" + a[i].toString(16) + " against " + b[i].toString(16) + ")"); };
+const near = (a, b, tol, what) => { if (!a || a.length !== b.length || a.some((v, i) => Math.abs(v - b[i]) > tol)) throw new Error(what + ": " + JSON.stringify(a) + ", not " + JSON.stringify(b)); };
+const total = (t) => { const a = ((((+t.angle || 0) + 90 * ((t.turn | 0) & 3)) % 360) + 360) % 360; return a > 180 ? a - 360 : a; };
+const seen = [];
+const onGeom = (e) => { if (e.editor === ed) seen.push({ kind: e.kind, m: e.m }); };
+host.on("geometry", onGeom);
+try {
+    const bc = document.createElement("canvas"); bc.width = W; bc.height = H;
+    const bx = bc.getContext("2d"), bi = bx.createImageData(W, H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; bi.data[i] = x & 255; bi.data[i + 1] = y & 255; bi.data[i + 2] = (x >> 8) * 40 + (y >> 8) * 90; bi.data[i + 3] = 255; }
+    bx.putImageData(bi, 0, 0);
+    bx.fillStyle = "#ff0000"; bx.fillRect(396, 96, 17, 17);
+    await ed.setBaseFromCanvas(bc);
+    const L1 = ed.addPaintLayer();
+    L1.px.fill([0, 0, W, H], "rgba(20,120,200,0.6)"); L1.px.fill([30, 40, 90, 70], "#ff3300"); ed.markLayerChanged(L1);
+    await run("select_rect", { x: 200, y: 60, w: 150, h: 90, doc: d.id });
+    ed.maskFromSelection(L1);
+    const L2 = ed.addLayer({ name: "small", kind: "paint", ref: null, px: ed.pixels.Layer.empty(240, 160), x: 50, y: 30, w: 120, h: 80, dirty: true });
+    L2.px.fill([0, 0, 120, 80], "#33cc66"); L2.px.fill([200, 100, 240, 160], "#ffee00"); ed.markLayerChanged(L2);
+    const R = ed.addLayer({ name: "ref", kind: "paint", ref: null, px: ed.pixels.Layer.empty(80, 60), x: 450, y: 240, w: 80, h: 60, dirty: true });
+    R.px.fill([0, 0, 80, 60], "#8040c0"); ed.markLayerChanged(R);
+    await run("set_layer", { layer: R.id, role: "reference", doc: d.id });
+    const fx = await run("add_filter", { type: "grain", doc: d.id });
+    await run("select_rect", { x: 400, y: 200, w: 100, h: 100, doc: d.id });
+    await run("set_mask", { layer: fx.id, op: "from_selection", doc: d.id });
+    const tx = await run("add_text", { text: "Straight", x: 60, y: 250, size: 40, doc: d.id });
+    await wait(300);
+    await run("select_rect", { x: 10, y: 20, w: 100, h: 50, doc: d.id });
+    await run("select_rect", { x: 200, y: 60, w: 150, h: 90, doc: d.id });
+    ed.saveSelection();
+    await run("select_rect", { x: 100, y: 100, w: 300, h: 150, doc: d.id });
+    ed.guides = { x: [5, 300], y: [100] };
+    const hc = document.createElement("canvas"); hc.width = 60; hc.height = 30;
+    const hx = hc.getContext("2d"); hx.fillStyle = "#0000ff"; hx.fillRect(0, 0, 60, 30);
+    ed.history.push({ key: "s23", name: "Result s23", ref: { filename: "none.png", subfolder: "", type: "input" }, x: 300, y: 100, w: 60, h: 30, prompt: "", thumbImg: hc });
+    const e = host.exportState ? host.exportState(ed) : null;
+    if (e) { e.width = 1000; e.height = 600; }
+    if (ed.syncLayers) await ed.syncLayers();
+    const F = () => ed.layers.find((l) => l.id === fx.id), T = () => ed.layers.find((l) => l.id === tx.id);
+    const Lx = (id) => ed.layers.find((l) => l.id === id);
+    const old = { base: ed.basePx, l1: L1.px, m1: L1.maskPx, l2: L2.px, fm: F().maskPx, sel: ed.sel, ref: R.px };
+    const before = {}; for (const k of Object.keys(old)) before[k] = words(old[k]);
+    const t0 = T(), tc0 = [t0.x + t0.w / 2, t0.y + t0.h / 2], rect0 = { l2: [L2.x, L2.y, L2.w, L2.h], ref: [R.x, R.y, R.w, R.h], text: [t0.x, t0.y, t0.w, t0.h] };
+    const frame = ed.fitFrame(DEG, W / H);
+    const n0 = ed.undo.length;
+    // busy: refused, nothing changes
+    ed.providerPending = { s23: true };
+    let refused = "";
+    try { await run("straighten_canvas", { angle: DEG, doc: d.id }); } catch (err) { refused = String(err.message || err); }
+    ed.providerPending = null;
+    if (!/running job/.test(refused) || ed.width !== W) throw new Error("a straighten while a job runs was not refused: " + (refused || "it ran"));
+    const r = await run("straighten_canvas", { angle: DEG, doc: d.id });
+    const [fx0, fy0, nw, nh] = frame;
+    if (r.width !== nw || r.height !== nh || ed.width !== nw || ed.height !== nh) throw new Error("the straighten made " + ed.width + " x " + ed.height + ", not " + nw + " x " + nh);
+    if (ed.undo.length !== n0 + 1) throw new Error("the straighten pushed " + (ed.undo.length - n0) + " steps");
+    const A = RS.xfMul(RS.xfTranslate(-fx0, -fy0), RS.xfRotate(DEG, W / 2, H / 2));
+    near(ed.docXf, A, 1e-9, "the document's map");
+    const onCanvas = RS.pixelMap(RS.xfInv(A));
+    const white = [255, 255, 255];
+    same(words(ed.basePx), words(old.base.transformed(onCanvas, nw, nh, { edge: "clamp" })), "the base");
+    const [dx, dy] = RS.xfApply(A, 404.5, 104.5);
+    const dot = ed.basePx.readRect(Math.floor(dx), Math.floor(dy), 1, 1).data;
+    if (dot[0] < 200 || dot[1] > 80) throw new Error("the red square is not where the map puts it: " + Array.from(dot));
+    const l1 = Lx(L1.id);
+    near([l1.x, l1.y, l1.w, l1.h], [0, 0, nw, nh], 0, "the layer over the whole canvas");
+    same(words(l1.px), words(old.l1.transformed(onCanvas, nw, nh, { edge: "clamp" })), "the layer over the whole canvas");
+    same(words(l1.maskPx), words(old.m1.transformed(onCanvas, nw, nh, { color: white, edge: "clamp" })), "its mask");
+    const l2 = Lx(L2.id);
+    const b2 = RS.xfBox(A, 50, 30, 170, 110), rx = Math.floor(b2[0]), ry = Math.floor(b2[1]), rw = Math.ceil(b2[2]) - rx, rh = Math.ceil(b2[3]) - ry;
+    near([l2.x, l2.y, l2.w, l2.h], [rx, ry, rw, rh], 0, "the small layer's turned rectangle");
+    if (l2.px.width !== rw * 2 || l2.px.height !== rh * 2) throw new Error("the small layer's pixels are " + l2.px.width + " x " + l2.px.height + ", not twice its rectangle");
+    const m2 = RS.pixelMap(RS.xfMul(RS.xfInv([0.5, 0, 0, 0.5, 50, 30]), RS.xfMul(RS.xfInv(A), [0.5, 0, 0, 0.5, rx, ry])));
+    same(words(l2.px), words(old.l2.transformed(m2, rw * 2, rh * 2)), "the small layer at its own resolution");
+    const f1 = F();
+    if (f1.w !== nw || f1.h !== nh) throw new Error("the filter layer covers " + f1.w + " x " + f1.h);
+    same(words(f1.maskPx), words(old.fm.transformed(onCanvas, nw, nh, { color: white })), "the filter layer's mask");
+    same(words(ed.sel), words(old.sel.transformed(onCanvas, nw, nh)), "the selection");
+    const t1 = T();
+    if (t1.kind !== "text" || Math.abs(total(t1.text) - DEG) > 1e-6) throw new Error("the text is " + t1.kind + " at " + (t1.text && total(t1.text)));
+    near([t1.x + t1.w / 2, t1.y + t1.h / 2], RS.xfApply(A, ...tc0), 1, "the text's middle");
+    const r1 = Lx(R.id), rc = RS.xfApply(A, rect0.ref[0] + 40, rect0.ref[1] + 30);
+    near([r1.x + r1.w / 2, r1.y + r1.h / 2], rc, 1, "the reference layer's middle");
+    if (r1.w !== 80 || r1.h !== 60) throw new Error("the reference layer was resized to " + r1.w + " x " + r1.h);
+    same(words(r1.px), before.ref, "the reference layer's pixels (moved, not resampled)");
+    near([...ed.guides.x, ...ed.guides.y], [300 - fx0, 100 - fy0], 0, "the guides, shifted by the crop (the one at 5 left the picture)");
+    const hEntry = ed.history.find((x) => x.key === "s23");
+    if (!hEntry.xf) throw new Error("the history entry has no map");
+    near([hEntry.x, hEntry.y, hEntry.w, hEntry.h], (() => { const b = RS.xfBox(A, 300, 100, 360, 130); return [b[0], b[1], b[2] - b[0], b[3] - b[1]]; })(), 1e-6, "the history entry's rectangle");
+    const u0 = ed.undo.length;
+    await ed.restoreResult(hEntry);
+    const restored = ed.layers.find((l) => l.name === "Result s23");
+    if (!restored || restored.px.width < 60 || restored.x !== Math.floor(hEntry.x)) throw new Error("the entry was restored as " + JSON.stringify(restored && [restored.x, restored.y, restored.px.width, restored.px.height]));
+    const centre = restored.px.readRect(restored.px.width >> 1, restored.px.height >> 1, 1, 1).data;
+    if (centre[3] !== 255 || centre[2] < 200) throw new Error("the restored entry's middle is " + Array.from(centre));
+    // the restore's own step if it pushed one, else the layer taken out by hand (the straighten's step stays on top)
+    while (ed.undo.length > u0) await run("undo", { doc: d.id });
+    if (ed.layers.includes(restored)) { ed.layers = ed.layers.filter((l) => l !== restored); ed.renderLayers(); }
+    if (ed.width !== nw) throw new Error("taking the restore back undid the straighten");
+    const u1 = ed.undo.length;
+    await ed.loadSelection(0);
+    const sb = ed.getBounds(), eb = RS.xfBox(A, 200, 60, 350, 150);
+    near([sb[0], sb[1], sb[2], sb[3]], [Math.floor(eb[0]), Math.floor(eb[1]), Math.ceil(eb[2]), Math.ceil(eb[3])], 2, "the saved selection loaded into the straightened picture");
+    while (ed.undo.length > u1) await run("undo", { doc: d.id });   // the load
+    if (e && (e.width || e.height)) throw new Error("a fixed export size survived the straighten: " + e.width + " x " + e.height);
+    const g = seen[seen.length - 1];
+    if (!g || g.kind !== "straighten") throw new Error("the plugins heard " + JSON.stringify(g));
+    near(g.m, A, 1e-9, "the map the plugins heard");
+    const after = { base: words(ed.basePx), l1: words(Lx(L1.id).px), sel: words(ed.sel) };
+    // undo: every byte, every place back
+    await run("undo", { doc: d.id });
+    if (ed.width !== W || ed.height !== H) throw new Error("the undo left " + ed.width + " x " + ed.height);
+    same(words(ed.basePx), before.base, "the base after the undo");
+    same(words(Lx(L1.id).px), before.l1, "the full layer after the undo");
+    same(words(Lx(L1.id).maskPx), before.m1, "its mask after the undo");
+    same(words(Lx(L2.id).px), before.l2, "the small layer after the undo");
+    same(words(F().maskPx), before.fm, "the filter mask after the undo");
+    same(words(ed.sel), before.sel, "the selection after the undo");
+    const l2u = Lx(L2.id);
+    near([l2u.x, l2u.y, l2u.w, l2u.h], rect0.l2, 0, "the small layer's place after the undo");
+    if (T().text.angle || T().text.turn) throw new Error("the text kept a turn after the undo: " + JSON.stringify(T().text));
+    near([...ed.guides.x, ...ed.guides.y], [5, 300, 100], 0, "the guides after the undo");
+    const hu = ed.history.find((x) => x.key === "s23");
+    if (hu.xf) throw new Error("the history entry kept a map after the undo: " + JSON.stringify(hu.xf));
+    near([hu.x, hu.y, hu.w, hu.h], [300, 100, 60, 30], 1e-6, "the history entry after the undo");
+    near(ed.docXf, [1, 0, 0, 1, 0, 0], 1e-12, "the document's map after the undo");
+    if (e && (e.width !== 1000 || e.height !== 600)) throw new Error("the undo did not put the export size back");
+    // redo: the same bytes as the straighten made
+    await run("redo", { doc: d.id });
+    if (ed.width !== nw) throw new Error("the redo left " + ed.width);
+    same(words(ed.basePx), after.base, "the base after the redo");
+    same(words(Lx(L1.id).px), after.l1, "the full layer after the redo");
+    same(words(ed.sel), after.sel, "the selection after the redo");
+    await run("undo", { doc: d.id });
+    // a render on the user's ComfyUI blocks it; an explicit frame past the turned picture is refused
+    ed._localRuns = new Set(["p1"]);
+    let blocked = "";
+    try { await run("straighten_canvas", { angle: 3, doc: d.id }); } catch (err) { blocked = String(err.message || err); }
+    ed._localRuns = new Set();
+    if (!/ComfyUI/.test(blocked) || ed.width !== W) throw new Error("a render on ComfyUI did not block the straighten: " + (blocked || "it ran"));
+    let outside = "";
+    try { await run("straighten_canvas", { angle: 10, x: 0, y: 0, width: W, height: H, doc: d.id }); } catch (err) { outside = String(err.message || err); }
+    if (!/past the turned picture/.test(outside) || ed.width !== W) throw new Error("a frame past the turned picture was not refused: " + (outside || "it ran"));
+    // an explicit frame and an aspect
+    await run("straighten_canvas", { angle: -2, aspect: "1:1", doc: d.id });
+    if (ed.width !== ed.height) throw new Error("the 1:1 frame made " + ed.width + " x " + ed.height);
+    await run("undo", { doc: d.id });
+    // an edit while the base uploads: nothing changes, the edit stays
+    const upload = ed.uploadBase;
+    let release = null;
+    ed.uploadBase = (px) => new Promise((resolve, reject) => { release = () => upload.call(ed, px).then(resolve, reject); });
+    const late = ed.straightenDocument({ angle: 4 });
+    for (let i = 0; i < 200 && !release; i++) await wait(10);
+    ed.uploadBase = upload;
+    if (!release) throw new Error("the straighten never reached its upload");
+    await run("select_rect", { x: 5, y: 5, w: 20, h: 20, doc: d.id });
+    release();
+    if (await late) throw new Error("a straighten over an edit made during its upload ran");
+    if (ed.width !== W || !/changed while/.test(ed.status)) throw new Error("the refused straighten left " + ed.width + ", " + ed.status);
+    same(words(ed.basePx), before.base, "the base after a refused straighten");
+    out.frame = frame;
+    out.ok = true;
+} finally { host.off("geometry", onGeom); await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

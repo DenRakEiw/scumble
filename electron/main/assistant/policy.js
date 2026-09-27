@@ -82,6 +82,7 @@ const POLICY = {
     flatten: () => ASK("merges every visible layer, yours included, into the base image"),
     rotate_canvas: () => ASK("turns the whole picture, every layer with it (Ctrl+Z takes it back)"),
     flip_canvas: () => ASK("mirrors the whole picture, every layer with it (Ctrl+Z takes it back)"),
+    straighten_canvas: () => ASK("straightens and crops the whole picture: every layer is resampled once (Ctrl+Z takes it back)"),
     extend_canvas: (call) => ASK(positive(call.args)
         ? "bakes every visible layer into the base image and drops the others"
         : "crops the canvas"),

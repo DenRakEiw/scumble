@@ -226,6 +226,55 @@ function textStartFraction(l) {
     return [f.start[0] / f.W, f.start[1] / f.H];
 }
 
+/**
+ * The largest frame of the aspect `ratio` (w / h; null for any) inside a W x H picture turned by `deg` degrees about its
+ * centre, centred on it (PLAN_0_1_31 §7, 23b): [x, y, w, h] in frame space (the turned picture as the screen shows it,
+ * image space at 0 degrees), whole pixels, rounded inwards. The free case is the known largest rectangle in a turned one.
+ */
+function autoCropFrame(W, H, deg, ratio = null) {
+    const r = Math.abs(deg) * Math.PI / 180, C = Math.abs(Math.cos(r)), S = Math.abs(Math.sin(r));
+    let w, h;
+    if (ratio) {
+        h = Math.min(W / (ratio * C + S), H / (ratio * S + C));
+        w = ratio * h;
+    } else if (S < 1e-12) {
+        w = W; h = H;
+    } else {
+        const long = Math.max(W, H), short = Math.min(W, H);
+        if (short <= 2 * S * C * long || Math.abs(S - C) < 1e-10) {
+            const x = short / 2;
+            [w, h] = W >= H ? [x / S, x / C] : [x / C, x / S];
+        } else {
+            const c2 = C * C - S * S;
+            w = (W * C - H * S) / c2; h = (H * C - W * S) / c2;
+        }
+    }
+    w = Math.max(8, Math.floor(w + 1e-6)); h = Math.max(8, Math.floor(h + 1e-6));
+    return [Math.round((W - w) / 2), Math.round((H - h) / 2), w, h];
+}
+
+/**
+ * Does the frame [x, y, w, h] (frame space) lie inside a W x H picture turned by `deg` about its centre? Its centre in
+ * the picture's own axes plus its half extents there, against the picture's half size (half a pixel of slack: the
+ * rounding of a fitted frame).
+ */
+function frameInside(W, H, deg, x, y, w, h) {
+    const r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r), C = Math.abs(c), S = Math.abs(s);
+    const dx = x + w / 2 - W / 2, dy = y + h / 2 - H / 2;
+    const u = dx * c + dy * s, v = -dx * s + dy * c;
+    return Math.abs(u) + (w / 2) * C + (h / 2) * S <= W / 2 + 0.5 && Math.abs(v) + (w / 2) * S + (h / 2) * C <= H / 2 + 0.5;
+}
+
+/** The image-to-image map of a straighten: the picture turned by `deg` about its centre, then the frame's origin at 0, 0. */
+const straightenXf = (W, H, deg, x, y) => xfMul(xfTranslate(-x, -y), xfRotate(deg, W / 2, H / 2));
+
+/** The new rectangle of a layer's box under a map: its bounding box on whole pixels, outwards. */
+function boxOnPixels(m, x, y, w, h) {
+    const b = xfBox(m, x, y, x + w, y + h);
+    const x0 = Math.floor(snapNum(b[0])), y0 = Math.floor(snapNum(b[1]));
+    return [x0, y0, Math.max(1, Math.ceil(snapNum(b[2])) - x0), Math.max(1, Math.ceil(snapNum(b[3])) - y0)];
+}
+
 const DOC_TURN_LABELS = { 1: "Rotate canvas 90° clockwise", "-1": "Rotate canvas 90° counter-clockwise", 2: "Rotate canvas 180°", h: "Flip canvas horizontally", v: "Flip canvas vertically" };
 
 const MASK_RGB = [255, 255, 255];           // a layer mask's colour where it lets through (the selection's is red)
@@ -3534,6 +3583,195 @@ class InpaintEditor {
         this.objects = null;
         this.objectShapeCache.clear();
         this.hoverObjectId = 0; this.hoverObjectCanvas = null;
+    }
+
+    // ---- the whole document straightened and cropped in one step (PLAN_0_1_31 §7, 23b) -------------------------------
+
+    /**
+     * Turn the whole document by `angle` degrees (clockwise) about its centre and crop it to the frame `x, y, w, h` (frame
+     * space: the turned picture; the largest frame of the picture's own aspect inside it when left out): the base, every
+     * layer with its mask, the selection and the filter layers' masks resampled once (inpaint_resample.js, in the pool),
+     * text layers turned by their description, reference layers moved, the rest (the results history, the saved
+     * selections, the guides, the export size, the plugins) following. One undo step. False with a status line when it
+     * cannot run. Serialised with the document's turns and waiting for every edit under way, as they do.
+     */
+    /** An aspect preset as a ratio w / h: "original" the picture's own, "free" null, "4:3" or "W:H" their ratio; undefined for none. */
+    aspectRatio(name) {
+        const s = String(name || "original").trim().toLowerCase();
+        if (s === "original") return this.width / this.height;
+        if (s === "free") return null;
+        const m = /^(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)$/.exec(s);
+        return m && +m[1] > 0 && +m[2] > 0 ? +m[1] / +m[2] : undefined;
+    }
+
+    /** The largest frame of `ratio` (null: any) centred in the picture turned by `deg`: [x, y, w, h] in frame space. */
+    fitFrame(deg, ratio) {
+        return autoCropFrame(this.width, this.height, deg, ratio);
+    }
+
+    straightenDocument(opts) {
+        const waitFor = [this._turnQueue, ...(this._pendingEdits ? Array.from(this._pendingEdits) : [])].filter(Boolean);
+        const run = Promise.all(waitFor).then(() => this.straightenDocumentNow(opts));
+        this._turnQueue = run.then(() => {}, () => {});
+        return this.trackEdit(run);
+    }
+
+    async straightenDocumentNow({ angle = 0, x = null, y = null, w = null, h = null } = {}) {
+        if (!this.base) { this.setStatus("Load an image first."); return false; }
+        const deg = normDeg(+angle || 0);
+        const W = this.width, H = this.height;
+        let frame = [x, y, w, h].every((v) => v !== null && v !== undefined && Number.isFinite(+v)) ? [x, y, w, h].map((v) => Math.round(+v)) : autoCropFrame(W, H, deg, W / H);
+        if (!(frame[2] >= 8 && frame[3] >= 8)) { this.setStatus("The frame would be smaller than 8 px."); return false; }
+        if (!deg && frame[0] === 0 && frame[1] === 0 && frame[2] === W && frame[3] === H) { this.setStatus("Nothing to straighten or crop."); return false; }
+        if (!deg && (frame[0] < 0 || frame[1] < 0 || frame[0] + frame[2] > W || frame[1] + frame[3] > H)) { this.setStatus("A frame past the picture extends the canvas: use Extend."); return false; }
+        if (deg && !frameInside(W, H, deg, ...frame)) { this.setStatus("The frame reaches past the turned picture: keep it inside when the picture is turned."); return false; }
+        const blocked = this.turnBlocked();
+        if (blocked) { this.setStatus(blocked); return false; }
+        const [fx, fy, nw, nh] = frame;
+        const label = deg ? "Straighten and crop" : "Crop canvas";
+        const A = straightenXf(W, H, deg, fx, fy), Ainv = xfInv(A);
+        let before = null, pushed = false;
+        const made = [];   // every new store, released when the step does not happen
+        const keep = (p) => { if (p) made.push(p); return p; };
+        this._turning = true;   // crop, resize, extend, merge and flatten wait for it (they would replace the base)
+        try {
+            this.setStatus(`${label} ...`);
+            if (this.pending) this.cancelPending();
+            if (this.textEdit) this.endTextEdit(true);
+            for (const l of this.layers) {
+                if (l.kind !== "text" || !l.text || !(l._textTimer || l._textRendering)) continue;
+                clearTimeout(l._textTimer); l._textTimer = null;
+                await this.renderTextLayer(l);
+            }
+            const again = this.turnBlocked();
+            if (again) { this.setStatus(again); return false; }
+            before = this.snapshot({ kind: "canvas" });
+            const gen = this.historyGen, base0 = this.basePx;
+            // every new store, in the pool (the window keeps drawing); nothing is assigned before all of them are there
+            const onCanvas = pixelMap(Ainv);
+            const jobs = [];
+            const basePx = keep(await this.basePx.transformedAsync(onCanvas, nw, nh, { edge: "clamp" }));
+            const plan = new Map();
+            for (const l of this.layers) {
+                const p = {};
+                plan.set(l, p);
+                if (l.kind === "filter") {
+                    if (l.maskPx) jobs.push(l.maskPx.transformedAsync(onCanvas, nw, nh, { color: MASK_RGB }).then((m) => { p.maskPx = keep(m); }));
+                    continue;
+                }
+                if (this.isReference(l)) {
+                    // a model's input, not part of the picture: moved (its middle mapped), not resampled
+                    const [cx, cy] = xfApply(A, l.x + l.w / 2, l.y + l.h / 2);
+                    p.rect = [Math.round(cx - l.w / 2), Math.round(cy - l.h / 2), l.w, l.h];
+                    continue;
+                }
+                if (l.kind === "text" && l.text) {
+                    // turned by its description and drawn at the angle, never resampled; its middle follows the picture
+                    const text = spinText(l.text, deg);
+                    jobs.push(renderText(text).then((r) => {
+                        let px = this.pixels.Layer.fromCanvas(r.canvas);
+                        if (!r.oriented) for (const op of orientOps(text)) px = px.turned(op);
+                        const oldRes = l.text.res || 2;
+                        let k = l.px && l.px.width > 1 ? l.w / (l.px.width / oldRes) : 1;
+                        if (l.px && Math.abs(k - 1) * (l.px.width / oldRes) < 1) k = 1;
+                        const tw = Math.max(1, Math.round(px.width / r.res * k)), th = Math.max(1, Math.round(px.height / r.res * k));
+                        const [cx, cy] = xfApply(A, l.x + l.w / 2, l.y + l.h / 2);
+                        p.text = { ...text, res: r.res, ...(r.box ? { box: r.box } : {}) };
+                        p.px = keep(px);
+                        p.rect = [Math.round(cx - tw / 2), Math.round(cy - th / 2), tw, th];
+                        if (l.maskPx) {
+                            const [nx, ny] = p.rect;
+                            const inv = xfMul(xfInv([l.w / l.maskPx.width, 0, 0, l.h / l.maskPx.height, l.x, l.y]), xfMul(Ainv, [tw / px.width, 0, 0, th / px.height, nx, ny]));
+                            p.maskPx = keep(l.maskPx.transformed(pixelMap(inv), px.width, px.height, { color: MASK_RGB }));
+                        }
+                    }));
+                    continue;
+                }
+                if (!l.px) continue;
+                const pw = l.px.width, ph = l.px.height;
+                const whole = l.x === 0 && l.y === 0 && l.w === W && l.h === H && pw === W && ph === H;
+                let rect, npw, nph, map, edge;
+                if (whole) {
+                    // a layer over the whole canvas stays one: resampled onto the new canvas like the base
+                    rect = [0, 0, nw, nh]; npw = nw; nph = nh; map = onCanvas; edge = "clamp";
+                } else {
+                    // any other keeps its whole turned rectangle (as a crop keeps pixels) at its own resolution
+                    rect = boxOnPixels(A, l.x, l.y, l.w, l.h);
+                    const rx = pw / l.w, ry = ph / l.h;
+                    npw = Math.max(1, Math.round(rect[2] * rx)); nph = Math.max(1, Math.round(rect[3] * ry));
+                    map = pixelMap(xfMul(xfInv([l.w / pw, 0, 0, l.h / ph, l.x, l.y]), xfMul(Ainv, [rect[2] / npw, 0, 0, rect[3] / nph, rect[0], rect[1]])));
+                    edge = "transparent";
+                }
+                p.rect = rect;
+                jobs.push(l.px.transformedAsync(map, npw, nph, { edge }).then((q) => { p.px = keep(q); }));
+                if (l.maskPx) jobs.push(l.maskPx.transformedAsync(map, npw, nph, { color: MASK_RGB, edge }).then((m) => { p.maskPx = keep(m); }));
+            }
+            let sel = null;
+            jobs.push(this.sel.transformedAsync(onCanvas, nw, nh).then((m) => { sel = keep(m); }));
+            await Promise.all(jobs);
+            const { ref } = await this.uploadBase(basePx);
+            // what happened meanwhile: an edit is in the document and not in the step, a drag works in the old geometry
+            if (this.historyGen !== gen || this.basePx !== base0 || this.width !== W || this.height !== H || this.gestureHeld()) {
+                for (const p of made) if (typeof p.release === "function") p.release();
+                made.length = 0;
+                this.setStatus("The picture changed while it was being straightened, so nothing was changed. Straighten it again.");
+                return false;
+            }
+            if (this.pending) this.cancelPending();
+            for (const l of this.layers) {
+                const p = plan.get(l);
+                if (!p) continue;
+                if (l.kind === "filter") { l.w = nw; l.h = nh; if (p.maskPx) l.maskPx = p.maskPx; continue; }
+                if (p.rect) [l.x, l.y, l.w, l.h] = p.rect;
+                if (p.px) l.px = p.px;
+                if (p.maskPx) l.maskPx = p.maskPx;
+                if (p.text) { l.text = p.text; l._textUndo = null; }
+            }
+            this.sel = sel;
+            this.mapExtras(A, "straighten");
+            // a guide is not turned by a few degrees: it stays where it was on the screen, shifted by the crop
+            this.mapGuides(xfTranslate(-fx, -fy), nw, nh);
+            this.docXf = snapXf(xfMul(A, this.docXf));
+            this.base = { ref, px: basePx };
+            this.width = nw; this.height = nh;
+            pushed = true;
+            made.length = 0;
+            this.pushUndoSnapshot(before, { tracked: true, label });
+            for (const l of this.layers) {
+                l.dirty = l.kind !== "filter";
+                l.exportRef = null;
+                l._maskedValid = false; l._mcache = null; l._mcacheView = null; l._mcacheSample = null;
+                l._mstats = null; l._mstatsSample = null; l._mstatsSampleRun = null; l._mstatsStack = null; l._mstatsStackRun = null;
+                l._fcache = null; l._fcacheView = null; l._fcacheSample = null; l._fxCache = null; l._bstats = null; l._bstatsRun = null;
+                if (l.maskPx) { l.maskDirty = true; this.touchSource(l.maskPx); }
+                if (l.kind !== "filter") this.touchSource(l.px);
+                this.touchSource(l._masked);
+            }
+            this.scheduleDetachedRelease();
+            this.uploaded = this.makeUploaded();
+            this.dropCompositeCaches();
+            this.touchSource(this.sel);
+            this.selectionDirty = true; this.selectionLoose = false;
+            this.selectionDataUrl = null; this.selectionEncoded = false;
+            this.polyPoints = null; this.lassoPoints = null; this.shapePoints = null; this.shapeDrag = null;
+            this.cloneSource = null; this.hover = null;
+            if (this.extendInputs) for (const k of Object.keys(this.extendInputs)) this.extendInputs[k].value = 0;
+            this.renderLayers(); this.renderHistory(); this.renderSelectionList(); this.renderInfo(); this.updateSubbar();
+            this.fitView(); this.drawThumb();
+            host.changed(this, { geometry: { kind: "straighten", m: A, from: { width: W, height: H }, to: { width: nw, height: nh } } });
+            this.notifyChanged();
+            this.syncLayers().catch((err) => console.warn("Inpaint Canvas: the straightened layers could not be stored", err));
+            this.setStatus(`${label}: the picture is ${nw} × ${nh}${deg ? `, turned ${Math.round(deg * 100) / 100}°` : ""} (Ctrl+Z takes it back).`);
+            return true;
+        } catch (err) {
+            for (const p of made) if (typeof p.release === "function") p.release();
+            if (!pushed && before) this.releaseSnapshot(before);
+            console.error(err);
+            this.setStatus(String(err.message || err));
+            return false;
+        } finally {
+            this._turning = false;
+        }
     }
 
     // ---- canvas tool: extend by dragging the frame ---------------------------------
@@ -10826,8 +11064,24 @@ class InpaintEditor {
             this.drawLayerFitted(ctx, layer, (canvas.width - w) / 2, (canvas.height - hh) / 2, w, hh);
             return;
         }
-        if (h.thumbImg) { paint(h.thumbImg); return; }
-        loadImageEl(viewUrl(h.ref)).then((img) => { h.thumbImg = img; paint(img); }).catch(() => { /* ignore */ });
+        const paintXf = (img) => {
+            // an entry that went through a straighten: its file drawn through its map, fitted into the thumbnail
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const m = xfMul(h.xf, xfScale(1 / (img.naturalWidth || img.width), 1 / (img.naturalHeight || img.height)));
+            const b = xfBox(m, 0, 0, img.naturalWidth || img.width, img.naturalHeight || img.height);
+            const s = Math.min(canvas.width / (b[2] - b[0]), canvas.height / (b[3] - b[1]));
+            ctx.save();
+            ctx.translate((canvas.width - (b[2] - b[0]) * s) / 2, (canvas.height - (b[3] - b[1]) * s) / 2);
+            ctx.scale(s, s);
+            ctx.translate(-b[0], -b[1]);
+            ctx.transform(...m);
+            ctx.drawImage(img, 0, 0);
+            ctx.restore();
+        };
+        const draw = (img) => (validXf(h.xf) ? paintXf(img) : paint(img));
+        if (h.thumbImg) { draw(h.thumbImg); return; }
+        loadImageEl(viewUrl(h.ref)).then((img) => { h.thumbImg = img; draw(img); }).catch(() => { /* ignore */ });
     }
 
     soloResult(h) {
@@ -10941,9 +11195,22 @@ class InpaintEditor {
             const img = h.thumbImg || await loadImageEl(viewUrl(h.ref));
             // the file as the model answered; turned as the document was since (its `orient`), then a file of its own
             let px = this.pixels.Layer.fromImage(img);
-            for (const op of orientOps(h.orient)) px = px.turned(op);
-            const up = orientIsUp(h.orient);
-            const layer = this.addLayer({ name: h.name, kind: "result", ref: up ? h.ref : null, px, x: h.x, y: h.y, w: h.w, h: h.h, ...(up ? {} : { dirty: true }) });
+            let layer;
+            if (validXf(h.xf)) {
+                // it went through a straighten: resampled once into its turned rectangle, at the file's own resolution
+                const fw = px.width, fh = px.height;
+                const rect = boxOnPixels(h.xf, 0, 0, 1, 1);
+                const rx = fw / Math.hypot(h.xf[0], h.xf[1]), ry = fh / Math.hypot(h.xf[2], h.xf[3]);
+                const npw = Math.max(1, Math.round(rect[2] * rx)), nph = Math.max(1, Math.round(rect[3] * ry));
+                const inv = xfMul(xfScale(fw, fh), xfMul(xfInv(h.xf), [rect[2] / npw, 0, 0, rect[3] / nph, rect[0], rect[1]]));
+                const turned = px.transformed(pixelMap(inv), npw, nph);
+                px.release();
+                layer = this.addLayer({ name: h.name, kind: "result", ref: null, px: turned, x: rect[0], y: rect[1], w: rect[2], h: rect[3], dirty: true });
+            } else {
+                for (const op of orientOps(h.orient)) px = px.turned(op);
+                const up = orientIsUp(h.orient);
+                layer = this.addLayer({ name: h.name, kind: "result", ref: up ? h.ref : null, px, x: h.x, y: h.y, w: h.w, h: h.h, ...(up ? {} : { dirty: true }) });
+            }
             h.layerId = layer.id;
             this.renderHistory();
             this.setStatus(`${h.name} restored.`);

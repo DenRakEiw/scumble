@@ -998,6 +998,28 @@ const COMMANDS = {
             return { width: ed.width, height: ed.height, status: ed.status };
         },
     },
+    straighten_canvas: {
+        needsImage: true, description: "Straighten the whole picture: turn it by any angle (degrees clockwise, -45..45) about its centre and crop it to a frame inside the turned picture, in one undo step. Without x / y / width / height the frame is the largest one of `aspect` (original: the picture's own; free; 1:1, 4:3, 3:2, 16:9, 5:4 or W:H) centred in the turned picture. x / y / width / height set the frame in the turned picture's coordinates (the picture's own at 0 degrees). The base, every layer and mask and the selection are resampled once; text stays editable (its angle grows); guides stay where they are on the screen, shifted by the crop. Refused while a render or another job of the document runs.",
+        params: {
+            angle: P.num("degrees clockwise, -45..45", { required: true }), aspect: P.str("original, free, 1:1, 4:3, 3:2, 16:9, 5:4 or W:H", { default: "original" }),
+            x: P.int("frame left"), y: P.int("frame top"), width: P.int("frame width"), height: P.int("frame height"),
+        },
+        async run(ed, a) {
+            const angle = +a.angle;
+            if (!Number.isFinite(angle) || Math.abs(angle) > 45) throw new Error("angle must be between -45 and 45 degrees (rotate_canvas turns by quarters)");
+            let frame = {};
+            if ([a.x, a.y, a.width, a.height].every((v) => v != null)) frame = { x: +a.x, y: +a.y, w: +a.width, h: +a.height };
+            else if ([a.x, a.y, a.width, a.height].some((v) => v != null)) throw new Error("give all of x, y, width and height, or none");
+            else {
+                const ratio = ed.aspectRatio(String(a.aspect || "original"));
+                if (ratio === undefined) throw new Error("aspect must be original, free, 1:1, 4:3, 3:2, 16:9, 5:4 or W:H");
+                const [x, y, w, h] = ed.fitFrame(angle, ratio);
+                frame = { x, y, w, h };
+            }
+            if (!(await ed.straightenDocument({ angle, ...frame }))) throw new Error(ed.status || "the picture could not be straightened");
+            return { width: ed.width, height: ed.height, status: ed.status };
+        },
+    },
 
     // -- export --
     export: {
