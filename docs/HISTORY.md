@@ -6,6 +6,32 @@ The blocks of 2026-09-19 to 2026-09-23 were moved here on 2026-09-26 (CLAUDE.md 
 
 The block of 2026-09-26 (evening) and the full text of the list were moved here late on 2026-09-26, when package 3b was built (CLAUDE.md keeps a short "Where things stand" and a condensed list).
 
+The block of 2026-09-27 (morning) was moved here the same morning, after the 0.1.30 release.
+
+## Where things stand (2026-09-27, morning)
+
+The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).
+
+**Released:** **0.1.30 is Latest** (published 2026-09-27 08:58 German time on the user's word "ok, pushe und schreibe
+dev log auf der webseite"): 3b `.scumble` documents, 3f the PNG metadata switch (`settings.embedRecipe`, **off by
+default**, a decision taken in the build: say so if the user wants it on) with an `sRGB` chunk on every PNG export, 3d
+TIFF open and save (`renderer/editor/inpaint_tiff.js`, gates `tiff` and `tiffperf:WxH`) and the `canvasRows` smoothing
+fix. Exe gates `--offline` ALL PASS on both backends (`rel30-exe` with `docux` rerun as `rel30-exe-docux` after a test
+fix, `rel30-exe-canvas`, `rel30-exe-canvas-docux`); dev blog post "Save it, and it stays" (`v0-1-30`, portfolio
+`e0ce4fd`, with the manual sync). Check `gh release list` before believing any release state written down anywhere.
+Deferred from 3f (not cheap): the source's EXIF / XMP in exports, an ICC profile in PSD and TIFF. Not checked: a
+double click in Explorer on an installed build, TIFFs from Photoshop / Affinity / Lightroom.
+
+**The build in progress is `docs/PLAN_0_1_29.md`** (read it first). Done: 1 skins, 2 providers, 3a, 3b, 3d, 3f. **Left,
+"wir bauen alles":** **3c** the history panel, **3e** editable PSD masks; then **4** brushes, **5** repair / remove /
+liquify, **6** layers pro. Still open for the user: LaMa shipped or downloaded (package 5), releases per package or
+bundled, and whether the PNG switch should default to on.
+
+**How the work goes (the user, 2026-09-26):** tests by risk (Working rules); few agents - the main loop builds, one or
+two background agents take separate files (a gate in an isolated worktree, docs), one package at a time, a local
+commit per step; check the 5-hour window (`mcp__ccd_session_mgmt__get_usage`) and stop at a committed state around 70
+to 80 %.
+
 The block of 2026-09-26 (late evening) was moved here that night, when 3f and 3d were built.
 
 ## Where things stand (2026-09-26, late evening)

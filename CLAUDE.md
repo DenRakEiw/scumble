@@ -3,7 +3,8 @@
 Read this first, then `docs/BRIEF.md` (vision, decisions, architecture, phases).
 `docs/BUGS.md` is the bug list: what is reported and not fixed, and what has to be
 measured before anyone writes code. Put a new report there, not in this file.
-`docs/NAMES.md` holds the name research, `docs/RUNPOD.md` the Docker template notes.
+`docs/NAMES.md` holds the name research, `docs/RUNPOD.md` the Docker template notes,
+`docs/TESTING.md` what each test tool covers and the known flakes.
 
 **Name: Scumble** (decided 2026-09-07). A scumble is a thin, semi-opaque layer of paint
 brushed over a dry layer so the one below shows through; that is what an inpaint result
@@ -109,38 +110,40 @@ code.
 The session hand-over blocks that used to live here ("Where things stand / stood", 2026-09-09 to
 2026-09-23) are in `docs/HISTORY.md`, newest first, verbatim. They are a record, not instructions.
 
-## Where things stand (2026-09-27, morning)
+## Where things stand (2026-09-27)
 
 The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).
 
-**Released:** **0.1.30 is Latest** (published 2026-09-27 08:58 German time on the user's word "ok, pushe und schreibe
-dev log auf der webseite"): 3b `.scumble` documents, 3f the PNG metadata switch (`settings.embedRecipe`, **off by
-default**, a decision taken in the build: say so if the user wants it on) with an `sRGB` chunk on every PNG export, 3d
-TIFF open and save (`renderer/editor/inpaint_tiff.js`, gates `tiff` and `tiffperf:WxH`) and the `canvasRows` smoothing
-fix. Exe gates `--offline` ALL PASS on both backends (`rel30-exe` with `docux` rerun as `rel30-exe-docux` after a test
-fix, `rel30-exe-canvas`, `rel30-exe-canvas-docux`); dev blog post "Save it, and it stays" (`v0-1-30`, portfolio
-`e0ce4fd`, with the manual sync). Check `gh release list` before believing any release state written down anywhere.
-Deferred from 3f (not cheap): the source's EXIF / XMP in exports, an ICC profile in PSD and TIFF. Not checked: a
-double click in Explorer on an installed build, TIFFs from Photoshop / Affinity / Lightroom.
+**Released:** 0.1.30 is Latest (2026-09-27: `.scumble` documents, the PNG metadata switch, TIFF open and save; dev
+blog post `v0-1-30`). Check `gh release list` before believing any release state written down anywhere. `main` is
+pushed; nothing is waiting locally but the uncommitted tutorial material.
+
+**Next: item 24, the canvas-only view** (the user, 2026-09-27: "eine tastenkombi die alles ausblendet und man das image
+in full screen sieht"). Asked for, not started; the design read from the code that day is under item 24 below. Item
+25 (the app's own dialogs instead of the native boxes) was asked about the same day; the user's answers on the look
+and the timing are still open.
 
 **The build in progress is `docs/PLAN_0_1_29.md`** (read it first). Done: 1 skins, 2 providers, 3a, 3b, 3d, 3f. **Left,
 "wir bauen alles":** **3c** the history panel, **3e** editable PSD masks; then **4** brushes, **5** repair / remove /
-liquify, **6** layers pro. Still open for the user: LaMa shipped or downloaded (package 5), releases per package or
-bundled, and whether the PNG switch should default to on.
+liquify, **6** layers pro. Open for the user: LaMa shipped or downloaded (package 5), releases per package or bundled,
+whether the PNG switch (`settings.embedRecipe`, off by default, decided in the build) should default to on.
+Deferred from 3f (not cheap): the source's EXIF / XMP in exports, an ICC profile in PSD and TIFF. Not checked: a
+double click in Explorer on an installed build, TIFFs from Photoshop / Affinity / Lightroom.
 
 **How the work goes (the user, 2026-09-26):** tests by risk (Working rules); few agents - the main loop builds, one or
-two background agents take separate files (a gate in an isolated worktree, docs), one package at a time, a local
+two background agents take separate files (a gate, tests against a stated API, docs), one package at a time, a local
 commit per step; check the 5-hour window (`mcp__ccd_session_mgmt__get_usage`) and stop at a committed state around 70
-to 80 %.
+to 80 %. A release only on the user's word; everything before it (CHANGELOG, `npm run dist`, exe gates) may be
+prepared locally.
 
 ## Open threads (condensed on 2026-09-26 from the hand-overs of 2026-09-19 to 2026-09-23)
 
 The full hand-over blocks of those days are in `docs/HISTORY.md`, verbatim. What still matters from them:
 
-**Releases.** 0.1.30 is Latest (published 2026-09-27: documents, the PNG metadata switch, TIFF). Check `gh release
-list` before believing any release state written down anywhere. Every release: the CHANGELOG section first, `npm run
-dist`, exe gates `--offline` on both backends, the manual sync (`node tools/manual_sync.js`) and a dev blog post (the
-decisions block above).
+**Every release:** the CHANGELOG section first, the version in `package.json`, `npm run dist`, exe gates `--offline` on
+both backends (0.1.30's list: `dist/gates/gates/rel30-exe*/summary.txt`), push, tag `v<version>`, `gh run watch` the
+tag's build, `gh release edit v<version> --draft=false`, then the manual sync (`node tools/manual_sync.js`) and the dev
+blog post (the decisions block above; `time` is the release's `published_at` in German time).
 
 **Open, from before 2026-09-26 (none started):**
 - **B3, the macOS build** (`docs/PLAN_0_1_24.md` "Session B3"): unblocked since the logo exists (`build/icon.png`
@@ -216,6 +219,25 @@ planning one of them.
 23. **Rotate and straighten the whole document** (on the later list, the user, 2026-09-26): rotate 90 / 180, flip,
    straighten by a drawn line, crop presets; 2 to 3.5 days, crop presets 1 to 2 more; every layer, mask and selection
    follows, like *Resize*.
+24. **A canvas-only view** (the user, 2026-09-27; next): one key hides everything and the picture fills the screen.
+   Read from the code, not built: **Tab** (free in the editor's `onKey`, Photoshop's and Krita's key; F11 stays the
+   plain window full screen of the View menu's `togglefullscreen`), Tab again or Escape returns (Escape only when the
+   editor has nothing pending: `pending`, `polyPoints`, `shapePoints`). App-only, in `renderer/shell.js` (a capture
+   keydown listener like the one for Ctrl+S, not in a text field, not while a dialog is open), so the editor source
+   and the node stay as they are: a class on the body hides `#shell-bar`, `#shell-tabs`, the help and assistant
+   columns and the editor's chrome (`.ipc-top`, `.ipc-tools`, `.ipc-side`, `.ipc-bottom`, the rulers), `.ipc-view`
+   fills the window; the window goes full screen over IPC (remember whether it already was; a `leave-full-screen`
+   from F11 or the OS ends the mode); the picture is fitted (a view the user had zoomed is put back on the way out);
+   a hint "Tab or Esc to return" fades after a few seconds. A View menu entry "Canvas Only" with `registerAccelerator:
+   false` (a registered Tab would reach text fields). Normal tier: a gate step (the chrome hidden, the view the window's
+   size, full screen on and back, Tab in a text field ignored, Escape with a pending transform cancels only that).
+25. **The app's own dialogs** (asked 2026-09-27; the user's answers open): the native message boxes (`askDocument`
+   in `electron/main/main.js`: close / changed / newer / history; `askWhileSaving`) and the eight `window.confirm`
+   calls of the renderer as one in-app dialog on the editor's `ask()` modal, main asking the window over IPC with the
+   native box as the fallback when it does not answer (a busy or hung renderer). Proposed: the skin's colours, the
+   structure protected like the assistant's ask card (`protectAsk`: shadow root, top layer), a new async
+   `dialogs.ask()` for plugins beside the old `confirm`. Stay native: the file pickers, the crash dialog. About 1 to
+   1.5 days.
 
 ## Gate runner and flakes
 
@@ -225,44 +247,15 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
 magnific oxen quit document docux metadata tiff`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
-ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]` and `huge:<W>x<H>` (the 30k gate; it refuses to run
+ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is
 forwarded to the user's server. A fresh gate profile otherwise connects to `127.0.0.1:8188`, the user's ComfyUI, and
 forwards every upload of every gate to its input folder; use `--offline` for everything but `smoke`. Run a change on both backends (`--tiles on` and `--tiles off`); a release also runs against
 `dist/win-unpacked/Scumble.exe` with `--exe`, each run on its own profile.
 
-Known flakes; **re-run before believing any of these**:
-- `commands_test.py` hangs after every step has printed `[ok]` (the runner's 420 s timeout, sometimes in
-  `Page.captureScreenshot`).
-- `editor_test.py` `closed_tabs_are_collected` fails with the last tabs still alive, or against an instance with 50+ tabs
-  from repeated runs.
-- The live stroke steps (`live_stroke_reaches_the_screen_before_the_release`, `live_stroke_preview_shows_what_the_commit_writes`)
-  fail when a real mouse is over the test window (they drive synthetic pointer events), or right after a diagnostic
-  instance was closed.
-- The marching ants (120 ms) break a screen comparison now and then; steps that compare the screen draw the selection as a
-  tint.
-- `composite_test.py` once got a 1200 × 794 canvas against its 1200 × 800 reference and then crashed with `KeyError 'bytes'`
-  in its own failure message (a test bug, not fixed).
-- `node tools/brush_test.js` hung once at exit under load after printing every PASS.
-- `editor_test.py` `closed_tabs_are_collected` failed twice in five runs of the editor gate alone on the canvas backend
-  (`--tiles off`, 2026-09-17, B item 2) and passed on the rerun each time; the code under it had not changed.
-- `editor_test.py` `selection_keeps_its_bounds_through_a_restore_above_1mp` failed once with no message on the canvas
-  backend (2026-09-23, after `help` and `assistant` in the same instance) and passed on the rerun in the same order.
-- `editor_test.py` `a_settled_read_builds_its_levels_in_the_worker_not_here` failed once with `requested: 0` in some twenty
-  runs since the mip chains go through the pool; not reproduced.
-- The first exe instance of the 0.1.18 gates failed `a_settled_read_builds_its_levels_in_the_worker_not_here`
-  (`requested: 0`, 11 s into the editor gate) and `composite_test.py`'s view (a 1200 × 794 canvas) in the same run; both
-  passed on a fresh instance. Two known flakes at once, in the first seconds of an instance: not looked into.
-- `perf_test.py`'s magic wand row (whole-image band) read 2.1, 4.0 and 7.0 s in three runs of the same code while ComfyUI
-  ran a job; an A/B against the commit before in the same minute read 3.5 s. It is the card, not the code.
-- The `commands` primed-cells checks wait up to 3 s for the film panel's own settled flatten; a failure "primed cells were
-  left behind" seen once without a mutation was that race.
-- The editor gate run alone on tiles takes about 370 s (120 s inside a full run). On 2026-09-18 (the split, stage 1)
-  four runs alone failed at four different timing-bound steps (the live stroke with the pointer message,
-  `closed_tabs_are_collected` twice with the last two tabs alive, `helper_inputs_read_levels_and_upload_nothing` with
-  one upload counted), while the unchanged tree passed once and `closed_tabs_are_collected` alone passed 3 of 3 on
-  both trees; not looked into further.
+Known flakes: `docs/TESTING.md` "Known flakes". **Re-run a failing gate before believing it** when its step is listed
+there; add a new flake there, with the date and what was ruled out.
 
 ## Traps worth keeping
 
@@ -304,6 +297,8 @@ Known flakes; **re-run before believing any of these**:
 - With `ELECTRON_RUN_AS_NODE` and `-e`, a switch after the code is taken for a Node option ("bad option:
   --mcp"); after `--` it lands in `process.argv[1]`, not `[2]`.
 - `mcp_test.py --user-data-dir` must come before `--cmd`, which otherwise takes it for its JSON.
+- A test that starts the exe from Python needs its absolute path: `subprocess` with the runner's relative
+  `dist/win-unpacked/Scumble.exe` fails with WinError 2 (`docux`, 2026-09-27).
 
 **Tooling, shell, git**
 - The Bash tool's heredoc breaks on an apostrophe in its text even with a quoted delimiter (`unexpected EOF while looking
@@ -317,7 +312,8 @@ Known flakes; **re-run before believing any of these**:
   (`<<'EOF'`) or use the Write tool. Heredocs also turn `\\n` in Python source into real newlines, and long Python heredocs
   fail to parse: write scripts with the Write tool.
 - PowerShell `Set-Content` writes a BOM (electron-builder then refuses `package.json`); edit such files from Python.
-- Python patch scripts write with `newline=chr(10)`.
+- The tools' Python has tifffile without `imagecodecs`: it writes no LZW, PackBits or zstd and cannot pack 1 / 2 / 4
+  bits; Pillow writes LZW (`tiff_lzw`) and PackBits, `tools/tiff_fixtures.py` builds the rest by hand.
 - Reusing one commit message file gives the next commit the old message.
 - The node's publish action runs on a push only when `pyproject.toml` changes; otherwise
   `gh workflow run publish_action.yml --repo DenRakEiw/ComfyUI-InpaintCanvas --ref master`.
@@ -434,45 +430,9 @@ Known flakes; **re-run before believing any of these**:
   queueing anything, never restart it unasked, delete own test prompts from the queue.
 - Python patch scripts must write with `newline=chr(10)`; a mistyped `newline="\\n"`
   once truncated a 7,000-line file.
-- Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-port=9555`
-  (9333 is usually taken by the node's headless tab), then `python tools/cdp.py eval|shot|log`
-  and `python tools/smoke_test.py` (load, select, generate through the recipe, save,
-  then the helpers and exports; `--no-helpers` for the short version) and
-  `python tools/commands_test.py` (command core + sample plugin, no ComfyUI needed).
-  `python tools/mcp_test.py` talks to the MCP server over stdio through
-  `electron/main/mcp/launch.js` (proxy mode while the dev instance runs, headless when
-  nothing runs; `--exe dist/win-unpacked/Scumble.exe` for the package, `--direct` for the
-  old registration, which the Python client rejects by design).
-  `python tools/llm_test.py` checks the OpenAI-compatible upsample endpoint against
-  `tools/llm_mock.py` (a mock server it starts itself; no ComfyUI, no key, no local model).
-  `python tools/generate_test.py` covers "Generate new" (a base image from the prompt
-  alone) against the loopback provider, no ComfyUI and no key needed.
-  `python tools/shape_test.py` covers the shape tool: every kind, fill and outline, the
-  corner radius, the clip to the selection and one undo step per shape.
-  `python tools/size_test.py` covers the size a crop is emitted at for an API run: the
-  provider variant's `limits`, the five API size modes, the pixel budget, and that a local
-  recipe keeps its `target_size`. Loopback only, no ComfyUI and no key needed.
-  `python tools/transparent_test.py` covers the OpenAI `background` parameter: the adapter's
-  size rules and parameter set in plain Node, then the loopback provider's transparent
-  answer surviving the stitch, "Generate new" with a transparent base, and the pixel floor.
-  `python tools/editor_test.py` covers the editor behaviour reported broken in 0.1.5: the
-  New dialog's two size boxes and its focus, the click that deselects, the outline that has
-  to stay visible on white, and copy / paste of a layer between tabs.
-  `node tools/helpers_test.js` runs the ONNX modules without Electron.
-  `python tools/composite_test.py` compares the GPU compositor against Canvas 2D and two
-  stored references in `tools/refs/` (`--update` rewrites them, `--tolerance n` allows n
-  levels); run it after anything that touches drawing.
-  `python tools/perf_test.py [2048x1152 6000x4000 12000x8000]` is the drawing benchmark
-  (synthetic documents in their own tab, no ComfyUI; `docs/PERFORMANCE.md` §7).
-  `python tools/mem_test.py [12000x8000] [--rounds 4] [--keep]` is the memory walk: a
-  document per round, benchmarked, closed and collected, with the private bytes of the
-  renderer and of the GPU process, a census of every live canvas and the line that made it.
-  Restart the app before every benchmark or memory run. Scripted
-  waits must use `setTimeout`, never `requestAnimationFrame`: rAF does not fire while the
-  window is hidden, and `drawSoon()` is rAF-based, so a hidden window draws nothing.
-  Start the dev instance with the Bash tool's `run_in_background`; a plain `&` job dies
-  with the shell.
-  `window.editor` and `import("./editor/host.js")` are reachable from the console.
-  Only one instance runs at a time (single-instance lock); stop the dev instance before
-  starting `dist/win-unpacked/Scumble.exe`. `Stop-Process -Name electron` in PowerShell.
+- Test with real runs: a dev instance `./node_modules/.bin/electron . --remote-debugging-port=9555
+  --user-data-dir=<scratch> --no-comfy` (the Bash tool's `run_in_background`; 9333 is the node's headless tab), then
+  `python tools/cdp.py eval|shot|log`, and `SCUMBLE_CDP_PORT=9555 python tools/close_app.py` to close it. Scripted waits
+  use `setTimeout`, never `requestAnimationFrame` (it stops in a hidden window). One instance at a time: stop the dev
+  instance before starting `dist/win-unpacked/Scumble.exe`. What each test tool covers: `docs/TESTING.md`.
 - Answer in German; code, comments and docs in English.
