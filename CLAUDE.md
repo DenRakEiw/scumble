@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-27, night)
+## Where things stand (2026-09-27, late night)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -84,19 +84,23 @@ verbatim). Check `gh release list` before believing any release state written do
 **Released:** 0.1.31 is Latest (2026-09-27, dev blog post live). `main` has local commits after it, not pushed.
 
 **In progress: 0.1.32 = 23b + package 4 (brushes)** (the user, 2026-09-27); package 5 is 0.1.33. The plan is
-`docs/PLAN_0_1_31.md` (§7 23b with its "built" paragraphs, §4 the brushes).
-- **23b is done** (local, 1b61e27..b85e867; CHANGELOG "Unreleased", MANUAL, DOCUMENTS.md, COMMANDS.md written): the
-  resampler (`renderer/editor/inpaint_resample.js`, `transformed` / `transformedAsync` on both backends, the Rust kernel
-  `resample_block`, px ABI 11), one geometry map (`docXf`; saved selections and history entries with `xf`; guides held
-  by the snapshots; the plugin `geometry` event with `kind` and `m`), text with a free angle (`text.angle` / `box`,
-  `setTextAngle`), `straightenDocument` / `straighten_canvas`, the pending canvas frame (`canvasFrame`), and the fixes
-  of a four-lens review.
-- **Next: package 4, step 1** (measure smudge, clone and heal at 15k on tiles), then plan §4's steps in order. A
-  read-only map of the brush code (four agents, 2026-09-27) is in `dist/map4/` (`engine.md`, `sources.md`,
-  `blend.md`, `tests.md`; `tests.md` holds the measurement script): read it before touching the brushes. 4.10 (the
-  brush panel): build it last and let the user judge it in the app.
-- Open for the user: LaMa shipped or downloaded (package 5), the PNG metadata switch's default, item 25's look and
-  timing.
+`docs/PLAN_0_1_31.md` (§7 23b, §4 the brushes with a "built" paragraph per step).
+- **23b is done** (local, 1b61e27..b85e867): the resampler, one geometry map (`docXf`), text with a free angle,
+  straighten, the pending canvas frame, a four-lens review's fixes.
+- **Package 4, steps 1 to 3 are done** (local, 697c16c..d128bec + the review fixes): step 1 measured
+  (`tools/brush_perf.py`, `docs/PERFORMANCE.md` §15); step 2 the regional sources (`brushSource` in
+  `inpaint_canvas.js`, `compositeBox` in the new `inpaint_boxstack.js`: clone / heal / smudge read the box under the
+  dab, 2 to 15 ms a move at 15k instead of 0.2 to 8 s); step 3 the pro smudge (the Rust kernel `smudge_dab`, px ABI
+  12, with its JS twin; Length, Finger, Sample layer / below / image). Beside them: the Opacity slider for the brushes,
+  AltGr+8 / 9 size the brush, the transform's mask note, PNG metadata on by default (with a settings migration for
+  profiles that stored the old default) and inputs named like keys left out (`redact.js`), fonts by their own file,
+  a PixelMemoryError instead of a RangeError. A four-lens review (workflow, 2026-09-27) found 15, all fixed.
+- **Next: package 4 step 4** (clone: the source overlay from `viewCanvas`, angle / scale / flip of the source through
+  anchors `q = S + A (d - D)`, imported tips for clone and heal). A ready patch and its gate step were written on
+  2026-09-27 (`p_step4.py`, `p_step4_test.py` in that session's scratchpad; `dist/map4/sources.md` §6 is the design),
+  then steps 5 to 10 in order; 4.10 is a popover from the tip preview (the user), built last.
+- The user's answers of 2026-09-27: LaMa is downloaded (package 5), the PNG switch is on by default, 4.10 a popover.
+  Open for the user: item 25's look and timing.
 
 **How the work goes (the user, 2026-09-26):** tests by risk (Working rules); few agents - the main loop builds, one or
 two background agents take separate files (a gate, tests against a stated API, docs), one package at a time, a local
@@ -220,6 +224,10 @@ there; add a new flake there, with the date and what was ruled out.
 - The tools' Python has tifffile without `imagecodecs`: it writes no LZW, PackBits or zstd and cannot pack 1 / 2 / 4
   bits; Pillow writes LZW (`tiff_lzw`) and PackBits, `tools/tiff_fixtures.py` builds the rest by hand.
 - Reusing one commit message file gives the next commit the old message.
+- A comment edit in `crates/px/src/*.rs` changes the wasm bytes (panic locations carry line numbers): rebuild with
+  `python tools/build_px.py` after any `.rs` edit, then `--check`.
+- `editor_test.py`'s steps are Python strings that are not raw: `\\n` in their JS, or `String.fromCharCode(10)`; a
+  plain `\n` becomes a newline inside a JS string literal.
 - The node's publish action runs on a push only when `pyproject.toml` changes; otherwise
   `gh workflow run publish_action.yml --repo DenRakEiw/ComfyUI-InpaintCanvas --ref master`.
 - `tools/run_gates.sh` and the mutation helpers restore only the files they saved; check `git diff --stat` after a mutation

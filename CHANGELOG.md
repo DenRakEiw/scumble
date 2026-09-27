@@ -44,11 +44,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   move at any size, and a gigabyte less memory. Heal matches the colour more exactly. On the base the smudge no
   longer copies the whole base into a layer first: it paints into a new layer from the picture.
 - **A smudge that carries paint.** The smudge brush now holds the paint it picks up and lays it down as it goes:
-  **Strength** is how much goes down, the new **Length** how far it goes on (0 is the smudge you know; towards 100
-  the colour is dragged to the end of the stroke), **Finger** starts every stroke with the paint colour on the
-  brush, and **Sample** takes the active layer, the layers up to it (below) or the whole visible picture. It keeps
-  the colour exact over long drags, respects alpha lock and the selection, works with imported brush tips, and pen
-  pressure sets its size and strength.
+  **Strength** is how much goes down, the new **Length** how far it goes on (0 drags what the last step left
+  behind; towards 100 the colour goes on to the end of the stroke), **Finger** starts every stroke with the paint
+  colour on the brush, and **Sample** takes the active layer, the layers up to it (below) or the whole visible
+  picture. Like a real smudge it drags transparency too: a stroke that starts beyond a layer's edge thins what it
+  crosses (tick alpha lock to keep the layer's alpha). It keeps the colour exact over long drags, respects the
+  selection, works with imported brush tips, and pen pressure sets its size and strength.
 
 ## 0.1.31 — 2026-09-27
 

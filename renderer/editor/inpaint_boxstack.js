@@ -36,10 +36,12 @@ export function releaseBoxBuffers() { pool = []; }
 
 /**
  * The bytes of one store (tile pixels `px` at (`sx`, `sy`) of the image) inside the box `X0, Y0, W, H` into `out`
- * (RGBA8, `W` wide, cleared), or with `alphaOnly` one byte a pixel, the alpha. False when no tile of the store lies there.
+ * (RGBA8, `W` wide, cleared), or with `alphaOnly` one byte a pixel, the alpha; only inside the picture (0, 0, `pw`, `ph`):
+ * a layer moved partly off the canvas keeps pixels there, which the picture does not show. False when no tile of the store
+ * lies there.
  */
-export function storeBox(px, sx, sy, X0, Y0, W, H, out, alphaOnly = false) {
-    const x0 = Math.max(X0, sx), y0 = Math.max(Y0, sy), x1 = Math.min(X0 + W, sx + px.width), y1 = Math.min(Y0 + H, sy + px.height);
+export function storeBox(px, sx, sy, X0, Y0, W, H, out, alphaOnly = false, pw = Infinity, ph = Infinity) {
+    const x0 = Math.max(X0, sx, 0), y0 = Math.max(Y0, sy, 0), x1 = Math.min(X0 + W, sx + px.width, pw), y1 = Math.min(Y0 + H, sy + px.height, ph);
     if (y1 <= y0 || x1 <= x0) return false;
     let any = false;
     for (let lty = (y0 - sy) >> 8; lty * TILE < y1 - sy; lty++) {
@@ -61,25 +63,25 @@ export function storeBox(px, sx, sy, X0, Y0, W, H, out, alphaOnly = false) {
 }
 
 /**
- * The composite of `stack` over the box (`X0`, `Y0`, `W` x `H`, whole image pixels; it may reach outside the picture,
- * which stays transparent there): RGBA8, `W * H * 4` bytes, a view on a buffer the next call reuses unless the box is
+ * The composite of `stack` over the box (`X0`, `Y0`, `W` x `H`, whole image pixels; it may reach outside the picture
+ * `pw` x `ph`, which stays transparent there, whatever a layer holds beyond its edge): RGBA8, `W * H * 4` bytes, a view on a buffer the next call reuses unless the box is
  * large. `rowsOfStack` of inpaint_worker.js does the same for a band of held clones.
  */
-export function compositeBox(stack, X0, Y0, W, H) {
+export function compositeBox(stack, X0, Y0, W, H, pw = Infinity, ph = Infinity) {
     const n = W * H;
     const dst = buffer(0, n * 4);
     const [base, ...layers] = stack;
-    if (base) storeBox(base.px, base.x | 0, base.y | 0, X0, Y0, W, H, dst);
+    if (base) storeBox(base.px, base.x | 0, base.y | 0, X0, Y0, W, H, dst, false, pw, ph);
     const srcs = [], alphas = [], masks = [], ops = [];
     let slot = 1;
     for (const l of layers) {
         if (!l || !(l.alpha > 0)) continue;
         const src = buffer(slot, n * 4);
-        if (!storeBox(l.px, l.x | 0, l.y | 0, X0, Y0, W, H, src)) continue;
+        if (!storeBox(l.px, l.x | 0, l.y | 0, X0, Y0, W, H, src, false, pw, ph)) continue;
         slot++;
         if (l.match) matchPixels(src, l.match);
         let mask = null;
-        if (l.mask) { mask = buffer(slot++, n); storeBox(l.mask, l.x | 0, l.y | 0, X0, Y0, W, H, mask, true); }
+        if (l.mask) { mask = buffer(slot++, n); storeBox(l.mask, l.x | 0, l.y | 0, X0, Y0, W, H, mask, true, pw, ph); }
         srcs.push(src); alphas.push(l.alpha); masks.push(mask); ops.push(l.op | 0);
     }
     if (srcs.length) compositeTile(dst, srcs, ops, alphas, masks);

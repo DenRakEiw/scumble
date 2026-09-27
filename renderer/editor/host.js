@@ -268,7 +268,8 @@ export const host = {
     /** The Export section's switch: one value for every open editor, kept in the settings. */
     setEmbedRecipe(on) {
         this.embedRecipe = !!on;
-        window.scumble.settings.set({ embedRecipe: this.embedRecipe }).catch((err) => console.warn("embedRecipe not saved", err));
+        // `embedRecipeChosen`: the value is the user's (electron/main/settings.js drops an unmarked false, the old default)
+        window.scumble.settings.set({ embedRecipe: this.embedRecipe, embedRecipeChosen: true }).catch((err) => console.warn("embedRecipe not saved", err));
         for (const ed of this._editors) this.syncExportRow(ed);
     },
 

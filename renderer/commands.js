@@ -17,6 +17,7 @@
 import { api, host } from "./editor/host.js";
 import { viewUrl, loadImageEl, makeCanvas } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
+import { fontList } from "./editor/inpaint_text.js";
 
 const VERSION = 2;   // 1 = the node's bridge
 
@@ -874,7 +875,7 @@ const COMMANDS = {
             if (!l) throw new Error(ed.status);
             const t = l.text;
             if (a.text != null) t.content = String(a.text);
-            if (a.font != null) t.font = String(a.font);
+            if (a.font != null && String(a.font) !== t.font) setFont(t, String(a.font));
             if (a.size != null) t.size = Math.max(4, Math.round(+a.size));
             if (a.color != null) t.color = String(a.color);
             if (a.bold != null) t.bold = !!a.bold;
@@ -899,7 +900,8 @@ const COMMANDS = {
             const l = findLayer(ed, a.layer);
             if (l.kind !== "text") throw new Error(`${l.name} is not a text layer`);
             const t = l.text;
-            for (const [k, tk] of [["text", "content"], ["font", "font"], ["color", "color"], ["align", "align"], ["outline_color", "outlineColor"]]) if (a[k] != null) t[tk] = String(a[k]);
+            for (const [k, tk] of [["text", "content"], ["color", "color"], ["align", "align"], ["outline_color", "outlineColor"]]) if (a[k] != null) t[tk] = String(a[k]);
+            if (a.font != null && String(a.font) !== t.font) setFont(t, String(a.font));
             if (a.size != null) t.size = Math.max(4, Math.round(+a.size));
             if (a.bold != null) t.bold = !!a.bold;
             if (a.italic != null) t.italic = !!a.italic;
@@ -1025,7 +1027,7 @@ const COMMANDS = {
 
     // -- export --
     export: {
-        needsImage: true, description: "Save the flattened image (png, jpg, webp, tiff, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; `canvas_width` / `canvas_height` put it in a frame of that size (bigger: a margin of `fill`, smaller: cropped) at `anchor`; PSD and ORA always keep the full size. A PNG carries the prompt, seed and recipe only when `metadata` is true, or when it is left out and the Export section's switch is on (off by default).",
+        needsImage: true, description: "Save the flattened image (png, jpg, webp, tiff, psd or ora with layers). With `path` no dialog is shown. `scale`, `width` and `height` save it smaller or bigger; `canvas_width` / `canvas_height` put it in a frame of that size (bigger: a margin of `fill`, smaller: cropped) at `anchor`; PSD and ORA always keep the full size. A PNG carries the prompt, seed and recipe only when `metadata` is true, or when it is left out and the Export section's switch is on (on by default).",
         params: { format: P.str("png, jpg, webp, tiff, psd or ora", { enum: ["png", "jpg", "webp", "tiff", "psd", "ora"], default: "png" }), name: P.str("file name stem for the dialog"), path: P.str("absolute target path (no dialog)"), scale: P.num("percent of the document size, 1..400"), width: P.int("width in pixels (the height follows the aspect ratio)"), height: P.int("height in pixels (the width follows the aspect ratio)"), quality: P.num("JPEG / WebP quality 0.1..1", { default: 0.92 }),
             canvas_width: P.int("frame width in pixels (default the picture's)"), canvas_height: P.int("frame height in pixels"), anchor: P.str("where the picture sits in the frame: tl, tc, tr, ml, mc, mr, bl, bc, br", { default: "mc" }), fill: P.str("transparent, white, black or #rrggbb around the picture", { default: "transparent" }),
             metadata: P.bool("PNG: write the prompt, seed and recipe into the file (default: the Export section's switch)") },
@@ -1136,6 +1138,13 @@ const COMMANDS = {
         },
     },
 };
+
+/** A text's font by name, and the file it names (the editor's font select does the same): a text keeps no file of another font. */
+function setFont(t, family) {
+    t.font = family;
+    const f = fontList().find((x) => x.family === family);
+    t.fontRef = f && f.ref ? f.ref : null;
+}
 
 function applyParams(ed, l, params) {
     if (!FILTERS[l.filter]) throw new Error(`filter "${l.filter}" is not installed (its plugin is off or missing): its settings are kept as they are`);

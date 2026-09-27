@@ -67,6 +67,8 @@ function whole(s, sx, sy, W, H, alphaOnly) {
     const l2 = store(W, H, (tx, ty) => (tx + ty) % 2 === 0, noise(2));                          // a checkerboard of tiles
     const l3 = store(120, 90, () => true, noise(3));
     const l4 = store(200, 200, () => true, noise(4));
+    const l5 = store(300, 300, () => true, noise(5));   // reaches past the picture's left and bottom edges
+    const l6 = store(260, 120, () => true, noise(6));   // past the right edge
     const match = [120, 90, 60, 100, 110, 140, 1.2, 0.9, 1.1, 0.7];
     const stacks = {
         "base only": [{ px: base, x: 0, y: 0, alpha: 255, op: 0 }],
@@ -77,6 +79,8 @@ function whole(s, sx, sy, W, H, alphaOnly) {
             { px: l2, x: 0, y: 0, alpha: 128, op: 10 },
             { px: l3, x: 500, y: 20, alpha: 0, op: 0 },                    // alpha 0: left out
             { px: l4, x: 430, y: 330, alpha: 255, op: 12, match },
+            { px: l5, x: -120, y: 420, alpha: 255, op: 0 },
+            { px: l6, x: 560, y: 60, alpha: 210, op: 6 },
         ],
     };
     // the reference: every store over the whole image, composited whole, the box cut out
@@ -102,7 +106,7 @@ function whole(s, sx, sy, W, H, alphaOnly) {
         const ref = reference(stack);
         let bad = 0, first = null;
         for (const [x0, y0, w, h] of boxes) {
-            const got = B.compositeBox(stack, x0, y0, w, h);
+            const got = B.compositeBox(stack, x0, y0, w, h, W, H);
             if (got.length !== w * h * 4) { bad++; first = first || `box ${[x0, y0, w, h]}: ${got.length} bytes`; continue; }
             for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
                 const X = x0 + x, Y = y0 + y, o = (y * w + x) * 4;

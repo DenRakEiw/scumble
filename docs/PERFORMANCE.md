@@ -1510,8 +1510,15 @@ the tiles (`compositeBox`, `renderer/editor/inpaint_boxstack.js`, the `composite
 a move for clone and heal and once a step for the smudge, into CPU canvases; the smudge on the base paints into a new
 layer from the picture. The press left is the press's own frame (about 30 to 40 ms at 1:1, 3 to 10 at fit). What still
 grows with the brush's area: the tile scratch round trip of each smudge step and heal's two readbacks of CPU canvases
-(heal 400 px at fit, 15 ms a move); step 7 measures 1,000 and 2,000 px. The region pass (the canvas backend, a filter
-layer, a scaled or text layer near the box) is not measured here; it is today's Canvas 2D picture of the box.
+(heal 400 px at fit, 15 ms a move); step 7 measures 1,000 and 2,000 px. The region pass (the canvas backend, or any
+shown filter, scaled, fractional or text layer or a pending transform, anywhere below the brush's layer for Sample
+below and anywhere in the picture otherwise) is not measured here; it is the Canvas 2D picture of the box, and
+within it a layer near the box that `boxReach` cannot bound makes it the whole flatten.
+
+After step 3 (the carry engine, the `smudge_dab` kernel in Rust; the same instance setup, 2026-09-27): the smudge 2.4 /
+6.5 / 13.6 ms a move at 50 / 200 / 400 px fitted, 1.3 / 2.3 / 4.9 ms at 1:1, the press 3 ms fitted and 29 to 34 ms at 1:1
+(its frame), on the base 42 ms and 9 ms a move; no mirror. Each step reads and writes the dab's box on the layer's
+tiles (`readRect` / `writeRect`), and the kernel costs 1.9 ms for a 400 px dab (the JS twin 16 ms, tools/px_test.js).
 
 ## 8. What goes where
 

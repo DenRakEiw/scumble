@@ -9,9 +9,10 @@
 //!   P  = S + lerp(C − S, a)                                what lies there once the dab is laid down
 //!   C' = P + lerp(C − P, keep)                             keep 0..65536: how much of the carry it keeps
 //!
-//! with lerp(d, w) = floor((d · w + 32768) / 65536). At keep 0 the carry is what the dab left behind, which is the
-//! smudge of 0.1.31 (it read the box at the previous step, after that step's write); with keep near 1 the paint goes
-//! on as far as the stroke. `pickup` (the first dab of a stroke) only fills the carry with `S`. Premultiplied 16 bits
+//! with lerp(d, w) = floor((d · w + 32768) / 65536). At keep 0 the carry is what the dab left behind, as the smudge of
+//! 0.1.31 read the box at the previous step, after that step's write; unlike that one, which drew source-over and
+//! never lowered alpha, the carry's alpha is laid down too (it smears transparency; alpha lock keeps the layer's).
+//! With keep near 1 the paint goes on as far as the stroke. `pickup` (the first dab of a stroke) only fills the carry with `S`. Premultiplied 16 bits
 //! from straight 8: c · a · 257 / 255 rounded, alpha a · 257; back: alpha (A + 128) / 257, colour (c · 255 + A / 2) / A,
 //! colour 0 at alpha 0. A pixel the dab does not cover (`a` 0) keeps its bytes. Every step is an integer operation, so
 //! the JS twin (`smudgeDab` in renderer/editor/px/kernels_js.js) and both builds give the same bytes (tools/px_test.js).

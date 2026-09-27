@@ -77,7 +77,7 @@ mutation rounds 22 of 22 (the module) and 10 of 10 (the app side).
 
 **Found** by the gap review of 2026-09-26: two tEXt chunks in every PNG export, the recipe (for an imported workflow
 every widget value of it, paths and third-party key widgets included) and the prompt fields. Now only when the Export
-section's switch *Prompt and recipe in the PNG* (`settings.embedRecipe`, off by default) or the `export` command's
+section's switch *Prompt and recipe in the PNG* (`settings.embedRecipe`, off by default then, on since 0.1.32) or the `export` command's
 `metadata` says so (`host.workflowForPng` answers null otherwise; the node keeps embedding its graph). Every PNG export
 also carries an `sRGB` chunk on both paths (not the uploads, whose names are their hash). Gate `metadata`
 (`tools/metadata_test.py`) on both backends, 12 of 12 mutations red.

@@ -65,7 +65,13 @@ function writeJson(name, value) {
 let cache = null;
 
 function get() {
-    if (!cache) cache = { ...DEFAULTS, ...readJson("settings.json", {}) };
+    if (!cache) {
+        const stored = readJson("settings.json", {});
+        // 0.1.30 and 0.1.31 stored their default `embedRecipe: false` with every write (set() writes the whole object); it
+        // counts as the user's only when the switch itself wrote it, which marks it (host.setEmbedRecipe, since 0.1.32)
+        if (stored && stored.embedRecipe === false && !stored.embedRecipeChosen) delete stored.embedRecipe;
+        cache = { ...DEFAULTS, ...stored };
+    }
     return cache;
 }
 

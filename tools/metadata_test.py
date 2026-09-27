@@ -243,7 +243,7 @@ for (let p = 12; p + 8 <= w.length;) { const t = new TextDecoder("latin1").decod
 return { jpeg: markers.join(" "), webp: riff.join(" ") };
 """),
     ("close", r"""
-host.setEmbedRecipe(false);   // the gate leaves the switch off, as a fresh profile has it
+host.setEmbedRecipe(false);   // the gate leaves the switch off (a fresh profile has it on since 0.1.32; export_test sets its own)
 await run("close_document", { doc: window.__md, force: true });
 return { closed: window.__md, embedRecipe: host.embedRecipe };
 """),

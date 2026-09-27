@@ -2004,7 +2004,8 @@ class InpaintEditor {
         slen.addEventListener("input", () => { this.smudgeOpts.length = +slen.value; slenVal.textContent = slen.value + "%"; });
         row("smudge", "Length", slen, slenVal);
         const ssample = selectInput(["layer", "below", "image"], "layer", "What the smudge picks up: the active layer alone, the layers up to it (below), or the visible image (all layers), smudged into the active layer. On the base it always takes the image and paints into a new layer");
-        ssample.addEventListener("change", () => { this.smudgeOpts.sample = ssample.value; });
+        ssample.addEventListener("change", () => { this.smudgeOpts.sample = ssample.value; this.root.focus({ preventScroll: true }); });
+        this.smudgeSampleSel = ssample;
         row("smudge", "Sample", ssample);
         const sfinger = document.createElement("input");
         sfinger.type = "checkbox"; sfinger.title = "Finger painting: every stroke starts with the paint colour on the brush";
@@ -2353,7 +2354,8 @@ class InpaintEditor {
         };
         window.addEventListener("keydown", this._docKey, true);
         this._docKeyUp = (e) => {
-            if (e.key === "\\" && this.peekHold) { this.peekHold = false; this.peekBase = false; if (this.peekBtn) this.peekBtn.classList.remove("ipc-toggle-on"); this.draw(); }
+            // the key that started it: AltGr+ß types \ only while AltGr is down, and it may come up first
+            if (this.peekHold && (e.key === "\\" || (this.peekCode && e.code === this.peekCode))) { this.peekHold = false; this.peekCode = null; this.peekBase = false; if (this.peekBtn) this.peekBtn.classList.remove("ipc-toggle-on"); this.draw(); }
         };
         window.addEventListener("keyup", this._docKeyUp, true);
         this.promptInput.value = this.promptText;
@@ -2596,7 +2598,7 @@ class InpaintEditor {
         // AltGr types [ ] \ { } @ on a German keyboard, and Chromium on Windows reports it as Ctrl+Alt: such a key is the
         // character it types, never a Ctrl shortcut (AltGr+8 moved the layer down instead of making the brush smaller)
         const altGr = !!(e.getModifierState && e.getModifierState("AltGraph"));
-        const ctrl = (e.ctrlKey || e.metaKey) && !altGr;
+        const ctrl = (e.ctrlKey || e.metaKey) && !(altGr && e.altKey);   // Windows' AltGr is Ctrl+Alt; a real Ctrl with Linux's AltGr stays Ctrl
         if (e.key === "Escape") { e.preventDefault(); if (this.pending) this.cancelPending(); else host.onEscape(this); return; }
         if (ctrl && e.key === "Enter") { e.preventDefault(); this.generate(); return; }
         if (e.key === "Enter" && this.pending) { e.preventDefault(); this.applyPending(); return; }
@@ -2638,7 +2640,7 @@ class InpaintEditor {
         if (e.shiftKey && k === "l") { this.setTool("polygon"); return; }
         if (e.shiftKey && k === "r") { this.setTool("ellipse"); return; }
         if (e.shiftKey && k === "t") { this.setTool("text"); return; }
-        if (e.key === "\\") { e.preventDefault(); if (!e.repeat && !this.peekBase) { this.peekBase = true; this.peekHold = true; this.draw(); } return; }
+        if (e.key === "\\") { e.preventDefault(); if (!e.repeat && !this.peekBase) { this.peekBase = true; this.peekHold = true; this.peekCode = e.code || null; this.draw(); } return; }
         if (host.pluginKey(this, e, k)) return;
         if (k === "x" && this.tool === "canvas") { this.swapFrameAspect(); this.setStatus(this.frameStatus()); return; }
         switch (k) {
@@ -4452,7 +4454,10 @@ class InpaintEditor {
                 // base as a layer took 1.9 s and held 1.1 GB of mirrors at 15000 x 10000, PLAN_0_1_31 §4 step 1)
                 layer = this.addPaintLayer();
                 sample = "all";
-                this.setStatus("The base cannot be edited directly: the smudge paints into a new layer from the picture.");
+                // and the strokes after it on that new layer take the picture too, not the layer's own few pixels
+                if (this.smudgeOpts) this.smudgeOpts.sample = "image";
+                if (this.smudgeSampleSel) this.smudgeSampleSel.value = "image";
+                this.setStatus("The base cannot be edited directly: the smudge paints into a new layer from the picture (Sample: image).");
             }
             this.pushUndo({ kind: "layer", id: layer.id, label: "Smudge" });
             // chosen before the gesture starts: a read during it must see the picture as if no gesture ran (brushSource)
@@ -5796,7 +5801,7 @@ class InpaintEditor {
                 const w = b[2] - b[0], h = b[3] - b[1];
                 let bytes;
                 // a store given back while the gesture ran (an agent's undo): the rest of the gesture reads the region pass
-                try { bytes = compositeBox(stack, b[0], b[1], w, h); }
+                try { bytes = compositeBox(stack, b[0], b[1], w, h, this.width, this.height); }
                 catch (err) { console.warn("Inpaint Canvas: the brush's tile read failed, reading the region pass:", err); src.tier = "region"; return region(box); }
                 const reads = this._brushRead || (this._brushRead = []);
                 const c = reads[slot] = cpuDab(reads[slot], w, h);
@@ -5807,7 +5812,7 @@ class InpaintEditor {
             // the smudge takes the composite as bytes, no canvas between
             bytes: (box) => {
                 if (src.tier === "tiles") {
-                    try { return compositeBox(stack, box[0], box[1], box[2] - box[0], box[3] - box[1]); }
+                    try { return compositeBox(stack, box[0], box[1], box[2] - box[0], box[3] - box[1], this.width, this.height); }
                     catch (err) { console.warn("Inpaint Canvas: the brush's tile read failed, reading the region pass:", err); src.tier = "region"; }
                 }
                 return regionBytes(box);
@@ -6460,7 +6465,16 @@ class InpaintEditor {
             }
             const src = p.src ? this.smudgeSample(p, target, bx, by, side) : img.data;   // the layer's own bytes: read before written, per pixel
             smudgeDabKernel(img.data, src, p.carry, mask, strength, keep, flags);
-            if (!(flags & SMUDGE_PICKUP)) target.writeRect(img, bx, by);
+            if (!(flags & SMUDGE_PICKUP)) {
+                target.writeRect(img, bx, by);
+                // the region pass reads the layer through its caches (the masked canvas, the match, the levels): the next
+                // step's read has to see this one (the tile tier reads the tiles themselves)
+                if (p.src && p.src.tier !== "tiles") {
+                    layer._maskedValid = false; layer._mcache = null; layer._mcacheView = null; layer._mcacheSample = null;
+                    const wx0 = Math.max(0, bx), wy0 = Math.max(0, by), wx1 = Math.min(target.width, bx + side), wy1 = Math.min(target.height, by + side);
+                    if (wx1 > wx0 && wy1 > wy0) this.touchSourceRect(target, wx0, wy0, wx1, wy1);
+                }
+            }
         }
         layer._maskedValid = false;
         layer._mcache = null;
@@ -6816,11 +6830,11 @@ class InpaintEditor {
         const p = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: false };
         this.strokeBounds(p, box[0], box[1], box[2], box[3], 0);
         const rect = this.strokeRect(p, layer.px);
-        this.commitStroke(p);
+        const ok = this.commitStroke(p) !== false;   // false: out of memory for pixels, which the status line says
         this.markLayerChanged(layer, rect);
         this.releaseStrokeScratch();
         this.draw();
-        this.setStatus(`${kind[0].toUpperCase() + kind.slice(1)} with ${pts.length} points drawn on ${layer.name}.`);
+        if (ok) this.setStatus(`${kind[0].toUpperCase() + kind.slice(1)} with ${pts.length} points drawn on ${layer.name}.`);
     }
 
     cancelShape() {
@@ -7029,6 +7043,7 @@ class InpaintEditor {
             // in, so Ctrl+Z takes back what the commit wrote, and the release goes on to mark the stroke's box
             if (!err || err.name !== "PixelMemoryError") throw err;
             this.setStatus(err.message);
+            return false;
         }
     }
 

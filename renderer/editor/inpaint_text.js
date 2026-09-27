@@ -118,8 +118,12 @@ export function ensureFont(family, ref = null) {
  * added, `ensureFont`), else its family. For what draws the text outside `renderText`: the editor's text field.
  */
 export function fontCss(t) {
-    const own = t && t.fontRef && t.fontRef.filename ? loaded.get(fileKey(t.fontRef)) : null;
-    return own || (t && t.font) || "sans-serif";
+    if (!t) return "sans-serif";
+    const own = t.fontRef && t.fontRef.filename ? loaded.get(fileKey(t.fontRef)) : null;
+    if (own) return own;
+    if (loaded.has(t.font)) return loaded.get(t.font);   // a bundled font, under its family
+    const u = user.find((f) => f.family === t.font);     // a user font found by its family, under its file's name
+    return (u && loaded.get(fileKey(u.ref))) || t.font || "sans-serif";
 }
 
 /** A text's free angle in degrees, clockwise on screen, in (-180, 180]; 0 when it has none (PLAN_0_1_31 §7, 23b). */

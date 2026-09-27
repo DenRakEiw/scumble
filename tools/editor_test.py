@@ -6983,6 +6983,45 @@ try {
 }
 return out;
 """),
+    ("package_4_review_fixes_hold", """
+// three fixes of the four-lens review of 2026-09-27 (docs/PLAN_0_1_31.md §4): a font set by name takes its own file (a
+// stale fontRef drew the old file), the base peek started with AltGr+ss ends when AltGr comes up first, and the smudge on
+// the base leaves Sample on the picture for the strokes after it
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+try {
+    await run("new_canvas", { width: 400, height: 300, doc: d.id });
+    // 1. set_text with a font by name: the old file goes
+    const t = await run("add_text", { doc: d.id, text: "Ab", x: 20, y: 20, size: 40 });
+    const L = ed.layers.find((l) => l.kind === "text");
+    L.text.font = "Stale"; L.text.fontRef = { filename: "Stale (1).ttf", subfolder: "inpaint_canvas/fonts", type: "input" };
+    await run("set_text", { doc: d.id, layer: L.id, font: "Stale" });   // the same name: its file stays
+    if (!L.text.fontRef || L.text.fontRef.filename !== "Stale (1).ttf") throw new Error("set_text with the same font dropped its file");
+    await run("set_text", { doc: d.id, layer: L.id, font: "Roboto" });
+    out.fontRef = L.text.fontRef;
+    if (L.text.font !== "Roboto" || (L.text.fontRef && L.text.fontRef.filename === "Stale (1).ttf")) throw new Error("set_text kept the stale font file: " + JSON.stringify(L.text));
+    // 2. the peek: AltGr+ss types a backslash; its keyup after AltGr went up reports the ss key's code, not "\\\\"
+    ed.onKey(new KeyboardEvent("keydown", { key: "\\\\", code: "Minus", ctrlKey: true, altKey: true, modifierAltGraph: true, bubbles: true, cancelable: true }));
+    if (!ed.peekBase) throw new Error("AltGr+ss did not start the peek");
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: "\\u00df", code: "Minus", bubbles: true }));
+    out.peekAfter = ed.peekBase;
+    if (ed.peekBase) throw new Error("the peek stayed on after the key came up without AltGr");
+    // 3. a smudge on the base: a new layer, and Sample on the picture from then on
+    ed.activeLayerId = null; ed.renderLayers();
+    ed.setTool("smudge");
+    ed.smudgeOpts.sample = "layer";
+    if (ed.smudgeSampleSel) ed.smudgeSampleSel.value = "layer";
+    ed.fitView(); ed.draw();
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 1300, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+    ed.canvas.dispatchEvent(ev("pointerdown", 100, 150)); ed.canvas.dispatchEvent(ev("pointermove", 200, 150)); ed.canvas.dispatchEvent(ev("pointerup", 200, 150));
+    out.sample = [ed.smudgeOpts.sample, ed.smudgeSampleSel && ed.smudgeSampleSel.value];
+    if (ed.smudgeOpts.sample !== "image" || (ed.smudgeSampleSel && ed.smudgeSampleSel.value !== "image")) throw new Error("after the smudge on the base Sample is " + out.sample);
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
     ("mask_operations_are_one_step_each", """
 // PLAN_0_1_31 6.4: set_mask's operations, each one undo step, the mask white where it shows, and the mask row's menu
 const d = await run("new_document");
