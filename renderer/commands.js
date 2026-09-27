@@ -905,6 +905,8 @@ const COMMANDS = {
             if (a.italic != null) t.italic = !!a.italic;
             if (a.outline != null) t.outline = Math.max(0, +a.outline);
             await ed.renderTextLayer(l, { keepScale: true });
+            // a locked layer keeps its angle: said, not silently skipped
+            if (a.angle != null && l.locked) throw new Error(`${l.name} is locked: its angle cannot change`);
             if (a.angle != null) await ed.setTextAngle(l, +a.angle || 0, { step: false });
             touch(ed);
             return layerSummary(ed, l);

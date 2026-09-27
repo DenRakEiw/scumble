@@ -1112,6 +1112,10 @@ export const host = {
         const factor = this.upscaleFactorFor(r, opts.factor);
         const max = (r.limits && r.limits.max) || 2048;
         if (scope === "selection" && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first, or upscale the whole picture.");
+        // the whole picture's answer replaces the base: not while a job would land in the old geometry (its resize lets
+        // the upscale's own landing through, so the check is here, before anything is paid for)
+        const blocked = scope === "document" && editor.turnBlocked ? editor.turnBlocked() : "";
+        if (blocked) throw new Error(blocked);
         if (scope === "document" && Math.max(editor.width, editor.height) > max) {
             throw new Error(`The picture is ${editor.width} × ${editor.height}; ${r.name || r.id} on ${label} takes at most ${max} px on the long side. Upscale a selection instead.`);
         }

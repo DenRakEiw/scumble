@@ -636,7 +636,7 @@ function buildCanvasPanel(ed, section) {
             grid.appendChild(el("span", null, label));
             ed.extendInputs[key] = numberInput(0, -65535, 65535, `Pixels to add at the ${key} (negative: crop); the canvas tool (C) shows the frame, Enter applies`, 64);
             ed.extendInputs[key].addEventListener("input", () => ed.setFrameFromSides());
-            ed.extendInputs[key].addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); ed.setFrameFromSides(); ed.applyFrame(); } });
+            ed.extendInputs[key].addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); ed.setFrameFromSides(); ed.root.focus({ preventScroll: true }); ed.applyFrame(); } });
             grid.appendChild(ed.extendInputs[key]);
         }
         sec.appendChild(grid);

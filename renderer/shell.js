@@ -2156,7 +2156,9 @@ host.on("removed", ({ editor }) => { if (canvasOnlyState && canvasOnlyState.ed =
 
 /** What the editor's Escape cancels first (its _docKey chain): while one is set, Escape is the editor's, not the view's. */
 function editorHasEscape(ed) {
-    return !!(ed.pending || ed.polyPoints || ed.shapePoints || (ed.tool === "canvas" && ed.extendPending && ed.extendPending()) || ed.flyout || ed.textEdit || ed.compare);
+    return !!(ed.pending || ed.polyPoints || ed.shapePoints || (ed.tool === "canvas" && ed.extendPending && ed.extendPending())
+        || (ed.tool === "canvas" && ed.pointer && ["frame", "framemove", "framerotate", "straighten"].includes(ed.pointer.kind))
+        || ed.flyout || ed.textEdit || ed.compare);
 }
 
 /** The view's size changed with the chrome: fit or redraw once (resizeCanvas does that itself when the size changed). */

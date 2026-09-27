@@ -7273,6 +7273,21 @@ try {
     if (!/rotate\\(30/.test(tf)) throw new Error("the text editor is turned by " + tf);
     const summary = (await run("list_layers", { doc: d.id })).layers.find((x) => x.id === t1.id);
     if (!summary.text || summary.text.angle !== 30) throw new Error("list_layers says " + JSON.stringify(summary.text));
+    // add_text with an angle: the corner the text starts at is x, y (the 23b review: it was read from the turned text)
+    for (const a of [30, -30, 120]) {
+        const ta = await run("add_text", { text: "Corner", x: 300, y: 150, size: 36, angle: a, doc: d.id });
+        await settle();
+        const la = ed.layers.find((x) => x.id === ta.id), sa = start(la);
+        if (Math.abs(sa[0] - 300) > 1.5 || Math.abs(sa[1] - 150) > 1.5) throw new Error("add_text at " + a + " degrees starts at " + sa);
+    }
+    // twenty turns of 7 degrees keep the middle (no half-pixel walk)
+    const t6 = await run("add_text", { text: "Walk", x: 400, y: 300, size: 30, doc: d.id });
+    await settle();
+    const L6 = () => ed.layers.find((x) => x.id === t6.id);
+    const m6 = [L6().x + L6().w / 2, L6().y + L6().h / 2];
+    for (let i = 1; i <= 20; i++) await ed.setTextAngle(L6(), 7 * i);
+    const m7 = [L6().x + L6().w / 2, L6().y + L6().h / 2];
+    if (Math.abs(m7[0] - m6[0]) > 1 || Math.abs(m7[1] - m6[1]) > 1) throw new Error("twenty turns walked the middle from " + m6 + " to " + m7);
     out.ok = true;
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;
@@ -7566,7 +7581,29 @@ try {
     // 10. the Canvas section's sides make the same frame, and Enter in them applies it
     ed.extendInputs.right.value = "-100"; ed.extendInputs.right.dispatchEvent(new Event("input"));
     if (!ed.framePending() || ed.frame().w !== W - 100) throw new Error("the sides made " + JSON.stringify(ed.frame()));
+    // 11. while a job runs the frame is not applied and stays; a crop from the command is refused too
+    ed.providerPending = { f23: true };
+    await key("Enter"); await settle();
+    const kept = ed.framePending() && ed.width === W;
+    await run("extend_canvas", { right: -50, doc: d.id }).catch(() => {});
+    const cropRefused = ed.width === W;
+    ed.providerPending = null;
+    if (!kept || !cropRefused) throw new Error("a running job did not hold the frame (" + kept + ") or the crop (" + cropRefused + ")");
     await key("Escape");
+    // 12. Enter in the angle field applies and gives the keys back to the editor (its value cannot come back on a blur)
+    ed.frameAngleInput.focus();
+    ed.frameAngleInput.value = "2";
+    ed.frameAngleInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    await settle();
+    if (document.activeElement === ed.frameAngleInput) throw new Error("Enter left the focus in the angle field");
+    if (ed.framePending()) throw new Error("a frame came back after the angle field's apply: " + JSON.stringify(ed.frame()));
+    if (+ed.frameAngleInput.value !== 0) throw new Error("the angle field still says " + ed.frameAngleInput.value);
+    await run("undo", { doc: d.id }); await settle();
+    // 13. a fitted frame is always inside (1920 x 1080 at 1.79 degrees was refused before the 23b review)
+    await run("new_canvas", { width: 1920, height: 1080, doc: d.id });
+    const ff = ed.fitFrame(1.79, null);
+    await run("straighten_canvas", { angle: 1.79, aspect: "free", doc: d.id });
+    if (ed.width !== ff[2] || ed.height !== ff[3]) throw new Error("the fitted frame " + ff + " was not taken: " + ed.width + " x " + ed.height + ", " + ed.status);
     out.ok = true;
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;

@@ -133,8 +133,10 @@ brushes). **23b is built and committed locally, not pushed** (CHANGELOG "Unrelea
   straighten line, the tilt preview in the scene draw only).
 Gates at 36afbcd: `editor` 82 of 82 on both backends, `glb`, `film`, `mcp`, `commands`, `pixels`, `document`,
 `canvasonly`, `lint`, `types`, `node tools/assistant_test.js`, `node tools/resample_test.js`, `node
-tools/manual_test.js`. Docs of step 7 (MANUAL, CHANGELOG, DOCUMENTS.md, COMMANDS.md, BUGS.md, the plan) are written;
-a four-lens review of the diff 5348c26..36afbcd ran as a workflow (its outcome: the plan's "23b built" paragraph).
+tools/manual_test.js`. Docs of step 7 (MANUAL, CHANGELOG, DOCUMENTS.md, COMMANDS.md, BUGS.md, the plan) are written.
+After the user's answers (Rust kernel yes, the size label stays, 4.10 "weiss ich nicht": build it last and let them
+judge it): 725ed72 **the Rust resample kernel** (ABI 11; the straighten at 15k with four layers 5.3 s, was 9.6), and
+**the review of 23b** (24 findings confirmed, all fixed in the commit after it; the plan lists them).
 **Next:** package 4, brushes (plan §4: measure first, then regional sources, pro smudge with a Rust kernel, clone,
 flow / pressure / stabiliser, blur / sharpen, the size cap, frequency separation, dodge and burn; 4.10 the optional
 brush panel is still the user's question). Open for the user: whether the Rust resample kernel is worth building (the

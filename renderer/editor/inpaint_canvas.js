@@ -250,7 +250,11 @@ function autoCropFrame(W, H, deg, ratio = null) {
         }
     }
     w = Math.max(8, Math.floor(w + 1e-6)); h = Math.max(8, Math.floor(h + 1e-6));
-    return [Math.round((W - w) / 2), Math.round((H - h) / 2), w, h];
+    // the same parity as the picture, so the frame sits exactly in the middle: a half-pixel offset put 0.5 % of the
+    // fitted frames just past frameInside's slack (the 23b review)
+    if ((W - w) & 1) w += w > 8 ? -1 : 1;
+    if ((H - h) & 1) h += h > 8 ? -1 : 1;
+    return [(W - w) / 2, (H - h) / 2, w, h];
 }
 
 /**
@@ -1983,7 +1987,8 @@ class InpaintEditor {
         // the Canvas tool's frame (PLAN_0_1_31 §7, 23b): the aspect, the angle, the straighten line, the lines, apply
         const asp = selectInput(["free", "original", "1:1", "4:3", "3:2", "16:9", "5:4", "custom"], this.frameAspect,
             "The frame's aspect: choosing one fits the largest such frame into the (turned) picture; X turns it on its side");
-        asp.addEventListener("change", () => { this.frameAspect = asp.value; this.fitFrameToAspect(); });
+        // S: the keys (Enter, X, Esc) go back to the editor after a pick
+        asp.addEventListener("change", () => { this.frameAspect = asp.value; this.frameAspectFlip = false; this.fitFrameToAspect(); this.root.focus({ preventScroll: true }); });
         this.frameAspectSel = asp;
         row("canvas", "Aspect", asp);
         const cw = numberInput(this.frameCustom[0], 1, 100000, "Custom aspect: width", 48), chh = numberInput(this.frameCustom[1], 1, 100000, "Custom aspect: height", 48);
@@ -1994,11 +1999,12 @@ class InpaintEditor {
         const ang = numberInput(0, -45, 45, "The picture's angle in degrees (clockwise); the frame fits inside the turned picture", 56);
         ang.step = 0.1;
         ang.addEventListener("change", () => this.setFrameAngle(+ang.value || 0));
-        ang.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); this.setFrameAngle(+ang.value || 0); this.applyFrame(); } });
+        ang.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); this.setFrameAngle(+ang.value || 0); this.root.focus({ preventScroll: true }); this.applyFrame(); } });
         const rng = document.createElement("input");
         rng.type = "range"; rng.min = -45; rng.max = 45; rng.step = 0.1; rng.value = 0;
         rng.title = "Turn the picture: the frame fits inside it (drag outside the frame on the canvas does the same)";
         rng.addEventListener("input", () => this.setFrameAngle(+rng.value || 0));
+        rng.addEventListener("change", () => this.root.focus({ preventScroll: true }));
         this.frameAngleInput = ang; this.frameAngleRange = rng;
         row("canvas", "Angle", rng, ang);
         this.frameStraightenBtn = iconButton("ruler", "Straighten: draw a line along something that should be level or plumb (Ctrl+drag on the canvas does the same)", () => {
@@ -2008,10 +2014,10 @@ class InpaintEditor {
         }, "Straighten");
         row("canvas", this.frameStraightenBtn);
         const ov = selectInput(["thirds", "golden", "grid", "diagonal", "none"], this.frameOverlay, "Lines over the frame to compose by");
-        ov.addEventListener("change", () => { this.frameOverlay = ov.value; try { localStorage.setItem("ipc.cropOverlay", ov.value); } catch (_) { /* no storage */ } this.draw(); });
+        ov.addEventListener("change", () => { this.frameOverlay = ov.value; try { localStorage.setItem("ipc.cropOverlay", ov.value); } catch (_) { /* no storage */ } this.draw(); this.root.focus({ preventScroll: true }); });
         row("canvas", "Lines", ov);
-        row("canvas", iconButton("check", "Apply the frame (Enter, or a double click inside it)", () => this.applyFrame(), "Apply"),
-            iconButton("close", "Reset the frame (Esc)", () => { this.resetFrame(); this.setStatus(this.frameStatus()); }, "Reset"));
+        row("canvas", iconButton("check", "Apply the frame (Enter, or a double click inside it)", () => this.applyFrame(), "Apply"));
+        row("canvas", iconButton("close", "Reset the frame (Esc)", () => { this.resetFrame(); this.setStatus(this.frameStatus()); }, "Reset"));
         this.optsHint = el("span", "ipc-hint", "");
         bar.appendChild(this.optsHint);
         for (const type of ["pointerdown", "pointermove", "pointerup", "wheel"]) bar.addEventListener(type, (e) => e.stopPropagation());
@@ -2208,8 +2214,9 @@ class InpaintEditor {
             // here: the render lands before the next frame, which would otherwise show the old pixels upright
             this.pending = null;
             this.updateSubbar();
-            this.setTextAngle(layer, textTotalAngle(layer.text) + p.angle * 180 / Math.PI, { label }).then(() => {
-                this.setStatus(`${layer.name}: turned to ${Math.round(textTotalAngle(layer.text) * 10) / 10}°, still editable.`);
+            this.setTextAngle(layer, textTotalAngle(layer.text) + p.angle * 180 / Math.PI, { label }).then((ok) => {
+                if (ok) this.setStatus(`${layer.name}: turned to ${Math.round(textTotalAngle(layer.text) * 10) / 10}°, still editable.`);
+                else this.draw();   // refused (a locked layer): the preview goes
             });
             return;
         }
@@ -2219,6 +2226,9 @@ class InpaintEditor {
             this.pushUndo({ kind: "layers", label });
             layer.kind = "paint";
             delete layer.text;
+            layer._textToken = (layer._textToken || 0) + 1;   // a render on its way must not land on the pixels
+            clearTimeout(layer._textTimer); layer._textTimer = null; layer._textRendering = 0;
+            if (layer._textUndo) this.releaseSnapshot(layer._textUndo);
             layer._textUndo = null;
         } else {
             this.pushUndo({ kind: "layerfull", id: layer.id, label });
@@ -3174,7 +3184,8 @@ class InpaintEditor {
             }
             ctx.restore();
         }
-        host.pluginOverlay(this, ctx);
+        // a plugin draws on the picture: under the straighten preview it turns with it
+        if (this.viewTilt()) { ctx.save(); this.applyTilt(ctx); host.pluginOverlay(this, ctx); ctx.restore(); } else host.pluginOverlay(this, ctx);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         if (this.compare && this.compare.a && this.compare.b) {
             const split = Math.min(0.95, Math.max(0.05, this.compare.split ?? 0.5));
@@ -3409,7 +3420,10 @@ class InpaintEditor {
         // replaced, not written (the undo step holds the old pixels)
         l.px = l.px.turned(op);
         if (l.maskPx) { l.maskPx = l.maskPx.turned(op); l.maskDirty = true; }
-        if (l.kind === "text" && l.text) l.text = composeTextOrient(l.text, op);
+        if (l.kind === "text" && l.text) {
+            l.text = composeTextOrient(l.text, op);
+            if (l._textTimer || l._textRendering) { clearTimeout(l._textTimer); l._textTimer = null; this.renderTextLayer(l); }
+        }
         this.markLayerChanged(l);
         this.renderLayers(); this.draw();
         this.setStatus(`${l.name} flipped ${axis === "h" ? "horizontally" : "vertically"}.`);
@@ -3471,7 +3485,10 @@ class InpaintEditor {
         // replaced, not written (the undo step holds the old pixels)
         l.px = l.px.turned(dir);
         if (l.maskPx) { l.maskPx = l.maskPx.turned(dir); l.maskDirty = true; }
-        if (l.kind === "text" && l.text) l.text = composeTextOrient(l.text, dir);
+        if (l.kind === "text" && l.text) {
+            l.text = composeTextOrient(l.text, dir);
+            if (l._textTimer || l._textRendering) { clearTimeout(l._textTimer); l._textTimer = null; this.renderTextLayer(l); }
+        }
         const cx = l.x + l.w / 2, cy = l.y + l.h / 2;
         [l.w, l.h] = [l.h, l.w];
         l.x = Math.round(cx - l.w / 2); l.y = Math.round(cy - l.h / 2);
@@ -3552,9 +3569,11 @@ class InpaintEditor {
             const { ref } = await this.uploadBase(px);
             // what happened meanwhile: an edit (a stroke, a selection, a merge) is in the document and not in the turn's
             // step, a drag or a transform works in the old geometry. Nothing is turned then, and the user turns again
-            if (this.historyGen !== gen || this.basePx !== base0 || this.width !== W || this.height !== H || this.gestureHeld()) {
+            const busy = this.turnBlocked();
+            if (this.historyGen !== gen || this.basePx !== base0 || this.width !== W || this.height !== H || this.gestureHeld() || busy) {
                 if (typeof px.release === "function") px.release();
-                this.setStatus("The picture changed while it was being turned, so nothing was turned. Turn it again.");
+                this.releaseSnapshot(before); before = null;
+                this.setStatus(busy || "The picture changed while it was being turned, so nothing was turned. Turn it again.");
                 return false;
             }
             if (this.pending) this.cancelPending();
@@ -3577,6 +3596,7 @@ class InpaintEditor {
                         // the next render (an edit) puts the text in this orientation itself; the text field's pending
                         // undo step is from before the turn, whose own step holds the layer as it was
                         l.text = composeTextOrient(l.text, op);
+                        if (l._textUndo) this.releaseSnapshot(l._textUndo);
                         l._textUndo = null;
                     }
                 }
@@ -3809,6 +3829,7 @@ class InpaintEditor {
             if (again) { this.setStatus(again); return false; }
             before = this.snapshot({ kind: "canvas" });
             const gen = this.historyGen, base0 = this.basePx;
+            const textSeen = new Map(this.layers.filter((l) => l.kind === "text" && l.text).map((l) => [l, { json: JSON.stringify(l.text), px: l.px }]));
             // every new store, in the pool (the window keeps drawing); nothing is assigned before all of them are there
             const onCanvas = pixelMap(Ainv);
             const jobs = [];
@@ -3873,10 +3894,15 @@ class InpaintEditor {
             await Promise.all(jobs);
             const { ref } = await this.uploadBase(basePx);
             // what happened meanwhile: an edit is in the document and not in the step, a drag works in the old geometry
-            if (this.historyGen !== gen || this.basePx !== base0 || this.width !== W || this.height !== H || this.gestureHeld()) {
+            // a job or a save started meanwhile (it works in the old geometry), and a text typed or recoloured meanwhile
+            // (its description is not the one the plan turned), stop it too
+            const busy = this.turnBlocked();
+            const textMoved = [...textSeen].some(([l, s]) => JSON.stringify(l.text) !== s.json || l.px !== s.px || l._textTimer || l._textRendering);
+            if (this.historyGen !== gen || this.basePx !== base0 || this.width !== W || this.height !== H || this.gestureHeld() || busy || textMoved) {
                 for (const p of made) if (typeof p.release === "function") p.release();
                 made.length = 0;
-                this.setStatus("The picture changed while it was being straightened, so nothing was changed. Straighten it again.");
+                this.releaseSnapshot(before); before = null;
+                this.setStatus(busy || "The picture changed while it was being straightened, so nothing was changed. Straighten it again.");
                 return false;
             }
             if (this.pending) this.cancelPending();
@@ -3887,7 +3913,7 @@ class InpaintEditor {
                 if (p.rect) [l.x, l.y, l.w, l.h] = p.rect;
                 if (p.px) l.px = p.px;
                 if (p.maskPx) l.maskPx = p.maskPx;
-                if (p.text) { l.text = p.text; l._textUndo = null; }
+                if (p.text) { l.text = p.text; if (l._textUndo) this.releaseSnapshot(l._textUndo); l._textUndo = null; }
             }
             this.sel = sel;
             this.mapExtras(A, "straighten");
@@ -4017,8 +4043,9 @@ class InpaintEditor {
 
     /** The aspect on its side (X). */
     swapFrameAspect() {
+        if (!this.frameRatio()) { this.setStatus("A free frame has no aspect to turn: pick one first."); return; }
         this.frameAspectFlip = !this.frameAspectFlip;
-        if (this.frameRatio()) this.fitFrameToAspect();
+        this.fitFrameToAspect();
         this.syncFrameControls();
     }
 
@@ -4044,9 +4071,10 @@ class InpaintEditor {
     }
 
     /** Every control of the frame (the Canvas section's sides, the options bar) set from it. */
-    syncFrameControls() {
+    syncFrameControls({ force = false } = {}) {
         const f = this.frame(), v = this.extendValues();
-        const focused = typeof document !== "undefined" ? document.activeElement : null;
+        // a field being typed in keeps what is typed, unless an apply just used it up
+        const focused = !force && typeof document !== "undefined" ? document.activeElement : null;
         if (this.extendInputs) for (const k of Object.keys(this.extendInputs)) { const i = this.extendInputs[k]; if (i !== focused) i.value = v[k]; }
         const a = f ? f.angle : 0;
         if (this.frameAngleInput && this.frameAngleInput !== focused) this.frameAngleInput.value = a;
@@ -4064,17 +4092,29 @@ class InpaintEditor {
     async applyFrame() {
         const f = this.frame();
         if (!f || !this.framePending()) { this.setStatus("Drag the frame first: its edges crop or extend, outside it turns the picture."); return false; }
+        // a job that would land in the old geometry: the frame stays for when it is in
+        const blocked = this.turnBlocked();
+        if (blocked) { this.setStatus(blocked); return false; }
+        // taken off at once (a second Enter during the run must not apply it again), put back when the apply was refused
         this.canvasFrame = null;
         this.frameStraighten = false;
-        this.syncFrameControls();
-        if (f.angle) return this.straightenDocument({ angle: f.angle, x: f.x, y: f.y, w: f.w, h: f.h });
-        const v = { top: -f.y, right: f.x + f.w - this.width, bottom: f.y + f.h - this.height, left: -f.x };
-        const pos = {}, neg = {};
-        for (const k of Object.keys(v)) { pos[k] = Math.max(0, v[k]); neg[k] = Math.min(0, v[k]); }
-        if (Object.values(pos).some((x) => x > 0)) await this.extendCanvas(pos);
-        if (Object.values(neg).some((x) => x < 0)) await this.cropCanvas(neg);
+        this.syncFrameControls({ force: true });
+        const base0 = this.base, W = this.width, H = this.height;
+        let ok;
+        if (f.angle) {
+            ok = await this.straightenDocument({ angle: f.angle, x: f.x, y: f.y, w: f.w, h: f.h });
+        } else {
+            const v = { top: -f.y, right: f.x + f.w - W, bottom: f.y + f.h - H, left: -f.x };
+            const pos = {}, neg = {};
+            for (const k of Object.keys(v)) { pos[k] = Math.max(0, v[k]); neg[k] = Math.min(0, v[k]); }
+            if (Object.values(pos).some((x) => x > 0)) await this.extendCanvas(pos);
+            if (Object.values(neg).some((x) => x < 0)) await this.cropCanvas(neg);
+            ok = this.base !== base0;
+        }
+        if (!ok && this.base === base0 && this.width === W && this.height === H && !this.canvasFrame) this.canvasFrame = f;
+        this.syncFrameControls({ force: true });
         this.draw();
-        return true;
+        return !!ok;
     }
 
     /** The frame as sides in frame space (positive: added, negative: cut off): what the Canvas section shows. */
@@ -4088,6 +4128,8 @@ class InpaintEditor {
         if (!this.extendInputs || !this.base) return;
         const v = {};
         for (const k of ["top", "right", "bottom", "left"]) v[k] = Math.round(+this.extendInputs[k].value || 0);
+        // a side typed past the opposite one stops 8 px short of it: the opposite side stays where it is
+        v.top = Math.max(v.top, -(this.height + v.bottom - 8)); v.left = Math.max(v.left, -(this.width + v.right - 8));
         this.setFrame({ x: -v.left, y: -v.top, w: this.width + v.left + v.right, h: this.height + v.top + v.bottom }, this.frame());
     }
 
@@ -4100,6 +4142,8 @@ class InpaintEditor {
     async cropCanvasNow(v) {
         if (!this.base) return;
         if (this._turning) { this.setStatus("Wait for the turn to finish."); return; }
+        const blocked = this.turnBlocked();
+        if (blocked) { this.setStatus(blocked); return; }
         const W = this.width, H = this.height;
         const left = -Math.min(0, v.left || 0), top = -Math.min(0, v.top || 0);
         const right = -Math.min(0, v.right || 0), bottom = -Math.min(0, v.bottom || 0);
@@ -4149,6 +4193,9 @@ class InpaintEditor {
     async resizeImageNow(nw, nh, { base = null } = {}) {
         if (!this.base) return;
         if (this._turning) { this.setStatus("Wait for the turn to finish."); return; }
+        // an upscale's own landing (`base`) is let through: its paid answer is in; runUpscale checks before it asks
+        const blocked = base ? "" : this.turnBlocked();
+        if (blocked) { this.setStatus(blocked); return; }
         nw = Math.round(nw); nh = Math.round(nh);
         if (!(nw >= 8 && nh >= 8) || (nw === this.width && nh === this.height)) { this.setStatus("Enter a new size."); return; }
         const W = this.width, H = this.height, sx = nw / W, sy = nh / H;
@@ -4606,10 +4653,16 @@ class InpaintEditor {
             this.setFrame({ x: o.x + dx, y: o.y + dy }, this.frame());
             this.setStatus(this.frameStatus());
         } else if (p.kind === "framerotate") {
-            // outside the frame the picture turns about its centre; Shift keeps whole degrees
-            let deg = normDeg(p.orig.angle + (Math.atan2(iy - this.height / 2, ix - this.width / 2) - p.a0) * 180 / Math.PI);
-            if (e.shiftKey) deg = Math.round(deg);
-            this.setFrameAngle(deg);
+            // outside the frame the picture turns about its centre (Shift keeps whole degrees), once the pointer has moved
+            // a few pixels: a click that wobbles must not refit a frame placed by hand
+            const moved = Math.hypot(ix - p.start[0], iy - p.start[1]) * this.view.scale / (window.devicePixelRatio || 1);
+            if (moved >= 4 || p.turning) {
+                p.turning = true;
+                let deg = normDeg(p.orig.angle + (Math.atan2(iy - this.height / 2, ix - this.width / 2) - p.a0) * 180 / Math.PI);
+                if (e.shiftKey) deg = Math.round(deg);
+                deg = Math.round(deg * 100) / 100;
+                if (deg !== (this.frameOrCanvas().angle || 0)) this.setFrameAngle(deg);
+            }
         } else if (p.kind === "straighten") {
             p.cur = [ix, iy];
         } else if (p.kind === "pending") {
@@ -7770,6 +7823,8 @@ class InpaintEditor {
 
     async extendCanvasNow(vals = null) {
         if (this._turning) { this.setStatus("Wait for the turn to finish."); return; }
+        const blocked = this.turnBlocked();
+        if (blocked) { this.setStatus(blocked); return; }
         if (!this.base) { this.setStatus("Load an image first."); return; }
         if (!vals && this.extendInputs && Object.values(this.extendValues()).some((x) => x < 0)) { await this.applyCanvasFrame(); return; }
         const v = vals || this.extendValues();
@@ -9778,17 +9833,21 @@ class InpaintEditor {
         const r = await renderText(layer.text);
         const { canvas, res, missing } = r;
         if (layer._textRendering === token) layer._textRendering = 0;
-        if (layer._textToken !== token || !this.layers.includes(layer)) return;
+        // a newer render, a layer gone, or a text made pixels meanwhile (distort, warp): this one is not wanted
+        if (layer._textToken !== token || !this.layers.includes(layer) || layer.kind !== "text" || !layer.text) return;
         const oldRes = (layer.text && layer.text.res) || 2;
         const had = layer.px && layer.px.width > 1;
         let k = keepScale && had ? layer.w / (layer.px.width / oldRes) : 1;
         // an unscaled text stays unscaled: the layer's size is rounded, and a scale derived from it would drift
         if (had && Math.abs(k - 1) * (layer.px.width / oldRes) < 1) k = 1;
-        // the point that stays: read from the pixels shown now, before they are replaced
-        const pivot = layer._textPivot === "centre" ? "centre" : "start";
+        // the point that stays: given with an angle change (read before the description changed), else read from the
+        // pixels shown now, before they are replaced
+        const piv = layer._textPivot;
         layer._textPivot = null;
+        const pivot = piv && piv.mode === "centre" ? "centre" : "start";
         const f0 = had && pivot === "start" ? textStartFraction(layer) : [0.5, 0.5];
-        const keepX = layer.x + f0[0] * layer.w, keepY = layer.y + f0[1] * layer.h;
+        const keepX = piv && Number.isFinite(piv.x) ? piv.x : layer.x + f0[0] * layer.w;
+        const keepY = piv && Number.isFinite(piv.y) ? piv.y : layer.y + f0[1] * layer.h;
         const before = { x: layer.x, y: layer.y, w: layer.w, h: layer.h, pw: had ? layer.px.width : 0, ph: had ? layer.px.height : 0 };
         // adopts the rendered canvas: replaced, not written (its size changes with every edit). A text with a free angle
         // comes drawn at it; one without is mirrored and turned here exactly (the document's turns and the layer's own
@@ -9805,6 +9864,7 @@ class InpaintEditor {
             layer.x = Math.round(keepX - f1[0] * layer.w);
             layer.y = Math.round(keepY - f1[1] * layer.h);
         }
+        layer._textCentre = had && pivot === "centre" ? { x: keepX, y: keepY, x0: layer.x, y0: layer.y, w: layer.w, h: layer.h } : null;
         if (adopt) adopt(layer, before);
         layer._maskedValid = false;
         const { turn: _turn, flip: _flip, angle: _angle, box: _box, ...style } = layer.text;   // a new text layer starts upright
@@ -9839,9 +9899,17 @@ class InpaintEditor {
         if (this.textEdit && this.textEdit.layer === layer) this.endTextEdit(true);
         if (step) this.pushUndo({ kind: "layers", label });
         const mask = layer.maskPx;
+        // the point that stays, read from the text as it is (add_text's start corner, or the middle); the exact middle of
+        // the last turn while the layer has not moved since, so many small turns do not walk it by half pixels
+        const mode = pivot === "start" ? "start" : "centre";
+        const f0 = mode === "start" ? textStartFraction(layer) : [0.5, 0.5];
+        const keep = { mode, x: layer.x + f0[0] * layer.w, y: layer.y + f0[1] * layer.h };
+        const c = layer._textCentre;
+        if (mode === "centre" && c && c.x0 === layer.x && c.y0 === layer.y && c.w === layer.w && c.h === layer.h) { keep.x = c.x; keep.y = c.y; }
         layer.text = spinText(layer.text, delta);
+        if (layer._textUndo) this.releaseSnapshot(layer._textUndo);
         layer._textUndo = null;
-        layer._textPivot = pivot === "start" ? "start" : "centre";
+        layer._textPivot = keep;
         await this.renderTextLayer(layer, {
             adopt: (l, b) => {
                 if (!mask || !b.pw) return;
@@ -13014,6 +13082,7 @@ class InpaintEditor {
                 if (side === "a") ctx.rect(0, 0, W * split, H); else ctx.rect(W * split, 0, W * (1 - split), H);
                 ctx.clip();
                 this.applyViewTransform(ctx);
+                this.applyTilt(ctx);
                 this.compareShow = this.compare[side];
                 this.uploaded.baseHash = null;
                 this.drawViewComposite(ctx);
