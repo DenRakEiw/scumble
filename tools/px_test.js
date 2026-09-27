@@ -555,6 +555,139 @@ async function matchCases(px, label, js) {
     }
 }
 
+// ---- the smudge's dab (PLAN_0_1_31 §4 step 3) --------------------------------------------------
+
+/** The smudge dab in doubles, from the formulas of crates/px/src/smudge.rs without its integers: straight bytes in, straight doubles out (the carry premultiplied, 0..1). */
+function smudgeDoubles(dst, src, carry, mask, strength, keep, flags) {
+    const n = mask.length, out = Float64Array.from(dst), c2 = new Float64Array(n * 4);
+    const s = strength / 65536, kp = keep / 65536, lock = flags & 1;
+    for (let k = 0; k < n; k++) {
+        const o = k * 4, sa = src[o + 3] / 255;
+        const S = [src[o] / 255 * sa, src[o + 1] / 255 * sa, src[o + 2] / 255 * sa, sa];
+        const C = [carry[o] / 65535, carry[o + 1] / 65535, carry[o + 2] / 65535, carry[o + 3] / 65535];
+        if (flags & 2) { for (let c = 0; c < 4; c++) c2[o + c] = S[c]; continue; }
+        const a = s * mask[k] / 255;
+        if (a > 0) {
+            const ta = dst[o + 3] / 255;
+            const T = [dst[o] / 255 * ta, dst[o + 1] / 255 * ta, dst[o + 2] / 255 * ta, ta];
+            const N = T.map((v, c) => v + (C[c] - v) * a);
+            if (N[3] > 0.5 / 255 && !(lock && !dst[o + 3])) {
+                for (let c = 0; c < 3; c++) out[o + c] = Math.min(255, N[c] / N[3] * 255);
+                out[o + 3] = lock ? dst[o + 3] : N[3] * 255;
+            } else if (!lock) { out[o] = out[o + 1] = out[o + 2] = out[o + 3] = 0; }
+        }
+        for (let c = 0; c < 4; c++) { const P = S[c] + (C[c] - S[c]) * a; c2[o + c] = P + (C[c] - P) * kp; }
+    }
+    return { out, carry: c2 };
+}
+
+function smudgeInputs(n, seed) {
+    const r = rng(seed);
+    const dst = pixelRow(n, seed), src = pixelRow(n, seed + 1000), mask = randomMask(n, seed + 2000);
+    // a carry picked up from something else: premultiplied, so each colour is at most its alpha
+    const carry = new Uint16Array(n * 4);
+    for (let k = 0; k < n; k++) {
+        const a = r() < 0.2 ? 0 : r() < 0.3 ? 65535 : Math.floor(r() * 65536);
+        carry[k * 4 + 3] = a;
+        for (let c = 0; c < 3; c++) carry[k * 4 + c] = Math.floor(r() * (a + 1));
+    }
+    return { dst, src, mask, carry };
+}
+
+async function smudgeTwinCases(js) {
+    // against the doubles: within a level on what is laid down, within a 16-bit unit or two on the carry
+    let worst = 0, worstC = 0, n = 0, lockMoved = 0, uncovered = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+        const { dst, src, mask, carry } = smudgeInputs(1500 + seed * 7, seed);
+        const strength = [0, 1, 65536, 32768, 65535][seed % 5] || Math.floor(rng(seed)() * 65537);
+        const keep = [0, 65536, 20000, 50000][seed % 4];
+        const flags = seed % 3 === 0 ? 1 : 0;
+        const d = dst.slice(), c = carry.slice();
+        js.smudgeDab(d, src, c, mask, strength, keep, flags);
+        const ref = smudgeDoubles(dst, src, carry, mask, strength, keep, flags);
+        for (let k = 0; k < mask.length; k++) {
+            const o = k * 4, a = Math.floor((Math.min(65536, strength) * mask[k] + 127) / 255);
+            if (!a) { for (let q = 0; q < 4; q++) if (d[o + q] !== dst[o + q]) uncovered++; }
+            if (flags & 1 && d[o + 3] !== dst[o + 3]) lockMoved++;
+            // a colour at a tiny alpha has no level to speak of: compare where the result is at least 4 in alpha
+            if (d[o + 3] >= 4) for (let q = 0; q < 4; q++) { const e = Math.abs(d[o + q] - ref.out[o + q]); if (e > worst) worst = e; }
+            for (let q = 0; q < 4; q++) { const e = Math.abs(c[o + q] / 65535 - ref.carry[o + q]) * 65535; if (e > worstC) worstC = e; }
+            n++;
+        }
+    }
+    check(`js smudgeDab within a level of its doubles (what is laid down; alpha at least 4)`, worst <= 1.5, `worst ${worst.toFixed(3)} of ${n} pixels`);
+    check(`js smudgeDab's carry within two 16-bit units of its doubles`, worstC <= 2, `worst ${worstC.toFixed(3)}`);
+    check(`js smudgeDab leaves what the dab does not cover, and the alpha under alpha lock`, uncovered === 0 && lockMoved === 0, `uncovered moved ${uncovered}, alpha moved ${lockMoved}`);
+    // the exact cases
+    const { dst, src, mask, carry } = smudgeInputs(4096, 77);
+    const d0 = dst.slice(), c0 = carry.slice();
+    js.smudgeDab(d0, src, c0, mask, 65536, 65536, 0);
+    check(`js smudgeDab with keep 1 leaves the carry as it was`, eqBytes(c0, carry));
+    const d1 = dst.slice(), c1 = carry.slice();
+    js.smudgeDab(d1, src, c1, mask, 0, 0, 0);
+    let pickedUp = true;
+    for (let k = 0; k < 4096 && pickedUp; k++) { const o = k * 4, a = src[o + 3]; for (let c = 0; c < 3; c++) if (c1[o + c] !== Math.floor((src[o + c] * a * 257 + 127) / 255)) pickedUp = false; if (c1[o + 3] !== a * 257) pickedUp = false; }
+    check(`js smudgeDab at strength 0 lays nothing down, and at keep 0 the carry is what lies there`, eqBytes(d1, dst) && pickedUp);
+    const d2 = dst.slice(), c2 = carry.slice();
+    js.smudgeDab(d2, src, c2, mask, 65536, 0, 2);
+    let premul = true;
+    for (let k = 0; k < 4096; k++) for (let c = 0; c < 3; c++) if (c2[k * 4 + c] > c2[k * 4 + 3]) premul = false;
+    check(`js smudgeDab's pickup fills the carry and lays nothing down; the carry stays premultiplied`, eqBytes(d2, dst) && eqBytes(c2, c1) && premul);
+    // at full strength and coverage the layer becomes the carry: the round trip of a picked-up pixel is the identity
+    const full = new Uint8Array(4096).fill(255), d3 = pixelRow(4096, 90), c3 = new Uint16Array(4096 * 4);
+    js.smudgeDab(d3.slice(), src, c3, full, 65536, 0, 2);
+    const d4 = d3.slice();
+    js.smudgeDab(d4, d4.slice(), c3, full, 65536, 0, 0);
+    let same = true;
+    for (let k = 0; k < 4096; k++) { const o = k * 4; if (src[o + 3] === 0) { if (d4[o + 3] !== 0) same = false; } else for (let c = 0; c < 4; c++) if (d4[o + c] !== src[o + c]) same = false; }
+    check(`js smudgeDab at full strength lays the carry down byte for byte (the 16-bit round trip is exact)`, same);
+}
+
+/** The twin against a Rust build, bit for bit: single dabs over random input, and a stroke of dabs whose carry goes on. */
+async function smudgeCases(px, label, js) {
+    let ok = true, detail = "";
+    for (const n of [1, 3, 16, 1000, 4099, 65536]) {
+        for (let trial = 0; trial < 8; trial++) {
+            const { dst, src, mask, carry } = smudgeInputs(n, 300 + trial + n);
+            const strength = [0, 65536, 12345, 65535, 40000, 1, 30000, 65536][trial], keep = [0, 65536, 32768, 1, 60000, 0, 12000, 65535][trial];
+            const flags = [0, 1, 2, 3, 0, 1, 0, 1][trial];
+            const da = dst.slice(), ca = carry.slice(), db = dst.slice(), cb = carry.slice();
+            js.smudgeDab(da, src, ca, mask, strength, keep, flags);
+            px.smudgeDab(db, src, cb, mask, strength, keep, flags);
+            if (!eqBytes(da, db) || !eqBytes(ca, cb)) { ok = false; detail = `${n}px trial ${trial}: dst ${firstDiff(da, db)} carry ${firstDiff(ca, cb)}`; }
+        }
+    }
+    check(`js smudgeDab equals the ${label} (random pixels, carries, masks; strength, keep, alpha lock, pickup)`, ok, detail);
+    // a stroke: 40 dabs over a 64 x 64 box, the layer's bytes shifted under a carry that goes on
+    let okS = true, detailS = "";
+    const w = 64, n = w * w;
+    let la = pixelRow(n, 5), lb = la.slice();
+    const ca = new Uint16Array(n * 4), cb = new Uint16Array(n * 4), m = randomMask(n, 8);
+    for (let i = 0; i < 40 && okS; i++) {
+        const shift = (bytes) => { const o = new Uint8Array(bytes.length); o.set(bytes.subarray(4 * (i % 3 + 1)), 0); return o; };
+        la = shift(la); lb = shift(lb);
+        js.smudgeDab(la, la.slice(), ca, m, 45000, 20000, i === 0 ? 2 : i % 7 === 3 ? 1 : 0);
+        px.smudgeDab(lb, lb.slice(), cb, m, 45000, 20000, i === 0 ? 2 : i % 7 === 3 ? 1 : 0);
+        if (!eqBytes(la, lb) || !eqBytes(ca, cb)) { okS = false; detailS = `dab ${i}: ${firstDiff(la, lb)} / ${firstDiff(ca, cb)}`; }
+    }
+    check(`js smudgeDab equals the ${label} over a stroke of 40 dabs whose carry goes on`, okS, detailS);
+    // a Uint8ClampedArray layer (what readRect gives) and a view into a larger buffer
+    const big = new Uint8ClampedArray(8 + n * 4);
+    big.set(pixelRow(n, 11), 8);
+    const view = new Uint8ClampedArray(big.buffer, 8, n * 4), plain = new Uint8Array(view);
+    const cv = new Uint16Array(n * 4), cp = new Uint16Array(n * 4);
+    px.smudgeDab(view, plain.slice(), cv, m, 30000, 0, 2);
+    js.smudgeDab(plain, plain.slice(), cp, m, 30000, 0, 2);
+    px.smudgeDab(view, view.slice(), cv, m, 30000, 9000, 0);
+    js.smudgeDab(plain, plain.slice(), cp, m, 30000, 9000, 0);
+    check(`${label} smudgeDab takes a Uint8ClampedArray view and gives the twin's bytes`, eqBytes(new Uint8Array(view.buffer, 8, n * 4), plain) && eqBytes(cv, cp) && big[0] === 0);
+    if (/rust/.test(label)) {
+        const N = 400 * 400, t = smudgeInputs(N, 3);
+        const best = (k) => { let b = Infinity; for (let i = 0; i < 5; i++) { const d = t.dst.slice(), c = t.carry.slice(), t0 = performance.now(); k.smudgeDab(d, t.src, c, t.mask, 40000, 20000, 0); b = Math.min(b, performance.now() - t0); } return b; };
+        console.log(`       a 400 px dab smudged: ${label} ${best(px).toFixed(2)} ms, twin ${best(js).toFixed(2)}`);
+    }
+}
+
 async function pngCases(ref, label, js) {
     const zlib = require("node:zlib");
     let ok = true, okRound = true, detail = "";
@@ -838,6 +971,7 @@ async function main() {
     await floodCases(ref, label, js, raster);
     await compositeCases(ref, label, js);
     await matchTwinCases(js);
+    await smudgeTwinCases(js);
     await pngCases(ref, label, js);
     for (const [name, file] of [["simd", "px.wasm"], ["scalar", "px_scalar.wasm"]]) {
         const px = await loadPx(fs.readFileSync(path.join(PX_DIR, file)));
@@ -851,6 +985,7 @@ async function main() {
         await pngReadCases(px, label, js);
         await compositeCases(px, label, js);
         await matchCases(px, label, js);
+        await smudgeCases(px, label, js);
         await pngCases(px, label, js);
         await pngPartCases(px, label);
         await psdCases(px, label, js);

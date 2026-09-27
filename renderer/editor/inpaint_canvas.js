@@ -17,8 +17,8 @@ import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromC
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
-import { setKernels, kernelsMode, OPS, deflate } from "./px/kernels.js";
-import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
+import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP } from "./px/kernels.js";
+import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
 import { INTERACTIVE, EXPORT } from "./inpaint_pool.js";
@@ -1941,7 +1941,7 @@ class InpaintEditor {
         // one call: a second one for "shape" overwrote the list and hid the slider for the brushes (e0c00a7 to 0.1.31)
         moveCtl(this.opacCtl && this.opacCtl.input.parentElement, "paint erase clone heal bucket gradient shape");
         moveCtl(this.colorLabel, "paint bucket gradient shape");
-        moveCtl(this.tipLabel, "paint erase");
+        moveCtl(this.tipLabel, "paint erase smudge");
         for (const e of this.tipOnlyEls || []) moveCtl(e, "paint erase");
         this.syncTipControls();
         const row = (cls, ...nodes) => { const lab = el("label", null); lab.dataset.for = cls; for (const n of nodes) lab.appendChild(typeof n === "string" ? el("span", null, n) : n); bar.appendChild(lab); return lab; };
@@ -1990,16 +1990,26 @@ class InpaintEditor {
         sradius.style.width = "56px"; sradius.title = "Corner radius of the rectangle, in image pixels";
         sradius.addEventListener("change", () => { this.shapeOpts.radius = Math.max(0, +sradius.value || 0); sradius.value = this.shapeOpts.radius; });
         this.shapeRadiusRow = row("shape", "Radius", sradius);
-        this.smudgeOpts = { strength: 60, sample: "layer" };
+        this.smudgeOpts = { strength: 60, sample: "layer", length: 0, finger: false };
         this.cloneOpts = { sample: "image", aligned: true };
         const str = document.createElement("input");
         str.type = "range"; str.min = 1; str.max = 100; str.value = this.smudgeOpts.strength; str.title = "Strength: how much of the picked-up paint is dragged along";
         const strVal = el("span", null, this.smudgeOpts.strength + "%");
         str.addEventListener("input", () => { this.smudgeOpts.strength = +str.value; strVal.textContent = str.value + "%"; });
         row("smudge", "Strength", str, strVal);
-        const ssample = selectInput(["layer", "image"], "layer", "What the smudge picks up: the active layer alone, or the visible image (all layers), smudged into the active layer. On the base it always takes the image and paints into a new layer");
+        const slen = document.createElement("input");
+        slen.type = "range"; slen.min = 0; slen.max = 100; slen.value = this.smudgeOpts.length;
+        slen.title = "Length: how much of the picked-up paint the brush keeps from dab to dab. 0 leaves it where it is laid down; towards 100 it goes on to the end of the stroke";
+        const slenVal = el("span", null, this.smudgeOpts.length + "%");
+        slen.addEventListener("input", () => { this.smudgeOpts.length = +slen.value; slenVal.textContent = slen.value + "%"; });
+        row("smudge", "Length", slen, slenVal);
+        const ssample = selectInput(["layer", "below", "image"], "layer", "What the smudge picks up: the active layer alone, the layers up to it (below), or the visible image (all layers), smudged into the active layer. On the base it always takes the image and paints into a new layer");
         ssample.addEventListener("change", () => { this.smudgeOpts.sample = ssample.value; });
         row("smudge", "Sample", ssample);
+        const sfinger = document.createElement("input");
+        sfinger.type = "checkbox"; sfinger.title = "Finger painting: every stroke starts with the paint colour on the brush";
+        sfinger.addEventListener("change", () => { this.smudgeOpts.finger = sfinger.checked; });
+        row("smudge", sfinger, "Finger");
         const csample = selectInput(["image", "layer"], "image", "Where the copied pixels come from: the visible image (all layers) or the active layer alone");
         csample.addEventListener("change", () => { this.cloneOpts.sample = csample.value; });
         row("clone heal", "Sample", csample);
@@ -4435,7 +4445,8 @@ class InpaintEditor {
             let layer = this.activeLayer();
             if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
             if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels to smudge."); return; }
-            let sample = this.smudgeOpts && this.smudgeOpts.sample === "image" ? "all" : "layer";
+            const so = this.smudgeOpts && this.smudgeOpts.sample;
+            let sample = so === "image" ? "all" : so === "below" ? "below" : "layer";
             if (!layer) {
                 // the base is never written: the smudge takes the picture and paints into a new layer (a whole copy of the
                 // base as a layer took 1.9 s and held 1.1 GB of mirrors at 15000 x 10000, PLAN_0_1_31 §4 step 1)
@@ -5764,7 +5775,17 @@ class InpaintEditor {
                     plan = [null, { px: l.px, mask: this.liveMask(l) ? this.tileMaskOf(l) : null, x: l.x, y: l.y, alpha: 255, op: 0 }];
             } else plan = this.stackPlan({ forRun: false, upTo });
         }
-        if (!plan) return { tier: "region", read: region };
+        // the region pass as bytes of the box (zeros where it lies outside the picture)
+        const regionBytes = (box) => {
+            const w = box[2] - box[0], h = box[3] - box[1];
+            const c = this._brushBytes = cpuDab(this._brushBytes, w, h);
+            const ctx = c.getContext("2d");
+            ctx.clearRect(0, 0, w, h);
+            const got = region(box);
+            if (got) ctx.drawImage(got.canvas, got.x - box[0], got.y - box[1]);
+            return ctx.getImageData(0, 0, w, h).data;
+        };
+        if (!plan) return { tier: "region", read: region, bytes: regionBytes };
         const stack = plan.map((s) => s && { px: s.px, mask: s.mask || null, x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0, match: s.match ? this.boxMatchOf(s.match) : null });
         const src = {
             tier: "tiles",
@@ -5781,6 +5802,15 @@ class InpaintEditor {
                 const c = reads[slot] = cpuDab(reads[slot], w, h);
                 c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(bytes.buffer, bytes.byteOffset, w * h * 4), w, h), 0, 0);
                 return { canvas: c, x: b[0], y: b[1] };
+            },
+            // the box as straight RGBA8 (whole image pixels; transparent outside the picture), valid until the next read:
+            // the smudge takes the composite as bytes, no canvas between
+            bytes: (box) => {
+                if (src.tier === "tiles") {
+                    try { return compositeBox(stack, box[0], box[1], box[2] - box[0], box[3] - box[1]); }
+                    catch (err) { console.warn("Inpaint Canvas: the brush's tile read failed, reading the region pass:", err); src.tier = "region"; }
+                }
+                return regionBytes(box);
             },
         };
         return src;
@@ -6383,80 +6413,121 @@ class InpaintEditor {
     }
 
     /**
-     * Smudge: drag the pixels under the brush along the stroke, directly on the layer's
-     * pixels. Every step reads what the step before wrote: the read goes into the dab scratch
-     * before that step's own write, which is one drawInto per step. The read is the dab's box
-     * (`smudgeRead`), never the whole layer, and a move refreshes the levels of its own box.
+     * Smudge (PLAN_0_1_31 §4 step 3): the brush holds a carry, a box of paint the size of the dab, laid down where the
+     * dab lands and refilled there from what the brush samples (the `smudge_dab` kernel, crates/px/src/smudge.rs, and
+     * its JS twin): Strength is how much of the carry goes down, Length how much of it the brush keeps (0: what it left
+     * behind, which was the smudge of 0.1.31; up to 100: the paint goes on to the end of the stroke). The first dab of a
+     * stroke only fills the carry, or with Finger painting starts from the paint colour. Pen pressure scales the size
+     * and the strength. The dab sits on whole pixels (its mask carries the fraction), so the carry moves a whole box at
+     * a time; each step reads the box from the layer (or the picture, `smudgeSample`) and writes it back.
      */
     smudgeDab(p, x0, y0, x1, y1) {
         const layer = p.layer, target = layer.px;
         const sx = target.width / layer.w, sy = target.height / layer.h;
         const lx0 = (x0 - layer.x) * sx, ly0 = (y0 - layer.y) * sy, lx1 = (x1 - layer.x) * sx, ly1 = (y1 - layer.y) * sy;
         const pr = Math.max(0.05, Math.min(1, p.pressure || 1));
-        const r = Math.max(1, this.brushSize * (sx + sy) / 4 * pr);
-        const size = Math.ceil(r * 2);
-        const strength = Math.max(0.01, Math.min(1, (this.smudgeOpts ? this.smudgeOpts.strength : 60) / 100));
-        const d = this._smudgeDab = cpuDab(this._smudgeDab, size);
-        const dctx = d.getContext("2d");
-        const mask = this.dabMask(r, this.hardness);
-        const op = layer.alphaLock ? "source-atop" : "source-over";
+        const o = this.smudgeOpts || {};
+        // the carry's side is fixed for the stroke (the full-pressure dab's box); a smaller dab is a smaller mask in it
+        if (!p.side) p.side = Math.ceil(Math.max(1, this.brushSize * (sx + sy) / 4) * 2) + 2;
+        const side = p.side;
+        const r = Math.min((side - 2) / 2, Math.max(1, this.brushSize * (sx + sy) / 4 * pr));
+        const strength = Math.round(Math.max(0, Math.min(1, (o.strength ?? 60) / 100)) * 65536 * pr);
+        const keep = Math.round(Math.max(0, Math.min(1, (o.length || 0) / 100)) * 65536);
+        if (!p.carry) p.carry = new Uint16Array(side * side * 4);
+        const tip = this.brushTip();
+        const spacing = Math.max(1, tip ? (tip.spacing || this.brushTipSpacing || 0.25) * 2 * r : r * 0.25);
         // the image box the move can touch (the release marks it, not the whole layer)
-        this.strokeBounds(p, x0, y0, x1, y1, this.brushSize / 2 * pr + 2);
+        this.strokeBounds(p, x0, y0, x1, y1, (side / 2 + 1) / Math.min(sx, sy));
         const dist = Math.hypot(lx1 - lx0, ly1 - ly0);
-        const steps = Math.max(1, Math.ceil(dist / Math.max(1, r * 0.25)));
-        let px = lx0, py = ly0;
-        for (let i = 1; i <= steps; i++) {
-            const x = lx0 + (lx1 - lx0) * i / steps, y = ly0 + (ly1 - ly0) * i / steps;
-            dctx.globalCompositeOperation = "source-over";
-            dctx.clearRect(0, 0, size, size);
-            this.smudgeRead(p, target, dctx, px - r, py - r, size);
-            dctx.globalCompositeOperation = "destination-in";
-            dctx.drawImage(mask, 0, 0);
+        const steps = Math.max(1, Math.ceil(dist / spacing));
+        for (let i = p.started ? 1 : 0; i <= steps; i++) {
+            const cx = lx0 + (lx1 - lx0) * i / steps, cy = ly0 + (ly1 - ly0) * i / steps;
+            const bx = Math.round(cx - side / 2), by = Math.round(cy - side / 2);
+            let mask = this.smudgeMask(side, cx - bx, cy - by, r, tip);
             if (p.clip) {
-                this._smudgeClip = cpuDab(this._smudgeClip, size);   // clipCanvasFor draws into it when it has the size
-                this._smudgeClip = this.clipCanvasFor(layer, target, x - r, y - r, size, size, this._smudgeClip);
-                dctx.drawImage(this._smudgeClip, 0, 0);
+                this._smudgeClip = cpuDab(this._smudgeClip, side);   // clipCanvasFor draws into it when it has the size
+                this._smudgeClip = this.clipCanvasFor(layer, target, bx, by, side, side, this._smudgeClip);
+                const sel = this._smudgeClip.getContext("2d").getImageData(0, 0, side, side).data;
+                mask = mask.slice();
+                for (let k = 0; k < mask.length; k++) mask[k] = Math.floor((mask[k] * sel[k * 4 + 3] + 127) / 255);
             }
-            const dx = x - r, dy = y - r;
-            // the dab lands on [dx, dx + size) at a fractional position; a pixel of margin covers its soft edge
-            target.drawInto([dx - 1, dy - 1, dx + size + 1, dy + size + 1], (ctx) => {
-                ctx.globalAlpha = strength;
-                ctx.globalCompositeOperation = op;
-                ctx.drawImage(d, dx, dy);
-            });
-            px = x; py = y;
+            const img = target.readRect(bx, by, side, side);
+            let flags = layer.alphaLock ? SMUDGE_ALPHA_LOCK : 0;
+            if (!p.started) {
+                p.started = true;
+                if (o.finger) this.fillCarry(p.carry, this.color);   // the stroke starts with paint on the brush
+                else flags |= SMUDGE_PICKUP;
+            }
+            const src = p.src ? this.smudgeSample(p, target, bx, by, side) : img.data;   // the layer's own bytes: read before written, per pixel
+            smudgeDabKernel(img.data, src, p.carry, mask, strength, keep, flags);
+            if (!(flags & SMUDGE_PICKUP)) target.writeRect(img, bx, by);
         }
         layer._maskedValid = false;
         layer._mcache = null;
         layer._mcacheView = null; layer._mcacheSample = null;
         // the levels of the move's box are refreshed, not dropped for the whole layer (C6 b)
-        const bx0 = Math.max(0, Math.floor(Math.min(lx0, lx1) - r) - 2), by0 = Math.max(0, Math.floor(Math.min(ly0, ly1) - r) - 2);
-        const bx1 = Math.min(target.width, Math.ceil(Math.max(lx0, lx1) + r) + 2), by1 = Math.min(target.height, Math.ceil(Math.max(ly0, ly1) + r) + 2);
+        const bx0 = Math.max(0, Math.floor(Math.min(lx0, lx1) - side / 2) - 2), by0 = Math.max(0, Math.floor(Math.min(ly0, ly1) - side / 2) - 2);
+        const bx1 = Math.min(target.width, Math.ceil(Math.max(lx0, lx1) + side / 2) + 2), by1 = Math.min(target.height, Math.ceil(Math.max(ly0, ly1) + side / 2) + 2);
         if (bx1 > bx0 && by1 > by0) this.touchSourceRect(target, bx0, by0, bx1, by1);
     }
 
+    /** The carry filled with one colour, opaque (finger painting). */
+    fillCarry(carry, hex) {
+        const [r, g, b] = hexToRgb(hex || "#000000");
+        for (let k = 0; k < carry.length; k += 4) { carry[k] = r * 257; carry[k + 1] = g * 257; carry[k + 2] = b * 257; carry[k + 3] = 65535; }
+    }
+
     /**
-     * What a smudge dab picks up at (x, y) of `target` (the layer's pixels, fractional), `size` a side, drawn into the dab
-     * at (0, 0): the picture through the gesture's source (Sample: the image; always on the base), or the layer's own
-     * box from its tiles. Before 0.1.32 the read was `drawTo`, the whole-layer display mirror (572 MB at 15000 x 10000,
-     * 0.2 to 8 s a move, PLAN_0_1_31 §4 step 1). The source rectangle is fractional and may reach outside the pixels:
-     * drawImage clips and resamples it as before, from a box a pixel wider than it on each side.
+     * The smudge dab's coverage, `side` x `side` bytes: the round dab of radius `r` whose centre lies at (fx, fy) of the box
+     * (full inside the hardness, falling linearly to 0 at `r`, as `dabMask`'s gradient), or an imported tip, its longer
+     * side 2r, centred there. Kept for the last few sizes and fractions (a quarter pixel): a stroke asks the same ones.
      */
-    smudgeRead(p, target, dctx, x, y, size) {
-        const layer = p.layer;
-        if (p.src) {
-            const fx = layer.w / target.width, fy = layer.h / target.height;
-            const ix = layer.x + x * fx, iy = layer.y + y * fy, iw = size * fx, ih = size * fy;
-            const got = p.src.read([Math.floor(ix) - 1, Math.floor(iy) - 1, Math.ceil(ix + iw) + 1, Math.ceil(iy + ih) + 1]);
-            if (got) dctx.drawImage(got.canvas, ix - got.x, iy - got.y, iw, ih, 0, 0, size, size);
-            return;
+    smudgeMask(side, fx, fy, r, tip = null) {
+        const qx = Math.round(fx * 4) / 4, qy = Math.round(fy * 4) / 4, h = Math.max(0, Math.min(0.97, this.hardness));
+        const key = `${side}|${r.toFixed(2)}|${qx}|${qy}|${tip ? tip.id + "|" + tip.canvas.width : "round|" + h}`;
+        const cache = this._smudgeMasks || (this._smudgeMasks = new Map());
+        let m = cache.get(key);
+        if (m) return m;
+        m = new Uint8Array(side * side);
+        if (tip) {
+            const c = this._smudgeTip = cpuDab(this._smudgeTip, side);
+            const ctx = c.getContext("2d");
+            ctx.clearRect(0, 0, side, side);
+            const k = 2 * r / Math.max(tip.canvas.width, tip.canvas.height), w = tip.canvas.width * k, hh = tip.canvas.height * k;
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(tip.canvas, qx - w / 2, qy - hh / 2, w, hh);
+            const d = ctx.getImageData(0, 0, side, side).data;
+            for (let i = 0; i < m.length; i++) m[i] = d[i * 4 + 3];
+        } else {
+            for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
+                const d = Math.hypot(x + 0.5 - qx, y + 0.5 - qy) / r;
+                m[y * side + x] = d <= h ? 255 : d >= 1 ? 0 : Math.round(255 * (1 - d) / (1 - h));
+            }
         }
-        if (!isTilePixels(target)) { target.drawTo(dctx, x, y, size, size, 0, 0, size, size); return; }   // its own canvas: no mirror
-        const b = [Math.max(0, Math.floor(x) - 1), Math.max(0, Math.floor(y) - 1), Math.min(target.width, Math.ceil(x + size) + 1), Math.min(target.height, Math.ceil(y + size) + 1)];
-        if (b[2] <= b[0] || b[3] <= b[1]) return;
-        const c = this._smudgeSrc = cpuDab(this._smudgeSrc, b[2] - b[0], b[3] - b[1]);
-        c.getContext("2d").putImageData(target.readRect(b[0], b[1], b[2] - b[0], b[3] - b[1]), 0, 0);
-        dctx.drawImage(c, x - b[0], y - b[1], size, size, 0, 0, size, size);
+        if (cache.size >= 24) cache.delete(cache.keys().next().value);
+        cache.set(key, m);
+        return m;
+    }
+
+    /**
+     * What the smudge samples for the box `side` x `side` at (bx, by) of `target` (the layer's pixels): the picture (Sample:
+     * current and below, or the image; always on the base) through the gesture's source, as straight RGBA8 on the layer's
+     * grid. An unscaled layer at whole pixels takes the source's bytes as they are; otherwise the box is drawn from the
+     * source's canvas at the layer's scale.
+     */
+    smudgeSample(p, target, bx, by, side) {
+        const layer = p.layer;
+        const fx = layer.w / target.width, fy = layer.h / target.height;
+        if (fx === 1 && fy === 1 && layer.x === Math.round(layer.x) && layer.y === Math.round(layer.y) && p.src.bytes) {
+            return p.src.bytes([layer.x + bx, layer.y + by, layer.x + bx + side, layer.y + by + side]);
+        }
+        const ix = layer.x + bx * fx, iy = layer.y + by * fy, iw = side * fx, ih = side * fy;
+        const c = this._smudgeSrc = cpuDab(this._smudgeSrc, side);
+        const ctx = c.getContext("2d");
+        ctx.clearRect(0, 0, side, side);
+        const got = p.src.read([Math.floor(ix) - 1, Math.floor(iy) - 1, Math.ceil(ix + iw) + 1, Math.ceil(iy + ih) + 1]);
+        if (got) ctx.drawImage(got.canvas, ix - got.x, iy - got.y, iw, ih, 0, 0, side, side);
+        return ctx.getImageData(0, 0, side, side).data;
     }
 
     /**
@@ -7070,7 +7141,7 @@ class InpaintEditor {
 
     /** After a gesture: the live preview canvases of a large layer are given back, small ones are kept for the next stroke. */
     releaseStrokeScratch() {
-        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_smudgeDab", "_smudgeSrc", "_smudgeClip", "_cloneDab", "_healDest"]) {
+        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest"]) {
             const c = this[k];
             if (c && c.width * c.height > STROKE_SCRATCH_KEEP_PX) this[k] = null;
         }
@@ -13651,7 +13722,7 @@ class InpaintEditor {
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }
-        for (const name of ["sceneCanvas", "viewCanvas", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView", "_filterMaskView", "_smudgeDab", "_smudgeSrc", "_smudgeClip", "_cloneDab", "_healDest", "_dabMask"]) {
+        for (const name of ["sceneCanvas", "viewCanvas", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView", "_filterMaskView", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest", "_dabMask"]) {
             if (this[name]) { freed += px(this[name].c || this[name]); this[name] = null; }
         }
         if (this._brushRead) { for (const c of this._brushRead) if (c) freed += px(c); this._brushRead = null; }

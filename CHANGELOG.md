@@ -41,9 +41,14 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Smudge, clone and heal stay fast on large pictures.** They read the whole picture before: clone and heal
   flattened it at every stroke (up to 1.7 s at 15,000 × 10,000 before the brush moved) and the smudge read the
   whole layer at every step (up to 8 s a move). Now each reads only what is under the brush: a few milliseconds a
-  move at any size, and a gigabyte less memory. Heal matches the colour more exactly. The smudge has a **Sample**
-  option (the layer, or the whole visible picture smudged into the active layer), and on the base it no longer
-  copies the whole base into a layer first: it paints into a new layer from the picture.
+  move at any size, and a gigabyte less memory. Heal matches the colour more exactly. On the base the smudge no
+  longer copies the whole base into a layer first: it paints into a new layer from the picture.
+- **A smudge that carries paint.** The smudge brush now holds the paint it picks up and lays it down as it goes:
+  **Strength** is how much goes down, the new **Length** how far it goes on (0 is the smudge you know; towards 100
+  the colour is dragged to the end of the stroke), **Finger** starts every stroke with the paint colour on the
+  brush, and **Sample** takes the active layer, the layers up to it (below) or the whole visible picture. It keeps
+  the colour exact over long drags, respects alpha lock and the selection, works with imported brush tips, and pen
+  pressure sets its size and strength.
 
 ## 0.1.31 — 2026-09-27
 

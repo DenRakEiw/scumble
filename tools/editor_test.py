@@ -6888,6 +6888,101 @@ try {
 }
 return out;
 """),
+    ("the_smudge_carries_paint_as_far_as_its_length", """
+// PLAN_0_1_31 §4 step 3: the smudge's carry (the smudge_dab kernel). Length keeps the paint going, finger painting
+// starts from the paint colour, alpha lock keeps the alpha, Sample "below" leaves the layers above out; the kernel and
+// its JS twin give the same bytes in the app; the undo gives the layer back. Real handlers, synthetic pointer events
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const W = 1600, H = 900;
+const out = { tiles: !!ed.tileMode };
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const K = ed.constructor.kernels;
+try {
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    const base = mk(W, H);
+    { const x = base.getContext("2d"); x.fillStyle = "#2040e0"; x.fillRect(0, 0, W, H); x.fillStyle = "#e02020"; x.fillRect(0, 0, 400, H); }
+    Object.defineProperty(base, "naturalWidth", { value: W }); Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "smudge_carry_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    // the target: red on its left 400 px, blue to the right, opaque
+    const lc = mk(W, H);
+    { const x = lc.getContext("2d"); x.fillStyle = "#2040e0"; x.fillRect(0, 0, W, H); x.fillStyle = "#e02020"; x.fillRect(0, 0, 400, H); }
+    const L = ed.addLayer({ name: "T", kind: "paint", px: ed.pixels.Layer.fromCanvas(lc), x: 0, y: 0, w: W, h: H, dirty: true });
+    ed.renderLayers(); ed.draw();
+    ed.view.angle = 0; ed.view.scale = 0.5; ed._fitted = false; ed.view.x = 10; ed.view.y = 10; ed.draw();
+    let pid = 900;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+    const send = (type, ix, iy) => ed.canvas.dispatchEvent(ev(type, ix, iy));
+    const stroke = (y, x0 = 300, x1 = 1300) => { pid++; send("pointerdown", x0, y); for (let i = 1; i <= 20; i++) send("pointermove", x0 + (x1 - x0) * i / 20, y); send("pointerup", x1, y); };
+    // how far red went: the last x on the row where red still beats blue
+    const reach = (l, y) => { const row = l.px.readRect(0, y, W, 1).data; let last = 0; for (let x = 0; x < W; x++) if (row[x * 4 + 3] > 0 && row[x * 4] > row[x * 4 + 2] + 30) last = x; return last; };
+    ed.activeLayerId = L.id; ed.renderLayers();
+    ed.setTool("smudge");
+    ed.brushSize = 60; ed.hardness = 0.6;
+    Object.assign(ed.smudgeOpts, { strength: 80, length: 0, sample: "layer", finger: false });
+    const before = L.px.readRect(0, 0, W, H).data.slice();
+    stroke(150);
+    Object.assign(ed.smudgeOpts, { length: 90 });
+    stroke(350);
+    out.reach = [reach(L, 150), reach(L, 350)];
+    if (!(out.reach[0] > 420)) throw new Error("the smudge did not drag the red: it reaches " + out.reach[0]);
+    if (!(out.reach[1] > out.reach[0] + 150)) throw new Error("Length 90 does not carry the paint further than 0: " + out.reach);
+    // the undo steps give the layer back byte for byte
+    await ed.undoStep(); await ed.undoStep();
+    const back = L.px.readRect(0, 0, W, H).data;
+    let diff = 0; for (let i = 0; i < back.length; i++) if (back[i] !== before[i]) diff++;
+    if (diff) throw new Error("two undos left " + diff + " bytes changed");
+    // finger painting: the stroke starts with the paint colour (green) on blue, where there is no green to drag
+    Object.assign(ed.smudgeOpts, { length: 50, finger: true });
+    ed.color = "#20e040";
+    stroke(550, 700, 1100);
+    const g = Array.from(L.px.readRect(760, 550, 1, 1).data);
+    out.finger = g;
+    if (!(g[1] > g[2] && g[1] > g[0])) throw new Error("finger painting laid down no paint colour: " + g);
+    Object.assign(ed.smudgeOpts, { finger: false, length: 0 });
+    // Sample "below": a green layer above the target is left out, "image" takes it
+    const uc = mk(W, H); { const x = uc.getContext("2d"); x.fillStyle = "#20e040"; x.fillRect(0, 700, 400, 200); }
+    const U = ed.addLayer({ name: "U", kind: "paint", px: ed.pixels.Layer.fromCanvas(uc), x: 0, y: 0, w: W, h: H, dirty: true });
+    ed.activeLayerId = L.id; ed.renderLayers();
+    Object.assign(ed.smudgeOpts, { sample: "below" });
+    stroke(760, 300, 700);
+    const below = Array.from(L.px.readRect(460, 760, 1, 1).data);
+    Object.assign(ed.smudgeOpts, { sample: "image" });
+    stroke(860, 300, 700);
+    const image = Array.from(L.px.readRect(460, 860, 1, 1).data);
+    out.sample = { below, image };
+    if (!(below[0] > below[1])) throw new Error("Sample below took the layer above: " + below);
+    if (!(image[1] > image[0])) throw new Error("Sample image left the layer above out: " + image);
+    ed.removeLayer(U.id); ed.renderLayers();
+    // alpha lock: red dragged over a transparent hole stays out of it
+    Object.assign(ed.smudgeOpts, { sample: "layer" });
+    L.px.clear([600, 0, 800, 120]); ed.markLayerChanged(L);
+    L.alphaLock = true;
+    stroke(60, 300, 1000);
+    L.alphaLock = false;
+    const hole = L.px.readRect(700, 60, 1, 1).data[3];
+    if (hole !== 0) throw new Error("alpha lock let the smudge into a transparent hole: alpha " + hole);
+    // the kernel and its twin: the same stroke from the same bytes, Rust and JS
+    const snap = L.px.readRect(0, 0, W, H);
+    const once = async (mode) => {
+        L.px.writeRect(snap, 0, 0); ed.markLayerChanged(L);
+        ed.constructor.kernels = mode;
+        Object.assign(ed.smudgeOpts, { length: 60, strength: 70 });
+        stroke(450, 250, 1250);
+        return L.px.readRect(0, 0, W, H).data.slice();
+    };
+    const a = await once("rust"), b = await once("js");
+    let twin = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) twin++;
+    out.twinDiff = twin;
+    if (twin) throw new Error("the Rust kernel and its JS twin smudged " + twin + " bytes apart");
+} finally {
+    ed.constructor.kernels = K;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("mask_operations_are_one_step_each", """
 // PLAN_0_1_31 6.4: set_mask's operations, each one undo step, the mask white where it shows, and the mask row's menu
 const d = await run("new_document");

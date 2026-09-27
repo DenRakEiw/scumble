@@ -15,7 +15,7 @@ import * as J from "./kernels_js.js";
 import { loadPx, Px } from "./px.js";
 import { resampleBlock as resampleBlockJS, resampleTable } from "../inpaint_resample.js";
 
-export { OPS, mipChainBytes, deflate } from "./kernels_js.js";
+export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP } from "./kernels_js.js";
 
 const RELEASE_BYTES = 256 * 1048576;
 
@@ -103,6 +103,12 @@ export function boxBlurs(data, w, h, radii) {
 export function compositeTile(dst, srcs, ops, alphas, masks = null) {
     const p = rustPx();
     return p ? p.compositeTile(dst, srcs, ops, alphas, masks) : J.compositeTile(dst, srcs, ops, alphas, masks);
+}
+
+/** One smudge dab: `dst` (straight RGBA8) and `carry` (premultiplied u16) in place (PLAN_0_1_31 §4 step 3). */
+export function smudgeDab(dst, src, carry, mask, strength, keep, flags = 0) {
+    const p = rustPx();
+    return p ? p.smudgeDab(dst, src, carry, mask, strength, keep, flags) : J.smudgeDab(dst, src, carry, mask, strength, keep, flags);
 }
 
 export function matchPixels(rgba, params) {

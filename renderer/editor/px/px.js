@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 11;
+export const PX_ABI = 12;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -293,6 +293,17 @@ export class Px {
             if (stride === row) out.set(src, off);
             else for (let j = 0; j < vh; j++) out.set(src.subarray(j * row, j * row + row), off + j * stride);
             return count;
+        } finally { a.reset(); }
+    }
+
+    /** One smudge dab (kernels_js.js `smudgeDab`): `dst` and `carry` in place. */
+    smudgeDab(dst, src, carry, mask, strength, keep, flags = 0) {
+        const a = this.job, n = mask.length;
+        try {
+            const pd = this._in(a, dst, n * 4), ps = this._in(a, src, n * 4), pc = this._in(a, carry, n * 8), pm = this._in(a, mask, n);
+            this.exports.smudge_dab(pd, ps, pc, pm, n, strength >>> 0, keep >>> 0, flags >>> 0);
+            this._out(Uint16Array, pc, n * 4, carry);
+            return this._out(Uint8Array, pd, n * 4, dst);
         } finally { a.reset(); }
     }
 

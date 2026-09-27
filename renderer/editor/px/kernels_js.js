@@ -853,3 +853,53 @@ export function pngUnfilterRows(lines, rows, rowBytes, bpp, prev, rgba = null) {
     }
     return rows;
 }
+
+// ---- the smudge's dab (PLAN_0_1_31 §4 step 3) ---------------------------------------------------
+
+export const SMUDGE_ALPHA_LOCK = 1, SMUDGE_PICKUP = 2;
+
+/**
+ * One smudge dab over `mask.length` pixels (crates/px/src/smudge.rs has the formulas): `dst` the layer's straight RGBA8
+ * under the dab box, written where the dab covers; `src` what the brush samples there (straight RGBA8; the layer's own
+ * bytes, a copy, or the picture); `carry` a Uint16Array of 4 per pixel, premultiplied, which the brush holds from dab to
+ * dab; `strength` and `keep` 0..65536; `flags` SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP (the first dab: the carry takes `src`,
+ * nothing is laid down). Integer arithmetic only, each division floored, so the Rust kernel gives the same bytes.
+ * Returns `dst`.
+ */
+export function smudgeDab(dst, src, carry, mask, strength, keep, flags = 0) {
+    const d = bytesOf(dst), s = bytesOf(src);
+    const n = Math.min(mask.length, d.length >> 2, s.length >> 2, carry.length >> 2);
+    const st = Math.min(65536, strength >>> 0), kp = Math.min(65536, keep >>> 0), lock = (flags & SMUDGE_ALPHA_LOCK) !== 0;
+    const lerp = (x, w) => Math.floor((x * w + 32768) / 65536);
+    const pre = (c, a) => Math.floor((c * a * 257 + 127) / 255);
+    const sp = [0, 0, 0, 0], cp = [0, 0, 0, 0], tp = [0, 0, 0, 0], nt = [0, 0, 0, 0], px = [0, 0, 0, 0];
+    const straight = (q, out, o) => {
+        const a = q[3], a8 = Math.floor((a + 128) / 257);
+        if (a8 <= 0) { out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0; return; }
+        for (let c = 0; c < 3; c++) { const v = Math.floor((q[c] * 255 + Math.floor(a / 2)) / a); out[o + c] = v > 255 ? 255 : v; }
+        out[o + 3] = a8;
+    };
+    for (let k = 0; k < n; k++) {
+        const o = k * 4, sa = s[o + 3];
+        sp[0] = pre(s[o], sa); sp[1] = pre(s[o + 1], sa); sp[2] = pre(s[o + 2], sa); sp[3] = sa * 257;
+        if (flags & SMUDGE_PICKUP) { for (let c = 0; c < 4; c++) carry[o + c] = sp[c]; continue; }
+        const a = Math.floor((st * mask[k] + 127) / 255);
+        for (let c = 0; c < 4; c++) cp[c] = carry[o + c];
+        if (a > 0) {
+            const ta = d[o + 3];
+            tp[0] = pre(d[o], ta); tp[1] = pre(d[o + 1], ta); tp[2] = pre(d[o + 2], ta); tp[3] = ta * 257;
+            for (let c = 0; c < 4; c++) nt[c] = tp[c] + lerp(cp[c] - tp[c], a);
+            if (!lock) straight(nt, d, o);
+            else if (ta > 0) {
+                // the colour of what was laid down, at the alpha the layer had
+                straight(nt, px, 0);
+                if (px[3] > 0) { d[o] = px[0]; d[o + 1] = px[1]; d[o + 2] = px[2]; }
+            }
+        }
+        for (let c = 0; c < 4; c++) {
+            const p = sp[c] + lerp(cp[c] - sp[c], a);
+            carry[o + c] = p + lerp(cp[c] - p, kp);
+        }
+    }
+    return dst;
+}
