@@ -45,6 +45,24 @@ function check(name, ok, detail = "") {
         for (const [, py] of j.push(i * 3, y, 1)) worst = Math.max(worst, Math.abs(py));
     }
     check("a hand trembling 8 px either side draws within 2 px of its line (radius 12)", worst < 2 && hand === 8, `brush ${worst.toFixed(2)}`);
+    // the blur and the sharpen of the brushes (step 6)
+    const img = (w, h, f) => { const d = new Uint8ClampedArray(w * h * 4); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) d.set(f(x, y), (y * w + x) * 4); return d; };
+    const flat = img(12, 9, () => [90, 150, 30, 255]);
+    check("a flat picture stays as it is under the blur and the sharpen", S.blurRGBA(flat, 12, 9, 2).every((v, i) => v === flat[i]) && S.sharpenRGBA(flat, 12, 9, 2).every((v, i) => v === flat[i]));
+    const edge = img(20, 3, (x) => (x < 10 ? [0, 0, 0, 255] : [255, 255, 255, 255]));
+    const bl = S.blurRGBA(edge, 20, 3, 1);
+    const row = (d) => Array.from({ length: 20 }, (_, x) => d[(20 + x) * 4]);
+    const br = row(bl);
+    let ramp = true; for (let x = 1; x < 20; x++) if (br[x] < br[x - 1]) ramp = false;
+    check("the blur softens an edge into a ramp, far pixels untouched", ramp && br[9] > 0 && br[10] < 255 && br[0] === 0 && br[19] === 255, br.join(","));
+    const sh = row(S.sharpenRGBA(bl, 20, 3, 1));
+    check("the sharpen steepens the ramp again", sh[8] <= br[8] && sh[11] >= br[11] && sh[9] < br[9] && sh[10] > br[10], sh.join(","));
+    const half = img(10, 1, (x) => (x < 5 ? [200, 40, 40, 255] : [0, 0, 0, 0]));
+    const hb = S.blurRGBA(half, 10, 1, 1);
+    let noDark = true; for (let x = 0; x < 10; x++) { const i = x * 4; if (hb[i + 3] > 0 && Math.abs(hb[i] - 200) > 2) noDark = false; if (!hb[i + 3] && (hb[i] || hb[i + 1] || hb[i + 2])) noDark = false; }
+    check("the blur is premultiplied: a colour next to transparency keeps its colour, not darker", noDark);
+    const sa = S.sharpenRGBA(half, 10, 1, 1);
+    check("the sharpen keeps the alpha", sa.every((v, i) => i % 4 !== 3 || v === half[i]));
     console.log(failures ? `${failures} FAILED` : "PASS");
     process.exit(failures ? 1 : 0);
 })().catch((err) => { console.error(err); process.exit(1); });

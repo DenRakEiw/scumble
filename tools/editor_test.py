@@ -7181,6 +7181,61 @@ try {
 }
 return out;
 """),
+    ("blur_and_sharpen_modes_soften_and_crisp_an_edge", """
+// PLAN_0_1_31 §4 step 6: the smudge tool's Blur and Sharpen modes through the real handlers. A hard black / white edge
+// gets a ramp where the blur passes and stays hard where it does not; a linear ramp gets darker below its dark end and
+// lighter above its light end under the sharpen (unsharp masking overshoots at the kinks); the undo says the mode
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = { tiles: !!ed.tileMode };
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const keep = { ...ed.smudgeOpts }, size = ed.brushSize, hard = ed.hardness;
+try {
+    await run("new_canvas", { width: 800, height: 400, doc: d.id });
+    const lc = mk(800, 400);
+    {
+        const x = lc.getContext("2d");
+        x.fillStyle = "#000000"; x.fillRect(0, 0, 400, 300); x.fillStyle = "#ffffff"; x.fillRect(400, 0, 400, 300);
+        const g = x.createLinearGradient(380, 0, 420, 0);
+        g.addColorStop(0, "rgb(64,64,64)"); g.addColorStop(1, "rgb(192,192,192)");
+        x.fillStyle = "rgb(64,64,64)"; x.fillRect(0, 300, 380, 100);
+        x.fillStyle = g; x.fillRect(380, 300, 40, 100);
+        x.fillStyle = "rgb(192,192,192)"; x.fillRect(420, 300, 380, 100);
+    }
+    const L = ed.addLayer({ name: "E", kind: "paint", px: ed.pixels.Layer.fromCanvas(lc), x: 0, y: 0, w: 800, h: 400, dirty: true });
+    ed.activeLayerId = L.id; ed.renderLayers();
+    ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false; ed.view.x = 20; ed.view.y = 20; ed.draw();
+    let pid = 1700;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy)));
+    const stroke = (x, y0, y1) => { pid++; ed.canvas.dispatchEvent(ev("pointerdown", x, y0)); for (let i = 1; i <= 10; i++) ed.canvas.dispatchEvent(ev("pointermove", x, y0 + (y1 - y0) * i / 10)); ed.canvas.dispatchEvent(ev("pointerup", x, y1)); };
+    const row = (y) => Array.from(L.px.readRect(0, y, 800, 1).data).filter((_, i) => i % 4 === 0);
+    ed.setTool("smudge");
+    ed.brushSize = 60; ed.hardness = 1;
+    Object.assign(ed.smudgeOpts, { mode: "blur", strength: 100, sample: "layer", length: 0, finger: false });
+    stroke(400, 60, 240);
+    const mid = row(150), away = row(280);
+    const soft = (r) => { let n = 0; for (let x = 385; x <= 415; x++) if (r[x] > 20 && r[x] < 235) n++; return n; };
+    out.blur = { ramp: soft(mid), away: soft(away) };
+    if (!(out.blur.ramp >= 3)) throw new Error("the blur did not soften the edge: " + mid.slice(390, 411).join(","));
+    if (out.blur.away !== 0) throw new Error("the edge softened where the blur did not pass: " + away.slice(390, 411).join(","));
+    const before = row(360);
+    Object.assign(ed.smudgeOpts, { mode: "sharpen" });
+    stroke(400, 320, 390);
+    const after = row(360);
+    out.sharpen = { dark: [before[379], after[379]], light: [before[421], after[421]], label: ed.undoList().slice(-1)[0].label };
+    if (!(after[379] < before[379] - 2 && after[421] > before[421] + 2)) throw new Error("the sharpen did not crisp the ramp's ends: " + JSON.stringify(out.sharpen));
+    if (out.sharpen.label !== "Sharpen") throw new Error("the undo step is labelled " + out.sharpen.label);
+    await ed.undoStep();
+    const back = row(360);
+    if (back.some((v, i) => v !== before[i])) throw new Error("the undo did not bring the ramp back");
+} finally {
+    ed.smudgeOpts = keep; ed.brushSize = size; ed.hardness = hard;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("mask_operations_are_one_step_each", """
 // PLAN_0_1_31 6.4: set_mask's operations, each one undo step, the mask white where it shows, and the mask row's menu
 const d = await run("new_document");

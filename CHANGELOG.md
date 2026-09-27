@@ -43,6 +43,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   whole layer at every step (up to 8 s a move). Now each reads only what is under the brush: a few milliseconds a
   move at any size, and a gigabyte less memory. Heal matches the colour more exactly. On the base the smudge no
   longer copies the whole base into a layer first: it paints into a new layer from the picture.
+- **Blur and sharpen brushes.** The smudge tool has a **Mode**: smudge, blur (softens what the brush passes over)
+  or sharpen (crisps it). Strength sets how far each stroke goes towards the full effect; going over a place again
+  within one stroke does not pile it up, a new stroke adds to it. Sample picks the layer or the whole picture, as for
+  the smudge.
 - **Flow, a pressure curve and a stabiliser for the brushes.** **Flow** sets how much paint each dab lays down: below
   100 % a stroke builds up where it passes again, while Opacity still caps the whole stroke. **Pressure** chooses how
   a pen's pressure sizes the brush (linear, soft for a light hand, hard), and **Stabiliser** lets the brush follow

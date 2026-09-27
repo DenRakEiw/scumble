@@ -25,7 +25,7 @@ import { INTERACTIVE, EXPORT } from "./inpaint_pool.js";
 import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.js";
 import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter, writeTiff } from "./inpaint_bands.js";
 import { compositeBox, releaseBoxBuffers } from "./inpaint_boxstack.js";
-import { pressureCurve, Stabiliser } from "./inpaint_stroke.js";
+import { pressureCurve, Stabiliser, blurRGBA, sharpenRGBA } from "./inpaint_stroke.js";
 import { isTiff, TIFF_EXT, tiffInfo, readTiff, tiffPart } from "./inpaint_tiff.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
@@ -2001,12 +2001,16 @@ class InpaintEditor {
         sradius.style.width = "56px"; sradius.title = "Corner radius of the rectangle, in image pixels";
         sradius.addEventListener("change", () => { this.shapeOpts.radius = Math.max(0, +sradius.value || 0); sradius.value = this.shapeOpts.radius; });
         this.shapeRadiusRow = row("shape", "Radius", sradius);
-        this.smudgeOpts = { strength: 60, sample: "layer", length: 0, finger: false };
+        this.smudgeOpts = { strength: 60, sample: "layer", length: 0, finger: false, mode: "smudge" };
         this.cloneOpts = { sample: "image", aligned: true, angle: 0, scale: 100, flipX: false, flipY: false, overlay: true };
         const str = document.createElement("input");
         str.type = "range"; str.min = 1; str.max = 100; str.value = this.smudgeOpts.strength; str.title = "Strength: how much of the picked-up paint is dragged along";
         const strVal = el("span", null, this.smudgeOpts.strength + "%");
         str.addEventListener("input", () => { this.smudgeOpts.strength = +str.value; strVal.textContent = str.value + "%"; });
+        const smode = selectInput(["smudge", "blur", "sharpen"], "smudge", "Mode: smudge drags the paint along; blur softens and sharpen crisps what the brush passes over, as much as the strength says (Length and Finger are the smudge's)");
+        smode.addEventListener("change", () => { this.smudgeOpts.mode = smode.value; this.root.focus({ preventScroll: true }); this.updateOptsBar(); });
+        this.smudgeModeSel = smode;
+        row("smudge", "Mode", smode);
         row("smudge", "Strength", str, strVal);
         // the pen (PLAN_0_1_31 §4 step 5): how its pressure maps to size, and a stabiliser for a steady line
         const pcurve = selectInput(["linear", "soft", "hard"], this.pressureCurve, "Pressure: how a pen's pressure sizes the brush. Soft reaches full size with a light hand, hard needs a firm one");
@@ -2126,7 +2130,7 @@ class InpaintEditor {
             freehand: "Draw with the cursor held down",
         };
         if (tool === "canvas") this.syncFrameControls();
-        const hints = { canvas: "Edges crop or extend, outside turns, Ctrl+drag straightens; Enter or a double click applies, Esc resets", shape: shapeHints[this.shapeOpts.kind] || "", select: "Paint to select, Alt subtracts", deselect: "Paint to deselect", paint: "Alt+click picks a colour, Shift+click draws a line", erase: "Shift+click draws a line", wand: "Click to select the similar area; Shift adds, Alt subtracts", bucket: "Click to fill; Shift+F fills the whole selection", gradient: "Drag from the colour to where it should have faded", eyedropper: "Click to pick a colour", smudge: "Drag across an edge to soften it", clone: this.cloneSource ? "Paint to copy from the source (Alt+click moves it)" : "Alt+click sets the source point", heal: this.cloneSource ? "Paint to repair with the source's texture (Alt+click moves it)" : "Alt+click sets the source point" };
+        const hints = { canvas: "Edges crop or extend, outside turns, Ctrl+drag straightens; Enter or a double click applies, Esc resets", shape: shapeHints[this.shapeOpts.kind] || "", select: "Paint to select, Alt subtracts", deselect: "Paint to deselect", paint: "Alt+click picks a colour, Shift+click draws a line", erase: "Shift+click draws a line", wand: "Click to select the similar area; Shift adds, Alt subtracts", bucket: "Click to fill; Shift+F fills the whole selection", gradient: "Drag from the colour to where it should have faded", eyedropper: "Click to pick a colour", smudge: this.smudgeOpts && this.smudgeOpts.mode === "blur" ? "Paint over what should soften" : this.smudgeOpts && this.smudgeOpts.mode === "sharpen" ? "Paint over what should crisp up; a little goes a long way" : "Drag across an edge to soften it", clone: this.cloneSource ? "Paint to copy from the source (Alt+click moves it)" : "Alt+click sets the source point", heal: this.cloneSource ? "Paint to repair with the source's texture (Alt+click moves it)" : "Alt+click sets the source point" };
         this.optsHint.textContent = hints[tool] || "";
     }
 
@@ -4503,11 +4507,17 @@ class InpaintEditor {
                 if (this.smudgeSampleSel) this.smudgeSampleSel.value = "image";
                 this.setStatus("The base cannot be edited directly: the smudge paints into a new layer from the picture (Sample: image).");
             }
-            this.pushUndo({ kind: "layer", id: layer.id, label: "Smudge" });
+            const mode = this.smudgeOpts && this.smudgeOpts.mode;
+            this.pushUndo({ kind: "layer", id: layer.id, label: mode === "blur" ? "Blur" : mode === "sharpen" ? "Sharpen" : "Smudge" });
             // chosen before the gesture starts: a read during it must see the picture as if no gesture ran (brushSource)
-            const src = sample === "layer" ? null : this.brushSource(sample, layer);
+            // blur and sharpen filter the picture of the press, not what the stroke has already done to it: every dab moves
+            // the pixels towards one result, which the strength reaches where the brush passes often (filtering the live
+            // pixels compounded: eight overlapping dabs of a sharpen rang between black and white)
+            const fx = mode === "blur" || mode === "sharpen";
+            const src = sample === "layer" ? null : this.brushSource(sample, layer, { snapshot: fx });
+            const orig = fx && sample === "layer" ? layer.px.clone() : null;
             const pressure = this.pressureOf(e);
-            this.pointer = { kind: "smudge", layer, src, last: [ix, iy], clip: this.strokeClip(layer, layer.px), pressure, stab: this.newStabiliser(ix, iy, pressure) };
+            this.pointer = { kind: "smudge", layer, src, orig, last: [ix, iy], clip: this.strokeClip(layer, layer.px), pressure, stab: this.newStabiliser(ix, iy, pressure) };
         } else if (this.tool === "clone" || this.tool === "heal") {
             if (e.altKey) {
                 this.cloneSource = { x: ix, y: iy };
@@ -4891,6 +4901,8 @@ class InpaintEditor {
             this.finishStroke(p);
             // the box the dabs covered (the whole layer before 0.1.32: every matched layer above lost its statistics)
             if (p.bounds) this.markLayerChanged(p.layer, this.strokeRect(p, p.layer.px));
+            if (p.orig) { p.orig.release(); p.orig = null; }
+            if (p.src && p.src.release) p.src.release();
             this.releaseStrokeScratch();
         } else if (p.kind === "maskpaint" && !p.layer.maskPx) {
             // the mask went away while the button was down (Ctrl+Z of the step that made it, or an
@@ -5900,7 +5912,7 @@ class InpaintEditor {
      * stroke into its layer, leaves the filters above it out and the target unmatched). Where `boxReach` is infinite
      * that is the cached whole flatten, as before; a smudge reading it sees the press's picture, not its own steps.
      */
-    brushSource(sample, layer) {
+    brushSource(sample, layer, { snapshot = false } = {}) {
         const idx = layer ? this.layers.indexOf(layer) : -1;
         const upTo = sample === "below" && idx >= 0 ? idx + 1 : null;
         const clampBox = (box) => {
@@ -5936,7 +5948,11 @@ class InpaintEditor {
             return ctx.getImageData(0, 0, w, h).data;
         };
         if (!plan) return { tier: "region", read: region, bytes: regionBytes };
-        const stack = plan.map((s) => s && { px: s.px, mask: s.mask || null, x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0, match: s.match ? this.boxMatchOf(s.match) : null });
+        // `snapshot`: the stores as copy-on-write clones of the press (blur and sharpen), given back by `release`; the
+        // region tier has no such copy and reads the live picture
+        const clones = [];
+        const held = (s) => { if (!snapshot || !s) return s; const c = s.clone(); clones.push(c); return c; };
+        const stack = plan.map((s) => s && { px: held(s.px), mask: held(s.mask || null), x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0, match: s.match ? this.boxMatchOf(s.match) : null });
         const src = {
             tier: "tiles",
             read: (box, slot = 0) => {
@@ -5953,6 +5969,7 @@ class InpaintEditor {
                 c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(bytes.buffer, bytes.byteOffset, w * h * 4), w, h), 0, 0);
                 return { canvas: c, x: b[0], y: b[1] };
             },
+            release() { for (const c of clones.splice(0)) c.release(); },
             // the box as straight RGBA8 (whole image pixels; transparent outside the picture), valid until the next read:
             // the smudge takes the composite as bytes, no canvas between
             bytes: (box) => {
@@ -6586,6 +6603,9 @@ class InpaintEditor {
         if (!p.carry) p.carry = new Uint16Array(side * side * 4);
         const tip = this.brushTip();
         const spacing = Math.max(1, tip ? (tip.spacing || this.brushTipSpacing || 0.25) * 2 * r : r * 0.25);
+        // blur and sharpen: a filter of 1 px for a small brush up to 8 px, read with three times that around the box
+        const mode = o.mode === "blur" || o.mode === "sharpen" ? o.mode : "smudge";
+        const fxRadius = Math.max(1, Math.min(8, Math.round(r / 12))), fxPad = fxRadius * 3;
         // the image box the move can touch (the release marks it, not the whole layer)
         this.strokeBounds(p, x0, y0, x1, y1, (side / 2 + 1) / Math.min(sx, sy));
         const dist = Math.hypot(lx1 - lx0, ly1 - ly0);
@@ -6603,13 +6623,25 @@ class InpaintEditor {
             }
             const img = target.readRect(bx, by, side, side);
             let flags = layer.alphaLock ? SMUDGE_ALPHA_LOCK : 0;
-            if (!p.started) {
-                p.started = true;
-                if (o.finger) this.fillCarry(p.carry, this.color);   // the stroke starts with paint on the brush
-                else flags |= SMUDGE_PICKUP;
+            if (mode !== "smudge") {
+                // blur and sharpen (step 6): the box and its surroundings filtered (the picture or the layer, as Sample says),
+                // taken into the carry and laid down at the strength; nothing carried to the next step
+                const pad = fxPad, big = side + 2 * pad;
+                const around = p.src ? this.smudgeSample(p, target, bx - pad, by - pad, big) : (p.orig || target).readRect(bx - pad, by - pad, big, big).data;
+                const f = mode === "blur" ? blurRGBA(around, big, big, fxRadius) : sharpenRGBA(around, big, big, fxRadius, 1);
+                const box = p.fxBox && p.fxBox.length === side * side * 4 ? p.fxBox : (p.fxBox = new Uint8ClampedArray(side * side * 4));
+                for (let y = 0; y < side; y++) box.set(f.subarray(((y + pad) * big + pad) * 4, ((y + pad) * big + pad + side) * 4), y * side * 4);
+                smudgeDabKernel(img.data, box, p.carry, mask, 0, 0, SMUDGE_PICKUP);
+                smudgeDabKernel(img.data, box, p.carry, mask, strength, 0, flags);
+            } else {
+                if (!p.started) {
+                    p.started = true;
+                    if (o.finger) this.fillCarry(p.carry, this.color);   // the stroke starts with paint on the brush
+                    else flags |= SMUDGE_PICKUP;
+                }
+                const src = p.src ? this.smudgeSample(p, target, bx, by, side) : img.data;   // the layer's own bytes: read before written, per pixel
+                smudgeDabKernel(img.data, src, p.carry, mask, strength, keep, flags);
             }
-            const src = p.src ? this.smudgeSample(p, target, bx, by, side) : img.data;   // the layer's own bytes: read before written, per pixel
-            smudgeDabKernel(img.data, src, p.carry, mask, strength, keep, flags);
             if (!(flags & SMUDGE_PICKUP)) {
                 target.writeRect(img, bx, by);
                 // the region pass reads the layer through its caches (the masked canvas, the match, the levels): the next
