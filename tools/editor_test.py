@@ -7452,6 +7452,125 @@ try {
 } finally { host.off("geometry", onGeom); await run("close_document", { doc: d.id, force: true }); }
 return out;
 """),
+    ("the_canvas_frame_waits_for_enter", """
+// PLAN_0_1_31 §7 (23b step 6): the Canvas tool's frame is pending. A release applies nothing; Enter, a double click inside
+// or Apply does, Esc resets (also in the middle of a drag); a tool switch keeps it, a new picture drops it; aspect
+// presets fit the largest frame, the angle turns the preview, the straighten line and a drag outside set it
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+const W = 800, H = 500;
+try {
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    ed.setTool("canvas");
+    ed.fitView(); ed.draw();
+    const rect = ed.canvas.getBoundingClientRect();
+    const client = (ix, iy) => { const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: 23, pointerType: "mouse", isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+    const drag = async (x0, y0, x1, y1, extra = {}, release = true) => {
+        ed.canvas.dispatchEvent(ev("pointerdown", x0, y0, extra));
+        for (let i = 1; i <= 6; i++) { ed.canvas.dispatchEvent(ev("pointermove", x0 + (x1 - x0) * i / 6, y0 + (y1 - y0) * i / 6, extra)); await wait(10); }
+        if (release) ed.canvas.dispatchEvent(ev("pointerup", x1, y1, extra));
+        await wait(30);
+    };
+    const key = async (k) => { document.body.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true })); await wait(50); };
+    const settle = async () => { for (let i = 0; i < 200 && (ed._turning || (ed._pendingEdits && ed._pendingEdits.size)); i++) await wait(20); await wait(50); };
+    const n0 = ed.undo.length;
+    if (!ed.optsBar || ed.optsBar.hidden || !ed.frameAngleInput) throw new Error("the Canvas tool shows no frame bar");
+    // 1. a handle dragged in: nothing happens on release
+    await drag(W, H / 2, W - 200, H / 2);
+    if (ed.width !== W || ed.undo.length !== n0) throw new Error("the release applied the frame: " + ed.width + ", " + (ed.undo.length - n0) + " steps");
+    if (!ed.framePending() || ed.frame().w !== W - 200) throw new Error("the frame is " + JSON.stringify(ed.frame()));
+    if (!/→ 600 × 500/.test(ed.canvasInfo ? ed.canvasInfo.textContent : "→ 600 × 500")) throw new Error("the Canvas section says " + ed.canvasInfo.textContent);
+    // 2. Enter applies, one step; its undo drops nothing it should not
+    await key("Enter"); await settle();
+    if (ed.width !== W - 200 || ed.undo.length !== n0 + 1) throw new Error("Enter made " + ed.width + " with " + (ed.undo.length - n0) + " steps");
+    if (ed.framePending()) throw new Error("the frame stayed after it was applied");
+    await run("undo", { doc: d.id }); await settle();
+    if (ed.width !== W || ed.framePending()) throw new Error("the undo left " + ed.width + ", frame " + JSON.stringify(ed.frame()));
+    // 3. Esc resets it, and in the middle of a drag puts the frame back where it was
+    await drag(W / 2, 0, W / 2, 100);
+    if (!ed.framePending()) throw new Error("the top handle made no frame");
+    const before = { ...ed.frame() };
+    const mid = before.y + before.h / 2;   // the right handle sits in the middle of the frame's side
+    await drag(W, mid, W - 300, mid, {}, false);
+    if (ed.frame().w === before.w) throw new Error("the second drag did not move the frame");
+    await key("Escape");
+    ed.canvas.dispatchEvent(ev("pointerup", W - 300, mid));
+    if (!ed.framePending() || ed.frame().w !== before.w || ed.frame().y !== before.y) throw new Error("Esc during the drag left " + JSON.stringify(ed.frame()));
+    await key("Escape");
+    if (ed.framePending()) throw new Error("Esc did not reset the frame");
+    // 4. a tool switch keeps the frame, a new picture drops it
+    await drag(W / 2, H, W / 2, H - 120);
+    ed.setTool("paint"); ed.setTool("canvas");
+    if (!ed.framePending() || ed.frame().h !== H - 120) throw new Error("a tool switch dropped the frame");
+    // 5. a double click inside applies it
+    for (let i = 0; i < 2; i++) { ed.canvas.dispatchEvent(ev("pointerdown", 300, 200, { detail: i + 1 })); ed.canvas.dispatchEvent(ev("pointerup", 300, 200, { detail: i + 1 })); await wait(40); }
+    await settle();
+    if (ed.height !== H - 120) throw new Error("the double click made " + ed.width + " x " + ed.height);
+    await run("undo", { doc: d.id }); await settle();
+    await drag(W / 2, H, W / 2, H - 80);
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    ed.setTool("canvas");
+    if (ed.framePending()) throw new Error("a new picture kept the old frame");
+    ed.fitView(); ed.draw();
+    // 6. an aspect preset fits the largest frame of it; X turns it on its side
+    ed.frameAspectSel.value = "1:1"; ed.frameAspectSel.dispatchEvent(new Event("change"));
+    let f = ed.frame();
+    if (!f || f.w !== H || f.h !== H || f.x !== (W - H) / 2) throw new Error("1:1 fitted " + JSON.stringify(f));
+    ed.frameAspectSel.value = "16:9"; ed.frameAspectSel.dispatchEvent(new Event("change"));
+    f = ed.frame();
+    if (Math.abs(f.w / f.h - 16 / 9) > 0.01 || f.w !== W) throw new Error("16:9 fitted " + JSON.stringify(f));
+    await key("x");
+    f = ed.frame();
+    if (Math.abs(f.h / f.w - 16 / 9) > 0.01 || f.h !== H) throw new Error("X turned 16:9 into " + JSON.stringify(f));
+    // a corner drag keeps the aspect
+    await drag(f.x + f.w, f.y + f.h, f.x + f.w - 60, f.y + f.h - 40);
+    f = ed.frame();
+    if (Math.abs(f.h / f.w - 16 / 9) > 0.03) throw new Error("the corner drag lost the aspect: " + JSON.stringify(f));
+    ed.frameAspectSel.value = "free"; ed.frameAspectSel.dispatchEvent(new Event("change")); ed.frameAspectFlip = false;
+    // 7. an angle turns the preview (the scene is drawn turned) and fits the frame inside; Enter straightens in one step
+    const sig0 = ed.sceneSignature();
+    ed.frameAngleInput.value = "4"; ed.frameAngleInput.dispatchEvent(new Event("change"));
+    f = ed.frame();
+    if (f.angle !== 4 || Math.abs(ed.viewTilt() - 4 * Math.PI / 180) > 1e-9 || ed.sceneSignature() === sig0) throw new Error("the angle made " + JSON.stringify(f) + ", tilt " + ed.viewTilt());
+    const fit = ed.fitFrame(4, null);
+    if (f.x !== fit[0] || f.w !== fit[2] || f.h !== fit[3]) throw new Error("the turned frame is " + JSON.stringify(f) + ", not the largest " + fit);
+    ed.draw();
+    const n1 = ed.undo.length;
+    await key("Enter"); await settle();
+    if (ed.width !== fit[2] || ed.height !== fit[3] || ed.undo.length !== n1 + 1) throw new Error("the straighten made " + ed.width + " x " + ed.height + " with " + (ed.undo.length - n1) + " steps");
+    await run("undo", { doc: d.id }); await settle();
+    ed.fitView(); ed.draw();
+    // 8. the straighten line: Ctrl+drag along a horizon that falls by 20 px over 400 turns the picture back by its angle
+    await drag(200, 200, 600, 220, { ctrlKey: true });
+    f = ed.frame();
+    const want = -Math.atan2(20, 400) * 180 / Math.PI;
+    if (!f || Math.abs(f.angle - want) > 0.02) throw new Error("the straighten line turned the picture to " + (f && f.angle) + ", not " + want);
+    // a steep line is taken for a plumb line
+    await key("Escape");
+    await drag(300, 100, 310, 400, { ctrlKey: true });
+    f = ed.frame();
+    const plumb = -(Math.atan2(300, 10) * 180 / Math.PI - 90);
+    if (!f || Math.abs(f.angle - plumb) > 0.02) throw new Error("a plumb line turned the picture to " + (f && f.angle) + ", not " + plumb);
+    await key("Escape");
+    // 9. a drag outside the frame turns the picture about its centre; the frame stays inside
+    await drag(W, H / 2, W - 200, H / 2);
+    await drag(W - 50, H / 2 - 150, W - 50, H / 2 - 100);
+    f = ed.frame();
+    if (!f.angle) throw new Error("the drag outside the frame did not turn the picture");
+    out.outside = f.angle;
+    await key("Escape");
+    if (ed.framePending() || ed.viewTilt()) throw new Error("Esc left a turn: " + JSON.stringify(ed.frame()));
+    // 10. the Canvas section's sides make the same frame, and Enter in them applies it
+    ed.extendInputs.right.value = "-100"; ed.extendInputs.right.dispatchEvent(new Event("input"));
+    if (!ed.framePending() || ed.frame().w !== W - 100) throw new Error("the sides made " + JSON.stringify(ed.frame()));
+    await key("Escape");
+    out.ok = true;
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

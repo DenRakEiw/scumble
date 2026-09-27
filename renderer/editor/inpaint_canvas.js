@@ -1595,6 +1595,15 @@ class InpaintEditor {
         // extends, resizes, straightens), as one map from the picture then to the picture now: an undo step and a snapshot
         // keep theirs, so a restore maps what no step holds (the results history, the saved selections) by the difference
         this.docXf = [1, 0, 0, 1, 0, 0];
+        // the Canvas tool's pending frame (PLAN_0_1_31 §7, 23b: `frame()`), its aspect preset and the lines over it
+        this.canvasFrame = null;
+        this.frameAspect = "free";
+        this.frameCustom = [4, 3];
+        this.frameAspectFlip = false;
+        this.frameStraighten = false;
+        let overlay = "thirds";
+        try { overlay = localStorage.getItem("ipc.cropOverlay") || "thirds"; } catch (_) { /* no storage */ }
+        this.frameOverlay = ["thirds", "golden", "grid", "diagonal", "none"].includes(overlay) ? overlay : "thirds";
         let showRulers = false, showGrid = false, gridSize = 64;
         try { showRulers = localStorage.getItem("ipc.rulers") === "1"; showGrid = localStorage.getItem("ipc.grid") === "1"; gridSize = +localStorage.getItem("ipc.gridSize") || 64; } catch (_) { /* no storage */ }
         this.showRulers = showRulers;
@@ -1971,6 +1980,38 @@ class InpaintEditor {
         aligned.type = "checkbox"; aligned.checked = true; aligned.title = "Aligned: the offset between source and brush stays the same for every stroke; off starts every stroke at the source point again";
         aligned.addEventListener("change", () => { this.cloneOpts.aligned = aligned.checked; });
         row("clone heal", aligned, "Aligned");
+        // the Canvas tool's frame (PLAN_0_1_31 §7, 23b): the aspect, the angle, the straighten line, the lines, apply
+        const asp = selectInput(["free", "original", "1:1", "4:3", "3:2", "16:9", "5:4", "custom"], this.frameAspect,
+            "The frame's aspect: choosing one fits the largest such frame into the (turned) picture; X turns it on its side");
+        asp.addEventListener("change", () => { this.frameAspect = asp.value; this.fitFrameToAspect(); });
+        this.frameAspectSel = asp;
+        row("canvas", "Aspect", asp);
+        const cw = numberInput(this.frameCustom[0], 1, 100000, "Custom aspect: width", 48), chh = numberInput(this.frameCustom[1], 1, 100000, "Custom aspect: height", 48);
+        const setCustom = () => { this.frameCustom = [Math.max(1, +cw.value || 1), Math.max(1, +chh.value || 1)]; if (this.frameAspect === "custom") this.fitFrameToAspect(); };
+        cw.addEventListener("change", setCustom); chh.addEventListener("change", setCustom);
+        this.frameCustomRow = row("canvas", cw, ":", chh);
+        row("canvas", iconButton("rotCW", "Turn the aspect on its side (X)", () => { this.swapFrameAspect(); this.setStatus(this.frameStatus()); }));
+        const ang = numberInput(0, -45, 45, "The picture's angle in degrees (clockwise); the frame fits inside the turned picture", 56);
+        ang.step = 0.1;
+        ang.addEventListener("change", () => this.setFrameAngle(+ang.value || 0));
+        ang.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); this.setFrameAngle(+ang.value || 0); this.applyFrame(); } });
+        const rng = document.createElement("input");
+        rng.type = "range"; rng.min = -45; rng.max = 45; rng.step = 0.1; rng.value = 0;
+        rng.title = "Turn the picture: the frame fits inside it (drag outside the frame on the canvas does the same)";
+        rng.addEventListener("input", () => this.setFrameAngle(+rng.value || 0));
+        this.frameAngleInput = ang; this.frameAngleRange = rng;
+        row("canvas", "Angle", rng, ang);
+        this.frameStraightenBtn = iconButton("ruler", "Straighten: draw a line along something that should be level or plumb (Ctrl+drag on the canvas does the same)", () => {
+            this.frameStraighten = !this.frameStraighten;
+            this.syncFrameControls();
+            this.setStatus(this.frameStraighten ? "Draw a line along something that should be level or plumb." : this.frameStatus());
+        }, "Straighten");
+        row("canvas", this.frameStraightenBtn);
+        const ov = selectInput(["thirds", "golden", "grid", "diagonal", "none"], this.frameOverlay, "Lines over the frame to compose by");
+        ov.addEventListener("change", () => { this.frameOverlay = ov.value; try { localStorage.setItem("ipc.cropOverlay", ov.value); } catch (_) { /* no storage */ } this.draw(); });
+        row("canvas", "Lines", ov);
+        row("canvas", iconButton("check", "Apply the frame (Enter, or a double click inside it)", () => this.applyFrame(), "Apply"),
+            iconButton("close", "Reset the frame (Esc)", () => { this.resetFrame(); this.setStatus(this.frameStatus()); }, "Reset"));
         this.optsHint = el("span", "ipc-hint", "");
         bar.appendChild(this.optsHint);
         for (const type of ["pointerdown", "pointermove", "pointerup", "wheel"]) bar.addEventListener(type, (e) => e.stopPropagation());
@@ -1980,7 +2021,7 @@ class InpaintEditor {
     updateOptsBar() {
         if (!this.optsBar) return;
         const tool = this.tool;
-        const on = ["select", "deselect", "paint", "erase", "bucket", "gradient", "eyedropper", "smudge", "clone", "heal", "wand", "shape"].includes(tool);
+        const on = ["select", "deselect", "paint", "erase", "bucket", "gradient", "eyedropper", "smudge", "clone", "heal", "wand", "shape", "canvas"].includes(tool);
         this.optsBar.hidden = !on;
         if (!on) return;
         for (const lab of this.optsBar.querySelectorAll("label")) lab.hidden = !(lab.dataset.for || "").split(" ").includes(tool);
@@ -2000,7 +2041,8 @@ class InpaintEditor {
             bezier: "Click a point, or drag while clicking to curve the line; Enter finishes",
             freehand: "Draw with the cursor held down",
         };
-        const hints = { shape: shapeHints[this.shapeOpts.kind] || "", select: "Paint to select, Alt subtracts", deselect: "Paint to deselect", paint: "Alt+click picks a colour, Shift+click draws a line", erase: "Shift+click draws a line", wand: "Click to select the similar area; Shift adds, Alt subtracts", bucket: "Click to fill; Shift+F fills the whole selection", gradient: "Drag from the colour to where it should have faded", eyedropper: "Click to pick a colour", smudge: "Drag across an edge to soften it", clone: this.cloneSource ? "Paint to copy from the source (Alt+click moves it)" : "Alt+click sets the source point", heal: this.cloneSource ? "Paint to repair with the source's texture (Alt+click moves it)" : "Alt+click sets the source point" };
+        if (tool === "canvas") this.syncFrameControls();
+        const hints = { canvas: "Edges crop or extend, outside turns, Ctrl+drag straightens; Enter or a double click applies, Esc resets", shape: shapeHints[this.shapeOpts.kind] || "", select: "Paint to select, Alt subtracts", deselect: "Paint to deselect", paint: "Alt+click picks a colour, Shift+click draws a line", erase: "Shift+click draws a line", wand: "Click to select the similar area; Shift adds, Alt subtracts", bucket: "Click to fill; Shift+F fills the whole selection", gradient: "Drag from the colour to where it should have faded", eyedropper: "Click to pick a colour", smudge: "Drag across an edge to soften it", clone: this.cloneSource ? "Paint to copy from the source (Alt+click moves it)" : "Alt+click sets the source point", heal: this.cloneSource ? "Paint to repair with the source's texture (Alt+click moves it)" : "Alt+click sets the source point" };
         this.optsHint.textContent = hints[tool] || "";
     }
 
@@ -2245,7 +2287,13 @@ class InpaintEditor {
                 if (this.pending) this.cancelPending();
                 else if (this.polyPoints) { this.polyPoints = null; this.draw(); this.setStatus("Polygon cancelled."); }
                 else if (this.shapePoints) { this.cancelShape(); this.draw(); this.setStatus("Shape cancelled."); }
-                else if (this.tool === "canvas" && this.extendPending()) { this.resetExtend(); this.setStatus("Canvas extension reset."); }
+                else if (this.tool === "canvas" && this.pointer && ["frame", "framemove", "framerotate", "straighten"].includes(this.pointer.kind)) {
+                    const o = this.pointer.orig;
+                    this.pointer = null;
+                    this.canvasFrame = o && o.base === this.base ? { ...o } : null;
+                    this.syncFrameControls(); this.draw(); this.setStatus("The frame is back where it was.");
+                }
+                else if (this.tool === "canvas" && this.framePending()) { this.resetFrame(); this.setStatus("Canvas frame reset."); }
                 else if (this.flyout) this.closeFlyout();
                 else if (this.textEdit) this.endTextEdit(false);
                 else if (this.compare) { this.compare = null; if (this.compareBtn) this.compareBtn.classList.remove("ipc-on"); this.draw(); this.setStatus("Compare ended."); }
@@ -2479,7 +2527,8 @@ class InpaintEditor {
         this.viewEl.classList.toggle("ipc-pan", tool === "hand");
         this.viewEl.classList.toggle("ipc-move", tool === "transform");
         if (tool !== "transform" && tool !== "canvas") this.viewEl.classList.remove(...CURSOR_CLASSES);
-        if (tool === "canvas") this.setStatus("Drag the frame's edges or corners outward to extend the canvas (8 px steps, Alt for single pixels). Applied on release, Ctrl+Z takes it back.");
+        if (tool === "canvas") this.setStatus("Drag the frame's edges to crop or extend (8 px steps, Alt for single pixels), outside it to turn the picture, Ctrl+drag along a horizon to straighten. Enter or a double click applies, Esc resets.");
+        this.syncFrameControls();
         if (tool === "text") this.setStatus("Click on the canvas to add a text layer; click a text layer to select it, drag to move it.");
         if (tool !== "object") { this.hoverObjectId = 0; this.hoverObjectCanvas = null; }
         else this.ensureObjects();
@@ -2502,7 +2551,7 @@ class InpaintEditor {
         if (e.key === "Enter" && this.pending) { e.preventDefault(); this.applyPending(); return; }
         if (e.key === "Enter" && this.polyPoints) { e.preventDefault(); this.closePolygon(); this.draw(); return; }
         if (e.key === "Enter" && this.shapePoints) { e.preventDefault(); this.finishShape(); return; }
-        if (e.key === "Enter" && this.tool === "canvas") { e.preventDefault(); if (this.extendPending()) this.applyCanvasFrame(); else this.setStatus("Drag the frame first: outward extends, inward crops."); return; }
+        if (e.key === "Enter" && this.tool === "canvas") { e.preventDefault(); if (this.framePending()) this.applyFrame(); else this.setStatus("Drag the frame first: its edges crop or extend, outside it turns the picture."); return; }
         if ((e.key === "Backspace" || e.key === "Delete") && this.polyPoints) { e.preventDefault(); this.polyPoints.pop(); if (!this.polyPoints.length) this.polyPoints = null; this.draw(); return; }
         if ((e.key === "Backspace" || e.key === "Delete") && this.shapePoints) { e.preventDefault(); this.shapePoints.pop(); if (!this.shapePoints.length) this.shapePoints = null; this.draw(); return; }
         if (this.tool === "transform" && !this.pending && e.key.startsWith("Arrow")) {
@@ -2540,6 +2589,7 @@ class InpaintEditor {
         if (e.shiftKey && k === "t") { this.setTool("text"); return; }
         if (e.key === "\\") { e.preventDefault(); if (!e.repeat && !this.peekBase) { this.peekBase = true; this.peekHold = true; this.draw(); } return; }
         if (host.pluginKey(this, e, k)) return;
+        if (k === "x" && this.tool === "canvas") { this.swapFrameAspect(); this.setStatus(this.frameStatus()); return; }
         switch (k) {
             case "1": this.zoomTo(1); break;
             case "4": this.rotateView(-Math.PI / 12); break;
@@ -2644,6 +2694,113 @@ class InpaintEditor {
         ctx.translate(this.view.x + dx, this.view.y + dy);
         if (this.view.angle) ctx.rotate(this.view.angle);
         ctx.scale(this.view.scale, this.view.scale);
+    }
+
+    /** The straighten preview's angle in radians: the pending frame's, in the Canvas tool only (null otherwise). */
+    viewTilt() {
+        if (this.tool !== "canvas") return null;
+        const f = this.frame();
+        return f && f.angle ? f.angle * Math.PI / 180 : null;
+    }
+
+    /** Compose the straighten preview onto a context in image coordinates: the picture turned about its centre. */
+    applyTilt(ctx) {
+        const t = this.viewTilt();
+        if (!t) return;
+        ctx.translate(this.width / 2, this.height / 2);
+        ctx.rotate(t);
+        ctx.translate(-this.width / 2, -this.height / 2);
+    }
+
+    /**
+     * The Canvas tool's frame, level over the (turned) picture: outside it darkened, a border it adds tinted, the chosen
+     * lines inside it, its outline and handles, its size and angle, and the straighten line while it is drawn.
+     */
+    drawCanvasFrame(ctx) {
+        const f = this.frameOrCanvas(), s = this.view.scale, W = this.width, H = this.height;
+        ctx.save();
+        const corners = [[0, 0], [this.canvas.width, 0], [0, this.canvas.height], [this.canvas.width, this.canvas.height]].map(([x, y]) => this.canvasToImage(x, y));
+        const vx0 = Math.min(...corners.map((c) => c[0])), vy0 = Math.min(...corners.map((c) => c[1]));
+        const vx1 = Math.max(...corners.map((c) => c[0])), vy1 = Math.max(...corners.map((c) => c[1]));
+        if (this.framePending()) {
+            ctx.fillStyle = "rgba(0,0,0,0.5)";
+            ctx.beginPath(); ctx.rect(vx0, vy0, vx1 - vx0, vy1 - vy0); ctx.rect(f.x, f.y, f.w, f.h); ctx.fill("evenodd");
+        }
+        if (!f.angle && (f.x < 0 || f.y < 0 || f.x + f.w > W || f.y + f.h > H)) {
+            // what an extend adds (the new border the model will fill)
+            ctx.save();
+            ctx.beginPath(); ctx.rect(f.x, f.y, f.w, f.h); ctx.clip();
+            ctx.fillStyle = "rgba(124,199,255,0.22)";
+            ctx.beginPath(); ctx.rect(f.x, f.y, f.w, f.h); ctx.rect(0, 0, W, H); ctx.fill("evenodd");
+            ctx.restore();
+        }
+        this.drawFrameOverlay(ctx, f, s);
+        ctx.lineWidth = 1 / s;
+        ctx.strokeStyle = "#7cc7ff";
+        ctx.setLineDash([6 / s, 4 / s]);
+        ctx.strokeRect(f.x, f.y, f.w, f.h);
+        ctx.setLineDash([]);
+        const r = HANDLE_PX / s / 2;
+        const handles = this.layerHandles({ x: f.x, y: f.y, w: f.w, h: f.h });
+        ctx.fillStyle = "#7cc7ff";
+        for (const name of ["nw", "ne", "sw", "se"]) { const [hx, hy] = handles[name]; ctx.fillRect(hx - r, hy - r, r * 2, r * 2); }
+        ctx.fillStyle = "#1e1e1e";
+        for (const name of ["n", "s", "w", "e"]) { const [hx, hy] = handles[name]; ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+        ctx.font = `${12 / s}px system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const label = (txt, x, y) => { const w = ctx.measureText(txt).width + 10 / s; ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(x - w / 2, y - 8 / s, w, 16 / s); ctx.fillStyle = "#fff"; ctx.fillText(txt, x, y); };
+        if (!f.angle) {
+            const v = this.extendValues(), sg = (n) => (n > 0 ? "+" : "") + n;
+            if (v.top) label(sg(v.top), W / 2, -v.top / 2);
+            if (v.bottom) label(sg(v.bottom), W / 2, H + v.bottom / 2);
+            if (v.left) label(sg(v.left), -v.left / 2, H / 2);
+            if (v.right) label(sg(v.right), W + v.right / 2, H / 2);
+        }
+        label(`${f.w} × ${f.h}${f.angle ? `  ${f.angle}°` : ""}`, f.x + f.w / 2, f.y - 14 / s);
+        const p = this.pointer;
+        if (p && p.kind === "straighten") {
+            const [x0, y0] = p.start, [x1, y1] = p.cur;
+            ctx.lineWidth = 2 / s;
+            ctx.strokeStyle = "rgba(0,0,0,0.6)";
+            ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+            ctx.lineWidth = 1 / s;
+            ctx.strokeStyle = "#ffd24a";
+            ctx.setLineDash([5 / s, 3 / s]);
+            ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+            ctx.setLineDash([]);
+            const phi = Math.atan2(y1 - y0, x1 - x0) * 180 / Math.PI, off = phi - 90 * Math.round(phi / 90);
+            label(`${Math.round(-off * 10) / 10}°`, x1, y1 - 14 / s);
+        }
+        ctx.restore();
+    }
+
+    /** The lines over the frame to compose by: thirds, the golden section, a grid, or Photoshop's diagonals. */
+    drawFrameOverlay(ctx, f, s) {
+        const kind = this.frameOverlay || "thirds";
+        if (kind === "none") return;
+        const lines = [], X = (t) => f.x + f.w * t, Y = (t) => f.y + f.h * t;
+        if (kind === "thirds" || kind === "golden") {
+            for (const t of kind === "thirds" ? [1 / 3, 2 / 3] : [0.381966, 0.618034]) lines.push([X(t), f.y, X(t), f.y + f.h], [f.x, Y(t), f.x + f.w, Y(t)]);
+        } else if (kind === "grid") {
+            // a round step of at least 32 px on the screen, from the frame's corner
+            const want = 32 * (window.devicePixelRatio || 1) / s, mag = Math.pow(10, Math.floor(Math.log10(want)));
+            const step = [1, 2, 5, 10].map((k) => k * mag).find((v) => v >= want);
+            for (let x = f.x + step; x < f.x + f.w; x += step) lines.push([x, f.y, x, f.y + f.h]);
+            for (let y = f.y + step; y < f.y + f.h; y += step) lines.push([f.x, y, f.x + f.w, y]);
+        } else if (kind === "diagonal") {
+            const m = Math.min(f.w, f.h);
+            lines.push([f.x, f.y, f.x + m, f.y + m], [f.x + f.w, f.y, f.x + f.w - m, f.y + m], [f.x, f.y + f.h, f.x + m, f.y + f.h - m], [f.x + f.w, f.y + f.h, f.x + f.w - m, f.y + f.h - m]);
+        }
+        ctx.save();
+        ctx.beginPath(); ctx.rect(f.x, f.y, f.w, f.h); ctx.clip();
+        for (const [w, c] of [[3 / s, "rgba(0,0,0,0.4)"], [1 / s, "rgba(255,255,255,0.75)"]]) {
+            ctx.lineWidth = w; ctx.strokeStyle = c;
+            ctx.beginPath();
+            for (const [a, b, c2, d] of lines) { ctx.moveTo(a, b); ctx.lineTo(c2, d); }
+            ctx.stroke();
+        }
+        ctx.restore();
     }
 
     /** Rotate the view about the middle of the canvas (Krita's 4 / 6 keys). */
@@ -2848,7 +3005,12 @@ class InpaintEditor {
     }
 
     updateCanvasCursor(ix, iy) {
-        this.setHandleCursor(this.canvasHandleAt(ix, iy));
+        const h = this.canvasHandleAt(ix, iy), f = this.frameOrCanvas();
+        const inside = ix >= f.x && ix <= f.x + f.w && iy >= f.y && iy <= f.y + f.h;
+        // a handle scales, inside moves, outside turns; the straighten line draws with the tool's own cursor
+        const drawLine = this.frameStraighten;
+        this.setHandleCursor(drawLine ? null : h, !drawLine && !h && !inside);
+        this.viewEl.classList.toggle("ipc-move", !drawLine && !h && inside);
     }
 
     showPane(id) {
@@ -3776,22 +3938,161 @@ class InpaintEditor {
 
     // ---- canvas tool: extend by dragging the frame ---------------------------------
 
-    extendValues() {
-        const v = {};
-        for (const k of ["top", "right", "bottom", "left"]) v[k] = Math.round(+(this.extendInputs && this.extendInputs[k] ? this.extendInputs[k].value : 0) || 0);
-        return v;
+    // ---- the canvas frame (PLAN_0_1_31 §7, 23b): pending until Enter, Apply or a double click, reset by Esc -------------
+
+    /**
+     * The pending canvas frame or null: `{ base, x, y, w, h, angle }` in frame space (the picture turned by `angle` about
+     * its centre as the Canvas tool shows it; image space at 0 degrees). It belongs to the picture it was made on: a new
+     * image, a crop, a turn or the undo of one drops it. A tool switch keeps it (it is drawn in the Canvas tool only).
+     */
+    frame() {
+        const f = this.canvasFrame;
+        if (f && f.base !== this.base) { this.canvasFrame = null; this.syncFrameControls(); return null; }
+        return f;
     }
 
-    /** Apply the canvas frame: positive sides extend (outpainting border), negative sides crop. */
-    async applyCanvasFrame() {
-        const v = this.extendValues();
+    /** The frame, or the whole picture upright when there is none: what the controls and the gestures start from. */
+    frameOrCanvas() {
+        return this.frame() || { base: this.base, x: 0, y: 0, w: this.width, h: this.height, angle: 0 };
+    }
+
+    /** Is there a frame that would change the picture? */
+    framePending() {
+        const f = this.frame();
+        return !!f && (!!f.angle || f.x !== 0 || f.y !== 0 || f.w !== this.width || f.h !== this.height);
+    }
+
+    /** The aspect preset as a ratio w / h (null: free), on its side when X turned it. */
+    frameRatio() {
+        const name = this.frameAspect || "free", c = this.frameCustom || [4, 3];
+        const r = name === "custom" ? (c[0] > 0 && c[1] > 0 ? c[0] / c[1] : null) : this.aspectRatio(name);
+        if (!r) return null;
+        return this.frameAspectFlip ? 1 / r : r;
+    }
+
+    /**
+     * Set the frame (any of x, y, w, h, angle; the rest kept): whole pixels, at least 8 a side, the angle within 45 degrees
+     * either way, and at an angle inside the turned picture: a frame that would reach past it is pulled back towards
+     * `prev` (the last good one) by bisection, or fitted anew when there is none.
+     */
+    setFrame(patch, prev = null) {
+        if (!this.base) return;
+        const f = { ...this.frameOrCanvas(), ...patch, base: this.base };
+        f.angle = Math.max(-45, Math.min(45, Math.round((+f.angle || 0) * 100) / 100));
+        f.w = Math.max(8, Math.round(f.w)); f.h = Math.max(8, Math.round(f.h)); f.x = Math.round(f.x); f.y = Math.round(f.y);
+        const W = this.width, H = this.height;
+        if (f.angle && !frameInside(W, H, f.angle, f.x, f.y, f.w, f.h)) {
+            const from = prev && prev.angle === f.angle && frameInside(W, H, f.angle, prev.x, prev.y, prev.w, prev.h) ? prev : null;
+            if (!from) {
+                const [x, y, w, h] = this.fitFrame(f.angle, this.frameRatio());
+                Object.assign(f, { x, y, w, h });
+            } else {
+                let lo = 0, hi = 1;   // how much of the way from `from` to `f` stays inside
+                const at = (k, t) => Math.round(from[k] + (f[k] - from[k]) * t);
+                for (let i = 0; i < 14; i++) {
+                    const t = (lo + hi) / 2;
+                    if (frameInside(W, H, f.angle, at("x", t), at("y", t), at("w", t), at("h", t))) lo = t; else hi = t;
+                }
+                for (const k of ["x", "y", "w", "h"]) f[k] = at(k, lo);
+            }
+        }
+        this.canvasFrame = f;
+        this.syncFrameControls();
+        this.drawSoon();
+    }
+
+    /** The frame turned to `deg` degrees (clockwise, 45 at most either way) and fitted: the largest frame of the aspect inside. */
+    setFrameAngle(deg) {
+        if (!this.base) return;
+        deg = Math.max(-45, Math.min(45, Math.round((+deg || 0) * 100) / 100));
+        const [x, y, w, h] = this.fitFrame(deg, this.frameRatio());
+        this.setFrame({ x, y, w, h, angle: deg });
+        this.setStatus(this.frameStatus());
+    }
+
+    /** The frame fitted to the aspect preset at its angle: the largest such frame, centred in the (turned) picture. */
+    fitFrameToAspect() {
+        this.setFrameAngle(this.frameOrCanvas().angle);
+    }
+
+    /** The aspect on its side (X). */
+    swapFrameAspect() {
+        this.frameAspectFlip = !this.frameAspectFlip;
+        if (this.frameRatio()) this.fitFrameToAspect();
+        this.syncFrameControls();
+    }
+
+    resetFrame() {
+        this.canvasFrame = null;
+        this.frameStraighten = false;
+        this.syncFrameControls();
+        this.draw();
+    }
+
+    /** What the status line says about the frame. */
+    frameStatus() {
+        const f = this.frameOrCanvas();
+        if (!this.framePending()) return "The frame is the whole picture: drag its edges to crop or extend, drag outside it to turn the picture.";
+        return `Frame ${f.w} × ${f.h}${f.angle ? `, the picture turned ${f.angle}°` : ""}: Enter, Apply or a double click inside applies it, Esc resets.`;
+    }
+
+    /** The size line of the Canvas section: the picture now, and what the frame would make of it. */
+    frameInfoText() {
+        if (!this.base) return "";
+        const f = this.frameOrCanvas();
+        return `now ${this.width} × ${this.height}` + (this.framePending() ? ` → ${f.w} × ${f.h}${f.angle ? `, ${f.angle}°` : ""}` : "");
+    }
+
+    /** Every control of the frame (the Canvas section's sides, the options bar) set from it. */
+    syncFrameControls() {
+        const f = this.frame(), v = this.extendValues();
+        const focused = typeof document !== "undefined" ? document.activeElement : null;
+        if (this.extendInputs) for (const k of Object.keys(this.extendInputs)) { const i = this.extendInputs[k]; if (i !== focused) i.value = v[k]; }
+        const a = f ? f.angle : 0;
+        if (this.frameAngleInput && this.frameAngleInput !== focused) this.frameAngleInput.value = a;
+        if (this.frameAngleRange) this.frameAngleRange.value = a;
+        if (this.frameAspectSel) this.frameAspectSel.value = this.frameAspect;
+        if (this.frameCustomRow) this.frameCustomRow.hidden = this.tool !== "canvas" || this.frameAspect !== "custom";
+        if (this.frameStraightenBtn) this.frameStraightenBtn.classList.toggle("ipc-on", !!this.frameStraighten);
+        if (this.canvasInfo) this.canvasInfo.textContent = this.frameInfoText();
+    }
+
+    /**
+     * Apply the pending frame. At an angle: a straighten, the picture turned and cropped in one step. Upright: sides past
+     * the picture extend it (the outpainting border, selected), sides inside crop it, as the frame always did.
+     */
+    async applyFrame() {
+        const f = this.frame();
+        if (!f || !this.framePending()) { this.setStatus("Drag the frame first: its edges crop or extend, outside it turns the picture."); return false; }
+        this.canvasFrame = null;
+        this.frameStraighten = false;
+        this.syncFrameControls();
+        if (f.angle) return this.straightenDocument({ angle: f.angle, x: f.x, y: f.y, w: f.w, h: f.h });
+        const v = { top: -f.y, right: f.x + f.w - this.width, bottom: f.y + f.h - this.height, left: -f.x };
         const pos = {}, neg = {};
         for (const k of Object.keys(v)) { pos[k] = Math.max(0, v[k]); neg[k] = Math.min(0, v[k]); }
         if (Object.values(pos).some((x) => x > 0)) await this.extendCanvas(pos);
         if (Object.values(neg).some((x) => x < 0)) await this.cropCanvas(neg);
-        if (this.extendInputs) for (const k of Object.keys(this.extendInputs)) this.extendInputs[k].value = 0;
         this.draw();
+        return true;
     }
+
+    /** The frame as sides in frame space (positive: added, negative: cut off): what the Canvas section shows. */
+    extendValues() {
+        const f = this.frameOrCanvas();
+        return { top: -f.y, right: f.x + f.w - this.width, bottom: f.y + f.h - this.height, left: -f.x };
+    }
+
+    /** The frame from the Canvas section's four sides (the angle kept). */
+    setFrameFromSides() {
+        if (!this.extendInputs || !this.base) return;
+        const v = {};
+        for (const k of ["top", "right", "bottom", "left"]) v[k] = Math.round(+this.extendInputs[k].value || 0);
+        this.setFrame({ x: -v.left, y: -v.top, w: this.width + v.left + v.right, h: this.height + v.top + v.bottom }, this.frame());
+    }
+
+    /** The Apply of the Canvas section and the old name of `applyFrame`. */
+    applyCanvasFrame() { return this.applyFrame(); }
 
     /** Crop the canvas: negative amounts per side. Layers keep their pixels and shift; nothing is baked. */
     cropCanvas(v) { return this.trackEdit(this.cropCanvasNow(v)); }   // undo waits for the upload (see extendCanvas)
@@ -3899,20 +4200,47 @@ class InpaintEditor {
         }
     }
 
-    extendPending() {
-        const v = this.extendValues();
-        return !!(v.top || v.right || v.bottom || v.left);
-    }
+    extendPending() { return this.framePending(); }
 
-    resetExtend() {
-        if (this.extendInputs) for (const k of Object.keys(this.extendInputs)) this.extendInputs[k].value = 0;
-        this.draw();
-    }
+    resetExtend() { this.resetFrame(); }
 
-    /** The planned canvas rectangle in image coordinates (the current canvas is 0,0 .. width,height). */
+    /** The frame's rectangle in frame space (image coordinates when upright; the current canvas is 0,0 .. width,height). */
     extendRect() {
-        const v = this.extendValues();
-        return { x: -v.left, y: -v.top, w: this.width + v.left + v.right, h: this.height + v.top + v.bottom };
+        const f = this.frameOrCanvas();
+        return { x: f.x, y: f.y, w: f.w, h: f.h };
+    }
+
+    /**
+     * A drag of a frame handle: the side or corner follows (8 px steps upright, Alt for single pixels; whole pixels at an
+     * angle), the opposite one stays; with an aspect a corner keeps it (the larger change leads) and an edge takes the
+     * other side along about the middle; Shift frees the aspect.
+     */
+    dragFrameHandle(p, ix, iy, e) {
+        const o = p.orig, h = p.handle, step = o.angle || e.altKey ? 1 : 8;
+        const q = (v) => Math.round(v / step) * step;
+        const dx = q(ix - p.start[0]), dy = q(iy - p.start[1]);
+        let x0 = o.x, y0 = o.y, x1 = o.x + o.w, y1 = o.y + o.h;
+        if (h.includes("w")) x0 = Math.min(x1 - 8, o.x + dx);
+        if (h.includes("e")) x1 = Math.max(x0 + 8, o.x + o.w + dx);
+        if (h.includes("n")) y0 = Math.min(y1 - 8, o.y + dy);
+        if (h.includes("s")) y1 = Math.max(y0 + 8, o.y + o.h + dy);
+        const r = e.shiftKey ? null : this.frameRatio();
+        if (r) {
+            let w = x1 - x0, hh = y1 - y0;
+            if (h.length === 2) {
+                if (Math.abs(w - o.w) / o.w >= Math.abs(hh - o.h) / o.h) hh = w / r; else w = hh * r;
+                if (h.includes("w")) x0 = x1 - w; else x1 = x0 + w;
+                if (h.includes("n")) y0 = y1 - hh; else y1 = y0 + hh;
+            } else if (h === "e" || h === "w") {
+                hh = w / r;
+                const cy = o.y + o.h / 2; y0 = cy - hh / 2; y1 = cy + hh / 2;
+            } else {
+                w = hh * r;
+                const cx = o.x + o.w / 2; x0 = cx - w / 2; x1 = cx + w / 2;
+            }
+        }
+        this.setFrame({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, this.frame());
+        this.setStatus(this.frameStatus());
     }
 
     canvasHandleAt(ix, iy) {
@@ -4129,9 +4457,20 @@ class InpaintEditor {
                 this.addTextLayer(ix, iy);
             }
         } else if (this.tool === "canvas") {
+            if (!this.base) return;
+            // the frame's gestures (PLAN_0_1_31 §7, 23b): nothing is applied on release
+            const f = this.frameOrCanvas();
+            if (this.frameStraighten || e.ctrlKey || e.metaKey) {
+                this.pointer = { kind: "straighten", start: [ix, iy], cur: [ix, iy], orig: { ...f } };
+                this.draw();
+                return;
+            }
             const handle = this.canvasHandleAt(ix, iy);
-            if (!handle) { this.setStatus("Drag an edge or corner of the canvas frame outward to extend it. Enter applies."); return; }
-            this.pointer = { kind: "canvasext", handle, start: [ix, iy], orig: this.extendValues() };
+            const inside = ix >= f.x && ix <= f.x + f.w && iy >= f.y && iy <= f.y + f.h;
+            if (!handle && inside && (e.detail >= 2 || isDouble) && this.framePending()) { this.applyFrame(); return; }
+            if (handle) this.pointer = { kind: "frame", handle, start: [ix, iy], orig: { ...f } };
+            else if (inside) this.pointer = { kind: "framemove", start: [ix, iy], orig: { ...f } };
+            else this.pointer = { kind: "framerotate", start: [ix, iy], orig: { ...f }, a0: Math.atan2(iy - this.height / 2, ix - this.width / 2) };
         }
         this.draw();
     }
@@ -4259,17 +4598,20 @@ class InpaintEditor {
         } else if (p.kind === "split") {
             const [cx] = this.toCanvasPx(e);
             this.compare.split = Math.min(0.95, Math.max(0.05, cx / this.canvas.width));
-        } else if (p.kind === "canvasext") {
-            const dx = ix - p.start[0], dy = iy - p.start[1], step = e.altKey ? 1 : 8;
-            // outward extends, inward crops; the canvas never goes below 8 px
-            const q = (v, limit) => Math.max(-(limit - 8), Math.round(v / step) * step);
-            const h = p.handle, o = p.orig;
-            if (h.includes("e")) this.extendInputs.right.value = q(o.right + dx, this.width + Math.min(0, o.left));
-            if (h.includes("w")) this.extendInputs.left.value = q(o.left - dx, this.width + Math.min(0, o.right));
-            if (h.includes("n")) this.extendInputs.top.value = q(o.top - dy, this.height + Math.min(0, o.bottom));
-            if (h.includes("s")) this.extendInputs.bottom.value = q(o.bottom + dy, this.height + Math.min(0, o.top));
-            const R = this.extendRect();
-            this.setStatus(`Canvas ${this.width} × ${this.height} → ${R.w} × ${R.h} (${R.w > this.width || R.h > this.height ? "extend" : "crop"}), applied on release.`);
+        } else if (p.kind === "frame") {
+            this.dragFrameHandle(p, ix, iy, e);
+        } else if (p.kind === "framemove") {
+            const o = p.orig, step = o.angle || e.altKey ? 1 : 8;
+            const dx = Math.round((ix - p.start[0]) / step) * step, dy = Math.round((iy - p.start[1]) / step) * step;
+            this.setFrame({ x: o.x + dx, y: o.y + dy }, this.frame());
+            this.setStatus(this.frameStatus());
+        } else if (p.kind === "framerotate") {
+            // outside the frame the picture turns about its centre; Shift keeps whole degrees
+            let deg = normDeg(p.orig.angle + (Math.atan2(iy - this.height / 2, ix - this.width / 2) - p.a0) * 180 / Math.PI);
+            if (e.shiftKey) deg = Math.round(deg);
+            this.setFrameAngle(deg);
+        } else if (p.kind === "straighten") {
+            p.cur = [ix, iy];
         } else if (p.kind === "pending") {
             this.pendingPointerMove(ix, iy, e);
         }
@@ -4407,9 +4749,23 @@ class InpaintEditor {
             else if (inside) list.push(p.pos);
             this.notifyChanged();
             this.setStatus(inside ? `Guide at ${p.axis} = ${p.pos}.` : (p.index >= 0 ? "Guide removed." : "Drag the guide onto the image to place it."));
-        } else if (p.kind === "canvasext") {
-            // like a crop handle in Photoshop: releasing applies; Ctrl+Z takes it back
-            if (this.extendPending()) this.applyCanvasFrame();
+        } else if (p.kind === "straighten") {
+            // along something that should be level or plumb: the nearest of the two is what the line is taken for, and the
+            // picture turns by what it is off (it is drawn over the preview, so from the angle it is turned already)
+            const [x0, y0] = p.start, [x1, y1] = p.cur;
+            const len = Math.hypot(x1 - x0, y1 - y0) * this.view.scale / (window.devicePixelRatio || 1);
+            if (len >= 8) {
+                const phi = Math.atan2(y1 - y0, x1 - x0) * 180 / Math.PI;
+                const off = phi - 90 * Math.round(phi / 90);
+                this.frameStraighten = false;
+                this.setFrameAngle(p.orig.angle - off);
+            } else {
+                this.setStatus("Draw a longer line along something that should be level or plumb.");
+            }
+            this.syncFrameControls();
+        } else if (p.kind === "frame" || p.kind === "framemove" || p.kind === "framerotate") {
+            // nothing is applied on release: Enter, Apply or a double click inside the frame does
+            this.setStatus(this.frameStatus());
         }
         this.draw();
     }
@@ -10218,7 +10574,7 @@ class InpaintEditor {
             rows.push(["Result", `${this.genSettings.mode} → ${rs.name}${rs.wired ? (rs.fallback ? " (only input wired)" : "") : " (not wired!)"}` + (this.genSettings.mode === "local" && this.genSettings.refine ? " · refine" : "")]);
         }
         this.infoEl.innerHTML = rows.map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join("");
-        if (this.canvasInfo) this.canvasInfo.textContent = this.base ? `now ${this.width} × ${this.height}` : "";
+        if (this.canvasInfo) this.canvasInfo.textContent = this.frameInfoText();
     }
 
     // ---- layers: management ------------------------------------------------
@@ -11458,8 +11814,11 @@ class InpaintEditor {
         if (!this.width || !this.canvas.width) return null;
         const W = this.canvas.width, H = this.canvas.height;
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        // under the straighten preview the screen shows the picture turned: its corners back through the turn
+        const tilt = this.viewTilt(), tc = Math.cos(-(tilt || 0)), ts = Math.sin(-(tilt || 0)), hx = this.width / 2, hy = this.height / 2;
         for (const [cx, cy] of [[0, 0], [W, 0], [0, H], [W, H]]) {
-            const [ix, iy] = this.canvasToImage(cx, cy);
+            let [ix, iy] = this.canvasToImage(cx, cy);
+            if (tilt) { const dx = ix - hx, dy = iy - hy; ix = hx + dx * tc - dy * ts; iy = hy + dx * ts + dy * tc; }
             if (ix < x0) x0 = ix;
             if (ix > x1) x1 = ix;
             if (iy < y0) y0 = iy;
@@ -12415,9 +12774,11 @@ class InpaintEditor {
         const region = this.viewportRegion();
         for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, -r], [r, -r], [-r, r]]) {
             this.applyViewTransform(a, dx, dy);
+            this.applyTilt(a);
             this.drawSelectionInto(a, s, region);
         }
         this.applyViewTransform(a);
+        this.applyTilt(a);
         a.globalCompositeOperation = "destination-out";
         this.drawSelectionInto(a, s, region);
         a.setTransform(1, 0, 0, 1, 0, 0);
@@ -12582,7 +12943,7 @@ class InpaintEditor {
         const parts = [this.pixelVersion, this.compositeVersion, this.width, this.height,
             this.canvas.width, this.canvas.height, Math.round(v.x * 8), Math.round(v.y * 8), v.scale, v.angle || 0,
             this.peekBase ? 1 : 0, this.compare ? `${this.compare.a}:${this.compare.b}:${this.compare.split}` : 0,
-            this.compareShow || 0, this.filterPreview || 0];
+            this.compareShow || 0, this.filterPreview || 0, this.viewTilt() || 0];
         for (const l of this.layers) {
             parts.push(l.id, l.visible ? 1 : 0, l.opacity, l.blend, l.role, l.x, l.y, l.w, l.h,
                 l.kind === "filter" ? l.filter + JSON.stringify(l.params || {}) : "",
@@ -12612,6 +12973,7 @@ class InpaintEditor {
             sctx.globalCompositeOperation = "source-over";
             sctx.clearRect(0, 0, W, H);
             this.applyViewTransform(sctx);
+            this.applyTilt(sctx);
             sctx.imageSmoothingEnabled = s < 1;
             this._pyramidBudget = 1;
             this._pyramidPending = false;
@@ -12668,6 +13030,9 @@ class InpaintEditor {
     /** Selection, crop frame, layer handles and the tool cursors, on top of the scene. */
     drawSceneOverlays(ctx) {
         const s = this.view.scale;
+        // what sits on the picture turns with the straighten preview; the frame, the guides and the grid stay level
+        const tilt = this.viewTilt();
+        if (tilt) { ctx.save(); this.applyTilt(ctx); }
         if (this.selectionDisplay === "tint" || this.quickMask || !this.getBounds()) {
             // an empty selection on tiles (no tile) draws nothing: its draw made a display mirror as large as the
             // image, and a GPU copy of it at 0.5 or more, for transparent pixels (C2's final review)
@@ -12783,38 +13148,8 @@ class InpaintEditor {
             ctx.restore();
         }
 
-        if (this.tool === "canvas" && this.width) {
-            const R = this.extendRect();
-            const v = this.extendValues();
-            ctx.save();
-            if (R.w !== this.width || R.h !== this.height) {
-                ctx.fillStyle = "rgba(124,199,255,0.18)";
-                ctx.beginPath(); ctx.rect(R.x, R.y, R.w, R.h); ctx.rect(0, 0, this.width, this.height); ctx.fill("evenodd");
-            }
-            ctx.lineWidth = 1 / s;
-            ctx.strokeStyle = "#7cc7ff";
-            ctx.setLineDash([6 / s, 4 / s]);
-            ctx.strokeRect(R.x, R.y, R.w, R.h);
-            ctx.setLineDash([]);
-            const r = HANDLE_PX / s / 2;
-            const handles = this.layerHandles(R);
-            ctx.fillStyle = "#7cc7ff";
-            for (const name of ["nw", "ne", "sw", "se"]) { const [hx, hy] = handles[name]; ctx.fillRect(hx - r, hy - r, r * 2, r * 2); }
-            ctx.fillStyle = "#1e1e1e";
-            for (const name of ["n", "s", "w", "e"]) { const [hx, hy] = handles[name]; ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
-            ctx.font = `${12 / s}px system-ui, sans-serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            const label = (txt, x, y) => { const w = ctx.measureText(txt).width + 10 / s; ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(x - w / 2, y - 8 / s, w, 16 / s); ctx.fillStyle = "#fff"; ctx.fillText(txt, x, y); };
-            const sg = (n) => (n > 0 ? "+" : "") + n;
-            if (v.top) label(sg(v.top), this.width / 2, -v.top / 2);
-            if (v.bottom) label(sg(v.bottom), this.width / 2, this.height + v.bottom / 2);
-            if (v.left) label(sg(v.left), -v.left / 2, this.height / 2);
-            if (v.right) label(sg(v.right), this.width + v.right / 2, this.height / 2);
-            label(`${R.w} × ${R.h}`, R.x + R.w / 2, R.y - 14 / s);
-            ctx.restore();
-        }
-
+        if (tilt) ctx.restore();
+        if (this.tool === "canvas" && this.width) this.drawCanvasFrame(ctx);
         if (this.snapGuides && this.pointer && (this.pointer.kind === "move" || this.pointer.kind === "scale")) {
             ctx.save();
             ctx.strokeStyle = "#ff66cc";

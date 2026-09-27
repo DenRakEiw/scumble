@@ -12,7 +12,8 @@ No ComfyUI, no key. Real key presses go through CDP (Input.dispatchKeyEvent), no
 - Tab again leaves: the view (every field of ed.view), _fitted, the rulers, the chrome and the window put back,
   localStorage ipc.rulers never touched;
 - Tab does nothing in the prompt textarea, inside an open <dialog>, while the editor's ask is open, or with Shift;
-- Escape first cancels what the editor has pending (a rotate transform, then an open polygon) and the mode stays;
+- Escape first cancels what the editor has pending (a rotate transform, then an open polygon, then a pending canvas
+  frame) and the mode stays;
   with nothing pending Escape leaves and the editor never sees it (no "Nothing to cancel.");
 - a full-screen exit from outside (setFullScreen(false)) ends the mode and restores the view;
 - a window that was full screen before the enter stays full screen after the leave;
@@ -357,6 +358,23 @@ if (!isOn()) p.push('the mode ended: this Escape belonged to the open polygon');
 if (!(await fs())) p.push('the window left full screen');
 if (p.length) fail('the Escape on the polygon', p, { status: ed.status });
 const status = ed.status;
+// the next thing to cancel: a pending canvas frame (PLAN_0_1_31 §7, 23b)
+ed.setTool('canvas');
+ed.setFrame({ x: 0, y: 0, w: ed.width - 100, h: ed.height });
+if (!ed.framePending()) throw new Error('setFrame left no pending frame');
+ed.root.focus({ preventScroll: true });
+return { status };
+"""
+
+ESC_AFTER_FRAME = """
+await soft(() => !ed.framePending(), 2000, 'the frame to be reset');
+await wait(500);
+const p = [];
+if (ed.framePending()) p.push('the pending frame is still there');
+if (!isOn()) p.push('the mode ended: this Escape belonged to the pending frame');
+if (!(await fs())) p.push('the window left full screen');
+if (p.length) fail('the Escape on the frame', p, { status: ed.status });
+const status = ed.status;
 ed.setTool('transform');
 ed.setTransformMode('scale');
 if (ed.pending) ed.cancelPending();
@@ -690,8 +708,10 @@ class Gate:
         await self.key("Escape")
         polygon = await self.ev(ESC_AFTER_POLYGON)
         await self.key("Escape")
+        frame = await self.ev(ESC_AFTER_FRAME)
+        await self.key("Escape")
         left = await self.ev(ESC_LEAVES)
-        return {"prep": prep, "pending": pending, "transform": transform, "polygon": polygon, "left": left}
+        return {"prep": prep, "pending": pending, "transform": transform, "polygon": polygon, "frame": frame, "left": left}
 
     async def a_full_screen_exit_from_outside_ends_the_mode(self):
         return await self.ev(OUTSIDE)

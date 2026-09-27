@@ -268,7 +268,7 @@ function buildTools(ed, body) {
     addTool("transform", "Move / scale / rotate the active layer (T). Drag inside to move, corners scale (Shift: free aspect), edges scale one axis, drag just outside a corner to rotate (Shift snaps to 15°). Rotation is applied with Enter.");
     addTool("text", "Text (Shift+T): click on the canvas to add a text layer, click a text layer to select it, drag to move it, double-click to edit it on the canvas.");
     addTool("hand", "Pan (H, Space or middle mouse)");
-    addTool("canvas", "Canvas size (C): drag the frame's edges or corners outward to extend the canvas (outpainting), inward to crop; applied when you release, Ctrl+Z takes it back. Snaps to 8 px, Alt for single pixels.");
+    addTool("canvas", "Canvas (C): drag the frame's edges or corners outward to extend the canvas (outpainting), inward to crop, outside the frame to turn the picture; Ctrl+drag along a horizon straightens it. Aspect presets and lines in the bar above. Enter or a double click inside applies, Esc resets. Snaps to 8 px, Alt for single pixels.");
     tools.appendChild(el("div", "ipc-sep"));
     tools.appendChild(iconButton("undo", "Undo (Ctrl+Z)", () => ed.undoStep()));
     tools.appendChild(iconButton("redo", "Redo (Ctrl+Shift+Z)", () => ed.redoStep()));
@@ -634,8 +634,9 @@ function buildCanvasPanel(ed, section) {
         ed.extendInputs = {};
         for (const [key, label] of [["top", "Top"], ["right", "Right"], ["bottom", "Bottom"], ["left", "Left"]]) {
             grid.appendChild(el("span", null, label));
-            ed.extendInputs[key] = numberInput(0, -8192, 8192, `Pixels to add at the ${key} (negative: crop)`, 64);
-            ed.extendInputs[key].addEventListener("input", () => ed.draw());
+            ed.extendInputs[key] = numberInput(0, -65535, 65535, `Pixels to add at the ${key} (negative: crop); the canvas tool (C) shows the frame, Enter applies`, 64);
+            ed.extendInputs[key].addEventListener("input", () => ed.setFrameFromSides());
+            ed.extendInputs[key].addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); ed.setFrameFromSides(); ed.applyFrame(); } });
             grid.appendChild(ed.extendInputs[key]);
         }
         sec.appendChild(grid);
@@ -645,9 +646,12 @@ function buildCanvasPanel(ed, section) {
         ed.extendFillSel.addEventListener("change", () => { ed.cropSettings.extendFill = ed.extendFillSel.value; ed.notifyChanged(); });
         fillLab.appendChild(ed.extendFillSel);
         sec.appendChild(fillLab);
-        const ext = iconButton("extend", "Extend the canvas (outpainting) by the pixels above, negative values crop; the canvas tool (C) sets them by dragging the frame. A new border becomes the selection.", () => ed.applyCanvasFrame(), "Apply");
+        const ext = iconButton("extend", "Apply the canvas frame: the pixels above extend the canvas (outpainting; the new border becomes the selection), negative values crop; with an angle the picture is straightened and cropped in one step. The canvas tool (C) sets the frame by dragging; Enter applies.", () => ed.applyFrame(), "Apply");
         ext.classList.add("ipc-small");
         sec.appendChild(ext);
+        const rst = iconButton("close", "Reset the canvas frame (Esc in the canvas tool)", () => ed.resetFrame(), "Reset");
+        rst.classList.add("ipc-small");
+        sec.appendChild(rst);
         ed.canvasInfo = el("span", null, "");
         sec.appendChild(ed.canvasInfo);
         d.appendChild(sec);
