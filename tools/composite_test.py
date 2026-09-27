@@ -178,6 +178,46 @@ VIEW = """
 })()
 """
 
+# A switched-off mask (layer.maskOff, docs/PLAN_0_1_31.md 3e) is drawn as no mask at all: the full composite, the view
+# and the PNG export the workers composite are byte for byte the ones with the mask taken away, and differ from the ones
+# with the mask on (so the step cannot pass by drawing nothing). Every path reads liveMask(); a mutation there shows here.
+MASK_OFF = """
+(async () => {
+    const ed = window.__cmp;
+    const l = ed.layers.find((x) => x.name === "masked");
+    if (!l || !l.maskPx) return { skipped: "no masked layer" };
+    // the grain filter on top stays: its cache keys on the composite version, so a switch that does not invalidate
+    // leaves it filtering the picture of before (its noise is seeded by the pinned layer id: the same in every shot)
+    const settle = async () => { await ed.mipsSettled(); await new Promise((r) => setTimeout(r, 150)); };
+    const flat = () => { ed.flatCache = null; const c = ed.flattenToCanvas({ forRun: false }); return c.getContext("2d").getImageData(0, 0, c.width, c.height).data; };
+    const view = async () => { await settle(); ed.sceneSig = null; ed.draw(); await new Promise((r) => setTimeout(r, 150)); return ed.ctx.getImageData(0, 0, Math.min(1200, ed.canvas.width), Math.min(800, ed.canvas.height)).data; };
+    const png = async () => {
+        const r = await ed.encodeComposite({ forRun: true }, {});
+        if (!r || !r.blob) return null;
+        const bmp = await createImageBitmap(r.blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+        const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
+        const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(bmp, 0, 0); bmp.close();
+        return x.getImageData(0, 0, c.width, c.height).data;
+    };
+    const shots = async () => ({ full: flat(), view: await view(), png: await png() });
+    const diff = (a, b) => { if (!a || !b) return null; if (a.length !== b.length) return { max: 999, n: -1 }; let m = 0, n = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d) { n++; if (d > m) m = d; } } return { max: m, n }; };
+    await settle();
+    const on = await shots();
+    if (!ed.setMaskOff(l, true)) throw new Error("setMaskOff(true) refused");
+    const off = await shots();
+    const mask = l.maskPx;
+    l.maskPx = null; l.maskOff = false;
+    ed.markMaskChanged(l, null, { pixels: false });
+    const none = await shots();
+    l.maskPx = mask;
+    ed.markMaskChanged(l, null, { pixels: false });
+    await settle();
+    const out = {};
+    for (const k of ["full", "view", "png"]) out[k] = { offVsNone: diff(off[k], none[k]), onVsOff: diff(on[k], off[k]) };
+    return out;
+})()
+"""
+
 # The phase 5 gate: the same view drawn by the GPU compositor and by Canvas 2D, in one run.
 # The filter layer is hidden because the filter chain still goes through Canvas 2D, and a
 # stroke or a transform would too - see glCompositeUsable.
@@ -532,6 +572,25 @@ async def run(c, args):
             else:
                 ok = False
                 print(f"[FAIL] {line}")
+        # a switched-off mask is no mask on every path, and a mask that is on is not
+        mo = await c.eval(MASK_OFF, timeout=300)
+        if mo.get("skipped"):
+            print(f"[skip] mask off: {mo['skipped']}")
+        else:
+            problems = []
+            for k, v in mo.items():
+                if v["offVsNone"] is None and k == "png":
+                    continue   # no worker export on this backend: reported below
+                if v["offVsNone"] is None or v["offVsNone"]["n"] != 0:
+                    problems.append(f"{k}: switched off differs from no mask ({v['offVsNone']})")
+                if v["onVsOff"] is None or v["onVsOff"]["n"] == 0:
+                    problems.append(f"{k}: the mask on draws the same as off ({v['onVsOff']})")
+            line = "mask off: " + ", ".join(f"{k} off/none {v['offVsNone']} on/off {v['onVsOff']}" for k, v in mo.items())
+            if problems:
+                ok = False
+                print(f"[FAIL] {line}: " + "; ".join(problems))
+            else:
+                print(f"[ok] {line}")
         # the compositor's windows of a large source (phase A item 4), a document of its own
         win = await c.eval(WINDOW, timeout=600)
         if win.get("skipped"):

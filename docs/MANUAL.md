@@ -169,6 +169,7 @@ Around all this sit transform (move, scale, rotate, flip, with a perspective mes
 - Blend modes: the usual eight, computed in the compositor with a single rounding per channel, so a stack looks the same on screen as it does in the exported file.
 - Layer names can be renamed by double-clicking them, and a rename is an undo step like anything else.
 - Copy and paste move whole layers between tabs, pixels, mask and settings included.
+- A mask can be switched off without losing it: the eye button in the mask row, or Shift+click on the word "mask" as in Photoshop. The layer then shows whole, the mask stays with it through moves, crops and saves, and editing the mask switches it back on.
 - SVG files can be loaded as layers, and PSD or ORA files arrive with their own layers since 0.1.25.
 
 ## Filter layers and the film pack
@@ -287,6 +288,7 @@ Closing Scumble asks nothing about unsaved documents. It waits until your last c
 
 - Large PNGs beyond the browser's canvas limit — up to 65,535 px a side — are opened and written in strips, so they do not need to fit into one canvas.
 - PSD export keeps layer names with umlauts and other non-ASCII letters since 0.1.25; before that they became underscores.
+- PSD keeps masks as masks: a layer's pixels go out whole and its mask as Photoshop's layer mask, switched off if it is off here, and a PSD's layer masks open as masks you can go on painting (a switched-off one stays off). ORA has no layer masks, so an ORA export bakes each mask that is on into its layer.
 - TIFF files open in 8 and 16 bits per channel (16 is rounded to 8), in RGB, grayscale or with a palette, uncompressed or with LZW, ZIP or PackBits compression, stored in strips or tiles; a transparent one keeps its transparency. The first picture of a file with several pages opens. Colour profiles and the orientation tag are not applied, and a layered TIFF from Photoshop opens as its merged picture; the status line says so when it happens. CMYK, floating-point, 32-bit and JPEG-compressed TIFFs are refused with a message saying how to save them instead. A TIFF export is 8 bits per channel, RGB with its transparency as an alpha channel, ZIP compressed; a picture that could pass 4 GB (more than about a gigapixel) has to go out as PNG instead.
 - The export runs in worker threads, so the window stays usable while a 15,000 pixel PSD is being written.
 

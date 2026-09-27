@@ -17,6 +17,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   restoring one is an undo step of its own. How deep the history goes is now a setting (Settings › Rendering: 30
   steps, and 384 MB for the copies brush strokes and selections keep, by default). Agents get `list_history`,
   `take_snapshot`, `restore_snapshot` and `delete_snapshot`, and `undo` / `redo` take a number of steps.
+- **Layer masks stay masks in PSD.** A PSD export used to bake every mask into its layer's transparency; now the
+  layer's pixels go out whole and the mask as Photoshop's own layer mask, so Photoshop, Affinity, Krita or GIMP can
+  go on editing it. Opening a PSD keeps its layer masks as masks too, where they used to be applied and lost. ORA has
+  no layer masks and still bakes them.
+- **A mask can be switched off** without deleting it: the eye button in the layer's mask row, or Shift+click on the
+  word "mask" as in Photoshop. The layer shows whole, the mask stays and follows moves, crops and saves, and
+  painting the mask switches it on again. PSD files carry the switch both ways.
 
 ## 0.1.30 — 2026-09-27
 

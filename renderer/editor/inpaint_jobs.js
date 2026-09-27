@@ -168,6 +168,8 @@ if (typeof Worker === "function") setChainTransport(mipsTransport);
 /**
  * A layered PSD or ORA file. The worker takes the layers one at a time, so only one
  * layer's pixels are in flight; without a worker the writers run on the main thread.
+ * A layer's `mask` (`{ canvas, disabled }`, inpaint_export.js) goes to a PSD as a second
+ * bitmap; ORA has no layer masks and never gets one.
  */
 async function buildLayered(format, { width, height, layers, composite }) {
     if (editorWorker()) {
@@ -177,7 +179,12 @@ async function buildLayered(format, { width, height, layers, composite }) {
             for (const L of layers) {
                 const bitmap = await createImageBitmap(L.canvas);
                 const meta = { name: L.name, x: L.x, y: L.y, opacity: L.opacity, visible: L.visible, blend: L.blend };
-                await workerCall("export_layer", { job, meta, bitmap }, [bitmap]);
+                let maskBitmap = null;
+                if (format === "psd" && L.mask) {
+                    try { maskBitmap = await createImageBitmap(L.mask.canvas); } catch (err) { bitmap.close(); throw err; }
+                    meta.mask = { disabled: !!L.mask.disabled };
+                }
+                await workerCall("export_layer", { job, meta, bitmap, maskBitmap }, maskBitmap ? [bitmap, maskBitmap] : [bitmap]);
             }
             const bitmap = await createImageBitmap(composite);
             const r = await workerCall("export_finish", { job, bitmap }, [bitmap]);

@@ -10,7 +10,8 @@
  *   export_begin / export_layer / export_finish
  *                   a layered PSD or ORA file, one layer at a time: the layer is packed
  *                   as soon as its pixels arrive, so only one layer is ever in flight and
- *                   the 3 s PackBits run happens off the main thread.
+ *                   the 3 s PackBits run happens off the main thread. A PSD layer's mask
+ *                   comes as a second bitmap (`maskBitmap`, its alpha the mask).
  *   selection       grow, shrink, feather or invert the selection (up to 3.9 s on the
  *                   main thread at 96 MP).
  *   flood           the magic wand's and the bucket's region: the similar pixels around a
@@ -697,8 +698,11 @@ async function run(msg) {
     }
     if (msg.op === "export_layer") {
         const job = exports_.get(msg.job);
-        if (!job) throw new Error("unknown export job");
-        await job.writer.layer(msg.meta, canvasOf(msg.bitmap));
+        if (!job) { for (const b of [msg.bitmap, msg.maskBitmap]) if (b) b.close(); throw new Error("unknown export job"); }
+        // a PSD layer's mask comes as a second bitmap (its alpha the mask), `meta.mask` its flags
+        const { mask, ...meta } = msg.meta;
+        if (msg.maskBitmap) meta.mask = { canvas: canvasOf(msg.maskBitmap), disabled: !!(mask && mask.disabled) };
+        await job.writer.layer(meta, canvasOf(msg.bitmap));
         return {};
     }
     if (msg.op === "export_finish") {

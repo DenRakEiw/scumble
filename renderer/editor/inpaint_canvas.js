@@ -1120,6 +1120,7 @@ const STYLE = `
 .ipc-undo-bar { padding-top:6px; padding-bottom:4px; }
 .ipc-snap-row { display:flex; align-items:center; gap:4px; padding:2px 8px 2px 10px; font-size:12px; color:var(--sc-fg, #ddd); }
 .ipc-snap-row .ipc-snap-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.ipc-mask-off { color:var(--sc-faint, #777); text-decoration:line-through; cursor:pointer; }
 .ipc-info { padding:8px 10px; color:var(--sc-fg-2, #aaa); display:grid; grid-template-columns:auto 1fr; gap:3px 10px; }
 .ipc-upsample { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .ipc-gen { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; }
@@ -1936,7 +1937,8 @@ class InpaintEditor {
         const layer = p.layer;
         if (p.mode === "rotate" && Math.abs(p.angle) < 1e-6) { this.cancelPending(); return; }
         this.pushUndo({ kind: "layerfull", id: layer.id, label: { rotate: "Rotate", distort: "Distort", warp: "Warp" }[p.mode] });
-        if (layer.maskPx) this.applyMask(layer, { silent: true, undo: false });
+        if (this.liveMask(layer)) this.applyMask(layer, { silent: true, undo: false });
+        else if (layer.maskPx) { layer.maskPx = null; layer.maskOff = false; layer.maskEdit = false; this.markMaskChanged(layer); }
         const n = this.pendingSubdivisions(p, true);
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
@@ -2480,7 +2482,7 @@ class InpaintEditor {
      * leaves it false (docs/PLAN_BCE.md §C2 step b).
      */
     layerPixels(layer, display = false) {
-        if (!layer.maskPx) return this.layerWithStroke(layer, display);
+        if (!this.liveMask(layer)) return this.layerWithStroke(layer, display);
         const p = this.pointer;
         const live = !!(p && (p.kind === "layerpaint" || p.kind === "maskpaint") && p.layer === layer);
         if (!live && layer._masked && layer._maskedValid) return layer._masked;
@@ -4119,7 +4121,7 @@ class InpaintEditor {
         ctx.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
         if (source === "layer") {
             const l = this.activeLayer();
-            if (l && l.kind !== "filter" && l.px && isTilePixels(l.px) && !this.liveStrokeOn(l) && (!l.maskPx || this.tileMaskOf(l))) {
+            if (l && l.kind !== "filter" && l.px && isTilePixels(l.px) && !this.liveStrokeOn(l) && (!this.liveMask(l) || this.tileMaskOf(l))) {
                 // C6 (c2b): the active layer on tiles from its own tiles at the pass's level, and its mask from the mask's
                 // (the canvas holds this layer only, so a whole-canvas destination-in is the mask). layerPixels gave the
                 // layer's display mirror, or `_masked` and two mirrors, and a Skia pyramid of it below half size: 0.57 to
@@ -4127,7 +4129,7 @@ class InpaintEditor {
                 const vp = { x: x0, y: y0, w: x1 - x0, h: y1 - y0, sx: scale, sy: scale, sample: true };
                 ctx.imageSmoothingEnabled = true;
                 this.drawPixelsInto(ctx, l, l.px, vp);
-                if (l.maskPx) {
+                if (this.liveMask(l)) {
                     ctx.globalCompositeOperation = "destination-in";
                     this.drawPixelsInto(ctx, l, l.maskPx, vp);
                     ctx.globalCompositeOperation = "source-over";
@@ -4239,7 +4241,7 @@ class InpaintEditor {
                 if (!(r >= 0) || !Number.isFinite(r)) return null;
                 const fop = l.blend && l.blend !== "normal" ? OPS[l.blend] : 0;
                 if (!(fop >= 0)) return null;
-                const fm = l.maskPx || null;
+                const fm = this.liveMask(l) || null;
                 if (fm && (!isTilePixels(fm) || fm.width !== this.width || fm.height !== this.height || (this.pointer && this.pointer.layer === l))) return null;
                 const falpha = Math.round(Math.max(0, Math.min(1, l.opacity ?? 1)) * 255);
                 if (falpha > 0) { out.push({ filter: l, reach: Math.ceil(r), mask: fm, alpha: falpha, op: fop }); sawFilter = true; }
@@ -4253,8 +4255,8 @@ class InpaintEditor {
             if ((this.pending && this.pending.layer === l) || this.liveStrokeOn(l)) return null;
             const px = l.px;
             if (!isTilePixels(px) || px.width !== l.w || px.height !== l.h || l.x !== Math.round(l.x) || l.y !== Math.round(l.y)) return null;
-            const mask = l.maskPx ? this.tileMaskOf(l) : null;
-            if (l.maskPx && !mask) return null;
+            const mask = this.liveMask(l) ? this.tileMaskOf(l) : null;
+            if (this.liveMask(l) && !mask) return null;
             const alpha = Math.round(Math.max(0, Math.min(1, l.opacity ?? 1)) * 255);
             out.push({ px, mask, x: l.x, y: l.y, alpha, op, match: matched ? l : null });
         }
@@ -4533,8 +4535,8 @@ class InpaintEditor {
         if (sample === "layer") {
             const l = this.activeLayer();
             if (l && l.kind !== "filter" && l.px) {
-                const plain = isTilePixels(l.px) && !this.liveStrokeOn(l) && (!l.maskPx || this.tileMaskOf(l)) && l.px.width === l.w && l.px.height === l.h && l.x === Math.round(l.x) && l.y === Math.round(l.y);
-                return plain ? [null, { px: l.px, mask: l.maskPx ? this.tileMaskOf(l) : null, x: l.x, y: l.y, alpha: 255 }] : null;
+                const plain = isTilePixels(l.px) && !this.liveStrokeOn(l) && (!this.liveMask(l) || this.tileMaskOf(l)) && l.px.width === l.w && l.px.height === l.h && l.x === Math.round(l.x) && l.y === Math.round(l.y);
+                return plain ? [null, { px: l.px, mask: this.liveMask(l) ? this.tileMaskOf(l) : null, x: l.x, y: l.y, alpha: 255 }] : null;
             }
         }
         return this.stackPlan({ forRun: false, filters: true });
@@ -4707,9 +4709,9 @@ class InpaintEditor {
         if (source === "layer") {
             // the same branch `sampleRegion` takes: the active layer alone, with its mask
             const l = this.activeLayer();
-            if (l && l.kind !== "filter" && l.px && !this.liveStrokeOn(l) && (!l.maskPx || this.tileMaskOf(l))) {
+            if (l && l.kind !== "filter" && l.px && !this.liveStrokeOn(l) && (!this.liveMask(l) || this.tileMaskOf(l))) {
                 add(l.px, l.x, l.y, l.w, l.h);
-                add(l.maskPx, l.x, l.y, l.w, l.h);
+                add(this.liveMask(l), l.x, l.y, l.w, l.h);
             }
             return out;
         }
@@ -4719,7 +4721,7 @@ class InpaintEditor {
             const layer = this.layers[i];
             if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
             if ((!layer.visible && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
-            if (layer.kind === "filter") { add(layer.maskPx, 0, 0, this.width, this.height); continue; }
+            if (layer.kind === "filter") { add(this.liveMask(layer), 0, 0, this.width, this.height); continue; }
             if (forRun && (this.isControl(layer) || this.isReference(layer))) continue;
             // only the layers `drawLayer` really draws from tiles in a region pass. A colour-matched layer off tiles
             // (`layerMatchedPixels`), a layer under a live paint stroke and one whose mask is not on the same
@@ -4728,9 +4730,9 @@ class InpaintEditor {
             const gesture = this.pointer && this.pointer.layer === layer;
             if (this.matchActive(layer) && !gesture && !this.matchFromTiles(layer)) continue;
             if (this.liveStrokeOn(layer)) continue;
-            if (layer.maskPx && !this.tileMaskOf(layer)) continue;
+            if (this.liveMask(layer) && !this.tileMaskOf(layer)) continue;
             add(layer.px, layer.x, layer.y, layer.w, layer.h);
-            add(layer.maskPx, layer.x, layer.y, layer.w, layer.h);
+            add(this.liveMask(layer), layer.x, layer.y, layer.w, layer.h);
         }
         return out;
     }
@@ -5782,9 +5784,18 @@ class InpaintEditor {
      * size is scaled onto the layer, which only the `_masked` canvas can do.
      */
     tileMaskOf(layer) {
-        const m = layer.maskPx;
+        const m = this.liveMask(layer);
         if (!m || !layer.px || !isTilePixels(m) || !isTilePixels(layer.px)) return null;
         return m.width === layer.px.width && m.height === layer.px.height ? m : null;
+    }
+
+    /**
+     * The mask that shapes `layer` where it is drawn: its `maskPx`, or none while the mask is switched off (`maskOff`,
+     * PSD's "disabled"; Shift+click on the mask). Everything that draws or composites a layer asks this; what moves,
+     * saves or undoes a mask keeps using `maskPx`, so a switched-off mask follows a crop or a flip like any.
+     */
+    liveMask(layer) {
+        return layer.maskOff ? null : layer.maskPx || null;
     }
 
     /** A gesture whose stroke buffer is drawn over `layer`'s pixels for the live preview. */
@@ -5820,7 +5831,7 @@ class InpaintEditor {
         // the scratch holds one (gesture, layer, region): a pan, a zoom, another layer, a write into
         // the pixels or the mask, or a new gesture rebuilds it
         const sig = [vp.x, vp.y, vp.w, vp.h, layer.id, p ? p.kind : "-", layer.x, layer.y, layer.w, layer.h,
-            layer.px.version, layer.maskPx ? layer.maskPx.version : -1,
+            layer.px.version, this.liveMask(layer) ? layer.maskPx.version : -1,
             // C6 b: mips landing from the worker put the stale cells of the region canvases again, the selection's too:
             // a clipped gesture's scratch is clipped by the selection's region canvas, and the dabs drawn before its
             // chains landed kept the clip of the selection before an invert until the commit (the C6 b review)
@@ -5867,7 +5878,7 @@ class InpaintEditor {
             if (p && p.kind === "layerpaint") {
                 this.drawStrokeInto(ctx, layer, layer.px, p.erase ? "destination-out" : (layer.alphaLock ? "source-atop" : "source-over"), vp, [dx0, dy0, dx1, dy1]);
             }
-            if (layer.maskPx) {
+            if (this.liveMask(layer)) {
                 ctx.globalAlpha = 1;
                 ctx.globalCompositeOperation = "destination-in";
                 if (p && p.kind === "maskpaint") {
@@ -5946,7 +5957,7 @@ class InpaintEditor {
             toPass(x);
             this.drawPixelsInto(x, layer, layer.px, vp);
             if (p && p.kind === "layerpaint") this.drawStrokeInto(x, layer, layer.px, p.erase ? "destination-out" : (layer.alphaLock ? "source-atop" : "source-over"), vp, [0, 0, W, H]);
-            if (layer.maskPx) {
+            if (this.liveMask(layer)) {
                 let m = null;
                 if (p && p.kind === "maskpaint") {
                     m = this.passScratch("_passMaskView", W, H);
@@ -7071,14 +7082,14 @@ class InpaintEditor {
         if (step.kind === "transform") return { kind: "transform", id: layer.id, x: layer.x, y: layer.y, w: layer.w, h: layer.h };
         if (step.kind === "mask") {
             const m = layer.maskPx;
-            return { kind: "mask", id: layer.id, ...(!m ? { url: null } : tiles ? { maskPx: m.clone() } : { url: this.snapUrl(m.toCanvas()) }), mw: m ? m.width : 0, mh: m ? m.height : 0 };
+            return { kind: "mask", id: layer.id, ...(!m ? { url: null } : tiles ? { maskPx: m.clone() } : { url: this.snapUrl(m.toCanvas()) }), mw: m ? m.width : 0, mh: m ? m.height : 0, maskOff: !!layer.maskOff };
         }
         if (step.kind === "match") return { kind: "match", id: layer.id, match: { ...(layer.match || { strength: 0, source: "surroundings" }) } };
         if (step.kind === "filter") return { kind: "filter", id: layer.id, filter: layer.filter, params: { ...(layer.params || {}) }, lut: layer.lut ? { ...layer.lut } : null, lutData: layer._lutData || null, plate: layer.plate ? { ...layer.plate } : null, plateImg: layer._plateImg || null, name: layer.name };
         if (step.kind === "text") return { kind: "text", id: layer.id, text: JSON.parse(JSON.stringify(layer.text || TEXT_DEFAULTS)), ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
             behind: !!layer._textRendering };
         if (step.kind === "layerfull") return { kind: "layerfull", id: layer.id, ...pixelsOf(layer.px), cw: layer.px.width, ch: layer.px.height, x: layer.x, y: layer.y, w: layer.w, h: layer.h,
-            ...maskOf(layer.maskPx), mw: layer.maskPx ? layer.maskPx.width : 0, mh: layer.maskPx ? layer.maskPx.height : 0 };
+            ...maskOf(layer.maskPx), mw: layer.maskPx ? layer.maskPx.width : 0, mh: layer.maskPx ? layer.maskPx.height : 0, maskOff: !!layer.maskOff };
         return null;
     }
 
@@ -7402,6 +7413,7 @@ class InpaintEditor {
             } else if (snap.kind === "mask") {
                 layer.maskPx = snap.maskPx || (snap.url ? this.pixels.Mask.fromImage(needImage(images.url), snap.mw, snap.mh) : null);
                 snap.maskPx = null;   // the document's now, not the step's to release (C4)
+                layer.maskOff = !!(snap.maskOff && layer.maskPx);
                 if (!layer.maskPx) layer.maskEdit = false;
                 this.markMaskChanged(layer);
                 this.renderLayers();
@@ -7433,6 +7445,7 @@ class InpaintEditor {
                 Object.assign(layer, { x: snap.x, y: snap.y, w: snap.w, h: snap.h });
                 layer.maskPx = snap.maskPx || (snap.mask ? this.pixels.Mask.fromImage(needImage(images.mask), snap.mw, snap.mh) : null);
                 snap.px = null; snap.maskPx = null;   // the document's now (C4)
+                layer.maskOff = !!(snap.maskOff && layer.maskPx);
                 if (!layer.maskPx) layer.maskEdit = false;
                 layer.maskDirty = !!layer.maskPx;
                 layer._maskedValid = false;
@@ -7870,7 +7883,7 @@ class InpaintEditor {
         if (chain && preview) chain = this.flushFilterChain(ctx, chain);   // the preview downscales on a canvas
         // A filter layer that covers its input one to one can leave its result on the GPU; a
         // mask, an opacity or a blend mode has to composite it onto the canvas.
-        const plain = !layer.maskPx && layer.opacity >= 1 && (!layer.blend || layer.blend === "normal") && !preview;
+        const plain = !this.liveMask(layer) && layer.opacity >= 1 && (!layer.blend || layer.blend === "normal") && !preview;
         const keepSurface = plain && more && !this.filterChainOff && glChainUsable(ctx.canvas.width, ctx.canvas.height);
         const out = this.filteredCanvas(layer, chain ? chain.surface : ctx.canvas, forRun, preview, keepSurface);
         const rx = vp ? vp.x : 0, ry = vp ? vp.y : 0;
@@ -7882,7 +7895,7 @@ class InpaintEditor {
         chain = this.flushFilterChain(ctx, chain);   // the result goes onto the canvas, so the composite has to be there
         if (!out) return null;
         let src = out;
-        if (layer.maskPx) {
+        if (this.liveMask(layer)) {
             if (!this.filterMaskCanvas || this.filterMaskCanvas.width !== out.width || this.filterMaskCanvas.height !== out.height) this.filterMaskCanvas = makeCanvas(out.width, out.height);
             const m = this.filterMaskCanvas;
             const mctx = m.getContext("2d");
@@ -7968,15 +7981,16 @@ class InpaintEditor {
         return false;
     }
 
-    markMaskChanged(layer, rect) {
+    markMaskChanged(layer, rect, { pixels = true } = {}) {
         this.scheduleAutosave();
-        layer.maskDirty = !!layer.maskPx;
+        if (pixels) layer.maskDirty = !!layer.maskPx;
         if (!layer.maskPx) layer.maskRef = null;
         layer._maskedValid = false;
         layer._mcache = null;
         layer._mcacheView = null; layer._mcacheSample = null;
         // `rect` (in the mask's own pixels) keeps the cached levels and refreshes them there
-        if (rect && layer.maskPx) this.touchSourceRect(layer.maskPx, rect[0], rect[1], rect[2], rect[3]);
+        if (!pixels) { /* only the switch: the mask's pixels and their levels stay */ }
+        else if (rect && layer.maskPx) this.touchSourceRect(layer.maskPx, rect[0], rect[1], rect[2], rect[3]);
         else { this.touchSource(layer.maskPx); this.scheduleDetachedRelease(); }   // a new mask, or none (C6 a)
         this.touchSource(layer._masked);
         layer.exportRef = null;
@@ -8066,6 +8080,7 @@ class InpaintEditor {
             const m = this.pixels.Mask.fromImageData(out);
             this.pushUndo({ kind: "mask", id: layer.id, label: "Remove background" });
             layer.maskPx = m;
+            layer.maskOff = false;
             layer.maskEdit = false;
             this.markMaskChanged(layer);
             this.renderLayers();
@@ -8111,6 +8126,7 @@ class InpaintEditor {
             if (part) { part.width = 1; part.height = 1; }
         }
         layer.maskPx = m;
+        layer.maskOff = false;
         layer.maskEdit = false;
         this.markMaskChanged(layer);
         this.renderLayers();
@@ -8122,6 +8138,7 @@ class InpaintEditor {
     applyMask(layer, { silent = false, undo = true } = {}) {
         if (!layer || !layer.maskPx) return;
         if (undo) this.pushUndo({ kind: "layerfull", id: layer.id, label: "Apply mask" });
+        if (layer.maskOff) { layer.maskOff = false; layer._maskedValid = false; }   // applying bakes the mask in, switched off or not
         const masked = this.layerPixels(layer);
         // new pixels, not a write into the old ones: the layerfull undo step and a running
         // encode of it may still read the old object
@@ -8129,6 +8146,7 @@ class InpaintEditor {
         out.getContext("2d").drawImage(masked, 0, 0);
         layer.px = this.pixels.Layer.fromCanvas(out);
         layer.maskPx = null;
+        layer.maskOff = false;
         layer.maskRef = null;
         layer.maskDirty = false;
         layer.maskEdit = false;
@@ -8136,10 +8154,27 @@ class InpaintEditor {
         if (!silent) { this.renderLayers(); this.draw(); this.setStatus(`${layer.name}: mask applied to the pixels.`); }
     }
 
+    /**
+     * Switch a layer's mask off or on (`off` left out: the other way), PSD's "disabled" mask: it stays with the layer,
+     * moves and saves with it, and the layer is drawn as if it had none. One undo step. False when nothing changed.
+     */
+    setMaskOff(layer, off = !(layer && layer.maskOff)) {
+        if (!layer || !layer.maskPx || !!layer.maskOff === !!off) return false;
+        this.pushUndo({ kind: "layers", label: off ? "Switch mask off" : "Switch mask on" });
+        layer.maskOff = !!off;
+        if (off) layer.maskEdit = false;
+        this.markMaskChanged(layer, null, { pixels: false });
+        this.renderLayers();
+        this.draw();
+        this.setStatus(off ? `${layer.name}: mask switched off. It stays with the layer; Shift+click the mask switch to turn it on.` : `${layer.name}: mask switched on.`);
+        return true;
+    }
+
     removeMask(layer) {
         if (!layer || !layer.maskPx) return;
         this.pushUndo({ kind: "mask", id: layer.id, label: "Remove mask" });
         layer.maskPx = null;
+        layer.maskOff = false;
         layer.maskEdit = false;
         this.markMaskChanged(layer);
         this.renderLayers();
@@ -8149,6 +8184,7 @@ class InpaintEditor {
 
     toggleMaskEdit(layer) {
         if (!layer || !layer.maskPx) return;
+        if (!layer.maskEdit && layer.maskOff) this.setMaskOff(layer, false);
         layer.maskEdit = !layer.maskEdit;
         for (const l of this.layers) if (l !== layer) l.maskEdit = false;
         this.activeLayerId = layer.id;
@@ -8181,7 +8217,7 @@ class InpaintEditor {
                 if (layered) {
                     // a PSD / ORA dropped on a document: every layer of it, where the file has it, the bottom one included
                     const doc = await this.readLayered(file, layered);
-                    for (const L of doc.layers) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true }, { activate: false });
+                    for (const L of doc.layers) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx }, { activate: false });
                     if (last) this.activeLayerId = last.id;
                     this.setStatus(`${doc.layers.length} layer${doc.layers.length === 1 ? "" : "s"} of ${file.name || "the file"} added.${doc.notes.length ? " " + doc.notes.join("; ") + "." : ""}`);
                     layeredFiles++;
@@ -8275,10 +8311,10 @@ class InpaintEditor {
         ctx.save();
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "medium";
-        if (isTilePixels(px) && (!live || !layer.maskPx || isTilePixels(layer.maskPx))) {
+        if (isTilePixels(px) && (!live || !this.liveMask(layer) || isTilePixels(layer.maskPx))) {
             // display (C6 b): a tile whose mips are in the worker shows what it had, and the row is drawn again when they land
             ctx.drawImage(px.thumbnailCanvas(true), x, y, w, h);
-            if (layer.maskPx) {
+            if (this.liveMask(layer)) {
                 // destination-in applies to the whole canvas: the thumbnail holds nothing else
                 ctx.globalCompositeOperation = "destination-in";
                 ctx.drawImage(layer.maskPx.thumbnailCanvas(true), x, y, w, h);
@@ -8475,7 +8511,7 @@ class InpaintEditor {
         ctx.imageSmoothingQuality = "low";
         below.px = this.pixels.Layer.fromCanvas(c);   // replaced, not written: the "layers" undo step holds the old pixels
         below.x = x0; below.y = y0; below.w = w; below.h = h;
-        below.maskPx = null; below.maskRef = null; below.maskDirty = false; below.maskEdit = false;
+        below.maskPx = null; below.maskOff = false; below.maskRef = null; below.maskDirty = false; below.maskEdit = false;
         if (below.kind === "text") { below.kind = "paint"; delete below.text; }
         below.match = { strength: 0, source: "surroundings" };
         this.layers = this.layers.filter((l) => l !== layer);
@@ -8497,7 +8533,7 @@ class InpaintEditor {
             const sx = Math.min(px.width - 1, Math.max(0, Math.floor((ix - l.x) * px.width / l.w)));
             const sy = Math.min(px.height - 1, Math.max(0, Math.floor((iy - l.y) * px.height / l.h)));
             let a = px.readRect(sx, sy, 1, 1).data[3];
-            if (a && l.maskPx) {
+            if (a && this.liveMask(l)) {
                 const m = l.maskPx;
                 a = a * m.readRect(Math.min(m.width - 1, Math.floor(sx * m.width / px.width)), Math.min(m.height - 1, Math.floor(sy * m.height / px.height)), 1, 1).data[3] / 255;
             }
@@ -8722,8 +8758,11 @@ class InpaintEditor {
     /**
      * The layers as PSD / ORA see them: pixels at image resolution, bottom first, the base as
      * "Background". The descriptors are not layers: each holds its own export copy as `canvas`.
+     * PSD (docs/PLAN_0_1_31.md 3e): a layer's pixels as they are and its mask as `mask: { canvas, disabled }` (the mask's
+     * alpha, at the layer's export size), switched off or not; ORA has no masks, so its layers bake the live one.
      */
-    exportLayerStack() {
+    exportLayerStack(fmt = "psd") {
+        const psd = fmt === "psd";
         const layers = [];
         const bg = makeCanvas(this.width, this.height);
         this.basePx.drawTo(bg.getContext("2d"), 0, 0);   // unscaled (PLAN_BCE §C1 rule 6)
@@ -8736,9 +8775,20 @@ class InpaintEditor {
             const ctx = c.getContext("2d");
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = "high";
-            ctx.drawImage(this.layerPixels(l), 0, 0, w, h);
+            const keepMask = psd && !!l.maskPx;
+            ctx.drawImage(keepMask ? this.layerWithStroke(l) : this.layerPixels(l), 0, 0, w, h);
+            let mask = null;
+            if (keepMask) {
+                // the mask at the pixels' export size, the same resampling as the pixels
+                const mc = makeCanvas(w, h);
+                const mctx = mc.getContext("2d");
+                mctx.imageSmoothingEnabled = true;
+                mctx.imageSmoothingQuality = "high";
+                l.maskPx.drawTo(mctx, 0, 0, w, h);
+                mask = { canvas: mc, disabled: !!l.maskOff };
+            }
             const aside = this.isControl(l) || this.isReference(l);
-            layers.push({ name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), canvas: c, opacity: l.opacity ?? 1, visible: l.visible !== false && !aside, blend: l.blend || "normal" });
+            layers.push({ name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), canvas: c, opacity: l.opacity ?? 1, visible: l.visible !== false && !aside, blend: l.blend || "normal", ...(mask ? { mask } : {}) });
         }
         return { layers, skipped };
     }
@@ -8748,8 +8798,11 @@ class InpaintEditor {
      * `open()` gives `{ source, close() }`. A layer on tiles, at its own size and without a mask, is read from its tiles
      * (a copy-on-write clone taken now, released through `held`); any other is drawn into a canvas of its size when it
      * is opened, as `exportLayerStack` does for all of them at once, so only one such canvas exists at a time.
+     * PSD: a masked layer's pixels as they are (from its tiles when it can) and its mask as `openMask()`, with
+     * `meta.mask = { disabled }`; ORA bakes the live mask as before.
      */
-    exportLayerSources(held) {
+    exportLayerSources(held, fmt = "psd") {
+        const psd = fmt === "psd";
         const byName = arenaEnabled();
         const fromTiles = (px) => { const snap = px.clone(); held.push(snap); return () => ({ source: tileRows(snap, byName), close() {} }); };
         const fromCanvas = (draw, w, h) => () => {
@@ -8768,10 +8821,16 @@ class InpaintEditor {
             if (l.kind === "filter" || !l.px) { skipped++; continue; }
             const w = Math.max(1, Math.round(l.w)), h = Math.max(1, Math.round(l.h));
             const aside = this.isControl(l) || this.isReference(l);
-            const plain = isTilePixels(l.px) && !l.maskPx && l.px.width === w && l.px.height === h && !this.liveStrokeOn(l) && !(this.pending && this.pending.layer === l);
+            const mask = psd ? l.maskPx : null;   // kept as a mask, switched off or not
+            const still = !this.liveStrokeOn(l) && !(this.pending && this.pending.layer === l);
+            // raw pixels from the tiles: an unmasked layer, or one whose mask goes along as a mask
+            const plain = isTilePixels(l.px) && (mask || !this.liveMask(l)) && l.px.width === w && l.px.height === h && still;
+            const smooth = (ctx) => { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; };
             out.push({
-                meta: { name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), opacity: l.opacity ?? 1, visible: l.visible !== false && !aside, blend: l.blend || "normal" },
-                open: plain ? fromTiles(l.px) : fromCanvas((ctx) => { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; ctx.drawImage(this.layerPixels(l), 0, 0, w, h); }, w, h),
+                meta: { name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), opacity: l.opacity ?? 1, visible: l.visible !== false && !aside, blend: l.blend || "normal", ...(mask ? { mask: { disabled: !!l.maskOff } } : {}) },
+                open: plain ? fromTiles(l.px) : fromCanvas((ctx) => { smooth(ctx); ctx.drawImage(mask ? this.layerWithStroke(l) : this.layerPixels(l), 0, 0, w, h); }, w, h),
+                // the mask at the pixels' size: its own tiles when it has that size already, else drawn to it
+                ...(mask ? { openMask: isTilePixels(mask) && mask.width === w && mask.height === h && still ? fromTiles(mask) : fromCanvas((ctx) => { smooth(ctx); mask.drawTo(ctx, 0, 0, w, h); }, w, h) } : {}),
             });
         }
         return { stack: out, skipped };
@@ -8792,7 +8851,7 @@ class InpaintEditor {
         try {
             const opts = { width: W, height: H, run: partsRun(group), flights: partsFlights(), pause: bandPause };
             const writer = fmt === "psd" ? new PsdBandWriter(opts) : new OraBandWriter(opts);
-            const { stack, skipped } = this.exportLayerSources(held);
+            const { stack, skipped } = this.exportLayerSources(held, fmt);
             // B item 1: the merged picture of a plain stack is composited by the workers, from clones taken now with the layers'
             const stackOf = await this.stackSource({ forRun: true });
             if (stackOf) held.push({ release: () => stackOf.release() });
@@ -8801,7 +8860,8 @@ class InpaintEditor {
             const report = (f) => { if (progress) progress((done + f) / steps); };
             for (const L of stack) {
                 const o = L.open();
-                try { await writer.layer(L.meta, o.source, report); } finally { o.close(); }
+                const m = L.openMask ? L.openMask() : null;
+                try { await writer.layer(L.meta, o.source, report, m ? m.source : null); } finally { o.close(); if (m) m.close(); }
                 done++;
             }
             const plan = stackOf ? null : this.bandPlan({ forRun: true });
@@ -8951,7 +9011,7 @@ class InpaintEditor {
             if (blob) { /* written in bands */ }
             else if (fmt === "psd" || fmt === "ora") {
                 const t0 = performance.now();
-                const { layers, skipped } = this.exportLayerStack();
+                const { layers, skipped } = this.exportLayerStack(fmt);
                 blob = await buildLayered(fmt, { width: this.width, height: this.height, layers, composite: canvas });
                 note = `, ${layers.length} layers${skipped ? `, ${skipped} filter layer${skipped > 1 ? "s" : ""} only in the merged image` : ""}, ${Math.round(performance.now() - t0)} ms`;
             } else {
@@ -9386,6 +9446,14 @@ class InpaintEditor {
         this.checkBaseSize(doc.width, doc.height);
         if (doc.width * doc.height > CANVAS_MAX_PIXELS) throw new Error(`${doc.width} × ${doc.height} px is larger than a layered file can be opened at (268 MP); save it as PNG`);
         for (const L of doc.layers) {
+            // a PSD mask (docs/PLAN_0_1_31.md 3e): one value per pixel of the layer, as the mask's alpha
+            if (L.mask && L.mask.data) {
+                const m = new ImageData(L.w, L.h), d = m.data, v = L.mask.data;
+                for (let i = 0, o = 0; i < v.length; i++, o += 4) { d[o] = 255; d[o + 1] = 255; d[o + 2] = 255; d[o + 3] = v[i]; }
+                L.maskPx = this.pixels.Mask.fromImageData(m);
+                L.maskOff = !!L.mask.disabled;
+            }
+            L.mask = null;
             if (L.rgba) { L.px = this.pixels.Layer.fromImageData(new ImageData(L.rgba, L.w, L.h)); L.rgba = null; continue; }
             const bmp = await createImageBitmap(new Blob([L.png], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
             L.w = bmp.width; L.h = bmp.height;
@@ -9408,7 +9476,7 @@ class InpaintEditor {
         const layers = doc.layers.slice();
         let basePx = null;
         const b = layers[0];
-        if (b && b.x === 0 && b.y === 0 && b.w === W && b.h === H && b.visible && b.opacity >= 0.999 && b.blend === "normal") { basePx = b.px; layers.shift(); }
+        if (b && b.x === 0 && b.y === 0 && b.w === W && b.h === H && b.visible && b.opacity >= 0.999 && b.blend === "normal" && !b.maskPx) { basePx = b.px; layers.shift(); }
         else if (!layers.length && doc.composite) basePx = this.pixels.Layer.fromImageData(new ImageData(doc.composite, W, H));
         else basePx = this.pixels.Layer.empty(W, H);
         const stem = (file.name || "layered").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "layered";
@@ -9417,7 +9485,7 @@ class InpaintEditor {
         if (later()) return;
         await this.setBasePixels(ref, basePx, { keepLayers: false });
         let top = null;
-        for (const L of layers) top = this.addLayer({ name: L.name, kind: "image", ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true }, { activate: false });
+        for (const L of layers) top = this.addLayer({ name: L.name, kind: "image", ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx }, { activate: false });
         if (top) this.activeLayerId = top.id;
         this.renderLayers();
         this.draw();
@@ -9481,7 +9549,8 @@ class InpaintEditor {
         if (!layer.blend) layer.blend = "normal";
         if (!layer.role) layer.role = "none";
         if (layer.maskPx === undefined) layer.maskPx = null;
-        if (!layer.maskPx) { layer.maskRef = null; layer.maskDirty = false; layer.maskEdit = false; }
+        if (!layer.maskPx) { layer.maskRef = null; layer.maskDirty = false; layer.maskEdit = false; layer.maskOff = false; }
+        else layer.maskOff = !!layer.maskOff;
         if (!layer.match) layer.match = { strength: 0, source: "surroundings" };
         this.historyGen++;   // no undo step, but a waiting restore of the layer list must not drop it
         this.layers.push(layer);
@@ -9767,7 +9836,15 @@ class InpaintEditor {
         }
         maskRow.appendChild(miniButton("mask", "Mask from selection: only the selected part of the layer stays visible", () => this.maskFromSelection(layer)));
         maskRow.appendChild(el("span", "ipc-grow"));
-        maskRow.appendChild(el("span", null, layer.maskPx ? (layer.maskEdit ? "mask ✎" : "mask") : "no mask"));
+        const maskLabel = el("span", layer.maskOff ? "ipc-mask-off" : null, layer.maskPx ? (layer.maskOff ? "mask off" : layer.maskEdit ? "mask ✎" : "mask") : "no mask");
+        if (layer.maskPx) {
+            maskLabel.title = "Shift+click switches the mask off and on (it stays with the layer)";
+            maskLabel.addEventListener("click", (e) => { if (!e.shiftKey) return; e.preventDefault(); e.stopPropagation(); this.setMaskOff(layer); });
+        }
+        maskRow.appendChild(maskLabel);
+        const offBtn = miniButton(layer.maskOff ? "eyeOff" : "eye", layer.maskOff ? "The mask is switched off: switch it on" : "Switch the mask off (it stays with the layer; Shift+click on the label does the same)", () => this.setMaskOff(layer), layer.maskOff ? "ipc-on" : "");
+        offBtn.disabled = !layer.maskPx;
+        maskRow.appendChild(offBtn);
         const editBtn = miniButton("maskEdit", "Edit the mask with the paint (reveal) and erase (hide) tools", () => this.toggleMaskEdit(layer), layer.maskEdit ? "ipc-on" : "");
         editBtn.disabled = !layer.maskPx;
         maskRow.appendChild(editBtn);
@@ -10507,7 +10584,7 @@ class InpaintEditor {
                 // layer's own tiles are drawn for it too. Only a colour match, a live stroke or a mask
                 // of another size still needs layerPixels to prepare a canvas.
                 const tileMask = matched ? null : this.tileMaskOf(layer);
-                const px = matched || (layer.maskPx && !tileMask ? this.layerPixels(layer, true) : layer.px);
+                const px = matched || (this.liveMask(layer) && !tileMask ? this.layerPixels(layer, true) : layer.px);
                 if (!px || px._livePreview) return null;
                 layers.push(this.glLayerSpec(px, layer.x, layer.y, layer.w, layer.h, opacity, blend, sx, tileMask));
             }
@@ -10672,7 +10749,7 @@ class InpaintEditor {
         // C3: a plain tile-backed layer in a region pass draws the part of itself the view shows, at
         // the view's level, straight from its tiles. A mask, a colour match or a live stroke has
         // prepared a canvas, and the canvas backend keeps the display pyramid.
-        if (vp && !matched && !painting && !layer.maskPx && isTilePixels(layer.px)) {
+        if (vp && !matched && !painting && !this.liveMask(layer) && isTilePixels(layer.px)) {
             this.drawTilesInto(ctx, layer.px, layer.x, layer.y, layer.w, layer.h, vp);
             return;
         }
@@ -10682,7 +10759,7 @@ class InpaintEditor {
         // layer's display mirror. C6 (c2): the screen keeps its scratch for a live stroke (layerRegionView:
         // a dab redraws only its box); every other pass, and a masked layer without a stroke, composes the
         // layer into a scratch of the pass target's size (drawLayerPass), whatever the pass's size.
-        if (vp && !matched && (this.liveStrokeOn(layer) || (layer.maskPx && this.tileMaskOf(layer)))) {
+        if (vp && !matched && (this.liveStrokeOn(layer) || (this.liveMask(layer) && this.tileMaskOf(layer)))) {
             if (!(vp.screen && this.liveStrokeOn(layer))) { this.drawLayerPass(ctx, layer, vp); return; }
             const live = this.layerRegionView(layer, vp);
             if (live) { ctx.drawImage(live, vp.x, vp.y, vp.w, vp.h); return; }
@@ -10693,7 +10770,7 @@ class InpaintEditor {
             const e = this.matchedRegionView(layer, vp, ctx.canvas);
             if (!e) return;
             if (!e.plain) ctx.drawImage(e.canvas, 0, 0, e.sw, e.sh, e.x, e.y, e.w, e.h);
-            else if (layer.maskPx) this.drawLayerPass(ctx, layer, vp);
+            else if (this.liveMask(layer)) this.drawLayerPass(ctx, layer, vp);
             else this.drawTilesInto(ctx, layer.px, layer.x, layer.y, layer.w, layer.h, vp);
             return;
         }
@@ -10749,7 +10826,7 @@ class InpaintEditor {
 
     /** A colour-matched layer whose region passes read its tiles (C6 c 7b): its pixels on tiles, its mask on the same grid. */
     matchFromTiles(layer) {
-        return !!layer.px && isTilePixels(layer.px) && (!layer.maskPx || !!this.tileMaskOf(layer));
+        return !!layer.px && isTilePixels(layer.px) && (!this.liveMask(layer) || !!this.tileMaskOf(layer));
     }
 
     /**
@@ -10774,7 +10851,7 @@ class InpaintEditor {
         // first: a statistics miss may run a pass of its own, which takes region canvases and scratches the view reads below
         const st = this.matchStats(layer, below, vp, null);
         if (!st || !(strength > 0)) return { plain: true };
-        const px = layer.px, mask = layer.maskPx || null;
+        const px = layer.px, mask = this.liveMask(layer) || null;
         const fx = layer.w / px.width, fy = layer.h / px.height;
         const level = this.tileLevel(fx * vp.sx);
         const display = !!(vp.screen || vp.display);
@@ -10987,7 +11064,7 @@ class InpaintEditor {
         if (this.matchFromTiles(layer)) {
             const vp = { x: box[0], y: box[1], w: box[2] - box[0], h: box[3] - box[1], sx: fx, sy: fy, display };
             this.drawPixelsInto(lctx, layer, layer.px, vp);
-            if (layer.maskPx) {
+            if (this.liveMask(layer)) {
                 lctx.globalCompositeOperation = "destination-in";
                 this.drawPixelsInto(lctx, layer, layer.maskPx, vp);
                 lctx.globalCompositeOperation = "source-over";
@@ -11529,7 +11606,7 @@ class InpaintEditor {
         for (const l of this.layers) {
             parts.push(l.id, l.visible ? 1 : 0, l.opacity, l.blend, l.role, l.x, l.y, l.w, l.h,
                 l.kind === "filter" ? l.filter + JSON.stringify(l.params || {}) : "",
-                l.match ? `${l.match.strength}:${l.match.source}` : "", l.maskPx ? 1 : 0, l.maskEdit ? 1 : 0);
+                l.match ? `${l.match.strength}:${l.match.source}` : "", l.maskPx ? (l.maskOff ? 2 : 1) : 0, l.maskEdit ? 1 : 0);
         }
         if (p) parts.push("p", p.kind, p.layer ? p.layer.id : "");
         if (q) parts.push("q", q.mode, q.angle || 0, q.points ? q.points.join(",") : "");
@@ -12208,6 +12285,7 @@ class InpaintEditor {
             layers: this.layers.map((l) => ({
                 id: l.id, name: l.name, kind: l.kind, role: l.role || "none", blend: l.blend || "normal", ref: l.ref,
                 x: l.x, y: l.y, w: l.w, h: l.h, opacity: l.opacity, visible: l.visible, mask: l.maskRef || null,
+                ...(l.maskOff && l.maskPx ? { maskOff: true } : {}),
                 ...(l.match && l.match.strength > 0 ? { match: l.match } : {}),
                 ...(l.locked ? { locked: true } : {}),
                 ...(l.alphaLock ? { alphaLock: true } : {}),
@@ -12303,7 +12381,7 @@ class InpaintEditor {
                         this.layers.push(installLayerAliases({
                             id: l.id, name: l.name, kind: "filter", role: "none", blend: l.blend || "normal", ref: null, px: pixels,
                             x: 0, y: 0, w: this.width, h: this.height, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked,
-                            maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false,
+                            maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
                             filter: fid, params: FILTERS[fid] ? { ...filterDefaults(fid), ...(l.params || {}) } : { ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,
                             plate: plateImg ? l.plate : null, _plateImg: plateImg,
                         }, this.pixels));
@@ -12340,7 +12418,7 @@ class InpaintEditor {
                         id: l.id, name: l.name, kind: l.kind || "result", role: l.role || "none", blend: l.blend || "normal",
                         ref: l.ref, px: pixels,
                         x: l.x, y: l.y, w: l.w, h: l.h, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, alphaLock: !!l.alphaLock,
-                        maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false,
+                        maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
                         match: l.match && typeof l.match === "object" ? { strength: +l.match.strength || 0, source: l.match.source === "underneath" ? "underneath" : "surroundings" } : { strength: 0, source: "surroundings" },
                         ...(l.kind === "text" && l.text ? { text: { ...TEXT_DEFAULTS, ...l.text } } : {}),
                     }, this.pixels));

@@ -691,10 +691,13 @@ const parsePsd = (b) => {
         for (let c = 0; c < nch; c++) { channels.push([(u16(b, o) << 16) >> 16, u32(b, o + 2)]); o += 6; }
         const blend = String.fromCharCode(b[o + 4], b[o + 5], b[o + 6], b[o + 7]), opacity = b[o + 8], flags = b[o + 10]; o += 12;
         const extra = u32(b, o); o += 4;
-        const nameLen = b[o + 8];
-        const name = String.fromCharCode(...b.subarray(o + 9, o + 9 + nameLen));
+        // the layer mask record (3e: 20 bytes with a mask, else none), the blending ranges, then the name
+        const ml = u32(b, o), mask = ml >= 20 ? { rect: [i32(b, o + 8), i32(b, o + 4), i32(b, o + 16), i32(b, o + 12)], def: b[o + 20], flags: b[o + 21] } : null;
+        const no = o + 4 + ml + 4 + u32(b, o + 4 + ml);
+        const nameLen = b[no];
+        const name = String.fromCharCode(...b.subarray(no + 1, no + 1 + nameLen));
         o += extra;
-        layers.push({ rect: [left, top, right, bottom], channels, blend, opacity, flags, name });
+        layers.push({ rect: [left, top, right, bottom], channels, blend, opacity, flags, name, mask });
     }
     for (const L of layers) {
         const w = L.rect[2] - L.rect[0], h = L.rect[3] - L.rect[1];
@@ -732,14 +735,15 @@ if (a.W !== b.W || a.H !== b.H || a.layers.length !== b.layers.length) throw new
 out.psd = [];
 a.layers.forEach((L, i) => {
     const M = b.layers[i];
-    for (const k of ["rect", "blend", "opacity", "flags", "name"]) if (JSON.stringify(L[k]) !== JSON.stringify(M[k])) throw new Error(`layer ${i} ${k}: ${JSON.stringify(L[k])} against ${JSON.stringify(M[k])}`);
+    for (const k of ["rect", "blend", "opacity", "flags", "name", "mask"]) if (JSON.stringify(L[k]) !== JSON.stringify(M[k])) throw new Error(`layer ${i} ${k}: ${JSON.stringify(L[k])} against ${JSON.stringify(M[k])}`);
     const row = { name: L.name };
-    for (const id of [-1, 0, 1, 2]) {
+    for (const id of L.mask ? [-1, 0, 1, 2, -2] : [-1, 0, 1, 2]) {
         const [worst, n] = worstOf(L.planes[id], M.planes[id]);
         row[id] = [worst, n];
         // the canvas writers read a GPU canvas, whose first read un-premultiplies a few hundred (value, alpha) pairs one
         // level differently from the tiles' own bytes (inpaint_tiles.js, roundTripTable); alpha itself is exact
-        if (worst > (id === -1 ? 0 : 1)) throw new Error(`layer ${L.name} channel ${id} is ${worst} levels off the canvas writer's on ${n} bytes`);
+        // the mask (-2) is an alpha plane too: exact
+        if (worst > (id === -1 || id === -2 ? 0 : 1)) throw new Error(`layer ${L.name} channel ${id} is ${worst} levels off the canvas writer's on ${n} bytes`);
     }
     out.psd.push(row);
 });
@@ -778,8 +782,17 @@ for (let i = 0; i < srcs.length; i++) {
     const w = L.rect[2] - L.rect[0];
     if (img.width !== w || img.height !== L.rect[3] - L.rect[1]) throw new Error(srcs[i] + " is " + img.width + " x " + img.height);
     let worst = 0;
-    for (let p = 0; p < img.width * img.height; p++) for (const [id, c] of [[0, 0], [1, 1], [2, 2], [-1, 3]]) { const d = Math.abs(img.data[p * 4 + c] - L.planes[id][p]); if (d > worst) worst = d; }
-    out.ora.push([srcs[i], worst]);
+    // 3e: the PSD keeps a mask as a mask, the ORA bakes the one that is on: its alpha is the PSD's times the mask (one
+    // rounding), its colour the PSD's wherever the mask leaves the pixel whole; a switched-off mask bakes nothing
+    const M = L.mask && !(L.mask.flags & 2) ? L.planes[-2] : null;
+    for (let p = 0; p < img.width * img.height; p++) {
+        const a = M ? Math.round(L.planes[-1][p] * M[p] / 255) : L.planes[-1][p];
+        const da = Math.abs(img.data[p * 4 + 3] - a);
+        if (da > (M ? 1 : 0) && da > worst) worst = da;
+        if (M && M[p] !== 255) continue;
+        for (const [id, c] of [[0, 0], [1, 1], [2, 2]]) { const d = Math.abs(img.data[p * 4 + c] - L.planes[id][p]); if (d > worst) worst = d; }
+    }
+    out.ora.push([srcs[i], worst, M ? "masked" : L.mask ? "mask off" : ""]);
     if (worst) throw new Error(srcs[i] + " differs from the PSD's layer " + L.name + " by " + worst);
 }
 const merged = await decode(new Blob([files["mergedimage.png"]]));
@@ -1108,6 +1121,23 @@ if (W * H <= 268435456) {
     const e = await timed(async () => { const cv = ed.layers[0].px.toCanvas(); const r = await E.parts.encodeCanvas(cv, { hash: true }); cv.width = 1; cv.height = 1; return r; });
     out.layer_canvas = { ms: e.ms, blocked: e.blocked, MB: +(e.r.blob.size / 1048576).toFixed(1) };
 }
+// 3e (docs/PLAN_0_1_31.md): the PSD from the tiles, then with a full-size mask on one layer (one channel more, packed
+// from the mask's own tiles)
+const ps = await timed(() => ed.exportLayeredBands("psd"));
+out.psd = { ms: ps.ms, blocked: ps.blocked, MB: ps.r ? +(ps.r.blob.size / 1048576).toFixed(1) : null };
+{
+    const c = mk(W, H), x = c.getContext("2d");
+    const g = x.createRadialGradient(W / 2, H / 2, H / 8, W / 2, H / 2, H / 1.6);
+    g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    const l = ed.layers[0];
+    l.maskPx = ed.pixels.Mask.fromCanvas(c);
+    ed.markMaskChanged(l);
+    c.width = 1; c.height = 1;
+    await ed.mipsSettled();
+}
+const pm = await timed(() => ed.exportLayeredBands("psd"));
+out.psd_masked = { ms: pm.ms, blocked: pm.blocked, MB: pm.r ? +(pm.r.blob.size / 1048576).toFixed(1) : null };
 out.pool = E.parts.pool().stats();
 await run("close_document", { doc: d.id, force: true });
 return out;

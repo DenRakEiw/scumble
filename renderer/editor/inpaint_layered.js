@@ -5,8 +5,11 @@
  * `readPsd(bytes, { inflate })` answers `{ width, height, layers, composite, notes }`: the layers bottom first, each
  * `{ name, x, y, w, h, opacity, visible, blend, rgba }` with straight (not premultiplied) RGBA bytes of w x h;
  * `composite` the file's merged picture as RGBA (null when it has none); `notes` what could not be kept, in words.
- * What a PSD holds and the editor has no place for is turned into what it looks like, where that is cheap and
- * exact enough: a layer mask is multiplied into the layer's alpha, a group's visibility and opacity into its layers'
+ * A layer with a user mask (channel -2, else -3) also has `mask: { data, defaultColor, disabled }`: `data` w x h bytes
+ * at the layer's own size (255 = visible; the mask's own rectangle placed in it, its default colour around it),
+ * `disabled` its switched-off flag; the pixels stay as they are (docs/PLAN_0_1_31.md 3e). A layer without one has
+ * no `mask`. What a PSD holds and the editor has no place for is turned into what it looks like, where that is cheap
+ * and exact enough: a group's visibility and opacity go into its layers'
  * (exact for a group in pass-through or normal mode), 16-bit samples are rounded to 8. What has no pixels of its own
  * is left out and named: adjustment and fill layers, empty layers. Clipping masks and blend modes the editor lacks
  * are named too (the layer stays, clipped to nothing and in normal mode). RGB and grayscale, 8 and 16 bit; PSB,
@@ -180,17 +183,54 @@ function interleave(ch, w, h, gray) {
     return out;
 }
 
-/** Multiply a layer mask (its own rectangle, `def` outside it) into the layer's alpha. */
-function applyMask(rgba, lx, ly, w, h, m) {
-    for (let y = 0; y < h; y++) {
-        const my = ly + y - m.top;
-        for (let x = 0; x < w; x++) {
-            const mx = lx + x - m.left;
-            const v = mx >= 0 && my >= 0 && mx < m.w && my < m.h ? m.data[my * m.w + mx] : m.def;
-            const o = (y * w + x) * 4 + 3;
-            rgba[o] = Math.round(rgba[o] * v / 255);
+/** A mask channel whose rectangle is empty: the mask is its default colour everywhere. */
+const EMPTY = new Uint8Array(0);
+
+/**
+ * A layer's mask record (at least 20 bytes, `r` at its start, `end` its end): the rectangle, default colour and flags
+ * of the user mask (flag bit 1: switched off). The mask parameters (flag bit 4: densities and feathers) are skipped; a
+ * record of 36 bytes or more then holds the "real" flags, default colour and rectangle, which channel -3 (the user
+ * mask Photoshop writes beside a vector mask) is read at.
+ */
+function maskRecord(r, end) {
+    const m = { top: r.i32(), left: r.i32(), bottom: r.i32(), right: r.i32(), def: r.u8(), flags: r.u8() };
+    if (m.flags & 16 && r.p < end) {
+        const params = r.u8();
+        r.p = Math.min(end, r.p + (params & 1 ? 1 : 0) + (params & 2 ? 8 : 0) + (params & 4 ? 1 : 0) + (params & 8 ? 8 : 0));
+    }
+    if (end - r.p >= 18) m.real = { flags: r.u8(), def: r.u8(), top: r.i32(), left: r.i32(), bottom: r.i32(), right: r.i32() };
+    return m;
+}
+
+/** The rectangle, default colour and flags a mask channel (-2 or -3) goes with, or null when the layer has no record. */
+function maskFor(L, id) {
+    if (!L.mask) return null;
+    return id === -3 && L.mask.real ? L.mask.real : L.mask;
+}
+
+/**
+ * A layer's user mask at the layer's own size (channel -2, else -3), or null: `{ data, defaultColor, disabled }`, `data`
+ * w * h bytes (255 = visible) holding the mask where its rectangle covers a pixel of the layer and the default colour
+ * where it does not.
+ */
+function layerMask(L, w, h) {
+    const id = L.ch[-2] ? -2 : L.ch[-3] ? -3 : 0;
+    if (!id) return null;
+    const m = maskFor(L, id), src = L.ch[id];
+    const data = new Uint8Array(w * h).fill(m.def);
+    if (src !== EMPTY) {
+        const mw = m.right - m.left;
+        // the columns and rows of the layer that the mask's rectangle covers
+        const x0 = Math.max(0, m.left - L.left), x1 = Math.min(w, m.right - L.left);
+        const y0 = Math.max(0, m.top - L.top), y1 = Math.min(h, m.bottom - L.top);
+        if (x1 > x0) {
+            for (let y = y0; y < y1; y++) {
+                const s = (L.top + y - m.top) * mw + (L.left + x0 - m.left);
+                data.set(src.subarray(s, s + x1 - x0), y * w + x0);
+            }
         }
     }
+    return { data, defaultColor: m.def, disabled: !!(m.flags & 2) };
 }
 
 function listNames(names, max = 6) {
@@ -235,10 +275,7 @@ export async function readPsd(input, { inflate = null } = {}) {
                 const extraEnd = r.p + extraLen;
                 const maskLen = r.u32();
                 const maskEnd = r.p + maskLen;
-                if (maskLen >= 20) {
-                    const m = { top: r.i32(), left: r.i32(), bottom: r.i32(), right: r.i32(), def: r.u8(), flags: r.u8() };
-                    L.mask = m;
-                }
+                if (maskLen >= 20) L.mask = maskRecord(r, maskEnd);
                 r.p = maskEnd;
                 r.skip(r.u32());   // blending ranges
                 L.name = pascalName(r, 4);
@@ -254,13 +291,13 @@ export async function readPsd(input, { inflate = null } = {}) {
                 L.ch = {};
                 for (const c of L.channels) {
                     const end = r.p + c.len;
+                    const isMask = c.id === -2 || c.id === -3;
+                    const m = isMask ? maskFor(L, c.id) : null;
+                    if (isMask && !m) { r.p = end; continue; }   // a mask channel without its record
+                    const cw = m ? m.right - m.left : w, chh = m ? m.bottom - m.top : h;
+                    if (m && !(cw > 0 && chh > 0)) { L.ch[c.id] = EMPTY; r.p = end; continue; }   // an empty rectangle: the default colour everywhere
                     if (c.len < 2) { r.p = end; continue; }
                     const comp = r.u16();
-                    let cw = w, chh = h;
-                    if (c.id === -2 || c.id === -3) {
-                        if (!L.mask) { r.p = end; continue; }
-                        cw = L.mask.right - L.mask.left; chh = L.mask.bottom - L.mask.top;
-                    }
                     if (cw > 0 && chh > 0) L.ch[c.id] = await readChannel(r, comp, cw, chh, depth, c.len - 2, inflate);
                     r.p = end;
                 }
@@ -299,7 +336,7 @@ export async function readPsd(input, { inflate = null } = {}) {
     const layers = [];
     let open = 0;   // open groups
     const adjust = [], empty = [], clipped = [], blends = [];
-    let masked = 0, grouped = 0;
+    let masks = 0, masksOff = 0, grouped = 0;
     for (const L of records) {
         if (L.section === 3) { open++; continue; }   // a group's bounding divider, below its layers
         if (L.section === 1 || L.section === 2) {
@@ -317,21 +354,21 @@ export async function readPsd(input, { inflate = null } = {}) {
         if (Object.keys(L.info).some((k) => ADJUSTMENTS.has(k))) { adjust.push(L.name); continue; }
         if (!(w > 0 && h > 0) || !L.ch[0]) { if (L.name) empty.push(L.name); continue; }
         const rgba = interleave(L.ch, w, h, gray);
-        const md = L.ch[-2] || L.ch[-3];
-        if (L.mask && md && !(L.mask.flags & 2)) {
-            applyMask(rgba, L.left, L.top, w, h, { top: L.mask.top, left: L.mask.left, w: L.mask.right - L.mask.left, h: L.mask.bottom - L.mask.top, def: L.mask.def, data: md });
-            masked++;
-        }
+        const mask = layerMask(L, w, h);
+        if (mask) { masks++; if (mask.disabled) masksOff++; }
         let blend = PSD_BLENDS[L.blendKey];
         if (!blend) { blends.push(`${L.name} (${L.blendKey.trim()})`); blend = "normal"; }
         if (L.clipping) clipped.push(L.name);
-        layers.push({ name: L.name || "Layer", x: L.left, y: L.top, w, h, opacity: L.opacity, visible: !(L.flags & 2), blend, rgba, _depth: open });
+        const layer = { name: L.name || "Layer", x: L.left, y: L.top, w, h, opacity: L.opacity, visible: !(L.flags & 2), blend, rgba, _depth: open };
+        if (mask) layer.mask = mask;
+        layers.push(layer);
     }
     for (const l of layers) delete l._depth;
     if (adjust.length) notes.push(`${adjust.length} adjustment or fill layer${adjust.length > 1 ? "s" : ""} left out (${listNames(adjust)}): the picture can look different`);
     if (clipped.length) notes.push(`clipping masks are not kept (${listNames(clipped)} now cover${clipped.length > 1 ? "" : "s"} more)`);
     if (blends.length) notes.push(`blend modes the editor lacks became normal: ${listNames(blends)}`);
-    if (masked) notes.push(`${masked} layer mask${masked > 1 ? "s" : ""} applied to ${masked > 1 ? "their layers'" : "its layer's"} transparency`);
+    if (masks === 1) notes.push(`1 layer mask kept as a mask${masksOff ? " (switched off)" : ""}`);
+    else if (masks > 1) notes.push(`${masks} layer masks kept as masks${masksOff ? ` (${masksOff === masks ? "all" : masksOff} switched off)` : ""}`);
     if (grouped) notes.push(`${grouped} group${grouped > 1 ? "s" : ""} flattened into their layers`);
     if (depth === 16) notes.push("16 bits per channel rounded to 8");
     if (empty.length && !layers.length && !composite) notes.push("no layer has pixels");

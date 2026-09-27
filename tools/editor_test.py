@@ -6615,6 +6615,64 @@ return out;
     ("undo_history_snapshot_restores_twice_and_is_undoable", UNDO_HISTORY_SNAPSHOTS),
     ("undo_history_depth_trims_to_its_steps", UNDO_HISTORY_DEPTH),
     ("undo_history_commands_match_the_list", UNDO_HISTORY_COMMANDS),
+    # 3e: a mask switched off (PSD's "disabled") is undone, redone, kept by the steps that hold the mask, and saved
+    ("a_switched_off_mask_is_undone_and_saved", """
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+try {
+    await run("new_canvas", { width: 400, height: 300, doc: d.id });
+    const L = ed.addPaintLayer();
+    const id = L.id;
+    const lay = () => ed.layers.find((l) => l.id === id);   // a "layers" step puts copies back: looked up each time
+    L.px.fill([0, 0, 400, 300], "#2060c0"); ed.markLayerChanged(L);
+    await run("select_rect", { x: 50, y: 50, w: 200, h: 100, doc: d.id });
+    ed.maskFromSelection(L);
+    await run("select_none", { doc: d.id });
+    if (!lay().maskPx || lay().maskOff) throw new Error("the mask from the selection is missing or off");
+    const summary = async () => (await run("list_layers", { doc: d.id })).layers.find((l) => l.id === id);
+    // the switch and its undo step
+    const v0 = ed.compositeVersion;
+    if (!ed.setMaskOff(lay(), true) || !lay().maskOff || ed.liveMask(lay())) throw new Error("setMaskOff(true) did not switch the mask off");
+    // what is drawn changed: every cache keyed on the composite version (filters, colour match above) goes
+    if (ed.compositeVersion === v0) throw new Error("the switch left the composite version where it was");
+    if (!(await summary()).mask_off) throw new Error("list_layers does not say the mask is off");
+    if (ed.setMaskOff(lay(), true)) throw new Error("switching an off mask off again pushed a step");
+    await ed.undoStep();
+    if (lay().maskOff || !lay().maskPx) throw new Error("the undo did not switch the mask on again");
+    await ed.redoStep();
+    if (!lay().maskOff) throw new Error("the redo did not switch it off again");
+    out.labels = ed.undoList().slice(-1).map((r) => r.label);
+    // a step that holds the mask holds its switch: remove and undo, apply and undo
+    ed.removeMask(lay());
+    if (lay().maskPx || lay().maskOff) throw new Error("the removed mask left its switch on");
+    await ed.undoStep();
+    if (!lay().maskPx || !lay().maskOff) throw new Error("the undo of a remove brought the mask back " + (lay().maskPx ? "switched on" : "not at all"));
+    ed.applyMask(lay());
+    if (lay().maskPx || lay().px.readRect(10, 10, 1, 1).data[3] !== 0 || lay().px.readRect(100, 80, 1, 1).data[3] !== 255) throw new Error("applying a switched-off mask did not bake it in");
+    await ed.undoStep();
+    if (!lay().maskPx || !lay().maskOff || lay().px.readRect(10, 10, 1, 1).data[3] !== 255) throw new Error("the undo of the apply did not bring the switched-off mask and the whole pixels back");
+    // saved and restored (the autosave bundle and .scumble both take getValue's layers)
+    if (ed.syncLayers) await ed.syncLayers();
+    const value = ed.getValue();
+    const saved = (typeof value === "string" ? JSON.parse(value) : value).layers.find((l) => l.id === id);
+    if (!saved || saved.maskOff !== true || !saved.mask) throw new Error("getValue does not keep the switch: " + JSON.stringify(saved && { mask: saved.mask, maskOff: saved.maskOff }));
+    const d2 = await run("new_document");
+    const ed2 = ednow(d2.id);
+    try {
+        await ed2.setValue(value);
+        const l2 = ed2.layers.find((l) => l.id === id);
+        if (!l2 || !l2.maskPx || l2.maskOff !== true) throw new Error("the restore lost the switch: " + JSON.stringify(l2 && { mask: !!l2.maskPx, maskOff: l2.maskOff }));
+    } finally { await run("close_document", { doc: d2.id, force: true }); }
+    // editing a switched-off mask switches it on (painting it would show nothing)
+    ed.toggleMaskEdit(lay());
+    if (lay().maskOff || !lay().maskEdit) throw new Error("editing the mask left it switched off");
+    ed.toggleMaskEdit(lay());
+    out.saved = true;
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

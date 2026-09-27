@@ -182,6 +182,7 @@ history entry would name it and it would be `false`.
 | `x`, `y`, `w`, `h` | every layer | the placement in canvas pixels; `w` / `h` may differ from the PNG's size (a scaled layer keeps its source pixels) |
 | `opacity`, `visible` | every layer | 0 to 1; boolean |
 | `mask` | every layer | the layer mask as a ref (a PNG), or `null` |
+| `maskOff` | when true | the mask is switched off (kept, not applied; PSD's "disabled"); left out when false, and a reader that does not know it shows the mask on |
 | `match` | when on | colour match `{ strength, source }`, `source` `surroundings` or `underneath`; left out at strength 0 |
 | `locked`, `alphaLock` | when true | left out when false |
 | `filter`, `params`, `lut`, `plate` | filter | the filter type id (built-in, or `<plugin>.<id>`), its parameters, a LUT `{ name, size, ref }` (the LUT stored as a PNG) or `null`, a grain plate `{ name, ref, w, h, mean, std }` or `null` |

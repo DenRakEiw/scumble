@@ -60,6 +60,7 @@ export function layerSummary(ed, l) {
         blend: l.blend || "normal", x: l.x, y: l.y, w: l.w, h: l.h, locked: !!l.locked, alpha_lock: !!l.alphaLock, mask: !!l.maskPx,
         active: l.id === ed.activeLayerId,
     };
+    if (l.maskPx && l.maskOff) out.mask_off = true;   // the mask is kept but switched off
     if (l.match && l.match.strength > 0) out.match = { strength: l.match.strength, source: l.match.source };
     if (l.kind === "filter") { out.filter = l.filter; out.params = { ...(l.params || {}) }; if (l.lut) out.lut = l.lut.name || true; }
     if (l.kind === "text" && l.text) out.text = { content: l.text.content, font: l.text.font, size: l.text.size, color: l.text.color, bold: !!l.text.bold, italic: !!l.text.italic, align: l.text.align };

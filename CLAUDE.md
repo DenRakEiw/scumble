@@ -115,24 +115,35 @@ The session hand-over blocks that used to live here ("Where things stand / stood
 The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).
 
 **Released:** 0.1.30 is Latest (2026-09-27: `.scumble` documents, the PNG metadata switch, TIFF open and save; dev
-blog post `v0-1-30`). Check `gh release list` before believing any release state written down anywhere. `main` is
-pushed; nothing is waiting locally but the uncommitted tutorial material.
+blog post `v0-1-30`). Check `gh release list` before believing any release state written down anywhere. `main` has
+local commits of packages 1-3 (not pushed) and the uncommitted tutorial material.
 
-**The build in progress is `docs/PLAN_0_1_31.md`** (read it first; written 2026-09-27). **Package 1, the canvas-only
-view, is built** (2026-09-27, committed locally, not pushed; CHANGELOG "Unreleased", gate `canvasonly`): Tab / View ›
-Canvas Only in `renderer/shell.js` (`canvasOnly`, `isCanvasOnly`), `window.scumble.window.*` full-screen IPC, the CSS
-in `shell.css`; Help and the assistant are covered, not hidden (protect.css pins an open assistant), and
-`assistant.js` keeps its focus guard off under the view. **Package 2, the Undo history, is built** (same day,
-committed locally): labelled steps (`UNDO_LABELS`, a label at every push site), `undoList` / `stepHistory`, named
-snapshots on the turn mechanism (tiles only), the depth in Settings › Rendering (`settings.history`), commands
-`list_history`, `take_snapshot`, `restore_snapshot`, `delete_snapshot`, `undo` / `redo` with `steps`. **The user's cut
-for 0.1.31 (2026-09-27): 1 + 2 + 3e PSD masks + mask operations (6.4) + the side panel's width (item 17), and item 23
-(rotate / straighten the document) if the session has room.** Next: package 3 (3e). The
-user's order: **1** the canvas-only view (item 24, Tab), **2** 3c the history panel, **3** 3e editable PSD masks
-(proposed as 0.1.31), then **4** brushes, **5** repair / remove / liquify, **6** layers pro - each with concrete steps,
-code facts and gates in that file; the package text of before is in `docs/PLAN_0_1_29.md` (done there: 1 skins, 2
-providers, 3a, 3b, 3d, 3f). Open for the user (the plan's last section): LaMa shipped or downloaded, the release cut,
-the PNG switch default, item 25's look and timing, the place of the Undo history section, the optional brush panel.
+**The build in progress is `docs/PLAN_0_1_31.md`** (read it first; written 2026-09-27; each built package has a
+"Built" paragraph there). **Built and committed locally on 2026-09-27, not pushed** (CHANGELOG "Unreleased" has all
+three):
+- **1, the canvas-only view** (gate `canvasonly`): Tab / View › Canvas Only, `renderer/shell.js` `canvasOnly` /
+  `isCanvasOnly`, `window.scumble.window.*` full-screen IPC; Help and the assistant are covered, not hidden.
+- **2, the Undo history** (steps in `editor_test.py` and `mcp_test.py`): labelled steps (`UNDO_LABELS`, a label at
+  every push site), `undoList` / `stepHistory`, named snapshots (tiles only, unique names), the depth in Settings ›
+  Rendering (`settings.history`), commands `list_history`, `take_snapshot` / `restore_snapshot` / `delete_snapshot`,
+  `undo` / `redo` with `steps`.
+- **3, 3e editable PSD masks** (full tier: `layered` Node 101 checks + app round trips on both writers, `composite`
+  "mask off" step, `export`, `editor` step `a_switched_off_mask_is_undone_and_saved`, mutation rounds on both sides):
+  PSD writes the raw pixels and the mask as channel -2 (both writers byte-identical), `readPsd` returns `mask: { data,
+  defaultColor, disabled }` instead of multiplying it in, `loadLayered` builds `maskPx`; `layer.maskOff` (PSD's
+  "disabled") - every drawing / compositing site reads `liveMask(l)`, what moves, saves or undoes a mask keeps
+  `maskPx`; `setMaskOff`, the eye button and Shift+click in the mask row, `maskOff` in `.scumble` / autosave
+  (`docs/DOCUMENTS.md`), `mask_off` in `list_layers`. ORA still bakes the live mask.
+
+**The user's cut for 0.1.31 (2026-09-27): 1 + 2 + 3e + mask operations (6.4) + the side panel's width (item 17), and
+item 23 (rotate / straighten the document) if a session has room.** **Next session: 6.4 mask operations** (invert,
+reveal all / hide all, enable / disable - the switch exists now -, a `set_mask` command over MCP; plan §6 step 4),
+**then item 17** (the side panel's width, a drag handle on its left edge; CLAUDE.md list), **then item 23** if there is
+room; then the release chain (CLAUDE.md "Every release") on the user's word. Brushes (package 4) are 0.1.32. The
+user's order after that: **4** brushes, **5** repair / remove / liquify, **6** layers pro (plan sections 4-6; the
+package text of before is in `docs/PLAN_0_1_29.md`). Open for the user (the plan's last section): LaMa shipped or
+downloaded, the PNG switch default, item 25's look and timing, the optional brush panel; the Undo history section sits
+under the layer and reference lists, closed by default - the user judges it by eye.
 Item 25 (the app's own dialogs instead of the native boxes) is not in the build.
 Deferred from 3f (not cheap): the source's EXIF / XMP in exports, an ICC profile in PSD and TIFF. Not checked: a
 double click in Explorer on an installed build, TIFFs from Photoshop / Affinity / Lightroom.
@@ -226,8 +237,7 @@ planning one of them.
 23. **Rotate and straighten the whole document** (on the later list, the user, 2026-09-26): rotate 90 / 180, flip,
    straighten by a drawn line, crop presets; 2 to 3.5 days, crop presets 1 to 2 more; every layer, mask and selection
    follows, like *Resize*.
-24. **A canvas-only view** (the user, 2026-09-27; next): one key hides everything and the picture fills the screen.
-   Read from the code, not built: **Tab** (free in the editor's `onKey`, Photoshop's and Krita's key; F11 stays the
+24. **A canvas-only view** (the user, 2026-09-27): **built 2026-09-27** (package 1 of `docs/PLAN_0_1_31.md`). As designed: **Tab** (free in the editor's `onKey`, Photoshop's and Krita's key; F11 stays the
    plain window full screen of the View menu's `togglefullscreen`), Tab again or Escape returns (Escape only when the
    editor has nothing pending: `pending`, `polyPoints`, `shapePoints`). App-only, in `renderer/shell.js` (a capture
    keydown listener like the one for Ctrl+S, not in a text field, not while a dialog is open), so the editor source

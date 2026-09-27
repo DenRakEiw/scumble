@@ -274,14 +274,23 @@ export class PsdBandWriter {
         this.count = 0;
     }
 
-    /** One layer, bottom first: `L` = { name, x, y, opacity, visible, blend }, `source` its pixels. */
-    async layer(L, source, progress = null) {
+    /**
+     * One layer, bottom first: `L` = { name, x, y, opacity, visible, blend, mask }, `source` its pixels. With
+     * `maskSource` (a row source of the layer's size whose alpha is the mask) and `L.mask` = `{ disabled }`, the layer
+     * gets its user mask (channel -2), as `PsdWriter.layer` writes it.
+     */
+    async layer(L, source, progress = null, maskSource = null) {
         const lw = source.width, lh = source.height;
-        const [r, g, b, a] = await packChannels(source, this.run, { flights: this.flights, progress, pause: this.pause });
+        if (maskSource && (maskSource.width !== lw || maskSource.height !== lh)) throw new Error(`the mask of layer "${L.name}" is ${maskSource.width} x ${maskSource.height}, its pixels ${lw} x ${lh}`);
+        if (!maskSource !== !L.mask) throw new Error(`layer "${L.name}": a mask ${maskSource ? "source without L.mask" : "flag without its pixels"}`);
+        // the mask's rows are packed like a layer's (all four channels, its alpha kept): half of the progress each
+        const part = (from, share) => (progress ? (f) => progress(from + f * share) : null);
+        const [r, g, b, a] = await packChannels(source, this.run, { flights: this.flights, progress: part(0, maskSource ? 0.5 : 1), pause: this.pause });
         const packed = [[-1, a], [0, r], [1, g], [2, b]];
+        if (maskSource) packed.push([-2, (await packChannels(maskSource, this.run, { flights: this.flights, progress: part(0.5, 0.5), pause: this.pause }))[3]]);
         const rec = this.records;
         rec.i32(L.y); rec.i32(L.x); rec.i32(L.y + lh); rec.i32(L.x + lw);
-        rec.u16(4);
+        rec.u16(packed.length);
         for (const [id, pk] of packed) { rec.i16(id); rec.u32(2 + 2 * lh + pk.total); }
         rec.ascii("8BIM");
         rec.ascii(PSD_BLEND[L.blend] || "norm");
@@ -290,8 +299,16 @@ export class PsdBandWriter {
         rec.u8(L.visible === false ? 2 : 0);
         rec.u8(0);
         const name = pascal(L.name, 4), uni = luni(L.name);
-        rec.u32(4 + 4 + name.length + uni.length);
-        rec.u32(0); rec.u32(0);
+        rec.u32(4 + (maskSource ? 20 : 0) + 4 + name.length + uni.length);
+        if (maskSource) {
+            // layer mask data: its rectangle (the layer's), default colour, flags (bit 1: disabled), 2 bytes of padding
+            rec.u32(20);
+            rec.i32(L.y); rec.i32(L.x); rec.i32(L.y + lh); rec.i32(L.x + lw);
+            rec.u8(255);
+            rec.u8(L.mask.disabled ? 2 : 0);
+            rec.u16(0);
+        } else rec.u32(0);
+        rec.u32(0);   // blending ranges
         rec.push(name);
         rec.push(uni);
         // the layer's channels as one Blob right away: the packed rows of a large layer are hundreds of megabytes in

@@ -1360,6 +1360,7 @@ compositor. The numbers, this machine (8 pool workers), the user's ComfyUI holdi
 | deflate of a filtered 4 MB band, one thread: miniz_oxide level 1 / 2 / 3 / 6 (ratio) | | 55 / 47 / 88 / 308 ms (0.416 / 0.349 / 0.353 / 0.327) |
 | 30000 × 20000: open from a 1.1 GB PNG / PNG export / PSD export (3.7 GB) | refused | 9.6 s / 10.5 s / 13.7 s |
 | … grow 16 / invert / invert back (blocked) | | 48 ms / 0.53 s / 1.2 s |
+| 15k PSD from the tiles, 4 full-size layers [longest block]; with a full-size mask on one (3e, 2026-09-27) | | 2.0 s [0.3 s] 226 MB; 2.4 s [0.3 s] 243 MB |
 
 Where a band's time goes (15000 × 256 rows, `tools/export_test.py --perf`): the region pass builds a region canvas per
 layer from its tiles (`putImageData`, about 40 ms a layer for the two bands it covers), the draw into the CPU canvas

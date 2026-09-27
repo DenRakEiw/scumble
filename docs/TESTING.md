@@ -62,6 +62,9 @@ in `tools/run_gates.sh` runs `tools/X_test.py`.
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:
+- `editor_test.py` `pixel_backend_is_the_one_the_flag_chose` on the canvas backend (`--tiles off`): "the display took
+  toCanvas() copies" (2 copies in 4 frames), once on 2026-09-27; the re-run in a fresh instance had 0. Ruled out: the
+  3e mask switch (`liveMask` gives the same mask while `maskOff` is unset, and the step sets no switch).
 - `commands_test.py` hangs after every step has printed `[ok]` (the runner's 420 s timeout, sometimes in
   `Page.captureScreenshot`).
 - `editor_test.py` `closed_tabs_are_collected` fails with the last tabs still alive, or against an instance with 50+ tabs

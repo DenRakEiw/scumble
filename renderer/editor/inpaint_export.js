@@ -4,7 +4,9 @@
  * description: { width, height, layers: [{ name, x, y, canvas, opacity, visible, blend }],
  * composite }. `layers` are bottom first, each canvas holds the layer's pixels at image
  * resolution (canvas.width × canvas.height placed at x, y); `composite` is the flattened
- * image. Filter layers cannot be represented and are left out by the caller.
+ * image. Filter layers cannot be represented and are left out by the caller. A layer may carry `mask: { canvas,
+ * disabled }` (its alpha the mask, at the layer's size): PSD writes it as the layer's user mask (channel -2), ORA has
+ * no place for one and ignores the field (the caller bakes masks into the pixels for ORA).
  */
 
 /** A 2D canvas in the window or in a worker. */
@@ -65,6 +67,27 @@ function planes(canvas) {
     return [r, g, b, a];
 }
 
+/** The alpha channel of an RGBA canvas alone, w*h bytes (a layer mask: alpha = visible). */
+function alphaPlane(canvas) {
+    const w = canvas.width, h = canvas.height;
+    const d = canvas.getContext("2d").getImageData(0, 0, w, h).data;
+    const a = new Uint8Array(w * h);
+    for (let p = 0, i = 3; p < w * h; p++, i += 4) a[p] = d[i];
+    return a;
+}
+
+/**
+ * The layer mask of a layer description, checked: `L.mask` = `{ canvas, disabled }`, the canvas at the layer's size
+ * (its alpha is the mask), or null when the layer has none.
+ */
+function maskOf(L, lw, lh) {
+    if (!L.mask) return null;
+    const c = L.mask.canvas;
+    if (!c) throw new Error(`the mask of layer "${L.name}" has no pixels`);
+    if (c.width !== lw || c.height !== lh) throw new Error(`the mask of layer "${L.name}" is ${c.width} x ${c.height}, its pixels ${lw} x ${lh}`);
+    return c;
+}
+
 /** PackBits-compressed channel: [rowLengths (2 bytes each), data] */
 function packPlane(plane, w, h) {
     const rows = [];
@@ -113,14 +136,20 @@ export class PsdWriter {
         this.count = 0;
     }
 
-    /** One layer: `L` is the description, `canvas` its pixels. */
+    /**
+     * One layer: `L` is the description, `canvas` its pixels. `L.mask` (optional) = `{ canvas, disabled }`: a layer
+     * mask at the layer's size whose alpha is the mask (255 = visible), written as the user mask channel -2 over the
+     * layer's own rectangle (default colour 255, flags 2 when `disabled`), the pixels themselves left as they are.
+     */
     layer(L, canvas = L.canvas) {
         const records = this.records, channelData = this.channelData;
         const lw = canvas.width, lh = canvas.height;
+        const maskCanvas = maskOf(L, lw, lh);
         const [r, g, b, a] = planes(canvas);
         const packed = [[-1, packPlane(a, lw, lh)], [0, packPlane(r, lw, lh)], [1, packPlane(g, lw, lh)], [2, packPlane(b, lw, lh)]];
+        if (maskCanvas) packed.push([-2, packPlane(alphaPlane(maskCanvas), lw, lh)]);
         records.i32(L.y); records.i32(L.x); records.i32(L.y + lh); records.i32(L.x + lw);
-        records.u16(4);
+        records.u16(packed.length);
         for (const [id, pk] of packed) { records.i16(id); records.u32(2 + 2 * lh + pk.total); }
         records.ascii("8BIM");
         records.ascii(PSD_BLEND[L.blend] || "norm");
@@ -129,8 +158,16 @@ export class PsdWriter {
         records.u8(L.visible === false ? 2 : 0);
         records.u8(0);
         const name = pascal(L.name, 4), uni = luni(L.name);
-        records.u32(4 + 4 + name.length + uni.length);
-        records.u32(0); records.u32(0);
+        records.u32(4 + (maskCanvas ? 20 : 0) + 4 + name.length + uni.length);
+        if (maskCanvas) {
+            // layer mask data: its rectangle (the layer's), default colour, flags (bit 1: disabled), 2 bytes of padding
+            records.u32(20);
+            records.i32(L.y); records.i32(L.x); records.i32(L.y + lh); records.i32(L.x + lw);
+            records.u8(255);
+            records.u8(L.mask.disabled ? 2 : 0);
+            records.u16(0);
+        } else records.u32(0);
+        records.u32(0);   // blending ranges
         records.push(name);
         records.push(uni);
         for (const [, pk] of packed) {
