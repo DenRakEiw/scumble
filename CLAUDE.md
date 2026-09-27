@@ -101,9 +101,9 @@ verbatim). Check `gh release list` before believing any release state written do
   from the press's picture). Each has a "built" paragraph in the plan and a gate step on both backends.
 - **Step 7 is done** (670c76a: brushes up to 1,000 px, `BRUSH_MAX`, a logarithmic Size slider).
 - **Step 8 is done** (frequency separation, linear light in every path, px ABI 13, `minReader` 2 only for documents with
-  a linear-light layer). Open: `composite` on the canvas backend is 4 levels off the tiles-made references in the
-  linear-light column (premultiplied canvas rounding doubled by the slope; a tolerance change was declined, decide
-  with the user: per-backend references, or accept); the GLSL clamp survives the mutation round (opaque test layers).
+  a linear-light layer). The canvas backend's 4 levels in `composite` were stale references (taken before the
+  emulation's opacity fix; tiles failed them too): retaken, no tolerance of its own, strict on both backends (plan
+  step 8, "Settled"). Open: the GLSL clamp survives the mutation round (opaque test layers).
 - **Next: package 4 step 9** (dodge and burn: `dist/map4/blend.md` §4), then 10 the popover.
 - The user's answers of 2026-09-27: LaMa is downloaded (package 5), the PNG switch is on by default, 4.10 a popover.
   Open for the user: item 25's look and timing.
@@ -246,6 +246,9 @@ there; add a new flake there, with the date and what was ruled out.
   a phase switch in `args`.
 
 **Testing and benchmarking**
+- References taken with `--update` go stale with every later fix to the same path: run the gate on both backends again
+  before the commit. A backend that is off by the same bytes as the other points at the references, not at itself (the
+  linear light column, 2026-09-28).
 - A mutation that is not run against a fresh instance proves nothing: the renderer caches the ES modules it imported at
   start. Close the app, patch, start again.
 - Restart the app before every benchmark or memory run; after several large documents the GL path degrades.

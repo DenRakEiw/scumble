@@ -528,11 +528,9 @@ async def run(c, args):
             # of the view is up to 3 levels apart on both backends, and only there (measured); the full-resolution
             # composite keeps its own statistics and stays identical
             tol = max(args.tolerance, 3) if name == "view" else args.tolerance
-            # linear light (0.1.32) has a slope of 2 in the layer's colour: the canvas backend's premultiplied storage of the
-            # half-transparent pixels of its column (a level either way against the references taken on tiles) comes out
-            # doubled there, measured 4 levels on both pictures; the tiles backend stays within the default
-            if os.environ.get("SCUMBLE_TILES") == "0":
-                tol = max(tol, 4)
+            # linear light (0.1.32) needs no tolerance of its own: both backends give the same bytes in its column, the grain
+            # over it included (measured 2026-09-28; the 4 levels seen then were references taken before the emulation's
+            # opacity moved out of its 8-bit scratch)
             if diff.get("differing", 0) == 0:
                 print(f"[ok] {name}: identical")
             elif diff.get("max", 999) <= tol:
