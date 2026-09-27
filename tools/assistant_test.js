@@ -1230,7 +1230,7 @@ async function main() {
             ["set_layer", { match: 60 }, "match"], ["set_layer", { match: 60, match_source: "below" }, "match"],
             ["set_layer", { match: 60, opacity: 50 }, "layers"], ["set_layer", { x: 10 }, null],
             ["set_filter", { params: { a: 1 } }, "filter"], ["set_filter", { type: "blur", params: { a: 1 } }, null],
-            ["set_text", { text: "x" }, "text"], ["set_prompt", { prompt: "x" }, null],
+            ["set_text", { text: "x" }, "text"], ["set_text", { angle: 30 }, "layers"], ["set_prompt", { prompt: "x" }, null],
             ["list_layers", {}, null], ["screenshot", {}, null],
         ];
         const badSteps = [];

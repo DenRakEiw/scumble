@@ -341,7 +341,8 @@ function undoStep(call, facts = {}) {
     // the selection's upscale adds a result layer as generate does; the whole picture's pushes its own `canvas` step
     if (name === "upscale") return args.scope === "document" ? null : "layers";
     if (name === "set_filter") return hasParams(call) && !args.type ? "filter" : null;
-    if (name === "set_text") return "text";
+    // an angle turns the mask with the text, which only a "layers" step holds
+    if (name === "set_text") return args.angle !== undefined ? "layers" : "text";
     if (name === "set_layer") {
         const soft = SET_LAYER_SOFT.filter((k) => args[k] !== undefined);
         if (!soft.length) return null;                                    // geometry pushes its own `transform`

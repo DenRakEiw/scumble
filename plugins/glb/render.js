@@ -30,21 +30,13 @@ export function normalise(p) {
     if (p.shadow != null) n.shadow = !!p.shadow;
     if (p.depthLayer != null) n.depthLayer = !!p.depthLayer;
     if (p.depth_layer != null) n.depthLayer = !!p.depth_layer;
-    // the whole picture turned or mirrored since the object was placed (PLAN_0_1_31 §7): it is rendered in the upright
-    // frame and then turned like the picture (`turn` quarter turns clockwise after an optional horizontal mirror)
-    if (p.orient && typeof p.orient === "object" && (((p.orient.turn | 0) & 3) || p.orient.flip)) n.orient = { turn: (p.orient.turn | 0) & 3, flip: !!p.orient.flip };
+    // the frame the object is rendered in and where it lies in the picture now (PLAN_0_1_31 §7, `frameOf`). An object
+    // of 0.1.31 has an `orient` instead (the whole picture turned or mirrored since it was placed: `turn` quarter turns
+    // clockwise after an optional horizontal mirror), turned into a frame at the next placement or geometry event
+    const frame = cleanFrame(p.frame);
+    if (frame) n.frame = frame;
+    else if (p.orient && typeof p.orient === "object" && (((p.orient.turn | 0) & 3) || p.orient.flip)) n.orient = { turn: (p.orient.turn | 0) & 3, flip: !!p.orient.flip };
     return n;
-}
-
-/** An orientation `{ turn, flip }` with one more flip or turn ("h", "v", 1, -1, 2) done on top of it. */
-export function composeOrient(o, op) {
-    let turn = ((o && o.turn) | 0) & 3, flip = !!(o && o.flip);
-    if (op === 1) turn = (turn + 1) & 3;
-    else if (op === -1) turn = (turn + 3) & 3;
-    else if (op === 2) turn = (turn + 2) & 3;
-    else if (op === "h") { flip = !flip; turn = (4 - turn) & 3; }
-    else if (op === "v") { flip = !flip; turn = (6 - turn) & 3; }
-    return { turn, flip };
 }
 
 /** The size of the upright frame of a w x h picture in orientation `o`. */
@@ -57,24 +49,138 @@ export function orientMatrix(o, w, h) {
     if (o && o.flip) ops.push("h");
     for (let i = 0; i < (((o && o.turn) | 0) & 3); i++) ops.push(1);
     for (const op of ops) {
-        const t = op === "h" ? [-1, 0, 0, 1, W, 0] : [0, 1, -1, 0, H, 0];
-        m = [t[0] * m[0] + t[2] * m[1], t[1] * m[0] + t[3] * m[1], t[0] * m[2] + t[2] * m[3], t[1] * m[2] + t[3] * m[3],
-            t[0] * m[4] + t[2] * m[5] + t[4], t[1] * m[4] + t[3] * m[5] + t[5]];
+        m = mulMatrix(op === "h" ? [-1, 0, 0, 1, W, 0] : [0, 1, -1, 0, H, 0], m);
         if (op === 1) [W, H] = [H, W];
     }
     return m;
 }
 
-/** A canvas drawn in orientation `o` (a new canvas; the same one when upright). */
-export function orientCanvas(c, o, make) {
-    if (!o || (!((o.turn | 0) & 3) && !o.flip)) return c;
-    const [w, h] = (o.turn & 1) ? [c.height, c.width] : [c.width, c.height];
-    const out = make(w, h);
-    const ctx = out.getContext("2d");
-    ctx.imageSmoothingEnabled = false;
-    ctx.setTransform(...orientMatrix(o, c.width, c.height));
-    ctx.drawImage(c, 0, 0);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+// ---- the object's frame (PLAN_0_1_31 §7, 23b) -------------------------------------------------------------------------
+// An object is rendered in its upright frame: `frame.w` x `frame.h` units, the camera's picture, `x` / `y` fractions of
+// it. `frame.m` is the canvas matrix [a, b, c, d, e, f] (x' = a x + c y + e, y' = b x + d y + f) from the frame's units
+// to the document's pixels as they are now. A new object's frame is the picture (the identity); every whole-picture
+// change (the plugin "geometry" event: a turn, crop, extend, resize or straighten) puts its matrix in front of it, so
+// Edit 3D object renders the object where it is, as big and as turned as it is.
+
+/** a * b of two canvas matrices: b first, then a. */
+export function mulMatrix(a, b) {
+    return [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
+        a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]];
+}
+
+/** The old-to-new matrix of a quarter turn or mirror `op` of a W x H picture (1 clockwise, -1, 2, "h", "v"), or null. */
+export function turnMatrix(op, W, H) {
+    if (op === 1) return [0, 1, -1, 0, H, 0];
+    if (op === -1) return [0, -1, 1, 0, 0, W];
+    if (op === 2) return [-1, 0, 0, -1, W, H];
+    if (op === "h") return [-1, 0, 0, 1, W, 0];
+    if (op === "v") return [1, 0, 0, -1, 0, H];
+    return null;
+}
+
+const finite = (v) => typeof v === "number" && Number.isFinite(v);
+
+/** An invertible matrix of six finite numbers (a copy), or null. */
+export function cleanMatrix(m) {
+    if (!Array.isArray(m) || m.length !== 6 || !m.every(finite)) return null;
+    return Math.abs(m[0] * m[3] - m[1] * m[2]) > 1e-12 ? m.slice() : null;
+}
+
+/** The matrix of a "geometry" event: its `m`, or for an editor that only sends 23a's `op`, the turn's; null otherwise. */
+export function eventMatrix(ev) {
+    const m = cleanMatrix(ev && ev.m);
+    if (m) return m;
+    if (!ev || !ev.from || (ev.kind != null && ev.kind !== "turn")) return null;
+    return finite(ev.from.width) && finite(ev.from.height) ? turnMatrix(ev.op, ev.from.width, ev.from.height) : null;
+}
+
+/** A valid frame (a copy): two positive finite sizes and an invertible matrix; null otherwise. */
+export function cleanFrame(f) {
+    if (!f || typeof f !== "object") return null;
+    const m = cleanMatrix(f.m);
+    return m && finite(f.w) && f.w > 0 && finite(f.h) && f.h > 0 ? { w: f.w, h: f.h, m } : null;
+}
+
+/**
+ * The frame of an object's parameters in a W x H picture: its own, or for one placed before frames existed the upright
+ * frame of the picture in the object's 0.1.31 orientation (nothing: the picture itself).
+ */
+export function frameOf(p, W, H) {
+    const own = cleanFrame(p && p.frame);
+    if (own) return own;
+    const o = p && p.orient;
+    const [uw, uh] = uprightSize(o, W, H);
+    return { w: uw, h: uh, m: orientMatrix(o, uw, uh) };
+}
+
+/**
+ * How a render of `frame` lands in the document. The render runs at the document's density along each of the frame's
+ * axes (after a resize to half it has half the pixels, it is not rendered at the old size and scaled), capped by `fitFn` (a
+ * renderer's `fit`, or the dialog's preview scale): `fit` { w, h, k }, a render pixel is 1 / k document pixels, the
+ * camera's aspect is the frame's (`aspect`: a non-uniform resize stretches the render like it stretched the picture).
+ *   exact   the frame's axes lie on the document's (turns, mirrors, crops, extends, resizes): the render's pixels are
+ *           moved by a signed permutation, not resampled, and placed from the frame's box in the document (23a's
+ *           numbers for a quarter turn); otherwise (a straighten) it is drawn through the matrix with smoothing
+ *   out     the size of the render drawn at density k, `origin` the document point at its corner
+ *   toDoc   the matrix from render pixels to document pixels
+ */
+export function framePlan(frame, fitFn) {
+    const [a, b, c, d, e, f] = frame.m;
+    const ax = Math.hypot(a, b), ay = Math.hypot(c, d);
+    const fit = fitFn(frame.w * ax, frame.h * ay);
+    const k = fit.k;
+    const R = [a / ax, b / ax, c / ay, d / ay];
+    const exact = R.every((v) => Math.abs(v) < 1e-6 || Math.abs(Math.abs(v) - 1) < 1e-6);
+    let lin, T, origin;
+    if (exact) {
+        lin = R.map((v) => Math.round(v) || 0);
+        // the render's corners through the permutation, and the frame's corners in the document
+        const xs = [0, lin[0] * fit.w, lin[2] * fit.h, lin[0] * fit.w + lin[2] * fit.h], ys = [0, lin[1] * fit.w, lin[3] * fit.h, lin[1] * fit.w + lin[3] * fit.h];
+        T = [...lin, -Math.min(...xs), -Math.min(...ys)];
+        const fx = [e, a * frame.w + e, c * frame.h + e, a * frame.w + c * frame.h + e], fy = [f, b * frame.w + f, d * frame.h + f, b * frame.w + d * frame.h + f];
+        origin = [Math.min(...fx), Math.min(...fy)];
+    } else {
+        // the render's own scale (frame units per render pixel) on each axis, times k: render pixels to output pixels
+        const sx = frame.w / fit.w * k, sy = frame.h / fit.h * k;
+        lin = [a * sx, b * sx, c * sy, d * sy];
+        const xs = [0, lin[0] * fit.w, lin[2] * fit.h, lin[0] * fit.w + lin[2] * fit.h].map((v) => v + e * k);
+        const ys = [0, lin[1] * fit.w, lin[3] * fit.h, lin[1] * fit.w + lin[3] * fit.h].map((v) => v + f * k);
+        const ox = Math.floor(Math.min(...xs) + 1e-6), oy = Math.floor(Math.min(...ys) + 1e-6);
+        T = [...lin, e * k - ox, f * k - oy];
+        origin = [ox / k, oy / k];
+    }
+    const out = [
+        Math.max(1, Math.ceil(Math.max(T[4], T[4] + T[0] * fit.w, T[4] + T[2] * fit.h, T[4] + T[0] * fit.w + T[2] * fit.h) - 1e-6)),
+        Math.max(1, Math.ceil(Math.max(T[5], T[5] + T[1] * fit.w, T[5] + T[3] * fit.h, T[5] + T[1] * fit.w + T[3] * fit.h) - 1e-6)),
+    ];
+    const toDoc = [T[0] / k, T[1] / k, T[2] / k, T[3] / k, origin[0] + T[4] / k, origin[1] + T[5] / k];
+    return { fit, k, aspect: frame.w / frame.h, exact, T, out, origin, toDoc };
+}
+
+/**
+ * Draw a render through `plan` into `ctx`: the document point (x0, y0) at the canvas's corner, `s` canvas pixels per
+ * document pixel. At the plan's own density an exact plan moves whole pixels (smoothing off, whole-pixel offsets).
+ */
+export function drawRender(ctx, src, plan, s = plan.k, x0 = 0, y0 = 0) {
+    const whole = plan.exact && s === plan.k;
+    const D = plan.toDoc;
+    const M = whole
+        ? [plan.T[0], plan.T[1], plan.T[2], plan.T[3], Math.round(s * (plan.origin[0] - x0)) + plan.T[4], Math.round(s * (plan.origin[1] - y0)) + plan.T[5]]
+        : [D[0] * s, D[1] * s, D[2] * s, D[3] * s, (D[4] - x0) * s, (D[5] - y0) * s];
+    ctx.save();
+    ctx.imageSmoothingEnabled = !whole;
+    if (!whole) ctx.imageSmoothingQuality = "high";
+    ctx.setTransform(...M);
+    ctx.drawImage(src, 0, 0);
+    ctx.restore();
+}
+
+/** A render drawn at the plan's density into a canvas of `plan.out` (the render itself when nothing moves). */
+export function planCanvas(src, plan, make) {
+    const T = plan.T;
+    if (plan.exact && T[0] === 1 && T[1] === 0 && T[2] === 0 && T[3] === 1 && T[4] === 0 && T[5] === 0) return src;
+    const out = make(plan.out[0], plan.out[1]);
+    drawRender(out.getContext("2d"), src, plan, plan.k, plan.origin[0], plan.origin[1]);
     return out;
 }
 
@@ -178,9 +284,9 @@ export class GlbRenderer {
         return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)), k };
     }
 
-    /** The colour pass with alpha, as a fresh canvas of w x h. */
-    render(model, p, w, h) {
-        const { scene, camera, group } = this.scene(model, p, w / h);
+    /** The colour pass with alpha, as a fresh canvas of w x h; `aspect` the camera's (the frame's) when it differs from w / h. */
+    render(model, p, w, h, aspect = w / h) {
+        const { scene, camera, group } = this.scene(model, p, aspect);
         this.renderer.setSize(w, h, false);
         this.renderer.setClearColor(0x000000, 0);
         this.renderer.render(scene, camera);
@@ -192,8 +298,8 @@ export class GlbRenderer {
     }
 
     /** The depth pass: the object's pixels white near, black far (the near / far planes hug the object), transparent elsewhere. */
-    depth(model, p, w, h) {
-        const { scene, camera, group, box } = this.scene(model, { ...p, shadow: false }, w / h);
+    depth(model, p, w, h, aspect = w / h) {
+        const { scene, camera, group, box } = this.scene(model, { ...p, shadow: false }, aspect);
         const near = Math.max(0.05, -box.max.z), far = Math.max(near + 0.01, -box.min.z);
         camera.near = near; camera.far = far;
         camera.updateProjectionMatrix();

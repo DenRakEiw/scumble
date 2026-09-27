@@ -6,7 +6,9 @@ with a depth layer, the layer's size and position against the parameters, the al
 and outside the cube's silhouette, the colour, the depth layer's role and its near / far
 values, a second object at another position, glb.edit replacing rather than stacking, the
 dialog opened through the action and closed with a real Escape, and the objects surviving a
-reload (the file in the local store, the parameters in the plugin's storage).
+reload (the file in the local store, the parameters in the plugin's storage). In a document of
+its own: an object's frame following a crop, a resize and a quarter turn of the whole picture
+(and a straighten's matrix sent by hand), glb.edit rendering it where the layer went.
 
     python tools/glb_test.py
 
@@ -144,6 +146,112 @@ const info = await c("glb.info", { doc: window.__gDoc });
 if (info.objects.length !== 2) throw new Error("info lists " + info.objects.length);
 window.__gLayer2 = L2.id;
 return { second: [L2.x, L2.y, L2.w, L2.h], edited: [after.w, after.h], objects: info.objects.map((o) => o.name) };
+"""),
+    ("frame_follows_crop_resize_and_turn", """
+// PLAN_0_1_31 §7 (23b): a 3D object keeps its place through the whole picture's geometry changes. Its frame
+// (params.frame { w, h, m }: the upright render frame and the matrix from it to the document) takes every change's
+// matrix on (the editor's "geometry" event), and glb.edit renders it where the layer went, at the picture's density,
+// parts outside the picture kept (a crop keeps pixels outside too). An undo of the change puts the frame back without an
+// event. A straighten's matrix is sent by hand (the editor's straighten is a later step): the render drawn rotated.
+// Its own document; the one of the other steps is active again after it.
+const d = await c("new_document");
+const ed = host.editors().find((e) => e.node.id === d.id);
+host.shell.activate(ed);
+await c("new_canvas", { width: 1200, height: 800, doc: d.id });
+const seen = [];
+const off = host.on("geometry", (e) => { if (e.editor === ed) seen.push({ kind: e.kind, m: e.m, op: e.op }); });
+const out = {};
+const near = (a, b, tol) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= tol);
+const L = (id) => ed.layers.find((q) => q.id === id);
+const rect = (id) => { const l = L(id); return [l.x, l.y, l.w, l.h]; };
+const frameOf = async (id) => (await c("glb.info", { doc: d.id })).objects.find((o) => o.layer === id).params.frame;
+const mul = (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]];
+// the alpha-weighted centre of an object's pixels, in document pixels
+const centroid = (id) => {
+    const l = L(id), w = l.px.width, h = l.px.height, a = l.px.readRect(0, 0, w, h).data;
+    let sx = 0, sy = 0, n = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const q = a[(y * w + x) * 4 + 3]; if (q) { sx += (x + 0.5) * q; sy += (y + 0.5) * q; n += q; } }
+    return [l.x + sx / n * (l.w / w), l.y + sy / n * (l.h / h)];
+};
+const edit = async (id) => { const e = await c("glb.edit", { layer: id, doc: d.id }); if (e.layer.id !== id) throw new Error("glb.edit made a new layer"); return e; };
+try {
+    const r = await c("glb.place", { filename: window.__gFile, position: { x: 0.3, y: 0.5 }, depth: 3, rotation: { x: 20, y: 35, z: 0 }, shadow: false, depth_layer: true, doc: d.id });
+    const id = r.layer.id, depthId = r.depthLayer.id;
+    let f = await frameOf(id);
+    if (!f || f.w !== 1200 || f.h !== 800 || !near(f.m, [1, 0, 0, 1, 0, 0], 0)) throw new Error("a new object's frame is " + JSON.stringify(f));
+    const r0 = rect(id), c0 = centroid(id);
+    // (1) a crop through the object: 300 px off the left (the cube spans about 100..620), 40 off the top -> 880 x 700
+    await c("extend_canvas", { left: -300, top: -40, right: -20, bottom: -60, doc: d.id });
+    if (ed.width !== 880 || ed.height !== 700) throw new Error("the crop made " + ed.width + " x " + ed.height);
+    f = await frameOf(id);
+    if (!f || f.w !== 1200 || f.h !== 800 || !near(f.m, [1, 0, 0, 1, -300, -40], 1e-9)) throw new Error("the crop left the frame at " + JSON.stringify(f));
+    // its undo puts the frame back, its redo the cropped one (no event either way)
+    await c("undo", { doc: d.id });
+    f = await frameOf(id);
+    if (ed.width !== 1200 || !near(f.m, [1, 0, 0, 1, 0, 0], 0)) throw new Error("the crop's undo left " + ed.width + " px and the frame " + JSON.stringify(f));
+    await c("redo", { doc: d.id });
+    f = await frameOf(id);
+    if (ed.width !== 880 || !near(f.m, [1, 0, 0, 1, -300, -40], 1e-9)) throw new Error("the crop's redo left " + ed.width + " px and the frame " + JSON.stringify(f));
+    const shifted = [r0[0] - 300, r0[1] - 40, r0[2], r0[3]];
+    if (!near(rect(id), shifted, 0)) throw new Error("the crop put the layer at " + rect(id) + ", not " + shifted);
+    await edit(id);
+    out.crop = { before: shifted, edited: rect(id) };
+    if (!near(rect(id), shifted, 1)) throw new Error("Edit after the crop rendered the object at " + rect(id) + ", the layer was at " + shifted);
+    if (!(L(id).x < 0)) throw new Error("the part of the object the crop cut off was not kept: the layer starts at " + L(id).x);
+    if (Math.abs(L(id).px.width - L(id).w) > 1) throw new Error("Edit after the crop rendered at " + L(id).px.width + " px for " + L(id).w);
+    const cc = centroid(id);
+    if (!near(cc, [c0[0] - 300, c0[1] - 40], 0.75)) throw new Error("the object's centre after the crop's edit is " + cc + ", not " + [c0[0] - 300, c0[1] - 40]);
+    // the depth layer covers the cropped picture again, bright on the object, black far from it
+    const D = L(depthId);
+    if (D.x !== 0 || D.y !== 0 || D.w !== 880 || D.h !== 700) throw new Error("the depth layer after the crop's edit is at " + [D.x, D.y, D.w, D.h]);
+    const ks = D.px.width / 880;
+    const dc = px(D.px, cc[0] * ks, cc[1] * ks), far = px(D.px, 860 * ks, 20 * ks);
+    if (dc[0] < 100 || far[0] !== 0 || far[3] !== 255) throw new Error("the depth layer after the crop: centre " + dc + ", far " + far);
+    // (2) a resize to half: the frame scales, Edit renders at the new density where the editor scaled the layer to
+    const c1 = centroid(id);
+    await ed.resizeImage(440, 350);
+    f = await frameOf(id);
+    if (!near(f.m, [0.5, 0, 0, 0.5, -150, -20], 1e-9)) throw new Error("the resize left the frame at " + JSON.stringify(f));
+    const scaled = rect(id);
+    await edit(id);
+    out.resize = { before: scaled, edited: rect(id), px: [L(id).px.width, L(id).px.height] };
+    if (!near(rect(id), scaled, 2)) throw new Error("Edit after the resize rendered the object at " + rect(id) + ", the layer was at " + scaled);
+    if (Math.abs(L(id).px.width - L(id).w) > 1) throw new Error("Edit after the resize rendered at " + L(id).px.width + " px for " + L(id).w + " (not at the picture's density)");
+    const c2 = centroid(id);
+    if (!near(c2, [c1[0] / 2, c1[1] / 2], 1.5)) throw new Error("the object's centre after the resize's edit is " + c2 + ", not " + [c1[0] / 2, c1[1] / 2]);
+    if (L(depthId).px.width !== 440 || L(depthId).w !== 440) throw new Error("the depth layer after the resize's edit: " + L(depthId).px.width + " px for " + L(depthId).w);
+    // (3) a quarter turn: the editor turns the layer's pixels exactly; Edit renders the same pixels turned
+    await c("rotate_canvas", { angle: 90, doc: d.id });
+    f = await frameOf(id);
+    const wantM = mul([0, 1, -1, 0, 350, 0], [0.5, 0, 0, 0.5, -150, -20]);
+    if (!near(f.m, wantM, 1e-9)) throw new Error("the turn left the frame at " + JSON.stringify(f) + ", not " + wantM);
+    const turnedRect = rect(id), turnedC = centroid(id);
+    await edit(id);
+    out.turn = { before: turnedRect, edited: rect(id) };
+    if (!near(rect(id), turnedRect, 1)) throw new Error("Edit after the turn rendered the object at " + rect(id) + ", the layer was at " + turnedRect);
+    if (!near(centroid(id), turnedC, 0.75)) throw new Error("the object's centre after the turn's edit is " + centroid(id) + ", not " + turnedC);
+    out.kinds = seen.map((e) => e.kind);
+    if (JSON.stringify(out.kinds) !== JSON.stringify(["crop", "resize", "turn"])) throw new Error("the editor sent " + JSON.stringify(seen) + " (one event per change, none for undo and redo)");
+    if (seen.some((e) => !Array.isArray(e.m) || e.m.length !== 6) || seen[2].op !== 1 || seen[0].op !== undefined) throw new Error("the events: " + JSON.stringify(seen));
+    // (4) a straighten's matrix, sent by hand: 10 degrees clockwise about the picture's centre, same size. The render
+    // is drawn rotated (a smoothed draw): the object's centre turns about the picture's centre
+    const W = ed.width, H = ed.height, t = 10 * Math.PI / 180, co = Math.cos(t), si = Math.sin(t);
+    const m = [co, si, -si, co, W / 2 - co * W / 2 + si * H / 2, H / 2 - si * W / 2 - co * H / 2];
+    const before = f.m, c3 = centroid(id);
+    host.emit("geometry", { editor: ed, kind: "straighten", m, from: { width: W, height: H }, to: { width: W, height: H } });
+    f = await frameOf(id);
+    if (!near(f.m, mul(m, before), 1e-9)) throw new Error("the straighten left the frame at " + JSON.stringify(f));
+    await edit(id);
+    const c4 = centroid(id), want4 = [m[0] * c3[0] + m[2] * c3[1] + m[4], m[1] * c3[0] + m[3] * c3[1] + m[5]];
+    out.straighten = { rect: rect(id), centre: c4, want: want4 };
+    if (!near(c4, want4, 2)) throw new Error("the straightened object's centre is " + c4 + ", not " + want4);
+    out.ok = true;
+} finally {
+    off();
+    await c("close_document", { doc: d.id, force: true });
+    host.shell.activate(ednow());
+}
+return out;
 """),
     ("dialog_opens_and_escape_closes_it", """
 const ed = ednow();

@@ -63,7 +63,13 @@ export function layerSummary(ed, l) {
     if (l.maskPx && l.maskOff) out.mask_off = true;   // the mask is kept but switched off
     if (l.match && l.match.strength > 0) out.match = { strength: l.match.strength, source: l.match.source };
     if (l.kind === "filter") { out.filter = l.filter; out.params = { ...(l.params || {}) }; if (l.lut) out.lut = l.lut.name || true; }
-    if (l.kind === "text" && l.text) out.text = { content: l.text.content, font: l.text.font, size: l.text.size, color: l.text.color, bold: !!l.text.bold, italic: !!l.text.italic, align: l.text.align };
+    if (l.kind === "text" && l.text) {
+        out.text = { content: l.text.content, font: l.text.font, size: l.text.size, color: l.text.color, bold: !!l.text.bold, italic: !!l.text.italic, align: l.text.align };
+        // how the text is turned on the screen in all (its quarter turns and its free angle), and mirrored
+        const angle = ((((+l.text.angle || 0) + 90 * ((l.text.turn | 0) & 3)) % 360) + 360) % 360;
+        if (angle) out.text.angle = Math.round((angle > 180 ? angle - 360 : angle) * 1000) / 1000;
+        if (l.text.flip) out.text.flipped = true;
+    }
     return out;
 }
 
@@ -861,8 +867,8 @@ const COMMANDS = {
 
     // -- text --
     add_text: {
-        needsImage: true, description: "Add a text layer at x,y (top left of the text). Bundled fonts: Roboto, Open Sans, Montserrat, Playfair Display, Lobster, Oswald, Pacifico, Bebas Neue and more (see the editor's font list).",
-        params: { text: P.str("the text", { required: true }), x: P.num("left (default 10 % of the width)"), y: P.num("top"), size: P.int("font size in pixels"), font: P.str("font family"), color: P.str("CSS colour"), bold: P.bool(""), italic: P.bool(""), align: P.str("left, center or right"), outline: P.num("outline width"), outline_color: P.str(""), name: P.str("layer name") },
+        needsImage: true, description: "Add a text layer at x,y (top left of the text; with an angle the corner the text starts at). Bundled fonts: Roboto, Open Sans, Montserrat, Playfair Display, Lobster, Oswald, Pacifico, Bebas Neue and more (see the editor's font list).",
+        params: { text: P.str("the text", { required: true }), x: P.num("left (default 10 % of the width)"), y: P.num("top"), size: P.int("font size in pixels"), font: P.str("font family"), color: P.str("CSS colour"), bold: P.bool(""), italic: P.bool(""), align: P.str("left, center or right"), outline: P.num("outline width"), outline_color: P.str(""), angle: P.num("degrees clockwise; the text stays editable"), name: P.str("layer name") },
         async run(ed, a) {
             const l = await ed.addTextLayer(a.x != null ? +a.x : ed.width * 0.1, a.y != null ? +a.y : ed.height * 0.1);
             if (!l) throw new Error(ed.status);
@@ -878,6 +884,8 @@ const COMMANDS = {
             if (a.outline_color != null) t.outlineColor = String(a.outline_color);
             if (a.name) l.name = String(a.name);
             await ed.renderTextLayer(l, { keepScale: false });
+            // turned about the corner the text starts at, which stays at x, y; the layer's own step covers it
+            if (a.angle != null && +a.angle) await ed.setTextAngle(l, +a.angle, { step: false, pivot: "start" });
             if (ed.textEdit) ed.endTextEdit(true);
             try { const focused = /** @type {HTMLElement | null} */ (document.activeElement); if (focused) focused.blur(); } catch (_) { /* ignore */ }
             touch(ed);
@@ -885,8 +893,8 @@ const COMMANDS = {
         },
     },
     set_text: {
-        description: "Change a text layer's content or style.",
-        params: { layer: P.layer("", { required: true }), text: P.str(""), font: P.str(""), size: P.int(""), color: P.str(""), bold: P.bool(""), italic: P.bool(""), align: P.str(""), outline: P.num(""), outline_color: P.str("") },
+        description: "Change a text layer's content, style or angle (degrees clockwise in all, about the layer's middle; the text stays editable).",
+        params: { layer: P.layer("", { required: true }), text: P.str(""), font: P.str(""), size: P.int(""), color: P.str(""), bold: P.bool(""), italic: P.bool(""), align: P.str(""), outline: P.num(""), outline_color: P.str(""), angle: P.num("") },
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
             if (l.kind !== "text") throw new Error(`${l.name} is not a text layer`);
@@ -897,6 +905,7 @@ const COMMANDS = {
             if (a.italic != null) t.italic = !!a.italic;
             if (a.outline != null) t.outline = Math.max(0, +a.outline);
             await ed.renderTextLayer(l, { keepScale: true });
+            if (a.angle != null) await ed.setTextAngle(l, +a.angle || 0, { step: false });
             touch(ed);
             return layerSummary(ed, l);
         },

@@ -6,7 +6,7 @@
 
 import {
     PRELUDE, LR, LG, LB, luma, clamp01, screen, softlight, sstep, mix, hueRgb, vnoise, hash2,
-    makeCanvas, copyCanvas, loop, blur, table, tablesTexture, lookup, monotone, toneCurve,
+    loop, blur, table, tablesTexture, lookup, monotone, toneCurve,
     num, pct, TRADEMARK, makeRunner, shader,
 } from "./common.js";
 import {

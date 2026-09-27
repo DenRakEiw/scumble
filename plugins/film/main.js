@@ -5,7 +5,7 @@
 // panel (one thumbnail per stock), the Plugins menu actions and the commands.
 
 import { makeFilters, lookStage } from "./filters.js";
-import { makePoints } from "./points.js";
+import { makePoints, geometryMatrix } from "./points.js";
 import { STOCKS, STOCK_BY_ID, GROUPS } from "./looks.js";
 import { makeRunner, makeCanvas, TRADEMARK } from "./common.js";
 
@@ -24,8 +24,9 @@ export function activate(scumble) {
     scumble.filters.register({ ...points.filter, chain: true });
     scumble.tools.register(points.tool);
     scumble.commands.register(points.command.name, points.command.def);
-    // the whole picture turned or mirrored (PLAN_0_1_31 §7): the points sit in image pixels and follow it
-    scumble.events.on("geometry", (ev) => { if (ev.doc && ev.from) points.follow(ev.doc, ev.op, ev.from); });
+    // the whole picture turned, mirrored, cropped, extended, resized or straightened (PLAN_0_1_31 §7): the points sit in
+    // image pixels and follow it by the event's matrix
+    scumble.events.on("geometry", (ev) => { const m = geometryMatrix(ev); if (ev.doc && m) points.follow(ev.doc, m); });
 
     // ---- apply a stock to the active look layer or a new one -----------------------------------------
     function applyLook(doc, presetId, { strength } = {}) {

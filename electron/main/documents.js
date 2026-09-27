@@ -52,6 +52,10 @@ function cleanDocument(d, notes) {
             // how the document was turned since it was saved (PLAN_0_1_31 §7), as whole numbers only
             const turn = s.orient && typeof s.orient === "object" ? ((s.orient.turn | 0) & 3) : 0, flip = !!(s.orient && s.orient.flip);
             if (turn || flip) o.orient = { turn, flip };
+            // how the document was moved, scaled and turned since (a 2 x 3 map, PLAN_0_1_31 §7): six finite numbers that
+            // can be inverted, or nothing
+            const m = s.xf;
+            if (Array.isArray(m) && m.length === 6 && m.every((v) => typeof v === "number" && Number.isFinite(v)) && Math.abs(m[0] * m[3] - m[1] * m[2]) > 1e-12) o.xf = m.slice();
             return o;
         });
     }

@@ -312,7 +312,8 @@ export const host = {
     //   built (editor)            an editor finished building its UI (plugins add panels / tools)
     //   activate (editor)         another tab became active
     //   changed (editor)          a document changed (debounced autosave follows)
-    //   geometry (editor, op, from, to) the whole picture was turned or mirrored (before its "changed")
+    //   geometry (editor, kind, m, op, from, to) the whole picture was turned, cropped, extended, resized or straightened
+    //                             (before its "changed"; `m` maps old image coordinates to new ones, `op` only for turns)
     //   tool (editor, tool, prev) the active tool changed
     //   removed (editor)          a tab was closed
 
@@ -1537,8 +1538,8 @@ export const host = {
 
     /**
      * An editor changed: autosave every open document (debounced) and refresh the tabs. `info.geometry` (the whole
-     * picture was turned or mirrored: `{ op, from, to }`, PLAN_0_1_31 §7) goes out first as a "geometry" event, for the
-     * plugins that keep image coordinates of their own.
+     * picture was turned, cropped, extended, resized or straightened: `{ kind, m, op, from, to }`, PLAN_0_1_31 §7) goes
+     * out first as a "geometry" event, for the plugins that keep image coordinates of their own.
      */
     changed(editor, info) {
         if (editor) editor._stateKey = null;      // changed since the last autosave: counts as changed until it runs (documentDirty)

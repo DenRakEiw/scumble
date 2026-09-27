@@ -5,7 +5,7 @@
 // the sky changes the sky and not the roof inside the circle. The tool (U) places, moves and
 // resizes points on the canvas; the layer row shows sliders for the selected point.
 
-import { PRELUDE, luma, clamp01, sstep, mix, loop, blur, num, pct, makeRunner, shader } from "./common.js";
+import { luma, clamp01, sstep, mix, loop, blur, num, pct, makeRunner, shader } from "./common.js";
 
 const FILTER_ID = "film.points";
 const MAX_POINTS = 64;
@@ -79,13 +79,33 @@ function sampleColor(doc, layer, x, y) {
     return opp(r / n / 255, g / n / 255, b / n / 255);
 }
 
-/** Where an image point (x, y) of a W x H picture lands when the whole picture is turned by `op` (PLAN_0_1_31 §7). */
-function turnPoint(op, x, y, W, H) {
-    if (op === "h") return [W - x, y];
-    if (op === "v") return [x, H - y];
-    if (op === 2) return [W - x, H - y];
-    if (op === 1) return [H - y, x];
-    return [y, W - x];
+/** The old-to-new matrix of a quarter turn or mirror `op` of a W x H picture (1 clockwise, -1, 2, "h", "v"), or null. */
+function turnMatrix(op, W, H) {
+    if (op === 1) return [0, 1, -1, 0, H, 0];
+    if (op === -1) return [0, -1, 1, 0, 0, W];
+    if (op === 2) return [-1, 0, 0, -1, W, H];
+    if (op === "h") return [-1, 0, 0, 1, W, 0];
+    if (op === "v") return [1, 0, 0, -1, 0, H];
+    return null;
+}
+
+/**
+ * The old-to-new image matrix [a, b, c, d, e, f] (x' = a x + c y + e, y' = b x + d y + f) of a "geometry" event
+ * (PLAN_0_1_31 §7: a turn, crop, extend, resize or straighten): its `m`, or for an editor that only sends 23a's `op`,
+ * the turn's; null for anything else (an unknown op is never taken for a turn).
+ */
+export function geometryMatrix(ev) {
+    const finite = (v) => typeof v === "number" && Number.isFinite(v);
+    const m = ev && Array.isArray(ev.m) && ev.m.length === 6 && ev.m.every(finite) ? ev.m : null;
+    if (m && Math.abs(m[0] * m[3] - m[1] * m[2]) > 1e-12) return m.slice();
+    if (!ev || !ev.from || (ev.kind != null && ev.kind !== "turn") || !finite(ev.from.width) || !finite(ev.from.height)) return null;
+    return turnMatrix(ev.op, ev.from.width, ev.from.height);
+}
+
+/** A control point moved by the matrix `m`: its centre mapped, its radius scaled by sqrt(|det m|) (`s`); a new object. */
+function mapPoint(q, m, s) {
+    const x = +q.x, y = +q.y;
+    return { ...q, x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5], r: +q.r * s };
 }
 
 export function makePoints(scumble) {
@@ -319,7 +339,8 @@ export function makePoints(scumble) {
         for (const q of points) {
             const b = ui.el("button", "film-chip" + (q.id === layer._fpSel ? " film-chip-on" : ""), String(q.id));
             b.type = "button";
-            b.title = `Point ${q.id} at ${q.x}, ${q.y}, radius ${q.r} px`;
+            const f1 = (v) => Math.round(num(v, 0) * 10) / 10;   // a resize or a straighten leaves fractions
+            b.title = `Point ${q.id} at ${f1(q.x)}, ${f1(q.y)}, radius ${f1(q.r)} px`;
             b.addEventListener("click", () => { layer._fpSel = q.id; rerender(); redraw(); });
             chips.appendChild(b);
         }
@@ -384,16 +405,20 @@ export function makePoints(scumble) {
     };
 
     /**
-     * The whole picture was turned or mirrored (the "geometry" event): every control-points layer's points move with it.
-     * New params objects without an undo step of their own: the turn's step holds the old ones and an undo puts them back.
+     * The whole picture changed its geometry (the "geometry" event, `m` its old-to-new matrix from `geometryMatrix`):
+     * every control-points layer's points move with it, their radii scale by sqrt(|det m|). Points that land outside the
+     * new picture stay (a crop keeps pixels outside too). Exact numbers, no rounding: a quarter turn gives what 23a's
+     * turn did (H - y, x), a crop whole pixels, a resize or a straighten fractions. New params and point objects without
+     * an undo step of their own: the change's step holds the old ones and an undo puts them back (it sends no event).
      */
-    function follow(doc, op, from) {
+    function follow(doc, m) {
+        const s = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
         for (const l of doc.layers()) {
             if (l.filter !== FILTER_ID) continue;
             const raw = doc.rawLayer(l.id);
             const pts = raw.params && Array.isArray(raw.params.points) ? raw.params.points : [];
             if (!pts.length) continue;
-            raw.params = { ...raw.params, points: pts.map((q) => { const [x, y] = turnPoint(op, q.x, q.y, from.width, from.height); return { ...q, x, y }; }) };
+            raw.params = { ...raw.params, points: pts.map((q) => mapPoint(q, m, s)) };
             doc.refresh(l.id);
         }
     }

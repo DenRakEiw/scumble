@@ -6956,8 +6956,10 @@ try {
         if (p.x !== H - 50 || p.y !== 100) throw new Error("the control point is at " + p.x + "," + p.y);
         out.points = true;
     }
-    const glbOrient = ed.pluginData && ed.pluginData.glb && ed.pluginData.glb.objects[L2.id].params.orient;
-    out.glb = glbOrient ? glbOrient.turn : "no plugin";
+    // a 3D object keeps the map from its render frame to the document (23b: the geometry event's matrix)
+    const glbFrame = ed.pluginData && ed.pluginData.glb && ed.pluginData.glb.objects[L2.id].params.frame;
+    if (glbFrame && JSON.stringify(glbFrame.m) !== JSON.stringify([0, 1, -1, 0, H, 0])) throw new Error("the 3D object's frame is " + JSON.stringify(glbFrame));
+    out.glb = glbFrame ? glbFrame.m : "no plugin";
     // the text keeps its turn when it is rendered again
     await ed.renderTextLayer(T());
     if (Math.abs(T().w - th0) > 1 || Math.abs(T().h - tw0) > 1 || T().px.height <= T().px.width) throw new Error("the re-rendered text came back upright: " + T().px.width + " x " + T().px.height + ", " + T().w + " x " + T().h);
@@ -6983,7 +6985,7 @@ try {
     if (hist.x !== 300 || hist.y !== 100 || (hist.orient && (hist.orient.turn || hist.orient.flip))) throw new Error("the undo left the history entry at " + JSON.stringify(hist));
     if (T().text.turn) throw new Error("the undo left the text turned");
     if (pts && ed.layers.find((l) => l.id === pts.id).params.points[0].x !== 100) throw new Error("the undo left the control point");
-    if (ed.pluginData.glb.objects[L2.id].params.orient) throw new Error("the undo left the 3D object's orientation");
+    if (ed.pluginData.glb.objects[L2.id].params.frame) throw new Error("the undo left the 3D object's frame");
     await ed.redoStep();
     if (ed.width !== H) throw new Error("the redo did not turn it again");
     mapped(before.base, W, H, ed.basePx, 1, "the base after the redo");
@@ -7052,6 +7054,225 @@ try {
     if (ed.width !== w3 || !/changed while/.test(ed.status)) throw new Error("the refused turn left " + ed.width + ", " + ed.status);
     same(words(ed.basePx), b3, "the base after a refused turn");
     out.steps = ed.undoList().slice(-3).map((x) => x.label);
+    out.ok = true;
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
+    ("guides_and_saved_selections_follow_crop_extend_resize", """
+// PLAN_0_1_31 §7 (23b step 3): one map (docXf) for what no pixels carry. Crop, extend and resize move the guides (dropped
+// when they leave the picture), the saved selections (their xf), the results-history entries and a fixed export size, and
+// tell the plugins (the geometry event with its matrix); undo puts each of them back
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+const W = 601, H = 357;
+const seen = [];
+const onGeom = (e) => { if (e.editor === ed) seen.push({ kind: e.kind, m: e.m, from: e.from, to: e.to, op: e.op }); };
+host.on("geometry", onGeom);
+const eq = (a, b, what) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(what + ": " + JSON.stringify(a) + ", not " + JSON.stringify(b)); };
+const near = (a, b, tol, what) => { if (!a || a.length !== b.length || a.some((v, i) => Math.abs(v - b[i]) > tol)) throw new Error(what + ": " + JSON.stringify(a) + ", not " + JSON.stringify(b)); };
+// the bounds of the saved selection loaded into the picture as it is now
+const loaded = async () => { await ed.loadSelection(0); const b = ed.getBounds(); return b ? [b[0], b[1], b[2], b[3]] : null; };
+const entry = () => { const h = ed.history.find((x) => x.key === "g23"); return [h.x, h.y, h.w, h.h]; };
+try {
+    const bc = document.createElement("canvas"); bc.width = W; bc.height = H;
+    const bx = bc.getContext("2d"); bx.fillStyle = "#406080"; bx.fillRect(0, 0, W, H); bx.fillStyle = "#e0c040"; bx.fillRect(200, 100, 100, 50);
+    await ed.setBaseFromCanvas(bc);
+    await run("select_rect", { x: 200, y: 100, w: 100, h: 50, doc: d.id });
+    ed.saveSelection();
+    await run("select_none", { doc: d.id });
+    ed.guides = { x: [20, 100, 580], y: [40] };
+    const hc = document.createElement("canvas"); hc.width = 60; hc.height = 30;
+    const hx = hc.getContext("2d"); hx.fillStyle = "#0000ff"; hx.fillRect(0, 0, 60, 30);
+    ed.history.push({ key: "g23", name: "Result g23", ref: { filename: "none.png", subfolder: "", type: "input" }, x: 300, y: 100, w: 60, h: 30, prompt: "", thumbImg: hc });
+    const e = host.exportState ? host.exportState(ed) : null;
+    if (e) { e.width = 1200; e.height = 714; }
+    const b0 = await loaded();
+    await run("select_none", { doc: d.id });
+    const n0 = ed.undo.length;
+    // crop 50 left, 10 top, 20 right: 531 x 347
+    await run("extend_canvas", { left: -50, top: -10, right: -20, doc: d.id });
+    if (ed.width !== 531 || ed.height !== 347) throw new Error("the crop made " + ed.width + " x " + ed.height);
+    if (ed.undo.length !== n0 + 1) throw new Error("the crop pushed " + (ed.undo.length - n0) + " steps");
+    eq(ed.guides, { x: [50, 530], y: [30] }, "the guides after the crop (the one at 20 left the picture)");
+    eq(entry(), [250, 90, 60, 30], "the history entry after the crop");
+    eq(await loaded(), [b0[0] - 50, b0[1] - 10, b0[2] - 50, b0[3] - 10], "the saved selection after the crop");
+    await run("select_none", { doc: d.id });
+    eq(ed.docXf, [1, 0, 0, 1, -50, -10], "the document's map after the crop");
+    if (e && (e.width || e.height)) throw new Error("a fixed export size survived the crop: " + e.width + " x " + e.height);
+    const g = seen[seen.length - 1];
+    if (!g || g.kind !== "crop" || JSON.stringify(g.m) !== JSON.stringify([1, 0, 0, 1, -50, -10]) || g.to.width !== 531 || g.op !== undefined) throw new Error("the plugins heard " + JSON.stringify(g));
+    // undo: everything as it was (the guide that had left the picture too)
+    for (let i = 0; i < 5 && ed.width !== W; i++) await run("undo", { doc: d.id });
+    if (ed.width !== W) throw new Error("the undo of the crop left " + ed.width);
+    eq(ed.guides, { x: [20, 100, 580], y: [40] }, "the guides after the undo");
+    eq(entry(), [300, 100, 60, 30], "the history entry after the undo");
+    eq(await loaded(), b0, "the saved selection after the undo");
+    await run("select_none", { doc: d.id });
+    eq(ed.docXf, [1, 0, 0, 1, 0, 0], "the document's map after the undo");
+    if (e && (e.width !== 1200 || e.height !== 714)) throw new Error("the undo did not put the export size back: " + e.width + " x " + e.height);
+    // the loads above pushed selection steps, which a redo would not jump over: crop again instead
+    await run("extend_canvas", { left: -50, top: -10, right: -20, doc: d.id });
+    // resize by two: 1062 x 694
+    await ed.resizeImage(1062, 694);
+    if (ed.width !== 1062 || ed.height !== 694) throw new Error("the resize made " + ed.width + " x " + ed.height);
+    eq(ed.guides, { x: [100, 1060], y: [60] }, "the guides after the resize");
+    eq(entry(), [500, 180, 120, 60], "the history entry after the resize");
+    near(await loaded(), [(b0[0] - 50) * 2, (b0[1] - 10) * 2, (b0[2] - 50) * 2, (b0[3] - 10) * 2], 2, "the saved selection after the resize");
+    await run("select_none", { doc: d.id });
+    const gr = seen[seen.length - 1];
+    if (!gr || gr.kind !== "resize" || gr.m[0] !== 2 || gr.m[3] !== 2) throw new Error("the plugins heard " + JSON.stringify(gr));
+    // extend 30 left, 5 top
+    await run("extend_canvas", { left: 30, top: 5, doc: d.id });
+    if (ed.width !== 1092 || ed.height !== 699) throw new Error("the extend made " + ed.width + " x " + ed.height);
+    eq(ed.guides, { x: [130, 1090], y: [65] }, "the guides after the extend");
+    eq(entry(), [530, 185, 120, 60], "the history entry after the extend");
+    near(await loaded(), [(b0[0] - 50) * 2 + 30, (b0[1] - 10) * 2 + 5, (b0[2] - 50) * 2 + 30, (b0[3] - 10) * 2 + 5], 2, "the saved selection after the extend");
+    await run("select_none", { doc: d.id });
+    // a quarter turn after all of it: the chain stays exact; (x, y) of the 1092 x 699 picture goes to (699 - y, x)
+    await run("rotate_canvas", { angle: 90, doc: d.id });
+    eq(ed.guides, { x: [634], y: [130, 1090] }, "the guides after the turn");
+    eq(entry(), [454, 530, 60, 120], "the history entry after the turn");
+    eq(ed.history.find((x) => x.key === "g23").orient, { turn: 1, flip: false }, "the entry's orientation");
+    const bx1 = (b0[0] - 50) * 2 + 30, by1 = (b0[1] - 10) * 2 + 5, bx2 = (b0[2] - 50) * 2 + 30, by2 = (b0[3] - 10) * 2 + 5;
+    near(await loaded(), [699 - by2, bx1, 699 - by1, bx2], 2, "the saved selection after the turn");
+    await run("select_none", { doc: d.id });
+    // an entry made now survives the undos: it is mapped back with them
+    ed.history.push({ key: "late", name: "late", ref: { filename: "none.png", subfolder: "", type: "input" }, x: 10, y: 20, w: 30, h: 40, prompt: "", thumbImg: hc });
+    for (let i = 0; i < 60 && ed.undo.length > n0; i++) await run("undo", { doc: d.id });
+    if (ed.width !== W || ed.height !== H) throw new Error("all undone left " + ed.width + " x " + ed.height);
+    eq(ed.guides, { x: [20, 100, 580], y: [40] }, "the guides after every undo");
+    eq(entry(), [300, 100, 60, 30], "the history entry after every undo");
+    const o = ed.history.find((x) => x.key === "g23").orient;
+    if (o && (o.turn || o.flip)) throw new Error("the entry kept an orientation: " + JSON.stringify(o));
+    eq(ed.docXf, [1, 0, 0, 1, 0, 0], "the document's map after every undo");
+    // (10, 20, 30, 40) of the turned picture, back through the turn (20, 659, 40, 30), the extend, the resize and the crop
+    const late = ed.history.find((x) => x.key === "late");
+    near([late.x, late.y, late.w, late.h], [45, 337, 20, 15], 1e-6, "the entry made after the steps");
+    if (ed.savedSelections[0].xf) throw new Error("the saved selection kept a map: " + JSON.stringify(ed.savedSelections[0].xf));
+    // a saved selection keeps its map through the document's JSON
+    await run("extend_canvas", { left: -50, top: -10, doc: d.id });
+    eq(JSON.parse(ed.getValue()).selections[0].xf, [1, 0, 0, 1, -50, -10], "a saved selection's map in the document's JSON");
+    out.events = seen.map((x) => x.kind);
+    out.ok = true;
+} finally { host.off("geometry", onGeom); await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
+    ("a_text_layer_keeps_its_free_angle", """
+// PLAN_0_1_31 §7 (23b step 4): a text turned by any angle stays text (text.angle, drawn at it as vectors); the transform
+// tool, the Angle field and set_text turn it; flips negate the angle, turns keep it; distort makes it pixels
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+const TX = await import("./editor/inpaint_text.js");
+const settle = async () => { for (let i = 0; i < 100; i++) { if (!ed.layers.some((l) => l._textRendering || l._textTimer)) return; await wait(20); } };
+const total = (t) => { const a = ((((+t.angle || 0) + 90 * ((t.turn | 0) & 3)) % 360) + 360) % 360; return a > 180 ? a - 360 : a; };
+const start = (l) => { const f = TX.textFrame(l.text.box[0], l.text.box[1], l.text); return [l.x + f.start[0] / f.W * l.w, l.y + f.start[1] / f.H * l.h]; };
+const words = (px) => { const a = px.readRect(0, 0, px.width, px.height).data; return new Uint32Array(a.buffer, a.byteOffset, a.length >> 2); };
+const sameWords = (a, b, what) => { if (a.length !== b.length) throw new Error(what + ": " + a.length + " against " + b.length + " pixels"); for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) throw new Error(what + ": pixel " + i + " differs"); };
+try {
+    await run("new_canvas", { width: 800, height: 500, doc: d.id });
+    const t1 = await run("add_text", { text: "Angle me", x: 100, y: 200, size: 40, doc: d.id });
+    await settle();
+    const L = () => ed.layers.find((l) => l.id === t1.id);
+    const w0 = L().w, h0 = L().h, c0 = [L().x + L().w / 2, L().y + L().h / 2];
+    // the transform tool turns it by 30 degrees about its middle
+    ed.activeLayerId = t1.id;
+    ed.startPending("rotate");
+    ed.pending.angle = 30 * Math.PI / 180;
+    ed.applyPending();
+    await wait(50); await settle();
+    let l = L();
+    if (l.kind !== "text" || !l.text) throw new Error("the turned text is " + l.kind);
+    if (Math.abs(total(l.text) - 30) > 1e-6) throw new Error("the text is turned " + total(l.text) + " degrees");
+    const c1 = [l.x + l.w / 2, l.y + l.h / 2];
+    if (Math.abs(c1[0] - c0[0]) > 1 || Math.abs(c1[1] - c0[1]) > 1) throw new Error("the middle moved from " + c0 + " to " + c1);
+    const c30 = Math.cos(Math.PI / 6), s30 = Math.sin(Math.PI / 6);
+    if (Math.abs(l.w - (w0 * c30 + h0 * s30)) > 2 || Math.abs(l.h - (w0 * s30 + h0 * c30)) > 2) throw new Error("the turned text is " + l.w + " x " + l.h + " from " + w0 + " x " + h0);
+    const corner = l.px.readRect(0, 0, 1, 1).data;
+    if (corner[3]) throw new Error("the corner of the turned text's box is not empty");
+    if (!ed.textHitAt(l, c1[0], c1[1]) || ed.textHitAt(l, l.x + 1, l.y + 1)) throw new Error("the text tool's hit test does not follow the angle");
+    out.turned = [l.w, l.h];
+    // more text: the angle stays and so does the corner the text starts at
+    const s0 = start(l);
+    await run("set_text", { layer: t1.id, text: "Angle me more", doc: d.id });
+    await settle();
+    l = L();
+    const s1 = start(l);
+    if (Math.abs(total(l.text) - 30) > 1e-6) throw new Error("an edit changed the angle to " + total(l.text));
+    if (Math.abs(s1[0] - s0[0]) > 1.5 || Math.abs(s1[1] - s0[1]) > 1.5) throw new Error("the corner the text starts at moved from " + s0 + " to " + s1);
+    // three turns of 10 degrees give the pixels of one of 30: rendered from the description, never resampled
+    const t2 = await run("add_text", { text: "Same", x: 50, y: 50, size: 30, doc: d.id });
+    const t3 = await run("add_text", { text: "Same", x: 400, y: 50, size: 30, doc: d.id });
+    await settle();
+    for (const a of [10, 20, 30]) await run("set_text", { layer: t2.id, angle: a, doc: d.id });
+    await run("set_text", { layer: t3.id, angle: 30, doc: d.id });
+    await settle();
+    const A2 = ed.layers.find((x) => x.id === t2.id), A3 = ed.layers.find((x) => x.id === t3.id);
+    sameWords(words(A2.px), words(A3.px), "three turns of 10 against one of 30");
+    if (A2.w !== A3.w || A2.h !== A3.h) throw new Error("three turns left " + A2.w + " x " + A2.h + ", one " + A3.w + " x " + A3.h);
+    // the Angle field's way (a step each) and its undo
+    const n0 = ed.undo.length;
+    await ed.setTextAngle(A3, 45);
+    if (ed.undo.length !== n0 + 1 || Math.abs(total(A3.text) - 45) > 1e-6) throw new Error("the angle change pushed " + (ed.undo.length - n0) + " steps and turned to " + total(A3.text));
+    await run("undo", { doc: d.id }); await settle();
+    const A3u = ed.layers.find((x) => x.id === t3.id);
+    if (Math.abs(total(A3u.text) - 30) > 1e-6) throw new Error("the undo left the angle at " + total(A3u.text));
+    sameWords(words(A3u.px), words(A2.px), "the pixels after the undo");
+    // 90 degrees in all is a quarter turn: the exact path, no free angle
+    await ed.setTextAngle(A3u, 90);
+    const q = ed.layers.find((x) => x.id === t3.id);
+    if ((q.text.turn | 0) !== 1 || q.text.angle) throw new Error("90 degrees became " + JSON.stringify({ turn: q.text.turn, angle: q.text.angle }));
+    // a flip negates the angle, a turn of the document keeps it and adds a quarter
+    // an undo puts copies of the layers back: look them up again
+    await ed.setTextAngle(ed.layers.find((x) => x.id === t2.id), 20);
+    ed.activeLayerId = t2.id;
+    ed.flipLayer("h");
+    const fl = ed.layers.find((x) => x.id === t2.id);
+    if (!fl.text.flip || Math.abs(total(fl.text) + 20) > 1e-6) throw new Error("the flipped text is " + JSON.stringify({ flip: fl.text.flip, turn: fl.text.turn, angle: fl.text.angle }));
+    await run("rotate_canvas", { angle: 90, doc: d.id });
+    await settle();
+    const rt = ed.layers.find((x) => x.id === t2.id);
+    if (Math.abs(total(rt.text) - 70) > 1e-6) throw new Error("the document's turn made the text " + total(rt.text));
+    await run("undo", { doc: d.id });
+    // a masked text keeps its mask, turned into the new box
+    const t4 = await run("add_text", { text: "Masked", x: 200, y: 300, size: 48, doc: d.id });
+    await settle();
+    const M = ed.layers.find((x) => x.id === t4.id);
+    await run("select_rect", { x: M.x, y: M.y, w: Math.round(M.w / 2), h: M.h, doc: d.id });
+    ed.maskFromSelection(M);
+    await run("select_none", { doc: d.id });
+    await ed.setTextAngle(M, 45);
+    const Mm = ed.layers.find((x) => x.id === t4.id);
+    if (Mm.kind !== "text" || !Mm.maskPx || Mm.maskPx.width !== Mm.px.width || Mm.maskPx.height !== Mm.px.height) throw new Error("the turned text's mask is " + (Mm.maskPx ? Mm.maskPx.width + " x " + Mm.maskPx.height : "gone") + " for pixels of " + Mm.px.width + " x " + Mm.px.height);
+    const ma = Mm.maskPx.readRect(0, 0, Mm.maskPx.width, Mm.maskPx.height).data;
+    let covered = 0;
+    for (let i = 3; i < ma.length; i += 4) if (ma[i] > 128) covered++;
+    if (covered < ma.length / 4 * 0.15 || covered > ma.length / 4 * 0.85) throw new Error("the turned mask covers " + covered + " of " + ma.length / 4 + " pixels");
+    // distort cannot be kept as text: pixels, and the undo brings the text back
+    ed.activeLayerId = t4.id;
+    ed.startPending("distort");
+    ed.applyPending();
+    const D1 = ed.layers.find((x) => x.id === t4.id);
+    if (D1.kind !== "paint" || D1.text) throw new Error("a distorted text is still " + D1.kind);
+    await run("undo", { doc: d.id });
+    const D2 = ed.layers.find((x) => x.id === t4.id);
+    if (D2.kind !== "text" || !D2.text || Math.abs(total(D2.text) - 45) > 1e-6) throw new Error("the undo of the distort gave " + D2.kind);
+    // a new text starts upright; the angle and the box go through the document's JSON
+    const t5 = await run("add_text", { text: "Upright", x: 10, y: 400, size: 20, doc: d.id });
+    await settle();
+    if (ed.layers.find((x) => x.id === t5.id).text.angle) throw new Error("a new text took the last angle");
+    const saved = JSON.parse(ed.getValue()).layers.find((x) => x.id === t1.id);
+    if (!saved || Math.abs(saved.text.angle - 30) > 1e-6 || !Array.isArray(saved.text.box)) throw new Error("the document keeps " + JSON.stringify(saved && saved.text));
+    // the on-canvas editor sits on the turned text
+    ed.beginTextEdit(L());
+    const tf = ed.textEdit.ta.style.transform;
+    ed.endTextEdit(false);
+    if (!/rotate\\(30/.test(tf)) throw new Error("the text editor is turned by " + tf);
+    const summary = (await run("list_layers", { doc: d.id })).layers.find((x) => x.id === t1.id);
+    if (!summary.text || summary.text.angle !== 30) throw new Error("list_layers says " + JSON.stringify(summary.text));
     out.ok = true;
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;

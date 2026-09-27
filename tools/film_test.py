@@ -3,8 +3,10 @@
 No ComfyUI needed: loads the test image from the local mirror, then checks every film filter
 on the GPU and the CPU path (same maths, at most two levels apart), the film look presets,
 the commands film.looks / film.apply_look / film.add_point, the control point tool through
-the pointer and key hooks (place, resize, move, delete, undo), the layer-row control, the
-Film looks panel thumbnails and the exports. Writes one PNG per filter to out_dir/film.
+the pointer and key hooks (place, resize, move, delete, undo), the control points following a
+crop, a resize and a turn of the whole picture (and a straighten's matrix sent by hand), the
+layer-row control, the Film looks panel thumbnails and the exports. Writes one PNG per filter
+to out_dir/film.
 
     python tools/film_test.py [out_dir]
 """
@@ -275,6 +277,74 @@ if (flats) throw new Error("a point under a vignette flattened the whole picture
 if (!r2.point.color.every((v, k) => Math.abs(v - want2[k]) < 1e-6)) throw new Error("the point under a vignette took " + JSON.stringify(r2.point.color) + ", the picture below the points layer is " + JSON.stringify(want2));
 await c("close_document", { doc: d.id, force: true });
 await c("activate_document", { doc: window.__filmDoc });
+return out;
+"""),
+    ("points_follow_crop_resize_and_turn", """
+// PLAN_0_1_31 §7 (23b): the control points follow the whole picture's geometry changes by the editor's "geometry"
+// event matrix: the centre mapped, the radius scaled by sqrt(|det m|), no rounding (a turn gives 23a's numbers, a
+// non-uniform resize fractions); an undo of the change puts them back without an event, its redo brings the mapped
+// ones. A straighten's matrix is sent by hand (the editor's straighten is a later step). Its own document, closed at
+// the end; the film document is active again after it.
+const H0 = (await import("./editor/host.js")).host;
+const d = await c("new_document");
+const ed = H0.editors().find((e) => e.node.id === d.id);
+H0.shell.activate(ed);
+await c("new_canvas", { width: 800, height: 600, doc: d.id });
+const seen = [];
+const off = H0.on("geometry", (e) => { if (e.editor === ed) seen.push({ kind: e.kind, m: e.m, op: e.op }); });
+const pt = () => ed.layers.find((l) => l.kind === "filter" && l.filter === "film.points").params.points[0];
+const at = (want, what, tol = 1e-9) => {
+    const p = pt();
+    if (Math.abs(p.x - want[0]) > tol || Math.abs(p.y - want[1]) > tol || Math.abs(p.r - want[2]) > tol) throw new Error(what + ": the point is at " + JSON.stringify([p.x, p.y, p.r]) + ", not " + JSON.stringify(want));
+};
+const out = {};
+try {
+    // exposure -1 on white: the point darkens the picture where it is
+    await c("film.add_point", { x: 300, y: 200, radius: 80, exposure: -1, doc: d.id });
+    at([300, 200, 80], "placed");
+    // a crop: 50 off the left, 30 off the top, 20 and 10 off the other sides -> 730 x 560
+    await c("extend_canvas", { left: -50, top: -30, right: -20, bottom: -10, doc: d.id });
+    if (ed.width !== 730 || ed.height !== 560) throw new Error("the crop made " + ed.width + " x " + ed.height);
+    at([250, 170, 80], "after the crop");
+    await c("undo", { doc: d.id });
+    at([300, 200, 80], "after the crop's undo");
+    await c("redo", { doc: d.id });
+    at([250, 170, 80], "after the crop's redo");
+    // a resize that is not uniform: 730 x 560 -> 365 x 420, x by 0.5 and y by 0.75, the radius by sqrt(0.375)
+    await ed.resizeImage(365, 420);
+    at([125, 127.5, 80 * Math.sqrt(0.375)], "after the resize");
+    // a quarter turn clockwise: (H - y, x), the radius kept
+    await c("rotate_canvas", { angle: 90, doc: d.id });
+    at([420 - 127.5, 125, 80 * Math.sqrt(0.375)], "after the turn");
+    out.kinds = seen.map((e) => e.kind);
+    if (JSON.stringify(out.kinds) !== JSON.stringify(["crop", "resize", "turn"])) throw new Error("the editor sent " + JSON.stringify(seen) + " (one event per change, none for undo and redo)");
+    if (seen.some((e) => !Array.isArray(e.m) || e.m.length !== 6) || seen[2].op !== 1 || seen[0].op !== undefined) throw new Error("the events: " + JSON.stringify(seen));
+    // a straighten's matrix, sent by hand: 10 degrees clockwise about the picture's centre, the same size
+    const W = ed.width, H = ed.height, t = 10 * Math.PI / 180, co = Math.cos(t), si = Math.sin(t);
+    const m = [co, si, -si, co, W / 2 - co * W / 2 + si * H / 2, H / 2 - si * W / 2 - co * H / 2];
+    const q = pt();
+    H0.emit("geometry", { editor: ed, kind: "straighten", m, from: { width: W, height: H }, to: { width: W, height: H } });
+    at([m[0] * q.x + m[2] * q.y + m[4], m[1] * q.x + m[3] * q.y + m[5], q.r], "after a straighten's matrix", 1e-6);
+    // an event this plugin cannot read changes nothing (23a's code took any unknown op for a -90 turn)
+    const q2 = pt();
+    H0.emit("geometry", { editor: ed, kind: "turn", op: "sideways", from: { width: W, height: H }, to: { width: W, height: H } });
+    at([q2.x, q2.y, q2.r], "after an event without a matrix or a known op", 0);
+    // the point acts where it is now: dark at its centre, the picture untouched far from it
+    const p = pt();
+    const flat = ed.flattenToCanvas({ forRun: true }).getContext("2d");
+    const centre = Array.from(flat.getImageData(Math.floor(p.x), Math.floor(p.y), 1, 1).data);
+    const corners = [[2, 2], [W - 3, 2], [2, H - 3], [W - 3, H - 3]];
+    const farC = corners.reduce((a, b) => (Math.hypot(b[0] - p.x, b[1] - p.y) > Math.hypot(a[0] - p.x, a[1] - p.y) ? b : a));
+    const far = Array.from(flat.getImageData(farC[0], farC[1], 1, 1).data);
+    out.point = { x: p.x, y: p.y, r: p.r, centre, far };
+    if (!(centre[0] < 200)) throw new Error("the point does not act at its centre " + [p.x, p.y] + ": " + centre);
+    if (Math.hypot(farC[0] - p.x, farC[1] - p.y) > p.r && far[0] < 250) throw new Error("the picture far from the point changed: " + far + " at " + farC);
+    out.ok = true;
+} finally {
+    off();
+    await c("close_document", { doc: d.id, force: true });
+    await c("activate_document", { doc: window.__filmDoc });
+}
 return out;
 """),
     ("point_tool", """

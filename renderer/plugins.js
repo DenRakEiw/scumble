@@ -642,7 +642,8 @@ function makeApi(entry) {
         events: {
             /**
              * built, activate, changed, tool, removed, theme (a skin was switched; doc is null), geometry (the whole picture was
-             * turned or mirrored: `op` 1 / -1 / 2 / "h" / "v", `from` and `to` { width, height }; an undo puts the plugin's
+             * turned, cropped, extended, resized or straightened: `kind`, `m` the matrix from old image coordinates to new
+             * ones, `op` 1 / -1 / 2 / "h" / "v" for a turn only, `from` and `to` { width, height }; an undo puts the plugin's
              * document data back itself): fn({ doc, ... }); returns the off() function.
              */
             on(type, fn) {
