@@ -132,7 +132,7 @@ export class Document {
         if (l.locked) throw new Error(`${l.name} is locked`);
         if (!imageData || !imageData.width || !imageData.data) throw new Error("setPixels needs an ImageData");
         const same = l.px.width === imageData.width && l.px.height === imageData.height;
-        if (undo) this.editor.pushUndo({ kind: same ? "layer" : "layerfull", id: l.id });
+        if (undo) this.editor.pushUndo({ kind: same ? "layer" : "layerfull", id: l.id, label: "Plugin" });
         // another size replaces the pixels with a new object (the layerfull step holds the old one)
         if (same) l.px.writeRect(imageData, 0, 0);
         else l.px = this.editor.pixels.Layer.fromImageData(imageData);
@@ -213,7 +213,7 @@ export class Document {
         Object.assign(l.params, patch || {});
         if (preview) { ed.filterPreview = l.id; ed.markFilterChanged(l, { soon: true }); return layerSummary(ed, l); }
         ed.filterPreview = null;
-        ed.pushUndoSnapshot(l._undoPending);
+        ed.pushUndoSnapshot(l._undoPending, { label: "Filter settings" });
         l._undoPending = null;
         ed.markFilterChanged(l);
         return layerSummary(ed, l);

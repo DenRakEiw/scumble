@@ -575,19 +575,21 @@ Change a text layer's content or style.
 
 ### `undo`
 
-Undo the last step.
+Undo the last step, or `steps` of them (list_history shows what each one is).
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
+| `steps` | integer | how many steps (default 1) (default `1`) |
 
 ### `redo`
 
-Redo the last undone step.
+Redo the last undone step, or `steps` of them.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
+| `steps` | integer | how many steps (default 1) (default `1`) |
 
 ### `compare`
 
@@ -683,6 +685,41 @@ Make this tab's base image from the prompt alone, no image needed. A local recip
 | `seed` | integer | seed; a new random one when left out |
 | `background` | string | transparent asks an API model that supports it (the OpenAI image models) for a cut-out on a transparent ground; the base image then keeps its alpha channel (one of `auto`, `opaque`, `transparent`) |
 | `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
+
+### `list_history`
+
+The undo history, oldest first: one row per state, named by the edit that led to it; `current` is the picture now, `future` rows are undone steps a redo brings back. `steps` is what undo (negative) or redo (positive) takes to get to a row. Also the named snapshots and the history's depth.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+
+### `take_snapshot` *(image)*
+
+Keep the whole document as it is now under a name (layers, masks, the selection, the prompt and settings), to come back to with restore_snapshot. Up to 8 per document, the oldest goes first; not saved with the document. Needs the tile backend.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `name` | string | a name for it (default "Snapshot N") |
+
+### `restore_snapshot` *(image)*
+
+Put the document back as it was in a named snapshot (take_snapshot). One undo step: undo takes it back; the snapshot stays.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `name` | string | the snapshot's name (required) |
+
+### `delete_snapshot`
+
+Delete a named snapshot. The picture does not change.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `name` | string | the snapshot's name (required) |
 
 ### `read_log` *(app)*
 

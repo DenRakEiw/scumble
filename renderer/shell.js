@@ -80,7 +80,7 @@ const ui = {
     recipes: $("set-recipes"), recipeImport: $("set-recipe-import"), recipeFolder: $("set-recipe-folder"), recipeNoteSet: $("set-recipe-note"),
     plugins: $("set-plugins"), pluginsReload: $("set-plugins-reload"), pluginsFolder: $("set-plugins-folder"), pluginsNote: $("set-plugins-note"),
     skins: $("set-skins"), skinsReload: $("set-skins-reload"), skinsFolder: $("set-skins-folder"), skinsNote: $("set-skins-note"),
-    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGens: $("set-gens"), setGensOpen: $("set-gens-open"), setGensNote: $("set-gens-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
+    setFiles: $("set-files"), setOpenFiles: $("set-open-files"), setPrune: $("set-prune"), setPruneNote: $("set-prune-note"), setGens: $("set-gens"), setGensOpen: $("set-gens-open"), setGensNote: $("set-gens-note"), setGpu: $("set-gpu"), setGpuLimit: $("set-gpu-limit"), setCardMin: $("set-card-min"), setAtlas: $("set-atlas"), setUndoSteps: $("set-undo-steps"), setUndoMB: $("set-undo-mb"), setGpuMem: $("set-gpu-mem"), setAsKeep: $("set-as-keep"), setAsSteps: $("set-as-steps"), setAsReset: $("set-as-reset"), setAsNote: $("set-as-note"),
     setTiles: $("set-tiles"), setTilesNote: $("set-tiles-note"), setTilesRestart: $("set-tiles-restart"), setAbout: $("set-about"), aboutRepo: $("set-about-repo"),
     log: $("log-dialog"), logLevel: $("log-level"), logFilter: $("log-filter"), logCopy: $("log-copy"), logOpen: $("log-open"), logClear: $("log-clear"), logList: $("log-list"), logPath: $("log-path"),
     updateBar: $("shell-update"), updateAuto: $("set-update-auto"), updateCheck: $("set-update-check"), updateInstall: $("set-update-install"), updateNote: $("set-update-note"), updateHelp: $("set-update-help"), updateNotes: $("set-update-notes"),
@@ -114,9 +114,20 @@ function applyAtlasBudget(mb) {
 }
 let atlasMB = (settings.memory && settings.memory.atlasMB) != null ? Math.max(16, settings.memory.atlasMB) : 512;
 
+/** The undo history's depth (settings.history, Settings › Memory): every open editor now, and every new one. */
+function historyDepth() {
+    const h = settings.history || {};
+    return { steps: Math.min(500, Math.max(5, Math.round(+h.steps) || 30)), mb: Math.min(8192, Math.max(64, Math.round(+h.mb) || 384)) };
+}
+function applyHistoryDepth(ed) {
+    const d = historyDepth();
+    for (const e of ed ? [ed] : host.editors()) e.setUndoDepth({ steps: d.steps, bytes: d.mb * 1048576 });
+}
+
 function newDocument(id) {
     const editor = new InpaintEditor({ id: id || host.nextId++, title: "Scumble" });
     editor.atlasMB = atlasMB;
+    applyHistoryDepth(editor);
     host.addEditor(editor);
     editor.open();
     host.attachBrushTips(editor);      // the shared tip library and its save hook
@@ -1781,6 +1792,9 @@ async function openSettings() {
     ui.setGpuLimit.value = wholeMB(mem.gpuLimitMB, 0, 3072);
     ui.setCardMin.value = wholeMB(mem.cardMinFreeMB, 0, 2048);
     ui.setAtlas.value = wholeMB(mem.atlasMB, 16, 512);
+    const depth = historyDepth();
+    ui.setUndoSteps.value = depth.steps;
+    ui.setUndoMB.value = depth.mb;
     const as = settings.assistant || {};
     ui.setAsKeep.value = Math.max(1, Math.round(Number(as.keepChats) || 20));
     ui.setAsSteps.value = Math.max(1, Math.round(Number(as.maxSteps) || 25));
@@ -1925,6 +1939,14 @@ ui.setAtlas.addEventListener("change", async () => {
     settings = await window.scumble.settings.set({ memory: { ...(settings.memory || {}), atlasMB: v } });
     applyAtlasBudget(v);
 });
+for (const [input, key, min, max] of [[ui.setUndoSteps, "steps", 5, 500], [ui.setUndoMB, "mb", 64, 8192]]) {
+    input.addEventListener("change", async () => {
+        const v = Math.min(max, Math.max(min, Math.round(Number(input.value) || 0)));
+        input.value = v;
+        settings = await window.scumble.settings.set({ history: { ...historyDepth(), [key]: v } });
+        applyHistoryDepth();
+    });
+}
 
 /**
  * Settings › Rendering › Tile engine (docs/PLAN_BCE.md §C7). The box shows the boolean `tiles` in
@@ -2286,7 +2308,9 @@ window.scumble.commands.onRequest(async ({ id, name, args, meta }) => {
         if (meta.undo && meta.undo.kind) {
             const ed = editorOf(args && args.doc);
             if (ed && typeof ed.pushUndo === "function") {
-                try { ed.pushUndo(meta.undo.id ? { kind: meta.undo.kind, id: meta.undo.id } : { kind: meta.undo.kind }); }
+                // labelled by the command, so the Undo history says what the assistant did
+                const label = `Assistant: ${String(name).replace(/_/g, " ")}`;
+                try { ed.pushUndo(meta.undo.id ? { kind: meta.undo.kind, id: meta.undo.id, label } : { kind: meta.undo.kind, label }); }
                 catch (err) { console.warn("assistant: the undo step could not be pushed", err); }
             }
         }

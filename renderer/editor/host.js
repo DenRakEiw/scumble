@@ -2188,7 +2188,7 @@ export const host = {
             const x = Math.floor(ix), y = Math.floor(iy);
             const already = editor.sel.readRect(x, y, 1, 1).data[3] > 0;
             const subtract = p.alt ? true : (p.shift ? false : already);
-            editor.pushUndo({ kind: "selection" });
+            editor.pushUndo({ kind: "selection", label: "Object selection" });
             const shape = document.createElement("canvas");
             shape.width = W; shape.height = H;
             const sctx = shape.getContext("2d");

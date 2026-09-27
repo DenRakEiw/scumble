@@ -751,7 +751,7 @@ const COMMANDS = {
             const geo = ["x", "y", "w", "h"].some((k) => a[k] != null) || a.width != null || a.height != null;
             if (geo) {
                 if (l.kind === "filter") throw new Error("filter layers cover the whole canvas");
-                ed.pushUndo({ kind: "transform", id: l.id });
+                ed.pushUndo({ kind: "transform", id: l.id, label: "Layer geometry" });
                 if (a.x != null) l.x = Math.round(+a.x);
                 if (a.y != null) l.y = Math.round(+a.y);
                 const w = a.w != null ? a.w : a.width, h = a.h != null ? a.h : a.height;
@@ -879,8 +879,56 @@ const COMMANDS = {
     },
 
     // -- history, canvas --
-    undo: { description: "Undo the last step.", params: {}, async run(ed) { await ed.undoStep(); return { undo: ed.undo.length, redo: ed.redo.length, status: ed.status }; } },
-    redo: { description: "Redo the last undone step.", params: {}, async run(ed) { await ed.redoStep(); return { undo: ed.undo.length, redo: ed.redo.length, status: ed.status }; } },
+    undo: {
+        description: "Undo the last step, or `steps` of them (list_history shows what each one is).",
+        params: { steps: P.int("how many steps (default 1)", { default: 1 }) },
+        async run(ed, a) { const stepped = await ed.stepHistory(-Math.max(1, Math.round(+a.steps || 1))); return { undo: ed.undo.length, redo: ed.redo.length, stepped, status: ed.status }; },
+    },
+    redo: {
+        description: "Redo the last undone step, or `steps` of them.",
+        params: { steps: P.int("how many steps (default 1)", { default: 1 }) },
+        async run(ed, a) { const stepped = await ed.stepHistory(Math.max(1, Math.round(+a.steps || 1))); return { undo: ed.undo.length, redo: ed.redo.length, stepped, status: ed.status }; },
+    },
+    list_history: {
+        description: "The undo history, oldest first: one row per state, named by the edit that led to it; `current` is the picture now, `future` rows are undone steps a redo brings back. `steps` is what undo (negative) or redo (positive) takes to get to a row. Also the named snapshots and the history's depth.",
+        params: {},
+        async run(ed) {
+            return {
+                rows: ed.undoList(), undo: ed.undo.length, redo: ed.redo.length,
+                snapshots: ed.snapshots.map((s) => ({ name: s.name, at: s.at })),
+                depth: { steps: ed.maxUndo, mb: Math.round(ed.maxUndoBytes / 1048576) },
+            };
+        },
+    },
+    take_snapshot: {
+        needsImage: true, description: "Keep the whole document as it is now under a name (layers, masks, the selection, the prompt and settings), to come back to with restore_snapshot. Up to 8 per document; not saved with the document. Needs the tile backend. A name already taken gets a number.",
+        params: { name: P.str("a name for it (default \"Snapshot N\")"), drop_oldest: P.bool("when the document holds 8 already: drop the oldest for good (else this is refused)") },
+        async run(ed, a) {
+            if (!ed.tileMode) throw new Error("snapshots need the tile backend (Settings › Rendering)");
+            if (ed.snapshots.length >= 8 && !a.drop_oldest) throw new Error(`the document holds 8 snapshots (${ed.snapshots.map((x) => x.name).join(", ")}): delete_snapshot one, or pass drop_oldest: true`);
+            const s = ed.takeSnapshot(a.name);
+            if (!s) throw new Error("the snapshot could not be taken");
+            return { name: s.name, snapshots: ed.snapshots.map((x) => x.name) };
+        },
+    },
+    restore_snapshot: {
+        needsImage: true, description: "Put the document back as it was in a named snapshot (take_snapshot). One undo step: undo takes it back; the snapshot stays.",
+        params: { name: P.str("the snapshot's name", { required: true }) },
+        async run(ed, a) {
+            if (!ed.findSnapshot(String(a.name))) throw new Error(`no snapshot "${a.name}" (list_history lists them)`);
+            if (!ed.restoreSnapshot(String(a.name))) throw new Error("the snapshot could not be restored");
+            touch(ed);
+            return { restored: String(a.name), undo: ed.undo.length, redo: ed.redo.length };
+        },
+    },
+    delete_snapshot: {
+        description: "Delete a named snapshot. The picture does not change.",
+        params: { name: P.str("the snapshot's name", { required: true }) },
+        async run(ed, a) {
+            if (!ed.deleteSnapshot(String(a.name))) throw new Error(`no snapshot "${a.name}"`);
+            return { deleted: String(a.name), snapshots: ed.snapshots.map((x) => x.name) };
+        },
+    },
     compare: { description: "Toggle the before / after split view.", params: { enabled: P.bool("on or off; toggles when omitted") }, async run(ed, a) { const want = a.enabled == null ? !ed.compare : !!a.enabled; if (want !== !!ed.compare) ed.toggleCompare(); return { compare: !!ed.compare, status: ed.status }; } },
     extend_canvas: {
         needsImage: true, description: "Extend (positive) or crop (negative) the canvas on each side, in pixels.",

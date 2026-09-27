@@ -10,6 +10,13 @@ the section for its version; `docs/` and the commit history hold the technical d
   Tab again or Escape brings it all back, with your zoom, the rulers and the window as they were (while a transform,
   a polygon or a text edit is pending, the first Escape cancels only that). Also in View › Canvas Only. Tab in a text
   field stays a Tab.
+- **Undo history.** A new section in the Image tab lists every undo step by name ("Brush stroke", "Rectangle
+  selection", "Merge down", "Crop canvas", ...), oldest first, with the time in its tooltip; a click jumps to any
+  of them, forward or back, and the steps you undid stay listed below until you edit again. **Snapshots** keep the
+  whole document under a name, to come back to later: up to eight per tab, they cost nothing when taken, and
+  restoring one is an undo step of its own. How deep the history goes is now a setting (Settings › Rendering: 30
+  steps, and 384 MB for the copies brush strokes and selections keep, by default). Agents get `list_history`,
+  `take_snapshot`, `restore_snapshot` and `delete_snapshot`, and `undo` / `redo` take a number of steps.
 
 ## 0.1.30 — 2026-09-27
 

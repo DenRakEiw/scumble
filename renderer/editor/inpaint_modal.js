@@ -26,6 +26,7 @@ export function buildEditorModal(ed) {
     const { side, section, toGenPane } = buildSidePanel(ed);
     buildLayers(ed);
     buildReferences(ed);
+    buildUndoHistory(ed, section);
     buildSelection(ed, section);
     buildCanvasPanel(ed, section);
     buildExport(ed, section);
@@ -377,6 +378,96 @@ function buildReferences(ed) {
         if (files.length) ed.addImageLayers(files, "reference");
     });
     ed.panes.image.appendChild(ed.refList);
+}
+
+/**
+ * Undo history (docs/PLAN_0_1_31.md §2): the undo steps as rows, oldest first, a click jumps there; named snapshots of
+ * the whole document under them (tiles only). Not the "History" section of the Generate tab, which lists results.
+ */
+function buildUndoHistory(ed, section) {
+    let open = false;
+    try { open = localStorage.getItem("ipc.undoOpen") === "1"; } catch (_) { /* no storage */ }
+    const d = section("Undo history", open, (d, sum) => {
+        sum.appendChild(el("span", "ipc-grow"));
+        const clr = miniButton("trash", "Clear the undo history (the snapshots stay). Nothing in the picture changes.", async () => {
+            if (!ed.undo.length && !ed.redo.length) return;
+            const yes = await ed.ask({ title: "Clear the undo history", message: `${ed.undo.length + ed.redo.length} step${ed.undo.length + ed.redo.length === 1 ? "" : "s"} can no longer be undone or redone. The picture stays as it is.`, ok: "Clear", danger: true });
+            if (!yes) return;
+            ed.clearUndo();
+            ed.setStatus("Undo history cleared.");
+        }, "ipc-del ipc-undo-clear");
+        clr.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); });
+        sum.appendChild(clr);
+        ed.undoListEl = el("div", "ipc-undo-list");
+        d.appendChild(ed.undoListEl);
+        const row = el("div", "ipc-sec ipc-undo-bar");
+        ed.undoSnapBtn = iconButton("plus", SNAP_TITLE, async () => {
+            if (!ed.tileMode || !ed.base) return;
+            const name = await ed.ask({ title: "Snapshot", message: "A name for the document as it is now:", value: ed.nextSnapshotName(), ok: "Take" });
+            if (name == null) return;
+            ed.takeSnapshot(String(name));
+        }, "Snapshot");
+        ed.undoSnapBtn.classList.add("ipc-small", "ipc-undo-snap");
+        row.appendChild(ed.undoSnapBtn);
+        d.appendChild(row);
+        ed.snapListEl = el("div", "ipc-snap-list");
+        d.appendChild(ed.snapListEl);
+    });
+    d.addEventListener("toggle", () => {
+        try { localStorage.setItem("ipc.undoOpen", d.open ? "1" : "0"); } catch (_) { /* no storage */ }
+        if (d.open) ed.renderUndoList();    // brings the present into view
+    });
+    ed.undoSection = d;
+    ed.renderUndoList = () => renderUndoList(ed);
+    renderUndoList(ed);
+}
+
+const SNAP_TITLE = "Keep the whole document as it is now under a name, to come back to later (up to 8; not saved with the document).";
+const clock = (t) => { if (!t) return ""; const x = new Date(t); const p = (n) => String(n).padStart(2, "0"); return `${p(x.getHours())}:${p(x.getMinutes())}:${p(x.getSeconds())}`; };
+
+/** The rows of the Undo history (a few dozen at most: the depth caps them), redrawn after every change of the stacks. */
+function renderUndoList(ed) {
+    const list = ed.undoListEl;
+    if (!list) return;
+    const tiles = !!ed.tileMode;
+    ed.undoSnapBtn.disabled = !tiles || !ed.base;
+    ed.undoSnapBtn.title = tiles ? SNAP_TITLE : "Snapshots need the tile backend (Settings › Rendering).";
+    list.textContent = "";
+    for (const r of ed.undoList()) {
+        const row = el("div", "ipc-undo-row" + (r.current ? " ipc-undo-current" : "") + (r.future ? " ipc-undo-future" : ""), r.label);
+        row.dataset.steps = String(r.steps);
+        row.title = (r.at ? clock(r.at) + " · " : "") + (r.current ? "The picture as it is now" : r.future ? `Redo ${r.steps} step${r.steps === 1 ? "" : "s"} to get here` : `Undo ${-r.steps} step${r.steps === -1 ? "" : "s"} to get here`);
+        // a click while a jump still runs is dropped: its step count belongs to the list before that jump
+        if (!r.current) row.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            if (ed._undoJumping) return;
+            ed._undoJumping = true;
+            try { await ed.stepHistory(r.steps); } finally { ed._undoJumping = false; }
+        });
+        list.appendChild(row);
+    }
+    // the present in view inside the list's own scroll box (scrollIntoView would move the whole side panel)
+    const cur = list.querySelector(".ipc-undo-current");
+    if (cur && ed.undoSection && ed.undoSection.open) {
+        if (cur.offsetTop < list.scrollTop) list.scrollTop = cur.offsetTop;
+        else if (cur.offsetTop + cur.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = cur.offsetTop + cur.offsetHeight - list.clientHeight;
+    }
+    const snaps = ed.snapListEl;
+    snaps.textContent = "";
+    for (const s of ed.snapshots) {
+        const row = el("div", "ipc-snap-row");
+        row.dataset.name = s.name;
+        const name = el("span", "ipc-snap-name", s.name);
+        name.title = `Taken at ${clock(s.at)}`;
+        row.appendChild(name);
+        row.appendChild(el("span", "ipc-grow"));
+        // the row's own entry, by where it is now (a name is unique, the entry is surer still)
+        const restore = miniButton("restore", `Put the document back as it was in "${s.name}" (one undo step: Ctrl+Z takes it back)`, () => ed.restoreSnapshot(ed.snapshots.indexOf(s)), "ipc-snap-restore");
+        const del = miniButton("trash", `Delete the snapshot "${s.name}"`, () => ed.deleteSnapshot(ed.snapshots.indexOf(s)), "ipc-del ipc-snap-delete");
+        row.appendChild(restore);
+        row.appendChild(del);
+        snaps.appendChild(row);
+    }
 }
 
 /** Selection: grow, feather, the stored selections, selection by text and the object tool. */

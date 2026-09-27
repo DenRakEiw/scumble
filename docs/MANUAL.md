@@ -96,7 +96,7 @@ Happy with it? Ctrl+Shift+E exports the visible picture, and Ctrl+S keeps the wh
 
 - Feather the selection by a few pixels (Selection panel) before a generate and the edge gets easier for both the model and the stitch.
 - Every document is a tab: Ctrl+T new, Ctrl+W close, Ctrl+Shift+T reopen the last one closed, Ctrl+Tab next. A run keeps going while another tab is in front.
-- Ctrl+Z is a real undo stack, not a single step, and it covers the assistant's work too.
+- Ctrl+Z is a real undo stack, not a single step, and it covers the assistant's work too. The **Undo history** section of the Image tab lists every step by name, oldest first; a click on a row jumps there, and the rows below the highlighted one are what redo brings back. **Snapshot** keeps the whole document under a name (up to eight per tab, not saved with the file), and Restore puts it back as one undo step. How many steps are kept is set under Settings › Rendering (30 steps, 384 MB by default).
 
 ## Selecting: brush, shapes, wand, objects, words
 
@@ -371,6 +371,7 @@ Above the browser's canvas limit — beyond about 268 megapixels — pictures ar
 ### Notes
 
 - Big documents want memory more than speed. Several open 15k tabs will show in the task manager.
+- On a large picture one undo step can hold hundreds of megabytes. The MB limit of the undo history (Settings › Rendering) counts brush strokes and selections only; a whole-layer step (a flip, a rotation, a filter change, a mask, a crop, a restored snapshot) can hold a full copy of its layer and is limited by the number of steps alone, so keep that number low on big documents. Snapshots cost nothing when taken and grow as the picture changes after them.
 - If something draws wrong, the first useful test is the Rendering switch: the two paths are the same picture by design, and a difference between them is a bug worth reporting.
 
 ## Under the hood: the crop, the Highres fix and the stitch

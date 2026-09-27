@@ -29,7 +29,7 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   answer surviving the stitch, "Generate new" with a transparent base, and the pixel floor.
   `python tools/editor_test.py` covers the editor behaviour reported broken in 0.1.5: the
   New dialog's two size boxes and its focus, the click that deselects, the outline that has
-  to stay visible on white, and copy / paste of a layer between tabs.
+  to stay visible on white, and copy / paste of a layer between tabs; since 0.1.31 also the Undo history (rows, jumps, snapshots, depth, the history commands).
   `node tools/helpers_test.js` runs the ONNX modules without Electron.
   `python tools/composite_test.py` compares the GPU compositor against Canvas 2D and two
   stored references in `tools/refs/` (`--update` rewrites them, `--tolerance n` allows n

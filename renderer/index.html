@@ -166,6 +166,7 @@
       <div class="shell-row"><label for="set-gpu-limit">Release the caches of background tabs above</label><input id="set-gpu-limit" type="number" min="0" step="1" style="width:6em"><span class="shell-note">MB in the GPU process (0 = never)</span></div>
       <div class="shell-row"><label for="set-card-min">Keep at least</label><input id="set-card-min" type="number" min="0" step="1" style="width:6em"><span class="shell-note">MB of the graphics card free (0 = ignore the card); above that the caches go, the front tab's textures too</span></div>
       <div class="shell-row"><label for="set-atlas">Tile atlas</label><input id="set-atlas" type="number" min="16" step="1" style="width:6em"><span class="shell-note">MB of graphics memory for the tiles the screen shows; above it the pages drawn longest ago are dropped and uploaded again when they are needed</span></div>
+      <div class="shell-row"><label for="set-undo-steps">Undo history</label><input id="set-undo-steps" type="number" min="5" max="500" step="1" style="width:5em"><span class="shell-note">steps, holding at most</span><input id="set-undo-mb" type="number" min="64" max="8192" step="1" style="width:6em"><span class="shell-note">MB of brush-stroke and selection copies per document. Whole-layer steps (a flip, a filter, a mask, a crop, a restore) are not counted and each can hold a whole layer: on a large picture keep the number of steps low</span></div>
       <p id="set-gpu-mem" class="shell-help"></p>
     </section>
     <section>

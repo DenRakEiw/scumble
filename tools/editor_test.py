@@ -33,6 +33,9 @@ C6 (b2): mip chains of the selection that land from the mips worker run no colou
 the chains of a layer below a matched one and a filter layer do, once, and the screen ends exact either way; a layer
 above them or the base replaced under them follows the same rule, a flatten after the landings keeps nothing a sampled
 pass made while they were on their way, and a flatten right after them does not set the screen's colour match.
+0.1.31, the Undo history (docs/PLAN_0_1_31.md section 2): three edits as three labelled rows in the panel, a click on a row
+that jumps back and forward to the state of that edit, named snapshots restored twice and taken back (tiles; refused on
+canvases), the depth that drops the oldest steps, and the history commands against the list.
 
     python tools/editor_test.py
 
@@ -1974,6 +1977,365 @@ async def restart_save_step(c):
 
 async def edit_step(c):
     return await c.eval(PRE % EDIT_STEP, timeout=180)
+
+
+# The Undo history (docs/PLAN_0_1_31.md section 2, step 6; the normal tier). The steps share a document of their own,
+# `window.__uh` (600 x 300), which the first opens and the last closes, and its paint layer `window.__uhLayer`. The
+# three edits of the first step are a rectangle selected, the selection filled red on the paint layer and that layer
+# flipped horizontally; each leaves a state of its own at the probes A (140, 120) and B, A's mirror (459, 120).
+UNDO_HISTORY_OPEN = """
+{
+    const d = await run("new_document");
+    window.__uh = d.id;
+    try { window.__uhOpen = localStorage.getItem("ipc.undoOpen"); } catch (_) { window.__uhOpen = null; }
+}
+"""
+
+UNDO_HISTORY_PRE = """
+const doc = window.__uh;
+const ed = ednow(doc);
+if (!ed) throw new Error("the undo history document is gone (undo_history_lists_three_edits_as_labelled_rows opens it)");
+host.shell.activate(ed);
+if (!ed.undoSection || typeof ed.undoList !== "function" || typeof ed.renderUndoList !== "function") throw new Error("the editor has no Undo history section");
+// the rows are rendered only while the section is open (renderUndoList returns early otherwise)
+if (!ed.undoSection.open) { ed.undoSection.open = true; await wait(60); ed.renderUndoList(); }
+const until = async (what, cond, ms = 10000) => {
+    const t0 = Date.now();
+    while (!cond()) {
+        if (Date.now() - t0 > ms) throw new Error("timed out waiting for " + what + " (undo " + ed.undo.length + ", redo " + ed.redo.length + "; " + ed.status + ")");
+        await wait(25);
+    }
+};
+const settle = () => wait(60);   // the list re-renders on a microtask after a change; waits are setTimeout, never rAF
+const rowEls = () => Array.from(ed.undoSection.querySelectorAll(".ipc-undo-list .ipc-undo-row"));
+const panel = () => rowEls().map((r) => ({ text: r.textContent, steps: +r.dataset.steps, current: r.classList.contains("ipc-undo-current"), future: r.classList.contains("ipc-undo-future") }));
+// the panel's rows are undoList(): the same count, order, labels, steps and marks
+const samePanel = (what) => {
+    const want = ed.undoList(), got = panel();
+    const bad = got.length !== want.length || want.some((w, i) => !got[i].text.includes(w.label) || got[i].steps !== w.steps || got[i].current !== !!w.current || got[i].future !== !!w.future);
+    if (bad) throw new Error(what + ": the panel shows " + JSON.stringify(got) + ", undoList() " + JSON.stringify(want));
+    return got.length;
+};
+const clickRow = (steps) => {
+    const r = rowEls().find((e) => e.dataset.steps === String(steps));
+    if (!r) throw new Error("no row with data-steps " + steps + ": " + JSON.stringify(panel()));
+    r.click();   // the element's own handler: ed.stepHistory(steps)
+};
+const bounds = () => { const b = ed.getBounds(); return b ? [b[0], b[1], b[2], b[3]] : null; };
+const layerPx = (x, y) => {
+    const l = ed.layers.find((q) => q.id === window.__uhLayer);   // looked up each time: a flip or a restore gives it new pixels
+    if (!l) throw new Error("the paint layer is gone: " + ed.layers.map((q) => q.id + " " + q.name).join(", "));
+    return Array.from(l.px.readRect(x, y, 1, 1).data);
+};
+const isRed = (p) => p[3] > 200 && p[0] > 200 && p[1] < 60 && p[2] < 60;
+const isClear = (p) => p[3] < 8;
+const RECT = [40, 60, 240, 180];
+const AT = {
+    start: { a: "clear", b: "clear", sel: null },   // the paint layer empty, nothing selected
+    rect: { a: "clear", b: "clear", sel: RECT },    // edit 1: the selection
+    fill: { a: "red", b: "clear", sel: RECT },      // edit 2: filled red
+    flip: { a: "clear", b: "red", sel: RECT },      // edit 3: the layer flipped, the red at the mirror
+};
+const expectState = (what, want) => {
+    const s = { a: layerPx(140, 120), b: layerPx(459, 120), sel: bounds() };
+    const ok = (want.a === "red" ? isRed(s.a) : isClear(s.a)) && (want.b === "red" ? isRed(s.b) : isClear(s.b)) && JSON.stringify(s.sel) === JSON.stringify(want.sel);
+    if (!ok) throw new Error(what + ": want " + JSON.stringify(want) + ", the document holds " + JSON.stringify(s));
+    return s;
+};
+const answerAsk = async (label) => {
+    await until("the question", () => ed.root.querySelector(".ipc-askbox"));
+    const b = Array.from(ed.root.querySelectorAll(".ipc-askbox button")).find((x) => x.textContent === label);
+    if (!b) throw new Error("the question has no " + label + " button: " + ed.root.querySelector(".ipc-askbox").textContent);
+    b.click();
+    await until("the question to close", () => !ed.root.querySelector(".ipc-askbox"));
+};
+"""
+
+UNDO_HISTORY_ROWS = UNDO_HISTORY_OPEN + UNDO_HISTORY_PRE + """
+await run("new_canvas", { width: 600, height: 300, doc });
+await settle();
+const fresh = ed.undoList();
+if (fresh.length !== 1 || fresh[0].label !== "Start" || !fresh[0].current || fresh[0].future || fresh[0].steps !== 0) throw new Error("a fresh canvas lists " + JSON.stringify(fresh));
+samePanel("a fresh canvas");
+if (ed.undoSection.tagName !== "DETAILS" || ed.undoSection.parentElement !== ed.panes.image) throw new Error("the Undo history is not a section of the Image tab");
+const sum = ed.undoSection.querySelector(":scope > summary");
+if (!sum || !sum.textContent.trim().startsWith("Undo history")) throw new Error("the section's title reads " + (sum && sum.textContent));
+const P = await run("add_paint_layer", { name: "History paint", doc });
+window.__uhLayer = P.id;
+const addPushed = ed.undo.length;   // no undo step today; the history starts after the layer either way
+ed.clearUndo();
+await settle();
+if (ed.undoList().length !== 1 || ed.undoList()[0].label !== "Start") throw new Error("a cleared history lists " + JSON.stringify(ed.undoList()));
+ed.activeLayerId = P.id;
+ed.color = "#ff0000"; ed.brushOpacity = 1;
+await run("select_rect", { x: 40, y: 60, w: 200, h: 120, doc });
+ed.fillSelection();
+ed.flipLayer("h");
+await settle();
+const rows = ed.undoList();
+if (rows.length !== 4) throw new Error("three edits list " + rows.length + " rows: " + JSON.stringify(rows));
+if (rows[0].label !== "Start") throw new Error("the first row is " + JSON.stringify(rows[0]));
+rows.forEach((r, i) => { if (r.steps !== i - 3 || r.current !== (i === 3) || r.future) throw new Error("row " + i + " is " + JSON.stringify(r) + ": " + JSON.stringify(rows)); });
+const labels = rows.slice(1).map((r) => r.label);
+if (labels.some((l) => typeof l !== "string" || !l.trim())) throw new Error("an edit without a label: " + JSON.stringify(labels));
+if (new Set(labels).size !== 3) throw new Error("a selection, a fill and a flip share a label: " + JSON.stringify(labels));
+if (rows.slice(1).some((r) => !(r.at > 0))) throw new Error("an edit row has no time: " + JSON.stringify(rows));
+samePanel("three edits");
+const els = rowEls();
+if (!els[3].classList.contains("ipc-undo-current") || els.slice(0, 3).some((e) => e.classList.contains("ipc-undo-current") || e.classList.contains("ipc-undo-future"))) throw new Error("the present is not the last row: " + JSON.stringify(panel()));
+expectState("after the three edits", AT.flip);
+// Clear asks first; Cancel keeps every step
+ed.undoSection.querySelector(".ipc-undo-clear").click();
+await answerAsk("Cancel");
+if (ed.undo.length !== 3 || ed.redo.length) throw new Error("Cancel on Clear changed the history: " + ed.undo.length + " / " + ed.redo.length);
+return { labels, addPushed, tiles: ed.tileMode };
+"""
+
+UNDO_HISTORY_JUMPS = UNDO_HISTORY_PRE + """
+if (ed.undo.length !== 3 || ed.redo.length) throw new Error("not at the present of the three edits: " + ed.undo.length + " / " + ed.redo.length);
+const labels = ed.undoList().map((r) => r.label);
+const sameLabels = (what) => { const now = ed.undoList().map((r) => r.label); if (JSON.stringify(now) !== JSON.stringify(labels)) throw new Error(what + ": the list reads " + JSON.stringify(now) + ", before " + JSON.stringify(labels)); };
+// a real click on the row of edit 1: two steps back
+const row1 = rowEls()[1];
+if (!row1 || row1.dataset.steps !== "-2") throw new Error("the second row is not two steps back: " + JSON.stringify(panel()));
+row1.click();
+await until("two undo steps", () => ed.undo.length === 1 && ed.redo.length === 2);
+await settle();
+expectState("after a click on the row of edit 1", AT.rect);
+sameLabels("after the jump back");   // an undone step keeps its label as a redo row
+samePanel("after the jump back");
+if (!rowEls()[1].classList.contains("ipc-undo-current")) throw new Error("the row of edit 1 is not the present: " + JSON.stringify(panel()));
+const future = rowEls().filter((e) => e.classList.contains("ipc-undo-future"));
+if (future.length !== 2 || future.map((e) => e.dataset.steps).join() !== "1,2") throw new Error("the redo rows: " + JSON.stringify(panel()));
+// the last redo row: the present again
+future[1].click();
+await until("two redo steps", () => ed.undo.length === 3 && ed.redo.length === 0);
+await settle();
+expectState("after a click on the last redo row", AT.flip);
+sameLabels("back at the present");
+samePanel("back at the present");
+// one step: the row of edit 2, then forward with stepHistory
+clickRow(-1);
+await until("one undo step", () => ed.undo.length === 2 && ed.redo.length === 1);
+await settle();
+expectState("after a click on the row of edit 2", AT.fill);
+samePanel("one step back");
+const one = await ed.stepHistory(1);
+if (one !== 1) throw new Error("stepHistory(1) took " + one + " steps");
+expectState("after stepHistory(1)", AT.flip);
+// the first row: the start, everything undone; more steps than there are take what there is
+clickRow(-3);
+await until("three undo steps", () => ed.undo.length === 0 && ed.redo.length === 3);
+await settle();
+expectState("after a click on the first row", AT.start);
+samePanel("at the start");
+const all = await ed.stepHistory(5);
+if (all !== 3) throw new Error("stepHistory(5) with three redo steps took " + all);
+await settle();
+expectState("after stepHistory(5)", AT.flip);
+// the present's own row does nothing
+const cur = rowEls().find((e) => e.classList.contains("ipc-undo-current"));
+if (!cur || cur.dataset.steps !== "0") throw new Error("the present's row: " + JSON.stringify(panel()));
+cur.click();
+await wait(150);
+if (ed.undo.length !== 3 || ed.redo.length) throw new Error("a click on the present moved the history: " + ed.undo.length + " / " + ed.redo.length);
+sameLabels("after the round trip");
+return { labels };
+"""
+
+UNDO_HISTORY_SNAPSHOTS = UNDO_HISTORY_PRE + """
+if (ed.undo.length !== 3 || ed.redo.length) throw new Error("not at the present of the three edits: " + ed.undo.length + " / " + ed.redo.length);
+const snapBtn = ed.undoSection.querySelector(".ipc-undo-snap");
+if (!snapBtn) throw new Error("no Snapshot button in the Undo history");
+if (!ed.tileMode) {
+    // the canvas backend cannot clone for free: the button is off and a snapshot is refused
+    if (!snapBtn.disabled) throw new Error("the Snapshot button is enabled on the canvas backend");
+    const none = ed.takeSnapshot("A");
+    if (none !== null || ed.snapshots.length) throw new Error("takeSnapshot answered on the canvas backend: " + JSON.stringify(none && none.name));
+    return { skipped: "snapshots need the tile backend", buttonDisabled: true };
+}
+if (snapBtn.disabled) throw new Error("the Snapshot button is disabled on tiles");
+const n0 = ed.undo.length;
+const taken = ed.takeSnapshot("A");
+if (!taken || taken.name !== "A" || !(taken.at > 0) || ed.snapshots.length !== 1) throw new Error("takeSnapshot('A'): " + JSON.stringify(taken && { name: taken.name, at: taken.at }) + ", " + ed.snapshots.length + " kept");
+if (ed.undo.length !== n0) throw new Error("taking a snapshot pushed an undo step");
+await settle();
+const row = () => ed.undoSection.querySelector('.ipc-snap-row[data-name="A"]');
+if (!row() || !row().querySelector(".ipc-snap-restore") || !row().querySelector(".ipc-snap-delete")) throw new Error("no row for the snapshot A with its buttons");
+// two edits after it: the layer flipped back and the selection dropped
+ed.flipLayer("h");
+await run("select_none", { doc });
+const edited = { a: "red", b: "clear", sel: null };
+expectState("after the edits past the snapshot", edited);
+const n1 = ed.undo.length;
+if (!ed.restoreSnapshot("A")) throw new Error("restoreSnapshot('A') refused: " + ed.status);
+await settle();
+expectState("after restoring A", AT.flip);
+if (ed.undo.length !== n1 + 1 || ed.redo.length) throw new Error("the restore is not one undo step: " + ed.undo.length + " / " + ed.redo.length + ", " + n1 + " before");
+const restoreLabel = ed.undoList()[ed.undoList().length - 1].label;
+if (!restoreLabel || !String(restoreLabel).trim()) throw new Error("the restore's row has no label");
+samePanel("after the restore");
+// Ctrl+Z takes the restore back
+await ed.undoStep();
+await settle();
+expectState("after undoing the restore", edited);
+if (ed.undo.length !== n1 || ed.redo.length !== 1) throw new Error("the undo of the restore left " + ed.undo.length + " / " + ed.redo.length);
+// the same snapshot a second time, through its row's button
+row().querySelector(".ipc-snap-restore").click();
+await settle();
+expectState("after restoring A a second time", AT.flip);
+if (ed.undo.length !== n1 + 1 || ed.redo.length) throw new Error("the second restore is not one undo step: " + ed.undo.length + " / " + ed.redo.length);
+if (ed.snapshots.length !== 1) throw new Error("a restore used the snapshot up: " + ed.snapshots.length + " kept");
+// its delete button
+row().querySelector(".ipc-snap-delete").click();
+await settle();
+if (ed.snapshots.length || ed.undoSection.querySelector(".ipc-snap-row")) throw new Error("the snapshot is still there after its delete");
+if (ed.restoreSnapshot("A")) throw new Error("a deleted snapshot was restored");
+expectState("after the delete", AT.flip);
+// eight at most: the oldest goes first
+for (let i = 1; i <= 9; i++) if (!ed.takeSnapshot("s" + i)) throw new Error("takeSnapshot('s" + i + "') refused");
+await settle();
+const kept = ed.snapshots.map((s) => s.name);
+if (kept.length !== 8 || kept[0] !== "s2" || kept[7] !== "s9") throw new Error("nine snapshots keep " + JSON.stringify(kept));
+if (ed.undoSection.querySelectorAll(".ipc-snap-row").length !== 8) throw new Error("the panel lists " + ed.undoSection.querySelectorAll(".ipc-snap-row").length + " snapshots of 8");
+// a snapshot holds its clones only, not the layers' live pixels or caches (they would outlive what the document replaced)
+if (ed.snapshots.some((s) => s.snap.layers.some((l) => l.px || l.maskPx || l._masked))) throw new Error("a snapshot's layer record keeps live pixels");
+// the command refuses at the cap unless it may drop the oldest; the panel's takeSnapshot drops it
+const { commands: C } = await import('./commands.js');
+const full = await C.call("take_snapshot", { name: "ninth" });
+if (full.ok) throw new Error("take_snapshot at the cap did not refuse: " + JSON.stringify(full.result));
+const dropped = await C.call("take_snapshot", { name: "ninth", drop_oldest: true });
+if (!dropped.ok || ed.snapshots.length !== 8 || ed.snapshots[0].name !== "s3") throw new Error("take_snapshot with drop_oldest: " + JSON.stringify(dropped) + " " + JSON.stringify(ed.snapshots.map((s) => s.name)));
+// names are unique: a taken name gets a number, the default skips the taken ones
+ed.deleteSnapshot(0);
+const dup = ed.takeSnapshot("ninth");
+if (!dup || dup.name !== "ninth (2)") throw new Error("a second \\"ninth\\" is named " + (dup && dup.name));
+ed.deleteSnapshot(0); ed.deleteSnapshot(0);        // six left
+ed.takeSnapshot("Snapshot 8");                     // seven: the default "Snapshot 8" is taken
+if (ed.nextSnapshotName() !== "Snapshot 9") throw new Error("the default name after a taken \\"Snapshot 8\\" is " + ed.nextSnapshotName());
+while (ed.snapshots.length) if (!ed.deleteSnapshot(0)) throw new Error("deleteSnapshot(0) refused with " + ed.snapshots.length + " left");
+if (ed.snapshots.length) throw new Error("eight deletes left " + ed.snapshots.length + " snapshots");
+await settle();
+if (ed.undoSection.querySelectorAll(".ipc-snap-row").length) throw new Error("the panel still lists snapshots after all were deleted");
+return { restoreLabel, undo: ed.undo.length, kept };
+"""
+
+UNDO_HISTORY_DEPTH = UNDO_HISTORY_PRE + """
+const was = { steps: ed.maxUndo, bytes: ed.maxUndoBytes };
+if (!(was.steps > 0) || !(was.bytes > 0)) throw new Error("the editor has no depth: " + JSON.stringify(was));
+const out = { was };
+try {
+    ed.clearUndo();
+    ed.setUndoDepth({ steps: 2 });
+    if (ed.maxUndo !== 2 || ed.maxUndoBytes !== was.bytes) throw new Error("setUndoDepth({ steps: 2 }) set " + ed.maxUndo + " steps and " + ed.maxUndoBytes + " bytes");
+    await run("select_rect", { x: 10, y: 10, w: 50, h: 50, doc });
+    await run("select_rect", { x: 20, y: 20, w: 50, h: 50, doc });
+    await settle();
+    // two edits fit: nothing dropped yet, the first row is still the start
+    if (ed.undo.length !== 2 || ed.undoList()[0].label !== "Start") throw new Error("two edits at a depth of 2: " + JSON.stringify(ed.undoList()));
+    await run("select_rect", { x: 30, y: 30, w: 50, h: 50, doc });
+    await settle();
+    const rows = ed.undoList();
+    out.rows = rows.map((r) => r.label);
+    if (ed.undo.length !== 2) throw new Error("three edits at a depth of 2 keep " + ed.undo.length + " steps");
+    if (rows.length !== 3 || rows[0].label !== "Oldest kept" || rows[0].steps !== -2) throw new Error("the first row after a dropped step: " + JSON.stringify(rows));
+    samePanel("at a depth of 2");
+    // the oldest state kept is the one after the first edit
+    await ed.stepHistory(-2);
+    if (JSON.stringify(bounds()) !== "[10,10,60,60]") throw new Error("the oldest kept state selects " + JSON.stringify(bounds()));
+    await ed.stepHistory(2);
+    if (JSON.stringify(bounds()) !== "[30,30,80,80]") throw new Error("back at the present the selection is " + JSON.stringify(bounds()));
+    // a smaller depth trims at once
+    ed.setUndoDepth({ steps: 1 });
+    await settle();
+    if (ed.undo.length !== 1 || ed.undoList()[0].label !== "Oldest kept") throw new Error("a depth of 1 keeps " + JSON.stringify(ed.undoList()));
+    samePanel("at a depth of 1");
+} finally {
+    ed.setUndoDepth({ steps: was.steps, bytes: was.bytes });
+}
+if (ed.maxUndo !== was.steps || ed.maxUndoBytes !== was.bytes) throw new Error("the depth did not go back: " + ed.maxUndo + " steps, " + ed.maxUndoBytes + " bytes");
+out.depth = [ed.maxUndo, ed.maxUndoBytes];
+return out;
+"""
+
+UNDO_HISTORY_COMMANDS = UNDO_HISTORY_PRE + """
+const out = {};
+try {
+    ed.clearUndo();
+    await run("select_rect", { x: 20, y: 20, w: 100, h: 80, doc });
+    await run("select_rect", { x: 200, y: 100, w: 150, h: 90, doc });
+    await run("select_none", { doc });
+    // list_history's rows are undoList()'s, its counts the stacks'
+    const same = (what, h) => {
+        const want = ed.undoList();
+        if (!h || !Array.isArray(h.rows) || h.rows.length !== want.length) throw new Error(what + ": list_history rows " + JSON.stringify(h && h.rows) + ", undoList() " + JSON.stringify(want));
+        want.forEach((w, i) => {
+            const r = h.rows[i];
+            if (r.label !== w.label || r.steps !== w.steps || !!r.current !== !!w.current || !!r.future !== !!w.future) throw new Error(what + ": row " + i + " is " + JSON.stringify(r) + ", undoList() has " + JSON.stringify(w));
+        });
+        if (h.undo !== ed.undo.length || h.redo !== ed.redo.length) throw new Error(what + ": list_history counts " + h.undo + " / " + h.redo + ", the editor " + ed.undo.length + " / " + ed.redo.length);
+        return h;
+    };
+    const h = same("three edits", await run("list_history", { doc }));
+    if (h.undo !== 3 || h.redo !== 0) throw new Error("list_history after three edits: " + h.undo + " / " + h.redo);
+    if (!Array.isArray(h.snapshots) || h.snapshots.length) throw new Error("list_history snapshots: " + JSON.stringify(h.snapshots));
+    if (!h.depth || h.depth.steps !== ed.maxUndo || !(Math.abs(h.depth.mb - ed.maxUndoBytes / 1048576) <= 1)) throw new Error("list_history depth " + JSON.stringify(h.depth) + ", the editor " + ed.maxUndo + " steps, " + ed.maxUndoBytes + " bytes");
+    out.rows = h.rows.map((r) => r.label);
+    out.depth = h.depth;
+    const u = await run("undo", { steps: 2, doc });
+    if (!u || u.stepped !== 2 || u.undo !== 1 || u.redo !== 2) throw new Error("undo { steps: 2 }: " + JSON.stringify(u));
+    if (JSON.stringify(bounds()) !== "[20,20,120,100]") throw new Error("two steps back the selection is " + JSON.stringify(bounds()));
+    same("two steps back", await run("list_history", { doc }));
+    const r = await run("redo", { steps: 2, doc });
+    if (!r || r.stepped !== 2 || r.undo !== 3 || r.redo !== 0) throw new Error("redo { steps: 2 }: " + JSON.stringify(r));
+    if (bounds() !== null) throw new Error("two steps forward the selection is " + JSON.stringify(bounds()));
+    // without steps: one
+    const u1 = await run("undo", { doc });
+    if (!u1 || u1.stepped !== 1 || u1.undo !== 2 || JSON.stringify(bounds()) !== "[200,100,350,190]") throw new Error("undo: " + JSON.stringify(u1) + ", the selection " + JSON.stringify(bounds()));
+    const r1 = await run("redo", { doc });
+    if (!r1 || r1.stepped !== 1 || r1.redo !== 0 || bounds() !== null) throw new Error("redo: " + JSON.stringify(r1) + ", the selection " + JSON.stringify(bounds()));
+    if (ed.tileMode) {
+        const named = (list) => Array.isArray(list) && list.some((s) => (s && s.name) === "by command" || s === "by command");
+        const t = await run("take_snapshot", { name: "by command", doc });
+        if (!t || t.name !== "by command" || !named(t.snapshots)) throw new Error("take_snapshot: " + JSON.stringify(t));
+        if (!named((await run("list_history", { doc })).snapshots)) throw new Error("list_history does not list the snapshot");
+        const n = ed.undo.length;
+        await run("select_rect", { x: 300, y: 50, w: 80, h: 80, doc });
+        const rs = await run("restore_snapshot", { name: "by command", doc });
+        if (!rs || !rs.restored || rs.undo !== n + 2 || rs.redo !== 0) throw new Error("restore_snapshot: " + JSON.stringify(rs) + " (" + n + " undo steps before the edit after the snapshot)");
+        if (bounds() !== null) throw new Error("the restore kept the selection made after the snapshot: " + JSON.stringify(bounds()));
+        const miss = await commands.call("restore_snapshot", { name: "no such snapshot", doc });
+        if (miss.ok && miss.result && miss.result.restored) throw new Error("restore_snapshot restored a name that was never taken: " + JSON.stringify(miss));
+        const del = await run("delete_snapshot", { name: "by command", doc });
+        if (!del || !del.deleted || !Array.isArray(del.snapshots) || del.snapshots.length) throw new Error("delete_snapshot: " + JSON.stringify(del));
+        if (ed.snapshots.length) throw new Error("delete_snapshot left " + ed.snapshots.length + " snapshots");
+        out.snapshot = { restored: rs.restored, deleted: del.deleted, missing: miss.ok ? miss.result : miss.error };
+    } else {
+        const t = await commands.call("take_snapshot", { name: "by command", doc });
+        if (t.ok) throw new Error("take_snapshot answered on the canvas backend: " + JSON.stringify(t.result));
+        out.snapshot = t.error;
+    }
+    // Clear through the panel, answered this time: both stacks empty, the list starts again
+    await run("undo", { doc });
+    await settle();
+    if (!ed.redo.length) throw new Error("no redo step for Clear to drop");
+    ed.undoSection.querySelector(".ipc-undo-clear").click();
+    await answerAsk("Clear");
+    await until("the history to clear", () => !ed.undo.length && !ed.redo.length);
+    await settle();
+    const left = ed.undoList();
+    if (left.length !== 1 || left[0].label !== "Start" || !left[0].current) throw new Error("after Clear the list is " + JSON.stringify(left));
+    samePanel("after Clear");
+} finally {
+    const box = ed.root.querySelector(".ipc-askbox");
+    if (box) { const c = Array.from(box.querySelectorAll("button")).find((b) => b.textContent === "Cancel"); if (c) c.click(); }
+    for (let i = 0; i < 10 && ed.snapshots && ed.snapshots.length; i++) ed.deleteSnapshot(0);
+    try { if (window.__uhOpen == null) localStorage.removeItem("ipc.undoOpen"); else localStorage.setItem("ipc.undoOpen", window.__uhOpen); } catch (_) { /* no storage */ }
+    await run("close_document", { doc, force: true });
+    host.shell.activate(ednow(window.__t) || host.editor);
+}
+return out;
+"""
 
 
 STEPS = [
@@ -6247,6 +6609,12 @@ await run("new_canvas", { width: 600, height: 300, doc: window.__t });
 return out;
 """),
     ("large_image_files_open_in_a_worker", lambda c: large_images_step(c)),
+    # the Undo history (0.1.31): in this order, on the document the first of them opens and the last closes
+    ("undo_history_lists_three_edits_as_labelled_rows", UNDO_HISTORY_ROWS),
+    ("undo_history_row_click_jumps_back_and_forward", UNDO_HISTORY_JUMPS),
+    ("undo_history_snapshot_restores_twice_and_is_undoable", UNDO_HISTORY_SNAPSHOTS),
+    ("undo_history_depth_trims_to_its_steps", UNDO_HISTORY_DEPTH),
+    ("undo_history_commands_match_the_list", UNDO_HISTORY_COMMANDS),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

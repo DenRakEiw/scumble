@@ -59,6 +59,13 @@ const NODE_CLASS = "InpaintCanvas";
 const STITCH_CLASS = "InpaintCanvasStitch";
 const MAX_UNDO = 30;
 const MAX_UNDO_BYTES = 384 * 1024 * 1024;   // rect undo copies: older steps are dropped past this
+const MAX_SNAPSHOTS = 8;                    // named snapshots of the whole document (the Undo history section)
+/** What an undo step is called in the Undo history when its site gives no label of its own. */
+const UNDO_LABELS = {
+    layerrect: "Layer pixels", layer: "Layer pixels", layerfull: "Layer", selection: "Selection", transform: "Transform",
+    mask: "Layer mask", match: "Colour match", filter: "Filter", text: "Text", layers: "Layers", canvas: "Canvas",
+    turn: "Assistant turn taken back",
+};
 const PYRAMID_MIN_PX = 1 << 20;             // sources below 1 MP are drawn straight, no levels
 const PYRAMID_LEVELS = 8;
 const FLOOD_COARSE_PX = 2048;               // the wand's and the bucket's first pass runs on a composite this large
@@ -1105,6 +1112,14 @@ const STYLE = `
 .ipc-hitem .ipc-htext { flex:1; min-width:0; font-size:11px; color:var(--sc-fg-2, #aaa); }
 .ipc-hitem .ipc-htext b { display:block; color:var(--sc-fg, #ddd); font-weight:500; }
 .ipc-hitem .ipc-htext span { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ipc-undo-list { position:relative; max-height:30vh; overflow:auto; }
+.ipc-undo-row { padding:3px 10px; font-size:12px; color:var(--sc-fg-2, #bbb); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; border-bottom:1px solid var(--sc-line, #1c1c1c); }
+.ipc-undo-row:hover { background:var(--sc-raised, #262b33); color:var(--sc-fg, #ddd); }
+.ipc-undo-row.ipc-undo-current { background:var(--sc-selected, #2b3a4f); box-shadow:inset 3px 0 0 var(--sc-active, #4a90d9); color:var(--sc-fg-strong, #fff); cursor:default; }
+.ipc-undo-row.ipc-undo-future { color:var(--sc-faint, #777); font-style:italic; }
+.ipc-undo-bar { padding-top:6px; padding-bottom:4px; }
+.ipc-snap-row { display:flex; align-items:center; gap:4px; padding:2px 8px 2px 10px; font-size:12px; color:var(--sc-fg, #ddd); }
+.ipc-snap-row .ipc-snap-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .ipc-info { padding:8px 10px; color:var(--sc-fg-2, #aaa); display:grid; grid-template-columns:auto 1fr; gap:3px 10px; }
 .ipc-upsample { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .ipc-gen { display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; }
@@ -1390,6 +1405,10 @@ class InpaintEditor {
         this.undo = [];
         this.redo = [];
         this.historyGen = 0;            // bumped by every change an undo that is still loading its step must not run over
+        this.maxUndo = MAX_UNDO;        // the history's depth: steps and bytes (the app's Settings › Memory sets them)
+        this.maxUndoBytes = MAX_UNDO_BYTES;
+        this.undoTrimmed = false;       // older steps were dropped since the last clear: the list's first row is not the start
+        this.snapshots = [];            // named snapshots: [{ name, at, snap }] (turn snapshots, tiles only; not saved)
         this.selectionDirty = true;
         this.selectionLoose = false;   // cachedBounds is a superset of the selection, made exact on the next getBounds()
         this.selectionDataUrl = null;
@@ -1870,12 +1889,12 @@ class InpaintEditor {
             const handle = this.handleAt(lx, ly);
             if (handle) {
                 // scale in the un-rotated frame; the corner opposite the handle stays put on screen
-                this.pushUndo({ kind: "transform", id: l.id });
+                this.pushUndo({ kind: "transform", id: l.id, label: "Scale" });
                 this.pointer = { kind: "scale", layer: l, handle, start: [lx, ly], orig: { x: l.x, y: l.y, w: l.w, h: l.h }, keepAspect: handle.length === 2 && !e.shiftKey, angle: p.angle, center: [cx, cy] };
                 return;
             }
             if (lx >= l.x && lx <= l.x + l.w && ly >= l.y && ly <= l.y + l.h) {
-                this.pushUndo({ kind: "transform", id: l.id });
+                this.pushUndo({ kind: "transform", id: l.id, label: "Move layer" });
                 this.pointer = { kind: "move", layer: l, start: [ix, iy], orig: { x: l.x, y: l.y } };
                 return;
             }
@@ -1916,7 +1935,7 @@ class InpaintEditor {
         if (!p) return;
         const layer = p.layer;
         if (p.mode === "rotate" && Math.abs(p.angle) < 1e-6) { this.cancelPending(); return; }
-        this.pushUndo({ kind: "layerfull", id: layer.id });
+        this.pushUndo({ kind: "layerfull", id: layer.id, label: { rotate: "Rotate", distort: "Distort", warp: "Warp" }[p.mode] });
         if (layer.maskPx) this.applyMask(layer, { silent: true, undo: false });
         const n = this.pendingSubdivisions(p, true);
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -2243,7 +2262,7 @@ class InpaintEditor {
             if (l) {
                 e.preventDefault();
                 const step = e.shiftKey ? 10 : 1;
-                this.pushUndo({ kind: "transform", id: l.id });
+                this.pushUndo({ kind: "transform", id: l.id, label: "Nudge layer" });
                 if (e.key === "ArrowLeft") l.x -= step; if (e.key === "ArrowRight") l.x += step;
                 if (e.key === "ArrowUp") l.y -= step; if (e.key === "ArrowDown") l.y += step;
                 this.uploaded.baseHash = null; this.uploaded.controlHash = null;
@@ -2858,7 +2877,7 @@ class InpaintEditor {
         // released otherwise (a cancel or an unchanged Enter left its blob URL behind for good)
         const changed = commit && te.layer.text.content !== te.before.text.content;
         if (!commit) te.layer.text.content = te.before.text.content;
-        if (changed) this.pushUndoSnapshot(te.before); else this.releaseSnapshot(te.before);
+        if (changed) this.pushUndoSnapshot(te.before, { label: "Edit text" }); else this.releaseSnapshot(te.before);
         this.renderTextLayer(te.layer);
         this.renderLayers();
         this.root.focus({ preventScroll: true });
@@ -2872,7 +2891,7 @@ class InpaintEditor {
         const x = Math.round(+g.x.value), y = Math.round(+g.y.value), w = Math.max(1, Math.round(+g.w.value)), h = Math.max(1, Math.round(+g.h.value));
         if (![x, y, w, h].every(Number.isFinite)) return;
         if (x === l.x && y === l.y && w === l.w && h === l.h) return;
-        this.pushUndo({ kind: "transform", id: l.id });
+        this.pushUndo({ kind: "transform", id: l.id, label: "Position and size" });
         l.x = x; l.y = y; l.w = w; l.h = h;
         this.uploaded.baseHash = null; this.uploaded.controlHash = null;
         this.renderLayers(); this.draw(); this.drawThumb(); this.notifyChanged();
@@ -2922,7 +2941,7 @@ class InpaintEditor {
     centerLayer() {
         const l = this.activeLayer();
         if (!l || l.kind === "filter" || l.locked) return;
-        this.pushUndo({ kind: "transform", id: l.id });
+        this.pushUndo({ kind: "transform", id: l.id, label: "Centre layer" });
         l.x = Math.round((this.width - l.w) / 2);
         l.y = Math.round((this.height - l.h) / 2);
         this.uploaded.baseHash = null; this.uploaded.controlHash = null;
@@ -2935,7 +2954,7 @@ class InpaintEditor {
         if (!l || l.kind === "filter") { this.setStatus("Select a pixel layer to flip."); return; }
         if (l.locked) { this.setStatus(`${l.name} is locked.`); return; }
         if (this.pending) this.cancelPending();
-        this.pushUndo({ kind: "layerfull", id: l.id });
+        this.pushUndo({ kind: "layerfull", id: l.id, label: axis === "h" ? "Flip horizontally" : "Flip vertically" });
         const flip = (src) => {
             const c = makeCanvas(src.width, src.height);
             const ctx = c.getContext("2d");
@@ -2998,7 +3017,7 @@ class InpaintEditor {
         if (!l || l.kind === "filter") { this.setStatus("Select a pixel layer to rotate."); return; }
         if (l.locked) { this.setStatus(`${l.name} is locked.`); return; }
         if (this.pending) this.cancelPending();
-        this.pushUndo({ kind: "layerfull", id: l.id });
+        this.pushUndo({ kind: "layerfull", id: l.id, label: dir === 1 ? "Rotate 90° clockwise" : "Rotate 90° counter-clockwise" });
         const rot = (src) => {
             const c = makeCanvas(src.height, src.width);
             const ctx = c.getContext("2d");
@@ -3088,7 +3107,7 @@ class InpaintEditor {
             this.base = { ref, px };
             this.width = nw; this.height = nh;
             pushed = true;
-            this.pushUndoSnapshot(before, { tracked: true });
+            this.pushUndoSnapshot(before, { tracked: true, label: "Crop canvas" });
             this.uploaded = this.makeUploaded();
             this.selectionDirty = true; this.selectionLoose = false;
             this.selectionDataUrl = null; this.selectionEncoded = false;
@@ -3144,7 +3163,7 @@ class InpaintEditor {
             this.base = { ref, px };
             this.width = nw; this.height = nh;
             pushed = true;
-            this.pushUndoSnapshot(before, { tracked: true });
+            this.pushUndoSnapshot(before, { tracked: true, label: base ? "Upscale image" : "Resize image" });
             this.uploaded = this.makeUploaded();
             this.selectionDirty = true; this.selectionLoose = false;
             this.selectionDataUrl = null; this.selectionEncoded = false;
@@ -3238,15 +3257,16 @@ class InpaintEditor {
         // Krita / Photoshop modifiers: Shift adds, Alt subtracts; rectangle and lasso replace otherwise.
         const selMode = e.altKey ? "subtract" : (e.shiftKey ? "add" : "replace");
         if (this.tool === "select" || this.tool === "deselect") {
-            this.pushUndo({ kind: "selection" });
+            this.pushUndo({ kind: "selection", label: this.tool === "deselect" ? "Deselect brush" : "Selection brush" });
             this.pointer = { kind: "selpaint", last: [ix, iy], path: [[ix, iy]], subtract: this.tool === "deselect" || e.altKey };
             this.selectionDab(ix, iy, ix, iy);
         } else if (this.tool === "wand") {
             this.wandSelect(ix, iy, selMode);
             return;
         } else if (this.tool === "rect" || this.tool === "ellipse") {
-            this.pushUndo({ kind: "selection" });
-            if (selMode === "replace" && !e.ctrlKey && this.selectedAt(ix, iy)) {
+            const moveSel = selMode === "replace" && !e.ctrlKey && this.selectedAt(ix, iy);
+            this.pushUndo({ kind: "selection", label: moveSel ? "Move selection" : this.tool === "ellipse" ? "Ellipse selection" : "Rectangle selection" });
+            if (moveSel) {
                 // dragging inside the selection moves its outline (Photoshop's marquee tools)
                 const orig = this.sel.clone();   // the outline as it was, drawn back offset while dragging
                 // every pixel with any alpha lies in `ext` (exact: an approximate extent left faint pixels
@@ -3259,7 +3279,7 @@ class InpaintEditor {
                 this.pointer = { kind: "rect", ellipse: this.tool === "ellipse", square: e.ctrlKey, start: [ix, iy], cur: [ix, iy], startPx: this.toCanvasPx(e), mode: selMode };
             }
         } else if (this.tool === "lasso") {
-            this.pushUndo({ kind: "selection" });
+            this.pushUndo({ kind: "selection", label: "Lasso selection" });
             this.pointer = { kind: "lasso", mode: selMode };
             this.lassoPoints = [[ix, iy]];
         } else if (this.tool === "polygon") {
@@ -3287,7 +3307,7 @@ class InpaintEditor {
             if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
             if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels to smudge."); return; }
             if (!layer) layer = this.baseCopyLayer();
-            this.pushUndo({ kind: "layer", id: layer.id });
+            this.pushUndo({ kind: "layer", id: layer.id, label: "Smudge" });
             this.pointer = { kind: "smudge", layer, last: [ix, iy], clip: this.strokeClip(layer, layer.px), pressure: e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 1 };
         } else if (this.tool === "clone" || this.tool === "heal") {
             if (e.altKey) {
@@ -3325,7 +3345,7 @@ class InpaintEditor {
             this.shapePointerDown(ix, iy, e, isDouble);
         } else if ((this.tool === "paint" || this.tool === "erase") && this.quickMask) {
             // quick mask: the brushes edit the selection
-            this.pushUndo({ kind: "selection" });
+            this.pushUndo({ kind: "selection", label: this.tool === "erase" ? "Quick mask erase" : "Quick mask paint" });
             this.pointer = { kind: "selpaint", last: [ix, iy], path: [[ix, iy]], subtract: this.tool === "erase" || e.altKey };
             this.selectionDab(ix, iy, ix, iy);
         } else if (this.tool === "paint" || this.tool === "erase") {
@@ -3366,7 +3386,7 @@ class InpaintEditor {
                 this.draw();
                 return;
             }
-            this.pushUndo({ kind: "transform", id: layer.id });
+            this.pushUndo({ kind: "transform", id: layer.id, label: handle ? "Scale" : "Move layer" });
             if (handle) {
                 const corner = handle.length === 2;
                 this.pointer = { kind: "scale", layer, handle, start: [ix, iy], orig: { x: layer.x, y: layer.y, w: layer.w, h: layer.h }, keepAspect: corner && !e.shiftKey };
@@ -3380,7 +3400,7 @@ class InpaintEditor {
                 this.renderLayers();
                 if ((e.detail >= 2 || isDouble) && !hit.locked) { e.preventDefault(); this.beginTextEdit(hit); this.draw(); return; }
                 if (hit.locked) { this.setStatus(`${hit.name} is locked.`); this.draw(); return; }
-                this.pushUndo({ kind: "transform", id: hit.id });
+                this.pushUndo({ kind: "transform", id: hit.id, label: "Move layer" });
                 this.pointer = { kind: "move", layer: hit, start: [ix, iy], orig: { x: hit.x, y: hit.y } };
             } else {
                 this.addTextLayer(ix, iy);
@@ -3676,7 +3696,7 @@ class InpaintEditor {
         const pts = this.polyPoints;
         this.polyPoints = null;
         if (!pts || pts.length < 3) { this.setStatus("A polygon needs at least three points."); return; }
-        this.pushUndo({ kind: "selection" });
+        this.pushUndo({ kind: "selection", label: "Polygon selection" });
         const mode = this.polyMode, W = this.width, H = this.height;
         if (mode === "replace") this.selectionLabel = "";
         let bx0 = pts[0][0], by0 = pts[0][1], bx1 = bx0, by1 = by0;
@@ -3842,7 +3862,8 @@ class InpaintEditor {
         const b = [Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(this.width, Math.ceil(box[2])), Math.min(this.height, Math.ceil(box[3]))];
         if (b[2] <= b[0] || b[3] <= b[1]) return false;
         const hint = this.boundsAfter(mode, b);
-        this.pushUndo({ kind: "selection" });
+        const all = mode === "replace" && !b[0] && !b[1] && b[2] === this.width && b[3] === this.height;
+        this.pushUndo({ kind: "selection", label: all ? "Select all" : "Rectangle selection" });
         if (mode === "replace") this.selectionLabel = "";
         const old = mode === "replace" ? this.getBounds() : null;
         if (mode === "replace") this.sel.clear();
@@ -3858,11 +3879,11 @@ class InpaintEditor {
      * placed with its top left corner at `at` (image coordinates; the shape may be a box
      * of the image rather than all of it). `box` is the region's bounding box in image
      * coordinates when the caller knows it, so the new selection's bounds do not have to
-     * be scanned for.
+     * be scanned for. `label` names the undo step.
      */
-    applyShapeToSelection(shape, mode = "replace", box = null, at = [0, 0]) {
+    applyShapeToSelection(shape, mode = "replace", box = null, at = [0, 0], label = "Selection from mask") {
         const hint = box ? this.boundsAfter(mode, box) : undefined;
-        this.pushUndo({ kind: "selection" });
+        this.pushUndo({ kind: "selection", label });
         if (mode === "replace") this.selectionLabel = "";
         const rect = [at[0], at[1], at[0] + shape.width, at[1] + shape.height];
         // C5: a replace clears the mask first -- on tiles that drops the tiles, where a clearRect
@@ -4629,7 +4650,7 @@ class InpaintEditor {
      */
     applyTilesToSelection(tiles, mode = "replace", box = null, at = [0, 0]) {
         const hint = box ? this.boundsAfter(mode, box) : undefined;
-        this.pushUndo({ kind: "selection" });
+        this.pushUndo({ kind: "selection", label: "Magic wand" });
         if (mode === "replace") this.selectionLabel = "";
         const old = mode === "replace" ? this.getBounds() : null;
         if (mode === "replace") this.sel.clear();
@@ -4795,7 +4816,7 @@ class InpaintEditor {
         const t0 = performance.now();
         const r = await this.floodRegion(x, y, { tolerance: o.tolerance, contiguous: o.contiguous, sample: o.sample, tiles: true });
         if (r.tiles) this.applyTilesToSelection(r.tiles, mode, r.bounds, [r.x, r.y]);
-        else this.applyShapeToSelection(r.shape, mode, r.bounds, [r.x, r.y]);
+        else this.applyShapeToSelection(r.shape, mode, r.bounds, [r.x, r.y], "Magic wand");
         if (r.close) r.shape.close();
         this.setStatus(`${r.count.toLocaleString()} px ${mode === "replace" ? "selected" : mode === "add" ? "added" : "subtracted"} (${Math.round(performance.now() - t0)} ms).`);
     }
@@ -4806,7 +4827,7 @@ class InpaintEditor {
     async featherSelectionNow(r) {
         if (!this.getBounds()) { this.setStatus("Nothing selected to feather."); return; }
         r = Math.max(0.5, Math.min(512, +r || 0));
-        this.pushUndo({ kind: "selection" });
+        this.pushUndo({ kind: "selection", label: "Feather selection" });
         // a Gaussian blur of radius r is over at about three sigma; two pixels of slack on top
         const done = await this.selectionInWorker("feather", { radius: r }, { halo: Math.ceil(r * 3) + 2 });
         if (!done) {
@@ -4852,7 +4873,7 @@ class InpaintEditor {
         if (!s) { this.setStatus("No saved selection chosen."); return; }
         try {
             const img = await loadImageEl(s.url);
-            this.pushUndo({ kind: "selection" });
+            this.pushUndo({ kind: "selection", label: "Load selection" });
             const W = this.width, H = this.height;
             // the saved PNG is drawn unscaled at 0, 0 whatever its size: the whole rect (null)
             this.sel.drawInto(null, (sctx) => {
@@ -5488,7 +5509,7 @@ class InpaintEditor {
         const target = layer.px;
         const sx = target.width / layer.w, sy = target.height / layer.h;
         const lx = (r.x - layer.x) * sx, ly = (r.y - layer.y) * sy, lw = r.w * sx, lh = r.h * sy;
-        this.pushUndoSnapshot(this.snapshotRect(layer, { x: lx, y: ly, w: lw, h: lh }));
+        this.pushUndoSnapshot(this.snapshotRect(layer, { x: lx, y: ly, w: lw, h: lh }), { label: "Bucket fill" });
         // the fill is r.w x r.h at (r.x, r.y), scaled into the layer's pixels: it covers the box, nothing outside
         const box = [Math.floor(lx), Math.floor(ly), Math.ceil(lx + lw), Math.ceil(ly + lh)];
         const opacity = this.brushOpacity, op = layer.alphaLock ? "source-atop" : "source-over";
@@ -5607,12 +5628,21 @@ class InpaintEditor {
         }
     }
 
+    /** What the Undo history calls a stroke's step (a shape is committed as a stroke while the shape tool is on). */
+    strokeLabel(p) {
+        if (p.kind === "maskpaint") return p.erase ? "Erase mask" : "Paint mask";
+        if (p.grad) return "Gradient";
+        if (p.clone) return p.clone.heal ? "Heal" : "Clone";
+        if (this.tool === "shape") return "Shape";
+        return p.erase ? "Erase" : "Brush stroke";
+    }
+
     /** Apply the stroke buffer to the layer (or its mask) with the brush opacity, band by band. */
     commitStroke(p) {
         const target = p.kind === "maskpaint" ? p.layer.maskPx : p.layer.px;
         if (!target) return;   // a mask removed under the gesture: nothing to write into
         // the undo step is a copy of what the stroke touched, taken before it is applied
-        if (!p.noUndo) this.pushUndoSnapshot(this.strokeUndo(p, target));
+        if (!p.noUndo) this.pushUndoSnapshot(this.strokeUndo(p, target), { label: this.strokeLabel(p) });
         if (!p.stroke || p.stroke.empty) return;
         const opacity = this.brushOpacity;
         const op = p.erase ? "destination-out" : (p.kind === "layerpaint" && p.layer.alphaLock ? "source-atop" : "source-over");
@@ -6016,7 +6046,7 @@ class InpaintEditor {
         if (layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
         const onMask = !!(layer.maskPx && layer.maskEdit);
         if (layer.kind === "filter" && !onMask) { this.setStatus("Filter layers have no pixels to fill. Use \"mask from selection\" to limit the filter instead."); return; }
-        this.pushUndo(onMask ? { kind: "mask", id: layer.id } : { kind: "layer", id: layer.id });
+        this.pushUndo(onMask ? { kind: "mask", id: layer.id, label: "Fill mask" } : { kind: "layer", id: layer.id, label: "Fill selection" });
         // a mask is replaced, not written (rule 2): the `mask` step restores by replacing it, and an
         // older `layers` / `canvas` step still holds the old object, which has to stay as it was
         if (onMask) layer.maskPx = layer.maskPx.clone();
@@ -6151,7 +6181,7 @@ class InpaintEditor {
         if (layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
         const onMask = !!(layer.maskPx && layer.maskEdit);
         if (layer.kind === "filter" && !onMask) { this.setStatus("Filter layers have no pixels. Use \"mask from selection\" to limit the filter instead."); return; }
-        this.pushUndo(onMask ? { kind: "mask", id: layer.id } : { kind: "layer", id: layer.id });
+        this.pushUndo(onMask ? { kind: "mask", id: layer.id, label: "Hide in mask" } : { kind: "layer", id: layer.id, label: "Clear pixels" });
         if (onMask) layer.maskPx = layer.maskPx.clone();   // replaced, as in fillSelection (rule 2)
         const target = onMask ? layer.maskPx : layer.px;
         const sel = this.sel;
@@ -6182,7 +6212,7 @@ class InpaintEditor {
         if (!this.sel || !n) return;
         const W = this.width, H = this.height;
         const grow = n > 0, r = Math.abs(n);
-        this.pushUndo({ kind: "selection" });
+        this.pushUndo({ kind: "selection", label: grow ? "Grow selection" : "Shrink selection" });
         const done = await this.selectionInWorker("grow", { n }, { halo: r + 2 });
         if (!done) {
             const img = this.sel.readRect(0, 0, W, H);
@@ -6197,7 +6227,7 @@ class InpaintEditor {
     selectionFromLayer() {
         const layer = this.activeLayer();
         if (!layer) { this.setStatus("Select a layer first (the base is fully opaque)."); return; }
-        this.pushUndo({ kind: "selection" });
+        this.pushUndo({ kind: "selection", label: "Selection from layer" });
         const tmp = makeCanvas(this.width, this.height);
         tmp.getContext("2d").drawImage(this.layerPixels(layer), layer.x, layer.y, layer.w, layer.h);
         const src = tmp.getContext("2d").getImageData(0, 0, this.width, this.height).data;
@@ -6579,7 +6609,7 @@ class InpaintEditor {
         const x = Math.floor(ix), y = Math.floor(iy);
         const already = this.sel.readRect(x, y, 1, 1).data[3] > 0;
         const subtract = p.alt ? true : (p.shift ? false : already);
-        this.pushUndo({ kind: "selection" });
+        this.pushUndo({ kind: "selection", label: "Object selection" });
         const shape = this.objectShape(id);   // image-sized: the whole rect (null)
         this.sel.drawInto(null, (sctx) => {
             sctx.globalCompositeOperation = subtract ? "destination-out" : "source-over";
@@ -6598,7 +6628,7 @@ class InpaintEditor {
         try {
             const img = await loadImageEl(viewUrl({ filename: info.filename, subfolder: info.subfolder || SUBFOLDER, type: info.type || "temp" }));
             if (!this.sel) return;
-            this.pushUndo({ kind: "selection" });
+            this.pushUndo({ kind: "selection", label: "Select by text" });
             const tmp = makeCanvas(this.width, this.height);
             const tctx = tmp.getContext("2d");
             tctx.drawImage(img, 0, 0, this.width, this.height);
@@ -6716,7 +6746,7 @@ class InpaintEditor {
             this.sel.fill(null, "#ff0000");
             this.sel.clear([left, top, left + W, top + H]);
             pushed = true;
-            this.pushUndoSnapshot(before, { tracked: true });
+            this.pushUndoSnapshot(before, { tracked: true, label: "Extend canvas" });
             this.uploaded = this.makeUploaded();
             this.selectionDirty = true; this.selectionLoose = false;
             this.selectionDataUrl = null; this.selectionEncoded = false;
@@ -6889,6 +6919,10 @@ class InpaintEditor {
         const layers = this.layers.map((l) => {
             const record = this.snapshotLayer(l);
             pixels.push({ id: l.id, px: l.px ? l.px.clone() : null, maskPx: l.maskPx ? l.maskPx.clone() : null });
+            // the restore takes the clones above; the record's own references to the live pixels and the layer's caches
+            // would only keep what the document replaces later alive (a named snapshot lives as long as the user wants)
+            record.px = null; record.maskPx = null;
+            record._masked = null; record._maskedValid = false; record._mcache = null; record._fcache = null; record._fxCache = null;
             return record;
         });
         return {
@@ -6915,16 +6949,100 @@ class InpaintEditor {
      * one `turn` step, so Ctrl+Z takes the restore back and redo does it again, like any step.
      * The steps the turn itself pushed stay below it; nothing is collapsed.
      */
-    restoreTurn(snap) {
+    restoreTurn(snap, { label } = {}) {
         if (!snap || snap.kind !== "turn" || !this.tileMode) return false;
         const now = this.turnSnapshot();
-        if (now) this.pushUndoSnapshot(now);
+        if (now) this.pushUndoSnapshot(now, { label });
         this.applySnapshot(snap);
         this.scheduleDetachedRelease();
         return true;
     }
 
+    // ---- named snapshots (the Undo history section; tiles only, not saved with the document) ----------------------
+
+    /**
+     * Keep the whole document under a name: a turn snapshot (copy-on-write clones of every layer, its mask and the
+     * selection, plus the prompt and the settings), so taking one costs nothing until the document is edited on. At
+     * most MAX_SNAPSHOTS; the oldest goes first. Null on the canvas backend, which cannot clone for free.
+     */
+    takeSnapshot(name) {
+        const snap = this.turnSnapshot();
+        if (!snap) return null;
+        // names are unique: the panel and the commands find a snapshot by its name
+        let label = String(name || "").trim() || this.nextSnapshotName();
+        if (this.findSnapshot(label)) { let n = 2; while (this.findSnapshot(`${label} (${n})`)) n++; label = `${label} (${n})`; }
+        const entry = { name: label, at: Date.now(), snap };
+        this.snapshots.push(entry);
+        let dropped = null;
+        while (this.snapshots.length > MAX_SNAPSHOTS) { dropped = this.snapshots.shift(); this.releaseSnapshot(dropped.snap); }
+        if (dropped) this.setStatus(`Snapshot "${label}" taken; the oldest, "${dropped.name}", was dropped (${MAX_SNAPSHOTS} at most).`);
+        else this.setStatus(`Snapshot "${label}" taken.`);
+        this.historyChanged();
+        return entry;
+    }
+
+    /** The first free "Snapshot N" (the panel offers it as the name). */
+    nextSnapshotName() {
+        let n = this.snapshots.length + 1;
+        while (this.findSnapshot(`Snapshot ${n}`)) n++;
+        return `Snapshot ${n}`;
+    }
+
+    /** A snapshot by its name or its index in `snapshots`. */
+    findSnapshot(which) {
+        if (typeof which === "number") return this.snapshots[which] || null;
+        return this.snapshots.find((s) => s.name === which) || null;
+    }
+
+    /**
+     * Put a snapshot back as one undo step (Ctrl+Z takes it back). The snapshot stays: what goes into the document
+     * is a fresh copy of it, since a restore moves the pixels it is given into the layers.
+     */
+    restoreSnapshot(which) {
+        const entry = this.findSnapshot(which);
+        if (!entry) return false;
+        if (!this.restoreTurn(this.copyTurn(entry.snap), { label: `Restore "${entry.name}"` })) return false;
+        this.setStatus(`Snapshot "${entry.name}" restored. Ctrl+Z takes it back.`);
+        return true;
+    }
+
+    deleteSnapshot(which) {
+        const entry = this.findSnapshot(which);
+        if (!entry) return false;
+        this.snapshots.splice(this.snapshots.indexOf(entry), 1);
+        this.releaseSnapshot(entry.snap);
+        this.historyChanged();
+        return true;
+    }
+
+    clearSnapshots() {
+        for (const s of this.snapshots) this.releaseSnapshot(s.snap);
+        this.snapshots = [];
+        this.historyChanged();
+    }
+
+    /** A turn snapshot to hand to applySnapshot, leaving `snap` whole: new clones and new layer records. */
+    copyTurn(snap) {
+        return {
+            ...snap,
+            selPx: snap.selPx ? snap.selPx.clone() : null,
+            layers: snap.layers.map((l) => this.snapshotLayer(l)),
+            pixels: (snap.pixels || []).map((p) => ({ id: p.id, px: p.px ? p.px.clone() : null, maskPx: p.maskPx ? p.maskPx.clone() : null })),
+            doc: JSON.parse(JSON.stringify(snap.doc || {})),
+        };
+    }
+
+    /** The undo step a site asks for, with its label (the site's, else the kind's) and, taken back, its time. */
     snapshot(step) {
+        const snap = this.snapshotOf(step);
+        if (snap) {
+            snap.label = step.label || UNDO_LABELS[snap.kind] || snap.kind;
+            if (step.at) snap.at = step.at;
+        }
+        return snap;
+    }
+
+    snapshotOf(step) {
         if (step.kind === "layerrect") {
             const l = this.layers.find((x) => x.id === step.id);
             return l ? this.snapshotRect(l, step, step.mask, true) : null;
@@ -6973,17 +7091,81 @@ class InpaintEditor {
      * `tracked`: the push of an operation an undo waits for (`trackEdit`) after its await. It is the
      * step that undo was pressed for, so it does not count as a change the waiting undo must stop at.
      */
-    pushUndoSnapshot(snap, { tracked = false } = {}) {
+    // `label`: what the Undo history calls the step (the edit it takes back); else the one the snapshot carries, else
+    // its kind's
+    pushUndoSnapshot(snap, { tracked = false, label } = {}) {
         if (!snap) return;
         if (!tracked) this.historyGen++;
+        if (label) snap.label = label;
+        if (!snap.label) snap.label = UNDO_LABELS[snap.kind] || snap.kind;
+        snap.at = Date.now();
         // the redo steps go first: the budget counts them, and trimming against it while they are
         // still counted threw away older undo steps that fit once the redo steps were gone
         for (const s of this.redo) this.releaseSnapshot(s);
         this.redo = [];
         this.undo.push(snap);
         this.undoBytes += snap.bytes || 0;
-        while (this.undo.length > MAX_UNDO || (this.undoBytes > MAX_UNDO_BYTES && this.undo.length > 1)) this.releaseSnapshot(this.undo.shift());
+        this.trimUndo();
         this.scheduleDetachedRelease();
+        this.historyChanged();
+    }
+
+    /** Drop the oldest steps past the depth (the instance's maxUndo / maxUndoBytes, which the app's settings set). */
+    trimUndo() {
+        const steps = Math.max(1, this.maxUndo || MAX_UNDO), bytes = this.maxUndoBytes || MAX_UNDO_BYTES;
+        while (this.undo.length > steps || (this.undoBytes > bytes && this.undo.length > 1)) {
+            this.releaseSnapshot(this.undo.shift());
+            this.undoTrimmed = true;
+        }
+    }
+
+    /** A new depth: applied at once (the oldest steps past it go), and to every step after. */
+    setUndoDepth({ steps, bytes } = {}) {
+        if (steps != null) this.maxUndo = Math.max(1, Math.round(+steps) || MAX_UNDO);
+        if (bytes != null) this.maxUndoBytes = Math.max(1048576, Math.round(+bytes) || MAX_UNDO_BYTES);
+        this.trimUndo();
+        this.historyChanged();
+    }
+
+    /** The undo stacks changed: the Undo history section redraws once, after the current task. */
+    historyChanged() {
+        if (!this.renderUndoList || this._undoListQueued) return;
+        this._undoListQueued = true;
+        queueMicrotask(() => { this._undoListQueued = false; try { this.renderUndoList(); } catch (err) { console.warn("undo history", err); } });
+    }
+
+    /**
+     * The history as rows, oldest first, the way Photoshop lists it: a state per row, named by the edit that led to it.
+     * The first row is the oldest state kept ("Start", or "Oldest kept" once steps were dropped), then one row per undo
+     * step (the state after that edit; the last of them is the present), then the redo steps (states after edits that
+     * were taken back). `steps` is what `stepHistory` takes to get there: negative undoes, positive redoes.
+     */
+    undoList() {
+        const rows = [{ label: this.undoTrimmed ? "Oldest kept" : "Start", at: null, steps: -this.undo.length }];
+        this.undo.forEach((s, i) => rows.push({ label: s.label || UNDO_LABELS[s.kind] || s.kind, at: s.at || null, steps: i + 1 - this.undo.length }));
+        for (let j = this.redo.length - 1; j >= 0; j--) {
+            const s = this.redo[j];
+            rows.push({ label: s.label || UNDO_LABELS[s.kind] || s.kind, at: s.at || null, steps: this.redo.length - j });
+        }
+        return rows.map((r) => ({ ...r, current: r.steps === 0, future: r.steps > 0 }));
+    }
+
+    /**
+     * Undo (`n` < 0) or redo (`n` > 0) that many steps, one after the other through the history queue; stops early when
+     * a step does not happen (a held stroke, an edit in between). Resolves with the steps taken.
+     */
+    async stepHistory(n) {
+        const redo = n > 0;
+        let done = 0;
+        for (let i = 0; i < Math.abs(Math.round(n) || 0); i++) {
+            const stack = () => (redo ? this.redo : this.undo);
+            const before = stack().length;
+            if (!before) break;
+            await (redo ? this.redoStep() : this.undoStep());
+            if (stack().length >= before) break;
+            done++;
+        }
+        return done;
     }
 
     /**
@@ -7047,6 +7229,8 @@ class InpaintEditor {
         this.undo = [];
         this.redo = [];
         this.undoBytes = 0;
+        this.undoTrimmed = false;
+        this.historyChanged();
     }
 
     /**
@@ -7113,7 +7297,9 @@ class InpaintEditor {
             this.draw();
             this.drawThumb();
             this.notifyChanged();
-            this.setStatus("The assistant's turn was taken back.");
+            // the assistant's own restore hands a snapshot without a label; an undo or redo of a restore step is said by
+            // historyStepNow
+            if (!snap.label) this.setStatus("The assistant's turn was taken back.");
             return;
         }
         if (snap.kind === "canvas") {
@@ -7354,16 +7540,19 @@ class InpaintEditor {
             this.releaseSnapshot(snap);
             return;
         }
+        // the present, as the other stack's step: it keeps the step's label and time, so the list reads the same
         const current = this.snapshot(snap);
         if (current) { (redo ? this.undo : this.redo).push(current); this.undoBytes += current.bytes || 0; }
         try {
             this.applySnapshot(snap, images);
+            if (snap.kind === "turn") this.setStatus(`${redo ? "Redone" : "Undone"}: ${snap.label || UNDO_LABELS.turn}.`);   // the whole document changed
         } catch (err) {
             console.error(`Inpaint Canvas: ${word} step could not be restored`, err);
             this.setStatus(`That ${word} step could not be restored: ${(err && err.message) || err}`);
         } finally {
             this.releaseSnapshot(snap);
             this.scheduleDetachedRelease();   // what the restore took out of the document is in the other stack now
+            this.historyChanged();
         }
     }
 
@@ -7372,7 +7561,7 @@ class InpaintEditor {
     clearSelection() {
         if (!this.sel) return;
         this.selectionLabel = "";
-        this.pushUndo({ kind: "selection" });
+        this.pushUndo({ kind: "selection", label: "Deselect" });
         this.sel.clear();
         this.markSelectionChanged(null);
         this.draw();
@@ -7382,7 +7571,7 @@ class InpaintEditor {
 
     async invertSelectionNow() {
         if (!this.sel) return;
-        this.pushUndo({ kind: "selection" });
+        this.pushUndo({ kind: "selection", label: "Invert selection" });
         // The inverse of a selection covers everything it does not, so no bounding box can help.
         // On tiles the mask inverts its own tiles (C5): the worker's route makes a canvas, an
         // ImageBitmap and a write-back scratch of the whole mask, three times 600 MB at 15k.
@@ -7516,7 +7705,7 @@ class InpaintEditor {
 
     setFilterType(layer, id) {
         if (!FILTERS[id] || layer.filter === id) return;
-        this.pushUndo({ kind: "filter", id: layer.id });
+        this.pushUndo({ kind: "filter", id: layer.id, label: "Filter type" });
         layer.filter = id;
         layer.params = filterDefaults(id);
         // layer names are not editable: the type (or a preset, see the preset select) names the layer
@@ -7541,7 +7730,7 @@ class InpaintEditor {
             this.setStatus(`Reading ${file.name} ...`);
             const lut = lutFromCube(await file.text());
             const up = await uploadCanvas(lutToCanvas(lut), `n${this.node.id}_lut`);
-            this.pushUndo({ kind: "filter", id: layer.id });
+            this.pushUndo({ kind: "filter", id: layer.id, label: "Load LUT" });
             layer.lut = { name: file.name, size: lut.size, ref: up.ref };
             layer._lutData = lut;
             if (/^LUT/.test(layer.name || "") || !layer.name) layer.name = file.name.replace(/\.cube$/i, "");
@@ -7563,7 +7752,7 @@ class InpaintEditor {
             const ref = await uploadBlob(file, stem + ext, { overwrite: false });
             const img = await loadImageEl(viewUrl(ref));
             const st = plateStats(img);
-            this.pushUndo({ kind: "filter", id: layer.id });
+            this.pushUndo({ kind: "filter", id: layer.id, label: "Load grain plate" });
             layer.plate = { name: file.name, ref, w: img.naturalWidth, h: img.naturalHeight, mean: Math.round(st.mean * 10) / 10, std: Math.round(st.std * 10) / 10 };
             layer._plateImg = img;
             this.markFilterChanged(layer);
@@ -7577,7 +7766,7 @@ class InpaintEditor {
 
     removePlate(layer) {
         if (!layer.plate) return;
-        this.pushUndo({ kind: "filter", id: layer.id });
+        this.pushUndo({ kind: "filter", id: layer.id, label: "Remove grain plate" });
         layer.plate = null;
         layer._plateImg = null;
         this.markFilterChanged(layer);
@@ -7875,7 +8064,7 @@ class InpaintEditor {
             let sum = 0;
             for (let i = 0; i < src.length; i += 4) { d[i] = 255; d[i + 1] = 255; d[i + 2] = 255; d[i + 3] = src[i]; sum += src[i]; }
             const m = this.pixels.Mask.fromImageData(out);
-            this.pushUndo({ kind: "mask", id: layer.id });
+            this.pushUndo({ kind: "mask", id: layer.id, label: "Remove background" });
             layer.maskPx = m;
             layer.maskEdit = false;
             this.markMaskChanged(layer);
@@ -7897,7 +8086,7 @@ class InpaintEditor {
     maskFromSelection(layer) {
         if (!layer || !this.sel) return;
         if (!this.getBounds()) { this.setStatus("Select the area to keep first."); return; }
-        this.pushUndo({ kind: "mask", id: layer.id });
+        this.pushUndo({ kind: "mask", id: layer.id, label: "Mask from selection" });
         // a new mask at the layer's own resolution (the mask undo step holds the old one): the
         // selection under the layer, turned white with its coverage kept in alpha
         const m = this.pixels.Mask.empty(layer.px.width, layer.px.height);
@@ -7932,7 +8121,7 @@ class InpaintEditor {
     /** Bake the mask into the layer's alpha. */
     applyMask(layer, { silent = false, undo = true } = {}) {
         if (!layer || !layer.maskPx) return;
-        if (undo) this.pushUndo({ kind: "layerfull", id: layer.id });
+        if (undo) this.pushUndo({ kind: "layerfull", id: layer.id, label: "Apply mask" });
         const masked = this.layerPixels(layer);
         // new pixels, not a write into the old ones: the layerfull undo step and a running
         // encode of it may still read the old object
@@ -7949,7 +8138,7 @@ class InpaintEditor {
 
     removeMask(layer) {
         if (!layer || !layer.maskPx) return;
-        this.pushUndo({ kind: "mask", id: layer.id });
+        this.pushUndo({ kind: "mask", id: layer.id, label: "Remove mask" });
         layer.maskPx = null;
         layer.maskEdit = false;
         this.markMaskChanged(layer);
@@ -8141,7 +8330,7 @@ class InpaintEditor {
             if (done) return;
             done = true;
             const v = input.value.trim();
-            if (commit && v && v !== layer.name) { this.pushUndo({ kind: "layers" }); layer.name = v; this.notifyChanged(); }
+            if (commit && v && v !== layer.name) { this.pushUndo({ kind: "layers", label: "Rename layer" }); layer.name = v; this.notifyChanged(); }
             this.renderLayers();
             this.renderHistory();
             this.root.focus({ preventScroll: true });
@@ -8163,7 +8352,7 @@ class InpaintEditor {
     reorderLayer(srcId, targetId, above) {
         const src = this.layers.find((l) => l.id === srcId);
         if (!src || srcId === targetId) return;
-        this.pushUndo({ kind: "layers" });
+        this.pushUndo({ kind: "layers", label: "Layer order" });
         this.layers = this.layers.filter((l) => l !== src);
         const j = this.layers.findIndex((l) => l.id === targetId);
         if (j < 0) { this.layers.push(src); } else this.layers.splice(above ? j + 1 : j, 0, src);
@@ -8194,7 +8383,7 @@ class InpaintEditor {
     /** Copy of the active layer right above it (Ctrl+J). */
     duplicateLayer(layer = this.activeLayer()) {
         if (!layer) { this.setStatus("Select a layer to duplicate."); return null; }
-        this.pushUndo({ kind: "layers" });
+        this.pushUndo({ kind: "layers", label: "Duplicate layer" });
         this.layerCounter += 1;
         const copy = {
             ...layer, id: "L" + Date.now().toString(36) + this.layerCounter, name: layer.name + " copy",
@@ -8249,7 +8438,7 @@ class InpaintEditor {
                 const { ref } = await uploadCanvas(c, `n${this.node.id}_base`);
                 const px = this.pixels.Layer.fromCanvas(c);   // C6 (d): not the upload decoded again
                 pushed = true;
-                this.pushUndoSnapshot(before, { tracked: true });
+                this.pushUndoSnapshot(before, { tracked: true, label: "Merge into base" });
                 this.layers = this.layers.filter((l) => l.id !== layer.id);   // by id: a restore makes new layer objects
                 this.base = { ref, px };
                 this.activeLayerId = null;
@@ -8266,7 +8455,7 @@ class InpaintEditor {
         if (below.locked) { this.setStatus(`${below.name} is locked.`); return; }
         if (below.kind === "filter") { this.setStatus("The layer below is a filter layer; move it or merge elsewhere."); return; }
         if (this.isControl(layer) !== this.isControl(below) || this.isReference(layer) !== this.isReference(below)) { this.setStatus("Only layers of the same kind (image, control or reference) can be merged."); return; }
-        this.pushUndo({ kind: "layers" });
+        this.pushUndo({ kind: "layers", label: "Merge down" });
         // union of both rectangles at the lower layer's resolution; the upper layer is composited with its opacity and blend mode
         const res = Math.max(1, below.px.width / below.w, below.px.height / below.h);
         const x0 = Math.min(layer.x, below.x), y0 = Math.min(layer.y, below.y);
@@ -8384,8 +8573,8 @@ class InpaintEditor {
         const box = el("div", "ipc-text");
         const stop = (e) => e.stopPropagation();
         const begin = () => { if (!layer._textUndo) layer._textUndo = this.snapshot({ kind: "text", id: layer.id }); };
-        const commit = () => { if (layer._textUndo) { this.pushUndoSnapshot(layer._textUndo); layer._textUndo = null; } };
-        const change = (fn) => { this.pushUndo({ kind: "text", id: layer.id }); fn(); this.renderTextLayer(layer); };
+        const commit = (label) => { if (layer._textUndo) { this.pushUndoSnapshot(layer._textUndo, { label }); layer._textUndo = null; } };
+        const change = (fn, label) => { this.pushUndo({ kind: "text", id: layer.id, label }); fn(); this.renderTextLayer(layer); };
 
         const ta = document.createElement("textarea");
         ta.value = t.content;
@@ -8395,7 +8584,7 @@ class InpaintEditor {
         ta.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") { ta.blur(); this.root.focus({ preventScroll: true }); } });
         ta.addEventListener("focus", begin);
         ta.addEventListener("input", () => { t.content = ta.value; this.scheduleTextRender(layer); });
-        ta.addEventListener("change", commit);
+        ta.addEventListener("change", () => commit("Edit text"));
         box.appendChild(ta);
 
         const fontRow = el("div", "ipc-row");
@@ -8405,7 +8594,7 @@ class InpaintEditor {
         this.fillFontSelect(fontSel, t.font);
         fontSel.addEventListener("click", stop);
         fontSel.addEventListener("keydown", stop);
-        fontSel.addEventListener("change", () => change(() => { t.font = fontSel.value; const f = fontList().find((x) => x.family === t.font); t.fontRef = f && f.ref ? f.ref : null; }));
+        fontSel.addEventListener("change", () => change(() => { t.font = fontSel.value; const f = fontList().find((x) => x.family === t.font); t.fontRef = f && f.ref ? f.ref : null; }, "Text font"));
         fontRow.appendChild(fontSel);
         fontRow.appendChild(miniButton("plus", "Add a font file (.ttf, .otf, .woff, .woff2). Uploaded to input/inpaint_canvas/fonts and available from then on.", () => { this.fontTarget = layer; this.fontInput.click(); }));
         box.appendChild(fontRow);
@@ -8413,20 +8602,20 @@ class InpaintEditor {
         const r1 = el("div", "ipc-row");
         r1.appendChild(el("span", null, "Size"));
         const size = numberInput(t.size, 1, 4096, "Font size in image pixels", 52);
-        size.addEventListener("change", () => change(() => { t.size = Math.max(1, +size.value || 1); }));
+        size.addEventListener("change", () => change(() => { t.size = Math.max(1, +size.value || 1); }, "Text size"));
         r1.appendChild(size);
         const col = document.createElement("input");
         col.type = "color"; col.value = t.color; col.title = "Text colour";
         col.addEventListener("click", stop);
         col.addEventListener("focus", begin);
         col.addEventListener("input", () => { t.color = col.value; this.scheduleTextRender(layer); });
-        col.addEventListener("change", commit);
+        col.addEventListener("change", () => commit("Text colour"));
         r1.appendChild(col);
-        const bold = miniButton("bold", "Bold", () => change(() => { t.bold = !t.bold; }), t.bold ? "ipc-on" : "");
-        const ital = miniButton("italic", "Italic", () => change(() => { t.italic = !t.italic; }), t.italic ? "ipc-on" : "");
+        const bold = miniButton("bold", "Bold", () => change(() => { t.bold = !t.bold; }, "Bold"), t.bold ? "ipc-on" : "");
+        const ital = miniButton("italic", "Italic", () => change(() => { t.italic = !t.italic; }, "Italic"), t.italic ? "ipc-on" : "");
         r1.appendChild(bold); r1.appendChild(ital);
         const align = selectInput(["left", "center", "right"], t.align || "left", "Alignment of several lines");
-        align.addEventListener("change", () => change(() => { t.align = align.value; }));
+        align.addEventListener("change", () => change(() => { t.align = align.value; }, "Text alignment"));
         r1.appendChild(align);
         box.appendChild(r1);
 
@@ -8434,22 +8623,22 @@ class InpaintEditor {
         r2.appendChild(el("span", null, "Line"));
         const lh = numberInput(t.lineHeight, 0.5, 4, "Line height as a multiple of the size", 52);
         lh.step = 0.05;
-        lh.addEventListener("change", () => change(() => { t.lineHeight = Math.min(4, Math.max(0.5, +lh.value || 1.2)); }));
+        lh.addEventListener("change", () => change(() => { t.lineHeight = Math.min(4, Math.max(0.5, +lh.value || 1.2)); }, "Line height"));
         r2.appendChild(lh);
         r2.appendChild(el("span", null, "Spacing"));
         const ls = numberInput(t.letterSpacing, -50, 200, "Letter spacing in image pixels", 52);
-        ls.addEventListener("change", () => change(() => { t.letterSpacing = +ls.value || 0; }));
+        ls.addEventListener("change", () => change(() => { t.letterSpacing = +ls.value || 0; }, "Letter spacing"));
         r2.appendChild(ls);
         r2.appendChild(el("span", null, "Outline"));
         const ow = numberInput(t.outline, 0, 200, "Outline width in image pixels (0 = none)", 48);
-        ow.addEventListener("change", () => change(() => { t.outline = Math.max(0, +ow.value || 0); }));
+        ow.addEventListener("change", () => change(() => { t.outline = Math.max(0, +ow.value || 0); }, "Outline width"));
         r2.appendChild(ow);
         const ocol = document.createElement("input");
         ocol.type = "color"; ocol.value = t.outlineColor || "#000000"; ocol.title = "Outline colour";
         ocol.addEventListener("click", stop);
         ocol.addEventListener("focus", begin);
         ocol.addEventListener("input", () => { t.outlineColor = ocol.value; this.scheduleTextRender(layer); });
-        ocol.addEventListener("change", commit);
+        ocol.addEventListener("change", () => commit("Outline colour"));
         r2.appendChild(ocol);
         box.appendChild(r2);
         return box;
@@ -8475,7 +8664,7 @@ class InpaintEditor {
         const target = this.fontTarget && this.layers.includes(this.fontTarget) ? this.fontTarget : null;
         this.fontTarget = null;
         if (target && target.kind === "text") {
-            this.pushUndo({ kind: "text", id: target.id });
+            this.pushUndo({ kind: "text", id: target.id, label: "Text font" });
             target.text.font = first.family;
             target.text.fontRef = first.ref;
             await this.renderTextLayer(target);
@@ -9101,6 +9290,7 @@ class InpaintEditor {
         // the history goes with the layers: a step of the old document applied to a new image put
         // its layers (or its base, for a crop) back on top of it
         if (!keepLayers || sizeChanged) { this.layers = []; this.activeLayerId = null; this.clearUndo(); }
+        if (!keepLayers) this.clearSnapshots();   // a new picture is a new document: the snapshots were of the old one
         if (!this.sel || sizeChanged) {
             this.sel = this.pixels.Mask.empty(this.width, this.height);
             this.clearUndo();
@@ -9321,7 +9511,7 @@ class InpaintEditor {
         if (!target) return;
         if (target.locked) { this.setStatus(`${target.name} is locked. Unlock it first.`); return; }
         if (this.pending && this.pending.layer.id === id) this.cancelPending();
-        this.pushUndo({ kind: "layers" });
+        this.pushUndo({ kind: "layers", label: "Delete layer" });
         this.layers = this.layers.filter((l) => l.id !== id);
         if (this.activeLayerId === id) this.activeLayerId = null;
         this.uploaded.baseHash = null;
@@ -9337,7 +9527,7 @@ class InpaintEditor {
         const i = this.layers.findIndex((l) => l.id === id);
         const j = i + delta;
         if (i < 0 || j < 0 || j >= this.layers.length) return;
-        if (undo) this.pushUndo({ kind: "layers" });
+        if (undo) this.pushUndo({ kind: "layers", label: delta > 0 ? "Move layer up" : "Move layer down" });
         const [l] = this.layers.splice(i, 1);
         this.layers.splice(j, 0, l);
         this.uploaded.baseHash = null;
@@ -9511,12 +9701,12 @@ class InpaintEditor {
                     this.markMatchChanged(layer);
                     this.drawSoon();
                 });
-                mr.addEventListener("change", () => { if (layer._matchUndo) { this.pushUndoSnapshot(layer._matchUndo); layer._matchUndo = null; } this.draw(); this.drawThumb(); this.notifyChanged(); });
+                mr.addEventListener("change", () => { if (layer._matchUndo) { this.pushUndoSnapshot(layer._matchUndo, { label: "Colour match strength" }); layer._matchUndo = null; } this.draw(); this.drawThumb(); this.notifyChanged(); });
                 mRow.appendChild(mr);
                 mRow.appendChild(mpct);
                 const msrc = selectInput(["surroundings", "underneath"], (layer.match && layer.match.source) || "surroundings", "What to match against: the ring around the layer's opaque area in the image below (surroundings), or the pixels the layer covers (underneath, for results replacing what was there)");
                 msrc.classList.add("ipc-narrow");
-                msrc.addEventListener("change", () => { this.pushUndo({ kind: "match", id: layer.id }); layer.match = { ...(layer.match || { strength: 0 }), source: msrc.value }; this.markMatchChanged(layer); this.draw(); this.drawThumb(); this.notifyChanged(); });
+                msrc.addEventListener("change", () => { this.pushUndo({ kind: "match", id: layer.id, label: "Colour match source" }); layer.match = { ...(layer.match || { strength: 0 }), source: msrc.value }; this.markMatchChanged(layer); this.draw(); this.drawThumb(); this.notifyChanged(); });
                 mRow.appendChild(msrc);
                 row.appendChild(mRow);
             }
@@ -9663,6 +9853,7 @@ class InpaintEditor {
             return box;
         }
         const def = FILTERS[layer.filter];
+        const stepLabel = (p) => (p.label ? `${def.label}: ${p.label}` : def.label);   // the Undo history's name of a control's step
         if (def.needsLut) {
             const lr = el("div", "ipc-lutrow");
             const input = document.createElement("input");
@@ -9705,7 +9896,7 @@ class InpaintEditor {
                 const node = def.control(layer, p, {
                     begin: () => { if (!layer._undoPending) layer._undoPending = this.snapshot({ kind: "filter", id: layer.id }); },
                     preview: () => { this.filterPreview = layer.id; this.markFilterChanged(layer, { soon: true }); },
-                    commit: () => { this.filterPreview = null; if (layer._undoPending) { this.pushUndoSnapshot(layer._undoPending); layer._undoPending = null; } this.markFilterChanged(layer); },
+                    commit: () => { this.filterPreview = null; if (layer._undoPending) { this.pushUndoSnapshot(layer._undoPending, { label: stepLabel(p) }); layer._undoPending = null; } this.markFilterChanged(layer); },
                     stop,
                 });
                 if (node) { node.style.gridColumn = "1 / -1"; box.appendChild(node); }
@@ -9734,7 +9925,7 @@ class InpaintEditor {
                 sel.addEventListener("change", () => {
                     const preset = p.options.find((o) => o.id === sel.value);
                     if (!preset) return;
-                    this.pushUndo({ kind: "filter", id: layer.id });
+                    this.pushUndo({ kind: "filter", id: layer.id, label: stepLabel(p) });
                     layer.params[p.key] = preset.id;
                     if (p.key !== "preset") { this.markFilterChanged(layer); return; }
                     for (const [k, v] of Object.entries(preset)) if (k !== "id" && k !== "label" && k !== "group") layer.params[k] = v;
@@ -9754,7 +9945,7 @@ class InpaintEditor {
                 cb.type = "checkbox"; cb.checked = !!cur;
                 cb.addEventListener("click", stop);
                 cb.addEventListener("change", () => {
-                    this.pushUndo({ kind: "filter", id: layer.id });
+                    this.pushUndo({ kind: "filter", id: layer.id, label: stepLabel(p) });
                     layer.params[p.key] = cb.checked;
                     val.textContent = fmt(p, cb.checked);
                     this.markFilterChanged(layer);
@@ -9779,7 +9970,7 @@ class InpaintEditor {
             });
             range.addEventListener("change", () => {
                 this.filterPreview = null;
-                if (layer._undoPending) { this.pushUndoSnapshot(layer._undoPending); layer._undoPending = null; }
+                if (layer._undoPending) { this.pushUndoSnapshot(layer._undoPending, { label: stepLabel(p) }); layer._undoPending = null; }
                 layer.params[p.key] = +range.value;
                 this.markFilterChanged(layer);
             });
@@ -11024,7 +11215,7 @@ class InpaintEditor {
                 px = this.pixels.Layer.fromCanvas(flat);   // C6 (d): not the upload decoded again
             }
             pushed = true;
-            this.pushUndoSnapshot(before, { tracked: true });
+            this.pushUndoSnapshot(before, { tracked: true, label: "Flatten" });
             this.layers = this.layers.filter((l) => this.isControl(l) || this.isReference(l));
             this.activeLayerId = null;
             this.base = { ref, px };
@@ -11880,7 +12071,7 @@ class InpaintEditor {
         for (const l of this.layers) { add(l.px); add(l.maskPx); }
         add(this._basePx);
         add(this.sel);
-        for (const list of [this.undo, this.redo]) {
+        for (const list of [this.undo, this.redo, this.snapshots.map((s) => s.snap)]) {
             for (const st of list) {
                 if (!st) continue;
                 add(st.px);
@@ -11888,6 +12079,7 @@ class InpaintEditor {
                 add(st.selPx);    // on tiles: a canvas step's selection
                 add(st.base && st.base.px);   // a canvas step's base (C6 d: its pixels, where it held an <img>)
                 for (const l of st.layers || []) { add(l.px); add(l.maskPx); }
+                for (const p of st.pixels || []) { add(p && p.px); add(p && p.maskPx); }   // a turn step's and a named snapshot's clones
             }
         }
         return out;
@@ -12428,10 +12620,11 @@ class InpaintEditor {
                     held += heldBytes(l.px) + heldBytes(l.maskPx);
                     if (l._masked && l._masked.width && !live.has(l._masked) && !undoSeen.has(l._masked)) { undoSeen.add(l._masked); held += px(l._masked); }
                 }
+                for (const p of s.pixels || []) held += heldBytes(p && p.px) + heldBytes(p && p.maskPx);   // a turn step's and a named snapshot's clones
             }
             return { steps: list.length, kinds, rectBytes: bytes, heldLayerBytes: held };
         };
-        const undo = { budget: this.undoBytes, undo: walkSteps(this.undo), redo: walkSteps(this.redo) };
+        const undo = { budget: this.undoBytes, undo: walkSteps(this.undo), redo: walkSteps(this.redo), snapshots: walkSteps(this.snapshots.map((s) => s.snap)) };
 
         const comp = this._compositor && this._compositor.stats ? this._compositor.stats() : null;
         const pool = this.tileMode ? scratchStats() : null;
@@ -12455,6 +12648,7 @@ class InpaintEditor {
         this.close();
         // after close(), which commits an open text edit: that step's blob URL is revoked with the rest
         this.clearUndo();   // the blob URLs of the whole-layer steps are revoked, not left behind
+        this.clearSnapshots();
         try { this.resizeObserver.disconnect(); } catch (_) { /* ignore */ }
         try { this.thumbObserver.disconnect(); } catch (_) { /* ignore */ }
     }

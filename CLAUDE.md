@@ -122,7 +122,12 @@ pushed; nothing is waiting locally but the uncommitted tutorial material.
 view, is built** (2026-09-27, committed locally, not pushed; CHANGELOG "Unreleased", gate `canvasonly`): Tab / View ›
 Canvas Only in `renderer/shell.js` (`canvasOnly`, `isCanvasOnly`), `window.scumble.window.*` full-screen IPC, the CSS
 in `shell.css`; Help and the assistant are covered, not hidden (protect.css pins an open assistant), and
-`assistant.js` keeps its focus guard off under the view. Next: package 2 (3c, the history panel). The
+`assistant.js` keeps its focus guard off under the view. **Package 2, the Undo history, is built** (same day,
+committed locally): labelled steps (`UNDO_LABELS`, a label at every push site), `undoList` / `stepHistory`, named
+snapshots on the turn mechanism (tiles only), the depth in Settings › Rendering (`settings.history`), commands
+`list_history`, `take_snapshot`, `restore_snapshot`, `delete_snapshot`, `undo` / `redo` with `steps`. **The user's cut
+for 0.1.31 (2026-09-27): 1 + 2 + 3e PSD masks + mask operations (6.4) + the side panel's width (item 17), and item 23
+(rotate / straighten the document) if the session has room.** Next: package 3 (3e). The
 user's order: **1** the canvas-only view (item 24, Tab), **2** 3c the history panel, **3** 3e editable PSD masks
 (proposed as 0.1.31), then **4** brushes, **5** repair / remove / liquify, **6** layers pro - each with concrete steps,
 code facts and gates in that file; the package text of before is in `docs/PLAN_0_1_29.md` (done there: 1 skins, 2

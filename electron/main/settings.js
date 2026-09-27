@@ -30,6 +30,10 @@ const DEFAULTS = {
     // above this many MB in the GPU process the shell releases the caches of the tabs that
     // are not in front (renderer/shell.js watchMemory); 0 switches the watch off
     memory: { gpuLimitMB: 3072, cardMinFreeMB: 2048, atlasMB: 512 },
+    // the undo history's depth per document (renderer/shell.js applyHistoryDepth, docs/PLAN_0_1_31.md §2): steps, and
+    // the MB of the copies brush strokes and selections keep (whole-layer steps count no bytes); the editor's own
+    // defaults are the same (MAX_UNDO, MAX_UNDO_BYTES)
+    history: { steps: 30, mb: 384 },
     // the in-app assistant (electron/main/assistant/index.js holds the values; docs/PLAN_ASSISTANT.md §2
     // row 27). `get()` merges only this level, so a stored `assistant` object replaces the whole default:
     // every writer writes the whole merged object

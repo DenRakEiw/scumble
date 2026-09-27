@@ -2,8 +2,8 @@
 
 Works in both modes: with the app running (the server proxies to it over the local socket)
 and without (the server starts the app headless in its own process and quits it at the end).
-No ComfyUI needed. Loads the test image from the local store, runs a selection, a plugin
-filter (WebGL2 in the hidden window), a screenshot (image content), an export to a fixed
+No ComfyUI needed. Loads the test image from the local store, runs a selection, reads the
+undo history (list_history), a plugin filter (WebGL2 in the hidden window), a screenshot (image content), an export to a fixed
 path and an error case.
 
     python tools/mcp_test.py [--exe <Scumble.exe | electron.exe>] [--direct] [--user-data-dir <dir>] [out_dir]
@@ -139,7 +139,7 @@ async def main():
             bad = [n for n in names if not NAME_RE.match(n)]
             if bad:
                 raise RuntimeError("tool names not allowed: " + ", ".join(bad))
-            for need in ("ping", "select_rect", "generate", "screenshot", "export", "film_apply_look", "sample_mean_color"):
+            for need in ("ping", "select_rect", "generate", "screenshot", "export", "film_apply_look", "sample_mean_color", "list_history"):
                 if need not in names:
                     raise RuntimeError("tool missing: " + need)
             sel = next(t for t in tools if t.name == "select_rect")
@@ -162,6 +162,18 @@ async def main():
             r = data_of(await call(session, "select_rect", {"x": 100, "y": 80, "w": 200, "h": 120, "doc": doc}))
             if r["selection"]["w"] != 200:
                 raise RuntimeError("select_rect: " + json.dumps(r)[:200])
+
+            # the undo history (docs/PLAN_0_1_31.md section 2): load_image started it, the selection is its present
+            hist = data_of(await call(session, "list_history", {"doc": doc}))
+            rows = hist.get("rows") if isinstance(hist, dict) else None
+            if not isinstance(rows, list) or not isinstance(hist.get("undo"), int) or hist["undo"] < 1 or len(rows) != hist["undo"] + (hist.get("redo") or 0) + 1:
+                raise RuntimeError("list_history: " + json.dumps(hist)[:300])
+            now = rows[-1]
+            if rows[0].get("label") != "Start" or not now.get("current") or now.get("steps") != 0 or not str(now.get("label") or "").strip():
+                raise RuntimeError("list_history rows: " + json.dumps(rows)[:300])
+            if not isinstance(hist.get("snapshots"), list) or not (hist.get("depth") or {}).get("steps"):
+                raise RuntimeError("list_history snapshots / depth: " + json.dumps(hist)[:300])
+            report["history"] = f"{hist['undo']} undo, {len(rows)} rows, now {now['label']!r}"
 
             types = data_of(await call(session, "filter_types"))
             ids = [t["id"] if isinstance(t, dict) else t for t in (types.get("filters") or types.get("types") or types)]

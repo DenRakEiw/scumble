@@ -14,7 +14,7 @@ const EXCLUDED = new Set(["list_commands", "run_action", "set_status", "ailabel_
 const READS = new Set([
     "ping", "list_documents", "list_recipes", "list_plugins", "list_layers", "list_brush_tips",
     "filter_types", "status", "get_state", "read_log", "film_looks", "glb_info", "sample_mean_color",
-    "screenshot", "compare",
+    "screenshot", "compare", "list_history",
 ]);
 
 /** Tools that can queue on the user's ComfyUI or cost money: they ask, and they refuse a busy document. */
@@ -119,6 +119,14 @@ const POLICY = {
     // ---- shared history, global settings, the brush --------------------------------------
     undo: () => ASK("the undo stack is shared with your own steps"),
     redo: () => ASK("the undo stack is shared with your own steps"),
+    list_history: AUTO,
+    // a snapshot costs memory and changes nothing, unless the tab holds 8 and the oldest goes; putting one back
+    // replaces the whole document (one undo step)
+    take_snapshot: (call) => (call.args && call.args.drop_oldest
+        ? ASK("the tab holds 8 snapshots: the oldest is dropped and cannot be brought back")
+        : AUTO()),
+    restore_snapshot: (call) => ASK("puts the whole document back as it was in the snapshot; Ctrl+Z takes it back", { snapshot: String((call.args && call.args.name) || "") }),
+    delete_snapshot: () => ASK("deletes a snapshot; it cannot be brought back"),
     select_recipe: (call, facts) => ASK("the recipe is global and is saved to your settings", card(call, facts, [])),
     set_node_params: (call, facts) => ASK("these values are global and are saved to your settings", card(call, facts, [])),
     set_brush: (call) => (call.args && call.args.spacing !== undefined
