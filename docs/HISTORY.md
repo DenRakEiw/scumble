@@ -8,6 +8,63 @@ The block of 2026-09-26 (evening) and the full text of the list were moved here 
 
 The block of 2026-09-27 (morning) was moved here the same morning, after the 0.1.30 release.
 
+The block of 2026-09-27 (evening, after the 0.1.31 release) was moved here the same night, when 23b was built.
+
+## Where things stand (2026-09-27, evening)
+
+The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).
+
+**Released:** 0.1.31 is Latest (published 2026-09-27 17:10 CEST: the canvas-only view, the Undo history, PSD masks
+and the mask switch, mask operations, the side panel's width, rotate / flip the whole document; dev blog post
+`v0-1-31` live, the manual synced, website commit 2128be5 deployed by git). Check `gh release list` before believing any
+release state written down anywhere. `main` is pushed; only the tutorial material is uncommitted.
+
+**The build in progress is `docs/PLAN_0_1_31.md`** (read it first; written 2026-09-27; each built package has a
+"Built" paragraph there). **Built and committed locally on 2026-09-27, not pushed** (CHANGELOG "Unreleased" has all
+of them):
+- **1, the canvas-only view** (gate `canvasonly`): Tab / View › Canvas Only, `renderer/shell.js` `canvasOnly` /
+  `isCanvasOnly`, `window.scumble.window.*` full-screen IPC; Help and the assistant are covered, not hidden.
+- **2, the Undo history** (steps in `editor_test.py` and `mcp_test.py`): labelled steps (`UNDO_LABELS`, a label at
+  every push site), `undoList` / `stepHistory`, named snapshots (tiles only, unique names), the depth in Settings ›
+  Rendering (`settings.history`), commands `list_history`, `take_snapshot` / `restore_snapshot` / `delete_snapshot`,
+  `undo` / `redo` with `steps`.
+- **3, 3e editable PSD masks** (full tier: `layered` Node 101 checks + app round trips on both writers, `composite`
+  "mask off" step, `export`, `editor` step `a_switched_off_mask_is_undone_and_saved`, mutation rounds on both sides):
+  PSD writes the raw pixels and the mask as channel -2 (both writers byte-identical), `readPsd` returns `mask: { data,
+  defaultColor, disabled }` instead of multiplying it in, `loadLayered` builds `maskPx`; `layer.maskOff` (PSD's
+  "disabled") - every drawing / compositing site reads `liveMask(l)`, what moves, saves or undoes a mask keeps
+  `maskPx`; `setMaskOff`, the eye button and Shift+click in the mask row, `maskOff` in `.scumble` / autosave
+  (`docs/DOCUMENTS.md`), `mask_off` in `list_layers`. ORA still bakes the live mask.
+- **6.4, mask operations** (727a0b0; `pixels` `mask_invert_white`, `editor` `mask_operations_are_one_step_each` on both
+  backends, `mcp`): the mask row's "..." flyout (Reveal all / Hide all / Reveal selection / Hide selection / Invert),
+  `maskOp(layer, op)`, `MaskPixels.invert(color)` (a layer mask inverts in white), command `set_mask`; `apply` is
+  refused on filter layers.
+- **Item 17, the side panel's width** (e1791c2; `editor` `side_panel_width_drags_and_is_kept`): a grip on the panel's
+  left edge, 310 px to 60 %, a CSS variable `--ipc-side-w` on the document (every tab), `localStorage ipc.sideWidth`;
+  the app's export rows now sit inside the Export block.
+- **Item 23a, rotate / flip the whole document** (plan §7; full tier: `pixels` `turned` on three backends, `editor`
+  `the_whole_document_turns_and_flips_with_everything_on_it` on both backends, `mcp`, `glb`, `film`, `document`,
+  `docux`, a 15k row, a mutation round): `turned(op)` on both pixel classes (tile by tile, 5.6x faster than the band
+  code it replaced), `turnDocument(op)` with one `canvas` step, `docOrient` and `restoreOrient` (guides, results
+  history, saved selections and the export size are turned by the orientation difference on undo, since no step holds
+  them), plugin data in the canvas and turn snapshots, `text.turn` / `text.flip` (also for the layer's own rotate /
+  flip), a `geometry` plugin event (film points, glb `params.orient`), the Image menu, a Turn row in the Canvas section,
+  commands `rotate_canvas` / `flip_canvas`.
+
+**The user's cut for 0.1.31 (2026-09-27): 1 + 2 + 3e + mask operations (6.4) + the side panel's width (item 17), and
+item 23 (rotate / straighten the document) if a session has room.** All of it is built except **23b** (straighten by any
+angle, crop presets with overlays: needs a block-wise resampler, plan §7), which went out without it: 0.1.31 was
+released on the user's word (exe gates: `dist/gates/gates/rel31-exe*/summary.txt`). **Next:** 23b or package 4
+(brushes, 0.1.32), the user's choice; the open questions for 23b (text under a straighten, the crop frame with an
+aspect, guides after a straighten) and for 23a's undo memory are in the plan's last section. Brushes (package 4) are 0.1.32. The
+user's order after that: **4** brushes, **5** repair / remove / liquify, **6** layers pro (plan sections 4-6; the
+package text of before is in `docs/PLAN_0_1_29.md`). Open for the user (the plan's last section): LaMa shipped or
+downloaded, the PNG switch default, item 25's look and timing, the optional brush panel; the Undo history section sits
+under the layer and reference lists, closed by default - the user judges it by eye.
+Item 25 (the app's own dialogs instead of the native boxes) is not in the build.
+Deferred from 3f (not cheap): the source's EXIF / XMP in exports, an ICC profile in PSD and TIFF. Not checked: a
+double click in Explorer on an installed build, TIFFs from Photoshop / Affinity / Lightroom.
+
 ## Where things stand (2026-09-27, morning)
 
 The hand-over blocks of before, and the full text of the list below, are in `docs/HISTORY.md` (newest first, verbatim).

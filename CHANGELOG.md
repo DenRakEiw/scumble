@@ -3,6 +3,26 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- **Straighten the picture.** The Canvas tool (C) turns the whole picture by any angle and crops it in one step:
+  drag outside the frame to turn it, set the angle in the bar above the canvas, or draw a line along a horizon or a
+  wall with Ctrl held (or the Straighten button) and the picture turns until that line is level or plumb. The frame
+  stays inside the turned picture, the largest one of the chosen aspect. Every layer, mask and the selection are
+  turned with it, text stays editable, and one Ctrl+Z takes it all back. Agents get `straighten_canvas`.
+- **The canvas frame waits for you.** Dragging the frame no longer crops or extends when you let go: move and
+  resize it as often as you like, then press Enter, click Apply or double-click inside it; Esc resets it. Aspect
+  presets (original, 1:1, 4:3, 3:2, 16:9, 5:4 or your own; X turns it on its side) fit the largest frame into the
+  picture, and the frame can show thirds, the golden section, a grid or diagonals to compose by.
+- **Text turns by any angle and stays text.** Turn a text layer with the transform tool (T) or its new Angle field
+  and it stays editable: change the words, the font or the size and it keeps its angle, drawn sharp at every edit.
+  (A text turned before this version lost its angle at the next edit.) Distort and warp still turn a text into
+  pixels, now with a note and one undo step that brings the text back.
+- **Guides, saved selections and past results follow crop, extend and resize.** Cropping used to leave the guides,
+  a saved selection and a result's place in the history where they were, so they landed off by what was cut away;
+  now they move with the picture (and scale with a resize), like they already turned with it. Film look control
+  points and 3D objects follow too.
+
 ## 0.1.31 — 2026-09-27
 
 - **Canvas only: Tab hides everything but the picture.** The tab bar, the editor's bars, the tools, the side panel

@@ -11,6 +11,23 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### Guides, saved selections, past results, film points and 3D objects stayed put on Crop, Extend or Resize - fixed for 0.1.32
+
+**Found** 2026-09-26 (saved selections, the gap review) and 2026-09-27 (guides, by reading; results-history entries,
+film control points, glb frames and a fixed export size by 23b's map of the code): none of them followed a crop, an
+extend or a resize, so they landed off by what was cut away or added. Now one map (`docXf`, PLAN_0_1_31 §7 23b step 3)
+moves them all: guides shifted or scaled and dropped outside (held by the canvas step), saved selections and history
+entries through an `xf`, the plugins through the geometry event's matrix, a fixed export size zeroed. Editor step
+`guides_and_saved_selections_follow_crop_extend_resize` on both backends, glb `frame_follows_crop_resize_and_turn`,
+film `points_follow_crop_resize_and_turn`.
+
+### A text layer rotated by the transform tool lost its rotation on the next edit - fixed for 0.1.32
+
+**Found** 2026-09-27 (23a's review): the transform tool baked the turned text into pixels and kept no angle, so the
+next render drew it upright. Now the text keeps `text.angle` and is drawn at it (23b step 4); distort and warp turn it
+into a paint layer with a status line. Editor step `a_text_layer_keeps_its_free_angle` on both backends. A text turned
+by 0.1.31 has no angle stored and still comes back upright at its first edit.
+
 ### TIFF was offered and could not be read - fixed for 0.1.30
 
 **Found** by the gap review of 2026-09-26: the Open dialog listed `tif` / `tiff`, the file was uploaded to the mirror
@@ -181,16 +198,6 @@ The ones that were part of `docs/PLAN_0_1_29.md` §3 (the skipped flush on quit,
 "Fixed, waiting for its release".
 
 - **Rotate, distort and warp bake the layer mask into the pixels** without a word (`inpaint_canvas.js` ~1909).
-- **Saved selections load misaligned after Resize, Crop or Extend canvas** (`inpaint_canvas.js` `loadSelection`). A
-  quarter turn or a flip of the document keeps them aligned since 2026-09-27 (their `orient`, PLAN_0_1_31 §7); crop,
-  resize and extend could go through the same mechanism with a general matrix instead of an orientation.
-- **Guides stay where they were after Crop, Extend or Resize canvas** (found 2026-09-27 by reading `cropCanvasNow`,
-  `extendCanvasNow`, `resizeImageNow`: none of them touches `this.guides`). Cropping 500 px off the left leaves a guide
-  500 px right of the content it was set on. Planned with 23b (PLAN_0_1_31 §7, the user's answer of 2026-09-27): shifted
-  by the crop / extend offset, scaled by a resize, dropped when they leave the canvas, put back by undo.
-- **A text layer rotated by the transform tool loses its rotation on the next text edit** (`renderTextLayer`). The
-  90° buttons, the layer flip and the document's turns keep it since 2026-09-27 (`text.turn` / `text.flip`); an
-  arbitrary angle has no field in the text description yet (the same question as 23b's straighten).
 - **The film look "None (adjustments only)" still adds grain**: `plugins/film/filters.js` ~387 falls back to
   `{ amount: 25, ... }` when there is no stock.
 - **At the typed-array cap (15.5 GB) the editor throws a `RangeError`** instead of refusing the operation.

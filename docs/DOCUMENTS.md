@@ -162,11 +162,11 @@ history entry would name it and it would be `false`.
 | `base` | ref | the picture the document started from. Required: a save refuses a state without it, and an open without it leaves the tab empty |
 | `prompt`, `negative` | strings | the prompt and the negative prompt |
 | `layers` | array | the layers, bottom to top (§4.1) |
-| `history` | array | the result history, the newest 100: `{ key, name, ref, x, y, w, h, prompt, layerId, time, seed, mode, denoise }` |
+| `history` | array | the result history, the newest 100: `{ key, name, ref, x, y, w, h, prompt, layerId, time, seed, mode, denoise, orient, xf }`. `orient` `{ turn, flip }` (0.1.31): the file turned by quarter turns and mirrored to fit `x, y, w, h`; left out when upright. `xf` (0.1.32): after a straighten, the map `[a, b, c, d, e, f]` from the file's unit square to the canvas (x' = a x + c y + e, y' = b x + d y + f), `x, y, w, h` its bounding box; left out otherwise. A reader that does not know them puts the file upright into `x, y, w, h` |
 | `seen` | array of strings | the history keys already looked at, the newest 200 |
 | `selection` | string or null | the selection mask as a PNG data URL (`data:image/png;base64,...`) |
 | `selectionBox` | `[x, y, w, h]` | only when the selection PNG holds a box of the mask instead of the whole canvas: where the box goes |
-| `selections` | array | the saved selections, `{ name, url }`, `url` a PNG data URL |
+| `selections` | array | the saved selections, `{ name, url, orient, xf }`, `url` a PNG data URL drawn at 0, 0; `orient` `{ turn, flip }` (0.1.31) turns it first, then `xf` (0.1.32: the map `[a, b, c, d, e, f]` of every crop, extend, resize, turn and straighten since it was saved) places it; each left out when it does nothing |
 | `guides` | `{ x: [], y: [] }` | guide positions in pixels; left out when there are none |
 | `crop`, `upsample`, `gen`, `settings`, `refs`, `cutout` | objects | the crop, prompt upsampling, generation, recipe *Settings* panel, reference-image (`{ fit }`, not file refs) and cut-out settings |
 
@@ -186,7 +186,7 @@ history entry would name it and it would be `false`.
 | `match` | when on | colour match `{ strength, source }`, `source` `surroundings` or `underneath`; left out at strength 0 |
 | `locked`, `alphaLock` | when true | left out when false |
 | `filter`, `params`, `lut`, `plate` | filter | the filter type id (built-in, or `<plugin>.<id>`), its parameters, a LUT `{ name, size, ref }` (the LUT stored as a PNG) or `null`, a grain plate `{ name, ref, w, h, mean, std }` or `null` |
-| `text` | text | the description `{ content, font, fontRef, size, color, bold, italic, align, lineHeight, letterSpacing, outline, outlineColor, res }`; the rendered pixels are the layer's `ref`. `fontRef` is a ref to a font the user added, `null` for a bundled or system font (named only; a machine without it falls back) |
+| `text` | text | the description `{ content, font, fontRef, size, color, bold, italic, align, lineHeight, letterSpacing, outline, outlineColor, res, turn, flip, angle, box }`; the rendered pixels are the layer's `ref`. `fontRef` is a ref to a font the user added, `null` for a bundled or system font (named only; a machine without it falls back). `turn` (quarter turns clockwise) and `flip` (mirrored before the turn, 0.1.31) and `angle` (degrees clockwise beyond the quarter turns, 0.1.32) say how the text is turned; `box` `[w, h]` is the upright render's size in render pixels (0.1.32). A reader that does not know `angle` shows the stored pixels until the text is edited, then draws it upright |
 
 ### 4.2 Refs and entry names
 

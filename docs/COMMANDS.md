@@ -545,7 +545,7 @@ Change a filter layer's parameters (or its type).
 
 ### `add_text` *(image)*
 
-Add a text layer at x,y (top left of the text). Bundled fonts: Roboto, Open Sans, Montserrat, Playfair Display, Lobster, Oswald, Pacifico, Bebas Neue and more (see the editor's font list).
+Add a text layer at x,y (top left of the text; with an angle the corner the text starts at). Bundled fonts: Roboto, Open Sans, Montserrat, Playfair Display, Lobster, Oswald, Pacifico, Bebas Neue and more (see the editor's font list).
 
 | param | type | description |
 |---|---|---|
@@ -561,11 +561,12 @@ Add a text layer at x,y (top left of the text). Bundled fonts: Roboto, Open Sans
 | `align` | string | left, center or right |
 | `outline` | number | outline width |
 | `outline_color` | string |  |
+| `angle` | number | degrees clockwise; the text stays editable |
 | `name` | string | layer name |
 
 ### `set_text`
 
-Change a text layer's content or style.
+Change a text layer's content, style or angle (degrees clockwise in all, about the layer's middle; the text stays editable).
 
 | param | type | description |
 |---|---|---|
@@ -580,6 +581,7 @@ Change a text layer's content or style.
 | `align` | string |  |
 | `outline` | number |  |
 | `outline_color` | string |  |
+| `angle` | number |  |
 
 ## History and canvas
 
@@ -675,6 +677,20 @@ Mirror the whole picture: horizontal (left to right) or vertical (top to bottom)
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `axis` | string | horizontal (left to right) or vertical (top to bottom) (required; one of `horizontal`, `vertical`) |
+
+### `straighten_canvas` *(image)*
+
+Straighten the whole picture: turn it by any angle (degrees clockwise, -45..45) about its centre and crop it to a frame inside the turned picture, in one undo step. Without x / y / width / height the frame is the largest one of `aspect` (original: the picture's own; free; 1:1, 4:3, 3:2, 16:9, 5:4 or W:H) centred in the turned picture. x / y / width / height set the frame in the turned picture's coordinates (the picture's own at 0 degrees). The base, every layer and mask and the selection are resampled once; text stays editable (its angle grows); guides stay where they are on the screen, shifted by the crop. Refused while a render or another job of the document runs.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `angle` | number | degrees clockwise, -45..45 (required) |
+| `aspect` | string | original, free, 1:1, 4:3, 3:2, 16:9, 5:4 or W:H (default `"original"`) |
+| `x` | integer | frame left |
+| `y` | integer | frame top |
+| `width` | integer | frame width |
+| `height` | integer | frame height |
 
 ## Export
 

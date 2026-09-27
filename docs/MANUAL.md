@@ -173,6 +173,8 @@ Around all this sit transform (move, scale, rotate, flip, with a perspective mes
 - The "..." button in the mask row, or a right click on the word "mask", holds the whole-mask operations: Reveal all and Hide all put a white or a black mask on the layer (Hide all, then paint the mask where the layer should show, is the quickest way to bring in a small part of a result), Reveal selection and Hide selection make the mask from the selection, and Invert mask swaps what shows and what is hidden. Each is one undo step.
 - SVG files can be loaded as layers, and PSD or ORA files arrive with their own layers since 0.1.25.
 - The whole picture turns and mirrors from Image › Rotate 90° Clockwise, Rotate 90° Counter-clockwise, Rotate 180°, Flip Horizontal and Flip Vertical, or from the Turn row in the Canvas section. Every layer turns with it, masks, the selection, guides, saved selections and earlier results included; text stays editable and keeps the turn, 3D objects and film control points follow. Nothing is resampled, so four turns give back the same pixels, and the whole turn is one Ctrl+Z. While a render is still running (on an API or on your ComfyUI) the picture does not turn, since the result lands where it was made for; two quick clicks on 90° make 180°. The transform tool's flip and rotate buttons turn one layer only.
+- **Straighten and crop** with the Canvas tool (C). Its frame now waits for you: drag its edges to crop or extend, drag inside it to move it, and nothing happens until you press Enter, click Apply or double-click inside it; Esc resets it. Drag outside the frame to turn the picture, type the angle in the bar above the canvas, or hold Ctrl and draw a line along a horizon or a wall (the Straighten button does the same): the picture turns until that line is level or plumb. While the picture is turned the frame stays inside it, the largest one of the aspect you chose (original, 1:1, 4:3, 3:2, 16:9, 5:4 or your own; X turns it on its side). The bar also draws thirds, the golden section, a grid or diagonals over the frame. Every layer, mask and the selection are resampled once, text stays text and turns with the picture, guides stay where they are on the screen, and the whole straighten is one Ctrl+Z.
+- Crop, extend and resize take the guides, saved selections and the places of earlier results with them, as the turns do.
 
 ## Filter layers and the film pack
 
@@ -212,6 +214,7 @@ And there are 3D objects: drop a .glb file in, and it is placed into the picture
 
 - Everything here is a normal layer: blend mode, opacity, mask, and a place in the stack.
 - A shape or a text layer makes a good mask source: draw it, then Select from layer.
+- Text turns by any angle and stays editable: the transform tool (T) or the Angle field in the text layer's row. It is drawn sharp at its angle every time, so turning it again and again costs nothing. Distort and warp cannot be kept as text: they turn the layer into pixels, and Ctrl+Z brings the text back.
 
 ## Upscaling
 
@@ -433,7 +436,9 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | G  ·  Shift+G | Bucket fill · gradient |
 | Y | Shape tool |
 | T  ·  Shift+T | Transform · text |
-| C | Canvas frame — drag out to extend, in to crop |
+| C | Canvas frame — drag its edges to crop or extend, outside it to turn the picture; Enter applies, Esc resets |
+| Ctrl+drag | Canvas tool: draw along a horizon or a wall to straighten the picture |
+| X | Canvas tool: turn the frame's aspect on its side |
 | H  ·  I | Hand · eyedropper |
 
 #### View
