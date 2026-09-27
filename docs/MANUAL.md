@@ -166,7 +166,8 @@ Around all this sit transform (move, scale, rotate, flip, with a perspective mes
 
 ### Notes
 
-- Blend modes: the usual eight, computed in the compositor with a single rounding per channel, so a stack looks the same on screen as it does in the exported file.
+- Blend modes: the usual eight and linear light, computed in the compositor with a single rounding per channel, so a stack looks the same on screen as it does in the exported file. A document with a linear-light layer needs Scumble 0.1.32 or newer to open.
+- **Image › Frequency Separation…** splits the picture (or the selection's box; up to 16 megapixels at a time) into two layers on top: *Low frequency*, a blur of the radius you give, carrying colour and tone, and *High frequency* in linear light, carrying the texture. Together they give back the picture exactly. Paint or blur on the low layer to even out skin tone without losing pores; clone or heal on the high layer to fix texture without shifting colour. One Ctrl+Z takes both layers away.
 - Layer names can be renamed by double-clicking them, and a rename is an undo step like anything else.
 - Copy and paste move whole layers between tabs, pixels, mask and settings included.
 - A mask can be switched off without losing it: the eye button in the mask row, or Shift+click on the word "mask" as in Photoshop. The layer then shows whole, the mask stays with it through moves, crops and saves, and editing the mask switches it back on.

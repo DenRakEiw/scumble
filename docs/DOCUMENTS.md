@@ -177,7 +177,7 @@ history entry would name it and it would be `false`.
 | `id`, `name` | every layer | the layer id (a string such as `"Lmg1x2k01"`, unique in the document; plugin data keys on it) and the shown name |
 | `kind` | every layer | `paint`, `image`, `result`, `text`, `filter`. Shapes are pixels drawn into an existing layer; the AI label and 3D renders are paint layers |
 | `role` | every layer | `none` (part of the picture), `reference`, or a control type: `scribble`, `lineart`, `depth`, `pose`, `canny`, `other` |
-| `blend` | every layer | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `soft-light`, `hard-light`, `difference` |
+| `blend` | every layer | `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `soft-light`, `hard-light`, `linear-light` (since 0.1.32: a document with such a layer writes `minReader` 2), `difference` |
 | `ref` | every layer | the layer's pixels, a PNG at its own size; `null` on a filter layer |
 | `x`, `y`, `w`, `h` | every layer | the placement in canvas pixels; `w` / `h` may differ from the PNG's size (a scaled layer keeps its source pixels) |
 | `opacity`, `visible` | every layer | 0 to 1; boolean |

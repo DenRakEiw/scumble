@@ -19,7 +19,14 @@ const zlib = require("node:zlib");
 
 const MIME = "application/x-scumble";
 const FORMAT_VERSION = 1;            // what this app writes
-const READER_VERSION = 1;            // the newest minReader this app can open
+const READER_VERSION = 2;            // the newest minReader this app can open (2: the linear light blend mode, 0.1.32)
+// blend modes a reader of version 1 (0.1.31 and before) does not know: it would show such a layer as normal, a different
+// picture, so a document that has one asks for reader 2 (docs/DOCUMENTS.md §8); every other document stays readable by 1
+const READER_2_BLENDS = new Set(["linear-light"]);
+function readerFor(document) {
+    const layers = document && Array.isArray(document.layers) ? document.layers : [];
+    return layers.some((l) => l && READER_2_BLENDS.has(l.blend)) ? 2 : 1;
+}
 const HEADER_ENTRY = "scumble/document.json";
 const THUMB_ENTRY = "Thumbnails/thumbnail.png";
 const MAX_HEADER = 64 * 1024 * 1024;
@@ -97,7 +104,7 @@ function renameRefs(v, renames) {
  */
 function buildHeader({ document, plugins = {}, extra = {}, app = "", summary = {}, recipe = null, files = [], saved = null }) {
     return {
-        format: "scumble", version: FORMAT_VERSION, minReader: 1,
+        format: "scumble", version: FORMAT_VERSION, minReader: readerFor(document),
         app: String(app), saved: saved || new Date().toISOString(),
         summary, recipe, document, extra, plugins,
         files: files.map((f) => ({ entry: entryOf(f.ref), size: f.size, required: f.required !== false })),

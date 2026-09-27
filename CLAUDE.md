@@ -100,12 +100,17 @@ verbatim). Check `gh release list` before believing any release state written do
   pull-string stabiliser in the new `inpaint_stroke.js`; 6f0dc15 blur and sharpen as the smudge tool's Mode, filtered
   from the press's picture). Each has a "built" paragraph in the plan and a gate step on both backends.
 - **Step 7 is done** (670c76a: brushes up to 1,000 px, `BRUSH_MAX`, a logarithmic Size slider).
-- **Next: package 4 step 8** (frequency separation + the linear light blend mode in every path: Rust `composite_tile`
-  op 13 with its twin and an ABI bump, the GL shader, a Canvas 2D emulation, PSD `lLit` / ORA both ways, the reader;
-  full tier; `dist/map4/blend.md` has the sites and the formulas), then 9 dodge and burn, 10 the popover.
-  `set_brush` has flow but no smudge / clone parameters yet.
+- **Step 8 is done** (frequency separation, linear light in every path, px ABI 13, `minReader` 2 only for documents with
+  a linear-light layer). Open: `composite` on the canvas backend is 4 levels off the tiles-made references in the
+  linear-light column (premultiplied canvas rounding doubled by the slope; a tolerance change was declined, decide
+  with the user: per-backend references, or accept); the GLSL clamp survives the mutation round (opaque test layers).
+- **Next: package 4 step 9** (dodge and burn: `dist/map4/blend.md` §4), then 10 the popover.
 - The user's answers of 2026-09-27: LaMa is downloaded (package 5), the PNG switch is on by default, 4.10 a popover.
   Open for the user: item 25's look and timing.
+
+**At most two build steps per session, then `/clear` or `/compact` (the user, 2026-09-28):** the context rose to 85 % in
+one session of eight steps (its own tool output and patch scripts, not this file); commit, write the hand-over, stop.
+Read maps and code with grep and offsets, edit with Edit rather than long patch scripts, keep gate output to a summary.
 
 **How the work goes (the user, 2026-09-26):** tests by risk (Working rules); few agents - the main loop builds, one or
 two background agents take separate files (a gate, tests against a stated API, docs), one package at a time, a local

@@ -43,6 +43,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   whole layer at every step (up to 8 s a move). Now each reads only what is under the brush: a few milliseconds a
   move at any size, and a gigabyte less memory. Heal matches the colour more exactly. On the base the smudge no
   longer copies the whole base into a layer first: it paints into a new layer from the picture.
+- **Frequency separation and the linear light blend mode.** *Image › Frequency Separation…* splits the picture, or the
+  selection's box, into a low-frequency layer (colour and tone) and a high-frequency layer (texture) that give the
+  picture back exactly, so you can even out skin tone on one and heal texture on the other. The high layer uses the
+  new **linear light** blend mode, which every layer can use now; PSD files keep it both ways. A document with a
+  linear-light layer needs 0.1.32 or newer to open; every other document still opens in 0.1.31. `set_layer` refuses a
+  mistyped blend mode instead of drawing it as normal, and agents get `frequency_separation`.
 - **Brushes up to 1,000 px.** The largest brush was 400 px; now it is 1,000, which on a 15,000 px picture still
   paints, clones and smudges without a stutter. The Size slider runs logarithmically, so the small sizes keep their
   room; `[` and `]` and `set_brush` go up to 1,000 as well.

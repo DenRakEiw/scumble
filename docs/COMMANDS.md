@@ -413,7 +413,7 @@ Change a layer: name, visible, opacity (0..1 or percent), blend, locked, alpha_l
 | `name` | string |  |
 | `visible` | boolean |  |
 | `opacity` | number | 0..1 (or 0..100) |
-| `blend` | string | normal, multiply, screen, overlay, ... |
+| `blend` | string | the blend mode (one of `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `soft-light`, `hard-light`, `linear-light`, `difference`) |
 | `locked` | boolean |  |
 | `alpha_lock` | boolean |  |
 | `role` | string | none, reference or control (one of `none`, `reference`, `control`) |
@@ -765,6 +765,15 @@ Make this tab's base image from the prompt alone, no image needed. A local recip
 | `seed` | integer | seed; a new random one when left out |
 | `background` | string | transparent asks an API model that supports it (the OpenAI image models) for a cut-out on a transparent ground; the base image then keeps its alpha channel (one of `auto`, `opaque`, `transparent`) |
 | `timeout` | integer | seconds to wait for the result (default 600) (default `600`) |
+
+### `frequency_separation`
+
+Frequency separation of the selection's box (or of the whole picture up to 16 MP): two layers on top, 'Low frequency' (its blur of radius px, normal) and 'High frequency' (the detail, linear light), which together give the picture back. One undo step; the high layer becomes active.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `radius` | number | the blur radius in pixels (default: 0.4 % of the picture's short side) |
 
 ### `read_log` *(app)*
 

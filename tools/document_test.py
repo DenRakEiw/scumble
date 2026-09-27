@@ -33,7 +33,7 @@ default), and this gate starts and ends each of them itself (WM_CLOSE, or a kill
  8. a_close_waits_for_the_save - WM_CLOSE during a save: the process ends after the rename, the file is complete and
     opens (in the next start, with the saved pixels);
 11. newer_documents - files crafted from a saved one (document.json rewritten, `mimetype` first, every entry stored):
-    `minReader: 2` is refused with nothing imported; `version: 2, minReader: 1` with a layer of an unknown kind (with a
+    `minReader: 3` is refused with nothing imported (2 is this version's since linear light, 0.1.32); `version: 2, minReader: 1` with a layer of an unknown kind (with a
     ref), an unknown filter id, an unknown top-level field and an unknown plugin's data (with a ref) opens with a note,
     and all four come back unchanged in the next save.
 
@@ -1205,18 +1205,18 @@ class Gate:
         min2 = os.path.join(docs, "newer_min2.scumble")
 
         def refuse(h):
-            h["version"], h["minReader"], h["app"] = 2, 2, "9.9.9"
+            h["version"], h["minReader"], h["app"] = 3, 3, "9.9.9"
         craft(every, min2, refuse, {pl + "newer_only.png": only})
         before = mirror_files(prof)
         await A.setg(newerPath=self.fwd(min2))
         r = await A.ev(OPEN_REFUSED)
         after = mirror_files(prof)
         if not r["err"] or "newer" not in r["err"] or "update" not in r["err"].lower():
-            problems.append(f"minReader 2 was not refused: {r['err']!r}")
+            problems.append(f"minReader 3 was not refused: {r['err']!r}")
         if r["opened"] or r["tabs"]:
-            problems.append("minReader 2 opened a tab")
+            problems.append("minReader 3 opened a tab")
         if set(after) != set(before) or "input/inpaint_canvas/newer_only.png" in after:
-            problems.append(f"minReader 2 imported {sorted(set(after) - set(before))}")
+            problems.append(f"minReader 3 imported {sorted(set(after) - set(before))}")
         # version 2, minReader 1: four things this version does not know
         v2 = os.path.join(docs, "newer_v2.scumble")
         future = {"id": "Lfuture1", "name": "future layer", "kind": "hologram", "role": "none", "blend": "normal",
@@ -1262,7 +1262,7 @@ class Gate:
             problems.append("the files of the unknown layer and plugin data did not travel: " + ", ".join(e for e in entries if "future" in e))
         await A.ev("for (const e of host.editors().slice()) if (e.docFile && /newer_v2/.test(e.docFile.path)) shell.closeDocument(e, { force: true }); return 1;")
         self.step("newer_documents", not problems, "; ".join(problems[:6]) if problems else
-                  f"minReader 2 refused ({r['err'][:90]}...), nothing imported; version 2 opened with the note, and the unknown kind, filter id, top-level field and plugin data (with their files) came back unchanged in the next save", t)
+                  f"minReader 3 refused ({r['err'][:90]}...), nothing imported; version 2 opened with the note, and the unknown kind, filter id, top-level field and plugin data (with their files) came back unchanged in the next save", t)
 
     def finish(self):
         ok = bool(self.results) and all(self.results)

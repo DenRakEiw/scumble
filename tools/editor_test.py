@@ -7273,6 +7273,71 @@ try {
 }
 return out;
 """),
+    ("frequency_separation_gives_the_picture_back_on_every_path", """
+// PLAN_0_1_31 §4 step 8: the low and the high layer (linear light) of a frequency separation recompose the picture byte
+// for byte: the worker stack (the kernel's op 13), the Canvas 2D flatten (the CPU emulation) and the screen (the GL
+// compositor against the Canvas 2D view with its GPU emulation). A typo in a blend mode is refused; the undo takes both.
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const W = 600, H = 400;
+const out = { tiles: !!ed.tileMode };
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+try {
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    const base = mk(W, H);
+    {
+        const x = base.getContext("2d");
+        const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#c07050"); g.addColorStop(1, "#305090");
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+        const img = x.getImageData(0, 0, W, H);
+        let s = 7;
+        for (let i = 0; i < img.data.length; i += 4) { s = (s * 1664525 + 1013904223) >>> 0; const n = (s >>> 26) - 32; img.data[i] += n; img.data[i + 1] += n >> 1; img.data[i + 2] -= n; }
+        x.putImageData(img, 0, 0);
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W }); Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "freqsep_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    const pic = ed.basePx.readRect(0, 0, W, H).data.slice();
+    const n0 = ed.layers.length;
+    const r = await run("frequency_separation", { doc: d.id, radius: 6 });
+    const low = ed.layers.find((l) => l.id === r.low), high = ed.layers.find((l) => l.id === r.high);
+    out.layers = [low && low.blend, high && high.blend, ed.activeLayerId === r.high];
+    if (!low || !high || high.blend !== "linear-light" || ed.layers.length !== n0 + 2) throw new Error("the two layers are not there: " + JSON.stringify(out.layers));
+    const diff = (a, b) => { let worst = 0, n = 0; for (let i = 0; i < a.length; i++) { if ((i & 3) === 3) continue; const e = Math.abs(a[i] - b[i]); if (e) n++; if (e > worst) worst = e; } return { worst, n }; };
+    // the worker stack (tiles) or the canvas backend's flatten
+    const box = await ed.readBoxBytes([0, 0, W, H], { forRun: true });
+    out.stack = { how: box.how, ...diff(new Uint8ClampedArray(box.data), pic) };
+    if (out.stack.worst !== 0) throw new Error("the " + box.how + " read does not give the picture back: " + JSON.stringify(out.stack));
+    // the Canvas 2D flatten: the CPU emulation
+    const flat = ed.flattenToCanvas().getContext("2d").getImageData(0, 0, W, H).data;
+    out.flatten = diff(flat, pic);
+    if (out.flatten.worst > 1) throw new Error("the Canvas 2D flatten does not give the picture back: " + JSON.stringify(out.flatten));
+    // the screen: the GL compositor against the Canvas 2D view (its GPU emulation)
+    ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false; ed.view.x = 10; ed.view.y = 10;
+    await ed.mipsSettled();
+    const [sx, sy] = ed.imageToScreen(50, 50);
+    const shot = () => { ed.sceneSig = null; ed.draw(); return ed.canvas.getContext("2d").getImageData(Math.round(sx), Math.round(sy), 300, 200).data.slice(); };
+    const gl = shot();
+    const offWas = ed.compositorOff;
+    ed.compositorOff = true;
+    const c2d = shot();
+    ed.compositorOff = offWas;
+    out.screen = diff(gl, c2d);
+    const shown = ed.canvas.getContext("2d").getImageData(Math.round(sx), Math.round(sy), 1, 1).data;
+    const want = pic.subarray((50 * W + 50) * 4, (50 * W + 50) * 4 + 3);
+    out.screenPixel = [Array.from(shown.slice(0, 3)), Array.from(want)];
+    if (out.screen.worst > 2) throw new Error("the Canvas 2D view differs from the GL compositor: " + JSON.stringify(out.screen));
+    if (Math.max(...[0, 1, 2].map((c) => Math.abs(shown[c] - want[c]))) > 2) throw new Error("the screen does not show the picture: " + JSON.stringify(out.screenPixel));
+    // a typo is refused
+    let refused = null;
+    try { await run("set_layer", { doc: d.id, layer: high.id, blend: "linaer-light" }); } catch (e) { refused = e.message; }
+    if (!refused || high.blend !== "linear-light") throw new Error("set_layer took a mistyped blend: " + refused);
+    // one undo step takes both layers
+    await ed.undoStep();
+    if (ed.layers.length !== n0) throw new Error("the undo left " + (ed.layers.length - n0) + " layers");
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
     ("mask_operations_are_one_step_each", """
 // PLAN_0_1_31 6.4: set_mask's operations, each one undo step, the mask white where it shows, and the mask row's menu
 const d = await run("new_document");

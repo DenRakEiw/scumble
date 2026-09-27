@@ -566,8 +566,8 @@ async function writerChecks(readPsd) {
         check("a clipping mask is named", doc.notes.some((n) => /clipping masks.*"clipped"/.test(n)), short(doc.notes));
         check("adjustment layers are named, with and without pixels", doc.notes.some((n) => /2 adjustment or fill layers left out \("Levels 1", "Curves over pixels"\)/.test(n)), short(doc.notes));
         check("the merged picture is read", doc.composite && doc.composite.length === W * H * 4 && doc.composite[3] === 255);
-        const every = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "difference"];
-        const keys = ["norm", "mul ", "scrn", "over", "dark", "lite", "sLit", "hLit", "diff"];
+        const every = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "linear-light", "difference"];
+        const keys = ["norm", "mul ", "scrn", "over", "dark", "lite", "sLit", "hLit", "lLit", "diff"];
         const bd = await readPsd(psd({ width: 2, height: 2, layers: keys.map((k) => ({ name: k, top: 0, left: 0, w: 1, h: 1, ch: solid(1, 1, 1, 1, 1), blend: k })) }));
         check("every blend mode the editor writes comes back", JSON.stringify(bd.layers.map((l) => l.blend)) === JSON.stringify(every), short(bd.layers.map((l) => l.blend)));
     }

@@ -2215,6 +2215,18 @@ function leaveCanvasOnly({ fullScreenGone = false } = {}) {
 }
 
 /** The canvas-only view on (`true`), off (`false`) or toggled (left out); resolves with the state after. */
+/** Image > Frequency Separation...: the radius asked for (the editor's own dialog), then the two layers (PLAN_0_1_31 §4 step 8). */
+async function frequencySeparation() {
+    const ed = host.editor;
+    if (!ed || !ed.base) return;
+    const def = Math.max(2, Math.round(Math.min(ed.width, ed.height) * 0.004));
+    const v = await ed.ask({ title: "Frequency separation", message: `The blur radius in pixels: detail finer than it goes to the high layer, colour and tone to the low one. ${ed.getBounds() ? "The selection's box is split." : "The whole picture is split (select an area for a large one)."}`, value: String(def), ok: "Split" });
+    if (v == null || v === false) return;
+    const r = Math.round(+v);
+    if (!(r > 0)) { ed.setStatus("The radius has to be a number of pixels."); return; }
+    try { await ed.frequencySeparation({ radius: r }); } catch (err) { ed.setStatus(`Frequency separation failed: ${err.message || err}`); }
+}
+
 async function canvasOnly(on) {
     const want = on === undefined ? !canvasOnlyState : !!on;
     await (want ? enterCanvasOnly() : leaveCanvasOnly());
@@ -2268,6 +2280,7 @@ window.scumble.onMenu((cmd) => {
         const op = { 1: 1, "-1": -1, 2: 2, h: "h", v: "v" }[cmd.slice(12)];
         if (op !== undefined && host.editor) host.editor.turnDocument(op);
     }
+    else if (cmd === "frequency-separation") frequencySeparation();
     else if (cmd === "new-tab") activate(newDocument());
     else if (cmd === "close-tab") closeDocument(host.editor);
     else if (cmd === "next-tab") cycleTab(1);

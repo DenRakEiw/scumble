@@ -19,15 +19,17 @@
 //! taken as 255 for "sp", which is what lets the SIMD path treat the 16 bytes of four pixels
 //! alike. Canvas 2D keeps premultiplied 8-bit pixels too, so the precision is the same.
 //!
-//! The eight blend modes (B item 7, ops 5 to 12) are the W3C compositing formula, rounded ONCE per channel: with three
-//! rounded products the result was up to 1.45 levels from the exact value and a level from the compositor's shader on
-//! 29 % of the bytes of a half-transparent layer; rounded once it is within half a level (12 % from the shader, which
-//! reads its source back from a premultiplied 8-bit texture).
+//! The nine blend modes (B item 7, ops 5 to 12; linear light, op 13, package 4 step 8) are the W3C compositing formula,
+//! rounded ONCE per channel: with three rounded products the result was up to 1.45 levels from the exact value and a
+//! level from the compositor's shader on 29 % of the bytes of a half-transparent layer; rounded once it is within half a
+//! level (12 % from the shader, which reads its source back from a premultiplied 8-bit texture). Linear light is not in
+//! the W3C list; it is the separable B = clamp(cb + 2·cs − 1, 0, 1) of Photoshop, GIMP and Krita.
 //!
 //!   B16(cb, cs) = 255 · B, exact integers:
 //!     multiply    b·s                          screen      65025 − (255 − b)(255 − s)
 //!     hard-light  s ≤ 127 ? 2·b·s : 65025 − (255 − b)(510 − 2s)        overlay: b and s swapped
 //!     darken, lighten, difference   255 · min, max, |b − s|
+//!     linear-light  255 · clamp(b + 2s − 255, 0, 255)
 //!     soft-light  s ≤ 127 ? 255·b − ((255 − 2s)·b·(255 − b) + 127) / 255
 //!                         : 255·b + ((2s − 255)·(D[b] − 257·b) + 128) / 257
 //!                 D[b] = round(65535 · d(b / 255)), d as the specification has it (a table, so that no square
@@ -52,6 +54,7 @@ pub const LIGHTEN: u8 = 9;
 pub const SOFT_LIGHT: u8 = 10;
 pub const HARD_LIGHT: u8 = 11;
 pub const DIFFERENCE: u8 = 12;
+pub const LINEAR_LIGHT: u8 = 13;
 
 /// round(65535 · d(b / 255)) of soft-light: d = ((16b − 12)b + 4)b up to a quarter (b ≤ 63), else the square root.
 static SOFT_D: [u16; 256] = [
@@ -106,7 +109,7 @@ pub fn apply(dst: &mut [u8], layer: &Layer) {
     let dst = &mut dst[..px * 4];
     let src = &layer.src[..px * 4];
     let mask = layer.mask.map(|m| &m[..px]);
-    if layer.op >= MULTIPLY && layer.op <= DIFFERENCE {
+    if layer.op >= MULTIPLY && layer.op <= LINEAR_LIGHT {
         let start = simd::blend(dst, src, layer.op, layer.alpha, mask);
         blend_from(dst, src, layer.op, layer.alpha as u32, mask, start);
         return;
@@ -141,6 +144,8 @@ fn blend_of<const OP: u8>(b: u32, s: u32) -> u32 {
             }
         }
         HARD_LIGHT => hard_light(b, s),
+        // b + 2s is 0..765: clamp to 255..510 first, subtract after, so nothing underflows in u32
+        LINEAR_LIGHT => 255 * ((b + 2 * s).max(255).min(510) - 255),
         _ => 255 * (b.max(s) - b.min(s)),
     }
 }
@@ -155,6 +160,7 @@ fn blend_from(dst: &mut [u8], src: &[u8], op: u8, o: u32, mask: Option<&[u8]>, s
         LIGHTEN => scalar_blend::<LIGHTEN>(dst, src, o, mask, start),
         SOFT_LIGHT => scalar_blend::<SOFT_LIGHT>(dst, src, o, mask, start),
         HARD_LIGHT => scalar_blend::<HARD_LIGHT>(dst, src, o, mask, start),
+        LINEAR_LIGHT => scalar_blend::<LINEAR_LIGHT>(dst, src, o, mask, start),
         _ => scalar_blend::<DIFFERENCE>(dst, src, o, mask, start),
     }
 }
@@ -426,6 +432,8 @@ mod simd {
             DARKEN => u32x4_mul(u32x4_min(d, s), c255),
             LIGHTEN => u32x4_mul(u32x4_max(d, s), c255),
             HARD_LIGHT => hard_light(d, s),
+            // lanes are unsigned 0..765: clamp d + 2s to 255..510, then subtract 255
+            LINEAR_LIGHT => u32x4_mul(u32x4_sub(u32x4_min(u32x4_max(u32x4_add(d, u32x4_shl(s, 1)), c255), u32x4_splat(510)), c255), c255),
             _ => u32x4_mul(u32x4_sub(u32x4_max(d, s), u32x4_min(d, s)), c255),
         };
         let inv = u32x4_sub(c255, sa);

@@ -27,6 +27,7 @@ export const OPS = Object.freeze({
     "soft-light": 10,
     "hard-light": 11,
     difference: 12,
+    "linear-light": 13,
 });
 
 // ---- element kinds and byte order --------------------------------------------------------------
@@ -350,13 +351,15 @@ function similarAt(d, i, r0, g0, b0, a0, tol) {
  * The operator is chosen once per layer, not per pixel, and the common case (no mask, full
  * opacity) has loops of its own.
  *
- * The eight blend modes (ops 5 to 12, docs/PLAN_BCE.md §3b B item 7) are the W3C formula rounded ONCE per channel
- * (three rounded products were up to 1.45 levels from the exact value; this is within half a level):
+ * The nine blend modes (ops 5 to 12, docs/PLAN_BCE.md §3b B item 7; linear light, op 13, docs/PLAN_0_1_31.md §4 step 8)
+ * are the W3C formula rounded ONCE per channel (three rounded products were up to 1.45 levels from the exact value; this
+ * is within half a level). Linear light is not a W3C mode; B = clamp(cb + 2·cs − 1, 0, 1) as Photoshop has it:
  *
  *   B16(cb, cs) = 255 · B, exact integers:
  *     multiply    b·s                          screen      65025 − (255 − b)(255 − s)
  *     hard-light  s ≤ 127 ? 2·b·s : 65025 − (255 − b)(510 − 2s)        overlay: b and s swapped
  *     darken, lighten, difference   255 · min, max, |b − s|
+ *     linear-light  255 · clamp(b + 2s − 255, 0, 255)
  *     soft-light  s ≤ 127 ? 255·b − floor(((255 − 2s)·b·(255 − b) + 127) / 255)
  *                         : 255·b + floor(((2s − 255)·(SOFT_D[b] − 257·b) + 128) / 257)
  *   over an opaque backdrop:  r = floor((dp·inv·255 + sa·B16 + 32512) / 65025)
@@ -384,7 +387,7 @@ export function compositeTile(dst, srcs, ops, alphas, masks = null) {
         else if (op === 1) erase(d, src, o, mask, px);
         else if (op === 2) atop(d, src, o, mask, px);
         else if (op === 3) keepIn(d, src, o, mask, px);
-        else if (op >= 5 && op <= 12) blendOp(d, src, o, mask, px, op);
+        else if (op >= 5 && op <= 13) blendOp(d, src, o, mask, px, op);
         else copyOp(d, src, o, mask, px);
     }
     for (let i = 0, n = px * 4; i < n; i += 4) {
@@ -564,6 +567,7 @@ function blendOf(op, b, s) {
             if (s <= 127) return 255 * b - Math.floor(((255 - 2 * s) * b * (255 - b) + 127) / 255);
             return 255 * b + Math.floor(((2 * s - 255) * (SOFT_D[b] - b * 257) + 128) / 257);
         case 11: return hardLight(b, s);
+        case 13: { const t = b + 2 * s - 255; return 255 * (t < 0 ? 0 : t > 255 ? 255 : t); }
         default: return 255 * (b > s ? b - s : s - b);
     }
 }

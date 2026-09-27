@@ -370,7 +370,7 @@ async function compositeCases(ref, label, js) {
             const srcs = [], ops = [], alphas = [], masks = [];
             for (let l = 0; l < n; l++) {
                 srcs.push(pixelRow(pixels, 2000 + trial * 10 + l + pixels));
-                ops.push((trial + l) % 13);
+                ops.push((trial + l) % 14);
                 alphas.push([255, 0, 128, 200, 1][(trial + 2 * l) % 5]);
                 masks.push((trial + l) % 3 === 0 ? null : randomMask(pixels, 3000 + trial * 10 + l));
             }
@@ -379,11 +379,11 @@ async function compositeCases(ref, label, js) {
             if (!eqBytes(a, b)) { ok = false; detail = `${pixels}px trial ${trial} ops ${ops} alphas ${alphas} ${firstDiff(a, b)}`; }
         }
     }
-    check(`js compositeTile equals the ${label} (5 ops and 8 blend modes, partial alpha, opacity, masks, tails)`, ok, detail);
+    check(`js compositeTile equals the ${label} (5 ops and 9 blend modes, partial alpha, opacity, masks, tails)`, ok, detail);
 
     // every blend mode alone: over an opaque tile (four opaque pixels at a time in the SIMD build), over a mixed one, masked or not
     let okModes = true, detailModes = "";
-    for (let op = 5; op <= 12; op++) {
+    for (let op = 5; op <= 13; op++) {
         for (const [pixels, opaque, o, masked] of [[4099, true, 255, false], [4099, true, 170, true], [4099, false, 255, true], [4099, false, 90, false], [3, false, 255, false]]) {
             const dst = pixelRow(pixels, 40 + op, { opaque }), src = pixelRow(pixels, 60 + op + pixels), mask = masked ? [randomMask(pixels, 80 + op)] : null;
             const a = js.compositeTile(dst.slice(), [src], [op], [o], mask);
@@ -424,8 +424,8 @@ async function compositeCases(ref, label, js) {
     check(`js source-over over an opaque tile within 1.5 levels of float maths`, worst <= 1.5, `worst ${worst.toFixed(2)}`);
 
     // the blend modes against the specification in floats: co = cs·as·(1 − ab) + cb·ab·(1 − as) + as·ab·B(cb, cs)
-    let worstB = 0, worstFull = 0, worstRatioB = 0, seenB = 0, worstMode = "";
-    for (let op = 5; op <= 12; op++) {
+    let worstB = 0, worstFull = 0, worstRatioB = 0, seenB = 0, worstMode = "", worstLL = 0, worstLLFull = 0, worstRatioLL = 0;
+    for (let op = 5; op <= 13; op++) {
         for (const o of [255, 140]) {
             const dst = pixelRow(8192, 11 + op + o, { opaque: true }), src = pixelRow(8192, 12 + op + o);
             const out = js.compositeTile(dst.slice(), [src], [op], [o], null);
@@ -436,6 +436,7 @@ async function compositeCases(ref, label, js) {
                     const e = Math.abs(want - out[i + c]);
                     if (e > worstB) { worstB = e; worstMode = BLEND_NAMES[op - 5]; }
                     if (o === 255 && e > worstFull) worstFull = e;
+                    if (op === 13) { worstLL = Math.max(worstLL, e); if (o === 255) worstLLFull = Math.max(worstLLFull, e); }
                 }
             }
             const dst2 = pixelRow(8192, 13 + op + o), out2 = js.compositeTile(dst2.slice(), [src], [op], [o], null);
@@ -448,16 +449,34 @@ async function compositeCases(ref, label, js) {
                     const cb = dst2[i + c] / 255, cs = src[i + c] / 255;
                     const want = 255 * (cs * sa * (1 - da) + cb * da * (1 - sa) + sa * da * blendFloat(op, cb, cs)) / oa;
                     worstRatioB = Math.max(worstRatioB, Math.abs(want - out2[i + c]) / bound);
+                    if (op === 13) worstRatioLL = Math.max(worstRatioLL, Math.abs(want - out2[i + c]) / bound);
                 }
             }
         }
     }
     // rounded once: half a level at full opacity; at an opacity the effective alpha is rounded to 8 bits first, which is up to half a level more
-    check(`js blend modes over an opaque tile within one level of the specification's floats (half a level at full opacity)`, worstB <= 1 && worstFull <= 0.51, `worst ${worstB.toFixed(2)} (${worstMode}), at full opacity ${worstFull.toFixed(3)}`);
-    check(`js blend modes over translucent pixels within 2.5·255/alpha + 2.5·255/backdrop alpha + 0.6 levels`, worstRatioB <= 1 && seenB > 1000, `worst at ${(worstRatioB * 100).toFixed(0)} % of the bound over ${seenB} pixels`);
+    check(`js blend modes over an opaque tile within one level of the specification's floats (half a level at full opacity)`, worstB <= 1 && worstFull <= 0.51, `worst ${worstB.toFixed(2)} (${worstMode}), at full opacity ${worstFull.toFixed(3)}; linear light ${worstLL.toFixed(3)}, at full opacity ${worstLLFull.toFixed(3)}`);
+    check(`js blend modes over translucent pixels within 2.5·255/alpha + 2.5·255/backdrop alpha + 0.6 levels`, worstRatioB <= 1 && seenB > 1000, `worst at ${(worstRatioB * 100).toFixed(0)} % of the bound over ${seenB} pixels; linear light ${(worstRatioLL * 100).toFixed(0)} %`);
+    // linear light over every opaque (b, s) pair, three channel arrangements: B16 is exact, so the result is clamp(b + 2s − 255, 0, 255) itself
+    {
+        const dst = new Uint8Array(65536 * 4), src = new Uint8Array(65536 * 4), ll = (b, s) => Math.min(255, Math.max(0, b + 2 * s - 255));
+        for (let b = 0; b < 256; b++) for (let s = 0; s < 256; s++) {
+            const i = (b * 256 + s) * 4;
+            dst[i] = b; src[i] = s; dst[i + 1] = s; src[i + 1] = b; dst[i + 2] = 255 - b; src[i + 2] = 255 - s; dst[i + 3] = 255; src[i + 3] = 255;
+        }
+        for (const [name, k] of [["js", js], [label, ref]]) {
+            const out = k.compositeTile(dst.slice(), [src], [js.OPS["linear-light"]], [255], null);   // the op the editor looks up by name
+            let bad = 0, first = "";
+            for (let p = 0; p < 65536; p++) for (let c = 0; c < 3; c++) {
+                const i = p * 4 + c;
+                if (out[i] !== ll(dst[i], src[i])) { if (!bad++) first = `b ${dst[i]} s ${src[i]}: ${out[i]}, want ${ll(dst[i], src[i])}`; }
+            }
+            check(`${name} linear light over every opaque (b, s) pair is clamp(b + 2s − 255, 0, 255) exactly`, bad === 0, bad ? `${bad} off, first ${first}` : "");
+        }
+    }
     if (/rust/.test(label)) {
         const N = 1 << 20, dstT = pixelRow(N, 5, { opaque: true }), srcT = pixelRow(N, 6), parts = [];
-        for (const op of [5, 7, 10]) {
+        for (const op of [5, 7, 10, 13]) {
             const best = (k) => { let b = Infinity; for (let i = 0; i < 5; i++) { const w = dstT.slice(), t0 = performance.now(); k.compositeTile(w, [srcT], [op], [200], null); b = Math.min(b, performance.now() - t0); } return b; };
             parts.push(`${BLEND_NAMES[op - 5]} ${label} ${best(ref).toFixed(1)} ms, twin ${best(js).toFixed(1)}`);
         }
@@ -800,7 +819,7 @@ const mul255 = (x, y) => { const t = x * y + 128; return (t + (t >> 8)) >> 8; };
 // soft-light's d(b), in 16 bits: the table the kernels carry, made here from the specification
 const SOFT_D_REF = Array.from({ length: 256 }, (_, b8) => { const b = b8 / 255; return Math.floor((b8 <= 63 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b)) * 65535 + 0.5); });
 const hardLightRef = (b, s) => (s <= 127 ? 2 * b * s : 65025 - (255 - b) * (510 - 2 * s));
-/** 255 · B(cb, cs) of the ops 5 to 12 in the kernels' integers (0..65025). */
+/** 255 · B(cb, cs) of the ops 5 to 13 in the kernels' integers (0..65025). */
 const blendRef = (op, b, s) => [
     () => b * s,
     () => 65025 - (255 - b) * (255 - s),
@@ -810,14 +829,15 @@ const blendRef = (op, b, s) => [
     () => (s <= 127 ? 255 * b - Math.floor(((255 - 2 * s) * b * (255 - b) + 127) / 255) : 255 * b + Math.floor(((2 * s - 255) * (SOFT_D_REF[b] - b * 257) + 128) / 257)),
     () => hardLightRef(b, s),
     () => 255 * Math.abs(b - s),
+    () => 255 * Math.min(255, Math.max(0, b + 2 * s - 255)),
 ][op - 5]();
-/** The same in the specification's floats (W3C Compositing and Blending Level 1), 0..1. */
+/** The same in the specification's floats (W3C Compositing and Blending Level 1; linear light as Photoshop has it), 0..1. */
 const blendFloat = (op, b, s) => {
     const hl = (b, s) => (s <= 0.5 ? b * 2 * s : b + (2 * s - 1) - b * (2 * s - 1));
     const d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b);
-    return [b * s, b + s - b * s, hl(s, b), Math.min(b, s), Math.max(b, s), s <= 0.5 ? b - (1 - 2 * s) * b * (1 - b) : b + (2 * s - 1) * (d - b), hl(b, s), Math.abs(b - s)][op - 5];
+    return [b * s, b + s - b * s, hl(s, b), Math.min(b, s), Math.max(b, s), s <= 0.5 ? b - (1 - 2 * s) * b * (1 - b) : b + (2 * s - 1) * (d - b), hl(b, s), Math.abs(b - s), Math.min(1, Math.max(0, b + 2 * s - 1))][op - 5];
 };
-const BLEND_NAMES = ["multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "difference"];
+const BLEND_NAMES = ["multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "difference", "linear-light"];
 
 const reference = {
     /** 2×2 box weighted by alpha: alpha (A + 2) >> 2, colour floor((Σ c·a + A/2) / A), 0 when A is 0. */

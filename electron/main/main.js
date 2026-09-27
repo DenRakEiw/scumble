@@ -593,6 +593,8 @@ function buildMenu() {
                 { type: "separator" },
                 { label: "Flip Horizontal", click: () => send("menu", "canvas:turn:h") },
                 { label: "Flip Vertical", click: () => send("menu", "canvas:turn:v") },
+                { type: "separator" },
+                { label: "Frequency Separation...", click: () => send("menu", "frequency-separation") },
             ],
         },
         {

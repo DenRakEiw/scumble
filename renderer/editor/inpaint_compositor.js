@@ -28,7 +28,7 @@ import { TILE_SIZE, MIP_LEVELS, GUTTER, slotSide } from "./inpaint_tiles.js";
 
 export const BLEND_INDEX = {
     normal: 0, multiply: 1, screen: 2, overlay: 3, darken: 4,
-    lighten: 5, "soft-light": 6, "hard-light": 7, difference: 8,
+    lighten: 5, "soft-light": 6, "hard-light": 7, difference: 8, "linear-light": 9,
 };
 
 const VS = `#version 300 es
@@ -65,6 +65,7 @@ float blend1(float b, float s) {
     if (u_mode == 6) return bSoftLight(b, s);
     if (u_mode == 7) return bHardLight(b, s);
     if (u_mode == 8) return abs(b - s);
+    if (u_mode == 9) return clamp(b + 2.0 * s - 1.0, 0.0, 1.0);   // linear light (PLAN_0_1_31 §4 step 8)
     return s;
 }
 

@@ -15,7 +15,7 @@
 // active tab is used. App commands (`scope: "app"`) take no document.
 
 import { api, host } from "./editor/host.js";
-import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX } from "./editor/inpaint_canvas.js";
+import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { fontList } from "./editor/inpaint_text.js";
 
@@ -737,13 +737,17 @@ const COMMANDS = {
     set_active_layer: { description: "Make a layer the active one.", params: { layer: P.layer("the layer: id, name or unique name fragment", { required: true }) }, async run(ed, a) { const l = findLayer(ed, a.layer, { allowActive: false }); ed.activeLayerId = l.id; touch(ed); if (ed.updateSubbar) ed.updateSubbar(); return layerSummary(ed, l); } },
     set_layer: {
         description: "Change a layer: name, visible, opacity (0..1 or percent), blend, locked, alpha_lock, role, colour match (0..100 %, match_source surroundings / below), geometry x y w h, active.",
-        params: { layer: P.layer(), name: P.str(""), visible: P.bool(""), opacity: P.num("0..1 (or 0..100)"), blend: P.str("normal, multiply, screen, overlay, ..."), locked: P.bool(""), alpha_lock: P.bool(""), role: P.str("none, reference or control", { enum: ["none", "reference", "control"] }), match: P.num("colour match strength 0..100"), match_source: P.str("surroundings or below", { enum: ["surroundings", "below"] }), x: P.int(""), y: P.int(""), w: P.int("width (alias width); without h the aspect is kept"), h: P.int("height (alias height)"), active: P.bool("also make it the active layer") },
+        params: { layer: P.layer(), name: P.str(""), visible: P.bool(""), opacity: P.num("0..1 (or 0..100)"), blend: P.str("the blend mode", { enum: BLEND_MODES }), locked: P.bool(""), alpha_lock: P.bool(""), role: P.str("none, reference or control", { enum: ["none", "reference", "control"] }), match: P.num("colour match strength 0..100"), match_source: P.str("surroundings or below", { enum: ["surroundings", "below"] }), x: P.int(""), y: P.int(""), w: P.int("width (alias width); without h the aspect is kept"), h: P.int("height (alias height)"), active: P.bool("also make it the active layer") },
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
             if (a.name != null) l.name = String(a.name);
             if (a.visible != null) l.visible = !!a.visible;
             if (a.opacity != null) l.opacity = Math.min(1, Math.max(0, +a.opacity > 1 ? +a.opacity / 100 : +a.opacity));
-            if (a.blend != null) l.blend = String(a.blend);
+            if (a.blend != null) {
+                // a typo drew as normal on every path before (no site checks the name): refused here
+                if (!BLEND_MODES.includes(String(a.blend))) throw new Error(`blend "${a.blend}" is not one of ${BLEND_MODES.join(", ")}`);
+                l.blend = String(a.blend);
+            }
             if (a.locked != null) l.locked = !!a.locked;
             if (a.alpha_lock != null) l.alphaLock = !!a.alpha_lock;
             if (a.role != null) {
@@ -779,6 +783,11 @@ const COMMANDS = {
         async run(ed, a) { const l = ed.addPaintLayer(); if (!l) throw new Error(ed.status); if (a.name) { l.name = String(a.name); touch(ed); } return layerSummary(ed, l); },
     },
     remove_layer: { description: "Delete a layer.", params: { layer: P.layer("", { required: true }) }, async run(ed, a) { const l = findLayer(ed, a.layer); ed.removeLayer(l.id); return { removed: l.id, layers: ed.layers.length }; } },
+    frequency_separation: {
+        description: "Frequency separation of the selection's box (or of the whole picture up to 16 MP): two layers on top, 'Low frequency' (its blur of radius px, normal) and 'High frequency' (the detail, linear light), which together give the picture back. One undo step; the high layer becomes active.",
+        params: { radius: P.num("the blur radius in pixels (default: 0.4 % of the picture's short side)") },
+        async run(ed, a) { const r = await ed.frequencySeparation({ radius: a.radius }); if (!r) throw new Error(ed.status); return r; },
+    },
     duplicate_layer: { description: "Duplicate a layer (the copy sits above it).", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); const c = ed.duplicateLayer(l); if (!c) throw new Error(ed.status); return layerSummary(ed, c); } },
     merge_down: { description: "Merge a layer into the one below it (into the base image if it is the lowest).", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); const n = ed.layers.length; await ed.mergeDown(l); if (ed.layers.length === n && ed.layers.includes(l)) throw new Error(ed.status); return { layers: ed.layers.map((x) => layerSummary(ed, x)), status: ed.status }; } },
     move_layer: {

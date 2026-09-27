@@ -62,9 +62,10 @@ BUILD = """
     await ed.setBase({ filename: "composite_ref.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
 
     // one small layer per blend mode, laid out in a row, each half opaque
-    const modes = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "difference"];
+    // ten modes since linear light (0.1.32): 80 px wide, 88 apart, so the row still fits the 900 px document
+    const modes = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "linear-light", "difference"];
     modes.forEach((mode, i) => {
-        const w = 90, h = 200;
+        const w = 80, h = 200;
         const c = mk(w, h);
         const x = c.getContext("2d");
         const g = x.createLinearGradient(0, 0, 0, h);
@@ -72,7 +73,7 @@ BUILD = """
         x.fillStyle = g; x.fillRect(0, 0, w, h);
         x.fillStyle = "rgba(255,255,255,0.85)"; x.fillRect(10, 20, 30, 60);
         x.fillStyle = "rgba(0,0,0,0.85)"; x.fillRect(50, 120, 30, 60);
-        const l = ed.addLayer({ name: "blend " + mode, kind: "paint", px: LayerPixels.fromCanvas(c), x: 10 + i * 98, y: 30, w, h, dirty: true });
+        const l = ed.addLayer({ name: "blend " + mode, kind: "paint", px: LayerPixels.fromCanvas(c), x: 10 + i * 88, y: 30, w, h, dirty: true });
         l.blend = mode;
         l.opacity = 0.75;
     });
@@ -527,6 +528,11 @@ async def run(c, args):
             # of the view is up to 3 levels apart on both backends, and only there (measured); the full-resolution
             # composite keeps its own statistics and stays identical
             tol = max(args.tolerance, 3) if name == "view" else args.tolerance
+            # linear light (0.1.32) has a slope of 2 in the layer's colour: the canvas backend's premultiplied storage of the
+            # half-transparent pixels of its column (a level either way against the references taken on tiles) comes out
+            # doubled there, measured 4 levels on both pictures; the tiles backend stays within the default
+            if os.environ.get("SCUMBLE_TILES") == "0":
+                tol = max(tol, 4)
             if diff.get("differing", 0) == 0:
                 print(f"[ok] {name}: identical")
             elif diff.get("max", 999) <= tol:

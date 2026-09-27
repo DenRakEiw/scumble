@@ -921,7 +921,7 @@ const E = Editor(ed);
 const W = ed.width;
 const out = {};
 let worstOf = 0;
-for (const mode of ["multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "difference"]) {
+for (const mode of ["multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "linear-light", "difference"]) {
     for (const l of ed.layers) l.blend = mode;
     ed.renderLayers();
     const plan = ed.stackPlan({ forRun: true });

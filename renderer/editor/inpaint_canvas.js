@@ -14,10 +14,10 @@
 
 import { api, host } from "./host.js";
 import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromCube, lutToCanvas, lutFromImage, plateStats, colourStats } from "./inpaint_filters.js";
-import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces } from "./inpaint_filters_gl.js";
+import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces, runShader } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
-import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP } from "./px/kernels.js";
+import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile } from "./px/kernels.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
@@ -297,7 +297,25 @@ const SIDE_MIN_PX = 310;                   // an expanded layer row fits from he
 const SIDE_MAX_SHARE = 0.6;                // of the editor's body: the picture keeps the rest
 const RULER_PX = 18;
 const CURSOR_CLASSES = ["ipc-scale", "ipc-scale-ne", "ipc-scale-x", "ipc-scale-y", "ipc-rotate"];
-const BLEND_MODES = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "difference"];
+const BLEND_MODES = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "linear-light", "difference"];
+// modes Canvas 2D has no globalCompositeOperation for: drawn through `blendEmulated` (PLAN_0_1_31 §4 step 8)
+const EMULATED_BLENDS = new Set(["linear-light"]);
+// the largest box frequency separation takes at once (two float copies of it are 32 bytes a pixel)
+const FREQ_MAX_PX = 16e6;
+// linear light over the backdrop (the input), the W3C source-over-with-blend of inpaint_compositor.js, straight alpha
+const LINEAR_LIGHT_SHADER = {
+    label: "linear light",
+    uniforms: { u_layer: "sampler2D", u_opacity: "float" },
+    code: `vec4 shade(vec4 B, vec2 uv) {
+    vec4 S = texture(u_layer, uv);
+    float as = S.a * u_opacity, ab = B.a;
+    vec3 bl = clamp(B.rgb + 2.0 * S.rgb - 1.0, 0.0, 1.0);
+    vec3 cs = mix(S.rgb, bl, ab);
+    float ao = as + ab * (1.0 - as);
+    vec3 co = cs * as + B.rgb * ab * (1.0 - as);
+    return ao > 0.0 ? vec4(co / ao, ao) : vec4(0.0);
+}`,
+};
 const ROLES = ["none", "reference", "scribble", "lineart", "depth", "pose", "canny", "other"];
 // Outputs after the setting slots (none at the moment). The backend would declare
 // them after setting_8, the frontend shows them right after the connected settings
@@ -9307,6 +9325,99 @@ class InpaintEditor {
         this.scheduleAutosave();
     }
 
+    /**
+     * Draw in a blend mode Canvas 2D has no operation for (linear light, PLAN_0_1_31 §4 step 8; PLAN_NIK9's other modes
+     * would join `EMULATED_BLENDS`): `draw(c)` puts the layer alone onto a scratch of `ctx`'s canvas size, with `ctx`'s
+     * transform and smoothing, at full opacity (the layer's `opacity` goes to the blend, as the worker stack takes it:
+     * baked into the 8-bit scratch its rounding came out doubled by linear light's slope), then blended over the canvas: on the GPU for a screen pass (the compositor's
+     * formula through runShader: a readback of the view canvas every frame would trip Chromium's acceleration latch),
+     * else on the CPU through `compositeTile`, the worker stack's own kernel (the flatten, the bands, the merges). A
+     * colour-matched layer drawn into the scratch finds no backdrop there: its statistics come from the sampled passes.
+     */
+    blendEmulated(ctx, mode, draw, opacity = 1) {
+        const cv = ctx.canvas, W = cv.width, H = cv.height;
+        if (!W || !H) return;
+        const screen = !!(this.viewPass && this.viewPass.screen);
+        const slot = screen ? "_blendScratchGpu" : "_blendScratchCpu";
+        let s = this[slot];
+        if (!s || s.width !== W || s.height !== H) s = this[slot] = screen ? makeCanvas(W, H) : cpuDab(null, W, H);
+        const sc = s.getContext("2d");
+        sc.setTransform(1, 0, 0, 1, 0, 0);
+        sc.globalAlpha = 1; sc.globalCompositeOperation = "source-over";
+        sc.clearRect(0, 0, W, H);
+        sc.setTransform(ctx.getTransform());
+        sc.imageSmoothingEnabled = ctx.imageSmoothingEnabled;
+        draw(sc);
+        sc.setTransform(1, 0, 0, 1, 0, 0);
+        sc.globalAlpha = 1;
+        if (screen && mode === "linear-light") {
+            let out = null;
+            try { out = runShader(LINEAR_LIGHT_SHADER, cv, { u_layer: s, u_opacity: Math.max(0, Math.min(1, opacity)) }); } catch (err) { console.warn("Inpaint Canvas: the linear light shader failed, blending on the CPU:", err); }
+            if (out) {
+                const img = isGLSurface(out) ? surfaceToCanvas(out) : out;
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.globalAlpha = 1;
+                ctx.globalCompositeOperation = "copy";
+                ctx.imageSmoothingEnabled = false;   // copy with smoothing on moves bytes (CLAUDE.md)
+                ctx.drawImage(img, 0, 0);
+                ctx.restore();
+                return;
+            }
+        }
+        const b = ctx.getImageData(0, 0, W, H), t = sc.getImageData(0, 0, W, H);
+        compositeTile(new Uint8Array(b.data.buffer, b.data.byteOffset, W * H * 4), [new Uint8Array(t.data.buffer, t.data.byteOffset, W * H * 4)], [OPS[mode]], [Math.round(Math.max(0, Math.min(1, opacity)) * 255)], [null]);
+        ctx.putImageData(b, 0, 0);
+    }
+
+    /**
+     * Frequency separation (PLAN_0_1_31 §4 step 8): the picture of the selection's box, or of the whole picture up to
+     * 16 MP, split into two layers on top, "Low frequency" (its blur of `radius` px, normal) and above it "High frequency"
+     * (the detail, in linear light), which give the picture back where it is opaque: H = floor((I - L + 255) / 2) and,
+     * where I - L is odd, L one level up (at 255 one down, H one up), so that L + 2H - 255 = I exactly, on every path at
+     * full opacity (8-bit linear light has no neutral grey; Photoshop's recipe loses a level on half the pixels). The
+     * picture is the run's (`readBoxBytes`, without helper layers). One undo step; the high layer is made active.
+     */
+    async frequencySeparation({ radius = null } = {}) {
+        if (!this.base) { this.setStatus("Load a picture first."); return null; }
+        const b = this.getBounds();
+        const box = b ? [Math.max(0, Math.floor(b[0])), Math.max(0, Math.floor(b[1])), Math.min(this.width, Math.ceil(b[2])), Math.min(this.height, Math.ceil(b[3]))] : [0, 0, this.width, this.height];
+        const w = box[2] - box[0], h = box[3] - box[1];
+        if (!(w > 0 && h > 0)) { this.setStatus("The selection is empty."); return null; }
+        if (w * h > FREQ_MAX_PX) { this.setStatus(`Frequency separation works on up to ${Math.round(FREQ_MAX_PX / 1e6)} MP (this is ${Math.round(w * h / 1e5) / 10} MP): select the area first, a face or a patch of skin.`); return null; }
+        const r = radius > 0 ? Math.max(1, Math.min(200, Math.round(radius))) : Math.max(2, Math.round(Math.min(this.width, this.height) * 0.004));
+        this.setStatus(`Frequency separation (${r} px) ...`);
+        const src = await this.readBoxBytes(box, { forRun: true });
+        const I = new Uint8ClampedArray(w * h * 4);
+        I.set(src.data.subarray ? src.data.subarray(0, w * h * 4) : src.data);
+        const L = blurRGBA(I, w, h, r), Hi = new Uint8ClampedArray(w * h * 4);
+        for (let i = 0; i < I.length; i += 4) {
+            for (let c = 0; c < 3; c++) {
+                const v = I[i + c], l = L[i + c], t = v - l + 255;
+                let hv = t >> 1;
+                if (t & 1) { if (l < 255) L[i + c] = l + 1; else { L[i + c] = 254; hv += 1; } }
+                Hi[i + c] = hv;
+            }
+            L[i + 3] = I[i + 3]; Hi[i + 3] = I[i + 3];
+        }
+        this.pushUndo({ kind: "layers", label: "Frequency separation" });
+        const make = (bytes, name, blend) => {
+            const px = this.pixels.Layer.empty(w, h);
+            px.writeRect({ data: bytes, width: w, height: h }, 0, 0);
+            const l = this.addLayer({ name, kind: "paint", px, x: box[0], y: box[1], w, h, dirty: true });
+            l.blend = blend;
+            this.markLayerChanged(l);
+            return l;
+        };
+        const low = make(L, `Low frequency (${r} px)`, "normal");
+        const high = make(Hi, "High frequency", "linear-light");
+        this.activeLayerId = high.id;
+        this.renderLayers();
+        this.draw();
+        this.setStatus(`Frequency separation: ${low.name} and ${high.name} (linear light) on top, ${w} \u00d7 ${h}. Soften colour on the low layer, retouch texture on the high one.`);
+        return { low: low.id, high: high.id, radius: r, box };
+    }
+
     /** A rectangle in a layer target's own pixels ([x0, y0, x1, y1]) in image coordinates; `target` is pixels or a canvas. */
     layerRectToImage(layer, target, rect) {
         const sx = layer.w / target.width, sy = layer.h / target.height;
@@ -9602,6 +9713,10 @@ class InpaintEditor {
             else layer.maskPx.drawTo(mctx, rx * ms, ry * ms, rw * ms, rh * ms, 0, 0, m.width, m.height);
             mctx.globalCompositeOperation = "source-over";
             src = m;
+        }
+        if (EMULATED_BLENDS.has(layer.blend)) {
+            this.blendEmulated(ctx, layer.blend, (c) => { c.drawImage(src, rx, ry, rw, rh); }, layer.opacity);
+            return null;
         }
         ctx.globalAlpha = layer.opacity;
         ctx.globalCompositeOperation = (layer.blend && layer.blend !== "normal") ? layer.blend : "source-over";
@@ -10229,9 +10344,12 @@ class InpaintEditor {
                 const c = makeCanvas(this.width, this.height);
                 const ctx = c.getContext("2d");
                 this.drawBaseInto(ctx, 0, 0, this.width, this.height);
-                ctx.globalAlpha = layer.opacity;
-                ctx.globalCompositeOperation = layer.blend && layer.blend !== "normal" ? layer.blend : "source-over";
-                this.drawLayer(ctx, layer);
+                if (EMULATED_BLENDS.has(layer.blend)) this.blendEmulated(ctx, layer.blend, (lc) => { this.drawLayer(lc, layer); }, layer.opacity);
+                else {
+                    ctx.globalAlpha = layer.opacity;
+                    ctx.globalCompositeOperation = layer.blend && layer.blend !== "normal" ? layer.blend : "source-over";
+                    this.drawLayer(ctx, layer);
+                }
                 ctx.globalAlpha = 1;
                 ctx.globalCompositeOperation = "source-over";
                 const { ref } = await uploadCanvas(c, `n${this.node.id}_base`);
@@ -10265,9 +10383,13 @@ class InpaintEditor {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         ctx.drawImage(this.layerPixels(below), (below.x - x0) * res, (below.y - y0) * res, below.w * res, below.h * res);
-        ctx.globalAlpha = layer.opacity;
-        ctx.globalCompositeOperation = layer.blend && layer.blend !== "normal" ? layer.blend : "source-over";
-        ctx.drawImage(this.layerPixels(layer), (layer.x - x0) * res, (layer.y - y0) * res, layer.w * res, layer.h * res);
+        if (EMULATED_BLENDS.has(layer.blend)) {
+            this.blendEmulated(ctx, layer.blend, (lc) => { lc.imageSmoothingEnabled = true; lc.imageSmoothingQuality = "high"; lc.drawImage(this.layerPixels(layer), (layer.x - x0) * res, (layer.y - y0) * res, layer.w * res, layer.h * res); }, layer.opacity);
+        } else {
+            ctx.globalAlpha = layer.opacity;
+            ctx.globalCompositeOperation = layer.blend && layer.blend !== "normal" ? layer.blend : "source-over";
+            ctx.drawImage(this.layerPixels(layer), (layer.x - x0) * res, (layer.y - y0) * res, layer.w * res, layer.h * res);
+        }
         // no alpha, blend or smoothing left on the new pixels' context (PLAN_BCE §C1 rule 11)
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
@@ -12622,6 +12744,7 @@ class InpaintEditor {
             if (controlOnly && !ctrl) continue;
             if (forRun && (ctrl || this.isReference(layer))) continue;
             chain = this.flushFilterChain(ctx, chain);
+            if (!controlOnly && EMULATED_BLENDS.has(layer.blend)) { this.blendEmulated(ctx, layer.blend, (lc) => { this.drawLayer(lc, layer); }, layer.opacity); continue; }
             ctx.globalAlpha = layer.opacity;
             ctx.globalCompositeOperation = (!controlOnly && layer.blend && layer.blend !== "normal") ? layer.blend : "source-over";
             this.drawLayer(ctx, layer);
@@ -14004,7 +14127,7 @@ class InpaintEditor {
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }
-        for (const name of ["sceneCanvas", "viewCanvas", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView", "_filterMaskView", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest", "_dabMask"]) {
+        for (const name of ["sceneCanvas", "viewCanvas", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView", "_filterMaskView", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest", "_dabMask", "_blendScratchGpu", "_blendScratchCpu"]) {
             if (this[name]) { freed += px(this[name].c || this[name]); this[name] = null; }
         }
         if (this._brushRead) { for (const c of this._brushRead) if (c) freed += px(c); this._brushRead = null; }
@@ -14639,4 +14762,4 @@ class InpaintEditor {
 }
 
 // everything the hosts use: Scumble's shell, commands and plugins, the node's extension (js/inpaint_node.js)
-export { InpaintEditor, viewUrl, loadImageEl, makeCanvas, uploadBlob, uploadCanvas, CROP_DEFAULTS, GEN_DEFAULTS, FIXED_OUTPUTS, SETTING_SLOTS, TAIL_OUTPUTS, NODE_CLASS, STITCH_CLASS, isSettingOutput, settingIndex, linkOf, el, icon, iconButton, miniButton, selectInput, numberInput , hostText, REF_FITS, REF_DEFAULTS, UPSAMPLE_CASES, randomSeed, STYLE };
+export { InpaintEditor, BLEND_MODES, viewUrl, loadImageEl, makeCanvas, uploadBlob, uploadCanvas, CROP_DEFAULTS, GEN_DEFAULTS, FIXED_OUTPUTS, SETTING_SLOTS, TAIL_OUTPUTS, NODE_CLASS, STITCH_CLASS, isSettingOutput, settingIndex, linkOf, el, icon, iconButton, miniButton, selectInput, numberInput , hostText, REF_FITS, REF_DEFAULTS, UPSAMPLE_CASES, randomSeed, STYLE };
