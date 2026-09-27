@@ -284,7 +284,8 @@ function createWindow() {
     win.once("ready-to-show", () => { if (!headless) win.show(); });
     win.on("close", (e) => {
         const b = win.getNormalBounds();
-        settings.set({ window: { ...b, maximized: win.isMaximized() } });
+        // a full-screen window is not maximized: the canvas-only view remembers whether it was before
+        settings.set({ window: { ...b, maximized: viewFullScreen && win.isFullScreen() ? maximizedBeforeView : win.isMaximized() } });
         // while an agent drives the app, closing the window only hides it; the app ends
         // with the MCP session (or stays when a script still talks to the socket)
         if (agentMode) { e.preventDefault(); win.hide(); headless = true; return; }
@@ -306,6 +307,8 @@ function createWindow() {
     win.webContents.on("did-start-navigation", (details) => {
         if (!details || details.isSameDocument || !details.isMainFrame) return;
         for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window reloaded" });
+        // the canvas-only view does not survive a reload: its full screen goes with it (F11's stays)
+        if (viewFullScreen && !win.isDestroyed()) win.setFullScreen(false);
     });
     // a window whose renderer ended (a crash, out of memory) comes back and restores the autosave (quit.js CrashGuard)
     win.webContents.on("render-process-gone", (_e, d) => {
@@ -331,6 +334,9 @@ function createWindow() {
             detail: "It ended three times in two minutes. Your documents of before the crashes are kept: Settings › Local files › Earlier states opens them at the next start.",
         }).then(done, done);
     });
+    // the canvas-only view follows the window's full screen: F11 or the OS ending it ends the view too (renderer/shell.js)
+    win.on("enter-full-screen", () => send("window:fullScreen", true));
+    win.on("leave-full-screen", () => { viewFullScreen = false; send("window:fullScreen", false); });
     win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
     // an unhandled file drop (the shell bar, the tabs, a panel) would navigate the window to the file:
     // every call in flight rejects and the editor is gone. Only the app's own origin may be navigated
@@ -441,6 +447,8 @@ function send(channel, payload) {
 
 /** Title suffix and a status line while agents (MCP, --cmd, scripts) are connected. */
 let docTitle = "";   // the active document and its "*" (renderer/shell.js syncTitle)
+let viewFullScreen = false;   // the window is full screen for the canvas-only view (window:setFullScreen), not by F11
+let maximizedBeforeView = false;   // and whether it was maximized before (a full-screen window reports that it is not)
 function showAgents() {
     const n = local.clients.size + (agentMode ? 1 : 0);
     const base = docTitle ? `${docTitle} - Scumble` : "Scumble";
@@ -584,6 +592,9 @@ function buildMenu() {
                 { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" },
                 { type: "separator" },
                 { role: "togglefullscreen" },
+                // the canvas-only view (renderer/shell.js canvasOnly): the window's own key listener takes Tab, where it
+                // can tell a text field from the picture; a registered Tab would reach the fields too
+                { label: "Canvas Only", accelerator: "Tab", registerAccelerator: false, click: () => send("menu", "canvas-only") },
                 { type: "separator" },
                 { label: "Assistant", accelerator: "CmdOrCtrl+Shift+A", click: () => send("menu", "assistant") },
                 { type: "separator" },
@@ -879,6 +890,17 @@ function installIpc() {
     });
     ipcMain.handle("documents:ask", (_e, q) => askDocument(q || {}));
     ipcMain.on("app:title", (_e, t) => { docTitle = String(t || "").slice(0, 200); showAgents(); });
+    // the canvas-only view (renderer/shell.js canvasOnly): the window's full screen, answered with the state after
+    const fullScreen = () => !!(win && !win.isDestroyed() && win.isFullScreen());
+    ipcMain.handle("window:setFullScreen", (_e, on) => {
+        if (win && !win.isDestroyed()) {
+            if (on && !win.isFullScreen()) maximizedBeforeView = win.isMaximized();
+            win.setFullScreen(!!on);
+        }
+        viewFullScreen = !!on;
+        return fullScreen();
+    });
+    ipcMain.handle("window:isFullScreen", () => fullScreen());
     ipcMain.handle("documents:cancel", (_e, reqId) => documents.cancel(reqId));
     ipcMain.handle("documents:takePending", () => documents.takePending());
     ipcMain.handle("documents:stat", async (_e, file) => { try { const st = await fsp.stat(String(file)); return { exists: st.isFile(), mtime: st.mtimeMs, size: st.size }; } catch (_) { return { exists: false }; } });

@@ -3,6 +3,14 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- **Canvas only: Tab hides everything but the picture.** The tab bar, the editor's bars, the tools, the side panel
+  and the rulers go, the window goes full screen and the picture is fitted into it; every tool and key keeps working.
+  Tab again or Escape brings it all back, with your zoom, the rulers and the window as they were (while a transform,
+  a polygon or a text edit is pending, the first Escape cancels only that). Also in View › Canvas Only. Tab in a text
+  field stays a Tab.
+
 ## 0.1.30 — 2026-09-27
 
 - **Documents: save your work as a `.scumble` file.** A document file keeps everything the way you left it: every

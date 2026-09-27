@@ -442,6 +442,7 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | 4  ·  6  ·  5 | Rotate the view 15° left · right · back to straight |
 | \\ (hold) | Peek at the base picture under every layer |
 | Ctrl+Shift+R  ·  Ctrl+Shift+G | Rulers · grid |
+| Tab | Canvas only: every bar and panel goes, the picture fills the screen; Tab or Escape brings them back |
 
 #### Selection
 
@@ -494,6 +495,7 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 ### Notes
 
 - On macOS every Ctrl here is Cmd.
+- **Canvas only** (Tab, or View › Canvas Only) hides the tab bar, the editor's bars, the tools, the side panel and the rulers, and the window goes full screen with the picture fitted into it. Every tool and key still works there. Tab again or Escape brings everything back, with your zoom and the window as they were; while something is pending (a transform, a polygon, a text edit) the first Escape cancels only that. Switching tabs, F11, or opening Help or the assistant ends it too. A question of the assistant still shows over the picture.
 - A shortcut does nothing while you are typing in a field — the editor only listens when the canvas has the focus. The File menu's keys, Ctrl+S among them, work from a text field too.
 - Plugins can add shortcuts of their own; the Plugins menu shows what each one bound.
 - The same editor in the ComfyUI node Inpaint Canvas keeps its old keys: Ctrl+S exports the picture there, and Ctrl+Shift+E merges down like Ctrl+E.

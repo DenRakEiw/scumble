@@ -218,9 +218,16 @@ export function toggleAssistant(on) {
     const want = on === undefined ? !ui.dialog.open : !!on;
     open(want);
     store(want);
-    if (want) { refresh().catch(() => {}); ui.text.focus(); }
+    // an ask opens the column in the canvas-only view too, under the picture: the keys stay with the picture there
+    // (show() has put the focus on the column itself)
+    if (want) { refresh().catch(() => {}); if (covered()) focusEditor(); else ui.text.focus(); }
     syncButton();
     return want;
+}
+
+/** The canvas-only view (renderer/shell.js canvasOnly) covers the column: its question still shows, its field does not. */
+function covered() {
+    return document.body.classList.contains("shell-canvas-only");
 }
 
 /**
@@ -304,15 +311,16 @@ function onFocusOut(e) {
     // end of a run, `add_text` blurs): while the panel is open and the user was writing, the
     // textarea takes it back. Not when the user went somewhere themselves - a click or a Tab in
     // the last 500 ms, an Escape (`handedOff`) - and not when the new target wants the focus for
-    // typing, which is what the editor's own question does the moment it opens.
-    if (handedOff || !ui.dialog.open) return;
+    // typing, which is what the editor's own question does the moment it opens. Nor under the canvas-only view, which
+    // takes the focus to the picture on purpose.
+    if (handedOff || !ui.dialog.open || covered()) return;
     const to = e.relatedTarget;
     if (to && ui.dialog.contains(to)) return;
     if (wants(to)) return;
     const now = Date.now();
     if (now - lastOutsidePointer < 500 || now - lastTab < 500) return;
     setTimeout(() => {
-        if (handedOff || !ui.dialog.open) return;
+        if (handedOff || !ui.dialog.open || covered()) return;
         const active = document.activeElement;
         if (active && ui.dialog.contains(active)) return;
         if (wants(active)) return;

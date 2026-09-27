@@ -42,6 +42,16 @@ html, body { margin: 0; height: 100%; background: var(--sc-bg, #181818); color: 
 #editor-host { position: relative; flex: 1; min-height: 0; min-width: 0; }
 #editor-host > .ipc-modal { position: absolute; inset: 0; }
 .shell-hidden, [hidden] { display: none !important; }
+/* the canvas-only view (Tab, renderer/shell.js canvasOnly): the editor covers the window with its chrome and the shell's
+   gone. !important because a skin's rules are unlayered and would beat plain ones of this layer. Help and the assistant
+   are covered, not hidden: protect.css keeps an open assistant displayed, and its question is drawn in the top layer,
+   so it still shows over the picture */
+body.shell-canvas-only #shell-bar, body.shell-canvas-only #shell-tabs,
+body.shell-canvas-only .ipc-top, body.shell-canvas-only .ipc-tools, body.shell-canvas-only .ipc-side,
+body.shell-canvas-only .ipc-bottom, body.shell-canvas-only .ipc-subbar { display: none !important; }
+body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !important; z-index: 10000 !important; }
+#shell-canvas-hint { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 10001; padding: 6px 14px; border-radius: var(--sc-radius-lg, 6px); background: rgba(0, 0, 0, 0.72); color: #eee; font: 13px/1.3 var(--sc-font, system-ui, sans-serif); pointer-events: none; white-space: nowrap; animation: shell-canvas-hint 3.6s ease-in forwards; }
+@keyframes shell-canvas-hint { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
 
 #shell-settings { background: var(--sc-surface, #202020); color: var(--sc-fg, #ddd); border: 1px solid var(--sc-border, #444); border-radius: var(--sc-radius-lg, 6px); padding: 0; width: 560px; max-width: 92vw; font: 13px/1.4 var(--sc-font, system-ui, sans-serif); }
 #shell-settings::backdrop { background: var(--sc-backdrop, rgba(0, 0, 0, 0.55)); }

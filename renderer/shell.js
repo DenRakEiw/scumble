@@ -9,8 +9,8 @@ import { commands, docSummary } from "./commands.js";
 import * as plugins from "./plugins.js";
 import { waitForUser, editorOf } from "./assistant_wait.js";
 import { beforeCall as snapshotTurn, watchUserEdits, forgetDocument } from "./assistant_turns.js";
-import { initAssistant, toggleAssistant, resetAssistant, refreshAssistantModels } from "./assistant.js";
-import { initHelp, toggleHelp } from "./help.js";
+import { initAssistant, toggleAssistant, assistantOpen, resetAssistant, refreshAssistantModels } from "./assistant.js";
+import { initHelp, toggleHelp, helpOpen } from "./help.js";
 import { initSkins, applySkin, reloadSkins, renderAppearance } from "./skins.js";
 
 // the editor's style, in the app's cascade layer (docs/SKINS.md): created here before the first editor, so the
@@ -91,6 +91,10 @@ const ui = {
 let settings = await window.scumble.settings.get();
 let lastStatus = { state: "disconnected", message: "not connected" };
 let lastProbe = null;
+// the canvas-only view (canvasOnly below): { ed, wasFullScreen, view, fitted, rulers, w, h } while it is on, and
+// whether the window is full screen (main tells, F11 and the OS included)
+let canvasOnlyState = null;
+let windowFullScreen = false;
 ui.url.value = (settings.comfy && settings.comfy.url) || "http://127.0.0.1:8188";
 
 // ---- documents (tabs) --------------------------------------------------------------------
@@ -2108,6 +2112,122 @@ window.addEventListener("keydown", (e) => {
     else saveDocumentFromUi(ed, { as: e.shiftKey });
 }, true);
 
+// ---- the canvas-only view (item 24, docs/PLAN_0_1_31.md §1) --------------------------------------------------------
+//
+// Tab hides the shell's chrome and the editor's (bars, tools, panels, rulers) and the picture fills the screen; Tab again
+// or Escape returns. The view is the shell's alone: the editor and the ComfyUI node know nothing of it. The window goes
+// full screen for it unless it already was, the picture is fitted, and leaving puts the view, the rulers and the window
+// back as they were. A tab switch, a closed tab and a full screen ended from outside (F11, the OS) end it too. Help and
+// the assistant stay open under the picture (shell.css); asking for one of them ends the view.
+
+try {
+    window.scumble.window.isFullScreen().then((on) => { windowFullScreen = !!on; }, () => { /* no window */ });
+    window.scumble.window.onFullScreenChange((on) => {
+        windowFullScreen = !!on;
+        if (!on && canvasOnlyState) leaveCanvasOnly({ fullScreenGone: true });
+    });
+} catch (_) { /* an older preload */ }
+// a tab switch ends the view, from wherever it comes (the tab bar, a command, a document opened), and so does closing
+// its tab: removeEditor() makes the next tab the active one before it activates it, so no "activate" is heard for that
+host.on("activate", ({ editor }) => { if (canvasOnlyState && canvasOnlyState.ed !== editor) leaveCanvasOnly(); });
+host.on("removed", ({ editor }) => { if (canvasOnlyState && canvasOnlyState.ed === editor) leaveCanvasOnly(); });
+
+/** What the editor's Escape cancels first (its _docKey chain): while one is set, Escape is the editor's, not the view's. */
+function editorHasEscape(ed) {
+    return !!(ed.pending || ed.polyPoints || ed.shapePoints || (ed.tool === "canvas" && ed.extendPending && ed.extendPending()) || ed.flyout || ed.textEdit || ed.compare);
+}
+
+/** The view's size changed with the chrome: fit or redraw once (resizeCanvas does that itself when the size changed). */
+function settleView(ed, fit) {
+    const size = ed.canvas.width + "x" + ed.canvas.height;
+    ed.resizeCanvas();
+    if (ed.canvas.width + "x" + ed.canvas.height !== size) return;
+    if (fit && ed.width) ed.fitView(); else ed.draw();
+}
+
+function enterCanvasOnly() {
+    const ed = host.editor;
+    if (canvasOnlyState || !ed || !ed.canvas) return Promise.resolve();
+    const st = canvasOnlyState = { ed, wasFullScreen: windowFullScreen, view: { ...ed.view }, fitted: ed._fitted, rulers: ed.showRulers, w: ed.width, h: ed.height };
+    document.body.classList.add("shell-canvas-only");
+    // the keys go to the picture: the view may come from the menu with the focus in a panel it now covers
+    ed.root.focus({ preventScroll: true });
+    ed.showRulers = false;       // not toggleRulers(): the user's setting in localStorage stays as it is
+    const old = $("shell-canvas-hint");
+    if (old) old.remove();       // a new element starts the fade again
+    const hint = document.createElement("div");
+    hint.id = "shell-canvas-hint";
+    hint.textContent = "Tab or Esc to return";
+    document.body.appendChild(hint);
+    // fitted now, and again by the editor's resize observer when the window is full screen (it refits while _fitted)
+    ed._fitted = true;
+    settleView(ed, true);
+    if (st.wasFullScreen) return Promise.resolve();
+    return window.scumble.window.setFullScreen(true).catch((err) => console.warn("canvas only: full screen", err));
+}
+
+/** `fullScreenGone`: the window left full screen by itself (F11, the OS), so there is nothing to undo there. */
+function leaveCanvasOnly({ fullScreenGone = false } = {}) {
+    const st = canvasOnlyState;
+    if (!st) return Promise.resolve();
+    canvasOnlyState = null;
+    document.body.classList.remove("shell-canvas-only");
+    const hint = $("shell-canvas-hint");
+    if (hint) hint.remove();
+    const ed = st.ed;
+    if (host.editors().includes(ed)) {        // a closed tab has nothing to put back
+        // the rulers as the user last set them: Ctrl+Shift+R in the view counts (its button follows every toggle)
+        ed.showRulers = ed.rulersBtn ? ed.rulersBtn.classList.contains("ipc-toggle-on") : st.rulers;
+        // the old view only for the same picture: after a crop, an extend or a new image it stays fitted
+        const same = ed.width === st.w && ed.height === st.h;
+        if (same) { Object.assign(ed.view, st.view); ed._fitted = st.fitted; } else ed._fitted = true;
+        settleView(ed, !same);
+    }
+    if (st.wasFullScreen || fullScreenGone) return Promise.resolve();
+    return window.scumble.window.setFullScreen(false).catch((err) => console.warn("canvas only: full screen", err));
+}
+
+/** The canvas-only view on (`true`), off (`false`) or toggled (left out); resolves with the state after. */
+async function canvasOnly(on) {
+    const want = on === undefined ? !canvasOnlyState : !!on;
+    await (want ? enterCanvasOnly() : leaveCanvasOnly());
+    return !!canvasOnlyState;
+}
+
+function isCanvasOnly() {
+    return !!canvasOnlyState;
+}
+
+/** Help and the assistant are columns beside the picture: asked for in the canvas-only view, the view ends, and one that is open already just shows. */
+function showColumn(isOpen, toggle) {
+    if (canvasOnlyState) {
+        leaveCanvasOnly();
+        if (isOpen()) return;
+    }
+    toggle();
+}
+
+// Tab toggles the view, Escape leaves it. Registered here, before any editor opens, so it runs before the editor's own
+// capture listener: Tab is free there, and Escape stays the editor's while it has something to cancel. Not in a text
+// field, a dialog (Help, the assistant, Settings) or the editor's question; Shift+Tab and Ctrl+Tab are not the view's.
+window.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab" && !(e.key === "Escape" && canvasOnlyState)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    if (document.querySelector("dialog:modal")) return;   // Settings and the like, also when their focused field was re-rendered away
+    const t = e.target;
+    // under the view the Help and assistant columns are covered: a key that lands there is the view's (the assistant's
+    // question is drawn over the picture and keeps its own keys)
+    const covered = canvasOnlyState && t && t.closest && t.closest("#help, #assistant") && !t.closest(".as-ask");
+    if (!covered && t && t.closest && t.closest("dialog[open]")) return;
+    if (!covered && t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    const ed = host.editor;
+    if (!ed || ed.askOpen) return;
+    if (e.key === "Escape" && editorHasEscape(ed)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (!e.repeat) canvasOnly();       // Escape gets here only while the view is on, so it only ever leaves
+}, true);
+
 window.scumble.onMenu((cmd) => {
     if (cmd === "save") host.editor && host.editor.exportImage();
     else if (cmd === "save-document") saveDocumentFromUi(host.editor);
@@ -2115,7 +2235,8 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "reopen-closed") reopenClosedTab();
     else if (cmd === "settings") openSettings();
     else if (cmd === "console") openConsole();
-    else if (cmd === "help") toggleHelp();
+    else if (cmd === "help") showColumn(helpOpen, toggleHelp);
+    else if (cmd === "canvas-only") canvasOnly();
     else if (cmd === "new-tab") activate(newDocument());
     else if (cmd === "close-tab") closeDocument(host.editor);
     else if (cmd === "next-tab") cycleTab(1);
@@ -2123,7 +2244,7 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "import-recipe") importRecipe();
     else if (cmd === "reload-plugins") plugins.reloadPlugins().then(async (all) => { const list = all.filter((p) => p.kind !== "skin"); try { await reloadSkins(); } catch (err) { console.warn("skins", err); } if (host.editor) host.editor.setStatus(`Plugins reloaded: ${list.filter((p) => p.loaded).length} of ${list.length} loaded.`); });
     else if (cmd.startsWith("skin:")) applySkin(cmd.slice(5)).catch(() => { /* the Appearance note says why */ });
-    else if (cmd === "assistant") toggleAssistant();
+    else if (cmd === "assistant") showColumn(assistantOpen, toggleAssistant);
     else if (cmd === "mcp-copied") host.editor && host.editor.setStatus("MCP registration copied. Paste it into your client; see docs/MCP.md.");
     else if (cmd === "settings-updates") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Updates"); if (h) h.scrollIntoView(); });
     else if (cmd === "settings-plugins") openSettings().then(() => { const h = Array.from(ui.settings.querySelectorAll("h3")).find((x) => x.textContent === "Plugins"); if (h) h.scrollIntoView(); });
@@ -2299,4 +2420,4 @@ ui.logOpen.addEventListener("click", () => window.scumble.log.open());
 ui.logClear.addEventListener("click", async () => { await window.scumble.log.clear(); logState.entries = []; renderLog(); });
 host.openConsole = () => openConsole();
 
-export { newDocument, activate, closeDocument, openSettings, openConsole, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory, cardMemory, cardShortfall, saveBeforeRestart };
+export { newDocument, activate, closeDocument, canvasOnly, isCanvasOnly, openSettings, openConsole, selectRecipe, loadRecipes, importRecipe, testConnection, connect, commands, plugins, watchMemory, cardMemory, cardShortfall, saveBeforeRestart };

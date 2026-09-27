@@ -118,7 +118,11 @@ The hand-over blocks of before, and the full text of the list below, are in `doc
 blog post `v0-1-30`). Check `gh release list` before believing any release state written down anywhere. `main` is
 pushed; nothing is waiting locally but the uncommitted tutorial material.
 
-**The build in progress is `docs/PLAN_0_1_31.md`** (read it first; written 2026-09-27, nothing of it built). The
+**The build in progress is `docs/PLAN_0_1_31.md`** (read it first; written 2026-09-27). **Package 1, the canvas-only
+view, is built** (2026-09-27, committed locally, not pushed; CHANGELOG "Unreleased", gate `canvasonly`): Tab / View ›
+Canvas Only in `renderer/shell.js` (`canvasOnly`, `isCanvasOnly`), `window.scumble.window.*` full-screen IPC, the CSS
+in `shell.css`; Help and the assistant are covered, not hidden (protect.css pins an open assistant), and
+`assistant.js` keeps its focus guard off under the view. Next: package 2 (3c, the history panel). The
 user's order: **1** the canvas-only view (item 24, Tab), **2** 3c the history panel, **3** 3e editable PSD masks
 (proposed as 0.1.31), then **4** brushes, **5** repair / remove / liquify, **6** layers pro - each with concrete steps,
 code facts and gates in that file; the package text of before is in `docs/PLAN_0_1_29.md` (done there: 1 skins, 2
@@ -244,7 +248,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is

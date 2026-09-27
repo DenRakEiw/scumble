@@ -51,8 +51,13 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
 Since then: `tools/document_test.py` / `document_ux_test.py` / `document_perf.py` (gates `document`, `docux`,
 `docperf:WxH`, `.scumble` documents), `tools/quit_test.py` (gate `quit`), `tools/metadata_test.py` (gate `metadata`,
 what an exported picture says about itself), `tools/tiff_test.js` with `tools/tiff_fixtures.py` and
-`tools/tiff_test.py` (gates `tiff`, `tiffperf:WxH`). Every gate name `X` without a rule of its own in
-`tools/run_gates.sh` runs `tools/X_test.py`.
+`tools/tiff_test.py` (gates `tiff`, `tiffperf:WxH`), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
+view of item 24: real Tab and Escape presses over CDP; the chrome hidden, the view the window's size, full screen and a
+fitted picture while on, the view / rulers / chrome / window put back after; Tab ignored in a text field, a dialog, the
+editor's ask and with Shift; Escape cancels a pending transform or an open polygon first and never reaches the editor
+when it leaves; a full-screen exit from outside, a tab switch and closing the tab end the view; a window that was full
+screen before stays so; it takes the test window full screen and back). Every gate name `X` without a rule of its own
+in `tools/run_gates.sh` runs `tools/X_test.py`.
 
 ## Known flakes
 

@@ -93,6 +93,13 @@ contextBridge.exposeInMainWorld("scumble", {
     },
     // the window title's document part ("portrait *"); main adds "Scumble" and the agents line
     setTitle: (text) => ipcRenderer.send("app:title", String(text || "")),
+    // the window's full screen, for the canvas-only view (renderer/shell.js canvasOnly); `onFullScreenChange` hears F11
+    // and the OS too
+    window: {
+        setFullScreen: (on) => ipcRenderer.invoke("window:setFullScreen", !!on),
+        isFullScreen: () => ipcRenderer.invoke("window:isFullScreen"),
+        onFullScreenChange: (cb) => on("window:fullScreen", cb),
+    },
     files: {
         stats: () => ipcRenderer.invoke("files:stats"),
         prune: (args) => ipcRenderer.invoke("files:prune", args),
