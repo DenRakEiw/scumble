@@ -198,6 +198,10 @@ The ones that were part of `docs/PLAN_0_1_29.md` §3 (the skipped flush on quit,
 "Fixed, waiting for its release".
 
 - **Rotate, distort and warp bake the layer mask into the pixels** without a word (`inpaint_canvas.js` ~1909).
+- **The Opacity slider is hidden for paint, erase, clone, heal, bucket and gradient** (found 2026-09-27 by package 4's
+  map, `dist/map4/engine.md` R6; read, not run): `buildOptsBar` moves the Opacity label twice, and the second call
+  (for "shape", since e0c00a7) overwrites its `data-for`, so `updateOptsBar` shows it for the shape tool only. One look
+  in the app confirms it; the fix belongs to package 4 step 5.
 - **The film look "None (adjustments only)" still adds grain**: `plugins/film/filters.js` ~387 falls back to
   `{ amount: 25, ... }` when there is no stock.
 - **At the typed-array cap (15.5 GB) the editor throws a `RangeError`** instead of refusing the operation.
