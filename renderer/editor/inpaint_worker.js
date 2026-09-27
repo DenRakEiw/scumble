@@ -27,6 +27,7 @@
  *   png_read        a PNG file decoded as a stream, its rows back band by band (`progress` messages).
  *   image_read      any image file the browser decodes (JPEG, WebP, a PNG with a colour profile), decoded here and
  *                   read back band by band like png_read: the window never decodes or reads it.
+ *   resample        one row of destination tiles of an affine resample (inpaint_resample.js): the straighten of 23b.
  *   band            a row of tiles composited, layer over layer (`compositeTile`): no caller in
  *                   the editor yet; phase R measures the kernel phase E's band export will run.
  *
@@ -43,6 +44,7 @@ import { PsdWriter, OraWriter } from "./inpaint_export.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
 import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
 import { readTiff, tiffPart } from "./inpaint_tiff.js";
+import { resampleStore } from "./inpaint_resample.js";
 import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate } from "./px/kernels.js";
 
 const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
@@ -673,9 +675,45 @@ async function floodOverTiles(msg) {
     return { bitmap: res.bitmap, count: res.count, bounds: bb, touches, timing: ms };
 }
 
+/**
+ * One row of destination tiles of a resample (inpaint_resample.js, PLAN_0_1_31 §7): `src` names the source store's
+ * tile rows the row's taps read (`{ w, h, tiles: { lty: names } }`, read where they lie, never written), `fx` the
+ * fixed-point map, `o` the options, `rt` the canvas round trip measured on the main thread, `txs` the tiles of row `ty`
+ * to make. Each comes back as a new buffer, transferred; a tile that came out empty does not come back.
+ */
+function resampleJob(msg) {
+    const t0 = now();
+    const { src, outW, outH, o, rt, ty } = msg;
+    const views = new Map();
+    const view = (t) => {
+        const k = t.data ? t : t.chunk * 65536 + t.slot;
+        let v = views.get(k);
+        if (!v) { v = tileBytes(t).bytes; views.set(k, v); }
+        return v;
+    };
+    const copyRun = (sy, x0, x1, dst, off) => {
+        const names = src.tiles[sy >> 8], ly = (sy & 255) * TILE * 4;
+        for (let x = x0; x < x1;) {
+            const lx = x & 255, n = Math.min(x1 - x, TILE - lx), at = off + (x - x0) * 4;
+            const t = names ? names[x >> 8] : null;
+            if (t) dst.set(view(t).subarray(ly + lx * 4, ly + (lx + n) * 4), at);
+            else dst.fill(0, at, at + n * 4);
+            x += n;
+        }
+    };
+    const tiles = [], transfer = [];
+    let current = null;
+    resampleStore({ width: src.w, height: src.h, copyRun, has: () => true }, Float64Array.from(msg.fx), outW, outH, o, rt, {
+        tile: () => { current = new Uint8Array(TILE_BYTES); return [current, 0, TILE * 4]; },
+        done: (tx, _ty, count) => { if (count) { tiles.push({ tx, data: current.buffer }); transfer.push(current.buffer); } },
+    }, msg.txs.map((tx) => [tx, ty]));
+    return { tiles, transfer, timing: { op: "resample", tiles: msg.txs.length, total: now() - t0 } };
+}
+
 async function run(msg) {
     setKernels(msg.kernels);
     await kernelsReady();
+    if (msg.op === "resample") return resampleJob(msg);
     if (msg.op === "png") return png(msg.bitmap, !!msg.hash);
     if (msg.op === "selection") return msg.sel ? selectionOverTiles(msg) : selection(msg);
     if (msg.op === "flood") return flood(msg);

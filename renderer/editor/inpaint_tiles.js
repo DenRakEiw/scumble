@@ -37,7 +37,7 @@
 import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN, reentrantPixels } from "./inpaint_pixels.js";
 import { mipChain, mipChainBytes, clampExtend, compositeTile } from "./px/kernels.js";
 import { allocTileBytes, isShared } from "./inpaint_arena.js";
-import { canvasRoundTrip, resampleOptions, resampleStore } from "./inpaint_resample.js";
+import { canvasRoundTrip, resampleOptions, resampleStore, toFixed, preimage } from "./inpaint_resample.js";
 
 export const TILE_SIZE = 256;
 const TILE_BYTES = TILE_SIZE * TILE_SIZE * 4;
@@ -434,6 +434,14 @@ function landedSet() {
 }
 
 const CHAINS = new ChainScheduler();
+
+// The resample transport (`transformedAsync`): `transport(args)` runs one "resample" job in the pool and resolves to
+// its reply; `transport.usable` says whether the pool and the arena are there. Set by inpaint_jobs.js, like the chains'.
+let RESAMPLE_TRANSPORT = null;
+
+export function setResampleTransport(transport) {
+    RESAMPLE_TRANSPORT = transport || null;
+}
 
 /** The transport of the default scheduler (the editor gives it its mips worker); null builds everything here. */
 export function setChainTransport(transport) {
@@ -1707,10 +1715,96 @@ const tiled = (Base) => class extends Base {
      */
     transformed(map, outW, outH, opts = {}) {
         this._guard();
-        const o = resampleOptions(opts, this instanceof MaskPixels);
         const out = new this.constructor(outW, outH);
+        this._resampleInto(out, toFixed(map, outW, outH), outW, outH, resampleOptions(opts, this instanceof MaskPixels), roundTripTable(), null);
+        return out;
+    }
+
+    /**
+     * `transformed` without holding the window: one pool job per row of destination tiles (`setResampleTransport`),
+     * each reading the source tiles it needs where they lie in the arena and answering its tiles as buffers, which land
+     * in the new store here. The source is held by a clone until every job has answered, so edits meanwhile cannot
+     * reach the jobs. Without the pool, with a tile outside the arena, or for a row whose job failed, the same kernel
+     * runs here in slices of a few tiles between which the window draws. The same bytes either way.
+     */
+    async transformedAsync(map, outW, outH, opts = {}) {
+        this._guard();
+        const o = resampleOptions(opts, this instanceof MaskPixels);
+        const fx = toFixed(map, outW, outH);
+        const snap = this.clone();
+        const out = new this.constructor(outW, outH);
+        try {
+            const rows = Math.ceil(outH / TILE_SIZE), cols = Math.ceil(outW / TILE_SIZE);
+            const W = snap._w, H = snap._h, rt = roundTripTable();
+            // the destination tiles each row needs (a tile whose taps meet no source tile is not made) and the source
+            // tile rows its taps read
+            const plan = [];
+            for (let ty = 0; ty < rows; ty++) {
+                const Y0 = ty * TILE_SIZE, vh = Math.min(TILE_SIZE, outH - Y0);
+                const txs = [];
+                let sy0 = Infinity, sy1 = -Infinity;
+                for (let tx = 0; tx < cols; tx++) {
+                    const X0 = tx * TILE_SIZE, vw = Math.min(TILE_SIZE, outW - X0);
+                    const box = preimage(fx, X0, Y0, vw, vh, o.filter);
+                    const lim = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
+                    const inside = o.clamp
+                        ? [lim(box[0], W - 1), lim(box[1], H - 1), lim(box[2] - 1, W - 1) + 1, lim(box[3] - 1, H - 1) + 1]
+                        : [Math.max(box[0], 0), Math.max(box[1], 0), Math.min(box[2], W), Math.min(box[3], H)];
+                    if (inside[2] <= inside[0] || inside[3] <= inside[1] || !snap._anyTileIn(inside)) continue;
+                    txs.push(tx);
+                    sy0 = Math.min(sy0, inside[1]); sy1 = Math.max(sy1, inside[3]);
+                }
+                if (txs.length) plan.push({ ty, txs, rows: [sy0 >> 8, (sy1 - 1) >> 8] });
+            }
+            const land = (tx, ty, bytes) => { out.writable(tx, ty).data.set(bytes); };
+            const local = async (row) => {
+                // here, in slices: the same kernel over the same source tiles
+                for (let i = 0; i < row.txs.length; i += 8) {
+                    snap._resampleInto(out, fx, outW, outH, o, rt, row.txs.slice(i, i + 8).map((tx) => [tx, row.ty]));
+                    await new Promise((r) => setTimeout(r, 0));
+                }
+            };
+            const transport = RESAMPLE_TRANSPORT && RESAMPLE_TRANSPORT.usable ? RESAMPLE_TRANSPORT : null;
+            const jobs = plan.map((row) => {
+                let src = null;
+                if (transport) {
+                    src = { w: W, h: H, tiles: {} };
+                    for (let lty = row.rows[0]; lty <= row.rows[1] && src; lty++) {
+                        const names = snap.tileRowNames(lty);
+                        if (names === null) src = null;
+                        else if (names.some(Boolean)) src.tiles[lty] = names;
+                    }
+                }
+                if (!src) return local(row);
+                return transport({ src, fx: Array.from(fx), outW, outH, o, rt, ty: row.ty, txs: row.txs }).then((r) => {
+                    for (const t of r.tiles) if (t.data) land(t.tx, row.ty, new Uint8Array(t.data));
+                }, (err) => {
+                    console.warn("Inpaint Canvas: a resample job failed, the row runs here:", (err && err.message) || err);
+                    return local(row);
+                });
+            });
+            await Promise.all(jobs);
+            return out;
+        } catch (err) {
+            out.release();
+            throw err;
+        } finally {
+            snap.release();
+        }
+    }
+
+    /** Is any tile of these pixels inside the box [x0, y0, x1, y1) (pixels, inside the store)? */
+    _anyTileIn(box) {
+        for (let ty = box[1] >> 8; ty <= (box[3] - 1) >> 8; ty++) {
+            for (let tx = box[0] >> 8; tx <= (box[2] - 1) >> 8; tx++) if (this._tiles.has((ty << 16) | tx)) return true;
+        }
+        return false;
+    }
+
+    /** The kernel for the destination tiles `list` ([tx, ty]) of `out`, from these pixels' tiles, here. */
+    _resampleInto(out, fx, outW, outH, o, rt, list) {
         const tiles = this._tiles;
-        const src = {
+        resampleStore({
             width: this._w, height: this._h,
             copyRun: (sy, x0, x1, dst, off) => {
                 const ty = sy >> 8, ly = (sy & 255) * TILE_SIZE * 4;
@@ -1722,19 +1816,12 @@ const tiled = (Base) => class extends Base {
                     x += n;
                 }
             },
-            has: (x0, y0, x1, y1) => {
-                for (let ty = y0 >> 8; ty <= (y1 - 1) >> 8; ty++) {
-                    for (let tx = x0 >> 8; tx <= (x1 - 1) >> 8; tx++) if (tiles.has((ty << 16) | tx)) return true;
-                }
-                return false;
-            },
-        };
-        resampleStore(src, map, outW, outH, o, roundTripTable(), {
+            has: (...box) => this._anyTileIn(box),
+        }, fx, outW, outH, o, rt, {
             // a new store: its tiles are fresh (zero), and the kernel writes every pixel of the tile's valid part
             tile: (tx, ty) => [out.writable(tx, ty).data, 0, TILE_SIZE * 4],
             done: (tx, ty, count) => { if (!count) out._dropTile((ty << 16) | tx); },
-        });
-        return out;
+        }, list);
     }
 
     // -- canvases out --

@@ -7,8 +7,9 @@
  */
 import { kernelsMode } from "./px/kernels.js";
 import { buildPsd, buildOra } from "./inpaint_export.js";
-import { WorkerPool, poolSize, INTERACTIVE } from "./inpaint_pool.js";
-import { setChainTransport } from "./inpaint_tiles.js";
+import { WorkerPool, poolSize, INTERACTIVE, NORMAL } from "./inpaint_pool.js";
+import { setChainTransport, setResampleTransport } from "./inpaint_tiles.js";
+import { arenaEnabled } from "./inpaint_arena.js";
 import { InpaintEditor } from "./inpaint_canvas.js";
 
 const WORKER_TIMEOUT = 180000;              // a worker job that never answers falls back to the main thread
@@ -164,6 +165,16 @@ mipsTransport.flights = poolSize();
 // tiles by slot only while the pool takes them: its workers are the ones that hold the arena's chunks
 Object.defineProperty(mipsTransport, "arena", { get: mipsOnPool });
 if (typeof Worker === "function") setChainTransport(mipsTransport);
+
+/**
+ * The tile store's resample transport (`transformedAsync`, PLAN_0_1_31 §7): one row of destination tiles per pool job,
+ * the source tiles named by their arena slots. Usable only where the pool's workers hold the arena.
+ */
+function resampleTransport(args) {
+    return editorPool().run("resample", args, [], { priority: NORMAL });
+}
+Object.defineProperty(resampleTransport, "usable", { get: () => arenaEnabled() && !editorPool().off });
+if (typeof Worker === "function") setResampleTransport(resampleTransport);
 
 /**
  * A layered PSD or ORA file. The worker takes the layers one at a time, so only one

@@ -2263,6 +2263,10 @@ function pixelsCases(P, T) {
             }
             const clamped = src.transformed(map(RS.xfRotate(-11, W / 2, H / 2)), W, H, { edge: "clamp" });
             snap(clamped, "clamped");
+            // the pool's way (tiles: one job per row of destination tiles, the source read by its arena slots) gives the
+            // same bytes as the synchronous one
+            same(await src.transformedAsync(map(RS.xfRotate(30, W / 2, H / 2)), W, H), outs[1], "transformedAsync");
+            same(await src.transformedAsync(map(RS.xfRotate(-11, W / 2, H / 2)), W, H, { edge: "clamp" }), clamped, "transformedAsync, clamped");
             // what the resampler wrote reads back from a canvas unchanged (the round trip is applied to the bytes)
             for (const t of [...outs, clamped]) same(Layer.fromImageData(t.readRect(0, 0, t.width, t.height)), t, "the round trip of a resample");
             // a mask: alpha only, in the colour asked for, a transparent pixel without colour
@@ -2284,6 +2288,8 @@ function pixelsCases(P, T) {
             big.fill([1700, 1300, 1800, 1400], "#20c060");
             const bt = big.transformed(map(RS.xfRotate(10, 1000, 750)), 2000, 1500);
             if (B.tiles && bt.tileCount > 6) throw new Error("a sparse layer turned into " + bt.tileCount + " tiles");
+            same(await big.transformedAsync(map(RS.xfRotate(10, 1000, 750)), 2000, 1500), bt, "transformedAsync, sparse");
+            same(await m.transformedAsync(map(RS.xfRotate(25, 150, 110)), 300, 220, { color: [255, 255, 255] }), mt, "transformedAsync, mask");
             // the block's centre (1750, 1350) lands at the turn of it about (1000, 750)
             const [cx, cy] = RS.xfApply(RS.xfRotate(10, 1000, 750), 1750, 1350);
             const p = bt.readRect(Math.round(cx), Math.round(cy), 1, 1).data;

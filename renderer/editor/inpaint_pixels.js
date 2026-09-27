@@ -455,6 +455,11 @@ export class LayerPixels {
         return this.constructor.fromImageData(img);
     }
 
+    /** `transformed` as a promise (the tile backend runs it in the pool; a canvas is small enough to run here). */
+    async transformedAsync(map, outW, outH, opts = {}) {
+        return this.transformed(map, outW, outH, opts);
+    }
+
     /**
      * A canvas with the pixels (of `rect` only, when given) for code that needs one: exports,
      * uploads, filters, the transform mesh. Read-only (see the rules at the top).
