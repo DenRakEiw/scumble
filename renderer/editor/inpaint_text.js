@@ -18,10 +18,18 @@ export const FONT_CATEGORIES = { sans: "Sans serif", serif: "Serif", display: "D
 
 let bundled = null;        // [{family, file, category, variable, license}] from fonts.json
 let user = [];             // [{family, ref}] from input/inpaint_canvas/fonts
-const faces = new Map();   // family -> Promise<FontFace|null>
+// a bundled family, or a font file's key (fileKey) -> Promise<the CSS family to draw with | null>
+const faces = new Map();
+let fileFaces = 0;         // a font from a file is registered under a name of its own: ipc-font-1, ipc-font-2, ...
+const loaded = new Map();  // a key of `faces` -> the CSS family, once its face loaded (fontCss)
 
 function viewUrl(ref) {
     return api.apiURL("/view?" + new URLSearchParams({ filename: ref.filename, subfolder: ref.subfolder || "", type: ref.type || "input" }));
+}
+
+/** A font file's key in `faces`: its type, subfolder and name, as the file mirror keys it. */
+function fileKey(ref) {
+    return `file:${ref.type || "input"}/${ref.subfolder || ""}/${ref.filename}`;
 }
 
 /** "PlayfairDisplay[wght].ttf" -> "PlayfairDisplay", "My_Font-Regular.otf" -> "My Font" */
@@ -53,32 +61,65 @@ export function addUserFont(ref) {
     const f = { family: familyOf(ref.filename), ref };
     user = user.filter((u) => u.family !== f.family).concat(f);
     faces.delete(f.family);
+    faces.delete(fileKey(ref));   // the upload overwrites a file of the same name: its old face is stale
     return { family: f.family, category: "user", variable: false, ref };
 }
 
-/** Make a font available to canvas text (FontFace); resolves to null when it cannot be loaded. */
-export function ensureFont(family, ref = null) {
-    if (!family) return Promise.resolve(null);
-    if (faces.has(family)) return faces.get(family);
-    const b = (bundled || []).find((f) => f.family === family);
-    const u = user.find((f) => f.family === family);
-    const src = b ? new URL(b.file, FONT_DIR).href : (u ? viewUrl(u.ref) : (ref && ref.filename ? viewUrl(ref) : null));
-    if (!src) return Promise.resolve(null);
+/** Load a FontFace under `name` into `faces[key]`: the promise of `name`, or of null when it does not load. */
+function loadFace(key, name, src, weight, what) {
     const p = (async () => {
         try {
-            // variable fonts carry their weight axis; static ones get bold synthesised by the browser
-            const face = new FontFace(family, `url("${src}")`, { weight: b && b.variable ? "100 900" : "400" });
+            const face = new FontFace(name, `url("${src}")`, { weight });
             await face.load();
             document.fonts.add(face);
-            return face;
+            loaded.set(key, name);
+            return name;
         } catch (err) {
-            console.warn("Inpaint Canvas: font not loaded", family, err);
-            faces.delete(family);
+            console.warn("Inpaint Canvas: font not loaded", what, err);
+            faces.delete(key);
+            loaded.delete(key);
             return null;
         }
     })();
-    faces.set(family, p);
+    faces.set(key, p);
     return p;
+}
+
+/** A font file (a font the user added), under a name no other file has. */
+function fileFont(ref, family) {
+    const key = fileKey(ref);
+    return faces.get(key) || loadFace(key, `ipc-font-${++fileFaces}`, viewUrl(ref), "400", `${family} (${ref.filename})`);
+}
+
+/**
+ * Make a text's font available to canvas text (a FontFace); resolves to the CSS family to draw it with, or null when
+ * it cannot be loaded. The layer's own file (`ref`, a font the user added) comes first, and only when it does not load
+ * does the family decide (the bundled font of that name, then the user's font of that name): two files can give one
+ * family, since an open imports a document's "MyFont.ttf" as "MyFont (1).ttf" when the file mirror holds other bytes
+ * under that name, and the layer keeps its family, so a search by family found whichever file the user list had
+ * (docs/BUGS.md, the .scumble review). For the same reason a file is registered under a name of its own and not its
+ * family: two faces of one family in `document.fonts` are drawn from whichever the browser matches first.
+ */
+export function ensureFont(family, ref = null) {
+    if (!family) return Promise.resolve(null);
+    const own = ref && ref.filename ? fileFont(ref, family) : Promise.resolve(null);
+    return own.then((name) => {
+        if (name) return name;
+        const b = (bundled || []).find((f) => f.family === family);
+        // variable fonts carry their weight axis; static ones get bold synthesised by the browser
+        if (b) return faces.get(family) || loadFace(family, family, new URL(b.file, FONT_DIR).href, b.variable ? "100 900" : "400", family);
+        const u = user.find((f) => f.family === family);
+        return u && !(ref && ref.filename && fileKey(u.ref) === fileKey(ref)) ? fileFont(u.ref, family) : null;
+    });
+}
+
+/**
+ * The CSS family a text shows in once its font has loaded: the name its own file was registered under (a font the user
+ * added, `ensureFont`), else its family. For what draws the text outside `renderText`: the editor's text field.
+ */
+export function fontCss(t) {
+    const own = t && t.fontRef && t.fontRef.filename ? loaded.get(fileKey(t.fontRef)) : null;
+    return own || (t && t.font) || "sans-serif";
 }
 
 /** A text's free angle in degrees, clockwise on screen, in (-180, 180]; 0 when it has none (PLAN_0_1_31 §7, 23b). */
@@ -118,7 +159,7 @@ export function textFrame(uw, uh, t) {
  */
 export async function renderText(t, res = 2) {
     const face = await ensureFont(t.font, t.fontRef);
-    const family = face ? t.font : "sans-serif";
+    const family = face || "sans-serif";
     const size = Math.max(1, +t.size || 1) * res;
     const font = `${t.italic ? "italic " : ""}${t.bold ? "700" : "400"} ${size}px "${family}", sans-serif`;
     const lines = String(t.content ?? "").split("\n");

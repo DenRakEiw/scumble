@@ -16,6 +16,7 @@
 
 import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, canvasBytes } from "./stitch.js";
 import { glReleasePool } from "./inpaint_filters_gl.js";
+import { withoutSecrets } from "./redact.js";
 
 const PROXY = "/comfy";
 const SUBFOLDER = "inpaint_canvas";
@@ -223,7 +224,7 @@ export const host = {
     objectInfo: null,
     nodeParams: { padding: 64, target_size: 1024, feather: 16, multiple_of: 64 },
     apiSize: "max",        // how big the crop goes to an API provider: max | x2 | x4 | target | crop
-    embedRecipe: false,    // settings.embedRecipe: exported PNGs carry the prompt, seed and recipe (docs/PLAN_0_1_29.md 3f)
+    embedRecipe: true,     // settings.embedRecipe: exported PNGs carry the prompt, seed and recipe (docs/PLAN_0_1_29.md 3f; on since 0.1.32)
     connected: false,
     _pendingStates: [],
     // quit safety (docs/PLAN_0_1_29.md §3): while documents are restored, an autosave would write only those restored so
@@ -569,8 +570,8 @@ export const host = {
         qRow.appendChild(qLab);
         qRow.appendChild(q);
 
-        // 3f: the prompt, seed and recipe in a PNG's text chunks; off unless the user wants them there, since anyone the
-        // file reaches can read them (an imported recipe carries every widget value of its workflow)
+        // 3f: the prompt, seed and recipe in a PNG's text chunks; on unless the user turns it off (the user's default since
+        // 0.1.32): anyone the file reaches can read them (an imported recipe carries every widget value of its workflow)
         const mRow = document.createElement("div");
         mRow.className = "ipc-seg scumble-export-metadata";
         const mLab = document.createElement("label");
@@ -1457,10 +1458,15 @@ export const host = {
         return (own == null ? this.embedRecipe : own) ? this.workflowInfo() : null;
     },
 
-    /** The recipe as the app describes it: the export's tEXt chunk, and a local run's `extra_pnginfo` for a SaveImage in it. */
+    /**
+     * The recipe as the app describes it: the export's tEXt chunk, and a local run's `extra_pnginfo` for a SaveImage in
+     * it. The recipe's prompt goes without the inputs named like a key, a token, a secret or a password (`redact.js`,
+     * the user 2026-09-27): an imported workflow carries its third-party key widgets, and the picture may travel. The
+     * run itself is queued from `r.prompt` (queueGenerate), which keeps them.
+     */
     workflowInfo() {
         const r = this.recipe;
-        return { app: "scumble", recipe: r ? r.id : null, kind: r ? r.kind || "comfy" : null, provider: (r && r.provider) || null, model: (r && r.model) || null, prompt: r ? r.prompt || null : null, nodeParams: this.nodeParams };
+        return { app: "scumble", recipe: r ? r.id : null, kind: r ? r.kind || "comfy" : null, provider: (r && r.provider) || null, model: (r && r.model) || null, prompt: r ? withoutSecrets(r.prompt || null) : null, nodeParams: this.nodeParams };
     },
 
     /**

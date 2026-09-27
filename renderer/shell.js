@@ -43,8 +43,11 @@ if (window.scumble && window.scumble.pixels) {
         const orig = console[name].bind(console);
         console[name] = (...a) => { send(level, text(a)); orig(...a); };
     }
-    window.addEventListener("error", (e) => send("error", "uncaught: " + (e.message || e), e.error && e.error.stack));
-    window.addEventListener("unhandledrejection", (e) => send("error", "unhandled: " + ((e.reason && (e.reason.message || e.reason)) || e), e.reason && e.reason.stack));
+    // the renderer's memory limit for pixels (PixelMemoryError, renderer/editor/inpaint_arena.js) reached where nothing
+    // catches it, a stroke or a timer: the status line says so, as it does for an operation that catches it
+    const pixelMemory = (err) => { if (err && err.name === "PixelMemoryError" && host.editor) host.editor.setStatus(err.message); };
+    window.addEventListener("error", (e) => { send("error", "uncaught: " + (e.message || e), e.error && e.error.stack); pixelMemory(e.error); });
+    window.addEventListener("unhandledrejection", (e) => { send("error", "unhandled: " + ((e.reason && (e.reason.message || e.reason)) || e), e.reason && e.reason.stack); pixelMemory(e.reason); });
 })();
 
 // docs/PLAN_BCE.md §E1: the scheme's COOP / COEP headers make the window cross-origin isolated, which the tile arena's

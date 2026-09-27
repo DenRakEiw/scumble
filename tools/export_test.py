@@ -811,7 +811,7 @@ const ed = ednow(window.__ex);
 let saved = null;
 const was = host.saveExport, embedWas = host.embedRecipe;
 host.saveExport = async (blob, name) => { saved = { blob, name }; return { path: "memory:" + name }; };
-host.setEmbedRecipe(true);   // 3f: off by default (tools/metadata_test.py); on here, so the bands carry the texts
+host.setEmbedRecipe(true);   // 3f: on by default since 0.1.32 (tools/metadata_test.py); set here, so the bands carry the texts
 try {
     if (ed.saveFormatSel) ed.saveFormatSel.value = "png";
     const out = await ed.exportImage({ download: false });

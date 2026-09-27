@@ -18,8 +18,9 @@ const DEFAULTS = {
     // <userData>/models, or a ComfyUI models folder), the SAM2 and matting model ids
     helpers: { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite" },
     updates: { check: true },   // check GitHub Releases at start (electron/main/updater.js)
-    // exported PNGs carry the prompt, seed and recipe as text chunks (the Export section's switch; docs/PLAN_0_1_29.md 3f)
-    embedRecipe: false,
+    // exported PNGs carry the prompt, seed and recipe as text chunks (the Export section's switch; docs/PLAN_0_1_29.md 3f);
+    // on unless the user turns it off (the user, 2026-09-27; off from 0.1.30 to 0.1.31)
+    embedRecipe: true,
     // prompt upsampling on a local or self-hosted OpenAI-compatible server (Ollama, LM
     // Studio, vLLM, a proxy); an optional key lives in keys.js under the name "compat"
     // `models` are the rows the user added under Settings > Language models

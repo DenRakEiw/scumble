@@ -29,7 +29,38 @@ const chunks = [];    // index -> { sab, free: [slot], used } or null once dropp
 const listeners = new Set();
 let registry = null;
 
-const STATS = { slots: 0, chunks: 0, allocated: 0, freed: 0, droppedChunks: 0, refused: 0 };
+// `refused`: chunks the browser would not make (the tile got a buffer of its own); `failed`: tiles that got no bytes at
+// all (PixelMemoryError)
+const STATS = { slots: 0, chunks: 0, allocated: 0, freed: 0, droppedChunks: 0, refused: 0, failed: 0 };
+
+/**
+ * What an allocation past the renderer's limit on typed arrays becomes. Chromium gives a renderer about 15.5 GB of
+ * `ArrayBuffer` and `SharedArrayBuffer` together (docs/PERFORMANCE.md §14, "The memory limits, measured": 18 full 15k
+ * layers) and then throws `RangeError: Array buffer allocation failed`, which came out of whichever write needed a new
+ * tile and said nothing a user could act on (docs/BUGS.md). This says what ran out and what gives it back. An operation
+ * that catches its errors shows the message in the status line, as it does a canvas-limit refusal (checkCanvas in
+ * inpaint_tiles.js); renderer/shell.js shows it for the ones nothing caught (a stroke, a timer), by `name`.
+ */
+export class PixelMemoryError extends Error {
+    constructor() {
+        const gb = STATS.chunks * CHUNK_BYTES / 2 ** 30;
+        super("Inpaint Canvas: out of memory for pixels. This window holds as many as it can (about 15.5 GB"
+            + (gb >= 1 ? `, ${gb.toFixed(1)} GB of them in layer tiles` : "")
+            + "). Close a document, or delete or merge layers, then try again.");
+        this.name = "PixelMemoryError";
+    }
+}
+
+/** A tile's own buffer (no arena, or no room for a chunk): the browser's RangeError at the limit as a PixelMemoryError. */
+function ownTileBytes() {
+    try {
+        return new Uint8ClampedArray(SLOT_BYTES);
+    } catch (err) {
+        if (!(err instanceof RangeError)) throw err;
+        STATS.failed++;
+        throw new PixelMemoryError();
+    }
+}
 
 /** Use the arena (default: when the page may share memory). A test switches it before any tile exists. */
 export function setArenaEnabled(on) {
@@ -72,16 +103,17 @@ function newChunk() {
 
 /**
  * The bytes of a new tile (zeroed) for `owner`, the object that holds them: a `Uint8ClampedArray` of SLOT_BYTES, with
- * `arenaChunk` / `arenaSlot` set on `owner` when they live in the arena.
+ * `arenaChunk` / `arenaSlot` set on `owner` when they live in the arena. Throws a PixelMemoryError at the renderer's
+ * limit, and then `owner` is untouched.
  */
 export function allocTileBytes(owner) {
-    if (!arenaEnabled()) return new Uint8ClampedArray(SLOT_BYTES);
+    if (!arenaEnabled()) return ownTileBytes();
     if (!registry) registry = new FinalizationRegistry(release);
     let index = -1;
     for (let i = 0; i < chunks.length; i++) if (chunks[i] && chunks[i].free.length) { index = i; break; }
     if (index < 0) {
         // no room for another 64 MB in one piece: this tile gets a buffer of its own, as without the arena
-        try { index = newChunk(); } catch (_) { STATS.refused++; return new Uint8ClampedArray(SLOT_BYTES); }
+        try { index = newChunk(); } catch (_) { STATS.refused++; return ownTileBytes(); }
     }
     const c = chunks[index];
     const slot = c.free.pop();

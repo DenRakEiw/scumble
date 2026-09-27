@@ -1,10 +1,11 @@
 """What an exported picture says about itself (docs/PLAN_0_1_29.md 3f), on both backends.
 
 Every PNG export carried the prompt, the seed and the recipe as tEXt chunks until 3f; now it does so only when the
-Export section's switch ("Prompt and recipe in the PNG", `settings.embedRecipe`, off by default) or the export command's
+Export section's switch ("Prompt and recipe in the PNG", `settings.embedRecipe`, on by default since 0.1.32) or the export command's
 `metadata` says so. Every PNG export carries an `sRGB` chunk (its pixels are sRGB), on the banded path and on the
 canvas path; uploads never do (their names are the hash of their bytes). JPEG gets Chromium's sRGB ICC profile (APP2);
-WebP's chunks are printed (2026-09-26: VP8X, ICCP, VP8).
+WebP's chunks are printed (2026-09-26: VP8X, ICCP, VP8). An embedded recipe leaves out the inputs named like a key, a
+token, a secret or a password (renderer/editor/redact.js; the matcher itself is tools/secret_names_test.js).
 
 No ComfyUI, no API key. Start the app first (tools/run_gates.sh does), then:
 
@@ -82,14 +83,15 @@ Object.defineProperty(c, "naturalWidth", { value: W }); Object.defineProperty(c,
 await ed.setBase({ filename: "metadata_test.png", subfolder: "inpaint_canvas", type: "input" }, c, { keepLayers: false });
 await run("set_prompt", { doc: d.id, text: "a red fox été", negative: "blur" });
 window.__mdWas = host.embedRecipe;
-// the default: the runner's fresh profile never touched the switch, so it is off (`--keep-switch` against a used profile)
-if (!__KEEP__ && (window.__mdWas !== false || (await window.scumble.settings.get()).embedRecipe !== false)) throw new Error("a fresh profile has the switch on: host " + window.__mdWas);
+// the default: the runner's fresh profile never touched the switch, so it is on (the user, 2026-09-27; `--keep-switch`
+// against a used profile). Off from here, so the next step starts from a switched-off app
+if (!__KEEP__ && (window.__mdWas !== true || (await window.scumble.settings.get()).embedRecipe !== true)) throw new Error("a fresh profile has the switch off: host " + window.__mdWas);
 host.setEmbedRecipe(false);
 const r = ed._exportRow;
 if (!r || !r.meta || !r.mRow) throw new Error("the Export section has no metadata switch");
 return { doc: d.id, tiles: !!ed.tileMode, switchWas: window.__mdWas };
 """),
-    ("off_by_default", r"""
+    ("switched_off_embeds_nothing", r"""
 const ed = ednow(window.__md);
 const fresh = await window.scumble.settings.get();
 const def = host.embedRecipe;
@@ -168,6 +170,33 @@ try {
 const described = window.__cmds.describe().find((c) => c.name === "export");
 if (!described || !described.params.metadata || described.params.metadata.type !== "boolean") throw new Error("the export command does not describe `metadata`");
 return { param: described.params.metadata.description };
+"""),
+    ("an_imported_key_stays_out_of_the_png", r"""
+// the user, 2026-09-27: an imported workflow's key widgets stay out of the embedded recipe (renderer/editor/redact.js);
+// a recipe as an import makes it, with a key typed into a node and one wired in from a primitive
+const ed = ednow(window.__md);
+const KEY = "sk-metadata-test-0123456789";
+const recipeWas = host.recipe;
+host.recipe = { id: "imported_with_a_key", kind: "comfy", mode: "local", canvas: "canvas", result: "decode:0", prompt: {
+    canvas: { class_type: "InpaintCanvas", inputs: { padding: 64 } },
+    api: { class_type: "SomeApiNode", inputs: { prompt: "a fox", api_key: KEY, keyframe: 3, image: ["canvas", 0] } },
+    prim: { class_type: "PrimitiveString", inputs: { value: KEY } },
+    llm: { class_type: "LLMNode", inputs: { openaiKey: ["prim", 0], max_tokens: 512 } },
+} };
+host.setEmbedRecipe(true);
+try {
+    const e = await exportOf(ed);
+    const got = await checkPng(e.blob, true, "an imported recipe with a key, switch on");
+    if (got.texts.workflow.includes(KEY) || got.texts.inpaint_canvas.includes(KEY)) throw new Error("the key is in the PNG: " + got.texts.workflow.slice(0, 400));
+    const wf = JSON.parse(got.texts.workflow);
+    if (wf.recipe !== "imported_with_a_key" || !wf.prompt || !wf.prompt.api) throw new Error("the recipe is not embedded: " + got.texts.workflow.slice(0, 300));
+    const api = wf.prompt.api.inputs, llm = wf.prompt.llm.inputs;
+    if ("api_key" in api || "openaiKey" in llm || "value" in wf.prompt.prim.inputs) throw new Error("a key input is still there: " + JSON.stringify(wf.prompt));
+    if (api.prompt !== "a fox" || api.keyframe !== 3 || llm.max_tokens !== 512 || wf.prompt.canvas.inputs.padding !== 64) throw new Error("an ordinary input went too: " + JSON.stringify(wf.prompt));
+    // the recipe the app runs keeps its key
+    if (host.recipe.prompt.api.inputs.api_key !== KEY) throw new Error("the recipe itself lost its key");
+    return { api: Object.keys(api), llm: Object.keys(llm), bytes: got.texts.workflow.length };
+} finally { host.recipe = recipeWas; host.setEmbedRecipe(false); }
 """),
     ("uploads_carry_no_srgb", r"""
 // the PNGs the mirror and ComfyUI get are named by the hash of their bytes: no chunk of the export's may go in

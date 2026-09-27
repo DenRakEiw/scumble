@@ -965,8 +965,10 @@ const tiled = (Base) => class extends Base {
             t = newTile();
             this._tiles.set(key, t);
         } else if (t.frozen > 0) {
-            t.frozen--;
+            // the copy first: at the renderer's memory limit newTile throws (PixelMemoryError, inpaint_arena.js), and a
+            // count taken down before that would let the next write go into the tile the other holders still read
             const c = newTile();
+            t.frozen--;
             c.data.set(t.data);
             // the original's chains as the copy's stale picture until its own are built (C6 b): read, never written
             // (`mipsOwn` false), because the other holders of the original read the same buffers. The original gives
