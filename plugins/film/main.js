@@ -24,6 +24,8 @@ export function activate(scumble) {
     scumble.filters.register({ ...points.filter, chain: true });
     scumble.tools.register(points.tool);
     scumble.commands.register(points.command.name, points.command.def);
+    // the whole picture turned or mirrored (PLAN_0_1_31 §7): the points sit in image pixels and follow it
+    scumble.events.on("geometry", (ev) => { if (ev.doc && ev.from) points.follow(ev.doc, ev.op, ev.from); });
 
     // ---- apply a stock to the active look layer or a new one -----------------------------------------
     function applyLook(doc, presetId, { strength } = {}) {

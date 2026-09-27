@@ -2259,6 +2259,10 @@ window.scumble.onMenu((cmd) => {
     else if (cmd === "console") openConsole();
     else if (cmd === "help") showColumn(helpOpen, toggleHelp);
     else if (cmd === "canvas-only") canvasOnly();
+    else if (cmd.startsWith("canvas:turn:")) {
+        const op = { 1: 1, "-1": -1, 2: 2, h: "h", v: "v" }[cmd.slice(12)];
+        if (op !== undefined && host.editor) host.editor.turnDocument(op);
+    }
     else if (cmd === "new-tab") activate(newDocument());
     else if (cmd === "close-tab") closeDocument(host.editor);
     else if (cmd === "next-tab") cycleTab(1);

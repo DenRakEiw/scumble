@@ -47,7 +47,13 @@ function cleanDocument(d, notes) {
         const list = Array.isArray(d.selections) ? d.selections : [];
         const kept = list.filter((s) => s && typeof s.url === "string" && DATA_PNG.test(s.url));
         if (kept.length !== list.length || !Array.isArray(d.selections)) notes.push("saved selections that were not pictures were left out");
-        d.selections = kept.map((s) => ({ name: typeof s.name === "string" ? s.name : "Selection", url: s.url }));
+        d.selections = kept.map((s) => {
+            const o = { name: typeof s.name === "string" ? s.name : "Selection", url: s.url };
+            // how the document was turned since it was saved (PLAN_0_1_31 §7), as whole numbers only
+            const turn = s.orient && typeof s.orient === "object" ? ((s.orient.turn | 0) & 3) : 0, flip = !!(s.orient && s.orient.flip);
+            if (turn || flip) o.orient = { turn, flip };
+            return o;
+        });
     }
     return d;
 }

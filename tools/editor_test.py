@@ -6869,6 +6869,193 @@ try {
 }
 return out;
 """),
+    ("the_whole_document_turns_and_flips_with_everything_on_it", """
+// PLAN_0_1_31 §7 (item 23a): rotate_canvas / flip_canvas move every store exactly, the rest follows, one undo step
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+const W = 601, H = 357;   // no multiple of 256: a new tile gathers from several source tiles
+const words = (px) => { const a = px.readRect(0, 0, px.width, px.height).data; return new Uint32Array(a.buffer, a.byteOffset, a.length >> 2); };
+// where a pixel (x, y) of a w x h store lands
+const land = { 1: (x, y, w, h) => [h - 1 - y, x], "-1": (x, y, w, h) => [y, w - 1 - x], 2: (x, y, w, h) => [w - 1 - x, h - 1 - y], h: (x, y, w, h) => [w - 1 - x, y], v: (x, y, w, h) => [x, h - 1 - y] };
+const mapped = (before, bw, bh, after, op, what) => {
+    const a = after.width, A = words(after);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+        const [X, Y] = land[String(op)](x, y, bw, bh);
+        if (before[y * bw + x] !== A[Y * a + X]) throw new Error(what + ": pixel " + x + "," + y + " is not at " + X + "," + Y + " after " + op);
+    }
+};
+const same = (a, b, what) => { if (a.length !== b.length) throw new Error(what + ": sizes differ"); for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) throw new Error(what + ": word " + i + " differs"); };
+try {
+    // a base with a pattern that tells every pixel apart
+    const bc = document.createElement("canvas"); bc.width = W; bc.height = H;
+    const bx = bc.getContext("2d"), bi = bx.createImageData(W, H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; bi.data[i] = x & 255; bi.data[i + 1] = y & 255; bi.data[i + 2] = (x >> 8) * 40 + (y >> 8) * 90; bi.data[i + 3] = 255; }
+    bx.putImageData(bi, 0, 0);
+    await ed.setBaseFromCanvas(bc);
+    // a full-size layer with a mask, a small layer at twice its resolution, a masked filter layer, a text layer
+    const L1 = ed.addPaintLayer();
+    L1.px.fill([0, 0, W, H], "rgba(20,120,200,0.8)"); L1.px.fill([30, 40, 90, 70], "#ff3300"); ed.markLayerChanged(L1);
+    await run("select_rect", { x: 200, y: 60, w: 150, h: 90, doc: d.id });
+    ed.maskFromSelection(L1);
+    const L2 = ed.addLayer({ name: "small", kind: "paint", ref: null, px: ed.pixels.Layer.empty(240, 160), x: 50, y: 30, w: 120, h: 80, dirty: true });
+    L2.px.fill([0, 0, 120, 80], "#33cc66"); L2.px.fill([200, 100, 240, 160], "#ffee00"); ed.markLayerChanged(L2);
+    const fx = await run("add_filter", { type: "grain", doc: d.id });
+    await run("select_rect", { x: 400, y: 200, w: 100, h: 100, doc: d.id });
+    await run("set_mask", { layer: fx.id, op: "from_selection", doc: d.id });
+    const tx = await run("add_text", { text: "Turn me", x: 60, y: 250, size: 40, doc: d.id });
+    await wait(300);
+    const T = () => ed.layers.find((l) => l.id === tx.id);
+    const tw0 = T().w, th0 = T().h;
+    // film control points and a 3D object's parameters, where their plugins are loaded
+    let pts = null;
+    try { pts = await run("add_filter", { type: "film.points", doc: d.id }); } catch (_) { /* no film pack */ }
+    if (pts) { const raw = ed.layers.find((l) => l.id === pts.id); raw.params = { ...raw.params, points: [{ id: 1, x: 100, y: 50, r: 20 }] }; }
+    ed.pluginData = { ...(ed.pluginData || {}), glb: { objects: { [L2.id]: { ref: null, name: "cube", params: { x: 0.5, y: 0.5 } } } } };
+    // the selection, a guide each way, a saved selection, a results-history entry that can be restored
+    await run("select_rect", { x: 10, y: 20, w: 100, h: 50, doc: d.id });
+    ed.guides = { x: [100], y: [40] };
+    ed.saveSelection();
+    const hc = document.createElement("canvas"); hc.width = 60; hc.height = 30;
+    const hx = hc.getContext("2d"); hx.fillStyle = "#0000ff"; hx.fillRect(0, 0, 60, 30); hx.fillStyle = "#ff00ff"; hx.fillRect(0, 0, 10, 10);
+    ed.history.push({ key: "t23", name: "Result t23", ref: { filename: "none.png", subfolder: "", type: "input" }, x: 300, y: 100, w: 60, h: 30, prompt: "", thumbImg: hc });
+    if (ed.syncLayers) await ed.syncLayers();
+    const before = { base: words(ed.basePx), l1: words(L1.px), m1: words(L1.maskPx), l2: words(L2.px), fm: words(ed.layers.find((l) => l.id === fx.id).maskPx), sel: words(ed.sel) };
+    const v0 = ed.compositeVersion, n0 = ed.undo.length, ref0 = JSON.stringify(L1.ref), mref0 = JSON.stringify(L1.maskRef);
+    // busy: refused, nothing changes
+    ed.providerPending = { t23: true };
+    let refused = "";
+    try { await run("rotate_canvas", { angle: 90, doc: d.id }); } catch (e) { refused = String(e.message || e); }
+    ed.providerPending = null;
+    if (!/running job/.test(refused) || ed.width !== W) throw new Error("a turn while a job runs was not refused: " + (refused || "it ran"));
+    // a quarter turn clockwise
+    const r = await run("rotate_canvas", { angle: 90, doc: d.id });
+    if (r.width !== H || r.height !== W || ed.width !== H || ed.height !== W) throw new Error("the turn made " + ed.width + " x " + ed.height);
+    if (ed.undo.length !== n0 + 1) throw new Error("the turn pushed " + (ed.undo.length - n0) + " steps");
+    if (ed.compositeVersion === v0) throw new Error("the turn left the composite version");
+    mapped(before.base, W, H, ed.basePx, 1, "the base");
+    const l1 = ed.layers.find((l) => l.id === L1.id), l2 = ed.layers.find((l) => l.id === L2.id), f1 = ed.layers.find((l) => l.id === fx.id);
+    mapped(before.l1, W, H, l1.px, 1, "the full-size layer");
+    mapped(before.m1, W, H, l1.maskPx, 1, "its mask");
+    mapped(before.l2, 240, 160, l2.px, 1, "the small layer at its own resolution");
+    mapped(before.fm, W, H, f1.maskPx, 1, "the filter layer's mask");
+    mapped(before.sel, W, H, ed.sel, 1, "the selection");
+    if (l1.x !== 0 || l1.y !== 0 || l1.w !== H || l1.h !== W) throw new Error("the full-size layer is at " + [l1.x, l1.y, l1.w, l1.h]);
+    if (l2.x !== H - 110 || l2.y !== 50 || l2.w !== 80 || l2.h !== 120) throw new Error("the small layer is at " + [l2.x, l2.y, l2.w, l2.h] + ", not " + [H - 110, 50, 80, 120]);
+    if (f1.w !== H || f1.h !== W) throw new Error("the filter layer covers " + f1.w + " x " + f1.h);
+    // the turned layer and its mask go out as new files at once (a restored session must not pair the old ones with the new places)
+    if (ed.syncLayers) await ed.syncLayers();
+    if (l1.dirty || l1.maskDirty || JSON.stringify(l1.ref) === ref0 || JSON.stringify(l1.maskRef) === mref0) throw new Error("the turned layer kept its old files: " + JSON.stringify({ dirty: l1.dirty, ref: l1.ref, ref0 }));
+    if (JSON.stringify(ed.guides) !== JSON.stringify({ x: [H - 40], y: [100] })) throw new Error("the guides are " + JSON.stringify(ed.guides));
+    const hist = ed.history.find((x) => x.key === "t23");
+    if ([hist.x, hist.y, hist.w, hist.h].join() !== [H - 130, 300, 30, 60].join() || !hist.orient || hist.orient.turn !== 1) throw new Error("the history entry is " + JSON.stringify({ x: hist.x, y: hist.y, w: hist.w, h: hist.h, orient: hist.orient }));
+    if (T().text.turn !== 1 || T().w !== th0 || T().h !== tw0) throw new Error("the text layer: turn " + T().text.turn + ", " + T().w + " x " + T().h);
+    if (pts) {
+        const p = ed.layers.find((l) => l.id === pts.id).params.points[0];
+        if (p.x !== H - 50 || p.y !== 100) throw new Error("the control point is at " + p.x + "," + p.y);
+        out.points = true;
+    }
+    const glbOrient = ed.pluginData && ed.pluginData.glb && ed.pluginData.glb.objects[L2.id].params.orient;
+    out.glb = glbOrient ? glbOrient.turn : "no plugin";
+    // the text keeps its turn when it is rendered again
+    await ed.renderTextLayer(T());
+    if (Math.abs(T().w - th0) > 1 || Math.abs(T().h - tw0) > 1 || T().px.height <= T().px.width) throw new Error("the re-rendered text came back upright: " + T().px.width + " x " + T().px.height + ", " + T().w + " x " + T().h);
+    // more text grows away from the corner the text starts at (after a clockwise turn the top right), which stays put
+    const right0 = T().x + T().w, top0 = T().y, wide0 = T().w;
+    T().text = { ...T().text, content: T().text.content + "\\nand a second line" };
+    await ed.renderTextLayer(T());
+    if (!(T().w > wide0) || Math.abs(T().x + T().w - right0) > 1 || Math.abs(T().y - top0) > 1) throw new Error("the turned text did not grow away from its first letter: right " + right0 + " -> " + (T().x + T().w) + ", top " + top0 + " -> " + T().y + ", width " + wide0 + " -> " + T().w);
+    // a saved selection loads turned; a restored result lands turned where its rectangle went
+    await ed.loadSelection(0, "replace");
+    mapped(before.sel, W, H, ed.sel, 1, "the saved selection loaded");
+    await ed.restoreResult(hist);
+    const res = ed.layers.find((l) => l.id === hist.layerId);
+    if (!res || res.x !== H - 130 || res.y !== 300 || res.px.width !== 30 || res.px.height !== 60) throw new Error("the restored result: " + JSON.stringify(res && [res.x, res.y, res.px.width, res.px.height]));
+    const rp = res.px.readRect(29, 0, 1, 1).data;   // the file's magenta corner (0, 0) lands at (29, 0) after a clockwise turn
+    if (!(rp[0] > 200 && rp[2] > 200 && rp[1] < 60)) throw new Error("the restored result is not turned: " + Array.from(rp));
+    await ed.undoStep(); await ed.undoStep();   // the loaded selection, the turn (a restored result is no step; the turn's undo drops it)
+    if (ed.width !== W || ed.height !== H) throw new Error("the undo left " + ed.width + " x " + ed.height);
+    same(words(ed.basePx), before.base, "the base after the undo");
+    same(words(ed.layers.find((l) => l.id === L1.id).px), before.l1, "the layer after the undo");
+    same(words(ed.sel), before.sel, "the selection after the undo");
+    if (JSON.stringify(ed.guides) !== JSON.stringify({ x: [100], y: [40] })) throw new Error("the undo left the guides at " + JSON.stringify(ed.guides));
+    if (hist.x !== 300 || hist.y !== 100 || (hist.orient && (hist.orient.turn || hist.orient.flip))) throw new Error("the undo left the history entry at " + JSON.stringify(hist));
+    if (T().text.turn) throw new Error("the undo left the text turned");
+    if (pts && ed.layers.find((l) => l.id === pts.id).params.points[0].x !== 100) throw new Error("the undo left the control point");
+    if (ed.pluginData.glb.objects[L2.id].params.orient) throw new Error("the undo left the 3D object's orientation");
+    await ed.redoStep();
+    if (ed.width !== H) throw new Error("the redo did not turn it again");
+    mapped(before.base, W, H, ed.basePx, 1, "the base after the redo");
+    if (JSON.stringify(ed.guides) !== JSON.stringify({ x: [H - 40], y: [100] })) throw new Error("the redo left the guides at " + JSON.stringify(ed.guides));
+    // three more quarter turns: everything as it was, byte for byte; a half turn and a flip map like the pixels do
+    for (let i = 0; i < 3; i++) await run("rotate_canvas", { angle: 90, doc: d.id });
+    same(words(ed.basePx), before.base, "four quarter turns");
+    same(words(ed.layers.find((l) => l.id === L1.id).maskPx), before.m1, "the mask after four turns");
+    same(words(ed.sel), before.sel, "the selection after four turns");
+    if (JSON.stringify(ed.guides) !== JSON.stringify({ x: [100], y: [40] })) throw new Error("four turns left the guides at " + JSON.stringify(ed.guides));
+    if (T().text.turn || T().text.flip) throw new Error("four turns left the text at " + JSON.stringify([T().text.turn, T().text.flip]));
+    await run("rotate_canvas", { angle: 180, doc: d.id });
+    mapped(before.base, W, H, ed.basePx, 2, "the half turn");
+    await run("rotate_canvas", { angle: 180, doc: d.id });
+    // a flip keeps the size: the picture the eyedropper, bucket and wand read must be the flipped one
+    const flat0 = ed.compositeCanvas().getContext("2d").getImageData(5, 5, 1, 1).data.slice();
+    ed.objects = { t23: true };   // an object map of the picture as it is: the flip makes it wrong
+    await run("flip_canvas", { axis: "horizontal", doc: d.id });
+    mapped(before.base, W, H, ed.basePx, "h", "the flip");
+    if (ed.objects) throw new Error("the object map of the unflipped picture survived the flip");
+    const flat1 = ed.compositeCanvas().getContext("2d").getImageData(W - 6, 5, 1, 1).data;
+    if (Array.from(flat1).some((v, i) => Math.abs(v - flat0[i]) > 3)) throw new Error("the composite after the flip is the old one: " + Array.from(flat0) + " / " + Array.from(flat1));
+    if (!T().text.flip) throw new Error("the flip did not reach the text");
+    // its undo keeps the size too (and uploads nothing): what the eyedropper reads is the picture before the flip again
+    await ed.undoStep();
+    const flat2 = ed.compositeCanvas().getContext("2d").getImageData(5, 5, 1, 1).data;
+    if (Array.from(flat2).some((v, i) => Math.abs(v - flat0[i]) > 3)) throw new Error("the composite after undoing the flip is the flipped one: " + Array.from(flat0) + " / " + Array.from(flat2));
+    await ed.redoStep();
+    mapped(before.base, W, H, ed.basePx, "h", "the flip redone");
+    await run("flip_canvas", { axis: "vertical", doc: d.id });
+    mapped(before.base, W, H, ed.basePx, 2, "h then v");
+    // the text's orientation composes like the pixels: after a quarter turn and a mirror a fresh render, put into the
+    // orientation the description says, is what the turns made of the old pixels (byte for byte on tiles)
+    await run("rotate_canvas", { angle: 90, doc: d.id });
+    await run("flip_canvas", { axis: "horizontal", doc: d.id });
+    const tt = T().text;
+    out.textOrient = [tt.turn, tt.flip];
+    const turnedPx = words(T().px), tpw = T().px.width;
+    await ed.renderTextLayer(T());
+    if (T().px.width !== tpw) throw new Error("the text rendered again is " + T().px.width + " wide, the turned pixels " + tpw);
+    if (ed.tileMode) same(words(T().px), turnedPx, "the text rendered in its orientation against the turned pixels");
+    // two turns asked for at once (a double click) run one after the other: a half turn, every store the document's size
+    const b2 = words(ed.basePx), w2 = ed.width, h2 = ed.height, s2 = words(ed.sel);
+    const both = await Promise.all([ed.turnDocument(1), ed.turnDocument(1)]);
+    if (!both[0] || !both[1]) throw new Error("two turns at once: " + JSON.stringify(both) + ", " + ed.status);
+    mapped(b2, w2, h2, ed.basePx, 2, "two turns at once, the base");
+    mapped(s2, w2, h2, ed.sel, 2, "two turns at once, the selection");
+    for (const l of ed.layers) if (l.kind !== "filter" && l.w === ed.width && l.h === ed.height && (l.px.width !== ed.width || l.px.height !== ed.height) && l.px.width * l.h === l.px.height * l.w) throw new Error("two turns at once left " + l.name + " at " + l.px.width + " x " + l.px.height);
+    // a render open on ComfyUI blocks a turn (its result lands in the geometry it was made for)
+    ed._localRuns = new Set(["t23-prompt"]);
+    const blocked = await ed.turnDocument(1);
+    ed._localRuns = null;
+    if (blocked || !/ComfyUI/.test(ed.status)) throw new Error("a turn with a render open ran: " + ed.status);
+    // an edit while the base uploads: nothing is turned, the edit stays
+    const upload = ed.uploadBase;
+    let release = null;
+    ed.uploadBase = (px) => new Promise((resolve, reject) => { release = () => upload.call(ed, px).then(resolve, reject); });
+    const w3 = ed.width, b3 = words(ed.basePx);
+    const late = ed.turnDocument(1);
+    for (let i = 0; i < 50 && !release; i++) await wait(10);
+    ed.uploadBase = upload;
+    if (!release) throw new Error("the turn never reached its upload");
+    await run("select_rect", { x: 5, y: 5, w: 20, h: 20, doc: d.id });
+    release();
+    if (await late) throw new Error("a turn over an edit made during its upload ran");
+    if (ed.width !== w3 || !/changed while/.test(ed.status)) throw new Error("the refused turn left " + ed.width + ", " + ed.status);
+    same(words(ed.basePx), b3, "the base after a refused turn");
+    out.steps = ed.undoList().slice(-3).map((x) => x.label);
+    out.ok = true;
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

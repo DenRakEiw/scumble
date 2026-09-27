@@ -116,11 +116,11 @@ The hand-over blocks of before, and the full text of the list below, are in `doc
 
 **Released:** 0.1.30 is Latest (2026-09-27: `.scumble` documents, the PNG metadata switch, TIFF open and save; dev
 blog post `v0-1-30`). Check `gh release list` before believing any release state written down anywhere. `main` has
-local commits of packages 1-3 (not pushed) and the uncommitted tutorial material.
+local commits of everything below (not pushed) and the uncommitted tutorial material.
 
 **The build in progress is `docs/PLAN_0_1_31.md`** (read it first; written 2026-09-27; each built package has a
 "Built" paragraph there). **Built and committed locally on 2026-09-27, not pushed** (CHANGELOG "Unreleased" has all
-three):
+of them):
 - **1, the canvas-only view** (gate `canvasonly`): Tab / View › Canvas Only, `renderer/shell.js` `canvasOnly` /
   `isCanvasOnly`, `window.scumble.window.*` full-screen IPC; Help and the assistant are covered, not hidden.
 - **2, the Undo history** (steps in `editor_test.py` and `mcp_test.py`): labelled steps (`UNDO_LABELS`, a label at
@@ -134,12 +134,26 @@ three):
   "disabled") - every drawing / compositing site reads `liveMask(l)`, what moves, saves or undoes a mask keeps
   `maskPx`; `setMaskOff`, the eye button and Shift+click in the mask row, `maskOff` in `.scumble` / autosave
   (`docs/DOCUMENTS.md`), `mask_off` in `list_layers`. ORA still bakes the live mask.
+- **6.4, mask operations** (727a0b0; `pixels` `mask_invert_white`, `editor` `mask_operations_are_one_step_each` on both
+  backends, `mcp`): the mask row's "..." flyout (Reveal all / Hide all / Reveal selection / Hide selection / Invert),
+  `maskOp(layer, op)`, `MaskPixels.invert(color)` (a layer mask inverts in white), command `set_mask`; `apply` is
+  refused on filter layers.
+- **Item 17, the side panel's width** (e1791c2; `editor` `side_panel_width_drags_and_is_kept`): a grip on the panel's
+  left edge, 310 px to 60 %, a CSS variable `--ipc-side-w` on the document (every tab), `localStorage ipc.sideWidth`;
+  the app's export rows now sit inside the Export block.
+- **Item 23a, rotate / flip the whole document** (plan §7; full tier: `pixels` `turned` on three backends, `editor`
+  `the_whole_document_turns_and_flips_with_everything_on_it` on both backends, `mcp`, `glb`, `film`, `document`,
+  `docux`, a 15k row, a mutation round): `turned(op)` on both pixel classes (tile by tile, 5.6x faster than the band
+  code it replaced), `turnDocument(op)` with one `canvas` step, `docOrient` and `restoreOrient` (guides, results
+  history, saved selections and the export size are turned by the orientation difference on undo, since no step holds
+  them), plugin data in the canvas and turn snapshots, `text.turn` / `text.flip` (also for the layer's own rotate /
+  flip), a `geometry` plugin event (film points, glb `params.orient`), the Image menu, a Turn row in the Canvas section,
+  commands `rotate_canvas` / `flip_canvas`.
 
 **The user's cut for 0.1.31 (2026-09-27): 1 + 2 + 3e + mask operations (6.4) + the side panel's width (item 17), and
-item 23 (rotate / straighten the document) if a session has room.** **Next session: 6.4 mask operations** (invert,
-reveal all / hide all, enable / disable - the switch exists now -, a `set_mask` command over MCP; plan §6 step 4),
-**then item 17** (the side panel's width, a drag handle on its left edge; CLAUDE.md list), **then item 23** if there is
-room; then the release chain (CLAUDE.md "Every release") on the user's word. Brushes (package 4) are 0.1.32. The
+item 23 (rotate / straighten the document) if a session has room.** All of it is built except **23b** (straighten by any
+angle, crop presets with overlays: needs a block-wise resampler, plan §7). **Next:** ask the user whether 0.1.31 goes
+out now (then the release chain, CLAUDE.md "Every release", on the user's word) or waits for 23b. Brushes (package 4) are 0.1.32. The
 user's order after that: **4** brushes, **5** repair / remove / liquify, **6** layers pro (plan sections 4-6; the
 package text of before is in `docs/PLAN_0_1_29.md`). Open for the user (the plan's last section): LaMa shipped or
 downloaded, the PNG switch default, item 25's look and timing, the optional brush panel; the Undo history section sits
@@ -219,8 +233,8 @@ planning one of them.
 15. **Qwen Image Edit 2.1:** the local ComfyUI recipe is built (0.1.23, never run: the models are not downloaded); the
    API side (providers, ids, masks, limits, prices) is open.
 16. **Oxen.ai:** built on 2026-09-26 from the docs (`docs/RECIPES.md` "Oxen.ai"), never run live (the user has no key).
-17. **A side panel of adjustable width:** the horizontal scrollbar is gone since 0.1.23; the drag handle on the left
-   edge is open (about half a day, a gate step in `editor_test.py`).
+17. **A side panel of adjustable width:** built 2026-09-27 (e1791c2): a grip on the left edge, 310 px to 60 % of the
+   window, kept per install.
 18. **The logo:** drawn for 0.1.27 (`build/icon.svg` and its exports); open: the mascot's other poses, the About dialog,
    the website.
 19. **3D layers from AI models** (only listed): image-to-3D (Comfy Router's Meshy / Hunyuan 3D, fal / Replicate TRELLIS,
@@ -234,9 +248,9 @@ planning one of them.
 22. **Nik 9 parity** (not optional; an update of its own): `docs/PLAN_NIK9.md` has the research and the shape (depth
    masks, edges, filters and control points, the 18 missing blend modes; 34-46 days), plus the masks-and-selections and
    the grading-and-panels packages folded in on 2026-09-26 (6.5-12.5 and 11-19.5 days). Suggested after B3.
-23. **Rotate and straighten the whole document** (on the later list, the user, 2026-09-26): rotate 90 / 180, flip,
-   straighten by a drawn line, crop presets; 2 to 3.5 days, crop presets 1 to 2 more; every layer, mask and selection
-   follows, like *Resize*.
+23. **Rotate and straighten the whole document** (on the later list, the user, 2026-09-26): **23a built 2026-09-27**
+   (rotate 90 / 180, flip; `docs/PLAN_0_1_31.md` §7). **23b open:** straighten by a drawn line, crop presets with
+   overlays (a block-wise resampler first: `applyPending`'s canvas path goes blank above 268 MP and bakes masks).
 24. **A canvas-only view** (the user, 2026-09-27): **built 2026-09-27** (package 1 of `docs/PLAN_0_1_31.md`). As designed: **Tab** (free in the editor's `onKey`, Photoshop's and Krita's key; F11 stays the
    plain window full screen of the View menu's `togglefullscreen`), Tab again or Escape returns (Escape only when the
    editor has nothing pending: `pending`, `polyPoints`, `shapePoints`). App-only, in `renderer/shell.js` (a capture

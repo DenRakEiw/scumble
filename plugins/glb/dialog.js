@@ -2,6 +2,8 @@
 // drag turns the object, Shift+drag moves it, the wheel scales it, sliders for everything.
 // A native <dialog>, so Escape closes it (the editor lets keys inside an open dialog through).
 
+import { uprightSize, orientCanvas } from "./render.js";
+
 const SLIDERS = [
     ["x", "X", -0.5, 1.5, 0.005, (v) => Math.round(v * 100) + " %"],
     ["y", "Y", -0.5, 1.5, 0.005, (v) => Math.round(v * 100) + " %"],
@@ -62,6 +64,7 @@ export function openDialog({ scumble, doc, model, renderer, params, title }) {
         // the stage: the picture scaled to fit, the object rendered over it
         const maxW = Math.min(820, window.innerWidth - 340), maxH = Math.min(560, window.innerHeight - 160);
         const k = Math.min(maxW / doc.width, maxH / doc.height, 1);
+        const [uw, uh] = uprightSize(p.orient, doc.width, doc.height);   // the object's own frame (a turned picture: turned back)
         const sw = Math.max(64, Math.round(doc.width * k)), sh = Math.max(64, Math.round(doc.height * k));
         const stage = document.createElement("div");
         stage.className = "glb-stage";
@@ -119,7 +122,10 @@ export function openDialog({ scumble, doc, model, renderer, params, title }) {
             const ctx = view.getContext("2d");
             ctx.clearRect(0, 0, sw, sh);
             ctx.drawImage(backdrop, 0, 0);
-            try { ctx.drawImage(renderer.render(model, p, sw, sh), 0, 0); } catch (err) { scumble.warn("preview", err); }
+            try {
+                const rw = Math.max(1, Math.round(uw * k)), rh = Math.max(1, Math.round(uh * k));
+                ctx.drawImage(orientCanvas(renderer.render(model, p, rw, rh), p.orient, scumble.makeCanvas), 0, 0, sw, sh);
+            } catch (err) { scumble.warn("preview", err); }
         };
         const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(draw); } };
         const syncSliders = () => { for (const [key, o] of Object.entries(inputs)) { o.inp.value = p[key]; o.val.textContent = o.fmt(p[key]); } };
@@ -129,8 +135,11 @@ export function openDialog({ scumble, doc, model, renderer, params, title }) {
         stage.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, shift: e.shiftKey, p: { ...p } }; stage.setPointerCapture(e.pointerId); e.preventDefault(); });
         stage.addEventListener("pointermove", (e) => {
             if (!drag) return;
-            const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-            if (drag.shift) { p.x = drag.p.x + dx / sw; p.y = drag.p.y + dy / sh; }
+            // the move on screen in the object's upright frame (a turned picture: the turns undone, then the mirror)
+            let dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+            const o = p.orient;
+            if (o) { for (let i = 0; i < (o.turn & 3); i++) [dx, dy] = [dy, -dx]; if (o.flip) dx = -dx; }
+            if (drag.shift) { p.x = drag.p.x + dx / (uw * k); p.y = drag.p.y + dy / (uh * k); }
             else { p.rotY = ((drag.p.rotY + dx * 0.5 + 180) % 360 + 360) % 360 - 180; p.rotX = Math.max(-180, Math.min(180, drag.p.rotX + dy * 0.5)); }
             syncSliders(); schedule();
         });

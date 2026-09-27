@@ -964,6 +964,31 @@ const COMMANDS = {
             return { width: ed.width, height: ed.height, status: ed.status };
         },
     },
+    rotate_canvas: {
+        needsImage: true, description: "Rotate the whole picture by a quarter or a half turn (degrees clockwise: 90, -90 = 270, 180). Every layer, mask, the selection, the guides, the saved selections and the results history turn with it; nothing is resampled. One undo step. Refused while a render or another job of the document runs.",
+        params: { angle: P.int("degrees clockwise", { required: true, enum: [90, -90, 180, 270] }) },
+        async run(ed, a) {
+            const turns = { 90: 1, 270: -1, "-90": -1, 180: 2, "-180": 2 };
+            const op = turns[String(Math.round(+a.angle))];
+            if (op === undefined) throw new Error("angle must be 90, -90 (270) or 180");
+            const w0 = ed.width, h0 = ed.height;
+            if (!(await ed.turnDocument(op))) throw new Error(ed.status || "the picture could not be turned");
+            const quarter = op !== 2;
+            if (ed.width !== (quarter ? h0 : w0) || ed.height !== (quarter ? w0 : h0)) throw new Error(`the picture is ${ed.width} × ${ed.height} after the turn`);
+            return { width: ed.width, height: ed.height, status: ed.status };
+        },
+    },
+    flip_canvas: {
+        needsImage: true, description: "Mirror the whole picture: horizontal (left to right) or vertical (top to bottom). Every layer, mask, the selection, the guides, the saved selections and the results history follow. One undo step. (flip_layer mirrors one layer.)",
+        params: { axis: P.str("horizontal (left to right) or vertical (top to bottom)", { required: true, enum: ["horizontal", "vertical"] }) },
+        async run(ed, a) {
+            const axis = String(a.axis || "").toLowerCase();
+            const op = axis === "horizontal" || axis === "h" ? "h" : axis === "vertical" || axis === "v" ? "v" : null;
+            if (!op) throw new Error("axis must be horizontal or vertical");
+            if (!(await ed.turnDocument(op))) throw new Error(ed.status || "the picture could not be mirrored");
+            return { width: ed.width, height: ed.height, status: ed.status };
+        },
+    },
 
     // -- export --
     export: {

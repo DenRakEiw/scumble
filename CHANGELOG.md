@@ -30,6 +30,11 @@ the section for its version; `docs/` and the commit history hold the technical d
   enable / disable, apply and remove.
 - **The side panel can be wider.** Drag its left edge (between 310 px and 60 % of the window); a double click on the
   edge goes back to the default. Every tab shows the same width, and Scumble keeps it for the next start.
+- **Rotate and flip the whole picture.** Image › Rotate 90° Clockwise / Counter-clockwise / 180° and Flip
+  Horizontal / Vertical, also in the Canvas section: every layer turns with the picture, with its mask, and so do the
+  selection, the guides, saved selections and earlier results; text stays editable and keeps the turn. Nothing is
+  resampled, and it is one undo step. A layer flipped or turned on its own now keeps that too when its text is edited.
+  Agents get `rotate_canvas` and `flip_canvas`.
 
 ## 0.1.30 — 2026-09-27
 

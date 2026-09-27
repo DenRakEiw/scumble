@@ -312,6 +312,7 @@ export const host = {
     //   built (editor)            an editor finished building its UI (plugins add panels / tools)
     //   activate (editor)         another tab became active
     //   changed (editor)          a document changed (debounced autosave follows)
+    //   geometry (editor, op, from, to) the whole picture was turned or mirrored (before its "changed")
     //   tool (editor, tool, prev) the active tool changed
     //   removed (editor)          a tab was closed
 
@@ -1401,6 +1402,9 @@ export const host = {
         }
         const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo() });
         editor.lastPromptId = res && res.prompt_id;
+        // open until ComfyUI says the prompt ended (success, error, interrupt) or its queue is empty: a turn of the whole
+        // picture waits for it, since the result lands in the geometry it was made for (PLAN_0_1_31 §7)
+        if (res && res.prompt_id) (editor._localRuns || (editor._localRuns = new Set())).add(res.prompt_id);
         return res;
     },
 
@@ -1531,11 +1535,16 @@ export const host = {
         return window.scumble.file.save({ name, data, path: this.exportPath || undefined });
     },
 
-    /** An editor changed: autosave every open document (debounced) and refresh the tabs. */
-    changed(editor) {
+    /**
+     * An editor changed: autosave every open document (debounced) and refresh the tabs. `info.geometry` (the whole
+     * picture was turned or mirrored: `{ op, from, to }`, PLAN_0_1_31 §7) goes out first as a "geometry" event, for the
+     * plugins that keep image coordinates of their own.
+     */
+    changed(editor, info) {
         if (editor) editor._stateKey = null;      // changed since the last autosave: counts as changed until it runs (documentDirty)
         clearTimeout(this._saveTimer);
         this._saveTimer = setTimeout(() => this.saveAll(), 1500);
+        if (info && info.geometry) this.emit("geometry", { editor, ...info.geometry });
         this.emit("changed", { editor });
     },
 
@@ -2266,7 +2275,20 @@ api.addEventListener("executed", ({ detail }) => {
     }
 });
 
+/** A prompt ended on ComfyUI: no document counts it as an open render any more (see queueGenerate). */
+function localRunEnded(detail) {
+    const id = detail && detail.prompt_id;
+    for (const ed of host.editors()) if (ed._localRuns) { if (id) ed._localRuns.delete(id); else ed._localRuns.clear(); }
+}
+api.addEventListener("execution_success", ({ detail }) => localRunEnded(detail));
+api.addEventListener("execution_interrupted", ({ detail }) => localRunEnded(detail));
+api.addEventListener("status", ({ detail }) => {
+    const info = detail && detail.status && detail.status.exec_info;
+    if (info && info.queue_remaining === 0) for (const ed of host.editors()) if (ed._localRuns) ed._localRuns.clear();
+});
+
 api.addEventListener("execution_error", ({ detail }) => {
+    localRunEnded(detail);
     if (!detail) return;
     const ed = host.editorByPrompt(detail.prompt_id) || host.editor;
     if (!ed) return;

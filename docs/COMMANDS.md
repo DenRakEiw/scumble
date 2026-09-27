@@ -658,6 +658,24 @@ Extend (positive) or crop (negative) the canvas on each side, in pixels.
 | `right` | integer | (default `0`) |
 | `bottom` | integer | (default `0`) |
 
+### `rotate_canvas` *(image)*
+
+Rotate the whole picture by a quarter or a half turn (degrees clockwise: 90, -90 = 270, 180). Every layer, mask, the selection, the guides, the saved selections and the results history turn with it; nothing is resampled. One undo step. Refused while a render or another job of the document runs.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `angle` | integer | degrees clockwise (required; one of `90`, `-90`, `180`, `270`) |
+
+### `flip_canvas` *(image)*
+
+Mirror the whole picture: horizontal (left to right) or vertical (top to bottom). Every layer, mask, the selection, the guides, the saved selections and the results history follow. One undo step. (flip_layer mirrors one layer.)
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `axis` | string | horizontal (left to right) or vertical (top to bottom) (required; one of `horizontal`, `vertical`) |
+
 ## Export
 
 ### `export` *(image)*

@@ -640,7 +640,11 @@ function makeApi(entry) {
         tools: { register: (def) => registerTool(entry, def), unregister: (id) => unregisterTool(entry, id.includes(".") ? id : `${entry.id}.${id}`) },
 
         events: {
-            /** built, activate, changed, tool, removed, theme (a skin was switched; doc is null): fn({ doc, ... }); returns the off() function. */
+            /**
+             * built, activate, changed, tool, removed, theme (a skin was switched; doc is null), geometry (the whole picture was
+             * turned or mirrored: `op` 1 / -1 / 2 / "h" / "v", `from` and `to` { width, height }; an undo puts the plugin's
+             * document data back itself): fn({ doc, ... }); returns the off() function.
+             */
             on(type, fn) {
                 const wrapped = (data) => { try { fn({ ...data, doc: docOf(data.editor) }); } catch (err) { report(entry, `on ${type}`, err); } };
                 const off = host.on(type, wrapped);

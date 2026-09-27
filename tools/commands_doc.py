@@ -23,7 +23,7 @@ GROUPS = [
     ("Prompt and generation", ["set_prompt", "set_generation", "set_crop", "set_settings", "upsample_prompt", "generate", "upscale"]),
     ("Layers", ["list_layers", "set_active_layer", "set_layer", "add_paint_layer", "remove_layer", "duplicate_layer", "merge_down", "move_layer", "flip_layer", "center_layer", "flatten", "cutout_layer", "set_mask"]),
     ("Filters and text", ["add_filter", "set_filter", "add_text", "set_text"]),
-    ("History and canvas", ["undo", "redo", "list_history", "take_snapshot", "restore_snapshot", "delete_snapshot", "compare", "extend_canvas"]),
+    ("History and canvas", ["undo", "redo", "list_history", "take_snapshot", "restore_snapshot", "delete_snapshot", "compare", "extend_canvas", "rotate_canvas", "flip_canvas"]),
     ("Export", ["export", "export_layer", "export_mask", "screenshot"]),
 ]
 

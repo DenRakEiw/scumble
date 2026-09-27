@@ -670,6 +670,23 @@ function buildCanvasPanel(ed, section) {
         rs.appendChild(rbtn);
         d.appendChild(rs);
 
+        // turn or mirror the whole picture, every layer with it (PLAN_0_1_31 §7); the transform bar has the layer's own
+        const turn = el("div", "ipc-sec");
+        turn.appendChild(el("span", null, "Turn"));
+        for (const [icon, op, title] of [
+            ["rotCCW", -1, "Rotate the whole picture 90° counter-clockwise: every layer, mask and the selection turn with it (undoable)"],
+            ["rotCW", 1, "Rotate the whole picture 90° clockwise: every layer, mask and the selection turn with it (undoable)"],
+            ["rot180", 2, "Rotate the whole picture 180° (undoable)"],
+            ["flipH", "h", "Mirror the whole picture left to right: every layer with it (undoable)"],
+            ["flipV", "v", "Mirror the whole picture top to bottom: every layer with it (undoable)"],
+        ]) {
+            const b = iconButton(icon, title, () => ed.turnDocument(op));
+            b.classList.add("ipc-small");
+            b.dataset.turn = String(op);
+            turn.appendChild(b);
+        }
+        d.appendChild(turn);
+
         // files
         const files = el("div", "ipc-sec");
         const clean = iconButton("broom", "Delete the node's own working files in input/output/temp inpaint_canvas that no workflow uses: not this or any open editor, not any saved workflow, not younger than two minutes. Images you loaded or saved keep their names and are never touched. Asks before deleting.", () => ed.cleanupFiles(), "Clean up files");

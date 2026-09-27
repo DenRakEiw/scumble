@@ -1669,6 +1669,58 @@ const tiled = (Base) => class extends Base {
         return out;
     }
 
+    /**
+     * The pixels mirrored ("h", "v") or turned (1 a quarter turn clockwise, -1 counter-clockwise, 2 a half turn) as new
+     * pixels of this class (PLAN_0_1_31 §7, the document's and a layer's flips and turns). A permutation of the pixels:
+     * every tile that exists is read once and its words land in the one to four new tiles its mapped rectangle falls
+     * in, so a sparse layer stays sparse and nothing is walked where there are no tiles; the bytes move as they are
+     * (no canvas round trip), and the padding of an edge tile stays zero. Clockwise (X, Y) <- (Y, H - 1 - X),
+     * counter-clockwise (X, Y) <- (W - 1 - Y, X), as the canvas backend draws them.
+     */
+    turned(op) {
+        this._guard();
+        const W = this._w, H = this._h, quarter = op === 1 || op === -1;
+        const out = new this.constructor(quarter ? H : W, quarter ? W : H);
+        // the source of a new pixel: sx = A x + B y + C, sy = D x + E y + F
+        let A = 1, B = 0, C = 0, D = 0, E = 1, F = 0;
+        if (op === "h") { A = -1; C = W - 1; }
+        else if (op === "v") { E = -1; F = H - 1; }
+        else if (op === 2) { A = -1; C = W - 1; E = -1; F = H - 1; }
+        else if (op === 1) { A = 0; B = 1; D = -1; E = 0; F = H - 1; }
+        else if (op === -1) { A = 0; B = -1; C = W - 1; D = 1; E = 0; }
+        else throw new Error(`Inpaint Canvas: no turn "${op}"`);
+        // the new place of a source pixel (the inverse): the rectangle a source tile lands in
+        const place = (x, y) => (op === "h" ? [W - 1 - x, y] : op === "v" ? [x, H - 1 - y] : op === 2 ? [W - 1 - x, H - 1 - y]
+            : op === 1 ? [H - 1 - y, x] : [y, W - 1 - x]);
+        const step = A + D * TILE_SIZE;   // one pixel to the right in the new pixels, in the source tile's words
+        const touched = new Set();
+        for (const [key, st] of this._tiles) {
+            const ox = (key & 0xFFFF) << 8, oy = (key >>> 16) << 8;
+            const bw = Math.min(TILE_SIZE, W - ox), bh = Math.min(TILE_SIZE, H - oy);
+            if (bw <= 0 || bh <= 0) continue;
+            const [ax, ay] = place(ox, oy), [bx, by] = place(ox + bw - 1, oy + bh - 1);
+            const rx0 = Math.min(ax, bx), rx1 = Math.max(ax, bx) + 1, ry0 = Math.min(ay, by), ry1 = Math.max(ay, by) + 1;
+            const s32 = u32Of(st);
+            for (let ty = ry0 >> 8; ty <= (ry1 - 1) >> 8; ty++) {
+                for (let tx = rx0 >> 8; tx <= (rx1 - 1) >> 8; tx++) {
+                    const tox = tx << 8, toy = ty << 8;
+                    const x0 = Math.max(rx0, tox), x1 = Math.min(rx1, tox + TILE_SIZE);
+                    const y0 = Math.max(ry0, toy), y1 = Math.min(ry1, toy + TILE_SIZE);
+                    const t = out.writable(tx, ty);   // a new store: its tiles are fresh, or written from another source tile
+                    touched.add((ty << 16) | tx);
+                    const d32 = u32Of(t);
+                    for (let y = y0; y < y1; y++) {
+                        let o = (y - toy) * TILE_SIZE + (x0 - tox);
+                        let s = (D * x0 + E * y + F - oy) * TILE_SIZE + (A * x0 + B * y + C - ox);
+                        for (let x = x0; x < x1; x++, o++, s += step) d32[o] = s32[s];
+                    }
+                }
+            }
+        }
+        for (const key of touched) { const t = out._tiles.get(key); if (t && tileEmpty(t)) out._dropTile(key); }
+        return out;
+    }
+
     // -- canvases out --
 
     /** A new canvas of r filled from the tiles. */

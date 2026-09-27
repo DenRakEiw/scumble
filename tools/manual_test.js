@@ -82,7 +82,7 @@ async function main() {
     check("every_menu_item_the_manual_names_exists", () => {
         // "Copy MCP registration (Claude Code)" is named without its bracket
         const labels = [...main.matchAll(/label:\s*"([^"]+)"/g)].map((m) => m[1].replace(/&/g, "").replace(/\.\.\.$/, "").replace(/ \([^)]*\)$/, ""));
-        const named = [...md.matchAll(/\b(File|Edit|View|Help|Plugins) › ([^.,;:)\n]+)/g)].map((m) => [m[1], m[2]]);
+        const named = [...md.matchAll(/\b(File|Edit|View|Help|Plugins|Image) › ([^.,;:)\n]+)/g)].map((m) => [m[1], m[2]]);
         const bad = named.filter(([, n]) => !labels.some((l) => n.startsWith(l)));
         if (bad.length) throw new Error(`no menu item for: ${bad.map(([m, n]) => m + " › " + n.slice(0, 40)).join(" | ")}`);
         return `${named.length} menu paths`;

@@ -79,6 +79,15 @@ function sampleColor(doc, layer, x, y) {
     return opp(r / n / 255, g / n / 255, b / n / 255);
 }
 
+/** Where an image point (x, y) of a W x H picture lands when the whole picture is turned by `op` (PLAN_0_1_31 §7). */
+function turnPoint(op, x, y, W, H) {
+    if (op === "h") return [W - x, y];
+    if (op === "v") return [x, H - y];
+    if (op === 2) return [W - x, H - y];
+    if (op === 1) return [H - y, x];
+    return [y, W - x];
+}
+
 export function makePoints(scumble) {
     const run = makeRunner(scumble);
     const { ui } = scumble;
@@ -374,5 +383,20 @@ export function makePoints(scumble) {
         },
     };
 
-    return { filter, tool, command, reset: () => { drag = null; } };
+    /**
+     * The whole picture was turned or mirrored (the "geometry" event): every control-points layer's points move with it.
+     * New params objects without an undo step of their own: the turn's step holds the old ones and an undo puts them back.
+     */
+    function follow(doc, op, from) {
+        for (const l of doc.layers()) {
+            if (l.filter !== FILTER_ID) continue;
+            const raw = doc.rawLayer(l.id);
+            const pts = raw.params && Array.isArray(raw.params.points) ? raw.params.points : [];
+            if (!pts.length) continue;
+            raw.params = { ...raw.params, points: pts.map((q) => { const [x, y] = turnPoint(op, q.x, q.y, from.width, from.height); return { ...q, x, y }; }) };
+            doc.refresh(l.id);
+        }
+    }
+
+    return { filter, tool, command, follow, reset: () => { drag = null; } };
 }

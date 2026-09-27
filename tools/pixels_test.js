@@ -2155,6 +2155,69 @@ function pixelsCases(P, T) {
             return { tiles: B.tiles ? m.tileCount : null, worst, alphaBack: diff };
         })],
 
+        // turned(op) (PLAN_0_1_31 §7, the document's and a layer's flips and turns): every pixel lands where the op puts it,
+        // exactly, on a size that is no multiple of 256 (a new tile gathers from two or four source tiles); the ops compose
+        // as they should (four quarter turns, a turn and its inverse, two mirrors, h then v = a half turn); a layer with
+        // one small block far from the origin stays sparse. Compared between the backends byte for byte like every case.
+        ["turned", both(async ({ B, Layer, snap }) => {
+            const W = 601, H = 357;
+            const img = new ImageData(W, H), d = img.data;
+            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 4;
+                d[i] = (x * 7 + y * 3) & 255; d[i + 1] = (x * y) & 255; d[i + 2] = (x ^ y) & 255;
+                d[i + 3] = (x + y) % 5 === 0 ? 0 : 40 + ((x * 13 + y * 29) % 216);
+            }
+            const src = Layer.fromImageData(img);
+            const S = src.readRect(0, 0, W, H).data;   // the stored bytes (premultiplied round trip done)
+            const at = (a, w, x, y) => { const i = (y * w + x) * 4; return a[i] | (a[i + 1] << 8) | (a[i + 2] << 16) | (a[i + 3] << 24); };
+            // where a source pixel (x, y) lands
+            const place = { h: (x, y) => [W - 1 - x, y], v: (x, y) => [x, H - 1 - y], 2: (x, y) => [W - 1 - x, H - 1 - y], 1: (x, y) => [H - 1 - y, x], "-1": (x, y) => [y, W - 1 - x] };
+            const out = {};
+            for (const op of ["h", "v", 2, 1, -1]) {
+                const t = src.turned(op);
+                const q = op === 1 || op === -1;
+                if (t.width !== (q ? H : W) || t.height !== (q ? W : H)) throw new Error(`turned(${op}) is ${t.width} x ${t.height}`);
+                if (t.constructor !== src.constructor) throw new Error(`turned(${op}) changed the class`);
+                const T = t.readRect(0, 0, t.width, t.height).data;
+                let bad = 0, first = null;
+                for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                    const [X, Y] = place[String(op)](x, y);
+                    if (at(S, W, x, y) !== at(T, t.width, X, Y)) { bad++; if (!first) first = [op, x, y, X, Y]; }
+                }
+                if (bad) throw new Error(`turned(${op}): ${bad} pixels not where they belong, first ${JSON.stringify(first)}`);
+                snap(t, "turned " + op);
+                out[op] = t;
+            }
+            // exact on tiles and on CPU canvases; a GPU canvas chain re-premultiplies on its way between GPU and CPU, so
+            // there the alpha is exact and a colour may move by the premultiplied rounding of its alpha (CLAUDE.md)
+            const exact = B.tiles || B.software;
+            let drift = 0;
+            const same = (a, b, what) => {
+                if (a.width !== b.width || a.height !== b.height) throw new Error(what + ": sizes differ");
+                const x = a.readRect(0, 0, a.width, a.height).data, y = b.readRect(0, 0, b.width, b.height).data;
+                for (let i = 0; i < x.length; i++) {
+                    if (x[i] === y[i]) continue;
+                    const alpha = x[i | 3];
+                    if (exact || (i & 3) === 3 || Math.abs(x[i] - y[i]) > 2 * Math.ceil(255 / Math.max(1, alpha)) + 1) throw new Error(what + ": byte " + i + " differs (" + x[i] + " against " + y[i] + ", alpha " + alpha + ")");
+                    drift = Math.max(drift, Math.abs(x[i] - y[i]));
+                }
+            };
+            same(out[1].turned(1).turned(1).turned(1), src, "four quarter turns");
+            same(out[1].turned(-1), src, "a turn and back");
+            same(out[2].turned(2), src, "two half turns");
+            same(out.h.turned("h"), src, "two mirrors");
+            same(out[1].turned(1), out[2], "two quarter turns");
+            same(out.h.turned("v"), out[2], "h then v");
+            // sparse: one 100 px block near the far corner of a 2000 x 1500 layer
+            const big = Layer.empty(2000, 1500);
+            big.fill([1700, 1300, 1800, 1400], "#20c060");
+            const bt = big.turned(1);
+            if (B.tiles && bt.tileCount > 4) throw new Error("a sparse layer turned into " + bt.tileCount + " tiles");
+            const p = bt.readRect(1500 - 1 - 1350, 1750, 1, 1).data;   // (1750, 1350) lands at (H - 1 - 1350, 1750)
+            if (p[3] !== 255 || p[1] < 150) throw new Error("the block of the sparse layer is not where it belongs: " + Array.from(p));
+            return { tiles: B.tiles ? out[1].tileCount : null, sparse: B.tiles ? bt.tileCount : null, drift };
+        })],
+
         // A layer mask inverts in its own white (set_mask invert, hide_selection): the colour passed, 255 - alpha, and a
         // pixel left fully transparent without colour on both backends, compared byte for byte like the red case.
         ["mask_invert_white", both(async ({ B, Mask, snap }) => {

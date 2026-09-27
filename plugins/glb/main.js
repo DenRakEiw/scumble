@@ -13,7 +13,7 @@
 // into the scene. render.js holds the three.js side, dialog.js the dialog.
 
 import { api } from "/editor/host.js";
-import { GlbRenderer, DEFAULTS, normalise, alphaBounds, crop } from "./render.js";
+import { GlbRenderer, DEFAULTS, normalise, alphaBounds, crop, composeOrient, uprightSize, orientCanvas } from "./render.js";
 import { openDialog } from "./dialog.js";
 
 const LAYER_NAME = "3D object";
@@ -34,11 +34,22 @@ export function activate(scumble) {
     const store = () => scumble.storage.get() || {};
     const legacyObjects = () => ({ ...(store().objects || {}) });
     const docObjects = (doc) => ({ ...(scumble.documents.data(doc).get().objects || {}) });
+    // the whole picture turned or mirrored (PLAN_0_1_31 §7): the objects' pixels turned with it, and their parameters
+    // remember it, so Edit 3D object renders them turned too; an undo of the turn puts the document data back by itself
+    scumble.events.on("geometry", (ev) => {
+        if (!ev.doc) return;
+        const all = docObjects(ev.doc);
+        const ids = Object.keys(all).filter((id) => all[id] && all[id].params);
+        if (!ids.length) return;
+        for (const id of ids) all[id] = { ...all[id], params: { ...all[id].params, orient: composeOrient(all[id].params.orient, ev.op) } };
+        scumble.documents.data(ev.doc).set({ objects: all });
+    });
     function remember(doc, layerId, entry, { last = true } = {}) {
         const all = docObjects(doc);
         all[layerId] = entry;
         scumble.documents.data(doc).set({ objects: all });
-        if (last) scumble.storage.set({ last: entry.params });
+        // an orientation belongs to one object in one document: a new object starts upright
+        if (last) { const { orient: _orient, ...rest } = entry.params || {}; scumble.storage.set({ last: rest }); }
         const legacy = legacyObjects();
         if (legacy[layerId]) { delete legacy[layerId]; scumble.storage.set({ objects: legacy }); }
     }
@@ -78,8 +89,10 @@ export function activate(scumble) {
     // ---- render and place --------------------------------------------------------------------------
     /** The colour layer (cropped to the object, placed in document pixels) and, when asked, the depth frame over black. */
     function renderFor(doc, model, p) {
-        const fit = R().fit(doc.width, doc.height);
-        const colour = R().render(model, p, fit.w, fit.h);
+        // rendered in the upright frame and turned like the picture was since the object was placed (`p.orient`)
+        const [uw, uh] = uprightSize(p.orient, doc.width, doc.height);
+        const fit = R().fit(uw, uh);
+        const colour = orientCanvas(R().render(model, p, fit.w, fit.h), p.orient, scumble.makeCanvas);
         const b = alphaBounds(colour);
         if (!b) throw new Error("the object is outside the picture (or too small to see): change position, distance or scale");
         const out = { canvas: crop(colour, b), x: b.x / fit.k, y: b.y / fit.k, w: b.w / fit.k, h: b.h / fit.k, render: fit };
@@ -89,7 +102,7 @@ export function activate(scumble) {
             const ctx = frame.getContext("2d");
             ctx.fillStyle = "#000"; ctx.fillRect(0, 0, fit.w, fit.h);
             ctx.drawImage(dep, 0, 0);
-            out.depth = frame;
+            out.depth = orientCanvas(frame, p.orient, scumble.makeCanvas);
         }
         return out;
     }
@@ -164,7 +177,7 @@ export function activate(scumble) {
             if (!file) return null;
             doc.status(`Reading ${file.name} ...`);
             ref = await refFromFile(file);
-            params = { ...DEFAULTS, ...(store().last || {}) };
+            params = { ...DEFAULTS, ...(store().last || {}), orient: undefined };   // a last saved before this rule had one
             name = file.name.replace(/\.(glb|gltf)$/i, "");
         }
         const model = await fetchModel(ref);

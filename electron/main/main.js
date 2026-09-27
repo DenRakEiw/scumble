@@ -583,6 +583,19 @@ function buildMenu() {
             ],
         },
         {
+            // the whole picture turned or mirrored, every layer with it (PLAN_0_1_31 §7); no accelerators: the editor
+            // takes Ctrl+I and Ctrl+C before a menu could
+            label: "&Image",
+            submenu: [
+                { label: "Rotate 90° Clockwise", click: () => send("menu", "canvas:turn:1") },
+                { label: "Rotate 90° Counter-clockwise", click: () => send("menu", "canvas:turn:-1") },
+                { label: "Rotate 180°", click: () => send("menu", "canvas:turn:2") },
+                { type: "separator" },
+                { label: "Flip Horizontal", click: () => send("menu", "canvas:turn:h") },
+                { label: "Flip Vertical", click: () => send("menu", "canvas:turn:v") },
+            ],
+        },
+        {
             label: "&View",
             submenu: [
                 { label: "Reload", accelerator: "CmdOrCtrl+R", click: () => reloadWindow(false) },

@@ -66,6 +66,77 @@ const UNDO_LABELS = {
     mask: "Layer mask", match: "Colour match", filter: "Filter", text: "Text", layers: "Layers", canvas: "Canvas",
     turn: "Assistant turn taken back",
 };
+/**
+ * An orientation `{ turn, flip }` (quarter turns clockwise after an optional horizontal mirror) with one more flip or turn
+ * ("h", "v", 1, -1, 2) done on top of it: a text layer keeps its own as it is turned (PLAN_0_1_31 §7). A mirror reverses
+ * the turns before it (H R^t = R^-t H), and "v" is a half turn after "h".
+ */
+function composeOrient(o, op) {
+    let turn = ((o && o.turn) | 0) & 3, flip = !!(o && o.flip);
+    if (op === 1) turn = (turn + 1) & 3;
+    else if (op === -1) turn = (turn + 3) & 3;
+    else if (op === 2) turn = (turn + 2) & 3;
+    else if (op === "h") { flip = !flip; turn = (4 - turn) & 3; }
+    else if (op === "v") { flip = !flip; turn = (6 - turn) & 3; }
+    return { turn, flip };
+}
+
+/** The `turned` ops that bring upright pixels into orientation `o`: the mirror first, then the turn. */
+function orientOps(o) {
+    const ops = [], turn = ((o && o.turn) | 0) & 3;
+    if (o && o.flip) ops.push("h");
+    if (turn) ops.push(turn === 1 ? 1 : turn === 2 ? 2 : -1);
+    return ops;
+}
+
+/** The orientation of `first` followed by `then` (both `{ turn, flip }`). */
+function orientChain(first, then) {
+    let r = { turn: ((first && first.turn) | 0) & 3, flip: !!(first && first.flip) };
+    for (const op of orientOps(then)) r = composeOrient(r, op);
+    return r;
+}
+
+/** The orientation that takes `o` back: a mirrored one takes itself back, a turn its opposite (R^t H R^t H = 1). */
+function orientInverse(o) {
+    const turn = ((o && o.turn) | 0) & 3;
+    return o && o.flip ? { turn, flip: true } : { turn: (4 - turn) & 3, flip: false };
+}
+
+const orientIsUp = (o) => !o || (!(((o.turn | 0) & 3)) && !o.flip);
+
+/** A W x H picture's size after a flip or a turn. */
+function turnSize(op, W, H) { return op === 1 || op === -1 ? [H, W] : [W, H]; }
+
+/** A point of a W x H picture (image units, not pixel indices) after a flip or a turn: clockwise (X, Y) = (H - y, x). */
+function turnPoint(op, x, y, W, H) {
+    if (op === "h") return [W - x, y];
+    if (op === "v") return [x, H - y];
+    if (op === 2) return [W - x, H - y];
+    if (op === 1) return [H - y, x];
+    return [y, W - x];
+}
+
+/** A rectangle [x, y, w, h] of a W x H picture after a flip or a turn. */
+function turnRect(op, x, y, w, h, W, H) {
+    const [ax, ay] = turnPoint(op, x, y, W, H), [bx, by] = turnPoint(op, x + w, y + h, W, H);
+    return [Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay)];
+}
+
+/** The canvas transform [a, b, c, d, e, f] that draws a w x h picture in orientation `o` (the mirror, then the turn). */
+function orientMatrix(o, w, h) {
+    let m = [1, 0, 0, 1, 0, 0], W = w, H = h;
+    for (const op of orientOps(o)) {
+        const t = op === "h" ? [-1, 0, 0, 1, W, 0] : op === 2 ? [-1, 0, 0, -1, W, H] : op === 1 ? [0, 1, -1, 0, H, 0] : [0, -1, 1, 0, 0, W];
+        // t after m: (X, Y) = t(m(x, y))
+        m = [t[0] * m[0] + t[2] * m[1], t[1] * m[0] + t[3] * m[1], t[0] * m[2] + t[2] * m[3], t[1] * m[2] + t[3] * m[3],
+            t[0] * m[4] + t[2] * m[5] + t[4], t[1] * m[4] + t[3] * m[5] + t[5]];
+        [W, H] = turnSize(op, W, H);
+    }
+    return m;
+}
+
+const DOC_TURN_LABELS = { 1: "Rotate canvas 90° clockwise", "-1": "Rotate canvas 90° counter-clockwise", 2: "Rotate canvas 180°", h: "Flip canvas horizontally", v: "Flip canvas vertically" };
+
 const MASK_RGB = [255, 255, 255];           // a layer mask's colour where it lets through (the selection's is red)
 const PYRAMID_MIN_PX = 1 << 20;             // sources below 1 MP are drawn straight, no levels
 const PYRAMID_LEVELS = 8;
@@ -847,6 +918,7 @@ const ICONS = {
     flipV: '<path d="M3 12h18" stroke-dasharray="2 2"/><path d="M7 9l5-5 5 5"/><path d="M7 15l5 5 5-5"/>',
     rotCW: '<path d="M4 12a8 8 0 018-8h5"/><path d="M14 1l3 3-3 3"/><rect x="11" y="12" width="9" height="8"/>',
     rotCCW: '<path d="M20 12a8 8 0 00-8-8H7"/><path d="M10 1L7 4l3 3"/><rect x="4" y="12" width="9" height="8"/>',
+    rot180: '<path d="M5 13a7 7 0 1014 0"/><path d="M16 16l3-3 3 3"/><rect x="8" y="3" width="8" height="6"/>',
     center: '<rect x="3" y="3" width="18" height="18"/><path d="M12 8v8M8 12h8"/>',
     resize: '<rect x="3" y="3" width="18" height="18"/><path d="M8 16l8-8"/><path d="M12 8h4v4"/><path d="M12 16H8v-4"/>',
     wand: '<path d="M4 20L15 9"/><path d="M15 9l-2-2 4-4 2 2z"/><path d="M19 2v2M22 5h-2M21 9l-1.5-.5M17 1l-.5 1.5"/>',
@@ -1379,6 +1451,10 @@ class InpaintEditor {
         this.history = [];           // { key, ref, x, y, w, h, prompt, layerId, thumb }
         this.view = { scale: 1, x: 0, y: 0, angle: 0 };
         this.guides = { x: [], y: [] };
+        // what the document's turns and mirrors add up to since it was opened (PLAN_0_1_31 §7): an undo step and a snapshot
+        // keep theirs, so a restore turns what no step holds (the guides, the results history, the saved selections) by the
+        // difference
+        this.docOrient = { turn: 0, flip: false };
         let showRulers = false, showGrid = false, gridSize = 64;
         try { showRulers = localStorage.getItem("ipc.rulers") === "1"; showGrid = localStorage.getItem("ipc.grid") === "1"; gridSize = +localStorage.getItem("ipc.gridSize") || 64; } catch (_) { /* no storage */ }
         this.showRulers = showRulers;
@@ -2998,33 +3074,33 @@ class InpaintEditor {
         if (!l || l.kind === "filter") { this.setStatus("Select a pixel layer to flip."); return; }
         if (l.locked) { this.setStatus(`${l.name} is locked.`); return; }
         if (this.pending) this.cancelPending();
-        this.pushUndo({ kind: "layerfull", id: l.id, label: axis === "h" ? "Flip horizontally" : "Flip vertically" });
-        const flip = (src) => {
-            const c = makeCanvas(src.width, src.height);
-            const ctx = c.getContext("2d");
-            if (axis === "h") { ctx.translate(src.width, 0); ctx.scale(-1, 1); } else { ctx.translate(0, src.height); ctx.scale(1, -1); }
-            ctx.drawImage(src, 0, 0);
-            ctx.setTransform(1, 0, 0, 1, 0, 0);   // no mirror left on the new pixels' context (PLAN_BCE §C1 rule 11)
-            return c;
-        };
-        // replaced, not written (the "layerfull" undo PNG may still be encoding from the old pixels)
         const op = axis === "h" ? "h" : "v";
-        l.px = isTilePixels(l.px) ? this.turnedTilePixels(l.px, op) : this.pixels.Layer.fromCanvas(flip(l.px.toCanvas()));
-        if (l.maskPx) { l.maskPx = isTilePixels(l.maskPx) ? this.turnedTilePixels(l.maskPx, op) : this.pixels.Mask.fromCanvas(flip(l.maskPx.toCanvas())); l.maskDirty = true; }
+        const label = axis === "h" ? "Flip horizontally" : "Flip vertically";
+        // a text layer keeps the flip in its description (the next edit renders it flipped), which only a "layers" step holds
+        this.pushUndo(l.kind === "text" ? { kind: "layers", label } : { kind: "layerfull", id: l.id, label });
+        // replaced, not written (the undo step holds the old pixels)
+        l.px = l.px.turned(op);
+        if (l.maskPx) { l.maskPx = l.maskPx.turned(op); l.maskDirty = true; }
+        if (l.kind === "text" && l.text) l.text = { ...l.text, ...composeOrient(l.text, op) };
         this.markLayerChanged(l);
         this.renderLayers(); this.draw();
         this.setStatus(`${l.name} flipped ${axis === "h" ? "horizontally" : "vertically"}.`);
     }
 
     /**
-     * Tile pixels mirrored (`op` "h" / "v") or turned by 90° (1 clockwise, -1 counter-clockwise) without a canvas:
-     * bands of 256 rows read with readRect, moved in JS and written into new pixels of the same class. The canvas
-     * path made a full-size copy, a GPU canvas of it and read that back, three buffers as large as the layer next
-     * to its tiles, which a 20000 × 12000 layer did not survive (C2's final review). The bytes move exactly (the
-     * canvas path's premultiplied draw rounded low alpha), and the turn is the one the canvas path draws:
-     * clockwise (X, Y) <- (Y, H - 1 - X), counter-clockwise (X, Y) <- (W - 1 - Y, X).
+     * Pixels mirrored (`op` "h" / "v") or turned (1 clockwise, -1 counter-clockwise, 2 a half turn): `src.turned(op)`,
+     * kept under this name for tools/perf_test.py and tools/px_jobs.py. On tiles the words move tile by tile
+     * (PLAN_0_1_31 §7); before, 256-row bands were read, moved in JS and written with a canvas round trip.
      */
     turnedTilePixels(src, op) {
+        return src.turned(op);
+    }
+
+    /**
+     * The band version `turned` replaced: bands of 256 rows read with readRect, moved in JS and written into new pixels
+     * of the same class ("h", "v", 1, -1). Kept to measure against (PLAN_0_1_31 §7).
+     */
+    turnedTilePixelsByBands(src, op) {
         const W = src.width, H = src.height, turn = op === 1 || op === -1, B = 256;
         const out = new src.constructor(turn ? H : W, turn ? W : H);
         for (let y = 0; y < H; y += B) {
@@ -3061,19 +3137,13 @@ class InpaintEditor {
         if (!l || l.kind === "filter") { this.setStatus("Select a pixel layer to rotate."); return; }
         if (l.locked) { this.setStatus(`${l.name} is locked.`); return; }
         if (this.pending) this.cancelPending();
-        this.pushUndo({ kind: "layerfull", id: l.id, label: dir === 1 ? "Rotate 90° clockwise" : "Rotate 90° counter-clockwise" });
-        const rot = (src) => {
-            const c = makeCanvas(src.height, src.width);
-            const ctx = c.getContext("2d");
-            ctx.translate(c.width / 2, c.height / 2);
-            ctx.rotate(dir * Math.PI / 2);
-            ctx.drawImage(src, -src.width / 2, -src.height / 2);
-            ctx.setTransform(1, 0, 0, 1, 0, 0);   // no turn left on the new pixels' context (PLAN_BCE §C1 rule 11)
-            return c;
-        };
-        // replaced, not written (the "layerfull" undo PNG may still be encoding from the old pixels)
-        l.px = isTilePixels(l.px) ? this.turnedTilePixels(l.px, dir) : this.pixels.Layer.fromCanvas(rot(l.px.toCanvas()));
-        if (l.maskPx) { l.maskPx = isTilePixels(l.maskPx) ? this.turnedTilePixels(l.maskPx, dir) : this.pixels.Mask.fromCanvas(rot(l.maskPx.toCanvas())); l.maskDirty = true; }
+        const label = dir === 1 ? "Rotate 90° clockwise" : "Rotate 90° counter-clockwise";
+        // a text layer keeps the turn in its description (the next edit renders it turned), which only a "layers" step holds
+        this.pushUndo(l.kind === "text" ? { kind: "layers", label } : { kind: "layerfull", id: l.id, label });
+        // replaced, not written (the undo step holds the old pixels)
+        l.px = l.px.turned(dir);
+        if (l.maskPx) { l.maskPx = l.maskPx.turned(dir); l.maskDirty = true; }
+        if (l.kind === "text" && l.text) l.text = { ...l.text, ...composeOrient(l.text, dir) };
         const cx = l.x + l.w / 2, cy = l.y + l.h / 2;
         [l.w, l.h] = [l.h, l.w];
         l.x = Math.round(cx - l.w / 2); l.y = Math.round(cy - l.h / 2);
@@ -3097,6 +3167,200 @@ class InpaintEditor {
         if (!outside) return false;
         const reach = 5 * r;
         return [[l.x, l.y], [l.x + l.w, l.y], [l.x, l.y + l.h], [l.x + l.w, l.y + l.h]].some(([cx, cy]) => Math.hypot(ix - cx, iy - cy) <= reach);
+    }
+
+    // ---- the whole document turned or mirrored (PLAN_0_1_31 §7, item 23a) ------------------
+
+    /**
+     * Turn (1 clockwise, -1 counter-clockwise, 2 a half turn) or mirror ("h", "v") the whole document: the base, every
+     * layer with its mask and place, the selection, the guides, the saved selections, the results history and the export
+     * size; text layers keep the turn in their description. One undo step. False (with a status line) when it cannot run.
+     */
+    turnDocument(op) {
+        // one after the other (two clicks on 90° make 180°), and after every edit already under way: a second turn read
+        // the size and the base before the first had put its own back, and left the selection and the layers turned twice
+        const waitFor = [this._turnQueue, ...(this._pendingEdits ? Array.from(this._pendingEdits) : [])].filter(Boolean);
+        const run = Promise.all(waitFor).then(() => this.turnDocumentNow(op));
+        this._turnQueue = run.then(() => {}, () => {});
+        return this.trackEdit(run);   // undo waits for the upload (see extendCanvas)
+    }
+
+    /** Why the document cannot be turned now (a job that would land where the picture was), or "". */
+    turnBlocked() {
+        if (this.providerPending || this.segmentPending || this.cutoutPending || this.objectsPending || this._pointPending
+            || this._loading || this._docSaving) return "Wait for the running job to finish: it would land where the picture was before the turn.";
+        // a render queued on ComfyUI lands in the geometry it was made for (the app's host counts them, host.js)
+        if (this._localRuns && this._localRuns.size) return "A render on your ComfyUI is still running: its result would land where the picture was. Turn the picture when it is in.";
+        if (this.gestureHeld()) return "Release the button first.";
+        return "";
+    }
+
+    async turnDocumentNow(op) {
+        if (!Object.prototype.hasOwnProperty.call(DOC_TURN_LABELS, String(op))) throw new Error(`no document turn "${op}"`);
+        if (!this.base) { this.setStatus("Load an image first."); return false; }
+        const blocked = this.turnBlocked();
+        if (blocked) { this.setStatus(blocked); return false; }
+        const label = DOC_TURN_LABELS[String(op)];
+        let before = null, pushed = false;
+        this._turning = true;   // crop, resize, extend, merge and flatten wait for it (they would replace the base)
+        try {
+            this.setStatus(`${label} ...`);
+            if (this.pending) this.cancelPending();
+            if (this.textEdit) this.endTextEdit(true);
+            // every text layer's pixels as its description says, so the step below holds matching pairs; a render on its
+            // way or scheduled is done now
+            for (const l of this.layers) {
+                if (l.kind !== "text" || !l.text || !(l._textTimer || l._textRendering)) continue;
+                clearTimeout(l._textTimer); l._textTimer = null;
+                await this.renderTextLayer(l);
+            }
+            const again = this.turnBlocked();
+            if (again) { this.setStatus(again); return false; }
+            const W = this.width, H = this.height, [nw, nh] = turnSize(op, W, H);
+            before = this.snapshot({ kind: "canvas" });
+            const gen = this.historyGen, base0 = this.basePx;
+            // the base first: the upload is the only wait, and nothing else is replaced before it is done (as in crop)
+            const px = this.basePx.turned(op);
+            const { ref } = await this.uploadBase(px);
+            // what happened meanwhile: an edit (a stroke, a selection, a merge) is in the document and not in the turn's
+            // step, a drag or a transform works in the old geometry. Nothing is turned then, and the user turns again
+            if (this.historyGen !== gen || this.basePx !== base0 || this.width !== W || this.height !== H || this.gestureHeld()) {
+                if (typeof px.release === "function") px.release();
+                this.setStatus("The picture changed while it was being turned, so nothing was turned. Turn it again.");
+                return false;
+            }
+            if (this.pending) this.cancelPending();
+            // every new store first, then all of them at once: a failure half way leaves the document as it was
+            const turned = new Map();
+            for (const l of this.layers) {
+                turned.set(l, { px: l.kind !== "filter" && l.px ? l.px.turned(op) : null, maskPx: l.maskPx ? l.maskPx.turned(op) : null });
+            }
+            const sel = this.sel.turned(op);
+            for (const l of this.layers) {
+                const t = turned.get(l);
+                if (l.kind === "filter") {
+                    // the whole canvas: the size follows, its (unused, empty) pixels stay as crop leaves them
+                    l.w = nw; l.h = nh;
+                } else {
+                    [l.x, l.y, l.w, l.h] = turnRect(op, l.x, l.y, l.w, l.h, W, H);
+                    // new pixels (the canvas step holds the old ones), turned in their own resolution
+                    if (t.px) l.px = t.px;
+                    if (l.kind === "text" && l.text) {
+                        // the next render (an edit) puts the text in this orientation itself; the text field's pending
+                        // undo step is from before the turn, whose own step holds the layer as it was
+                        l.text = { ...l.text, ...composeOrient(l.text, op) };
+                        l._textUndo = null;
+                    }
+                }
+                if (t.maskPx) l.maskPx = t.maskPx;
+            }
+            this.sel = sel;
+            this.turnExtras([op], W, H);
+            this.docOrient = composeOrient(this.docOrient, op);
+            this.base = { ref, px };
+            this.width = nw; this.height = nh;
+            pushed = true;
+            this.pushUndoSnapshot(before, { tracked: true, label });
+            // every layer's caches and files, once for the document (markLayerChanged would redraw per layer)
+            for (const l of this.layers) {
+                l.dirty = l.kind !== "filter";
+                l.exportRef = null;
+                l._maskedValid = false; l._mcache = null; l._mcacheView = null; l._mcacheSample = null;
+                l._mstats = null; l._mstatsSample = null; l._mstatsSampleRun = null; l._mstatsStack = null; l._mstatsStackRun = null;
+                l._fcache = null; l._fcacheView = null; l._fcacheSample = null; l._fxCache = null; l._bstats = null; l._bstatsRun = null;
+                if (l.maskPx) { l.maskDirty = true; this.touchSource(l.maskPx); }
+                if (l.kind !== "filter") this.touchSource(l.px);
+                this.touchSource(l._masked);
+            }
+            this.scheduleDetachedRelease();
+            this.uploaded = this.makeUploaded();
+            this.dropCompositeCaches();
+            this.touchSource(this.sel);
+            this.selectionDirty = true; this.selectionLoose = false;
+            this.selectionDataUrl = null; this.selectionEncoded = false;
+            // what was under way in the old geometry
+            this.polyPoints = null; this.lassoPoints = null; this.shapePoints = null; this.shapeDrag = null;
+            this.cloneSource = null; this.hover = null;
+            if (this.extendInputs) for (const k of Object.keys(this.extendInputs)) this.extendInputs[k].value = 0;
+            this.renderLayers(); this.renderHistory(); this.renderSelectionList(); this.renderInfo(); this.updateSubbar();
+            this.fitView(); this.drawThumb();
+            // plugins with image coordinates of their own (the film look's control points, 3D objects) follow
+            host.changed(this, { geometry: { op, from: { width: W, height: H }, to: { width: nw, height: nh } } });
+            this.notifyChanged();
+            // every layer's file is the old orientation now: uploaded at once, or a restored session (a crash before the
+            // next edit) would put the upright files into the turned rectangles
+            this.syncLayers().catch((err) => console.warn("Inpaint Canvas: the turned layers could not be stored", err));
+            this.setStatus(`${label}: the picture is ${nw} × ${nh}, every layer turned with it (Ctrl+Z takes it back).`);
+            return true;
+        } catch (err) {
+            if (!pushed && before) this.releaseSnapshot(before);
+            console.error(err);
+            this.setStatus(String(err.message || err));
+            return false;
+        } finally {
+            this._turning = false;
+        }
+    }
+
+    /**
+     * What no pixels carry, turned with them by `ops` (in order, from a W x H picture): the guides, each results-history
+     * entry (its rectangle, and the turn composed into its `orient` so a restore turns the file's pixels), each saved
+     * selection (its `orient`, applied when it is loaded) and the export size.
+     */
+    turnExtras(ops, W, H) {
+        for (const op of ops) {
+            const g = this.guides || { x: [], y: [] }, gx = g.x || [], gy = g.y || [];
+            const flipX = (v) => W - v, flipY = (v) => H - v;
+            if (op === "h") this.guides = { ...g, x: gx.map(flipX), y: gy.slice() };
+            else if (op === "v") this.guides = { ...g, x: gx.slice(), y: gy.map(flipY) };
+            else if (op === 2) this.guides = { ...g, x: gx.map(flipX), y: gy.map(flipY) };
+            else if (op === 1) this.guides = { ...g, x: gy.map(flipY), y: gx.slice() };   // a line y = b goes to x = H - b
+            else this.guides = { ...g, x: gy.slice(), y: gx.map(flipX) };                 // a line x = a goes to y = W - a
+            for (const h of this.history || []) {
+                if ([h.x, h.y, h.w, h.h].every(Number.isFinite)) [h.x, h.y, h.w, h.h] = turnRect(op, h.x, h.y, h.w, h.h, W, H);
+                h.orient = composeOrient(h.orient, op);
+            }
+            for (const sv of this.savedSelections || []) sv.orient = composeOrient(sv.orient, op);
+            const e = this._export;   // the app's export settings (host.js); the node has none
+            if (e && (op === 1 || op === -1)) {
+                [e.width, e.height] = [e.height, e.width];
+                [e.canvasW, e.canvasH] = [e.canvasH, e.canvasW];
+            }
+            [W, H] = turnSize(op, W, H);
+        }
+    }
+
+    /**
+     * A canvas or turn snapshot is about to be put back: what no step holds is turned by the difference between the
+     * snapshot's orientation and the document's (a snapshot from before a turn turns it back), and the plugin data the
+     * snapshot kept comes back.
+     */
+    restoreOrient(snap) {
+        if (snap.orient) {
+            const diff = orientChain(orientInverse(this.docOrient), snap.orient);
+            if (!orientIsUp(diff)) this.turnExtras(orientOps(diff), this.width, this.height);
+            this.docOrient = { ...snap.orient };
+        }
+        if (snap.pluginData !== undefined) this.pluginData = snap.pluginData ? JSON.parse(JSON.stringify(snap.pluginData)) : {};
+    }
+
+    /** The plugins' per-document data as it is now (a copy), for a step that replaces the geometry it refers to. */
+    pluginDataCopy() {
+        return this.pluginData && typeof this.pluginData === "object" ? JSON.parse(JSON.stringify(this.pluginData)) : null;
+    }
+
+    /**
+     * After a change of the whole picture that may keep its size (a flip, a half turn, their undo): a new composite version
+     * (`makeUploaded` swaps the upload cache without one) and no cached flatten, object map or sampled stats, which a
+     * size check would otherwise have caught.
+     */
+    dropCompositeCaches() {
+        this.uploaded.baseHash = null;   // the setter bumps compositeVersion
+        this.uploaded.controlHash = null;
+        this.flatCache = null;
+        this.objects = null;
+        this.objectShapeCache.clear();
+        this.hoverObjectId = 0; this.hoverObjectCanvas = null;
     }
 
     // ---- canvas tool: extend by dragging the frame ---------------------------------
@@ -3123,6 +3387,7 @@ class InpaintEditor {
 
     async cropCanvasNow(v) {
         if (!this.base) return;
+        if (this._turning) { this.setStatus("Wait for the turn to finish."); return; }
         const W = this.width, H = this.height;
         const left = -Math.min(0, v.left || 0), top = -Math.min(0, v.top || 0);
         const right = -Math.min(0, v.right || 0), bottom = -Math.min(0, v.bottom || 0);
@@ -3170,6 +3435,7 @@ class InpaintEditor {
     /** `base`: the new base's pixels at nw x nh (an upscaler's answer) instead of the old base resampled. */
     async resizeImageNow(nw, nh, { base = null } = {}) {
         if (!this.base) return;
+        if (this._turning) { this.setStatus("Wait for the turn to finish."); return; }
         nw = Math.round(nw); nh = Math.round(nh);
         if (!(nw >= 8 && nh >= 8) || (nw === this.width && nh === this.height)) { this.setStatus("Enter a new size."); return; }
         const W = this.width, H = this.height, sx = nw / W, sy = nh / H;
@@ -4919,11 +5185,14 @@ class InpaintEditor {
             const img = await loadImageEl(s.url);
             this.pushUndo({ kind: "selection", label: "Load selection" });
             const W = this.width, H = this.height;
-            // the saved PNG is drawn unscaled at 0, 0 whatever its size: the whole rect (null)
+            // the saved PNG is drawn unscaled at 0, 0 whatever its size: the whole rect (null); turned as the document was
+            // since it was saved (its `orient`, on whole pixels: no smoothing)
+            const m = orientIsUp(s.orient) ? null : orientMatrix(s.orient, img.naturalWidth || img.width, img.naturalHeight || img.height);
             this.sel.drawInto(null, (sctx) => {
                 if (mode === "replace") sctx.clearRect(0, 0, W, H);
                 sctx.globalCompositeOperation = mode === "subtract" ? "destination-out" : "source-over";
-                sctx.drawImage(img, 0, 0);
+                if (m) { sctx.save(); sctx.imageSmoothingEnabled = false; sctx.transform(...m); sctx.drawImage(img, 0, 0); sctx.restore(); }
+                else sctx.drawImage(img, 0, 0);
             });
             this.selectionLabel = mode === "replace" ? s.name : this.selectionLabel;
             this.markSelectionChanged();
@@ -6728,6 +6997,7 @@ class InpaintEditor {
     extendCanvas(vals = null) { return this.trackEdit(this.extendCanvasNow(vals)); }
 
     async extendCanvasNow(vals = null) {
+        if (this._turning) { this.setStatus("Wait for the turn to finish."); return; }
         if (!this.base) { this.setStatus("Load an image first."); return; }
         if (!vals && this.extendInputs && Object.values(this.extendValues()).some((x) => x < 0)) { await this.applyCanvasFrame(); return; }
         const v = vals || this.extendValues();
@@ -6987,6 +7257,8 @@ class InpaintEditor {
             layers,
             pixels,
             activeLayerId: this.activeLayerId,
+            orient: { ...this.docOrient },
+            pluginData: this.pluginDataCopy(),
             doc: {
                 prompt: this.promptText,
                 negative: this.negativeText,
@@ -7113,7 +7385,8 @@ class InpaintEditor {
         if (step.kind === "canvas") {
             // base, size, selection and the layer list (shallow copies: the canvases themselves are never mutated by extend / crop, only replaced)
             const sel = tiles ? { selPx: this.sel.clone() } : { selection: this.snapUrl(this.sel.toCanvas()) };
-            return { kind: "canvas", base: this.base, width: this.width, height: this.height, ...sel, layers: this.layers.map((l) => this.snapshotLayer(l)), activeLayerId: this.activeLayerId };
+            return { kind: "canvas", base: this.base, width: this.width, height: this.height, ...sel, layers: this.layers.map((l) => this.snapshotLayer(l)), activeLayerId: this.activeLayerId,
+                orient: { ...this.docOrient }, pluginData: this.pluginDataCopy() };
         }
         const layer = this.layers.find((l) => l.id === step.id);
         if (!layer) return null;
@@ -7306,6 +7579,8 @@ class InpaintEditor {
             if (this.pending) this.cancelPending();
             if (this.textEdit) this.endTextEdit(false);
             const byId = new Map((snap.pixels || []).map((p) => [p.id, p]));
+            const resized = snap.width !== this.width || snap.height !== this.height;
+            this.restoreOrient(snap);
             this.base = snap.base;
             this.width = snap.width;
             this.height = snap.height;
@@ -7326,8 +7601,11 @@ class InpaintEditor {
             this.sel = sel;
             this.touchSource(sel);
             this.uploaded = this.makeUploaded();
+            this.dropCompositeCaches();
             this.selectionDirty = true; this.selectionLoose = false;
             this.selectionDataUrl = null; this.selectionEncoded = false;
+            if (resized) this.fitView();   // a snapshot from before a quarter turn or a crop
+            this.renderSelectionList();
             // what no undo step holds: the fields set_prompt, set_generation, set_crop and
             // set_settings change; put back the way setValue puts them back
             const doc = snap.doc || {};
@@ -7361,6 +7639,7 @@ class InpaintEditor {
             // saw a new, empty selection, cached its display levels under the version the restored
             // one kept, and the restored selection's bounds came back empty
             const selImg = images.selection || null;   // null: its encode failed, an empty selection
+            this.restoreOrient(snap);
             this.base = snap.base;
             this.width = snap.width;
             this.height = snap.height;
@@ -7375,10 +7654,13 @@ class InpaintEditor {
             this.sel = sel;
             this.touchSource(sel);
             this.uploaded = this.makeUploaded();
+            this.dropCompositeCaches();
             this.selectionDirty = true; this.selectionLoose = false;
             this.selectionDataUrl = null; this.selectionEncoded = false;
             if (this.extendInputs) for (const k of Object.keys(this.extendInputs)) this.extendInputs[k].value = 0;
             this.renderLayers();
+            this.renderHistory();
+            this.renderSelectionList();
             this.renderInfo();
             this.fitView();
             this.drawThumb();
@@ -8599,6 +8881,7 @@ class InpaintEditor {
     mergeDown(layer = this.activeLayer()) { return this.trackEdit(this.mergeDownNow(layer)); }   // undo waits for the upload into the base (see extendCanvas)
 
     async mergeDownNow(layer) {
+        if (this._turning) { this.setStatus("Wait for the turn to finish."); return; }
         if (!layer) { this.setStatus("Select a layer to merge down."); return; }
         if (layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
         if (layer.kind === "filter") { this.setStatus("Filter layers cannot be merged into a layer; Flatten bakes them into the base."); return; }
@@ -8719,13 +9002,27 @@ class InpaintEditor {
         if (layer._textToken !== token || !this.layers.includes(layer)) return;
         const oldRes = (layer.text && layer.text.res) || 2;
         const k = keepScale && layer.px && layer.px.width > 1 ? layer.w / (layer.px.width / oldRes) : 1;
-        // adopts the rendered canvas: replaced, not written (its size changes with every edit)
-        layer.px = this.pixels.Layer.fromCanvas(canvas);
+        // adopts the rendered canvas: replaced, not written (its size changes with every edit); mirrored and turned as the
+        // layer was (the document's turns and the layer's own compose into text.turn / text.flip)
+        let px = this.pixels.Layer.fromCanvas(canvas);
+        const ops = orientOps(layer.text);
+        for (const op of ops) px = px.turned(op);
+        const had = layer.px && layer.px.width > 1, ow = layer.w, oh = layer.h;
+        layer.px = px;
         layer.text.res = res;
-        layer.w = Math.max(1, Math.round(canvas.width / res * k));
-        layer.h = Math.max(1, Math.round(canvas.height / res * k));
+        layer.w = Math.max(1, Math.round(px.width / res * k));
+        layer.h = Math.max(1, Math.round(px.height / res * k));
+        if (had && ops.length) {
+            // the corner the text starts at (the upright top left) stays where it is: a turned or mirrored text grows away
+            // from it, as an upright one grows to the right and down
+            let cx = 0, cy = 0, W = 1, H = 1;
+            for (const op of ops) { [cx, cy] = turnPoint(op, cx, cy, W, H); [W, H] = turnSize(op, W, H); }
+            if (cx) layer.x += ow - layer.w;
+            if (cy) layer.y += oh - layer.h;
+        }
         layer._maskedValid = false;
-        this.textDefaults = { ...layer.text, content: TEXT_DEFAULTS.content };
+        const { turn: _turn, flip: _flip, ...style } = layer.text;   // a new text layer starts upright
+        this.textDefaults = { ...style, content: TEXT_DEFAULTS.content };
         if (missing) this.setStatus(`Font "${layer.text.font}" is not available here; a fallback was used.`);
         this.markLayerChanged(layer);
         this.draw();
@@ -10258,9 +10555,17 @@ class InpaintEditor {
         const paint = (img) => {
             const ctx = canvas.getContext("2d");
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            const s = Math.min(canvas.width / img.width, canvas.height / img.height);
-            const w = img.width * s, hh = img.height * s;
-            ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - hh) / 2, w, hh);
+            // the file turned as the document was since (the entry's `orient`)
+            const quarter = !!(h.orient && (h.orient.turn & 1));
+            const iw = quarter ? img.height : img.width, ih = quarter ? img.width : img.height;
+            const s = Math.min(canvas.width / iw, canvas.height / ih);
+            const w = iw * s, hh = ih * s;
+            ctx.save();
+            ctx.translate((canvas.width - w) / 2, (canvas.height - hh) / 2);
+            ctx.scale(s, s);
+            if (!orientIsUp(h.orient)) ctx.transform(...orientMatrix(h.orient, img.width, img.height));
+            ctx.drawImage(img, 0, 0);
+            ctx.restore();
         };
         const layer = this.layers.find((l) => l.id === h.layerId);
         if (layer && layer.px) {
@@ -10384,7 +10689,11 @@ class InpaintEditor {
     async restoreResult(h) {
         try {
             const img = h.thumbImg || await loadImageEl(viewUrl(h.ref));
-            const layer = this.addLayer({ name: h.name, kind: "result", ref: h.ref, px: this.pixels.Layer.fromImage(img), x: h.x, y: h.y, w: h.w, h: h.h });
+            // the file as the model answered; turned as the document was since (its `orient`), then a file of its own
+            let px = this.pixels.Layer.fromImage(img);
+            for (const op of orientOps(h.orient)) px = px.turned(op);
+            const up = orientIsUp(h.orient);
+            const layer = this.addLayer({ name: h.name, kind: "result", ref: up ? h.ref : null, px, x: h.x, y: h.y, w: h.w, h: h.h, ...(up ? {} : { dirty: true }) });
             h.layerId = layer.id;
             this.renderHistory();
             this.setStatus(`${h.name} restored.`);
@@ -11420,6 +11729,7 @@ class InpaintEditor {
     flatten() { return this.trackEdit(this.flattenNow()); }   // undo waits for the upload (see extendCanvas)
 
     async flattenNow() {
+        if (this._turning) { this.setStatus("Wait for the turn to finish."); return; }
         if (!this.base || !this.layers.length) return;
         if (this.pending) this.cancelPending();
         let before = null, pushed = false;
@@ -12445,11 +12755,12 @@ class InpaintEditor {
                 ...(l.kind === "filter" ? { filter: l.filter, params: l.params, lut: l.lut || null, plate: l.plate || null } : {}),
                 ...(l.kind === "text" && l.text ? { text: l.text } : {}),
             })),
-            history: this.history.slice(-100).map((h) => ({ key: h.key, name: h.name, ref: h.ref, x: h.x, y: h.y, w: h.w, h: h.h, prompt: h.prompt, layerId: h.layerId, time: h.time, seed: h.seed, mode: h.mode, denoise: h.denoise })),
+            history: this.history.slice(-100).map((h) => ({ key: h.key, name: h.name, ref: h.ref, x: h.x, y: h.y, w: h.w, h: h.h, prompt: h.prompt, layerId: h.layerId, time: h.time, seed: h.seed, mode: h.mode, denoise: h.denoise,
+                ...(orientIsUp(h.orient) ? {} : { orient: { ...h.orient } }) })),
             selection: this.selectionDataUrl,
             // E5: where the selection's PNG goes when it holds a box of the mask and not all of it ([x, y, w, h])
             ...(this.selectionDataUrl && this.selectionBox ? { selectionBox: this.selectionBox } : {}),
-            selections: (this.savedSelections || []).map((s) => ({ name: s.name, url: s.url })),
+            selections: (this.savedSelections || []).map((s) => (orientIsUp(s.orient) ? { name: s.name, url: s.url } : { name: s.name, url: s.url, orient: { ...s.orient } })),
             guides: this.guides && (this.guides.x.length || this.guides.y.length) ? this.guides : undefined,
             seen: Array.from(this.seenResults).slice(-200),
             crop: this.cropSettings,
@@ -12588,7 +12899,8 @@ class InpaintEditor {
                 if (stale()) return;
             }
             this.history = (state.history || []).map((h) => ({ ...h }));
-            this.savedSelections = Array.isArray(state.selections) ? state.selections.filter((s) => s && s.url).map((s) => ({ name: s.name || "Selection", url: s.url })) : [];
+            this.savedSelections = Array.isArray(state.selections) ? state.selections.filter((s) => s && s.url).map((s) => (orientIsUp(s.orient) ? { name: s.name || "Selection", url: s.url }
+                : { name: s.name || "Selection", url: s.url, orient: { turn: ((s.orient.turn | 0) & 3), flip: !!s.orient.flip } })) : [];
             this.guides = state.guides && Array.isArray(state.guides.x) && Array.isArray(state.guides.y) ? { x: state.guides.x.map(Number), y: state.guides.y.map(Number) } : { x: [], y: [] };
             this.renderSelectionList();
             for (const key of state.seen || []) this.seenResults.add(key);

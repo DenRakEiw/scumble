@@ -1148,6 +1148,7 @@ async function main() {
             ["set_mask", { layer: "Lyours", op: "hide" }, "ask"],
             ["merge_down", { layer: "Lmine" }, "ask"],
             ["flatten", {}, "ask"],
+            ["rotate_canvas", { angle: 90 }, "ask"], ["flip_canvas", { axis: "horizontal" }, "ask"],
             ["extend_canvas", { left: 100 }, "ask"],
             ["extend_canvas", { left: -100 }, "ask"],
             ["glb_edit", { layer: "Lmine", depth_layer: false }, "auto"],

@@ -422,6 +422,9 @@ function listTree(dir) {
             const notes = [];
             const d = cleanDocument({ selection: "javascript:alert(1)", selectionBox: [0, 0, 1, 1], selections: [{ name: "a", url: "data:image/png;base64,AA==" }, { url: "http://x/y.png" }, null] }, notes);
             assert(d.selection === undefined && d.selectionBox === undefined && d.selections.length === 1 && notes.length === 2, "cleanDocument " + JSON.stringify(d));
+            // a saved selection's orientation (PLAN_0_1_31 §7) is kept, normalised; an upright or broken one is left out
+            const o = cleanDocument({ selections: [{ name: "t", url: "data:image/png;base64,AA==", orient: { turn: 5, flip: 1, x: "y" } }, { name: "u", url: "data:image/png;base64,AA==", orient: { turn: 0 } }, { name: "b", url: "data:image/png;base64,AA==", orient: "left" }] }, []);
+            assert(JSON.stringify(o.selections.map((s) => s.orient || null)) === JSON.stringify([{ turn: 1, flip: true }, null, null]), "cleanDocument orient " + JSON.stringify(o.selections));
             const argv = documentArgs(["--flag", "x.png", target, path.join(scratch, "nope.scumble")], scratch);
             assert(argv.length === 1 && argv[0] === target, "documentArgs " + JSON.stringify(argv));
             return "target kept; 2 selection fields dropped; argv found 1 of 4";

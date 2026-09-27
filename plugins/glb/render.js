@@ -30,7 +30,52 @@ export function normalise(p) {
     if (p.shadow != null) n.shadow = !!p.shadow;
     if (p.depthLayer != null) n.depthLayer = !!p.depthLayer;
     if (p.depth_layer != null) n.depthLayer = !!p.depth_layer;
+    // the whole picture turned or mirrored since the object was placed (PLAN_0_1_31 §7): it is rendered in the upright
+    // frame and then turned like the picture (`turn` quarter turns clockwise after an optional horizontal mirror)
+    if (p.orient && typeof p.orient === "object" && (((p.orient.turn | 0) & 3) || p.orient.flip)) n.orient = { turn: (p.orient.turn | 0) & 3, flip: !!p.orient.flip };
     return n;
+}
+
+/** An orientation `{ turn, flip }` with one more flip or turn ("h", "v", 1, -1, 2) done on top of it. */
+export function composeOrient(o, op) {
+    let turn = ((o && o.turn) | 0) & 3, flip = !!(o && o.flip);
+    if (op === 1) turn = (turn + 1) & 3;
+    else if (op === -1) turn = (turn + 3) & 3;
+    else if (op === 2) turn = (turn + 2) & 3;
+    else if (op === "h") { flip = !flip; turn = (4 - turn) & 3; }
+    else if (op === "v") { flip = !flip; turn = (6 - turn) & 3; }
+    return { turn, flip };
+}
+
+/** The size of the upright frame of a w x h picture in orientation `o`. */
+export function uprightSize(o, w, h) { return o && (o.turn & 1) ? [h, w] : [w, h]; }
+
+/** The canvas transform that draws a w x h upright picture in orientation `o` (the mirror, then the quarter turns). */
+export function orientMatrix(o, w, h) {
+    let m = [1, 0, 0, 1, 0, 0], W = w, H = h;
+    const ops = [];
+    if (o && o.flip) ops.push("h");
+    for (let i = 0; i < (((o && o.turn) | 0) & 3); i++) ops.push(1);
+    for (const op of ops) {
+        const t = op === "h" ? [-1, 0, 0, 1, W, 0] : [0, 1, -1, 0, H, 0];
+        m = [t[0] * m[0] + t[2] * m[1], t[1] * m[0] + t[3] * m[1], t[0] * m[2] + t[2] * m[3], t[1] * m[2] + t[3] * m[3],
+            t[0] * m[4] + t[2] * m[5] + t[4], t[1] * m[4] + t[3] * m[5] + t[5]];
+        if (op === 1) [W, H] = [H, W];
+    }
+    return m;
+}
+
+/** A canvas drawn in orientation `o` (a new canvas; the same one when upright). */
+export function orientCanvas(c, o, make) {
+    if (!o || (!((o.turn | 0) & 3) && !o.flip)) return c;
+    const [w, h] = (o.turn & 1) ? [c.height, c.width] : [c.width, c.height];
+    const out = make(w, h);
+    const ctx = out.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(...orientMatrix(o, c.width, c.height));
+    ctx.drawImage(c, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    return out;
 }
 
 export class GlbRenderer {

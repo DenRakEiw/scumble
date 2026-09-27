@@ -409,6 +409,28 @@ export class LayerPixels {
     }
 
     /**
+     * Mirrored ("h", "v") or turned (1 clockwise, -1 counter-clockwise, 2 a half turn) as new pixels: one draw on whole
+     * pixels with smoothing off, so the pixels move as they are. The tile backend moves the words instead.
+     */
+    turned(op) {
+        this._guard();
+        const W = this.width, H = this.height, quarter = op === 1 || op === -1;
+        const c = makeCanvas(quarter ? H : W, quarter ? W : H);
+        const ctx = c.getContext("2d");
+        ctx.imageSmoothingEnabled = false;
+        // (X, Y) = (a x + c y + e, b x + d y + f)
+        if (op === "h") ctx.setTransform(-1, 0, 0, 1, W, 0);
+        else if (op === "v") ctx.setTransform(1, 0, 0, -1, 0, H);
+        else if (op === 2) ctx.setTransform(-1, 0, 0, -1, W, H);
+        else if (op === 1) ctx.setTransform(0, 1, -1, 0, H, 0);
+        else if (op === -1) ctx.setTransform(0, -1, 1, 0, 0, W);
+        else throw new Error(`Inpaint Canvas: no turn "${op}"`);
+        ctx.drawImage(this._c, 0, 0);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);   // no turn left on the new pixels' context (rule 11)
+        return new this.constructor(c);
+    }
+
+    /**
      * A canvas with the pixels (of `rect` only, when given) for code that needs one: exports,
      * uploads, filters, the transform mesh. Read-only (see the rules at the top).
      */
