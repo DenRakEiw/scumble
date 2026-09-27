@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-27, late night)
+## Where things stand (2026-09-28, early morning)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -95,10 +95,13 @@ verbatim). Check `gh release list` before believing any release state written do
   AltGr+8 / 9 size the brush, the transform's mask note, PNG metadata on by default (with a settings migration for
   profiles that stored the old default) and inputs named like keys left out (`redact.js`), fonts by their own file,
   a PixelMemoryError instead of a RangeError. A four-lens review (workflow, 2026-09-27) found 15, all fixed.
-- **Next: package 4 step 4** (clone: the source overlay from `viewCanvas`, angle / scale / flip of the source through
-  anchors `q = S + A (d - D)`, imported tips for clone and heal). A ready patch and its gate step were written on
-  2026-09-27 (`p_step4.py`, `p_step4_test.py` in that session's scratchpad; `dist/map4/sources.md` §6 is the design),
-  then steps 5 to 10 in order; 4.10 is a popover from the tip preview (the user), built last.
+- **Steps 4 to 6 are done too** (0135a27 clone: source angle / scale / flip through anchors, the overlay from
+  `viewCanvas`, tips; 788e26e flow (option A, the slider from 5 %), the pressure curve, coalesced pen events, a
+  pull-string stabiliser in the new `inpaint_stroke.js`; 6f0dc15 blur and sharpen as the smudge tool's Mode, filtered
+  from the press's picture). Each has a "built" paragraph in the plan and a gate step on both backends.
+- **Next: package 4 step 7** (the 400 px cap: measure 1,000 and 2,000 px with `tools/brush_perf.py`, raise the cap in
+  its four places or make it a share of the short side), then 8 frequency separation + linear light (full tier), 9
+  dodge and burn, 10 the popover. `set_brush` has flow but no smudge / clone parameters yet.
 - The user's answers of 2026-09-27: LaMa is downloaded (package 5), the PNG switch is on by default, 4.10 a popover.
   Open for the user: item 25's look and timing.
 
