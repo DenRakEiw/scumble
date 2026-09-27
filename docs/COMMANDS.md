@@ -786,7 +786,7 @@ The brush tips available under Tip: the built-in round dab and the imported ones
 
 ### `set_brush`
 
-Brush settings of this document: the tip (round, or an imported tip by id or name), size in pixels, hardness and opacity in percent, the tip's spacing in percent of its size, and whether the tip follows the stroke direction. Every parameter is optional.
+Brush settings of this document: the tip (round, or an imported tip by id or name), size in pixels, hardness, opacity and flow in percent, the tip's spacing in percent of its size, and whether the tip follows the stroke direction. Every parameter is optional.
 
 | param | type | description |
 |---|---|---|
@@ -796,6 +796,7 @@ Brush settings of this document: the tip (round, or an imported tip by id or nam
 | `hardness` | number | 0..100 for the paint brush (the eraser keeps its own, see erase_hardness) |
 | `erase_hardness` | number | 0..100 for the eraser |
 | `opacity` | number | brush opacity 0..100 |
+| `flow` | number | brush flow 5..100: below 100 a stroke builds up where it overlaps itself |
 | `spacing` | number | stamp spacing of the active imported tip, in percent of its size (1..200) |
 | `follow` | boolean | rotate an imported tip with the stroke direction |
 

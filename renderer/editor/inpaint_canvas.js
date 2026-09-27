@@ -25,6 +25,7 @@ import { INTERACTIVE, EXPORT } from "./inpaint_pool.js";
 import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.js";
 import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter, writeTiff } from "./inpaint_bands.js";
 import { compositeBox, releaseBoxBuffers } from "./inpaint_boxstack.js";
+import { pressureCurve, Stabiliser } from "./inpaint_stroke.js";
 import { isTiff, TIFF_EXT, tiffInfo, readTiff, tiffPart } from "./inpaint_tiff.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
@@ -1647,6 +1648,15 @@ class InpaintEditor {
             if (e >= 0 && e <= 1) this.eraseHardness = e;
         } catch (_) { /* no storage */ }
         this.brushOpacity = 1;
+        this.brushFlow = 1;             // below 1 the stroke builds up where its stamps overlap (flowStamps)
+        // the pen: its pressure curve and the stabiliser's string in screen pixels (0 off), kept like the hardness
+        this.pressureCurve = "linear";
+        this.stabiliser = 0;
+        try {
+            const pc = localStorage.getItem("ipc.pressureCurve"), st = +localStorage.getItem("ipc.stabiliser");
+            if (pc === "soft" || pc === "hard" || pc === "linear") this.pressureCurve = pc;
+            if (st > 0 && st <= 100) this.stabiliser = st;
+        } catch (_) { /* no storage */ }
         this.color = "#ff3b30";
         this.fillEnclosed = true;
         this.promptText = "";
@@ -1940,6 +1950,7 @@ class InpaintEditor {
         moveCtl(this.hardCtl && this.hardCtl.input.parentElement, "paint erase smudge clone heal");
         // one call: a second one for "shape" overwrote the list and hid the slider for the brushes (e0c00a7 to 0.1.31)
         moveCtl(this.opacCtl && this.opacCtl.input.parentElement, "paint erase clone heal bucket gradient shape");
+        moveCtl(this.flowCtl && this.flowCtl.input.parentElement, "paint erase");
         moveCtl(this.colorLabel, "paint bucket gradient shape");
         moveCtl(this.tipLabel, "paint erase smudge clone heal");
         for (const e of this.tipOnlyEls || []) moveCtl(e, "paint erase");
@@ -1997,6 +2008,16 @@ class InpaintEditor {
         const strVal = el("span", null, this.smudgeOpts.strength + "%");
         str.addEventListener("input", () => { this.smudgeOpts.strength = +str.value; strVal.textContent = str.value + "%"; });
         row("smudge", "Strength", str, strVal);
+        // the pen (PLAN_0_1_31 §4 step 5): how its pressure maps to size, and a stabiliser for a steady line
+        const pcurve = selectInput(["linear", "soft", "hard"], this.pressureCurve, "Pressure: how a pen's pressure sizes the brush. Soft reaches full size with a light hand, hard needs a firm one");
+        pcurve.addEventListener("change", () => { this.pressureCurve = pcurve.value; try { localStorage.setItem("ipc.pressureCurve", pcurve.value); } catch (_) { /* ignore */ } this.root.focus({ preventScroll: true }); });
+        row("paint erase smudge clone heal", "Pressure", pcurve);
+        const stab = document.createElement("input");
+        stab.type = "range"; stab.min = 0; stab.max = 60; stab.value = this.stabiliser;
+        stab.title = "Stabiliser: the brush follows the cursor on a string this many screen pixels long, so a trembling hand draws a calm line (0: off). The release finishes the line to the cursor";
+        const stabVal = el("span", null, this.stabiliser ? this.stabiliser + "px" : "off");
+        stab.addEventListener("input", () => { this.stabiliser = +stab.value; stabVal.textContent = this.stabiliser ? this.stabiliser + "px" : "off"; try { localStorage.setItem("ipc.stabiliser", String(this.stabiliser)); } catch (_) { /* ignore */ } });
+        row("paint erase smudge clone heal", "Stabiliser", stab, stabVal);
         const slen = document.createElement("input");
         slen.type = "range"; slen.min = 0; slen.max = 100; slen.value = this.smudgeOpts.length;
         slen.title = "Length: how much of the picked-up paint the brush keeps from dab to dab. 0 leaves it where it is laid down; towards 100 it goes on to the end of the stroke";
@@ -4485,7 +4506,8 @@ class InpaintEditor {
             this.pushUndo({ kind: "layer", id: layer.id, label: "Smudge" });
             // chosen before the gesture starts: a read during it must see the picture as if no gesture ran (brushSource)
             const src = sample === "layer" ? null : this.brushSource(sample, layer);
-            this.pointer = { kind: "smudge", layer, src, last: [ix, iy], clip: this.strokeClip(layer, layer.px), pressure: e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 1 };
+            const pressure = this.pressureOf(e);
+            this.pointer = { kind: "smudge", layer, src, last: [ix, iy], clip: this.strokeClip(layer, layer.px), pressure, stab: this.newStabiliser(ix, iy, pressure) };
         } else if (this.tool === "clone" || this.tool === "heal") {
             if (e.altKey) {
                 this.cloneSource = { x: ix, y: iy };
@@ -4509,7 +4531,8 @@ class InpaintEditor {
             const src = this.brushSource(sample, layer);
             const dest = heal ? (sample === "all" ? src : this.brushSource("all", layer)) : null;
             const stroke = new StrokeBuffer(layer.px, this.pixels);
-            this.pointer = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: false, last: [ix, iy], pressure: e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 1,
+            const pressure = this.pressureOf(e);
+            this.pointer = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: false, last: [ix, iy], pressure, stab: this.newStabiliser(ix, iy, pressure),
                 clone: { src, dest, off: this.cloneOffset, heal, S: { x: this.cloneSource.x, y: this.cloneSource.y }, xf: this.cloneXf(o) } };
             this.cloneDab(this.pointer, ix, iy, ix, iy);
         } else if (this.tool === "gradient") {
@@ -4532,7 +4555,7 @@ class InpaintEditor {
         } else if (this.tool === "paint" || this.tool === "erase") {
             let layer = this.activeLayer();
             if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
-            const pressure = e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 1;
+            const pressure = this.pressureOf(e);
             // Shift+click: a straight line from where the last stroke on this layer ended
             const prev = this.lastStrokeEnd;
             const lineFrom = e.shiftKey && prev && layer && prev.layerId === layer.id ? [prev.x, prev.y] : null;
@@ -4540,7 +4563,7 @@ class InpaintEditor {
             if (layer && layer.maskPx && layer.maskEdit) {
                 // Painting on the transparency mask: paint reveals, erase hides.
                 const stroke = new StrokeBuffer(layer.maskPx, this.pixels);
-                this.pointer = { kind: "maskpaint", layer, stroke, clip: this.strokeClip(layer, layer.maskPx), erase: this.tool === "erase", white: true, last: [ix, iy], pressure };
+                this.pointer = { kind: "maskpaint", layer, stroke, clip: this.strokeClip(layer, layer.maskPx), erase: this.tool === "erase", white: true, last: [ix, iy], pressure, flow: this.brushFlow, stab: this.newStabiliser(ix, iy, pressure) };
                 if (lineFrom && prev.mask) this.layerDab(this.pointer, lineFrom[0], lineFrom[1], ix, iy); else this.layerDab(this.pointer, ix, iy, ix, iy);
                 this.draw();
                 return;
@@ -4551,7 +4574,7 @@ class InpaintEditor {
                 layer = this.addPaintLayer();
             }
             const stroke = new StrokeBuffer(layer.px, this.pixels);
-            this.pointer = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: this.tool === "erase", last: [ix, iy], pressure };
+            this.pointer = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: this.tool === "erase", last: [ix, iy], pressure, flow: this.brushFlow, stab: this.newStabiliser(ix, iy, pressure) };
             if (lineFrom && !prev.mask) this.layerDab(this.pointer, lineFrom[0], lineFrom[1], ix, iy); else this.layerDab(this.pointer, ix, iy, ix, iy);
         } else if (this.tool === "transform") {
             const layer = this.activeLayer();
@@ -4633,12 +4656,17 @@ class InpaintEditor {
             p.last = [ix, iy];
             p.path.push([ix, iy]);
         } else if (p.kind === "layerpaint" || p.kind === "maskpaint") {
-            if (e.pointerType === "pen" && e.pressure > 0) p.pressure = e.pressure;
-            if (p.shape) this.shapeDab(p, ix, iy, e);
-            else if (p.grad) this.gradientDab(p, ix, iy);
-            else if (p.clone) this.cloneDab(p, p.last[0], p.last[1], ix, iy);
-            else this.layerDab(p, p.last[0], p.last[1], ix, iy);
-            p.last = [ix, iy];
+            if (p.shape || p.grad) {
+                if (e.pointerType === "pen" && e.pressure > 0) p.pressure = this.pressureOf(e);
+                if (p.shape) this.shapeDab(p, ix, iy, e); else this.gradientDab(p, ix, iy);
+                p.last = [ix, iy];
+            } else {
+                for (const [x, y, pr] of this.strokePoints(p, e)) {
+                    p.pressure = pr;
+                    if (p.clone) this.cloneDab(p, p.last[0], p.last[1], x, y); else this.layerDab(p, p.last[0], p.last[1], x, y);
+                    p.last = [x, y];
+                }
+            }
         } else if (p.kind === "shapepoint") {
             // a Bezier point curves the line by dragging its handle out of the click
             if (this.shapeDrag && this.shapePoints) {
@@ -4646,9 +4674,11 @@ class InpaintEditor {
                 if (q) { q.hx = ix - q.x; q.hy = iy - q.y; }
             }
         } else if (p.kind === "smudge") {
-            if (e.pointerType === "pen" && e.pressure > 0) p.pressure = e.pressure;
-            this.smudgeDab(p, p.last[0], p.last[1], ix, iy);
-            p.last = [ix, iy];
+            for (const [x, y, pr] of this.strokePoints(p, e)) {
+                p.pressure = pr;
+                this.smudgeDab(p, p.last[0], p.last[1], x, y);
+                p.last = [x, y];
+            }
         } else if (p.kind === "rect") {
             if (p.startPx) {
                 // in screen pixels, so it is the same gesture at every zoom: on a large image
@@ -4849,6 +4879,7 @@ class InpaintEditor {
         } else if (p.kind === "object") {
             if (!p.moved) this.toggleObjectAt(...this.toImage(e), p);
         } else if (p.kind === "layerpaint") {
+            this.finishStroke(p);   // the stabiliser's rest of the string, before the box is taken
             const box = this.strokeRect(p, p.layer.px);
             this.commitStroke(p);
             this.markLayerChanged(p.layer, box);
@@ -4857,6 +4888,7 @@ class InpaintEditor {
         } else if (p.kind === "shapepoint") {
             this.shapeDrag = null;
         } else if (p.kind === "smudge") {
+            this.finishStroke(p);
             // the box the dabs covered (the whole layer before 0.1.32: every matched layer above lost its statistics)
             if (p.bounds) this.markLayerChanged(p.layer, this.strokeRect(p, p.layer.px));
             this.releaseStrokeScratch();
@@ -4866,6 +4898,7 @@ class InpaintEditor {
             this.releaseStrokeScratch();
             this.draw();
         } else if (p.kind === "maskpaint") {
+            this.finishStroke(p);
             const box = this.strokeRect(p, p.layer.maskPx);
             this.commitStroke(p);
             this.markMaskChanged(p.layer, box);
@@ -5014,8 +5047,10 @@ class InpaintEditor {
         const color = p.white ? "#ffffff" : (p.erase ? "#000000" : this.color);
         const hardness = p.erase ? this.eraseHardness : this.hardness;
         const tip = this.brushTip();
+        const flow = p.flow == null ? 1 : Math.max(0.01, Math.min(1, p.flow));
         c.draw(Math.min(lx0, lx1) - R, Math.min(ly0, ly1) - R, Math.max(lx0, lx1) + R, Math.max(ly0, ly1) + R, (ctx) => {
             ctx.globalCompositeOperation = "source-over";
+            if (flow < 1) { this.flowStamps(ctx, p, tip, lx0, ly0, lx1, ly1, radius, color, hardness, flow); return; }
             if (tip) { this.stampDab(ctx, tip, lx0, ly0, lx1, ly1, radius, color); return; }
             if (hardness >= 0.98) {
                 ctx.strokeStyle = color;
@@ -5055,6 +5090,93 @@ class InpaintEditor {
                 ctx.restore();
             }
         });
+    }
+
+    /**
+     * Flow below 100 % (PLAN_0_1_31 §4 step 5): stamps at even spacing along the stroke, each at alpha `flow`, so paint
+     * builds up where stamps overlap and where the stroke passes again; the distance to the next stamp carries over from
+     * one segment to the next (`p.rest`), so no joint is stamped twice. The round dab is spaced at a quarter of its
+     * diameter (Photoshop's default), a tip at its own spacing. The stroke buffer is 8 bits, so a low flow tops out below
+     * full cover (5 % near 96 %), which is why the slider starts at 5 %. Flow 100 % keeps the path of before.
+     */
+    flowStamps(ctx, p, tip, lx0, ly0, lx1, ly1, radius, color, hardness, flow) {
+        const dist = Math.hypot(lx1 - lx0, ly1 - ly0);
+        if (p.rest != null && dist === 0) return;   // a repeated point adds nothing; the press stamps once
+        const stamp = tip ? this.tipStamp(tip, radius * 2, color) : null;
+        const spacing = Math.max(1, stamp ? Math.max(stamp.width, stamp.height) * (tip.spacing || this.brushTipSpacing) : radius * 0.5);
+        let fill = color;
+        if (!tip && hardness < 0.98) {
+            if (!p.gradient || p.gradientRadius !== radius || p.gradientCtx !== ctx) {
+                const g = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+                const rgb = color.length === 7 ? `${parseInt(color.slice(1, 3), 16)},${parseInt(color.slice(3, 5), 16)},${parseInt(color.slice(5, 7), 16)}` : "0,0,0";
+                g.addColorStop(0, `rgba(${rgb},1)`);
+                g.addColorStop(Math.max(0, Math.min(0.97, hardness)), `rgba(${rgb},1)`);
+                g.addColorStop(1, `rgba(${rgb},0)`);
+                p.gradient = g; p.gradientRadius = radius; p.gradientCtx = ctx;
+            }
+            fill = p.gradient;
+        }
+        const rotate = !!(tip && this.tipRotate);
+        if (rotate && dist > 0.5) this._tipAngle = Math.atan2(ly1 - ly0, lx1 - lx0);
+        const angle = rotate ? (this._tipAngle || 0) : 0;
+        ctx.globalAlpha = flow;
+        let next = p.rest == null ? 0 : p.rest;
+        while (next <= dist) {
+            const t = dist ? next / dist : 0;
+            const x = lx0 + (lx1 - lx0) * t, y = ly0 + (ly1 - ly0) * t;
+            ctx.save();
+            ctx.translate(x, y);
+            if (stamp) { if (angle) ctx.rotate(angle); ctx.drawImage(stamp, -stamp.width / 2, -stamp.height / 2); }
+            else { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill(); }
+            ctx.restore();
+            next += spacing;
+        }
+        p.rest = next - dist;
+        ctx.globalAlpha = 1;
+    }
+
+    /** A pen's pressure through the chosen curve (PLAN_0_1_31 §4 step 5); the mouse and touch paint at 1. */
+    pressureOf(e) {
+        return e && e.pointerType === "pen" && e.pressure > 0 ? pressureCurve(e.pressure, this.pressureCurve) : 1;
+    }
+
+    /** The gesture's stabiliser, or null when it is off: the options bar's string in screen pixels, in image pixels at this zoom. */
+    newStabiliser(ix, iy, pressure) {
+        if (!(this.stabiliser > 0)) return null;
+        const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+        return new Stabiliser(this.stabiliser * dpr / Math.max(1e-6, this.view.scale), ix, iy, pressure);
+    }
+
+    /**
+     * The points a move gives a brush gesture: every coalesced event of `e` (a pen faster than the screen gives several a
+     * frame, and Chromium hands one pointermove per frame), in image pixels with its pressure, through the gesture's
+     * stabiliser; none while its string is slack. A synthetic event without coalesced events is its own one.
+     */
+    strokePoints(p, e) {
+        let evs = null;
+        try { evs = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : null; } catch (_) { evs = null; }
+        if (!evs || !evs.length) evs = [e];
+        const out = [];
+        for (const ce of evs) {
+            const [x, y] = this.toImage(ce);
+            const pr = this.pressureOf(ce);
+            if (p.stab) for (const q of p.stab.push(x, y, pr)) out.push(q);
+            else out.push([x, y, pr]);
+        }
+        return out;
+    }
+
+    /** The release of a brush gesture: the stabiliser's rest of the string, drawn before the stroke is committed. */
+    finishStroke(p) {
+        if (!p || !p.stab) return;
+        for (const [x, y, pr] of p.stab.finish()) {
+            p.pressure = pr;
+            if (p.kind === "smudge") this.smudgeDab(p, p.last[0], p.last[1], x, y);
+            else if (p.clone) this.cloneDab(p, p.last[0], p.last[1], x, y);
+            else if (!p.shape && !p.grad) this.layerDab(p, p.last[0], p.last[1], x, y);
+            p.last = [x, y];
+        }
+        p.stab = null;
     }
 
     // ---- selection tools: wand, feather, saved selections, quick mask ------------------------
@@ -13658,6 +13780,13 @@ class InpaintEditor {
             const cr = this.brushSize / 2 / (xf ? xf.k : 1), k = 6 / s;
             ctx.beginPath(); ctx.arc(q[0], q[1], cr, 0, Math.PI * 2); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(q[0] - k, q[1]); ctx.lineTo(q[0] + k, q[1]); ctx.moveTo(q[0], q[1] - k); ctx.lineTo(q[0], q[1] + k); ctx.stroke();
+            ctx.restore();
+        }
+        if (p && p.stab && p.last && this.hover && (p.last[0] !== this.hover[0] || p.last[1] !== this.hover[1])) {
+            // the stabiliser's string, from where the brush is to the cursor
+            ctx.save();
+            ctx.strokeStyle = "#7cc7ff"; ctx.lineWidth = 1 / s; ctx.setLineDash([4 / s, 3 / s]);
+            ctx.beginPath(); ctx.moveTo(p.last[0], p.last[1]); ctx.lineTo(this.hover[0], this.hover[1]); ctx.stroke();
             ctx.restore();
         }
         if (!(p && p.kind === "pan") && !this.spaceDown) this.drawBrushRing(ctx, s);

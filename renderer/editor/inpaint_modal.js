@@ -99,6 +99,9 @@ function buildTopBar(ed, root) {
     });
     ed.hardCtl.input.title = "Brush hardness. The eraser keeps its own value (soft by default); the slider shows the active tool's.";
     ed.opacCtl = slider("Opacity", 1, 100, 100, (v) => v + "%", (v) => { ed.brushOpacity = v / 100; });
+    // flow builds a stroke up where it passes again (the stroke buffer is 8 bits: below 5 % it would not reach full cover)
+    ed.flowCtl = slider("Flow", 5, 100, 100, (v) => v + "%", (v) => { ed.brushFlow = v / 100; });
+    ed.flowCtl.input.title = "Flow: how much paint each dab lays down; below 100 % a stroke builds up where it overlaps itself. Opacity caps the whole stroke.";
 
     const colorLabel = el("label", null, "Color");
     ed.colorLabel = colorLabel;

@@ -43,6 +43,12 @@ the section for its version; `docs/` and the commit history hold the technical d
   whole layer at every step (up to 8 s a move). Now each reads only what is under the brush: a few milliseconds a
   move at any size, and a gigabyte less memory. Heal matches the colour more exactly. On the base the smudge no
   longer copies the whole base into a layer first: it paints into a new layer from the picture.
+- **Flow, a pressure curve and a stabiliser for the brushes.** **Flow** sets how much paint each dab lays down: below
+  100 % a stroke builds up where it passes again, while Opacity still caps the whole stroke. **Pressure** chooses how
+  a pen's pressure sizes the brush (linear, soft for a light hand, hard), and **Stabiliser** lets the brush follow
+  the cursor on a string, so a trembling hand draws a calm line; letting go finishes the line to the cursor. Fast pen
+  strokes are smoother too: every pen sample between two screen frames is painted now, not only the last one.
+  Agents set the flow with `set_brush`.
 - **Clone and heal turn, scale and mirror their source, and show it under the brush.** New fields in their bar:
   **Angle**, **Scale** and **Flip H / V** set how the source lands (a window reflected the other way, a pattern at
   twice its size), and **Overlay** shows what the brush would copy, half transparent inside the brush circle, while

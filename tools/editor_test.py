@@ -7115,6 +7115,72 @@ try {
 }
 return out;
 """),
+    ("brush_flow_pressure_coalesced_and_stabiliser", """
+// PLAN_0_1_31 §4 step 5 through the real handlers: flow below 100 % builds up where a stroke passes again, every coalesced
+// point of a move is painted, the pressure curve sizes a pen's brush, the stabiliser holds the brush on its string and
+// the release finishes the line to the cursor
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = { tiles: !!ed.tileMode };
+const keep = { flow: ed.brushFlow, curve: ed.pressureCurve, stab: ed.stabiliser, size: ed.brushSize, hard: ed.hardness };
+try {
+    await run("new_canvas", { width: 800, height: 520, doc: d.id });
+    const L = ed.addPaintLayer();
+    ed.activeLayerId = L.id; ed.renderLayers();
+    ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false; ed.view.x = 20; ed.view.y = 20; ed.draw();
+    ed.setTool("paint");
+    ed.color = "#d02020"; ed.brushOpacity = 1; ed.brushTipId = ""; ed.hardness = 1;
+    let pid = 1500;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const init = (type, ix, iy, o = {}) => Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: o.pen ? "pen" : "mouse", pressure: type === "pointerup" ? 0 : (o.pen || 0.5), button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy));
+    const send = (type, ix, iy, o = {}) => { const ev = new PointerEvent(type, Object.assign(init(type, ix, iy, o), o.coalesced ? { coalescedEvents: o.coalesced.map(([x, y]) => new PointerEvent("pointermove", init("pointermove", x, y, o))) } : {})); ed.canvas.dispatchEvent(ev); return ev; };
+    const stroke = (pts, o = {}) => { pid++; send("pointerdown", pts[0][0], pts[0][1], o); for (const [x, y] of pts.slice(1)) send("pointermove", x, y, o); const [ex, ey] = pts[pts.length - 1]; send("pointerup", ex, ey, o); };
+    const line = (x0, x1, y, n = 12) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y]);
+    const alpha = (x, y) => L.px.readRect(x, y, 1, 1).data[3];
+    // 1. flow: 100 % covers, 30 % builds up to less, and more where the stroke comes back
+    ed.brushSize = 40;
+    ed.brushFlow = 1; stroke(line(100, 700, 60));
+    ed.brushFlow = 0.3; stroke(line(100, 700, 140));
+    stroke(line(100, 700, 220).concat(line(700, 100, 220)));
+    ed.brushFlow = 1;
+    out.flow = { full: alpha(400, 60), low: alpha(400, 140), twice: alpha(400, 220) };
+    if (out.flow.full !== 255) throw new Error("flow 100 % did not cover: " + JSON.stringify(out.flow));
+    if (!(out.flow.low > 60 && out.flow.low < 240)) throw new Error("flow 30 % covered " + out.flow.low + " of 255");
+    if (!(out.flow.twice > out.flow.low + 10)) throw new Error("the stroke that came back did not build up: " + JSON.stringify(out.flow));
+    // 2. coalesced points: a move to (700, 300) that passed through (400, 380) paints there, not on the straight line
+    pid++;
+    send("pointerdown", 100, 300);
+    const ev = send("pointermove", 700, 300, { coalesced: [[400, 380], [700, 300]] });
+    out.coalescedGiven = ev.getCoalescedEvents().length;
+    send("pointerup", 700, 300);
+    if (out.coalescedGiven !== 2) throw new Error("this Chromium does not take coalescedEvents in PointerEventInit: " + out.coalescedGiven);
+    out.coalesced = { via: alpha(400, 380), straight: alpha(400, 300) };
+    if (!(out.coalesced.via > 200) || out.coalesced.straight !== 0) throw new Error("the coalesced point was not painted: " + JSON.stringify(out.coalesced));
+    // 3. the pressure curve: a pen at half pressure, 80 px, linear against hard
+    const width = (x) => { const col = L.px.readRect(x, 400, 1, 100).data; let n = 0; for (let i = 3; i < col.length; i += 4) if (col[i] > 127) n++; return n; };
+    ed.brushSize = 80;
+    ed.pressureCurve = "linear"; stroke(line(100, 300, 450), { pen: 0.5 });
+    ed.pressureCurve = "hard"; stroke(line(450, 650, 450), { pen: 0.5 });
+    out.pressure = { linear: width(200), hard: width(550) };
+    if (!(out.pressure.linear >= 34 && out.pressure.linear <= 46 && out.pressure.hard >= 15 && out.pressure.hard <= 26)) throw new Error("the pressure curve does not size the brush: " + JSON.stringify(out.pressure));
+    ed.pressureCurve = "linear";
+    // 4. the stabiliser: 30 screen px of string; a move of 20 image px paints nothing past the press, the release does
+    ed.brushSize = 10; ed.stabiliser = 30;
+    pid++;
+    send("pointerdown", 500, 505);
+    send("pointermove", 520, 505);
+    const held = { stab: !!(ed.pointer && ed.pointer.stab), at: alpha(518, 505) };
+    send("pointerup", 520, 505);
+    out.stabiliser = { ...held, after: alpha(518, 505) };
+    if (!held.stab || held.at !== 0) throw new Error("the stabiliser did not hold the brush on its string: " + JSON.stringify(out.stabiliser));
+    if (!(out.stabiliser.after > 200)) throw new Error("the release did not finish the line to the cursor: " + JSON.stringify(out.stabiliser));
+} finally {
+    ed.brushFlow = keep.flow; ed.pressureCurve = keep.curve; ed.stabiliser = keep.stab; ed.brushSize = keep.size; ed.hardness = keep.hard;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("mask_operations_are_one_step_each", """
 // PLAN_0_1_31 6.4: set_mask's operations, each one undo step, the mask white where it shows, and the mask row's menu
 const d = await run("new_document");
