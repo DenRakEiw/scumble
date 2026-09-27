@@ -49,6 +49,16 @@ the section for its version; `docs/` and the commit history hold the technical d
   new **linear light** blend mode, which every layer can use now; PSD files keep it both ways. A document with a
   linear-light layer needs 0.1.32 or newer to open; every other document still opens in 0.1.31. `set_layer` refuses a
   mistyped blend mode instead of drawing it as normal, and agents get `frequency_separation`.
+- **Dodge, burn and sponge.** A new brush (Shift+O, beside smudge, clone and heal) lightens (dodge) or darkens
+  (burn) the shadows, midtones or highlights by the Exposure you set, with GIMP's own curves; *Protect tones* keeps
+  colours from shifting or clipping. Hold Alt while you press to burn with the dodge and the other way round. The
+  sponge saturates (with *Vibrance*, dull colours gain most and nothing clips) or desaturates. A stroke does not pile
+  up over itself; a new stroke goes further. It works from the layer, the layers below or the whole picture, and on
+  the base it paints into a new layer. *Image › New Dodge & Burn Layer* adds an empty soft-light layer to paint white
+  and black on (the same picture as the classic 50 % grey layer, without its memory); the *(50 % Grey)* entry makes
+  the grey one. Agents get `dodge_burn_layer`. Blur and sharpen now work on a click too, no longer build up within a
+  stroke on the canvas backend or under a filter layer, and no longer erase what a layer holds beyond the picture's
+  edge when they read the picture.
 - **Brushes up to 1,000 px.** The largest brush was 400 px; now it is 1,000, which on a 15,000 px picture still
   paints, clones and smudges without a stutter. The Size slider runs logarithmically, so the small sizes keep their
   room; `[` and `]` and `set_brush` go up to 1,000 as well.

@@ -108,3 +108,72 @@ export function sharpenRGBA(src, w, h, r, amount = 1) {
     }
     return out;
 }
+
+/**
+ * Dodge and burn (PLAN_0_1_31 §4 step 9): the tone curve of GIMP's Dodge / Burn tool (`gimp_gegl_dodgeburn` in
+ * app/gegl/gimp-gegl-loops.cc, the same on 2.10 and 3.x; GPL-3.0 like this project) as a 256-entry table on the sRGB
+ * values: `range` "shadows", "midtones" or "highlights", `exposure` 0..1, `burn` false for dodge. GIMP's third is the
+ * literal 0.333333; its float result is clamped here, where GIMP's 8-bit layers clamp it on the write.
+ */
+export function toneLUT(range, exposure, burn = false) {
+    const e = Math.max(0, Math.min(1, +exposure || 0)) * (burn ? -1 : 1);
+    const lut = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) {
+        const s = i / 255;
+        let d;
+        if (range === "highlights") d = s * (1 + e * 0.333333);
+        else if (range === "shadows") {
+            const f = 0.333333 * Math.abs(e);
+            d = e >= 0 ? f + s - f * s : s < f ? 0 : (s - f) / (1 - f);
+        } else d = Math.pow(s, e < 0 ? 1 - e * 0.333333 : 1 / (1 + e));
+        lut[i] = Math.max(0, Math.min(255, Math.round(d * 255)));
+    }
+    return lut;
+}
+
+/**
+ * A tone table on straight RGBA8, a new Uint8ClampedArray; the alpha stays and transparent pixels keep their bytes.
+ * Per channel as GIMP does, or with `protect` (Protect tones, own): the table on the brightest channel, and the three
+ * scaled alike above the table's floor lut[0] (only a shadows dodge lifts it: black goes to that grey, and a pixel a
+ * level off black lands next to it, not on a saturated speck), which keeps the hue and cannot clip.
+ */
+export function toneRGBA(src, lut, protect = false) {
+    const out = new Uint8ClampedArray(src.length);
+    for (let i = 0; i < src.length; i += 4) {
+        const r = src[i], g = src[i + 1], b = src[i + 2];
+        out[i + 3] = src[i + 3];
+        if (!src[i + 3]) { out[i] = r; out[i + 1] = g; out[i + 2] = b; continue; }
+        if (!protect) { out[i] = lut[r]; out[i + 1] = lut[g]; out[i + 2] = lut[b]; continue; }
+        const v = r > g ? (r > b ? r : b) : (g > b ? g : b), o = lut[0];
+        if (!v) { out[i] = out[i + 1] = out[i + 2] = o; continue; }
+        const k = (lut[v] - o) / v;
+        out[i] = o + r * k; out[i + 1] = o + g * k; out[i + 2] = o + b * k;
+    }
+    return out;
+}
+
+/**
+ * The sponge (own formula; Photoshop's is not published and GIMP has none): each channel moved from the pixel's luma
+ * (BT.601 in integers) by a gain, `amount` 0..1 of the way to grey (desaturate) or up by that much (saturate). Saturating
+ * stops where the first channel would clip, so the hue stays; `vibrance` scales it by 1 - the HSV saturation, so dull
+ * colours gain more than vivid ones. Straight RGBA8 in, a new Uint8ClampedArray out, the alpha kept.
+ */
+export function spongeRGBA(src, amount, saturate = false, vibrance = true) {
+    const k = Math.max(0, Math.min(1, +amount || 0));
+    const out = new Uint8ClampedArray(src.length);
+    for (let i = 0; i < src.length; i += 4) {
+        const r = src[i], g = src[i + 1], b = src[i + 2];
+        out[i] = r; out[i + 1] = g; out[i + 2] = b; out[i + 3] = src[i + 3];
+        const mx = r > g ? (r > b ? r : b) : (g > b ? g : b), mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+        if (!src[i + 3] || mx === mn) continue;   // transparent or grey: nothing to move
+        const y = (77 * r + 150 * g + 29 * b + 128) >> 8;
+        let t;
+        if (saturate) {
+            t = 1 + k * (vibrance ? 1 - (mx - mn) / mx : 1);
+            const lim = Math.min(mx > y ? (255 - y) / (mx - y) : Infinity, mn < y ? y / (y - mn) : Infinity);
+            if (t > lim) t = Math.max(1, lim);
+        } else t = 1 - k;
+        out[i] = y + (r - y) * t; out[i + 1] = y + (g - y) * t; out[i + 2] = y + (b - y) * t;
+    }
+    return out;
+}

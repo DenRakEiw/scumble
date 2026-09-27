@@ -49,7 +49,7 @@ const POLICY = {
 
     // ---- layers -------------------------------------------------------------------------
     add_paint_layer: AUTO, add_filter: AUTO, add_text: AUTO, set_active_layer: AUTO,
-    move_layer: AUTO, duplicate_layer: AUTO, frequency_separation: AUTO, flip_layer: AUTO, center_layer: AUTO,
+    move_layer: AUTO, duplicate_layer: AUTO, frequency_separation: AUTO, dodge_burn_layer: AUTO, flip_layer: AUTO, center_layer: AUTO,
     film_apply_look: AUTO, film_add_point: AUTO,
 
     set_filter: (call) => (hasParams(call) && !call.args.type
@@ -337,7 +337,8 @@ function undoStep(call, facts = {}) {
     const name = String(call && call.name);
     const args = (call && call.args) || {};
     if (READS.has(name)) return null;
-    if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "duplicate_layer", "frequency_separation", "generate", "glb_place"].includes(name)) return "layers";
+    // duplicate_layer, frequency_separation and dodge_burn_layer push their own "layers" step (a second was an empty one)
+    if (["add_paint_layer", "add_filter", "add_text", "add_image_layer", "generate", "glb_place"].includes(name)) return "layers";
     if (name === "film_apply_look") return addsLayer(facts) ? "layers" : null;
     // the selection's upscale adds a result layer as generate does; the whole picture's pushes its own `canvas` step
     if (name === "upscale") return args.scope === "document" ? null : "layers";

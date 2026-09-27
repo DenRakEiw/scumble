@@ -63,6 +63,98 @@ function check(name, ok, detail = "") {
     check("the blur is premultiplied: a colour next to transparency keeps its colour, not darker", noDark);
     const sa = S.sharpenRGBA(half, 10, 1, 1);
     check("the sharpen keeps the alpha", sa.every((v, i) => i % 4 !== 3 || v === half[i]));
+    // dodge and burn (step 9): GIMP's tone curves as tables
+    const RANGES = ["shadows", "midtones", "highlights"], EXPS = [0, 0.1, 0.25, 0.5, 0.75, 1];
+    const T = (range, e, burn) => S.toneLUT(range, e, burn);
+    check("exposure 0 is the identity in every range, dodge and burn", RANGES.every((r) => [false, true].every((b) => T(r, 0, b).every((v, i) => v === i))));
+    let rises = true, dodgeUp = true, burnDown = true;
+    for (const r of RANGES) for (const e of EXPS) for (const b of [false, true]) {
+        const l = T(r, e, b);
+        for (let i = 0; i < 256; i++) { if (i && l[i] < l[i - 1]) rises = false; if (!b && l[i] < i) dodgeUp = false; if (b && l[i] > i) burnDown = false; }
+    }
+    check("every table rises; dodge lies on or above the identity, burn on or below", rises && dodgeUp && burnDown);
+    check("midtones keep 0 and 255, highlights keep 0", EXPS.every((e) => [false, true].every((b) => T("midtones", e, b)[0] === 0 && T("midtones", e, b)[255] === 255 && T("highlights", e, b)[0] === 0)));
+    let shEnds = true;
+    for (const e of EXPS) { const f = 0.333333 * e, bu = T("shadows", e, true); if (T("shadows", e)[0] !== Math.round(f * 255)) shEnds = false; for (let i = 0; i < f * 255; i++) if (bu[i]) shEnds = false; }
+    check("shadows dodge lifts 0 to f*255, shadows burn puts everything below f*255 at 0", shEnds);
+    // hand values from Python (2026-09-27), the literal 0.333333 as third:
+    //   (128/255)**(1/1.5)*255 = 161.06; (128/255)**(1+0.333333)*255 = 101.73; 200*(1-0.333333) = 133.33;
+    //   0.333333*0.5*255 = 42.49996 (an exact third would give 42.5 -> 43); (128/255-0.333333)/(1-0.333333)*255 = 64.5001
+    const hv = [T("midtones", 0.5)[128], T("midtones", 1, true)[128], T("highlights", 1, true)[200], T("shadows", 0.5)[0], T("shadows", 1, true)[128]];
+    check("hand values: midtones dodge/burn, highlights burn, shadows dodge/burn", hv.join() === "161,102,133,42,65", hv.join());
+    check("an unknown range is midtones; exposure is clamped", T("odd", 0.5).join() === T("midtones", 0.5).join() && T("highlights", 3).join() === T("highlights", 1).join() && T("shadows", -1, true).every((v, i) => v === i));
+    // random straight RGBA: a seeded PRNG (mulberry32), a tenth transparent with junk colour, a tenth grey
+    let seed = 0x5eed1234;
+    const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const N = 4000, px = new Uint8ClampedArray(N * 4);
+    for (let p = 0; p < N; p++) {
+        const k = rnd(), c = [0, 0, 0].map(() => (rnd() * 256) | 0);
+        if (k < 0.1) c[1] = c[2] = c[0];
+        px.set([...c, k > 0.9 ? 0 : 1 + ((rnd() * 255) | 0)], p * 4);
+    }
+    const keepsAlpha = (o) => o.every((v, i) => i % 4 !== 3 || v === px[i]);
+    const clearSame = (o) => { for (let i = 0; i < px.length; i += 4) if (!px[i + 3] && (o[i] !== px[i] || o[i + 1] !== px[i + 1] || o[i + 2] !== px[i + 2])) return false; return true; };
+    const ordered = (o) => { for (let i = 0; i < px.length; i += 4) for (const [a, b] of [[0, 1], [1, 2], [0, 2]]) if ((px[i + a] - px[i + b]) * (o[i + a] - o[i + b]) < 0) return false; return true; };
+    // the tone brush on pixels
+    let tAlpha = true, tClear = true, tPlain = true, tOrder = true, tRatio = true, worstR = 0;
+    for (const r of RANGES) for (const e of [0.3, 1]) for (const b of [false, true]) {
+        const l = T(r, e, b), plain = S.toneRGBA(px, l), prot = S.toneRGBA(px, l, true);
+        tAlpha = tAlpha && keepsAlpha(plain) && keepsAlpha(prot);
+        tClear = tClear && clearSame(plain) && clearSame(prot);
+        for (let i = 0; i < px.length; i += 4) if (px[i + 3]) for (let c = 0; c < 3; c++) if (plain[i + c] !== l[px[i + c]]) tPlain = false;
+        tOrder = tOrder && ordered(prot);
+        // protect scales the three alike above the table's floor o = lut[0]: (c' - o) / (lut[v] - o) = c / v to rounding
+        const o = l[0];
+        for (let i = 0; i < px.length; i += 4) {
+            const v = Math.max(px[i], px[i + 1], px[i + 2]), span = l[v] - o;
+            if (!px[i + 3] || !v || !span) continue;
+            for (let c = 0; c < 3; c++) { const d = Math.abs((prot[i + c] - o) / span - px[i + c] / v); worstR = Math.max(worstR, d * span); if (d > 0.5 / span + 1e-9) tRatio = false; }
+        }
+    }
+    check("tone: the alpha stays, transparent pixels keep their bytes (plain and protect)", tAlpha && tClear);
+    check("tone without protect is the table per channel", tPlain);
+    check("tone with protect keeps the channel order and every c/max within rounding", tOrder && tRatio, `worst ${worstR.toFixed(3)} of a level`);
+    // near black a shadows dodge lifts to the floor's grey: a pixel a level off black lands beside it, not on a speck
+    // (the review of 2026-09-28: (1, 0, 0) came out (43, 0, 0) next to (42, 42, 42) when protect only scaled)
+    const shd = T("shadows", 0.5), dark = Uint8ClampedArray.of(0, 0, 0, 255, 1, 0, 0, 255, 0, 1, 0, 255, 2, 1, 0, 255, 5, 3, 2, 255);
+    const dq = S.toneRGBA(dark, shd, true), dp = S.toneRGBA(dark, shd);
+    let speck = 0;
+    for (let i = 0; i < dark.length; i += 4) speck = Math.max(speck, Math.max(dq[i], dq[i + 1], dq[i + 2]) - Math.min(dq[i], dq[i + 1], dq[i + 2]));
+    check("protect is continuous at black under a shadows dodge (no coloured specks)", dq.slice(0, 3).join() === "42,42,42" && speck <= 3 && dq.every((v, i) => Math.abs(v - dp[i]) <= 1), `${Array.from(dq).join()} / per channel ${Array.from(dp).join()}`);
+    const warm = Uint8ClampedArray.of(250, 120, 40, 255), hi = T("highlights", 1);
+    const wp = S.toneRGBA(warm, hi), wq = S.toneRGBA(warm, hi, true);
+    check("highlights dodge 1 on (250,120,40): per channel clips red and shifts the hue, protect keeps the ratio",
+        wp.join() === "255,160,53,255" && wq.join() === "255,122,41,255" && Math.abs(wq[1] / wq[0] - 120 / 250) < 0.005 && Math.abs(wp[1] / wp[0] - 120 / 250) > 0.1, `${wp.join()} / ${wq.join()}`);
+    // the sponge
+    const luma = (i) => (77 * px[i] + 150 * px[i + 1] + 29 * px[i + 2] + 128) >> 8;
+    const spread = (d, i) => Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]);
+    check("sponge amount 0 is the identity (desaturate, saturate, without vibrance)", [[false, true], [true, true], [true, false]].every(([s, v]) => S.spongeRGBA(px, 0, s, v).every((x, i) => x === px[i])));
+    let gAlpha = true, gClear = true, gGrey = true, gOrder = true, gSign = true, gLine = true, gSpread = true;
+    for (const amt of [0.1, 0.5, 1]) for (const [sat, vib] of [[false, true], [true, true], [true, false]]) {
+        const o = S.spongeRGBA(px, amt, sat, vib);
+        gAlpha = gAlpha && keepsAlpha(o); gClear = gClear && clearSame(o); gOrder = gOrder && ordered(o);
+        for (let i = 0; i < px.length; i += 4) {
+            if (!px[i + 3]) continue;
+            if (px[i] === px[i + 1] && px[i] === px[i + 2]) { if (o[i] !== px[i] || o[i + 1] !== px[i] || o[i + 2] !== px[i]) gGrey = false; continue; }
+            const y = luma(i), d = [0, 1, 2].map((c) => px[i + c] - y), n = [0, 1, 2].map((c) => o[i + c] - y);
+            if (d.some((x, c) => x * n[c] < 0)) gSign = false;
+            // the colour moves along its line through the luma: a clipped channel would leave it by far more than rounding
+            for (const [a, b] of [[0, 1], [1, 2], [0, 2]]) if (Math.abs(n[a] * d[b] - n[b] * d[a]) > 0.5 * (Math.abs(d[a]) + Math.abs(d[b])) + 1e-9) gLine = false;
+            if (sat ? spread(o, i) < spread(px, i) : spread(o, i) > spread(px, i)) gSpread = false;
+        }
+    }
+    check("sponge: the alpha stays, transparent and grey pixels keep their bytes", gAlpha && gClear && gGrey);
+    check("sponge keeps the channel order and the side of the luma every channel is on", gOrder && gSign);
+    check("sponge moves along the line through the luma: no channel clips", gLine);
+    check("saturate never narrows max-min, desaturate never widens it", gSpread);
+    const flatG = S.spongeRGBA(px, 1);
+    let allY = true; for (let i = 0; i < px.length; i += 4) if (px[i + 3] && !(flatG[i] === luma(i) && flatG[i + 1] === luma(i) && flatG[i + 2] === luma(i))) allY = false;
+    check("desaturate 1 gives r = g = b = the luma on every visible pixel", allY);
+    // vibrance: at 0.25 neither colour reaches its clip limit (dull 8.3, vivid 1.30), so only the vibrance tells them apart
+    const pair = Uint8ClampedArray.of(140, 120, 110, 255, 220, 60, 30, 255);
+    const gain = (o) => [spread(o, 0) / 30, spread(o, 4) / 190];
+    const [dv, vv] = gain(S.spongeRGBA(pair, 0.25, true)), [dn, vn] = gain(S.spongeRGBA(pair, 0.25, true, false));
+    check("vibrance lifts a dull colour more than a vivid one; without it both gain alike", dv > vv + 0.1 && Math.abs(dn - vn) < 0.05 && dn > 1.2, `vibrance ${dv.toFixed(3)} / ${vv.toFixed(3)}, plain ${dn.toFixed(3)} / ${vn.toFixed(3)}`);
     console.log(failures ? `${failures} FAILED` : "PASS");
     process.exit(failures ? 1 : 0);
 })().catch((err) => { console.error(err); process.exit(1); });

@@ -2214,7 +2214,6 @@ function leaveCanvasOnly({ fullScreenGone = false } = {}) {
     return window.scumble.window.setFullScreen(false).catch((err) => console.warn("canvas only: full screen", err));
 }
 
-/** The canvas-only view on (`true`), off (`false`) or toggled (left out); resolves with the state after. */
 /** Image > Frequency Separation...: the radius asked for (the editor's own dialog), then the two layers (PLAN_0_1_31 §4 step 8). */
 async function frequencySeparation() {
     const ed = host.editor;
@@ -2227,6 +2226,7 @@ async function frequencySeparation() {
     try { await ed.frequencySeparation({ radius: r }); } catch (err) { ed.setStatus(`Frequency separation failed: ${err.message || err}`); }
 }
 
+/** The canvas-only view on (`true`), off (`false`) or toggled (left out); resolves with the state after. */
 async function canvasOnly(on) {
     const want = on === undefined ? !canvasOnlyState : !!on;
     await (want ? enterCanvasOnly() : leaveCanvasOnly());
@@ -2281,6 +2281,7 @@ window.scumble.onMenu((cmd) => {
         if (op !== undefined && host.editor) host.editor.turnDocument(op);
     }
     else if (cmd === "frequency-separation") frequencySeparation();
+    else if (cmd === "dodge-burn-layer" || cmd === "dodge-burn-layer:grey") { if (host.editor) host.editor.dodgeBurnLayer({ grey: cmd.endsWith(":grey") }); }
     else if (cmd === "new-tab") activate(newDocument());
     else if (cmd === "close-tab") closeDocument(host.editor);
     else if (cmd === "next-tab") cycleTab(1);

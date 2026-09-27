@@ -595,6 +595,8 @@ function buildMenu() {
                 { label: "Flip Vertical", click: () => send("menu", "canvas:turn:v") },
                 { type: "separator" },
                 { label: "Frequency Separation...", click: () => send("menu", "frequency-separation") },
+                { label: "New Dodge && Burn Layer", click: () => send("menu", "dodge-burn-layer") },
+                { label: "New Dodge && Burn Layer (50 % Grey)", click: () => send("menu", "dodge-burn-layer:grey") },
             ],
         },
         {

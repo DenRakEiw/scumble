@@ -104,7 +104,12 @@ verbatim). Check `gh release list` before believing any release state written do
   a linear-light layer). The canvas backend's 4 levels in `composite` were stale references (taken before the
   emulation's opacity fix; tiles failed them too): retaken, no tolerance of its own, strict on both backends (plan
   step 8, "Settled"). Open: the GLSL clamp survives the mutation round (opaque test layers).
-- **Next: package 4 step 9** (dodge and burn: `dist/map4/blend.md` §4), then 10 the popover.
+- **Step 9 is done** (the tone brush `tone`, Shift+O: dodge / burn with GIMP's curves, the sponge, Protect tones, Alt
+  swaps; on the smudge engine with the press's picture; the region tier keeps the press by first reads within
+  `boxReach`; Image > New Dodge & Burn Layer, empty soft light or 50 % grey, `dodge_burn_layer`). A three-lens review
+  found 7, all fixed (plan step 9). Open for the user: the dodge & burn layer starts empty (grey is the second menu
+  entry and `grey: true`); flip the default if the user wants Photoshop's grey.
+- **Next: package 4 step 10** (the brush popover, §4 item 10; the user chose a popover on 2026-09-27).
 - The user's answers of 2026-09-27: LaMa is downloaded (package 5), the PNG switch is on by default, 4.10 a popover.
   Open for the user: item 25's look and timing.
 

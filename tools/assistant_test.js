@@ -1232,6 +1232,8 @@ async function main() {
             ["set_filter", { params: { a: 1 } }, "filter"], ["set_filter", { type: "blur", params: { a: 1 } }, null],
             ["set_text", { text: "x" }, "text"], ["set_text", { angle: 30 }, "layers"], ["set_prompt", { prompt: "x" }, null],
             ["list_layers", {}, null], ["screenshot", {}, null],
+            // they push their own step
+            ["duplicate_layer", {}, null], ["frequency_separation", {}, null], ["dodge_burn_layer", {}, null],
         ];
         const badSteps = [];
         for (const [name, args, want] of steps) {

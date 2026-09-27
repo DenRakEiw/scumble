@@ -7338,6 +7338,164 @@ try {
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;
 """),
+    ("dodge_burn_and_sponge_through_the_real_handlers", """
+// PLAN_0_1_31 §4 step 9: the tone brush (Shift+O) through the real pointer handlers. One stroke lays its curve down once
+// (no build-up over itself, GIMP's default) and a second stroke goes further; Alt burns; Protect tones keeps the hue;
+// the sponge desaturates to the luma and saturates without clipping; on the base it paints into a new layer from the
+// picture; the undo says the mode. Then the dodge & burn layer: empty in soft light (paint white lightens), or 50 % grey
+// and neutral to the byte.
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = { tiles: !!ed.tileMode };
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const keep = { ...ed.toneOpts }, size = ed.brushSize, hard = ed.hardness;
+try {
+    await run("new_canvas", { width: 800, height: 400, doc: d.id });
+    const lc = mk(800, 400);
+    {
+        const x = lc.getContext("2d");
+        const img = x.createImageData(800, 400);
+        for (let y = 0; y < 400; y++) for (let xx = 0; xx < 800; xx++) {
+            const i = (y * 800 + xx) * 4;
+            // a grey ramp above (the value is x / 800 of the way), a warm band below
+            const v = y < 200 ? Math.round(xx * 255 / 799) : 0;
+            img.data[i] = y < 200 ? v : 200; img.data[i + 1] = y < 200 ? v : 100; img.data[i + 2] = y < 200 ? v : 50; img.data[i + 3] = 255;
+        }
+        x.putImageData(img, 0, 0);
+    }
+    const L = ed.addLayer({ name: "T", kind: "paint", px: ed.pixels.Layer.fromCanvas(lc), x: 0, y: 0, w: 800, h: 400, dirty: true });
+    ed.activeLayerId = L.id; ed.renderLayers();
+    ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false; ed.view.x = 20; ed.view.y = 20; ed.draw();
+    let pid = 2700;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, alt) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1, altKey: !!alt }, client(ix, iy)));
+    const stroke = (x, y0, y1, alt) => { pid++; ed.canvas.dispatchEvent(ev("pointerdown", x, y0, alt)); for (let i = 1; i <= 12; i++) ed.canvas.dispatchEvent(ev("pointermove", x, y0 + (y1 - y0) * i / 12, alt)); ed.canvas.dispatchEvent(ev("pointerup", x, y1, alt)); };
+    const px = (l, x, y) => Array.from(l.px.readRect(x, y, 1, 1).data);
+    const label = () => ed.undoList().slice(-1)[0].label;
+    ed.setTool("tone");
+    if (ed.tool !== "tone") throw new Error("setTool(tone) left the tool at " + ed.tool);
+    ed.brushSize = 40; ed.hardness = 1;
+    // 1. dodge, midtones 50 %, per channel: the stroke's core is the curve of the press, once
+    Object.assign(ed.toneOpts, { mode: "dodge", range: "midtones", exposure: 50, protect: false, sample: "layer" });
+    const lut = ed.toneStroke().lut;
+    const v0 = px(L, 200, 100)[0];
+    stroke(200, 20, 180);
+    const v1 = px(L, 200, 100)[0];
+    out.dodge = { v0, v1, want: lut[v0], label: label(), away: px(L, 600, 100)[0] };
+    if (Math.abs(v1 - lut[v0]) > 1) throw new Error("one dodge stroke did not lay its curve down once: " + JSON.stringify(out.dodge));
+    if (out.dodge.label !== "Dodge") throw new Error("the undo step is labelled " + out.dodge.label);
+    if (out.dodge.away !== Math.round(600 * 255 / 799)) throw new Error("the dodge reached x 600: " + out.dodge.away);
+    stroke(200, 20, 180);
+    out.dodge.again = px(L, 200, 100)[0];
+    if (Math.abs(out.dodge.again - lut[v1]) > 1) throw new Error("a second stroke did not go further: " + JSON.stringify(out.dodge));
+    // 1b. a click without a move dabs once where it lands (a spot dodge), one undo step (the review of 2026-09-28)
+    const c0 = px(L, 700, 100)[0], nUndo = ed.undoList().length;
+    pid++; ed.canvas.dispatchEvent(ev("pointerdown", 700, 100)); ed.canvas.dispatchEvent(ev("pointerup", 700, 100));
+    out.click = { c0, c1: px(L, 700, 100)[0], want: lut[c0], steps: ed.undoList().length - nUndo };
+    if (Math.abs(out.click.c1 - out.click.want) > 1 || out.click.steps !== 1) throw new Error("a click did not dodge its spot: " + JSON.stringify(out.click));
+    // 1c. with quick mask on the brush refuses: the selection is what is being edited
+    ed.quickMask = true;
+    const q0 = px(L, 650, 100)[0], nq = ed.undoList().length;
+    try { stroke(650, 20, 180); } finally { ed.quickMask = false; }
+    if (px(L, 650, 100)[0] !== q0 || ed.undoList().length !== nq) throw new Error("the tone brush worked with quick mask on");
+    // 2. Alt burns
+    const b0 = px(L, 400, 100)[0];
+    stroke(400, 20, 180, true);
+    const burnLut = (() => { Object.assign(ed.toneOpts, { mode: "burn" }); const t = ed.toneStroke().lut; Object.assign(ed.toneOpts, { mode: "dodge" }); return t; })();
+    out.burn = { b0, b1: px(L, 400, 100)[0], want: burnLut[b0], label: label() };
+    if (Math.abs(out.burn.b1 - out.burn.want) > 1 || out.burn.label !== "Burn") throw new Error("Alt did not burn: " + JSON.stringify(out.burn));
+    // 3. Protect tones: highlights dodge at 100 % on the warm band keeps its 4 : 2 : 1
+    Object.assign(ed.toneOpts, { mode: "dodge", range: "highlights", exposure: 100, protect: true });
+    const hl = ed.toneStroke().lut, k = hl[200] / 200;
+    stroke(100, 220, 380);
+    const w = px(L, 100, 300);
+    out.protect = { got: w, want: [200, 100, 50].map((c) => Math.round(c * k)) };
+    if (w.slice(0, 3).some((c, i) => Math.abs(c - out.protect.want[i]) > 1)) throw new Error("Protect tones did not scale the three alike: " + JSON.stringify(out.protect));
+    Object.assign(ed.toneOpts, { protect: false });
+    stroke(160, 220, 380);
+    const pc = px(L, 160, 300);
+    out.perChannel = { got: pc, want: [hl[200], hl[100], hl[50]] };
+    if (pc.slice(0, 3).some((c, i) => Math.abs(c - out.perChannel.want[i]) > 1)) throw new Error("per channel is not the curve on each channel: " + JSON.stringify(out.perChannel));
+    if (!(pc[1] - w[1] >= 3)) throw new Error("per channel and protect gave the same green: " + pc + " / " + w);
+    // 4. the sponge: desaturate 100 % gives the luma, saturate widens without clipping
+    Object.assign(ed.toneOpts, { mode: "desaturate", exposure: 100 });
+    stroke(300, 220, 380);
+    const g = px(L, 300, 300), yl = (77 * 200 + 150 * 100 + 29 * 50 + 128) >> 8;
+    out.desaturate = { g, y: yl, label: label() };
+    if (g.slice(0, 3).some((c) => Math.abs(c - yl) > 1) || out.desaturate.label !== "Desaturate") throw new Error("desaturate 100 % did not give the luma: " + JSON.stringify(out.desaturate));
+    Object.assign(ed.toneOpts, { mode: "saturate", exposure: 60, vibrance: true });
+    stroke(500, 220, 380);
+    const s = px(L, 500, 300);
+    out.saturate = s;
+    if (!(s[0] > 200 && s[2] < 50 && s[0] < 255 && s[0] - s[2] > 150)) throw new Error("saturate did not widen the band: " + s);
+    // 5. the undo takes the last stroke back
+    await ed.undoStep();
+    if (px(L, 500, 300).slice(0, 3).join() !== "200,100,50") throw new Error("the undo did not bring the band back: " + px(L, 500, 300));
+    // 5b. a layer hanging out of the picture: a brush reading the image finds nothing outside it and leaves that alone
+    const oc = mk(200, 100); { const x = oc.getContext("2d"); x.fillStyle = "rgb(90,90,90)"; x.fillRect(0, 0, 200, 100); }
+    const O = ed.addLayer({ name: "O", kind: "paint", px: ed.pixels.Layer.fromCanvas(oc), x: -100, y: 250, w: 200, h: 100, dirty: true });
+    ed.activeLayerId = O.id; ed.renderLayers();
+    Object.assign(ed.toneOpts, { mode: "dodge", range: "midtones", exposure: 50, protect: true, sample: "image" });
+    stroke(5, 260, 340);
+    out.outside = { out: px(O, 90, 50), in: px(O, 105, 50) };
+    if (out.outside.out.join() !== "90,90,90,255") throw new Error("the brush changed the layer outside the picture: " + out.outside.out);
+    if (!(out.outside.in[0] > 110)) throw new Error("the brush did not dodge inside the picture: " + out.outside.in);
+    ed.removeLayer(O.id);
+    ed.activeLayerId = L.id;
+    // 6. on the base: a new layer from the picture, the base untouched
+    ed.removeLayer(L.id);
+    const bc = mk(800, 400); { const x = bc.getContext("2d"); x.fillStyle = "rgb(100,100,100)"; x.fillRect(0, 0, 800, 400); }
+    await ed.setBase({ filename: "tone_base.png", subfolder: "inpaint_canvas", type: "input" }, bc, { keepLayers: false });
+    ed.activeLayerId = null; ed.renderLayers();
+    const n0 = ed.layers.length;
+    Object.assign(ed.toneOpts, { mode: "dodge", range: "midtones", exposure: 50, protect: true, sample: "layer" });
+    const want = ed.toneStroke().lut[100];
+    stroke(400, 50, 350);
+    const N = ed.layers[ed.layers.length - 1];
+    out.base = { added: ed.layers.length - n0, kind: N && N.kind, px: N && px(N, 400, 200), base: Array.from(ed.basePx.readRect(400, 200, 1, 1).data), want, sample: ed.toneOpts.sample };
+    if (out.base.added !== 1 || out.base.kind !== "paint") throw new Error("the tone brush on the base did not make one paint layer: " + JSON.stringify(out.base));
+    if (Math.abs(out.base.px[0] - want) > 1 || out.base.px[3] < 250) throw new Error("the new layer does not hold the dodged picture: " + JSON.stringify(out.base));
+    if (out.base.base[0] !== 100) throw new Error("the tone brush wrote the base: " + out.base.base);
+    if (out.base.sample !== "image") throw new Error("Sample did not switch to image: " + out.base.sample);
+    ed.removeLayer(N.id);
+    // 6b. a blur filter layer above the layer (the region tier, on tiles too): each dab's write spreads the blur's reach
+    // past its box, and the stroke still lays the press's curve (the first reads take that reach around the box)
+    const fc = mk(800, 400); { const x = fc.getContext("2d"); x.fillStyle = "rgb(100,100,100)"; x.fillRect(0, 0, 800, 400); }
+    const F = ed.addLayer({ name: "F", kind: "paint", px: ed.pixels.Layer.fromCanvas(fc), x: 0, y: 0, w: 800, h: 400, dirty: true });
+    const bl = ed.addFilterLayer("blur");
+    bl.params = { ...(bl.params || {}), radius: 4 }; bl._fcache = null; bl._fcacheView = null;
+    ed.activeLayerId = F.id; ed.renderLayers();
+    Object.assign(ed.toneOpts, { mode: "dodge", range: "midtones", exposure: 50, protect: true, sample: "image" });
+    stroke(400, 100, 300);
+    out.filterAbove = { got: px(F, 400, 200), want: ed.toneStroke().lut[100] };
+    if (Math.abs(out.filterAbove.got[0] - out.filterAbove.want) > 1) throw new Error("under a blur filter the stroke compounded: " + JSON.stringify(out.filterAbove));
+    ed.removeLayer(bl.id); ed.removeLayer(F.id);
+    // 7. the dodge & burn layer: empty soft light, painted white at half alpha, lightens; 50 % grey is neutral to the byte
+    const flat = () => { ed.flatCache = null; return Array.from(ed.flattenToCanvas({ forRun: false }).getContext("2d").getImageData(400, 200, 1, 1).data); };
+    const plain = flat();
+    const e = await run("dodge_burn_layer", { doc: d.id });
+    const E = ed.layers.find((l) => l.id === e.id);
+    out.layer = { blend: E.blend, name: E.name, active: ed.activeLayerId === E.id, empty: px(E, 400, 200)[3], label: label(), flatEmpty: flat() };
+    if (E.blend !== "soft-light" || !out.layer.active || out.layer.empty !== 0 || out.layer.label !== "Dodge & burn layer") throw new Error("the dodge & burn layer is not an empty active soft-light layer: " + JSON.stringify(out.layer));
+    if (out.layer.flatEmpty.join() !== plain.join()) throw new Error("the empty layer changed the picture: " + out.layer.flatEmpty);
+    E.px.drawInto(null, (c) => { c.fillStyle = "rgba(255,255,255,0.5)"; c.fillRect(0, 0, 800, 400); });
+    ed.markLayerChanged(E);
+    out.layer.white = flat();
+    if (!(out.layer.white[0] > plain[0] + 5)) throw new Error("white on the soft-light layer did not lighten: " + out.layer.white);
+    await ed.undoStep();
+    if (ed.layers.includes(E)) throw new Error("the undo left the dodge & burn layer");
+    const gr = await run("dodge_burn_layer", { doc: d.id, grey: true });
+    const G = ed.layers.find((l) => l.id === gr.id);
+    out.grey = { px: px(G, 400, 200), flat: flat() };
+    if (out.grey.px.join() !== "128,128,128,255") throw new Error("the grey layer holds " + out.grey.px);
+    for (const op of [1, 0.5]) { G.opacity = op; ed.bumpComposite(G, null); const f = flat(); if (f.join() !== plain.join()) throw new Error("50 % grey is not neutral at opacity " + op + ": " + f + " against " + plain); }
+} finally {
+    Object.assign(ed.toneOpts, keep); ed.brushSize = size; ed.hardness = hard;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("mask_operations_are_one_step_each", """
 // PLAN_0_1_31 6.4: set_mask's operations, each one undo step, the mask white where it shows, and the mask row's menu
 const d = await run("new_document");

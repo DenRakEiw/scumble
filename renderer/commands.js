@@ -788,6 +788,11 @@ const COMMANDS = {
         params: { radius: P.num("the blur radius in pixels (default: 0.4 % of the picture's short side)") },
         async run(ed, a) { const r = await ed.frequencySeparation({ radius: a.radius }); if (!r) throw new Error(ed.status); return r; },
     },
+    dodge_burn_layer: {
+        description: "A dodge & burn layer on top: a paint layer in soft light where white paint lightens and black darkens. Empty by default (the same picture as 50 % grey, no memory until painted); grey fills it with 50 % grey. One undo step; the layer becomes active.",
+        params: { grey: P.bool("fill it with 50 % grey (Photoshop's habit; about 600 MB at 15000 x 10000)") },
+        async run(ed, a) { const l = ed.dodgeBurnLayer({ grey: !!a.grey }); if (!l) throw new Error(ed.status); return layerSummary(ed, l); },
+    },
     duplicate_layer: { description: "Duplicate a layer (the copy sits above it).", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); const c = ed.duplicateLayer(l); if (!c) throw new Error(ed.status); return layerSummary(ed, c); } },
     merge_down: { description: "Merge a layer into the one below it (into the base image if it is the lowest).", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); const n = ed.layers.length; await ed.mergeDown(l); if (ed.layers.length === n && ed.layers.includes(l)) throw new Error(ed.status); return { layers: ed.layers.map((x) => layerSummary(ed, x)), status: ed.status }; } },
     move_layer: {

@@ -25,7 +25,7 @@ import { INTERACTIVE, EXPORT } from "./inpaint_pool.js";
 import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.js";
 import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter, writeTiff } from "./inpaint_bands.js";
 import { compositeBox, releaseBoxBuffers } from "./inpaint_boxstack.js";
-import { pressureCurve, Stabiliser, blurRGBA, sharpenRGBA } from "./inpaint_stroke.js";
+import { pressureCurve, Stabiliser, blurRGBA, sharpenRGBA, toneLUT, toneRGBA, spongeRGBA } from "./inpaint_stroke.js";
 import { isTiff, TIFF_EXT, tiffInfo, readTiff, tiffPart } from "./inpaint_tiff.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
@@ -300,6 +300,9 @@ const CURSOR_CLASSES = ["ipc-scale", "ipc-scale-ne", "ipc-scale-x", "ipc-scale-y
 const BLEND_MODES = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "linear-light", "difference"];
 // modes Canvas 2D has no globalCompositeOperation for: drawn through `blendEmulated` (PLAN_0_1_31 §4 step 8)
 const EMULATED_BLENDS = new Set(["linear-light"]);
+
+// the tone brush's dab through the smudge engine: the whole of its curve at every dab, nothing carried (§4 step 9)
+const TONE_DAB = Object.freeze({ strength: 100, length: 0 });
 // the largest box frequency separation takes at once (two float copies of it are 32 bytes a pixel)
 const FREQ_MAX_PX = 16e6;
 // linear light over the backdrop (the input), the W3C source-over-with-blend of inpaint_compositor.js, straight alpha
@@ -1121,6 +1124,7 @@ const ICONS = {
     blur: '<circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/>',
     smudge: '<path d="M8 21c-3 0-5-2-5-5v-6a2 2 0 014 0v3"/><path d="M7 13V5a2 2 0 014 0v7"/><path d="M11 12V7a2 2 0 014 0v5"/><path d="M15 12v-1a2 2 0 014 0v5c0 3-2 5-5 5H8"/>',
     clone: '<path d="M5 21h14"/><path d="M4 17h16v-4H4z"/><path d="M9 13V7a3 3 0 016 0v6"/>',
+    tone: '<circle cx="14.5" cy="9.5" r="5.5"/><path d="M14.5 4a5.5 5.5 0 010 11z" fill="currentColor" stroke="none"/><path d="M10.6 13.4L3.5 20.5"/>',
     heal: '<rect x="2" y="9" width="20" height="6" rx="3" transform="rotate(-45 12 12)"/><path d="M10 10l4 4"/><path d="M14 10l-4 4"/>',
     eyedropper: '<path d="M4 20l1-4 9-9 3 3-9 9z"/><path d="M14 7l3-3 3 3-3 3"/>',
     bucket: '<path d="M4 11l7-7 8 8-7 7z"/><path d="M4 11h11"/><path d="M19 14c0 2 1.5 3 1.5 4.5a1.5 1.5 0 01-3 0C17.5 17 19 16 19 14z" fill="currentColor" stroke="none"/>',
@@ -1975,13 +1979,13 @@ class InpaintEditor {
         this.gradientOpts = { type: "linear", to: "transparent" };
         // the brush settings move from the top bar into this bar and show for the tools that use them
         const moveCtl = (labelEl, forTools) => { if (!labelEl) return; labelEl.dataset.for = forTools; bar.appendChild(labelEl); };
-        moveCtl(this.sizeCtl && this.sizeCtl.input.parentElement, "select deselect paint erase smudge clone heal");
-        moveCtl(this.hardCtl && this.hardCtl.input.parentElement, "paint erase smudge clone heal");
+        moveCtl(this.sizeCtl && this.sizeCtl.input.parentElement, "select deselect paint erase smudge tone clone heal");
+        moveCtl(this.hardCtl && this.hardCtl.input.parentElement, "paint erase smudge tone clone heal");
         // one call: a second one for "shape" overwrote the list and hid the slider for the brushes (e0c00a7 to 0.1.31)
         moveCtl(this.opacCtl && this.opacCtl.input.parentElement, "paint erase clone heal bucket gradient shape");
         moveCtl(this.flowCtl && this.flowCtl.input.parentElement, "paint erase");
         moveCtl(this.colorLabel, "paint bucket gradient shape");
-        moveCtl(this.tipLabel, "paint erase smudge clone heal");
+        moveCtl(this.tipLabel, "paint erase smudge tone clone heal");
         for (const e of this.tipOnlyEls || []) moveCtl(e, "paint erase");
         this.syncTipControls();
         const row = (cls, ...nodes) => { const lab = el("label", null); lab.dataset.for = cls; for (const n of nodes) lab.appendChild(typeof n === "string" ? el("span", null, n) : n); bar.appendChild(lab); return lab; };
@@ -2044,13 +2048,13 @@ class InpaintEditor {
         // the pen (PLAN_0_1_31 §4 step 5): how its pressure maps to size, and a stabiliser for a steady line
         const pcurve = selectInput(["linear", "soft", "hard"], this.pressureCurve, "Pressure: how a pen's pressure sizes the brush. Soft reaches full size with a light hand, hard needs a firm one");
         pcurve.addEventListener("change", () => { this.pressureCurve = pcurve.value; try { localStorage.setItem("ipc.pressureCurve", pcurve.value); } catch (_) { /* ignore */ } this.root.focus({ preventScroll: true }); });
-        row("paint erase smudge clone heal", "Pressure", pcurve);
+        row("paint erase smudge tone clone heal", "Pressure", pcurve);
         const stab = document.createElement("input");
         stab.type = "range"; stab.min = 0; stab.max = 60; stab.value = this.stabiliser;
         stab.title = "Stabiliser: the brush follows the cursor on a string this many screen pixels long, so a trembling hand draws a calm line (0: off). The release finishes the line to the cursor";
         const stabVal = el("span", null, this.stabiliser ? this.stabiliser + "px" : "off");
         stab.addEventListener("input", () => { this.stabiliser = +stab.value; stabVal.textContent = this.stabiliser ? this.stabiliser + "px" : "off"; try { localStorage.setItem("ipc.stabiliser", String(this.stabiliser)); } catch (_) { /* ignore */ } });
-        row("paint erase smudge clone heal", "Stabiliser", stab, stabVal);
+        row("paint erase smudge tone clone heal", "Stabiliser", stab, stabVal);
         const slen = document.createElement("input");
         slen.type = "range"; slen.min = 0; slen.max = 100; slen.value = this.smudgeOpts.length;
         slen.title = "Length: how much of the picked-up paint the brush keeps from dab to dab. 0 leaves it where it is laid down; towards 100 it goes on to the end of the stroke";
@@ -2065,6 +2069,36 @@ class InpaintEditor {
         sfinger.type = "checkbox"; sfinger.title = "Finger painting: every stroke starts with the paint colour on the brush";
         sfinger.addEventListener("change", () => { this.smudgeOpts.finger = sfinger.checked; });
         row("smudge", sfinger, "Finger");
+        // dodge / burn / sponge (PLAN_0_1_31 §4 step 9): GIMP's curves, Photoshop's options; the smudge's stroke engine
+        this.toneOpts = { mode: "dodge", range: "midtones", exposure: 50, protect: true, vibrance: true, sample: "layer" };
+        const tmode = selectInput(["dodge", "burn", "saturate", "desaturate"], "dodge", "Dodge lightens, burn darkens; saturate and desaturate are the sponge. Alt while pressing swaps dodge and burn, saturate and desaturate, for that stroke");
+        tmode.addEventListener("change", () => { this.toneOpts.mode = tmode.value; this.root.focus({ preventScroll: true }); this.updateOptsBar(); });
+        this.toneModeSel = tmode;
+        row("tone", "Mode", tmode);
+        const trange = selectInput(["shadows", "midtones", "highlights"], "midtones", "Range: which tones dodge and burn act on most");
+        trange.addEventListener("change", () => { this.toneOpts.range = trange.value; this.root.focus({ preventScroll: true }); });
+        this.toneRangeRow = row("tone", "Range", trange);
+        const texp = document.createElement("input");
+        texp.type = "range"; texp.min = 1; texp.max = 100; texp.value = this.toneOpts.exposure;
+        texp.title = "Exposure: how strongly one stroke lightens, darkens or changes the saturation. A stroke does not build up over itself; paint again to go further";
+        const texpVal = el("span", null, this.toneOpts.exposure + "%");
+        texp.addEventListener("input", () => { this.toneOpts.exposure = +texp.value; texpVal.textContent = texp.value + "%"; });
+        this.toneExpName = el("span", null, "Exposure");
+        row("tone", this.toneExpName, texp, texpVal);
+        const tprotect = document.createElement("input");
+        tprotect.type = "checkbox"; tprotect.checked = true;
+        tprotect.title = "Protect tones: the curve moves the brightest channel and the other two keep their share of it, so colours neither shift nor clip. Off: each channel on its own, as GIMP does";
+        tprotect.addEventListener("change", () => { this.toneOpts.protect = tprotect.checked; });
+        this.toneProtectRow = row("tone", tprotect, "Protect tones");
+        const tvib = document.createElement("input");
+        tvib.type = "checkbox"; tvib.checked = true;
+        tvib.title = "Vibrance: dull colours gain more saturation than vivid ones";
+        tvib.addEventListener("change", () => { this.toneOpts.vibrance = tvib.checked; });
+        this.toneVibranceRow = row("tone", tvib, "Vibrance");
+        const tsample = selectInput(["layer", "below", "image"], "layer", "What the brush works from: the active layer alone, the layers up to it (below), or the visible image (all layers), written into the active layer. On the base it always takes the image and paints into a new layer");
+        tsample.addEventListener("change", () => { this.toneOpts.sample = tsample.value; this.root.focus({ preventScroll: true }); });
+        this.toneSampleSel = tsample;
+        row("tone", "Sample", tsample);
         const csample = selectInput(["image", "layer"], "image", "Where the copied pixels come from: the visible image (all layers) or the active layer alone");
         csample.addEventListener("change", () => { this.cloneOpts.sample = csample.value; });
         row("clone heal", "Sample", csample);
@@ -2138,7 +2172,7 @@ class InpaintEditor {
     updateOptsBar() {
         if (!this.optsBar) return;
         const tool = this.tool;
-        const on = ["select", "deselect", "paint", "erase", "bucket", "gradient", "eyedropper", "smudge", "clone", "heal", "wand", "shape", "canvas"].includes(tool);
+        const on = ["select", "deselect", "paint", "erase", "bucket", "gradient", "eyedropper", "smudge", "tone", "clone", "heal", "wand", "shape", "canvas"].includes(tool);
         this.optsBar.hidden = !on;
         if (!on) return;
         for (const lab of this.optsBar.querySelectorAll("label")) lab.hidden = !(lab.dataset.for || "").split(" ").includes(tool);
@@ -2150,6 +2184,13 @@ class InpaintEditor {
             this.shapeColorRow.hidden = !(o.stroke || open);
             this.shapeRadiusRow.hidden = o.kind !== "rectangle";
         }
+        if (tool === "tone") {
+            const sponge = this.toneOpts.mode === "saturate" || this.toneOpts.mode === "desaturate";
+            this.toneRangeRow.hidden = sponge;
+            this.toneProtectRow.hidden = sponge;
+            this.toneVibranceRow.hidden = this.toneOpts.mode !== "saturate";
+            this.toneExpName.textContent = sponge ? "Amount" : "Exposure";
+        }
         const shapeHints = {
             rectangle: "Drag a rectangle; Shift keeps it square, Alt draws from the centre",
             ellipse: "Drag an ellipse; Shift keeps it a circle, Alt draws from the centre",
@@ -2159,7 +2200,7 @@ class InpaintEditor {
             freehand: "Draw with the cursor held down",
         };
         if (tool === "canvas") this.syncFrameControls();
-        const hints = { canvas: "Edges crop or extend, outside turns, Ctrl+drag straightens; Enter or a double click applies, Esc resets", shape: shapeHints[this.shapeOpts.kind] || "", select: "Paint to select, Alt subtracts", deselect: "Paint to deselect", paint: "Alt+click picks a colour, Shift+click draws a line", erase: "Shift+click draws a line", wand: "Click to select the similar area; Shift adds, Alt subtracts", bucket: "Click to fill; Shift+F fills the whole selection", gradient: "Drag from the colour to where it should have faded", eyedropper: "Click to pick a colour", smudge: this.smudgeOpts && this.smudgeOpts.mode === "blur" ? "Paint over what should soften" : this.smudgeOpts && this.smudgeOpts.mode === "sharpen" ? "Paint over what should crisp up; a little goes a long way" : "Drag across an edge to soften it", clone: this.cloneSource ? "Paint to copy from the source (Alt+click moves it)" : "Alt+click sets the source point", heal: this.cloneSource ? "Paint to repair with the source's texture (Alt+click moves it)" : "Alt+click sets the source point" };
+        const hints = { canvas: "Edges crop or extend, outside turns, Ctrl+drag straightens; Enter or a double click applies, Esc resets", shape: shapeHints[this.shapeOpts.kind] || "", select: "Paint to select, Alt subtracts", deselect: "Paint to deselect", paint: "Alt+click picks a colour, Shift+click draws a line", erase: "Shift+click draws a line", wand: "Click to select the similar area; Shift adds, Alt subtracts", bucket: "Click to fill; Shift+F fills the whole selection", gradient: "Drag from the colour to where it should have faded", eyedropper: "Click to pick a colour", smudge: this.smudgeOpts && this.smudgeOpts.mode === "blur" ? "Paint over what should soften" : this.smudgeOpts && this.smudgeOpts.mode === "sharpen" ? "Paint over what should crisp up; a little goes a long way" : "Drag across an edge to soften it", tone: this.toneHint(), clone: this.cloneSource ? "Paint to copy from the source (Alt+click moves it)" : "Alt+click sets the source point", heal: this.cloneSource ? "Paint to repair with the source's texture (Alt+click moves it)" : "Alt+click sets the source point" };
         this.optsHint.textContent = hints[tool] || "";
     }
 
@@ -2728,7 +2769,7 @@ class InpaintEditor {
             case "b": this.setTool("select"); break;
             case "r": this.setTool("rect"); break;
             case "l": this.setTool("lasso"); break;
-            case "o": this.setTool("object"); break;
+            case "o": this.setTool(e.shiftKey ? "tone" : "object"); break;
             case "d": this.setTool("deselect"); break;
             case "p": this.setTool("paint"); break;
             case "e": this.setTool("erase"); break;
@@ -4520,11 +4561,15 @@ class InpaintEditor {
         } else if (this.tool === "bucket") {
             if (this.quickMask) this.wandSelect(ix, iy, selMode); else this.bucketFill(ix, iy);
             return;
-        } else if (this.tool === "smudge") {
+        } else if (this.tool === "smudge" || this.tool === "tone") {
+            // the tone brush (dodge / burn / sponge, PLAN_0_1_31 §4 step 9) rides the smudge's engine as blur and sharpen do
+            const toneTool = this.tool === "tone", opts = toneTool ? this.toneOpts : this.smudgeOpts;
             let layer = this.activeLayer();
             if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
-            if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels to smudge."); return; }
-            const so = this.smudgeOpts && this.smudgeOpts.sample;
+            if (layer && layer.kind === "filter") { this.setStatus(`Filter layers have no pixels to ${toneTool ? "dodge or burn" : "smudge"}.`); return; }
+            // the mask or the selection is what the UI says is being edited; these brushes only work on pixels
+            if (this.quickMask || (layer && layer.maskEdit)) { this.setStatus(`${this.quickMask ? "Quick mask is on" : `The mask of ${layer.name} is being edited`}: the ${toneTool ? "dodge / burn brush" : "smudge"} works on pixels. ${this.quickMask ? "Press Q to leave it." : "Switch the mask edit off first."}`); return; }
+            const so = opts && opts.sample;
             let sample = so === "image" ? "all" : so === "below" ? "below" : "layer";
             if (!layer) {
                 // the base is never written: the smudge takes the picture and paints into a new layer (a whole copy of the
@@ -4532,21 +4577,28 @@ class InpaintEditor {
                 layer = this.addPaintLayer();
                 sample = "all";
                 // and the strokes after it on that new layer take the picture too, not the layer's own few pixels
-                if (this.smudgeOpts) this.smudgeOpts.sample = "image";
-                if (this.smudgeSampleSel) this.smudgeSampleSel.value = "image";
-                this.setStatus("The base cannot be edited directly: the smudge paints into a new layer from the picture (Sample: image).");
+                if (opts) opts.sample = "image";
+                const sel = toneTool ? this.toneSampleSel : this.smudgeSampleSel;
+                if (sel) sel.value = "image";
+                this.setStatus(`The base cannot be edited directly: the ${toneTool ? "brush" : "smudge"} paints into a new layer from the picture (Sample: image).`);
             }
-            const mode = this.smudgeOpts && this.smudgeOpts.mode;
-            this.pushUndo({ kind: "layer", id: layer.id, label: mode === "blur" ? "Blur" : mode === "sharpen" ? "Sharpen" : "Smudge" });
+            // the tone brush's curve is fixed for the stroke; Alt swaps dodge and burn (Photoshop's habit)
+            const tone = toneTool ? this.toneStroke(e.altKey) : null;
+            const mode = tone ? "tone" : this.smudgeOpts && this.smudgeOpts.mode;
+            this.pushUndo({ kind: "layer", id: layer.id, label: tone ? tone.label : mode === "blur" ? "Blur" : mode === "sharpen" ? "Sharpen" : "Smudge" });
             // chosen before the gesture starts: a read during it must see the picture as if no gesture ran (brushSource)
             // blur and sharpen filter the picture of the press, not what the stroke has already done to it: every dab moves
             // the pixels towards one result, which the strength reaches where the brush passes often (filtering the live
             // pixels compounded: eight overlapping dabs of a sharpen rang between black and white)
-            const fx = mode === "blur" || mode === "sharpen";
+            // (dodge and burn too: the stroke reaches its curve and does not build up over itself, GIMP's default)
+            const fx = mode === "blur" || mode === "sharpen" || mode === "tone";
             const src = sample === "layer" ? null : this.brushSource(sample, layer, { snapshot: fx });
             const orig = fx && sample === "layer" ? layer.px.clone() : null;
             const pressure = this.pressureOf(e);
-            this.pointer = { kind: "smudge", layer, src, orig, last: [ix, iy], clip: this.strokeClip(layer, layer.px), pressure, stab: this.newStabiliser(ix, iy, pressure) };
+            this.pointer = { kind: "smudge", layer, src, orig, tone, last: [ix, iy], clip: this.strokeClip(layer, layer.px), pressure, stab: this.newStabiliser(ix, iy, pressure) };
+            // blur, sharpen and the tone brush dab where they are pressed, so a click lightens a spot (GIMP, Photoshop);
+            // the smudge only picks up there, at its first move
+            if (fx) this.smudgeDab(this.pointer, ix, iy, ix, iy);
         } else if (this.tool === "clone" || this.tool === "heal") {
             if (e.altKey) {
                 this.cloneSource = { x: ix, y: iy };
@@ -5966,8 +6018,29 @@ class InpaintEditor {
                     plan = [null, { px: l.px, mask: this.liveMask(l) ? this.tileMaskOf(l) : null, x: l.x, y: l.y, alpha: 255, op: 0 }];
             } else plan = this.stackPlan({ forRun: false, upTo });
         }
+        // `snapshot` on the region tier (the canvas backend, and tiles under a filter layer or a scaled one), which reads
+        // the live picture: the press's picture kept pixel by pixel as the stroke first reads it. A dab reads its box
+        // before it writes there, so the first read of a pixel is its value at the press; the memory grows with the
+        // ground the stroke covers, in 256 px blocks, not with the document (a stroke of dodge compounded to white)
+        const firstRead = snapshot ? new Map() : null;
+        const remember = (bytes, box) => {
+            const w = box[2] - box[0], x0 = Math.max(0, box[0]), x1 = Math.min(this.width, box[2]);
+            for (let iy = Math.max(0, box[1]); iy < Math.min(this.height, box[3]); iy++) {
+                for (let ix = x0; ix < x1;) {
+                    const key = (iy >> 8) * 65536 + (ix >> 8), n = Math.min(x1 - ix, 256 - (ix & 255));
+                    let blk = firstRead.get(key);
+                    if (!blk) firstRead.set(key, blk = { px: new Uint8ClampedArray(256 * 256 * 4), known: new Uint8Array(256 * 256) });
+                    for (let k = 0, bi = (iy & 255) * 256 + (ix & 255), si = ((iy - box[1]) * w + ix - box[0]) * 4; k < n; k++, bi++, si += 4) {
+                        if (blk.known[bi]) { bytes[si] = blk.px[bi * 4]; bytes[si + 1] = blk.px[bi * 4 + 1]; bytes[si + 2] = blk.px[bi * 4 + 2]; bytes[si + 3] = blk.px[bi * 4 + 3]; }
+                        else { blk.known[bi] = 1; blk.px[bi * 4] = bytes[si]; blk.px[bi * 4 + 1] = bytes[si + 1]; blk.px[bi * 4 + 2] = bytes[si + 2]; blk.px[bi * 4 + 3] = bytes[si + 3]; }
+                    }
+                    ix += n;
+                }
+            }
+            return bytes;
+        };
         // the region pass as bytes of the box (zeros where it lies outside the picture)
-        const regionBytes = (box) => {
+        const rawBytes = (box) => {
             const w = box[2] - box[0], h = box[3] - box[1];
             const c = this._brushBytes = cpuDab(this._brushBytes, w, h);
             const ctx = c.getContext("2d");
@@ -5976,29 +6049,50 @@ class InpaintEditor {
             if (got) ctx.drawImage(got.canvas, got.x - box[0], got.y - box[1]);
             return ctx.getImageData(0, 0, w, h).data;
         };
-        if (!plan) return { tier: "region", read: region, bytes: regionBytes };
-        // `snapshot`: the stores as copy-on-write clones of the press (blur and sharpen), given back by `release`; the
-        // region tier has no such copy and reads the live picture
+        const regionBytes = (box) => {
+            if (!firstRead) return rawBytes(box);
+            // a spatial filter above (a blur's radius, `boxReach`) carries a dab's write that far past its box: those
+            // pixels are remembered with this read, before the write lands (infinite reach reads the press's flatten)
+            const R = Math.ceil(this.boxReach(box, upTo == null ? { forRun: false } : { forRun: false, upTo }));
+            if (!(R > 0) || !Number.isFinite(R)) return remember(rawBytes(box), box);
+            const pb = [box[0] - R, box[1] - R, box[2] + R, box[3] + R], pw = pb[2] - pb[0];
+            const big = remember(rawBytes(pb), pb), w = box[2] - box[0], h = box[3] - box[1], out = new Uint8ClampedArray(w * h * 4);
+            for (let y = 0; y < h; y++) out.set(big.subarray(((y + R) * pw + R) * 4, ((y + R) * pw + R + w) * 4), y * w * 4);
+            return out;
+        };
+        // the same as a canvas (a scaled layer's smudge draws from it): through the bytes when the press is kept
+        const regionRead = !firstRead ? region : (box, slot = 0) => {
+            const b = clampBox(box);
+            if (!b) return null;
+            const w = b[2] - b[0], h = b[3] - b[1], bytes = regionBytes(b);
+            const reads = this._brushRead || (this._brushRead = []);
+            const c = reads[slot] = cpuDab(reads[slot], w, h);
+            c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(bytes.buffer, bytes.byteOffset, w * h * 4), w, h), 0, 0);
+            return { canvas: c, x: b[0], y: b[1] };
+        };
+        if (!plan) return { tier: "region", read: regionRead, bytes: regionBytes, release() { if (firstRead) firstRead.clear(); } };
+        // `snapshot`: the stores as copy-on-write clones of the press (blur, sharpen, the tone brush), given back by
+        // `release`; the region tier keeps the press by first reads (above)
         const clones = [];
         const held = (s) => { if (!snapshot || !s) return s; const c = s.clone(); clones.push(c); return c; };
         const stack = plan.map((s) => s && { px: held(s.px), mask: held(s.mask || null), x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0, match: s.match ? this.boxMatchOf(s.match) : null });
         const src = {
             tier: "tiles",
             read: (box, slot = 0) => {
-                if (src.tier !== "tiles") return region(box);
+                if (src.tier !== "tiles") return regionRead(box, slot);
                 const b = clampBox(box);
                 if (!b) return null;
                 const w = b[2] - b[0], h = b[3] - b[1];
                 let bytes;
                 // a store given back while the gesture ran (an agent's undo): the rest of the gesture reads the region pass
                 try { bytes = compositeBox(stack, b[0], b[1], w, h, this.width, this.height); }
-                catch (err) { console.warn("Inpaint Canvas: the brush's tile read failed, reading the region pass:", err); src.tier = "region"; return region(box); }
+                catch (err) { console.warn("Inpaint Canvas: the brush's tile read failed, reading the region pass:", err); src.tier = "region"; return regionRead(box, slot); }
                 const reads = this._brushRead || (this._brushRead = []);
                 const c = reads[slot] = cpuDab(reads[slot], w, h);
                 c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(bytes.buffer, bytes.byteOffset, w * h * 4), w, h), 0, 0);
                 return { canvas: c, x: b[0], y: b[1] };
             },
-            release() { for (const c of clones.splice(0)) c.release(); },
+            release() { for (const c of clones.splice(0)) c.release(); if (firstRead) firstRead.clear(); },
             // the box as straight RGBA8 (whole image pixels; transparent outside the picture), valid until the next read:
             // the smudge takes the composite as bytes, no canvas between
             bytes: (box) => {
@@ -6622,7 +6716,8 @@ class InpaintEditor {
         const sx = target.width / layer.w, sy = target.height / layer.h;
         const lx0 = (x0 - layer.x) * sx, ly0 = (y0 - layer.y) * sy, lx1 = (x1 - layer.x) * sx, ly1 = (y1 - layer.y) * sy;
         const pr = Math.max(0.05, Math.min(1, p.pressure || 1));
-        const o = this.smudgeOpts || {};
+        // the tone brush lays its curve down whole (the pressure scales it); Exposure is in the curve, not the strength
+        const o = p.tone ? TONE_DAB : this.smudgeOpts || {};
         // the carry's side is fixed for the stroke (the full-pressure dab's box); a smaller dab is a smaller mask in it
         if (!p.side) p.side = Math.ceil(Math.max(1, this.brushSize * (sx + sy) / 4) * 2) + 2;
         const side = p.side;
@@ -6632,14 +6727,17 @@ class InpaintEditor {
         if (!p.carry) p.carry = new Uint16Array(side * side * 4);
         const tip = this.brushTip();
         const spacing = Math.max(1, tip ? (tip.spacing || this.brushTipSpacing || 0.25) * 2 * r : r * 0.25);
-        // blur and sharpen: a filter of 1 px for a small brush up to 8 px, read with three times that around the box
-        const mode = o.mode === "blur" || o.mode === "sharpen" ? o.mode : "smudge";
-        const fxRadius = Math.max(1, Math.min(8, Math.round(r / 12))), fxPad = fxRadius * 3;
+        // blur and sharpen: a filter of 1 px for a small brush up to 8 px, read with three times that around the box; the
+        // tone brush works pixel by pixel and reads the box alone
+        const mode = p.tone ? "tone" : o.mode === "blur" || o.mode === "sharpen" ? o.mode : "smudge";
+        const fxRadius = Math.max(1, Math.min(8, Math.round(r / 12))), fxPad = mode === "tone" ? 0 : fxRadius * 3;
         // the image box the move can touch (the release marks it, not the whole layer)
         this.strokeBounds(p, x0, y0, x1, y1, (side / 2 + 1) / Math.min(sx, sy));
         const dist = Math.hypot(lx1 - lx0, ly1 - ly0);
         const steps = Math.max(1, Math.ceil(dist / spacing));
-        for (let i = p.started ? 1 : 0; i <= steps; i++) {
+        // a filter brush's press is one dab; after it every call starts past the point the last one ended on
+        const last = mode !== "smudge" && !p.started && dist === 0 ? 0 : steps;
+        for (let i = p.started ? 1 : 0; i <= last; i++) {
             const cx = lx0 + (lx1 - lx0) * i / steps, cy = ly0 + (ly1 - ly0) * i / steps;
             const bx = Math.round(cx - side / 2), by = Math.round(cy - side / 2);
             let mask = this.smudgeMask(side, cx - bx, cy - by, r, tip);
@@ -6650,6 +6748,17 @@ class InpaintEditor {
                 mask = mask.slice();
                 for (let k = 0; k < mask.length; k++) mask[k] = Math.floor((mask[k] * sel[k * 4 + 3] + 127) / 255);
             }
+            if (p.src && mode !== "smudge" && (layer.x + bx / sx < 0 || layer.y + by / sy < 0 || layer.x + (bx + side) / sx > this.width || layer.y + (by + side) / sy > this.height)) {
+                // a filter brush that reads the picture finds nothing outside it: laid down there it would erase the layer
+                mask = mask.slice();
+                for (let y = 0; y < side; y++) {
+                    const iy = layer.y + (by + y + 0.5) / sy, rowOut = iy < 0 || iy >= this.height;
+                    for (let x = 0; x < side; x++) {
+                        const ix = layer.x + (bx + x + 0.5) / sx;
+                        if (rowOut || ix < 0 || ix >= this.width) mask[y * side + x] = 0;
+                    }
+                }
+            }
             const img = target.readRect(bx, by, side, side);
             let flags = layer.alphaLock ? SMUDGE_ALPHA_LOCK : 0;
             if (mode !== "smudge") {
@@ -6657,11 +6766,14 @@ class InpaintEditor {
                 // taken into the carry and laid down at the strength; nothing carried to the next step
                 const pad = fxPad, big = side + 2 * pad;
                 const around = p.src ? this.smudgeSample(p, target, bx - pad, by - pad, big) : (p.orig || target).readRect(bx - pad, by - pad, big, big).data;
-                const f = mode === "blur" ? blurRGBA(around, big, big, fxRadius) : sharpenRGBA(around, big, big, fxRadius, 1);
+                const t = p.tone;
+                const f = mode === "tone" ? (t.sponge ? spongeRGBA(around, t.amount, t.mode === "saturate", t.vibrance) : toneRGBA(around, t.lut, t.protect))
+                    : mode === "blur" ? blurRGBA(around, big, big, fxRadius) : sharpenRGBA(around, big, big, fxRadius, 1);
                 const box = p.fxBox && p.fxBox.length === side * side * 4 ? p.fxBox : (p.fxBox = new Uint8ClampedArray(side * side * 4));
                 for (let y = 0; y < side; y++) box.set(f.subarray(((y + pad) * big + pad) * 4, ((y + pad) * big + pad + side) * 4), y * side * 4);
                 smudgeDabKernel(img.data, box, p.carry, mask, 0, 0, SMUDGE_PICKUP);
                 smudgeDabKernel(img.data, box, p.carry, mask, strength, 0, flags);
+                p.started = true;
             } else {
                 if (!p.started) {
                     p.started = true;
@@ -9416,6 +9528,47 @@ class InpaintEditor {
         this.draw();
         this.setStatus(`Frequency separation: ${low.name} and ${high.name} (linear light) on top, ${w} \u00d7 ${h}. Soften colour on the low layer, retouch texture on the high one.`);
         return { low: low.id, high: high.id, radius: r, box };
+    }
+
+    /**
+     * Image > New Dodge & Burn Layer (PLAN_0_1_31 §4 step 9): a paint layer in soft light on top, where white paint
+     * lightens and black darkens. Empty unless `grey`: soft light is affine in the layer's colour on each side of 50 %
+     * grey, so paint of alpha a on an empty layer gives the picture it gives on a grey one (to rounding), and an empty
+     * layer holds no tiles until painted (a grey fill takes every one, about 600 MB at 15000 x 10000). `grey` fills it
+     * with 128 (Photoshop's habit; 128 is neutral at any opacity, dist/map4/blend.md §4a). One undo step, made active.
+     */
+    dodgeBurnLayer({ grey = false } = {}) {
+        if (!this.width) { this.setStatus("Load an image first."); return null; }
+        this.pushUndo({ kind: "layers", label: "Dodge & burn layer" });
+        const px = this.pixels.Layer.empty(this.width, this.height);
+        if (grey) px.fill(null, "#808080");
+        // the blend goes in with it: addLayer draws at once, and a grey layer drawn as normal covered the picture
+        const l = this.addLayer({ name: "Dodge & burn", kind: "paint", px, x: 0, y: 0, w: this.width, h: this.height, dirty: true, blend: "soft-light" });
+        this.markLayerChanged(l);
+        this.renderLayers();
+        this.draw();
+        this.setStatus(`Dodge & burn layer (soft light${grey ? ", 50 % grey" : ""}) on top: paint white to lighten and black to darken at a low opacity${grey ? ", grey takes it back" : ", the eraser takes it back"}.`);
+        return l;
+    }
+
+    /** The tone brush's stroke, fixed at the press: the options bar's mode and curve; `swap` (Alt) turns dodge into burn. */
+    toneStroke(swap = false) {
+        const o = this.toneOpts || {};
+        let mode = o.mode || "dodge";
+        if (swap) mode = { dodge: "burn", burn: "dodge", saturate: "desaturate", desaturate: "saturate" }[mode] || mode;
+        const amount = Math.max(0, Math.min(100, +o.exposure || 0)) / 100;
+        const label = mode[0].toUpperCase() + mode.slice(1);
+        if (mode === "saturate" || mode === "desaturate") return { mode, label, sponge: true, amount, vibrance: o.vibrance !== false };
+        return { mode, label, lut: toneLUT(o.range || "midtones", amount, mode === "burn"), protect: o.protect !== false };
+    }
+
+    /** The options bar's hint for the tone brush. */
+    toneHint() {
+        const m = this.toneOpts && this.toneOpts.mode;
+        return m === "burn" ? "Paint over what should darken; Alt dodges"
+            : m === "saturate" ? "Paint over what should gain colour; Alt desaturates"
+            : m === "desaturate" ? "Paint over what should lose colour; Alt saturates"
+            : "Paint over what should lighten; Alt burns";
     }
 
     /** A rectangle in a layer target's own pixels ([x0, y0, x1, y1]) in image coordinates; `target` is pixels or a canvas. */
@@ -13410,7 +13563,7 @@ class InpaintEditor {
      * that is simply bigger than what is being painted on.
      */
     drawBrushRing(ctx, s) {
-        const brushTools = ["select", "deselect", "paint", "erase", "smudge", "clone", "heal"];
+        const brushTools = ["select", "deselect", "paint", "erase", "smudge", "tone", "clone", "heal"];
         if (!this.hover || !brushTools.includes(this.tool)) return;
         ctx.save();
         const colour = this.tool === "paint" ? this.color : (this.tool === "erase" || this.tool === "deselect" ? "#ffd166" : "#fff");

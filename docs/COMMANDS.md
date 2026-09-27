@@ -775,6 +775,15 @@ Frequency separation of the selection's box (or of the whole picture up to 16 MP
 | `doc` | integer | document id (default the active tab) |
 | `radius` | number | the blur radius in pixels (default: 0.4 % of the picture's short side) |
 
+### `dodge_burn_layer`
+
+A dodge & burn layer on top: a paint layer in soft light where white paint lightens and black darkens. Empty by default (the same picture as 50 % grey, no memory until painted); grey fills it with 50 % grey. One undo step; the layer becomes active.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `grey` | boolean | fill it with 50 % grey (Photoshop's habit; about 600 MB at 15000 x 10000) |
+
 ### `read_log` *(app)*
 
 The app's log (what the app, its providers and helpers reported; errors carry the request shape and the stack): the last entries, newest last. Also in Help > Console and in <userData>/logs/scumble.log.
