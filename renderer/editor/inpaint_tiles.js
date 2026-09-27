@@ -37,6 +37,7 @@
 import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN, reentrantPixels } from "./inpaint_pixels.js";
 import { mipChain, mipChainBytes, clampExtend, compositeTile } from "./px/kernels.js";
 import { allocTileBytes, isShared } from "./inpaint_arena.js";
+import { canvasRoundTrip, resampleOptions, resampleStore } from "./inpaint_resample.js";
 
 export const TILE_SIZE = 256;
 const TILE_BYTES = TILE_SIZE * TILE_SIZE * 4;
@@ -515,33 +516,9 @@ function words(bytes) {
 
 // ---- the straight-alpha round trip of a canvas ---------------------------------------------------
 
-let ROUND_TRIP = null;
-
-/**
- * T[(a << 8) | c]: the channel value a canvas gives back for straight (c, a) put into it. Measured
- * from a CPU canvas (a GPU canvas's first read un-premultiplies 450 of the 65,536 pairs one level
- * differently; its later reads agree with this table).
- */
-function roundTripTable() {
-    if (ROUND_TRIP) return ROUND_TRIP;
-    const c = document.createElement("canvas");
-    c.width = 256; c.height = 256;
-    const ctx = c.getContext("2d", { willReadFrequently: true });
-    const img = new ImageData(256, 256);
-    for (let a = 0; a < 256; a++) {
-        for (let v = 0; v < 256; v++) {
-            const i = (a * 256 + v) * 4;
-            img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v; img.data[i + 3] = a;
-        }
-    }
-    ctx.putImageData(img, 0, 0);
-    const d = ctx.getImageData(0, 0, 256, 256).data;
-    const t = new Uint8Array(65536);
-    for (let i = 0; i < 65536; i++) t[i] = d[i * 4];
-    c.width = 1; c.height = 1;
-    ROUND_TRIP = t;
-    return t;
-}
+// T[(a << 8) | c]: the channel value a canvas gives back for straight (c, a) put into it (inpaint_resample.js, where
+// the resampler's workers are handed it from)
+const roundTripTable = canvasRoundTrip;
 
 /** The round trip applied to a block of a tile in place (w x h at lx, ly). */
 function normalizeBlock(d, lx, ly, w, h) {
@@ -1718,6 +1695,45 @@ const tiled = (Base) => class extends Base {
             }
         }
         for (const key of touched) { const t = out._tiles.get(key); if (t && tileEmpty(t)) out._dropTile(key); }
+        return out;
+    }
+
+    /**
+     * The pixels resampled through an affine map, as new pixels of this class of outW x outH (PLAN_0_1_31 §7, 23b; the
+     * map, the filters and the edges are inpaint_resample.js's contract). Synchronous, on this thread: each destination
+     * tile gathers the block its taps read from the one to nine source tiles under it, a destination tile whose taps
+     * meet no tile is not made, and one that comes out empty is dropped, so a sparse layer stays sparse. The bytes are
+     * the canvas backend's to the byte (the same kernel over the same source bytes).
+     */
+    transformed(map, outW, outH, opts = {}) {
+        this._guard();
+        const o = resampleOptions(opts, this instanceof MaskPixels);
+        const out = new this.constructor(outW, outH);
+        const tiles = this._tiles;
+        const src = {
+            width: this._w, height: this._h,
+            copyRun: (sy, x0, x1, dst, off) => {
+                const ty = sy >> 8, ly = (sy & 255) * TILE_SIZE * 4;
+                for (let x = x0; x < x1;) {
+                    const lx = x & 255, n = Math.min(x1 - x, TILE_SIZE - lx), at = off + (x - x0) * 4;
+                    const t = tiles.get((ty << 16) | (x >> 8));
+                    if (t) dst.set(t.data.subarray(ly + lx * 4, ly + (lx + n) * 4), at);
+                    else dst.fill(0, at, at + n * 4);
+                    x += n;
+                }
+            },
+            has: (x0, y0, x1, y1) => {
+                for (let ty = y0 >> 8; ty <= (y1 - 1) >> 8; ty++) {
+                    for (let tx = x0 >> 8; tx <= (x1 - 1) >> 8; tx++) if (tiles.has((ty << 16) | tx)) return true;
+                }
+                return false;
+            },
+        };
+        resampleStore(src, map, outW, outH, o, roundTripTable(), {
+            // a new store: its tiles are fresh (zero), and the kernel writes every pixel of the tile's valid part
+            tile: (tx, ty) => [out.writable(tx, ty).data, 0, TILE_SIZE * 4],
+            done: (tx, ty, count) => { if (!count) out._dropTile((ty << 16) | tx); },
+        });
         return out;
     }
 

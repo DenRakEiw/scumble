@@ -2218,6 +2218,79 @@ function pixelsCases(P, T) {
             return { tiles: B.tiles ? out[1].tileCount : null, sparse: B.tiles ? bt.tileCount : null, drift };
         })],
 
+        // transformed(map, w, h, opts) (PLAN_0_1_31 §7, 23b: the resampler of inpaint_resample.js): a map on whole pixels
+        // copies the bytes (the identity, a shift equal to resized(), the quarter turns and a mirror equal to turned());
+        // 3 and 30 degrees, a mask in its white, clamped edges and a sparse layer; the bytes it writes survive a canvas round
+        // trip. Every output is compared between canvas-cpu and tiles byte for byte like every case (the same kernel over the
+        // same source bytes).
+        ["transformed", both(async ({ B, Layer, Mask, snap }) => {
+            const RS = await import("./editor/inpaint_resample.js");
+            const W = 601, H = 357;
+            const img = new ImageData(W, H), d = img.data;
+            for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+                const i = (y * W + x) * 4;
+                d[i] = (x * 7 + y * 3) & 255; d[i + 1] = (x * y) & 255; d[i + 2] = (x ^ y) & 255;
+                d[i + 3] = (x + y) % 5 === 0 ? 0 : 40 + ((x * 13 + y * 29) % 216);
+            }
+            const src = Layer.fromImageData(img);
+            const exact = B.tiles || B.software;
+            let drift = 0;
+            const same = (a, b, what) => {
+                if (a.width !== b.width || a.height !== b.height) throw new Error(`${what}: ${a.width} x ${a.height} against ${b.width} x ${b.height}`);
+                if (a.constructor !== b.constructor) throw new Error(what + ": another class");
+                const x = a.readRect(0, 0, a.width, a.height).data, y = b.readRect(0, 0, b.width, b.height).data;
+                for (let i = 0; i < x.length; i++) {
+                    if (x[i] === y[i]) continue;
+                    const alpha = x[i | 3];
+                    if (exact || (i & 3) === 3 || Math.abs(x[i] - y[i]) > 2 * Math.ceil(255 / Math.max(1, alpha)) + 1) throw new Error(what + ": byte " + i + " differs (" + x[i] + " against " + y[i] + ", alpha " + alpha + ")");
+                    drift = Math.max(drift, Math.abs(x[i] - y[i]));
+                }
+            };
+            const map = (fwd) => RS.pixelMap(RS.xfInv(fwd));
+            same(src.transformed(RS.XF_IDENTITY, W, H), src, "the identity");
+            same(src.transformed(RS.XF_IDENTITY, W, H, { filter: "bilinear" }), src, "the identity, bilinear");
+            same(src.transformed(map(RS.xfTranslate(37, -20)), W + 50, H), src.resized(W + 50, H, { x: 37, y: -20 }), "a shift");
+            const fwd = { 1: RS.xfMul(RS.xfTranslate(H, 0), RS.xfRotate(90)), "-1": RS.xfMul(RS.xfTranslate(0, W), RS.xfRotate(-90)), 2: RS.xfRotate(180, W / 2, H / 2), h: [-1, 0, 0, 1, W, 0], v: [1, 0, 0, -1, 0, H] };
+            for (const op of ["h", "v", 2, 1, -1]) {
+                const q = op === 1 || op === -1;
+                same(src.transformed(map(fwd[String(op)]), q ? H : W, q ? W : H), src.turned(op), "turned " + op);
+            }
+            const outs = [];
+            for (const deg of [3, 30]) {
+                const t = src.transformed(map(RS.xfRotate(deg, W / 2, H / 2)), W, H);
+                snap(t, deg + " degrees");
+                outs.push(t);
+            }
+            const clamped = src.transformed(map(RS.xfRotate(-11, W / 2, H / 2)), W, H, { edge: "clamp" });
+            snap(clamped, "clamped");
+            // what the resampler wrote reads back from a canvas unchanged (the round trip is applied to the bytes)
+            for (const t of [...outs, clamped]) same(Layer.fromImageData(t.readRect(0, 0, t.width, t.height)), t, "the round trip of a resample");
+            // a mask: alpha only, in the colour asked for, a transparent pixel without colour
+            const m = Mask.empty(300, 220);
+            m.drawInto(null, (ctx) => { ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.ellipse(150, 110, 110, 70, 0.4, 0, Math.PI * 2); ctx.fill(); });
+            const mt = m.transformed(map(RS.xfRotate(25, 150, 110)), 300, 220, { color: [255, 255, 255] });
+            const md = mt.readRect(0, 0, 300, 220).data;
+            let colour = 0, soft = 0;
+            for (let i = 0; i < md.length; i += 4) {
+                const want = md[i + 3] ? 255 : 0;
+                if (md[i] !== want || md[i + 1] !== want || md[i + 2] !== want) colour++;
+                if (md[i + 3] > 0 && md[i + 3] < 255) soft++;
+            }
+            if (colour) throw new Error(`a turned mask has ${colour} pixels of another colour`);
+            if (!soft) throw new Error("a turned mask has no anti-aliased edge");
+            snap(mt, "mask");
+            // sparse: one block of a 2000 x 1500 layer turned by 10 degrees makes only the tiles around it
+            const big = Layer.empty(2000, 1500);
+            big.fill([1700, 1300, 1800, 1400], "#20c060");
+            const bt = big.transformed(map(RS.xfRotate(10, 1000, 750)), 2000, 1500);
+            if (B.tiles && bt.tileCount > 6) throw new Error("a sparse layer turned into " + bt.tileCount + " tiles");
+            // the block's centre (1750, 1350) lands at the turn of it about (1000, 750)
+            const [cx, cy] = RS.xfApply(RS.xfRotate(10, 1000, 750), 1750, 1350);
+            const p = bt.readRect(Math.round(cx), Math.round(cy), 1, 1).data;
+            if (p[3] !== 255 || p[1] < 150) throw new Error("the block of the sparse layer is not where it belongs: " + Array.from(p));
+            return { sparse: B.tiles ? bt.tileCount : null, drift };
+        })],
+
         // A layer mask inverts in its own white (set_mask invert, hide_selection): the colour passed, 255 - alpha, and a
         // pixel left fully transparent without colour on both backends, compared byte for byte like the red case.
         ["mask_invert_white", both(async ({ B, Mask, snap }) => {

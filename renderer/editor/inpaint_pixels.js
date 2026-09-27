@@ -42,6 +42,8 @@
  *   await is kept.
  */
 
+import { canvasRoundTrip, resampleOptions, resampleStore } from "./inpaint_resample.js";
+
 let OPTIONS = { strict: false, copy: false, software: false, tiles: null, tilesFrom: null };
 const warned = new Set();
 
@@ -428,6 +430,29 @@ export class LayerPixels {
         ctx.drawImage(this._c, 0, 0);
         ctx.setTransform(1, 0, 0, 1, 0, 0);   // no turn left on the new pixels' context (rule 11)
         return new this.constructor(c);
+    }
+
+    /**
+     * Resampled through an affine map as new pixels of outW x outH (inpaint_resample.js: the map, the filters, the
+     * edges). The canvas is read once (a read per tile would move Chromium's canvases to software, CLAUDE.md), the
+     * kernel runs over it in 256 px blocks as the tile backend's does, and the result is put into a new canvas.
+     */
+    transformed(map, outW, outH, opts = {}) {
+        this._guard();
+        const o = resampleOptions(opts, this instanceof MaskPixels);
+        const W = this.width, H = this.height;
+        const d = this.readRect(0, 0, W, H).data;
+        const img = new ImageData(Math.max(1, outW), Math.max(1, outH));
+        const stride = img.width * 4;
+        resampleStore({
+            width: W, height: H,
+            copyRun: (sy, x0, x1, dst, off) => dst.set(d.subarray((sy * W + x0) * 4, (sy * W + x1) * 4), off),
+            has: () => true,
+        }, map, outW, outH, o, canvasRoundTrip(), {
+            tile: (tx, ty) => [img.data, (ty * 256 * img.width + tx * 256) * 4, stride],
+            done: () => {},
+        });
+        return this.constructor.fromImageData(img);
     }
 
     /**
