@@ -15,7 +15,7 @@
 // active tab is used. App commands (`scope: "app"`) take no document.
 
 import { api, host } from "./editor/host.js";
-import { viewUrl, loadImageEl, makeCanvas } from "./editor/inpaint_canvas.js";
+import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { fontList } from "./editor/inpaint_text.js";
 
@@ -1101,7 +1101,7 @@ const COMMANDS = {
         description: "Brush settings of this document: the tip (round, or an imported tip by id or name), size in pixels, hardness, opacity and flow in percent, the tip's spacing in percent of its size, and whether the tip follows the stroke direction. Every parameter is optional.",
         params: {
             tip: P.str("round, or the id or name of an imported tip (list_brush_tips)"),
-            size: P.int("brush size in image pixels (2..400)"),
+            size: P.int("brush size in image pixels (2..1000)"),
             hardness: P.num("0..100 for the paint brush (the eraser keeps its own, see erase_hardness)"),
             erase_hardness: P.num("0..100 for the eraser"),
             opacity: P.num("brush opacity 0..100"),
@@ -1120,7 +1120,7 @@ const COMMANDS = {
                     ed.setBrushTip(hit.id);
                 }
             }
-            if (a.size != null) { ed.brushSize = clampInt(a.size, 2, 400, ed.brushSize); if (ed.sizeCtl) { ed.sizeCtl.input.value = ed.brushSize; ed.sizeCtl.value.textContent = ed.brushSize + "px"; } }
+            if (a.size != null) { const v = clampInt(a.size, 2, BRUSH_MAX, ed.brushSize); if (ed.setBrushSize && ed.sizeCtl) ed.setBrushSize(v); else ed.brushSize = v; }
             const pct = (v) => Math.max(0, Math.min(1, (+v) / 100));
             if (a.hardness != null && Number.isFinite(+a.hardness)) { ed.hardness = pct(a.hardness); if (ed.tool !== "erase" && ed.hardCtl) { ed.hardCtl.input.value = Math.round(ed.hardness * 100); ed.hardCtl.value.textContent = Math.round(ed.hardness * 100) + "%"; } }
             if (a.erase_hardness != null && Number.isFinite(+a.erase_hardness)) { ed.eraseHardness = pct(a.erase_hardness); if (ed.tool === "erase" && ed.hardCtl) { ed.hardCtl.input.value = Math.round(ed.eraseHardness * 100); ed.hardCtl.value.textContent = Math.round(ed.eraseHardness * 100) + "%"; } }

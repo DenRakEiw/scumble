@@ -792,7 +792,7 @@ Brush settings of this document: the tip (round, or an imported tip by id or nam
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `tip` | string | round, or the id or name of an imported tip (list_brush_tips) |
-| `size` | integer | brush size in image pixels (2..400) |
+| `size` | integer | brush size in image pixels (2..1000) |
 | `hardness` | number | 0..100 for the paint brush (the eraser keeps its own, see erase_hardness) |
 | `erase_hardness` | number | 0..100 for the eraser |
 | `opacity` | number | brush opacity 0..100 |

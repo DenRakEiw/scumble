@@ -650,6 +650,17 @@ function clampRect(r, w, h) {
     return [x0, y0, Math.max(x0, Math.min(w, Math.ceil(r[2]))), Math.max(y0, Math.min(h, Math.ceil(r[3])))];
 }
 
+/**
+ * The largest brush, in image pixels (PLAN_0_1_31 §4 step 7): 400 until 0.1.31, then measured at 15000 x 10000 on the
+ * regional path (docs/PERFORMANCE.md §15): a 1,000 px clone 17 to 24 ms a move and a smudge 31 to 41 ms, 2,000 px 53 to
+ * 89 ms. The Size slider maps it logarithmically (brushSizeToSlider), so 2 to 40 px keep the room they had.
+ */
+export const BRUSH_MAX = 1000;
+const SIZE_STEPS = 1000;
+/** A brush size (2..BRUSH_MAX px) as the Size slider's position (0..1000), and back: logarithmic. */
+export function brushSizeToSlider(size) { return Math.round(SIZE_STEPS * Math.log(Math.max(2, Math.min(BRUSH_MAX, size)) / 2) / Math.log(BRUSH_MAX / 2)); }
+export function sliderToBrushSize(v) { return Math.max(2, Math.min(BRUSH_MAX, Math.round(2 * Math.pow(BRUSH_MAX / 2, Math.max(0, Math.min(SIZE_STEPS, +v || 0)) / SIZE_STEPS)))); }
+
 function makeCanvas(w, h) {
     const c = document.createElement("canvas");
     c.width = Math.max(1, w | 0);
@@ -2740,8 +2751,8 @@ class InpaintEditor {
     }
 
     setBrushSize(v) {
-        this.brushSize = Math.min(400, Math.max(2, v));
-        this.sizeCtl.input.value = this.brushSize;
+        this.brushSize = Math.min(BRUSH_MAX, Math.max(2, Math.round(v)));
+        this.sizeCtl.input.value = brushSizeToSlider(this.brushSize);
         this.sizeCtl.value.textContent = this.brushSize + "px";
         this.drawSoon();
     }

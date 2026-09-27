@@ -2550,6 +2550,43 @@ try {
 } finally { delete ed.moveLayer; delete ed.activeLayer; delete ed.undoStep; }
 return { shown, sizes };
 """),
+    ("the_brush_reaches_1000_px_on_a_log_slider", """
+// PLAN_0_1_31 §4 step 7: the brush size goes to 1,000 px (measured on the regional path, docs/PERFORMANCE.md §15) on a
+// logarithmic Size slider, and every way to set it stops there: the slider, setBrushSize and the keys, set_brush
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+const I = await import("./editor/inpaint_canvas.js");
+const keep = ed.brushSize, out = { max: I.BRUSH_MAX };
+try {
+    if (I.BRUSH_MAX !== 1000) throw new Error("the cap is " + I.BRUSH_MAX);
+    const trips = {};
+    for (const s of [2, 3, 10, 40, 100, 400, 1000]) {
+        const back = I.sliderToBrushSize(I.brushSizeToSlider(s));
+        trips[s] = back;
+        if (Math.abs(back - s) > Math.max(1, s * 0.03)) throw new Error("the slider does not come back to " + s + ": " + back);
+    }
+    out.trips = trips;
+    if (I.sliderToBrushSize(0) !== 2 || I.sliderToBrushSize(1000) !== 1000) throw new Error("the slider's ends are not 2 and 1000 px");
+    out.at40 = I.brushSizeToSlider(40);
+    if (out.at40 < 333) throw new Error("40 px sits at " + out.at40 + " of 1000 on the slider: the small sizes got no room");
+    const inp = ed.sizeCtl.input;
+    inp.value = String(I.brushSizeToSlider(800));
+    inp.dispatchEvent(new Event("input"));
+    out.slider = ed.brushSize;
+    if (Math.abs(ed.brushSize - 800) > 24) throw new Error("the slider at 800 px gave " + ed.brushSize);
+    ed.setBrushSize(5000);
+    if (ed.brushSize !== 1000) throw new Error("setBrushSize(5000) gave " + ed.brushSize);
+    ed.setBrushSize(900);
+    ed.onKey(new KeyboardEvent("keydown", { key: "]", bubbles: true, cancelable: true }));
+    if (ed.brushSize !== 1000) throw new Error("] from 900 px gave " + ed.brushSize);
+    await run("set_brush", { doc: window.__t, size: 700 });
+    out.command = [ed.brushSize, I.sliderToBrushSize(+inp.value), ed.sizeCtl.value.textContent];
+    if (ed.brushSize !== 700 || Math.abs(I.sliderToBrushSize(+inp.value) - 700) > 21 || ed.sizeCtl.value.textContent !== "700px") throw new Error("set_brush 700: " + JSON.stringify(out.command));
+    await run("set_brush", { doc: window.__t, size: 5000 });
+    if (ed.brushSize !== 1000) throw new Error("set_brush 5000 gave " + ed.brushSize);
+} finally { ed.setBrushSize(keep); }
+return out;
+"""),
     ("outline_visible_on_white", """
 const ed = ednow(window.__t);
 const c = document.createElement("canvas"); c.width = 100; c.height = 100;

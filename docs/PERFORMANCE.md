@@ -1520,6 +1520,10 @@ After step 3 (the carry engine, the `smudge_dab` kernel in Rust; the same instan
 (its frame), on the base 42 ms and 9 ms a move; no mirror. Each step reads and writes the dab's box on the layer's
 tiles (`readRect` / `writeRect`), and the kernel costs 1.9 ms for a 400 px dab (the JS twin 16 ms, tools/px_test.js).
 
+Step 7 (the size cap, 2026-09-28, the same setup, `SIZES: [1000, 2000]`): the smudge 40.9 / 81.2 ms a move fitted and
+30.6 / 89.1 at 1:1; clone (Sample image) 24.2 / 66.8 fitted and 16.9 / 53.3 at 1:1; the press 3 to 118 ms. The cap is
+1,000 px since 0.1.32.
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first

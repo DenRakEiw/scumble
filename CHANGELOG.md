@@ -43,6 +43,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   whole layer at every step (up to 8 s a move). Now each reads only what is under the brush: a few milliseconds a
   move at any size, and a gigabyte less memory. Heal matches the colour more exactly. On the base the smudge no
   longer copies the whole base into a layer first: it paints into a new layer from the picture.
+- **Brushes up to 1,000 px.** The largest brush was 400 px; now it is 1,000, which on a 15,000 px picture still
+  paints, clones and smudges without a stutter. The Size slider runs logarithmically, so the small sizes keep their
+  room; `[` and `]` and `set_brush` go up to 1,000 as well.
 - **Blur and sharpen brushes.** The smudge tool has a **Mode**: smudge, blur (softens what the brush passes over)
   or sharpen (crisps it). Strength sets how far each stroke goes towards the full effect; going over a place again
   within one stroke does not pile it up, a new stroke adds to it. Sample picks the layer or the whole picture, as for

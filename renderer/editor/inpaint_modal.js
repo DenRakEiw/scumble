@@ -4,7 +4,7 @@
 // code is the method's, with `this` as the `ed` parameter. Every function writes its elements onto
 // the editor, as the method did: they are construction, not state of their own.
 import { host } from "./host.js";
-import { el, iconButton, miniButton, selectInput, numberInput, hostText, REF_FITS, REF_DEFAULTS, UPSAMPLE_CASES, randomSeed } from "./inpaint_canvas.js";
+import { el, iconButton, miniButton, selectInput, numberInput, hostText, REF_FITS, REF_DEFAULTS, UPSAMPLE_CASES, randomSeed, brushSizeToSlider, sliderToBrushSize } from "./inpaint_canvas.js";
 
 /**
  * The whole dialog of one editor. The order is the one the method had, and the two joints it kept
@@ -91,7 +91,9 @@ function buildTopBar(ed, root) {
         top.appendChild(lab);
         return { input: inp, value: val };
     };
-    ed.sizeCtl = slider("Size", 2, 400, ed.brushSize, (v) => v + "px", (v) => { ed.brushSize = v; ed.draw(); });
+    // the slider is logarithmic (BRUSH_MAX px at its end, inpaint_canvas.js): its position is not the size
+    ed.sizeCtl = slider("Size", 0, 1000, brushSizeToSlider(ed.brushSize), (v) => sliderToBrushSize(v) + "px", (v) => { ed.brushSize = sliderToBrushSize(v); ed.draw(); });
+    ed.sizeCtl.value.textContent = ed.brushSize + "px";
     ed.hardCtl = slider("Hardness", 0, 100, Math.round(ed.hardness * 100), (v) => v + "%", (v) => {
         // the slider edits the hardness of the active tool: the eraser has its own
         if (ed.tool === "erase") ed.eraseHardness = v / 100; else ed.hardness = v / 100;
