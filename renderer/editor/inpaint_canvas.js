@@ -15,7 +15,7 @@
 import { api, host } from "./host.js";
 import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromCube, lutToCanvas, lutFromImage, plateStats, colourStats } from "./inpaint_filters.js";
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces } from "./inpaint_filters_gl.js";
-import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame } from "./inpaint_text.js";
+import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
 import { setKernels, kernelsMode, OPS, deflate } from "./px/kernels.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
@@ -24,6 +24,7 @@ import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAli
 import { INTERACTIVE, EXPORT } from "./inpaint_pool.js";
 import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.js";
 import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter, writeTiff } from "./inpaint_bands.js";
+import { compositeBox, releaseBoxBuffers } from "./inpaint_boxstack.js";
 import { isTiff, TIFF_EXT, tiffInfo, readTiff, tiffPart } from "./inpaint_tiff.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
@@ -653,6 +654,25 @@ function makeCanvas(w, h) {
     c.width = Math.max(1, w | 0);
     c.height = Math.max(1, h | 0);
     return c;
+}
+
+/**
+ * A canvas of w x h the CPU keeps: `c` when it has that size, else a new one. A brush dab ends in a tile scratch, which
+ * is on the CPU too, so a dab canvas on the GPU was a readback at every draw (PLAN_0_1_31 §4 step 2).
+ */
+function cpuDab(c, w, h = w) {
+    w = Math.max(1, w | 0); h = Math.max(1, h | 0);
+    if (c && c.width === w && c.height === h) return c;
+    const n = makeCanvas(w, h);
+    n.getContext("2d", { willReadFrequently: true });
+    return n;
+}
+
+/** The mean colour of the RGBA bytes whose alpha is at least 8, or null when there are none (heal). */
+function meanRGB(d) {
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 8) continue; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+    return n ? [r / n, g / n, b / n] : null;
 }
 
 function el(tag, cls, text) {
@@ -1918,8 +1938,8 @@ class InpaintEditor {
         const moveCtl = (labelEl, forTools) => { if (!labelEl) return; labelEl.dataset.for = forTools; bar.appendChild(labelEl); };
         moveCtl(this.sizeCtl && this.sizeCtl.input.parentElement, "select deselect paint erase smudge clone heal");
         moveCtl(this.hardCtl && this.hardCtl.input.parentElement, "paint erase smudge clone heal");
-        moveCtl(this.opacCtl && this.opacCtl.input.parentElement, "paint erase clone heal bucket gradient");
-        moveCtl(this.opacCtl && this.opacCtl.input.parentElement, "shape");
+        // one call: a second one for "shape" overwrote the list and hid the slider for the brushes (e0c00a7 to 0.1.31)
+        moveCtl(this.opacCtl && this.opacCtl.input.parentElement, "paint erase clone heal bucket gradient shape");
         moveCtl(this.colorLabel, "paint bucket gradient shape");
         moveCtl(this.tipLabel, "paint erase");
         for (const e of this.tipOnlyEls || []) moveCtl(e, "paint erase");
@@ -1970,13 +1990,16 @@ class InpaintEditor {
         sradius.style.width = "56px"; sradius.title = "Corner radius of the rectangle, in image pixels";
         sradius.addEventListener("change", () => { this.shapeOpts.radius = Math.max(0, +sradius.value || 0); sradius.value = this.shapeOpts.radius; });
         this.shapeRadiusRow = row("shape", "Radius", sradius);
-        this.smudgeOpts = { strength: 60 };
+        this.smudgeOpts = { strength: 60, sample: "layer" };
         this.cloneOpts = { sample: "image", aligned: true };
         const str = document.createElement("input");
         str.type = "range"; str.min = 1; str.max = 100; str.value = this.smudgeOpts.strength; str.title = "Strength: how much of the picked-up paint is dragged along";
         const strVal = el("span", null, this.smudgeOpts.strength + "%");
         str.addEventListener("input", () => { this.smudgeOpts.strength = +str.value; strVal.textContent = str.value + "%"; });
         row("smudge", "Strength", str, strVal);
+        const ssample = selectInput(["layer", "image"], "layer", "What the smudge picks up: the active layer alone, or the visible image (all layers), smudged into the active layer. On the base it always takes the image and paints into a new layer");
+        ssample.addEventListener("change", () => { this.smudgeOpts.sample = ssample.value; });
+        row("smudge", "Sample", ssample);
         const csample = selectInput(["image", "layer"], "image", "Where the copied pixels come from: the visible image (all layers) or the active layer alone");
         csample.addEventListener("change", () => { this.cloneOpts.sample = csample.value; });
         row("clone heal", "Sample", csample);
@@ -2233,6 +2256,10 @@ class InpaintEditor {
         } else {
             this.pushUndo({ kind: "layerfull", id: layer.id, label });
         }
+        // the new pixels have no grid the mask could stay on: a live mask is baked in, a switched-off one dropped, and
+        // the status says so (both went without a word until 0.1.32; the undo step above holds the mask)
+        const maskNote = this.liveMask(layer) ? " Its mask is baked into the pixels (Ctrl+Z brings it back)."
+            : layer.maskPx ? " Its switched-off mask was dropped (Ctrl+Z brings it back)." : "";
         if (this.liveMask(layer)) this.applyMask(layer, { silent: true, undo: false });
         else if (layer.maskPx) { layer.maskPx = null; layer.maskOff = false; layer.maskEdit = false; this.markMaskChanged(layer); }
         const n = this.pendingSubdivisions(p, true);
@@ -2273,8 +2300,8 @@ class InpaintEditor {
         this.renderLayers();
         this.updateSubbar();
         this.draw();
-        this.setStatus(madePixels ? `${layer.name} is pixels now: a ${p.mode} cannot be kept as text (Ctrl+Z brings the text back).`
-            : `${layer.name}: ${p.mode} applied (${bw} × ${bh}).`);
+        this.setStatus((madePixels ? `${layer.name} is pixels now: a ${p.mode} cannot be kept as text (Ctrl+Z brings the text back).`
+            : `${layer.name}: ${p.mode} applied (${bw} × ${bh}).`) + maskNote);
     }
 
     open() {
@@ -2556,8 +2583,12 @@ class InpaintEditor {
 
     onKey(e) {
         const k = e.key.toLowerCase();
+        // AltGr types [ ] \ { } @ on a German keyboard, and Chromium on Windows reports it as Ctrl+Alt: such a key is the
+        // character it types, never a Ctrl shortcut (AltGr+8 moved the layer down instead of making the brush smaller)
+        const altGr = !!(e.getModifierState && e.getModifierState("AltGraph"));
+        const ctrl = (e.ctrlKey || e.metaKey) && !altGr;
         if (e.key === "Escape") { e.preventDefault(); if (this.pending) this.cancelPending(); else host.onEscape(this); return; }
-        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); this.generate(); return; }
+        if (ctrl && e.key === "Enter") { e.preventDefault(); this.generate(); return; }
         if (e.key === "Enter" && this.pending) { e.preventDefault(); this.applyPending(); return; }
         if (e.key === "Enter" && this.polyPoints) { e.preventDefault(); this.closePolygon(); this.draw(); return; }
         if (e.key === "Enter" && this.shapePoints) { e.preventDefault(); this.finishShape(); return; }
@@ -2577,22 +2608,22 @@ class InpaintEditor {
             }
             return;
         }
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && k === "n") { e.preventDefault(); this.addPaintLayer(); return; }
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && k === "r") { e.preventDefault(); this.toggleRulers(); return; }
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && k === "g") { e.preventDefault(); this.toggleGrid(); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "j") { e.preventDefault(); this.duplicateLayer(); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "e") { e.preventDefault(); this.mergeDown(); return; }
-        if ((e.ctrlKey || e.metaKey) && (e.key === "]" || e.key === "[")) { e.preventDefault(); const l = this.activeLayer(); if (l) this.moveLayer(l.id, e.key === "]" ? +1 : -1, { undo: true }); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); e.shiftKey ? this.redoStep() : this.undoStep(); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "y") { e.preventDefault(); this.redoStep(); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "d") { e.preventDefault(); this.clearSelection(); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "u") { e.preventDefault(); this.upsamplePrompt(); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "c") { e.preventDefault(); this.copySelection({ merged: e.shiftKey }); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "x") { e.preventDefault(); this.copySelection({ cut: true }); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "v") { e.preventDefault(); this.pasteClipboard(); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "i") { e.preventDefault(); this.invertSelection(); return; }
-        if ((e.ctrlKey || e.metaKey) && k === "s") { e.preventDefault(); this.exportImage(); return; }
-        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (ctrl && e.shiftKey && k === "n") { e.preventDefault(); this.addPaintLayer(); return; }
+        if (ctrl && e.shiftKey && k === "r") { e.preventDefault(); this.toggleRulers(); return; }
+        if (ctrl && e.shiftKey && k === "g") { e.preventDefault(); this.toggleGrid(); return; }
+        if (ctrl && k === "j") { e.preventDefault(); this.duplicateLayer(); return; }
+        if (ctrl && k === "e") { e.preventDefault(); this.mergeDown(); return; }
+        if (ctrl && (e.key === "]" || e.key === "[")) { e.preventDefault(); const l = this.activeLayer(); if (l) this.moveLayer(l.id, e.key === "]" ? +1 : -1, { undo: true }); return; }
+        if (ctrl && k === "z") { e.preventDefault(); e.shiftKey ? this.redoStep() : this.undoStep(); return; }
+        if (ctrl && k === "y") { e.preventDefault(); this.redoStep(); return; }
+        if (ctrl && k === "d") { e.preventDefault(); this.clearSelection(); return; }
+        if (ctrl && k === "u") { e.preventDefault(); this.upsamplePrompt(); return; }
+        if (ctrl && k === "c") { e.preventDefault(); this.copySelection({ merged: e.shiftKey }); return; }
+        if (ctrl && k === "x") { e.preventDefault(); this.copySelection({ cut: true }); return; }
+        if (ctrl && k === "v") { e.preventDefault(); this.pasteClipboard(); return; }
+        if (ctrl && k === "i") { e.preventDefault(); this.invertSelection(); return; }
+        if (ctrl && k === "s") { e.preventDefault(); this.exportImage(); return; }
+        if (ctrl || (e.altKey && !altGr)) return;
         if (e.shiftKey && k === "f") { this.fillSelection(); return; }
         if (e.shiftKey && k === "l") { this.setTool("polygon"); return; }
         if (e.shiftKey && k === "r") { this.setTool("ellipse"); return; }
@@ -3320,7 +3351,7 @@ class InpaintEditor {
             left: `${sx / dpr}px`, top: `${sy / dpr}px`,
             width: `${Math.max(24, uw / res * k * z + 2)}px`, height: `${Math.max(fs * 1.4, uh / res * k * z + 2)}px`,
             padding: `${pad}px`, fontSize: `${fs}px`, lineHeight: String(t.lineHeight || 1.2),
-            fontFamily: `"${t.font}", sans-serif`, fontWeight: t.bold ? "700" : "400", fontStyle: t.italic ? "italic" : "normal",
+            fontFamily: `"${fontCss(t)}", sans-serif`, fontWeight: t.bold ? "700" : "400", fontStyle: t.italic ? "italic" : "normal",
             textAlign: t.align || "left", letterSpacing: `${(t.letterSpacing || 0) * k * z}px`,
             transform: `${turn ? `rotate(${turn}deg)` : ""}${t.flip ? " scaleX(-1)" : ""}`.trim(), transformOrigin: "0 0",
         });
@@ -4404,9 +4435,18 @@ class InpaintEditor {
             let layer = this.activeLayer();
             if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
             if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels to smudge."); return; }
-            if (!layer) layer = this.baseCopyLayer();
+            let sample = this.smudgeOpts && this.smudgeOpts.sample === "image" ? "all" : "layer";
+            if (!layer) {
+                // the base is never written: the smudge takes the picture and paints into a new layer (a whole copy of the
+                // base as a layer took 1.9 s and held 1.1 GB of mirrors at 15000 x 10000, PLAN_0_1_31 §4 step 1)
+                layer = this.addPaintLayer();
+                sample = "all";
+                this.setStatus("The base cannot be edited directly: the smudge paints into a new layer from the picture.");
+            }
             this.pushUndo({ kind: "layer", id: layer.id, label: "Smudge" });
-            this.pointer = { kind: "smudge", layer, last: [ix, iy], clip: this.strokeClip(layer, layer.px), pressure: e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 1 };
+            // chosen before the gesture starts: a read during it must see the picture as if no gesture ran (brushSource)
+            const src = sample === "layer" ? null : this.brushSource(sample, layer);
+            this.pointer = { kind: "smudge", layer, src, last: [ix, iy], clip: this.strokeClip(layer, layer.px), pressure: e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 1 };
         } else if (this.tool === "clone" || this.tool === "heal") {
             if (e.altKey) {
                 this.cloneSource = { x: ix, y: iy };
@@ -4423,11 +4463,15 @@ class InpaintEditor {
             if (!layer) layer = this.addPaintLayer();
             const o = this.cloneOpts || { sample: "image", aligned: true };
             if (!o.aligned || !this.cloneOffset) this.cloneOffset = { x: this.cloneSource.x - ix, y: this.cloneSource.y - iy };
-            const sample = this.sampleCanvas(o.sample);
             const heal = this.tool === "heal";
+            // where the dabs read, chosen before the gesture starts (PLAN_0_1_31 §4 step 2): a box per move, not a flatten of
+            // the whole picture at every press (0.5 to 1.7 s at 15000 x 10000); heal also reads the picture under the dab
+            const sample = o.sample === "layer" ? "layer" : "all";
+            const src = this.brushSource(sample, layer);
+            const dest = heal ? (sample === "all" ? src : this.brushSource("all", layer)) : null;
             const stroke = new StrokeBuffer(layer.px, this.pixels);
             this.pointer = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: false, last: [ix, iy], pressure: e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 1,
-                clone: { sample, dest: heal ? (o.sample === "image" ? sample : this.compositeCanvas()) : null, off: this.cloneOffset, heal } };
+                clone: { src, dest, off: this.cloneOffset, heal } };
             this.cloneDab(this.pointer, ix, iy, ix, iy);
         } else if (this.tool === "gradient") {
             let layer = this.activeLayer();
@@ -4774,7 +4818,9 @@ class InpaintEditor {
         } else if (p.kind === "shapepoint") {
             this.shapeDrag = null;
         } else if (p.kind === "smudge") {
-            this.markLayerChanged(p.layer);
+            // the box the dabs covered (the whole layer before 0.1.32: every matched layer above lost its statistics)
+            if (p.bounds) this.markLayerChanged(p.layer, this.strokeRect(p, p.layer.px));
+            this.releaseStrokeScratch();
         } else if (p.kind === "maskpaint" && !p.layer.maskPx) {
             // the mask went away while the button was down (Ctrl+Z of the step that made it, or an
             // agent's undo): the stroke has nothing to land on and ends like a cancelled one
@@ -5673,6 +5719,85 @@ class InpaintEditor {
     }
 
     /**
+     * Where a brush that reads the picture reads it (PLAN_0_1_31 §4 step 2), chosen once at the press, before
+     * `this.pointer` is set: `{ tier, read(box, slot) }`. `read` gives `{ canvas, x, y }`, a canvas whose (0, 0) is the
+     * image point (x, y) and that covers `box` ([x0, y0, x1, y1] in image pixels) clamped to the picture, or null when
+     * the box lies outside it; `slot` (0, 1) keeps two reads of one move apart (heal's source and destination). `sample`:
+     * "layer" (`layer` alone through its mask over nothing, as the wand's and the bucket's "layer"), "below" (the picture
+     * up to and including `layer`) or "all" (the visible picture with the helper layers, as `compositeCanvas` draws it).
+     * Clone and heal flattened the whole picture at every press before (0.5 to 1.7 s at 15000 x 10000, 1.1 GB of
+     * mirrors), the smudge read the layer's whole mirror at every step (0.2 to 8 s a move).
+     *
+     * Tier "tiles": `stackPlan`'s stack (for "layer" the layer alone, as `floodStack`), composited under the box by
+     * `compositeBox` from the tiles, nothing that grows with the document. The stores are read where they are, not held:
+     * a clone or heal stroke writes into its stroke buffer until the release, so what it reads stays the press's picture,
+     * and a smudge reads what its own steps wrote. A colour-matched layer is matched with the statistics the sampled
+     * passes use, taken here (`boxMatchOf`). The kernel's composite may differ from Canvas 2D's by a level or two in a
+     * blend mode (CLAUDE.md "three roundings"). Tier "region" (the canvas backend, a filter layer, a scaled, fractional or
+     * text layer, a pending transform, or `InpaintEditor.regionalBrushes === false`, the A/B switch): `readBox` or
+     * `sampleRegion("layer")`, the Canvas 2D picture, read as if no gesture ran (a region pass during a stroke draws the
+     * stroke into its layer, leaves the filters above it out and the target unmatched). Where `boxReach` is infinite
+     * that is the cached whole flatten, as before; a smudge reading it sees the press's picture, not its own steps.
+     */
+    brushSource(sample, layer) {
+        const idx = layer ? this.layers.indexOf(layer) : -1;
+        const upTo = sample === "below" && idx >= 0 ? idx + 1 : null;
+        const clampBox = (box) => {
+            const b = [Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(this.width, Math.ceil(box[2])), Math.min(this.height, Math.ceil(box[3]))];
+            return b[2] > b[0] && b[3] > b[1] ? b : null;
+        };
+        const region = (box) => {
+            const b = clampBox(box);
+            if (!b) return null;
+            const keep = this.pointer;
+            this.pointer = null;
+            try {
+                const canvas = sample === "layer" ? this.sampleRegion("layer", b, 1) : this.readBox(b, upTo == null ? { forRun: false } : { forRun: false, upTo });
+                return { canvas, x: b[0], y: b[1] };
+            } finally { this.pointer = keep; }
+        };
+        let plan = null;
+        if (InpaintEditor.regionalBrushes !== false && this.tileMode) {
+            if (sample === "layer") {
+                const l = layer;
+                if (l && l.kind !== "filter" && l.px && isTilePixels(l.px) && (!this.liveMask(l) || this.tileMaskOf(l)) && l.px.width === l.w && l.px.height === l.h && l.x === Math.round(l.x) && l.y === Math.round(l.y))
+                    plan = [null, { px: l.px, mask: this.liveMask(l) ? this.tileMaskOf(l) : null, x: l.x, y: l.y, alpha: 255, op: 0 }];
+            } else plan = this.stackPlan({ forRun: false, upTo });
+        }
+        if (!plan) return { tier: "region", read: region };
+        const stack = plan.map((s) => s && { px: s.px, mask: s.mask || null, x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0, match: s.match ? this.boxMatchOf(s.match) : null });
+        const src = {
+            tier: "tiles",
+            read: (box, slot = 0) => {
+                if (src.tier !== "tiles") return region(box);
+                const b = clampBox(box);
+                if (!b) return null;
+                const w = b[2] - b[0], h = b[3] - b[1];
+                let bytes;
+                // a store given back while the gesture ran (an agent's undo): the rest of the gesture reads the region pass
+                try { bytes = compositeBox(stack, b[0], b[1], w, h); }
+                catch (err) { console.warn("Inpaint Canvas: the brush's tile read failed, reading the region pass:", err); src.tier = "region"; return region(box); }
+                const reads = this._brushRead || (this._brushRead = []);
+                const c = reads[slot] = cpuDab(reads[slot], w, h);
+                c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(bytes.buffer, bytes.byteOffset, w * h * 4), w, h), 0, 0);
+                return { canvas: c, x: b[0], y: b[1] };
+            },
+        };
+        return src;
+    }
+
+    /** The ten floats a colour-matched layer is matched with in `compositeBox` (as `stackMatchOf` gives the workers), from the statistics the sampled passes use; null for no match. */
+    boxMatchOf(layer) {
+        const m = layer.match || {};
+        const k = Math.min(1, Math.max(0, (m.strength || 0) / 100));
+        if (!(k > 0)) return null;
+        const stats = this.sampledMatchStats(layer, false, false);
+        if (!stats) return null;
+        const p = [...stats.meanS, ...stats.meanT, ...stats.scale, k];
+        return p.every(Number.isFinite) ? p : null;
+    }
+
+    /**
      * The flood over `box` (on the tile grid, inside the image) of a held stack, without a canvas (B item 2): the pool
      * composites the box from the tiles into one shared buffer, a tile row a job, and one worker floods it there. The
      * answer is `floodShape`'s, with `tiles` in place of `shape` when `o.tiles` asks for the selection's tiles. Null when
@@ -6245,7 +6370,7 @@ class InpaintEditor {
         const key = `${r}|${hardness}`;
         if (this._dabMask && this._dabMask.key === key) return this._dabMask.c;
         const size = Math.max(1, Math.ceil(r * 2));
-        const c = makeCanvas(size, size);
+        const c = cpuDab(null, size);   // drawn into the dab canvases, which are on the CPU
         const ctx = c.getContext("2d");
         const g = ctx.createRadialGradient(r, r, 0, r, r, r);
         g.addColorStop(0, "rgba(0,0,0,1)");
@@ -6257,31 +6382,26 @@ class InpaintEditor {
         return c;
     }
 
-    /** The base as an image layer (for tools that need pixels of their own, e.g. smudge on the base). */
-    baseCopyLayer() {
-        const c = makeCanvas(this.width, this.height);
-        this.basePx.drawTo(c.getContext("2d"), 0, 0);   // unscaled (PLAN_BCE §C1 rule 6)
-        const layer = this.addLayer({ name: "Base copy", kind: "image", ref: null, px: this.pixels.Layer.fromCanvas(c), x: 0, y: 0, w: this.width, h: this.height, dirty: true }, { activate: true });
-        this.setStatus("The base cannot be edited directly: a copy layer was added.");
-        return layer;
-    }
-
     /**
      * Smudge: drag the pixels under the brush along the stroke, directly on the layer's
      * pixels. Every step reads what the step before wrote: the read goes into the dab scratch
-     * before that step's own write, which is one drawInto per step.
+     * before that step's own write, which is one drawInto per step. The read is the dab's box
+     * (`smudgeRead`), never the whole layer, and a move refreshes the levels of its own box.
      */
     smudgeDab(p, x0, y0, x1, y1) {
         const layer = p.layer, target = layer.px;
         const sx = target.width / layer.w, sy = target.height / layer.h;
         const lx0 = (x0 - layer.x) * sx, ly0 = (y0 - layer.y) * sy, lx1 = (x1 - layer.x) * sx, ly1 = (y1 - layer.y) * sy;
-        const r = Math.max(1, this.brushSize * (sx + sy) / 4 * Math.max(0.05, Math.min(1, p.pressure || 1)));
+        const pr = Math.max(0.05, Math.min(1, p.pressure || 1));
+        const r = Math.max(1, this.brushSize * (sx + sy) / 4 * pr);
         const size = Math.ceil(r * 2);
         const strength = Math.max(0.01, Math.min(1, (this.smudgeOpts ? this.smudgeOpts.strength : 60) / 100));
-        if (!this._smudgeDab || this._smudgeDab.width !== size) this._smudgeDab = makeCanvas(size, size);
-        const d = this._smudgeDab, dctx = d.getContext("2d");
+        const d = this._smudgeDab = cpuDab(this._smudgeDab, size);
+        const dctx = d.getContext("2d");
         const mask = this.dabMask(r, this.hardness);
         const op = layer.alphaLock ? "source-atop" : "source-over";
+        // the image box the move can touch (the release marks it, not the whole layer)
+        this.strokeBounds(p, x0, y0, x1, y1, this.brushSize / 2 * pr + 2);
         const dist = Math.hypot(lx1 - lx0, ly1 - ly0);
         const steps = Math.max(1, Math.ceil(dist / Math.max(1, r * 0.25)));
         let px = lx0, py = ly0;
@@ -6289,11 +6409,14 @@ class InpaintEditor {
             const x = lx0 + (lx1 - lx0) * i / steps, y = ly0 + (ly1 - ly0) * i / steps;
             dctx.globalCompositeOperation = "source-over";
             dctx.clearRect(0, 0, size, size);
-            // the source rectangle is fractional and may reach outside the pixels: drawImage clips and resamples it as before
-            target.drawTo(dctx, px - r, py - r, size, size, 0, 0, size, size);
+            this.smudgeRead(p, target, dctx, px - r, py - r, size);
             dctx.globalCompositeOperation = "destination-in";
             dctx.drawImage(mask, 0, 0);
-            if (p.clip) { this._smudgeClip = this.clipCanvasFor(layer, target, x - r, y - r, size, size, this._smudgeClip); dctx.drawImage(this._smudgeClip, 0, 0); }
+            if (p.clip) {
+                this._smudgeClip = cpuDab(this._smudgeClip, size);   // clipCanvasFor draws into it when it has the size
+                this._smudgeClip = this.clipCanvasFor(layer, target, x - r, y - r, size, size, this._smudgeClip);
+                dctx.drawImage(this._smudgeClip, 0, 0);
+            }
             const dx = x - r, dy = y - r;
             // the dab lands on [dx, dx + size) at a fractional position; a pixel of margin covers its soft edge
             target.drawInto([dx - 1, dy - 1, dx + size + 1, dy + size + 1], (ctx) => {
@@ -6306,22 +6429,63 @@ class InpaintEditor {
         layer._maskedValid = false;
         layer._mcache = null;
         layer._mcacheView = null; layer._mcacheSample = null;
-        this.touchSource(target);
+        // the levels of the move's box are refreshed, not dropped for the whole layer (C6 b)
+        const bx0 = Math.max(0, Math.floor(Math.min(lx0, lx1) - r) - 2), by0 = Math.max(0, Math.floor(Math.min(ly0, ly1) - r) - 2);
+        const bx1 = Math.min(target.width, Math.ceil(Math.max(lx0, lx1) + r) + 2), by1 = Math.min(target.height, Math.ceil(Math.max(ly0, ly1) + r) + 2);
+        if (bx1 > bx0 && by1 > by0) this.touchSourceRect(target, bx0, by0, bx1, by1);
     }
 
-    /** Mean RGB of a region of an image-sized canvas, via an 8 × 8 downscale. */
-    regionMean(src, x, y, w, h) {
-        if (!this._meanCanvas) this._meanCanvas = makeCanvas(8, 8);
-        const m = this._meanCanvas, mctx = m.getContext("2d");
-        mctx.clearRect(0, 0, 8, 8);
-        mctx.drawImage(src, x, y, w, h, 0, 0, 8, 8);
-        const d = mctx.getImageData(0, 0, 8, 8).data;
-        let r = 0, g = 0, b = 0, n = 0;
-        for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 8) continue; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
-        return n ? [r / n, g / n, b / n] : null;
+    /**
+     * What a smudge dab picks up at (x, y) of `target` (the layer's pixels, fractional), `size` a side, drawn into the dab
+     * at (0, 0): the picture through the gesture's source (Sample: the image; always on the base), or the layer's own
+     * box from its tiles. Before 0.1.32 the read was `drawTo`, the whole-layer display mirror (572 MB at 15000 x 10000,
+     * 0.2 to 8 s a move, PLAN_0_1_31 §4 step 1). The source rectangle is fractional and may reach outside the pixels:
+     * drawImage clips and resamples it as before, from a box a pixel wider than it on each side.
+     */
+    smudgeRead(p, target, dctx, x, y, size) {
+        const layer = p.layer;
+        if (p.src) {
+            const fx = layer.w / target.width, fy = layer.h / target.height;
+            const ix = layer.x + x * fx, iy = layer.y + y * fy, iw = size * fx, ih = size * fy;
+            const got = p.src.read([Math.floor(ix) - 1, Math.floor(iy) - 1, Math.ceil(ix + iw) + 1, Math.ceil(iy + ih) + 1]);
+            if (got) dctx.drawImage(got.canvas, ix - got.x, iy - got.y, iw, ih, 0, 0, size, size);
+            return;
+        }
+        if (!isTilePixels(target)) { target.drawTo(dctx, x, y, size, size, 0, 0, size, size); return; }   // its own canvas: no mirror
+        const b = [Math.max(0, Math.floor(x) - 1), Math.max(0, Math.floor(y) - 1), Math.min(target.width, Math.ceil(x + size) + 1), Math.min(target.height, Math.ceil(y + size) + 1)];
+        if (b[2] <= b[0] || b[3] <= b[1]) return;
+        const c = this._smudgeSrc = cpuDab(this._smudgeSrc, b[2] - b[0], b[3] - b[1]);
+        c.getContext("2d").putImageData(target.readRect(b[0], b[1], b[2] - b[0], b[3] - b[1]), 0, 0);
+        dctx.drawImage(c, x - b[0], y - b[1], size, size, 0, 0, size, size);
     }
 
-    /** Clone / heal: copy the source patch (offset by the stroke's offset) into the stroke buffer; heal shifts its colour to the destination's. */
+    /**
+     * Heal: the patch in the dab canvas takes the destination's colour, the difference of the two means added to its
+     * bytes when it is more than a level (both means over the pixels at least 8 in alpha: the patch's square and the
+     * destination's square `w` at (x, y) of the image, read from `dst`). The means were an 8 x 8 downscale of two
+     * whole-picture canvases with a readback each before 0.1.32; now they are the bytes' own, from CPU canvases.
+     */
+    healShift(dctx, size, dst, x, y, w) {
+        const img = dctx.getImageData(0, 0, size, size), a = img.data;
+        const ms = meanRGB(a);
+        if (!ms) return;
+        const t = this._healDest = cpuDab(this._healDest, size);
+        const tctx = t.getContext("2d");
+        tctx.clearRect(0, 0, size, size);
+        tctx.drawImage(dst.canvas, x - dst.x, y - dst.y, w, w, 0, 0, size, size);
+        const md = meanRGB(tctx.getImageData(0, 0, size, size).data);
+        if (!md) return;
+        const dr = md[0] - ms[0], dg = md[1] - ms[1], db = md[2] - ms[2];
+        if (Math.abs(dr) + Math.abs(dg) + Math.abs(db) <= 1) return;
+        for (let k = 0; k < a.length; k += 4) { a[k] += dr; a[k + 1] += dg; a[k + 2] += db; }
+        dctx.putImageData(img, 0, 0);
+    }
+
+    /**
+     * Clone / heal: copy the source patch (offset by the stroke's offset) into the stroke buffer; heal shifts its colour to
+     * the destination's. One read a move (PLAN_0_1_31 §4 step 2): the box that every step of this segment takes its patch
+     * from, and for heal the box of the picture under the segment; the gesture's source (`brushSource`) composites it.
+     */
     cloneDab(p, x0, y0, x1, y1) {
         const layer = p.layer, s = p.stroke, cl = p.clone;
         const sx = s.tw / layer.w, sy = s.th / layer.h;
@@ -6330,31 +6494,24 @@ class InpaintEditor {
         const size = Math.ceil(r * 2);
         this.strokeBounds(p, x0, y0, x1, y1, R + 2);
         this.strokeDirty(p, x0, y0, x1, y1, R + 2);
-        if (!this._cloneDab || this._cloneDab.width !== size) this._cloneDab = makeCanvas(size, size);
-        const d = this._cloneDab, dctx = d.getContext("2d");
+        const d = this._cloneDab = cpuDab(this._cloneDab, size);
+        const dctx = d.getContext("2d");
         const mask = this.dabMask(r, this.hardness);
         const dist = Math.hypot(x1 - x0, y1 - y0);
         const steps = Math.max(1, Math.ceil(dist / Math.max(1, R * 0.25)));
+        const span = (ax, ay, bx, by) => [Math.floor(Math.min(ax, bx) - R) - 2, Math.floor(Math.min(ay, by) - R) - 2, Math.ceil(Math.max(ax, bx) + R) + 2, Math.ceil(Math.max(ay, by) + R) + 2];
+        const src = cl.src.read(span(x0 + cl.off.x, y0 + cl.off.y, x1 + cl.off.x, y1 + cl.off.y), 0);
+        const dst = cl.heal && src ? cl.dest.read(span(x0, y0, x1, y1), 1) : null;
         s.draw((Math.min(x0, x1) - layer.x) * sx - r - 1, (Math.min(y0, y1) - layer.y) * sy - r - 1, (Math.max(x0, x1) - layer.x) * sx + r + 1, (Math.max(y0, y1) - layer.y) * sy + r + 1, (sctx) => {
+            if (!src) return;   // the source lies outside the picture: nothing to copy
             for (let i = 0; i <= steps; i++) {
                 if (i === 0 && dist > 0) continue;
                 const x = x0 + (x1 - x0) * i / steps, y = y0 + (y1 - y0) * i / steps;
                 const qx = x + cl.off.x, qy = y + cl.off.y;
                 dctx.globalCompositeOperation = "source-over";
                 dctx.clearRect(0, 0, size, size);
-                dctx.drawImage(cl.sample, qx - R, qy - R, R * 2, R * 2, 0, 0, size, size);
-                if (cl.heal) {
-                    const ms = this.regionMean(cl.sample, qx - R, qy - R, R * 2, R * 2);
-                    const md = this.regionMean(cl.dest, x - R, y - R, R * 2, R * 2);
-                    if (ms && md) {
-                        const dr = md[0] - ms[0], dg = md[1] - ms[1], db = md[2] - ms[2];
-                        if (Math.abs(dr) + Math.abs(dg) + Math.abs(db) > 1) {
-                            const img = dctx.getImageData(0, 0, size, size), a = img.data;
-                            for (let k = 0; k < a.length; k += 4) { a[k] += dr; a[k + 1] += dg; a[k + 2] += db; }
-                            dctx.putImageData(img, 0, 0);
-                        }
-                    }
-                }
+                dctx.drawImage(src.canvas, qx - R - src.x, qy - R - src.y, R * 2, R * 2, 0, 0, size, size);
+                if (dst) this.healShift(dctx, size, dst, x - R, y - R, R * 2);
                 dctx.globalCompositeOperation = "destination-in";
                 dctx.drawImage(mask, 0, 0);
                 const lx = (x - layer.x) * sx, ly = (y - layer.y) * sy;
@@ -6784,16 +6941,23 @@ class InpaintEditor {
         if (!p.stroke || p.stroke.empty) return;
         const opacity = this.brushOpacity;
         const op = p.erase ? "destination-out" : (p.kind === "layerpaint" && p.layer.alphaLock ? "source-atop" : "source-over");
-        if (this.commitStrokeTiles(p, target, op, opacity)) return;
-        for (const [bx, by, bw, bh] of this.strokeBands(p, target)) {
-            const patch = this.strokePatch(p, target, bx, by, bw, bh);
-            if (!patch) continue;
-            // the patch is the band's size at the band's origin: unscaled, on whole pixels
-            target.drawInto([bx, by, bx + bw, by + bh], (ctx) => {
-                ctx.globalAlpha = opacity;
-                ctx.globalCompositeOperation = op;
-                ctx.drawImage(patch, bx, by);
-            });
+        try {
+            if (this.commitStrokeTiles(p, target, op, opacity)) return;
+            for (const [bx, by, bw, bh] of this.strokeBands(p, target)) {
+                const patch = this.strokePatch(p, target, bx, by, bw, bh);
+                if (!patch) continue;
+                // the patch is the band's size at the band's origin: unscaled, on whole pixels
+                target.drawInto([bx, by, bx + bw, by + bh], (ctx) => {
+                    ctx.globalAlpha = opacity;
+                    ctx.globalCompositeOperation = op;
+                    ctx.drawImage(patch, bx, by);
+                });
+            }
+        } catch (err) {
+            // the renderer's memory for pixels ran out part way (PixelMemoryError, inpaint_arena.js): the undo step above is
+            // in, so Ctrl+Z takes back what the commit wrote, and the release goes on to mark the stroke's box
+            if (!err || err.name !== "PixelMemoryError") throw err;
+            this.setStatus(err.message);
         }
     }
 
@@ -6906,10 +7070,11 @@ class InpaintEditor {
 
     /** After a gesture: the live preview canvases of a large layer are given back, small ones are kept for the next stroke. */
     releaseStrokeScratch() {
-        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev"]) {
+        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_smudgeDab", "_smudgeSrc", "_smudgeClip", "_cloneDab", "_healDest"]) {
             const c = this[k];
             if (c && c.width * c.height > STROKE_SCRATCH_KEEP_PX) this[k] = null;
         }
+        if (this._brushRead) this._brushRead = this._brushRead.map((c) => (c && c.width * c.height > STROKE_SCRATCH_KEEP_PX ? null : c));
         this._strokeViewOf = null;
         this._strokeViewSig = null;
     }
@@ -10340,7 +10505,7 @@ class InpaintEditor {
             const pngChunks = fmt === "png" ? [SRGB_CHUNK] : null;   // 3f: the pixels are sRGB, and the file says so
             if (fmt === "png") {
                 // Same metadata as SaveImage: the workflow (and the canvas prompt), so the file loads back into ComfyUI. The
-                // host answers null when it is not to be embedded (the app's switch, off by default: docs/PLAN_0_1_29.md 3f).
+                // host answers null when it is not to be embedded (the app's switch, on by default: docs/PLAN_0_1_29.md 3f).
                 try {
                     const workflow = host.workflowForPng(this);
                     if (workflow) pngTexts = { workflow: asciiJson(workflow), inpaint_canvas: asciiJson({ prompt: this.promptText, negative: this.negativeText, width: this.width, height: this.height, seed: this.genSettings.seed, mode: this.genSettings.mode }) };
@@ -13486,9 +13651,11 @@ class InpaintEditor {
             if (l._masked) { freed += px(l._masked); sources.push(l._masked); l._masked = null; l._maskedValid = false; }
             for (const p of [l.px, l.maskPx]) if (p) sources.push(displayCanvasIfMade(p));
         }
-        for (const name of ["sceneCanvas", "viewCanvas", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView", "_filterMaskView"]) {
-            if (this[name]) { freed += px(this[name]); this[name] = null; }
+        for (const name of ["sceneCanvas", "viewCanvas", "flatCanvas", "filterMaskCanvas", "strokePreview", "maskPreview", "maskedPreview", "antsCanvas", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_passView", "_passMaskView", "_filterMaskView", "_smudgeDab", "_smudgeSrc", "_smudgeClip", "_cloneDab", "_healDest", "_dabMask"]) {
+            if (this[name]) { freed += px(this[name].c || this[name]); this[name] = null; }
         }
+        if (this._brushRead) { for (const c of this._brushRead) if (c) freed += px(c); this._brushRead = null; }
+        releaseBoxBuffers();
         if (this.flatCache) { freed += px(this.flatCache.canvas); this.flatCache = null; }
         this.sceneSig = null;
         // the pyramids: their levels are exclusively theirs, the sources stay

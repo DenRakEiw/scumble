@@ -22,6 +22,28 @@ the section for its version; `docs/` and the commit history hold the technical d
   a saved selection and a result's place in the history where they were, so they landed off by what was cut away;
   now they move with the picture (and scale with a resize), like they already turned with it. Film look control
   points and 3D objects follow too.
+- **PNG exports carry the prompt and the recipe again.** *Prompt and recipe in the PNG* in the Export panel is on
+  unless you untick it (it was off since 0.1.30); JPEG, WebP, TIFF, PSD and ORA never carry them. What the recipe
+  names like a key, a token, a secret or a password stays out of the file: a workflow you imported with an API key
+  typed into one of its nodes no longer hands that key to whoever gets the picture.
+- **The Opacity slider is back for the brushes.** The paint brush, the eraser, clone, heal, the bucket and the
+  gradient showed no Opacity slider since the shape tool came; it is in their bar again.
+- **`[` and `]` size the brush on a German keyboard.** Typed with AltGr, they moved the active layer up or down
+  instead; AltGr+ß (`\`) now peeks at the base as it should.
+- **Text keeps the font file it was set in.** When a document you opened brought a font whose name was already taken
+  by another file of yours (it is stored as "MyFont (1).ttf" then), its text could be drawn from your file instead
+  on the next edit. Each text now uses the file it names, and two fonts of the same name can be used side by side.
+- **Rotating a masked layer says what happens to the mask.** Rotate, distort and warp bake a layer's mask into its
+  pixels (or drop a switched-off one); the status line now says so, and Ctrl+Z still brings the mask back.
+- **Out of memory says so.** A window holds about 15.5 GB of pixels (18 full layers at 15,000 × 10,000); one more
+  used to end in an error in the log and a stroke half written. Now the status line says memory ran out and what
+  gives it back, and a stroke that hit it can be undone as usual.
+- **Smudge, clone and heal stay fast on large pictures.** They read the whole picture before: clone and heal
+  flattened it at every stroke (up to 1.7 s at 15,000 × 10,000 before the brush moved) and the smudge read the
+  whole layer at every step (up to 8 s a move). Now each reads only what is under the brush: a few milliseconds a
+  move at any size, and a gigabyte less memory. Heal matches the colour more exactly. The smudge has a **Sample**
+  option (the layer, or the whole visible picture smudged into the active layer), and on the base it no longer
+  copies the whole base into a layer first: it paints into a new layer from the picture.
 
 ## 0.1.31 — 2026-09-27
 

@@ -11,6 +11,44 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### At the renderer's 15.5 GB of typed arrays the editor threw a RangeError - fixed for 0.1.32
+
+**Found** by phase N1 (2026-09-17, `native_limits.py layers 15000x10000 22`: the 19th full 15k layer) and the gap review
+of 2026-09-26: at Chromium's limit on `ArrayBuffer`s a new tile's `new Uint8ClampedArray` threw an uncaught
+`RangeError: Array buffer allocation failed` out of whatever write needed it (`allocTileBytes`, after the arena had
+counted a refused chunk). And `writable()` counted a shared tile's holders down *before* it allocated the copy, so a
+failed allocation let the next write go into the tile the undo step still read. Now the copy comes first, the
+allocation throws a `PixelMemoryError` whose message says what ran out and what gives it back (close a document,
+delete or merge layers), a stroke's commit catches it (its undo step is in), and the shell shows one nothing caught in
+the status line. `tools/pixel_memory_test.js` (plain Node; red on the old order). Mip chains built while drawing can
+still hit the limit; not measured in the app.
+
+### A user font renamed on open could lose to a local font of the same family - fixed for 0.1.32
+
+**Found** by the .scumble review of 2026-09-26 (read): `ensureFont` (`renderer/editor/inpaint_text.js`) searched the
+user font list by family before it looked at the layer's `fontRef`, so a document whose "MyFont.ttf" was imported as
+"MyFont (1).ttf" (the mirror held other bytes under that name) re-rendered its text from the local file. Now the
+layer's own file comes first and the family only when that file does not load; every font file is registered under a
+name of its own, so two files of one family in one session each draw as themselves. `tools/font_ref_test.js` (plain
+Node, the editor's host and FontFace stood in for; red on the old code).
+
+### Rotate, distort and warp baked the layer mask in without a word - fixed for 0.1.32
+
+**Found** by the gap review of 2026-09-26 (read): `applyPending` bakes a live mask into the new pixels and drops a
+switched-off one (the new pixels have no grid the mask could stay on), and said nothing. Now the status line says
+which of the two happened and that Ctrl+Z brings the mask back (the `layerfull` undo step holds it). Editor step
+`a_transform_says_it_baked_the_mask`.
+
+### The Opacity slider was hidden for the brushes, and AltGr+8 / AltGr+9 moved the layer - fixed for 0.1.32
+
+**Found** 2026-09-27 by package 4's map of the brush code (`dist/map4/engine.md` R6 and R5, read): `buildOptsBar`
+moved the Opacity label twice, and the second call (for "shape", since e0c00a7) overwrote its tool list, so the
+slider showed for the shape tool only (paint, erase, clone, heal, bucket and gradient had it through `set_brush`
+alone). And on a German keyboard `[` and `]` are AltGr+8 / AltGr+9, which Chromium on Windows reports with Ctrl and
+Alt down: the key handler took them for Ctrl+[ / Ctrl+] and moved the active layer instead of sizing the brush (AltGr
++ß for `\`, the base peek, did nothing). Now one tool list, and `onKey` treats a key typed with AltGr as the
+character it types. Editor step `brush_keys_under_altgr_and_the_opacity_slider`.
+
 ### Guides, saved selections, past results, film points and 3D objects stayed put on Crop, Extend or Resize - fixed for 0.1.32
 
 **Found** 2026-09-26 (saved selections, the gap review) and 2026-09-27 (guides, by reading; results-history entries,
@@ -197,27 +235,18 @@ An entry here leaves the file when the release named in it is published.
 The ones that were part of `docs/PLAN_0_1_29.md` §3 (the skipped flush on quit, TIFF, the PNG metadata) are fixed:
 "Fixed, waiting for its release".
 
-- **Rotate, distort and warp bake the layer mask into the pixels** without a word (`inpaint_canvas.js` ~1909).
-- **The Opacity slider is hidden for paint, erase, clone, heal, bucket and gradient** (found 2026-09-27 by package 4's
-  map, `dist/map4/engine.md` R6; read, not run): `buildOptsBar` moves the Opacity label twice, and the second call
-  (for "shape", since e0c00a7) overwrites its `data-for`, so `updateOptsBar` shows it for the shape tool only. One look
-  in the app confirms it; the fix belongs to package 4 step 5.
 - **The film look "None (adjustments only)" still adds grain**: `plugins/film/filters.js` ~387 falls back to
   `{ amount: 25, ... }` when there is no stock.
-- **At the typed-array cap (15.5 GB) the editor throws a `RangeError`** instead of refusing the operation.
 
 ### Found in the .scumble review (2026-09-26, read, not run)
 
 **Written** 2026-09-26 when `docs/DOCUMENTS.md` was written from the code (package 3b). The other findings of that
 review are fixed (reserved Windows names, refs the document does not carry, `extra` in the ref walkers and the renames,
-the temp registry after the rename, `summary.name`); these two touch the shared editor code and wait:
+the temp registry after the rename, `summary.name`); these touch the shared editor code and wait (the user font renamed
+on open is fixed for 0.1.32, above):
 
 - **A layer of an unknown kind without a `ref` is dropped on open without a note** (`inpaint_canvas.js` `setValue`,
   `if (!l.ref) continue;`); the plan wanted a note. Only a document from a newer Scumble can hold one.
-- **A user font renamed on open can lose to a local font of the same family** (`renderer/editor/inpaint_text.js`
-  `ensureFont`: the user font list is searched by family before the layer's `fontRef`). When an open imported the
-  document's font as "MyFont (1).ttf" because another file of that name was in the mirror, a re-render may use the
-  local file. Probably rare (the same family in two different files); a fix prefers `fontRef` when it names a file.
 - **Canvas backend only: an undo back to the saved state leaves the tab's "*"** (measured by `docux`, 2026-09-26). The
   layer's upload name is a hash of its PNG, encoded through `createImageBitmap` of a GPU canvas; fully transparent
   pixels can come back with other colour bytes, so the same visible pixels (0 differ) get another name and the state
@@ -287,10 +316,7 @@ agent ist nur add on"), so the assistant's plan does not fix them; each is its o
 - **The whole-picture wand on a document above the canvas limit works for 4.6 s and then refuses** ("larger than any
   canvas", 30000 × 20000, `native_test.py 30000x20000 wand_whole_picture`). Why it gets
   that far before it refuses is not read yet. Either it says so at once, or it floods over tiles.
-- **At the renderer's 15.5 GB of typed arrays the editor throws instead of saying no**: the 19th full 15k layer ends in an
-  uncaught `RangeError: Array buffer allocation failed` out of `allocTileBytes` / `TileLayerPixels.writable`
-  (`native_limits.py layers 15000x10000 22`). The arena counts a refused chunk and then falls back to a plain array, which
-  fails the same way. Not measured: what a stroke or a paste does to the document when it hits that in the middle.
+- (The renderer's 15.5 GB of typed arrays: fixed for 0.1.32, "Fixed, waiting for its release" above.)
 - (The provider crop's block and the opening of a large JPEG, WebP or profiled PNG are fixed: "Fixed, waiting for its
   release" above.)
 

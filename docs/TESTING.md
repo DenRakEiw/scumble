@@ -50,7 +50,9 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
 
 Since then: `tools/document_test.py` / `document_ux_test.py` / `document_perf.py` (gates `document`, `docux`,
 `docperf:WxH`, `.scumble` documents), `tools/quit_test.py` (gate `quit`), `tools/metadata_test.py` (gate `metadata`,
-what an exported picture says about itself), `tools/tiff_test.js` with `tools/tiff_fixtures.py` and
+what an exported picture says about itself; `node tools/secret_names_test.js` the names it leaves out of an embedded
+recipe), `node tools/font_ref_test.js` (which file a text's font is loaded from), `node tools/pixel_memory_test.js`
+(the tile store at the renderer's typed-array limit, the refusal stood in for), `tools/tiff_test.js` with `tools/tiff_fixtures.py` and
 `tools/tiff_test.py` (gates `tiff`, `tiffperf:WxH`), `tools/canvasonly_test.py` (gate `canvasonly`, the canvas-only
 view of item 24: real Tab and Escape presses over CDP; the chrome hidden, the view the window's size, full screen and a
 fitted picture while on, the view / rulers / chrome / window put back after; Tab ignored in a text field, a dialog, the
@@ -62,9 +64,11 @@ in `tools/run_gates.sh` runs `tools/X_test.py`.
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:
-- `editor_test.py` `pixel_backend_is_the_one_the_flag_chose` on the canvas backend (`--tiles off`): "the display took
-  toCanvas() copies" (2 copies in 4 frames), once on 2026-09-27; the re-run in a fresh instance had 0. Ruled out: the
-  3e mask switch (`liveMask` gives the same mask while `maskOff` is unset, and the step sets no switch).
+- (Fixed 2026-09-27: `editor_test.py` `pixel_backend_is_the_one_the_flag_chose` on the canvas backend, "the display
+  took toCanvas() copies". Not the display: the tab the live stroke step closes flushes its 10000 x 5000 layers, and
+  `rememberClosed`'s `saveAll` then encodes every open tab, this step's selection with `toCanvas()` among them, while
+  the step counted every copy of the prototypes; with the heal and smudge rows of 0.1.32 it landed there every run.
+  The step counts the copies its draws take now, and names their callers.)
 - `commands_test.py` hangs after every step has printed `[ok]` (the runner's 420 s timeout, sometimes in
   `Page.captureScreenshot`).
 - `editor_test.py` `closed_tabs_are_collected` fails with the last tabs still alive, or against an instance with 50+ tabs

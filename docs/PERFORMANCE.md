@@ -1477,6 +1477,42 @@ tiles and the match in the worker (15k with a 5,000 × 3,500 matched layer: PNG 
 84 ms; the wand 2.5 s to 0.9 s). What is left: a matched layer above a filter, a provider run's crop (`readBox`),
 and the coarse pass.
 
+## 15. Brushes at 15k: smudge, clone and heal read their box (2026-09-27)
+
+`docs/PLAN_0_1_31.md` §4 steps 1 and 2. 15000 x 10000 on tiles, a textured base and a full-size textured paint layer
+(active), one fresh instance per tool, `--no-comfy`, the window in front, the round tip at hardness 0.5, strength 60, a
+stroke of 30 pointer moves of 12 CSS px (DPR 1.5: 18 image px a move at 1:1, 156 at fit), the real handlers through
+synthetic pointer events, one draw per move timed with it ("sync" mode). ComfyUI's queue was empty, the card held
+16-17 GB (not freed: a production machine). The script is `tools/brush_perf.js` (run by `tools/brush_perf.py`); the two
+tables are local, in `dist/map4/measure/`. ms per move is the handler and its frame, the median of moves 2 to 30.
+
+| Tool, sample | Size, view | Press before | Press after | Move before | Move after | Mirrors before | after |
+|---|---|---|---|---|---|---|---|
+| smudge | 50 px, fit | 0.7 ms | 3.1 ms | 7,951 ms | 3.5 ms | 572 MB | 0 |
+| smudge | 200 px, fit | 0.8 | 3.6 | 2,213 | 5.1 | 572 | 0 |
+| smudge | 400 px, fit | 5.7 | 2.9 | 1,208 | 8.8 | 572 | 0 |
+| smudge | 200 px, 1:1 | 35 | 29 | 253 | 2.3 | 572 | 0 |
+| smudge on the base | 200 px, fit | 1,850 | 47 | 2,288 | 5.4 | 1,144 | 0 |
+| clone, image | 50 / 200 / 400, fit | 517 / 606 / 591 | 8 / 9 / 13 | 10 / 4.8 / 5.9 | 2.3 / 4.5 / 8.0 | 1,144 + 572 flat | 0 |
+| clone, image | 200 px, 1:1 | 701 | 40 | 3.6 | 2.2 | 1,144 + 572 | 0 |
+| clone, image, first stroke | 200 px, fit | 1,383 | 37 | 5.6 | 4.2 | 1,144 + 572 | 0 |
+| clone, layer | 200 px, fit | 360 | 8.5 | 4.8 | 4.4 | 572 + 572 | 0 |
+| heal, image | 50 / 200 / 400, fit | 204 / 203 / 208 | 8 / 9 / 19 | 3.2 / 5.8 / 9.8 | 3.4 / 7.2 / 14.9 | 1,144 + 572 | 0 |
+| heal, image, first stroke | 200 px, fit | 1,679 | 46 | 101 (worst 6,910) | 8.0 | 1,144 + 572 | 0 |
+| heal, layer | 200 px, fit | 373 | 11 | 13 | 7.3 | 1,144 + 572 | 0 |
+
+Before, the smudge read every step from the layer's whole display mirror (built at the first dab, a 15k CPU canvas
+drawn into a GPU dab canvas and read back into the tile scratch), and on the base it first copied the base into a
+full-size layer. Clone and heal flattened the whole picture at every press (every commit bumps the composite version,
+so every stroke flattened again) and drew each dab as a sub-rectangle of that 150 MP canvas; heal read back two 8 x 8
+downscales and the dab per step. After: the gesture's source (`brushSource`) composites the box under the dab from
+the tiles (`compositeBox`, `renderer/editor/inpaint_boxstack.js`, the `compositeTile` kernel on the main thread) once
+a move for clone and heal and once a step for the smudge, into CPU canvases; the smudge on the base paints into a new
+layer from the picture. The press left is the press's own frame (about 30 to 40 ms at 1:1, 3 to 10 at fit). What still
+grows with the brush's area: the tile scratch round trip of each smudge step and heal's two readbacks of CPU canvases
+(heal 400 px at fit, 15 ms a move); step 7 measures 1,000 and 2,000 px. The region pass (the canvas backend, a filter
+layer, a scaled or text layer near the box) is not measured here; it is today's Canvas 2D picture of the box.
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first

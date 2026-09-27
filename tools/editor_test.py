@@ -230,7 +230,8 @@ ed.brushTipId = null;
 ed.shapeOpts = { kind: "rectangle", fill: true, stroke: false, width: 4, radius: 0, color: "#000000" };
 ed.gradientOpts = { type: "linear", to: "transparent" };
 ed.cloneOpts = { sample: "image", aligned: false };
-ed.cloneSource = o.tool === "clone" ? { x: o.x0 - 700, y: o.y - 900 } : null;
+ed.cloneSource = o.tool === "clone" || o.tool === "heal" ? { x: o.x0 - 700, y: o.y - 900 } : null;
+if (ed.smudgeOpts) { ed.smudgeOpts.sample = "layer"; ed.smudgeOpts.strength = 60; }
 ed.cloneOffset = null;
 ed.selectionDisplay = "ants";
 const cx = (o.x0 + o.x1) / 2;
@@ -374,8 +375,10 @@ async def live_stroke_reaches_the_screen_before_the_release(c):
         ("1to1_erase", dict(tool="erase", view="1:1", scale=1, y=2850, x0=4300, x1=4800, wider=True)),
         ("1to1_shape", dict(tool="shape", view="1:1", scale=1, y=3100, x0=4300, x1=4800, dy=60, wider=True)),
         ("1to1_gradient", dict(tool="gradient", view="1:1", scale=1, y=2475, x0=4300, x1=4800, wider=True)),
-        # last: the clone tool makes a display mirror of the layer on tiles, and a stroke after it could not be checked for one
         ("1to1_clone", dict(tool="clone", view="1:1", scale=1, y=3350, x0=4300, x1=4800, wider=True)),
+        # 0.1.32 (PLAN_0_1_31 §4 step 2): heal and smudge read their box too, and have a row each
+        ("1to1_heal", dict(tool="heal", view="1:1", scale=1, y=3480, x0=4300, x1=4800, wider=True)),
+        ("1to1_smudge", dict(tool="smudge", view="1:1", scale=1, y=1450, x0=4300, x1=4800, wider=True)),
     ]
     fails = []
     try:
@@ -421,8 +424,9 @@ async def live_strokes(c, rows, setup, out, fails):
             row["mirror"] = [info["mirrorBefore"], end["mirror"]]
         out["strokes"][name] = row
         tool = o["tool"]
-        behind = tool in ("paint", "erase", "clone")
-        if end["pointer"] != "layerpaint" or after["pointer"] is not None:
+        behind = tool in ("paint", "erase", "clone", "heal", "smudge")
+        kind = "smudge" if tool == "smudge" else "layerpaint"
+        if end["pointer"] != kind or after["pointer"] is not None:
             fails.append("%s: the gesture was not a stroke held to the end and released (%s)" % (name, row["pointer"]))
             continue
         # the stroke went where the step moved it: a real mouse over the window (the user's hand) moves the pointer as well
@@ -443,7 +447,9 @@ async def live_strokes(c, rows, setup, out, fails):
             fails.append("%s: right after the last move, the button still down, the screen shows %d of the %d pixels the release shows (%.3f)" % (name, m["endNow"][0], m["endNow"][1], m["endNow"][2]))
         if m["end"][2] < 0.95:
             fails.append("%s: after a rest with the button still down the screen shows %d of the %d pixels the release shows (%.3f)" % (name, m["end"][0], m["end"][1], m["end"][2]))
-        if behind and (m["mid"][1] < 500 or m["mid"][2] is None or m["mid"][2] < 0.9):
+        # heal moves the source's texture to the colour under it: on the textured copy few pixels change by 30 levels (119
+        # half way, measured 2026-09-27), so its row asks for fewer
+        if behind and (m["mid"][1] < (50 if tool == "heal" else 500) or m["mid"][2] is None or m["mid"][2] < 0.9):
             fails.append("%s: half way through the stroke, the hand moving, the screen shows %d of the %d pixels behind the cursor (%s)" % (name, m["mid"][0], m["mid"][1], m["mid"][2]))
         if not behind and m["midAny"][2] < 0.1:
             fails.append("%s: half way through the stroke, the hand moving, the screen shows %d pixels of the stroke, against %d after the release (%.3f)" % (name, m["midAny"][0], m["midAny"][1], m["midAny"][2]))
@@ -457,11 +463,11 @@ async def live_strokes(c, rows, setup, out, fails):
         bound = 2 if o["view"] == "1:1" else 20
         if eq["worst"] > bound:
             fails.append("%s: the last frame before the release is not the frame after the commit (%d levels, bound %d, on %d bytes)" % (name, eq["worst"], bound, eq["differing"]))
-        # C5's cost: the live stroke is composed in the region the screen shows. The clone tool is left out: it makes a display
-        # mirror of the layer on tiles in 0.1.13 already (its whole-picture sample), which is not what this step is about
-        if setup["tiles"] and tool != "clone" and end["mirror"] and not info["mirrorBefore"]:
+        # C5's cost: the live stroke is composed in the region the screen shows. Clone, heal and smudge too since 0.1.32
+        # (their whole-picture sample and the smudge's read made a display mirror of the layer before)
+        if setup["tiles"] and end["mirror"] and not info["mirrorBefore"]:
             fails.append("%s: the stroke made a display mirror of the layer" % name)
-        if setup["tiles"] and tool != "clone" and info["mirrorBefore"]:
+        if setup["tiles"] and info["mirrorBefore"]:
             fails.append("%s: the layer had a display mirror before the stroke, so the step cannot tell whether the stroke makes one" % name)
 
 
@@ -611,11 +617,14 @@ const canvasOf = (p) => (flag ? P.displayCanvasIfMade(p) : P.canvasOf(p));
 const canvases = shown.map(canvasOf);
 const proto = [ed.pixels.Layer.prototype, ed.pixels.Mask.prototype];
 const orig = proto.map((pr) => Object.prototype.hasOwnProperty.call(pr, "toCanvas") ? pr.toCanvas : null);
-let copies = 0;
-for (const pr of proto) { const f = pr.toCanvas; pr.toCanvas = function (...a) { copies++; return f.apply(this, a); }; }
+let copies = 0, drawing = false;
+const callers = [];   // who took a copy (the stack's first frames)
+// only the copies the draws take: an autosave that lands meanwhile encodes this document's selection with toCanvas
+// (host.saveAll after a closed tab's flush, the tab of the live stroke step before: the flake of docs/TESTING.md)
+for (const pr of proto) { const f = pr.toCanvas; pr.toCanvas = function (...a) { if (drawing) { copies++; if (callers.length < 4) callers.push(String(new Error().stack).split(String.fromCharCode(10)).slice(2, 7).map((x) => x.trim().split("/").pop()).join(" < ")); } return f.apply(this, a); }; }
 let frames = 0;
 try {
-    for (let i = 0; i < 12; i++) { ed.sceneSig = null; ed.draw(); frames++; await wait(30); if (!ed._pyramidPending && i >= 3) break; }
+    for (let i = 0; i < 12; i++) { ed.sceneSig = null; drawing = true; try { ed.draw(); } finally { drawing = false; } frames++; await wait(30); if (!ed._pyramidPending && i >= 3) break; }
 } finally {
     proto.forEach((pr, i) => { if (orig[i]) pr.toCanvas = orig[i]; else delete pr.toCanvas; });
 }
@@ -625,7 +634,7 @@ const comp = ed.compositor();
 const atlas = comp ? comp.stats().atlas : null;
 out.display = { frames, copies, pending: ed._pyramidPending, levels: entry ? entry.levels.length : 0,
                 kept: ed.pyramids.get(canvasOf(M.px)) === entry, mirror: !!P.displayCanvasIfMade(M.px), atlas };
-if (copies) throw new Error("the display took toCanvas() copies: " + JSON.stringify(out.display));
+if (copies) throw new Error("the display took toCanvas() copies: " + JSON.stringify(out.display) + " from " + JSON.stringify(callers));
 if (shown.some((p, i) => canvasOf(p) !== canvases[i])) throw new Error("a display canvas changed between frames");
 // C5 (d): the mask reaches the screen from its own tiles. L is blue over 100,100..1900,1300 and its
 // mask lets the left 1200 px through, so the blue shows at 600,200 and not at 1500,200, where the
@@ -2500,6 +2509,46 @@ for (let i = 0; i < d.length; i += 4) if (d[i] < 128 && d[i + 1] < 128) dark++;
 ed.hover = null;
 if (!dark) throw new Error("the brush ring is invisible over its own paint colour");
 return { darkPixels: dark };
+"""),
+    ("brush_keys_under_altgr_and_the_opacity_slider", """
+const ed = ednow(window.__t);
+host.shell.activate(ed);
+// the Opacity slider shows for every tool that paints with it (a second moveCtl for "shape" hid it for the brushes, e0c00a7)
+const lab = ed.opacCtl.input.parentElement;
+const shown = {};
+for (const t of ["paint", "erase", "clone", "heal", "bucket", "gradient", "shape", "smudge"]) { ed.setTool(t); ed.updateOptsBar(); shown[t] = !lab.hidden; }
+for (const t of ["paint", "erase", "clone", "heal", "bucket", "gradient", "shape"]) if (!shown[t]) throw new Error("the Opacity slider is hidden for " + t + ": " + JSON.stringify(shown));
+if (shown.smudge) throw new Error("the Opacity slider shows for smudge, which has Strength instead");
+// AltGr+8 / AltGr+9 type [ and ] on a German keyboard; Chromium reports them with Ctrl and Alt down
+ed.setTool("paint");
+const moved = [];
+const undos = [];
+// stubs on the instance, deleted after: the prototype's methods come back
+ed.moveLayer = function (...a) { moved.push(a); };
+ed.activeLayer = function () { return { id: "stub" }; };
+ed.undoStep = function () { undos.push(1); };
+const key = (k, o) => ed.onKey(new KeyboardEvent("keydown", Object.assign({ key: k, bubbles: true, cancelable: true }, o)));
+const probe = new KeyboardEvent("keydown", { key: "[", ctrlKey: true, altKey: true, modifierAltGraph: true });
+if (!probe.getModifierState("AltGraph")) throw new Error("this Chromium does not take modifierAltGraph: the step cannot build an AltGr key");
+let sizes;
+try {
+    ed.setBrushSize(100);
+    key("[", { ctrlKey: true, altKey: true, modifierAltGraph: true });
+    const small = ed.brushSize;
+    key("]", { ctrlKey: true, altKey: true, modifierAltGraph: true });
+    const back = ed.brushSize;
+    sizes = [small, back];
+    if (small !== 83 || back !== 100) throw new Error("AltGr+[ / ] did not size the brush: " + sizes);
+    if (moved.length) throw new Error("AltGr+[ moved the layer: " + JSON.stringify(moved));
+    // Ctrl+[ without AltGr still moves the layer; AltGr+Z is no undo
+    key("[", { ctrlKey: true });
+    if (moved.length !== 1) throw new Error("Ctrl+[ no longer moves the layer: " + JSON.stringify(moved));
+    key("z", { ctrlKey: true, altKey: true, modifierAltGraph: true });
+    if (undos.length) throw new Error("AltGr+Z ran an undo");
+    key("z", { ctrlKey: true });
+    if (undos.length !== 1) throw new Error("Ctrl+Z no longer undoes");
+} finally { delete ed.moveLayer; delete ed.activeLayer; delete ed.undoStep; }
+return { shown, sizes };
 """),
     ("outline_visible_on_white", """
 const ed = ednow(window.__t);
@@ -6671,6 +6720,172 @@ try {
     ed.toggleMaskEdit(lay());
     out.saved = true;
 } finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
+    ("a_transform_says_it_baked_the_mask", """
+// rotate, distort and warp bake a live mask into the new pixels and drop a switched-off one: the status says so, and the
+// undo step brings the mask back (docs/BUGS.md, found by reading 2026-09-26)
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+try {
+    await run("new_canvas", { width: 400, height: 300, doc: d.id });
+    const L = ed.addPaintLayer();
+    const id = L.id;
+    const lay = () => ed.layers.find((l) => l.id === id);
+    L.px.fill([0, 0, 400, 300], "#2060c0"); ed.markLayerChanged(L);
+    await run("select_rect", { x: 50, y: 50, w: 200, h: 100, doc: d.id });
+    ed.maskFromSelection(L);
+    await run("select_none", { doc: d.id });
+    ed.activeLayerId = id;
+    ed.startPending("rotate");
+    ed.pending.angle = 10 * Math.PI / 180;
+    ed.applyPending();
+    out.live = ed.status;
+    if (!/mask is baked/.test(ed.status)) throw new Error("a rotate over a live mask says nothing about it: " + ed.status);
+    if (lay().maskPx) throw new Error("the rotate kept the mask");
+    await ed.undoStep();
+    if (!lay().maskPx || lay().maskOff) throw new Error("the undo did not bring the live mask back");
+    ed.setMaskOff(lay(), true);
+    ed.activeLayerId = id;
+    ed.startPending("distort");
+    ed.pending.points[1][0] += 20;
+    ed.applyPending();
+    out.off = ed.status;
+    if (!/switched-off mask was dropped/.test(ed.status)) throw new Error("a distort over a switched-off mask says nothing about it: " + ed.status);
+    await ed.undoStep();
+    if (!lay().maskPx || !lay().maskOff) throw new Error("the undo did not bring the switched-off mask back");
+    // a layer without a mask: no note
+    ed.removeMask(lay());
+    ed.activeLayerId = id;
+    ed.startPending("rotate");
+    ed.pending.angle = 5 * Math.PI / 180;
+    ed.applyPending();
+    out.none = ed.status;
+    if (/mask/.test(ed.status)) throw new Error("a rotate without a mask speaks of one: " + ed.status);
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
+    ("smudge_clone_and_heal_read_only_their_box", """
+// PLAN_0_1_31 §4 step 2: clone and heal flattened the whole picture at every press, the smudge read the layer's whole
+// display mirror at every step and copied the base into a full-size layer. Now each reads the box under its dab through
+// the gesture's source (brushSource): from the tiles on tiles, a region pass on canvases. The real handlers through
+// synthetic pointer events; uniform patches of the base, so the check does not depend on where a pointer lands
+const P = await import("./editor/inpaint_pixels.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const W = 4000, H = 3000;
+const out = { tiles: !!ed.tileMode };
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const calls = { compositeCanvas: 0, flattenToCanvas: 0, sampleCanvas: 0 };
+let counting = false;
+try {
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    const base = mk(W, H);
+    {
+        const x = base.getContext("2d");
+        const g = x.createLinearGradient(0, 0, W, 0);
+        g.addColorStop(0, "#803020"); g.addColorStop(1, "#203080");
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+        for (let i = 0; i < 300; i++) { x.fillStyle = `hsl(${(i * 47) % 360},70%,${30 + (i * 13) % 40}%)`; x.fillRect((i * 977) % W, (i * 613) % H, 30 + (i % 7) * 9, 30 + (i % 5) * 11); }
+        x.fillStyle = "#20c040"; x.fillRect(400, 400, 600, 600);      // A: the clone / heal source
+        x.fillStyle = "#c03080"; x.fillRect(2000, 400, 600, 600);     // B: where clone and heal paint
+        x.fillStyle = "#e0e000"; x.fillRect(400, 1800, 600, 600);     // C, and D right of it: the base smudge
+        x.fillStyle = "#0000e0"; x.fillRect(1000, 1800, 600, 600);
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W }); Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "brushbox_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    // a half-transparent textured layer over it, empty over A, B, C, D and the smudge's field; a red block to smudge from
+    const pc = mk(W, H);
+    {
+        const x = pc.getContext("2d");
+        for (let i = 0; i < 300; i++) { x.fillStyle = `hsla(${(i * 71) % 360},80%,50%,0.5)`; x.fillRect((i * 433) % W, (i * 271) % H, 60 + (i % 9) * 10, 60 + (i % 4) * 15); }
+        x.clearRect(300, 300, 2400, 800); x.clearRect(300, 1700, 1400, 800); x.clearRect(2700, 1400, 1100, 700);
+        x.fillStyle = "#e02020"; x.fillRect(2800, 1500, 400, 400);
+    }
+    const L = ed.addLayer({ name: "P", kind: "paint", px: ed.pixels.Layer.fromCanvas(pc), x: 0, y: 0, w: W, h: H, dirty: true });
+    // a colour-matched layer far from every stroke: the tile source has to carry it (it is the app's common case)
+    const mc = mk(500, 400); { const x = mc.getContext("2d"); x.fillStyle = "#808080"; x.fillRect(0, 0, 500, 400); }
+    const M = ed.addLayer({ name: "M", kind: "paint", px: ed.pixels.Layer.fromCanvas(mc), x: 3300, y: 2500, w: 500, h: 400, dirty: true });
+    M.match = { strength: 100, source: "surroundings" };
+    ed.renderLayers(); ed.draw();
+    await ed.mipsSettled();
+    for (const k of Object.keys(calls)) { const f = ed[k]; ed[k] = function (...a) { if (counting) calls[k]++; return f.apply(this, a); }; }
+    ed.view.angle = 0; ed.view.scale = 0.4; ed._fitted = false; ed.view.x = 20; ed.view.y = 20; ed.draw();
+    let pid = 700;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+    const send = (type, ix, iy, extra) => { counting = true; try { ed.canvas.dispatchEvent(ev(type, ix, iy, extra)); } finally { counting = false; } };
+    // a stroke from a to b in six moves; what the gesture's source was, read while the button is down
+    const stroke = (a, b) => {
+        pid++;
+        send("pointerdown", a[0], a[1]);
+        const p = ed.pointer;
+        const tier = p ? (p.clone ? p.clone.src.tier + (p.clone.dest && p.clone.dest !== p.clone.src ? "+" + p.clone.dest.tier : "") : p.src ? p.src.tier : "own") : null;
+        for (let i = 1; i <= 6; i++) send("pointermove", a[0] + (b[0] - a[0]) * i / 6, a[1] + (b[1] - a[1]) * i / 6);
+        send("pointerup", b[0], b[1]);
+        return tier;
+    };
+    const px = (l, x, y) => Array.from(l.px.readRect(x, y, 1, 1).data);
+    const near = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
+    const mirrors = () => ed.tileMode ? [!!P.displayCanvasIfMade(L.px), !!P.displayCanvasIfMade(ed.basePx)] : null;
+    const m0 = mirrors();
+    ed.brushSize = 200; ed.hardness = 1; ed.brushOpacity = 1; ed.brushTipId = null;
+    ed.activeLayerId = L.id; ed.renderLayers();
+    // 1. clone from A into B, the whole picture as the source; the undo gives the layer's bytes back
+    ed.setTool("clone");
+    ed.cloneOpts = { sample: "image", aligned: false };
+    send("pointerdown", 700, 700, { altKey: true }); send("pointerup", 700, 700);
+    if (!ed.cloneSource) throw new Error("Alt+click set no clone source: " + ed.status);
+    const box0 = L.px.readRect(2150, 550, 300, 300).data.slice();
+    out.clone = stroke([2300, 700], [2350, 700]);
+    const cl = px(L, 2320, 700);
+    if (!near(cl, [0x20, 0xc0, 0x40, 255], 3)) throw new Error("clone: the layer at the dab is " + cl + ", not the source's green");
+    await ed.undoStep();
+    const box1 = L.px.readRect(2150, 550, 300, 300).data;
+    let diff = 0; for (let i = 0; i < box1.length; i++) if (box1[i] !== box0[i]) diff++;
+    if (diff) throw new Error("the undo of the clone left " + diff + " bytes changed");
+    // 2. heal: the source's texture takes the destination's colour (uniform here, so B itself)
+    ed.setTool("heal");
+    out.heal = stroke([2300, 700], [2350, 700]);
+    const he = px(L, 2320, 700);
+    if (!near(he, [0xc0, 0x30, 0x80, 255], 4)) throw new Error("heal: the layer at the dab is " + he + ", not the destination's colour");
+    // 3. heal with the layer alone as its source: the source (the layer, empty over A) is transparent, nothing lands
+    ed.cloneOpts = { sample: "layer", aligned: false };
+    send("pointerdown", 700, 1000, { altKey: true }); send("pointerup", 700, 1000);
+    const before3 = px(L, 2320, 1000);
+    out.healLayer = stroke([2300, 1000], [2350, 1000]);
+    if (!near(px(L, 2320, 1000), before3, 0)) throw new Error("heal from an empty patch of the layer painted " + px(L, 2320, 1000));
+    // 4. smudge on the layer, its own pixels: the red block is dragged into the empty field right of it
+    ed.setTool("smudge");
+    ed.smudgeOpts.sample = "layer"; ed.smudgeOpts.strength = 80;
+    const sm0 = px(L, 3240, 1700);
+    out.smudge = stroke([3150, 1700], [3400, 1700]);
+    const sm = px(L, 3240, 1700);
+    if (!(sm[3] > 0 && sm[0] > sm[2]) || sm0[3] !== 0) throw new Error("smudge: the field right of the red block is " + sm + " (was " + sm0 + ")");
+    // 5. smudge on the base: a new layer from the picture, the base untouched, no base copy
+    ed.activeLayerId = null; ed.renderLayers();
+    const n0 = ed.layers.length, base0 = Array.from(ed.basePx.readRect(1030, 2100, 1, 1).data);
+    out.smudgeBase = stroke([850, 2100], [1150, 2100]);
+    if (ed.layers.length !== n0 + 1) throw new Error("smudge on the base added " + (ed.layers.length - n0) + " layers");
+    const N = ed.activeLayer();
+    if (!N || N.kind !== "paint" || /copy/i.test(N.name)) throw new Error("smudge on the base made " + (N && N.kind) + " " + (N && N.name));
+    const nb = px(N, 1030, 2100);
+    if (!(nb[3] > 0 && nb[0] > nb[2])) throw new Error("the new layer right of the yellow is " + nb + ": the smudge did not take the picture");
+    if (!near(Array.from(ed.basePx.readRect(1030, 2100, 1, 1).data), base0, 0)) throw new Error("smudge on the base wrote the base");
+    out.calls = calls;
+    out.mirrors = [m0, mirrors()];
+    const want = ed.tileMode ? "tiles" : "region";
+    for (const k of ["clone", "heal", "healLayer", "smudgeBase"]) if (!String(out[k]).split("+").every((t) => t === want)) throw new Error(k + " read through " + out[k] + ", not " + want);
+    if (out.smudge !== "own") throw new Error("the smudge with Sample: layer read through " + out.smudge);
+    if (calls.compositeCanvas || calls.flattenToCanvas || calls.sampleCanvas) throw new Error("a brush read the whole picture: " + JSON.stringify(calls));
+    if (ed.tileMode && ((!m0[0] && out.mirrors[1][0]) || (!m0[1] && out.mirrors[1][1]))) throw new Error("a brush made a display mirror: " + JSON.stringify(out.mirrors));
+} finally {
+    for (const k of Object.keys(calls)) delete ed[k];
+    await run("close_document", { doc: d.id, force: true });
+}
 return out;
 """),
     ("mask_operations_are_one_step_each", """
