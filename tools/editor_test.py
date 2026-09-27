@@ -7022,6 +7022,99 @@ try {
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;
 """),
+    ("clone_source_turns_scales_and_flips", """
+// PLAN_0_1_31 §4 step 4: the clone source turned, scaled and mirrored where it lands, an imported tip as the dab, and the
+// overlay under the brush. A source of four coloured quarters around S; one dab at D, read back at points off its centre
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const W = 1200, H = 800;
+const out = { tiles: !!ed.tileMode };
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const opts0 = { ...ed.cloneOpts }, tips0 = ed.brushTips.slice(), tip0 = ed.brushTipId;
+try {
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    const base = mk(W, H);
+    {
+        const x = base.getContext("2d");
+        x.fillStyle = "#808080"; x.fillRect(0, 0, W, H);
+        x.fillStyle = "#e02020"; x.fillRect(200, 300, 100, 100);   // around S = (300, 400): red top left,
+        x.fillStyle = "#20c040"; x.fillRect(300, 300, 100, 100);   // green top right,
+        x.fillStyle = "#2040e0"; x.fillRect(200, 400, 100, 100);   // blue bottom left,
+        x.fillStyle = "#e0e020"; x.fillRect(300, 400, 100, 100);   // yellow bottom right
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W }); Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "clone_xf_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    const L = ed.addPaintLayer();
+    ed.activeLayerId = L.id; ed.renderLayers();
+    ed.fitView(); ed.draw();
+    let pid = 1100;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+    const send = (type, ix, iy, extra) => ed.canvas.dispatchEvent(ev(type, ix, iy, extra));
+    ed.setTool("clone");
+    ed.brushSize = 300; ed.hardness = 1; ed.brushOpacity = 1; ed.brushTipId = "";
+    send("pointerdown", 300, 400, { altKey: true }); send("pointerup", 300, 400);
+    if (!ed.cloneSource) throw new Error("Alt+click set no source");
+    const S = { ...ed.cloneSource };
+    // one dab at D = (800, 400): lined up there (Aligned off), so the dab's centre copies S
+    const dab = async (opts) => {
+        Object.assign(ed.cloneOpts, { sample: "image", aligned: false, angle: 0, scale: 100, flipX: false, flipY: false }, opts);
+        pid++;
+        send("pointerdown", 800, 400); send("pointerup", 800, 400);
+    };
+    const at = (x, y) => Array.from(L.px.readRect(x, y, 1, 1).data);
+    const is = (p, hex) => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); return p[3] > 200 && c.every((v, i) => Math.abs(v - p[i]) <= 12); };
+    const cases = [
+        ["plain", {}, [[750, 350, "#e02020"], [850, 450, "#e0e020"], [750, 450, "#2040e0"]]],
+        ["flip H", { flipX: true }, [[750, 350, "#20c040"], [850, 450, "#2040e0"]]],
+        ["flip V", { flipY: true }, [[750, 350, "#2040e0"], [850, 350, "#e0e020"]]],
+        ["turned 90", { angle: 90 }, [[750, 350, "#2040e0"], [850, 350, "#e02020"]]],
+        ["scaled 200", { scale: 200 }, [[680, 380, "#e02020"], [920, 420, "#e0e020"]]],
+    ];
+    out.cases = {};
+    for (const [name, o, probes] of cases) {
+        await dab(o);
+        const got = probes.map(([x, y, hex]) => [at(x, y), hex]);
+        out.cases[name] = got.map(([p]) => p.slice(0, 3).join(","));
+        const bad = got.filter(([p, hex]) => !is(p, hex));
+        if (bad.length) throw new Error(name + ": " + JSON.stringify(bad) + " (S " + JSON.stringify(S) + ")");
+        await ed.undoStep();
+    }
+    // without the scale, the point that took red at 200 % lies outside the quarters: grey
+    await dab({});
+    if (!is(at(680, 380), "#808080")) throw new Error("the plain dab at 680,380 is " + at(680, 380) + ", not the grey outside the source");
+    await ed.undoStep();
+    // an imported square tip: its corner lies outside the round dab
+    const sq = mk(64, 64); sq.getContext("2d").fillRect(0, 0, 64, 64);
+    ed.brushTips.push({ id: "clone-square", name: "square", canvas: sq, spacing: 0.25 });
+    ed.brushTipId = "clone-square";
+    await dab({});
+    const corner = at(660, 260);
+    ed.brushTipId = "";
+    await ed.undoStep();
+    await dab({});
+    const roundCorner = at(660, 260);
+    await ed.undoStep();
+    out.tip = { square: corner[3], round: roundCorner[3] };
+    if (!(corner[3] > 200) || roundCorner[3] !== 0) throw new Error("the square tip did not shape the dab: " + JSON.stringify(out.tip));
+    // the overlay: at the brush, half of what it would copy (red at 750,350 over grey), and nothing with it off
+    ed.fitView(); await ed.mipsSettled();
+    ed.hover = [800, 400];
+    const screen = () => { ed.sceneSig = null; ed.draw(); const [sx, sy] = ed.imageToScreen(750, 350); return Array.from(ed.canvas.getContext("2d").getImageData(Math.round(sx), Math.round(sy), 1, 1).data); };
+    Object.assign(ed.cloneOpts, { overlay: true, aligned: false, angle: 0, scale: 100, flipX: false, flipY: false });
+    const on = screen();
+    ed.cloneOpts.overlay = false;
+    const off = screen();
+    ed.hover = null;
+    out.overlay = { on, off };
+    if (!(on[0] - off[0] > 30 && off[0] - on[1] > 10)) throw new Error("the overlay does not show the source's red under the brush: " + JSON.stringify(out.overlay));
+} finally {
+    ed.cloneOpts = opts0; ed.brushTips.splice(0, ed.brushTips.length, ...tips0); ed.brushTipId = tip0;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("mask_operations_are_one_step_each", """
 // PLAN_0_1_31 6.4: set_mask's operations, each one undo step, the mask white where it shows, and the mask row's menu
 const d = await run("new_document");

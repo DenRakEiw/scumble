@@ -43,6 +43,11 @@ the section for its version; `docs/` and the commit history hold the technical d
   whole layer at every step (up to 8 s a move). Now each reads only what is under the brush: a few milliseconds a
   move at any size, and a gigabyte less memory. Heal matches the colour more exactly. On the base the smudge no
   longer copies the whole base into a layer first: it paints into a new layer from the picture.
+- **Clone and heal turn, scale and mirror their source, and show it under the brush.** New fields in their bar:
+  **Angle**, **Scale** and **Flip H / V** set how the source lands (a window reflected the other way, a pattern at
+  twice its size), and **Overlay** shows what the brush would copy, half transparent inside the brush circle, while
+  the source is on screen. The source's crosshair follows the brush when Aligned is on. Imported brush tips shape
+  clone and heal too.
 - **A smudge that carries paint.** The smudge brush now holds the paint it picks up and lays it down as it goes:
   **Strength** is how much goes down, the new **Length** how far it goes on (0 drags what the last step left
   behind; towards 100 the colour goes on to the end of the stroke), **Finger** starts every stroke with the paint

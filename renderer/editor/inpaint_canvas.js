@@ -1941,7 +1941,7 @@ class InpaintEditor {
         // one call: a second one for "shape" overwrote the list and hid the slider for the brushes (e0c00a7 to 0.1.31)
         moveCtl(this.opacCtl && this.opacCtl.input.parentElement, "paint erase clone heal bucket gradient shape");
         moveCtl(this.colorLabel, "paint bucket gradient shape");
-        moveCtl(this.tipLabel, "paint erase smudge");
+        moveCtl(this.tipLabel, "paint erase smudge clone heal");
         for (const e of this.tipOnlyEls || []) moveCtl(e, "paint erase");
         this.syncTipControls();
         const row = (cls, ...nodes) => { const lab = el("label", null); lab.dataset.for = cls; for (const n of nodes) lab.appendChild(typeof n === "string" ? el("span", null, n) : n); bar.appendChild(lab); return lab; };
@@ -1991,7 +1991,7 @@ class InpaintEditor {
         sradius.addEventListener("change", () => { this.shapeOpts.radius = Math.max(0, +sradius.value || 0); sradius.value = this.shapeOpts.radius; });
         this.shapeRadiusRow = row("shape", "Radius", sradius);
         this.smudgeOpts = { strength: 60, sample: "layer", length: 0, finger: false };
-        this.cloneOpts = { sample: "image", aligned: true };
+        this.cloneOpts = { sample: "image", aligned: true, angle: 0, scale: 100, flipX: false, flipY: false, overlay: true };
         const str = document.createElement("input");
         str.type = "range"; str.min = 1; str.max = 100; str.value = this.smudgeOpts.strength; str.title = "Strength: how much of the picked-up paint is dragged along";
         const strVal = el("span", null, this.smudgeOpts.strength + "%");
@@ -2018,6 +2018,29 @@ class InpaintEditor {
         aligned.type = "checkbox"; aligned.checked = true; aligned.title = "Aligned: the offset between source and brush stays the same for every stroke; off starts every stroke at the source point again";
         aligned.addEventListener("change", () => { this.cloneOpts.aligned = aligned.checked; });
         row("clone heal", aligned, "Aligned");
+        // the source turned, scaled and mirrored against where it lands (PLAN_0_1_31 §4 step 4)
+        const numIn = (min, max, value, title, set) => {
+            const n = document.createElement("input");
+            n.type = "number"; n.className = "ipc-num"; n.min = min; n.max = max; n.value = value; n.style.width = "52px"; n.title = title;
+            n.addEventListener("change", () => { const v = Math.max(min, Math.min(max, Math.round(+n.value || 0))); n.value = v; set(v); this.draw(); });
+            return n;
+        };
+        this.cloneAngleInput = numIn(-180, 180, 0, "Angle: the source turned by this many degrees where it lands", (v) => { this.cloneOpts.angle = v; });
+        row("clone heal", "Angle", this.cloneAngleInput, "\u00b0");
+        this.cloneScaleInput = numIn(10, 400, 100, "Scale: the source this big where it lands, in percent", (v) => { this.cloneOpts.scale = v; });
+        row("clone heal", "Scale", this.cloneScaleInput, "%");
+        const flip = (key, title) => {
+            const c = document.createElement("input");
+            c.type = "checkbox"; c.title = title;
+            c.addEventListener("change", () => { this.cloneOpts[key] = c.checked; this.draw(); });
+            return c;
+        };
+        row("clone heal", flip("flipX", "Mirror the source left to right"), "Flip H");
+        row("clone heal", flip("flipY", "Mirror the source top to bottom"), "Flip V");
+        const ghost = document.createElement("input");
+        ghost.type = "checkbox"; ghost.checked = true; ghost.title = "Overlay: show what the brush would copy under it, half transparent (while the source is in view)";
+        ghost.addEventListener("change", () => { this.cloneOpts.overlay = ghost.checked; this.draw(); });
+        row("clone heal", ghost, "Overlay");
         // the Canvas tool's frame (PLAN_0_1_31 §7, 23b): the aspect, the angle, the straighten line, the lines, apply
         const asp = selectInput(["free", "original", "1:1", "4:3", "3:2", "16:9", "5:4", "custom"], this.frameAspect,
             "The frame's aspect: choosing one fits the largest such frame into the (turned) picture; X turns it on its side");
@@ -4487,7 +4510,7 @@ class InpaintEditor {
             const dest = heal ? (sample === "all" ? src : this.brushSource("all", layer)) : null;
             const stroke = new StrokeBuffer(layer.px, this.pixels);
             this.pointer = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: false, last: [ix, iy], pressure: e.pointerType === "pen" && e.pressure > 0 ? e.pressure : 1,
-                clone: { src, dest, off: this.cloneOffset, heal } };
+                clone: { src, dest, off: this.cloneOffset, heal, S: { x: this.cloneSource.x, y: this.cloneSource.y }, xf: this.cloneXf(o) } };
             this.cloneDab(this.pointer, ix, iy, ix, iy);
         } else if (this.tool === "gradient") {
             let layer = this.activeLayer();
@@ -6581,21 +6604,38 @@ class InpaintEditor {
         this.strokeDirty(p, x0, y0, x1, y1, R + 2);
         const d = this._cloneDab = cpuDab(this._cloneDab, size);
         const dctx = d.getContext("2d");
-        const mask = this.dabMask(r, this.hardness);
+        const tip = this.brushTip();
+        const mask = tip ? this.tipMaskCanvas(size, r, tip) : this.dabMask(r, this.hardness);
         const dist = Math.hypot(x1 - x0, y1 - y0);
-        const steps = Math.max(1, Math.ceil(dist / Math.max(1, R * 0.25)));
-        const span = (ax, ay, bx, by) => [Math.floor(Math.min(ax, bx) - R) - 2, Math.floor(Math.min(ay, by) - R) - 2, Math.ceil(Math.max(ax, bx) + R) + 2, Math.ceil(Math.max(ay, by) + R) + 2];
-        const src = cl.src.read(span(x0 + cl.off.x, y0 + cl.off.y, x1 + cl.off.x, y1 + cl.off.y), 0);
-        const dst = cl.heal && src ? cl.dest.read(span(x0, y0, x1, y1), 1) : null;
+        const steps = Math.max(1, Math.ceil(dist / Math.max(1, tip ? (tip.spacing || this.brushTipSpacing || 0.25) * 2 * R : R * 0.25)));
+        // the source point of an image point d: S + A (d - D), D the point the source was lined up with (S - off);
+        // without a transform A is 1 and it is d + off, as before
+        const xf = cl.xf, S = cl.S || { x: x0 + cl.off.x, y: y0 + cl.off.y }, Dx = S.x - cl.off.x, Dy = S.y - cl.off.y;
+        const qOf = (x, y) => (xf ? [S.x + xf.A[0] * (x - Dx) + xf.A[1] * (y - Dy), S.y + xf.A[2] * (x - Dx) + xf.A[3] * (y - Dy)] : [x + cl.off.x, y + cl.off.y]);
+        const reach = xf ? R * Math.SQRT2 / xf.k : R;   // a turned, scaled dab reads up to its corners
+        const span = (ax, ay, bx, by, e) => [Math.floor(Math.min(ax, bx) - e) - 2, Math.floor(Math.min(ay, by) - e) - 2, Math.ceil(Math.max(ax, bx) + e) + 2, Math.ceil(Math.max(ay, by) + e) + 2];
+        const q0 = qOf(x0, y0), q1 = qOf(x1, y1);
+        const src = cl.src.read(span(q0[0], q0[1], q1[0], q1[1], reach), 0);
+        const dst = cl.heal && src ? cl.dest.read(span(x0, y0, x1, y1, R), 1) : null;
         s.draw((Math.min(x0, x1) - layer.x) * sx - r - 1, (Math.min(y0, y1) - layer.y) * sy - r - 1, (Math.max(x0, x1) - layer.x) * sx + r + 1, (Math.max(y0, y1) - layer.y) * sy + r + 1, (sctx) => {
             if (!src) return;   // the source lies outside the picture: nothing to copy
             for (let i = 0; i <= steps; i++) {
                 if (i === 0 && dist > 0) continue;
                 const x = x0 + (x1 - x0) * i / steps, y = y0 + (y1 - y0) * i / steps;
-                const qx = x + cl.off.x, qy = y + cl.off.y;
                 dctx.globalCompositeOperation = "source-over";
                 dctx.clearRect(0, 0, size, size);
-                dctx.drawImage(src.canvas, qx - R - src.x, qy - R - src.y, R * 2, R * 2, 0, 0, size, size);
+                if (!xf) {
+                    const qx = x + cl.off.x, qy = y + cl.off.y;
+                    dctx.drawImage(src.canvas, qx - R - src.x, qy - R - src.y, R * 2, R * 2, 0, 0, size, size);
+                } else {
+                    // the source canvas drawn through the inverse: dab pixel u = sc (D + Ai (q - S) - (x - R, y - R)), q its image point
+                    const sc = size / (2 * R), Ai = xf.Ai, ox = src.x - S.x, oy = src.y - S.y;
+                    dctx.setTransform(sc * Ai[0], sc * Ai[2], sc * Ai[1], sc * Ai[3],
+                        sc * (Ai[0] * ox + Ai[1] * oy + Dx - (x - R)), sc * (Ai[2] * ox + Ai[3] * oy + Dy - (y - R)));
+                    dctx.imageSmoothingEnabled = true;
+                    dctx.drawImage(src.canvas, 0, 0);
+                    dctx.setTransform(1, 0, 0, 1, 0, 0);
+                }
                 if (dst) this.healShift(dctx, size, dst, x - R, y - R, R * 2);
                 dctx.globalCompositeOperation = "destination-in";
                 dctx.drawImage(mask, 0, 0);
@@ -6603,6 +6643,54 @@ class InpaintEditor {
                 sctx.drawImage(d, lx - r, ly - r);
             }
         });
+    }
+
+    /**
+     * The clone source's transform (PLAN_0_1_31 §4 step 4) from the options, or null when it is none: the source turned
+     * by `angle` degrees, `scale` percent as large and mirrored where it lands. `A` maps an offset from the lined-up
+     * point D to the source's offset from S, `q = S + A (d - D)`, A = (1/k) R(-angle) F; `Ai` is its inverse, k F R(angle);
+     * both as [a, b, c, d] for [[a, b], [c, d]].
+     */
+    cloneXf(o = this.cloneOpts || {}) {
+        const t = (+o.angle || 0) * Math.PI / 180, k = Math.max(0.1, Math.min(4, (+o.scale || 100) / 100));
+        const fx = o.flipX ? -1 : 1, fy = o.flipY ? -1 : 1;
+        if (!t && k === 1 && fx === 1 && fy === 1) return null;
+        const c = Math.cos(t), s = Math.sin(t);
+        return { k, A: [c * fx / k, s * fy / k, -s * fx / k, c * fy / k], Ai: [k * fx * c, -k * fx * s, k * fy * s, k * fy * c] };
+    }
+
+    /** An imported tip as a dab mask: a CPU canvas `size` a side, the tip's longer side 2r, in the middle (clone and heal). */
+    tipMaskCanvas(size, r, tip) {
+        const key = `${size}|${r.toFixed(2)}|${tip.id}|${tip.canvas.width}`;
+        if (this._tipMask && this._tipMask.key === key) return this._tipMask.c;
+        const c = cpuDab(null, size), ctx = c.getContext("2d");
+        const k = 2 * r / Math.max(tip.canvas.width, tip.canvas.height), w = tip.canvas.width * k, h = tip.canvas.height * k;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(tip.canvas, size / 2 - w / 2, size / 2 - h / 2, w, h);
+        this._tipMask = { key, c };
+        return c;
+    }
+
+    /**
+     * The clone overlay (PLAN_0_1_31 §4 step 4): what the brush at `hv` would copy, drawn half transparent inside the brush
+     * circle, turned, scaled and mirrored as the options say. Its pixels are the view's own composite (`viewCanvas`, the
+     * region the last scene was built from), so it costs one clipped draw and no read; while the source is outside that
+     * region nothing is drawn but the source's circle. `ctx` is in image coordinates.
+     */
+    drawCloneGhost(ctx, hv, D, S, xf, q) {
+        const reg = this._viewRegion, img = this.viewCanvas;
+        if (!reg || !img) return;
+        const R = this.brushSize / 2, reach = (xf ? R * Math.SQRT2 / xf.k : R) + 1;
+        if (q[0] - reach < reg.x || q[1] - reach < reg.y || q[0] + reach > reg.x + reg.w || q[1] + reach > reg.y + reg.h) return;
+        const Ai = xf ? xf.Ai : [1, 0, 0, 1];
+        ctx.save();
+        ctx.beginPath(); ctx.arc(hv[0], hv[1], R, 0, Math.PI * 2); ctx.clip();
+        ctx.globalAlpha = 0.5;
+        // the source point q shows at d = D + Ai (q - S)
+        ctx.transform(Ai[0], Ai[2], Ai[1], Ai[3], D.x - (Ai[0] * S.x + Ai[1] * S.y), D.y - (Ai[2] * S.x + Ai[3] * S.y));
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(img, reg.x, reg.y, reg.w, reg.h);
+        ctx.restore();
     }
 
     /** Gradient tool: rebuild the stroke buffer as a gradient from the drag start to (ix, iy). */
@@ -12275,6 +12363,7 @@ class InpaintEditor {
         const vw = Math.max(1, Math.round(region.w * region.scale));
         const vh = Math.max(1, Math.round(region.h * region.scale));
         if (!this.viewCanvas || this.viewCanvas.width !== vw || this.viewCanvas.height !== vh) this.viewCanvas = makeCanvas(vw, vh);
+        this._viewRegion = opts.baseOnly ? null : region;   // what viewCanvas shows (the clone overlay reads it); not the base alone
         const v = this.viewCanvas.getContext("2d");
         const sx = vw / region.w, sy = vh / region.h;
         v.setTransform(1, 0, 0, 1, 0, 0);
@@ -13555,12 +13644,18 @@ class InpaintEditor {
             ctx.restore();
         }
         if ((this.tool === "clone" || this.tool === "heal") && this.cloneSource) {
-            // the source: a crosshair; during a stroke it follows the brush at the stroke's offset
-            const q = this.pointer && this.pointer.clone && this.hover ? [this.hover[0] + this.pointer.clone.off.x, this.hover[1] + this.pointer.clone.off.y] : [this.cloneSource.x, this.cloneSource.y];
+            // the source: a crosshair, and the point the brush copies from follows it: during a stroke at the stroke's
+            // lining up, before one at the lining up the next press takes (the kept offset when Aligned, else the press)
+            const o = this.cloneOpts || {}, pc = this.pointer && this.pointer.clone, hv = this.hover;
+            const S = pc && pc.S ? pc.S : this.cloneSource, xf = pc ? pc.xf : this.cloneXf(o);
+            const off = pc ? pc.off : (o.aligned && this.cloneOffset ? this.cloneOffset : null);
+            const D = off ? { x: S.x - off.x, y: S.y - off.y } : hv ? { x: hv[0], y: hv[1] } : null;
+            const q = hv && D ? (xf ? [S.x + xf.A[0] * (hv[0] - D.x) + xf.A[1] * (hv[1] - D.y), S.y + xf.A[2] * (hv[0] - D.x) + xf.A[3] * (hv[1] - D.y)] : [hv[0] + S.x - D.x, hv[1] + S.y - D.y]) : [S.x, S.y];
+            if (o.overlay !== false && hv && D && !this.compare && !this.peekBase) this.drawCloneGhost(ctx, hv, D, S, xf, q);
             ctx.save();
             ctx.strokeStyle = "#7cc7ff";
             ctx.lineWidth = 1 / s;
-            const cr = this.brushSize / 2, k = 6 / s;
+            const cr = this.brushSize / 2 / (xf ? xf.k : 1), k = 6 / s;
             ctx.beginPath(); ctx.arc(q[0], q[1], cr, 0, Math.PI * 2); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(q[0] - k, q[1]); ctx.lineTo(q[0] + k, q[1]); ctx.moveTo(q[0], q[1] - k); ctx.lineTo(q[0], q[1] + k); ctx.stroke();
             ctx.restore();
