@@ -75,6 +75,9 @@ const SNAP_CANVAS_PX = 16 * 1024 * 1024;   // a selection undo step up to this m
 const SEL_BOX_MAX_PX = 64 * 1024 * 1024;    // the selection's PNG holds its box up to this size, above it the whole mask (written in parts)
 const SYNC_ENCODE_PX = 16 * 1024 * 1024;    // above this the selection PNG for getValue is encoded off the main thread
 const HANDLE_PX = 9;
+const SIDE_DEFAULT_PX = 320;               // the side panel's width (item 17: the user drags it between the two below)
+const SIDE_MIN_PX = 310;                   // an expanded layer row fits from here, beside the list's and the pane's scrollbars
+const SIDE_MAX_SHARE = 0.6;                // of the editor's body: the picture keeps the rest
 const RULER_PX = 18;
 const CURSOR_CLASSES = ["ipc-scale", "ipc-scale-ne", "ipc-scale-x", "ipc-scale-y", "ipc-rotate"];
 const BLEND_MODES = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "difference"];
@@ -1022,12 +1025,14 @@ const STYLE = `
 .ipc-view.ipc-rotate { cursor:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M19 12a7 7 0 1 1-2-4.9' fill='none' stroke='black' stroke-width='4.5' stroke-linecap='round'/><path d='M19 3v5h-5' fill='none' stroke='black' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'/><path d='M19 12a7 7 0 1 1-2-4.9' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/><path d='M19 3v5h-5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>") 12 12, alias; }
 .ipc-drop { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center;
   color:#888; pointer-events:none; padding:20px; white-space:pre-line; font-size:15px; }
-.ipc-side { width:320px; display:flex; flex-direction:column; background:var(--sc-surface, #202020); border-left:1px solid var(--sc-chrome-edge, #0d0d0d); overflow:hidden; }
+.ipc-side { width:var(--ipc-side-w, 320px); min-width:310px; max-width:60%; position:relative; display:flex; flex-direction:column; background:var(--sc-surface, #202020); border-left:1px solid var(--sc-chrome-edge, #0d0d0d); overflow:hidden; }
 .ipc-tabs { display:flex; background:var(--sc-well, #1a1a1a); border-bottom:1px solid var(--sc-chrome-edge, #0d0d0d); flex:none; }
 .ipc-tab { flex:1; background:transparent; border:none; border-bottom:2px solid transparent; color:var(--sc-muted, #888); padding:8px 0 6px; font:inherit; font-size:11px; text-transform:uppercase; letter-spacing:.06em; cursor:pointer; }
 .ipc-tab:hover { color:var(--sc-fg, #ddd); }
 .ipc-tab.ipc-active { color:var(--sc-fg-strong, #fff); border-bottom-color:var(--sc-active, #4a90d9); }
 .ipc-pane { display:flex; flex-direction:column; overflow:auto; flex:1; min-height:0; }
+.ipc-side-grip { position:absolute; left:0; top:0; bottom:0; width:5px; cursor:col-resize; z-index:4; touch-action:none; }
+.ipc-side-grip:hover, .ipc-side-grip.ipc-dragging { background:var(--sc-accent, #ffd166); opacity:.55; }
 .ipc-side h4, .ipc-side summary { margin:0; padding:6px 10px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--sc-muted, #999); background:var(--sc-raised, #262626);
   border-bottom:1px solid var(--sc-chrome-edge, #0d0d0d); border-top:1px solid var(--sc-chrome-edge, #0d0d0d); display:flex; align-items:center; gap:6px; cursor:default; list-style:none; }
 .ipc-side summary { cursor:pointer; }
@@ -2024,6 +2029,7 @@ class InpaintEditor {
         this.syncRefControls();
         loadFontList().then(() => { if (this.isOpen && this.layers.some((l) => l.kind === "text")) this.renderLayers(); }).catch(() => {});
         this.root.focus({ preventScroll: true });
+        this.applyStoredSideWidth();
         this.resizeCanvas();
         this.fitView();
         this.renderLayers();
@@ -2678,6 +2684,34 @@ class InpaintEditor {
     }
 
     // ---- view: rulers, grid, guides, before/after, compare, on-canvas text ----------------------
+
+    /**
+     * The side panel's width in CSS pixels (item 17), clamped to 310 px .. 60 % of the editor's body; null = the
+     * default. A variable on the document, so every tab (and the node's editor) shows the same width; `save` keeps it
+     * in localStorage like the rulers. The picture is refitted (resizeCanvas) if it was fitted. Returns the width set.
+     */
+    setSideWidth(w, { save = true } = {}) {
+        const body = this.sidePanel && this.sidePanel.parentElement;
+        // a hidden or closed tab's body has no box: the window stands in for it
+        const room = (body && body.getBoundingClientRect().width) || window.innerWidth;
+        const max = Math.max(SIDE_MIN_PX, Math.floor(room * SIDE_MAX_SHARE));
+        const px = w == null || !Number.isFinite(+w) ? SIDE_DEFAULT_PX : Math.round(Math.min(max, Math.max(SIDE_MIN_PX, +w)));
+        document.documentElement.style.setProperty("--ipc-side-w", px + "px");
+        this.resizeCanvas();   // at once: the ResizeObserver waits for a rendering step, which a hidden window does not take
+        if (save) {
+            try {
+                if (px === SIDE_DEFAULT_PX) localStorage.removeItem("ipc.sideWidth"); else localStorage.setItem("ipc.sideWidth", String(px));
+            } catch (_) { /* no storage */ }
+        }
+        return px;
+    }
+
+    /** The width kept by setSideWidth, put back on the document (not clamped to this window: the panel's max-width does that). */
+    applyStoredSideWidth() {
+        let w = 0;
+        try { w = Math.round(+localStorage.getItem("ipc.sideWidth") || 0); } catch (_) { /* no storage */ }
+        document.documentElement.style.setProperty("--ipc-side-w", (w >= SIDE_MIN_PX ? w : SIDE_DEFAULT_PX) + "px");
+    }
 
     toggleRulers() {
         this.showRulers = !this.showRulers;

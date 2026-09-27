@@ -6769,6 +6769,106 @@ try {
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;
 """),
+    ("side_panel_width_drags_and_is_kept", """
+// item 17: the grip on the side panel's left edge sets its width, clamped; every tab shows it; it is kept; the view refits
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+const sideOf = (e) => e.root.querySelector(".ipc-side");
+const width = (e) => Math.round(parseFloat(getComputedStyle(sideOf(e)).width));   // the CSS width, the border not counted
+try {
+    await run("new_canvas", { width: 1600, height: 1000, doc: d.id });
+    const L = ed.addPaintLayer();
+    await run("select_rect", { x: 100, y: 100, w: 300, h: 200, doc: d.id });
+    await run("set_mask", { layer: L.id, op: "from_selection", doc: d.id });
+    ed.activeLayerId = L.id; ed.renderLayers();
+    ed.setSideWidth(null);
+    await wait(150);
+    const side = sideOf(ed), grip = side.querySelector(".ipc-side-grip");
+    if (!grip) throw new Error("no grip on the side panel");
+    let stored = null; try { stored = localStorage.getItem("ipc.sideWidth"); } catch (_) { /* none */ }
+    const w0 = width(ed);
+    if (Math.abs(w0 - 320) > 2 || stored !== null) throw new Error("the default is not 320 px unstored: " + w0 + ", " + stored);
+    // at the default width an expanded row (its mask row included) fits: nothing in the panel is wider than it
+    const over = [...side.querySelectorAll(".ipc-pane, .ipc-layer, .ipc-maskrow")].filter((p) => p.offsetParent !== null && p.scrollWidth > p.clientWidth + 1).map((p) => p.className + " " + p.scrollWidth + ">" + p.clientWidth);
+    if (over.length) throw new Error("wider than the panel at the default width: " + over.join("; "));
+    // a drag 120 px to the left, with the pointer leaving the grip on the way
+    const gr = grip.getBoundingClientRect(), x = gr.left + 2, y = gr.top + 60;
+    const pe = (target, type, cx) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: cx, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 7, isPrimary: true, pointerType: "mouse" }));
+    const cw0 = ed.canvas.width;
+    ed.fitView();
+    const s0 = ed.view.scale;
+    pe(grip, "pointerdown", x);
+    if (!grip.classList.contains("ipc-dragging")) throw new Error("the grip did not take the press");
+    pe(ed.canvas, "pointermove", x - 60);
+    pe(ed.canvas, "pointermove", x - 120);
+    pe(ed.canvas, "pointerup", x - 120);
+    await wait(250);
+    const w1 = width(ed);
+    try { stored = localStorage.getItem("ipc.sideWidth"); } catch (_) { stored = "?"; }
+    if (Math.abs(w1 - (w0 + 120)) > 2) throw new Error("the drag made the panel " + w1 + " px, not " + (w0 + 120));
+    if (grip.classList.contains("ipc-dragging")) throw new Error("the release did not end the drag");
+    if (stored !== String(w0 + 120)) throw new Error("the width was not kept: " + stored);
+    if (!(ed.canvas.width < cw0)) throw new Error("the view did not shrink with the panel: " + cw0 + " -> " + ed.canvas.width);
+    if (ed._fitted === false || !(ed.view.scale < s0)) throw new Error("the picture was not refitted: scale " + s0 + " -> " + ed.view.scale);
+    out.dragged = [w0, w1];
+    // the ends: no narrower than 300 px, no wider than 60 % of the editor's body
+    const drag = (dx) => { const g = grip.getBoundingClientRect(); pe(grip, "pointerdown", g.left + 2); pe(ed.canvas, "pointermove", g.left + 2 + dx); pe(ed.canvas, "pointerup", g.left + 2 + dx); };
+    drag(4000); await wait(150);
+    if (Math.abs(width(ed) - 310) > 2) throw new Error("dragged far right the panel is " + width(ed) + " px, not 310");
+    // at the minimum an expanded row still fits beside the list's scrollbar (16 layers make the list scroll)
+    for (let i = 0; i < 15; i++) ed.addPaintLayer();
+    ed.activeLayerId = L.id; ed.renderLayers();
+    await wait(150);
+    const list = side.querySelector(".ipc-list");
+    const tight = [...side.querySelectorAll(".ipc-list, .ipc-pane")].filter((p) => p.offsetParent !== null && p.scrollWidth > p.clientWidth + 1).map((p) => p.className + " " + p.scrollWidth + ">" + p.clientWidth);
+    if (tight.length) throw new Error("at the minimum width the panel scrolls sideways: " + tight.join("; ") + (list ? " (list scrollbar " + (list.offsetWidth - list.clientWidth) + " px)" : ""));
+    out.minScrollbar = list ? list.offsetWidth - list.clientWidth : null;
+    drag(-6000); await wait(150);
+    const body = side.parentElement.getBoundingClientRect().width;
+    if (width(ed) > Math.floor(body * 0.6) + 2 || width(ed) < 400) throw new Error("dragged far left the panel is " + width(ed) + " px of a body of " + Math.round(body));
+    out.ends = [310, width(ed), Math.round(body)];
+    // a press without a move stores nothing; a move without the button held (the release was lost) ends the drag
+    try { stored = localStorage.getItem("ipc.sideWidth"); } catch (_) { stored = "?"; }
+    { const g = grip.getBoundingClientRect(); pe(grip, "pointerdown", g.left + 2); pe(ed.canvas, "pointerup", g.left + 2); }
+    let after = null; try { after = localStorage.getItem("ipc.sideWidth"); } catch (_) { after = "?"; }
+    if (after !== stored) throw new Error("a press without a move stored " + after + " over " + stored);
+    ed.setSideWidth(400);
+    { const g = grip.getBoundingClientRect(); pe(grip, "pointerdown", g.left + 2); pe(ed.canvas, "pointermove", g.left - 48); }
+    ed.canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 200, clientY: y, buttons: 0, pointerId: 7, pointerType: "mouse" }));
+    if (grip.classList.contains("ipc-dragging")) throw new Error("a move without the button did not end the drag");
+    if (width(ed) !== 450) throw new Error("the lost release left " + width(ed) + " px, not the 450 of the last move with the button");
+    ed.canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 100, clientY: y, buttons: 0, pointerId: 7, pointerType: "mouse" }));
+    if (width(ed) !== 450) throw new Error("the panel still follows the mouse after the drag ended: " + width(ed));
+    // the app's export rows sit inside the Export block (its padding), not on the panel's left edge under the grip
+    const exRow = ed.root.querySelector(".scumble-export-size");
+    if (exRow && !exRow.parentElement.classList.contains("ipc-sec")) throw new Error("the export size row is outside the Export block");
+    // another tab shows the same width
+    ed.setSideWidth(450);
+    const d2 = await run("new_document");
+    const ed2 = ednow(d2.id);
+    try {
+        host.shell.activate(ed2);
+        await wait(150);
+        if (Math.abs(width(ed2) - 450) > 2) throw new Error("another tab shows " + width(ed2) + " px, not 450");
+    } finally { await run("close_document", { doc: d2.id, force: true }); host.shell.activate(ed); }
+    // a stored width is put back when an editor opens (a restart); a double click goes back to the default and forgets it
+    document.documentElement.style.setProperty("--ipc-side-w", "320px");
+    ed.applyStoredSideWidth();
+    await wait(100);
+    if (Math.abs(width(ed) - 450) > 2) throw new Error("the stored width did not come back: " + width(ed));
+    grip.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    await wait(150);
+    try { stored = localStorage.getItem("ipc.sideWidth"); } catch (_) { stored = "?"; }
+    if (Math.abs(width(ed) - 320) > 2 || stored !== null) throw new Error("the double click left " + width(ed) + " px, stored " + stored);
+    out.ok = true;
+} finally {
+    ed.setSideWidth(null);
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

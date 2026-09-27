@@ -28,6 +28,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   Reveal all and Hide all (a white or a black mask, added when the layer has none), Reveal selection and Hide
   selection, and Invert mask. Each is one undo step. Agents get `set_mask` with the same operations plus
   enable / disable, apply and remove.
+- **The side panel can be wider.** Drag its left edge (between 310 px and 60 % of the window); a double click on the
+  edge goes back to the default. Every tab shows the same width, and Scumble keeps it for the next start.
 
 ## 0.1.30 — 2026-09-27
 

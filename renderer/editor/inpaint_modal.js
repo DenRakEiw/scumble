@@ -309,6 +309,8 @@ function buildSidePanel(ed) {
     side.appendChild(tabBar);
     side.appendChild(ed.panes.image);
     side.appendChild(ed.panes.gen);
+    ed.sidePanel = side;
+    side.appendChild(buildSideGrip(ed, side));
     let pane = ed.panes.image;
     const section = (title, open, build) => {
         const d = document.createElement("details");
@@ -321,6 +323,50 @@ function buildSidePanel(ed) {
     };
     ed.addSection = (title, open, build, paneId) => { const prev = pane; pane = ed.panes[paneId] || prev; try { return section(title, open, build); } finally { pane = prev; } };
     return { side, section, toGenPane: () => { pane = ed.panes.gen; } };
+}
+
+/**
+ * The grip on the side panel's left edge (item 17): drag to make the panel wider or narrower, double-click for the
+ * default. The move and the release are listened for on the window in the capture phase: the editor's root stops
+ * pointerup from bubbling, and the pointer may leave the grip while it drags.
+ */
+function buildSideGrip(ed, side) {
+    const grip = el("div", "ipc-side-grip");
+    grip.title = "Drag to make the panel wider or narrower; double-click for the default width";
+    grip.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        // the used CSS width, without the border a bounding box adds (a drag would move the panel by it)
+        const x0 = e.clientX, w0 = parseFloat(getComputedStyle(side).width) || side.getBoundingClientRect().width;
+        let w = w0, moved = false;
+        try { grip.setPointerCapture(e.pointerId); } catch (_) { /* a pointer the browser does not know (a scripted event) */ }
+        grip.classList.add("ipc-dragging");
+        const end = (save) => {
+            window.removeEventListener("pointermove", move, true);
+            window.removeEventListener("pointerup", up, true);
+            window.removeEventListener("pointercancel", up, true);
+            grip.classList.remove("ipc-dragging");
+            // a press without a move keeps what is stored (the panel may show a stored width clamped to a small window)
+            if (save && moved) ed.setSideWidth(w);
+            else if (!save) ed.applyStoredSideWidth();
+        };
+        const up = () => end(true);
+        const move = (ev) => {
+            // the release was lost (the button let go over another window) or the tab went away under the drag (hidden
+            // or closed: its body has no box, and every width would clamp to the minimum): the drag ends, the tab's own
+            // width (the stored one) stays
+            if (!(ev.buttons & 1)) { end(true); return; }
+            if (!side.isConnected || side.parentElement.getBoundingClientRect().width < 1) { end(false); return; }
+            if (ev.clientX !== x0) moved = true;
+            w = ed.setSideWidth(w0 + (x0 - ev.clientX), { save: false });
+        };
+        window.addEventListener("pointermove", move, true);
+        window.addEventListener("pointerup", up, true);
+        window.addEventListener("pointercancel", up, true);
+    });
+    grip.addEventListener("dblclick", (e) => { e.stopPropagation(); ed.setSideWidth(null); });
+    return grip;
 }
 
 /** The layer list and the buttons above it. */

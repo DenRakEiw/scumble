@@ -582,12 +582,15 @@ export const host = {
         mLab.appendChild(document.createTextNode("Prompt and recipe in the PNG"));
         mRow.appendChild(mLab);
 
-        anchor.insertAdjacentElement("afterend", row);
+        // inside the Export section's block, not after it: its padding and row layout apply (after it, the rows sat on the
+        // panel's left edge, under the width grip)
+        anchor.appendChild(row);
         row.insertAdjacentElement("afterend", qRow);
         qRow.insertAdjacentElement("afterend", mRow);
         // the canvas: a frame around the (scaled) picture, for a fixed output format or a margin
         const cRow = document.createElement("div");
         cRow.className = "ipc-seg scumble-export-canvas";
+        cRow.style.flexWrap = "wrap";   // the fill select goes onto a line of its own in a narrow panel instead of squeezing the fields
         const cLab = document.createElement("span");
         cLab.textContent = "Canvas";
         cLab.title = "The saved file's frame around the picture: empty = the picture's own size. Bigger adds a margin of the fill, smaller crops.";
