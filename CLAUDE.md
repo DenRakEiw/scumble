@@ -118,15 +118,13 @@ The hand-over blocks of before, and the full text of the list below, are in `doc
 blog post `v0-1-30`). Check `gh release list` before believing any release state written down anywhere. `main` is
 pushed; nothing is waiting locally but the uncommitted tutorial material.
 
-**Next: item 24, the canvas-only view** (the user, 2026-09-27: "eine tastenkombi die alles ausblendet und man das image
-in full screen sieht"). Asked for, not started; the design read from the code that day is under item 24 below. Item
-25 (the app's own dialogs instead of the native boxes) was asked about the same day; the user's answers on the look
-and the timing are still open.
-
-**The build in progress is `docs/PLAN_0_1_29.md`** (read it first). Done: 1 skins, 2 providers, 3a, 3b, 3d, 3f. **Left,
-"wir bauen alles":** **3c** the history panel, **3e** editable PSD masks; then **4** brushes, **5** repair / remove /
-liquify, **6** layers pro. Open for the user: LaMa shipped or downloaded (package 5), releases per package or bundled,
-whether the PNG switch (`settings.embedRecipe`, off by default, decided in the build) should default to on.
+**The build in progress is `docs/PLAN_0_1_31.md`** (read it first; written 2026-09-27, nothing of it built). The
+user's order: **1** the canvas-only view (item 24, Tab), **2** 3c the history panel, **3** 3e editable PSD masks
+(proposed as 0.1.31), then **4** brushes, **5** repair / remove / liquify, **6** layers pro - each with concrete steps,
+code facts and gates in that file; the package text of before is in `docs/PLAN_0_1_29.md` (done there: 1 skins, 2
+providers, 3a, 3b, 3d, 3f). Open for the user (the plan's last section): LaMa shipped or downloaded, the release cut,
+the PNG switch default, item 25's look and timing, the place of the Undo history section, the optional brush panel.
+Item 25 (the app's own dialogs instead of the native boxes) is not in the build.
 Deferred from 3f (not cheap): the source's EXIF / XMP in exports, an ICC profile in PSD and TIFF. Not checked: a
 double click in Explorer on an installed build, TIFFs from Photoshop / Affinity / Lightroom.
 
