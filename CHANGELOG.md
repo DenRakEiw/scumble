@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.31 — 2026-09-27
 
 - **Canvas only: Tab hides everything but the picture.** The tab bar, the editor's bars, the tools, the side panel
   and the rulers go, the window goes full screen and the picture is fitted into it; every tool and key keeps working.
