@@ -122,8 +122,16 @@ function buildTopBar(ed, root) {
     ed.tipThumb.width = 48; ed.tipThumb.height = 24;
     ed.tipThumb.className = "ipc-tipthumb";
     ed.tipThumb.style.width = "48px"; ed.tipThumb.style.height = "24px"; ed.tipThumb.style.position = "static";   // .ipc-view canvas is absolute and 100 %
-    ed.tipThumb.title = "The tip that will land on the canvas";
-    tipLabel.appendChild(ed.tipThumb);
+    // the thumbnail opens the tip popover (every tip with a stroke preview, the recent ones, a search); it is the label's
+    // first control, so a click on "Tip" opens it too
+    ed.tipBtn = el("button", "ipc-tipbtn");
+    ed.tipBtn.type = "button";
+    ed.tipBtn.title = "The tip that will land on the canvas. Click for all tips with a stroke preview, the recent ones and a search.";
+    ed.tipBtn.setAttribute("aria-haspopup", "dialog");
+    ed.tipBtn.appendChild(ed.tipThumb);
+    ed.tipBtn.appendChild(el("span", "ipc-caret", "▾"));
+    ed.tipBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); ed.toggleTipPicker(); });
+    tipLabel.appendChild(ed.tipBtn);
     ed.tipSel = selectInput(["Round"], "Round", "The brush tip. Round is the built-in soft dab; the others were imported from a .abr or an image file.");
     ed.tipSel.addEventListener("change", () => ed.setBrushTip(ed.tipSel.value === "Round" ? "" : ed.tipSel.value));
     tipLabel.appendChild(ed.tipSel);

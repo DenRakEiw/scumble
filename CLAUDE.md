@@ -109,7 +109,11 @@ verbatim). Check `gh release list` before believing any release state written do
   `boxReach`; Image > New Dodge & Burn Layer, empty soft light or 50 % grey, `dodge_burn_layer`). A three-lens review
   found 7, all fixed (plan step 9). Open for the user: the dodge & burn layer starts empty (grey is the second menu
   entry and `grey: true`); flip the default if the user wants Photoshop's grey.
-- **Next: package 4 step 10** (the brush popover, §4 item 10; the user chose a popover on 2026-09-27).
+- **Step 10 is done, package 4 is complete** (the tip popover from the Tip thumbnail: stroke previews, recent tips,
+  search; the new `renderer/editor/inpaint_tippicker.js`; a three-lens review found 5, all fixed, plan step 10). All of
+  0.1.32 (23b + package 4) is built and committed locally; the CHANGELOG's "Unreleased" section holds it.
+- **Next: on the user's word** either the 0.1.32 release chain (`docs/RELEASING.md`: version, CHANGELOG heading,
+  `npm run dist`, exe gates, tag, blog post) or package 5 (repair, remove, liquify; plan §5) for 0.1.33.
 - The user's answers of 2026-09-27: LaMa is downloaded (package 5), the PNG switch is on by default, 4.10 a popover.
   Open for the user: item 25's look and timing.
 

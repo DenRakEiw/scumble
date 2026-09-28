@@ -59,6 +59,11 @@ the section for its version; `docs/` and the commit history hold the technical d
   the grey one. Agents get `dodge_burn_layer`. Blur and sharpen now work on a click too, no longer build up within a
   stroke on the canvas backend or under a filter layer, and no longer erase what a layer holds beyond the picture's
   edge when they read the picture.
+- **A picker for the brush tips.** Click the tip's thumbnail in the brush bar (or the word *Tip*) and every tip
+  opens in a list, each with a stroke drawn with it, grouped by the file it came from, the tips you used last on top
+  and a search over the names and the file names, for a pack of hundreds. A click picks a tip and leaves the list
+  open, so you can try a few; a double click or Enter picks and closes it, and so do a click beside it, Esc and the
+  thumbnail. *Import…* is in it too.
 - **Brushes up to 1,000 px.** The largest brush was 400 px; now it is 1,000, which on a 15,000 px picture still
   paints, clones and smudges without a stutter. The Size slider runs logarithmically, so the small sizes keep their
   room; `[` and `]` and `set_brush` go up to 1,000 as well.

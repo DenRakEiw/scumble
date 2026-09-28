@@ -2161,7 +2161,7 @@ host.on("removed", ({ editor }) => { if (canvasOnlyState && canvasOnlyState.ed =
 function editorHasEscape(ed) {
     return !!(ed.pending || ed.polyPoints || ed.shapePoints || (ed.tool === "canvas" && ed.extendPending && ed.extendPending())
         || (ed.tool === "canvas" && ed.pointer && ["frame", "framemove", "framerotate", "straighten"].includes(ed.pointer.kind))
-        || ed.flyout || ed.textEdit || ed.compare);
+        || ed.flyout || (ed.tipPicker && ed.tipPicker.isOpen) || ed.textEdit || ed.compare);
 }
 
 /** The view's size changed with the chrome: fit or redraw once (resizeCanvas does that itself when the size changed). */
@@ -2177,6 +2177,7 @@ function enterCanvasOnly() {
     if (canvasOnlyState || !ed || !ed.canvas) return Promise.resolve();
     const st = canvasOnlyState = { ed, wasFullScreen: windowFullScreen, view: { ...ed.view }, fitted: ed._fitted, rulers: ed.showRulers, w: ed.width, h: ed.height };
     document.body.classList.add("shell-canvas-only");
+    if (ed.closeTipPicker) ed.closeTipPicker();   // it hangs from the options bar, which the view hides
     // the keys go to the picture: the view may come from the menu with the focus in a panel it now covers
     ed.root.focus({ preventScroll: true });
     ed.showRulers = false;       // not toggleRulers(): the user's setting in localStorage stays as it is

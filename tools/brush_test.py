@@ -136,6 +136,102 @@ let lit = 0; for (let i = 3; i < td.length; i += 4) if (td[i] > 0) lit++;
 if (lit < 50) throw new Error("the thumbnail is empty");
 return { ...out, thumbPixels: lit };
 """),
+    ("tip_popover_previews_recent_search_and_closes", """
+const ed = ednow();
+ed.setTool("paint");
+try { localStorage.removeItem("ipc.recentTips"); } catch (_) { /* ignore */ }
+ed.setBrushTip(""); ed.setBrushTip(window.__bIds[1]);        // recent: Bar Brush, then Round
+ed.closeTipPicker();
+const stamp0 = ed._tipStamp;
+ed.tipBtn.click();                                          // the thumbnail opens it
+const pk = ed.tipPicker;
+if (!pk || !pk.isOpen || !pk.el.isConnected) throw new Error("the thumbnail did not open the popover");
+if (document.activeElement !== pk.search) throw new Error("the search field has no focus");
+await wait(300);                                            // the previews are painted in slices
+if (ed._tipStamp !== stamp0) throw new Error("the previews went through the stroke's tip cache");
+const rows = () => Array.from(pk.el.querySelectorAll(".ipc-tp-row"));
+const nameOf = (r) => r.querySelector(".ipc-tp-name").textContent;
+const rowOf = (name) => rows().find((r) => nameOf(r) === name);
+const names = rows().map(nameOf);
+if (names[0] !== "Round" || !["Ring Brush", "Bar Brush", "Bar Brush (dual)"].every((n) => names.includes(n))) throw new Error("rows " + names);
+const groups = Array.from(pk.el.querySelectorAll(".ipc-tp-group")).map((g) => g.textContent);
+if (groups[0] !== "Built in" || !groups.includes("synthetic_v6.abr")) throw new Error("groups " + groups);
+const lit = (cv) => { const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return n; };
+const litOf = { round: lit(rowOf("Round").querySelector("canvas")), ring: lit(rowOf("Ring Brush").querySelector("canvas")), bar: lit(rowOf("Bar Brush").querySelector("canvas")) };
+if (litOf.round < 200 || litOf.ring < 200 || litOf.bar < 200) throw new Error("an empty stroke preview " + JSON.stringify(litOf));
+if (!rowOf("Bar Brush").classList.contains("ipc-active")) throw new Error("the active tip is not marked");
+const chips = Array.from(pk.el.querySelectorAll(".ipc-tp-chip")).map((b) => b.dataset.id);
+if (chips[0] !== window.__bIds[1] || chips[1] !== "") throw new Error("recent " + JSON.stringify(chips));
+// a click picks and leaves it open
+rowOf("Ring Brush").click();
+if (ed.brushTipId !== window.__bIds[0] || !pk.isOpen) throw new Error("a click did not pick, or closed the popover");
+if (!rowOf("Ring Brush").classList.contains("ipc-active") || rowOf("Bar Brush").classList.contains("ipc-active")) throw new Error("the mark did not follow the pick");
+// the search: every word, in the names and the files
+const type = (q) => { pk.search.value = q; pk.search.dispatchEvent(new Event("input", { bubbles: true })); };
+type("synthetic bar");                                      // the file is only ours (the first step clears stale copies)
+const barNames = rows().map(nameOf);
+if (JSON.stringify(barNames) !== JSON.stringify(["Bar Brush", "Bar Brush (dual)"])) throw new Error("search bar: " + barNames);
+if (!pk.recentBox.hidden) throw new Error("the recent row shows during a search");
+type("SYNTHETIC ring");
+if (JSON.stringify(rows().map(nameOf)) !== JSON.stringify(["Ring Brush"])) throw new Error("search by file and name: " + rows().map(nameOf));
+type("zzz nothing");
+if (rows().length || !pk.el.querySelector(".ipc-tp-empty")) throw new Error("the no-match state");
+type("");
+// a press on a heading keeps the focus in the search field (the default is prevented), one in the field does not
+const md = (node) => { const ev = new MouseEvent("mousedown", { bubbles: true, cancelable: true }); node.dispatchEvent(ev); return ev.defaultPrevented; };
+if (!md(pk.el.querySelector(".ipc-tp-group")) || md(pk.search)) throw new Error("the focus guard of the popover");
+// a key from a button inside the popover is no editor shortcut: Backspace there removes no layer
+const nLayers = ed.layers.length;
+pk.el.querySelector(".ipc-tp-chip, .ipc-ib").dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+if (ed.layers.length !== nLayers) throw new Error("Backspace in the popover removed a layer");
+// the arrows move (from the active tip, which this query hides: from the top), Enter picks and closes
+type("synthetic bar");
+const key = (k) => pk.search.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+key("ArrowDown"); key("ArrowDown"); key("Enter");
+if (pk.isOpen) throw new Error("Enter did not close");
+if (ed.brushTipId !== window.__bIds[2]) throw new Error("Enter picked " + ed.brushTipId);
+const recent = JSON.parse(localStorage.getItem("ipc.recentTips") || "[]");
+if (JSON.stringify(recent.slice(0, 4)) !== JSON.stringify([window.__bIds[2], window.__bIds[0], window.__bIds[1], "round"])) throw new Error("recent after the picks " + JSON.stringify(recent));
+// Esc, a click beside it, the thumbnail again, a tool without tips: each closes it
+ed.tipBtn.click();
+if (!pk.isOpen || pk.search.value) throw new Error("reopened with the old query: " + pk.search.value);
+key("Escape");
+if (pk.isOpen) throw new Error("Esc did not close");
+if (pk.listEl !== null || pk.rows.length) throw new Error("the closed popover keeps its rows");
+ed.tipBtn.click();
+key("Enter");                                               // no query, no cursor: Enter only closes
+if (pk.isOpen || ed.brushTipId !== window.__bIds[2]) throw new Error("Enter without a cursor changed the tip or stayed open");
+ed.tipBtn.click();
+const pd = (node, pointerId) => node.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId, pointerType: "mouse", isPrimary: true, button: 0, buttons: 1, clientX: 400, clientY: 400 }));
+pd(ed.sidePanel, 9);
+if (pk.isOpen) throw new Error("a click beside it did not close");
+ed.tipBtn.click();
+pd(ed.canvas, 10);                                          // a press on the picture closes it and paints nothing
+ed.canvas.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 10, pointerType: "mouse", isPrimary: true, button: 0, buttons: 0, clientX: 400, clientY: 400 }));
+if (pk.isOpen) throw new Error("a press on the picture did not close");
+if (ed.pointer) throw new Error("the press that closed it started a " + ed.pointer.kind);
+ed.tipBtn.click();
+pd(ed.tipLabel, 11); ed.tipLabel.click();                   // the word Tip closes it as the thumbnail does
+if (pk.isOpen) throw new Error("a click on the label left it open (closed and opened again?)");
+ed.tipBtn.click(); ed.tipBtn.click();
+if (pk.isOpen) throw new Error("the thumbnail did not close it");
+ed.tipLabel.click();                                        // a click on "Tip" is a click on its first control
+if (!pk.isOpen) throw new Error("the label did not open it");
+ed.setTool("select");
+if (pk.isOpen) throw new Error("a tool without tips left it open");
+ed.setTool("paint");
+// a tip added while it is open is listed, a removed one leaves (renderBrushTips re-renders it)
+ed.tipBtn.click();
+const n0 = rows().length;
+const pc = document.createElement("canvas"); pc.width = 8; pc.height = 8; pc.getContext("2d").fillRect(0, 0, 8, 8);
+const probe = ed.makeTip("Popover Probe", pc, 0, "probe.png");
+ed.brushTips.push(probe); ed.renderBrushTips();
+if (rows().length !== n0 + 1 || !rowOf("Popover Probe")) throw new Error("the new tip is not listed");
+ed.removeBrushTip(probe.id);
+if (rows().length !== n0 || rowOf("Popover Probe")) throw new Error("the removed tip is still listed");
+ed.closeTipPicker();
+return { rows: names.length, groups, lit: litOf, chips: chips.length, recent: recent.length };
+"""),
     ("commands", """
 const ed = ednow();
 const before = await c("list_brush_tips", { doc: window.__bDoc });

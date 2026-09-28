@@ -208,7 +208,7 @@ Text is a layer that stays text: font, size, colour, spacing, alignment and a fe
 
 The shape tool draws rectangles, ellipses, polygons, Bezier paths and freehand paths, filled, outlined or both, with a corner radius, clipped to the selection if there is one. Each shape is one undo step.
 
-Brushes can be loaded from Photoshop .abr files, which means the brush set you already own works here for painting and for masking.
+Brushes can be loaded from Photoshop .abr files, which means the brush set you already own works here for painting and for masking. Click the tip's thumbnail in the brush bar to see every tip with a stroke drawn with it, the ones you used last on top and a search box for a pack of hundreds; a click tries a tip, a double click or Enter takes it and closes the list.
 
 And there are 3D objects: drop a .glb file in, and it is placed into the picture as a layer you can rotate, scale and light. It is a niche feature with a clear use — a product, a prop or a reference shape put into a scene in the right perspective before you let a model paint over it.
 

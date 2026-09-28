@@ -26,6 +26,7 @@ import { pngHeader, asciiJson, pngWithChunks, SRGB_CHUNK } from "./inpaint_png.j
 import { tileRows, bandRows, stackRows, stackArgs, storeArgs, stackInArena, PsdBandWriter, OraBandWriter, writeTiff } from "./inpaint_bands.js";
 import { compositeBox, releaseBoxBuffers } from "./inpaint_boxstack.js";
 import { pressureCurve, Stabiliser, blurRGBA, sharpenRGBA, toneLUT, toneRGBA, spongeRGBA } from "./inpaint_stroke.js";
+import { TipPicker, noteRecentTip } from "./inpaint_tippicker.js";
 import { isTiff, TIFF_EXT, tiffInfo, readTiff, tiffPart } from "./inpaint_tiff.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { pixelsBackend, isTilePixels, scratchStats, TILE_SIZE, MIP_LEVELS, CANVAS_MAX_PIXELS, chainScheduler } from "./inpaint_tiles.js";
@@ -1324,6 +1325,32 @@ const STYLE = `
 .ipc-list.ipc-reflist { min-height:0; max-height:30vh; }
 .ipc-list.ipc-reflist:empty::after { content:"No references. Drop images here or use the button above."; display:block; padding:8px 10px; color:var(--sc-faint, #666); font-size:11px; }
 .ipc-tipthumb { width:48px; height:24px; vertical-align:middle; background:var(--sc-well, #1a1a1a); border:1px solid var(--sc-line, #444); border-radius:var(--sc-radius-sm, 3px); margin-right:4px; }
+.ipc-tipbtn { display:inline-flex; align-items:center; gap:1px; padding:0; margin:0; background:transparent; border:none; color:var(--sc-fg-2, #aaa); cursor:pointer; font:inherit; }
+.ipc-tipbtn .ipc-tipthumb { margin-right:0; }
+.ipc-tipbtn:hover .ipc-tipthumb, .ipc-tipbtn.ipc-open .ipc-tipthumb { border-color:var(--sc-active, #4a90d9); }
+.ipc-tipbtn:hover, .ipc-tipbtn.ipc-open { color:var(--sc-fg-strong, #fff); }
+.ipc-tipbtn .ipc-caret { font-size:9px; width:9px; min-width:0; text-align:center; }
+.ipc-tippop { position:absolute; z-index:7; width:360px; box-sizing:border-box; display:flex; flex-direction:column; gap:6px; padding:8px; background:var(--sc-raised, #262626); border:1px solid var(--sc-border, #444);
+  border-radius:var(--sc-radius-lg, 8px); box-shadow:var(--sc-shadow, 0 8px 24px rgba(0,0,0,.55)); color:var(--sc-fg, #ddd); font-size:12px; }
+.ipc-tippop [hidden] { display:none !important; }
+.ipc-tippop .ipc-tp-head { display:flex; gap:6px; align-items:center; }
+.ipc-tippop input[type=search] { flex:1; min-width:0; background:var(--sc-field, #161616); color:var(--sc-fg, #ddd); border:1px solid var(--sc-line, #3a3a3a); border-radius:var(--sc-radius, 4px); padding:4px 6px; font:inherit; }
+.ipc-tippop input[type=search]:focus { outline:none; border-color:var(--sc-active, #4a90d9); }
+.ipc-tippop .ipc-tp-label { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--sc-muted, #999); }
+.ipc-tippop .ipc-tp-sec { display:flex; flex-direction:column; gap:4px; }
+.ipc-tippop .ipc-tp-recent { display:flex; gap:4px; flex-wrap:wrap; }
+.ipc-tippop .ipc-tp-chip { width:36px; height:36px; padding:0; display:flex; align-items:center; justify-content:center; background:var(--sc-well, #1a1a1a); border:1px solid var(--sc-line, #3a3a3a); border-radius:var(--sc-radius, 4px); cursor:pointer; }
+.ipc-tippop .ipc-tp-chip:hover { border-color:var(--sc-fg-2, #aaa); }
+.ipc-tippop .ipc-tp-chip.ipc-active { border-color:var(--sc-active, #4a90d9); box-shadow:inset 0 0 0 1px var(--sc-active, #4a90d9); }
+.ipc-tippop .ipc-tp-list { overflow:auto; flex:1 1 auto; min-height:60px; display:flex; flex-direction:column; margin:0 -4px; padding:0 4px; }
+.ipc-tippop .ipc-tp-group { flex:none; font-size:10px; color:var(--sc-faint, #777); padding:6px 4px 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ipc-tippop .ipc-tp-row { flex:none; display:flex; align-items:center; gap:8px; padding:3px 4px; border-radius:var(--sc-radius, 4px); cursor:pointer; }
+.ipc-tippop .ipc-tp-row:hover, .ipc-tippop .ipc-tp-row.ipc-cursor { background:var(--sc-btn-hover, #3a3a3a); }
+.ipc-tippop .ipc-tp-row.ipc-active { background:var(--sc-selected, #2b3a4f); box-shadow:inset 3px 0 0 var(--sc-active, #4a90d9); }
+.ipc-tippop .ipc-tp-row canvas { flex:none; background:var(--sc-well, #1a1a1a); border-radius:var(--sc-radius-sm, 3px); }
+.ipc-tippop .ipc-tp-name { flex:1; min-width:0; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-height:1.25; overflow-wrap:anywhere; }
+.ipc-tippop .ipc-tp-empty { color:var(--sc-faint, #777); padding:8px 4px; }
+.ipc-tippop .ipc-tp-foot { font-size:10px; color:var(--sc-faint, #777); }
 .ipc-refcount { color:var(--sc-link, #7cc7ff); font-size:10px; margin-left:6px; text-transform:none; letter-spacing:0; }
 .ipc-side h4 .ipc-sel.ipc-narrow { max-width:80px; font-size:11px; padding:1px 4px; }
 .ipc-layer { display:flex; flex-direction:column; gap:4px; padding:6px 8px; border-bottom:1px solid var(--sc-line, #161616); cursor:pointer; }
@@ -2448,6 +2475,7 @@ class InpaintEditor {
             if (t && t.closest && t.closest("dialog[open]")) return;   // a key inside an open <dialog> (a host settings dialog, a plugin's) stays with the dialog: Escape has to reach its native close
             const inField = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT");
             if (e.key === "Escape") {
+                if (this.tipPicker && this.tipPicker.isOpen) { e.stopImmediatePropagation(); e.preventDefault(); this.closeTipPicker(); return; }
                 if (t === this.promptInput) return;
                 e.stopImmediatePropagation(); e.preventDefault();
                 if (this.pending) this.cancelPending();
@@ -2466,6 +2494,8 @@ class InpaintEditor {
                 else host.onEscape(this);
                 return;
             }
+            // a key from inside the tip popover (a button there after Tab) is never an editor shortcut
+            if (this.tipPicker && this.tipPicker.isOpen && t && this.tipPicker.el.contains(t)) return;
             if (inField) return;   // typing in the editor's own fields: their handlers stop propagation themselves
             e.stopImmediatePropagation();
             this.onKey(e);
@@ -2502,6 +2532,7 @@ class InpaintEditor {
         this._docKeyUp = null;
         if (this.textEdit) this.endTextEdit(true);
         this.closeFlyout();
+        this.closeTipPicker();
         clearTimeout(this._autosave);
         this.compare = null;
         this.peekBase = false;
@@ -2683,6 +2714,8 @@ class InpaintEditor {
         if (this.shapePoints && tool !== "shape") this.cancelShape();
         const prevTool = this.tool;
         this.tool = tool;
+        // the popover hangs from the tip thumbnail, which only the brushes show
+        if (this.tipPicker && this.tipPicker.isOpen && !(this.tipLabel && (this.tipLabel.dataset.for || "").split(" ").includes(tool))) this.closeTipPicker();
         host.toolChanged(this, tool, prevTool);
         if (this.hardCtl) {
             const v = Math.round(this.activeHardness() * 100);
@@ -6503,7 +6536,9 @@ class InpaintEditor {
         this._tipStamp = null;
         if (this.tipSel) this.tipSel.value = this.brushTipId || "Round";
         const t = this.brushTip();
+        noteRecentTip(this.brushTipId);
         this.syncTipControls();
+        if (this.tipPicker) this.tipPicker.markActive();
         this.draw();
         this.setStatus(t ? `Brush tip: ${t.name} (${t.canvas.width} \u00d7 ${t.canvas.height}${t.spacing ? `, spacing ${Math.round(t.spacing * 100)} %` : ""}).` : "Brush tip: the built-in round dab.");
     }
@@ -6561,6 +6596,23 @@ class InpaintEditor {
         }
         this.tipSel.value = this.brushTips.some((t) => t.id === keep) ? keep : "Round";
         this.brushTipId = this.tipSel.value === "Round" ? "" : this.tipSel.value;
+        if (this.tipPicker && this.tipPicker.isOpen) this.tipPicker.render();
+    }
+
+    /** The tip popover (inpaint_tippicker.js) under the tip thumbnail: every tip with a stroke preview, recent, search. */
+    openTipPicker() {
+        if (!this.tipPicker) this.tipPicker = new TipPicker(this);
+        this.closeFlyout();
+        this.tipPicker.open(this.tipBtn || this.tipThumb);
+        return this.tipPicker;
+    }
+
+    closeTipPicker() {
+        if (this.tipPicker) this.tipPicker.close();
+    }
+
+    toggleTipPicker() {
+        if (this.tipPicker && this.tipPicker.isOpen) this.closeTipPicker(); else this.openTipPicker();
     }
 
     /**
