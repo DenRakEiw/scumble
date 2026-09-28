@@ -193,6 +193,9 @@ planning one of them.
    structure protected like the assistant's ask card (`protectAsk`: shadow root, top layer), a new async
    `dialogs.ask()` for plugins beside the old `confirm`. Stay native: the file pickers, the crash dialog. About 1 to
    1.5 days.
+26. **Magnific-style prompting with reference images** (the user, 2026-09-28, in these words: "maginific style prompting
+   mit referenz bildern als referenz imprompt"): reference images addressed from inside the prompt, as Magnific does.
+   The user explains it later; only listed, no research yet.
 
 ## Where things stand (2026-09-27, evening)
 

@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-28, noon)
+## Where things stand (2026-09-28, afternoon)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -97,12 +97,18 @@ paragraph per step). The CHANGELOG's "Unreleased" section holds all of it.
   A three-lens review found 11, all fixed. **Open (plan §5 step 1):** a heal the source's transparency splits into thin
   strands does not settle (the kernel says so in info[3], the quick heal stays); the fix is connectivity-aware
   coarsening or MG-preconditioned CG.
-- **Next:** package 5 step 3 (Remove with LaMa: downloaded like SAM2, the user's answer of 2026-09-27; confirm the
-  ONNX port's licence before the code), then 4 (patch / content-aware move on the solver), 5 (liquify); then the
-  0.1.32 release chain on the user's word (`docs/RELEASING.md`). A background agent researched step 3 before the
-  `/clear` of 2026-09-28 (licence, download URL, tensor contract, DirectML, the integration beside SAM2): read
-  `C:/Users/SCHOEN~1/AppData/Local/Temp/claude/F--canvas/53eb0ebb-7de7-4fd8-9abf-6d82dd3d91ac/scratchpad/lama_research.md`
-  if it is there, else redo that research first.
+- **Package 5 step 3 is done** (local, 2026-09-28; plan §5 "Step 3 built"): Remove with LaMa. Carve's ONNX export of
+  Big-LaMa (Apache-2.0, 208 MB, downloaded in Settings › Helpers like SAM2; the user allowed the test download), CPU only
+  (DirectML fails on its Fourier unit), in **a process of its own** (`electron/main/onnx/lama.js`, `lama_process.js`:
+  an Electron utility process; a worker thread crashed the main process with 0xC0000409 when terminated inside the
+  native call), the tool `remove` (Shift+J; the stroke marks the hole, the fill lands at the release with the gesture
+  held as a heal's) and the recipe "LaMa remove (in-app)" (keyless provider `inapp`). Gate step
+  `remove_fills_the_hole_from_the_model_at_the_release` (both backends), `tools/remove_test.js`, `tools/helpers_test.js`
+  with the real model; the full editor gate on both backends. A three-lens review confirmed 15, all fixed.
+  **Unverified:** the utility process in the packaged exe (the exe gates at the release; a worker thread loads from
+  `app.asar` on Electron 44, checked); a hole wider than about 256 px comes back softer (LaMa is fixed at 512).
+- **Next:** package 5 step 4 (patch tool / content-aware move on the solver; move: LaMa for the hole, the solver for
+  the seam), then 5 (liquify); then the 0.1.32 release chain on the user's word (`docs/RELEASING.md`).
 - The Microsoft Store certification of 2026-09-28 refused the search term "ComfyUI" (policy 10.1.3); the user replaced
   it and "FLUX" in the listing with "photo retouching" and "outpainting" (`docs/STORE_LISTING.md`); the resubmission is on
   the user's side.
@@ -157,6 +163,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 21: lens flares like Flarecore (an optional plugin, 7-9 days), no place in the order yet.
 - 22: Nik 9 parity (an update of its own; `docs/PLAN_NIK9.md`, 34-46 days plus two folded packages), suggested after B3.
 - 25: the app's own dialogs instead of the native boxes (about 1-1.5 days), the user's answers open.
+- 26: Magnific-style prompting with reference images referenced in the prompt (the user, 2026-09-28; they explain it
+  later), only listed.
 
 ## Gate runner and flakes
 
