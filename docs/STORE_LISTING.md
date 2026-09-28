@@ -79,7 +79,11 @@ through your own ComfyUI or the image models of the API provider you choose.
 
 ## Keywords (up to 7)
 
-inpainting, AI image editor, ComfyUI, FLUX, image generation, layers, PSD
+inpainting, AI image editor, photo retouching, outpainting, image generation, layers, PSD
+
+No product titles of others: certification on 2026-09-28 refused "ComfyUI" (policy 10.1.3, search terms must not name
+products the publisher does not publish); "FLUX" went out with it for the same reason. Naming ComfyUI in the
+description is fine.
 
 ## What's new in this version
 
