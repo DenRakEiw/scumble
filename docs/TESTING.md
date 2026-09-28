@@ -34,7 +34,13 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   `remove_fills_the_hole_from_the_model_at_the_release` (a stand-in for LaMa) and
   `patch_blends_the_donor_into_the_selection_at_the_release` (the Patch tool: the landed RGB against `poissonBlend` of
   the selection's mask, Source, Destination, Blend, the worker, the clamp at the picture's edge, a feather, the
-  refusals, no flatten while it drags). `SCUMBLE_EDITOR_ONLY=name,name` runs just those steps.
+  refusals, no flatten while it drags) and `content_aware_move_fills_the_hole_and_blends_the_seam` (the LaMa stand-in:
+  the model's input, the fill, the seam band against `distTransform` and `poissonBlend`, the core exact, an overlapping
+  move reading the fill, Blend all, Extend, the worker, the held gesture, a failure, the refusals).
+  `SCUMBLE_EDITOR_ONLY=name,name` runs just those steps. On the canvas backend `readRect` of a sub-rectangle of a
+  canvas with pixels that are not opaque can differ by a level from a read of the whole canvas (measured 2026-09-28,
+  286 of 108k bytes, only where alpha < 255; 0 on tiles): an expectation for such a picture is built from the reader
+  the tool uses (`brushSource("all").bytes`), as the move step's case 15 does.
   `node tools/helpers_test.js` runs the ONNX modules without Electron (LaMa in its own process too); it needs the
   model files, a missing one is skipped. `node tools/remove_test.js` checks the Remove tool's crop and resampling
   (`renderer/editor/inpaint_remove.js`) without models.
@@ -82,7 +88,8 @@ Known flakes; **re-run before believing any of these**:
   from repeated runs.
 - The live stroke steps (`live_stroke_reaches_the_screen_before_the_release`, `live_stroke_preview_shows_what_the_commit_writes`)
   fail when a real mouse is over the test window (they drive synthetic pointer events), or right after a diagnostic
-  instance was closed.
+  instance was closed. 2026-09-28: `live_stroke_reaches_the_screen_before_the_release` failed once in a full editor run
+  on the canvas backend (28 frames against 200: the window not in front) and passed alone at once.
 - The marching ants (120 ms) break a screen comparison now and then; steps that compare the screen draw the selection as a
   tint.
 - `composite_test.py` once got a 1200 × 794 canvas against its 1200 × 800 reference and then crashed with `KeyError 'bytes'`

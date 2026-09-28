@@ -12,9 +12,59 @@ The block of 2026-09-27 (evening, after the 0.1.31 release) was moved here the s
 
 The block of 2026-09-28 (early morning, package 4 complete) was moved here at noon, when package 5 steps 1 and 2 were built.
 
+The block of 2026-09-28 (afternoon, package 5 step 3) was moved here in the evening, when step 4 was built.
+
 The block of 2026-09-27 (night), the open threads and the full list were moved here the same night, when CLAUDE.md was
 compressed (the user: the context ran full); the release procedure went to `docs/RELEASING.md`.
 
+
+## Where things stand (2026-09-28, afternoon)
+
+Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
+verbatim). Check `gh release list` before believing any release state written down anywhere.
+
+**Released:** 0.1.31 is Latest (2026-09-27, dev blog post live). `main` has local commits after it, not pushed.
+
+**In progress: 0.1.32 = 23b + package 4 (brushes) + package 5 (repair, remove, liquify)** (the user, 2026-09-28:
+package 5 first, then one release). The plan is `docs/PLAN_0_1_31.md` (§7 23b, §4 the brushes, §5 repair; a "built"
+paragraph per step). The CHANGELOG's "Unreleased" section holds all of it.
+- **23b and package 4 are done** (local, 1b61e27..8c14eee; the hand-over before this one in `docs/HISTORY.md` has them
+  step by step). Open from them: the GLSL clamp survives the linear-light mutation round; the dodge & burn layer starts
+  empty (flip to Photoshop's grey on the user's word).
+- **Package 5, steps 1 and 2 are done** (local, 2026-09-28): the Poisson solver `poisson_blend` (`crates/px/src/
+  poisson.rs`, px ABI 14: multigrid with FIXED-first coarsening, an energy-scaled correction and a full-multigrid
+  start; a bit-exact twin; px_test against an f64 CG reference; mutation round 15 of 16) and heal blending at the
+  release (`healBlend` in `inpaint_canvas.js`: up to 128k px here, larger in a pool worker with the gesture held;
+  gate step `heal_blends_the_source_into_the_picture_at_the_release` on both backends; 15k measured, 73 ms to 2.8 s).
+  A three-lens review found 11, all fixed. **Open (plan §5 step 1):** a heal the source's transparency splits into thin
+  strands does not settle (the kernel says so in info[3], the quick heal stays); the fix is connectivity-aware
+  coarsening or MG-preconditioned CG.
+- **Package 5 step 3 is done** (local, 2026-09-28; plan §5 "Step 3 built"): Remove with LaMa. Carve's ONNX export of
+  Big-LaMa (Apache-2.0, 208 MB, downloaded in Settings › Helpers like SAM2; the user allowed the test download), CPU only
+  (DirectML fails on its Fourier unit), in **a process of its own** (`electron/main/onnx/lama.js`, `lama_process.js`:
+  an Electron utility process; a worker thread crashed the main process with 0xC0000409 when terminated inside the
+  native call), the tool `remove` (Shift+J; the stroke marks the hole, the fill lands at the release with the gesture
+  held as a heal's) and the recipe "LaMa remove (in-app)" (keyless provider `inapp`). Gate step
+  `remove_fills_the_hole_from_the_model_at_the_release` (both backends), `tools/remove_test.js`, `tools/helpers_test.js`
+  with the real model; the full editor gate on both backends. A three-lens review confirmed 15, all fixed.
+  **Unverified:** the utility process in the packaged exe (the exe gates at the release; a worker thread loads from
+  `app.asar` on Electron 44, checked); a hole wider than about 256 px comes back softer (LaMa is fixed at 512).
+- **Next:** package 5 step 4 (patch tool / content-aware move on the solver; move: LaMa for the hole, the solver for
+  the seam), then 5 (liquify); then the 0.1.32 release chain on the user's word (`docs/RELEASING.md`).
+- The Microsoft Store certification of 2026-09-28 refused the search term "ComfyUI" (policy 10.1.3); the user replaced
+  it and "FLUX" in the listing with "photo retouching" and "outpainting" (`docs/STORE_LISTING.md`); the resubmission is on
+  the user's side.
+- Open for the user: item 25's look and timing.
+
+**At most two build steps per session, then `/clear` or `/compact` (the user, 2026-09-28):** the context rose to 85 % in
+one session of eight steps (its own tool output and patch scripts, not this file); commit, write the hand-over, stop.
+Read maps and code with grep and offsets, edit with Edit rather than long patch scripts, keep gate output to a summary.
+
+**How the work goes (the user, 2026-09-26):** tests by risk (Working rules); few agents - the main loop builds, one or
+two background agents take separate files (a gate, tests against a stated API, docs), one package at a time, a local
+commit per step; check the 5-hour window (`mcp__ccd_session_mgmt__get_usage`) and stop at a committed state around 70
+to 80 %. A release only on the user's word; everything before it (CHANGELOG, `npm run dist`, exe gates) may be
+prepared locally.
 
 ## Where things stand (2026-09-28, early morning)
 

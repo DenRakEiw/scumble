@@ -7816,6 +7816,634 @@ try {
 }
 return out;
 """),
+    ("content_aware_move_fills_the_hole_and_blends_the_seam", """
+// PLAN_0_1_31 section 5 step 4b: the Content-aware move. A press inside the selection drags it (the patch's gesture); at
+// the release the piece lands at E + d with a band inside its edge blended into the new place by the heal's solver (its
+// core byte for byte), and Move fills the old place with LaMa (a stand-in here: the model's mask painted one flat colour,
+// so the fill is known to the byte); one step, the selection unchanged. The real handlers through synthetic pointer
+// events; the layer against the move computed here from the picture's bytes with the kernels' JS twins: a move apart, an
+// overlapping one (the seam reads the filled hole), Blend all, in a worker, held (a press, a key, Ctrl+Z, the layer
+// deleted), a failure, no model, Extend, the hole's limit, the refusals, the base, and no whole-picture read
+const J = await import("./editor/px/kernels_js.js");
+const P = await import("./editor/inpaint_pixels.js");
+const R = await import("./editor/inpaint_remove.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const IE = ed.constructor;
+const W = 1200, H = 800, N = R.REMOVE_SIZE;
+const FILL = [10, 200, 30];
+// the later cases first in the printed line (it is cut at 4000 characters)
+const out = { tiles: !!ed.tileMode, long: null, layerMoved: null, feathered: null, alpha: null };
+const keep = { helperCall: host.helperCall, removeModel: host.removeModel, sync: IE.healSyncMax, maxHole: IE.removeMaxHole };
+const fake = () => ({ id: "fake", label: "fake" });
+// the model stand-in (the Remove step's): every request recorded, an optional delay and failure
+const calls = [];
+let delay = 0, fail = null;
+host.removeModel = fake;
+host.helperCall = async (name, a) => {
+    if (name === "warmInpaint") { calls.push({ name, model: a.model }); return { ready: true, seconds: 0, provider: "fake" }; }
+    if (name !== "inpaint") throw new Error("unknown helper " + name);
+    calls.push({ name, model: a.model, image: new Uint8Array(a.image), mask: new Uint8Array(a.mask) });
+    if (delay) await wait(delay);
+    if (fail) throw fail;
+    const image = new Uint8Array(a.image);
+    for (let i = 0; i < N * N; i++) if (a.mask[i]) { image[4 * i] = FILL[0]; image[4 * i + 1] = FILL[1]; image[4 * i + 2] = FILL[2]; image[4 * i + 3] = 255; }
+    return { image, size: N, seconds: 0.01, provider: "fake" };
+};
+const reqs = () => calls.filter((c) => c.name === "inpaint");
+const counts = { compositeCanvas: 0, flattenToCanvas: 0, sampleCanvas: 0 };
+const stacks = [], phases = {}, ants = [];
+let counting = false;
+try {
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    // the picture: the patch step's lit gradient with a fine grain and a warm, coarser texture (x 700 to 1000, y 280 to
+    // 620: where the piece goes), and the object to move: a green textured ellipse around (380, 360), radii 55 and 40
+    const base = document.createElement("canvas"); base.width = W; base.height = H;
+    {
+        const img = new ImageData(W, H), a = img.data;
+        const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return (h >>> 24) / 255; };
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const o = (y * W + x) * 4, n = hash(x, y) - 0.5;
+            if ((x - 380) * (x - 380) / 3025 + (y - 360) * (y - 360) / 1600 < 1) { const t = hash(x >> 1, y >> 1) - 0.5; a[o] = 30 + 30 * t; a[o + 1] = 170 + 40 * t; a[o + 2] = 70 + 20 * t; }
+            else if (x >= 700 && x < 1000 && y >= 280 && y < 620) { const t = hash(x >> 2, y >> 2) - 0.5; a[o] = 200 + 40 * t + 10 * n; a[o + 1] = 70 + 40 * t; a[o + 2] = 50 + 30 * t; }
+            else { a[o] = 60 + 0.06 * x + 12 * n; a[o + 1] = 90 + 0.05 * y + 12 * n; a[o + 2] = 140 - 0.04 * x + 12 * n; }
+            a[o + 3] = 255;
+        }
+        base.getContext("2d").putImageData(img, 0, 0);
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W }); Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "move_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    const L = ed.addPaintLayer();
+    ed.activeLayerId = L.id; ed.renderLayers();
+    await ed.mipsSettled();
+    ed.view.angle = 0; ed.view.scale = 0.5; ed._fitted = false; ed.view.x = 10; ed.view.y = 10; ed.draw();
+    let baseAll = ed.basePx.readRect(0, 0, W, H).data.slice();
+    // the whole-picture reads counted while a pointer event, a draw of the drag or a landing runs (with where from)
+    for (const k of Object.keys(counts)) { const f = ed[k]; ed[k] = function (...a) { if (counting) { counts[k]++; if (stacks.length < 4) stacks.push(k + " " + String(new Error().stack).split(String.fromCharCode(10)).slice(2, 7).join(" < ")); } return f.apply(this, a); }; }
+    { const f = ed.drawMarchingAnts; ed.drawMarchingAnts = function (ctx, shift) { if (counting) ants.push(shift ? [shift[0], shift[1]] : null); return f.call(this, ctx, shift); }; }
+    // for a failure's report: the picture the release read (`moveInputs`: the new place and the piece over U), copied before
+    // the seam writes the fill into it
+    let lastJob = null;
+    ed.moveInputs = function (p, layer) { const j = IE.prototype.moveInputs.call(this, p, layer); lastJob = j ? { U: j.U.slice(), base: j.base.slice(), piece: j.piece.slice() } : null; return j; };
+    const mirrors = () => ed.tileMode ? [!!P.displayCanvasIfMade(L.px), !!P.displayCanvasIfMade(ed.basePx)] : null;
+    const m0 = mirrors();
+    const mark = (name) => { phases[name] = counts.compositeCanvas + counts.flattenToCanvas + counts.sampleCanvas; };
+    let pid = 3100;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+    const send = (type, ix, iy, extra) => { counting = true; try { ed.canvas.dispatchEvent(ev(type, ix, iy, extra)); } finally { counting = false; } };
+    const drawNow = () => { counting = true; try { ed.draw(); } finally { counting = false; } };
+    const key = (k, o = {}) => ed.root.dispatchEvent(new KeyboardEvent("keydown", Object.assign({ key: k, bubbles: true, cancelable: true }, o)));
+    // a drag from a to b in six moves, the picture drawn after each (the preview and the ants, as the screen would); what the
+    // press made, the offset the drag took and the last shifted outline, read before the release
+    const drag = (a, b, moves = 6) => {
+        pid++;
+        send("pointerdown", a[0], a[1]);
+        const kind = ed.pointer ? ed.pointer.kind : null;
+        ants.length = 0;
+        for (let i = 1; i <= moves; i++) { send("pointermove", a[0] + (b[0] - a[0]) * i / moves, a[1] + (b[1] - a[1]) * i / moves); drawNow(); }
+        const p = ed.pointer, dd = p && p.kind === "patchdrag" ? p.d.slice() : null;
+        const shifted = ants.filter((s) => s).map((s) => s.join()).pop() || null;
+        send("pointerup", b[0], b[1]);
+        return { kind, d: dd, ants: shifted };
+    };
+    // the landing waited for, counted as part of the gesture (the model's answer, the seam, the write, the commit)
+    const settle = async () => { counting = true; try { await ed.removePending; for (let i = 0; i < 20 && ed._historyQueue; i++) await ed._historyQueue; } finally { counting = false; } };
+    const hashOf = (a) => { let h = 2166136261, n = 0; for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 16777619); for (let i = 3; i < a.length; i += 4) if (a[i]) n++; return (h >>> 0).toString(16) + "/" + n; };
+    const digest = (layer) => hashOf(layer.px.readRect(0, 0, layer.w, layer.h).data);
+    const selDigest = () => hashOf(ed.sel.readRect(0, 0, W, H).data);
+    const baseDigest = () => hashOf(ed.basePx.readRect(0, 0, W, H).data);
+    const top = () => (ed.undo[ed.undo.length - 1] || {}).label;
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    // the bytes of `px` (pw x ph) over [x, y, w, h] of its own pixels, zeros outside it
+    const readZ = (px, pw, ph, x, y, w, h) => {
+        const o = new Uint8Array(w * h * 4);
+        const x0 = Math.max(0, x), y0 = Math.max(0, y), x1 = Math.min(pw, x + w), y1 = Math.min(ph, y + h), rw = x1 - x0;
+        if (rw <= 0 || y1 <= y0) return o;
+        const a = px.readRect(x0, y0, rw, y1 - y0).data;
+        for (let yy = y0; yy < y1; yy++) o.set(a.subarray((yy - y0) * rw * 4, (yy - y0 + 1) * rw * 4), ((yy - y) * w + x0 - x) * 4);
+        return o;
+    };
+    // the same, but past the pixels' edge the nearest pixel inside (the move's piece: `patchGuide` replicates the edge)
+    const readE = (px, pw, ph, x, y, w, h) => {
+        const o = new Uint8Array(w * h * 4);
+        const x0 = Math.max(0, Math.min(pw - 1, x)), y0 = Math.max(0, Math.min(ph - 1, y)), x1 = Math.min(pw, Math.max(x0 + 1, x + w)), y1 = Math.min(ph, Math.max(y0 + 1, y + h)), rw = x1 - x0;
+        const a = px.readRect(x0, y0, rw, y1 - y0).data;
+        for (let yy = 0; yy < h; yy++) {
+            const sy = Math.min(y1 - 1, Math.max(y0, y + yy)) - y0;
+            for (let xx = 0; xx < w; xx++) {
+                const sx = Math.min(x1 - 1, Math.max(x0, x + xx)) - x0, s = (sy * rw + sx) * 4, d = (yy * w + xx) * 4;
+                o[d] = a[s]; o[d + 1] = a[s + 1]; o[d + 2] = a[s + 2]; o[d + 3] = a[s + 3];
+            }
+        }
+        return o;
+    };
+
+    // the selection as the move takes it (what the ants show): E the extent of alpha 128 and up, selA the alpha over E
+    // (the hole and pm are where it is 128 and up); `soft` the pixels of any alpha below 255, `any` the extent of any alpha
+    let E = null, ew = 0, eh = 0, selA = null, sel0 = null, selAll = null;
+    const takeSel = () => {
+        selAll = ed.sel.readRect(0, 0, W, H).data.slice();
+        sel0 = hashOf(selAll);
+        let x0 = W, y0 = H, x1 = -1, y1 = -1, a0 = W, b0 = H, a1 = -1, b1 = -1, soft = 0;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const s = selAll[(y * W + x) * 4 + 3];
+            if (!s) continue;
+            if (s !== 255) soft++;
+            if (x < a0) a0 = x; if (x > a1) a1 = x; if (y < b0) b0 = y; b1 = y;
+            if (s < 128) continue;
+            if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; y1 = y;
+        }
+        E = [x0, y0, x1 + 1, y1 + 1]; ew = E[2] - E[0]; eh = E[3] - E[1];
+        selA = new Uint8Array(ew * eh);
+        for (let y = 0; y < eh; y++) for (let x = 0; x < ew; x++) selA[y * ew + x] = selAll[((y + E[1]) * W + x + E[0]) * 4 + 3];
+        return { E: E.slice(), any: [a0, b0, a1 + 1, b1 + 1], soft };
+    };
+    await run("select_rect", { x: 300, y: 300, w: 160, h: 120, doc: d.id });
+    const s0 = takeSel();
+    if (!same(E, [300, 300, 460, 420]) || s0.soft) throw new Error("select_rect did not select the 160 x 120 rectangle: " + JSON.stringify(s0));
+    const C = [380, 360];
+    // what the model should get (Move): the picture over removeCrop(E) and the hole there, at 512 (the Remove module's own
+    // functions, fed from the base's bytes)
+    const crop0 = R.removeCrop(E, W, H), cw = crop0[2] - crop0[0], ch = crop0[3] - crop0[1];
+    const holeCrop = new Uint8Array(cw * ch);
+    for (let y = 0; y < eh; y++) for (let x = 0; x < ew; x++) if (selA[y * ew + x] >= 128) holeCrop[(E[1] + y - crop0[1]) * cw + E[0] + x - crop0[0]] = 255;
+    const wantImage = R.toModelImage(readZ(ed.basePx, W, H, crop0[0], crop0[1], cw, ch), cw, ch), wantMask = R.toModelMask(holeCrop, cw, ch);
+    const toModel = (X, Y) => Math.round((Y - crop0[1] + 0.5) * N / ch - 0.5) * N + Math.round((X - crop0[0] + 0.5) * N / cw - 0.5);
+    const nDiff = (a, b) => { if (a.length !== b.length) return -1; let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; };
+    // the move by `dd` as the release should make it, from the picture's bytes (the base; the paint layers are empty):
+    // U = E + d and a pixel around it, cut to the picture and the layer rect `Lr`; the piece = the picture at U - d (its
+    // edge repeated past the picture); pm = the selection (alpha 128 and up) moved by d where the piece is not clear; with
+    // Move (`hole`) the new place takes FILL where the old place reaches into U (`fill` false: without it, for the order
+    // check); Blend "edge": a band of b = clamp(round(min(ew, eh) / 10), 4, 32) px inside pm's edge (the JS twin's squared
+    // distances) is the solver's, the core the piece's own bytes; "all" (`whole`): all of pm is the solver's. Last, where
+    // the piece lands over its old place with an alpha a below 255, it lies over the filled new place:
+    // round((out * a + dstP * (255 - a)) / 255)
+    const expectMove = (dd, { hole = true, whole = false, Lr = [0, 0, W, H], fill = true, px = ed.basePx } = {}) => {
+        const [dx, dy] = dd, T = [E[0] + dx, E[1] + dy, E[2] + dx, E[3] + dy];
+        const U = [Math.max(Lr[0], 0, T[0] - 1), Math.max(Lr[1], 0, T[1] - 1), Math.min(Lr[2], W, T[2] + 1), Math.min(Lr[3], H, T[3] + 1)];
+        const uw = U[2] - U[0], uh = U[3] - U[1], n = uw * uh;
+        const base = readZ(px, W, H, U[0], U[1], uw, uh), piece = readE(px, W, H, U[0] - dx, U[1] - dy, uw, uh);
+        const pm = new Uint8Array(n), inHole = new Uint8Array(n);
+        for (let y = 0; y < uh; y++) for (let x = 0; x < uw; x++) {
+            const k = y * uw + x, px = U[0] + x - dx - E[0], py = U[1] + y - dy - E[1], hx = U[0] + x - E[0], hy = U[1] + y - E[1];
+            if (px >= 0 && px < ew && py >= 0 && py < eh && selA[py * ew + px] >= 128 && piece[4 * k + 3]) pm[k] = 255;
+            if (hole && hx >= 0 && hx < ew && hy >= 0 && hy < eh && selA[hy * ew + hx] >= 128) inHole[k] = 1;
+        }
+        const dstP = base.slice();
+        if (fill) for (let k = 0; k < n; k++) if (inHole[k]) { dstP[4 * k] = FILL[0]; dstP[4 * k + 1] = FILL[1]; dstP[4 * k + 2] = FILL[2]; dstP[4 * k + 3] = 255; }
+        const b = whole ? null : Math.max(4, Math.min(32, Math.round(Math.min(ew, eh) / 10)));
+        const d2 = whole ? null : J.distTransform(pm.map((v) => (v ? 0 : 255)), uw, uh);
+        const dst = dstP.slice(), mask = new Uint8Array(n), core = new Uint8Array(n);
+        let unknowns = 0, over = 0;
+        for (let k = 0; k < n; k++) {
+            if (!pm[k]) continue;
+            if (!d2 || d2[k] <= b * b) { mask[k] = 255; unknowns++; }
+            else { core[k] = 1; for (let c = 0; c < 4; c++) dst[4 * k + c] = piece[4 * k + c]; }
+        }
+        const info = new Int32Array(4);
+        const res = J.poissonBlend(dst, piece, mask, uw, uh, undefined, info), raw = res.slice();
+        for (let k = 0; k < n; k++) {
+            const a = piece[4 * k + 3];
+            if (!pm[k] || !inHole[k] || a === 255) continue;
+            over++;
+            for (let c = 4 * k; c < 4 * k + 3; c++) res[c] = Math.round((res[c] * a + dstP[c] * (255 - a)) / 255);
+        }
+        return { U, uw, uh, d: dd, pm, inHole, hole, base, piece, out: res, raw, info: Array.from(info), band: b, unknowns, core, over };
+    };
+    // the release's picture against the one the expectation read: the bytes that differ (in the new place, in the piece,
+    // where the pixel is not opaque) and the largest step
+    const inputsDiff = (x) => {
+        if (!lastJob || !same(lastJob.U, x.U)) return { job: lastJob && lastJob.U };
+        const r = { base: 0, piece: 0, soft: 0, max: 0, at: null };
+        for (const [k, a, b] of [["base", lastJob.base, x.base], ["piece", lastJob.piece, x.piece]]) {
+            for (let i = 0; i < a.length; i++) {
+                if (a[i] === b[i]) continue;
+                r[k]++;
+                if (b[i - (i % 4) + 3] < 255) r.soft++;
+                r.max = Math.max(r.max, Math.abs(a[i] - b[i]));
+                if (!r.at) r.at = [k, x.U[0] + ((i >> 2) % x.uw), x.U[1] + Math.floor((i >> 2) / x.uw), i % 4, a[i], b[i], b[i - (i % 4) + 3]];
+            }
+        }
+        return r;
+    };
+    // the layer against it: in U where the piece lands or the hole reaches, the expected RGB (where the landed alpha is 255)
+    // and alpha (255 on the hole, the piece's elsewhere on pm); the hole outside U exactly FILL at 255; the core (pm farther
+    // than the band from its edge; where the piece is opaque) the picture's own bytes at X - d; everything else clear
+    const verify = (layer, x) => {
+        const got = layer.px.readRect(0, 0, layer.w, layer.h).data;
+        const [U0, U1, U2, U3] = x.U;
+        const r = { landed: 0, full: 0, differ: 0, alpha: 0, fill: 0, fillBad: 0, leak: 0, core: 0, coreBad: 0, first: null };
+        for (let ly = 0; ly < layer.h; ly++) for (let lx = 0; lx < layer.w; lx++) {
+            const X = lx + layer.x, Y = ly + layer.y, o = (ly * layer.w + lx) * 4, A = got[o + 3];
+            const inU = X >= U0 && X < U2 && Y >= U1 && Y < U3, k = inU ? (Y - U1) * x.uw + X - U0 : -1;
+            const hx = X - E[0], hy = Y - E[1], inHole = x.hole && hx >= 0 && hx < ew && hy >= 0 && hy < eh && selA[hy * ew + hx] >= 128;
+            if (inU && (x.pm[k] || inHole)) {
+                r.landed++;
+                if (A !== (inHole ? 255 : x.piece[4 * k + 3])) r.alpha++;
+                if (A === 255) {
+                    r.full++;
+                    for (let c = 0; c < 3; c++) if (got[o + c] !== x.out[4 * k + c]) { r.differ++; if (!r.first) r.first = [X, Y, Array.from(got.slice(o, o + 4)), Array.from(x.out.slice(4 * k, 4 * k + 4))]; }
+                }
+            } else if (inHole) {
+                r.fill++;
+                if (A !== 255 || got[o] !== FILL[0] || got[o + 1] !== FILL[1] || got[o + 2] !== FILL[2]) r.fillBad++;
+            } else if (A) r.leak++;
+            if (inU && x.core[k] && x.piece[4 * k + 3] === 255) {
+                r.core++;
+                const s = ((Y - x.d[1]) * W + X - x.d[0]) * 4;
+                if (A !== 255 || got[o] !== baseAll[s] || got[o + 1] !== baseAll[s + 1] || got[o + 2] !== baseAll[s + 2]) r.coreBad++;
+            }
+        }
+        return r;
+    };
+    const exact = (r, minFull) => r.full >= minFull && !r.differ && !r.alpha && !r.fillBad && !r.leak && !r.coreBad;
+    const lmWant = (x, mode, blend) => ({ box: [x.U[0], x.U[1], x.uw, x.uh], hole: mode === "move" ? [E[0], E[1], ew, eh] : null, off: x.d, mode, blend, crop: mode === "move" ? R.removeCrop(E, W, H) : null, band: x.band, unknowns: x.unknowns, wrote: true, error: null });
+    // the undo step's parts: two copies (the old place and the new, layer pixels) when the box around both is larger than
+    // the two together (Move only), else none
+    const area = (b) => (b[2] - b[0]) * (b[3] - b[1]);
+    const wantParts = (x) => (x.hole && area([Math.min(E[0], x.U[0]), Math.min(E[1], x.U[1]), Math.max(E[2], x.U[2]), Math.max(E[3], x.U[3])]) > area(E) + area(x.U) ? 2 : 0);
+    const topParts = () => { const s = ed.undo[ed.undo.length - 1]; return s && Array.isArray(s.parts) ? s.parts.length : 0; };
+    const lmGot = (lm) => lm ? { box: lm.box, hole: lm.hole, off: lm.off, mode: lm.mode, blend: lm.blend, crop: lm.crop, band: lm.band, unknowns: lm.unknowns, wrote: lm.wrote, error: lm.error } : null;
+    // a press that refuses: the status says why, no gesture, no step, no new layer, no request, nothing written
+    const refuse = (what, re) => {
+        const n = ed.undo.length, nl = ed.layers.length, e = digest(L), q = reqs().length;
+        pid++;
+        send("pointerdown", C[0], C[1]);
+        const pointer = ed.pointer ? ed.pointer.kind : null;
+        send("pointermove", C[0] + 250, C[1]); send("pointermove", C[0] + 500, C[1]);
+        send("pointerup", C[0] + 500, C[1]);
+        const r = { tool: ed.tool, status: ed.status, pointer, steps: ed.undo.length - n, layers: ed.layers.length - nl, requests: reqs().length - q, same: digest(L) === e, sel: selDigest() === sel0 };
+        if (r.tool !== "contentmove" || !re.test(r.status) || r.pointer || r.steps || r.layers || r.requests || !r.same || !r.sel) throw new Error(what + " did not refuse the move: " + JSON.stringify(r));
+        return r;
+    };
+
+    // 1. picking the tool in Move mode loads the model once (a warm-up request, no inpaint)
+    ed.moveOpts = { mode: "move", blend: "edge" };
+    ed.setTool("contentmove");
+    await wait(50);
+    out.warm = { warm: calls.filter((c) => c.name === "warmInpaint").length, inpaint: reqs().length, tool: ed.tool };
+    if (out.warm.warm !== 1 || out.warm.inpaint || ed.tool !== "contentmove") throw new Error("picking the Content-aware move did not warm the model once: " + JSON.stringify(out.warm) + " " + ed.status);
+    const e0 = digest(L);
+    mark("warm");
+
+    // 2. Move by (500, 0) on a paint layer: held at the release, one request (the picture and the hole over the crop), one
+    // step; the hole FILL outside U, U the move computed here, the core (the moved rect shrunk by the 12 px band) the
+    // picture's own bytes, nothing else written, the selection as it was
+    const n2 = ed.undo.length, q2 = reqs().length, nl2 = ed.layers.length;
+    const g2 = drag(C, [C[0] + 500, C[1]]);
+    const held2 = !!(ed.pointer && ed.pointer.healing && ed.pointer.move && ed.removePending);
+    await settle();
+    const lm2 = ed.lastMove, x2 = expectMove([500, 0]), r2 = verify(L, x2), rq2 = reqs()[reqs().length - 1];
+    out.move = Object.assign({ kind: g2.kind, d: g2.d, ants: g2.ants, held: held2, steps: ed.undo.length - n2, label: top(), layers: ed.layers.length - nl2, requests: reqs().length - q2, sel: selDigest() === sel0,
+        where: lm2 && lm2.where, band: lm2 && lm2.band, unknowns: lm2 && lm2.unknowns, info: lm2 && lm2.info, ms: lm2 && lm2.ms }, r2);
+    const o2 = out.move;
+    if (g2.kind !== "patchdrag" || !same(g2.d, [500, 0]) || !held2) throw new Error("the drag inside the selection did not start the move, held at the release: " + JSON.stringify(o2) + " " + ed.status);
+    if (o2.steps !== 1 || o2.label !== "Content-aware move" || o2.layers || o2.requests !== 1 || !o2.sel) throw new Error("the move is not one request and one step: " + JSON.stringify(o2) + " " + ed.status);
+    if (!same(lmGot(lm2), lmWant(x2, "move", "edge")) || lm2.where !== "here" || (lm2.info && lm2.info[3]) || x2.band !== 12) throw new Error("lastMove is not the move as stated: " + JSON.stringify({ got: lmGot(lm2), want: lmWant(x2, "move", "edge"), where: lm2 && lm2.where, info: lm2 && lm2.info }));
+    const mc = toModel(C[0], C[1]), mf = toModel(crop0[0] + 6, crop0[1] + 6);
+    out.move.request = { model: rq2.model, image: nDiff(rq2.image, wantImage), mask: nDiff(rq2.mask, wantMask), centre: rq2.mask[mc], far: rq2.mask[mf], at: Array.from(rq2.image.slice(4 * mc, 4 * mc + 3)) };
+    const rq = out.move.request;
+    if (rq.model !== "fake" || rq.image || rq.mask || rq.centre !== 255 || rq.far !== 0 || !(rq.at[1] > rq.at[0] + 80)) throw new Error("the model did not get the picture and the hole over removeCrop(E): " + JSON.stringify(rq));
+    if (!exact(r2, 19000) || r2.landed !== 19200 || r2.fill !== 19200 || r2.core !== 136 * 96) throw new Error("the move did not land as computed: " + JSON.stringify(o2));
+    // the two places lie apart (the box around both, 661 x 122, is larger than the two): the step copies each of them
+    o2.parts = topParts();
+    if (wantParts(x2) !== 2 || o2.parts !== 2) throw new Error("the step of a move apart does not copy the two places: " + JSON.stringify({ parts: o2.parts, want: wantParts(x2) }));
+    const dig2 = digest(L);
+    await ed.undoStep();
+    if (digest(L) !== e0) throw new Error("the undo of the move did not give the empty layer back");
+    mark("move");
+
+    // 3. an overlapping move by (60, 0): the seam reads the new place with the fill already in (the old place reaches into
+    // U); the same computation without the fill differs there, so the case proves the order
+    const n3 = ed.undo.length, q3 = reqs().length;
+    const g3 = drag(C, [C[0] + 60, C[1]]);
+    await settle();
+    const lm3 = ed.lastMove, x3 = expectMove([60, 0]), r3 = verify(L, x3), x3n = expectMove([60, 0], { fill: false });
+    let order = 0, holeInU = 0;
+    for (let k = 0; k < x3.uw * x3.uh; k++) {
+        if (x3.inHole[k]) holeInU++;
+        if ((x3.pm[k] || x3.inHole[k]) && (x3.out[4 * k] !== x3n.out[4 * k] || x3.out[4 * k + 1] !== x3n.out[4 * k + 1] || x3.out[4 * k + 2] !== x3n.out[4 * k + 2])) order++;
+    }
+    out.overlap = Object.assign({ d: g3.d, steps: ed.undo.length - n3, label: top(), requests: reqs().length - q3, holeInU, order, where: lm3 && lm3.where }, r3);
+    const o3 = out.overlap;
+    if (!same(g3.d, [60, 0]) || o3.steps !== 1 || o3.label !== "Content-aware move" || o3.requests !== 1 || !same(lmGot(lm3), lmWant(x3, "move", "edge"))) throw new Error("the overlapping move did not run as stated: " + JSON.stringify(o3) + " " + JSON.stringify(lmGot(lm3)));
+    if (holeInU !== 101 * 120 || order < 100) throw new Error("the overlapping move proves nothing about the order (no hole in U, or the fill changes nothing): " + JSON.stringify(o3));
+    if (!exact(r3, 19000) || r3.landed !== 19200 + 120 || r3.fill !== 59 * 120 || r3.core !== 136 * 96) throw new Error("the overlapping move did not land as computed (the fill read into the seam): " + JSON.stringify(o3));
+    // a short overlapping move: one box, no parts
+    o3.parts = topParts();
+    if (wantParts(x3) || o3.parts) throw new Error("the step of a short overlapping move has parts: " + JSON.stringify({ parts: o3.parts, want: wantParts(x3) }));
+    await ed.undoStep();
+    if (digest(L) !== e0) throw new Error("the undo of the overlapping move did not give the empty layer back");
+    mark("overlap");
+
+    // 4. Blend "all" by (0, 300): all of the piece is the solver's (the mask = pm), no band
+    ed.moveOpts.blend = "all";
+    const n4 = ed.undo.length;
+    const g4 = drag(C, [C[0], C[1] + 300]);
+    await settle();
+    ed.moveOpts.blend = "edge";
+    const lm4 = ed.lastMove, x4 = expectMove([0, 300], { whole: true }), r4 = verify(L, x4);
+    out.all = Object.assign({ d: g4.d, steps: ed.undo.length - n4, label: top(), band: lm4 && lm4.band, unknowns: lm4 && lm4.unknowns, where: lm4 && lm4.where }, r4);
+    if (!same(g4.d, [0, 300]) || out.all.steps !== 1 || out.all.label !== "Content-aware move" || lm4.band !== null || lm4.unknowns !== 19200 || !same(lmGot(lm4), lmWant(x4, "move", "all"))) throw new Error("Blend all did not run as stated: " + JSON.stringify(out.all) + " " + JSON.stringify(lmGot(lm4)));
+    if (!exact(r4, 19000) || r4.landed !== 19200 || r4.fill !== 19200) throw new Error("Blend all did not land as computed: " + JSON.stringify(out.all));
+    await ed.undoStep();
+    if (digest(L) !== e0) throw new Error("the undo of the Blend all move did not give the empty layer back");
+    mark("all");
+
+    // 5. the seam in a worker (healSyncMax 0): the same bytes as the move of case 2 here
+    IE.healSyncMax = 0;
+    const n5 = ed.undo.length;
+    try { drag(C, [C[0] + 500, C[1]]); await settle(); } finally { IE.healSyncMax = keep.sync; }
+    const lm5 = ed.lastMove;
+    out.worker = { where: lm5 && lm5.where, same: digest(L) === dig2, steps: ed.undo.length - n5, label: top(), info: lm5 && lm5.info, unknowns: lm5 && lm5.unknowns };
+    if (out.worker.where !== "worker" || !out.worker.same || out.worker.steps !== 1 || out.worker.label !== "Content-aware move" || (lm5.info && lm5.info[3])) throw new Error("the move's seam in a worker landed otherwise: " + JSON.stringify(out.worker));
+    await ed.undoStep();
+    if (digest(L) !== e0) throw new Error("the undo of the move in a worker did not give the empty layer back");
+    mark("worker");
+
+    // 6. held while the model runs (the stand-in's delay): a press and a shortcut wait and say so, the move lands as one
+    // step; Ctrl+Z pressed meanwhile takes it back once it lands; the layer deleted meanwhile takes nothing
+    delay = 400;
+    try {
+        const n6 = ed.undo.length;
+        drag(C, [C[0] + 500, C[1]]);
+        const p6 = ed.pointer;
+        const held6 = !!(p6 && p6.healing && p6.move && ed.removePending), gh6 = ed.gestureHeld();
+        pid++; send("pointerdown", 900, 650); send("pointermove", 950, 650); send("pointerup", 950, 650);
+        const pressWaited = ed.pointer === p6, pressStatus = ed.status;
+        key("b");
+        const keyWaited = ed.tool === "contentmove" && /Moving: a moment/.test(ed.status);
+        await settle();
+        out.held = { held: held6, gestureHeld: gh6, pressWaited, pressStatus, keyWaited, steps: ed.undo.length - n6, label: top(), same: digest(L) === dig2, after: ed.pointer === null, ms: ed.lastMove.ms };
+        if (!held6 || !gh6 || !pressWaited || !/Moving: a moment/.test(pressStatus) || !keyWaited) throw new Error("the move did not hold the gesture: " + JSON.stringify(out.held));
+        if (out.held.steps !== 1 || out.held.label !== "Content-aware move" || !out.held.same || !out.held.after) throw new Error("the held move landed otherwise: " + JSON.stringify(out.held));
+        await ed.undoStep();
+        if (digest(L) !== e0) throw new Error("the undo of the held move did not give the empty layer back");
+        const n6z = ed.undo.length;
+        drag(C, [C[0] + 500, C[1]]);
+        const heldZ = !!(ed.pointer && ed.pointer.healing && ed.removePending);
+        key("z", { ctrlKey: true });
+        await settle();
+        out.undoWhileHeld = { held: heldZ, empty: digest(L) === e0, steps: ed.undo.length - n6z, wrote: ed.lastMove.wrote, future: ed.undoList().filter((r) => r.future).map((r) => r.label) };
+        if (!heldZ || !out.undoWhileHeld.empty || out.undoWhileHeld.steps || !out.undoWhileHeld.wrote || out.undoWhileHeld.future.join() !== "Content-aware move") throw new Error("Ctrl+Z pressed while the move was held did not take it back: " + JSON.stringify(out.undoWhileHeld));
+        const D = ed.addPaintLayer();
+        ed.activeLayerId = D.id; ed.renderLayers();
+        const d6 = digest(D);
+        drag(C, [C[0] + 500, C[1]]);
+        await wait(50);
+        ed.removeLayer(D.id);
+        await settle();
+        const back = () => ed.layers.find((l) => l.id === D.id);
+        out.deleted = { wrote: ed.lastMove.wrote, error: ed.lastMove.error, gone: !back(), top: top() };
+        await ed.undoStep();
+        out.deleted.restored = !!back();
+        out.deleted.same = back() ? digest(back()) === d6 : null;
+        if (out.deleted.wrote !== false || !/deleted/.test(out.deleted.error || "") || !out.deleted.gone || out.deleted.top !== "Delete layer" || !out.deleted.restored || !out.deleted.same) throw new Error("a move landed in a layer deleted while it was held: " + JSON.stringify(out.deleted));
+        ed.removeLayer(D.id);
+        ed.activeLayerId = L.id; ed.renderLayers();
+    } finally { delay = 0; }
+    mark("held");
+
+    // 7. the model fails: no step, the layer as it was, the status says so; on the base the layer the move made goes again
+    const n7 = ed.undo.length;
+    fail = new Error("boom");
+    try { drag(C, [C[0] + 500, C[1]]); await settle(); } finally { fail = null; }
+    out.failure = { steps: ed.undo.length - n7, same: digest(L) === e0, status: ed.status, wrote: ed.lastMove.wrote, error: ed.lastMove.error, after: ed.pointer === null };
+    if (out.failure.steps || !out.failure.same || !/^Content-aware move failed/.test(out.failure.status) || out.failure.wrote !== false || out.failure.error !== "boom" || !out.failure.after) throw new Error("a failed move left something: " + JSON.stringify(out.failure));
+    ed.activeLayerId = null; ed.renderLayers();
+    const nl7 = ed.layers.length, n7b = ed.undo.length, b7 = baseDigest();
+    fail = new Error("boom again");
+    try { drag(C, [C[0] + 500, C[1]]); await settle(); } finally { fail = null; }
+    out.baseFailure = { layers: ed.layers.length - nl7, active: ed.activeLayerId, steps: ed.undo.length - n7b, status: ed.status, baseSame: baseDigest() === b7 };
+    if (out.baseFailure.layers || out.baseFailure.active !== null || out.baseFailure.steps || !/^Content-aware move failed/.test(out.baseFailure.status) || !out.baseFailure.baseSame) throw new Error("a failed move on the base left its new layer: " + JSON.stringify(out.baseFailure));
+    ed.activeLayerId = L.id; ed.renderLayers();
+    mark("failure");
+
+    // 8. no model: Move refuses at the press; Extend needs none: no request, the old place untouched, U the seam over the
+    // new place as it is (no fill), one "Content-aware extend" step
+    host.removeModel = () => null;
+    try {
+        out.noModel = refuse("Move without a model", /needs the LaMa model/);
+        ed.moveOpts.mode = "extend";
+        const n8 = ed.undo.length, q8 = reqs().length;
+        const g8 = drag(C, [C[0] + 500, C[1]]);
+        await settle();
+        const lm8 = ed.lastMove, x8 = expectMove([500, 0], { hole: false }), r8 = verify(L, x8);
+        out.extend = Object.assign({ d: g8.d, steps: ed.undo.length - n8, label: top(), requests: reqs().length - q8, sel: selDigest() === sel0, where: lm8 && lm8.where }, r8);
+        if (!same(g8.d, [500, 0]) || out.extend.steps !== 1 || out.extend.label !== "Content-aware extend" || out.extend.requests || !out.extend.sel || !same(lmGot(lm8), lmWant(x8, "extend", "edge"))) throw new Error("Extend did not run as stated: " + JSON.stringify(out.extend) + " " + JSON.stringify(lmGot(lm8)) + " " + ed.status);
+        if (!exact(r8, 19000) || r8.landed !== 19200 || r8.fill || r8.core !== 136 * 96) throw new Error("Extend did not land as computed (or touched the old place): " + JSON.stringify(out.extend));
+        await ed.undoStep();
+    } finally { host.removeModel = fake; ed.moveOpts.mode = "move"; }
+    if (digest(L) !== e0) throw new Error("the undo of the Extend did not give the empty layer back");
+    mark("extend");
+
+    // 9. a hole wider than removeMaxHole refuses Move at the press; the patch's refusals, in the move's words
+    IE.removeMaxHole = 100;
+    try { out.maxHole = refuse("a 160 px hole over a limit of 100", /fills up to/); } finally { IE.removeMaxHole = keep.maxHole; }
+    out.refused = {};
+    ed.quickMask = true;
+    try { out.refused.quickMask = refuse("quick mask", /Quick mask/); } finally { ed.quickMask = false; }
+    const S = ed.addLayer({ name: "S", kind: "paint", px: ed.pixels.Layer.empty(600, 400), x: 0, y: 0, w: W, h: H });
+    ed.activeLayerId = S.id; ed.renderLayers();
+    try { out.refused.scaled = refuse("a scaled layer", /Content-aware move paints into a layer at its own size/); } finally { ed.removeLayer(S.id); }
+    const O = ed.addLayer({ name: "O", kind: "paint", px: ed.pixels.Layer.empty(400, 400), x: 37, y: -21, w: 400, h: 400 });
+    ed.activeLayerId = O.id; ed.renderLayers();
+    try { out.refused.past = refuse("a layer at (37, -21) short of the selection", /reaches past/); } finally { ed.removeLayer(O.id); }
+    ed.activeLayerId = L.id; ed.renderLayers();
+    mark("refusals");
+
+    // 10. on the base: a new active paint layer takes the move (the same bytes as on the paint layer), the base as it was
+    ed.activeLayerId = null; ed.renderLayers();
+    const nl10 = ed.layers.length, n10 = ed.undo.length, b10 = baseDigest();
+    drag(C, [C[0] + 500, C[1]]);
+    await settle();
+    const NL = ed.activeLayer(), x10 = expectMove([500, 0]);
+    const r10 = NL ? verify(NL, x10) : {};
+    out.base = Object.assign({ layers: ed.layers.length - nl10, kind: NL && NL.kind, active: !!NL && NL !== L, steps: ed.undo.length - n10, label: top(), baseSame: baseDigest() === b10, same: !!NL && digest(NL) === dig2 }, r10);
+    const o10 = out.base;
+    if (o10.layers !== 1 || o10.kind !== "paint" || !o10.active || o10.steps !== 1 || o10.label !== "Content-aware move" || !o10.baseSame) throw new Error("the move on the base did not paint into a new active layer as one step: " + JSON.stringify(o10));
+    if (!exact(r10, 19000) || r10.fill !== 19200 || !o10.same) throw new Error("the move on the base did not land as computed: " + JSON.stringify(o10));
+    await ed.undoStep();
+    o10.undone = { kept: ed.layers.includes(NL), empty: ed.layers.includes(NL) ? /[/]0$/.test(digest(NL)) : null, baseSame: baseDigest() === b10 };
+    if ((o10.undone.kept && !o10.undone.empty) || !o10.undone.baseSame) throw new Error("the undo of the move on the base left pixels: " + JSON.stringify(o10.undone));
+    ed.activeLayerId = L.id; ed.renderLayers();
+    mark("base");
+
+    // 12. a long move: E at (100, 100) moved by (800, 500), the box around both places 961 x 621 px. The step is a
+    // layerrect of two parts (a copy around each place, layer pixels), its bytes their sum and fewer than the box's; undo
+    // gives the layer from before the move back, redo the moved one
+    await run("select_rect", { x: 100, y: 100, w: 160, h: 120, doc: d.id });
+    const s12 = takeSel();
+    if (!same(E, [100, 100, 260, 220]) || s12.soft) throw new Error("select_rect did not select the rectangle at (100, 100): " + JSON.stringify(s12));
+    const n12 = ed.undo.length;
+    const g12 = drag([180, 160], [980, 660]);
+    await settle();
+    const x12 = expectMove([800, 500]), r12 = verify(L, x12), st12 = ed.undo[ed.undo.length - 1] || {};
+    const U12 = x12.U, box12 = [Math.min(E[0], U12[0]), Math.min(E[1], U12[1]), Math.max(E[2], U12[2]), Math.max(E[3], U12[3])];
+    const parts12 = Array.isArray(st12.parts) ? st12.parts : [];
+    const holds = (s, b) => s.x <= b[0] && s.y <= b[1] && s.x + s.w >= b[2] && s.y + s.h >= b[3];
+    out.long = Object.assign({ d: g12.d, steps: ed.undo.length - n12, label: st12.label, kind: st12.kind, parts: parts12.map((s) => [s.x, s.y, s.w, s.h]), bytes: st12.bytes,
+        sum: parts12.reduce((n, s) => n + (s.bytes || 0), 0), boxBytes: area(box12) * 4, want: wantParts(x12),
+        each: parts12.length === 2 && ((holds(parts12[0], E) && holds(parts12[1], U12)) || (holds(parts12[1], E) && holds(parts12[0], U12))) }, r12);
+    const o12 = out.long;
+    if (!same(g12.d, [800, 500]) || o12.steps !== 1 || o12.label !== "Content-aware move" || !exact(r12, 19000) || r12.landed !== 19200 || r12.fill !== 19200) throw new Error("the long move did not land as computed: " + JSON.stringify(o12));
+    if (o12.want !== 2 || o12.kind !== "layerrect" || o12.parts.length !== 2 || !o12.each || o12.bytes !== o12.sum || !(o12.bytes > 0 && o12.bytes < o12.boxBytes)) throw new Error("the step of the long move is not a copy of each place, smaller than the box around both: " + JSON.stringify(o12));
+    const dig12 = digest(L);
+    await ed.undoStep();
+    o12.undone = digest(L) === e0;
+    await ed.redoStep();
+    o12.redone = digest(L) === dig12;
+    await ed.undoStep();
+    o12.again = digest(L) === e0;
+    if (!o12.undone || !o12.redone || !o12.again) throw new Error("undo / redo of the long move did not give the layer's states back: " + JSON.stringify({ undone: o12.undone, redone: o12.redone, again: o12.again }));
+    mark("long");
+
+    // 13. the layer moved while the model runs: a paint layer at (40, 30) covering the move; the move once as it is, then
+    // again with the layer moved 60 px right (the transform bar's X) during the wait: the result lands in the layer's own
+    // pixels as at the release (the same bytes), the mark's colour (255, 60, 120) nowhere in them
+    await run("select_rect", { x: 300, y: 300, w: 160, h: 120, doc: d.id });
+    takeSel();
+    const M = ed.addLayer({ name: "M", kind: "paint", px: ed.pixels.Layer.empty(1300, 900), x: 40, y: 30, w: 1300, h: 900 });
+    ed.activeLayerId = M.id; ed.renderLayers();
+    const eM = digest(M);
+    const own = (layer) => layer.px.readRect(0, 0, layer.w, layer.h).data.slice();
+    const marks = (a) => { let n = 0; for (let i = 0; i < a.length; i += 4) if (a[i + 3] && Math.abs(a[i] - 255) <= 3 && Math.abs(a[i + 1] - 60) <= 3 && Math.abs(a[i + 2] - 120) <= 3) n++; return n; };
+    const n13 = ed.undo.length;
+    drag(C, [C[0] + 500, C[1]]);
+    await settle();
+    const x13 = expectMove([500, 0], { Lr: [40, 30, 1340, 930] }), r13 = verify(M, x13), ref13 = own(M);
+    out.layerMoved = Object.assign({ steps: ed.undo.length - n13, label: top(), marks: marks(ref13) }, r13);
+    if (out.layerMoved.steps !== 1 || out.layerMoved.label !== "Content-aware move" || !exact(r13, 19000) || r13.fill !== 19200 || out.layerMoved.marks) throw new Error("the move on a layer at (40, 30) did not land as computed: " + JSON.stringify(out.layerMoved));
+    await ed.undoStep();
+    if (digest(M) !== eM) throw new Error("the undo of the move on the layer at (40, 30) did not give it back empty");
+    delay = 400;
+    try {
+        const n13b = ed.undo.length;
+        drag(C, [C[0] + 500, C[1]]);
+        await wait(50);
+        const heldM = !!(ed.pointer && ed.pointer.healing && ed.pointer.move && ed.removePending);
+        const g = ed.geoInputs;
+        g.x.value = String(M.x + 60); g.y.value = String(M.y); g.w.value = String(M.w); g.h.value = String(M.h);
+        ed.setLayerGeometry();
+        const movedTo = [M.x, M.y];
+        await settle();
+        const got13 = own(M);
+        const sh = out.layerMoved.shifted = { held: heldM, movedTo, steps: ed.undo.length - n13b, labels: ed.undo.slice(-2).map((s) => s.label).sort(), differ: nDiff(got13, ref13), marks: marks(got13), wrote: ed.lastMove.wrote, error: ed.lastMove.error, at: [M.x, M.y] };
+        if (!heldM || !same(movedTo, [100, 30]) || sh.steps !== 2 || !same(sh.labels, ["Content-aware move", "Position and size"])) throw new Error("the layer was not moved while the move was held: " + JSON.stringify(sh));
+        if (!sh.wrote || sh.differ || sh.marks) throw new Error("the move landed elsewhere in a layer moved while it was held: " + JSON.stringify(sh));
+        await ed.undoStep(); await ed.undoStep();
+        sh.undone = { empty: digest(M) === eM, at: [M.x, M.y] };
+        if (!sh.undone.empty || !same(sh.undone.at, [40, 30])) throw new Error("the undo of the move and the layer's move did not give the layer back: " + JSON.stringify(sh.undone));
+    } finally { delay = 0; }
+    ed.removeLayer(M.id);
+    ed.activeLayerId = L.id; ed.renderLayers();
+    mark("layerMoved");
+
+    // 14. a feathered selection: the move takes it as the ants show it, alpha 128 and up: E is that extent (inside the
+    // extent of any alpha), the hole and pm follow it (the model's mask too), nothing lands where its alpha is 1 to 127
+    await ed.featherSelection(8);
+    const s14 = takeSel();
+    let holeN = 0;
+    for (let k = 0; k < ew * eh; k++) if (selA[k] >= 128) holeN++;
+    const n14 = ed.undo.length, q14 = reqs().length, sf14 = sel0;
+    const g14 = drag(C, [C[0] + 500, C[1]]);
+    await settle();
+    const lm14 = ed.lastMove, x14 = expectMove([500, 0]), r14 = verify(L, x14), rq14 = reqs()[reqs().length - 1];
+    const crop14 = R.removeCrop(E, W, H), cw14 = crop14[2] - crop14[0], ch14 = crop14[3] - crop14[1], hc14 = new Uint8Array(cw14 * ch14);
+    for (let y = 0; y < eh; y++) for (let x = 0; x < ew; x++) if (selA[y * ew + x] >= 128) hc14[(E[1] + y - crop14[1]) * cw14 + E[0] + x - crop14[0]] = 255;
+    // the feather's outer half (alpha 1 to 127): where it is and where it would have gone, nothing landed
+    const got14 = L.px.readRect(0, 0, W, H).data;
+    let tail = 0, tailHit = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const s = selAll[(y * W + x) * 4 + 3];
+        if (!s || s >= 128) continue;
+        tail++;
+        if (got14[(y * W + x) * 4 + 3]) tailHit++;
+        if (x + 500 < W && got14[(y * W + x + 500) * 4 + 3]) tailHit++;
+    }
+    out.feathered = Object.assign({ E: s14.E, any: s14.any, soft: s14.soft, holeN, tail, tailHit, d: g14.d, steps: ed.undo.length - n14, label: top(), requests: reqs().length - q14, sel: selDigest() === sf14,
+        mask: nDiff(rq14.mask, R.toModelMask(hc14, cw14, ch14)), band: lm14 && lm14.band }, r14);
+    const o14 = out.feathered;
+    if (!o14.soft || !(s14.any[0] < E[0] && s14.any[1] < E[1] && s14.any[2] > E[2] && s14.any[3] > E[3]) || !tail) throw new Error("the feathered selection has no tail below 128 around E (the case would prove nothing): " + JSON.stringify(o14));
+    if (!same(g14.d, [500, 0]) || o14.steps !== 1 || o14.label !== "Content-aware move" || o14.requests !== 1 || !o14.sel || o14.mask || !same(lmGot(lm14), lmWant(x14, "move", "edge"))) throw new Error("the move of a feathered selection did not take it at 128: " + JSON.stringify(o14) + " " + JSON.stringify({ got: lmGot(lm14), want: lmWant(x14, "move", "edge") }));
+    if (!exact(r14, 15000) || r14.landed !== holeN || r14.fill !== holeN || tailHit) throw new Error("the move of a feathered selection did not land as computed at 128: " + JSON.stringify(o14));
+    await ed.undoStep();
+    if (digest(L) !== e0) throw new Error("the undo of the feathered move did not give the empty layer back");
+    mark("feathered");
+
+    // no press, drag, preview draw, release or landing above made a display mirror on tiles (read before the base changes)
+    out.mirrors = [m0, mirrors()];
+    if (ed.tileMode && ((!m0[0] && out.mirrors[1][0]) || (!m0[1] && out.mirrors[1][1]))) throw new Error("a move made a display mirror: " + JSON.stringify(out.mirrors));
+
+    // 15. an overlapping move whose piece is not opaque: a new base whose selected part fades to the right (alpha 255 at x
+    // 300 down to 136 at x 459); moved by (60, 0) into a new paint layer. Where the piece lands over its own old place with
+    // an alpha a below 255 it lies over the fill: round((out * a + FILL * (255 - a)) / 255), at alpha 255 (the hole's);
+    // elsewhere on pm the piece's own alpha
+    const tb = document.createElement("canvas"); tb.width = W; tb.height = H;
+    {
+        const img = new ImageData(W, H), a = img.data;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const o = (y * W + x) * 4;
+            a[o] = 60 + 0.06 * x; a[o + 1] = 90 + 0.05 * y; a[o + 2] = 140 - 0.04 * x;
+            a[o + 3] = x >= 300 && x < 460 && y >= 280 && y < 440 ? 255 - Math.floor((x - 300) * 0.75) : 255;
+        }
+        tb.getContext("2d").putImageData(img, 0, 0);
+    }
+    Object.defineProperty(tb, "naturalWidth", { value: W }); Object.defineProperty(tb, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "move_test_alpha.png", subfolder: "inpaint_canvas", type: "input" }, tb, { keepLayers: false });
+    const L2 = ed.addPaintLayer();
+    ed.activeLayerId = L2.id; ed.renderLayers();
+    if (ed.tool !== "contentmove") ed.setTool("contentmove");
+    await ed.mipsSettled();
+    baseAll = ed.basePx.readRect(0, 0, W, H).data.slice();
+    const alphaAt = baseAll[(360 * W + 400) * 4 + 3];
+    if (alphaAt !== 180) throw new Error("the new base did not keep its alpha (the case would prove nothing): " + alphaAt);
+    await run("select_rect", { x: 300, y: 300, w: 160, h: 120, doc: d.id });
+    takeSel();
+    if (!same(E, [300, 300, 460, 420])) throw new Error("select_rect on the new base selected " + JSON.stringify(E));
+    // the picture as the tools read it (brushSource "all"), before the move, and this case's expectation built from it: on
+    // the canvas backend a sub-rectangle read of the base (`readRect`) is a level off the whole read and the composite
+    // where the base is not opaque (found 2026-09-28: 286 bytes of the move's box, the same before and after the move;
+    // `picVsBase` records it), and the expectation read that way missed the release's picture by those bytes
+    const src15 = ed.brushSource("all", L2);
+    let pic15 = null;
+    try { pic15 = new Uint8Array(src15.bytes([0, 0, W, H])); } finally { if (src15.release) src15.release(); }
+    const picPx = { readRect: (x, y, w, h) => { const o = new Uint8ClampedArray(w * h * 4); for (let r = 0; r < h; r++) o.set(pic15.subarray(((y + r) * W + x) * 4, ((y + r) * W + x + w) * 4), r * w * 4); return { data: o }; } };
+    const vsBase = { bytes: 0, opaque: 0, max: 0 };
+    for (let i = 0; i < pic15.length; i++) if (pic15[i] !== baseAll[i]) { vsBase.bytes++; if (baseAll[i - (i % 4) + 3] === 255) vsBase.opaque++; vsBase.max = Math.max(vsBase.max, Math.abs(pic15[i] - baseAll[i])); }
+    // the base's own bytes over the move's box read again (a sub-rectangle) against the whole read after setBase: before
+    // the move and after it (the base is not written in between)
+    const baseBox = (tag) => { const a = readZ(ed.basePx, W, H, 299, 299, 222, 122); const r = { tag, bytes: 0, max: 0 }; for (let i = 0; i < a.length; i++) { const X = 299 + ((i >> 2) % 222), Y = 299 + Math.floor((i >> 2) / 222), b = baseAll[(Y * W + X) * 4 + (i % 4)]; if (a[i] !== b) { r.bytes++; r.max = Math.max(r.max, Math.abs(a[i] - b)); } } return r; };
+    vsBase.before = baseBox("before");
+    const n15 = ed.undo.length, q15 = reqs().length;
+    const g15 = drag(C, [C[0] + 60, C[1]]);
+    await settle();
+    const lm15 = ed.lastMove, x15 = expectMove([60, 0], { px: picPx }), r15 = verify(L2, x15);
+    vsBase.after = baseBox("after");
+    let mixed = 0;
+    for (let k = 0; k < x15.uw * x15.uh; k++) if (x15.pm[k] && x15.inHole[k] && x15.piece[4 * k + 3] < 255 && (x15.out[4 * k] !== x15.raw[4 * k] || x15.out[4 * k + 1] !== x15.raw[4 * k + 1] || x15.out[4 * k + 2] !== x15.raw[4 * k + 2])) mixed++;
+    out.alpha = Object.assign({ baseAlpha: alphaAt, d: g15.d, steps: ed.undo.length - n15, label: top(), requests: reqs().length - q15, over: x15.over, mixed, where: lm15 && lm15.where, info: lm15 && lm15.info, picVsBase: vsBase, inputs: inputsDiff(x15) }, r15);
+    const o15 = out.alpha;
+    if (!same(g15.d, [60, 0]) || o15.steps !== 1 || o15.label !== "Content-aware move" || o15.requests !== 1 || !same(lmGot(lm15), lmWant(x15, "move", "edge")) || (lm15.info && lm15.info[3])) throw new Error("the move of a piece that is not opaque did not run as stated: " + JSON.stringify(o15) + " " + JSON.stringify(lmGot(lm15)));
+    if (x15.over !== 98 * 120 || mixed < 5000) throw new Error("the move of a piece that is not opaque has no such pixels over its old place (the case would prove nothing): " + JSON.stringify(o15));
+    if (!exact(r15, 12000) || r15.full !== 101 * 120 || r15.landed !== 19200 + 120 || r15.fill !== 59 * 120) throw new Error("the piece that is not opaque did not land over the fill as computed: " + JSON.stringify(o15));
+    mark("alpha");
+
+    // 11. no press, drag, preview draw, release or landing above read the whole picture
+    out.calls = counts;
+    out.phases = phases;
+    if (counts.compositeCanvas || counts.flattenToCanvas || counts.sampleCanvas) throw new Error("a move read the whole picture: " + JSON.stringify({ counts, phases, stacks }));
+} finally {
+    host.helperCall = keep.helperCall; host.removeModel = keep.removeModel;
+    IE.healSyncMax = keep.sync; IE.removeMaxHole = keep.maxHole;
+    for (const k of Object.keys(counts)) delete ed[k];
+    delete ed.drawMarchingAnts; delete ed.moveInputs;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("the_smudge_carries_paint_as_far_as_its_length", """
 // PLAN_0_1_31 §4 step 3: the smudge's carry (the smudge_dab kernel). Length keeps the paint going, finger painting
 // starts from the paint colour, alpha lock keeps the alpha, Sample "below" leaves the layers above out; the kernel and
