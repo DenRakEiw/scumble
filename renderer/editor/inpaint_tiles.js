@@ -38,6 +38,7 @@ import { LayerPixels, MaskPixels, pixelRect, WHOLE_CANVAS_OPS, BLIT_MARGIN, reen
 import { mipChain, mipChainBytes, clampExtend, compositeTile, resampleBlock } from "./px/kernels.js";
 import { allocTileBytes, isShared } from "./inpaint_arena.js";
 import { canvasRoundTrip, resampleOptions, resampleStore, toFixed, preimage } from "./inpaint_resample.js";
+import { liquifyStore, liquifyBox } from "./inpaint_liquify.js";
 
 export const TILE_SIZE = 256;
 const TILE_BYTES = TILE_SIZE * TILE_SIZE * 4;
@@ -441,6 +442,13 @@ let RESAMPLE_TRANSPORT = null;
 
 export function setResampleTransport(transport) {
     RESAMPLE_TRANSPORT = transport || null;
+}
+
+// Liquify's bake transport (`liquifiedAsync`): one "liquify" job per row of output tiles, as the resample's.
+let LIQUIFY_TRANSPORT = null;
+
+export function setLiquifyTransport(transport) {
+    LIQUIFY_TRANSPORT = transport || null;
 }
 
 /** The transport of the default scheduler (the editor gives it its mips worker); null builds everything here. */
@@ -1824,6 +1832,145 @@ const tiled = (Base) => class extends Base {
             tile: (tx, ty) => [out.writable(tx, ty).data, 0, TILE_SIZE * 4],
             done: (tx, ty, count) => { if (!count) out._dropTile((ty << 16) | tx); },
         }, list, resampleBlock);
+    }
+
+    // -- liquify (PLAN_0_1_31 §5 step 5) --
+
+    /**
+     * Liquify's bake: the output tiles `keys` ((ty << 16) | tx) of these pixels through a field, as results for
+     * `putTiles`: `{ key, bytes }` (a new tile's bytes, the round trip applied), `{ key, empty: true }` (it came out
+     * transparent) or `{ key, share: true }` (all its nodes are zero: these pixels' own tile is the output). `nodes` maps
+     * a key to its dense nodes (`LiquifyField.tileNodes`, null for zero), taken before any wait so a field changed
+     * meanwhile cannot reach the bake. `clamp`: the edge pixels repeat outside (a layer as large as the picture). Here,
+     * on this thread; `stats` on the array.
+     */
+    liquified(s, nodes, { clamp = false, blockMax } = {}) {
+        this._guard();
+        const out = [];
+        let cur = null;
+        const keys = Array.from(nodes.keys()).sort((a, b) => a - b).map((k) => [k & 0xFFFF, k >>> 16]);
+        const tiles = this._tiles;
+        out.stats = liquifyStore({
+            width: this._w, height: this._h,
+            copyRun: (sy, x0, x1, dst, off) => {
+                const ty = sy >> 8, ly = (sy & 255) * TILE_SIZE * 4;
+                for (let x = x0; x < x1;) {
+                    const lx = x & 255, n = Math.min(x1 - x, TILE_SIZE - lx), at = off + (x - x0) * 4;
+                    const t = tiles.get((ty << 16) | (x >> 8));
+                    if (t) dst.set(t.data.subarray(ly + lx * 4, ly + (lx + n) * 4), at);
+                    else dst.fill(0, at, at + n * 4);
+                    x += n;
+                }
+            },
+            has: (...box) => this._anyTileIn(box),
+        }, s, (tx, ty) => nodes.get((ty << 16) | tx) || null, keys, clamp, roundTripTable(), {
+            share: (tx, ty) => out.push({ key: (ty << 16) | tx, share: true }),
+            tile: () => { cur = new Uint8Array(TILE_BYTES); return [cur, 0, TILE_SIZE * 4]; },
+            done: (tx, ty, count) => out.push(count ? { key: (ty << 16) | tx, bytes: cur } : { key: (ty << 16) | tx, empty: true }),
+        }, blockMax);
+        return out;
+    }
+
+    /**
+     * `liquified` without holding the window: one pool job per row of output tiles (`setLiquifyTransport`), each reading
+     * the source tiles its taps need where they lie in the arena. The source is held by a clone until every job has
+     * answered. Without the pool, with a tile outside the arena, or for a row whose job failed, the same kernel runs here
+     * in slices of a few tiles. The same bytes either way; `stats.pool` counts the rows the pool made.
+     */
+    async liquifiedAsync(s, nodes, { clamp = false, blockMax } = {}) {
+        this._guard();
+        const snap = this.clone();
+        try {
+            const W = snap._w, H = snap._h, ls = Math.log2(s), n = TILE_SIZE >> ls, rt = roundTripTable();
+            const rows = new Map();
+            for (const key of Array.from(nodes.keys()).sort((a, b) => a - b)) {
+                const ty = key >>> 16;
+                if (!rows.has(ty)) rows.set(ty, []);
+                rows.get(ty).push(key & 0xFFFF);
+            }
+            const results = [];
+            results.stats = { blocks: 0, splits: 0, maxBlock: 0, pool: 0, local: 0 };
+            const add = (st) => {
+                results.stats.blocks += st.blocks; results.stats.splits += st.splits;
+                results.stats.maxBlock = Math.max(results.stats.maxBlock, st.maxBlock);
+            };
+            const local = async (ty, txs) => {
+                // called from inside the planning loop and from a failed job: the window draws before the first slice too
+                await new Promise((res) => setTimeout(res, 0));
+                for (let i = 0; i < txs.length; i += 8) {
+                    const part = new Map(txs.slice(i, i + 8).map((tx) => [(ty << 16) | tx, nodes.get((ty << 16) | tx)]));
+                    const r = snap.liquified(s, part, { clamp, blockMax });
+                    add(r.stats);
+                    for (const x of r) results.push(x);
+                    await new Promise((res) => setTimeout(res, 0));
+                }
+                results.stats.local++;
+            };
+            const transport = LIQUIFY_TRANSPORT && LIQUIFY_TRANSPORT.usable ? LIQUIFY_TRANSPORT : null;
+            const lim = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
+            const jobs = [];
+            for (const [ty, all] of rows) {
+                // a tile whose nodes are all zero is the source's own tile, no job needed
+                const txs = [];
+                for (const tx of all) {
+                    if (nodes.get((ty << 16) | tx)) txs.push(tx);
+                    else results.push({ key: (ty << 16) | tx, share: true });
+                }
+                if (!txs.length) continue;
+                // the source tile rows the taps of the row read (the whole tile's box bounds every region the walk splits it into)
+                let src = null;
+                if (transport) {
+                    let sy0 = Infinity, sy1 = -Infinity;
+                    for (const tx of txs) {
+                        const X0 = tx * TILE_SIZE, Y0 = ty * TILE_SIZE;
+                        const box = liquifyBox(nodes.get((ty << 16) | tx), n + 1, tx * n, ty * n, ls, X0, Y0, Math.min(W, X0 + TILE_SIZE), Math.min(H, Y0 + TILE_SIZE));
+                        const y0 = clamp ? lim(box[1], H - 1) : Math.max(box[1], 0), y1 = clamp ? lim(box[3] - 1, H - 1) + 1 : Math.min(box[3], H);
+                        if (y1 > y0) { sy0 = Math.min(sy0, y0); sy1 = Math.max(sy1, y1); }
+                    }
+                    src = { w: W, h: H, tiles: {} };
+                    if (sy1 > sy0) {
+                        for (let lty = sy0 >> 8; lty <= (sy1 - 1) >> 8 && src; lty++) {
+                            const names = snap.tileRowNames(lty);
+                            if (names === null) src = null;
+                            else if (names.some(Boolean)) src.tiles[lty] = names;
+                        }
+                    }
+                }
+                if (!src) { jobs.push(local(ty, txs)); continue; }
+                // the nodes go as copies (not transferred): a failed job's row runs here from them
+                const args = { src, s, ty, txs, nodes: txs.map((tx) => nodes.get((ty << 16) | tx)), clamp, rt, blockMax };
+                jobs.push(transport(args).then((r) => {
+                    for (const t of r.tiles) results.push(t.data ? { key: (ty << 16) | t.tx, bytes: new Uint8Array(t.data) } : { key: (ty << 16) | t.tx, [t.share ? "share" : "empty"]: true });
+                    add(r.stats);
+                    results.stats.pool++;
+                }, (err) => {
+                    console.warn("Inpaint Canvas: a liquify job failed, the row runs here:", (err && err.message) || err);
+                    return local(ty, txs);
+                }));
+            }
+            await Promise.all(jobs);
+            return results;
+        } finally {
+            snap.release();
+        }
+    }
+
+    /**
+     * Liquify's landing: each result of `liquified` into its tile. `bytes` go into the tile made writable (copy-on-write
+     * and the chain ownership, `writable`), `empty` drops it, `share` takes `orig`'s tile at that key (the session's
+     * source; dropped when it has none). The pixels object stays the same, so the atlas keeps every other tile's slot.
+     */
+    putTiles(results, orig) {
+        this._guard();
+        for (const r of results) {
+            const tx = r.key & 0xFFFF, ty = r.key >>> 16;
+            if (r.bytes) this.writable(tx, ty).data.set(r.bytes);
+            else if (r.empty) this._dropTile(r.key);
+            else if (r.share) {
+                const t = orig._tiles.get(r.key);
+                if (t) this._share(r.key, t); else this._dropTile(r.key);
+            }
+        }
     }
 
     // -- canvases out --

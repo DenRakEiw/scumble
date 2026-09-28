@@ -37,13 +37,19 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   refusals, no flatten while it drags) and `content_aware_move_fills_the_hole_and_blends_the_seam` (the LaMa stand-in:
   the model's input, the fill, the seam band against `distTransform` and `poissonBlend`, the core exact, an overlapping
   move reading the fill, Blend all, Extend, the worker, the held gesture, a failure, the refusals).
+  Liquify has `liquify_bakes_each_stroke_from_the_session_source` (both backends: every landing equals the bake of the
+  session's source through the whole field, pool and here, a forced small gather, Restore all exact, undo / redo with
+  the field, the base's copy, the held bake and the tile guard, no flatten while it drags) and
+  `liquify_brushes_move_the_picture_and_refuse` (the modes, Alt, the selection, the refusals, the keys).
   `SCUMBLE_EDITOR_ONLY=name,name` runs just those steps. On the canvas backend `readRect` of a sub-rectangle of a
   canvas with pixels that are not opaque can differ by a level from a read of the whole canvas (measured 2026-09-28,
   286 of 108k bytes, only where alpha < 255; 0 on tiles): an expectation for such a picture is built from the reader
   the tool uses (`brushSource("all").bytes`), as the move step's case 15 does.
   `node tools/helpers_test.js` runs the ONNX modules without Electron (LaMa in its own process too); it needs the
   model files, a missing one is skipped. `node tools/remove_test.js` checks the Remove tool's crop and resampling
-  (`renderer/editor/inpaint_remove.js`) without models.
+  (`renderer/editor/inpaint_remove.js`) without models. `node tools/liquify_test.js` holds Liquify's kernel
+  (`renderer/editor/inpaint_liquify.js`) to 23b's resampler on constant fields, to a direct integer reference on random
+  ones, the bounded gather's split to the unsplit bytes, and the brushes to their rules (advected, restore exact, no fold).
   `python tools/composite_test.py` compares the GPU compositor against Canvas 2D and two
   stored references in `tools/refs/` (`--update` rewrites them, `--tolerance n` allows n
   levels); run it after anything that touches drawing.

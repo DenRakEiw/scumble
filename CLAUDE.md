@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-28, evening)
+## Where things stand (2026-09-28, night)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -86,31 +86,34 @@ verbatim). Check `gh release list` before believing any release state written do
 **In progress: 0.1.32 = 23b + package 4 (brushes) + package 5 (repair, remove, liquify)** (the user, 2026-09-28:
 package 5 first, then one release). The plan is `docs/PLAN_0_1_31.md` (§7 23b, §4 the brushes, §5 repair; a "built"
 paragraph per step). The CHANGELOG's "Unreleased" section holds all of it.
-- **23b and package 4 are done** (local, 1b61e27..8c14eee; the hand-over before this one in `docs/HISTORY.md` has them
-  step by step). Open from them: the GLSL clamp survives the linear-light mutation round; the dodge & burn layer starts
-  empty (flip to Photoshop's grey on the user's word).
-- **Package 5, steps 1 to 3 are done** (local, 2026-09-28; plan §5 has a "built" paragraph each, the hand-over
-  before this one in `docs/HISTORY.md` has them in full): the Poisson solver `poisson_blend` (px ABI 14), heal blending
-  at the release (`healBlend`), Remove with LaMa in a process of its own (`remove`, the recipe "LaMa remove (in-app)").
-  **Open (plan §5 step 1):** a heal the source's transparency splits into thin strands does not settle (info[3], the
-  quick heal stays). **Unverified:** the LaMa utility process in the packaged exe (the exe gates at the release); a
-  hole wider than about 256 px comes back softer (LaMa is fixed at 512).
-- **Package 5 step 4 is done** (local, 2026-09-28: db2436b 4a, then 4b; plan §5 "Step 4a built", "Step 4b built"; the
-  design came from a workflow of six readers, three designs and a judge). **Patch** (`patch`, Shift+J twice: J heals,
-  Shift+J goes round Remove, Patch, Content-aware move): lasso outside the selection, drag inside it; Source / Destination,
-  Blend; the donor with the selection's alpha goes into a stroke buffer and `healBlend` runs over it (`patchRun`, one
-  step "Patch"). **Content-aware move** (`contentmove`, Shift+J three times, app only): Move / Extend, Blend edge / all;
-  LaMa fills the old place, a Poisson band inside the piece's edge blends it into the new place, the core lands exactly
-  (`moveRun`), the gesture held as a Remove's; a long move's undo step copies the two places (`layerrect` with `parts`,
-  `snapshotRects`). Gate steps `patch_blends_the_donor_into_the_selection_at_the_release` and
-  `content_aware_move_fills_the_hole_and_blends_the_seam` (both backends, background agents against a stated API); the
-  full editor gate on both backends; two three-lens reviews (6 and 4 confirmed, all fixed). Found on the way:
-  `healInputs` read a pixel past the stroke buffer's canvas and a GPU canvas gave alpha there (`StrokeBuffer.bytes`).
-  **Defaults taken, open for the user:** the selection stays where it was after a patch or a move (following the drop
-  needs a compound undo step); the Shift+J ring; Blend edge keeps the object exact and can leave a faint halo where the
-  old and new surroundings differ a lot (Blend all is the option).
-- **Next:** package 5 step 5 (liquify, 4 - 6 d, full tier for the bake); then the 0.1.32 release chain on the user's
-  word (`docs/RELEASING.md`).
+- **23b, package 4 and package 5 steps 1 to 4 are done** (local; the hand-over before this one in `docs/HISTORY.md` has
+  them with their open points): the Poisson solver and heal blending, Remove with LaMa, Patch, Content-aware move. Open
+  from them: the GLSL clamp survives the linear-light mutation round; the dodge & burn layer starts empty; a heal split
+  into thin strands keeps the quick heal; the LaMa utility process in the packaged exe is unverified; defaults for the
+  user: the selection stays after a patch or a move, the Shift+J ring, Blend edge's faint halo.
+- **Package 5 step 5a is done** (local, 2026-09-28; plan §5 "Step 5a built"; the design from a workflow of six readers,
+  three designs and a judge, the synthesis's decisions are in that paragraph): **Liquify** (`liquify`, Shift+W or
+  Ctrl+Shift+X): push / grow / shrink / swirl / restore, Restore all; every stroke lands at its release as one undo step,
+  every stroke of a session is baked from the session's source (`this.liq.orig`) through the whole field, so nothing
+  softens and Restore is exact. The pure module `renderer/editor/inpaint_liquify.js` (the field in integer cells, the
+  advected brushes, the bake kernel copied from 23b's resampler, `liquifyStore` with a bounded gather, `previewBlock`);
+  `liquified` / `liquifiedAsync` / `putTiles` on both pixel classes, the worker op "liquify"; undo carries the field
+  (`snap.liq`); the base gets a copy layer "Liquify". Tests: `tools/liquify_test.js` (86 checks), gate steps
+  `liquify_bakes_each_stroke_from_the_session_source` (both backends) and `liquify_brushes_move_the_picture_and_refuse`;
+  the full editor gate on both backends; a three-lens review (9 confirmed, 6 after merging, all fixed).
+  **Defaults taken, open for the user:** no Apply (a stroke lands at its release; picking another tool ends the session,
+  Photoshop's OK); Shift+W and Ctrl+Shift+X; strength 50 %; the base's copy "Liquify" directly above the base (a
+  full-size layer in saves); the mask is not moved and a layer does not grow; the grid 1 / 2 / 4 / 8 px by picture size;
+  the preview a little softer than the result; grow / shrink / swirl / restore rates set by eye (0.04, 3 degrees, 0.15);
+  a canvas-backend session copies the layer's canvas.
+- **Next: package 5 step 5b** (plan §5, the synthesis's 5b in the "Step 5a built" paragraph): the freeze mask (Freeze /
+  Thaw modes, Clear / Invert / Show freeze, a red veil, kept per layer), the 15k rows (press, frame p50 / p95 at fit and
+  1:1 for sizes 200 and 1000, dab ms at s = 4 and s = 1, release to landing for a face stroke and a 1000 px stroke, the
+  heavy-shrink block bound; `brush_perf` gets "liquify"; restart the app before each run), the GL sampler only if the 1:1
+  size-1000 frame is above 16 ms p95, queued presses only if a face stroke's landing is above 150 ms, the mutation round
+  of the bake (the full tier; the table is in the synthesis: phase shift, weights swapped, verbatim path off, box
+  without dmax, split off, neighbour keys dropped, additive push, restore rounding, clamp, the undo hook, the tile guard,
+  `painting` in every pass), then a review. Then the 0.1.32 release chain on the user's word (`docs/RELEASING.md`).
 - The Microsoft Store certification of 2026-09-28 refused the search term "ComfyUI" (policy 10.1.3); the user replaced
   it and "FLUX" in the listing with "photo retouching" and "outpainting" (`docs/STORE_LISTING.md`); the resubmission is on
   the user's side.

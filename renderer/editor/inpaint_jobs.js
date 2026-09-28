@@ -8,7 +8,7 @@
 import { kernelsMode } from "./px/kernels.js";
 import { buildPsd, buildOra } from "./inpaint_export.js";
 import { WorkerPool, poolSize, INTERACTIVE, NORMAL } from "./inpaint_pool.js";
-import { setChainTransport, setResampleTransport } from "./inpaint_tiles.js";
+import { setChainTransport, setResampleTransport, setLiquifyTransport } from "./inpaint_tiles.js";
 import { arenaEnabled } from "./inpaint_arena.js";
 import { InpaintEditor } from "./inpaint_canvas.js";
 
@@ -175,6 +175,16 @@ function resampleTransport(args) {
 }
 Object.defineProperty(resampleTransport, "usable", { get: () => arenaEnabled() && !editorPool().off });
 if (typeof Worker === "function") setResampleTransport(resampleTransport);
+
+/**
+ * Liquify's bake transport (`liquifiedAsync`, PLAN_0_1_31 §5 step 5): one row of output tiles per pool job, INTERACTIVE
+ * (the gesture waits for it, as a heal's blend does).
+ */
+function liquifyTransport(args) {
+    return editorPool().run("liquify", args, [], { priority: INTERACTIVE });
+}
+Object.defineProperty(liquifyTransport, "usable", { get: () => arenaEnabled() && !editorPool().off });
+if (typeof Worker === "function") setLiquifyTransport(liquifyTransport);
 
 /**
  * A layered PSD or ORA file. The worker takes the layers one at a time, so only one

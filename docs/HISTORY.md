@@ -17,6 +17,59 @@ The block of 2026-09-28 (afternoon, package 5 step 3) was moved here in the even
 The block of 2026-09-27 (night), the open threads and the full list were moved here the same night, when CLAUDE.md was
 compressed (the user: the context ran full); the release procedure went to `docs/RELEASING.md`.
 
+The block of 2026-09-28 (evening, package 5 step 4) was moved here at night, when step 5a (liquify) was built.
+
+
+## Where things stand (2026-09-28, evening)
+
+Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
+verbatim). Check `gh release list` before believing any release state written down anywhere.
+
+**Released:** 0.1.31 is Latest (2026-09-27, dev blog post live). `main` has local commits after it, not pushed.
+
+**In progress: 0.1.32 = 23b + package 4 (brushes) + package 5 (repair, remove, liquify)** (the user, 2026-09-28:
+package 5 first, then one release). The plan is `docs/PLAN_0_1_31.md` (§7 23b, §4 the brushes, §5 repair; a "built"
+paragraph per step). The CHANGELOG's "Unreleased" section holds all of it.
+- **23b and package 4 are done** (local, 1b61e27..8c14eee; the hand-over before this one in `docs/HISTORY.md` has them
+  step by step). Open from them: the GLSL clamp survives the linear-light mutation round; the dodge & burn layer starts
+  empty (flip to Photoshop's grey on the user's word).
+- **Package 5, steps 1 to 3 are done** (local, 2026-09-28; plan §5 has a "built" paragraph each, the hand-over
+  before this one in `docs/HISTORY.md` has them in full): the Poisson solver `poisson_blend` (px ABI 14), heal blending
+  at the release (`healBlend`), Remove with LaMa in a process of its own (`remove`, the recipe "LaMa remove (in-app)").
+  **Open (plan §5 step 1):** a heal the source's transparency splits into thin strands does not settle (info[3], the
+  quick heal stays). **Unverified:** the LaMa utility process in the packaged exe (the exe gates at the release); a
+  hole wider than about 256 px comes back softer (LaMa is fixed at 512).
+- **Package 5 step 4 is done** (local, 2026-09-28: db2436b 4a, then 4b; plan §5 "Step 4a built", "Step 4b built"; the
+  design came from a workflow of six readers, three designs and a judge). **Patch** (`patch`, Shift+J twice: J heals,
+  Shift+J goes round Remove, Patch, Content-aware move): lasso outside the selection, drag inside it; Source / Destination,
+  Blend; the donor with the selection's alpha goes into a stroke buffer and `healBlend` runs over it (`patchRun`, one
+  step "Patch"). **Content-aware move** (`contentmove`, Shift+J three times, app only): Move / Extend, Blend edge / all;
+  LaMa fills the old place, a Poisson band inside the piece's edge blends it into the new place, the core lands exactly
+  (`moveRun`), the gesture held as a Remove's; a long move's undo step copies the two places (`layerrect` with `parts`,
+  `snapshotRects`). Gate steps `patch_blends_the_donor_into_the_selection_at_the_release` and
+  `content_aware_move_fills_the_hole_and_blends_the_seam` (both backends, background agents against a stated API); the
+  full editor gate on both backends; two three-lens reviews (6 and 4 confirmed, all fixed). Found on the way:
+  `healInputs` read a pixel past the stroke buffer's canvas and a GPU canvas gave alpha there (`StrokeBuffer.bytes`).
+  **Defaults taken, open for the user:** the selection stays where it was after a patch or a move (following the drop
+  needs a compound undo step); the Shift+J ring; Blend edge keeps the object exact and can leave a faint halo where the
+  old and new surroundings differ a lot (Blend all is the option).
+- **Next:** package 5 step 5 (liquify, 4 - 6 d, full tier for the bake); then the 0.1.32 release chain on the user's
+  word (`docs/RELEASING.md`).
+- The Microsoft Store certification of 2026-09-28 refused the search term "ComfyUI" (policy 10.1.3); the user replaced
+  it and "FLUX" in the listing with "photo retouching" and "outpainting" (`docs/STORE_LISTING.md`); the resubmission is on
+  the user's side.
+- Open for the user: item 25's look and timing.
+
+**At most two build steps per session, then `/clear` or `/compact` (the user, 2026-09-28):** the context rose to 85 % in
+one session of eight steps (its own tool output and patch scripts, not this file); commit, write the hand-over, stop.
+Read maps and code with grep and offsets, edit with Edit rather than long patch scripts, keep gate output to a summary.
+
+**How the work goes (the user, 2026-09-26):** tests by risk (Working rules); few agents - the main loop builds, one or
+two background agents take separate files (a gate, tests against a stated API, docs), one package at a time, a local
+commit per step; check the 5-hour window (`mcp__ccd_session_mgmt__get_usage`) and stop at a committed state around 70
+to 80 %. A release only on the user's word; everything before it (CHANGELOG, `npm run dist`, exe gates) may be
+prepared locally.
+
 
 ## Where things stand (2026-09-28, afternoon)
 

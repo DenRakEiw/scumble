@@ -8444,6 +8444,654 @@ try {
 }
 return out;
 """),
+    ("liquify_bakes_each_stroke_from_the_session_source", """
+// PLAN_0_1_31 section 5 step 5a: Liquify. Every stroke lands at its release as one undo step, baked from the session's
+// source (`ed.liq.orig`: the layer as the session's first press found it) through the whole displacement field. The real
+// handlers through synthetic pointer events; after every landing the layer against the reference, the source baked through
+// `ed.liq.field` by the backend's `liquified`, tile by tile and byte for byte; on tiles every tile the stroke's output tiles
+// leave out is the same object as before it. The preview during a stroke (the layer unchanged, the screen displaced, a
+// whole-pixel shift the bake's bytes; a sampled pass and the thumbnails draw the tiles); here, in the pool and with the
+// bake's block split small the same bytes; undo and redo carry the field (A, undo, B is B alone); Restore all gives the
+// source back (on tiles its own tiles); a paint stroke or a write between two strokes starts a new session; a layer off
+// the origin (no edge clamp); the base gets a copy (the layer "Liquify"); a held bake refuses a press, a flush waits for
+// it, the tile guard drops a stroke whose tiles were written meanwhile; a picture above 4 MP (grid step 2); a close
+// during a held bake lands nothing; no whole-picture read through the presses, moves, draws and releases
+const LQ = await import("./editor/inpaint_liquify.js");
+const P = await import("./editor/inpaint_pixels.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const IE = ed.constructor;
+const keep = { sync: IE.liquifySyncMax, block: IE.liquifyBlockMax, rate: IE.liquifyRateMs, stab: ed.stabiliser };
+const W = 1200, H = 800, BIG = 1e12;
+// the later cases first in the printed line (it is cut at 4000 characters)
+const out = { tiles: !!ed.tileMode, close: null, grid2: null, guard: null, held: null, base: null, offset: null, between: null, restoreAll: null, undo: null, here: null, preview: null, first: null };
+const calls = { compositeCanvas: 0, flattenToCanvas: 0, sampleCanvas: 0, toCanvas: 0 };
+const stacks = [], phases = {};
+let counting = false, phase = "setup", LPproto = null, toCanvas0 = null;
+const note = (k) => { calls[k]++; phases[phase] = (phases[phase] || 0) + 1; if (stacks.length < 6) stacks.push(phase + " " + k + " " + String(new Error().stack).split(String.fromCharCode(10)).slice(2, 8).join(" < ")); };
+try {
+    IE.liquifyRateMs = 0;
+    ed.stabiliser = 0;
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return (h >>> 24) / 255; };
+    const texturedBase = (w, h) => {
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        const img = new ImageData(w, h), a = img.data;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+            const o = (y * w + x) * 4, n = hash(x, y) - 0.5;
+            a[o] = 60 + 0.06 * x + 20 * n; a[o + 1] = 90 + 0.05 * y + 20 * n; a[o + 2] = 140 - 0.04 * x + 20 * n; a[o + 3] = 255;
+        }
+        c.getContext("2d").putImageData(img, 0, 0);
+        Object.defineProperty(c, "naturalWidth", { value: w }); Object.defineProperty(c, "naturalHeight", { value: h });
+        return c;
+    };
+    // a layer's pixels: a textured opaque rectangle R (hard edges), a half-transparent band B (alpha 96 and 160 in 8 px
+    // stripes, its own colours), transparent elsewhere
+    const layerData = (w, h, R, B) => {
+        const img = new ImageData(w, h), a = img.data;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+            const o = (y * w + x) * 4;
+            if (x >= R[0] && x < R[2] && y >= R[1] && y < R[3]) { const t = hash(x >> 1, y >> 1), u = hash(x + 7, y >> 2); a[o] = 40 + 200 * t; a[o + 1] = 60 + 150 * u; a[o + 2] = 30 + 120 * t * u; a[o + 3] = 255; }
+            else if (B && x >= B[0] && x < B[2] && y >= B[1] && y < B[3]) { a[o] = 250 - 0.15 * x; a[o + 1] = 40 + 0.15 * x; a[o + 2] = 200; a[o + 3] = 96 + ((x >> 3) & 1) * 64; }
+        }
+        return img;
+    };
+    await ed.setBase({ filename: "liquify_test.png", subfolder: "inpaint_canvas", type: "input" }, texturedBase(W, H), { keepLayers: false });
+    // `let`: an undo of a "layers" step (the base's case below) puts copies of the layer objects back
+    let L = ed.addLayer({ name: "Warp", kind: "paint", ref: null, px: ed.pixels.Layer.fromImageData(layerData(W, H, [300, 200, 700, 600], [100, 380, 1100, 440])), x: 0, y: 0, w: W, h: H, dirty: true });
+    ed.activeLayerId = L.id; ed.renderLayers();
+    ed.setTool("liquify");
+    ed.liquifyOpts = { mode: "push", strength: 100 };
+    ed.setBrushSize(100); ed.hardness = 0.5;   // r = 50, a flat core of 25 px, push steps of 5 px
+    await ed.mipsSettled();
+    const fnv = (a) => { let h = 2166136261; for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 16777619); return (h >>> 0).toString(16) + "/" + a.length; };
+    const pxDigest = (px) => fnv(px.readRect(0, 0, px.width, px.height).data);
+    const digest = (layer) => pxDigest(layer.px);
+    const baseDigest = () => pxDigest(ed.basePx);
+    const cellsKey = (cells) => Array.from(cells.keys()).sort((a, b) => a - b).map((k) => { const c = cells.get(k); return k + ":" + fnv(new Uint8Array(c.buffer, c.byteOffset, c.byteLength)); }).join(",");
+    const fieldKey = () => (ed.liq ? cellsKey(ed.liq.field.cells) : "no session");
+    const top = () => (ed.undo[ed.undo.length - 1] || {}).label;
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const tileGrid = (px) => [Math.ceil(px.width / 256), Math.ceil(px.height / 256)];
+    const tilesOf = (px) => { const m = new Map(), [tw, th] = tileGrid(px); for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) m.set((ty << 16) | tx, px.tileAt(tx, ty)); return m; };
+    const mirrors = () => ed.tileMode ? !!P.displayCanvasIfMade(L.px) : null;
+    // the whole-picture reads counted while a pointer event, a draw or a mid-stroke pass runs: the editor's three, and a
+    // toCanvas of a whole pixels object of the layers' class
+    for (const k of ["compositeCanvas", "flattenToCanvas", "sampleCanvas"]) { const f = ed[k]; ed[k] = function (...a) { if (counting) note(k); return f.apply(this, a); }; }
+    LPproto = Object.getPrototypeOf(L.px); toCanvas0 = LPproto.toCanvas;
+    LPproto.toCanvas = function (rect) { if (counting && (!rect || (rect[0] <= 0 && rect[1] <= 0 && rect[2] >= this.width && rect[3] >= this.height))) note("toCanvas"); return toCanvas0.apply(this, arguments); };
+    let pid = 5100;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+    const send = (type, ix, iy, extra) => { counting = true; try { ed.canvas.dispatchEvent(ev(type, ix, iy, extra)); } finally { counting = false; } };
+    const drawNow = () => { counting = true; try { ed.draw(); } finally { counting = false; } };
+    const line = (a, b, n) => { const o = []; for (let i = 0; i <= n; i++) o.push([a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n]); return o; };
+    // a stroke through the handlers: press, moves (the screen drawn after each), release; `mid(p)` before the release;
+    // `hold` leaves a held landing waiting
+    const stroke = async (pts, o = {}) => {
+        pid++;
+        send("pointerdown", pts[0][0], pts[0][1], o.alt ? { altKey: true } : undefined);
+        const p = ed.pointer;
+        for (let i = 1; i < pts.length; i++) { send("pointermove", pts[i][0], pts[i][1]); if (o.draws !== false) drawNow(); }
+        if (o.mid) await o.mid(p);
+        const e = pts[pts.length - 1];
+        send("pointerup", e[0], e[1]);
+        const held = !!(p && ed.pointer === p && p.healing);
+        if (!o.hold && ed.liquifyPending) await ed.liquifyPending;
+        return { p, held, kind: p ? p.kind : null };
+    };
+    // the reference: the session's source baked through the whole field (every tile of the layer, `liquified`), against
+    // the layer's bytes tile by tile; `share` is the source's own tile
+    const refCheck = (layer, what) => {
+        const liq = ed.liq;
+        if (!liq || !ed.liquifyValid(liq, layer)) throw new Error(what + ": no valid session on the layer: " + JSON.stringify({ sid: liq ? liq.sid : null, same: liq ? liq.layer === layer : null, stamp: liq ? liq.stamp : null, version: layer.px.version }));
+        const px = layer.px, [tw, th] = tileGrid(px), nodes = new Map();
+        for (let ty = 0; ty < th; ty++) for (let tx = 0; tx < tw; tx++) nodes.set((ty << 16) | tx, liq.field.tileNodes(tx, ty));
+        const res = liq.orig.liquified(liq.field.s, nodes, { clamp: liq.clamp });
+        const r = { s: liq.s, clamp: liq.clamp, cells: liq.field.cells.size, baked: 0, share: 0, empty: 0, differ: 0, bad: [] };
+        for (const t of res) {
+            const tx = t.key & 0xFFFF, ty = t.key >>> 16, x = tx * 256, y = ty * 256, w = Math.min(256, px.width - x), h = Math.min(256, px.height - y);
+            const got = px.readRect(x, y, w, h).data, src = t.share ? liq.orig.readRect(x, y, w, h).data : null;
+            let n = 0;
+            for (let j = 0; j < h; j++) for (let i = 0; i < w * 4; i++) {
+                const v = src ? src[j * w * 4 + i] : t.empty ? 0 : t.bytes[j * 1024 + i];
+                if (got[j * w * 4 + i] !== v) n++;
+            }
+            if (t.share) r.share++; else if (t.empty) r.empty++; else r.baked++;
+            if (n) { r.differ += n; if (r.bad.length < 4) r.bad.push([tx, ty, t.share ? "share" : t.empty ? "empty" : "bytes", n]); }
+        }
+        if (res.length !== tw * th || r.differ) throw new Error(what + ": the layer is not its source baked through the field: " + JSON.stringify(r));
+        return r;
+    };
+    // the bake of the field as it is now over [x0, y0, w, h] of a layer at the origin
+    const bakeRect = (x0, y0, w, h) => {
+        const liq = ed.liq, nodes = new Map();
+        for (let ty = y0 >> 8; ty <= (y0 + h - 1) >> 8; ty++) for (let tx = x0 >> 8; tx <= (x0 + w - 1) >> 8; tx++) nodes.set((ty << 16) | tx, liq.field.tileNodes(tx, ty));
+        const res = liq.orig.liquified(liq.s, nodes, { clamp: liq.clamp }), o = new Uint8Array(w * h * 4);
+        for (const t of res) {
+            const tx = t.key & 0xFFFF, ty = t.key >>> 16;
+            const ax0 = Math.max(x0, tx * 256), ax1 = Math.min(x0 + w, tx * 256 + 256), ay0 = Math.max(y0, ty * 256), ay1 = Math.min(y0 + h, ty * 256 + 256);
+            if (ax1 <= ax0 || ay1 <= ay0) continue;
+            const src = t.share ? liq.orig.readRect(ax0, ay0, ax1 - ax0, ay1 - ay0).data : null;
+            for (let y = ay0; y < ay1; y++) for (let x = ax0; x < ax1; x++) {
+                const q = ((y - y0) * w + (x - x0)) * 4;
+                for (let c = 0; c < 4; c++) o[q + c] = src ? src[((y - ay0) * (ax1 - ax0) + (x - ax0)) * 4 + c] : t.empty ? 0 : t.bytes[((y - ty * 256) * 256 + (x - tx * 256)) * 4 + c];
+            }
+        }
+        return o;
+    };
+    // one stroke on `layer` that lands as one step: the reference after it; the tiles its output tiles leave out untouched
+    // (on tiles the same objects); `ed.lastLiquify` counts those output tiles
+    const landed = async (what, layer, pts, o = {}) => {
+        const before = ed.liq && ed.liquifyValid(ed.liq, layer) ? new Map(ed.liq.field.cells) : new Map();
+        const T0 = ed.tileMode ? tilesOf(layer.px) : null;
+        const u = ed.undo.length;
+        ed.lastLiquify = null;
+        const g = await stroke(pts, o);
+        const r = refCheck(layer, what);
+        const [tw, th] = tileGrid(layer.px), keys = ed.liq.field.changedTiles(before, tw, th);
+        let moved = 0;
+        if (T0) { const T1 = tilesOf(layer.px); for (const [k, t] of T0) if (!keys.has(k) && T1.get(k) !== t) moved++; }
+        const lq = ed.lastLiquify;
+        Object.assign(r, { steps: ed.undo.length - u, label: top(), keys: keys.size, moved, where: lq && lq.where, landedTiles: lq && lq.tiles, stats: lq && lq.stats, sid: ed.liq.sid });
+        if (g.kind !== "liquify" || r.steps !== 1 || r.label !== (o.label || "Liquify: push") || !lq || lq.tiles !== keys.size || !keys.size || moved) throw new Error(what + ": the stroke did not land as one step on its output tiles: " + JSON.stringify(r));
+        if (o.where && lq.where !== o.where) throw new Error(what + ": landed " + lq.where + ", not " + o.where + ": " + JSON.stringify(r));
+        return r;
+    };
+    const m0 = mirrors();
+
+    // 1. a push leftwards across the rectangle's left edge through the band, at 1:1: during the stroke the layer is as it
+    // was, the screen shows the displaced picture (where the field is a whole-pixel shift, the preview's bytes and the
+    // screen's are the bake's), a sampled pass and the thumbnails draw the tiles; one step at the release, the reference
+    phase = "first";
+    IE.liquifySyncMax = BIG;
+    ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false;
+    ed.view.x = Math.round(ed.canvas.width / 2 - 300); ed.view.y = Math.round(ed.canvas.height / 2 - 410);
+    ed.sceneSig = null; ed.draw(); await ed.mipsSettled(); await wait(60);
+    const RX = 250, RY = 360, RW = 100, RH = 100, srBox = [RX, RY, RX + RW, RY + RH];
+    const srBytes = (c) => c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    // the canvas backend: the first read of a fresh layer canvas can give some half-transparent pixels a level off the
+    // reads after it (measured 2026-09-28: 300 pixels of alpha 96, R one lower, between two reads with a sampled pass
+    // between them); the layer is read once before its bytes are taken
+    const sr0 = srBytes(ed.sampleRegion("image", srBox, 1));
+    digest(L);
+    const b1 = L.px.readRect(0, 0, W, H).data.slice(), d1 = fnv(b1);
+    // for a failure's report: where the layer's bytes differ from `b1`, and how
+    const layerDiff = () => {
+        const a = L.px.readRect(0, 0, W, H).data, r = { n: 0, bbox: null, alphas: {}, samples: [] };
+        let x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (let k = 0; k < W * H; k++) {
+            const q = 4 * k;
+            if (a[q] === b1[q] && a[q + 1] === b1[q + 1] && a[q + 2] === b1[q + 2] && a[q + 3] === b1[q + 3]) continue;
+            r.n++;
+            const x = k % W, y = (k / W) | 0;
+            x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+            r.alphas[b1[q + 3]] = (r.alphas[b1[q + 3]] || 0) + 1;
+            if (r.samples.length < 4) r.samples.push([x, y, Array.from(b1.subarray(q, q + 4)), Array.from(a.subarray(q, q + 4))]);
+        }
+        if (r.n) r.bbox = [x0, y0, x1 + 1, y1 + 1];
+        return r;
+    };
+    const Tstart = ed.tileMode ? tilesOf(L.px) : null;
+    // six moves of 8 px: two push steps of exactly 4 px each, so the last dab's flat core is shifted by 48 whole pixels
+    const pts1 = line([340, 410], [292, 410], 6);
+    const pv = { readTwice: digest(L) === d1 };
+    if (!pv.readTwice) throw new Error("two reads of the untouched layer differ: " + JSON.stringify(layerDiff()));
+    const r1 = await landed("the first push", L, pts1, { mid: async (p) => {
+        const liq = ed.liq;
+        pv.layerSame = digest(L) === d1;
+        if (!pv.layerSame) pv.layerDiff = layerDiff();
+        pv.sid = liq.sid;
+        counting = true;
+        let sc;
+        try { sc = ed.sampleRegion("image", srBox, 1); ed.refreshLayerThumb(L); ed.drawThumb(); } finally { counting = false; }
+        const sr1 = srBytes(sc);
+        let srMax = 0;
+        for (let i = 0; i < sr1.length; i++) srMax = Math.max(srMax, Math.abs(sr1[i] - sr0[i]));
+        pv.sampledMax = srMax;
+        const bake = bakeRect(RX, RY, RW, RH), src = liq.orig.readRect(RX, RY, RW, RH).data;
+        const win = ed.liquifyWindow(p, { x: RX - 100, y: RY - 100, w: RW + 200, h: RH + 200, sx: 1, sy: 1, screen: true });
+        const prev = new Uint8ClampedArray(RW * RH * 4);
+        LQ.previewBlock(win, liq.field, RX - L.x, RY - L.y, 1, prev, RW, RH);
+        ed.hover = null; ed.sceneSig = null; drawNow();
+        const c0 = ed.imageToScreen(RX, RY).map(Math.round);
+        const scr = ed.canvas.getContext("2d").getImageData(c0[0], c0[1], RW, RH).data;
+        const rd = LQ.fieldReader(liq.field), last = pts1[pts1.length - 1], rr = ed.brushSize / 2;
+        let whole = 0, pvDiff = 0, scrN = 0, scrMax = 0, shown = 0;
+        for (let y = 0; y < RH; y++) for (let x = 0; x < RW; x++) {
+            const X = RX + x, Y = RY + y, dx = rd.at(X, Y, 0), dy = rd.at(X, Y, 1);
+            if (!(dx || dy) || dx % 256 || dy % 256) continue;
+            whole++;
+            const q = (y * RW + x) * 4;
+            for (let c = 0; c < 4; c++) if (prev[q + c] !== bake[q + c]) { pvDiff++; break; }
+            const ring = Math.abs(Math.hypot(X + 0.5 - last[0], Y + 0.5 - last[1]) - rr) < 5;
+            if (bake[q + 3] === 255 && !ring) {
+                scrN++;
+                let mv = 0;
+                for (let c = 0; c < 3; c++) { scrMax = Math.max(scrMax, Math.abs(scr[q + c] - bake[q + c])); mv = Math.max(mv, Math.abs(bake[q + c] - src[q + c])); }
+                if (mv > 8) shown++;
+            }
+        }
+        Object.assign(pv, { at: [c0, ed.canvasToImage(c0[0], c0[1]).map(Math.round)], whole, pvDiff, scrN, scrMax, shown, calls: Object.values(calls).reduce((a, b) => a + b, 0) });
+    } });
+    out.first = { keys: r1.keys, where: r1.where, baked: r1.baked, share: r1.share, cells: r1.cells, sid: r1.sid, clamp: r1.clamp };
+    out.preview = pv;
+    if (!pv.layerSame) throw new Error("the layer changed during the stroke (it lands at the release): " + JSON.stringify(pv));
+    if (pv.sampledMax > 2 || pv.calls) throw new Error("a sampled pass or a thumbnail mid-stroke did not draw the tiles, or read the whole picture: " + JSON.stringify({ pv, calls, stacks }));
+    if (pv.whole < 800 || pv.pvDiff) throw new Error("the preview's bytes are not the bake's where the field is a whole-pixel shift: " + JSON.stringify(pv));
+    if (pv.scrN < 800 || pv.scrMax > 2 || pv.shown < 200) throw new Error("the screen at 1:1 does not show the displaced picture: " + JSON.stringify(pv));
+    if (!r1.clamp || r1.s !== 1 || r1.where !== "here") throw new Error("the first push did not run as stated: " + JSON.stringify(r1));
+
+    // 2. a push down across the bottom edge and two tile borders, at another zoom (the preview through drawLayerPass):
+    // here, in the pool, and with the bake's block split at 64 px: the same bytes and the same field
+    phase = "here";
+    ed.view.scale = 0.37; ed.view.x = 13; ed.view.y = 7; ed.sceneSig = null; ed.draw();
+    const pts2 = line([515, 560], [515, 640], 10);
+    const dS1 = digest(L), cS1 = fieldKey();
+    let mid2 = null;
+    const h2 = await landed("the second push, here", L, pts2, { where: "here", mid: async () => { mid2 = digest(L) === dS1; } });
+    const dHere = digest(L), cHere = fieldKey();
+    await ed.undoStep();
+    const u2 = { same: digest(L) === dS1, cells: fieldKey() === cS1 };
+    IE.liquifySyncMax = 0;
+    const h3 = await landed("the second push, in the pool", L, pts2, { where: "pool" });
+    const pool = { bytes: digest(L) === dHere, cells: fieldKey() === cHere };
+    await ed.undoStep();
+    IE.liquifySyncMax = BIG; IE.liquifyBlockMax = 64;
+    let h4;
+    try { h4 = await landed("the second push, its bake split small", L, pts2, { where: "here" }); } finally { IE.liquifyBlockMax = 0; }
+    const split = { bytes: digest(L) === dHere, cells: fieldKey() === cHere };
+    out.here = { keys: h2.keys, mid: mid2, undo: u2, pool, poolStats: h3.stats, split, splitStats: h4.stats, hereStats: h2.stats };
+    if (!mid2 || !u2.same || !u2.cells) throw new Error("the second push: the layer changed during it, or its undo did not give the layer and the field back: " + JSON.stringify(out.here));
+    if (!pool.bytes || !pool.cells) throw new Error("the pool's bake is not the one made here: " + JSON.stringify(out.here));
+    if (!split.bytes || !split.cells || !(h4.stats && h4.stats.splits > 0)) throw new Error("the bake split into small blocks is not the same, or did not split: " + JSON.stringify(out.here));
+    if (h2.keys <= 4) throw new Error("the second push reached " + h2.keys + " tiles: it was meant to cross two tile borders");
+
+    // 3. undo and redo carry the field: B alone; A, undone (the layer and the field as before, the session kept), redone
+    // (A's bytes and field), undone; then B again: B's bytes and field
+    phase = "undo";
+    ed.view.scale = 0.5; ed.view.x = 10; ed.view.y = 10; ed.sceneSig = null; ed.draw();
+    const ptsA = line([300, 450], [340, 410], 5);   // diagonal: steps of 3.77 px, a field between whole pixels
+    const ptsB = line([660, 300], [716, 300], 7);   // the rectangle pushed past its right edge
+    const dS = digest(L), cS = fieldKey(), sidS = ed.liq.sid;
+    const back = (what) => { const r = { same: digest(L) === dS, cells: fieldKey() === cS, valid: ed.liquifyValid(ed.liq, L), sid: ed.liq ? ed.liq.sid : null }; if (!r.same || !r.cells || !r.valid || r.sid !== sidS) throw new Error(what + " did not give the layer and the field back: " + JSON.stringify(r)); return r; };
+    await landed("stroke B", L, ptsB);
+    const dB = digest(L), cB = fieldKey();
+    await ed.undoStep(); back("the undo of B");
+    await landed("stroke A", L, ptsA);
+    const dA = digest(L), cA = fieldKey();
+    await ed.undoStep(); back("the undo of A");
+    await ed.redoStep();
+    const redo = { same: digest(L) === dA, cells: fieldKey() === cA, valid: ed.liquifyValid(ed.liq, L), sid: ed.liq ? ed.liq.sid : null, label: top() };
+    if (!redo.same || !redo.cells || !redo.valid || redo.sid !== sidS || redo.label !== "Liquify: push") throw new Error("the redo of A did not bring its bytes and its field back: " + JSON.stringify(redo));
+    refCheck(L, "A redone");
+    await ed.undoStep(); back("the second undo of A");
+    const rB2 = await landed("B after A and its undo", L, ptsB);
+    const alone = { same: digest(L) === dB, cells: fieldKey() === cB };
+    out.undo = { redo, alone, sid: sidS, keysB: rB2.keys };
+    if (!alone.same || !alone.cells) throw new Error("A, undo, B is not B alone: " + JSON.stringify(out.undo));
+    out.mirrors = [m0, mirrors()];
+    if (ed.tileMode && !m0 && out.mirrors[1]) throw new Error("a liquify stroke made a display mirror of its layer");
+
+    // 4. Restore all: the session's source again, byte for byte (on tiles the tiles the session found), one step; its undo
+    // gives the strokes back
+    phase = "restoreAll";
+    const dPre = digest(L), cPre = fieldKey(), uR = ed.undo.length, origD = pxDigest(ed.liq.orig);
+    ed.lastLiquify = null;
+    counting = true;
+    try { ed.liquifyRestoreAll(); } finally { counting = false; }
+    if (ed.liquifyPending) await ed.liquifyPending;
+    const ra = { steps: ed.undo.length - uR, label: top(), source: digest(L) === origD, sourceIsStart: origD === d1, empty: !!ed.liq && ed.liq.field.empty, where: ed.lastLiquify && ed.lastLiquify.where, tiles: ed.lastLiquify && ed.lastLiquify.tiles };
+    if (Tstart) { const T1 = tilesOf(L.px), other = []; for (const [k, t] of Tstart) if (T1.get(k) !== t) other.push([k & 0xFFFF, k >>> 16]); ra.otherTiles = other; }
+    out.restoreAll = ra;
+    if (ra.steps !== 1 || ra.label !== "Liquify: restore all" || !ra.source || !ra.sourceIsStart || !ra.empty) throw new Error("Restore all did not give the session's source back as one step: " + JSON.stringify(ra));
+    if (Tstart && ra.otherTiles.length) throw new Error("Restore all left tiles that are not the ones the session found: " + JSON.stringify(ra));
+    refCheck(L, "Restore all");
+    await ed.undoStep();
+    ra.undone = { same: digest(L) === dPre, cells: fieldKey() === cPre, valid: ed.liquifyValid(ed.liq, L) };
+    if (!ra.undone.same || !ra.undone.cells || !ra.undone.valid) throw new Error("the undo of Restore all did not give the strokes back: " + JSON.stringify(ra));
+    refCheck(L, "the undo of Restore all");
+
+    // 5. picking another tool ends the session; a paint stroke, then a push: a new session from the painted layer. A write
+    // while the tool stays, then a push: a new session from the written layer
+    phase = "between";
+    const sidP = ed.liq.sid;
+    ed.setTool("paint");
+    const ended = ed.liq === null;
+    ed.setBrushSize(20);
+    pid++;
+    for (const [t, x] of [["pointerdown", 380], ["pointermove", 400], ["pointermove", 420], ["pointermove", 440], ["pointerup", 460]]) ed.canvas.dispatchEvent(ev(t, x, 250));
+    await wait(100);
+    const dPaint = digest(L);
+    ed.setTool("liquify"); ed.setBrushSize(100);
+    const rP = await landed("the push after a paint stroke", L, line([420, 262], [372, 262], 6));
+    const between = { ended, painted: dPaint !== dPre, sids: [sidP, rP.sid], sourceIsPainted: pxDigest(ed.liq.orig) === dPaint };
+    const sidW = ed.liq.sid, dot = new ImageData(6, 6);
+    dot.data.fill(255);
+    L.px.writeRect(dot, 800, 100); ed.markLayerChanged(L, [800, 100, 806, 106]);
+    between.validAfterWrite = ed.liquifyValid(ed.liq, L);
+    const rW = await landed("the push after a write", L, line([826, 103], [778, 103], 6));
+    between.write = { sids: [sidW, rW.sid], sourceHasDot: Array.from(ed.liq.orig.readRect(802, 102, 1, 1).data).join() === "255,255,255,255" };
+    out.between = between;
+    if (!ended || !between.painted || rP.sid === sidP || !between.sourceIsPainted) throw new Error("a paint stroke between two pushes did not start a new session from the painted layer: " + JSON.stringify(between));
+    if (between.validAfterWrite || rW.sid === sidW || !between.write.sourceHasDot) throw new Error("a write between two pushes did not start a new session from the written layer: " + JSON.stringify(between));
+
+    // 6. a layer of 500 x 300 at (650, 450): no edge clamp (what the field reads from outside is transparent, what it
+    // pushes out is cut); a push rightwards from past its left edge
+    phase = "offset";
+    const Q = ed.addLayer({ name: "Offset", kind: "paint", ref: null, px: ed.pixels.Layer.fromImageData(layerData(500, 300, [0, 0, 250, 300], [250, 100, 500, 160])), x: 650, y: 450, w: 500, h: 300, dirty: true });
+    ed.activeLayerId = Q.id; ed.renderLayers();
+    const dQ = digest(Q);
+    const rQ = await landed("a push on a layer at (650, 450)", Q, line([630, 560], [678, 560], 6));
+    out.offset = { clamp: rQ.clamp, keys: rQ.keys, baked: rQ.baked, changed: digest(Q) !== dQ, size: [Q.px.width, Q.px.height, Q.x, Q.y] };
+    if (rQ.clamp || !out.offset.changed || !same(out.offset.size, [500, 300, 650, 450])) throw new Error("the push on a layer off the origin did not run as stated: " + JSON.stringify(out.offset));
+    ed.removeLayer(Q.id);
+    ed.activeLayerId = L.id; ed.renderLayers();
+
+    // 7. on the base: a press adds the layer "Liquify" directly above it (a copy of the base, on tiles its very tiles), the
+    // push lands in it as one step, the base is never written; one undo takes the layer away; a click without a move
+    // leaves no layer and no step
+    phase = "base";
+    ed.activeLayerId = null; ed.renderLayers();
+    const nl7 = ed.layers.length, n7 = ed.undo.length, b7 = baseDigest(), TB = ed.tileMode ? tilesOf(ed.basePx) : null;
+    const g7 = await stroke(line([900, 250], [948, 250], 6));
+    const N = ed.layers[0];
+    const o7 = { layers: ed.layers.length - nl7, name: N && N.name, active: !!N && ed.activeLayerId === N.id, steps: ed.undo.length - n7, label: top(), baseSame: baseDigest() === b7, session: !!ed.liq && ed.liq.layer === N };
+    out.base = o7;
+    if (g7.kind !== "liquify" || o7.layers !== 1 || o7.name !== "Liquify" || !o7.active || o7.steps !== 1 || o7.label !== "Liquify: push" || !o7.baseSame || !o7.session) throw new Error("a push on the base did not land in a new layer Liquify above it: " + JSON.stringify(o7));
+    o7.ref = refCheck(N, "the push on the base").baked;
+    o7.sourceIsBase = pxDigest(ed.liq.orig) === b7;
+    if (TB) { const keys = ed.liq.field.changedTiles(new Map(), ...tileGrid(N.px)), T1 = tilesOf(N.px); let moved = 0; for (const [k, t] of TB) if (!keys.has(k) && T1.get(k) !== t) moved++; o7.notBaseTiles = moved; }
+    if (!o7.sourceIsBase || o7.notBaseTiles) throw new Error("the layer Liquify is not a copy of the base (on tiles its tiles): " + JSON.stringify(o7));
+    await ed.undoStep();
+    o7.undone = { layers: ed.layers.length - nl7, gone: !ed.layers.includes(N), steps: ed.undo.length - n7, baseSame: baseDigest() === b7 };
+    if (o7.undone.layers || !o7.undone.gone || o7.undone.steps || !o7.undone.baseSame) throw new Error("one undo did not take the layer Liquify away: " + JSON.stringify(o7));
+    ed.activeLayerId = null; ed.renderLayers();
+    pid++; send("pointerdown", 900, 250); send("pointerup", 900, 250);
+    if (ed.liquifyPending) await ed.liquifyPending;
+    o7.click = { layers: ed.layers.length - nl7, steps: ed.undo.length - n7, pointer: ed.pointer === null, baseSame: baseDigest() === b7 };
+    if (o7.click.layers || o7.click.steps || !o7.click.pointer || !o7.click.baseSame) throw new Error("a click on the base without a move left a layer or a step: " + JSON.stringify(o7));
+    L = ed.layers.find((l) => l.id === L.id);
+    ed.activeLayerId = L.id; ed.renderLayers();
+
+    // 8. a bake in the pool holds the gesture: a press meanwhile is refused with a word, the flush of the document waits for
+    // the landing (one step, the reference)
+    phase = "held";
+    IE.liquifySyncMax = 0;
+    ed.lastLiquify = null;
+    const n8 = ed.undo.length, d8 = digest(L);
+    const g8 = await stroke(line([560, 330], [608, 330], 6), { hold: true });
+    const p8 = ed.pointer;
+    const h8 = { held: g8.held, pending: !!ed.liquifyPending, gestureHeld: ed.gestureHeld(), layerSame: digest(L) === d8, steps: ed.undo.length - n8 };
+    pid++; send("pointerdown", 200, 700); send("pointermove", 240, 700); send("pointerup", 240, 700);
+    h8.pressWaited = ed.pointer === p8; h8.pressStatus = ed.status;
+    await host.flushEditor(ed);
+    Object.assign(h8, { after: ed.pointer === null, pendingAfter: ed.liquifyPending === null, landed: ed.undo.length - n8, label: top(), where: ed.lastLiquify && ed.lastLiquify.where, stats: ed.lastLiquify && ed.lastLiquify.stats });
+    out.held = h8;
+    if (!h8.held || !h8.pending || !h8.gestureHeld || !h8.layerSame || h8.steps || !h8.pressWaited || !/Liquifying: a moment/.test(h8.pressStatus)) throw new Error("a bake in the pool did not hold the gesture: " + JSON.stringify(h8));
+    if (!h8.after || !h8.pendingAfter || h8.landed !== 1 || h8.label !== "Liquify: push" || h8.where !== "pool") throw new Error("the flush did not wait for the held bake: " + JSON.stringify(h8));
+    refCheck(L, "the held push");
+
+    // 9. the tile guard: a write into one of the stroke's output tiles while its bake is held drops the stroke (the layer as
+    // it was, the field as before); on canvases any write does
+    phase = "guard";
+    const n9 = ed.undo.length, d9 = digest(L);
+    const g9 = await stroke(line([560, 520], [608, 520], 6), { hold: true });
+    const p9 = ed.pointer, keys9 = p9 && p9.healing ? ed.liq.field.changedTiles(p9.before, ...tileGrid(L.px)) : new Set();
+    const c9 = p9 && p9.before ? cellsKey(p9.before) : null;
+    const k9 = Array.from(keys9)[0] || 0, gx = k9 & 0xFFFF, gy = k9 >>> 16;
+    let unwrite;
+    if (ed.tileMode) { ed.liq.px.writable(gx, gy).data[0] ^= 1; unwrite = () => { L.px.writable(gx, gy).data[0] ^= 1; }; }
+    else {
+        const x9 = gx * 256 + 40, y9 = gy * 256 + 40, was = L.px.readRect(x9, y9, 1, 1), dot9 = new ImageData(1, 1);
+        dot9.data.set([1, 2, 3, 255]);
+        // the canvas backend's version moves on the editor's touch after a write (inpaint_pixels.js), not on writeRect
+        L.px.writeRect(dot9, x9, y9, "copy"); ed.markLayerChanged(L, [x9, y9, x9 + 1, y9 + 1]);
+        unwrite = () => { L.px.writeRect(was, x9, y9, "copy"); ed.markLayerChanged(L, [x9, y9, x9 + 1, y9 + 1]); };
+    }
+    if (ed.liquifyPending) await ed.liquifyPending;
+    const o9 = { held: g9.held, keys: keys9.size, status: ed.status, steps: ed.undo.length - n9, pointer: ed.pointer === null, cells: fieldKey() === c9 };
+    unwrite();
+    o9.same = digest(L) === d9;
+    out.guard = o9;
+    if (!o9.held || !o9.keys || !/The layer changed while Liquify was baking: nothing landed/.test(o9.status) || o9.steps || !o9.pointer || !o9.cells || !o9.same) throw new Error("a write into the held stroke's tiles did not drop it: " + JSON.stringify(o9));
+
+    // 10. a picture above 4 MP: the grid step is 2 px; a push against the reference; its undo empties the field
+    phase = "grid2";
+    IE.liquifySyncMax = BIG;
+    const W2 = 2400, H2 = 1800;
+    await run("new_canvas", { width: W2, height: H2, doc: d.id });
+    await ed.setBase({ filename: "liquify_test2.png", subfolder: "inpaint_canvas", type: "input" }, texturedBase(W2, H2), { keepLayers: false });
+    const L2 = ed.addLayer({ name: "Warp 2", kind: "paint", ref: null, px: ed.pixels.Layer.fromImageData(layerData(W2, H2, [900, 600, 1500, 1200], [300, 850, 2100, 950])), x: 0, y: 0, w: W2, h: H2, dirty: true });
+    ed.activeLayerId = L2.id; ed.renderLayers();
+    ed.setTool("liquify"); ed.setBrushSize(100); ed.hardness = 0.5;
+    ed.view.scale = 0.25; ed.view.x = 10; ed.view.y = 10; ed.sceneSig = null; ed.draw();
+    await ed.mipsSettled();
+    const d10 = digest(L2);
+    const r10 = await landed("a push at grid step 2", L2, line([1000, 900], [952, 900], 6));
+    out.grid2 = { s: r10.s, lastS: ed.lastLiquify && ed.lastLiquify.s, keys: r10.keys, baked: r10.baked, clamp: r10.clamp };
+    if (r10.s !== 2 || out.grid2.lastS !== 2 || !r10.clamp) throw new Error("the picture above 4 MP did not liquify at grid step 2: " + JSON.stringify(out.grid2));
+    await ed.undoStep();
+    out.grid2.undone = { same: digest(L2) === d10, empty: !!ed.liq && ed.liq.field.empty };
+    if (!out.grid2.undone.same || !out.grid2.undone.empty) throw new Error("the undo of the push at grid step 2 did not give the layer back: " + JSON.stringify(out.grid2));
+
+    // 11. the phases above with a press, a move, a draw or a release read no whole picture (the canvas backend's "layers"
+    // step for the new layer Liquify writes every layer out: its base phase is left out)
+    out.calls = calls; out.phases = phases;
+    const bad = Object.keys(phases).filter((k) => !(k === "base" && !ed.tileMode));
+    if (bad.length) throw new Error("a liquify stroke read the whole picture: " + JSON.stringify({ calls, phases, stacks }));
+
+    // 12. closing the editor while a bake is held lands nothing, not even when the bake answers after it
+    phase = "close";
+    IE.liquifySyncMax = 0;
+    const n12 = ed.undo.length, d12 = digest(L2);
+    const g12 = await stroke(line([1000, 1100], [952, 1100], 6), { hold: true });
+    const pend = ed.liquifyPending;
+    const o12 = { held: g12.held, pending: !!pend };
+    ed.close();
+    Object.assign(o12, { pointer: ed.pointer === null, same: digest(L2) === d12, steps: ed.undo.length - n12, session: ed.liq === null });
+    if (pend) await pend;
+    await wait(50);
+    Object.assign(o12, { sameAfter: digest(L2) === d12, stepsAfter: ed.undo.length - n12 });
+    out.close = o12;
+    if (!o12.held || !o12.pending || !o12.pointer || !o12.same || o12.steps || !o12.session || !o12.sameAfter || o12.stepsAfter) throw new Error("closing the editor during a held bake landed something: " + JSON.stringify(o12));
+} finally {
+    IE.liquifySyncMax = keep.sync; IE.liquifyBlockMax = keep.block; IE.liquifyRateMs = keep.rate;
+    if (LPproto && toCanvas0) LPproto.toCanvas = toCanvas0;
+    for (const k of ["compositeCanvas", "flattenToCanvas", "sampleCanvas"]) delete ed[k];
+    ed.stabiliser = keep.stab;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
+    ("liquify_brushes_move_the_picture_and_refuse", """
+// PLAN_0_1_31 section 5 step 5a: Liquify's brushes through the real handlers (the timed dabs by `liquifyTick`). Grow
+// swells a disc (its edge along a ray moves out), shrink pinches it (in), swirl clockwise turns a marker right of the
+// centre downwards (y down), swirl counter-clockwise upwards; Alt reverses grow, shrink and the swirl; restore brings a
+// grow back to the byte; a hard selection keeps a push inside itself; every refusal at the press leaves no step and no
+// session; the keys (Shift+W and Ctrl+Shift+X pick Liquify, W stays the wand, Ctrl+X still cuts)
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const IE = ed.constructor;
+const keep = { rate: IE.liquifyRateMs, sync: IE.liquifySyncMax, stab: ed.stabiliser };
+const W = 1200, H = 800, C = [600, 400];
+const out = { tiles: !!ed.tileMode, keys: null, refused: null, selection: null, restore: null };
+try {
+    IE.liquifyRateMs = 0; IE.liquifySyncMax = 1e12; ed.stabiliser = 0;
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    // the layer: a textured disc of radius 60 around C, a blue marker (10 px square) 100 px right of C, transparent elsewhere
+    const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return (h >>> 24) / 255; };
+    const img = new ImageData(W, H), a = img.data;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const o = (y * W + x) * 4, dx = x + 0.5 - C[0], dy = y + 0.5 - C[1];
+        if (dx * dx + dy * dy <= 3600) { a[o] = 150 + 100 * hash(x >> 1, y >> 1); a[o + 1] = 120 + 80 * hash(x, y >> 1); a[o + 2] = 40; a[o + 3] = 255; }
+        else if (x >= 695 && x < 705 && y >= 395 && y < 405) { a[o] = 30; a[o + 1] = 60; a[o + 2] = 220; a[o + 3] = 255; }
+    }
+    const D = ed.addLayer({ name: "Disc", kind: "paint", ref: null, px: ed.pixels.Layer.fromImageData(img), x: 0, y: 0, w: W, h: H, dirty: true });
+    ed.activeLayerId = D.id; ed.renderLayers();
+    ed.view.angle = 0; ed.view.scale = 0.5; ed._fitted = false; ed.view.x = 10; ed.view.y = 10; ed.draw();
+    ed.setTool("liquify");
+    await ed.mipsSettled();
+    const fnv = (b) => { let h = 2166136261; for (let i = 0; i < b.length; i++) h = Math.imul(h ^ b[i], 16777619); return (h >>> 0).toString(16) + "/" + b.length; };
+    const digest = (layer) => fnv(layer.px.readRect(0, 0, layer.px.width, layer.px.height).data);
+    const top = () => (ed.undo[ed.undo.length - 1] || {}).label;
+    let pid = 6100;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+    const send = (type, ix, iy, extra) => ed.canvas.dispatchEvent(ev(type, ix, iy, extra));
+    const key = (k, o = {}) => ed.root.dispatchEvent(new KeyboardEvent("keydown", Object.assign({ key: k, bubbles: true, cancelable: true }, o)));
+    // where the disc's edge lies left of C along its row (the first pixel under half alpha), and the marker's centroid
+    const edgeLeft = () => { const r = D.px.readRect(0, C[1], C[0] + 1, 1).data; for (let x = C[0]; x >= 0; x--) if (r[x * 4 + 3] < 128) return x; return -1; };
+    const marker = () => {
+        const r = D.px.readRect(450, 200, 400, 400).data;
+        let n = 0, sx = 0, sy = 0;
+        for (let y = 0; y < 400; y++) for (let x = 0; x < 400; x++) { const q = (y * 400 + x) * 4; if (r[q + 3] > 128 && r[q + 2] > 150 && r[q] < 100) { n++; sx += 450 + x + 0.5; sy += 200 + y + 0.5; } }
+        return n ? [+(sx / n).toFixed(1), +(sy / n).toFixed(1), n] : null;
+    };
+    // a brush held at C: the press's dab, `ticks` timed dabs, the release
+    const brush = async (mode, o = {}) => {
+        ed.liquifyOpts = { mode, strength: 100 };
+        ed.setBrushSize(o.size || 300); ed.hardness = o.hard != null ? o.hard : 0;
+        const n = ed.undo.length;
+        pid++;
+        send("pointerdown", C[0], C[1], o.alt ? { altKey: true } : undefined);
+        const p = ed.pointer, kind = p ? p.kind : null, pm = p ? p.mode : null;
+        for (let t = 0; t < (o.ticks || 10); t++) ed.liquifyTick();
+        send("pointerup", C[0], C[1]);
+        if (ed.liquifyPending) await ed.liquifyPending;
+        return { kind, mode: pm, steps: ed.undo.length - n, label: top(), edge: edgeLeft(), marker: marker() };
+    };
+    const d0 = digest(D), e0 = edgeLeft(), m0 = marker();
+    if (e0 !== 539 || !m0 || m0[0] !== 700 || m0[1] !== 400) throw new Error("the test layer is not as drawn: " + JSON.stringify({ e0, m0 }));
+    const undo = async (what) => { await ed.undoStep(); if (digest(D) !== d0) throw new Error("the undo of " + what + " did not give the layer back"); };
+    const res = {};
+    const expect = (name, r, mode, label, ok, why) => { res[name] = r; if (r.kind !== "liquify" || r.mode !== mode || r.steps !== 1 || r.label !== label || !ok(r)) throw new Error(name + ": " + why + ": " + JSON.stringify({ e0, m0, r })); };
+
+    // 1. grow and shrink along the ray left of C; Alt reverses them
+    expect("grow", await brush("grow"), "grow", "Liquify: grow", (r) => r.edge < e0 - 5, "the disc's edge did not move outwards");
+    await undo("grow");
+    expect("shrink", await brush("shrink"), "shrink", "Liquify: shrink", (r) => r.edge > e0 + 5, "the disc's edge did not move inwards");
+    await undo("shrink");
+    expect("growAlt", await brush("grow", { alt: true }), "shrink", "Liquify: shrink", (r) => r.edge > e0 + 5, "Alt did not turn grow into shrink");
+    await undo("grow with Alt");
+    expect("shrinkAlt", await brush("shrink", { alt: true }), "grow", "Liquify: grow", (r) => r.edge < e0 - 5, "Alt did not turn shrink into grow");
+    await undo("shrink with Alt");
+
+    // 2. swirl: clockwise on the screen (y down) takes the marker right of C down, counter-clockwise up; Alt reverses
+    expect("swirlcw", await brush("swirlcw"), "swirlcw", "Liquify: swirl", (r) => r.marker && r.marker[1] > m0[1] + 5, "swirl clockwise did not turn the marker right of the centre downwards");
+    await undo("swirl clockwise");
+    expect("swirlccw", await brush("swirlccw"), "swirlccw", "Liquify: swirl", (r) => r.marker && r.marker[1] < m0[1] - 5, "swirl counter-clockwise did not turn the marker upwards");
+    await undo("swirl counter-clockwise");
+    expect("swirlcwAlt", await brush("swirlcw", { alt: true }), "swirlccw", "Liquify: swirl", (r) => r.marker && r.marker[1] < m0[1] - 5, "Alt did not reverse the swirl");
+    await undo("swirl with Alt");
+    out.brushes = res;
+
+    // 3. restore: a grow, then the restore brush held over all of it brings the layer back to the byte (the field empty)
+    const g3 = await brush("grow");
+    const sourceIsStart = digest(D) !== d0 && ed.liq && digest({ px: ed.liq.orig }) === d0;
+    const r3 = await brush("restore", { size: 400, hard: 0.8, ticks: 70 });
+    out.restore = { grew: g3.edge, sourceIsStart, steps: r3.steps, label: r3.label, back: digest(D) === d0, empty: !!ed.liq && ed.liq.field.empty, edge: r3.edge };
+    if (g3.steps !== 1 || !sourceIsStart || r3.kind !== "liquify" || r3.steps !== 1 || r3.label !== "Liquify: restore" || !out.restore.back || !out.restore.empty) throw new Error("the restore brush did not bring the grow back: " + JSON.stringify(out.restore));
+    await ed.undoStep(); await ed.undoStep();
+    if (digest(D) !== d0) throw new Error("the undo of the restore and the grow did not give the layer back");
+
+    // 4. a hard selection: a push through it changes nothing outside it (beyond one grid step)
+    await run("select_rect", { x: 560, y: 360, w: 80, h: 80, doc: d.id });
+    ed.setTool("liquify");
+    ed.liquifyOpts = { mode: "push", strength: 100 }; ed.setBrushSize(200); ed.hardness = 0.5;
+    const n4 = ed.undo.length, b4 = D.px.readRect(0, 0, W, H).data.slice();
+    pid++;
+    send("pointerdown", 560, 400);
+    for (let i = 1; i <= 10; i++) send("pointermove", 560 + 8 * i, 400);
+    send("pointerup", 640, 400);
+    if (ed.liquifyPending) await ed.liquifyPending;
+    const a4 = D.px.readRect(0, 0, W, H).data;
+    let inside = 0, outside = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const q = (y * W + x) * 4;
+        if (a4[q] === b4[q] && a4[q + 1] === b4[q + 1] && a4[q + 2] === b4[q + 2] && a4[q + 3] === b4[q + 3]) continue;
+        if (x >= 559 && x < 641 && y >= 359 && y < 441) inside++; else outside++;
+    }
+    out.selection = { steps: ed.undo.length - n4, label: top(), inside, outside };
+    if (out.selection.steps !== 1 || out.selection.label !== "Liquify: push" || outside || inside < 200) throw new Error("the selection did not keep the push inside itself: " + JSON.stringify(out.selection));
+    await ed.undoStep();
+    if (digest(D) !== d0) throw new Error("the undo of the push in the selection did not give the layer back");
+    await run("select_none", { doc: d.id });
+
+    // 5. the refusals at the press: the status says why, no gesture, no step, no new layer, no session, nothing written
+    ed.setTool("paint"); ed.setTool("liquify");
+    if (ed.liq !== null) throw new Error("picking another tool did not end the session");
+    ed.liquifyOpts = { mode: "push", strength: 100 }; ed.setBrushSize(100); ed.hardness = 0.5;
+    const refuse = (what, re, layer) => {
+        const n = ed.undo.length, nl = ed.layers.length, e = layer && layer.px ? digest(layer) : null;
+        pid++;
+        send("pointerdown", 600, 400);
+        const pointer = ed.pointer ? ed.pointer.kind : null;
+        send("pointermove", 640, 400); send("pointermove", 680, 400);
+        send("pointerup", 680, 400);
+        const r = { tool: ed.tool, status: ed.status, pointer, steps: ed.undo.length - n, layers: ed.layers.length - nl, session: ed.liq ? ed.liq.sid : null, same: e === null || digest(layer) === e };
+        if (r.tool !== "liquify" || !re.test(r.status) || r.pointer || r.steps || r.layers || r.session !== null || !r.same) throw new Error(what + " did not refuse Liquify: " + JSON.stringify(r));
+        return r.status;
+    };
+    const refused = {};
+    ed.activeLayerId = D.id; ed.renderLayers();
+    ed.quickMask = true;
+    try { refused.quickMask = refuse("quick mask", /Quick mask is on/, D); } finally { ed.quickMask = false; }
+    D.locked = true;
+    try { refused.locked = refuse("a locked layer", /is locked/, D); } finally { D.locked = false; }
+    D.alphaLock = true;
+    try { refused.alphaLock = refuse("a layer with its transparency locked", /Liquify moves transparency too/, D); } finally { D.alphaLock = false; }
+    const M0 = ed.addPaintLayer();
+    ed.activeLayerId = M0.id; ed.renderLayers();
+    await run("set_mask", { layer: M0.id, op: "hide", doc: d.id });
+    const M = ed.layers.find((l) => l.id === M0.id);
+    ed.setTool("liquify"); ed.activeLayerId = M.id; ed.renderLayers();
+    M.maskEdit = true;
+    try { refused.maskEdit = refuse("a mask being edited", /The mask of .+ is being edited/, M); } finally { M.maskEdit = false; }
+    ed.removeLayer(M.id);
+    await run("add_text", { doc: d.id, text: "Ab", x: 20, y: 20, size: 40 });
+    const TL = ed.layers.find((l) => l.kind === "text");
+    if (!TL) throw new Error("add_text made no text layer");
+    ed.setTool("liquify"); ed.activeLayerId = TL.id; ed.renderLayers();
+    refused.text = refuse("a text layer", /Text layers hold text/, null);
+    ed.removeLayer(TL.id);
+    const fx = await run("add_filter", { type: "grain", doc: d.id });
+    const FL = ed.layers.find((l) => l.id === fx.id) || ed.layers.find((l) => l.kind === "filter");
+    if (!FL) throw new Error("add_filter made no filter layer");
+    ed.setTool("liquify"); ed.activeLayerId = FL.id; ed.renderLayers();
+    refused.filter = refuse("a filter layer", /Filter layers have no pixels/, null);
+    ed.removeLayer(FL.id);
+    const S = ed.addLayer({ name: "S", kind: "paint", px: ed.pixels.Layer.empty(600, 400), x: 0, y: 0, w: W, h: H });
+    ed.activeLayerId = S.id; ed.renderLayers();
+    refused.scaled = refuse("a scaled layer", /scaled or placed between pixels/, S);
+    ed.removeLayer(S.id);
+    const F = ed.addLayer({ name: "F", kind: "paint", px: ed.pixels.Layer.empty(400, 400), x: 400.5, y: 200, w: 400, h: 400 });
+    ed.activeLayerId = F.id; ed.renderLayers();
+    refused.between = refuse("a layer placed between pixels", /scaled or placed between pixels/, F);
+    ed.removeLayer(F.id);
+    out.refused = Object.keys(refused);
+    ed.activeLayerId = D.id; ed.renderLayers();
+
+    // 6. the keys: Shift+W and Ctrl+Shift+X pick Liquify, W the wand; Ctrl+X still cuts the selection
+    ed.setTool("paint");
+    key("W", { shiftKey: true }); const k1 = ed.tool;
+    key("w"); const k2 = ed.tool;
+    key("X", { ctrlKey: true, shiftKey: true }); const k3 = ed.tool;
+    await run("select_rect", { x: 560, y: 360, w: 80, h: 80, doc: d.id });
+    ed.setTool("wand");
+    ed.activeLayerId = D.id; ed.renderLayers();
+    const dCut = digest(D);
+    key("x", { ctrlKey: true });
+    out.keys = { shiftW: k1, w: k2, ctrlShiftX: k3, ctrlX: ed.tool, cut: /^Cut /.test(ed.status), changed: digest(D) !== dCut };
+    if (k1 !== "liquify" || k2 !== "wand" || k3 !== "liquify" || out.keys.ctrlX !== "wand" || !out.keys.cut || !out.keys.changed) throw new Error("the keys did not pick as stated: " + JSON.stringify(out.keys) + " " + ed.status);
+} finally {
+    IE.liquifyRateMs = keep.rate; IE.liquifySyncMax = keep.sync; ed.stabiliser = keep.stab;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("the_smudge_carries_paint_as_far_as_its_length", """
 // PLAN_0_1_31 §4 step 3: the smudge's carry (the smudge_dab kernel). Length keeps the paint going, finger painting
 // starts from the paint colour, alpha lock keeps the alpha, Sample "below" leaves the layers above out; the kernel and

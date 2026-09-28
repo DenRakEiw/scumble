@@ -44,6 +44,7 @@
 
 import { canvasRoundTrip, resampleOptions, resampleStore } from "./inpaint_resample.js";
 import { resampleBlock } from "./px/kernels.js";
+import { liquifyStore, liquifyBox } from "./inpaint_liquify.js";
 
 let OPTIONS = { strict: false, copy: false, software: false, tiles: null, tilesFrom: null };
 const warned = new Set();
@@ -459,6 +460,102 @@ export class LayerPixels {
     /** `transformed` as a promise (the tile backend runs it in the pool; a canvas is small enough to run here). */
     async transformedAsync(map, outW, outH, opts = {}) {
         return this.transformed(map, outW, outH, opts);
+    }
+
+    /**
+     * Liquify's bake (the tile store's `liquified`: the same results, the same bytes): the canvas is read once over the
+     * union of the boxes the output tiles' taps read, and the kernel runs over that.
+     */
+    liquified(s, nodes, opts = {}) {
+        const run = this._liquifyRun(s, nodes, opts);
+        const out = [];
+        out.stats = run(run.keys, out);
+        return out;
+    }
+
+    /**
+     * `liquified` as a promise: the one read here, then the kernel in slices of a few tiles between which the window
+     * draws (a gesture held on it stays responsive).
+     */
+    async liquifiedAsync(s, nodes, opts = {}) {
+        const run = this._liquifyRun(s, nodes, opts);
+        const out = [];
+        out.stats = { blocks: 0, splits: 0, maxBlock: 0, pool: 0, local: 1 };
+        for (let i = 0; i < run.keys.length; i += 8) {
+            await new Promise((res) => setTimeout(res, 0));
+            const st = run(run.keys.slice(i, i + 8), out);
+            out.stats.blocks += st.blocks; out.stats.splits += st.splits; out.stats.maxBlock = Math.max(out.stats.maxBlock, st.maxBlock);
+        }
+        return out;
+    }
+
+    /** The read of `liquified`, and a runner of the kernel over a part of its keys into a results array. */
+    _liquifyRun(s, nodes, { clamp = false, blockMax } = {}) {
+        this._guard();
+        const W = this.width, H = this.height, ls = Math.log2(s), n = 256 >> ls;
+        const keys = Array.from(nodes.keys()).sort((a, b) => a - b).map((k) => [k & 0xFFFF, k >>> 16]);
+        const lim = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
+        let ux0 = Infinity, uy0 = Infinity, ux1 = -Infinity, uy1 = -Infinity;
+        for (const [tx, ty] of keys) {
+            const nd = nodes.get((ty << 16) | tx);
+            if (!nd) continue;
+            const X0 = tx * 256, Y0 = ty * 256;
+            const b = liquifyBox(nd, n + 1, tx * n, ty * n, ls, X0, Y0, Math.min(W, X0 + 256), Math.min(H, Y0 + 256));
+            const r = clamp ? [lim(b[0], W - 1), lim(b[1], H - 1), lim(b[2] - 1, W - 1) + 1, lim(b[3] - 1, H - 1) + 1]
+                : [Math.max(b[0], 0), Math.max(b[1], 0), Math.min(b[2], W), Math.min(b[3], H)];
+            if (r[2] <= r[0] || r[3] <= r[1]) continue;
+            ux0 = Math.min(ux0, r[0]); uy0 = Math.min(uy0, r[1]); ux1 = Math.max(ux1, r[2]); uy1 = Math.max(uy1, r[3]);
+        }
+        const uw = ux1 - ux0, d = uw > 0 ? this.readRect(ux0, uy0, uw, uy1 - uy0).data : null;
+        const src = {
+            width: W, height: H,
+            copyRun: (sy, x0, x1, dst, off) => dst.set(d.subarray(((sy - uy0) * uw + x0 - ux0) * 4, ((sy - uy0) * uw + x1 - ux0) * 4), off),
+            has: () => !!d,
+        };
+        const rt = canvasRoundTrip();
+        const run = (part, out) => {
+            let cur = null;
+            return liquifyStore(src, s, (tx, ty) => nodes.get((ty << 16) | tx) || null, part, clamp, rt, {
+                share: (tx, ty) => out.push({ key: (ty << 16) | tx, share: true }),
+                tile: () => { cur = new Uint8Array(256 * 256 * 4); return [cur, 0, 256 * 4]; },
+                done: (tx, ty, count) => out.push(count ? { key: (ty << 16) | tx, bytes: cur } : { key: (ty << 16) | tx, empty: true }),
+            }, blockMax);
+        };
+        run.keys = keys;
+        return run;
+    }
+
+    /**
+     * Liquify's landing (the tile store's `putTiles`): each result's 256 x 256 tile written with "copy" (it may lower
+     * alpha), `empty` cleared, `share` given `orig`'s bytes there (read once over all of them).
+     */
+    putTiles(results, orig) {
+        this._guard();
+        const W = this.width, H = this.height;
+        const rect = (key) => {
+            const x = (key & 0xFFFF) * 256, y = (key >>> 16) * 256;
+            return [x, y, Math.min(256, W - x), Math.min(256, H - y)];
+        };
+        const shared = results.filter((r) => r.share);
+        let sd = null, sx0 = 0, sy0 = 0, sw = 0;
+        if (shared.length) {
+            let x1 = -Infinity, y1 = -Infinity;
+            sx0 = Infinity; sy0 = Infinity;
+            for (const r of shared) { const [x, y, w, h] = rect(r.key); sx0 = Math.min(sx0, x); sy0 = Math.min(sy0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h); }
+            sw = x1 - sx0;
+            sd = orig.readRect(sx0, sy0, sw, y1 - sy0).data;
+        }
+        for (const r of results) {
+            const [x, y, w, h] = rect(r.key);
+            if (w <= 0 || h <= 0) continue;
+            if (r.empty) { this.clear([x, y, x + w, y + h]); continue; }
+            const img = new ImageData(w, h);
+            for (let j = 0; j < h; j++) {
+                if (r.bytes) img.data.set(r.bytes.subarray(j * 1024, j * 1024 + w * 4), j * w * 4);
+                else { const o = ((y + j - sy0) * sw + (x - sx0)) * 4; img.data.set(sd.subarray(o, o + w * 4), j * w * 4); }
+            }
+            this.writeRect(img, x, y, "copy");
+        }
     }
 
     /**
