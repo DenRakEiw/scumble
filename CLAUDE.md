@@ -99,7 +99,13 @@ paragraph per step). The CHANGELOG's "Unreleased" section holds all of it.
   coarsening or MG-preconditioned CG.
 - **Next:** package 5 step 3 (Remove with LaMa: downloaded like SAM2, the user's answer of 2026-09-27; confirm the
   ONNX port's licence before the code), then 4 (patch / content-aware move on the solver), 5 (liquify); then the
-  0.1.32 release chain on the user's word (`docs/RELEASING.md`).
+  0.1.32 release chain on the user's word (`docs/RELEASING.md`). A background agent researched step 3 before the
+  `/clear` of 2026-09-28 (licence, download URL, tensor contract, DirectML, the integration beside SAM2): read
+  `C:/Users/SCHOEN~1/AppData/Local/Temp/claude/F--canvas/53eb0ebb-7de7-4fd8-9abf-6d82dd3d91ac/scratchpad/lama_research.md`
+  if it is there, else redo that research first.
+- The Microsoft Store certification of 2026-09-28 refused the search term "ComfyUI" (policy 10.1.3); the user replaced
+  it and "FLUX" in the listing with "photo retouching" and "outpainting" (`docs/STORE_LISTING.md`); the resubmission is on
+  the user's side.
 - Open for the user: item 25's look and timing.
 
 **At most two build steps per session, then `/clear` or `/compact` (the user, 2026-09-28):** the context rose to 85 % in
