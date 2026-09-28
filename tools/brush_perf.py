@@ -2,6 +2,7 @@
 in a running instance (port SCUMBLE_CDP_PORT, default 9555) and prints its table.
 
     python tools/brush_perf.py '{"TOOLS": ["clone"]}'
+    python tools/brush_perf.py '{"SIZES": [200]}' liquify_perf.js    # another script of the same shape (Liquify)
 
 Start a fresh instance per tool, on its own profile, `--no-comfy`, the window in front and no hand on the mouse
 (tools/run_gates.sh does not run it: it is a measurement, not a gate). The JSON sets `window.__bp` (W, H, TOOLS, SIZES,
@@ -16,7 +17,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
 
-JS = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "brush_perf.js"), encoding="utf-8").read()
+JS = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), sys.argv[2] if len(sys.argv) > 2 else "brush_perf.js"), encoding="utf-8").read()
 PARAMS = sys.argv[1] if len(sys.argv) > 1 else "{}"
 
 

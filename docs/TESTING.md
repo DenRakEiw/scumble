@@ -40,7 +40,10 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   Liquify has `liquify_bakes_each_stroke_from_the_session_source` (both backends: every landing equals the bake of the
   session's source through the whole field, pool and here, a forced small gather, Restore all exact, undo / redo with
   the field, the base's copy, the held bake and the tile guard, no flatten while it drags) and
-  `liquify_brushes_move_the_picture_and_refuse` (the modes, Alt, the selection, the refusals, the keys).
+  `liquify_brushes_move_the_picture_and_refuse` (the modes, Alt, the selection, the refusals, the keys) and
+  `liquify_freeze_holds_what_it_covers` (a frozen band holds its bytes under a push, thaw, Restore all under a freeze,
+  Invert, Clear, the veil, a flip and a new picture drop the freeze). `python tools/brush_perf.py '{}' liquify_perf.js`
+  measures Liquify at 15000 x 10000 (docs/PERFORMANCE.md §15.1; a measurement, not a gate).
   `SCUMBLE_EDITOR_ONLY=name,name` runs just those steps. On the canvas backend `readRect` of a sub-rectangle of a
   canvas with pixels that are not opaque can differ by a level from a read of the whole canvas (measured 2026-09-28,
   286 of 108k bytes, only where alpha < 255; 0 on tiles): an expectation for such a picture is built from the reader

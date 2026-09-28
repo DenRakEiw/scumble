@@ -24,8 +24,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   swells and shrink pinches what is under the brush, swirl turns it, restore brings it back (Alt swaps grow and shrink
   and the swirl's direction). You see the result while you drag, and every stroke is one undo step. All strokes of a
   session are taken from the layer as it was when you started, so the picture does not soften stroke by stroke, and
-  *Restore all* gets the original back exactly. A selection limits it; on the base it works on a copy, the layer
-  *Liquify*.
+  *Restore all* gets the original back exactly. A selection limits it, and so does a freeze you paint (shown in red,
+  thawed again with Alt); on the base it works on a copy, the layer *Liquify*.
 - **LaMa remove (in-app).** The same model as a recipe: select what should go, pick *LaMa remove (in-app)* and press
   Generate, offline.
 - **The healing brush blends.** Heal (J) now lays the source's texture into the colour and light around the stroke,

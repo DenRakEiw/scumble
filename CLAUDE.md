@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-28, night)
+## Where things stand (2026-09-28, late night)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -101,19 +101,21 @@ paragraph per step). The CHANGELOG's "Unreleased" section holds all of it.
   (`snap.liq`); the base gets a copy layer "Liquify". Tests: `tools/liquify_test.js` (86 checks), gate steps
   `liquify_bakes_each_stroke_from_the_session_source` (both backends) and `liquify_brushes_move_the_picture_and_refuse`;
   the full editor gate on both backends; a three-lens review (9 confirmed, 6 after merging, all fixed).
+- **Package 5 step 5b is done** (local, 2026-09-28; plan §5 "Step 5b built"): the freeze (modes freeze / thaw, a Freeze
+  row with Show, Clear, Invert; kept per layer while the document is open, not in undo or files), the 15k rows
+  (docs/PERFORMANCE.md §15.1, `tools/liquify_perf.js` through `brush_perf.py`; the preview of a large box at a coarser
+  step, the undo step as runs of tiles), the bake's mutation round (17 + 1 mutants, all dead or equivalent, two checks
+  added), gate step `liquify_freeze_holds_what_it_covers`, a two-lens review (6 fixed). **Package 5 is complete.**
   **Defaults taken, open for the user:** no Apply (a stroke lands at its release; picking another tool ends the session,
   Photoshop's OK); Shift+W and Ctrl+Shift+X; strength 50 %; the base's copy "Liquify" directly above the base (a
   full-size layer in saves); the mask is not moved and a layer does not grow; the grid 1 / 2 / 4 / 8 px by picture size;
-  the preview a little softer than the result; grow / shrink / swirl / restore rates set by eye (0.04, 3 degrees, 0.15);
-  a canvas-backend session copies the layer's canvas.
-- **Next: package 5 step 5b** (plan §5, the synthesis's 5b in the "Step 5a built" paragraph): the freeze mask (Freeze /
-  Thaw modes, Clear / Invert / Show freeze, a red veil, kept per layer), the 15k rows (press, frame p50 / p95 at fit and
-  1:1 for sizes 200 and 1000, dab ms at s = 4 and s = 1, release to landing for a face stroke and a 1000 px stroke, the
-  heavy-shrink block bound; `brush_perf` gets "liquify"; restart the app before each run), the GL sampler only if the 1:1
-  size-1000 frame is above 16 ms p95, queued presses only if a face stroke's landing is above 150 ms, the mutation round
-  of the bake (the full tier; the table is in the synthesis: phase shift, weights swapped, verbatim path off, box
-  without dmax, split off, neighbour keys dropped, additive push, restore rounding, clamp, the undo hook, the tile guard,
-  `painting` in every pass), then a review. Then the 0.1.32 release chain on the user's word (`docs/RELEASING.md`).
+  the preview a little softer than the result (and coarser for a large brush at 1:1); grow / shrink / swirl / restore
+  rates set by eye (0.04, 3 degrees, 0.15); the swirl modes labelled "swirl ↻ / ↺"; the freeze at the strength (50 %
+  freezes half), not undone, not saved, dropped by a flip or turn of its layer; a canvas-backend session copies the
+  layer's canvas. Not built (measured as not needed): the GL sampler, queued presses during a held bake.
+- **Next: the 0.1.32 release chain on the user's word** (`docs/RELEASING.md`: CHANGELOG, `npm run dist`, the exe gates
+  against `dist/win-unpacked/Scumble.exe` (the LaMa utility process there is still unverified), tag, draft release, the
+  dev blog post). Then package 6 (layers pro) in the user's order.
 - The Microsoft Store certification of 2026-09-28 refused the search term "ComfyUI" (policy 10.1.3); the user replaced
   it and "FLUX" in the listing with "photo retouching" and "outpainting" (`docs/STORE_LISTING.md`); the resubmission is on
   the user's side.

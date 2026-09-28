@@ -38,7 +38,7 @@ import { LAYERED_EXT, isPsd, isOra, readPsd, readOra } from "./inpaint_layered.j
 import { THEME } from "./inpaint_theme.js";
 import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap } from "./inpaint_resample.js";
 import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
-import { LiquifyField, gridStep, previewBlock } from "./inpaint_liquify.js";
+import { LiquifyField, gridStep, previewBlock, liquifyFalloff } from "./inpaint_liquify.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -2039,7 +2039,7 @@ class InpaintEditor {
         this.removeOpts = { sample: "image" };
         this.patchOpts = { mode: "source", blend: 100 };
         this.moveOpts = { mode: "move", blend: "edge" };
-        this.liquifyOpts = { mode: "push", strength: 50 };
+        this.liquifyOpts = { mode: "push", strength: 50, showFreeze: true };
         // the brush settings move from the top bar into this bar and show for the tools that use them
         const moveCtl = (labelEl, forTools) => { if (!labelEl) return; labelEl.dataset.for = forTools; bar.appendChild(labelEl); };
         moveCtl(this.sizeCtl && this.sizeCtl.input.parentElement, "select deselect paint erase smudge tone clone heal remove liquify");
@@ -2189,8 +2189,8 @@ class InpaintEditor {
         this.moveBlendSel = mblend;
         row("contentmove", "Blend", mblend);
         // liquify (PLAN_0_1_31 §5 step 5): the mode, how strongly a dab moves the picture, and Restore all
-        const lmode = selectInput(["push", "grow", "shrink", "swirlcw", "swirlccw", "restore"], "push", "Push drags the picture along with the brush; grow and shrink swell or pinch what is under it, swirl turns it, restore brings back what the session started from. Grow, shrink, swirl and restore keep working while the button is held still. Alt while pressing reverses grow / shrink and the swirl");
-        for (const o of lmode.options) o.textContent = { swirlcw: "swirl clockwise", swirlccw: "swirl counter-clockwise" }[o.value] || o.value;
+        const lmode = selectInput(["push", "grow", "shrink", "swirlcw", "swirlccw", "restore", "freeze", "thaw"], "push", "Push drags the picture along with the brush; grow and shrink swell or pinch what is under it, swirl turns it, restore brings back what the session started from; freeze paints what should stay where it is (red) and thaw frees it again. Grow, shrink, swirl and restore keep working while the button is held still. Alt while pressing reverses grow / shrink, the swirl, and freeze / thaw");
+        for (const o of lmode.options) o.textContent = { swirlcw: "swirl ↻", swirlccw: "swirl ↺" }[o.value] || o.value;   // clockwise, counter-clockwise
         lmode.addEventListener("change", () => { this.liquifyOpts.mode = lmode.value; this.updateOptsBar(); this.root.focus({ preventScroll: true }); });
         this.liquifyModeSel = lmode;
         row("liquify", "Mode", lmode);
@@ -2203,6 +2203,13 @@ class InpaintEditor {
         row("liquify", "Strength", lstr, lstrVal);
         row("liquify", iconButton("undo", "Restore all: the active layer as it was when the Liquify session began (inside the selection, when there is one). One undo step",
             () => { this.liquifyRestoreAll(); this.root.focus({ preventScroll: true }); }, "Restore all"));
+        // the freeze's three controls in one row: icon buttons, so the bar stays one line
+        const lshow = document.createElement("input");
+        lshow.type = "checkbox"; lshow.checked = true; lshow.title = "Show the frozen parts of the active layer in red while Liquify is the tool";
+        lshow.addEventListener("change", () => { this.liquifyOpts.showFreeze = lshow.checked; this.draw(); this.root.focus({ preventScroll: true }); });
+        row("liquify", "Freeze", lshow,
+            iconButton("close", "Clear freeze: every part of the active layer free to move again", () => { this.liquifyClearFreeze(); this.root.focus({ preventScroll: true }); }),
+            iconButton("invert", "Invert freeze: what was frozen is free, and the rest of the active layer frozen", () => { this.liquifyInvertFreeze(); this.root.focus({ preventScroll: true }); }));
         const aligned = document.createElement("input");
         aligned.type = "checkbox"; aligned.checked = true; aligned.title = "Aligned: the offset between source and brush stays the same for every stroke; off starts every stroke at the source point again";
         aligned.addEventListener("change", () => { this.cloneOpts.aligned = aligned.checked; });
@@ -2611,6 +2618,7 @@ class InpaintEditor {
         if (hp && hp.kind === "liquify") { this.pointer = null; this.liquifyDrop(hp, null); }
         else if (hp && hp.healing) { this.pointer = null; if (hp.remove) this.dropStroke(hp); else this.commitLayerPaint(hp); }
         this.endLiquify();
+        this.liqFreezes = null;
         this.isOpen = false;
         if (this.antsTimer) { clearInterval(this.antsTimer); this.antsTimer = null; }
         this.pointer = null;
@@ -8059,6 +8067,7 @@ class InpaintEditor {
         const m = (this.liquifyOpts && this.liquifyOpts.mode) || "push";
         if (m === "push") return "Drag to push the picture along with the brush";
         if (m === "restore") return "Brush over what should go back to where the session began";
+        if (m === "freeze" || m === "thaw") return m === "freeze" ? "Paint what should stay where it is; Alt thaws" : "Paint to free what was frozen; Alt freezes";
         if (m === "grow" || m === "shrink") return "Hold or drag to " + (m === "grow" ? "swell" : "pinch") + " what is under the brush; Alt " + (m === "grow" ? "pinches" : "swells");
         return "Hold or drag to turn what is under the brush; Alt turns the other way";
     }
@@ -8128,7 +8137,20 @@ class InpaintEditor {
      * per cell of the field, one read of the selection each, kept while the selection and the layer's place stay.
      */
     liquifyThaw(liq) {
-        if (!this.getBounds()) return null;
+        const fr = this.liquifyFreezeOf(liq.layer), sel = this.getBounds() ? this.liquifySelThaw(liq) : null;
+        if (!fr || !fr.cells.size) return sel;
+        const n = fr.n, sh = 8 - fr.ls, m = n - 1;
+        let lk = -1, lc = null;
+        const free = (i, j) => {
+            const key = ((j >> sh) << 16) | (i >> sh);
+            if (key !== lk) { lk = key; lc = fr.cells.get(key) || null; }
+            return lc ? 1 - lc[(j & m) * n + (i & m)] / 255 : 1;
+        };
+        return sel ? (i, j) => sel(i, j) * free(i, j) : free;
+    }
+
+    /** The selection's part of `liquifyThaw`. */
+    liquifySelThaw(liq) {
         const sel = this.sel, layer = liq.layer, s = liq.s, n = 256 / s, sh = 8 - Math.log2(s), m = n - 1;
         let cache = liq.thawCache;
         if (!cache || cache.sel !== sel || cache.ver !== sel.version || cache.x !== layer.x || cache.y !== layer.y) {
@@ -8170,11 +8192,13 @@ class InpaintEditor {
         const liq = this.liquifySession(layer);
         let mode = (this.liquifyOpts && this.liquifyOpts.mode) || "push";
         // Alt reverses the mode for the stroke (the tone brush's habit)
-        if (e.altKey) mode = { grow: "shrink", shrink: "grow", swirlcw: "swirlccw", swirlccw: "swirlcw" }[mode] || mode;
+        if (e.altKey) mode = { grow: "shrink", shrink: "grow", swirlcw: "swirlccw", swirlccw: "swirlcw", freeze: "thaw", thaw: "freeze" }[mode] || mode;
         const pressure = this.pressureOf(e);
         const x = ix - layer.x - 0.5, y = iy - layer.y - 0.5;
         const p = this.pointer = { kind: "liquify", layer, liq, mode, before: new Map(liq.field.cells), made, last: [ix, iy], at: [x, y], travel: 0,
-            pressure, stab: this.newStabiliser(ix, iy, pressure), thaw: this.liquifyThaw(liq), strokeBox: null, dirtyView: null, tick: null, liqWin: null };
+            pressure, stab: this.newStabiliser(ix, iy, pressure), thaw: this.liquifyThaw(liq), strokeBox: null, dirtyView: null, tick: null, liqWin: null,
+            freeze: mode === "freeze" || mode === "thaw" ? this.liquifyFreezeOf(layer, true) : null };
+        if (p.freeze) { this.liquifyFreezeDab(p, x, y); this.drawSoon(); return; }
         if (mode !== "push") {
             this.liquifyDab(p, x, y, null);
             // they keep acting while the button is held still: a timer, never requestAnimationFrame (it stops in a hidden window)
@@ -8186,6 +8210,7 @@ class InpaintEditor {
 
     /** One dab at (x, y) in the layer's pixel-index positions; `delta` the push's step (null for the other modes). */
     liquifyDab(p, x, y, delta) {
+        if (p.freeze) { this.liquifyFreezeDab(p, x, y); return; }
         const liq = p.liq, r = Math.max(2 * liq.s, this.brushSize / 2);
         const amount = Math.min(1, ((this.liquifyOpts ? this.liquifyOpts.strength : 50) / 100) * (p.pressure || 1));
         const box = liq.field.dab(delta ? "push" : p.mode, x, y, r, this.activeHardness(), amount, delta, p.thaw, p.before);
@@ -8201,7 +8226,7 @@ class InpaintEditor {
     /** The timer's dab of a mode that acts where it is held (and a test's: `ed.liquifyTick()`). */
     liquifyTick() {
         const p = this.pointer;
-        if (!p || p.kind !== "liquify" || p.healing || p.mode === "push") return;
+        if (!p || p.kind !== "liquify" || p.healing || p.mode === "push" || p.freeze) return;
         this.liquifyDab(p, p.last[0] - p.layer.x - 0.5, p.last[1] - p.layer.y - 0.5, null);
     }
 
@@ -8241,6 +8266,14 @@ class InpaintEditor {
     liquifyRelease(p) {
         if (p.tick) { clearInterval(p.tick); p.tick = null; }
         this.finishStroke(p);
+        if (p.freeze) {
+            // a thaw (or Alt) on the base's fresh copy froze nothing: the copy goes again, as for a stroke that lands nothing
+            if (p.made && !p.froze) { this.liquifyDrop(p, null); return; }
+            if (p.made) { this.pushUndoSnapshot(p.made, { label: "Liquify: copy of the base" }); this.renderLayers(); }
+            if (p.liq.ended) p.liq.orig.release();
+            this.draw();
+            return;
+        }
         if (p.mode === "push") this.liquifyPushTo(p, p.last[0] - p.layer.x - 0.5, p.last[1] - p.layer.y - 0.5, 4096);
         const words = { push: "push", grow: "grow", shrink: "shrink", swirlcw: "swirl", swirlccw: "swirl", restore: "restore" };
         this.liquifyLand(p, "Liquify: " + (words[p.mode] || p.mode));
@@ -8329,15 +8362,23 @@ class InpaintEditor {
         }
         // something else wrote the layer during the stroke (outside these tiles): this lands, the session starts again next time
         const clean = px.version === liq.stamp;
+        // the stroke's tiles as runs along each row (a diagonal stroke across a 15k picture copied its bounding box: 60 MB of
+        // a 384 MB budget for one stroke, measured), and the box around them for the layer's caches
         let box = null;
-        for (const key of keys) {
-            const x = (key & 0xFFFF) * 256, y = (key >>> 16) * 256, r = [x, y, Math.min(px.width, x + 256), Math.min(px.height, y + 256)];
-            box = !box ? r : [Math.min(box[0], r[0]), Math.min(box[1], r[1]), Math.max(box[2], r[2]), Math.max(box[3], r[3])];
+        const runs = [], sorted = Array.from(keys).sort((a, b) => a - b);
+        for (let i = 0; i < sorted.length;) {
+            const ty = sorted[i] >>> 16, tx0 = sorted[i] & 0xFFFF;
+            let tx1 = tx0;
+            while (i + 1 < sorted.length && sorted[i + 1] === ((ty << 16) | (tx1 + 1))) { i++; tx1++; }
+            i++;
+            const x = tx0 * 256, y = ty * 256, x1 = Math.min(px.width, (tx1 + 1) * 256), y1 = Math.min(px.height, y + 256);
+            runs.push({ x, y, w: x1 - x, h: y1 - y });
+            box = !box ? [x, y, x1, y1] : [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x1), Math.max(box[3], y1)];
         }
         // the step first (the tiles as they are: the guard has just proved them the stroke's before), then the write
         let snap = p.made;
         if (!snap) {
-            snap = this.snapshotRect(layer, { x: box[0], y: box[1], w: box[2] - box[0], h: box[3] - box[1] });
+            snap = this.snapshotRects(layer, runs, true);
             if (snap && !liq.ended) {
                 snap.liq = { sid: liq.sid, cells: p.before };
                 snap.liqBytes = this.liquifyCellBytes(p.before, liq.field.cells, liq.field);
@@ -8405,6 +8446,135 @@ class InpaintEditor {
         }
     }
 
+    /**
+     * The freeze of `layer` (Liquify's mask of what stays, 5b): a byte per field node (0 free, 255 frozen) in cells per
+     * tile, on the field's grid; kept per layer while the document is open, across tool switches and sessions; not in
+     * undo, not in files. Made when `make`. A freeze of a layer that left the stack goes, and so does one whose layer got
+     * other pixels (a flip, a turn, a crop: it would hold other content still) or whose grid changed. Its veil is one
+     * canvas at a node a pixel (a coarser step above 2,048 on a side), redrawn where a dab touched it.
+     */
+    liquifyFreezeOf(layer, make = false) {
+        const all = this.liqFreezes || (this.liqFreezes = new Map());
+        for (const id of Array.from(all.keys())) if (!this.layers.some((l) => l.id === id)) all.delete(id);
+        if (!layer || !layer.px) return null;
+        const s = gridStep(this.width, this.height);
+        let fr = all.get(layer.id) || null;
+        if (fr && (fr.s !== s || fr.px !== layer.px || fr.w !== layer.px.width || fr.h !== layer.px.height)) { all.delete(layer.id); fr = null; }
+        if (!fr && make) {
+            const ls = Math.log2(s), nw = ((layer.px.width - 1) >> ls) + 2, nh = ((layer.px.height - 1) >> ls) + 2;
+            const k = Math.max(1, Math.ceil(Math.max(nw, nh) / 2048));
+            fr = { s, ls, n: 256 / s, px: layer.px, w: layer.px.width, h: layer.px.height, cells: new Map(),
+                k, vw: Math.ceil(nw / k), vh: Math.ceil(nh / k), veil: null, dirty: null, drawn: 0 };
+            all.set(layer.id, fr);
+        }
+        return fr;
+    }
+
+    /** A freeze's node, 0..255 (0 where no cell holds it). */
+    liquifyFreezeAt(fr, i, j) {
+        const sh = 8 - fr.ls, m = fr.n - 1, c = fr.cells.get(((j >> sh) << 16) | (i >> sh));
+        return c ? c[(j & m) * fr.n + (i & m)] : 0;
+    }
+
+    /** The veil to be drawn again over nodes [i0, j0, i1, j1] (inclusive), or all of it. */
+    liquifyVeilDirty(fr, box) {
+        if (!box || fr.dirty === "all") { fr.dirty = "all"; return; }
+        const d = fr.dirty;
+        fr.dirty = !d ? box.slice() : [Math.min(d[0], box[0]), Math.min(d[1], box[1]), Math.max(d[2], box[2]), Math.max(d[3], box[3])];
+    }
+
+    /** A freeze or thaw dab at (x, y), layer pixel-index positions: freeze raises nodes to 255 w, thaw scales them by 1 - w. */
+    liquifyFreezeDab(p, x, y) {
+        const fr = p.freeze, s = fr.s, n = fr.n, sh = 8 - fr.ls, m = n - 1;
+        const r = Math.max(2 * s, this.brushSize / 2), h = Math.min(0.8, Math.max(0, this.activeHardness()));
+        const amount = Math.min(1, ((this.liquifyOpts ? this.liquifyOpts.strength : 50) / 100) * (p.pressure || 1));
+        const ni = ((fr.w - 1) >> fr.ls) + 1, nj = ((fr.h - 1) >> fr.ls) + 1;
+        const i0 = Math.max(0, Math.ceil((x - r) / s)), i1 = Math.min(ni, Math.floor((x + r) / s));
+        const j0 = Math.max(0, Math.ceil((y - r) / s)), j1 = Math.min(nj, Math.floor((y + r) / s));
+        const freeze = p.mode === "freeze", touched = new Set();
+        let bi0 = Infinity, bj0 = Infinity, bi1 = -Infinity, bj1 = -Infinity;
+        for (let j = j0; j <= j1; j++) {
+            for (let i = i0; i <= i1; i++) {
+                const w = amount * liquifyFalloff(Math.hypot(i * s - x, j * s - y) / r, h);
+                if (!(w > 0)) continue;
+                const key = ((j >> sh) << 16) | (i >> sh);
+                let c = fr.cells.get(key);
+                if (!c) { if (!freeze) continue; c = new Uint8Array(n * n); fr.cells.set(key, c); }
+                const o = (j & m) * n + (i & m), old = c[o];
+                const v = freeze ? Math.max(old, Math.round(255 * w)) : Math.floor(old * (1 - w));
+                if (v === old) continue;
+                c[o] = v; touched.add(key);
+                if (i < bi0) bi0 = i; if (i > bi1) bi1 = i; if (j < bj0) bj0 = j; if (j > bj1) bj1 = j;
+            }
+        }
+        if (!touched.size) return;
+        for (const key of touched) if (!freeze && fr.cells.get(key).every((v) => !v)) fr.cells.delete(key);
+        this.liquifyVeilDirty(fr, [bi0, bj0, bi1, bj1]);
+        p.froze = true;
+        // the veil is an overlay over the cached scene: a draw, not a new composite
+        this.drawSoon();
+    }
+
+    /** Clear freeze (the options bar): every node of the active layer free again. */
+    liquifyClearFreeze() {
+        const layer = this.activeLayer(), fr = layer && this.liquifyFreezeOf(layer);
+        if (!fr || !fr.cells.size) { this.setStatus("Nothing is frozen on this layer."); return; }
+        this.liqFreezes.delete(layer.id);
+        this.setStatus("Freeze cleared.");
+        this.draw();
+    }
+
+    /** Invert freeze (the options bar): what was frozen is free and the rest of the layer frozen. */
+    liquifyInvertFreeze() {
+        const layer = this.activeLayer();
+        const why = this.liquifyRefusal(layer);
+        if (why || !layer) { this.setStatus(why || "Freeze works on a layer: pick one (on the base, Liquify first makes a copy of it)."); return; }
+        const fr = this.liquifyFreezeOf(layer, true), n = fr.n;
+        const cx = (((fr.w - 1) >> fr.ls) + 1) >> (8 - fr.ls), cy = (((fr.h - 1) >> fr.ls) + 1) >> (8 - fr.ls);
+        for (let ty = 0; ty <= cy; ty++) {
+            for (let tx = 0; tx <= cx; tx++) {
+                const key = (ty << 16) | tx, c = fr.cells.get(key) || new Uint8Array(n * n);
+                for (let q = 0; q < c.length; q++) c[q] = 255 - c[q];
+                if (c.every((v) => !v)) fr.cells.delete(key); else fr.cells.set(key, c);
+            }
+        }
+        this.liquifyVeilDirty(fr, null);
+        this.setStatus("Freeze inverted.");
+        this.draw();
+    }
+
+    /** The freeze of the active layer as a red veil (image coordinates), while the tool is Liquify and Show freeze is on. */
+    drawLiquifyFreeze(ctx) {
+        if (this.tool !== "liquify" || !(this.liquifyOpts && this.liquifyOpts.showFreeze)) return;
+        const layer = this.activeLayer(), fr = layer && this.liquifyFreezeOf(layer);
+        if (!fr || !fr.cells.size) return;
+        if (!fr.veil) { fr.veil = makeCanvas(fr.vw, fr.vh); fr.dirty = "all"; }
+        if (fr.dirty) {
+            // the touched part of the veil again: a node a pixel (every k-th node on a coarser veil), red at half its freeze
+            const k = fr.k, d = fr.dirty;
+            const a0 = d === "all" ? 0 : Math.max(0, Math.floor(d[0] / k)), b0 = d === "all" ? 0 : Math.max(0, Math.floor(d[1] / k));
+            const a1 = d === "all" ? fr.vw - 1 : Math.min(fr.vw - 1, Math.floor(d[2] / k)), b1 = d === "all" ? fr.vh - 1 : Math.min(fr.vh - 1, Math.floor(d[3] / k));
+            const w = a1 - a0 + 1, h = b1 - b0 + 1, img = new ImageData(w, h);
+            for (let b = 0; b < h; b++) {
+                for (let a = 0, o = b * w * 4; a < w; a++, o += 4) {
+                    img.data[o] = 255;
+                    img.data[o + 3] = this.liquifyFreezeAt(fr, (a0 + a) * k, (b0 + b) * k) >> 1;
+                }
+            }
+            fr.veil.getContext("2d").putImageData(img, a0, b0);
+            fr.dirty = null;
+        }
+        const half = fr.s / 2, S = fr.k * fr.s;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(layer.x, layer.y, layer.w, layer.h);
+        ctx.clip();
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(fr.veil, 0, 0, fr.vw, fr.vh, layer.x - half, layer.y - half, fr.vw * S, fr.vh * S);
+        ctx.restore();
+        fr.drawn++;
+    }
+
     /** The live stroke of Liquify runs on `layer` (its preview is drawn in the screen's stroke scratch). */
     liquifyOn(layer) {
         const p = this.pointer;
@@ -8469,10 +8639,30 @@ class InpaintEditor {
         const u1 = Math.min(dx1, Math.ceil((sb[2] - vp.x) * vp.sx)), v1 = Math.min(dy1, Math.ceil((sb[3] - vp.y) * vp.sy));
         if (u1 <= u0 || v1 <= v0) return;
         const win = this.liquifyWindow(p, vp);
-        const img = new ImageData(u1 - u0, v1 - v0);
-        previewBlock(win, p.liq.field, vp.x + u0 / vp.sx - layer.x, vp.y + v0 / vp.sy - layer.y, 1 / vp.sx, img.data, u1 - u0, v1 - v0);
-        // putImageData ignores the transform and the clip: exactly these bytes, inside the part being redrawn
-        ctx.putImageData(img, u0, v0);
+        const bw = u1 - u0, bh = v1 - v0, ox = vp.x + u0 / vp.sx - layer.x, oy = vp.y + v0 / vp.sy - layer.y;
+        // a large box is sampled every f-th pixel and scaled up (a 1000 px brush at 1:1 took 57 ms a frame at full
+        // resolution, measured at 15000 x 10000): softer while the button is down, the landing is the bake's anyway
+        const f = Math.max(1, Math.ceil(Math.sqrt((bw * bh) / InpaintEditor.liquifyPreviewMax)));
+        if (f === 1) {
+            const img = new ImageData(bw, bh);
+            previewBlock(win, p.liq.field, ox, oy, 1 / vp.sx, img.data, bw, bh);
+            // putImageData ignores the transform and the clip: exactly these bytes, inside the part being redrawn
+            ctx.putImageData(img, u0, v0);
+            return;
+        }
+        const sw = Math.ceil(bw / f), sh = Math.ceil(bh / f), img = new ImageData(sw, sh);
+        previewBlock(win, p.liq.field, ox, oy, f / vp.sx, img.data, sw, sh);
+        let c = this._liqPreview;
+        if (!c || c.width < sw || c.height < sh) { c = this._liqPreview = makeCanvas(Math.max(sw, c ? c.width : 0), Math.max(sh, c ? c.height : 0)); c._livePreview = true; }
+        c.getContext("2d").putImageData(img, 0, 0);
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = "source-over";
+        ctx.imageSmoothingEnabled = true;
+        ctx.clearRect(u0, v0, bw, bh);
+        ctx.drawImage(c, 0, 0, bw / f, bh / f, u0, v0, bw, bh);
+        ctx.restore();
     }
 
     /** The Remove model loaded while the user aims (about 9 s the first time), with a line in the status bar. */
@@ -9102,7 +9292,7 @@ class InpaintEditor {
 
     /** After a gesture: the live preview canvases of a large layer are given back, small ones are kept for the next stroke. */
     releaseStrokeScratch() {
-        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest", "_healClip", "_healSrc", "_patchQuick", "_patchPrev"]) {
+        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest", "_healClip", "_healSrc", "_patchQuick", "_patchPrev", "_liqPreview"]) {
             const c = this[k];
             if (c && c.width * c.height > STROKE_SCRATCH_KEEP_PX) this[k] = null;
         }
@@ -12491,6 +12681,9 @@ class InpaintEditor {
     /** Grow, shrink, swirl and restore dab this often (ms) while the button is held still; 0 turns the timer off (tests). */
     static liquifyRateMs = 33;
 
+    /** Liquify's preview of a box larger than this many pixels is computed at a coarser resolution and scaled up. */
+    static liquifyPreviewMax = 256 * 1024;
+
     /** A patch drag shows the picture it would take (Source) or the piece it copies (Destination) up to this many pixels of the selection's box; above, only the outline follows. */
     static patchPreviewMax = 2 * 1024 * 1024;
 
@@ -13109,6 +13302,7 @@ class InpaintEditor {
         const sizeChanged = px.width !== this.width || px.height !== this.height;
         this.historyGen++;   // a restore still loading must not put the old document over the new image
         this.endLiquify();
+        this.liqFreezes = null;
         this.base = { ref, px };
         this.width = px.width;
         this.height = px.height;
@@ -15529,6 +15723,7 @@ class InpaintEditor {
         // a patch drag: its preview under the outline, and the outline where the drag has taken it
         const patch = this.pointer && this.pointer.kind === "patchdrag" ? this.pointer : null;
         if (patch) this.drawPatchPreview(ctx, patch);
+        this.drawLiquifyFreeze(ctx);
         const shift = patch && patch.moved && (patch.d[0] || patch.d[1]) ? patch.d : null;
         if (this.selectionDisplay === "tint" || this.quickMask || !this.getBounds()) {
             // an empty selection on tiles (no tile) draws nothing: its draw made a display mirror as large as the

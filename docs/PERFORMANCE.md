@@ -1541,6 +1541,27 @@ picture, source and coverage read, the job sent) 7 to 113 ms, then the blend in 
 About half a microsecond a healed pixel, whatever the document's size (the box is read, not the picture). A spot of up
 to 128k pixels (`healSyncMax`) blends at the release on the main thread instead (the gate's 29k px: 9 to 17 ms).
 
+### 15.1 Liquify (2026-09-28, PLAN_0_1_31 §5 step 5b)
+
+`python tools/brush_perf.py '{}' liquify_perf.js` against a fresh dev instance (--no-comfy, tiles, the window in front):
+15000 x 10000, grid step 4, the base active (the first press makes the copy "Liquify"), hardness 0.5, strength 50 %;
+a push of 20 moves at fit (about 3,100 image px) and 60 at 1:1 (1,080 px); the frame is `draw()` after each move.
+
+| Row | Press | Dab p50 / p95 | Frame p50 / p95 | Landing (pool) | Main thread held at most | Output tiles | Undo step |
+|---|---|---|---|---|---|---|---|
+| push, fit, 200 px | 66 ms (the copy) | 2.4 / 8.9 ms | 0.2 / 14 ms | 47 ms | 12 ms | 48 | (the layer list) |
+| push, fit, 1,000 px | 1 ms | 13.5 / 14.3 ms | 1.2 / 10 ms | 141 ms | 82 ms | 113 | 28 MB |
+| push, 1:1, 200 px | 35 ms | 0.3 / 0.5 ms | 2.8 / 3.5 ms | 30 ms | 13 ms | 23 | 6 MB |
+| push, 1:1, 1,000 px | 32 ms | 3.3 / 3.9 ms | 13.8 / 19.3 ms | 67 ms | 22 ms | 61 | 15 MB |
+| shrink held, 150 ticks, 1,000 px | | 3.1 / 3.6 ms a tick | | 50 ms (1 split, block 908k px, reach 692 px) | 37 ms | 33 | |
+| Restore all over the session | | | | 7 ms (278 tiles, all shared) | 7 ms | 278 | |
+
+The preview at 1:1 with a 1,000 px brush took 57 / 68 ms a frame at full resolution (p50 / p95); above 256k px of box
+(`liquifyPreviewMax`) it is sampled every f-th pixel and scaled up, which gives the row above (the first frame of a
+stroke builds the source window: 25 to 51 ms at 1:1). The undo steps copied their tiles' bounding box at first: after
+the six rows 373 MB of the 384 MB budget (the fit 1,000 px push alone 60 MB); as runs of tiles per row 133 MB. The field
+after the session held 6 MB. The GL sampler of the design was not built: the frame stays near 16 ms without it.
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first

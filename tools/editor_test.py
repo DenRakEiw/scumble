@@ -8452,9 +8452,10 @@ return out;
 // leave out is the same object as before it. The preview during a stroke (the layer unchanged, the screen displaced, a
 // whole-pixel shift the bake's bytes; a sampled pass and the thumbnails draw the tiles); here, in the pool and with the
 // bake's block split small the same bytes; undo and redo carry the field (A, undo, B is B alone); Restore all gives the
-// source back (on tiles its own tiles); a paint stroke or a write between two strokes starts a new session; a layer off
-// the origin (no edge clamp); the base gets a copy (the layer "Liquify"); a held bake refuses a press, a flush waits for
-// it, the tile guard drops a stroke whose tiles were written meanwhile; a picture above 4 MP (grid step 2); a close
+// source back (on tiles its own tiles); a paint stroke or a write between two strokes starts a new session; a tool key
+// during a drag ends the session and the stroke still lands from its source; a layer off the origin (no edge clamp);
+// the base gets a copy (the layer "Liquify"); a held bake refuses a press, a flush waits for it, the tile guard drops a
+// stroke whose tiles were written meanwhile; a picture above 4 MP (grid step 2); a close
 // during a held bake lands nothing; no whole-picture read through the presses, moves, draws and releases
 const LQ = await import("./editor/inpaint_liquify.js");
 const P = await import("./editor/inpaint_pixels.js");
@@ -8465,7 +8466,7 @@ const IE = ed.constructor;
 const keep = { sync: IE.liquifySyncMax, block: IE.liquifyBlockMax, rate: IE.liquifyRateMs, stab: ed.stabiliser };
 const W = 1200, H = 800, BIG = 1e12;
 // the later cases first in the printed line (it is cut at 4000 characters)
-const out = { tiles: !!ed.tileMode, close: null, grid2: null, guard: null, held: null, base: null, offset: null, between: null, restoreAll: null, undo: null, here: null, preview: null, first: null };
+const out = { tiles: !!ed.tileMode, close: null, grid2: null, guard: null, held: null, base: null, offset: null, toolkey: null, between: null, restoreAll: null, undo: null, here: null, preview: null, first: null };
 const calls = { compositeCanvas: 0, flattenToCanvas: 0, sampleCanvas: 0, toCanvas: 0 };
 const stacks = [], phases = {};
 let counting = false, phase = "setup", LPproto = null, toCanvas0 = null;
@@ -8777,6 +8778,36 @@ try {
     if (!ended || !between.painted || rP.sid === sidP || !between.sourceIsPainted) throw new Error("a paint stroke between two pushes did not start a new session from the painted layer: " + JSON.stringify(between));
     if (between.validAfterWrite || rW.sid === sidW || !between.write.sourceHasDot) throw new Error("a write between two pushes did not start a new session from the written layer: " + JSON.stringify(between));
 
+    // 5b. a tool key while the button is down (the 5a review's bug: the key ended the session and let its source go under
+    // the drag, and the landing dropped the tiles it wrote): the key ends the session, the stroke still lands at the
+    // release as one step, the session's source baked through the field as the drag left it; the source is let go only
+    // after the landing (on canvases `release` does nothing, so its call is what is timed)
+    phase = "toolkey";
+    const n5b = ed.undo.length, k5b = { released: null };
+    let liq5b = null, want5b = null, rel5b = null;
+    try {
+        const g5b = await stroke(line([470, 520], [422, 520], 6), { mid: async (p) => {
+            liq5b = p.liq;
+            k5b.session = ed.liq === liq5b;
+            rel5b = liq5b.orig.release;
+            liq5b.orig.release = function (...a) { if (!k5b.released) k5b.released = { steps: ed.undo.length - n5b, keyDone: !!k5b.key }; return rel5b.apply(this, a); };
+            want5b = bakeRect(0, 0, W, H);
+            ed.root.dispatchEvent(new KeyboardEvent("keydown", { key: "p", bubbles: true, cancelable: true }));
+            k5b.key = { tool: ed.tool, ended: ed.liq === null, pointer: ed.pointer === p, released: !!k5b.released };
+        } });
+        const got5b = L.px.readRect(0, 0, W, H).data;
+        let off5b = 0;
+        for (let i = 0; i < got5b.length; i++) if (got5b[i] !== want5b[i]) off5b++;
+        Object.assign(k5b, { kind: g5b.kind, steps: ed.undo.length - n5b, label: top(), off: off5b, sessionAfter: ed.liq === null, pointerAfter: ed.pointer === null });
+    } finally {
+        if (liq5b && rel5b) delete liq5b.orig.release;
+    }
+    out.toolkey = k5b;
+    if (!k5b.session || !k5b.key || k5b.key.tool !== "paint" || !k5b.key.ended || !k5b.key.pointer || k5b.key.released) throw new Error("a tool key during a liquify drag did not end the session with the stroke still running: " + JSON.stringify(k5b));
+    if (k5b.kind !== "liquify" || k5b.steps !== 1 || k5b.label !== "Liquify: push" || k5b.off || !k5b.sessionAfter || !k5b.pointerAfter) throw new Error("a stroke whose session a tool key ended did not land as the bake of its source: " + JSON.stringify(k5b));
+    if (!k5b.released || k5b.released.steps !== 1 || !k5b.released.keyDone) throw new Error("the ended session's source was not let go after the landing: " + JSON.stringify(k5b));
+    ed.setTool("liquify"); ed.setBrushSize(100);
+
     // 6. a layer of 500 x 300 at (650, 450): no edge clamp (what the field reads from outside is transparent, what it
     // pushes out is cut); a push rightwards from past its left edge
     phase = "offset";
@@ -8909,15 +8940,16 @@ return out;
 // PLAN_0_1_31 section 5 step 5a: Liquify's brushes through the real handlers (the timed dabs by `liquifyTick`). Grow
 // swells a disc (its edge along a ray moves out), shrink pinches it (in), swirl clockwise turns a marker right of the
 // centre downwards (y down), swirl counter-clockwise upwards; Alt reverses grow, shrink and the swirl; restore brings a
-// grow back to the byte; a hard selection keeps a push inside itself; every refusal at the press leaves no step and no
-// session; the keys (Shift+W and Ctrl+Shift+X pick Liquify, W stays the wand, Ctrl+X still cuts)
+// grow back to the byte; a push there and back empties the field again; a hard selection keeps a push inside itself;
+// every refusal at the press leaves no step and no session; the keys (Shift+W and Ctrl+Shift+X pick Liquify, W stays
+// the wand, Ctrl+X still cuts)
 const d = await run("new_document");
 const ed = ednow(d.id);
 host.shell.activate(ed);
 const IE = ed.constructor;
 const keep = { rate: IE.liquifyRateMs, sync: IE.liquifySyncMax, stab: ed.stabiliser };
 const W = 1200, H = 800, C = [600, 400];
-const out = { tiles: !!ed.tileMode, keys: null, refused: null, selection: null, restore: null };
+const out = { tiles: !!ed.tileMode, keys: null, refused: null, selection: null, thereAndBack: null, restore: null };
 try {
     IE.liquifyRateMs = 0; IE.liquifySyncMax = 1e12; ed.stabiliser = 0;
     await run("new_canvas", { width: W, height: H, doc: d.id });
@@ -8996,6 +9028,32 @@ try {
     if (g3.steps !== 1 || !sourceIsStart || r3.kind !== "liquify" || r3.steps !== 1 || r3.label !== "Liquify: restore" || !out.restore.back || !out.restore.empty) throw new Error("the restore brush did not bring the grow back: " + JSON.stringify(out.restore));
     await ed.undoStep(); await ed.undoStep();
     if (digest(D) !== d0) throw new Error("the undo of the restore and the grow did not give the layer back");
+
+    // 3b. a push there and back with a flat core wider than the layer (200 x 200 at (300, 200), a brush of 500 px at
+    // hardness 0.8: every node at full weight, one 5 px step each way): every node goes back to exactly zero, the cell
+    // that came back to zero is dropped at the landing (the field is empty again), the layer is its source, and Restore
+    // all has nothing to restore (no empty step)
+    const sq = new ImageData(200, 200);
+    for (let y = 0; y < 200; y++) for (let x = 0; x < 200; x++) { const o = (y * 200 + x) * 4; sq.data[o] = 20 + x; sq.data[o + 1] = 30 + y; sq.data[o + 2] = 90 + 60 * hash(x, y); sq.data[o + 3] = 255; }
+    const SQ = ed.addLayer({ name: "Square", kind: "paint", ref: null, px: ed.pixels.Layer.fromImageData(sq), x: 300, y: 200, w: 200, h: 200, dirty: true });
+    ed.activeLayerId = SQ.id; ed.renderLayers();
+    ed.liquifyOpts = { mode: "push", strength: 100 }; ed.setBrushSize(500); ed.hardness = 1;
+    const s3b = digest(SQ), n3b = ed.undo.length;
+    const push3b = async (x0, x1) => { pid++; send("pointerdown", x0, 300); send("pointermove", x1, 300); send("pointerup", x1, 300); if (ed.liquifyPending) await ed.liquifyPending; };
+    await push3b(400, 405);
+    const there = { steps: ed.undo.length - n3b, moved: digest(SQ) !== s3b, cells: ed.liq && ed.liq.layer === SQ ? ed.liq.field.cells.size : null };
+    await push3b(400, 395);
+    const back3b = { steps: ed.undo.length - n3b, label: top(), source: digest(SQ) === s3b, session: !!ed.liq && ed.liq.layer === SQ, empty: !!ed.liq && ed.liq.field.empty,
+        zeroCells: ed.liq ? Array.from(ed.liq.field.cells.values()).filter((c) => c.every((v) => v === 0)).length : null };
+    const nR3b = ed.undo.length;
+    ed.liquifyRestoreAll();
+    if (ed.liquifyPending) await ed.liquifyPending;
+    back3b.restoreAll = { steps: ed.undo.length - nR3b, status: ed.status };
+    out.thereAndBack = { there, back: back3b };
+    if (there.steps !== 1 || !there.moved || there.cells !== 1) throw new Error("the push there did not land: " + JSON.stringify(out.thereAndBack));
+    if (back3b.steps !== 2 || back3b.label !== "Liquify: push" || !back3b.source || !back3b.session || !back3b.empty || back3b.zeroCells || back3b.restoreAll.steps || !/Nothing to restore/.test(back3b.restoreAll.status)) throw new Error("a push there and back did not bring the field back to empty (a cell back at zero is dropped): " + JSON.stringify(out.thereAndBack));
+    ed.removeLayer(SQ.id);
+    ed.activeLayerId = D.id; ed.renderLayers();
 
     // 4. a hard selection: a push through it changes nothing outside it (beyond one grid step)
     await run("select_rect", { x: 560, y: 360, w: 80, h: 80, doc: d.id });
@@ -9086,6 +9144,160 @@ try {
     key("x", { ctrlKey: true });
     out.keys = { shiftW: k1, w: k2, ctrlShiftX: k3, ctrlX: ed.tool, cut: /^Cut /.test(ed.status), changed: digest(D) !== dCut };
     if (k1 !== "liquify" || k2 !== "wand" || k3 !== "liquify" || out.keys.ctrlX !== "wand" || !out.keys.cut || !out.keys.changed) throw new Error("the keys did not pick as stated: " + JSON.stringify(out.keys) + " " + ed.status);
+} finally {
+    IE.liquifyRateMs = keep.rate; IE.liquifySyncMax = keep.sync; ed.stabiliser = keep.stab;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
+    ("liquify_freeze_holds_what_it_covers", """
+// PLAN_0_1_31 section 5 step 5b: Liquify's freeze. Freeze paints what stays (on the base the press makes the copy
+// "Liquify", one step, and the freeze stroke itself lands nothing); a push through a frozen band leaves its bytes as they
+// were while the picture beside it moves; Alt thaws a part, which then moves; Restore all keeps what is frozen where it
+// was moved to and brings back the rest; the freeze survives a tool switch; Invert freezes the rest (a push there lands
+// nothing), Clear frees it all; the veil is drawn only with the tool and Show freeze; a new picture drops every freeze
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const IE = ed.constructor;
+const keep = { rate: IE.liquifyRateMs, sync: IE.liquifySyncMax, stab: ed.stabiliser };
+const W = 1200, H = 800;
+const out = { tiles: !!ed.tileMode };
+try {
+    IE.liquifyRateMs = 0; IE.liquifySyncMax = 1e12; ed.stabiliser = 0;
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    // the picture: noise in both directions (any move shows), as the base
+    const base = document.createElement("canvas"); base.width = W; base.height = H;
+    {
+        const img = new ImageData(W, H), a = img.data;
+        const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return h >>> 24; };
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const o = (y * W + x) * 4; a[o] = hash(x >> 2, y >> 2); a[o + 1] = hash(y >> 3, x >> 3); a[o + 2] = (x + y) & 255; a[o + 3] = 255; }
+        base.getContext("2d").putImageData(img, 0, 0);
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W }); Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "freeze_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    ed.activeLayerId = null; ed.renderLayers();
+    ed.view.angle = 0; ed.view.scale = 0.5; ed._fitted = false; ed.view.x = 10; ed.view.y = 10; ed.draw();
+    ed.setTool("liquify");
+    await ed.mipsSettled();
+    const fnv = (b) => { let h = 2166136261; for (let i = 0; i < b.length; i++) h = Math.imul(h ^ b[i], 16777619); return (h >>> 0).toString(16) + "/" + b.length; };
+    const dig = (px, x, y, w, h) => fnv(px.readRect(x, y, w, h).data);
+    const top = () => (ed.undo[ed.undo.length - 1] || {}).label;
+    let pid = 6400;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+    const send = (type, ix, iy, extra) => ed.canvas.dispatchEvent(ev(type, ix, iy, extra));
+    const drag = async (a, b, moves, alt = false) => {
+        pid++;
+        send("pointerdown", a[0], a[1], alt ? { altKey: true } : undefined);
+        for (let i = 1; i <= moves; i++) send("pointermove", a[0] + (b[0] - a[0]) * i / moves, a[1] + (b[1] - a[1]) * i / moves);
+        send("pointerup", b[0], b[1]);
+        if (ed.liquifyPending) await ed.liquifyPending;
+    };
+    const mode = (m, size, hard) => { ed.liquifyOpts = { mode: m, strength: 100, showFreeze: true }; ed.setBrushSize(size); ed.hardness = hard; };
+    const nodeAt = (fr, x, y) => { const sh = 8 - fr.ls, m = fr.n - 1, i = Math.round(x / fr.s), j = Math.round(y / fr.s); const c = fr.cells.get(((j >> sh) << 16) | (i >> sh)); return c ? c[(j & m) * fr.n + (i & m)] : 0; };
+
+    // 1. a freeze band along y = 400 on the base: the copy, one step, and nothing else lands
+    mode("freeze", 100, 0.8);
+    const n0 = ed.undo.length;
+    await drag([100, 400], [1100, 400], 50);
+    const L = ed.activeLayer();
+    const fr = L && ed.liquifyFreezeOf(L);
+    out.made = { name: L && L.name, first: ed.layers[0] === L, steps: ed.undo.length - n0, label: top(), cells: fr ? fr.cells.size : 0, core: fr ? nodeAt(fr, 600, 400) : null, off: fr ? nodeAt(fr, 600, 200) : null };
+    if (!L || L.name !== "Liquify" || ed.layers[0] !== L || out.made.steps !== 1 || out.made.label !== "Liquify: copy of the base" || !fr || !fr.cells.size || out.made.core !== 255 || out.made.off !== 0)
+        throw new Error("a freeze on the base: " + JSON.stringify(out.made));
+    const src = ed.basePx;
+    if (dig(L.px, 0, 0, W, H) !== dig(src, 0, 0, W, H)) throw new Error("a freeze stroke changed the pixels");
+
+    // 2. a push across the band: the band's core stays byte for byte, the picture above it moves
+    const band = () => dig(L.px, 150, 375, 900, 50);
+    const band0 = band(), above0 = dig(L.px, 420, 250, 360, 70);
+    mode("push", 300, 0.5);
+    const n1 = ed.undo.length;
+    await drag([500, 300], [700, 500], 20);
+    out.push = { steps: ed.undo.length - n1, label: top(), band: band() === band0, above: dig(L.px, 420, 250, 360, 70) !== above0 };
+    if (out.push.steps !== 1 || out.push.label !== "Liquify: push" || !out.push.band || !out.push.above) throw new Error("a push across the frozen band: " + JSON.stringify(out.push));
+
+    // 3. Alt in freeze thaws a part of the band (no step); a push there moves it, the rest of the band stays
+    mode("freeze", 100, 0.8);
+    const n2 = ed.undo.length;
+    await drag([560, 400], [640, 400], 10, true);
+    out.thaw = { steps: ed.undo.length - n2, at: nodeAt(fr, 600, 400), kept: nodeAt(fr, 300, 400) };
+    if (out.thaw.steps !== 0 || out.thaw.at !== 0 || out.thaw.kept !== 255) throw new Error("Alt did not thaw: " + JSON.stringify(out.thaw));
+    const thawed0 = dig(L.px, 585, 385, 30, 30), left0 = dig(L.px, 150, 375, 250, 50);
+    mode("push", 200, 0.5);
+    await drag([540, 400], [660, 400], 12);
+    out.thawedMoves = { moved: dig(L.px, 585, 385, 30, 30) !== thawed0, left: dig(L.px, 150, 375, 250, 50) === left0 };
+    if (!out.thawedMoves.moved || !out.thawedMoves.left) throw new Error("after the thaw: " + JSON.stringify(out.thawedMoves));
+
+    // 4. freeze the moved part again, then Restore all: it keeps its move, the rest comes back to the source
+    mode("freeze", 100, 0.8);
+    await drag([560, 400], [640, 400], 10);
+    const kept0 = dig(L.px, 585, 385, 30, 30);
+    const n3 = ed.undo.length;
+    ed.liquifyRestoreAll();
+    if (ed.liquifyPending) await ed.liquifyPending;
+    out.restoreAll = { steps: ed.undo.length - n3, label: top(), kept: dig(L.px, 585, 385, 30, 30) === kept0, moved: kept0 !== dig(src, 585, 385, 30, 30),
+        back: dig(L.px, 420, 200, 360, 60) === dig(src, 420, 200, 360, 60) };
+    if (out.restoreAll.steps !== 1 || out.restoreAll.label !== "Liquify: restore all" || !out.restoreAll.kept || !out.restoreAll.moved || !out.restoreAll.back)
+        throw new Error("Restore all under a freeze: " + JSON.stringify(out.restoreAll));
+
+    // 5. the freeze survives a tool switch (and a new session)
+    const cells = fr.cells.size;
+    ed.setTool("lasso"); ed.setTool("liquify");
+    out.toolSwitch = { same: ed.liquifyFreezeOf(L) === fr, cells: fr.cells.size === cells };
+    if (!out.toolSwitch.same || !out.toolSwitch.cells) throw new Error("a tool switch lost the freeze: " + JSON.stringify(out.toolSwitch));
+
+    // 6. the veil: drawn with the tool and Show freeze, not without; one canvas at a node a pixel, red at half the freeze
+    fr.drawn = 0; ed.draw();
+    const shown = fr.drawn;
+    fr.drawn = 0; ed.liquifyOpts.showFreeze = false; ed.draw();
+    const hidden = fr.drawn;
+    ed.liquifyOpts.showFreeze = true; ed.setTool("lasso"); fr.drawn = 0; ed.draw();
+    const otherTool = fr.drawn;
+    ed.setTool("liquify");
+    const vx = Math.round(300 / fr.s / fr.k), vy = Math.round(400 / fr.s / fr.k);
+    const vpix = fr.veil ? Array.from(fr.veil.getContext("2d").getImageData(vx, vy, 1, 1).data) : null;
+    out.veil = { shown, hidden, otherTool, size: fr.veil ? [fr.veil.width, fr.veil.height] : null, at: vpix };
+    if (!(shown > 0) || hidden !== 0 || otherTool !== 0 || !vpix || vpix[0] < 250 || Math.abs(vpix[3] - 127) > 1) throw new Error("the veil: " + JSON.stringify(out.veil));
+
+    // 7. Invert freezes the rest: a push up there lands nothing; Clear frees it all and the same push lands
+    ed.liquifyInvertFreeze();
+    out.invert = { band: nodeAt(fr, 300, 400), rest: nodeAt(fr, 300, 150) };
+    if (out.invert.band !== 0 || out.invert.rest !== 255) throw new Error("Invert freeze: " + JSON.stringify(out.invert));
+    mode("push", 200, 0.5);
+    const up0 = dig(L.px, 200, 80, 300, 140), n4 = ed.undo.length;
+    await drag([250, 150], [400, 150], 10);
+    out.frozenPush = { steps: ed.undo.length - n4, same: dig(L.px, 200, 80, 300, 140) === up0 };
+    if (out.frozenPush.steps !== 0 || !out.frozenPush.same) throw new Error("a push over what is all frozen: " + JSON.stringify(out.frozenPush));
+    ed.liquifyClearFreeze();
+    const cleared = ed.liquifyFreezeOf(L);
+    await drag([250, 150], [400, 150], 10);
+    out.cleared = { none: !cleared || !cleared.cells.size, steps: ed.undo.length - n4, moved: dig(L.px, 200, 80, 300, 140) !== up0 };
+    if (!out.cleared.none || out.cleared.steps !== 1 || !out.cleared.moved) throw new Error("Clear freeze: " + JSON.stringify(out.cleared));
+
+    // 8. a thaw on the base's fresh copy froze nothing: the copy goes again, no step; a flip of the layer drops its freeze
+    ed.activeLayerId = null; ed.renderLayers();
+    mode("thaw", 100, 0.8);
+    const nl = ed.layers.length, n5 = ed.undo.length;
+    await drag([300, 600], [500, 600], 10);
+    out.thawOnBase = { layers: ed.layers.length - nl, steps: ed.undo.length - n5 };
+    if (out.thawOnBase.layers !== 0 || out.thawOnBase.steps !== 0) throw new Error("a thaw on the base: " + JSON.stringify(out.thawOnBase));
+    ed.activeLayerId = L.id; ed.renderLayers();
+    mode("freeze", 100, 0.8);
+    await drag([300, 600], [500, 600], 10);
+    const beforeFlip = !!(ed.liquifyFreezeOf(L) && ed.liquifyFreezeOf(L).cells.size);
+    await run("flip_layer", { layer: L.id, axis: "x", doc: d.id });
+    out.flip = { before: beforeFlip, after: !!ed.liquifyFreezeOf(L) };
+    if (!out.flip.before || out.flip.after) throw new Error("a flip kept the freeze: " + JSON.stringify(out.flip));
+
+    // 9. a new picture drops every freeze
+    mode("freeze", 100, 0.8);
+    await drag([300, 600], [500, 600], 10);
+    const had = !!(ed.liquifyFreezeOf(L) && ed.liquifyFreezeOf(L).cells.size);
+    await ed.setBase({ filename: "freeze_test2.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    out.newPicture = { had, after: ed.liqFreezes };
+    if (!had || ed.liqFreezes !== null) throw new Error("a new picture kept a freeze: " + JSON.stringify({ had, after: !!ed.liqFreezes }));
 } finally {
     IE.liquifyRateMs = keep.rate; IE.liquifySyncMax = keep.sync; ed.stabiliser = keep.stab;
     await run("close_document", { doc: d.id, force: true });
