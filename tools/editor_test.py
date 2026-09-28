@@ -231,6 +231,10 @@ ed.shapeOpts = { kind: "rectangle", fill: true, stroke: false, width: 4, radius:
 ed.gradientOpts = { type: "linear", to: "transparent" };
 ed.cloneOpts = { sample: "image", aligned: false };
 ed.cloneSource = o.tool === "clone" || o.tool === "heal" ? { x: o.x0 - 700, y: o.y - 900 } : null;
+// heal's release lays the Poisson blend since 0.1.32, which differs from its preview (the dabs' mean shift) by design: this
+// step asks whether the preview reaches the screen, so the heal row commits the preview (the blend is
+// heal_blends_the_source_into_the_picture_at_the_release's)
+ed.constructor.healBlend = o.tool !== "heal";
 if (ed.smudgeOpts) { ed.smudgeOpts.sample = "layer"; ed.smudgeOpts.strength = 60; }
 ed.cloneOffset = null;
 ed.selectionDisplay = "ants";
@@ -384,7 +388,7 @@ async def live_stroke_reaches_the_screen_before_the_release(c):
     try:
         await live_strokes(c, rows, setup, out, fails)
     finally:
-        await c.eval(PRE % "try { await run(\"close_document\", { doc: window.__lv, force: true }); } catch (_) { /* gone */ } return 1;")
+        await c.eval(PRE % "try { ednow(window.__lv).constructor.healBlend = true; await run(\"close_document\", { doc: window.__lv, force: true }); } catch (_) { /* gone */ } return 1;")
     if fails:
         raise Exception(" | ".join(fails) + " " + json.dumps(out["strokes"]))
     return out["strokes"]
@@ -6921,6 +6925,196 @@ try {
     if (ed.tileMode && ((!m0[0] && out.mirrors[1][0]) || (!m0[1] && out.mirrors[1][1]))) throw new Error("a brush made a display mirror: " + JSON.stringify(out.mirrors));
 } finally {
     for (const k of Object.keys(calls)) delete ed[k];
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
+    ("heal_blends_the_source_into_the_picture_at_the_release", """
+// PLAN_0_1_31 §5 step 2: heal lays the Poisson blend at the release (the dabs' mean shift is only the preview): the
+// source's texture with the picture's colour and light up to the stroke's edge. The real handlers through synthetic
+// pointer events. The layer holds the kernel's result over the box the release took, bit for bit (and so equal with the
+// twin in the page); a small stroke blends at once, a large one in a worker while the gesture is held; the selection
+// cuts the healed region and the blend meets the picture at its edge too; quick mask refuses the brush
+const J = await import("./editor/px/kernels_js.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const IE = ed.constructor;
+const keep = { sync: IE.healSyncMax, kernels: IE.kernels, blend: IE.healBlend };
+const W = 1600, H = 1000;
+const out = { tiles: !!ed.tileMode };
+try {
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    // the picture: a lit gradient with a fine grain; the source A: a warm, coarser texture far from it in colour
+    const base = document.createElement("canvas"); base.width = W; base.height = H;
+    {
+        const img = new ImageData(W, H), a = img.data;
+        const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return (h >>> 24) / 255; };
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const o = (y * W + x) * 4, n = hash(x, y) - 0.5;
+            if (x >= 200 && x < 600 && y >= 200 && y < 600) { const t = hash(x >> 2, y >> 2) - 0.5; a[o] = 200 + 40 * t + 10 * n; a[o + 1] = 70 + 40 * t; a[o + 2] = 50 + 30 * t; }
+            else { a[o] = 60 + 0.06 * x + 12 * n; a[o + 1] = 90 + 0.05 * y + 12 * n; a[o + 2] = 140 - 0.04 * x + 12 * n; }
+            a[o + 3] = 255;
+        }
+        base.getContext("2d").putImageData(img, 0, 0);
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W }); Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "heal_blend_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    const L = ed.addPaintLayer();
+    ed.activeLayerId = L.id; ed.renderLayers();
+    await ed.mipsSettled();
+    ed.view.angle = 0; ed.view.scale = 0.5; ed._fitted = false; ed.view.x = 10; ed.view.y = 10; ed.draw();
+    let pid = 900;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+    const send = (type, ix, iy, extra) => ed.canvas.dispatchEvent(ev(type, ix, iy, extra));
+    const stroke = (a, b) => {
+        pid++;
+        send("pointerdown", a[0], a[1]);
+        for (let i = 1; i <= 8; i++) send("pointermove", a[0] + (b[0] - a[0]) * i / 8, a[1] + (b[1] - a[1]) * i / 8);
+        send("pointerup", b[0], b[1]);
+    };
+    ed.brushSize = 120; ed.hardness = 1; ed.brushOpacity = 1; ed.brushTipId = null;
+    ed.setTool("heal");
+    ed.cloneOpts = { sample: "image", aligned: false };
+    pid++; send("pointerdown", 400, 400, { altKey: true }); send("pointerup", 400, 400);
+    if (!ed.cloneSource) throw new Error("Alt+click set no source: " + ed.status);
+    const boxBytes = (b) => L.px.readRect(b[0], b[1], b[2], b[3]).data;
+    const empty = (b) => { const a = boxBytes(b); for (let i = 0; i < a.length; i++) if (a[i]) return false; return true; };
+    // the kernel over the box the release took: the picture (the base, the layer is empty) and the source at the offset
+    const expect = (h) => {
+        const [x, y, w, hh] = h.box, n = w * hh;
+        const dst = ed.basePx.readRect(x, y, w, hh).data, src = ed.basePx.readRect(x + h.off[0], y + h.off[1], w, hh).data;
+        const got = boxBytes(h.box), mask = new Uint8Array(n);
+        for (let k = 0; k < n; k++) mask[k] = got[4 * k + 3] ? 255 : 0;
+        const want = J.poissonBlend(dst, src, mask, w, hh);
+        let differ = 0, full = 0;
+        for (let k = 0; k < n; k++) if (got[4 * k + 3] === 255) { full++; for (let c = 0; c < 3; c++) if (got[4 * k + c] !== want[4 * k + c]) differ++; }
+        return { differ, full, got, dst, src, w, h: hh };
+    };
+    // within 3 px of the stroke's edge the heal is near the picture while the source is far from it; inside, heal minus
+    // source (the correction) is harmonic: its Laplacian within the rounding of two roundings (4)
+    const seam = (r) => {
+        const { got, dst, src, w, h } = r, A = (k) => got[4 * k + 3];
+        let n = 0, dHeal = 0, dSrc = 0, lap = 0, inside = 0;
+        for (let y = 3; y < h - 3; y++) for (let x = 3; x < w - 3; x++) {
+            const k = y * w + x;
+            if (A(k) !== 255) continue;
+            if (A(k - 3) < 255 || A(k + 3) < 255 || A(k - 3 * w) < 255 || A(k + 3 * w) < 255) {
+                for (let c = 0; c < 3; c++) { dHeal += Math.abs(got[4 * k + c] - dst[4 * k + c]); dSrc += Math.abs(src[4 * k + c] - dst[4 * k + c]); }
+                n++;
+            } else {
+                for (let c = 0; c < 3; c++) { const u = (q) => got[4 * q + c] - src[4 * q + c]; lap = Math.max(lap, Math.abs(4 * u(k) - u(k - 1) - u(k + 1) - u(k - w) - u(k + w))); }
+                inside++;
+            }
+        }
+        return { edge: n, heal: +(dHeal / (3 * n)).toFixed(2), source: +(dSrc / (3 * n)).toFixed(2), lap, inside };
+    };
+    const A0 = [1000, 500], B0 = [1150, 500];
+    // 1. a small stroke: blended at the release, here
+    const n0 = ed.undoList().length;
+    stroke(A0, B0);
+    const h1 = ed.lastHeal;
+    if (!h1 || h1.where !== "here") throw new Error("the small heal was not blended at the release: " + JSON.stringify(h1));
+    const r1 = expect(h1), s1 = seam(r1);
+    out.small = { box: h1.box, off: h1.off, unknowns: h1.unknowns, cycles: h1.info && h1.info[1], ms: h1.ms, full: r1.full, differ: r1.differ, seam: s1, steps: ed.undoList().length - n0 };
+    if (r1.full < 10000 || r1.differ) throw new Error("the layer is not the kernel's blend over the box: " + JSON.stringify(out.small));
+    if (!(s1.edge > 500 && s1.heal * 4 < s1.source && s1.lap <= 4 && s1.inside > 5000)) throw new Error("the blend does not meet the picture at its edge: " + JSON.stringify(out.small));
+    if (out.small.steps !== 1) throw new Error("the heal left " + out.small.steps + " undo steps");
+    const bytes1 = boxBytes(h1.box).slice();
+    await ed.undoStep();
+    if (!empty(h1.box)) throw new Error("the undo of the heal left pixels on the layer");
+    // two strokes are compared where both cover fully: the dabs' soft edge is drawn through canvases, and after many
+    // readbacks Chromium makes new canvases software, whose edge differs by a level (CLAUDE.md, canvas traps)
+    const inside = (a, b) => { let n = 0; for (let k = 0; k < a.length; k += 4) if (a[k + 3] === 255 && b[k + 3] === 255) for (let c = 0; c < 3; c++) if (a[k + c] !== b[k + c]) n++; return n; };
+    // 2. the twin in the page gives the same blend
+    IE.kernels = "js";
+    try { stroke(A0, B0); } finally { IE.kernels = keep.kernels; }
+    const r2 = expect(ed.lastHeal);
+    out.twin = { box: ed.lastHeal.box, info: ed.lastHeal.info, differ: r2.differ, inside: inside(r2.got, bytes1) };
+    if (r2.differ || out.twin.inside || JSON.stringify(ed.lastHeal.box) !== JSON.stringify(h1.box)) throw new Error("the twin healed otherwise: " + JSON.stringify(out.twin));
+    await ed.undoStep();
+    if (!empty(h1.box)) { const a = boxBytes(h1.box); let n = 0, k0 = -1; for (let k = 0; k < a.length; k += 4) if (a[k + 3]) { n++; if (k0 < 0) k0 = k; } throw new Error("the undo of the twin's heal left " + n + " pixels, first " + Array.from(a.slice(k0, k0 + 4)) + " at " + ((k0 / 4) % h1.box[2]) + "," + (((k0 / 4) / h1.box[2]) | 0) + "; undo " + JSON.stringify(ed.undoList().map((r) => r.label))); }
+    // 3. a large one (every stroke, here): in a worker while the gesture is held; a press meanwhile does nothing
+    IE.healSyncMax = 0;
+    const n3 = ed.undo.length;
+    stroke(A0, B0);
+    const held = !!(ed.pointer && ed.pointer.healing), gh = ed.gestureHeld(), pend = !!ed.healPending;
+    const pHeld = ed.pointer;
+    pid++; send("pointerdown", 1300, 800); send("pointermove", 1350, 800); send("pointerup", 1350, 800);
+    const still = ed.pointer === pHeld;
+    await ed.healPending;
+    const r3 = expect(ed.lastHeal);
+    out.large = { held, gestureHeld: gh, pending: pend, pressWaited: still, where: ed.lastHeal.where, ms: ed.lastHeal.ms, differ: r3.differ, inside: inside(r3.got, bytes1), steps: ed.undo.length - n3, after: ed.pointer === null };
+    if (!held || !gh || !pend || !still) throw new Error("the large heal did not hold the gesture: " + JSON.stringify(out.large));
+    if (r3.differ || out.large.inside || !out.large.after || out.large.steps !== 1 || out.large.where !== "worker") throw new Error("the large heal landed otherwise: " + JSON.stringify(out.large));
+    await ed.undoStep();
+    // 3b. Ctrl+Z pressed while it blends waits for it and takes it back (the review of 2026-09-28: it was refused)
+    stroke(A0, B0);
+    const undone = ed.undoStep();
+    await ed.healPending; await undone;
+    out.undoWhileHeld = { empty: empty(h1.box), label: ed.undoList().filter((r) => r.future).map((r) => r.label) };
+    if (!out.undoWhileHeld.empty) throw new Error("an undo pressed while the heal blended did not take it back: " + JSON.stringify(out.undoWhileHeld));
+    IE.healSyncMax = keep.sync;
+    // 4. the selection cuts the healed region: nothing lands right of it, and at its edge the blend meets the picture
+    await run("select_rect", { x: 900, y: 400, w: 170, h: 200, doc: d.id });
+    stroke(A0, B0);
+    const h4 = ed.lastHeal, r4 = expect(h4), [bx, by, bw, bh] = h4.box;
+    let right = 0, edgeD = 0, edgeS = 0, edgeN = 0;
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+        const k = y * bw + x, X = bx + x;
+        if (X >= 1070 && r4.got[4 * k + 3]) right++;
+        if (X === 1068 && r4.got[4 * k + 3] === 255) { for (let c = 0; c < 3; c++) { edgeD += Math.abs(r4.got[4 * k + c] - r4.dst[4 * k + c]); edgeS += Math.abs(r4.src[4 * k + c] - r4.dst[4 * k + c]); } edgeN++; }
+    }
+    out.selection = { differ: r4.differ, right, edgeN, heal: +(edgeD / (3 * edgeN)).toFixed(2), source: +(edgeS / (3 * edgeN)).toFixed(2) };
+    if (r4.differ || right || edgeN < 50 || out.selection.heal * 4 > out.selection.source) throw new Error("the selection did not cut the blend: " + JSON.stringify(out.selection));
+    await ed.undoStep();
+    // 4b. a deselect while a large heal blends: the commit clips by the selection of the release, not by none (it wrote
+    // nothing before: the review of 2026-09-28); the shortcut waits, a deselect by command does not
+    IE.healSyncMax = 0;
+    stroke(A0, B0);
+    ed.clearSelection();
+    await ed.healPending;
+    IE.healSyncMax = keep.sync;
+    const r4b = expect(ed.lastHeal);
+    let right4b = 0; for (let k = 0; k < r4b.got.length; k += 4) if (r4b.got[k + 3] && ed.lastHeal.box[0] + ((k / 4) % ed.lastHeal.box[2]) >= 1070) right4b++;
+    out.deselectWhileHeld = { full: r4b.full, differ: r4b.differ, right: right4b };
+    if (r4b.full < 5000 || r4b.differ || right4b) throw new Error("a deselect during the blend changed its commit: " + JSON.stringify(out.deselectWhileHeld));
+    await ed.undoStep(); await ed.undoStep();
+    await run("select_none", { doc: d.id });
+    // 5. the quick heal as before when the blend is off: the preview's colours land (not the blend's)
+    IE.healBlend = false;
+    const last = ed.lastHeal;
+    try { stroke(A0, B0); } finally { IE.healBlend = keep.blend; }
+    const d5 = inside(boxBytes(h1.box), bytes1);
+    out.off = { differ: d5, noted: ed.lastHeal !== last };
+    if (!d5 || out.off.noted) throw new Error("with the blend off the heal still blended: " + JSON.stringify(out.off));
+    await ed.undoStep();
+    // 5b. a layer not at the origin: the box is the image's, the layer's pixels shifted by its place
+    const M = ed.addLayer({ name: "O", kind: "paint", px: ed.pixels.Layer.empty(1400, 900), x: 37, y: -21, w: 1400, h: 900 });
+    ed.activeLayerId = M.id; ed.renderLayers();
+    stroke(A0, B0);
+    {
+        const h = ed.lastHeal, [x, y, w, hh] = h.box, n = w * hh;
+        const got = M.px.readRect(x - 37, y + 21, w, hh).data, dst = ed.basePx.readRect(x, y, w, hh).data, src = ed.basePx.readRect(x + h.off[0], y + h.off[1], w, hh).data;
+        const mask = new Uint8Array(n);
+        for (let k = 0; k < n; k++) mask[k] = got[4 * k + 3] ? 255 : 0;
+        const want = J.poissonBlend(dst, src, mask, w, hh);
+        let differ = 0, full = 0;
+        for (let k = 0; k < n; k++) if (got[4 * k + 3] === 255) { full++; for (let c = 0; c < 3; c++) if (got[4 * k + c] !== want[4 * k + c]) differ++; }
+        out.offsetLayer = { box: h.box, full, differ };
+        if (full < 10000 || differ) throw new Error("the heal on a layer at (37, -21) is not the blend over its box: " + JSON.stringify(out.offsetLayer));
+    }
+    await ed.undoStep();
+    ed.activeLayerId = L.id; ed.renderLayers();
+    // 6. quick mask on: the healing brush refuses (it works on pixels)
+    ed.quickMask = true;
+    const nq = ed.undoList().length;
+    try { stroke(A0, B0); } finally { ed.quickMask = false; }
+    out.quickMask = { status: ed.status, steps: ed.undoList().length - nq, empty: empty(h1.box) };
+    if (out.quickMask.steps || !out.quickMask.empty || !/Quick mask/.test(out.quickMask.status)) throw new Error("heal worked with quick mask on: " + JSON.stringify(out.quickMask));
+} finally {
+    IE.healSyncMax = keep.sync; IE.kernels = keep.kernels; IE.healBlend = keep.blend;
     await run("close_document", { doc: d.id, force: true });
 }
 return out;

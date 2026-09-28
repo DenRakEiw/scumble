@@ -1524,6 +1524,23 @@ Step 7 (the size cap, 2026-09-28, the same setup, `SIZES: [1000, 2000]`): the sm
 30.6 / 89.1 at 1:1; clone (Sample image) 24.2 / 66.8 fitted and 16.9 / 53.3 at 1:1; the press 3 to 118 ms. The cap is
 1,000 px since 0.1.32.
 
+Package 5 step 2 (heal blends at the release, the `poisson_blend` kernel; the same setup, `TOOLS: ["heal"]`, Sample
+image, 2026-09-28; `tools/brush_perf.js` now waits for the blend and notes `healWait` and `heal`). The moves are as
+before (9.6 / 18 / 66 ms at 200 / 400 / 1,000 px fitted, 3 / 6 / 30 at 1:1); the release's own part (`up`: the box's
+picture, source and coverage read, the job sent) 7 to 113 ms, then the blend in a pool worker with the gesture held:
+
+| Size, view | Box | Pixels healed | Cycles | Blend (worker) | Wait after the release |
+|---|---|---|---|---|---|
+| 200 px, 1:1 | 748 x 208 | 139k | 7 | 73 ms | 91 ms |
+| 400 px, 1:1 | 948 x 408 | 341k | 8 | 160 ms | 184 ms |
+| 1,000 px, 1:1 | 1548 x 1008 | 1.3M | 8 | 696 ms | 738 ms |
+| 200 px, fit | 4904 x 209 | 968k | 7 | 499 ms | 520 ms |
+| 400 px, fit | 5104 x 408 | 2.0M | 7 | 1,109 ms | 1,148 ms |
+| 1,000 px, fit | 5704 x 1008 | 5.5M | 7 | 2,834 ms | 2,883 ms |
+
+About half a microsecond a healed pixel, whatever the document's size (the box is read, not the picture). A spot of up
+to 128k pixels (`healSyncMax`) blends at the release on the main thread instead (the gate's 29k px: 9 to 17 ms).
+
 ## 8. What goes where
 
 Everything in phases 1–5 is editor code and lands in the node repo first

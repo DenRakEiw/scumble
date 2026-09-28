@@ -10,8 +10,52 @@ The block of 2026-09-27 (morning) was moved here the same morning, after the 0.1
 
 The block of 2026-09-27 (evening, after the 0.1.31 release) was moved here the same night, when 23b was built.
 
+The block of 2026-09-28 (early morning, package 4 complete) was moved here at noon, when package 5 steps 1 and 2 were built.
+
 The block of 2026-09-27 (night), the open threads and the full list were moved here the same night, when CLAUDE.md was
 compressed (the user: the context ran full); the release procedure went to `docs/RELEASING.md`.
+
+
+## Where things stand (2026-09-28, early morning)
+
+Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
+verbatim). Check `gh release list` before believing any release state written down anywhere.
+
+**Released:** 0.1.31 is Latest (2026-09-27, dev blog post live). `main` has local commits after it, not pushed.
+
+**In progress: 0.1.32 = 23b + package 4 (brushes)** (the user, 2026-09-27); package 5 is 0.1.33. The plan is
+`docs/PLAN_0_1_31.md` (§7 23b, §4 the brushes with a "built" paragraph per step).
+- **23b is done** (local, 1b61e27..b85e867): the resampler, one geometry map (`docXf`), text with a free angle,
+  straighten, the pending canvas frame, a four-lens review's fixes.
+- **Package 4, steps 1 to 3 are done** (local, 697c16c..d128bec + the review fixes): step 1 measured
+  (`tools/brush_perf.py`, `docs/PERFORMANCE.md` §15); step 2 the regional sources (`brushSource` in
+  `inpaint_canvas.js`, `compositeBox` in the new `inpaint_boxstack.js`: clone / heal / smudge read the box under the
+  dab, 2 to 15 ms a move at 15k instead of 0.2 to 8 s); step 3 the pro smudge (the Rust kernel `smudge_dab`, px ABI
+  12, with its JS twin; Length, Finger, Sample layer / below / image). Beside them: the Opacity slider for the brushes,
+  AltGr+8 / 9 size the brush, the transform's mask note, PNG metadata on by default (with a settings migration for
+  profiles that stored the old default) and inputs named like keys left out (`redact.js`), fonts by their own file,
+  a PixelMemoryError instead of a RangeError. A four-lens review (workflow, 2026-09-27) found 15, all fixed.
+- **Steps 4 to 6 are done too** (0135a27 clone: source angle / scale / flip through anchors, the overlay from
+  `viewCanvas`, tips; 788e26e flow (option A, the slider from 5 %), the pressure curve, coalesced pen events, a
+  pull-string stabiliser in the new `inpaint_stroke.js`; 6f0dc15 blur and sharpen as the smudge tool's Mode, filtered
+  from the press's picture). Each has a "built" paragraph in the plan and a gate step on both backends.
+- **Step 7 is done** (670c76a: brushes up to 1,000 px, `BRUSH_MAX`, a logarithmic Size slider).
+- **Step 8 is done** (frequency separation, linear light in every path, px ABI 13, `minReader` 2 only for documents with
+  a linear-light layer). The canvas backend's 4 levels in `composite` were stale references (taken before the
+  emulation's opacity fix; tiles failed them too): retaken, no tolerance of its own, strict on both backends (plan
+  step 8, "Settled"). Open: the GLSL clamp survives the mutation round (opaque test layers).
+- **Step 9 is done** (the tone brush `tone`, Shift+O: dodge / burn with GIMP's curves, the sponge, Protect tones, Alt
+  swaps; on the smudge engine with the press's picture; the region tier keeps the press by first reads within
+  `boxReach`; Image > New Dodge & Burn Layer, empty soft light or 50 % grey, `dodge_burn_layer`). A three-lens review
+  found 7, all fixed (plan step 9). Open for the user: the dodge & burn layer starts empty (grey is the second menu
+  entry and `grey: true`); flip the default if the user wants Photoshop's grey.
+- **Step 10 is done, package 4 is complete** (the tip popover from the Tip thumbnail: stroke previews, recent tips,
+  search; the new `renderer/editor/inpaint_tippicker.js`; a three-lens review found 5, all fixed, plan step 10). All of
+  0.1.32 (23b + package 4) is built and committed locally; the CHANGELOG's "Unreleased" section holds it.
+- **Next: on the user's word** either the 0.1.32 release chain (`docs/RELEASING.md`: version, CHANGELOG heading,
+  `npm run dist`, exe gates, tag, blog post) or package 5 (repair, remove, liquify; plan §5) for 0.1.33.
+- The user's answers of 2026-09-27: LaMa is downloaded (package 5), the PNG switch is on by default, 4.10 a popover.
+  Open for the user: item 25's look and timing.
 
 ## Where things stand (2026-09-27, night)
 

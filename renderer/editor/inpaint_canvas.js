@@ -17,7 +17,7 @@ import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromC
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces, runShader } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
-import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile } from "./px/kernels.js";
+import { setKernels, kernelsMode, OPS, deflate, smudgeDab as smudgeDabKernel, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, compositeTile, poissonBlend as poissonBlendKernel } from "./px/kernels.js";
 import { floodMask, maskToColorCanvas, clipMaskToSelection, rgbToHex, hexToRgb, growMask, invertMask, maskBounds } from "./inpaint_raster.js";
 import { GLCompositor } from "./inpaint_compositor.js";
 import { LayerPixels, MaskPixels, canvasOf, displayCanvasIfMade, installLayerAliases, deprecatedPixels, pixelsOptions, BLIT_MARGIN, resetContext } from "./inpaint_pixels.js";
@@ -2498,6 +2498,13 @@ class InpaintEditor {
             if (this.tipPicker && this.tipPicker.isOpen && t && this.tipPicker.el.contains(t)) return;
             if (inField) return;   // typing in the editor's own fields: their handlers stop propagation themselves
             e.stopImmediatePropagation();
+            // a heal stroke blending in a worker is still the gesture (`healBlend`): its commit reads the selection and the
+            // layer as they are, so a shortcut waits for it as a press does (Ctrl+Z waits for it through `trackEdit`)
+            if (this.pointer && this.pointer.healing && !((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "z")) {
+                e.preventDefault();
+                this.setStatus("Healing: a moment.");
+                return;
+            }
             this.onKey(e);
         };
         window.addEventListener("keydown", this._docKey, true);
@@ -2522,6 +2529,9 @@ class InpaintEditor {
     close() {
         if (!this.isOpen) return;
         if (this.pending) this.cancelPending();
+        // a heal still blending in a worker lands as its quick heal (the worker's answer finds the pointer gone)
+        const hp = this.pointer;
+        if (hp && hp.healing) { this.pointer = null; this.commitLayerPaint(hp); }
         this.isOpen = false;
         if (this.antsTimer) { clearInterval(this.antsTimer); this.antsTimer = null; }
         this.pointer = null;
@@ -4500,6 +4510,8 @@ class InpaintEditor {
     onPointerDown(e) {
         this.root.focus({ preventScroll: true });
         if (!this.width) return;
+        // a heal stroke is held until its blend lands (`healBlend`): the next gesture waits for it
+        if (this.pointer && this.pointer.healing) { this.setStatus("Healing: a moment."); return; }
         // Chrome reports detail = 0 on pointer events, so double-clicks are detected here:
         // a second press within 400 ms and 8 css px of the previous one.
         const nowMs = performance.now();
@@ -4645,6 +4657,8 @@ class InpaintEditor {
             let layer = this.activeLayer();
             if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
             if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels. Select a paint or image layer."); return; }
+            // they paint the layer's pixels, never the mask or the selection the UI says is being edited (the smudge's rule)
+            if (this.quickMask || (layer && layer.maskEdit)) { this.setStatus(`${this.quickMask ? "Quick mask is on" : `The mask of ${layer.name} is being edited`}: the ${this.tool === "heal" ? "healing brush" : "clone brush"} works on pixels. ${this.quickMask ? "Press Q to leave it." : "Switch the mask edit off first."}`); return; }
             if (!layer) layer = this.addPaintLayer();
             const o = this.cloneOpts || { sample: "image", aligned: true };
             if (!o.aligned || !this.cloneOffset) this.cloneOffset = { x: this.cloneSource.x - ix, y: this.cloneSource.y - iy };
@@ -4758,7 +4772,8 @@ class InpaintEditor {
         this.hover = [ix, iy];
         if (host.pluginPointer(this, "move", e, ix, iy)) return;
         const p = this.pointer;
-        if (!p) {
+        if (!p || p.healing) {
+            if (p) { this.drawSoon(); return; }
             if (this.tool === "transform") this.updateTransformCursor(ix, iy);
             if (this.tool === "canvas") this.updateCanvasCursor(ix, iy);
             if (this.tool === "object") this.updateObjectHover(ix, iy);
@@ -4932,7 +4947,7 @@ class InpaintEditor {
 
     onPointerUp(e) {
         const p = this.pointer;
-        if (!p) return;
+        if (!p || p.healing) return;
         this.pointer = null;
         this.viewEl.classList.remove("ipc-panning");
         try { this.canvas.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
@@ -5004,11 +5019,9 @@ class InpaintEditor {
             if (!p.moved) this.toggleObjectAt(...this.toImage(e), p);
         } else if (p.kind === "layerpaint") {
             this.finishStroke(p);   // the stabiliser's rest of the string, before the box is taken
-            const box = this.strokeRect(p, p.layer.px);
-            this.commitStroke(p);
-            this.markLayerChanged(p.layer, box);
-            this.releaseStrokeScratch();
-            if (!p.grad) this.lastStrokeEnd = { layerId: p.layer.id, x: p.last[0], y: p.last[1], mask: false };
+            // heal: the blend replaces the dabs' colours; a large stroke is blended in a worker and commits when it lands
+            if (p.clone && p.clone.heal && this.healBlend(p)) { this.draw(); return; }
+            this.commitLayerPaint(p);
         } else if (p.kind === "shapepoint") {
             this.shapeDrag = null;
         } else if (p.kind === "smudge") {
@@ -6992,6 +7005,184 @@ class InpaintEditor {
         });
     }
 
+    /** The release of a layer stroke: its undo step and the write, and what depends on the layer. */
+    commitLayerPaint(p) {
+        const box = this.strokeRect(p, p.layer.px);
+        this.commitStroke(p);
+        this.markLayerChanged(p.layer, box);
+        this.releaseStrokeScratch();
+        if (!p.grad) this.lastStrokeEnd = { layerId: p.layer.id, x: p.last[0], y: p.last[1], mask: false };
+    }
+
+    /**
+     * Heal at the release (PLAN_0_1_31 §5 step 2): the stroke's colours become the Poisson blend of the raw source patch
+     * with the picture around the stroke (`poissonBlend`: the source's texture, the destination's colour and light
+     * right up to the stroke's edge); the dabs' mean shift was only the preview. A stroke with up to `healSyncMax` pixels
+     * to heal in a box of up to `healSyncBox` is blended here and the release goes on (false). A larger one goes to a
+     * worker while the gesture stays held (the preview stays; presses, moves and shortcuts wait, an undo waits for it
+     * through `trackEdit`) and commits when the blend lands (true), with the selection, the opacity, the alpha lock and
+     * the box as they were at the release; without a worker the same kernel runs here. The quick heal lands as it was
+     * on a scaled or fractionally placed layer, for a box above `healBlendMax`, and where the blend did not settle (info[3]:
+     * a heal split into strands by the source's transparency, which the coarse grids join).
+     */
+    healBlend(p) {
+        if (InpaintEditor.healBlend === false) return false;
+        let job = null;
+        try { job = this.healInputs(p); } catch (err) { console.warn("Inpaint Canvas: the heal could not read its box, keeping the quick heal:", err); }
+        if (!job) return false;
+        const t0 = performance.now();
+        // what the last blend took, for tests and the status line: the box (image pixels), the source offset, the kernel's info
+        const note = (where, info) => { this.lastHeal = { box: [job.x + p.layer.x, job.y + p.layer.y, job.w, job.h], off: job.off, unknowns: job.unknowns, where, info: info ? Array.from(info) : null, ms: Math.round(performance.now() - t0) }; };
+        // the blend's colours, unless it did not settle (the quick heal stays then)
+        const land = (out, info, where) => {
+            note(where, info);
+            if (info && info[3]) { this.setStatus("The blend did not settle here (the source splits the stroke into strands): the quick heal stays."); return; }
+            this.healWrite(p, job, out);
+        };
+        if (job.unknowns <= InpaintEditor.healSyncMax && job.w * job.h <= InpaintEditor.healSyncBox) {
+            const info = new Int32Array(4);
+            try { land(poissonBlendKernel(job.dst, job.src, job.mask, job.w, job.h, null, info), info, "here"); }
+            catch (err) { console.warn("Inpaint Canvas: the heal's blend failed, keeping the quick heal:", err); }
+            return false;
+        }
+        p.healing = true;
+        // what the commit reads, as it is now: the user has let go, and may deselect, move the opacity or nudge meanwhile
+        p.opacity = this.brushOpacity;
+        p.op = p.layer.alphaLock ? "source-atop" : "source-over";
+        p.rect = this.strokeRect(p, p.layer.px);
+        if (p.clip && this.sel) p.clipSel = this.sel.clone();
+        this.pointer = p;
+        this.setStatus("Healing...");
+        const done = (async () => {
+            let out = null, where = "worker", info = null;
+            try {
+                // the picture and the source go over (the transfer empties them here); the mask is copied, `healWrite` reads it
+                const args = { dst: job.dst.buffer, src: job.src.buffer, mask: job.mask.slice().buffer, w: job.w, h: job.h };
+                const m = await editorPool().run("poisson", args, [args.dst, args.src, args.mask], { priority: INTERACTIVE, group: "heal" + nextPartsSeq() });
+                out = new Uint8Array(m.out);
+                info = m.info;
+            } catch (err) {
+                // no worker (the pool is off, a worker was lost): the same kernel here, on inputs read again (the transfer took
+                // them; the picture and the stroke are as they were, the gesture is held)
+                if (this.pointer === p) {
+                    console.warn("Inpaint Canvas: the heal's worker failed, blending here:", (err && err.message) || err);
+                    try {
+                        const again = this.healInputs(p);
+                        if (again) { job = again; info = new Int32Array(4); out = poissonBlendKernel(job.dst, job.src, job.mask, job.w, job.h, null, info); where = "here"; }
+                    } catch (err2) { console.warn("Inpaint Canvas: the heal's blend failed, keeping the quick heal:", err2); }
+                }
+            }
+            if (this.pointer !== p) { if (p.clipSel) p.clipSel.release(); return; }   // the editor was closed meanwhile
+            let settled = false;
+            try { if (out) { land(out, info, where); settled = !(info && info[3]); } }
+            catch (err) { console.warn("Inpaint Canvas: the heal's blend could not be written, keeping the quick heal:", err); }
+            this.pointer = null;
+            try { this.commitLayerPaint(p); }
+            finally { if (p.clipSel) { p.clipSel.release(); p.clipSel = null; } }
+            this.draw();
+            if (settled) this.setStatus(`Healed ${job.unknowns.toLocaleString()} px (${Math.round(performance.now() - t0)} ms).`);
+        })();
+        this.healPending = done;
+        this.trackEdit(done);
+        done.finally(() => { if (this.healPending === done) this.healPending = null; });
+        return true;
+    }
+
+    /**
+     * What the heal's blend needs over the stroke's box (the layer's pixels, which are the image's here: an unscaled layer
+     * on whole pixels, else null): `dst` the picture before the stroke (it is not committed yet), `src` the raw source
+     * patch (`healSource`), `mask` the stroke's coverage cut by the selection, and `stroke` the buffer's bytes the result
+     * goes back into. The box is the stroke's extent and a pixel around it, the boundary the blend takes. Null when
+     * nothing is covered or the box is above `healBlendMax`.
+     */
+    healInputs(p) {
+        const layer = p.layer, s = p.stroke, cl = p.clone;
+        if (!s || s.empty || !cl || !cl.dest || s.tw !== layer.w || s.th !== layer.h || layer.x !== Math.round(layer.x) || layer.y !== Math.round(layer.y)) return null;
+        const x0 = Math.max(0, s.x - 1), y0 = Math.max(0, s.y - 1), x1 = Math.min(s.tw, s.x + s.w + 1), y1 = Math.min(s.th, s.y + s.h + 1);
+        const w = x1 - x0, h = y1 - y0, n = w * h;
+        if (w <= 0 || h <= 0 || n > InpaintEditor.healBlendMax) return null;
+        const stroke = s.px ? s.px.readRect(x0, y0, w, h) : s.canvas.getContext("2d").getImageData(x0 - s.cx, y0 - s.cy, w, h);
+        const sa = stroke.data, mask = new Uint8Array(n);
+        let unknowns = 0;
+        for (let k = 0; k < n; k++) if (sa[4 * k + 3]) mask[k] = 255;
+        if (p.clip) {
+            const c = this._healClip = this.clipCanvasFor(layer, layer.px, x0, y0, w, h, cpuDab(this._healClip, w, h), p.clipSel || this.sel);
+            const ca = c.getContext("2d").getImageData(0, 0, w, h).data;
+            for (let k = 0; k < n; k++) if (!ca[4 * k + 3]) mask[k] = 0;
+        }
+        for (let k = 0; k < n; k++) if (mask[k]) unknowns++;
+        if (!unknowns) return null;
+        const ix = x0 + layer.x, iy = y0 + layer.y;
+        const guide = this.healSource(p, ix, iy, w, h);
+        if (!guide) return null;
+        // the preview sampled the source at the fraction, the blend at the whole pixel: where that one is clear (the
+        // picture's edge, a cut-out's) there is nothing to blend, and the pixel keeps the quick heal's colour
+        for (let k = 0; k < n; k++) if (mask[k] && !guide.bytes[4 * k + 3]) { mask[k] = 0; unknowns--; }
+        if (!unknowns) return null;
+        // bytes() hands out a buffer its next read reuses: copied at once (dest may be the source's own reader)
+        const dst = new Uint8Array(cl.dest.bytes([ix, iy, ix + w, iy + h]));
+        return { x: x0, y: y0, w, h, dst, src: guide.bytes, off: guide.off, mask, stroke, unknowns };
+    }
+
+    /**
+     * The source patch under the box at (ix, iy), w x h image pixels, as the blend's guide ({ bytes, off }): the source at
+     * the stroke's offset rounded to whole pixels (`off`; its bytes, not resampled: the dabs' preview sampled it at the
+     * fraction), or drawn through the source's transform (`cloneXf`) as the dabs draw it (`off` null). Null when that
+     * source box is above `healBlendMax`.
+     */
+    healSource(p, ix, iy, w, h) {
+        const cl = p.clone, xf = cl.xf;
+        if (!xf) {
+            const ox = Math.round(cl.off.x), oy = Math.round(cl.off.y);
+            return { off: [ox, oy], bytes: new Uint8Array(cl.src.bytes([ix + ox, iy + oy, ix + ox + w, iy + oy + h])) };
+        }
+        const S = cl.S, Dx = S.x - cl.off.x, Dy = S.y - cl.off.y, A = xf.A, Ai = xf.Ai;
+        const q = [[ix, iy], [ix + w, iy], [ix, iy + h], [ix + w, iy + h]].map(([x, y]) => [S.x + A[0] * (x - Dx) + A[1] * (y - Dy), S.y + A[2] * (x - Dx) + A[3] * (y - Dy)]);
+        const qx = q.map((v) => v[0]), qy = q.map((v) => v[1]);
+        const sb = [Math.floor(Math.min(...qx)) - 2, Math.floor(Math.min(...qy)) - 2, Math.ceil(Math.max(...qx)) + 2, Math.ceil(Math.max(...qy)) + 2];
+        if ((sb[2] - sb[0]) * (sb[3] - sb[1]) > InpaintEditor.healBlendMax) return null;
+        const got = cl.src.read(sb, 0);
+        const c = this._healSrc = cpuDab(this._healSrc, w, h), ctx = c.getContext("2d");
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.clearRect(0, 0, w, h);
+        if (got) {
+            // image point u of the box takes the source at q = S + A (u - D): the source canvas through Ai, as `cloneDab`
+            const ox = got.x - S.x, oy = got.y - S.y;
+            ctx.setTransform(Ai[0], Ai[2], Ai[1], Ai[3], Ai[0] * ox + Ai[1] * oy + Dx - ix, Ai[2] * ox + Ai[3] * oy + Dy - iy);
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(got.canvas, 0, 0);
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+        }
+        return { off: null, bytes: new Uint8Array(ctx.getImageData(0, 0, w, h).data.buffer) };
+    }
+
+    /** The blend's colours into the stroke buffer where it healed, the buffer's alpha kept (it is the dabs' coverage). */
+    healWrite(p, job, out) {
+        const s = p.stroke, a = job.stroke.data, m = job.mask, w = job.w, h = job.h;
+        for (let k = 0, n = w * h; k < n; k++) {
+            if (!m[k]) continue;
+            const o = 4 * k;
+            a[o] = out[o]; a[o + 1] = out[o + 1]; a[o + 2] = out[o + 2];
+        }
+        if (!s.px) { s.canvas.getContext("2d").putImageData(job.stroke, job.x - s.cx, job.y - s.cy); return; }
+        // on tiles only the tiles' worth of blocks it healed in: a write of the whole box would give the sparse buffer a
+        // tile of zeros everywhere a diagonal stroke's box reaches
+        const T = TILE_SIZE;
+        for (let ty = Math.floor(job.y / T) * T; ty < job.y + h; ty += T) {
+            for (let tx = Math.floor(job.x / T) * T; tx < job.x + w; tx += T) {
+                const bx = Math.max(tx, job.x) - job.x, by = Math.max(ty, job.y) - job.y;
+                const bw = Math.min(tx + T, job.x + w) - job.x - bx, bh = Math.min(ty + T, job.y + h) - job.y - by;
+                let any = false;
+                for (let y = by; y < by + bh && !any; y++) for (let x = bx; x < bx + bw; x++) if (m[y * w + x]) { any = true; break; }
+                if (!any) continue;
+                const blk = new ImageData(bw, bh);
+                for (let y = 0; y < bh; y++) blk.data.set(a.subarray(((by + y) * w + bx) * 4, ((by + y) * w + bx + bw) * 4), y * bw * 4);
+                s.px.writeRect(blk, job.x + bx, job.y + by);
+            }
+        }
+    }
+
     /**
      * The clone source's transform (PLAN_0_1_31 §4 step 4) from the options, or null when it is none: the source turned
      * by `angle` degrees, `scale` percent as large and mirrored where it lands. `A` maps an offset from the lined-up
@@ -7360,7 +7551,7 @@ class InpaintEditor {
      * transforms, which is allowed because the canvas is its own (or `into`, a scratch it owns),
      * never a context handed to a drawInto callback (docs/PLAN_BCE.md §C1 rule 12).
      */
-    clipCanvasFor(layer, target, x, y, w, h, into = null) {
+    clipCanvasFor(layer, target, x, y, w, h, into = null, sel = this.sel) {
         const c = into && into.width === w && into.height === h ? into : makeCanvas(w, h);
         const ctx = c.getContext("2d");
         const fx = layer.w / target.width, fy = layer.h / target.height;
@@ -7375,12 +7566,12 @@ class InpaintEditor {
         // whole thing does. `drawTo` reads the selection's display mirror, which at 15000 x 10000 is
         // 572 MB built for a clip of a few hundred pixels. A canvas selection is its own canvas: the
         // draw is free there and a crop would allocate per dab (the smudge asks once a step).
-        const r = isTilePixels(this.sel)
+        const r = isTilePixels(sel)
             ? clampRect([layer.x + x * fx - BLIT_MARGIN, layer.y + y * fy - BLIT_MARGIN,
                 layer.x + (x + w) * fx + BLIT_MARGIN, layer.y + (y + h) * fy + BLIT_MARGIN], this.width, this.height)
             : null;
-        if (!r) this.sel.drawTo(ctx, -layer.x, -layer.y);
-        else if (r[2] > r[0] && r[3] > r[1]) ctx.drawImage(this.sel.toCanvas(r), r[0] - layer.x, r[1] - layer.y, r[2] - r[0], r[3] - r[1]);
+        if (!r) sel.drawTo(ctx, -layer.x, -layer.y);
+        else if (r[2] > r[0] && r[3] > r[1]) ctx.drawImage(sel.toCanvas(r), r[0] - layer.x, r[1] - layer.y, r[2] - r[0], r[3] - r[1]);
         ctx.restore();
         return c;
     }
@@ -7419,7 +7610,7 @@ class InpaintEditor {
         ctx.drawImage(src.canvas, ix0 - src.x, iy0 - src.y, ix1 - ix0, iy1 - iy0, ix0 - x, iy0 - y, ix1 - ix0, iy1 - iy0);
         if (p.clip) {
             ctx.globalCompositeOperation = "destination-in";
-            ctx.drawImage(this.clipCanvasFor(p.layer, target, x, y, w, h, this.bandScratch("_strokeClip", w, h)), 0, 0);
+            ctx.drawImage(this.clipCanvasFor(p.layer, target, x, y, w, h, this.bandScratch("_strokeClip", w, h), p.clipSel || this.sel), 0, 0);
             ctx.globalCompositeOperation = "source-over";
         }
         return c;
@@ -7457,10 +7648,13 @@ class InpaintEditor {
         const target = p.kind === "maskpaint" ? p.layer.maskPx : p.layer.px;
         if (!target) return;   // a mask removed under the gesture: nothing to write into
         // the undo step is a copy of what the stroke touched, taken before it is applied
-        if (!p.noUndo) this.pushUndoSnapshot(this.strokeUndo(p, target), { label: this.strokeLabel(p) });
+        // a heal that blended in a worker is an edit an undo pressed meanwhile waited for (`trackEdit`): its step is that
+        // undo's to take back, so it does not count as an edit made after the key
+        if (!p.noUndo) this.pushUndoSnapshot(this.strokeUndo(p, target), { label: this.strokeLabel(p), tracked: !!p.healing });
         if (!p.stroke || p.stroke.empty) return;
-        const opacity = this.brushOpacity;
-        const op = p.erase ? "destination-out" : (p.kind === "layerpaint" && p.layer.alphaLock ? "source-atop" : "source-over");
+        // what the release froze for a heal that blended in a worker (`healBlend`), else as it is now
+        const opacity = p.opacity != null ? p.opacity : this.brushOpacity;
+        const op = p.op || (p.erase ? "destination-out" : (p.kind === "layerpaint" && p.layer.alphaLock ? "source-atop" : "source-over"));
         try {
             if (this.commitStrokeTiles(p, target, op, opacity)) return;
             for (const [bx, by, bw, bh] of this.strokeBands(p, target)) {
@@ -7493,7 +7687,7 @@ class InpaintEditor {
         if (!sp || !isTilePixels(target) || typeof target.compositeStroke !== "function" || InpaintEditor.strokeTiles === false) return false;
         if (sp.width !== target.width || sp.height !== target.height) return false;
         const l = p.layer;
-        const sel = p.clip ? this.sel : null;
+        const sel = p.clip ? (p.clipSel || this.sel) : null;
         if (sel && (!isTilePixels(sel) || target.width !== l.w || target.height !== l.h || l.x !== Math.round(l.x) || l.y !== Math.round(l.y))) return false;
         // the box the bands would walk (`strokeBands`): the buffer's extent within the gesture's rectangle
         const r = this.strokeRect(p, target);
@@ -7591,7 +7785,7 @@ class InpaintEditor {
 
     /** After a gesture: the live preview canvases of a large layer are given back, small ones are kept for the next stroke. */
     releaseStrokeScratch() {
-        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest"]) {
+        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest", "_healClip", "_healSrc"]) {
             const c = this[k];
             if (c && c.width * c.height > STROKE_SCRATCH_KEEP_PX) this[k] = null;
         }
@@ -8682,6 +8876,7 @@ class InpaintEditor {
     /** The box a gesture painted over, in the target canvas's own pixels, or null for all of it. */
     strokeRect(p, target) {
         if (!target || !p.bounds) return null;
+        if (p.rect && target === p.layer.px) return p.rect;   // frozen at the release of a heal that blended in a worker
         const layer = p.layer;
         const sx = target.width / layer.w, sy = target.height / layer.h;
         const [x0, y0, x1, y1] = p.bounds;
@@ -10918,6 +11113,18 @@ class InpaintEditor {
 
     /** Image files (JPEG, WebP, a PNG the stream reader does not take) of at least this many pixels are decoded in a pool worker on tiles (0: never). */
     static imageWorkerFrom = 32 * 1024 * 1024;
+
+    /** The heal's Poisson blend at the release (false: the dabs' quick heal is what lands, as before 0.1.32). */
+    static healBlend = true;
+
+    /** A heal stroke's box above this many pixels keeps the quick heal (the blend's grids take about 40 bytes a pixel). */
+    static healBlendMax = 8 * 1024 * 1024;
+
+    /** A heal stroke with at most this many pixels to heal, in a box of at most `healSyncBox`, is blended at the release
+     * (up to about 60 ms: the blend's cost follows the box too); more go to a worker. */
+    static healSyncMax = 128 * 1024;
+
+    static healSyncBox = 512 * 1024;
 
     static jobTimings(reset = false) {
         const out = JOB_TIMINGS.slice();

@@ -5,6 +5,12 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
+- **The healing brush blends.** Heal (J) now lays the source's texture into the colour and light around the stroke,
+  right up to its edge, so the repair has no rim: a gradient-domain ("Poisson") blend when you let go, the way the
+  healing brush works in Photoshop. While you paint you still see the quick version. A spot heals at once; a large
+  stroke takes a moment, and the brush and the shortcuts wait for it (Ctrl+Z pressed meanwhile takes it back once it
+  has landed). With a selection the blend stops at the selection's edge and meets the picture there too. Clone and heal no longer paint while quick mask is on or a mask
+  is being edited (the smudge already refused).
 - **Straighten the picture.** The Canvas tool (C) turns the whole picture by any angle and crops it in one step:
   drag outside the frame to turn it, set the angle in the bar above the canvas, or draw a line along a horizon or a
   wall with Ctrl held (or the Straighten button) and the picture turns until that line is level or plumb. The frame

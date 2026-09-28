@@ -1670,6 +1670,7 @@ export const host = {
      */
     documentDirty(ed) {
         if (!ed || !ed.base) return false;
+        if (ed.pointer && ed.pointer.healing) return true;   // a heal stroke blending in a worker is an edit on its way
         if (!ed.docFile || !ed.docFile.key) return true;
         if (ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx))) return true;
         if (ed.sel && !ed.selectionEncoded) return true;

@@ -6,7 +6,7 @@
 // The previews are drawn here and never through the editor's stroke code: `stampDab`, `tipStamp` and `dabMask` keep a
 // single cache entry each (and `stampDab` the last stroke's angle), which a preview would evict mid-stroke. A tip is
 // drawn from a small copy (`tipMini`, its long side MINI px) cached on the tip object, since a .abr tip may be thousands
-// of pixels a side; the previews are cached there too, keyed by what they show. `host.saveBrushTips` stores named fields
+// of pixels a side; the previews are cached there too, keyed by what they show. The host's `saveBrushTips` stores named fields
 // only, so neither cache reaches the brush store.
 
 import { THEME } from "./inpaint_theme.js";

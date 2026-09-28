@@ -175,7 +175,11 @@
             row.otherFrames = others.length;
             await wait(30);
             const hold2 = probe();
+            ed.lastHeal = null;   // a row whose heal keeps the quick heal notes none
             row.up = r1(send("pointerup", x0 + len, y));   // the commit (or markLayerChanged of the whole layer for smudge) and the release's draw()
+            // heal blends at the release (PLAN_0_1_31 §5 step 2): a large stroke in a worker, the gesture held until it lands
+            if (ed.healPending) { const t = performance.now(); await ed.healPending; row.healWait = r1(performance.now() - t); }
+            if (tool === "heal" && ed.lastHeal) row.heal = { where: ed.lastHeal.where, ms: ed.lastHeal.ms, px: ed.lastHeal.unknowns, box: ed.lastHeal.box.slice(2), cycles: ed.lastHeal.info && ed.lastHeal.info[1] };
             await ed.mipsSettled();
             await wait(30);
             row.release = hold2();

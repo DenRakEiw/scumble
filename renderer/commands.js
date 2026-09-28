@@ -52,7 +52,7 @@ function docName(ed) {
 }
 
 function busy(ed) {
-    return !!(ed.pending || ed.segmentPending || ed.cutoutPending || ed.upsamplePending || ed.objectsPending || ed._loading || ed.providerPending || ed._docSaving);
+    return !!(ed.pending || ed.segmentPending || ed.cutoutPending || ed.upsamplePending || ed.objectsPending || ed._loading || ed.providerPending || ed._docSaving || (ed.pointer && ed.pointer.healing));
 }
 
 export function layerSummary(ed, l) {

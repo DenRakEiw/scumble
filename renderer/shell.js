@@ -2021,6 +2021,8 @@ async function saveBeforeRestart(say = () => {}, when = "the restart") {
     // the editors: the bundle waits for it (host.js _restoring)
     for (const until = Date.now() + 60000; host._restoring && Date.now() < until;) await new Promise((r) => setTimeout(r, 100));
     const eds = host.editors();
+    // a heal stroke still blending in a worker (the button is up, the gesture held until it lands: `healBlend`)
+    for (const until = Date.now() + 10000; eds.some((ed) => ed.pointer && ed.pointer.healing) && Date.now() < until;) await new Promise((r) => setTimeout(r, 50));
     const edited = (ed) => ed.base && ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx));
     if (eds.some(edited)) say(`Saving the edited layers before ${when}...`);
     // each document's layers, then the bundle, so a save cut short still keeps the documents done so far; again for

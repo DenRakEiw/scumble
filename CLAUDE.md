@@ -76,46 +76,31 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-28, early morning)
+## Where things stand (2026-09-28, noon)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
 **Released:** 0.1.31 is Latest (2026-09-27, dev blog post live). `main` has local commits after it, not pushed.
 
-**In progress: 0.1.32 = 23b + package 4 (brushes)** (the user, 2026-09-27); package 5 is 0.1.33. The plan is
-`docs/PLAN_0_1_31.md` (§7 23b, §4 the brushes with a "built" paragraph per step).
-- **23b is done** (local, 1b61e27..b85e867): the resampler, one geometry map (`docXf`), text with a free angle,
-  straighten, the pending canvas frame, a four-lens review's fixes.
-- **Package 4, steps 1 to 3 are done** (local, 697c16c..d128bec + the review fixes): step 1 measured
-  (`tools/brush_perf.py`, `docs/PERFORMANCE.md` §15); step 2 the regional sources (`brushSource` in
-  `inpaint_canvas.js`, `compositeBox` in the new `inpaint_boxstack.js`: clone / heal / smudge read the box under the
-  dab, 2 to 15 ms a move at 15k instead of 0.2 to 8 s); step 3 the pro smudge (the Rust kernel `smudge_dab`, px ABI
-  12, with its JS twin; Length, Finger, Sample layer / below / image). Beside them: the Opacity slider for the brushes,
-  AltGr+8 / 9 size the brush, the transform's mask note, PNG metadata on by default (with a settings migration for
-  profiles that stored the old default) and inputs named like keys left out (`redact.js`), fonts by their own file,
-  a PixelMemoryError instead of a RangeError. A four-lens review (workflow, 2026-09-27) found 15, all fixed.
-- **Steps 4 to 6 are done too** (0135a27 clone: source angle / scale / flip through anchors, the overlay from
-  `viewCanvas`, tips; 788e26e flow (option A, the slider from 5 %), the pressure curve, coalesced pen events, a
-  pull-string stabiliser in the new `inpaint_stroke.js`; 6f0dc15 blur and sharpen as the smudge tool's Mode, filtered
-  from the press's picture). Each has a "built" paragraph in the plan and a gate step on both backends.
-- **Step 7 is done** (670c76a: brushes up to 1,000 px, `BRUSH_MAX`, a logarithmic Size slider).
-- **Step 8 is done** (frequency separation, linear light in every path, px ABI 13, `minReader` 2 only for documents with
-  a linear-light layer). The canvas backend's 4 levels in `composite` were stale references (taken before the
-  emulation's opacity fix; tiles failed them too): retaken, no tolerance of its own, strict on both backends (plan
-  step 8, "Settled"). Open: the GLSL clamp survives the mutation round (opaque test layers).
-- **Step 9 is done** (the tone brush `tone`, Shift+O: dodge / burn with GIMP's curves, the sponge, Protect tones, Alt
-  swaps; on the smudge engine with the press's picture; the region tier keeps the press by first reads within
-  `boxReach`; Image > New Dodge & Burn Layer, empty soft light or 50 % grey, `dodge_burn_layer`). A three-lens review
-  found 7, all fixed (plan step 9). Open for the user: the dodge & burn layer starts empty (grey is the second menu
-  entry and `grey: true`); flip the default if the user wants Photoshop's grey.
-- **Step 10 is done, package 4 is complete** (the tip popover from the Tip thumbnail: stroke previews, recent tips,
-  search; the new `renderer/editor/inpaint_tippicker.js`; a three-lens review found 5, all fixed, plan step 10). All of
-  0.1.32 (23b + package 4) is built and committed locally; the CHANGELOG's "Unreleased" section holds it.
-- **Next: on the user's word** either the 0.1.32 release chain (`docs/RELEASING.md`: version, CHANGELOG heading,
-  `npm run dist`, exe gates, tag, blog post) or package 5 (repair, remove, liquify; plan §5) for 0.1.33.
-- The user's answers of 2026-09-27: LaMa is downloaded (package 5), the PNG switch is on by default, 4.10 a popover.
-  Open for the user: item 25's look and timing.
+**In progress: 0.1.32 = 23b + package 4 (brushes) + package 5 (repair, remove, liquify)** (the user, 2026-09-28:
+package 5 first, then one release). The plan is `docs/PLAN_0_1_31.md` (§7 23b, §4 the brushes, §5 repair; a "built"
+paragraph per step). The CHANGELOG's "Unreleased" section holds all of it.
+- **23b and package 4 are done** (local, 1b61e27..8c14eee; the hand-over before this one in `docs/HISTORY.md` has them
+  step by step). Open from them: the GLSL clamp survives the linear-light mutation round; the dodge & burn layer starts
+  empty (flip to Photoshop's grey on the user's word).
+- **Package 5, steps 1 and 2 are done** (local, 2026-09-28): the Poisson solver `poisson_blend` (`crates/px/src/
+  poisson.rs`, px ABI 14: multigrid with FIXED-first coarsening, an energy-scaled correction and a full-multigrid
+  start; a bit-exact twin; px_test against an f64 CG reference; mutation round 15 of 16) and heal blending at the
+  release (`healBlend` in `inpaint_canvas.js`: up to 128k px here, larger in a pool worker with the gesture held;
+  gate step `heal_blends_the_source_into_the_picture_at_the_release` on both backends; 15k measured, 73 ms to 2.8 s).
+  A three-lens review found 11, all fixed. **Open (plan §5 step 1):** a heal the source's transparency splits into thin
+  strands does not settle (the kernel says so in info[3], the quick heal stays); the fix is connectivity-aware
+  coarsening or MG-preconditioned CG.
+- **Next:** package 5 step 3 (Remove with LaMa: downloaded like SAM2, the user's answer of 2026-09-27; confirm the
+  ONNX port's licence before the code), then 4 (patch / content-aware move on the solver), 5 (liquify); then the
+  0.1.32 release chain on the user's word (`docs/RELEASING.md`).
+- Open for the user: item 25's look and timing.
 
 **At most two build steps per session, then `/clear` or `/compact` (the user, 2026-09-28):** the context rose to 85 % in
 one session of eight steps (its own tool output and patch scripts, not this file); commit, write the hand-over, stop.
