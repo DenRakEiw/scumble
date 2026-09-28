@@ -262,7 +262,7 @@ function buildTools(ed, body) {
     addTool("paint", "Paint on the active layer (P). On the base it creates a paint layer. Alt+click picks a colour, Shift+click draws a straight line.");
     addTool("erase", "Erase from the active layer (E)");
     addGroup([
-        { tool: "smudge", label: "Smudge", key: "Shift+S", title: "Smudge (Shift+S): drag pixels along the stroke, like a finger in wet paint. Strength in the bar above the canvas; on the base it first makes a copy layer." },
+        { tool: "smudge", label: "Smudge", key: "Shift+S", title: "Smudge (Shift+S): drag the paint along the stroke, like a finger in wet paint; Mode also makes it a blur or sharpen brush. Strength, Length, Finger and Sample are in the bar above the canvas; on the base it paints into a new layer from the picture." },
         { tool: "clone", label: "Clone stamp", key: "S", title: "Clone stamp (S): Alt+click sets the source, then paint to copy from there onto the active layer. Aligned keeps the offset between strokes; Sample chooses the visible image or the layer." },
         { tool: "heal", label: "Healing brush", key: "J", title: "Healing brush (J): like the clone stamp, but the copied texture takes on the colour and light around it, blended without a rim when you let go." },
         ...(host.removeSupported ? [{ tool: "remove", label: "Remove", key: "Shift+J", title: "Remove (Shift+J): brush over an object or a blemish; when you let go it is filled from what surrounds it (LaMa, in-app: Settings › Helpers). It paints into the active layer; on the base it paints into a new layer." }] : []),

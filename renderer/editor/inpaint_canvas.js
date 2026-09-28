@@ -2150,7 +2150,7 @@ class InpaintEditor {
         row("tone", this.toneExpName, texp, texpVal);
         const tprotect = document.createElement("input");
         tprotect.type = "checkbox"; tprotect.checked = true;
-        tprotect.title = "Protect tones: the curve moves the brightest channel and the other two keep their share of it, so colours neither shift nor clip. Off: each channel on its own, as GIMP does";
+        tprotect.title = "Protect tones: the curve moves the brightest channel and the other two keep their share of it, so colours keep their hue (a strong highlights dodge or shadows burn can still clip). Off: each channel on its own, as GIMP does";
         tprotect.addEventListener("change", () => { this.toneOpts.protect = tprotect.checked; });
         this.toneProtectRow = row("tone", tprotect, "Protect tones");
         const tvib = document.createElement("input");

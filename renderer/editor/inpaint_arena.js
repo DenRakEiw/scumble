@@ -46,7 +46,8 @@ export class PixelMemoryError extends Error {
         const gb = STATS.chunks * CHUNK_BYTES / 2 ** 30;
         super("Inpaint Canvas: out of memory for pixels. This window holds as many as it can (about 15.5 GB"
             + (gb >= 1 ? `, ${gb.toFixed(1)} GB of them in layer tiles` : "")
-            + "). Close a document, or delete or merge layers, then try again.");
+            + "). Close a document, or lower the Undo history steps in Settings › Rendering (a deleted or merged layer is"
+            + " kept by its undo step), then try again.");
         this.name = "PixelMemoryError";
     }
 }

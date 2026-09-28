@@ -76,50 +76,39 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-28, late night)
+## Where things stand (2026-09-28, night: 0.1.32 prepared)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
 **Released:** 0.1.31 is Latest (2026-09-27, dev blog post live). `main` has local commits after it, not pushed.
 
-**In progress: 0.1.32 = 23b + package 4 (brushes) + package 5 (repair, remove, liquify)** (the user, 2026-09-28:
-package 5 first, then one release). The plan is `docs/PLAN_0_1_31.md` (§7 23b, §4 the brushes, §5 repair; a "built"
-paragraph per step). The CHANGELOG's "Unreleased" section holds all of it.
-- **23b, package 4 and package 5 steps 1 to 4 are done** (local; the hand-over before this one in `docs/HISTORY.md` has
-  them with their open points): the Poisson solver and heal blending, Remove with LaMa, Patch, Content-aware move. Open
-  from them: the GLSL clamp survives the linear-light mutation round; the dodge & burn layer starts empty; a heal split
-  into thin strands keeps the quick heal; the LaMa utility process in the packaged exe is unverified; defaults for the
-  user: the selection stays after a patch or a move, the Shift+J ring, Blend edge's faint halo.
-- **Package 5 step 5a is done** (local, 2026-09-28; plan §5 "Step 5a built"; the design from a workflow of six readers,
-  three designs and a judge, the synthesis's decisions are in that paragraph): **Liquify** (`liquify`, Shift+W or
-  Ctrl+Shift+X): push / grow / shrink / swirl / restore, Restore all; every stroke lands at its release as one undo step,
-  every stroke of a session is baked from the session's source (`this.liq.orig`) through the whole field, so nothing
-  softens and Restore is exact. The pure module `renderer/editor/inpaint_liquify.js` (the field in integer cells, the
-  advected brushes, the bake kernel copied from 23b's resampler, `liquifyStore` with a bounded gather, `previewBlock`);
-  `liquified` / `liquifiedAsync` / `putTiles` on both pixel classes, the worker op "liquify"; undo carries the field
-  (`snap.liq`); the base gets a copy layer "Liquify". Tests: `tools/liquify_test.js` (86 checks), gate steps
-  `liquify_bakes_each_stroke_from_the_session_source` (both backends) and `liquify_brushes_move_the_picture_and_refuse`;
-  the full editor gate on both backends; a three-lens review (9 confirmed, 6 after merging, all fixed).
-- **Package 5 step 5b is done** (local, 2026-09-28; plan §5 "Step 5b built"): the freeze (modes freeze / thaw, a Freeze
-  row with Show, Clear, Invert; kept per layer while the document is open, not in undo or files), the 15k rows
-  (docs/PERFORMANCE.md §15.1, `tools/liquify_perf.js` through `brush_perf.py`; the preview of a large box at a coarser
-  step, the undo step as runs of tiles), the bake's mutation round (17 + 1 mutants, all dead or equivalent, two checks
-  added), gate step `liquify_freeze_holds_what_it_covers`, a two-lens review (6 fixed). **Package 5 is complete.**
-  **Defaults taken, open for the user:** no Apply (a stroke lands at its release; picking another tool ends the session,
-  Photoshop's OK); Shift+W and Ctrl+Shift+X; strength 50 %; the base's copy "Liquify" directly above the base (a
-  full-size layer in saves); the mask is not moved and a layer does not grow; the grid 1 / 2 / 4 / 8 px by picture size;
-  the preview a little softer than the result (and coarser for a large brush at 1:1); grow / shrink / swirl / restore
-  rates set by eye (0.04, 3 degrees, 0.15); the swirl modes labelled "swirl ↻ / ↺"; the freeze at the strength (50 %
-  freezes half), not undone, not saved, dropped by a flip or turn of its layer; a canvas-backend session copies the
-  layer's canvas. Not built (measured as not needed): the GL sampler, queued presses during a held bake.
-- **Next: the 0.1.32 release chain on the user's word** (`docs/RELEASING.md`: CHANGELOG, `npm run dist`, the exe gates
-  against `dist/win-unpacked/Scumble.exe` (the LaMa utility process there is still unverified), tag, draft release, the
-  dev blog post). Then package 6 (layers pro) in the user's order.
-- The Microsoft Store certification of 2026-09-28 refused the search term "ComfyUI" (policy 10.1.3); the user replaced
-  it and "FLUX" in the listing with "photo retouching" and "outpainting" (`docs/STORE_LISTING.md`); the resubmission is on
-  the user's side.
-- Open for the user: item 25's look and timing.
+**0.1.32 is prepared locally, waiting for the user's word** (23b + package 4 brushes + package 5 repair / remove /
+liquify; the plan `docs/PLAN_0_1_31.md`, the step details in the previous hand-over in `docs/HISTORY.md`):
+- `package.json` 0.1.32; the CHANGELOG section `## 0.1.32 — 2026-09-28` (re-date it if the release goes out on another
+  day). The section was checked by a workflow (four readers against the code, one against the 37 commits, a skeptic per
+  finding: 32 of 34 confirmed, all applied): Blend's direction, Liquify's session and freeze, straighten up to 45°, text
+  turned in older versions, the export size cleared by a crop, the refusals while a render runs, **the PNG switch the
+  update turns on again even for those who unticked it** (settings.js: 0.1.30 / 0.1.31 could not tell a choice from the
+  default), Protect tones does not stop clipping, blur / sharpen strength per dab, 1,000 px timings, two new entries
+  (the assistant's duplicate, the plugin `geometry` event). The same pass fixed `docs/MANUAL.md` (system fonts are not
+  listed, Protect tones, blur / sharpen strength, the move's 2,048 px) and three strings (the out-of-memory advice in
+  `inpaint_arena.js`, the Protect tones and smudge tooltips).
+- `npm run dist` built `dist/Scumble Setup 0.1.32.exe`; the exe gates `--offline` are all green:
+  `dist/gates/gates/rel32-exe` (28 gates, tiles, with `brush` and `pxjobs`), `rel32-exe-canvas` (18), and after the
+  rebuild for the string and manual fixes `rel32-exe-final` (help, editor) and `rel32-exe-canvas-final` (help).
+- **LaMa's utility process verified in the packaged exe** (2026-09-28): a NodeService child of `Scumble.exe`, load
+  7.4 s, a run 1.4 to 1.7 s, a masked square in a ramp filled within 2.8 levels, the bytes outside kept, IPC answered in
+  9 ms during a run, no main-thread fallback, exit code 0. The model file for such a check:
+  `%LOCALAPPDATA%/Temp/claude/F--canvas/dd88f832-1837-4aee-9d21-d5ac8d5174bf/scratchpad/models/lama_fp32.onnx`.
+- **The dev blog draft** (slug `v0-1-32`, "Brush it away", about 1,600 words, the audit's corrections applied, `time`
+  still `TIME_FROM_PUBLISHED_AT`): `%LOCALAPPDATA%/Temp/claude/F--canvas/fff3f99a-7183-4a3b-8574-287b2bf14c72/scratchpad/blog_v0-1-32.ts`.
+- **Next, on "ok, pushe und schreibe dev log":** push, tag `v0.1.32`, `gh run watch`, publish the draft release, `node
+  tools/manual_sync.js`, the post in `F:/portfolio_web` (its own identity, no trailer; `hub.version` 0.1.32), the live
+  check. Then package 6 (layers pro) in the user's order.
+- **Open for the user:** the defaults of packages 4 and 5 (the list in the previous hand-over in `docs/HISTORY.md`,
+  among them the selection that stays after a patch or a move, now said in the CHANGELOG); the post's length; item 25's
+  look and timing. The Store resubmission (search terms without "ComfyUI" / "FLUX") is on the user's side.
 
 **At most two build steps per session, then `/clear` or `/compact` (the user, 2026-09-28):** the context rose to 85 % in
 one session of eight steps (its own tool output and patch scripts, not this file); commit, write the hand-over, stop.

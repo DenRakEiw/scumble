@@ -19,6 +19,54 @@ compressed (the user: the context ran full); the release procedure went to `docs
 
 The block of 2026-09-28 (evening, package 5 step 4) was moved here at night, when step 5a (liquify) was built.
 
+The block of 2026-09-28 (late night, package 5 complete) was moved here the same night, when 0.1.32 was prepared.
+
+
+## Where things stand (2026-09-28, late night)
+
+Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
+verbatim). Check `gh release list` before believing any release state written down anywhere.
+
+**Released:** 0.1.31 is Latest (2026-09-27, dev blog post live). `main` has local commits after it, not pushed.
+
+**In progress: 0.1.32 = 23b + package 4 (brushes) + package 5 (repair, remove, liquify)** (the user, 2026-09-28:
+package 5 first, then one release). The plan is `docs/PLAN_0_1_31.md` (§7 23b, §4 the brushes, §5 repair; a "built"
+paragraph per step). The CHANGELOG's "Unreleased" section holds all of it.
+- **23b, package 4 and package 5 steps 1 to 4 are done** (local; the hand-over before this one in `docs/HISTORY.md` has
+  them with their open points): the Poisson solver and heal blending, Remove with LaMa, Patch, Content-aware move. Open
+  from them: the GLSL clamp survives the linear-light mutation round; the dodge & burn layer starts empty; a heal split
+  into thin strands keeps the quick heal; the LaMa utility process in the packaged exe is unverified; defaults for the
+  user: the selection stays after a patch or a move, the Shift+J ring, Blend edge's faint halo.
+- **Package 5 step 5a is done** (local, 2026-09-28; plan §5 "Step 5a built"; the design from a workflow of six readers,
+  three designs and a judge, the synthesis's decisions are in that paragraph): **Liquify** (`liquify`, Shift+W or
+  Ctrl+Shift+X): push / grow / shrink / swirl / restore, Restore all; every stroke lands at its release as one undo step,
+  every stroke of a session is baked from the session's source (`this.liq.orig`) through the whole field, so nothing
+  softens and Restore is exact. The pure module `renderer/editor/inpaint_liquify.js` (the field in integer cells, the
+  advected brushes, the bake kernel copied from 23b's resampler, `liquifyStore` with a bounded gather, `previewBlock`);
+  `liquified` / `liquifiedAsync` / `putTiles` on both pixel classes, the worker op "liquify"; undo carries the field
+  (`snap.liq`); the base gets a copy layer "Liquify". Tests: `tools/liquify_test.js` (86 checks), gate steps
+  `liquify_bakes_each_stroke_from_the_session_source` (both backends) and `liquify_brushes_move_the_picture_and_refuse`;
+  the full editor gate on both backends; a three-lens review (9 confirmed, 6 after merging, all fixed).
+- **Package 5 step 5b is done** (local, 2026-09-28; plan §5 "Step 5b built"): the freeze (modes freeze / thaw, a Freeze
+  row with Show, Clear, Invert; kept per layer while the document is open, not in undo or files), the 15k rows
+  (docs/PERFORMANCE.md §15.1, `tools/liquify_perf.js` through `brush_perf.py`; the preview of a large box at a coarser
+  step, the undo step as runs of tiles), the bake's mutation round (17 + 1 mutants, all dead or equivalent, two checks
+  added), gate step `liquify_freeze_holds_what_it_covers`, a two-lens review (6 fixed). **Package 5 is complete.**
+  **Defaults taken, open for the user:** no Apply (a stroke lands at its release; picking another tool ends the session,
+  Photoshop's OK); Shift+W and Ctrl+Shift+X; strength 50 %; the base's copy "Liquify" directly above the base (a
+  full-size layer in saves); the mask is not moved and a layer does not grow; the grid 1 / 2 / 4 / 8 px by picture size;
+  the preview a little softer than the result (and coarser for a large brush at 1:1); grow / shrink / swirl / restore
+  rates set by eye (0.04, 3 degrees, 0.15); the swirl modes labelled "swirl ↻ / ↺"; the freeze at the strength (50 %
+  freezes half), not undone, not saved, dropped by a flip or turn of its layer; a canvas-backend session copies the
+  layer's canvas. Not built (measured as not needed): the GL sampler, queued presses during a held bake.
+- **Next: the 0.1.32 release chain on the user's word** (`docs/RELEASING.md`: CHANGELOG, `npm run dist`, the exe gates
+  against `dist/win-unpacked/Scumble.exe` (the LaMa utility process there is still unverified), tag, draft release, the
+  dev blog post). Then package 6 (layers pro) in the user's order.
+- The Microsoft Store certification of 2026-09-28 refused the search term "ComfyUI" (policy 10.1.3); the user replaced
+  it and "FLUX" in the listing with "photo retouching" and "outpainting" (`docs/STORE_LISTING.md`); the resubmission is on
+  the user's side.
+- Open for the user: item 25's look and timing.
+
 
 ## Where things stand (2026-09-28, evening)
 

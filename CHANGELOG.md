@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.32 — 2026-09-28
 
 - **Remove.** A new tool (Shift+J, beside heal) takes things out of the picture: brush over an object, a person, a
   wire or a blemish and let go, and LaMa fills the stroke from what surrounds it. LaMa runs inside Scumble on the
@@ -14,47 +14,62 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Patch.** A new tool (Shift+J again, after Remove) repairs a whole area: lasso the spot, drag the selection to where
   the picture is right and let go. That texture is laid into the spot and takes on the colour and light around it,
   without a rim; while you drag, the spot shows what it would take. *Destination* copies the selection to where you let
-  go instead, and *Blend* keeps more of the copied texture's own colour. One undo step, in the active layer (on the
-  base in a new layer); the selection stays, so you can drag again (Ctrl+Z first for a clean second try).
-- **Content-aware move.** A new tool (Shift+J a third time) moves something within the picture: lasso it with a
-  little of its surroundings, drag it and let go. It lands there as it was, its edge blending into the new place, and
-  LaMa fills where it was. *Extend* places a copy and leaves the original (no model needed); *Blend: all* lets the
-  whole piece take on the new place's light. One undo step, in the active layer (on the base in a new layer).
-- **Liquify.** A new tool (Shift+W, or Ctrl+Shift+X) bends the picture with the brush: push drags it along, grow
-  swells and shrink pinches what is under the brush, swirl turns it, restore brings it back (Alt swaps grow and shrink
-  and the swirl's direction). You see the result while you drag, and every stroke is one undo step. All strokes of a
-  session are taken from the layer as it was when you started, so the picture does not soften stroke by stroke, and
-  *Restore all* gets the original back exactly. A selection limits it, and so does a freeze you paint (shown in red,
-  thawed again with Alt); on the base it works on a copy, the layer *Liquify*.
+  go instead, and *Blend* below 100 % keeps more of the copied texture's own colour (at 0 % it goes in as it is). One
+  undo step, in the active layer (on the base in a new layer); the selection stays, so you can drag again (Ctrl+Z first
+  for a clean second try).
+- **Content-aware move.** A new tool (Shift+J a third time) moves something within the picture: lasso it with a little
+  of its surroundings, drag it and let go. It lands there as it was, its edge blending into the new place, and LaMa
+  fills where it was. *Extend* places a copy and leaves the original (no model needed); *Blend: all* lets the whole
+  piece take on the new place's light. One undo step, in the active layer (on the base in a new layer). The selection
+  stays where the object was, so a second drag moves what now fills that place, not the object.
+- **Liquify.** A new tool (Shift+W, or Ctrl+Shift+X) bends the picture with the brush: push drags it along, grow swells
+  and shrink pinches what is under the brush, swirl turns it, restore brings it back (Alt swaps grow and shrink and the
+  swirl's direction). You see the result while you drag, and every stroke is one undo step. As long as Liquify stays the
+  tool on the same layer, every stroke is taken from the layer as it was when you started, so the picture does not
+  soften stroke by stroke, and *Restore all* gets that back exactly; after another tool (Space to pan is fine) or
+  another layer, restore goes back only to that point, while Ctrl+Z still goes further. A selection limits it, and so
+  does a freeze you paint (the modes *freeze* and *thaw*, shown in red; a lower Strength freezes only partly). The
+  freeze stays with its layer while the document is open, but Ctrl+Z does not take it back and it is not saved. On the
+  base Liquify works on a copy, the layer *Liquify*.
 - **LaMa remove (in-app).** The same model as a recipe: select what should go, pick *LaMa remove (in-app)* and press
   Generate, offline.
 - **The healing brush blends.** Heal (J) now lays the source's texture into the colour and light around the stroke,
   right up to its edge, so the repair has no rim: a gradient-domain ("Poisson") blend when you let go, the way the
   healing brush works in Photoshop. While you paint you still see the quick version. A spot heals at once; a large
-  stroke takes a moment, and the brush and the shortcuts wait for it (Ctrl+Z pressed meanwhile takes it back once it
-  has landed). With a selection the blend stops at the selection's edge and meets the picture there too. Clone and heal no longer paint while quick mask is on or a mask
-  is being edited (the smudge already refused).
-- **Straighten the picture.** The Canvas tool (C) turns the whole picture by any angle and crops it in one step:
-  drag outside the frame to turn it, set the angle in the bar above the canvas, or draw a line along a horizon or a
-  wall with Ctrl held (or the Straighten button) and the picture turns until that line is level or plumb. The frame
-  stays inside the turned picture, the largest one of the chosen aspect. Every layer, mask and the selection are
-  turned with it, text stays editable, and one Ctrl+Z takes it all back. Agents get `straighten_canvas`.
+  stroke takes a moment, and the brush and the shortcuts wait for it (Ctrl+Z pressed meanwhile takes it back once it has
+  landed). With a selection the blend stops at the selection's edge and meets the picture there too. Clone and heal no
+  longer paint while quick mask is on or a mask is being edited (neither do the smudge, blur, sharpen, dodge, burn and
+  sponge); the status line says why.
+- **Straighten the picture.** The Canvas tool (C) turns the whole picture by up to 45° either way (the quarter turns in
+  the Image menu do the rest) and crops it in one step: drag outside the frame to turn it, set the angle in the bar
+  above the canvas, or draw a line along a horizon or a wall with Ctrl held (or the Straighten button) and the picture
+  turns until that line is level or plumb. The frame stays inside the turned picture, the largest one of the chosen
+  aspect. Every layer, mask and the selection are turned with it, text stays editable, and one Ctrl+Z takes it all back.
+  Agents get `straighten_canvas`.
 - **The canvas frame waits for you.** Dragging the frame no longer crops or extends when you let go: move and
   resize it as often as you like, then press Enter, click Apply or double-click inside it; Esc resets it. Aspect
   presets (original, 1:1, 4:3, 3:2, 16:9, 5:4 or your own; X turns it on its side) fit the largest frame into the
   picture, and the frame can show thirds, the golden section, a grid or diagonals to compose by.
-- **Text turns by any angle and stays text.** Turn a text layer with the transform tool (T) or its new Angle field
-  and it stays editable: change the words, the font or the size and it keeps its angle, drawn sharp at every edit.
-  (A text turned before this version lost its angle at the next edit.) Distort and warp still turn a text into
-  pixels, now with a note and one undo step that brings the text back.
-- **Guides, saved selections and past results follow crop, extend and resize.** Cropping used to leave the guides,
-  a saved selection and a result's place in the history where they were, so they landed off by what was cut away;
-  now they move with the picture (and scale with a resize), like they already turned with it. Film look control
-  points and 3D objects follow too.
-- **PNG exports carry the prompt and the recipe again.** *Prompt and recipe in the PNG* in the Export panel is on
-  unless you untick it (it was off since 0.1.30); JPEG, WebP, TIFF, PSD and ORA never carry them. What the recipe
-  names like a key, a token, a secret or a password stays out of the file: a workflow you imported with an API key
-  typed into one of its nodes no longer hands that key to whoever gets the picture.
+- **Text turns by any angle and stays text.** Turn a text layer with the transform tool (T) or its new Angle field and
+  it stays editable: change the words, the font or the size and it keeps its angle, drawn sharp at every edit. (A text
+  turned in an older version has no angle stored and still comes back upright at its first edit: type its angle once
+  into the Angle field and it keeps it from then on.) Distort and warp still turn a text into pixels, now with a note
+  and one undo step that brings the text back. Agents turn text with an `angle` on `add_text` and `set_text`, and
+  `list_layers` reports it.
+- **Guides, saved selections and past results follow crop, extend and resize.** Cropping used to leave the guides, a
+  saved selection and a result's place in the history where they were, so they landed off by what was cut away; now they
+  move with the picture (and scale with a resize), like they already turned with it. Film look control points and 3D
+  objects follow too. A pixel size typed into the Export panel's Size row is cleared by a crop, extend, resize or
+  straighten, so the export follows the new shape instead of stretching it to the old one. While a render, a text
+  selection, a cutout or a save is still running, crop, extend, resize, the frame's Apply and upscaling the whole
+  picture wait for it (the result lands where it was made for): the status line says so, and the frame stays for you to
+  apply afterwards.
+- **PNG exports carry the prompt and the recipe again.** *Prompt and recipe in the PNG* in the Export panel is on unless
+  you untick it (it was off since 0.1.30). **This update turns it on even if you had unticked it** in 0.1.30 or 0.1.31
+  (those versions could not tell your choice from their default): untick it once more if your PNGs should carry nothing;
+  from now on it stays as you set it. JPEG, WebP, TIFF, PSD and ORA never carry them. What the recipe names like a key,
+  a token, a secret or a password stays out of the file: a workflow you imported with an API key typed into one of its
+  nodes no longer hands that key to whoever gets the picture.
 - **The Opacity slider is back for the brushes.** The paint brush, the eraser, clone, heal, the bucket and the
   gradient showed no Opacity slider since the shape tool came; it is in their bar again.
 - **`[` and `]` size the brush on a German keyboard.** Typed with AltGr, they moved the active layer up or down
@@ -62,50 +77,56 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Text keeps the font file it was set in.** When a document you opened brought a font whose name was already taken
   by another file of yours (it is stored as "MyFont (1).ttf" then), its text could be drawn from your file instead
   on the next edit. Each text now uses the file it names, and two fonts of the same name can be used side by side.
-- **Rotating a masked layer says what happens to the mask.** Rotate, distort and warp bake a layer's mask into its
-  pixels (or drop a switched-off one); the status line now says so, and Ctrl+Z still brings the mask back.
-- **Out of memory says so.** A window holds about 15.5 GB of pixels (18 full layers at 15,000 × 10,000); one more
-  used to end in an error in the log and a stroke half written. Now the status line says memory ran out and what
-  gives it back, and a stroke that hit it can be undone as usual.
-- **Smudge, clone and heal stay fast on large pictures.** They read the whole picture before: clone and heal
-  flattened it at every stroke (up to 1.7 s at 15,000 × 10,000 before the brush moved) and the smudge read the
-  whole layer at every step (up to 8 s a move). Now each reads only what is under the brush: a few milliseconds a
-  move at any size, and a gigabyte less memory. Heal matches the colour more exactly. On the base the smudge no
-  longer copies the whole base into a layer first: it paints into a new layer from the picture.
+- **Rotating a masked layer says what happens to the mask.** The transform tool's rotate, distort and warp bake a
+  layer's mask into its pixels (or drop a switched-off one); the status line now says so, and Ctrl+Z still brings the
+  mask back. (A text layer, and any layer turned by the 90° buttons, keeps its mask as a mask.)
+- **Out of memory says so.** A window holds about 15.5 GB of pixels (18 full layers at 15,000 × 10,000); one more used
+  to end in an error in the log and a stroke half written. Now the status line says memory ran out and what gives it
+  back (closing a document, or fewer Undo history steps in Settings › Rendering: a deleted or merged layer is kept by
+  its undo step), and a stroke that hit it can be undone as usual.
+- **One undo step for a layer the assistant duplicates.** It used to leave a second, empty step in the Undo history, so
+  the second Ctrl+Z seemed to do nothing.
+- **Smudge, clone and heal stay fast on large pictures.** They read the whole picture before: clone and heal flattened
+  it at every stroke (up to 1.7 s at 15,000 × 10,000 before the brush moved) and the smudge read the whole layer at
+  every step (up to 8 s a move). Now each reads only what is under the brush: a few milliseconds a move at any picture
+  size (a few tens near the largest brush), and a gigabyte less memory. Heal matches the colour more exactly. On the
+  base the smudge no longer copies the whole base into a layer first: it paints into a new layer from the picture.
 - **Frequency separation and the linear light blend mode.** *Image › Frequency Separation…* splits the picture, or the
-  selection's box, into a low-frequency layer (colour and tone) and a high-frequency layer (texture) that give the
-  picture back exactly, so you can even out skin tone on one and heal texture on the other. The high layer uses the
-  new **linear light** blend mode, which every layer can use now; PSD files keep it both ways. A document with a
-  linear-light layer needs 0.1.32 or newer to open; every other document still opens in 0.1.31. `set_layer` refuses a
-  mistyped blend mode instead of drawing it as normal, and agents get `frequency_separation`.
-- **Dodge, burn and sponge.** A new brush (Shift+O, beside smudge, clone and heal) lightens (dodge) or darkens
-  (burn) the shadows, midtones or highlights by the Exposure you set, with GIMP's own curves; *Protect tones* keeps
-  colours from shifting or clipping. Hold Alt while you press to burn with the dodge and the other way round. The
-  sponge saturates (with *Vibrance*, dull colours gain most and nothing clips) or desaturates. A stroke does not pile
-  up over itself; a new stroke goes further. It works from the layer, the layers below or the whole picture, and on
-  the base it paints into a new layer. *Image › New Dodge & Burn Layer* adds an empty soft-light layer to paint white
-  and black on (the same picture as the classic 50 % grey layer, without its memory); the *(50 % Grey)* entry makes
-  the grey one. Agents get `dodge_burn_layer`. Blur and sharpen now work on a click too, no longer build up within a
-  stroke on the canvas backend or under a filter layer, and no longer erase what a layer holds beyond the picture's
-  edge when they read the picture.
+  selection's box (up to 16 megapixels at a time: on a larger picture select the face first), into a low-frequency layer
+  (colour and tone) and a high-frequency layer (texture) that give the picture back exactly, so you can even out skin
+  tone on one and heal texture on the other. The high layer uses the new **linear light** blend mode, which every layer
+  can use now; PSD files keep it both ways (an ORA only for Scumble). A document with a linear-light layer needs 0.1.32
+  or newer to open; every other document still opens in 0.1.31, where a text turned by a free angle comes back upright
+  at its next edit. `set_layer` refuses a mistyped blend mode instead of drawing it as normal, and agents get
+  `frequency_separation`.
+- **Dodge, burn and sponge.** A new brush (Shift+O, beside smudge, clone and heal) lightens (dodge) or darkens (burn)
+  the shadows, midtones or highlights by the Exposure you set, with GIMP's own curves; *Protect tones* moves the colour
+  channels together so colours keep their hue (a strong highlights dodge can still blow out what is already bright).
+  Hold Alt while you press to burn with the dodge and the other way round. The sponge saturates (with *Vibrance*, dull
+  colours gain most and nothing clips) or desaturates. A stroke does not pile up over itself; a new stroke goes further.
+  It works from the layer, the layers below or the whole picture, and on the base it paints into a new layer. *Image ›
+  New Dodge & Burn Layer* adds an empty soft-light layer to paint white and black on (the same picture as the classic
+  50 % grey layer, without its memory); the *(50 % Grey)* entry makes the grey one. Agents get `dodge_burn_layer`.
 - **A picker for the brush tips.** Click the tip's thumbnail in the brush bar (or the word *Tip*) and every tip
   opens in a list, each with a stroke drawn with it, grouped by the file it came from, the tips you used last on top
   and a search over the names and the file names, for a pack of hundreds. A click picks a tip and leaves the list
   open, so you can try a few; a double click or Enter picks and closes it, and so do a click beside it, Esc and the
   thumbnail. *Import…* is in it too.
-- **Brushes up to 1,000 px.** The largest brush was 400 px; now it is 1,000, which on a 15,000 px picture still
-  paints, clones and smudges without a stutter. The Size slider runs logarithmically, so the small sizes keep their
-  room; `[` and `]` and `set_brush` go up to 1,000 as well.
-- **Blur and sharpen brushes.** The smudge tool has a **Mode**: smudge, blur (softens what the brush passes over)
-  or sharpen (crisps it). Strength sets how far each stroke goes towards the full effect; going over a place again
-  within one stroke does not pile it up, a new stroke adds to it. Sample picks the layer or the whole picture, as for
+- **Brushes up to 1,000 px.** The largest brush was 400 px; now it is 1,000. A brush that large does more work at every
+  move: on a 15,000 px picture a 1,000 px clone takes about 20 ms a move and the smudge 30 to 40 ms, so the smudge
+  trails the cursor a little. The Size slider runs logarithmically, so the small sizes keep their room; `[` and `]` and
+  `set_brush` go up to 1,000 as well.
+- **Blur and sharpen brushes.** The smudge tool has a **Mode**: smudge, blur (softens what the brush passes over) or
+  sharpen (crisps it). Strength is how far each dab moves the picture towards that; the dabs overlap, so at the default
+  one pass goes nearly all the way (set it low for a gentle touch). Going over a place again within one stroke does not
+  go further, a new stroke adds to it, and a click works on a spot. Sample picks the layer or the whole picture, as for
   the smudge.
-- **Flow, a pressure curve and a stabiliser for the brushes.** **Flow** sets how much paint each dab lays down: below
-  100 % a stroke builds up where it passes again, while Opacity still caps the whole stroke. **Pressure** chooses how
-  a pen's pressure sizes the brush (linear, soft for a light hand, hard), and **Stabiliser** lets the brush follow
-  the cursor on a string, so a trembling hand draws a calm line; letting go finishes the line to the cursor. Fast pen
-  strokes are smoother too: every pen sample between two screen frames is painted now, not only the last one.
-  Agents set the flow with `set_brush`.
+- **Flow, a pressure curve and a stabiliser for the brushes.** **Flow** (the paint brush and the eraser) sets how much
+  paint each dab lays down: below 100 % a stroke builds up where it passes again, while Opacity still caps the whole
+  stroke. **Pressure** chooses how a pen's pressure sizes the brush (linear, soft for a light hand, hard), and
+  **Stabiliser** lets the brush follow the cursor on a string, so a trembling hand draws a calm line; letting go
+  finishes the line to the cursor. Fast pen strokes are smoother too: every pen sample between two screen frames is
+  painted now, not only the last one. Agents set the flow with `set_brush`.
 - **Clone and heal turn, scale and mirror their source, and show it under the brush.** New fields in their bar:
   **Angle**, **Scale** and **Flip H / V** set how the source lands (a window reflected the other way, a pattern at
   twice its size), and **Overlay** shows what the brush would copy, half transparent inside the brush circle, while
@@ -118,6 +139,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   picture. Like a real smudge it drags transparency too: a stroke that starts beyond a layer's edge thins what it
   crosses (tick alpha lock to keep the layer's alpha). It keeps the colour exact over long drags, respects the
   selection, works with imported brush tips, and pen pressure sets its size and strength.
+- **For plugin authors:** the `geometry` event now fires for crop, extend, resize (an upscale too) and straighten as
+  well, not only for turns and mirrors. Every event carries `kind` and `m`, the matrix from old to new image
+  coordinates, and `op` only when `kind` is `"turn"`: a handler written for 0.1.31 checks `kind` first
+  (`docs/PLUGINS.md`).
 
 ## 0.1.31 — 2026-09-27
 
