@@ -76,39 +76,24 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-28, night: 0.1.32 prepared)
+## Where things stand (2026-09-28, night: 0.1.32 released)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**Released:** 0.1.31 is Latest (2026-09-27, dev blog post live). `main` has local commits after it, not pushed.
-
-**0.1.32 is prepared locally, waiting for the user's word** (23b + package 4 brushes + package 5 repair / remove /
-liquify; the plan `docs/PLAN_0_1_31.md`, the step details in the previous hand-over in `docs/HISTORY.md`):
-- `package.json` 0.1.32; the CHANGELOG section `## 0.1.32 — 2026-09-28` (re-date it if the release goes out on another
-  day). The section was checked by a workflow (four readers against the code, one against the 37 commits, a skeptic per
-  finding: 32 of 34 confirmed, all applied): Blend's direction, Liquify's session and freeze, straighten up to 45°, text
-  turned in older versions, the export size cleared by a crop, the refusals while a render runs, **the PNG switch the
-  update turns on again even for those who unticked it** (settings.js: 0.1.30 / 0.1.31 could not tell a choice from the
-  default), Protect tones does not stop clipping, blur / sharpen strength per dab, 1,000 px timings, two new entries
-  (the assistant's duplicate, the plugin `geometry` event). The same pass fixed `docs/MANUAL.md` (system fonts are not
-  listed, Protect tones, blur / sharpen strength, the move's 2,048 px) and three strings (the out-of-memory advice in
-  `inpaint_arena.js`, the Protect tones and smudge tooltips).
-- `npm run dist` built `dist/Scumble Setup 0.1.32.exe`; the exe gates `--offline` are all green:
-  `dist/gates/gates/rel32-exe` (28 gates, tiles, with `brush` and `pxjobs`), `rel32-exe-canvas` (18), and after the
-  rebuild for the string and manual fixes `rel32-exe-final` (help, editor) and `rel32-exe-canvas-final` (help).
-- **LaMa's utility process verified in the packaged exe** (2026-09-28): a NodeService child of `Scumble.exe`, load
-  7.4 s, a run 1.4 to 1.7 s, a masked square in a ramp filled within 2.8 levels, the bytes outside kept, IPC answered in
-  9 ms during a run, no main-thread fallback, exit code 0. The model file for such a check:
-  `%LOCALAPPDATA%/Temp/claude/F--canvas/dd88f832-1837-4aee-9d21-d5ac8d5174bf/scratchpad/models/lama_fp32.onnx`.
-- **The dev blog draft** (slug `v0-1-32`, "Brush it away", about 1,600 words, the audit's corrections applied, `time`
-  still `TIME_FROM_PUBLISHED_AT`): `%LOCALAPPDATA%/Temp/claude/F--canvas/fff3f99a-7183-4a3b-8574-287b2bf14c72/scratchpad/blog_v0-1-32.ts`.
-- **Next, on "ok, pushe und schreibe dev log":** push, tag `v0.1.32`, `gh run watch`, publish the draft release, `node
-  tools/manual_sync.js`, the post in `F:/portfolio_web` (its own identity, no trailer; `hub.version` 0.1.32), the live
-  check. Then package 6 (layers pro) in the user's order.
-- **Open for the user:** the defaults of packages 4 and 5 (the list in the previous hand-over in `docs/HISTORY.md`,
-  among them the selection that stays after a patch or a move, now said in the CHANGELOG); the post's length; item 25's
-  look and timing. The Store resubmission (search terms without "ComfyUI" / "FLUX") is on the user's side.
+**Released:** 0.1.32 is Latest (published 2026-09-28 23:26 CEST: 23b straighten and the canvas frame, package 4 the
+brushes, package 5 Remove with LaMa, Patch, Content-aware move, heal's Poisson blend, Liquify). The dev blog post
+`v0-1-32` ("Brush it away") is live, the manual synced, website commit 5a80cc0 deployed by git. `main` is pushed.
+- Before the release: the CHANGELOG checked by a workflow against the code and the commits (32 of 34 findings applied;
+  among them the PNG switch the update turns on again for those who had unticked it, said in bold), four MANUAL fixes
+  and three strings; the exe gates `--offline` green on both backends (`dist/gates/gates/rel32-exe*`), LaMa's utility
+  process verified in the packaged exe (load 7.4 s, a run 1.4 to 1.7 s, IPC live during a run, no fallback). The step
+  details of 23b and packages 4 and 5 are in the hand-overs in `docs/HISTORY.md` and the plan's "built" paragraphs.
+- **Next: package 6 (layers pro)** of `docs/PLAN_0_1_31.md` in the user's order.
+- **Open for the user:** the defaults of packages 4 and 5 (listed in the late-night hand-over of 2026-09-28 in
+  `docs/HISTORY.md`: among them the selection that stays after a patch or a move, the Shift+J ring, Liquify's no-Apply,
+  its strength and keys, the freeze not undone or saved); item 25's look and timing. The Store resubmission (search terms
+  without "ComfyUI" / "FLUX") is on the user's side; a Store package for 0.1.32 (`npm run dist:store`) only on their word.
 
 **At most two build steps per session, then `/clear` or `/compact` (the user, 2026-09-28):** the context rose to 85 % in
 one session of eight steps (its own tool output and patch scripts, not this file); commit, write the hand-over, stop.
