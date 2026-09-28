@@ -37,6 +37,7 @@ import { SUBFOLDER, uploadBlob, uploadCanvas, uploadPixels } from "./inpaint_upl
 import { LAYERED_EXT, isPsd, isOra, readPsd, readOra } from "./inpaint_layered.js";
 import { THEME } from "./inpaint_theme.js";
 import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap } from "./inpaint_resample.js";
+import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -285,6 +286,7 @@ function boxOnPixels(m, x, y, w, h) {
 const DOC_TURN_LABELS = { 1: "Rotate canvas 90° clockwise", "-1": "Rotate canvas 90° counter-clockwise", 2: "Rotate canvas 180°", h: "Flip canvas horizontally", v: "Flip canvas vertically" };
 
 const MASK_RGB = [255, 255, 255];           // a layer mask's colour where it lets through (the selection's is red)
+const REMOVE_MARK = "#ff3c78";              // the Remove tool's stroke, shown half transparent until the fill lands
 const PYRAMID_MIN_PX = 1 << 20;             // sources below 1 MP are drawn straight, no levels
 const PYRAMID_LEVELS = 8;
 const FLOOD_COARSE_PX = 2048;               // the wand's and the bucket's first pass runs on a composite this large
@@ -1127,6 +1129,7 @@ const ICONS = {
     clone: '<path d="M5 21h14"/><path d="M4 17h16v-4H4z"/><path d="M9 13V7a3 3 0 016 0v6"/>',
     tone: '<circle cx="14.5" cy="9.5" r="5.5"/><path d="M14.5 4a5.5 5.5 0 010 11z" fill="currentColor" stroke="none"/><path d="M10.6 13.4L3.5 20.5"/>',
     heal: '<rect x="2" y="9" width="20" height="6" rx="3" transform="rotate(-45 12 12)"/><path d="M10 10l4 4"/><path d="M14 10l-4 4"/>',
+    remove: '<path d="M4 20l9-9"/><path d="M13 11l3-3 2 2-3 3z"/><path d="M18 3v3M16.5 4.5h3"/><path d="M8 4v2M7 5h2"/>',
     eyedropper: '<path d="M4 20l1-4 9-9 3 3-9 9z"/><path d="M14 7l3-3 3 3-3 3"/>',
     bucket: '<path d="M4 11l7-7 8 8-7 7z"/><path d="M4 11h11"/><path d="M19 14c0 2 1.5 3 1.5 4.5a1.5 1.5 0 01-3 0C17.5 17 19 16 19 14z" fill="currentColor" stroke="none"/>',
     shape: '<rect x="3" y="8" width="11" height="11" rx="1.5"/><circle cx="16" cy="9" r="5"/>',
@@ -2004,10 +2007,11 @@ class InpaintEditor {
         this.optsBar = bar;
         this.fillOpts = { tolerance: 32, contiguous: true, sample: "image" };
         this.gradientOpts = { type: "linear", to: "transparent" };
+        this.removeOpts = { sample: "image" };
         // the brush settings move from the top bar into this bar and show for the tools that use them
         const moveCtl = (labelEl, forTools) => { if (!labelEl) return; labelEl.dataset.for = forTools; bar.appendChild(labelEl); };
-        moveCtl(this.sizeCtl && this.sizeCtl.input.parentElement, "select deselect paint erase smudge tone clone heal");
-        moveCtl(this.hardCtl && this.hardCtl.input.parentElement, "paint erase smudge tone clone heal");
+        moveCtl(this.sizeCtl && this.sizeCtl.input.parentElement, "select deselect paint erase smudge tone clone heal remove");
+        moveCtl(this.hardCtl && this.hardCtl.input.parentElement, "paint erase smudge tone clone heal remove");
         // one call: a second one for "shape" overwrote the list and hid the slider for the brushes (e0c00a7 to 0.1.31)
         moveCtl(this.opacCtl && this.opacCtl.input.parentElement, "paint erase clone heal bucket gradient shape");
         moveCtl(this.flowCtl && this.flowCtl.input.parentElement, "paint erase");
@@ -2129,6 +2133,10 @@ class InpaintEditor {
         const csample = selectInput(["image", "layer"], "image", "Where the copied pixels come from: the visible image (all layers) or the active layer alone");
         csample.addEventListener("change", () => { this.cloneOpts.sample = csample.value; });
         row("clone heal", "Sample", csample);
+        const rsample = selectInput(["image", "layer"], "image", "What Remove fills from: the visible image (all layers) or the active layer alone. The fill goes into the active layer; on the base it always takes the image and paints into a new layer");
+        rsample.addEventListener("change", () => { this.removeOpts.sample = rsample.value; this.root.focus({ preventScroll: true }); });
+        this.removeSampleSel = rsample;
+        row("remove", "Sample", rsample);
         const aligned = document.createElement("input");
         aligned.type = "checkbox"; aligned.checked = true; aligned.title = "Aligned: the offset between source and brush stays the same for every stroke; off starts every stroke at the source point again";
         aligned.addEventListener("change", () => { this.cloneOpts.aligned = aligned.checked; });
@@ -2199,7 +2207,7 @@ class InpaintEditor {
     updateOptsBar() {
         if (!this.optsBar) return;
         const tool = this.tool;
-        const on = ["select", "deselect", "paint", "erase", "bucket", "gradient", "eyedropper", "smudge", "tone", "clone", "heal", "wand", "shape", "canvas"].includes(tool);
+        const on = ["select", "deselect", "paint", "erase", "bucket", "gradient", "eyedropper", "smudge", "tone", "clone", "heal", "remove", "wand", "shape", "canvas"].includes(tool);
         this.optsBar.hidden = !on;
         if (!on) return;
         for (const lab of this.optsBar.querySelectorAll("label")) lab.hidden = !(lab.dataset.for || "").split(" ").includes(tool);
@@ -2227,7 +2235,7 @@ class InpaintEditor {
             freehand: "Draw with the cursor held down",
         };
         if (tool === "canvas") this.syncFrameControls();
-        const hints = { canvas: "Edges crop or extend, outside turns, Ctrl+drag straightens; Enter or a double click applies, Esc resets", shape: shapeHints[this.shapeOpts.kind] || "", select: "Paint to select, Alt subtracts", deselect: "Paint to deselect", paint: "Alt+click picks a colour, Shift+click draws a line", erase: "Shift+click draws a line", wand: "Click to select the similar area; Shift adds, Alt subtracts", bucket: "Click to fill; Shift+F fills the whole selection", gradient: "Drag from the colour to where it should have faded", eyedropper: "Click to pick a colour", smudge: this.smudgeOpts && this.smudgeOpts.mode === "blur" ? "Paint over what should soften" : this.smudgeOpts && this.smudgeOpts.mode === "sharpen" ? "Paint over what should crisp up; a little goes a long way" : "Drag across an edge to soften it", tone: this.toneHint(), clone: this.cloneSource ? "Paint to copy from the source (Alt+click moves it)" : "Alt+click sets the source point", heal: this.cloneSource ? "Paint to repair with the source's texture (Alt+click moves it)" : "Alt+click sets the source point" };
+        const hints = { canvas: "Edges crop or extend, outside turns, Ctrl+drag straightens; Enter or a double click applies, Esc resets", shape: shapeHints[this.shapeOpts.kind] || "", select: "Paint to select, Alt subtracts", deselect: "Paint to deselect", paint: "Alt+click picks a colour, Shift+click draws a line", erase: "Shift+click draws a line", wand: "Click to select the similar area; Shift adds, Alt subtracts", bucket: "Click to fill; Shift+F fills the whole selection", gradient: "Drag from the colour to where it should have faded", eyedropper: "Click to pick a colour", smudge: this.smudgeOpts && this.smudgeOpts.mode === "blur" ? "Paint over what should soften" : this.smudgeOpts && this.smudgeOpts.mode === "sharpen" ? "Paint over what should crisp up; a little goes a long way" : "Drag across an edge to soften it", tone: this.toneHint(), remove: "Brush over what should go: it is filled from its surroundings when you let go", clone: this.cloneSource ? "Paint to copy from the source (Alt+click moves it)" : "Alt+click sets the source point", heal: this.cloneSource ? "Paint to repair with the source's texture (Alt+click moves it)" : "Alt+click sets the source point" };
         this.optsHint.textContent = hints[tool] || "";
     }
 
@@ -2502,7 +2510,7 @@ class InpaintEditor {
             // layer as they are, so a shortcut waits for it as a press does (Ctrl+Z waits for it through `trackEdit`)
             if (this.pointer && this.pointer.healing && !((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "z")) {
                 e.preventDefault();
-                this.setStatus("Healing: a moment.");
+                this.setStatus(this.pointer.remove ? "Removing: a moment." : "Healing: a moment.");
                 return;
             }
             this.onKey(e);
@@ -2529,9 +2537,10 @@ class InpaintEditor {
     close() {
         if (!this.isOpen) return;
         if (this.pending) this.cancelPending();
-        // a heal still blending in a worker lands as its quick heal (the worker's answer finds the pointer gone)
+        // a heal still blending in a worker lands as its quick heal (the worker's answer finds the pointer gone); a Remove
+        // waiting for the model lands nothing (its stroke is only the mark of the hole)
         const hp = this.pointer;
-        if (hp && hp.healing) { this.pointer = null; this.commitLayerPaint(hp); }
+        if (hp && hp.healing) { this.pointer = null; if (hp.remove) this.dropStroke(hp); else this.commitLayerPaint(hp); }
         this.isOpen = false;
         if (this.antsTimer) { clearInterval(this.antsTimer); this.antsTimer = null; }
         this.pointer = null;
@@ -2742,6 +2751,7 @@ class InpaintEditor {
         if (tool === "text") this.setStatus("Click on the canvas to add a text layer; click a text layer to select it, drag to move it.");
         if (tool !== "object") { this.hoverObjectId = 0; this.hoverObjectCanvas = null; }
         else this.ensureObjects();
+        if (tool === "remove" && prevTool !== "remove") this.warmRemove();
         this.updateSubbar();
         this.updateOptsBar();
         this.drawAfterPaint();
@@ -2824,7 +2834,7 @@ class InpaintEditor {
             case "y": this.setTool("shape"); break;
             case "q": this.toggleQuickMask(); break;
             case "s": this.setTool(e.shiftKey ? "smudge" : "clone"); break;
-            case "j": this.setTool("heal"); break;
+            case "j": this.setTool(e.shiftKey && host.removeSupported ? "remove" : "heal"); break;
             case "g": this.setTool(e.shiftKey ? "gradient" : "bucket"); break;
             case "f": this.fitView(); break;
             case "delete": case "backspace": {
@@ -4511,7 +4521,7 @@ class InpaintEditor {
         this.root.focus({ preventScroll: true });
         if (!this.width) return;
         // a heal stroke is held until its blend lands (`healBlend`): the next gesture waits for it
-        if (this.pointer && this.pointer.healing) { this.setStatus("Healing: a moment."); return; }
+        if (this.pointer && this.pointer.healing) { this.setStatus(this.pointer.remove ? "Removing: a moment." : "Healing: a moment."); return; }
         // Chrome reports detail = 0 on pointer events, so double-clicks are detected here:
         // a second press within 400 ms and 8 css px of the previous one.
         const nowMs = performance.now();
@@ -4673,6 +4683,31 @@ class InpaintEditor {
             this.pointer = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: false, last: [ix, iy], pressure, stab: this.newStabiliser(ix, iy, pressure),
                 clone: { src, dest, off: this.cloneOffset, heal, S: { x: this.cloneSource.x, y: this.cloneSource.y }, xf: this.cloneXf(o) } };
             this.cloneDab(this.pointer, ix, iy, ix, iy);
+        } else if (this.tool === "remove") {
+            // the stroke marks the hole (REMOVE_MARK, shown half transparent); the fill lands at the release (`removeRun`)
+            let layer = this.activeLayer();
+            if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+            if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels. Select a paint or image layer."); return; }
+            if (this.quickMask || (layer && layer.maskEdit)) { this.setStatus(`${this.quickMask ? "Quick mask is on" : `The mask of ${layer.name} is being edited`}: Remove works on pixels. ${this.quickMask ? "Press Q to leave it." : "Switch the mask edit off first."}`); return; }
+            if (!host.removeModel()) { this.setStatus("Remove needs the LaMa model: download it in Settings › Helpers (in-app models)."); return; }
+            if (layer && (layer.px.width !== layer.w || layer.px.height !== layer.h || layer.x !== Math.round(layer.x) || layer.y !== Math.round(layer.y))) {
+                this.setStatus(`Remove paints into a layer at its own size on whole pixels, and ${layer.name} is scaled or placed between pixels: pick another layer, or the base (Remove then paints into a new layer).`);
+                return;
+            }
+            // on the base the fill goes into a new layer and is taken from the image (the new layer has nothing to take); the
+            // option goes back to image, or the next stroke, on that layer, would take the layer alone (the smudge's rule)
+            const made = !layer;
+            if (made) {
+                layer = this.addPaintLayer();
+                if (this.removeOpts) this.removeOpts.sample = "image";
+                if (this.removeSampleSel) this.removeSampleSel.value = "image";
+            }
+            const sample = !made && (this.removeOpts || {}).sample === "layer" ? "layer" : "all";
+            const stroke = new StrokeBuffer(layer.px, this.pixels);
+            const pressure = this.pressureOf(e);
+            this.pointer = { kind: "layerpaint", layer, stroke, clip: this.strokeClip(layer, layer.px), erase: false, last: [ix, iy], pressure, stab: this.newStabiliser(ix, iy, pressure),
+                remove: { src: this.brushSource(sample, layer), sample, made }, dabColor: REMOVE_MARK, previewAlpha: 0.5, opacity: 1 };
+            this.layerDab(this.pointer, ix, iy, ix, iy);
         } else if (this.tool === "gradient") {
             let layer = this.activeLayer();
             if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
@@ -5021,6 +5056,8 @@ class InpaintEditor {
             this.finishStroke(p);   // the stabiliser's rest of the string, before the box is taken
             // heal: the blend replaces the dabs' colours; a large stroke is blended in a worker and commits when it lands
             if (p.clone && p.clone.heal && this.healBlend(p)) { this.draw(); return; }
+            // remove: the stroke only marks the hole; the model's fill lands when it answers, or nothing does
+            if (p.remove) { this.removeRun(p); this.draw(); return; }
             this.commitLayerPaint(p);
         } else if (p.kind === "shapepoint") {
             this.shapeDrag = null;
@@ -5183,9 +5220,9 @@ class InpaintEditor {
         const radius = this.brushSize * (sx + sy) / 4 * (p.pressure == null ? 1 : Math.max(0.05, Math.min(1, p.pressure)));
         // the buffer holds the segment plus the dab (a tip may be wider than round, and turned)
         const R = radius * 1.5 + 2;
-        const color = p.white ? "#ffffff" : (p.erase ? "#000000" : this.color);
+        const color = p.dabColor || (p.white ? "#ffffff" : (p.erase ? "#000000" : this.color));
         const hardness = p.erase ? this.eraseHardness : this.hardness;
-        const tip = this.brushTip();
+        const tip = p.remove ? null : this.brushTip();   // Remove marks a hole with the round brush
         const flow = p.flow == null ? 1 : Math.max(0.01, Math.min(1, p.flow));
         c.draw(Math.min(lx0, lx1) - R, Math.min(ly0, ly1) - R, Math.max(lx0, lx1) + R, Math.max(ly0, ly1) + R, (ctx) => {
             ctx.globalCompositeOperation = "source-over";
@@ -7073,6 +7110,16 @@ class InpaintEditor {
                 }
             }
             if (this.pointer !== p) { if (p.clipSel) p.clipSel.release(); return; }   // the editor was closed meanwhile
+            if (!this.layers.includes(p.layer)) {
+                // the layer was deleted (or merged) from the panel meanwhile: nothing lands in a layer that is gone
+                this.pointer = null;
+                if (p.clipSel) { p.clipSel.release(); p.clipSel = null; }
+                this.releaseStrokeScratch();
+                this.historyGen++;
+                this.draw();
+                this.setStatus("The layer was deleted while the heal blended: nothing landed.");
+                return;
+            }
             let settled = false;
             try { if (out) { land(out, info, where); settled = !(info && info[3]); } }
             catch (err) { console.warn("Inpaint Canvas: the heal's blend could not be written, keeping the quick heal:", err); }
@@ -7181,6 +7228,224 @@ class InpaintEditor {
                 s.px.writeRect(blk, job.x + bx, job.y + by);
             }
         }
+    }
+
+    /**
+     * Remove at the release (PLAN_0_1_31 §5 step 3): the stroke marked a hole; the in-app LaMa model fills it from the
+     * picture around it (`removeInputs`: a crop around the hole scaled to the model's 512 x 512), the fill is sampled back
+     * at the hole's pixels (`fromModel`) and written into the stroke buffer (`removeWrite`), which commits as a stroke:
+     * the buffer's alpha (the dabs' coverage) feathers the fill's edge, one undo step. The model runs in the main
+     * process's worker thread (about 1.5 s, the first run of a session also loads it, about 9 s), and the gesture stays
+     * held meanwhile as a heal's in a worker (`healBlend`): the mark stays, presses, moves and shortcuts wait, an undo
+     * waits for it (`trackEdit`), and the selection, the alpha lock and the box are frozen at the release. Without an
+     * answer (no model, an error, the editor closed) nothing lands (`dropStroke`).
+     */
+    removeRun(p) {
+        const t0 = performance.now();
+        let job = null;
+        try { job = this.removeInputs(p); }
+        catch (err) { this.dropStroke(p); this.setStatus(String((err && err.message) || err)); return; }
+        if (!job) { this.dropStroke(p); this.setStatus("Nothing to remove: the stroke lies outside the selection or the picture."); return; }
+        p.healing = true;
+        p.op = p.layer.alphaLock ? "source-atop" : "source-over";
+        p.rect = this.strokeRect(p, p.layer.px);
+        if (p.clip && this.sel) p.clipSel = this.sel.clone();
+        this.pointer = p;
+        this.setStatus(this._removeReady ? "Removing..." : "Removing (the first run loads LaMa, about 10 s)...");
+        const done = (async () => {
+            let res = null, error = null;
+            try { res = await host.removeInApp(this, { image: job.image, mask: job.modelMask }); }
+            catch (err) { error = err; }
+            if (this.pointer !== p) { if (p.clipSel) p.clipSel.release(); return; }   // the editor was closed: `close` dropped it
+            this.pointer = null;
+            // the layer was deleted (or merged) from the panel meanwhile: nothing lands in a layer that is gone
+            if (!this.layers.includes(p.layer)) error = error || new Error("the layer was deleted meanwhile");
+            let wrote = false;
+            try {
+                if (res && res.image && !error) {
+                    this.removeWrite(p, job, fromModel(res.image, job.crop, { x: job.ix, y: job.iy, w: job.w, h: job.h }, job.mask));
+                    this.commitLayerPaint(p);
+                    wrote = true;
+                    this._removeReady = true;
+                } else if (!error) error = new Error("the model gave no picture");
+            } catch (err) {
+                error = error || err;
+                console.warn("Inpaint Canvas: Remove could not write its fill:", err);
+            } finally {
+                if (p.clipSel) { p.clipSel.release(); p.clipSel = null; }
+            }
+            // nothing landed: an undo pressed while it waited (`trackEdit`) must not take back the edit before it
+            if (!wrote) { this.dropStroke(p); this.historyGen++; }
+            const why = error ? String((error && error.message) || error).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, "") : null;
+            // `box`: the hole's extent (image pixels, x y w h), what the crop was placed around
+            this.lastRemove = { box: [job.hole[0], job.hole[1], job.hole[2] - job.hole[0], job.hole[3] - job.hole[1]], crop: job.crop.slice(), holes: job.holes, wrote, seconds: res ? res.seconds : null, provider: res ? res.provider : null, ms: Math.round(performance.now() - t0), error: why };
+            this.draw();
+            this.setStatus(wrote ? `Removed (${job.holes.toLocaleString()} px in ${((performance.now() - t0) / 1000).toFixed(1)} s).` : `Remove failed: ${why}`);
+        })();
+        this.removePending = done;
+        this.trackEdit(done);
+        done.finally(() => { if (this.removePending === done) this.removePending = null; });
+    }
+
+    /**
+     * What Remove sends: the hole is every pixel the stroke covered, cut by the selection, in the layer's pixels, which
+     * are the image's (the press took an unscaled layer on whole pixels only), and inside the picture; the crop around it
+     * (`removeCrop`) is read from the picture the press chose (`p.remove.src`, the visible image or the layer) and scaled
+     * with the hole to the model's size. `stroke` is the buffer's bytes the fill goes back into, `cover` its coverage.
+     * Null when nothing is covered; throws the status line's words for a stroke wider than `removeMaxHole`.
+     */
+    removeInputs(p) {
+        const layer = p.layer, s = p.stroke;
+        if (!s || s.empty || s.tw !== layer.w || s.th !== layer.h) return null;
+        const x0 = Math.max(0, s.x), y0 = Math.max(0, s.y), x1 = Math.min(s.tw, s.x + s.w), y1 = Math.min(s.th, s.y + s.h);
+        const w = x1 - x0, h = y1 - y0, n = w * h;
+        if (w <= 0 || h <= 0) return null;
+        // the buffer's box is the dabs' drawing rectangles, a margin of 1.5 radii wider than what they covered: a box
+        // twice the limit is refused before it is read, the hole's own extent is measured below
+        const max = InpaintEditor.removeMaxHole;
+        const tooWide = (span) => new Error(`Remove fills up to ${max.toLocaleString()} px across, and this stroke spans ${span.toLocaleString()} px: remove it in parts, or select it and use Generate.`);
+        if (Math.max(w, h) > 2 * max) throw tooWide(Math.max(w, h));
+        const stroke = s.px ? s.px.readRect(x0, y0, w, h) : s.canvas.getContext("2d").getImageData(x0 - s.cx, y0 - s.cy, w, h);
+        const sa = stroke.data, cover = new Uint8Array(n), mask = new Uint8Array(n);
+        for (let k = 0; k < n; k++) if (sa[4 * k + 3]) cover[k] = mask[k] = 255;
+        if (p.clip) {
+            const c = this._healClip = this.clipCanvasFor(layer, layer.px, x0, y0, w, h, cpuDab(this._healClip, w, h), p.clipSel || this.sel);
+            const ca = c.getContext("2d").getImageData(0, 0, w, h).data;
+            for (let k = 0; k < n; k++) if (!ca[4 * k + 3]) mask[k] = 0;
+        }
+        const ix = x0 + layer.x, iy = y0 + layer.y, W = this.width, H = this.height;
+        // the hole: what is covered, cut by the selection and the picture; its extent sets the crop (not the buffer's box,
+        // whose margin would shrink the surroundings the model sees, and differ between the backends)
+        let holes = 0, hx0 = w, hy0 = h, hx1 = -1, hy1 = -1;
+        for (let y = 0; y < h; y++) {
+            const out = iy + y < 0 || iy + y >= H;
+            for (let x = 0, k = y * w; x < w; x++, k++) {
+                if (mask[k] && (out || ix + x < 0 || ix + x >= W)) mask[k] = 0;
+                if (!mask[k]) continue;
+                holes++;
+                if (x < hx0) hx0 = x;
+                if (x > hx1) hx1 = x;
+                if (y < hy0) hy0 = y;
+                if (y > hy1) hy1 = y;
+            }
+        }
+        if (!holes) return null;
+        const hole = [ix + hx0, iy + hy0, ix + hx1 + 1, iy + hy1 + 1];
+        if (Math.max(hole[2] - hole[0], hole[3] - hole[1]) > max) throw tooWide(Math.max(hole[2] - hole[0], hole[3] - hole[1]));
+        const crop = removeCrop(hole, W, H);
+        const cw = crop[2] - crop[0], ch = crop[3] - crop[1];
+        const holeCrop = new Uint8Array(cw * ch);
+        for (let y = 0; y < h; y++) {
+            const cy = iy + y - crop[1];
+            if (cy < 0 || cy >= ch) continue;
+            for (let x = 0; x < w; x++) {
+                const cx = ix + x - crop[0];
+                if (mask[y * w + x] && cx >= 0 && cx < cw) holeCrop[cy * cw + cx] = 255;
+            }
+        }
+        // bytes() hands out a buffer its next read reuses: copied (or scaled) at once
+        let pic = p.remove.src.bytes(crop);
+        if (p.remove.sample === "layer") pic = this.removeOverMean(pic, holeCrop, cw, ch);
+        const image = toModelImage(pic, cw, ch);
+        return { x: x0, y: y0, w, h, ix, iy, hole, crop, image, modelMask: toModelMask(holeCrop, cw, ch), mask, cover, stroke, holes };
+    }
+
+    /**
+     * Sample "layer": the layer's crop as the model sees it. Its clear and half-clear pixels lie over the mean colour of
+     * its opaque pixels around the hole (the model takes no alpha, and a clear pixel's bytes are black to it: a fill next
+     * to transparency came out dark). Throws the status line's words when nothing opaque lies around the hole.
+     */
+    removeOverMean(bytes, hole, w, h) {
+        const n = w * h, out = new Uint8Array(n * 4);
+        let r = 0, g = 0, b = 0, k = 0;
+        for (let i = 0; i < n; i++) {
+            if (hole[i] || bytes[4 * i + 3] !== 255) continue;
+            r += bytes[4 * i]; g += bytes[4 * i + 1]; b += bytes[4 * i + 2]; k++;
+        }
+        if (!k) throw new Error("The active layer holds nothing opaque around the stroke to fill from: set Remove's Sample to image.");
+        r /= k; g /= k; b /= k;
+        for (let i = 0, o = 0; i < n; i++, o += 4) {
+            const a = bytes[o + 3] / 255;
+            out[o] = Math.round(bytes[o] * a + r * (1 - a));
+            out[o + 1] = Math.round(bytes[o + 1] * a + g * (1 - a));
+            out[o + 2] = Math.round(bytes[o + 2] * a + b * (1 - a));
+            out[o + 3] = 255;
+        }
+        return out;
+    }
+
+    /**
+     * The fill into the stroke buffer: its colours where the hole is (the buffer's alpha, the coverage, kept), and
+     * nothing where the stroke covered but no fill goes (outside the picture, cut by the selection), so the mark's colour
+     * never lands.
+     */
+    removeWrite(p, job, fill) {
+        const s = p.stroke, a = job.stroke.data, m = job.mask, cov = job.cover, w = job.w, h = job.h;
+        for (let k = 0, n = w * h; k < n; k++) {
+            const o = 4 * k;
+            if (m[k]) { a[o] = fill[o]; a[o + 1] = fill[o + 1]; a[o + 2] = fill[o + 2]; }
+            else if (cov[k]) a[o] = a[o + 1] = a[o + 2] = a[o + 3] = 0;
+        }
+        if (!s.px) { s.canvas.getContext("2d").putImageData(job.stroke, job.x - s.cx, job.y - s.cy); return; }
+        // on tiles only the blocks the stroke covered (as `healWrite`)
+        const T = TILE_SIZE;
+        for (let ty = Math.floor(job.y / T) * T; ty < job.y + h; ty += T) {
+            for (let tx = Math.floor(job.x / T) * T; tx < job.x + w; tx += T) {
+                const bx = Math.max(tx, job.x) - job.x, by = Math.max(ty, job.y) - job.y;
+                const bw = Math.min(tx + T, job.x + w) - job.x - bx, bh = Math.min(ty + T, job.y + h) - job.y - by;
+                let any = false;
+                for (let y = by; y < by + bh && !any; y++) for (let x = bx; x < bx + bw; x++) if (cov[y * w + x]) { any = true; break; }
+                if (!any) continue;
+                const blk = new ImageData(bw, bh);
+                for (let y = 0; y < bh; y++) blk.data.set(a.subarray(((by + y) * w + bx) * 4, ((by + y) * w + bx + bw) * 4), y * bw * 4);
+                s.px.writeRect(blk, job.x + bx, job.y + by);
+            }
+        }
+    }
+
+    /**
+     * A heal or a Remove still waiting at its release (the gesture held): its stroke is drawn over its layer until it
+     * lands (a Remove's mark, a heal's quick version), so an export, a run, a document save or a thumbnail waits for it.
+     */
+    async heldEdit() {
+        for (let h; (h = this.removePending || this.healPending);) await h.catch(() => {});
+    }
+
+    /**
+     * A stroke that lands nothing (Remove without a fill): the layer stays as it was, the mark goes from the screen, and a
+     * paint layer the press made for it on the base goes again (it holds nothing, and no undo step made it).
+     */
+    dropStroke(p) {
+        if (p.clipSel) { p.clipSel.release(); p.clipSel = null; }
+        if (p.remove && p.remove.src && p.remove.src.release) p.remove.src.release();
+        if (p.remove && p.remove.made && this.layers.includes(p.layer)) {
+            this.layers = this.layers.filter((l) => l !== p.layer);
+            if (this.activeLayerId === p.layer.id) this.activeLayerId = null;
+            if (p.layer.name === "Paint " + this.paintCounter) this.paintCounter--;
+            this.historyGen++;
+            this.renderLayers();
+            this.drawThumb();
+            this.notifyChanged();
+        }
+        this.releaseStrokeScratch();
+        this.pixelVersion++;
+        this.draw();
+    }
+
+    /** The Remove model loaded while the user aims (about 9 s the first time), with a line in the status bar. */
+    warmRemove() {
+        if (!host.removeSupported) return;
+        if (!host.removeModel()) { this.setStatus("Remove needs the LaMa model: download it in Settings › Helpers (in-app models)."); return; }
+        if (this._removeWarming) return;
+        // asked at every pick: the process may have been stopped (a model folder change), and a loaded one answers at once
+        this._removeWarming = true;
+        if (!this._removeReady) this.setStatus("Loading LaMa for Remove (about 10 s the first time)...");
+        host.warmRemove(this).then((r) => {
+            this._removeWarming = false;
+            this._removeReady = !!(r && r.ready);
+            if (this.tool !== "remove" || this.pointer) return;
+            this.setStatus(r && r.ready ? "LaMa is ready: brush over what should go." : `LaMa could not be loaded: ${(r && r.error) || "no model"}.`);
+        });
     }
 
     /**
@@ -7638,9 +7903,15 @@ class InpaintEditor {
     strokeLabel(p) {
         if (p.kind === "maskpaint") return p.erase ? "Erase mask" : "Paint mask";
         if (p.grad) return "Gradient";
+        if (p.remove) return "Remove";
         if (p.clone) return p.clone.heal ? "Heal" : "Clone";
         if (this.tool === "shape") return "Shape";
         return p.erase ? "Erase" : "Brush stroke";
+    }
+
+    /** The opacity a live stroke is shown at: the brush's, or the gesture's own (Remove shows its mark half transparent). */
+    strokeAlpha(p) {
+        return p && p.previewAlpha != null ? p.previewAlpha : this.brushOpacity;
     }
 
     /** Apply the stroke buffer to the layer (or its mask) with the brush opacity, band by band. */
@@ -7772,7 +8043,7 @@ class InpaintEditor {
         ctx.globalAlpha = 1;
         ctx.clearRect(x, y, w, h);
         target.drawTo(ctx, x, y, w, h, x, y, w, h);
-        ctx.globalAlpha = this.brushOpacity;
+        ctx.globalAlpha = this.strokeAlpha(p);
         ctx.globalCompositeOperation = op;
         for (const [bx, by, bw, bh] of this.strokeBands(p, target)) {
             const ix0 = Math.max(x, bx), iy0 = Math.max(y, by), ix1 = Math.min(x + w, bx + bw), iy1 = Math.min(y + h, by + bh);
@@ -8016,7 +8287,7 @@ class InpaintEditor {
         const p = this.pointer, sb = p.stroke;
         if (!sb || sb.empty) return;
         if (!p.clip) {
-            ctx.globalAlpha = this.brushOpacity;
+            ctx.globalAlpha = this.strokeAlpha(p);
             ctx.globalCompositeOperation = op;
             sb.drawOver(this, ctx, layer, target, vp);
             ctx.globalAlpha = 1;
@@ -8040,7 +8311,7 @@ class InpaintEditor {
         ctx.save();
         try {
             ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.globalAlpha = this.brushOpacity;
+            ctx.globalAlpha = this.strokeAlpha(p);
             ctx.globalCompositeOperation = op;
             ctx.drawImage(s, 0, 0, w, h, dev[0], dev[1], w, h);
         } finally {
@@ -11126,6 +11397,9 @@ class InpaintEditor {
 
     static healSyncBox = 512 * 1024;
 
+    /** Remove fills a stroke up to this many pixels across (its crop is twice that, scaled to the model's 512 x 512). */
+    static removeMaxHole = 2048;
+
     static jobTimings(reset = false) {
         const out = JOB_TIMINGS.slice();
         if (reset) JOB_TIMINGS.length = 0;
@@ -11369,6 +11643,7 @@ class InpaintEditor {
 
     async exportImage({ download = false } = {}) {
         if (!this.base) { this.setStatus("Nothing to save yet."); return null; }
+        if (this.removePending || this.healPending) { this.setStatus("Waiting for the stroke to land..."); await this.heldEdit(); }
         const fmt = ["png", "jpg", "webp", "tiff", "psd", "ora"].includes(this.saveFormatSel && this.saveFormatSel.value) ? this.saveFormatSel.value : "png";
         const stem = ((this.saveNameInput && this.saveNameInput.value) || "inpaint_canvas").trim().replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._ -]/gi, "_") || "inpaint_canvas";
         try {
@@ -13822,7 +14097,7 @@ class InpaintEditor {
      * that is simply bigger than what is being painted on.
      */
     drawBrushRing(ctx, s) {
-        const brushTools = ["select", "deselect", "paint", "erase", "smudge", "tone", "clone", "heal"];
+        const brushTools = ["select", "deselect", "paint", "erase", "smudge", "tone", "clone", "heal", "remove"];
         if (!this.hover || !brushTools.includes(this.tool)) return;
         ctx.save();
         const colour = this.tool === "paint" ? this.color : (this.tool === "erase" || this.tool === "deselect" ? "#ffd166" : "#fff");
@@ -14621,6 +14896,7 @@ class InpaintEditor {
 
     async generate() {
         if (!this.base) { this.setStatus("Load an image first."); return; }
+        if (this.removePending || this.healPending) { this.setStatus("Waiting for the stroke to land..."); await this.heldEdit(); }
         if (this.genSettings.seedRandom) { this.genSettings.seed = randomSeed(); if (this.seedInput) this.seedInput.value = this.genSettings.seed; }
         const { name, wired } = this.resultInputState();
         try {

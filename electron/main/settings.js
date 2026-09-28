@@ -15,8 +15,8 @@ const DEFAULTS = {
     // InpaintCanvas node widgets, filled into the recipe's canvas node on every run
     nodeParams: { padding: 64, target_size: 1024, feather: 16, multiple_of: 64 },
     // in-app helper models (electron/main/onnx): device auto|gpu|cpu, model folder (null =
-    // <userData>/models, or a ComfyUI models folder), the SAM2 and matting model ids
-    helpers: { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite" },
+    // <userData>/models, or a ComfyUI models folder), the SAM2, matting and inpaint (Remove) model ids
+    helpers: { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama" },
     updates: { check: true },   // check GitHub Releases at start (electron/main/updater.js)
     // exported PNGs carry the prompt, seed and recipe as text chunks (the Export section's switch; docs/PLAN_0_1_29.md 3f);
     // on unless the user turns it off (the user, 2026-09-27; off from 0.1.30 to 0.1.31)

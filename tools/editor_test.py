@@ -7119,6 +7119,306 @@ try {
 }
 return out;
 """),
+    ("remove_fills_the_hole_from_the_model_at_the_release", """
+// PLAN_0_1_31 section 5 step 3: Remove. The stroke only marks the hole (its colour never lands); at the release the crop
+// around it goes to the in-app LaMa model at 512 x 512 and the answer is sampled back into the hole as one undo step. The
+// model is a stand-in (`host.helperCall` answers "inpaint" with its input, the model mask painted one flat colour), so the
+// fill is known to the byte. The real handlers through synthetic pointer events: on the base (a new layer), the gesture
+// held while the model runs (a press and a shortcut wait, Ctrl+Z waits and takes it back), the selection, a failure, no
+// model, quick mask, a layer off the origin that reaches out of the picture, and Sample "layer" against "image"
+const R = await import("./editor/inpaint_remove.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const W = 1200, H = 800, N = R.REMOVE_SIZE, RAD = 75;
+const FILL = [10, 200, 30];
+const out = { tiles: !!ed.tileMode };
+const keep = { helperCall: host.helperCall, removeModel: host.removeModel, stabiliser: ed.stabiliser };
+const fake = () => ({ id: "fake", label: "fake" });
+// the model stand-in: every request recorded, an optional delay and failure per check
+const calls = [];
+let delay = 0, fail = null;
+host.removeModel = fake;
+host.helperCall = async (name, a) => {
+    if (name === "warmInpaint") { calls.push({ name, model: a.model }); return { ready: true, seconds: 0, provider: "fake" }; }
+    if (name !== "inpaint") throw new Error("unknown helper " + name);
+    calls.push({ name, model: a.model, image: new Uint8Array(a.image), mask: new Uint8Array(a.mask) });
+    if (delay) await wait(delay);
+    if (fail) throw fail;
+    const image = new Uint8Array(a.image);
+    for (let i = 0; i < N * N; i++) if (a.mask[i]) { image[4 * i] = FILL[0]; image[4 * i + 1] = FILL[1]; image[4 * i + 2] = FILL[2]; image[4 * i + 3] = 255; }
+    return { image, size: N, seconds: 0.01, provider: "fake" };
+};
+const reqs = () => calls.filter((c) => c.name === "inpaint");
+const lastReq = () => reqs()[reqs().length - 1];
+try {
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    // the picture: a smooth gradient with a flat red disc in the middle
+    const base = document.createElement("canvas"); base.width = W; base.height = H;
+    {
+        const img = new ImageData(W, H), a = img.data;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const o = (y * W + x) * 4;
+            if ((x - 600) * (x - 600) + (y - 400) * (y - 400) < 90 * 90) { a[o] = 220; a[o + 1] = 30; a[o + 2] = 30; }
+            else { a[o] = 40 + 0.15 * x; a[o + 1] = 80 + 0.1 * y; a[o + 2] = 150 - 0.05 * x; }
+            a[o + 3] = 255;
+        }
+        base.getContext("2d").putImageData(img, 0, 0);
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W }); Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "remove_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    ed.activeLayerId = null; ed.renderLayers();
+    await ed.mipsSettled();
+    ed.view.angle = 0; ed.view.scale = 0.5; ed._fitted = false; ed.view.x = 10; ed.view.y = 10; ed.draw();
+    let pid = 1900;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+    const send = (type, ix, iy, extra) => ed.canvas.dispatchEvent(ev(type, ix, iy, extra));
+    const stroke = (a, b) => {
+        pid++;
+        send("pointerdown", a[0], a[1]);
+        for (let i = 1; i <= 8; i++) send("pointermove", a[0] + (b[0] - a[0]) * i / 8, a[1] + (b[1] - a[1]) * i / 8);
+        send("pointerup", b[0], b[1]);
+    };
+    const key = (k, o = {}) => ed.root.dispatchEvent(new KeyboardEvent("keydown", Object.assign({ key: k, bubbles: true, cancelable: true }, o)));
+    // geometry: the distance of a pixel centre to the stroke's segment (a hard round brush paints the capsule around it)
+    const segDist = (x, y, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy; const t = l2 ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / l2)) : 0; return Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy); };
+    const inPic = (X, Y) => X >= 0 && X < W && Y >= 0 && Y < H;
+    // a layer's pixels against the stroke a -> b: `keepFn` says where a fill may land (the picture, the selection). core:
+    // 3 px inside the capsule where a fill may land, all (FILL, 255); far: 3 px outside it, all clear; leak: anything
+    // where no fill may land; marked: red above green at any alpha (the mark is (255, 60, 120), the fill green)
+    const look = (layer, a, b, keepFn = inPic) => {
+        const px = layer.px.readRect(0, 0, layer.w, layer.h).data;
+        const r = { covered: 0, full: 0, differ: 0, core: 0, coreBad: 0, far: 0, leak: 0, marked: 0 };
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (let ly = 0; ly < layer.h; ly++) for (let lx = 0; lx < layer.w; lx++) {
+            const o = (ly * layer.w + lx) * 4, A = px[o + 3], X = lx + layer.x, Y = ly + layer.y;
+            const dist = segDist(X + 0.5, Y + 0.5, a, b), ok = keepFn(X, Y);
+            const exact = px[o] === FILL[0] && px[o + 1] === FILL[1] && px[o + 2] === FILL[2];
+            if (A) {
+                r.covered++;
+                x0 = Math.min(x0, X); y0 = Math.min(y0, Y); x1 = Math.max(x1, X); y1 = Math.max(y1, Y);
+                if (px[o] > px[o + 1]) r.marked++;
+                if (!ok) r.leak++;
+                if (dist >= RAD + 3) r.far++;
+                if (A === 255) { r.full++; if (!exact) r.differ++; }
+            }
+            if (dist <= RAD - 3 && ok) { r.core++; if (A !== 255 || !exact) r.coreBad++; }
+        }
+        r.bounds = r.covered ? [x0, y0, x1, y1] : null;
+        return r;
+    };
+    const digest = (layer) => { const a = layer.px.readRect(0, 0, layer.w, layer.h).data; let h = 2166136261, n = 0; for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 16777619); for (let i = 3; i < a.length; i += 4) if (a[i]) n++; return (h >>> 0).toString(16) + "/" + n; };
+    // model <-> image: the model pixel whose centre lies nearest an image pixel's centre, and the image pixel under a
+    // model pixel's centre
+    const toModel = (crop, X, Y) => [Math.round((X - crop[0] + 0.5) * N / (crop[2] - crop[0]) - 0.5), Math.round((Y - crop[1] + 0.5) * N / (crop[3] - crop[1]) - 0.5)];
+    const toImg = (crop, mx, my) => [Math.floor(crop[0] + (mx + 0.5) * (crop[2] - crop[0]) / N), Math.floor(crop[1] + (my + 0.5) * (crop[3] - crop[1]) / N)];
+    const reqPx = (q, m) => Array.from(q.image.slice(4 * (m[1] * N + m[0]), 4 * (m[1] * N + m[0]) + 3));
+    const reqMask = (q, m) => q.mask[m[1] * N + m[0]];
+    const basePx = (p) => Array.from(ed.basePx.readRect(p[0], p[1], 1, 1).data.slice(0, 3));
+    const diff = (p, q) => Math.max(...p.map((v, i) => Math.abs(v - q[i])));
+    const cropOf = (box) => R.removeCrop([Math.max(0, box[0]), Math.max(0, box[1]), Math.min(W, box[0] + box[2]), Math.min(H, box[1] + box[3])], W, H);
+    const settle = async () => { await ed.removePending; for (let i = 0; i < 20 && ed._historyQueue; i++) await ed._historyQueue; };
+
+    ed.brushSize = 150; ed.hardness = 1; ed.brushOpacity = 0.4; ed.brushTipId = null; ed.stabiliser = 0;
+    ed.removeOpts = { sample: "image" };
+    ed.setTool("remove");
+    await wait(50);
+    out.warm = calls.filter((c) => c.name === "warmInpaint").length;
+    if (out.warm !== 1 || ed.tool !== "remove") throw new Error("picking Remove did not warm the model once: " + JSON.stringify({ warm: out.warm, tool: ed.tool, status: ed.status }));
+
+    // 1. on the base: a new paint layer takes the fill (at opacity 1, not the brush's 0.4), the crop and the request as stated
+    const A1 = [540, 400], B1 = [660, 400];
+    const nL = ed.layers.length, u1 = ed.undo.length, q1 = reqs().length;
+    stroke(A1, B1);
+    const heldAtRelease = !!(ed.pointer && ed.pointer.healing && ed.pointer.remove);
+    await settle();
+    const L1 = ed.activeLayer(), lr1 = ed.lastRemove, req1 = lastReq();
+    if (!L1 || !lr1 || !lr1.wrote) throw new Error("the Remove on the base wrote nothing: " + ed.status + " " + JSON.stringify(lr1));
+    const s1 = look(L1, A1, B1);
+    const c1 = toModel(lr1.crop, 600, 400), far1 = [10, 10];
+    out.base = { box: lr1.box, crop: lr1.crop, holes: lr1.holes, provider: lr1.provider, held: heldAtRelease, layers: ed.layers.length - nL, kind: L1.kind, active: ed.activeLayerId === L1.id,
+        steps: ed.undo.length - u1, label: (ed.undo[ed.undo.length - 1] || {}).label, requests: reqs().length - q1, model: req1.model, image: req1.image.length, mask: req1.mask.length,
+        maskCentre: reqMask(req1, c1), maskFar: reqMask(req1, far1), centre: reqPx(req1, c1), farDiff: diff(reqPx(req1, far1), basePx(toImg(lr1.crop, ...far1))),
+        bounds: s1.bounds, covered: s1.covered, full: s1.full, differ: s1.differ, core: s1.core, coreBad: s1.coreBad, far: s1.far, leak: s1.leak, marked: s1.marked };
+    const b1 = out.base;
+    if (b1.layers !== 1 || b1.kind !== "paint" || !b1.active) throw new Error("Remove on the base did not paint into a new active paint layer: " + JSON.stringify(b1));
+    if (b1.steps !== 1 || b1.label !== "Remove" || b1.requests !== 1 || b1.model !== "fake" || b1.provider !== "fake" || !b1.held) throw new Error("the Remove on the base is not one request and one undo step: " + JSON.stringify(b1));
+    if (JSON.stringify(lr1.crop) !== JSON.stringify(cropOf(lr1.box))) throw new Error("the crop is not removeCrop of the hole's box: " + JSON.stringify({ crop: lr1.crop, want: cropOf(lr1.box), box: lr1.box }));
+    // the box is the hole's own extent (what the fill covers), not the stroke buffer's drawing rectangles (1.5 radii wider)
+    if (!s1.bounds || JSON.stringify(lr1.box) !== JSON.stringify([s1.bounds[0], s1.bounds[1], s1.bounds[2] - s1.bounds[0] + 1, s1.bounds[3] - s1.bounds[1] + 1])) throw new Error("the crop is not placed around the hole itself: " + JSON.stringify({ box: lr1.box, bounds: s1.bounds }));
+    if (b1.image !== N * N * 4 || b1.mask !== N * N || b1.maskCentre !== 255 || b1.maskFar !== 0) throw new Error("the model's input is not the 512 picture and hole: " + JSON.stringify(b1));
+    if (diff(b1.centre, [220, 30, 30]) > 3 || b1.farDiff > 3) throw new Error("the model's picture is not the picture under the crop (the mark sent?): " + JSON.stringify(b1));
+    if (b1.core < 25000 || b1.coreBad || b1.differ || b1.far || b1.leak || b1.marked || b1.covered !== b1.holes) throw new Error("the fill did not land as the model's colour over the stroke: " + JSON.stringify(b1));
+    await ed.undoStep();
+    const empty1 = digest(L1);
+    if (!/[/]0$/.test(empty1)) throw new Error("the undo of the Remove left pixels: " + empty1);
+
+    // 2. the gesture is held while the model runs: a press and a shortcut wait, the fill lands as one step, undo takes it back
+    delay = 400;
+    const u2 = ed.undo.length, q2 = reqs().length;
+    stroke(A1, B1);
+    const p2 = ed.pointer;
+    const held2 = !!(p2 && p2.healing && p2.remove), gh2 = ed.gestureHeld(), pend2 = !!ed.removePending;
+    pid++; send("pointerdown", 900, 650); send("pointermove", 950, 650); send("pointerup", 950, 650);
+    const pressWaited = ed.pointer === p2, pressStatus = ed.status;
+    key("b");
+    const keyWaited = ed.tool === "remove" && /Removing: a moment/.test(ed.status);
+    await settle();
+    const s2 = look(L1, A1, B1);
+    out.held = { held: held2, gestureHeld: gh2, pending: pend2, pressWaited, pressStatus, keyWaited, requests: reqs().length - q2, steps: ed.undo.length - u2, full: s2.full, coreBad: s2.coreBad, marked: s2.marked, after: ed.pointer === null, ms: ed.lastRemove.ms };
+    if (!held2 || !gh2 || !pend2 || !pressWaited || !/Removing: a moment/.test(pressStatus) || !keyWaited) throw new Error("the Remove did not hold the gesture: " + JSON.stringify(out.held));
+    if (out.held.requests !== 1 || out.held.steps !== 1 || !out.held.after || s2.full < 25000 || s2.coreBad || s2.marked) throw new Error("the held Remove landed otherwise: " + JSON.stringify(out.held));
+    await ed.undoStep();
+    out.held.undone = digest(L1) === empty1;
+    if (!out.held.undone) throw new Error("the undo of the held Remove did not give the layer back: " + JSON.stringify(out.held));
+
+    // 3. Ctrl+Z pressed while the model runs waits for the fill and takes it back; the redo list holds it
+    const u3 = ed.undo.length;
+    stroke(A1, B1);
+    key("z", { ctrlKey: true });
+    await settle();
+    out.undoWhileHeld = { same: digest(L1) === empty1, steps: ed.undo.length - u3, wrote: ed.lastRemove.wrote, future: ed.undoList().filter((r) => r.future).map((r) => r.label) };
+    if (!out.undoWhileHeld.same || out.undoWhileHeld.steps || !out.undoWhileHeld.wrote || out.undoWhileHeld.future.join() !== "Remove") throw new Error("Ctrl+Z pressed while the model ran did not take the Remove back: " + JSON.stringify(out.undoWhileHeld));
+    delay = 0;
+
+    // 4. the selection cuts the hole: nothing lands outside it (not even the mark), inside is the fill
+    await run("select_rect", { x: 400, y: 300, w: 200, h: 200, doc: d.id });
+    const inSel = (X, Y) => X >= 400 && X < 600 && Y >= 300 && Y < 500;
+    const u4 = ed.undo.length;
+    stroke(A1, B1);
+    await settle();
+    const s4 = look(L1, A1, B1, inSel), lr4 = ed.lastRemove, req4 = lastReq();
+    out.selection = { wrote: lr4.wrote, steps: ed.undo.length - u4, holes: lr4.holes, covered: s4.covered, core: s4.core, coreBad: s4.coreBad, differ: s4.differ, leak: s4.leak, marked: s4.marked,
+        maskIn: reqMask(req4, toModel(lr4.crop, 560, 400)), maskOut: reqMask(req4, toModel(lr4.crop, 650, 400)) };
+    if (!lr4.wrote || out.selection.steps !== 1 || s4.core < 10000 || s4.coreBad || s4.differ || s4.leak || s4.marked || out.selection.maskIn !== 255 || out.selection.maskOut !== 0) throw new Error("the selection did not cut the Remove: " + JSON.stringify(out.selection));
+    await ed.undoStep();
+    await run("select_none", { doc: d.id });
+
+    // 5. the model fails: nothing lands, no undo step, the status says so
+    const u5 = ed.undo.length;
+    fail = new Error("boom");
+    try { stroke(A1, B1); await settle(); } finally { fail = null; }
+    const s5 = look(L1, A1, B1);
+    out.failure = { steps: ed.undo.length - u5, same: digest(L1) === empty1, status: ed.status, wrote: ed.lastRemove.wrote, error: ed.lastRemove.error, marked: s5.marked, after: ed.pointer === null };
+    if (out.failure.steps || !out.failure.same || !/^Remove failed/.test(out.failure.status) || out.failure.wrote !== false || out.failure.error !== "boom" || s5.marked || !out.failure.after) throw new Error("a failed Remove left something: " + JSON.stringify(out.failure));
+
+    // 6. no model: the press refuses (no gesture, no layer, no request)
+    host.removeModel = () => null;
+    ed.activeLayerId = null; ed.renderLayers();
+    const nl6 = ed.layers.length, q6 = reqs().length, u6 = ed.undo.length;
+    try { stroke(A1, B1); } finally { host.removeModel = fake; }
+    out.noModel = { status: ed.status, pointer: ed.pointer === null, layers: ed.layers.length - nl6, requests: reqs().length - q6, steps: ed.undo.length - u6 };
+    if (!/LaMa model/.test(out.noModel.status) || !out.noModel.pointer || out.noModel.layers || out.noModel.requests || out.noModel.steps) throw new Error("Remove without a model did not refuse: " + JSON.stringify(out.noModel));
+    ed.activeLayerId = L1.id; ed.renderLayers();
+
+    // 7. quick mask on: Remove refuses (it works on pixels)
+    const u7 = ed.undo.length, q7 = reqs().length;
+    ed.quickMask = true;
+    try { stroke(A1, B1); } finally { ed.quickMask = false; }
+    out.quickMask = { status: ed.status, steps: ed.undo.length - u7, requests: reqs().length - q7, same: digest(L1) === empty1, pointer: ed.pointer === null };
+    if (!/Quick mask/.test(out.quickMask.status) || out.quickMask.steps || out.quickMask.requests || !out.quickMask.same || !out.quickMask.pointer) throw new Error("Remove worked with quick mask on: " + JSON.stringify(out.quickMask));
+
+    // 8. a paint layer at (37, -21), larger than the picture: the fill lands at the image position (layer pixel = image
+    // pixel - (37, -21)), and the stroke's part outside the picture stays clear
+    const M = ed.addLayer({ name: "off", kind: "paint", px: ed.pixels.Layer.empty(1400, 900), x: 37, y: -21, w: 1400, h: 900 });
+    ed.activeLayerId = M.id; ed.renderLayers();
+    const A8 = [1120, 60], B8 = [1170, 60];
+    const u8 = ed.undo.length;
+    stroke(A8, B8);
+    await settle();
+    const s8 = look(M, A8, B8), lr8 = ed.lastRemove, req8 = lastReq();
+    const at8 = Array.from(M.px.readRect(1145 - 37, 60 + 21, 1, 1).data);
+    out.offsetLayer = { box: lr8.box, crop: lr8.crop, wrote: lr8.wrote, steps: ed.undo.length - u8, bounds: s8.bounds, at: at8, core: s8.core, coreBad: s8.coreBad, differ: s8.differ, far: s8.far, leak: s8.leak, marked: s8.marked,
+        maskAt: reqMask(req8, toModel(lr8.crop, 1145, 60)) };
+    const o8 = out.offsetLayer;
+    if (!o8.wrote || o8.steps !== 1 || JSON.stringify(lr8.crop) !== JSON.stringify(cropOf(lr8.box)) || o8.maskAt !== 255) throw new Error("the Remove on a layer at (37, -21) did not run as stated: " + JSON.stringify(o8));
+    // the stroke reaches out of the picture (its capsule), the hole is cut to it (the box is the hole's extent)
+    if (!(A8[1] - RAD < 0 && B8[0] + RAD > W)) throw new Error("the stroke did not reach out of the picture (the check would prove nothing): " + JSON.stringify(o8));
+    if (lr8.box[1] !== 0 || lr8.box[0] + lr8.box[2] !== W) throw new Error("the hole was not cut to the picture: " + JSON.stringify(o8));
+    if (at8.join() !== FILL.concat(255).join() || o8.core < 12000 || o8.coreBad || o8.differ || o8.far || o8.leak || o8.marked) throw new Error("the fill on a layer at (37, -21) is not at the image position: " + JSON.stringify(o8));
+    if (!o8.bounds || Math.abs(o8.bounds[0] - (A8[0] - RAD)) > 2 || o8.bounds[1] !== 0 || o8.bounds[2] !== W - 1 || Math.abs(o8.bounds[3] - (A8[1] + RAD)) > 2) throw new Error("the fill on a layer at (37, -21) is not where the stroke was, cut to the picture: " + JSON.stringify(o8));
+    await ed.undoStep();
+
+    // 9. Sample "layer" sends the active layer alone (clear is black to the model), "image" the visible picture
+    const G = ed.addPaintLayer();
+    G.px.drawInto(null, (x) => { x.fillStyle = "#00c800"; x.fillRect(450, 250, 300, 300); });
+    ed.markLayerChanged(G);
+    ed.activeLayerId = G.id; ed.renderLayers();
+    await ed.mipsSettled();
+    const A9 = [580, 400], B9 = [620, 400];
+    const sampleAt = async (mode) => {
+        ed.removeOpts.sample = mode;
+        stroke(A9, B9);
+        await settle();
+        const lr = ed.lastRemove, q = lastReq(), bare = toModel(lr.crop, 360, 160);
+        const r = { wrote: lr.wrote, square: reqPx(q, toModel(lr.crop, 470, 270)), bare: reqPx(q, bare), base: basePx(toImg(lr.crop, ...bare)) };
+        if (lr.wrote) await ed.undoStep();
+        return r;
+    };
+    const sl = await sampleAt("layer"), si = await sampleAt("image");
+    ed.removeOpts.sample = "image";
+    out.sample = { layer: { square: sl.square, bare: sl.bare }, image: { square: si.square, bare: si.bare, base: si.base } };
+    // the layer's clear pixels lie over the mean of its opaque ones (here the green square), neither black nor the base
+    if (!sl.wrote || !si.wrote || diff(sl.square, [0, 200, 0]) > 3 || diff(sl.bare, [0, 200, 0]) > 3) throw new Error("Sample layer did not send the layer alone over its mean colour: " + JSON.stringify(out.sample));
+    if (diff(si.square, [0, 200, 0]) > 3 || diff(si.bare, si.base) > 3 || diff(si.base, [0, 0, 0]) < 50) throw new Error("Sample image did not send the visible picture: " + JSON.stringify(out.sample));
+    // Sample "layer" on a layer with nothing opaque around the stroke refuses (nothing to fill from)
+    const E = ed.addPaintLayer();
+    ed.activeLayerId = E.id; ed.renderLayers();
+    ed.removeOpts.sample = "layer";
+    const q9 = reqs().length, u9 = ed.undo.length;
+    stroke(A9, B9); await settle();
+    out.emptyLayer = { requests: reqs().length - q9, steps: ed.undo.length - u9, status: ed.status };
+    ed.removeOpts.sample = "image";
+    if (out.emptyLayer.requests || out.emptyLayer.steps || !/nothing opaque/.test(out.emptyLayer.status)) throw new Error("Sample layer on an empty layer did not refuse: " + JSON.stringify(out.emptyLayer));
+
+    // 10. a failed Remove on the base takes away the paint layer its press made (it holds nothing, no step made it)
+    ed.activeLayerId = null; ed.renderLayers();
+    const n10 = ed.layers.length, u10 = ed.undo.length;
+    fail = new Error("boom again");
+    try { stroke(A1, B1); await settle(); } finally { fail = null; }
+    out.baseFailure = { layers: ed.layers.length - n10, active: ed.activeLayerId, steps: ed.undo.length - u10, status: ed.status };
+    if (out.baseFailure.layers || out.baseFailure.active !== null || out.baseFailure.steps || !/^Remove failed/.test(out.baseFailure.status)) throw new Error("a failed Remove on the base left its new layer: " + JSON.stringify(out.baseFailure));
+
+    // 11. the layer deleted from the panel while the model runs: nothing lands in it, and undoing the delete brings it
+    // back as it was (not with the fill)
+    const D = ed.addPaintLayer();
+    ed.activeLayerId = D.id; ed.renderLayers();
+    const d11 = digest(D);
+    delay = 400;
+    try {
+        stroke(A1, B1);
+        await wait(50);
+        ed.removeLayer(D.id);
+        await settle();
+    } finally { delay = 0; }
+    const back = () => ed.layers.find((l) => l.id === D.id);
+    out.deleted = { wrote: ed.lastRemove.wrote, error: ed.lastRemove.error, gone: !back(), top: (ed.undo[ed.undo.length - 1] || {}).label };
+    await ed.undoStep();
+    out.deleted.restored = !!back();
+    out.deleted.same = back() ? digest(back()) === d11 : null;
+    if (out.deleted.wrote !== false || !/deleted/.test(out.deleted.error || "") || !out.deleted.gone || out.deleted.top !== "Delete layer" || !out.deleted.restored || !out.deleted.same) throw new Error("a Remove landed in a layer deleted while it ran: " + JSON.stringify(out.deleted));
+
+    // 12. the document thumbnail (as a save makes it) waits for a Remove still landing: its mark is never in it
+    const T = ed.addPaintLayer();
+    ed.activeLayerId = T.id; ed.renderLayers();
+    delay = 300;
+    let pendingWhenDone = "unset";
+    try {
+        stroke(A1, B1);
+        await wait(20);
+        const heldThen = !!ed.removePending;
+        await host.documentThumbnail(ed);
+        pendingWhenDone = ed.removePending;
+        out.thumbnail = { heldThen, pendingAfter: pendingWhenDone === null, wrote: ed.lastRemove.wrote };
+    } finally { delay = 0; await settle(); }
+    if (!out.thumbnail.heldThen || !out.thumbnail.pendingAfter || !out.thumbnail.wrote) throw new Error("the thumbnail did not wait for the Remove: " + JSON.stringify(out.thumbnail));
+} finally {
+    host.helperCall = keep.helperCall; host.removeModel = keep.removeModel; ed.stabiliser = keep.stabiliser;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("the_smudge_carries_paint_as_far_as_its_length", """
 // PLAN_0_1_31 §4 step 3: the smudge's carry (the smudge_dab kernel). Length keeps the paint going, finger painting
 // starts from the paint colour, alpha lock keeps the alpha, Sample "below" leaves the layers above out; the kernel and

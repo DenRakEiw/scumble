@@ -204,6 +204,10 @@ export const api = {
  * @property {(editor: any, pending: any) => Promise<any>} findObjects
  * @property {(editor: any, ix: number, iy: number, p?: any) => Promise<any>} selectPoint
  * @property {() => Promise<any>} freeHelpers
+ * @property {boolean} removeSupported
+ * @property {() => any} removeModel
+ * @property {(editor: any, req: { image: Uint8Array, mask: Uint8Array }) => Promise<any>} removeInApp
+ * @property {(editor: any) => Promise<any>} warmRemove
  */
 
 // ---- host --------------------------------------------------------------------------------
@@ -1633,6 +1637,7 @@ export const host = {
     async flushEditor(ed, say = (_text) => {}, when = "saving") {
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         for (const until = Date.now() + 60000; this._restoring && Date.now() < until;) await sleep(100);
+        if (ed.heldEdit) await ed.heldEdit();   // a heal or a Remove still landing (its stroke is drawn until it has)
         for (const until = Date.now() + 10000; ed.pointer && Date.now() < until;) await sleep(50);   // a stroke still down
         const edited = () => ed.base && ed.layers && ed.layers.some((l) => (l.dirty && l.px) || (l.maskDirty && l.maskPx));
         if (edited()) say(`Saving the edited layers before ${when}...`);
@@ -1650,6 +1655,7 @@ export const host = {
 
     /** The file's 256 px picture (PNG bytes), from the settled pyramid; null when it cannot be made. */
     async documentThumbnail(ed) {
+        if (ed.heldEdit) await ed.heldEdit();
         const W = ed.width, H = ed.height;
         const small = await ed.sampleRegionSettled("image", [0, 0, W, H], Math.min(1, 256 / Math.max(W, H)), { forRun: true });
         const blob = small.convertToBlob ? await small.convertToBlob({ type: "image/png" }) : await new Promise((r) => small.toBlob(r, "image/png"));
@@ -1906,8 +1912,8 @@ export const host = {
     // availableCutoutBackends() / cutoutLayer(); when
     // no in-app model is present, the ComfyUI helper prompts run as in the node.
 
-    /** @type {{ models: any[], sam2?: any, matting?: any, runtime?: any }} */
-    helpers: { models: [], sam2: null, matting: null, runtime: null },
+    /** @type {{ models: any[], sam2?: any, matting?: any, inpaint?: any, runtime?: any }} */
+    helpers: { models: [], sam2: null, matting: null, inpaint: null, runtime: null },
     onHelpersChanged: null,   // set by the shell: (status) => void
 
     /** Ask the main process what is downloaded and refresh the editors' model lists. */
@@ -1963,7 +1969,10 @@ export const host = {
         editor.setStatus(editor.status.replace(/\.$/, "") + ` (${backend.label.replace(/ \(.*\)$/, "")}, ${res.seconds.toFixed(1)} s${note}).`);
     },
 
-    /** One call into the in-app helper models (`objects`, `segment`, `cutout`); one member, so a gate can stand in for it. */
+    /**
+     * One call into the in-app helper models (`objects`, `segment`, `cutout`, `inpaint`, `warmInpaint`); one member, so
+     * a gate can stand in for it.
+     */
     helperCall(name, args) {
         return window.scumble.helpers[name](args);
     },
@@ -1985,6 +1994,37 @@ export const host = {
     /** Cutout backends in the shape of the editor's CUTOUT_BACKENDS entries (id "app:<model>"). */
     cutoutBackends() {
         return this.presentHelpers("matting").map((m) => ({ id: "app:" + m.id, label: `${m.label} (in-app)`, inApp: true, model: m.id, needs: [] }));
+    },
+
+    /** The Remove tool is in the app (LaMa in-app, PLAN_0_1_31 §5 step 3); the node has none. */
+    removeSupported: true,
+
+    /** The inpaint model the Remove tool runs (LaMa): the chosen one when present, else the first present, else null. */
+    removeModel() {
+        const all = this.presentHelpers("inpaint");
+        return all.find((m) => m.id === this.helpers.inpaint) || all[0] || null;
+    },
+
+    /**
+     * Remove: the picture and the hole at the model's size (RGBA and bytes, 512²) through the in-app model ->
+     * { image (RGBA 512²), size, seconds, runMs, provider, model, label }.
+     */
+    async removeInApp(editor, req) {
+        const m = this.removeModel();
+        if (!m) throw new Error("Remove needs the LaMa model: download it in Settings › Helpers (in-app models).");
+        // no `helperUsed`: LaMa runs on the CPU in its own process and holds no VRAM, so a local run need not free it
+        return this.helperCall("inpaint", { model: m.id, image: req.image, mask: req.mask });
+    },
+
+    /**
+     * Load the Remove model ahead of the first stroke (about 9 s on the CPU): the tool asks when it is picked.
+     * -> { ready, seconds, provider } or { ready: false, error }; null without a model. Never throws.
+     */
+    async warmRemove(editor) {
+        const m = this.removeModel();
+        if (!m) return null;
+        try { return await this.helperCall("warmInpaint", { model: m.id }); }
+        catch (err) { return { ready: false, error: String(err && err.message || err) }; }
     },
 
     /** What a helper looks at, as a canvas: the flattened image, or one layer on neutral grey. */

@@ -1,6 +1,6 @@
 // The helpers facade the main process exposes over IPC: model folder and downloads,
-// the ONNX runtime with its device choice, and the two jobs the editor asks for
-// (objects for the hover tool, cutout for a layer). Settings live in settings.json
+// the ONNX runtime with its device choice, and the jobs the editor asks for (objects
+// for the hover tool, segment for a click, cutout for a layer, inpaint for Remove). Settings live in settings.json
 // under `helpers`; the Hugging Face token in keys.js under "hf-token".
 "use strict";
 
@@ -13,14 +13,16 @@ const models = require("./models");
 const { Runtime } = require("./runtime");
 const { Sam2, logitsToMask, SIZE } = require("./sam2");
 const { Matting } = require("./matting");
+const { Lama, SIZE: LAMA_SIZE } = require("./lama");
 
 const HF_TOKEN = "hf-token";
-const DEFAULTS = { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite" };
+const DEFAULTS = { device: "auto", dir: null, sam2: "sam2_base_plus", matting: "birefnet_lite", inpaint: "lama" };
 
 const runtime = new Runtime();
 let progressSink = null;
 const sam2Instances = new Map();     // model id -> Sam2
 const mattingInstances = new Map();  // model id -> Matting
+const inpaintInstances = new Map();  // model id -> Lama
 const busy = new Set();              // running jobs, for the status line
 
 function conf() {
@@ -55,7 +57,7 @@ function status() {
     const sc = lastScan(dir);
     return {
         dir, isDefaultDir: !c.dir, downloadDir: models.downloadDir(dir), isComfyDir: models.isComfyModelsDir(dir),
-        device: c.device, sam2: c.sam2, matting: c.matting,
+        device: c.device, sam2: c.sam2, matting: c.matting, inpaint: c.inpaint,
         models: models.describeAll(dir, links(), sc ? sc.elsewhere : null),
         scan: sc,
         downloads: downloader.running(),
@@ -70,7 +72,7 @@ async function configure(patch) {
     const next = { ...before, ...(patch || {}) };
     if (patch && "device" in patch && next.device !== before.device) { runtime.setDevice(next.device); await free(); }
     const dirChanged = !!(patch && "dir" in patch && patch.dir !== before.dir);
-    if (dirChanged) { sam2Instances.clear(); mattingInstances.clear(); await free(); }
+    if (dirChanged) { clearInstances(); await free(); }
     settings.set({ helpers: next });
     // a new folder is scanned at once, so a ComfyUI models folder links what it can
     return dirChanged ? scan() : status();
@@ -87,9 +89,18 @@ async function scan() {
     const walk = await models.scanFolder(dir);
     const m = models.matchScan(walk);
     settings.set({ helpers: { ...conf(), links: m.links, scan: { dir, time: Date.now(), files: walk.files.length, dirs: walk.dirs, truncated: walk.truncated, elsewhere: m.elsewhere } } });
-    sam2Instances.clear(); mattingInstances.clear();
+    clearInstances();
     return status();
 }
+
+function clearInstances() {
+    sam2Instances.clear(); mattingInstances.clear();
+    for (const l of inpaintInstances.values()) l.kill();
+    inpaintInstances.clear();
+}
+
+// LaMa's process ends with the app (a utility process would too; the forked one of plain Node would not)
+app.on("will-quit", () => { for (const l of inpaintInstances.values()) l.kill(); });
 
 async function browseDir(win) {
     const r = await dialog.showOpenDialog(win, { title: "Model folder (the app's own, or a ComfyUI models folder)", defaultPath: modelsDir(), properties: ["openDirectory", "createDirectory"] });
@@ -127,19 +138,31 @@ async function remove(id) {
     }
     sam2Instances.delete(id);
     mattingInstances.delete(id);
+    const lama = inpaintInstances.get(id);
+    if (lama) { lama.kill(); inpaintInstances.delete(id); }
     return status();
 }
 
+/**
+ * The GPU sessions let go (Free VRAM, a local ComfyUI run). LaMa stays: it runs on the CPU in its own process, holds no
+ * VRAM, and a Remove under way would lose its answer.
+ */
 async function free() {
     for (const s of sam2Instances.values()) s.cache.clear();
     return runtime.free();
 }
 
+const MISSING = {
+    sam2: "No SAM2 model is downloaded (Settings › Helpers).",
+    matting: "No background removal model is downloaded (Settings › Helpers).",
+    inpaint: "The LaMa model is not downloaded (Settings › Helpers).",
+};
+
 function presentOf(kind, wanted) {
     const dir = modelsDir();
     const all = models.MODELS.filter((m) => m.kind === kind);
     const pick = all.find((m) => m.id === wanted && models.paths(m, dir, links())) || all.find((m) => models.paths(m, dir, links()));
-    if (!pick) throw new Error(kind === "sam2" ? "No SAM2 model is downloaded (Settings › Helpers)." : "No background removal model is downloaded (Settings › Helpers).");
+    if (!pick) throw new Error(MISSING[kind] || "The helper model is not downloaded (Settings › Helpers).");
     return pick;
 }
 
@@ -153,6 +176,12 @@ function mattingFor(id) {
     const model = presentOf("matting", id || conf().matting);
     if (!mattingInstances.has(model.id)) mattingInstances.set(model.id, new Matting(runtime, model, models.paths(model, modelsDir(), links()).model));
     return { model, matting: mattingInstances.get(model.id) };
+}
+
+function inpaintFor(id) {
+    const model = presentOf("inpaint", id || conf().inpaint);
+    if (!inpaintInstances.has(model.id)) inpaintInstances.set(model.id, new Lama(model, models.paths(model, modelsDir(), links()).model));
+    return { model, lama: inpaintInstances.get(model.id) };
 }
 
 function checkImage(req) {
@@ -214,4 +243,42 @@ async function cutout(req) {
     }
 }
 
-module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, setProgressSink, HF_TOKEN, DEFAULTS };
+/**
+ * Remove: req { model?, image (RGBA 512²), mask (512² bytes, not 0 = fill) }
+ * -> { image: Uint8Array RGBA 512² (alpha 255), size, seconds, runMs, provider, model, label }.
+ * Outside the mask the answer holds the input's bytes.
+ */
+async function inpaint(req) {
+    const n = LAMA_SIZE * LAMA_SIZE;
+    const image = req && req.image;
+    const mask = req && req.mask;
+    if (!image || image.length !== n * 4) throw new Error(`Remove needs an RGBA image of ${LAMA_SIZE} × ${LAMA_SIZE} pixels`);
+    if (!mask || mask.length !== n) throw new Error(`Remove needs a mask of ${LAMA_SIZE} × ${LAMA_SIZE} bytes`);
+    const { model, lama } = inpaintFor(req.model);
+    const t0 = Date.now();
+    busy.add("inpaint");
+    try {
+        const res = await lama.run(image, mask);
+        return { image: res.rgba, size: res.size, seconds: (Date.now() - t0) / 1000, runMs: res.ms, holes: res.holes, provider: res.provider, model: model.id, label: model.label };
+    } finally {
+        busy.delete("inpaint");
+    }
+}
+
+/**
+ * Load the inpaint model's session ahead of a run (about 9 s on the CPU): the Remove tool
+ * asks when it is picked. -> { ready, provider, model, seconds } or { ready: false, error }
+ * when the model is missing; never throws.
+ */
+async function warmInpaint(req) {
+    const t0 = Date.now();
+    try {
+        const { model, lama } = inpaintFor(req && req.model);
+        const { provider } = await lama.warm();
+        return { ready: true, provider, model: model.id, label: model.label, seconds: (Date.now() - t0) / 1000 };
+    } catch (err) {
+        return { ready: false, error: String(err && err.message || err) };
+    }
+}
+
+module.exports = { status, configure, scan, browseDir, openFolder, download, cancel, remove, free, objects, segment, cutout, inpaint, warmInpaint, setProgressSink, HF_TOKEN, DEFAULTS, LAMA_SIZE };

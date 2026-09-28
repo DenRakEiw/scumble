@@ -74,9 +74,11 @@ async function main() {
     check("every_settings_section_the_manual_names_exists", () => {
         const sections = [...html.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1].trim());
         const named = [...md.matchAll(/Settings › ([^.,;:)\n]+)/g)].map((m) => m[1]);
-        const bad = named.filter((n) => !sections.some((s) => n.startsWith(s)));
+        // a section's name cut where a mention's is ("Helpers (in-app models)" is named as "Helpers (in-app models")
+        const cut = (s) => s.split(/[.,;:)\n]/)[0];
+        const bad = named.filter((n) => !sections.some((s) => n.startsWith(cut(s))));
         if (bad.length) throw new Error(`no section for: ${bad.map((b) => b.slice(0, 40)).join(" | ")} (the dialog has ${sections.join(", ")})`);
-        return `${named.length} mentions of ${new Set(named.map((n) => sections.find((s) => n.startsWith(s)))).size} sections`;
+        return `${named.length} mentions of ${new Set(named.map((n) => sections.find((s) => n.startsWith(cut(s))))).size} sections`;
     });
 
     check("every_menu_item_the_manual_names_exists", () => {

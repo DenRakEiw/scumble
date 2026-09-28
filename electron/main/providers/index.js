@@ -47,6 +47,7 @@ const PROVIDERS = {
     moonshot: require("./moonshot"),     // key row only: the assistant
     zai: require("./zai"),               // key row only: the assistant
     compat: require("./compat"),         // key row only: the OpenAI-compatible endpoint (llm.js)
+    inapp: require("./inapp"),           // no key row: LaMa inside the app (electron/main/onnx), Settings › Helpers
     loopback: require("./loopback"),
 };
 
@@ -60,8 +61,8 @@ function keyNameOf(id, p) {
  * (`sharesKey`) is listed for its label and key state but gets no key row of its own.
  */
 function describeAll() {
-    // loopback is the smoke test's own provider, compat has its own settings section (URL, model, key)
-    return Object.entries(PROVIDERS).filter(([id]) => id !== "loopback" && id !== "compat").map(([id, p]) => ({ id, label: p.label, keyUrl: p.keyUrl, keyHint: p.keyHint || "", key: keys.describe(keyNameOf(id, p)), balance: typeof p.balance === "function", sharesKey: p.keyName || null }));
+    // loopback is the smoke test's own provider, compat has its own settings section (URL, model, key), inapp needs no key
+    return Object.entries(PROVIDERS).filter(([id]) => id !== "loopback" && id !== "compat" && id !== "inapp").map(([id, p]) => ({ id, label: p.label, keyUrl: p.keyUrl, keyHint: p.keyHint || "", key: keys.describe(keyNameOf(id, p)), balance: typeof p.balance === "function", sharesKey: p.keyName || null }));
 }
 
 function toBuffer(v) {

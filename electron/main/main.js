@@ -980,6 +980,8 @@ function installIpc() {
     ipcMain.handle("helpers:objects", (_e, req) => helpers.objects(req));
     ipcMain.handle("helpers:segment", (_e, req) => helpers.segment(req));
     ipcMain.handle("helpers:cutout", (_e, req) => helpers.cutout(req));
+    ipcMain.handle("helpers:inpaint", (_e, req) => helpers.inpaint(req));
+    ipcMain.handle("helpers:warmInpaint", (_e, req) => helpers.warmInpaint(req));
     // plugins (electron/main/plugins.js): folders and manifests; the renderer loads the modules
     ipcMain.handle("plugins:list", () => plugins.list());
     ipcMain.handle("plugins:setEnabled", (_e, { id, enabled }) => plugins.setEnabled(String(id), !!enabled));

@@ -5,6 +5,14 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
+- **Remove.** A new tool (Shift+J, beside heal) takes things out of the picture: brush over an object, a person, a
+  wire or a blemish and let go, and LaMa fills the stroke from what surrounds it. LaMa runs inside Scumble on the
+  processor: no prompt, no key, no ComfyUI. Download it once (198 MB) in Settings › Helpers; the tool loads it when you
+  pick it (about 10 s the first time), and then a stroke takes one to two seconds. The fill goes into the active layer
+  as one undo step, on the base into a new layer. A small spot is filled at full resolution, a large stroke comes back
+  softer than the picture around it.
+- **LaMa remove (in-app).** The same model as a recipe: select what should go, pick *LaMa remove (in-app)* and press
+  Generate, offline.
 - **The healing brush blends.** Heal (J) now lays the source's texture into the colour and light around the stroke,
   right up to its edge, so the repair has no rim: a gradient-domain ("Poisson") blend when you let go, the way the
   healing brush works in Photoshop. While you paint you still see the quick version. A spot heals at once; a large

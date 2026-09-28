@@ -1,0 +1,17 @@
+{
+  "id": "lama_remove",
+  "kind": "provider",
+  "name": "LaMa remove (in-app)",
+  "family": "In-app",
+  "description": "Fills the selection from what surrounds it with LaMa, inside the app: no prompt, no key, no server, offline. For removing objects, people, wires, text or blemishes; it does not invent new things (use a model recipe for that). Download LaMa once in Settings › Helpers (in-app models). The crop goes to the model at 512 × 512, so a large selection comes back softer than the picture around it.",
+  "default": "inapp",
+  "providers": {
+    "inapp": {
+      "model": "lama",
+      "input": "fill",
+      "text": false,
+      "limits": { "min": 512, "max": 512, "step": 512, "aspects": ["1:1"] },
+      "settings": []
+    }
+  }
+}

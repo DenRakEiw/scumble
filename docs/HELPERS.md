@@ -209,10 +209,27 @@ error names the URL. It puts `settings.llm` back at the end.
 | `models.js` | The registry (below), lookup in the model folder and its `onnx/`, `sam2/`, `RMBG/`, `BiRefNet/`, `rembg/` subfolders, `Downloader` (Node `fetch`, `.part` files resumed with `Range`, progress events, `Authorization: Bearer <hf token>`, size check against the registry), `remove()`. No Electron imports: `node tools/helpers_test.js` uses it directly. |
 | `sam2.js` | `Sam2`: `encode(rgba1024, key)` (cached per key, three embeddings), `decode()` for B prompts, `predict(points, box)` (best of three masks), `automask()`: the SAM2 automatic mask generator with crop_n_layers = 0 and the node's parameters (32 × 32 point grid, batches of 64, pred IoU ≥ 0.8, stability ≥ 0.92 with offset 1.0, box NMS 0.7, min area 0.02 %), masks kept as Int8 quantised logits, painted large to small (the smallest object under the cursor wins) into a `Uint16Array` label map at the requested size by bilinear sampling of the logits. |
 | `matting.js` | `Matting`: one 1024 × 1024 RGB in with the model's mean / std, the output tensor of 1024² values (sigmoid applied when the range says it is a logit; RMBG-1.4 already outputs probabilities) → `Uint8Array` alpha. |
-| `index.js` | The IPC facade: `status`, `configure({device, dir, sam2, matting})`, `browseDir`, `openFolder`, `download`, `cancel`, `remove`, `free`, `objects`, `segment`, `cutout`. Settings under `helpers` in `settings.json`, the Hugging Face token under `hf-token` in `keys.js`. |
+| `lama.js`, `lama_process.js` | `Lama`: the Remove model (below) in a **process of its own** (an Electron utility process; a forked Node process under plain Node): `warm()` loads the session, `run(rgba512, mask512)` answers RGBA 512² (outside the mask the input's bytes), `kill()` ends the process where it stands and refuses its jobs, `busy()`. `engine(ort)` is the load / run code the process and the fallback share: a process that dies before its first answer (it could not start or load onnxruntime) leaves the engine to the main thread, and the jobs that waited run there. |
+| `index.js` | The IPC facade: `status`, `configure({device, dir, sam2, matting, inpaint})`, `browseDir`, `openFolder`, `download`, `cancel`, `remove`, `free`, `objects`, `segment`, `cutout`, `inpaint`, `warmInpaint`. Settings under `helpers` in `settings.json`, the Hugging Face token under `hf-token` in `keys.js`. |
+
+**Every model but LaMa runs on the main process's thread.** onnxruntime-node's
+`InferenceSession.create` and `run` are synchronous native calls behind a `setImmediate`
+(`backend.js`), so while one runs, every IPC channel, the ComfyUI events, MCP and the autosave
+wait (a SAM2 object map about a second, a BiRefNet cutout 2.5 s). LaMa loads for 9 s and runs
+for 1.5 s on the CPU, so it runs in a process of its own (2026-09-28: the main process answered an
+IPC call in 51 ms during a run). **Not a worker thread:** a worker cannot be stopped inside such
+a native call, and `terminate()` during a load or a run, or a quit meanwhile, ended the whole
+process with 0xC0000409 when the call returned (the review's measurement in plain Node, 2026-09-28);
+a utility process is killed where it stands (measured in the app: a folder scan 1 s into the load and
+300 ms into a run, the app went on; a quit during a run closed in 1.3 s with exit code 0 and left no
+process). The process is killed on a folder change, a scan, the model's removal and at quit
+(`will-quit`); **Free VRAM leaves it** (it holds no VRAM, and a Remove under way would lose its
+answer), and a Remove does not set the editor's `helperUsed`, so a local run does not free it.
+Moving SAM2 and the matting models out of the main thread is open.
 
 The renderer side is in `renderer/editor/host.js` (`findObjects`, `cutoutInApp`,
-`selectPoint`, `segmentPoint`, `refreshHelpers`, `cutoutBackends`) and the editor
+`selectPoint`, `segmentPoint`, `refreshHelpers`, `cutoutBackends`, `removeModel`,
+`removeInApp`, `warmRemove`) and the editor
 `host.*` calls in the editor (`docs/BUILD_NODE.md`). The renderer scales the source to 1024 × 1024 with
 Canvas 2D (squashed, like SAM2's own transform and the ComfyUI RMBG node), sends the
 RGBA bytes over IPC, and scales the answer back: the label map comes at ≤ 2048 px long
@@ -228,6 +245,23 @@ layer with smoothing.
 | `birefnet` | `birefnet.onnx` (973 MB) | `onnx-community/BiRefNet-ONNX` | MIT |
 | `rmbg14` | `rmbg14.onnx` (176 MB) | `briaai/RMBG-1.4` | BRIA, non-commercial |
 | `rmbg2` | `rmbg2.onnx` (1.02 GB) | `briaai/RMBG-2.0` (gated: accept the licence, save a token) | CC BY-NC 4.0 |
+| `lama` (kind `inpaint`) | `lama_fp32.onnx` (208 MB; also found in `inpaint/` and `lama/`) | `Carve/LaMa-ONNX`, pinned to commit `c3c0c9e4`, sha256 `1faef530…68d6` | Apache-2.0 (the weights: `advimman/lama`, Apache-2.0) |
+
+**LaMa** (package 5 step 3, 2026-09-28): the Big-LaMa weights in Carve's ONNX export (opset 17,
+the Fourier unit rewritten with `Einsum` / `Cos` / `Sin` so it exports, the same output as the
+PyTorch model per Carve). Fixed size: `image` [1,3,512,512] RGB in 0..1, `mask` [1,1,512,512]
+(1 = fill) → `output` [1,3,512,512] in 0..255, clipped; the graph blanks the masked pixels
+itself (`image * (1 - mask)`) and gives the unmasked input back (`mask * fill + (1 - mask) *
+image`, times 255), so outside the mask the answer is the input to the byte. Chosen over
+OpenCV Zoo's `inpainting_lama_2025jan.onnx` (the same export, weights quantised to int8, 93 MB,
+opset 21 with block-wise `DequantizeLinear`): the original weights and an opset every runtime
+has. **CPU only:** DirectML (onnxruntime-node 1.29) fails at the first run on
+`/generator/model/model.5/conv1/ffc/convg2g/fu/rttn/MatMul_5` with 0x80070057 ("Falscher
+Parameter") at every graph optimisation level and with the batch dimension fixed
+(`freeDimensionOverrides`); the CPU run is 1.5 to 1.7 s (24 threads), the load 7 to 9 s
+whatever the optimisation level (the graph has 17,480 nodes). The Remove tool loads it when it
+is picked (`warmInpaint`). A ComfyUI folder's `big-lama.pt` (the PyTorch weights of the
+ComfyUI inpaint nodes) is reported, never loaded.
 
 SAM2 tensors: encoder `image` [1,3,1024,1024] (ImageNet mean / std) →
 `high_res_feats_0` [1,32,256,256], `high_res_feats_1` [1,64,128,128], `image_embed`
@@ -264,8 +298,8 @@ prints the report for a real folder.
 
 ## Settings › Helpers
 
-Device (auto / GPU / CPU; changing it frees the sessions), the SAM2 model for the
-object tool, the model folder (Change folder … / App folder / Open folder / Scan folder,
+Device (auto / GPU / CPU; changing it frees the sessions; LaMa always runs on the CPU), the
+SAM2 model for the object tool, the model folder (Change folder … / App folder / Open folder / Scan folder,
 with a summary line of the last scan), one row per
 model with Download (progress bar, Cancel; a `.part` resumes) or Remove, the Hugging
 Face token, and a runtime line (ONNX Runtime version, providers tried, what is loaded
@@ -280,6 +314,7 @@ cutout model lists in every open editor.
 | SAM2 base+ point prompt | | 0.4 s |
 | BiRefNet lite cutout | 10 s | 2.5 s |
 | RMBG-1.4 cutout | | 0.9 s |
+| LaMa (CPU, 24 threads, 2026-09-28) | 7-9 s | 1.5-1.7 s |
 
 **VRAM pressure:** with ComfyUI holding Flux.2 Klein plus its helper models (29 of
 32 GB in use) the same SAM2 run took 125 s: DirectML pages through system memory. After
@@ -289,7 +324,10 @@ The CPU path is the slow fallback: about 24 s for the SAM2 base+ object map.
 
 `node tools/helpers_test.js [dir] [--sam2 id] [--matting id] [--cpu]` runs a synthetic
 image (three shapes on grey) through automask, a point prompt and the matting model
-and checks that the shapes come out as distinct objects.
+and checks that the shapes come out as distinct objects, and a red square on a grey ramp
+through LaMa (in its own process) with the square masked: no red left, the ramp continued
+within 12 levels on average (1.1 measured), the pixels outside the mask unchanged. A
+model that is not in the folder is skipped; no model at all is a failure.
 
 ## Not done / ideas
 
@@ -300,4 +338,10 @@ and checks that the shapes come out as distinct objects.
   linux/x64 (hundreds of MB, and it needs the user's CUDA 12 libraries anyway), so `runtime.js`'s
   `cuda` attempt fails on the first session and the helpers run on the CPU. Shipping it, or
   downloading it on demand like a model, is open; untested either way.
-- WebGPU EP (`webgpu`, experimental in onnxruntime-node) as a DirectML alternative.
+- WebGPU EP (`webgpu`, experimental in onnxruntime-node) as a DirectML alternative; for LaMa
+  it may be the way onto the GPU (DirectML fails on its Fourier unit).
+- SAM2 and the matting models in a process like LaMa's (they hold the main process for their run
+  today).
+- LaMa beyond 512: the export is fixed at 512 x 512, so a hole wider than about 256 px comes
+  back softer than the picture; Carve's notebook exports other sizes, and a refinement pass
+  (LaMa's own "refine", or the Poisson solver's texture transfer) is the other way.

@@ -1513,6 +1513,23 @@ itself, $0.034 an image by ComfyUI's price badge. Generate new may ask up to 409
 **Where the pictures go.** Into Comfy's storage (signed URLs), from where Tencent fetches them. Where Tencent runs
 the model and what it keeps was not read.
 
+### In-app (`inapp`)
+
+A provider without a key or a network: `electron/main/providers/inapp.js` hands the crop to a helper model inside the
+app (`electron/main/onnx`, docs/HELPERS.md). One recipe, `recipes/lama_remove.json` ("LaMa remove (in-app)", family
+"In-app", package 5 step 3 of docs/PLAN_0_1_31.md): `model: "lama"`, `input: "fill"`, `text: false`, and the limits
+`{ min: 512, max: 512, step: 512, aspects: ["1:1"] }`, so the crop is widened to a square where the picture allows and
+goes out at LaMa's fixed 512 x 512 (a larger crop is scaled down and the answer scaled back up by the stitch). The hole
+is the soft repaint mask above half (the selection grown and feathered, which also takes the rim), else the selection's
+alpha; the answer holds the input outside it, and the stitch blends and colour-matches it as any provider's. No
+prompt goes anywhere. The adapter is hidden from Settings › API providers (`describeAll`), `providerKeyState` in
+`renderer/shell.js` reports the model instead of a key ("the LaMa model is not downloaded yet"), and a missing model
+fails the run with the Helpers message. The recipe is listed under the api mode, since a provider recipe is: making it
+a local recipe would free the helper models (LaMa among them) before its own run (`freeHelperModels`).
+
+**Where the pictures go.** Nowhere: LaMa's own process on this machine. An empty hole (nothing selected) fails the
+run with "nothing to fill" before the model runs.
+
 ### Magnific (`magnific`)
 
 [Magnific](https://www.magnific.com) (Freepik) sells its upscalers and, through the same key, most of the image

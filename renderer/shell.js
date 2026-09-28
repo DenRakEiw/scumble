@@ -376,7 +376,7 @@ ui.setUrl.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key ==
 let recipes = [];
 let providers = [];
 
-const FAMILY_ORDER = ["ComfyUI", "Google", "OpenAI", "Black Forest Labs", "ByteDance", "Qwen"];
+const FAMILY_ORDER = ["ComfyUI", "In-app", "Google", "OpenAI", "Black Forest Labs", "ByteDance", "Qwen"];
 const familyOf = (r) => (r.kind === "provider" ? (r.family || "API providers") : "ComfyUI");
 /** local = a ComfyUI recipe on the result_local chain, api = a provider recipe or a ComfyUI recipe of API nodes. */
 const modeOf = (r) => (r.kind === "provider" || r.mode === "api" ? "api" : "local");
@@ -414,7 +414,7 @@ function renderRecipeOptions(mode) {
 
 function providerLabel(id) {
     const p = providers.find((x) => x.id === id);
-    return (p && p.label) || (id === "loopback" ? "Loopback" : id);
+    return (p && p.label) || (id === "loopback" ? "Loopback" : id === "inapp" ? "In-app" : id);
 }
 
 /** The provider a model recipe runs on: the remembered choice, else the recipe's default. */
@@ -435,6 +435,10 @@ function resolveRecipe(r) {
 function providerKeyState(r) {
     if (r.kind !== "provider") return null;
     const p = providers.find((x) => x.id === r.provider);
+    if (r.provider === "inapp") {
+        // no key: the model in the app's model folder (Settings › Helpers)
+        return host.presentHelpers("inpaint").some((m) => m.id === r.model) ? { ok: true } : { ok: false, text: "the LaMa model is not downloaded yet: Settings (Ctrl+,) › Helpers (in-app models)" };
+    }
     if (!p) return r.provider === "loopback" ? { ok: true } : { ok: false, text: `unknown provider "${r.provider}"` };
     return p.key && p.key.set ? { ok: true } : { ok: false, text: `no ${p.label} key yet: Settings (Ctrl+,) › API providers` };
 }
@@ -504,7 +508,7 @@ function recipeMeta(r) {
     if (r.kind !== "provider") return `ComfyUI · ${r.mode || "local"} · ${Object.keys(r.prompt || {}).length} nodes`;
     const v = resolveRecipe(r);
     const ks = providerKeyState(v);
-    return `${v.model || ""}${ks && !ks.ok ? " · no key" : ""}`;
+    return `${v.model || ""}${ks && !ks.ok ? (v.provider === "inapp" ? " · model not downloaded" : " · no key") : ""}`;
 }
 
 function renderRecipeList() {
@@ -1436,7 +1440,7 @@ function renderHelpers(status) {
         row.className = "shell-model";
         const name = document.createElement("span");
         name.textContent = m.label;
-        name.title = `${m.kind === "sam2" ? "objects (SAM2)" : "background removal"} · ${m.source} · ${m.license}`;
+        name.title = `${({ sam2: "objects (SAM2)", matting: "background removal", inpaint: "the Remove tool (inpainting)" })[m.kind] || m.kind} · ${m.source} · ${m.license}`;
         row.appendChild(name);
         const info = document.createElement("span");
         info.className = "shell-model-info";

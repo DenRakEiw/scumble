@@ -15,7 +15,7 @@ import { commands, describe } from "../renderer/commands.js";
 const _api = api;
 
 /**
- * The 40 members the editor modules call. The node's own js/host.js has to answer the same
+ * The 44 members the editor modules call. The node's own js/host.js has to answer the same
  * list; only tools/build_node.py --check reaches that repository, and it greps for these
  * names.
  * @type {import("../renderer/editor/host.js").EditorHost}

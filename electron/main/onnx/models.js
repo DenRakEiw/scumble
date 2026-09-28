@@ -54,12 +54,19 @@ const MODELS = [
         input: 1024, ...IMAGENET,
         files: [{ name: "rmbg2.onnx", role: "model", size: 1024331469, url: `${HF}/briaai/RMBG-2.0/resolve/main/onnx/model.onnx` }],
     },
+    {
+        // pinned to the commit the app was tested with (sha256 1faef530...68d6)
+        id: "lama", kind: "inpaint", label: "LaMa", note: "Big-LaMa, removes objects (Remove tool, the in-app LaMa recipe); runs on the CPU",
+        source: "Carve/LaMa-ONNX", sourceUrl: `${HF}/Carve/LaMa-ONNX`, license: "Apache-2.0",
+        input: 512,
+        files: [{ name: "lama_fp32.onnx", role: "model", size: 208044816, url: `${HF}/Carve/LaMa-ONNX/resolve/c3c0c9e468934d62e79c329e35d82dd09ff8c444/lama_fp32.onnx` }],
+    },
 ];
 
 const byId = (id) => MODELS.find((m) => m.id === id) || null;
 
 /** Subfolders of the model folder that are searched too (a linked ComfyUI models folder). */
-const SUBDIRS = ["", "onnx", "sam2", "RMBG", "BiRefNet", "rembg"];
+const SUBDIRS = ["", "onnx", "sam2", "RMBG", "BiRefNet", "rembg", "inpaint", "lama"];
 
 function isComfyModelsDir(dir) {
     return fs.existsSync(path.join(dir, "checkpoints")) || fs.existsSync(path.join(dir, "diffusion_models"));
@@ -151,6 +158,7 @@ const OTHER_WEIGHTS = {
     birefnet: /birefnet(?![^/]*lite)[^/]*\.(?:safetensors|pt|pth|bin)$/,
     rmbg14: /rmbg[_-]?1\.4(?:[^/]*\.(?:safetensors|pt|pth|bin)|\/(?:model|pytorch_model)\.(?:safetensors|pth|bin))$/,
     rmbg2: /rmbg[_-]?2\.0(?:[^/]*\.(?:safetensors|pt|pth|bin)|\/(?:model|pytorch_model)\.(?:safetensors|pth|bin))$/,
+    lama: /(?:^|\/)big[_-]?lama[^/]*\.(?:safetensors|pt|pth|ckpt)$/,
 };
 
 /** Every weight file under `dir` (depth and count bounded), with its size. Never follows symlinks. */
