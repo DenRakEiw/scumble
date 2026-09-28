@@ -11,6 +11,11 @@ the section for its version; `docs/` and the commit history hold the technical d
   pick it (about 10 s the first time), and then a stroke takes one to two seconds. The fill goes into the active layer
   as one undo step, on the base into a new layer. A small spot is filled at full resolution, a large stroke comes back
   softer than the picture around it.
+- **Patch.** A new tool (Shift+J again, after Remove) repairs a whole area: lasso the spot, drag the selection to where
+  the picture is right and let go. That texture is laid into the spot and takes on the colour and light around it,
+  without a rim; while you drag, the spot shows what it would take. *Destination* copies the selection to where you let
+  go instead, and *Blend* keeps more of the copied texture's own colour. One undo step, in the active layer (on the
+  base in a new layer); the selection stays, so you can drag again (Ctrl+Z first for a clean second try).
 - **LaMa remove (in-app).** The same model as a recipe: select what should go, pick *LaMa remove (in-app)* and press
   Generate, offline.
 - **The healing brush blends.** Heal (J) now lays the source's texture into the colour and light around the stroke,

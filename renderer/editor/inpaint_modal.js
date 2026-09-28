@@ -266,6 +266,7 @@ function buildTools(ed, body) {
         { tool: "clone", label: "Clone stamp", key: "S", title: "Clone stamp (S): Alt+click sets the source, then paint to copy from there onto the active layer. Aligned keeps the offset between strokes; Sample chooses the visible image or the layer." },
         { tool: "heal", label: "Healing brush", key: "J", title: "Healing brush (J): like the clone stamp, but the copied texture takes on the colour and light around it, blended without a rim when you let go." },
         ...(host.removeSupported ? [{ tool: "remove", label: "Remove", key: "Shift+J", title: "Remove (Shift+J): brush over an object or a blemish; when you let go it is filled from what surrounds it (LaMa, in-app: Settings › Helpers). It paints into the active layer; on the base it paints into a new layer." }] : []),
+        { tool: "patch", label: "Patch", key: "Shift+J", title: "Patch (Shift+J, again after Remove): lasso a spot (or select it), then drag the selection to where the picture is right; when you let go that texture is laid into the spot and takes on the colour and light around it. Mode Destination copies the selection to where you let go instead. It paints into the active layer; on the base into a new layer." },
         { tool: "tone", label: "Dodge / burn", key: "Shift+O", title: "Dodge / burn (Shift+O): paint to lighten or darken (shadows, midtones or highlights), or with the sponge to saturate or desaturate. Alt while pressing swaps dodge and burn. On the base it paints into a new layer." },
     ]);
     addGroup([

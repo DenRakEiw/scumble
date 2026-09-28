@@ -704,6 +704,15 @@ function cpuDab(c, w, h = w) {
     return n;
 }
 
+/** A patch's Blend below 100 %: the blend's RGB (`out`) pulled back towards the plain copy (`raw`, RGBA) by `b` (0..1) where the mask is set. */
+function patchMix(out, raw, mask, b) {
+    for (let k = 0, n = mask.length; k < n; k++) {
+        if (!mask[k]) continue;
+        const o = 4 * k;
+        for (let c = o; c < o + 3; c++) out[c] = Math.round(raw[c] + b * (out[c] - raw[c]));
+    }
+}
+
 /** The mean colour of the RGBA bytes whose alpha is at least 8, or null when there are none (heal). */
 function meanRGB(d) {
     let r = 0, g = 0, b = 0, n = 0;
@@ -1130,6 +1139,7 @@ const ICONS = {
     tone: '<circle cx="14.5" cy="9.5" r="5.5"/><path d="M14.5 4a5.5 5.5 0 010 11z" fill="currentColor" stroke="none"/><path d="M10.6 13.4L3.5 20.5"/>',
     heal: '<rect x="2" y="9" width="20" height="6" rx="3" transform="rotate(-45 12 12)"/><path d="M10 10l4 4"/><path d="M14 10l-4 4"/>',
     remove: '<path d="M4 20l9-9"/><path d="M13 11l3-3 2 2-3 3z"/><path d="M18 3v3M16.5 4.5h3"/><path d="M8 4v2M7 5h2"/>',
+    patch: '<rect x="3" y="3" width="11" height="11" rx="2" stroke-dasharray="2.5 2"/><rect x="10" y="10" width="11" height="11" rx="2"/><path d="M8 8l5 5"/>',
     eyedropper: '<path d="M4 20l1-4 9-9 3 3-9 9z"/><path d="M14 7l3-3 3 3-3 3"/>',
     bucket: '<path d="M4 11l7-7 8 8-7 7z"/><path d="M4 11h11"/><path d="M19 14c0 2 1.5 3 1.5 4.5a1.5 1.5 0 01-3 0C17.5 17 19 16 19 14z" fill="currentColor" stroke="none"/>',
     shape: '<rect x="3" y="8" width="11" height="11" rx="1.5"/><circle cx="16" cy="9" r="5"/>',
@@ -1625,6 +1635,22 @@ class StrokeBuffer {
     /** Nothing has been drawn into the buffer yet. */
     get empty() { return !this.cells.size; }
 
+    /**
+     * The buffer's pixels over (x, y, w, h), target pixels, as ImageData, transparent wherever the buffer has none. On
+     * canvases only the part inside the buffer's canvas is read: Chromium's first `getImageData` of a GPU canvas returned
+     * alpha, mostly 255, for pixels outside it (the heal's box reaches a pixel past the buffer; 2026-09-28, the patch step).
+     */
+    bytes(x, y, w, h) {
+        if (this.px) return this.px.readRect(x, y, w, h);
+        const out = new ImageData(w, h);
+        if (!this.canvas) return out;
+        const x0 = Math.max(x, this.cx), y0 = Math.max(y, this.cy), x1 = Math.min(x + w, this.cx + this.cw), y1 = Math.min(y + h, this.cy + this.ch);
+        if (x1 <= x0 || y1 <= y0) return out;
+        const got = this.canvas.getContext("2d").getImageData(x0 - this.cx, y0 - this.cy, x1 - x0, y1 - y0).data, rw = (x1 - x0) * 4;
+        for (let yy = y0; yy < y1; yy++) out.data.set(got.subarray((yy - y0) * rw, (yy - y0 + 1) * rw), ((yy - y) * w + (x0 - x)) * 4);
+        return out;
+    }
+
     /** A canvas holding the buffer's pixels of [x0, y0, x1, y1] (target pixels) and where its (0, 0) sits. */
     part(x0, y0, x1, y1) {
         if (this.px) return { canvas: this.px.toCanvas([x0, y0, x1, y1]), x: x0, y: y0 };
@@ -2008,6 +2034,7 @@ class InpaintEditor {
         this.fillOpts = { tolerance: 32, contiguous: true, sample: "image" };
         this.gradientOpts = { type: "linear", to: "transparent" };
         this.removeOpts = { sample: "image" };
+        this.patchOpts = { mode: "source", blend: 100 };
         // the brush settings move from the top bar into this bar and show for the tools that use them
         const moveCtl = (labelEl, forTools) => { if (!labelEl) return; labelEl.dataset.for = forTools; bar.appendChild(labelEl); };
         moveCtl(this.sizeCtl && this.sizeCtl.input.parentElement, "select deselect paint erase smudge tone clone heal remove");
@@ -2137,6 +2164,17 @@ class InpaintEditor {
         rsample.addEventListener("change", () => { this.removeOpts.sample = rsample.value; this.root.focus({ preventScroll: true }); });
         this.removeSampleSel = rsample;
         row("remove", "Sample", rsample);
+        const pmode = selectInput(["source", "destination"], "source", "Source: the selection is repaired with what lies where you drag it. Destination: what is selected is copied to where you drag it");
+        pmode.addEventListener("change", () => { this.patchOpts.mode = pmode.value; this.updateOptsBar(); this.root.focus({ preventScroll: true }); });
+        this.patchModeSel = pmode;
+        row("patch", "Mode", pmode);
+        const pblend = document.createElement("input");
+        pblend.type = "range"; pblend.min = 0; pblend.max = 100; pblend.value = 100;
+        pblend.title = "Blend: at 100 % the patch takes on the colour and light around it; at 0 % its texture is copied as it is";
+        const pblendVal = el("span", null, "100%");
+        pblend.addEventListener("input", () => { this.patchOpts.blend = +pblend.value; pblendVal.textContent = pblend.value + "%"; });
+        pblend.addEventListener("change", () => this.root.focus({ preventScroll: true }));
+        row("patch", "Blend", pblend, pblendVal);
         const aligned = document.createElement("input");
         aligned.type = "checkbox"; aligned.checked = true; aligned.title = "Aligned: the offset between source and brush stays the same for every stroke; off starts every stroke at the source point again";
         aligned.addEventListener("change", () => { this.cloneOpts.aligned = aligned.checked; });
@@ -2207,7 +2245,7 @@ class InpaintEditor {
     updateOptsBar() {
         if (!this.optsBar) return;
         const tool = this.tool;
-        const on = ["select", "deselect", "paint", "erase", "bucket", "gradient", "eyedropper", "smudge", "tone", "clone", "heal", "remove", "wand", "shape", "canvas"].includes(tool);
+        const on = ["select", "deselect", "paint", "erase", "bucket", "gradient", "eyedropper", "smudge", "tone", "clone", "heal", "remove", "patch", "wand", "shape", "canvas"].includes(tool);
         this.optsBar.hidden = !on;
         if (!on) return;
         for (const lab of this.optsBar.querySelectorAll("label")) lab.hidden = !(lab.dataset.for || "").split(" ").includes(tool);
@@ -2235,7 +2273,7 @@ class InpaintEditor {
             freehand: "Draw with the cursor held down",
         };
         if (tool === "canvas") this.syncFrameControls();
-        const hints = { canvas: "Edges crop or extend, outside turns, Ctrl+drag straightens; Enter or a double click applies, Esc resets", shape: shapeHints[this.shapeOpts.kind] || "", select: "Paint to select, Alt subtracts", deselect: "Paint to deselect", paint: "Alt+click picks a colour, Shift+click draws a line", erase: "Shift+click draws a line", wand: "Click to select the similar area; Shift adds, Alt subtracts", bucket: "Click to fill; Shift+F fills the whole selection", gradient: "Drag from the colour to where it should have faded", eyedropper: "Click to pick a colour", smudge: this.smudgeOpts && this.smudgeOpts.mode === "blur" ? "Paint over what should soften" : this.smudgeOpts && this.smudgeOpts.mode === "sharpen" ? "Paint over what should crisp up; a little goes a long way" : "Drag across an edge to soften it", tone: this.toneHint(), remove: "Brush over what should go: it is filled from its surroundings when you let go", clone: this.cloneSource ? "Paint to copy from the source (Alt+click moves it)" : "Alt+click sets the source point", heal: this.cloneSource ? "Paint to repair with the source's texture (Alt+click moves it)" : "Alt+click sets the source point" };
+        const hints = { canvas: "Edges crop or extend, outside turns, Ctrl+drag straightens; Enter or a double click applies, Esc resets", shape: shapeHints[this.shapeOpts.kind] || "", select: "Paint to select, Alt subtracts", deselect: "Paint to deselect", paint: "Alt+click picks a colour, Shift+click draws a line", erase: "Shift+click draws a line", wand: "Click to select the similar area; Shift adds, Alt subtracts", bucket: "Click to fill; Shift+F fills the whole selection", gradient: "Drag from the colour to where it should have faded", eyedropper: "Click to pick a colour", smudge: this.smudgeOpts && this.smudgeOpts.mode === "blur" ? "Paint over what should soften" : this.smudgeOpts && this.smudgeOpts.mode === "sharpen" ? "Paint over what should crisp up; a little goes a long way" : "Drag across an edge to soften it", tone: this.toneHint(), remove: "Brush over what should go: it is filled from its surroundings when you let go", patch: this.patchOpts.mode === "destination" ? "Lasso what to copy, then drag the selection to where the copy should go" : "Lasso the spot, then drag the selection to where the picture is right", clone: this.cloneSource ? "Paint to copy from the source (Alt+click moves it)" : "Alt+click sets the source point", heal: this.cloneSource ? "Paint to repair with the source's texture (Alt+click moves it)" : "Alt+click sets the source point" };
         this.optsHint.textContent = hints[tool] || "";
     }
 
@@ -2486,7 +2524,8 @@ class InpaintEditor {
                 if (this.tipPicker && this.tipPicker.isOpen) { e.stopImmediatePropagation(); e.preventDefault(); this.closeTipPicker(); return; }
                 if (t === this.promptInput) return;
                 e.stopImmediatePropagation(); e.preventDefault();
-                if (this.pending) this.cancelPending();
+                if (this.pointer && this.pointer.kind === "patchdrag") { const p = this.pointer; this.pointer = null; this.patchDone(p); this.draw(); this.setStatus("Patch cancelled."); }
+                else if (this.pending) this.cancelPending();
                 else if (this.polyPoints) { this.polyPoints = null; this.draw(); this.setStatus("Polygon cancelled."); }
                 else if (this.shapePoints) { this.cancelShape(); this.draw(); this.setStatus("Shape cancelled."); }
                 else if (this.tool === "canvas" && this.pointer && ["frame", "framemove", "framerotate", "straighten"].includes(this.pointer.kind)) {
@@ -2510,7 +2549,7 @@ class InpaintEditor {
             // layer as they are, so a shortcut waits for it as a press does (Ctrl+Z waits for it through `trackEdit`)
             if (this.pointer && this.pointer.healing && !((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "z")) {
                 e.preventDefault();
-                this.setStatus(this.pointer.remove ? "Removing: a moment." : "Healing: a moment.");
+                this.setStatus(this.heldWord(this.pointer));
                 return;
             }
             this.onKey(e);
@@ -2749,6 +2788,8 @@ class InpaintEditor {
         if (tool === "canvas") this.setStatus("Drag the frame's edges to crop or extend (8 px steps, Alt for single pixels), outside it to turn the picture, Ctrl+drag along a horizon to straighten. Enter or a double click applies, Esc resets.");
         this.syncFrameControls();
         if (tool === "text") this.setStatus("Click on the canvas to add a text layer; click a text layer to select it, drag to move it.");
+        // (Shift+J reaches Patch through Remove, whose model line would stay otherwise)
+        if (tool === "patch") this.setStatus("Lasso the spot (or select it), then drag the selection to where the picture is right; Mode Destination copies it there instead.");
         if (tool !== "object") { this.hoverObjectId = 0; this.hoverObjectCanvas = null; }
         else this.ensureObjects();
         if (tool === "remove" && prevTool !== "remove") this.warmRemove();
@@ -2834,7 +2875,13 @@ class InpaintEditor {
             case "y": this.setTool("shape"); break;
             case "q": this.toggleQuickMask(); break;
             case "s": this.setTool(e.shiftKey ? "smudge" : "clone"); break;
-            case "j": this.setTool(e.shiftKey && host.removeSupported ? "remove" : "heal"); break;
+            case "j": {
+                // J heals; Shift+J goes round Remove and Patch (Photoshop's J group), from any other tool to the first
+                if (!e.shiftKey) { this.setTool("heal"); break; }
+                const ring = [...(host.removeSupported ? ["remove"] : []), "patch"];
+                this.setTool(ring[(ring.indexOf(this.tool) + 1) % ring.length]);
+                break;
+            }
             case "g": this.setTool(e.shiftKey ? "gradient" : "bucket"); break;
             case "f": this.fitView(); break;
             case "delete": case "backspace": {
@@ -4521,7 +4568,7 @@ class InpaintEditor {
         this.root.focus({ preventScroll: true });
         if (!this.width) return;
         // a heal stroke is held until its blend lands (`healBlend`): the next gesture waits for it
-        if (this.pointer && this.pointer.healing) { this.setStatus(this.pointer.remove ? "Removing: a moment." : "Healing: a moment."); return; }
+        if (this.pointer && this.pointer.healing) { this.setStatus(this.heldWord(this.pointer)); return; }
         // Chrome reports detail = 0 on pointer events, so double-clicks are detected here:
         // a second press within 400 ms and 8 css px of the previous one.
         const nowMs = performance.now();
@@ -4592,10 +4639,14 @@ class InpaintEditor {
             } else {
                 this.pointer = { kind: "rect", ellipse: this.tool === "ellipse", square: e.ctrlKey, start: [ix, iy], cur: [ix, iy], startPx: this.toCanvasPx(e), mode: selMode };
             }
-        } else if (this.tool === "lasso") {
-            this.pushUndo({ kind: "selection", label: "Lasso selection" });
-            this.pointer = { kind: "lasso", mode: selMode };
-            this.lassoPoints = [[ix, iy]];
+        } else if (this.tool === "lasso" || this.tool === "patch") {
+            // the patch tool drags the selection when pressed inside it (the marquee's rule) and draws a lasso elsewhere
+            if (this.tool === "patch" && selMode === "replace" && !e.ctrlKey && this.selectedAt(ix, iy)) this.patchPress(e, ix, iy);
+            else {
+                this.pushUndo({ kind: "selection", label: "Lasso selection" });
+                this.pointer = { kind: "lasso", mode: selMode };
+                this.lassoPoints = [[ix, iy]];
+            }
         } else if (this.tool === "polygon") {
             if (!this.polyPoints) {
                 this.polyPoints = [[ix, iy]];
@@ -4908,6 +4959,8 @@ class InpaintEditor {
         } else if (p.kind === "lasso") {
             this.lassoPoints.push([ix, iy]);
             p.mode = e.altKey ? "subtract" : (e.shiftKey ? "add" : p.mode === "replace" && !e.shiftKey ? "replace" : "add");
+        } else if (p.kind === "patchdrag") {
+            this.patchDrag(p, e, ix, iy);
         } else if (p.kind === "move") {
             p.layer.x = Math.round(p.orig.x + (ix - p.start[0]));
             p.layer.y = Math.round(p.orig.y + (iy - p.start[1]));
@@ -5045,6 +5098,8 @@ class InpaintEditor {
                 });
                 this.markSelectionChanged(this.boundsAfter(p.mode, [lx0, ly0, lx1, ly1]));
             }
+        } else if (p.kind === "patchdrag") {
+            this.patchRelease(p, e);
         } else if (p.kind === "selpaint") {
             const filled = this.fillEnclosed && this.closeStrokeLoop(p.path, !!p.subtract);
             // the dabs kept the levels up to date and a closed loop fills inside the path, which
@@ -7048,7 +7103,8 @@ class InpaintEditor {
         this.commitStroke(p);
         this.markLayerChanged(p.layer, box);
         this.releaseStrokeScratch();
-        if (!p.grad) this.lastStrokeEnd = { layerId: p.layer.id, x: p.last[0], y: p.last[1], mask: false };
+        // a patch is no stroke a Shift+click line could go on from
+        if (!p.grad && !p.patch) this.lastStrokeEnd = { layerId: p.layer.id, x: p.last[0], y: p.last[1], mask: false };
     }
 
     /**
@@ -7070,10 +7126,12 @@ class InpaintEditor {
         const t0 = performance.now();
         // what the last blend took, for tests and the status line: the box (image pixels), the source offset, the kernel's info
         const note = (where, info) => { this.lastHeal = { box: [job.x + p.layer.x, job.y + p.layer.y, job.w, job.h], off: job.off, unknowns: job.unknowns, where, info: info ? Array.from(info) : null, ms: Math.round(performance.now() - t0) }; };
-        // the blend's colours, unless it did not settle (the quick heal stays then)
+        // the blend's colours, unless it did not settle (the quick heal stays then); a patch's Blend below 100 % mixes them
+        // with the plain copy its buffer holds (`patchRun`)
         const land = (out, info, where) => {
             note(where, info);
-            if (info && info[3]) { this.setStatus("The blend did not settle here (the source splits the stroke into strands): the quick heal stays."); return; }
+            if (info && info[3]) { this.setStatus(`The blend did not settle here (the source splits the ${p.patch ? "patch" : "stroke"} into strands): the ${p.patch ? "plain copy" : "quick heal"} stays.`); return; }
+            if (p.patch && p.patch.blend < 1) patchMix(out, job.stroke.data, job.mask, p.patch.blend);
             this.healWrite(p, job, out);
         };
         if (job.unknowns <= InpaintEditor.healSyncMax && job.w * job.h <= InpaintEditor.healSyncBox) {
@@ -7084,12 +7142,13 @@ class InpaintEditor {
         }
         p.healing = true;
         // what the commit reads, as it is now: the user has let go, and may deselect, move the opacity or nudge meanwhile
-        p.opacity = this.brushOpacity;
+        // (a patch lands at full opacity: it set its own)
+        if (p.opacity == null) p.opacity = this.brushOpacity;
         p.op = p.layer.alphaLock ? "source-atop" : "source-over";
         p.rect = this.strokeRect(p, p.layer.px);
         if (p.clip && this.sel) p.clipSel = this.sel.clone();
         this.pointer = p;
-        this.setStatus("Healing...");
+        this.setStatus(p.patch ? "Patching..." : "Healing...");
         const done = (async () => {
             let out = null, where = "worker", info = null;
             try {
@@ -7127,7 +7186,7 @@ class InpaintEditor {
             try { this.commitLayerPaint(p); }
             finally { if (p.clipSel) { p.clipSel.release(); p.clipSel = null; } }
             this.draw();
-            if (settled) this.setStatus(`Healed ${job.unknowns.toLocaleString()} px (${Math.round(performance.now() - t0)} ms).`);
+            if (settled) this.setStatus(`${p.patch ? "Patched" : "Healed"} ${job.unknowns.toLocaleString()} px (${Math.round(performance.now() - t0)} ms).`);
         })();
         this.healPending = done;
         this.trackEdit(done);
@@ -7148,7 +7207,7 @@ class InpaintEditor {
         const x0 = Math.max(0, s.x - 1), y0 = Math.max(0, s.y - 1), x1 = Math.min(s.tw, s.x + s.w + 1), y1 = Math.min(s.th, s.y + s.h + 1);
         const w = x1 - x0, h = y1 - y0, n = w * h;
         if (w <= 0 || h <= 0 || n > InpaintEditor.healBlendMax) return null;
-        const stroke = s.px ? s.px.readRect(x0, y0, w, h) : s.canvas.getContext("2d").getImageData(x0 - s.cx, y0 - s.cy, w, h);
+        const stroke = s.bytes(x0, y0, w, h);
         const sa = stroke.data, mask = new Uint8Array(n);
         let unknowns = 0;
         for (let k = 0; k < n; k++) if (sa[4 * k + 3]) mask[k] = 255;
@@ -7181,7 +7240,11 @@ class InpaintEditor {
         const cl = p.clone, xf = cl.xf;
         if (!xf) {
             const ox = Math.round(cl.off.x), oy = Math.round(cl.off.y);
-            return { off: [ox, oy], bytes: new Uint8Array(cl.src.bytes([ix + ox, iy + oy, ix + ox + w, iy + oy + h])) };
+            // a patch read its guide once, over this box (`patchRun`): taken once (the worker's transfer empties it)
+            const gd = cl.guide;
+            if (gd) { cl.guide = null; if (gd.x === ix && gd.y === iy && gd.w === w && gd.h === h && gd.ox === ox && gd.oy === oy) return { off: [ox, oy], bytes: gd.bytes }; }
+            const box = [ix + ox, iy + oy, ix + ox + w, iy + oy + h];
+            return { off: [ox, oy], bytes: p.patch ? this.patchGuide(cl.src, box) : new Uint8Array(cl.src.bytes(box)) };
         }
         const S = cl.S, Dx = S.x - cl.off.x, Dy = S.y - cl.off.y, A = xf.A, Ai = xf.Ai;
         const q = [[ix, iy], [ix + w, iy], [ix, iy + h], [ix + w, iy + h]].map(([x, y]) => [S.x + A[0] * (x - Dx) + A[1] * (y - Dy), S.y + A[2] * (x - Dx) + A[3] * (y - Dy)]);
@@ -7228,6 +7291,236 @@ class InpaintEditor {
                 s.px.writeRect(blk, job.x + bx, job.y + by);
             }
         }
+    }
+
+    /**
+     * The words that refuse a patch on `layer` (the active one, null for the base), or null when it can go on. It
+     * writes a layer's own pixels as the heal does (`healInputs`): not the mask or the selection the UI says is being
+     * edited, not a locked, filter or text layer, and only a layer at its own size on whole pixels.
+     */
+    patchRefusal(layer) {
+        if (this.quickMask || (layer && layer.maskEdit)) return `${this.quickMask ? "Quick mask is on" : `The mask of ${layer.name} is being edited`}: Patch works on pixels. ${this.quickMask ? "Press Q to leave it." : "Switch the mask edit off first."}`;
+        if (!layer) return null;
+        if (layer.locked) return `${layer.name} is locked.`;
+        if (layer.kind === "filter") return "Filter layers have no pixels. Select a paint or image layer.";
+        if (layer.kind === "text") return "Text layers hold text, not pixels. Select a paint or image layer.";
+        if (layer.px.width !== layer.w || layer.px.height !== layer.h || layer.x !== Math.round(layer.x) || layer.y !== Math.round(layer.y))
+            return `Patch paints into a layer at its own size on whole pixels, and ${layer.name} is scaled or placed between pixels: pick another layer, or the base (Patch then paints into a new layer).`;
+        return null;
+    }
+
+    /**
+     * The selection as the patch takes it: `E` the extent of every pixel with any alpha ([x0, y0, x1, y1], image pixels)
+     * and `selA` its alpha over E (row-major). One read at the press: on tiles the extent is exact, on the canvas backend
+     * a padded box from the 1/16 level, tightened here. Null without a selection; throws the status line's words above
+     * `healBlendMax`.
+     */
+    patchExtent() {
+        if (!this.sel || !this.getBounds()) return null;
+        const X = this.selectionExtent();
+        if (!X) return null;
+        const w0 = X[2] - X[0], h0 = X[3] - X[1], max = InpaintEditor.healBlendMax;
+        const tooLarge = () => new Error(`Patch blends up to ${Math.round(max / 1048576)} MP of selection: patch it in parts.`);
+        if (w0 * h0 > 2 * max) throw tooLarge();
+        const d = this.sel.readRect(X[0], X[1], w0, h0).data;
+        let x0 = w0, y0 = h0, x1 = -1, y1 = -1;
+        for (let y = 0; y < h0; y++) {
+            for (let x = 0, j = y * w0 * 4 + 3; x < w0; x++, j += 4) {
+                if (!d[j]) continue;
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                y1 = y;
+            }
+        }
+        if (x1 < 0) return null;
+        const ew = x1 - x0 + 1, eh = y1 - y0 + 1;
+        // the blend's box is the patch's plus the stroke buffer's margin (32 px on the canvas backend) and a pixel
+        if ((ew + 70) * (eh + 70) > max) throw tooLarge();
+        const selA = new Uint8Array(ew * eh);
+        for (let y = 0; y < eh; y++) for (let x = 0; x < ew; x++) selA[y * ew + x] = d[((y + y0) * w0 + x + x0) * 4 + 3];
+        return { E: [X[0] + x0, X[1] + y0, X[0] + x1 + 1, X[1] + y1 + 1], selA };
+    }
+
+    /**
+     * A press of the patch tool inside the selection (PLAN_0_1_31 §5 step 4): the selection is read once (`patchExtent`)
+     * and dragged as an offset. Source (the default) repairs the selection with the picture under the dragged outline;
+     * Destination copies what is selected to where it is dropped. The offset stays inside the picture, and for
+     * Destination inside the layer it is written into; the blend runs at the release (`patchRun`).
+     */
+    patchPress(e, ix, iy) {
+        const mode = this.patchOpts && this.patchOpts.mode === "destination" ? "destination" : "source";
+        const layer = this.activeLayer();
+        let why = this.patchRefusal(layer), got = null;
+        if (!why) {
+            try { got = this.patchExtent(); } catch (err) { why = String((err && err.message) || err); }
+            if (!why && !got) why = "Nothing is selected to patch.";
+        }
+        if (why) { this.setStatus(why); return; }
+        const E = got.E, ew = E[2] - E[0], eh = E[3] - E[1];
+        const lim = [0, 0, this.width, this.height];
+        if (layer) {
+            const L = [layer.x, layer.y, layer.x + layer.w, layer.y + layer.h];
+            if (mode === "source" && (E[0] < L[0] || E[1] < L[1] || E[2] > L[2] || E[3] > L[3])) { this.setStatus(`The selection reaches past ${layer.name}: pick a layer that covers it, or the base.`); return; }
+            if (mode === "destination") { lim[0] = Math.max(0, L[0]); lim[1] = Math.max(0, L[1]); lim[2] = Math.min(this.width, L[2]); lim[3] = Math.min(this.height, L[3]); }
+        }
+        if (lim[2] - lim[0] < ew || lim[3] - lim[1] < eh) { this.setStatus(`The selection is larger than ${layer ? layer.name : "the picture"}: there is nowhere to copy it to.`); return; }
+        // the preview reads the picture as it is now; above `patchPreviewMax` only the outline follows
+        let src = null, maskC = null, ghost = null;
+        if (ew * eh <= InpaintEditor.patchPreviewMax) {
+            src = this.brushSource("all", layer);
+            // on the CPU as the preview it is drawn into (a GPU canvas there was a readback at every offset)
+            maskC = cpuDab(null, ew, eh);
+            const mi = new ImageData(ew, eh);
+            for (let k = 0; k < ew * eh; k++) mi.data[4 * k + 3] = got.selA[k];
+            maskC.getContext("2d").putImageData(mi, 0, 0);
+            if (mode === "destination") ghost = this.patchPiece(src, E, maskC);
+        } else this.setStatus("A large selection: the outline follows the drag, the patch shows when you let go.");
+        this.pointer = { kind: "patchdrag", mode, start: [ix, iy], startPx: this.toCanvasPx(e), d: [0, 0], moved: false, E, selA: got.selA, lim, src, maskC, ghost, prevD: null };
+    }
+
+    /** The picture over `box` (inside it) cut to the selection's shape (`maskC`, the box's size), as a canvas of the box. */
+    patchPiece(src, box, maskC) {
+        const w = box[2] - box[0], h = box[3] - box[1];
+        const c = this._patchPrev = cpuDab(this._patchPrev, w, h), ctx = c.getContext("2d");
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
+        ctx.clearRect(0, 0, w, h);
+        const got = src.read(box, 1);
+        if (got) ctx.drawImage(got.canvas, got.x - box[0], got.y - box[1]);
+        ctx.globalCompositeOperation = "destination-in";
+        ctx.drawImage(maskC, 0, 0);
+        ctx.globalCompositeOperation = "source-over";
+        return c;
+    }
+
+    /** The drag: a whole-pixel offset, once the pointer has moved 3 screen pixels, clamped so the moved box stays inside `lim`. */
+    patchDrag(p, e, ix, iy) {
+        const [cx, cy] = this.toCanvasPx(e);
+        if (!p.moved && Math.hypot(cx - p.startPx[0], cy - p.startPx[1]) <= 3) return;
+        p.moved = true;
+        const E = p.E, L = p.lim;
+        p.d = [Math.min(L[2] - E[2], Math.max(L[0] - E[0], Math.round(ix - p.start[0]))), Math.min(L[3] - E[3], Math.max(L[1] - E[1], Math.round(iy - p.start[1])))];
+    }
+
+    /**
+     * The drag's preview, in image coordinates under the view: Source shows the picture the outline covers inside the
+     * selection (read again when the offset changes), Destination the selected piece where it would land.
+     */
+    drawPatchPreview(ctx, p) {
+        if (!p.src) return;
+        const E = p.E, [dx, dy] = p.d;
+        ctx.save();
+        ctx.imageSmoothingEnabled = this.view.scale < 1;
+        if (p.mode === "source") {
+            if (!p.prevD || p.prevD[0] !== dx || p.prevD[1] !== dy) { this.patchPiece(p.src, [E[0] + dx, E[1] + dy, E[2] + dx, E[3] + dy], p.maskC); p.prevD = [dx, dy]; }
+            if (p.moved) ctx.drawImage(this._patchPrev, E[0], E[1]);
+        } else if (p.ghost && p.moved) {
+            ctx.globalAlpha = 0.85;
+            ctx.drawImage(p.ghost, E[0] + dx, E[1] + dy);
+        }
+        ctx.restore();
+    }
+
+    /** The drag ends: nothing happens without a move (a click, a cancel), else the patch runs. */
+    patchRelease(p, e) {
+        try {
+            if (e && e.type === "pointercancel") { this.setStatus("Patch cancelled."); return; }
+            if (!p.moved || (!p.d[0] && !p.d[1])) {
+                this.setStatus(p.mode === "source" ? "Drag the selection to where the picture is right: the spot is patched from there when you let go." : "Drag the selection to where the copy should go.");
+                return;
+            }
+            this.patchRun(p);
+        } finally { this.patchDone(p); }
+    }
+
+    /**
+     * A patch's guide over `box` ([x0, y0, x1, y1] image pixels, the offset already added) as bytes of its own: the
+     * picture through the reader `R`, and past the picture's edge the nearest pixel inside it. The heal's ring there would
+     * read a clear source and hold nothing (Neumann), and a patch dragged against the picture's edge left that side
+     * unanchored: a straight step of 2 to 3 levels across a smooth sky (the review of step 4a).
+     */
+    patchGuide(R, box) {
+        const W = this.width, H = this.height, w = box[2] - box[0], h = box[3] - box[1];
+        if (box[0] >= 0 && box[1] >= 0 && box[2] <= W && box[3] <= H) return new Uint8Array(R.bytes(box));
+        const c = [Math.max(0, box[0]), Math.max(0, box[1]), Math.min(W, box[2]), Math.min(H, box[3])];
+        const out = new Uint8Array(w * h * 4);
+        if (c[2] <= c[0] || c[3] <= c[1]) return out;
+        // bytes() hands out a buffer its next read reuses: used up here
+        const got = R.bytes(c), cw = c[2] - c[0], left = c[0] - box[0], right = box[2] - c[2];
+        for (let y = 0; y < h; y++) {
+            const s = (Math.min(c[3] - 1, Math.max(c[1], box[1] + y)) - c[1]) * cw * 4, o = y * w * 4;
+            out.set(got.subarray(s, s + cw * 4), o + left * 4);
+            for (let x = 0; x < left; x++) out.set(got.subarray(s, s + 4), o + x * 4);
+            for (let x = 0; x < right; x++) out.set(got.subarray(s + (cw - 1) * 4, s + cw * 4), o + (left + cw + x) * 4);
+        }
+        return out;
+    }
+
+    /** What a patch drag held for its preview, given back. */
+    patchDone(p) {
+        if (p.src && p.src.release) p.src.release();
+        p.src = null; p.ghost = null; p.maskC = null;
+    }
+
+    /**
+     * The patch at the release, on the heal's machinery: a stroke buffer on the target layer (a new paint layer on the
+     * base) holds the plain copy of the donor (`D`, the picture at the target box + `off`) with the selection's alpha
+     * (`selA`) as its coverage, and `healBlend` lays the Poisson blend of the donor with the picture around the target
+     * over it (at the release, or in a worker with the gesture held), `patchMix` pulls it back by Blend, and the commit
+     * is the stroke's: one "Patch" step, the soft edge applied once through the buffer's alpha (no clip: the coverage is
+     * the buffer's). Source: target = the selection, donor at +d; Destination: target = the selection moved by d, donor
+     * the selection itself. The selection stays where it is.
+     */
+    patchRun(p) {
+        let layer = this.activeLayer();
+        // a key during the drag may have changed what the press checked (quick mask, the active layer)
+        const why = this.patchRefusal(layer);
+        if (why) { this.setStatus(why); return; }
+        const E = p.E, [dx, dy] = p.d, ew = E[2] - E[0], eh = E[3] - E[1];
+        const dest = p.mode === "destination";
+        const T = dest ? [E[0] + dx, E[1] + dy, E[2] + dx, E[3] + dy] : E.slice();
+        const off = dest ? [-dx, -dy] : [dx, dy];
+        if (layer && (T[0] < layer.x || T[1] < layer.y || T[2] > layer.x + layer.w || T[3] > layer.y + layer.h)) { this.setStatus(`The patch reaches past ${layer.name}: pick a layer that covers it, or the base.`); return; }
+        const R = this.brushSource("all", layer);
+        // the donor is read once, over the box the heal's blend will ask its guide for (`healInputs`: the stroke buffer's
+        // extent, the target padded by the buffer's margin, and a pixel; inside the layer, the picture for a new one), and
+        // handed to `healSource` with the offset; the plain copy is cut out of it
+        const PAD = (this.pixels && this.pixels.tiles ? 2 : 32) + 1;
+        const Lr = layer ? [layer.x, layer.y, layer.x + layer.w, layer.y + layer.h] : [0, 0, this.width, this.height];
+        const G = [Math.max(Lr[0], T[0] - PAD), Math.max(Lr[1], T[1] - PAD), Math.min(Lr[2], T[2] + PAD), Math.min(Lr[3], T[3] + PAD)];
+        const gw = G[2] - G[0], gh = G[3] - G[1];
+        const B = this.patchGuide(R, [G[0] + off[0], G[1] + off[1], G[2] + off[0], G[3] + off[1]]);
+        const Q = new ImageData(ew, eh), q = Q.data, selA = p.selA;
+        let any = 0;
+        for (let y = 0; y < eh; y++) {
+            for (let x = 0, k = y * ew, o = 4 * k, b = ((T[1] - G[1] + y) * gw + T[0] - G[0]) * 4; x < ew; x++, k++, o += 4, b += 4) {
+                const a = selA[k] ? Math.round(B[b + 3] * selA[k] / 255) : 0;
+                if (!a) continue;
+                q[o] = B[b]; q[o + 1] = B[b + 1]; q[o + 2] = B[b + 2]; q[o + 3] = a;
+                any++;
+            }
+        }
+        if (!any) { this.setStatus("Nothing to patch from there: the picture is clear where the selection was dragged."); return; }
+        if (!layer) layer = this.addPaintLayer();
+        const quick = this._patchQuick = cpuDab(this._patchQuick, ew, eh);
+        quick.getContext("2d").putImageData(Q, 0, 0);
+        const lx = T[0] - layer.x, ly = T[1] - layer.y;
+        const stroke = new StrokeBuffer(layer.px, this.pixels);
+        stroke.draw(lx, ly, lx + ew, ly + eh, (ctx) => { ctx.imageSmoothingEnabled = false; ctx.drawImage(quick, lx, ly); });
+        const blend = Math.max(0, Math.min(100, +((this.patchOpts || {}).blend ?? 100))) / 100;
+        const g = { kind: "layerpaint", layer, stroke, clip: null, erase: false, last: [T[0], T[1]], opacity: 1, previewAlpha: 1, patch: { mode: p.mode, blend },
+            clone: { src: R, dest: R, off: { x: off[0], y: off[1] }, heal: true, S: null, xf: null, guide: { x: G[0], y: G[1], w: gw, h: gh, ox: off[0], oy: off[1], bytes: B } } };
+        this.strokeBounds(g, T[0], T[1], T[2], T[3], 0);
+        this.strokeDirty(g, T[0], T[1], T[2], T[3], 0);
+        // Blend 0 is the plain copy; else the heal's blend lands over it (here, or held in a worker until it commits)
+        if (blend > 0 && this.healBlend(g)) return;
+        this.commitLayerPaint(g);
+        // what landed (not the new layer's line), unless the blend said it did not settle
+        const h = this.lastHeal;
+        if (!blend) this.setStatus(`Patched ${any.toLocaleString()} px (copied as it is: Blend 0 %).`);
+        else if (!(h && h.info && h.info[3] && h.off && h.off[0] === off[0] && h.off[1] === off[1])) this.setStatus(`Patched ${any.toLocaleString()} px.`);
     }
 
     /**
@@ -7305,7 +7598,7 @@ class InpaintEditor {
         const max = InpaintEditor.removeMaxHole;
         const tooWide = (span) => new Error(`Remove fills up to ${max.toLocaleString()} px across, and this stroke spans ${span.toLocaleString()} px: remove it in parts, or select it and use Generate.`);
         if (Math.max(w, h) > 2 * max) throw tooWide(Math.max(w, h));
-        const stroke = s.px ? s.px.readRect(x0, y0, w, h) : s.canvas.getContext("2d").getImageData(x0 - s.cx, y0 - s.cy, w, h);
+        const stroke = s.bytes(x0, y0, w, h);
         const sa = stroke.data, cover = new Uint8Array(n), mask = new Uint8Array(n);
         for (let k = 0; k < n; k++) if (sa[4 * k + 3]) cover[k] = mask[k] = 255;
         if (p.clip) {
@@ -7409,6 +7702,11 @@ class InpaintEditor {
      */
     async heldEdit() {
         for (let h; (h = this.removePending || this.healPending);) await h.catch(() => {});
+    }
+
+    /** What the status line says while a held gesture waits (a press or a key meanwhile). */
+    heldWord(p) {
+        return p.remove ? "Removing: a moment." : p.patch ? "Patching: a moment." : "Healing: a moment.";
     }
 
     /**
@@ -7903,6 +8201,7 @@ class InpaintEditor {
     strokeLabel(p) {
         if (p.kind === "maskpaint") return p.erase ? "Erase mask" : "Paint mask";
         if (p.grad) return "Gradient";
+        if (p.patch) return "Patch";
         if (p.remove) return "Remove";
         if (p.clone) return p.clone.heal ? "Heal" : "Clone";
         if (this.tool === "shape") return "Shape";
@@ -8056,7 +8355,7 @@ class InpaintEditor {
 
     /** After a gesture: the live preview canvases of a large layer are given back, small ones are kept for the next stroke. */
     releaseStrokeScratch() {
-        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest", "_healClip", "_healSrc"]) {
+        for (const k of ["strokePreview", "maskPreview", "maskedPreview", "strokeView", "strokeMaskView", "_strokePatch", "_strokeClip", "_strokeDev", "_smudgeSrc", "_smudgeClip", "_smudgeTip", "_brushBytes", "_cloneDab", "_healDest", "_healClip", "_healSrc", "_patchQuick", "_patchPrev"]) {
             const c = this[k];
             if (c && c.width * c.height > STROKE_SCRATCH_KEEP_PX) this[k] = null;
         }
@@ -11400,6 +11699,9 @@ class InpaintEditor {
     /** Remove fills a stroke up to this many pixels across (its crop is twice that, scaled to the model's 512 x 512). */
     static removeMaxHole = 2048;
 
+    /** A patch drag shows the picture it would take (Source) or the piece it copies (Destination) up to this many pixels of the selection's box; above, only the outline follows. */
+    static patchPreviewMax = 2 * 1024 * 1024;
+
     static jobTimings(reset = false) {
         const out = JOB_TIMINGS.slice();
         if (reset) JOB_TIMINGS.length = 0;
@@ -14140,8 +14442,11 @@ class InpaintEditor {
         path();
     }
 
-    /** Selection as a marching-ants outline: the mask shifted by a screen pixel in eight directions minus the mask, filled with a moving stripe pattern. */
-    drawMarchingAnts(ctx) {
+    /**
+     * Selection as a marching-ants outline: the mask shifted by a screen pixel in eight directions minus the mask, filled
+     * with a moving stripe pattern. `shift` ([dx, dy] image pixels) draws it moved (a patch drag), the selection unchanged.
+     */
+    drawMarchingAnts(ctx, shift = null) {
         const W = this.canvas.width, H = this.canvas.height;
         if (!this.antsCanvas || this.antsCanvas.width !== W || this.antsCanvas.height !== H) this.antsCanvas = makeCanvas(W, H);
         const a = this.antsCanvas.getContext("2d");
@@ -14154,16 +14459,22 @@ class InpaintEditor {
         const r = 1.25;
         // nine draws of the selection: never at full size (the view's level, and on tiles only the
         // part the view shows, straight from the tiles)
-        const region = this.viewportRegion();
+        const view = this.viewportRegion();
+        // moved: the selection's part that lands in view is the view's region moved back
+        const region = shift && view ? { ...view, x: view.x - shift[0], y: view.y - shift[1] } : view;
         for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, -r], [r, -r], [-r, r]]) {
             this.applyViewTransform(a, dx, dy);
             this.applyTilt(a);
-            this.drawSelectionInto(a, s, region);
+            if (shift) a.translate(shift[0], shift[1]);
+            // the moved pass reads as a sampler (not `display`): on tiles it would otherwise take the screen's region slot
+            // and the unmoved pass would rebuild it again, two whole regions a frame while the patch drags
+            this.drawSelectionInto(a, s, region, !shift);
         }
         this.applyViewTransform(a);
         this.applyTilt(a);
+        if (shift) a.translate(shift[0], shift[1]);
         a.globalCompositeOperation = "destination-out";
-        this.drawSelectionInto(a, s, region);
+        this.drawSelectionInto(a, s, region, !shift);
         a.setTransform(1, 0, 0, 1, 0, 0);
         a.globalCompositeOperation = "source-in";
         if (!this.antsPattern) {
@@ -14417,16 +14728,25 @@ class InpaintEditor {
         // what sits on the picture turns with the straighten preview; the frame, the guides and the grid stay level
         const tilt = this.viewTilt();
         if (tilt) { ctx.save(); this.applyTilt(ctx); }
+        // a patch drag: its preview under the outline, and the outline where the drag has taken it
+        const patch = this.pointer && this.pointer.kind === "patchdrag" ? this.pointer : null;
+        if (patch) this.drawPatchPreview(ctx, patch);
+        const shift = patch && patch.moved && (patch.d[0] || patch.d[1]) ? patch.d : null;
         if (this.selectionDisplay === "tint" || this.quickMask || !this.getBounds()) {
             // an empty selection on tiles (no tile) draws nothing: its draw made a display mirror as large as the
             // image, and a GPU copy of it at 0.5 or more, for transparent pixels (C2's final review)
             if (!this.selectionHasNoTiles()) {
                 ctx.globalAlpha = this.quickMask ? 0.5 : 0.4;
-                this.drawSelectionInto(ctx, s, this.viewportRegion());
+                const region = this.viewportRegion();
+                if (shift) { ctx.save(); ctx.translate(shift[0], shift[1]); }
+                this.drawSelectionInto(ctx, s, shift && region ? { ...region, x: region.x - shift[0], y: region.y - shift[1] } : region);
+                if (shift) ctx.restore();
                 ctx.globalAlpha = 1;
             }
         } else {
+            // the outline stays where the selection is, and a second one follows the drag
             this.drawMarchingAnts(ctx);
+            if (shift) this.drawMarchingAnts(ctx, shift);
         }
 
         if (this.tool === "object" && this.hoverObjectCanvas && !this.spaceDown) {

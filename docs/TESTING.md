@@ -30,6 +30,11 @@ Test with real runs: start `./node_modules/.bin/electron . --remote-debugging-po
   `python tools/editor_test.py` covers the editor behaviour reported broken in 0.1.5: the
   New dialog's two size boxes and its focus, the click that deselects, the outline that has
   to stay visible on white, and copy / paste of a layer between tabs; since 0.1.31 also the Undo history (rows, jumps, snapshots, depth, the history commands).
+  Its retouch steps check the kernel's bytes: `heal_blends_the_source_into_the_picture_at_the_release`,
+  `remove_fills_the_hole_from_the_model_at_the_release` (a stand-in for LaMa) and
+  `patch_blends_the_donor_into_the_selection_at_the_release` (the Patch tool: the landed RGB against `poissonBlend` of
+  the selection's mask, Source, Destination, Blend, the worker, the clamp at the picture's edge, a feather, the
+  refusals, no flatten while it drags). `SCUMBLE_EDITOR_ONLY=name,name` runs just those steps.
   `node tools/helpers_test.js` runs the ONNX modules without Electron (LaMa in its own process too); it needs the
   model files, a missing one is skipped. `node tools/remove_test.js` checks the Remove tool's crop and resampling
   (`renderer/editor/inpaint_remove.js`) without models.

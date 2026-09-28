@@ -7419,6 +7419,403 @@ try {
 }
 return out;
 """),
+    ("patch_blends_the_donor_into_the_selection_at_the_release", """
+// PLAN_0_1_31 section 5 step 4a: the Patch tool. A press inside the selection drags it (elsewhere the tool draws a lasso);
+// at the release the donor (Source: the picture under the dragged outline; Destination: the selection itself) lands in the
+// target with the selection's alpha, and the heal's Poisson blend lays it into the picture around the target: one "Patch"
+// step, the selection unchanged. The real handlers through synthetic pointer events; the layer against the kernel over the
+// box the release took (here, and in a worker with the gesture held; Ctrl+Z while held), Destination, Blend 0 and 50, the
+// clamp at the picture's edge, the base (a new layer), a layer off the origin, Esc and a click, the refusals, a feathered
+// selection, and no whole-picture read (nor a display mirror on tiles) through the drags and their preview
+const J = await import("./editor/px/kernels_js.js");
+const P = await import("./editor/inpaint_pixels.js");
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const IE = ed.constructor;
+const keep = { sync: IE.healSyncMax };
+const W = 1200, H = 800;
+const out = { tiles: !!ed.tileMode };
+const calls = { compositeCanvas: 0, flattenToCanvas: 0, sampleCanvas: 0 };
+const phases = {};
+const ants = [];
+let counting = false;
+try {
+    await run("new_canvas", { width: W, height: H, doc: d.id });
+    // the picture: a lit gradient with a fine grain; a warm, coarser texture right of the selection (the Source donor)
+    const base = document.createElement("canvas"); base.width = W; base.height = H;
+    {
+        const img = new ImageData(W, H), a = img.data;
+        const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return (h >>> 24) / 255; };
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+            const o = (y * W + x) * 4, n = hash(x, y) - 0.5;
+            if (x >= 700 && x < 1000 && y >= 280 && y < 620) { const t = hash(x >> 2, y >> 2) - 0.5; a[o] = 200 + 40 * t + 10 * n; a[o + 1] = 70 + 40 * t; a[o + 2] = 50 + 30 * t; }
+            else { a[o] = 60 + 0.06 * x + 12 * n; a[o + 1] = 90 + 0.05 * y + 12 * n; a[o + 2] = 140 - 0.04 * x + 12 * n; }
+            a[o + 3] = 255;
+        }
+        base.getContext("2d").putImageData(img, 0, 0);
+    }
+    Object.defineProperty(base, "naturalWidth", { value: W }); Object.defineProperty(base, "naturalHeight", { value: H });
+    await ed.setBase({ filename: "patch_test.png", subfolder: "inpaint_canvas", type: "input" }, base, { keepLayers: false });
+    const L = ed.addPaintLayer();
+    ed.activeLayerId = L.id; ed.renderLayers();
+    await ed.mipsSettled();
+    ed.view.angle = 0; ed.view.scale = 0.5; ed._fitted = false; ed.view.x = 10; ed.view.y = 10; ed.draw();
+    // the whole-picture reads counted while a pointer event or a draw of the drag runs; the ants' shifts recorded
+    for (const k of Object.keys(calls)) { const f = ed[k]; ed[k] = function (...a) { if (counting) calls[k]++; return f.apply(this, a); }; }
+    { const f = ed.drawMarchingAnts; ed.drawMarchingAnts = function (ctx, shift) { if (counting) ants.push(shift ? [shift[0], shift[1]] : null); return f.call(this, ctx, shift); }; }
+    const mirrors = () => ed.tileMode ? [!!P.displayCanvasIfMade(L.px), !!P.displayCanvasIfMade(ed.basePx)] : null;
+    const m0 = mirrors();
+    const mark = (name) => { phases[name] = calls.compositeCanvas + calls.flattenToCanvas + calls.sampleCanvas; };
+    let pid = 2600;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: "mouse", pressure: type === "pointerup" ? 0 : 0.5, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra));
+    const send = (type, ix, iy, extra) => { counting = true; try { ed.canvas.dispatchEvent(ev(type, ix, iy, extra)); } finally { counting = false; } };
+    const drawNow = () => { counting = true; try { ed.draw(); } finally { counting = false; } };
+    const key = (k, o = {}) => ed.root.dispatchEvent(new KeyboardEvent("keydown", Object.assign({ key: k, bubbles: true, cancelable: true }, o)));
+    // a drag from a to b in six moves, the picture drawn after each (the preview and the ants, as the screen would); what the
+    // press made, the offset the drag took and the last shifted outline, read before the release
+    const drag = (a, b, moves = 6) => {
+        pid++;
+        send("pointerdown", a[0], a[1]);
+        const kind = ed.pointer ? ed.pointer.kind : null;
+        ants.length = 0;
+        for (let i = 1; i <= moves; i++) { send("pointermove", a[0] + (b[0] - a[0]) * i / moves, a[1] + (b[1] - a[1]) * i / moves); drawNow(); }
+        const p = ed.pointer, dd = p && p.kind === "patchdrag" ? p.d.slice() : null;
+        const shifted = ants.filter((s) => s).map((s) => s.join()).pop() || null;
+        send("pointerup", b[0], b[1]);
+        return { kind, d: dd, ants: shifted };
+    };
+    const hashOf = (a) => { let h = 2166136261, n = 0; for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i], 16777619); for (let i = 3; i < a.length; i += 4) if (a[i]) n++; return (h >>> 0).toString(16) + "/" + n; };
+    const digest = (layer) => hashOf(layer.px.readRect(0, 0, layer.w, layer.h).data);
+    const selDigest = () => hashOf(ed.sel.readRect(0, 0, W, H).data);
+    const baseDigest = () => hashOf(ed.basePx.readRect(0, 0, W, H).data);
+    const top = () => (ed.undo[ed.undo.length - 1] || {}).label;
+    // the bytes of `px` (pw x ph) over [x, y, w, h] of its own pixels, zeros outside it (the brush source reads so)
+    const readZ = (px, pw, ph, x, y, w, h) => {
+        const o = new Uint8Array(w * h * 4);
+        const x0 = Math.max(0, x), y0 = Math.max(0, y), x1 = Math.min(pw, x + w), y1 = Math.min(ph, y + h), rw = x1 - x0;
+        if (rw <= 0 || y1 <= y0) return o;
+        const a = px.readRect(x0, y0, rw, y1 - y0).data;
+        for (let yy = y0; yy < y1; yy++) o.set(a.subarray((yy - y0) * rw * 4, (yy - y0 + 1) * rw * 4), ((yy - y) * w + x0 - x) * 4);
+        return o;
+    };
+    // the same, but past the pixels' edge the nearest pixel inside (the patch's guide: `patchGuide` replicates the edge)
+    const readE = (px, pw, ph, x, y, w, h) => {
+        const o = new Uint8Array(w * h * 4);
+        const x0 = Math.max(0, Math.min(pw - 1, x)), y0 = Math.max(0, Math.min(ph - 1, y)), x1 = Math.min(pw, Math.max(x0 + 1, x + w)), y1 = Math.min(ph, Math.max(y0 + 1, y + h)), rw = x1 - x0;
+        const a = px.readRect(x0, y0, rw, y1 - y0).data;
+        for (let yy = 0; yy < h; yy++) {
+            const sy = Math.min(y1 - 1, Math.max(y0, y + yy)) - y0;
+            for (let xx = 0; xx < w; xx++) {
+                const sx = Math.min(x1 - 1, Math.max(x0, x + xx)) - x0, s = (sy * rw + sx) * 4, d = (yy * w + xx) * 4;
+                o[d] = a[s]; o[d + 1] = a[s + 1]; o[d + 2] = a[s + 2]; o[d + 3] = a[s + 3];
+            }
+        }
+        return o;
+    };
+    // the landed patch over `h.box` (image px) against the kernel: mask = the selection (read `sd` from the box: the
+    // Destination's target is the selection moved by d) where it has any alpha, dst = the picture over the box, src = the
+    // picture at the box + h.off (the donor; past the picture's edge its nearest pixel, as the patch reads it). `mix` (Blend below 100 %): round(src + mix * (blend - src)). RGB compared
+    // where the selection and the landed alpha are 255; the landed alpha within 1 of the selection's where the mask is set,
+    // clear elsewhere in the box
+    const check = (layer, h, sd = [0, 0], mix = null) => {
+        const [x, y, w, hh] = h.box, n = w * hh;
+        const got = readZ(layer.px, layer.w, layer.h, x - layer.x, y - layer.y, w, hh);
+        const sa = readZ(ed.sel, W, H, x + sd[0], y + sd[1], w, hh);
+        const dst = readZ(ed.basePx, W, H, x, y, w, hh), src = readE(ed.basePx, W, H, x + h.off[0], y + h.off[1], w, hh);
+        const mask = new Uint8Array(n);
+        for (let k = 0; k < n; k++) mask[k] = sa[4 * k + 3] ? 255 : 0;
+        const want = J.poissonBlend(dst, src, mask, w, hh);
+        if (mix != null) for (let k = 0; k < n; k++) if (mask[k]) for (let c = 4 * k; c < 4 * k + 3; c++) want[c] = Math.round(src[c] + mix * (want[c] - src[c]));
+        const r = { box: h.box, off: h.off, where: h.where, info: h.info, unknowns: h.unknowns, masked: 0, soft: 0, full: 0, differ: 0, alpha: 0, outside: 0 };
+        for (let k = 0; k < n; k++) {
+            const A = got[4 * k + 3], S = sa[4 * k + 3];
+            if (!mask[k]) { if (A) r.outside++; continue; }
+            r.masked++;
+            if (S < 255) r.soft++;
+            if (Math.abs(A - S) > 1) r.alpha++;
+            if (S === 255 && A === 255) { r.full++; for (let c = 0; c < 3; c++) if (got[4 * k + c] !== want[4 * k + c]) r.differ++; }
+        }
+        Object.defineProperty(r, "bytes", { value: { got, dst, src, w, h: hh }, enumerable: false });
+        return r;
+    };
+    const exact = (r, minFull) => r.full >= minFull && !r.differ && !r.alpha && !r.outside;
+    // for a failure's report: the blend's own mask (`healInputs`, its stroke buffer's alpha; on the canvas backend where
+    // the buffer's canvas lies) and the selection the press read (`patchExtent`), against the selection `check` reads.
+    // Found 2026-09-28: on the canvas backend the blend's mask had 100 to 480 unknowns more than the selection, all one
+    // pixel outside the buffer's canvas: `healInputs` reads the box 1 px past the canvas, and Chromium's first
+    // getImageData of a GPU canvas does not zero what lies outside it (a second read does, as does a willReadFrequently
+    // canvas); reported to the main loop, the check stays
+    let lastJob = null, lastExt = null;
+    ed.healInputs = function (p) {
+        const s = p.stroke, j = IE.prototype.healInputs.call(this, p);
+        lastJob = j ? { x: j.x, y: j.y, w: j.w, h: j.h, mask: j.mask.slice(), alpha: j.stroke.data.filter((_, i) => i % 4 === 3), buffer: s && !s.px && s.canvas ? { canvas: [s.canvas.width, s.canvas.height], at: [s.cx, s.cy] } : null } : null;
+        return j;
+    };
+    ed.patchExtent = function () { const g = IE.prototype.patchExtent.call(this); lastExt = g ? { E: g.E.slice(), set: g.selA.reduce((n, v) => n + (v ? 1 : 0), 0) } : null; return g; };
+    const diag = (r, sd = [0, 0]) => {
+        if (!lastJob) return { job: null };
+        const [x, y, w, hh] = r.box, sa = readZ(ed.sel, W, H, x + sd[0], y + sd[1], w, hh);
+        const o = { job: [lastJob.x, lastJob.y, lastJob.w, lastJob.h], buffer: lastJob.buffer || null, press: lastExt, extra: 0, missing: 0, bbox: null, alphas: {}, sel: {}, samples: [] };
+        if (lastJob.w !== w || lastJob.h !== hh) return o;
+        let bx0 = Infinity, by0 = Infinity, bx1 = -1, by1 = -1;
+        for (let k = 0; k < w * hh; k++) {
+            const m = lastJob.mask[k] > 0, s = sa[4 * k + 3];
+            if (m && !s) {
+                o.extra++;
+                const X = x + (k % w), Y = y + ((k / w) | 0), a = lastJob.alpha[k];
+                bx0 = Math.min(bx0, X); by0 = Math.min(by0, Y); bx1 = Math.max(bx1, X); by1 = Math.max(by1, Y);
+                o.alphas[a] = (o.alphas[a] || 0) + 1;
+                if (o.samples.length < 6) o.samples.push([X, Y, a]);
+            } else if (!m && s) { o.missing++; o.sel[s] = (o.sel[s] || 0) + 1; }
+        }
+        if (o.extra) o.bbox = [bx0, by0, bx1 + 1, by1 + 1];
+        return o;
+    };
+    // the heal step's seam test: within 3 px of the patch's edge the result is near the picture while the donor is far from
+    // it; inside, result minus donor is harmonic (its Laplacian within two roundings)
+    const seam = (r) => {
+        const { got, dst, src, w, h } = r.bytes, A = (k) => got[4 * k + 3];
+        let n = 0, dHeal = 0, dSrc = 0, lap = 0, inside = 0;
+        for (let y = 3; y < h - 3; y++) for (let x = 3; x < w - 3; x++) {
+            const k = y * w + x;
+            if (A(k) !== 255) continue;
+            if (A(k - 3) < 255 || A(k + 3) < 255 || A(k - 3 * w) < 255 || A(k + 3 * w) < 255) {
+                for (let c = 0; c < 3; c++) { dHeal += Math.abs(got[4 * k + c] - dst[4 * k + c]); dSrc += Math.abs(src[4 * k + c] - dst[4 * k + c]); }
+                n++;
+            } else {
+                for (let c = 0; c < 3; c++) { const u = (q) => got[4 * q + c] - src[4 * q + c]; lap = Math.max(lap, Math.abs(4 * u(k) - u(k - 1) - u(k + 1) - u(k - w) - u(k + w))); }
+                inside++;
+            }
+        }
+        return { edge: n, heal: +(dHeal / (3 * n)).toFixed(2), source: +(dSrc / (3 * n)).toFixed(2), lap, inside };
+    };
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+    // 1. nothing selected: a press of the patch tool draws a lasso (an octagon of radius 80 around C), one step
+    ed.setTool("patch");
+    ed.patchOpts = { mode: "source", blend: 100 };
+    const C = [500, 400], oct = [];
+    for (let i = 0; i < 8; i++) oct.push([C[0] + 80 * Math.cos((i + 0.5) * Math.PI / 4), C[1] + 80 * Math.sin((i + 0.5) * Math.PI / 4)]);
+    const u0 = ed.undo.length;
+    pid++;
+    send("pointerdown", oct[0][0], oct[0][1]);
+    const lassoKind = ed.pointer ? ed.pointer.kind : null;
+    for (let i = 1; i <= 8; i++) send("pointermove", oct[i % 8][0], oct[i % 8][1]);
+    send("pointerup", oct[0][0], oct[0][1]);
+    out.lasso = { tool: ed.tool, kind: lassoKind, steps: ed.undo.length - u0, label: top() };
+    if (out.lasso.tool !== "patch" || lassoKind !== "lasso" || out.lasso.steps !== 1 || out.lasso.label !== "Lasso selection") throw new Error("the patch tool did not draw a lasso where nothing was selected: " + JSON.stringify(out.lasso));
+    // E: the extent of every selected pixel, read here
+    const selAll = ed.sel.readRect(0, 0, W, H).data.slice();
+    const sel0 = hashOf(selAll);
+    let ex0 = W, ey0 = H, ex1 = -1, ey1 = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (selAll[(y * W + x) * 4 + 3]) { if (x < ex0) ex0 = x; if (x > ex1) ex1 = x; if (y < ey0) ey0 = y; ey1 = y; }
+    const E = [ex0, ey0, ex1 + 1, ey1 + 1];
+    out.lasso.E = E;
+    if (!(E[0] > 410 && E[0] < 430 && E[2] > 570 && E[2] < 590)) throw new Error("the lasso selected " + JSON.stringify(E));
+    const e0 = digest(L);
+    mark("lasso");
+
+    // 1b. Source, dragged by (300, 40) onto the warm texture, on a paint layer: blended at the release, here
+    const n1 = ed.undo.length;
+    const g1 = drag(C, [C[0] + 300, C[1] + 40]);
+    const h1 = ed.lastHeal;
+    if (g1.kind !== "patchdrag" || !h1) throw new Error("the drag inside the selection did not patch: " + JSON.stringify({ g1, h1, status: ed.status }));
+    const r1 = check(L, h1), s1 = seam(r1);
+    out.source = Object.assign({ d: g1.d, ants: g1.ants, steps: ed.undo.length - n1, label: top(), sel: selDigest() === sel0, seam: s1, ms: h1.ms }, r1);
+    const o1 = out.source;
+    if (!same(g1.d, [300, 40]) || !same(h1.off, [300, 40]) || h1.where !== "here" || o1.steps !== 1 || o1.label !== "Patch" || !o1.sel) throw new Error("the Source patch did not run as stated: " + JSON.stringify(o1));
+    if (ed.selectionDisplay !== "tint" && o1.ants !== "300,40") throw new Error("no second outline followed the drag: " + JSON.stringify(o1));
+    if (!exact(r1, 10000) || h1.unknowns !== r1.masked) throw new Error("the layer is not the kernel's blend of the donor over the box: " + JSON.stringify(o1) + " diag " + JSON.stringify(diag(r1)));
+    if (!(s1.edge > 500 && s1.heal * 4 < s1.source && s1.lap <= 4 && s1.inside > 5000)) throw new Error("the patch does not meet the picture at its edge: " + JSON.stringify(o1));
+    const bytes1 = r1.bytes.got.slice();
+    await ed.undoStep();
+    if (digest(L) !== e0) throw new Error("the undo of the patch did not give the empty layer back");
+    mark("source");
+
+    // 2. in a worker (every patch, here): the gesture held, a press meanwhile waits; the same bytes; Ctrl+Z while held
+    IE.healSyncMax = 0;
+    const n2 = ed.undo.length;
+    drag(C, [C[0] + 300, C[1] + 40]);
+    const p2 = ed.pointer;
+    const held = !!(p2 && p2.healing && p2.patch && ed.healPending), gh = ed.gestureHeld();
+    pid++; send("pointerdown", 900, 700); send("pointermove", 950, 700); send("pointerup", 950, 700);
+    const pressWaited = ed.pointer === p2, pressStatus = ed.status;
+    await ed.healPending;
+    const h2 = ed.lastHeal, r2 = check(L, h2);
+    let vsSync = 0;
+    for (let k = 0; k < bytes1.length; k += 4) {
+        if (bytes1[k + 3] !== r2.bytes.got[k + 3]) vsSync++;
+        else if (bytes1[k + 3] === 255) for (let c = 0; c < 3; c++) if (bytes1[k + c] !== r2.bytes.got[k + c]) vsSync++;
+    }
+    out.worker = Object.assign({ held, gestureHeld: gh, pressWaited, pressStatus, vsSync, sameBox: same(h2.box, h1.box), steps: ed.undo.length - n2, label: top(), after: ed.pointer === null }, r2);
+    const o2 = out.worker;
+    if (!held || !gh || !pressWaited || !/Patching: a moment/.test(pressStatus)) throw new Error("the patch in a worker did not hold the gesture: " + JSON.stringify(o2));
+    if (h2.where !== "worker" || !o2.sameBox || o2.vsSync || !exact(r2, 10000) || o2.steps !== 1 || o2.label !== "Patch" || !o2.after) throw new Error("the patch in a worker landed otherwise: " + JSON.stringify(o2));
+    await ed.undoStep();
+    drag(C, [C[0] + 300, C[1] + 40]);
+    const heldZ = !!(ed.pointer && ed.pointer.healing && ed.healPending);
+    const undone = ed.undoStep();
+    await ed.healPending; await undone;
+    out.undoWhileHeld = { held: heldZ, empty: digest(L) === e0, steps: ed.undo.length - n2, future: ed.undoList().filter((r) => r.future).map((r) => r.label) };
+    IE.healSyncMax = keep.sync;
+    if (!heldZ || !out.undoWhileHeld.empty || out.undoWhileHeld.steps) throw new Error("an undo pressed while the patch blended did not take it back: " + JSON.stringify(out.undoWhileHeld));
+    mark("worker");
+
+    // 3. Destination by (-300, 0): the selection's piece copied there (the donor is the selection itself, off = -d)
+    ed.patchOpts = { mode: "destination", blend: 100 };
+    const n3 = ed.undo.length;
+    const g3 = drag(C, [C[0] - 300, C[1]]);
+    const h3 = ed.lastHeal;
+    if (g3.kind !== "patchdrag" || !h3) throw new Error("the Destination drag did not patch: " + JSON.stringify({ g3, status: ed.status }));
+    const r3 = check(L, h3, [300, 0]);
+    out.destination = Object.assign({ d: g3.d, ants: g3.ants, steps: ed.undo.length - n3, label: top(), sel: selDigest() === sel0 }, r3);
+    const o3 = out.destination;
+    if (!same(g3.d, [-300, 0]) || !same(h3.off, [300, 0]) || h3.where !== "here" || o3.steps !== 1 || o3.label !== "Patch" || !o3.sel) throw new Error("the Destination patch did not run as stated: " + JSON.stringify(o3));
+    if (ed.selectionDisplay !== "tint" && o3.ants !== "-300,0") throw new Error("no second outline followed the Destination drag: " + JSON.stringify(o3));
+    if (!exact(r3, 10000) || h3.unknowns !== r3.masked) throw new Error("the Destination patch is not the kernel's blend of the selection's piece: " + JSON.stringify(o3) + " diag " + JSON.stringify(diag(r3, [300, 0])));
+    await ed.undoStep();
+    if (digest(L) !== e0) throw new Error("the undo of the Destination patch did not give the empty layer back");
+    mark("destination");
+
+    // 4. Blend 0: no blend at all, the donor's bytes as they are; Blend 50: halfway between the donor and the blend
+    ed.patchOpts = { mode: "source", blend: 0 };
+    ed.lastHeal = null;
+    const n4 = ed.undo.length;
+    const g4 = drag(C, [C[0] + 300, C[1] + 40]);
+    const r4 = check(L, { box: [E[0], E[1], E[2] - E[0], E[3] - E[1]], off: [300, 40] }, [0, 0], 0);
+    out.blend0 = Object.assign({ d: g4.d, lastHeal: ed.lastHeal, steps: ed.undo.length - n4, label: top() }, r4);
+    if (ed.lastHeal !== null || !same(g4.d, [300, 40]) || out.blend0.steps !== 1 || out.blend0.label !== "Patch" || !exact(r4, 10000)) throw new Error("Blend 0 did not land the plain copy: " + JSON.stringify(out.blend0));
+    await ed.undoStep();
+    ed.patchOpts.blend = 50;
+    const n5 = ed.undo.length;
+    drag(C, [C[0] + 300, C[1] + 40]);
+    const h5 = ed.lastHeal, r5 = check(L, h5, [0, 0], 0.5), r5full = check(L, h5);
+    out.blend50 = Object.assign({ steps: ed.undo.length - n5, label: top(), vsFull: r5full.differ }, r5);
+    if (!h5 || h5.where !== "here" || !same(h5.off, [300, 40]) || out.blend50.steps !== 1 || out.blend50.label !== "Patch" || !exact(r5, 10000) || r5full.differ < 1000) throw new Error("Blend 50 did not land halfway: " + JSON.stringify(out.blend50));
+    await ed.undoStep();
+    if (digest(L) !== e0) throw new Error("the undo of the Blend patches did not give the empty layer back");
+    ed.patchOpts.blend = 100;
+    mark("blend");
+
+    // 5. a drag far past the right edge: the offset stops where the moved selection meets the picture's edge
+    const n6 = ed.undo.length;
+    const g6 = drag(C, [C[0] + 1500, C[1]]);
+    const h6 = ed.lastHeal, r6 = check(L, h6);
+    out.clamp = Object.assign({ d: g6.d, want: W - E[2], steps: ed.undo.length - n6 }, r6);
+    if (!same(g6.d, [W - E[2], 0]) || !same(h6.off, [W - E[2], 0]) || out.clamp.steps !== 1 || !exact(r6, 10000)) throw new Error("the drag past the edge was not clamped to the picture: " + JSON.stringify(out.clamp));
+    await ed.undoStep();
+    mark("clamp");
+
+    // 7. on the base: a new paint layer takes the patch and is active, the base stays as it was
+    ed.activeLayerId = null; ed.renderLayers();
+    const nl7 = ed.layers.length, n7 = ed.undo.length, b7 = baseDigest();
+    drag(C, [C[0] + 300, C[1] + 40]);
+    const N = ed.activeLayer(), h7 = ed.lastHeal;
+    const r7 = N ? check(N, h7) : {};
+    out.base = Object.assign({ layers: ed.layers.length - nl7, kind: N && N.kind, active: !!N && ed.activeLayerId === N.id && N !== L, steps: ed.undo.length - n7, label: top(), baseSame: baseDigest() === b7 }, r7);
+    const o7 = out.base;
+    if (o7.layers !== 1 || o7.kind !== "paint" || !o7.active || o7.steps !== 1 || o7.label !== "Patch" || !o7.baseSame) throw new Error("the patch on the base did not paint into a new active layer as one step: " + JSON.stringify(o7));
+    if (!exact(r7, 10000) || !same(h7.off, [300, 40])) throw new Error("the patch on the base is not the kernel's blend: " + JSON.stringify(o7));
+    await ed.undoStep();
+    o7.undone = { kept: ed.layers.includes(N), empty: ed.layers.includes(N) ? /[/]0$/.test(digest(N)) : null, baseSame: baseDigest() === b7 };
+    if ((o7.undone.kept && !o7.undone.empty) || !o7.undone.baseSame) throw new Error("the undo of the patch on the base left pixels: " + JSON.stringify(o7.undone));
+    ed.activeLayerId = L.id; ed.renderLayers();
+    mark("base");
+
+    // 8. Esc during a drag: the drag ends, nothing lands (not at the later release either); a click inside does nothing
+    const n8 = ed.undo.length;
+    pid++;
+    send("pointerdown", C[0], C[1]);
+    send("pointermove", C[0] + 60, C[1] + 20); send("pointermove", C[0] + 120, C[1] + 40);
+    const p8 = ed.pointer, kind8 = p8 && p8.kind, moved8 = !!(p8 && p8.moved);
+    key("Escape");
+    out.escape = { kind: kind8, moved: moved8, pointer: ed.pointer === null, status: ed.status };
+    send("pointerup", C[0] + 120, C[1] + 40);
+    Object.assign(out.escape, { steps: ed.undo.length - n8, same: digest(L) === e0, sel: selDigest() === sel0, statusAfter: ed.status });
+    const o8 = out.escape;
+    if (o8.kind !== "patchdrag" || !o8.moved || !o8.pointer || !/Patch cancelled/.test(o8.status) || o8.steps || !o8.same || !o8.sel) throw new Error("Esc did not cancel the patch drag: " + JSON.stringify(o8));
+    pid++;
+    send("pointerdown", C[0], C[1]);
+    const kindC = ed.pointer ? ed.pointer.kind : null;
+    send("pointerup", C[0], C[1]);
+    out.click = { kind: kindC, pointer: ed.pointer === null, steps: ed.undo.length - n8, same: digest(L) === e0, sel: selDigest() === sel0, status: ed.status };
+    if (kindC !== "patchdrag" || !out.click.pointer || out.click.steps || !out.click.same || !out.click.sel || !/Drag the selection/.test(out.click.status)) throw new Error("a click inside the selection did something: " + JSON.stringify(out.click));
+    mark("escape");
+
+    // 9. the refusals at the press: the status says why, no gesture, no step, no new layer, nothing written
+    const refuse = (what, re) => {
+        const n = ed.undo.length, nl = ed.layers.length, e = digest(L);
+        pid++;
+        send("pointerdown", C[0], C[1]);
+        const pointer = ed.pointer ? ed.pointer.kind : null;
+        send("pointermove", C[0] + 150, C[1] + 20); send("pointermove", C[0] + 300, C[1] + 40);
+        send("pointerup", C[0] + 300, C[1] + 40);
+        const r = { tool: ed.tool, status: ed.status, pointer, steps: ed.undo.length - n, layers: ed.layers.length - nl, same: digest(L) === e, sel: selDigest() === sel0 };
+        if (r.tool !== "patch" || !re.test(r.status) || r.pointer || r.steps || r.layers || !r.same || !r.sel) throw new Error(what + " did not refuse the patch: " + JSON.stringify(r));
+        return r;
+    };
+    out.refused = {};
+    ed.quickMask = true;
+    try { out.refused.quickMask = refuse("quick mask", /Quick mask/); } finally { ed.quickMask = false; }
+    await run("add_text", { doc: d.id, text: "Ab", x: 20, y: 20, size: 40 });
+    const TL = ed.layers.find((l) => l.kind === "text");
+    if (!TL) throw new Error("add_text made no text layer");
+    ed.setTool("patch");
+    ed.activeLayerId = TL.id; ed.renderLayers();
+    out.refused.text = refuse("a text layer", /Text layers hold text/);
+    ed.removeLayer(TL.id);
+    const S = ed.addLayer({ name: "S", kind: "paint", px: ed.pixels.Layer.empty(600, 400), x: 0, y: 0, w: W, h: H });
+    ed.activeLayerId = S.id; ed.renderLayers();
+    out.refused.scaled = refuse("a scaled layer", /scaled or placed between pixels/);
+    ed.removeLayer(S.id);
+    const O = ed.addLayer({ name: "O", kind: "paint", px: ed.pixels.Layer.empty(400, 400), x: 37, y: -21, w: 400, h: 400 });
+    ed.activeLayerId = O.id; ed.renderLayers();
+    out.refused.past = refuse("a layer at (37, -21) short of the selection", /reaches past/);
+    ed.removeLayer(O.id);
+    // 9b. a layer at (37, -21) that covers it: the patch lands at the image position (layer pixel = image pixel - (37, -21))
+    const M = ed.addLayer({ name: "M", kind: "paint", px: ed.pixels.Layer.empty(1400, 900), x: 37, y: -21, w: 1400, h: 900 });
+    ed.activeLayerId = M.id; ed.renderLayers();
+    const n9 = ed.undo.length;
+    drag(C, [C[0] + 300, C[1] + 40]);
+    const h9 = ed.lastHeal, r9 = check(M, h9);
+    out.offsetLayer = Object.assign({ steps: ed.undo.length - n9, label: top() }, r9);
+    if (!same(h9.off, [300, 40]) || out.offsetLayer.steps !== 1 || !exact(r9, 10000)) throw new Error("the patch on a layer at (37, -21) is not the blend at the image position: " + JSON.stringify(out.offsetLayer));
+    await ed.undoStep();
+    ed.removeLayer(M.id);
+    ed.activeLayerId = L.id; ed.renderLayers();
+    mark("refusals");
+
+    // 6. a feathered selection: the landed alpha follows the selection's soft edge, the colours are the blend's
+    await run("select_rect", { x: 440, y: 330, w: 120, h: 140, doc: d.id });
+    await ed.featherSelection(8);
+    const selF = selDigest();
+    const n10 = ed.undo.length;
+    const g10 = drag(C, [C[0] + 300, C[1] + 40]);
+    const h10 = ed.lastHeal, r10 = check(L, h10);
+    out.feathered = Object.assign({ kind: g10.kind, d: g10.d, steps: ed.undo.length - n10, label: top(), sel: selDigest() === selF }, r10);
+    const o10 = out.feathered;
+    if (g10.kind !== "patchdrag" || !same(h10.off, [300, 40]) || h10.where !== "here" || o10.steps !== 1 || o10.label !== "Patch" || !o10.sel) throw new Error("the patch of a feathered selection did not run as stated: " + JSON.stringify(o10));
+    if (!exact(r10, 5000) || r10.soft < 1000 || h10.unknowns !== r10.masked) throw new Error("the patch of a feathered selection does not follow its alpha: " + JSON.stringify(o10) + " diag " + JSON.stringify(diag(r10)));
+    await ed.undoStep();
+    if (digest(L) !== e0) throw new Error("the undo of the feathered patch did not give the empty layer back");
+    mark("feathered");
+
+    // 10. no press, drag, preview draw or release above read the whole picture, nor made a display mirror on tiles
+    out.calls = calls;
+    out.phases = phases;
+    out.mirrors = [m0, mirrors()];
+    if (calls.compositeCanvas || calls.flattenToCanvas || calls.sampleCanvas) throw new Error("a patch read the whole picture: " + JSON.stringify({ calls, phases }));
+    if (ed.tileMode && ((!m0[0] && out.mirrors[1][0]) || (!m0[1] && out.mirrors[1][1]))) throw new Error("a patch made a display mirror: " + JSON.stringify(out.mirrors));
+} finally {
+    IE.healSyncMax = keep.sync;
+    for (const k of Object.keys(calls)) delete ed[k];
+    delete ed.drawMarchingAnts; delete ed.healInputs; delete ed.patchExtent;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("the_smudge_carries_paint_as_far_as_its_length", """
 // PLAN_0_1_31 §4 step 3: the smudge's carry (the smudge_dab kernel). Length keeps the paint going, finger painting
 // starts from the paint colour, alpha lock keeps the alpha, Sample "below" leaves the layers above out; the kernel and
