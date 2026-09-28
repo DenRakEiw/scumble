@@ -11,7 +11,7 @@
  * anything that could have allocated, never keep one across `alloc` / `take`.
  */
 
-export const PX_ABI = 13;
+export const PX_ABI = 14;
 
 // arithmetic, not `& -n`: sizes above 2 GB do not survive a 32-bit bitwise operator
 const roundUp = (n, to) => Math.ceil(n / to) * to;
@@ -304,6 +304,17 @@ export class Px {
             this.exports.smudge_dab(pd, ps, pc, pm, n, strength >>> 0, keep >>> 0, flags >>> 0);
             this._out(Uint16Array, pc, n * 4, carry);
             return this._out(Uint8Array, pd, n * 4, dst);
+        } finally { a.reset(); }
+    }
+
+    /** The healing brush's Poisson blend over a box (kernels_js.js `poissonBlend`); `info` (4 ints) optional. */
+    poissonBlend(dst, src, mask, w, h, out = null, info = null) {
+        const a = this.job, n = w * h;
+        try {
+            const pd = this._in(a, dst, n * 4), ps = this._in(a, src, n * 4), pm = this._in(a, mask, n), po = a.take(n * 4), pi = a.take(16);
+            this.exports.poisson_blend(pd, ps, pm, w, h, po, pi);
+            if (info) info.set(this.view(Int32Array, pi, 4));
+            return this._out(Uint8Array, po, n * 4, out);
         } finally { a.reset(); }
     }
 

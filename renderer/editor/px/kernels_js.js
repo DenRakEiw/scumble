@@ -907,3 +907,320 @@ export function smudgeDab(dst, src, carry, mask, strength, keep, flags = 0) {
     }
     return dst;
 }
+
+// ---- the healing brush's Poisson blend (PLAN_0_1_31 §5 step 1) -------------------------------------
+
+export const POISSON_TOL = 1 / 32, POISSON_MAX_CYCLES = 30, POISSON_MIN_ALPHA = 8;
+// P_FREE: an unknown whose 4-connected region touches no FIXED cell keeps the start and stays out of the solve
+const P_NONE = 0, P_FIXED = 1, P_UNKNOWN = 2, P_FREE = 3, P_PRE = 2, P_POST = 2, P_COARSEST = 40, P_MAX_LEVELS = 24, P_ALPHA_MAX = 4;
+const P_INV = [0, 1, 0.5, 1 / 3, 0.25];
+
+/** One grid of the solver: `w` x `h` cells inside a ring of NONE padding (crates/px/src/poisson.rs `Level`). */
+function poissonLevel(w, h, coarse) {
+    const stride = w + 2, cells = stride * (h + 2);
+    return { w, h, stride, cells, state: new Uint8Array(cells), nb: new Uint8Array(cells), u: new Float32Array(cells * 3), f: coarse ? new Float32Array(cells * 3) : null, cc: null, spans: null, rows: null };
+}
+
+function poissonFinish(lv) {
+    const { w, h, stride: s, state, nb } = lv, spans = [], rows = [0];
+    for (let y = 0; y < h; y++) {
+        const row = (y + 1) * s + 1;
+        let x = 0;
+        while (x < w) {
+            if (state[row + x] !== P_UNKNOWN) { x++; continue; }
+            const x0 = x;
+            while (x < w && state[row + x] === P_UNKNOWN) {
+                const i = row + x;
+                nb[i] = (state[i - 1] !== P_NONE) + (state[i + 1] !== P_NONE) + (state[i - s] !== P_NONE) + (state[i + s] !== P_NONE);
+                x++;
+            }
+            spans.push(x0, x);
+        }
+        rows.push(spans.length >> 1);
+    }
+    lv.spans = Uint32Array.from(spans);
+    lv.rows = Uint32Array.from(rows);
+}
+
+/** The next coarser grid; its values are the mean of the children of the cell's own kind (the boundary for the start). */
+function poissonCoarser(lv) {
+    const w1 = (lv.w + 1) >> 1, h1 = (lv.h + 1) >> 1, c = poissonLevel(w1, h1, true), acc = [0, 0, 0];
+    for (let y1 = 0; y1 < h1; y1++) {
+        for (let x1 = 0; x1 < w1; x1++) {
+            let st = P_NONE;
+            for (let dy = 0; dy < 2; dy++) {
+                for (let dx = 0; dx < 2; dx++) {
+                    const x = 2 * x1 + dx, y = 2 * y1 + dy;
+                    if (x < lv.w && y < lv.h) { const v = lv.state[(y + 1) * lv.stride + x + 1]; if (v === P_FIXED || (v === P_UNKNOWN && st === P_NONE)) st = v; }
+                }
+            }
+            const j = (y1 + 1) * c.stride + x1 + 1;
+            c.state[j] = st;
+            if (st === P_NONE) continue;
+            acc[0] = 0; acc[1] = 0; acc[2] = 0;
+            let n = 0;
+            for (let dy = 0; dy < 2; dy++) {
+                for (let dx = 0; dx < 2; dx++) {
+                    const x = 2 * x1 + dx, y = 2 * y1 + dy;
+                    if (x >= lv.w || y >= lv.h) continue;
+                    const i = (y + 1) * lv.stride + x + 1;
+                    if (lv.state[i] !== st) continue;
+                    for (let ch = 0; ch < 3; ch++) acc[ch] += lv.u[3 * i + ch];
+                    n++;
+                }
+            }
+            for (let ch = 0; ch < 3; ch++) c.u[3 * j + ch] = acc[ch] / n;
+        }
+    }
+    poissonFinish(c);
+    return c;
+}
+
+function poissonSweep(lv, color, track) {
+    const { h, stride: s, nb, u, f, spans, rows } = lv;
+    let mx = 0;
+    for (let y = 0; y < h; y++) {
+        const row = (y + 1) * s + 1;
+        for (let k = rows[y], ke = rows[y + 1]; k < ke; k++) {
+            const x1 = spans[2 * k + 1];
+            let x = spans[2 * k];
+            x += (x + y + color) & 1;
+            for (; x < x1; x += 2) {
+                const i = row + x, n = P_INV[nb[i]];
+                for (let c = 0; c < 3; c++) {
+                    const sum = u[3 * (i - 1) + c] + u[3 * (i + 1) + c] + u[3 * (i - s) + c] + u[3 * (i + s) + c];
+                    const fv = f ? f[3 * i + c] : 0;
+                    const v = (fv + sum) * n;
+                    if (track) { const dv = Math.abs(v - u[3 * i + c]); if (dv > mx) mx = dv; }
+                    u[3 * i + c] = v;
+                }
+            }
+        }
+    }
+    return mx;
+}
+
+function poissonRestrict(fine, c) {
+    const s = fine.stride, fu = fine.u, ff = fine.f, acc = [0, 0, 0];
+    for (let y1 = 0; y1 < c.h; y1++) {
+        for (let k = c.rows[y1], ke = c.rows[y1 + 1]; k < ke; k++) {
+            for (let x1 = c.spans[2 * k], xe = c.spans[2 * k + 1]; x1 < xe; x1++) {
+                acc[0] = 0; acc[1] = 0; acc[2] = 0;
+                for (let dy = 0; dy < 2; dy++) {
+                    for (let dx = 0; dx < 2; dx++) {
+                        const x = 2 * x1 + dx, y = 2 * y1 + dy;
+                        if (x >= fine.w || y >= fine.h) continue;
+                        const i = (y + 1) * s + x + 1;
+                        if (fine.state[i] !== P_UNKNOWN) continue;
+                        const n = fine.nb[i];
+                        for (let ch = 0; ch < 3; ch++) {
+                            const sum = fu[3 * (i - 1) + ch] + fu[3 * (i + 1) + ch] + fu[3 * (i - s) + ch] + fu[3 * (i + s) + ch];
+                            const fv = ff ? ff[3 * i + ch] : 0;
+                            acc[ch] += (fv + sum) - n * fu[3 * i + ch];
+                        }
+                    }
+                }
+                const j = (y1 + 1) * c.stride + x1 + 1;
+                for (let ch = 0; ch < 3; ch++) { c.f[3 * j + ch] = acc[ch]; c.u[3 * j + ch] = 0; }
+            }
+        }
+    }
+}
+
+/** The coarse grid bilinearly at the fine grid's unknowns into `into` (f32, 3 a cell); a NONE neighbour mirrors the parent. */
+function poissonInterp(c, fine, into) {
+    const cs = c.stride, cu = c.u, cst = c.state;
+    for (let y = 0; y < fine.h; y++) {
+        const row = (y + 1) * fine.stride + 1, py = (y >> 1) + 1, vy = y & 1 ? py + 1 : py - 1;
+        for (let k = fine.rows[y], ke = fine.rows[y + 1]; k < ke; k++) {
+            for (let x = fine.spans[2 * k], xe = fine.spans[2 * k + 1]; x < xe; x++) {
+                const px = (x >> 1) + 1, hx = x & 1 ? px + 1 : px - 1;
+                const p = py * cs + px, hh = py * cs + hx, vv = vy * cs + px, dd = vy * cs + hx, i = row + x;
+                for (let ch = 0; ch < 3; ch++) {
+                    const ep = cu[3 * p + ch];
+                    const eh = cst[hh] === P_NONE ? ep : cu[3 * hh + ch];
+                    const ev = cst[vv] === P_NONE ? ep : cu[3 * vv + ch];
+                    const ed = cst[dd] === P_NONE ? ep : cu[3 * dd + ch];
+                    into[3 * i + ch] = (9 * ep + 3 * eh + 3 * ev + ed) * 0.0625;
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The coarse correction added to the fine grid, scaled per channel by the step that minimises the error's energy
+ * along it (alpha = r.c / c.Ac, within 0..P_ALPHA_MAX): a coarse grid whose boundary moved inward corrects too little,
+ * by up to 2.6 times on the coarse grids of a thin diagonal stroke. The fine grid's `cc` holds the interpolated
+ * correction (0 outside the unknowns, which is all it ever writes).
+ */
+function poissonCorrect(c, fine, track) {
+    const s = fine.stride, fu = fine.u, ff = fine.f, cc = fine.cc;
+    poissonInterp(c, fine, cc);
+    const rc = [0, 0, 0], cac = [0, 0, 0];
+    for (let y = 0; y < fine.h; y++) {
+        const row = (y + 1) * s + 1;
+        for (let k = fine.rows[y], ke = fine.rows[y + 1]; k < ke; k++) {
+            for (let x = fine.spans[2 * k], xe = fine.spans[2 * k + 1]; x < xe; x++) {
+                const i = row + x, n = fine.nb[i];
+                for (let ch = 0; ch < 3; ch++) {
+                    const sum = fu[3 * (i - 1) + ch] + fu[3 * (i + 1) + ch] + fu[3 * (i - s) + ch] + fu[3 * (i + s) + ch];
+                    const fv = ff ? ff[3 * i + ch] : 0;
+                    const r = (fv + sum) - n * fu[3 * i + ch];
+                    const ci = cc[3 * i + ch];
+                    const ac = n * ci - (cc[3 * (i - 1) + ch] + cc[3 * (i + 1) + ch] + cc[3 * (i - s) + ch] + cc[3 * (i + s) + ch]);
+                    rc[ch] += r * ci;
+                    cac[ch] += ci * ac;
+                }
+            }
+        }
+    }
+    const al = [0, 0, 0];
+    for (let ch = 0; ch < 3; ch++) {
+        if (cac[ch] > 0) { const a = rc[ch] / cac[ch]; al[ch] = a <= 0 ? 0 : a >= P_ALPHA_MAX ? P_ALPHA_MAX : a; }
+    }
+    let mx = 0;
+    for (let y = 0; y < fine.h; y++) {
+        const row = (y + 1) * s + 1;
+        for (let k = fine.rows[y], ke = fine.rows[y + 1]; k < ke; k++) {
+            for (let x = fine.spans[2 * k], xe = fine.spans[2 * k + 1]; x < xe; x++) {
+                const i = row + x;
+                for (let ch = 0; ch < 3; ch++) {
+                    const e = al[ch] * cc[3 * i + ch];
+                    if (track) { const dv = Math.abs(e); if (dv > mx) mx = dv; }
+                    fu[3 * i + ch] = fu[3 * i + ch] + e;
+                }
+            }
+        }
+    }
+    return mx;
+}
+
+/** Marks P_FREE every 4-connected region of unknowns with no FIXED neighbour (poisson.rs `free_regions`). */
+function poissonFreeRegions(lv) {
+    const s = lv.stride, state = lv.state, seen = new Uint8Array(lv.cells), stack = [], region = [];
+    for (let y = 0; y < lv.h; y++) {
+        for (let x = 0; x < lv.w; x++) {
+            const i0 = (y + 1) * s + x + 1;
+            if (state[i0] !== P_UNKNOWN || seen[i0]) continue;
+            let anchored = false;
+            region.length = 0;
+            stack.push(i0);
+            seen[i0] = 1;
+            while (stack.length) {
+                const i = stack.pop();
+                region.push(i);
+                for (const j of [i - 1, i + 1, i - s, i + s]) {
+                    const v = state[j];
+                    if (v === P_FIXED) anchored = true;
+                    else if (v === P_UNKNOWN && !seen[j]) { seen[j] = 1; stack.push(j); }
+                }
+            }
+            if (!anchored) for (const i of region) state[i] = P_FREE;
+        }
+    }
+}
+
+/** One V-cycle with `levels[top]` as its finest grid; the largest update at level 0. */
+function poissonVcycle(levels, top) {
+    const n = levels.length;
+    let mx = 0;
+    for (let l = top; l < n - 1; l++) {
+        for (let r = 0; r < P_PRE; r++) for (let color = 0; color < 2; color++) { const m = poissonSweep(levels[l], color, l === 0); if (m > mx) mx = m; }
+        poissonRestrict(levels[l], levels[l + 1]);
+    }
+    for (let r = 0; r < P_COARSEST; r++) for (let color = 0; color < 2; color++) { const m = poissonSweep(levels[n - 1], color, n === 1); if (m > mx) mx = m; }
+    for (let l = n - 2; l >= top; l--) {
+        const m = poissonCorrect(levels[l + 1], levels[l], l === 0);
+        if (m > mx) mx = m;
+        for (let r = 0; r < P_POST; r++) for (let color = 0; color < 2; color++) { const m2 = poissonSweep(levels[l], color, l === 0); if (m2 > mx) mx = m2; }
+    }
+    return mx;
+}
+
+/**
+ * The healing brush's gradient-domain blend over a `w` x `h` box (crates/px/src/poisson.rs has the method): `dst` the
+ * picture before the stroke, `src` the patch the brush clones (straight RGBA8), `mask` a byte per pixel (> 0: heal
+ * there). Per RGB channel the correction `u` is harmonic where the mask covers and `dst - src` on the pixels around it
+ * where both are at least POISSON_MIN_ALPHA in alpha; the box edge and clearer pixels hold nothing (Neumann). `out` gets
+ * floor(src + u + 0.5) with src's alpha where the mask covers (0 0 0 0 where src is transparent) and dst's bytes
+ * elsewhere; `info` (4 ints, optional) the pixels healed, the V-cycles, the levels, and 1 when the cycles ran out
+ * before it settled (the caller keeps what it had). Doubles over f32 storage in the order of the Rust kernel, so both
+ * give the same bytes. Returns `out`.
+ */
+export function poissonBlend(dst, src, mask, w, h, out = new Uint8Array(w * h * 4), info = null) {
+    const d = bytesOf(dst), sr = bytesOf(src), o8 = bytesOf(out);
+    if (info) info.fill(0);
+    if (!w || !h) return out;
+    const top = poissonLevel(w, h, false), { stride: s, state, u } = top;
+    let unknowns = 0;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const k = y * w + x, i = (y + 1) * s + x + 1;
+            if (mask[k] > 0) { state[i] = P_UNKNOWN; unknowns++; }
+            else if (d[4 * k + 3] >= POISSON_MIN_ALPHA && sr[4 * k + 3] >= POISSON_MIN_ALPHA) {
+                state[i] = P_FIXED;
+                for (let c = 0; c < 3; c++) u[3 * i + c] = d[4 * k + c] - sr[4 * k + c];
+            }
+        }
+    }
+    if (!unknowns) { o8.set(d.subarray(0, w * h * 4)); return out; }
+    poissonFreeRegions(top);
+    poissonFinish(top);
+    const acc = [0, 0, 0];
+    let count = 0;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = (y + 1) * s + x + 1;
+            if (state[i] === P_FIXED && (state[i - 1] === P_UNKNOWN || state[i + 1] === P_UNKNOWN || state[i - s] === P_UNKNOWN || state[i + s] === P_UNKNOWN)) {
+                for (let c = 0; c < 3; c++) acc[c] += u[3 * i + c];
+                count++;
+            }
+        }
+    }
+    if (count > 0) {
+        const start = new Float32Array(3);
+        for (let c = 0; c < 3; c++) start[c] = acc[c] / count;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y + 1) * s + x + 1; if (state[i] === P_UNKNOWN || state[i] === P_FREE) u.set(start, 3 * i); }
+    }
+    const solve = top.spans.length > 0;
+    const levels = [top];
+    while (levels.length < P_MAX_LEVELS) {
+        const last = levels[levels.length - 1];
+        if (last.w <= 3 && last.h <= 3) break;
+        const next = poissonCoarser(last);
+        if (!next.spans.length) break;
+        levels.push(next);
+    }
+    const n = levels.length;
+    for (let l = 0; l < n - 1; l++) levels[l].cc = new Float32Array(levels[l].cells * 3);
+    // the start (full multigrid): each coarse grid holds the problem itself, the mean of its children's boundary;
+    // the coarsest is solved, each finer one starts from the one below and gets a V-cycle, whose coarse grids then
+    // hold corrections (a fixed cell's correction is 0)
+    let cycles = 0, last = solve ? Infinity : 0;
+    if (solve && n > 1) {
+        for (let r = 0; r < P_COARSEST; r++) for (let color = 0; color < 2; color++) poissonSweep(levels[n - 1], color, false);
+        for (let l = n - 2; l >= 0; l--) {
+            poissonInterp(levels[l + 1], levels[l], levels[l].u);
+            levels[l + 1].u.fill(0);
+            const m = poissonVcycle(levels, l);
+            if (l === 0) { cycles = 1; last = m; }
+        }
+    }
+    while (cycles < POISSON_MAX_CYCLES && !(last < POISSON_TOL)) { cycles++; last = poissonVcycle(levels, 0); }
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const k = y * w + x, o = 4 * k, i = (y + 1) * s + x + 1;
+            if (state[i] !== P_UNKNOWN && state[i] !== P_FREE) { o8[o] = d[o]; o8[o + 1] = d[o + 1]; o8[o + 2] = d[o + 2]; o8[o + 3] = d[o + 3]; continue; }
+            const a = sr[o + 3];
+            if (!a) { o8[o] = 0; o8[o + 1] = 0; o8[o + 2] = 0; o8[o + 3] = 0; continue; }
+            for (let c = 0; c < 3; c++) {
+                const v = Math.floor(sr[o + c] + u[3 * i + c] + 0.5);
+                o8[o + c] = v <= 0 ? 0 : v >= 255 ? 255 : v;
+            }
+            o8[o + 3] = a;
+        }
+    }
+    if (info) { info[0] = unknowns; info[1] = cycles; info[2] = levels.length; info[3] = last < POISSON_TOL ? 0 : 1; }
+    return out;
+}

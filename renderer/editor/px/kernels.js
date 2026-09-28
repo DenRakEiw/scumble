@@ -15,7 +15,7 @@ import * as J from "./kernels_js.js";
 import { loadPx, Px } from "./px.js";
 import { resampleBlock as resampleBlockJS, resampleTable } from "../inpaint_resample.js";
 
-export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP } from "./kernels_js.js";
+export { OPS, mipChainBytes, deflate, SMUDGE_ALPHA_LOCK, SMUDGE_PICKUP, POISSON_TOL, POISSON_MAX_CYCLES } from "./kernels_js.js";
 
 const RELEASE_BYTES = 256 * 1048576;
 
@@ -109,6 +109,13 @@ export function compositeTile(dst, srcs, ops, alphas, masks = null) {
 export function smudgeDab(dst, src, carry, mask, strength, keep, flags = 0) {
     const p = rustPx();
     return p ? p.smudgeDab(dst, src, carry, mask, strength, keep, flags) : J.smudgeDab(dst, src, carry, mask, strength, keep, flags);
+}
+
+/** The healing brush's Poisson blend over a box (PLAN_0_1_31 §5 step 1): `out` straight RGBA8, `info` [healed, cycles, levels]. */
+export function poissonBlend(dst, src, mask, w, h, out = null, info = null) {
+    const p = rustPx();
+    if (!p) return J.poissonBlend(dst, src, mask, w, h, out || new Uint8Array(w * h * 4), info);
+    try { return p.poissonBlend(dst, src, mask, w, h, out, info); } finally { releaseIfLarge(); }
 }
 
 export function matchPixels(rgba, params) {

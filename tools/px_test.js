@@ -707,6 +707,564 @@ async function smudgeCases(px, label, js) {
     }
 }
 
+// ---- the healing brush's Poisson solver (PLAN_0_1_31 §5 step 1) --------------------------------
+
+const P_NONE = 0, P_UNKNOWN = 1, P_FIXED = 2;
+const P_STEPS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+/** Textured straight RGBA, opaque: a wave of its own per channel plus noise, within lo..hi. */
+function poissonTexture(w, h, seed, lo = 0, hi = 255) {
+    const r = rng(seed), d = new Uint8Array(w * h * 4);
+    const fx = 0.04 + r() * 0.2, fy = 0.04 + r() * 0.2, ph = r() * 6, mid = (lo + hi) / 2, amp = (hi - lo) / 2;
+    for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i += 4) {
+        for (let c = 0; c < 3; c++) {
+            const v = mid + amp * (0.6 * Math.sin(x * fx * (1 + 0.3 * c) + y * fy + ph + c) + 0.4 * (r() * 2 - 1));
+            d[i + c] = Math.max(lo, Math.min(hi, Math.round(v)));
+        }
+        d[i + 3] = 255;
+    }
+    return d;
+}
+
+/** `tex` under other light: an offset and a gradient per channel, clipped at 0 and 255. */
+function poissonLit(tex, w, h, off, gx, gy) {
+    const d = tex.slice();
+    for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i += 4)
+        for (let c = 0; c < 3; c++) d[i + c] = Math.max(0, Math.min(255, Math.round(tex[i + c] + off[c] + gx[c] * x + gy[c] * y)));
+    return d;
+}
+
+/**
+ * A heal the source's transparency splits into strands (a cut-out of hair, a fence: the review of 2026-09-28): a disc of
+ * mask over vertical strands `on` px wide with `off` px clear between them, where the source is clear and so is the mask.
+ */
+function poissonStrands(w, h, on, off, seed) {
+    const src = poissonTexture(w, h, seed, 40, 200), dst = poissonLit(poissonTexture(w, h, seed + 1, 40, 200), w, h, [30, -20, 10], [0.1, 0, -0.05], [0, 0.08, 0]);
+    const disc = poissonMask(w, h, discCover(w / 2, h / 2, Math.min(w, h) * 0.45)), mask = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const k = y * w + x;
+        if (x % (on + off) >= on) src[k * 4 + 3] = 0;
+        else if (disc[k]) mask[k] = disc[k];
+    }
+    return { w, h, dst, src, mask, name: `strands ${on} / ${off}` };
+}
+
+/** A mask from a coverage function: 0 where it is at most 0, 1 to 255 above (a soft edge gives the small values). */
+function poissonMask(w, h, cover) {
+    const m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const v = cover(x, y);
+        m[y * w + x] = v > 0 ? Math.max(1, Math.min(255, Math.round(v * 255))) : 0;
+    }
+    return m;
+}
+const discCover = (cx, cy, r, soft = 1.5) => (x, y) => (r - Math.hypot(x - cx, y - cy)) / soft + 0.5;
+function capsuleCover(x0, y0, x1, y1, width, soft = 1.5) {
+    const dx = x1 - x0, dy = y1 - y0, l2 = dx * dx + dy * dy;
+    return (x, y) => {
+        const t = l2 ? Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / l2)) : 0;
+        return (width / 2 - Math.hypot(x - x0 - t * dx, y - y0 - t * dy)) / soft + 0.5;
+    };
+}
+
+/**
+ * The Poisson blend in doubles, from the stated equations and not from any kernel's code. Pixels are UNKNOWN where the
+ * mask is set, FIXED where it is not and both layers have alpha 8 or more (u = dst - src there), NONE otherwise (and outside the
+ * box). Per RGB channel, at every unknown p: n_p u_p - (sum of u_q over p's 4-neighbours q that are not NONE) = 0, n_p
+ * their count. A 4-connected region of unknowns that touches a FIXED pixel is symmetric positive definite and solved by
+ * conjugate gradients to a largest residual below 1e-10; a region that touches none is singular and keeps the solver's
+ * start (the plain mean of the FIXED pixels with an UNKNOWN neighbour, each pixel once, or 0). Returns the rounded
+ * bytes, u (three doubles a pixel, 0 off the unknowns), the start and the CG steps.
+ */
+function poissonDoubles(dst, src, mask, w, h) {
+    const n = w * h, kind = new Uint8Array(n), nbs = new Array(n);
+    for (let p = 0; p < n; p++) kind[p] = mask[p] > 0 ? P_UNKNOWN : dst[p * 4 + 3] >= 8 && src[p * 4 + 3] >= 8 ? P_FIXED : P_NONE;
+    const start = [0, 0, 0];
+    let edge = 0;
+    for (let p = 0; p < n; p++) {
+        if (kind[p] === P_NONE) continue;
+        const x = p % w, y = (p - x) / w;
+        nbs[p] = [];
+        for (const [dx, dy] of P_STEPS) {
+            const qx = x + dx, qy = y + dy;
+            if (qx < 0 || qy < 0 || qx >= w || qy >= h || kind[qy * w + qx] === P_NONE) continue;
+            nbs[p].push(qy * w + qx);
+        }
+        if (kind[p] === P_FIXED && nbs[p].some((q) => kind[q] === P_UNKNOWN)) {
+            edge++;
+            for (let c = 0; c < 3; c++) start[c] += dst[p * 4 + c] - src[p * 4 + c];
+        }
+    }
+    if (edge) for (let c = 0; c < 3; c++) start[c] /= edge;
+    // the regions of unknowns; only the ones that touch a FIXED pixel go into the system
+    const local = new Int32Array(n).fill(-1), order = [], seen = new Uint8Array(n);
+    for (let p0 = 0; p0 < n; p0++) {
+        if (kind[p0] !== P_UNKNOWN || seen[p0]) continue;
+        const region = [p0];
+        let fixed = false;
+        seen[p0] = 1;
+        for (let i = 0; i < region.length; i++) for (const q of nbs[region[i]]) {
+            if (kind[q] === P_FIXED) fixed = true;
+            else if (!seen[q]) { seen[q] = 1; region.push(q); }
+        }
+        if (fixed) for (const p of region) { local[p] = order.length; order.push(p); }
+    }
+    const u = new Float64Array(n * 3);
+    for (let p = 0; p < n; p++) if (kind[p] === P_UNKNOWN) for (let c = 0; c < 3; c++) u[p * 3 + c] = start[c];
+    const m = order.length;
+    let iterations = 0;
+    if (m) {
+        const deg = new Float64Array(m), off = new Int32Array(m + 1), adj = [], rhs = [new Float64Array(m), new Float64Array(m), new Float64Array(m)];
+        for (let i = 0; i < m; i++) {
+            const p = order[i];
+            deg[i] = nbs[p].length;
+            for (const q of nbs[p]) {
+                if (kind[q] === P_FIXED) for (let c = 0; c < 3; c++) rhs[c][i] += dst[q * 4 + c] - src[q * 4 + c];
+                else adj.push(local[q]);
+            }
+            off[i + 1] = adj.length;
+        }
+        const apply = (v, into) => {
+            for (let i = 0; i < m; i++) {
+                let s = deg[i] * v[i];
+                for (let k = off[i]; k < off[i + 1]; k++) s -= v[adj[k]];
+                into[i] = s;
+            }
+        };
+        const dot = (a, b) => { let s = 0; for (let i = 0; i < m; i++) s += a[i] * b[i]; return s; };
+        const x = new Float64Array(m), r = new Float64Array(m), d = new Float64Array(m), q = new Float64Array(m);
+        for (let c = 0; c < 3; c++) {
+            x.fill(start[c]);
+            apply(x, q);
+            for (let i = 0; i < m; i++) d[i] = r[i] = rhs[c][i] - q[i];
+            let rr = dot(r, r);
+            for (let it = 0; ; it++) {
+                let worst = 0;
+                for (let i = 0; i < m; i++) worst = Math.max(worst, Math.abs(r[i]));
+                if (worst < 1e-10) break;
+                if (it > 20 * m + 1000) throw new Error(`poissonDoubles: CG did not converge (${m} unknowns, residual ${worst})`);
+                apply(d, q);
+                const alpha = rr / dot(d, q);
+                for (let i = 0; i < m; i++) { x[i] += alpha * d[i]; r[i] -= alpha * q[i]; }
+                const rr2 = dot(r, r), beta = rr2 / rr;
+                rr = rr2;
+                for (let i = 0; i < m; i++) d[i] = r[i] + beta * d[i];
+                iterations++;
+            }
+            for (let i = 0; i < m; i++) u[order[i] * 3 + c] = x[i];
+        }
+    }
+    const out = new Uint8Array(n * 4);
+    for (let p = 0; p < n; p++) {
+        const o = p * 4;
+        if (!(mask[p] > 0)) { for (let c = 0; c < 4; c++) out[o + c] = dst[o + c]; continue; }
+        if (!src[o + 3]) continue;
+        for (let c = 0; c < 3; c++) out[o + c] = Math.max(0, Math.min(255, Math.floor(src[o + c] + u[p * 3 + c] + 0.5)));
+        out[o + 3] = src[o + 3];
+    }
+    return { out, u, start, iterations };
+}
+
+/** The largest |n_p u_p - sum over the neighbours| over the unknowns, straight from the definition (its own classes). */
+function poissonResidual(u, dst, src, mask, w, h) {
+    const kindAt = (x, y) => {
+        if (x < 0 || y < 0 || x >= w || y >= h) return P_NONE;
+        const p = y * w + x;
+        return mask[p] > 0 ? P_UNKNOWN : dst[p * 4 + 3] >= 8 && src[p * 4 + 3] >= 8 ? P_FIXED : P_NONE;
+    };
+    let worst = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const p = y * w + x;
+        if (!(mask[p] > 0)) continue;
+        for (let c = 0; c < 3; c++) {
+            let s = 0, k = 0;
+            for (const [dx, dy] of P_STEPS) {
+                const kq = kindAt(x + dx, y + dy), q = (y + dy) * w + x + dx;
+                if (kq === P_NONE) continue;
+                k++;
+                s += kq === P_FIXED ? dst[q * 4 + c] - src[q * 4 + c] : u[q * 3 + c];
+            }
+            worst = Math.max(worst, Math.abs(k * u[p * 3 + c] - s));
+        }
+    }
+    return worst;
+}
+
+/** A hole enclosed by fixed pixels whose difference is a plane with whole coefficients (no clipping): u is that plane. */
+function poissonLinearScene() {
+    const w = 100, h = 80, src = poissonTexture(w, h, 51, 90, 130), dst = src.slice();
+    const plane = (x, y, c) => [x - 40, 30 - y, x - y][c];
+    for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i += 4) for (let c = 0; c < 3; c++) dst[i + c] = src[i + c] + plane(x, y, c);
+    return { w, h, src, dst, mask: poissonMask(w, h, discCover(50, 40, 25, 2)), plane };
+}
+
+/** The scenes a heal meets: discs, blobs, thin strokes, a ring round an island, the box edge, transparency on the boundary, soft masks, strips, clipping. */
+function poissonScenes() {
+    const scenes = [];
+    const add = (name, w, h, seed, cover, { off = [35, -25, 50], grad = 0.6, edit = null } = {}) => {
+        const src = poissonTexture(w, h, seed);
+        const dst = poissonLit(poissonTexture(w, h, seed + 500), w, h, off, [grad, -0.5 * grad, 0.8 * grad], [0.3 * grad, 0.7 * grad, -0.6 * grad]);
+        const s = { name, w, h, dst, src, mask: typeof cover === "function" ? poissonMask(w, h, cover) : cover };
+        if (edit) edit(s, rng(seed + 900));
+        scenes.push(s);
+    };
+    const alphaWhere = (s, bytes, test, value) => { for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) if (test(x, y, y * s.w + x)) bytes[(y * s.w + x) * 4 + 3] = value(); };
+    add("a disc of radius 5", 20, 20, 1, discCover(9.6, 10.2, 5));
+    add("a disc of radius 20", 64, 60, 2, discCover(31, 30, 20, 3));
+    add("a disc of radius 60", 140, 136, 3, discCover(70, 67, 60, 6));
+    const rb = rng(44);
+    add("blobs with random mask values", 96, 72, 4, blobs(96, 72, 4, 4).map((v) => (v ? 1 + Math.floor(rb() * 255) : 0)));
+    add("a stroke 3 px wide", 90, 40, 5, capsuleCover(6, 5, 84, 34, 3, 1));
+    add("a stroke 9 px wide", 50, 120, 6, capsuleCover(9, 110, 41, 9, 9));
+    add("a ring round a fixed island", 80, 80, 7, (x, y) => { const d = Math.hypot(x - 40, y - 40); return Math.min(30 - d, d - 12) / 1.5 + 0.5; });
+    add("a disc cut by the box edge", 70, 50, 8, discCover(1, 24, 25));
+    add("a disc over a corner", 60, 60, 9, discCover(57, 3, 30));
+    add("clear and partial destination on the boundary", 80, 80, 10, discCover(40, 40, 25), {
+        edit: (s, r) => {
+            alphaWhere(s, s.dst, (x, y) => r() < 0.1, () => 1 + Math.floor(r() * 254));
+            alphaWhere(s, s.dst, (x, y) => x >= 4 && x < 30 && y >= 28 && y < 54, () => 0);
+        },
+    });
+    add("clear source patches inside and across the boundary", 80, 64, 11, discCover(40, 32, 22), {
+        edit: (s, r) => {
+            alphaWhere(s, s.src, (x, y) => r() < 0.1, () => 1 + Math.floor(r() * 254));
+            alphaWhere(s, s.src, (x, y) => (x >= 30 && x < 40 && y >= 20 && y < 28) || (x >= 55 && x < 70 && y >= 25 && y < 40), () => 0);
+        },
+    });
+    const rs = rng(1212);
+    add("a soft mask throughout", 72, 72, 12, (x, y) => (Math.hypot(x - 36, y - 36) < 28 ? rs() : 0));
+    add("two regions, one cut off by transparency", 100, 60, 13, (x, y) => Math.max(discCover(25, 30, 14)(x, y), discCover(72, 30, 12)(x, y)), {
+        edit: (s) => alphaWhere(s, s.dst, (x, y, p) => !s.mask[p] && Math.hypot(x - 72, y - 30) < 17, () => 0),
+    });
+    add("strong light: clipping on both sides", 64, 64, 14, discCover(32, 32, 24), { off: [120, -120, 90], grad: 1.5 });
+    add("a mask over all but the top row and the left column", 48, 40, 20, (x, y) => (x > 0 && y > 0 ? 1 : 0));
+    add("a wide box with a long stroke", 160, 24, 19, capsuleCover(4, 12, 156, 10, 7));
+    add("a 200 x 1 strip, fixed at both ends", 200, 1, 15, (x) => (x >= 20 && x < 180 ? 1 : 0));
+    add("a 150 x 1 strip open at one end", 150, 1, 16, (x) => (x >= 60 ? 1 : 0));
+    add("a 1 x 150 strip, fixed at both ends", 1, 150, 17, (x, y) => (y >= 30 && y < 130 ? 1 : 0));
+    add("a 1 x 90 strip open at one end", 1, 90, 18, (x, y) => (y < 50 ? 1 : 0));
+    return scenes;
+}
+
+/** The reference against closed forms before it judges anything, then its residual from the definition on the scenes. */
+function poissonReferenceCases(scenes, refs) {
+    // a plane with whole coefficients in a hole enclosed by fixed pixels: the 5-point Laplacian is exact on it
+    const L = poissonLinearScene(), a = poissonDoubles(L.dst, L.src, L.mask, L.w, L.h);
+    let e1 = 0;
+    for (let p = 0; p < L.w * L.h; p++) if (L.mask[p]) for (let c = 0; c < 3; c++) e1 = Math.max(e1, Math.abs(a.u[p * 3 + c] - L.plane(p % L.w, Math.floor(p / L.w), c)));
+    check(`poisson reference: u is the plane in a hole enclosed by fixed pixels`, e1 < 1e-8, `worst ${e1.toExponential(2)}, ${a.iterations} CG steps`);
+    // a band from the top edge to the bottom edge, the difference a plane in x only: the rows at the edge (Neumann) keep it
+    {
+        const w = 90, h = 40, src = poissonTexture(w, h, 61, 60, 190), dst = src.slice();
+        const plane = (x, c) => [x - 45, 30 - x, 7][c];
+        for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i += 4) for (let c = 0; c < 3; c++) dst[i + c] = src[i + c] + plane(x, c);
+        const mask = poissonMask(w, h, (x) => (x >= 30 && x < 60 ? 1 : 0)), b = poissonDoubles(dst, src, mask, w, h);
+        let e = 0;
+        for (let p = 0; p < w * h; p++) if (mask[p]) for (let c = 0; c < 3; c++) e = Math.max(e, Math.abs(b.u[p * 3 + c] - plane(p % w, c)));
+        check(`poisson reference: a band across the box keeps a plane in x at the box edge (Neumann)`, e < 1e-8, `worst ${e.toExponential(2)}`);
+    }
+    // strips: the straight line between two fixed ends; a constant towards an open end
+    {
+        let e = 0;
+        for (const [w, h] of [[120, 1], [1, 120]]) {
+            const src = poissonTexture(w, h, 62), dst = poissonLit(poissonTexture(w, h, 63), w, h, [20, -10, 30], [0.5, -0.3, 0.2], [0.5, -0.3, 0.2]);
+            const bAt = (i, c) => dst[i * 4 + c] - src[i * 4 + c];
+            const both = poissonDoubles(dst, src, Uint8Array.from({ length: 120 }, (_, i) => (i >= 10 && i < 110 ? 200 : 0)), w, h);
+            const open = poissonDoubles(dst, src, Uint8Array.from({ length: 120 }, (_, i) => (i >= 30 ? 9 : 0)), w, h);
+            for (let c = 0; c < 3; c++) {
+                for (let i = 10; i < 110; i++) e = Math.max(e, Math.abs(both.u[i * 3 + c] - (bAt(9, c) + (bAt(110, c) - bAt(9, c)) * (i - 9) / 101)));
+                for (let i = 30; i < 120; i++) e = Math.max(e, Math.abs(open.u[i * 3 + c] - bAt(29, c)));
+            }
+        }
+        check(`poisson reference: a strip is the straight line between fixed ends and constant to an open end (1 x N and N x 1)`, e < 1e-8, `worst ${e.toExponential(2)}`);
+    }
+    // a region cut off by transparency keeps the start: the mean of the fixed pixels next to an unknown, counted by brute force
+    {
+        const w = 60, h = 40, src = poissonTexture(w, h, 64), dst = poissonLit(poissonTexture(w, h, 65), w, h, [30, -30, 10], [0.4, 0.2, -0.3], [0, 0.5, 0.2]);
+        const mask = poissonMask(w, h, (x, y) => Math.max(discCover(15, 20, 8)(x, y), discCover(44, 20, 8)(x, y)));
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!mask[y * w + x] && Math.hypot(x - 44, y - 20) < 12) dst[(y * w + x) * 4 + 3] = 0;
+        const sum = [0, 0, 0];
+        let count = 0;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+            const p = y * w + x;
+            if (mask[p] || !dst[p * 4 + 3] || !src[p * 4 + 3]) continue;
+            if (!P_STEPS.some(([dx, dy]) => x + dx >= 0 && y + dy >= 0 && x + dx < w && y + dy < h && mask[(y + dy) * w + x + dx])) continue;
+            count++;
+            for (let c = 0; c < 3; c++) sum[c] += dst[p * 4 + c] - src[p * 4 + c];
+        }
+        const mean = sum.map((s) => s / count), r = poissonDoubles(dst, src, mask, w, h);
+        let e = 0, solvedMoved = 0;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+            const p = y * w + x;
+            if (!mask[p]) continue;
+            for (let c = 0; c < 3; c++) {
+                if (x > 30) e = Math.max(e, Math.abs(r.u[p * 3 + c] - mean[c]));
+                else if (Math.abs(r.u[p * 3 + c] - mean[c]) > 1e-3) solvedMoved++;
+            }
+        }
+        check(`poisson reference: a region cut off by transparency keeps the start (the mean of ${count} fixed pixels next to an unknown)`,
+            e === 0 && r.start.every((v, c) => Math.abs(v - mean[c]) < 1e-12) && solvedMoved > 0, `worst ${e}, solved values off the start ${solvedMoved}`);
+    }
+    // the residual from the definition, and the maximum principle: u between the least and the largest difference on the boundary
+    let res = 0, outside = 0;
+    scenes.forEach((s, k) => {
+        res = Math.max(res, poissonResidual(refs[k].u, s.dst, s.src, s.mask, s.w, s.h));
+        const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+        for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) {
+            const p = y * s.w + x;
+            if (s.mask[p] || !s.dst[p * 4 + 3] || !s.src[p * 4 + 3]) continue;
+            if (!P_STEPS.some(([dx, dy]) => x + dx >= 0 && y + dy >= 0 && x + dx < s.w && y + dy < s.h && s.mask[(y + dy) * s.w + x + dx])) continue;
+            for (let c = 0; c < 3; c++) { const b = s.dst[p * 4 + c] - s.src[p * 4 + c]; lo[c] = Math.min(lo[c], b); hi[c] = Math.max(hi[c], b); }
+        }
+        for (let p = 0; p < s.w * s.h; p++) if (s.mask[p]) for (let c = 0; c < 3; c++) {
+            const v = refs[k].u[p * 3 + c];
+            if (lo[c] === Infinity ? v !== 0 : v < lo[c] - 1e-9 || v > hi[c] + 1e-9) outside++;
+        }
+    });
+    check(`poisson reference: residual from the definition on ${scenes.length} scenes, u within the boundary's range`, res < 1e-8 && outside === 0, `residual ${res.toExponential(2)}, outside the range ${outside}`);
+}
+
+/** The twin against the doubles (within a level), the exact cases, and what it must leave alone. */
+async function poissonTwinCases(js) {
+    const scenes = poissonScenes(), refs = scenes.map((s) => poissonDoubles(s.dst, s.src, s.mask, s.w, s.h));
+    poissonReferenceCases(scenes, refs);
+    if (typeof js.poissonBlend !== "function") { check(`js poissonBlend exists`, false); return; }
+    let worst = 0, where = "", differ = 0, bytes = 0, worstU = 0, alphaBad = 0, outsideBad = 0, infoBad = "", fewest = Infinity, most = 0, slowest = "";
+    scenes.forEach((s, k) => {
+        const ref = refs[k], info = new Int32Array(4), out = js.poissonBlend(s.dst, s.src, s.mask, s.w, s.h, undefined, info);
+        let unknowns = 0;
+        for (let p = 0; p < s.w * s.h; p++) {
+            const o = p * 4;
+            if (!s.mask[p]) { for (let c = 0; c < 4; c++) if (out[o + c] !== s.dst[o + c]) outsideBad++; continue; }
+            unknowns++;
+            if (out[o + 3] !== s.src[o + 3] || (!s.src[o + 3] && (out[o] | out[o + 1] | out[o + 2]))) alphaBad++;
+            if (!s.src[o + 3]) continue;
+            for (let c = 0; c < 3; c++) {
+                const v = out[o + c], e = Math.abs(v - ref.out[o + c]);
+                bytes++;
+                if (e) differ++;
+                if (e > worst) { worst = e; where = `${s.name} at (${p % s.w}, ${Math.floor(p / s.w)}) channel ${c}: ${v} vs ${ref.out[o + c]}`; }
+                // the byte puts the twin's u in [v - src - 0.5, v - src + 0.5), open to one side where it clipped
+                const lo = v === 0 ? -Infinity : v - s.src[o + c] - 0.5, hi = v === 255 ? Infinity : v - s.src[o + c] + 0.5, ur = ref.u[p * 3 + c];
+                worstU = Math.max(worstU, ur < lo ? lo - ur : ur > hi ? ur - hi : 0);
+            }
+        }
+        if (info[0] !== unknowns || info[1] < 0 || info[1] > js.POISSON_MAX_CYCLES || (unknowns && info[2] < 1) || info[3] !== 0) infoBad = `${s.name}: info [${info}] for ${unknowns} unknowns`;
+        fewest = Math.min(fewest, info[1]);
+        if (info[1] > most) { most = info[1]; slowest = s.name; }
+    });
+    check(`js poissonBlend within a level of the doubles (${scenes.length} scenes: discs, blobs, strokes, a ring, the box edge, transparency, soft masks, strips, clipping)`,
+        worst <= 1, `worst ${worst}${worst > 1 ? " in " + where : ""}; ${(100 * differ / bytes).toFixed(2)} % of ${bytes} bytes differ; the twin's u off by at least ${worstU.toFixed(3)}`);
+    // a level either way is the rounding of a u near a half: the share of such bytes and how far the twin's u can be from
+    // the doubles' say whether it is only that (0.06 % and 0.003 measured; a floor without the half gave 46 % and 0.502,
+    // a tolerance of 4 levels a cycle 2 levels on one scene: the mutation round of 2026-09-28)
+    check(`js poissonBlend differs from the doubles' rounding on at most 1 % of the bytes, its u within 0.1`, differ <= bytes / 100 && worstU <= 0.1,
+        `${(100 * differ / bytes).toFixed(2)} %, u off by at least ${worstU.toFixed(3)}`);
+    check(`js poissonBlend keeps the source's alpha in the mask ([0,0,0,0] where the source is clear) and the destination outside it`, alphaBad === 0 && outsideBad === 0,
+        `alpha wrong ${alphaBad}, outside moved ${outsideBad}`);
+    check(`js poissonBlend's info: the unknowns, the cycles (${fewest} to ${most}), the levels`, !infoBad, infoBad);
+    check(`js poissonBlend converges before the cap of ${js.POISSON_MAX_CYCLES} cycles on every scene`, most < js.POISSON_MAX_CYCLES, `most ${most}`);
+    // and fast: 4 to 8 cycles measured; an interpolation that pulls a NONE neighbour to 0 instead of mirroring the parent
+    // still converges, in up to 29 on an open strip (the mutation round of 2026-09-28)
+    check(`js poissonBlend takes at most 10 cycles on every scene`, most <= 10, `most ${most} (${slowest})`);
+
+    // the exact cases: dst == src gives dst (the correction is 0)
+    {
+        const w = 64, h = 48, t = poissonTexture(w, h, 31), r = rng(32);
+        for (let i = 3; i < t.length; i += 4) if (r() < 0.1) t[i] = 1 + Math.floor(r() * 254);
+        check(`js poissonBlend with dst == src gives dst`, eqBytes(js.poissonBlend(t, t.slice(), poissonMask(w, h, discCover(30, 22, 17)), w, h), t));
+    }
+    // dst = src + k gives dst; a region cut off by transparency starts at the mean, k too
+    {
+        const w = 90, h = 60, src = poissonTexture(w, h, 33, 40, 200), r = rng(34), k = [12, -30, 45];
+        for (let i = 3; i < src.length; i += 4) if (r() < 0.1) src[i] = 1 + Math.floor(r() * 254);
+        const dst = src.slice();
+        for (let i = 0; i < dst.length; i += 4) for (let c = 0; c < 3; c++) dst[i + c] = src[i + c] + k[c];
+        const mask = poissonMask(w, h, (x, y) => Math.max(discCover(22, 30, 16)(x, y), capsuleCover(50, 10, 80, 50, 8)(x, y)));
+        const cut = poissonMask(w, h, discCover(22, 30, 21));
+        for (let p = 0; p < w * h; p++) if (cut[p] && !mask[p]) dst[p * 4 + 3] = 0;
+        check(`js poissonBlend with dst = src + k gives dst (k ${k}; a region cut off by transparency takes the start, k too)`, eqBytes(js.poissonBlend(dst, src, mask, w, h), dst));
+    }
+    // an empty mask leaves dst and solves nothing
+    {
+        const w = 57, h = 31, dst = randomRGBA(w, h, 35), src = randomRGBA(w, h, 36), info = new Int32Array(4);
+        const out = js.poissonBlend(dst, src, new Uint8Array(w * h), w, h, undefined, info);
+        check(`js poissonBlend with an empty mask gives dst, info[0] 0`, eqBytes(out, dst) && info[0] === 0, `info [${info}]`);
+    }
+    // no fixed pixel: u = 0, the source comes through (its clear pixels as [0,0,0,0])
+    {
+        const w = 61, h = 43, n = w * h, src = randomRGBA(w, h, 37), dst = randomRGBA(w, h, 38);
+        for (let i = 3; i < dst.length; i += 4) dst[i] = 0;
+        const full = js.poissonBlend(dst, src, new Uint8Array(n).fill(255), w, h), part = randomMask(n, 39), some = js.poissonBlend(dst, src, part, w, h);
+        let okFull = true, okPart = true;
+        for (let p = 0; p < n; p++) for (let c = 0; c < 4; c++) {
+            const o = p * 4 + c, want = src[p * 4 + 3] ? src[o] : 0;
+            if (full[o] !== want) okFull = false;
+            if (some[o] !== (part[p] ? want : dst[o])) okPart = false;
+        }
+        check(`js poissonBlend with no fixed pixel gives the source (a full mask, and a partial one over a clear destination)`, okFull && okPart, `full ${okFull}, partial ${okPart}`);
+    }
+    // a plane in a hole enclosed by fixed pixels: floor(src + plane + 0.5) within a level
+    {
+        const L = poissonLinearScene(), out = js.poissonBlend(L.dst, L.src, L.mask, L.w, L.h);
+        let e = 0, off = 0;
+        for (let p = 0; p < L.w * L.h; p++) if (L.mask[p]) for (let c = 0; c < 3; c++) {
+            const want = Math.max(0, Math.min(255, Math.floor(L.src[p * 4 + c] + L.plane(p % L.w, Math.floor(p / L.w), c) + 0.5))), d = Math.abs(out[p * 4 + c] - want);
+            e = Math.max(e, d);
+            if (d) off++;
+        }
+        check(`js poissonBlend fills a hole enclosed by a plane with the plane`, e === 0, `worst ${e}, ${off} bytes off`);
+    }
+    // strands: where the multigrid does not settle it says so (info[3]), and where it says it did it is within a level
+    {
+        const rows = [];
+        let honest = true;
+        for (const [on, off] of [[4, 3], [6, 5], [10, 6]]) {
+            const S = poissonStrands(160, 160, on, off, 41 + on), info = new Int32Array(4), out = js.poissonBlend(S.dst, S.src, S.mask, S.w, S.h, undefined, info);
+            const ref = poissonDoubles(S.dst, S.src, S.mask, S.w, S.h);
+            let worst = 0;
+            for (let p = 0; p < S.w * S.h; p++) if (S.mask[p]) for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(out[p * 4 + c] - ref.out[p * 4 + c]));
+            rows.push(`${S.name}: ${info[1]} cycles, settled ${!info[3]}, worst ${worst}`);
+            if (!info[3] && worst > 1) honest = false;
+            if (info[3] && info[1] !== js.POISSON_MAX_CYCLES) honest = false;
+        }
+        check(`js poissonBlend on strands the source splits: within a level where it settled, info[3] where it did not`, honest, rows.join("; "));
+    }
+    // a boundary pixel at alpha below 8 holds nothing: its straight colour (here 0 0 0 at alpha 1) leaves a flat heal flat
+    {
+        const w = 40, h = 40, dst = new Uint8Array(w * h * 4), src = new Uint8Array(w * h * 4), mask = poissonMask(w, h, discCover(20, 20, 12, 0.01));
+        for (let k = 0; k < w * h; k++) { dst.set([150, 90, 60, 255], 4 * k); src.set([100, 100, 100, 255], 4 * k); }
+        for (let k = 0; k < w * h; k++) if (!mask[k] && ((k % w) + Math.floor(k / w)) % 5 === 0) dst.set([0, 0, 0, 1], 4 * k);
+        const out = js.poissonBlend(dst, src, mask, w, h);
+        let flat = true;
+        for (let k = 0; k < w * h; k++) if (mask[k] && (out[4 * k] !== 150 || out[4 * k + 1] !== 90 || out[4 * k + 2] !== 60)) flat = false;
+        check(`js poissonBlend leaves out boundary pixels below alpha 8`, flat);
+    }
+    // soft mask values count as set: a binary mask gives the same bytes; a Uint8ClampedArray gives the same bytes
+    {
+        let same = true, clamped = true;
+        for (const s of scenes.filter((t) => /soft|random mask|radius 60/.test(t.name))) {
+            const a = js.poissonBlend(s.dst, s.src, s.mask, s.w, s.h);
+            if (!eqBytes(a, js.poissonBlend(s.dst, s.src, s.mask.map((v) => (v ? 255 : 0)), s.w, s.h))) same = false;
+            if (!eqBytes(a, js.poissonBlend(new Uint8ClampedArray(s.dst), new Uint8ClampedArray(s.src), s.mask, s.w, s.h))) clamped = false;
+        }
+        check(`js poissonBlend: mask values 1 to 255 act alike (the bytes of a binary mask)`, same);
+        check(`js poissonBlend gives the same bytes for Uint8ClampedArray input`, clamped);
+    }
+    // w or h 0: nothing happens
+    {
+        let ok = true, detail = "";
+        try {
+            const e = new Uint8Array(0);
+            for (const [w, h] of [[0, 5], [5, 0], [0, 0]]) {
+                const junk = new Uint8Array(8).fill(9), r = js.poissonBlend(e, e, e, w, h, junk);
+                if (r !== junk || junk.some((v) => v !== 9) || js.poissonBlend(e, e, e, w, h).length !== 0) { ok = false; detail = `${w} x ${h}`; }
+            }
+        } catch (err) { ok = false; detail = String(err); }
+        check(`js poissonBlend with w or h 0 does nothing`, ok, detail);
+    }
+}
+
+const poissonTimed = new Map();
+
+/** The timing inputs of a size x size box and the twin's best of two on them, made once for both Rust builds. */
+function poissonTiming(size, js) {
+    if (poissonTimed.has(size)) return poissonTimed.get(size);
+    const g = 100 / size, src = poissonTexture(size, size, 71);
+    const dst = poissonLit(poissonTexture(size, size, 72), size, size, [35, -25, 50], [g, -0.5 * g, 0.8 * g], [0.3 * g, 0.7 * g, -0.6 * g]);
+    const shapes = [["a disc", discCover(size / 2, size / 2, size * 0.47, 2)], ["a diagonal 60 px stroke", capsuleCover(40, 40, size - 40, size - 40, 60)]].map(([shape, cover]) => {
+        const mask = poissonMask(size, size, cover), info = new Int32Array(4);
+        let best = Infinity, out = null;
+        for (let i = 0; i < 2; i++) { const t0 = performance.now(); out = js.poissonBlend(dst, src, mask, size, size, undefined, info); best = Math.min(best, performance.now() - t0); }
+        return { shape, mask, twin: { best, out, info } };
+    });
+    const t = { dst, src, shapes };
+    poissonTimed.set(size, t);
+    return t;
+}
+
+/** The twin against a Rust build, bit for bit (out and info): the scenes, random boxes and masks, views, out given or not; then the timings. */
+async function poissonCases(px, label, js) {
+    if (typeof px.poissonBlend !== "function" || typeof js.poissonBlend !== "function") { check(`${label} and js poissonBlend exist`, false); return; }
+    {
+        let ok = true, detail = "";
+        for (const [on, off] of [[4, 3], [10, 6]]) {
+            const S = poissonStrands(160, 160, on, off, 41 + on), ia = new Int32Array(4), ib = new Int32Array(4);
+            const a = js.poissonBlend(S.dst, S.src, S.mask, S.w, S.h, undefined, ia), b = px.poissonBlend(S.dst, S.src, S.mask, S.w, S.h, null, ib);
+            if (!eqBytes(a, b) || ia.join() !== ib.join()) { ok = false; detail = `${S.name}: ${firstDiff(a, b)}, info [${ia}] vs [${ib}]`; }
+        }
+        check(`js poissonBlend equals the ${label} on strands, the not-settled flag included`, ok, detail);
+    }
+    const both = (dst, src, mask, w, h) => {
+        const ia = new Int32Array(4), ib = new Int32Array(4);
+        const a = js.poissonBlend(dst, src, mask, w, h, undefined, ia), b = px.poissonBlend(dst, src, mask, w, h, null, ib);
+        return eqBytes(a, b) && eqBytes(ia, ib) ? "" : `out ${firstDiff(a, b) || "same"}, info [${ia}] vs [${ib}]`;
+    };
+    const scenes = poissonScenes();
+    let ok = true, detail = "";
+    for (const s of scenes) { const d = both(s.dst, s.src, s.mask, s.w, s.h); if (d) { ok = false; detail = `${s.name}: ${d}`; } }
+    check(`js poissonBlend equals the ${label} on the ${scenes.length} scenes (out and info)`, ok, detail);
+    // random boxes: random pixels (clear ones among them, or opaque), sparse, dense, full and empty masks
+    let okR = true, detailR = "", seed = 0;
+    for (const [w, h] of [[1, 1], [1, 7], [7, 1], [3, 3], [2, 2], [257, 129], [64, 64]]) {
+        const n = w * h;
+        for (const kind of ["sparse", "dense", "all 255", "all 0"]) for (const opaque of [false, true]) {
+            const r = rng(9000 + ++seed);
+            const mask = kind === "sparse" ? Uint8Array.from({ length: n }, () => (r() < 0.06 ? 1 + Math.floor(r() * 255) : 0))
+                : kind === "dense" ? randomMask(n, 9100 + seed) : new Uint8Array(n).fill(kind === "all 255" ? 255 : 0);
+            const d = both(randomRGBA(w, h, 9200 + seed, { opaque }), randomRGBA(w, h, 9300 + seed, { opaque }), mask, w, h);
+            if (d) { okR = false; detailR = `${w} x ${h} ${kind}${opaque ? " opaque" : ""}: ${d}`; }
+        }
+    }
+    check(`js poissonBlend equals the ${label} on random boxes (1 x 1 to 257 x 129; sparse, dense, full and empty masks)`, okR, detailR);
+    // dst and src as Uint8ClampedArray views at a byte offset of 8 into larger buffers; the inputs stay as they were
+    let okV = true, detailV = "";
+    const rv = { name: "random 257 x 129", w: 257, h: 129, dst: randomRGBA(257, 129, 81), src: randomRGBA(257, 129, 82), mask: randomMask(257 * 129, 83) };
+    for (const s of [scenes[2], scenes[9], rv]) {
+        const view = (bytes) => { const all = new Uint8ClampedArray(bytes.length + 16).fill(77); all.set(bytes, 8); return new Uint8ClampedArray(all.buffer, 8, bytes.length); };
+        const dv = view(s.dst), sv = view(s.src), ia = new Int32Array(4), ib = new Int32Array(4);
+        const a = js.poissonBlend(s.dst, s.src, s.mask, s.w, s.h, undefined, ia), b = px.poissonBlend(dv, sv, s.mask, s.w, s.h, null, ib);
+        const intact = (v, bytes) => eqBytes(v, bytes) && new Uint8Array(v.buffer).every((x, i) => i >= 8 && i < 8 + bytes.length || x === 77);
+        if (!eqBytes(a, b) || !eqBytes(ia, ib) || !eqBytes(a, js.poissonBlend(dv, sv, s.mask, s.w, s.h))) { okV = false; detailV = `${s.name}: ${firstDiff(a, b)} info [${ia}] vs [${ib}]`; }
+        if (!intact(dv, s.dst) || !intact(sv, s.src)) { okV = false; detailV = `${s.name}: an input was written`; }
+    }
+    check(`${label} poissonBlend takes Uint8ClampedArray views at an offset, gives the twin's bytes and leaves its inputs`, okV, detailV);
+    // out given (junk first) or null: the same bytes; the given array comes back, null gives a new one outside wasm memory
+    {
+        const s = scenes[3], junk = () => new Uint8Array(s.w * s.h * 4).fill(0x5a), oa = junk(), ob = junk();
+        const ra = js.poissonBlend(s.dst, s.src, s.mask, s.w, s.h, oa), rb = px.poissonBlend(s.dst, s.src, s.mask, s.w, s.h, ob);
+        const fresh = px.poissonBlend(s.dst, s.src, s.mask, s.w, s.h, null), again = px.poissonBlend(s.dst, s.src, s.mask, s.w, s.h);
+        const wrong = Object.entries({
+            "the twin returns another array": ra !== oa, [`the ${label} returns another array`]: rb !== ob, "the given outs differ": !eqBytes(oa, ob),
+            "null gives other bytes": !eqBytes(fresh, ob), "no out gives other bytes": !eqBytes(again, ob),
+            "null gives no Uint8Array": !(fresh instanceof Uint8Array), "null gives a view of wasm memory": fresh.buffer === px.memory.buffer,
+        }).filter(([, bad]) => bad).map(([what]) => what);
+        check(`${label} poissonBlend writes a given out and returns it; without one it returns a new array of the same bytes`, !wrong.length, wrong.join(", "));
+    }
+    // w or h 0
+    {
+        let okZ = true, detailZ = "";
+        try {
+            const e = new Uint8Array(0);
+            for (const [w, h] of [[0, 5], [5, 0]]) if (px.poissonBlend(e, e, e, w, h, null).length !== 0) { okZ = false; detailZ = `${w} x ${h}`; }
+        } catch (err) { okZ = false; detailZ = String(err); }
+        check(`${label} poissonBlend with w or h 0 does nothing`, okZ, detailZ);
+    }
+    if (/rust/.test(label)) {
+        for (const size of [512, 2048]) {
+            const T = poissonTiming(size, js);
+            for (const t of T.shapes) {
+                const info = new Int32Array(4);
+                let best = Infinity, out = null;
+                for (let i = 0; i < 3; i++) { const t0 = performance.now(); out = px.poissonBlend(T.dst, T.src, t.mask, size, size, null, info); best = Math.min(best, performance.now() - t0); }
+                check(`js poissonBlend equals the ${label} on ${t.shape} in a ${size} x ${size} box`, eqBytes(out, t.twin.out) && eqBytes(info, t.twin.info),
+                    `${firstDiff(out, t.twin.out)} info [${info}] vs [${t.twin.info}]`);
+                console.log(`       ${t.shape} healed in a ${size} x ${size} box (${info[0]} px): ${label} ${best.toFixed(1)} ms, ${info[1]} cycles, ${info[2]} levels; twin ${t.twin.best.toFixed(1)} ms, ${t.twin.info[1]} cycles`);
+            }
+        }
+    }
+}
+
 async function pngCases(ref, label, js) {
     const zlib = require("node:zlib");
     let ok = true, okRound = true, detail = "";
@@ -992,6 +1550,7 @@ async function main() {
     await compositeCases(ref, label, js);
     await matchTwinCases(js);
     await smudgeTwinCases(js);
+    await poissonTwinCases(js);
     await pngCases(ref, label, js);
     for (const [name, file] of [["simd", "px.wasm"], ["scalar", "px_scalar.wasm"]]) {
         const px = await loadPx(fs.readFileSync(path.join(PX_DIR, file)));
@@ -1006,6 +1565,7 @@ async function main() {
         await compositeCases(px, label, js);
         await matchCases(px, label, js);
         await smudgeCases(px, label, js);
+        await poissonCases(px, label, js);
         await pngCases(px, label, js);
         await pngPartCases(px, label);
         await psdCases(px, label, js);

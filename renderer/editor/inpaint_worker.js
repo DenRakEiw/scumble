@@ -30,6 +30,8 @@
  *   resample        one row of destination tiles of an affine resample (inpaint_resample.js): the straighten of 23b.
  *   band            a row of tiles composited, layer over layer (`compositeTile`): no caller in
  *                   the editor yet; phase R measures the kernel phase E's band export will run.
+ *   poisson         the healing brush's blend over a stroke's box (`poissonBlend`, PLAN_0_1_31 §5): the picture,
+ *                   the source patch and the mask as plain buffers in, the healed box back.
  *
  * Pixels arrive as ImageBitmaps (transferred, never copied through structured cloning) and
  * are closed as soon as they are drawn. Every reply carries the request's id; a failure
@@ -45,7 +47,7 @@ import { floodMask, maskToColorCanvas, clipMaskToSelection, growMaskBounds, inve
 import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
 import { readTiff, tiffPart } from "./inpaint_tiff.js";
 import { resampleStore } from "./inpaint_resample.js";
-import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock } from "./px/kernels.js";
+import { mipChain, mipChainBytes, clampExtend, compositeTile, matchPixels, psdPackRows, kernelsReady, setKernels, rustPx, kernelsInUse, releaseIfLarge, deflate, resampleBlock, poissonBlend } from "./px/kernels.js";
 
 const TILE = 256, LEVELS = 5, TILE_BYTES = TILE * TILE * 4;
 const now = () => performance.now();
@@ -148,6 +150,14 @@ async function band(msg) {
         transfer.push(col.dst);
     }
     return { dsts: transfer, transfer, timing: { op: "band", kernels: kernelsInUse(), tiles: msg.columns.length, kernel: now() - t0 } };
+}
+
+/** The healing brush's blend (PLAN_0_1_31 §5 step 2): `dst`, `src` (RGBA8) and `mask` (a byte a pixel) of a w x h box. */
+function poissonJob(msg) {
+    const t0 = now(), w = msg.w, h = msg.h;
+    const out = new Uint8Array(w * h * 4), info = new Int32Array(4);
+    poissonBlend(new Uint8Array(msg.dst), new Uint8Array(msg.src), new Uint8Array(msg.mask), w, h, out, info);
+    return { out: out.buffer, info: Array.from(info), transfer: [out.buffer], timing: { op: "poisson", kernels: kernelsInUse(), pixels: info[0], kernel: now() - t0 } };
 }
 
 /**
@@ -726,6 +736,7 @@ async function run(msg) {
     if (msg.op === "flood") return flood(msg);
     if (msg.op === "mips") return mips(msg);
     if (msg.op === "band") return band(msg);
+    if (msg.op === "poisson") return poissonJob(msg);
     if (msg.op === "png_part") return pngPart(msg);
     if (msg.op === "stack_into") return stackInto(msg);
     if (msg.op === "stack_points") return stackPoints(msg);

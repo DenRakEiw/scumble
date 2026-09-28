@@ -26,6 +26,7 @@ mod jobs;
 mod maskf;
 mod mip;
 mod png;
+mod poisson;
 mod psd;
 mod resample;
 mod smudge;
@@ -38,11 +39,11 @@ fn align_for(bytes: usize) -> usize {
     if bytes >= 16 * 1024 { 4096 } else { 8 }
 }
 
-/// Bumped whenever an export changes its signature or learns a new op (13: linear light in `composite_tile`);
+/// Bumped whenever an export changes its signature or learns a new op (14: `poisson_blend`);
 /// `px.js` refuses a module it does not know.
 #[no_mangle]
 pub extern "C" fn px_abi_version() -> u32 {
-    13
+    14
 }
 
 /// 1 when this build uses WASM SIMD128, 0 for the scalar build.
@@ -271,6 +272,21 @@ pub unsafe extern "C" fn composite_tile(dst: *mut u8, px: usize, n: usize, srcs:
 #[no_mangle]
 pub unsafe extern "C" fn smudge_dab(dst: *mut u8, src: *const u8, carry: *mut u16, mask: *const u8, n: usize, strength: u32, keep: u32, flags: u32) {
     smudge::smudge_dab(slice::from_raw_parts_mut(dst, n * 4), slice::from_raw_parts(src, n * 4), slice::from_raw_parts_mut(carry, n * 4), slice::from_raw_parts(mask, n), strength, keep, flags);
+}
+
+/// The healing brush's Poisson blend over a `w` x `h` box (docs/PLAN_0_1_31.md §5 step 1, `poisson.rs`): `dst` the
+/// picture before the stroke and `src` the cloned patch (straight RGBA8), `mask` a byte per pixel (> 0: heal there),
+/// `out` RGBA8 (may not alias the inputs), `info` 4 i32 or 0: the pixels healed, the V-cycles, the levels, and 1 when
+/// the cycles ran out before it settled. A whole job: it allocates its grids. Returns the pixels healed.
+#[no_mangle]
+pub unsafe extern "C" fn poisson_blend(dst: *const u8, src: *const u8, mask: *const u8, w: usize, h: usize, out: *mut u8, info: *mut i32) -> i32 {
+    let n = w * h;
+    let mut none = [0i32; 4];
+    let info = if info.is_null() { &mut none[..] } else { slice::from_raw_parts_mut(info, 4) };
+    if n == 0 {
+        return poisson::poisson_blend(&[], &[], &[], w, h, &mut [], info);
+    }
+    poisson::poisson_blend(slice::from_raw_parts(dst, n * 4), slice::from_raw_parts(src, n * 4), slice::from_raw_parts(mask, n), w, h, slice::from_raw_parts_mut(out, n * 4), info)
 }
 
 /// The colour match of a layer over `px` pixels of straight RGBA8, in place (B item 7 part 3): `params` are
