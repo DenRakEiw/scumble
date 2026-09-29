@@ -126,5 +126,7 @@ export function watchUserEdits() {
             if (ed.root && ed.root.contains(e.target)) { record.docs.get(id).edited = true; return; }
         }
     };
-    for (const type of ["pointerdown", "keydown", "input"]) document.addEventListener(type, mark, true);
+    // paste and drop too: the prompt field cancels the browser's own input for them, and a file dropped from outside
+    // brings no pointerdown inside the editor
+    for (const type of ["pointerdown", "keydown", "input", "paste", "drop"]) document.addEventListener(type, mark, true);
 }

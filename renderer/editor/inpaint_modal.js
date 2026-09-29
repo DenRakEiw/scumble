@@ -5,6 +5,7 @@
 // the editor, as the method did: they are construction, not state of their own.
 import { host } from "./host.js";
 import { el, iconButton, miniButton, selectInput, numberInput, hostText, REF_FITS, REF_DEFAULTS, UPSAMPLE_CASES, randomSeed, brushSizeToSlider, sliderToBrushSize } from "./inpaint_canvas.js";
+import { PromptField } from "./prompt_field.js";
 
 /**
  * The whole dialog of one editor. The order is the one the method had, and the two joints it kept
@@ -754,9 +755,19 @@ function buildExport(ed, section) {
 function buildPrompt(ed, section) {
     section("Prompt", true, (d) => {
         const wrap = el("div", "ipc-prompt");
-        ed.promptInput = document.createElement("textarea");
-        ed.promptInput.placeholder = "Describe what should appear in the selection. Available as the node's prompt output.";
-        ed.promptInput.spellcheck = false;
+        if (host.refTokens) {
+            // the app: a field that draws the @img tokens as reference chips and reads like the textarea (PLAN_REFS C4)
+            ed.promptField = new PromptField({
+                placeholder: "Describe the change. Type @ to name a reference image.",
+                refs: () => ed.refContext(),
+                popupRoot: ed.root,
+            });
+            ed.promptInput = ed.promptField.el;
+        } else {
+            ed.promptInput = document.createElement("textarea");
+            ed.promptInput.placeholder = "Describe what should appear in the selection. Available as the node's prompt output.";
+            ed.promptInput.spellcheck = false;
+        }
         ed.promptInput.addEventListener("input", () => { ed.promptText = ed.promptInput.value; });
         ed.promptInput.addEventListener("change", () => ed.notifyChanged());
         ed.promptInput.addEventListener("keydown", (e) => {

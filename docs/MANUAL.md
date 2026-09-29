@@ -140,6 +140,8 @@ Local recipes are ComfyUI workflows in API format with an Inpaint Canvas node in
 
 Provider recipes go out over HTTPS with your key. Scumble crops the selection with context, sends it at a size the provider really accepts — the Highres fix setting picks the tier — and stitches the answer back at full resolution with the surrounding pixels preserved. Models that take a mask get one; models that do not get an instruction edit and Scumble's own composite mask does the blending afterwards. Reference layers are sent along for the models that take references. The reference list and the canvas label each shown reference img1, img2 and so on from the top of the list; a new reference goes below the others and takes the next number, and hiding one renumbers the rest. Write @img1 in the prompt to name that picture: the prompt keeps following it when the list changes, and the request names it the way the chosen model counts its pictures (image 3, say, when the crop and the Original go first); the status line says which name each token went as. A token for a hidden or deleted reference waits and stops the run until you show the layer again or take the token out. An upscale and Generate new send no reference pictures, so there a token goes as the layer's name, and a ComfyUI recipe does not take the tokens yet.
 
+In the prompt field each token shows as a chip: a small round picture of the reference and its label. A token whose reference is hidden shows struck through with the layer's name, one whose reference was deleted, or a number no reference holds, shows struck through in red; the mouse over the chip says why. A chip counts as one character: the caret steps over it, and Backspace or Delete takes it whole. A token becomes a chip once you type the space after it, so @img12 can be typed without a chip for @img1 on the way. A word typed right against a chip gets a space between the two, since @img1 only counts with one; type the space yourself and it steps over the one already there, and Backspace or Delete on such a space steps over it too. A click on a chip puts the caret beside it. The prompt field keeps its own undo: Ctrl+Z there takes back typing, a paste, Upsample, Revert or a prompt an agent set, and never an edit of the picture.
+
 The recipe **LaMa remove (in-app)** does what the Remove tool does, for a selection: select what should go, pick the recipe and press Generate. It runs the same model inside the app, offline and without a prompt, and its answer is stitched back like a provider's. It fills from the surroundings and never invents anything new; for that, use a model recipe.
 
 Generate new makes the base picture from the prompt alone, locally or through a provider, when you want to start from nothing rather than from a photo; Mystic, Magnific's own model, lives only there. And prompt upsampling turns a short prompt into a long one through a language model — your own key, an OpenRouter, Oxen.ai or ToAPIs key, or a local Ollama or LM Studio that needs no key at all. Your own prompt-writing rules can be stored as Markdown templates, so upsampling follows your house style and not a generic one.
@@ -501,6 +503,16 @@ Two of them are worth knowing before the rest. Hold the backslash key to peek at
 | Ctrl+U | Upsample the prompt with a language model |
 | Escape | Cancel what is running, or drop what is pending |
 | Enter | Apply what is pending: a transform, a polygon, a shape, the canvas frame |
+
+#### In the prompt field
+
+| Key | What it does |
+| --- | --- |
+| Enter  ·  Shift+Enter | A new line |
+| Backspace  ·  Delete | Delete a character, or a reference chip whole |
+| Left  ·  Right | Step over a character, or over a chip |
+| Ctrl+Z  ·  Ctrl+Y | Undo and redo in the prompt, not in the picture |
+| Escape | Leave the field; the editor's keys work again |
 
 #### The app
 

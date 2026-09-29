@@ -168,7 +168,8 @@ The chat column keeps its own keys: Enter sends (Shift+Enter is a new line), Esc
 running turn or hands the focus back to the picture, and no key typed in the chat reaches the
 editor's shortcuts or an open editor question. While you are writing, the chat field takes the
 focus back when the editor grabs it for itself - but never from a field you clicked into, and
-never after Escape.
+never after Escape. The editor's prompt field is a contenteditable (it draws the reference chips), and it counts as
+such a field: a click into it keeps the focus there.
 
 These still fire anywhere, as always: **Ctrl+W** closes the tab (after its confirm), **Ctrl+R**
 reloads the window, **Ctrl+0 / Ctrl+= / Ctrl+-** zoom the whole window, **F11** is full screen.

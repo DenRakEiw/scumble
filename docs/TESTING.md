@@ -111,6 +111,24 @@ the path through the app. Every
 gate that touches references ends with `ed._refDrift` 0: a change of the shown references that no site remapped is
 counted in `renderReferences`.
 
+26c1, the prompt field (`renderer/editor/prompt_field.js`): `node tools/prompt_field_test.js` covers its pure helpers
+in plain Node (`sanitize`, `atWordStart`, `unitBefore` / `unitAfter` over chips, emoji and surrogates, with and without
+`Intl.Segmenter`, `EditHistory`'s merging, word steps, `map` and cap, `chipState`, `renderPlan` with an open token);
+the import itself proves nothing touches the DOM at load. The editor gate's five `prompt_field_*` steps
+(`tools/prompt_field_steps.py`, each on a document of its own with two references) drive the field with real CDP input:
+`is_the_textarea_for_every_reader` (value, selection kept while blurred and put back by `focus()`, placeholder,
+disabled, the hidden "@" of zero width with `innerText` reading the token, live / inactive / broken chips),
+`types_deletes_and_moves_over_chips` (Backspace and Delete take a chip whole, the arrows step over it, Enter, a typed
+token turns into a chip at the space, the automatic space against a chip and the typed space stepping over it, a caret
+on both sides of a chip between two others, `ed.undo` untouched), `undo_redo_paste_and_copy` (word steps with the
+caret, Ctrl+Y and Ctrl+Shift+Z, a paste with CR LF and U+200B, a copy over a chip, an undo after a remap gives the
+remapped older text, `"reset"`), `leaves_a_composition_alone` (`Input.imeSetComposition`: the chip nodes are not drawn
+anew, an Enter while composing adds no line, a remap during a composition lands on the composed text) and
+`keeps_the_editor_keys` (Ctrl+Enter and Ctrl+U reach `generate` / `upsamplePrompt`, Escape hands the focus to the
+editor, Backspace / Delete / Ctrl+Z / the AltGr probe run no editor shortcut, a click on a chip's chevron keeps the
+focus). While iterating: `SCUMBLE_EDITOR_ONLY=prompt_field_is_the_textarea_for_every_reader,... bash tools/run_gates.sh
+26c-it --offline --tiles on editor`.
+
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:

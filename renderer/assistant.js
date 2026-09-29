@@ -337,7 +337,7 @@ function onFocusOut(e) {
  */
 function wants(node) {
     if (!node || node === document.body) return false;
-    if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(node.tagName)) return true;
+    if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(node.tagName) || node.isContentEditable) return true;   // the prompt field is a contenteditable
     return !!(node.closest && node.closest(".ipc-ask"));
 }
 

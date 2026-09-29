@@ -100,11 +100,13 @@ main's `docs/MANUAL.md` already describes S1's img labels, which ship with 0.1.3
   declared, caps per variant from the vendors' pages, one instruction sentence numbered like the markers, label parts.
   A typed `@img1` now works end to end on API recipes (ComfyUI recipes refuse it until 26e). Each step has a "Built"
   paragraph in the plan; gates `--offline --tiles on` green (commands, generate, upscale, the provider gates, editor,
-  document, mcp, assistant, nodecopy, lint, types). The prompt update ships as **0.1.34**. **Next: S3 = 26c1**, the
-  rich prompt field (contenteditable with chips), then the user looks at it in the app before 26c2 (picker, bar,
-  hover, swap). Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins); 26c1 adds the node
-  stub `async refLayout() { return null; }` if shared code calls `host.refLayout`. Then package 6 (layers pro) of
-  `docs/PLAN_0_1_31.md`.
+  document, mcp, assistant, nodecopy, lint, types). The prompt update ships as **0.1.34**. **26c1 built and committed
+  locally 2026-09-29 (S3, not pushed):** `renderer/editor/prompt_field.js`, the prompt as a contenteditable with
+  reference chips, its own undo, whole-chip deletes, an automatic space between a chip and a word typed against it
+  (its "Built" paragraph in the plan lists what the code showed and the review's ten fixes). **Waiting for the user**:
+  they look at the field in the app (a screenshot was sent) and say go before **26c2** (picker, bar, hover card, swap
+  menu; it adds the node stub `async refLayout() { return null; }` with `refreshRefLayout`). Read the plan's sections
+  0 and 3-6 and the step's own section ("Read first" wins). Then package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 - **To do at the 0.1.34 release (the user, 2026-09-29):** take the other product's name out of the "Next up" line of
   the `v0-1-33` post (`F:\portfolio_web\lib\scumble-posts.ts`, "... the way X does it"), and write the 0.1.34 post,
   CHANGELOG section and manual lines without naming any other product as the model for the feature.
@@ -209,6 +211,10 @@ there; add a new flake there, with the date and what was ruled out.
 - `requestAnimationFrame` does not fire in a hidden window (`drawSoon()` is rAF-based), and `img.decode()` never resolves
   there; scripted waits use `setTimeout`, image loads wait for `onload`.
 - On a `<dialog>` closed by a real Escape Chromium fires `cancel`, not always `close`.
+- A `contenteditable="plaintext-only"` element gets no `getTargetRanges()` for deletes (Backspace: `[]`, measured
+  2026-09-29): the prompt field computes every delete from its own string. `innerText` breaks lines around flex items and
+  absolutely positioned elements (both are blockified): a chip that `innerText` must read as `@img1` is `inline-block`
+  with `inline-block` children.
 - `texSubImage2D` and `readPixels` take a view on a `SharedArrayBuffer` here (Electron's Chromium): no copy between the
   workers' buffer and the GPU (B item 7 part 2). 572 MB go up in 0.1 s and come back in 0.2 s, on the main thread.
 

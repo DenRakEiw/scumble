@@ -5,8 +5,8 @@ reference images (in Scumble: the reference layers) can be named inside the prom
 must be changed so that they understand the reference images too. In the prompt the images must be named with the
 designation under which they are actually sent over the API.
 
-**Status (2026-09-29):** S1 (26a1, 26b1) and S2 (26b2, 26a2) built, see their "Built" paragraphs; next S3 = 26c1, the
-field core, then the user looks at it in the app before 26c2. The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+**Status (2026-09-29):** S1 (26a1, 26b1) and S2 (26b2, 26a2) built, and 26c1 (the field core) of S3, see their "Built"
+paragraphs; the user looks at the field in the app before 26c2 (picker, bar, hover card, swap) is built. The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 
 How this plan was made: a code map and a web survey (seven agents), a design review (three critics), the user's
 answers, then one planner per step against the code and two cross-step critics (interfaces; facts and rules). **Where a
@@ -368,7 +368,13 @@ directly; comfy steps stub `host.connected`, `objectInfo`, `ensureOnServer` and 
   reference image"; agents get `label`, `status.references[].sent_as`, `set_prompt refs` and `generate`'s
   `prompt_sent`, and a refused `generate` returns at once.
 - 26c: the prompt field shows reference chips; Upsample, Revert and an agent's `set_prompt` are steps of the field's
-  own undo.
+  own undo. 26c1 built: a token shows as a chip (round picture, label; a hidden reference's struck through with the
+  layer's name, a deleted one's or an unknown number's struck through in red, the reason on the mouse); a chip is one
+  character for the caret, Backspace and Delete; a token turns into a chip at the space after it; a word typed against
+  a chip gets a space (a typed space steps over it), and the space between a chip and a word is stepped over by
+  Backspace / Delete instead of gluing them; a press on a chip puts the caret beside it; Ctrl+Z / Ctrl+Y in the field
+  are the field's own (word steps), and an undo there names the references as they are now; the field's line height
+  is 22 px (the textarea's was 17.5).
 - 26d2: the named reference pictures go to the language model's provider when upsampling (a setting turns it off);
   the local endpoint no longer retries a 401 / 402 / 429.
 - 26e: local Klein and Qwen 2.1 no longer repeat the crop into unused slots, so the same seed gives another result;
@@ -1289,6 +1295,35 @@ About 1 day. Commit as DenRakEiw per CLAUDE.md, with no trailer:
 Sources read 2026-09-29: [fal Seedream v5 lite edit](https://fal.ai/models/fal-ai/bytedance/seedream/v5/lite/edit/api), [fal Seedream v5 pro edit](https://fal.ai/models/bytedance/seedream/v5/pro/edit/api), [fal FLUX.2 klein 9b edit](https://fal.ai/models/fal-ai/flux-2/klein/9b/edit/api), [fal FLUX.2 pro edit](https://fal.ai/models/fal-ai/flux-2-pro/edit/api), [fal GPT Image 2 edit](https://fal.ai/models/openai/gpt-image-2/edit/api), [BFL FLUX.2 editing](https://docs.bfl.ai/flux_2/flux2_image_editing), [BFL FLUX.2 pro reference](https://docs.bfl.ai/api-reference/models/generate-or-edit-an-image-with-flux2-%5Bpro%5D), [BFL FLUX.2 flex reference](https://docs.bfl.ai/api-reference/models/generate-or-edit-an-image-with-flux2-%5Bflex%5D), [BFL klein 9B KV](https://docs.eu.bfl.ai/api-reference/models/generate-or-edit-an-image-with-flux2-%5Bklein-9b-kv%5D) (via search), [Replicate FLUX.2 pro](https://replicate.com/black-forest-labs/flux-2-pro), [Replicate FLUX.2 flex](https://replicate.com/black-forest-labs/flux-2-flex), [Replicate FLUX.2 max](https://replicate.com/black-forest-labs/flux-2-max), [WaveSpeed FLUX.2 pro edit](https://wavespeed.ai/docs/docs-api/wavespeed-ai/flux-2-pro-edit), [WaveSpeed klein 9b edit](https://wavespeed.ai/docs/docs-api/wavespeed-ai/flux-2-klein-9b-edit), [WaveSpeed Qwen edit plus](https://wavespeed.ai/docs/docs-api/wavespeed-ai/qwen-image-edit-plus), and the local ComfyUI `comfy_api_nodes` (nodes_bfl.py, nodes_gemini.py, nodes_bytedance.py, nodes_openai.py, nodes_qwen.py).
 
 ## 26c: The rich prompt field, the @ picker and the reference bar
+
+**26c1 built (2026-09-29, S3).** `renderer/editor/prompt_field.js` (in the node's `FILES`): the pure helpers of sub-task
+1 (`sanitize`, `atWordStart`, `unitBefore` / `unitAfter`, `EditHistory`, `chipState`, `renderPlan`; `mapOffset` /
+`diffRange` re-exported from `reftokens.js`) and `PromptField` (sub-tasks 2-8: the chip DOM with guards and the trailing
+`<br>`, a shape check so a native edit that typed into a run is not drawn anew, `domToOffset` / `offsetToDom`, the
+textarea API on the element, the own undo, composition). The editor: `buildPrompt` builds it when `host.refTokens`;
+`setPromptText(text, {keepCaret, history})`; `refContext()` and `refAvatar(layer)` (a 32 px data URL kept for the pixels
+and live mask it was drawn from, through `WeakRef`s, and dropped in `markLayerChanged` / `markMaskChanged` /
+`redrawThumbsOf`, which also calls `updateThumbs`); `renderReferences` ends with `refresh()`; `_docKey`, the root click
+and the paste handler know a contenteditable; `close()` / `destroy()`. `assistant.js` `wants()` takes a contenteditable,
+`assistant_turns.js` counts paste and drop. **What the code showed against the text above:** Chromium gives a
+`plaintext-only` field no `getTargetRanges()` for deletes, so every delete is controlled (sub-task 4's native delete
+path is gone; word and line deletes use the Windows rules on the string); `innerText` breaks lines around flex items, so
+the chip is `inline-block`. **Decisions the plan did not have:** a word typed against a chip gets a space (C1 makes
+`x@img1` plain text, and the chip would turn into text and back at every letter), a space typed there steps over it,
+and the lone space between a chip and a word is stepped over by Backspace / Delete instead of deleted (a longer delete
+leaves one space); a press on a chip puts the caret beside it (the browser left it in the chip's label, where no key
+reaches the field); a chip has a `title` with its reason until 26c2's hover card; chips are not draggable yet (26c2);
+`setText`'s `"reset"` and remap reach the field's undo even when the text stays the same, and `refsMutated` passes its
+remap whenever the field exists; writes during a composition are replayed in order at its end (`pendingValue()` is what
+`value` reads meanwhile). Node stub: none needed (no shared code calls `host.refLayout` yet; it comes with 26c2's
+`refreshRefLayout`). Tests: `tools/prompt_field_test.js` (164 checks), the editor gate's five `prompt_field_*` steps
+(`tools/prompt_field_steps.py`, real CDP input), gates `--offline --tiles on` green (editor, commands, assistant,
+canvasonly, llm, document, lint, types, nodecopy). A review (three reviewers, a skeptic per finding) confirmed ten of
+eleven findings, seven distinct, all fixed with a gate check each: a chip formed around the caret sent the DOM caret to the field's start (the
+render now snaps the selection, to the chip's end after typing), a click on a chip left the caret in its label, the
+undo missed remaps that left the text alone, writes during a composition, a delete gluing a word to a chip, the
+thumbnail cache on mask changes and rotations, and a probe that asserted nothing; a mutation of the render snap turns
+`prompt_field_types_deletes_and_moves_over_chips` red.
 
 ### Read first: corrections from the review (they win over the text below)
 

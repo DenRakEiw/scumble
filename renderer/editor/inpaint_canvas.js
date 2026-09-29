@@ -1446,6 +1446,27 @@ const STYLE = `
 .ipc-prompt textarea { width:100%; box-sizing:border-box; min-height:80px; resize:vertical; background:var(--sc-field, #161616); color:var(--sc-fg, #ddd); border:1px solid var(--sc-line, #3a3a3a);
   border-radius:var(--sc-radius, 6px); padding:6px 8px; font:13px/1.35 var(--sc-font, system-ui, sans-serif); }
 .ipc-prompt textarea:focus { outline:none; border-color:var(--sc-active, #4a90d9); }
+.ipc-pf { position:relative; display:block; width:100%; box-sizing:border-box; min-height:80px; resize:vertical; overflow:auto; background:var(--sc-field, #161616); color:var(--sc-fg, #ddd);
+  border:1px solid var(--sc-line, #3a3a3a); border-radius:var(--sc-radius, 6px); padding:6px 8px; font:13px/22px var(--sc-font, system-ui, sans-serif);
+  white-space:pre-wrap; overflow-wrap:anywhere; cursor:text; outline:none; margin-bottom:6px; }
+.ipc-pf:focus { border-color:var(--sc-active, #4a90d9); }
+.ipc-pf.ipc-pf-empty::before { content:attr(data-placeholder); position:absolute; left:9px; top:6px; right:9px; color:var(--sc-faint, #777); pointer-events:none; white-space:normal; }
+.ipc-pf[aria-disabled=true] { opacity:.6; cursor:default; }
+.ipc-chip { display:inline-block; height:20px; box-sizing:border-box; margin:1px 1px 0; padding:0 1px 0 1px; vertical-align:top;
+  border:1px solid var(--sc-line, #3a3a3a); border-radius:10px; background:var(--sc-btn, #2a2a2a); color:var(--sc-fg, #ddd); font-size:12px; line-height:18px; white-space:nowrap; cursor:default; }
+.ipc-chip:hover { background:var(--sc-btn-hover, #333); }
+.ipc-chip > * { display:inline-block; vertical-align:top; }
+.ipc-chip > .ipc-chip-at { width:0; overflow:hidden; }
+.ipc-chip > .ipc-chip-av { width:16px; height:16px; margin:1px 3px 0 0; border-radius:50%; object-fit:cover; background:var(--sc-well, #111); }
+.ipc-chip > .ipc-chip-av[hidden] { display:none; }
+.ipc-chip > .ipc-chip-label { max-width:14ch; overflow:hidden; text-overflow:ellipsis; padding-left:2px; }
+.ipc-chip > .ipc-chip-chev { position:relative; width:14px; height:18px; padding:0; margin:0; border:0; background:transparent; color:var(--sc-fg-2, #bbb); cursor:pointer; }
+.ipc-chip-chev::after { content:""; position:absolute; left:3px; top:6px; border:4px solid transparent; border-top-color:currentColor; }
+.ipc-chip[data-state=inactive] { opacity:.7; }
+.ipc-chip[data-state=inactive] .ipc-chip-label, .ipc-chip[data-state=broken] .ipc-chip-label { text-decoration:line-through; }
+.ipc-chip[data-state=broken] { color:var(--sc-error, #f66); }
+.ipc-chip[data-state=over] { border-color:var(--sc-warn, #ffb347); }
+.ipc-chip.ipc-in-sel { outline:2px solid var(--sc-active, #4a90d9); outline-offset:-1px; }
 .ipc-hist { max-height:30vh; overflow:auto; }
 .ipc-hitem { display:flex; align-items:center; gap:8px; padding:5px 8px; border-bottom:1px solid var(--sc-line, #161616); }
 .ipc-hitem.ipc-gone { opacity:.55; }
@@ -2582,7 +2603,7 @@ class InpaintEditor {
             const t = e.target;
             if (this.askOpen) return;   // the question dialog has its own keys
             if (t && t.closest && t.closest("dialog[open]")) return;   // a key inside an open <dialog> (a host settings dialog, a plugin's) stays with the dialog: Escape has to reach its native close
-            const inField = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT");
+            const inField = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
             if (e.key === "Escape") {
                 if (this.tipPicker && this.tipPicker.isOpen) { e.stopImmediatePropagation(); e.preventDefault(); this.closeTipPicker(); return; }
                 if (t === this.promptInput) return;
@@ -2658,6 +2679,7 @@ class InpaintEditor {
         if (this.textEdit) this.endTextEdit(true);
         this.closeFlyout();
         this.closeTipPicker();
+        if (this.promptField) this.promptField.closePopups();
         clearTimeout(this._autosave);
         this.compare = null;
         this.peekBase = false;
@@ -2680,7 +2702,8 @@ class InpaintEditor {
         root.addEventListener("click", (e) => {
             const t = e.target;
             if (this.askOpen) return;   // the dialog just focused its input; do not pull the focus back to the canvas
-            if (t && t.closest && t.closest("button") && !t.closest("input, select, textarea")) this.root.focus({ preventScroll: true });
+            // a button inside the prompt field (a chip's chevron) keeps the field's focus
+            if (t && t.closest && t.closest("button") && !t.closest("input, select, textarea, [contenteditable]")) this.root.focus({ preventScroll: true });
         });
         root.addEventListener("wheel", (e) => {
             if (e.target !== this.canvas) { e.stopPropagation(); return; }
@@ -2692,7 +2715,7 @@ class InpaintEditor {
         // only keep them from bubbling to the graph canvas.
         root.addEventListener("keydown", (e) => e.stopPropagation());
         root.addEventListener("paste", (e) => {
-            if (e.target === this.promptInput) return;
+            if (this.promptInput && e.target && this.promptInput.contains(e.target)) return;
             const items = e.clipboardData && e.clipboardData.items;
             if (!items) return;
             for (const item of items) {
@@ -3292,7 +3315,8 @@ class InpaintEditor {
         }
         const r = (t) => (t ? remap(t, before, target) : t);
         const p = r(this.promptText);
-        if (p !== this.promptText) this.setPromptText(p, { keepCaret: true, history: r });
+        // the field's undo too when the text stays the same: an older state may name a reference that moved
+        if (p !== this.promptText || this.promptField) this.setPromptText(p, { keepCaret: true, history: r });
         const n = r(this.negativeText);
         if (n !== this.negativeText) this.setNegativeText(n);
         this.remapOthers(r);
@@ -3336,11 +3360,52 @@ class InpaintEditor {
     /**
      * The prompt set from code (Upsample, Revert, an agent, a remap, a restore). `keepCaret`: the caret stays after the
      * same word when the field has the focus. `history` is for the prompt field's own undo (docs/PLAN_REFS.md C4:
-     * "push", "reset" or a text-to-text function); the textarea keeps none of its own.
+     * "push", "reset" or a text-to-text function); the textarea keeps none of its own. The field normalises the text
+     * (line breaks, the tokens' prefix), and `promptText` takes what it holds, so the two never differ.
      */
-    setPromptText(text, { keepCaret = false } = {}) {
+    setPromptText(text, { keepCaret = false, history = "push" } = {}) {
+        if (this.promptField) {
+            this.promptField.setText(text, { keepCaret, history });
+            this.promptText = this.promptField.el.value;
+            return;
+        }
         this.promptText = String(text == null ? "" : text);
         setFieldText(this.promptInput, this.promptText, keepCaret);
+    }
+
+    /**
+     * What the prompt field draws its chips from (docs/PLAN_REFS.md C4): every reference layer, top first, hidden ones
+     * with label null, each with a 32 px thumbnail; `reason` says why a parked token's layer has no descriptor.
+     */
+    refContext() {
+        const byId = new Map(this.layers.map((l) => [l.id, l]));
+        const refs = this.refDescriptors().map((d) => ({ ...d, thumb: this.refAvatar(byId.get(d.id)) }));
+        return {
+            refs, cap: null, none: null, canAdd: !!this.width,
+            reason: (id) => (byId.has(id) ? "no longer a reference: make it a reference again to send it" : "deleted: an undo brings it back"),
+        };
+    }
+
+    /**
+     * A reference's picture for its chip: 32 × 32, cover-cropped, as a PNG data URL. Kept on the layer for the pixels
+     * and the live mask it was drawn from (a rotation replaces the pixels, the mask switch changes the live mask), and
+     * dropped when either changes in place (markLayerChanged, markMaskChanged, redrawThumbsOf). A 32 px canvas stays in
+     * software: no GPU readback.
+     */
+    refAvatar(layer) {
+        if (!layer || !layer.px || !layer.px.width || !layer.px.height) return null;
+        // held weakly: a replaced layer's pixels must not live on in the cache
+        const mask = this.liveMask(layer), got = layer._refAvatar;
+        if (got && got.px.deref() === layer.px && (got.mask ? got.mask.deref() : null) === mask) return got.url;
+        const c = document.createElement("canvas");
+        c.width = c.height = 32;
+        const s = Math.max(32 / layer.px.width, 32 / layer.px.height);
+        const w = layer.px.width * s, h = layer.px.height * s;
+        try {
+            this.drawLayerFitted(c.getContext("2d"), layer, (32 - w) / 2, (32 - h) / 2, w, h);
+            layer._refAvatar = { url: c.toDataURL("image/png"), px: new WeakRef(layer.px), mask: mask ? new WeakRef(mask) : null };
+        } catch (_) { return null; }
+        return layer._refAvatar.url;
     }
 
     /** The negative prompt set from code, as setPromptText. */
@@ -11488,6 +11553,7 @@ class InpaintEditor {
 
     markLayerChanged(layer, rect) {
         layer.dirty = true;
+        layer._refAvatar = null;
         layer._maskedValid = false;
         layer._mcache = null;
         layer._mcacheView = null; layer._mcacheSample = null;
@@ -11976,6 +12042,7 @@ class InpaintEditor {
 
     markMaskChanged(layer, rect, { pixels = true } = {}) {
         this.scheduleAutosave();
+        layer._refAvatar = null;
         if (pixels) layer.maskDirty = !!layer.maskPx;
         if (!layer.maskPx) layer.maskRef = null;
         layer._maskedValid = false;
@@ -12440,6 +12507,8 @@ class InpaintEditor {
      * refreshLayerThumb rebuild both lists) and left the result list's picture coarse (the C6 b review).
      */
     redrawThumbsOf(layer) {
+        layer._refAvatar = null;
+        if (this.promptField && this.isReference(layer)) this.promptField.updateThumbs([layer.id]);
         const sel = `.ipc-layer[data-layer="${layer.id}"] canvas.ipc-lthumb`;
         for (const list of [this.layerList, this.refList]) {
             const th = list && list.querySelector(sel);
@@ -14164,6 +14233,8 @@ class InpaintEditor {
             if (layer.id === this.activeLayerId) row.appendChild(this.buildMaskRow(layer));
             list.appendChild(row);
         }
+        // the prompt's chips follow (a state, a label, a name); drawn again only when one of them changed
+        if (this.promptField) this.promptField.refresh();
     }
 
     /** Type select, one slider per parameter, LUT loader: the controls of a filter layer row. */
@@ -17064,6 +17135,7 @@ class InpaintEditor {
     destroy() {
         if (this._compositor) { try { this._compositor.dispose(); } catch (_) { /* context gone */ } this._compositor = null; }
         this.close();
+        if (this.promptField) this.promptField.destroy();   // its document listener and the context callback
         // after close(), which commits an open text edit: that step's blob URL is revoked with the rest
         this.clearUndo();   // the blob URLs of the whole-layer steps are revoked, not left behind
         this.clearSnapshots();
