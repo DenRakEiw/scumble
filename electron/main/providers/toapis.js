@@ -139,6 +139,11 @@ function channelOf(req) {
     return { name: name || "default", ...ch };
 }
 
+/** How many images a channel takes (its max_images, crop included), or null: the one reading the layout and the builder share. */
+function capOf(ch) {
+    return +ch.max_images > 0 ? +ch.max_images : null;
+}
+
 function gcd(a, b) {
     while (b) [a, b] = [b, a % b];
     return a;
@@ -263,7 +268,8 @@ async function prepareFiles(req, ctx, ch, stamp) {
         if (ref.bytes.length > MAX_UPLOAD) throw new Error(`ToAPIs: reference ${i + 1} is ${mb(ref.bytes.length)} MB${transparent ? " (with transparency, so it stays a PNG)" : ""}, ToAPIs takes 10 MB per image: set Highres fix lower, turn Original off, or use a smaller reference layer.`);
         files.push(ref);
     }
-    if (ch.max_images && files.length > ch.max_images) throw new Error(`ToAPIs ${ch.model} takes ${ch.max_images} image${ch.max_images > 1 ? "s" : ""}, this run has ${files.length} (the crop and ${files.length - 1} reference${files.length === 2 ? "" : "s"}).`);
+    const max = capOf(ch);
+    if (max != null && files.length > max) throw new Error(`ToAPIs ${ch.model} takes ${max} image${max > 1 ? "s" : ""}, this run has ${files.length} (the crop and ${files.length - 1} reference${files.length === 2 ? "" : "s"}).`);
     let mask = null;
     if (req.kind === "fill" && ch.mask) {
         if (!req.maskAlpha || !req.maskAlpha.length) throw new Error(`ToAPIs ${ch.model}: the run has no alpha mask.`);
@@ -307,14 +313,17 @@ function bodyFor(req, ch, urls, sz) {
     return body;
 }
 
-/** Where prepareFiles and bodyFor above put each picture: the crop and the references in the channel's image list. */
+/**
+ * Where prepareFiles and bodyFor above put each picture: the crop and the references in the channel's image list, the
+ * mask in a field of its own. `max` is the chosen channel's cap (channelOf), read as prepareFiles reads it.
+ */
 function layout(req) {
     const ch = channelOf(req);
     const F = ch.images || "image_urls";
     return layoutOf({
         seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])],
         own: req.kind === "fill" && ch.mask ? [["mask", "mask_url"]] : [],
-        max: +ch.max_images || null,
+        max: capOf(ch),
     });
 }
 

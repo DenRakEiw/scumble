@@ -291,10 +291,13 @@ function aspectFor(req, o, list, pictures) {
     }
 }
 
-/** The prompt of an edit or fill: the mask and reference sentences that ran live on OpenRouter. */
-function promptFor(req, pics) {
+/**
+ * The prompt of an edit or fill: the OpenRouter adapter's instruction (its mask clause ran live there), numbered by
+ * this adapter's own layout, so a mask that goes as mask_url is no picture of the sentence.
+ */
+function promptFor(req) {
     if (req.kind === "text") return String(req.prompt || "");
-    return openrouter.promptFor(req, pics);
+    return openrouter.promptFor(req, layout(req));
 }
 
 /** The JSON body of one request; `pics` and `mask` from picturesFor (none for a text run). */
@@ -308,7 +311,7 @@ function bodyFor(req, pics = [], mask = null) {
     const keepAuto = new Set(Array.isArray(o.keep_auto) ? o.keep_auto : []);
     const numbers = new Set(Array.isArray(o.numbers) ? o.numbers : []);
     const body = { model: String(req.model || "") };
-    if (!upscale) body.prompt = promptFor(req, pics);
+    if (!upscale) body.prompt = promptFor(req);
     body.response_format = "b64_json";
     if (!text && pics.length) {
         const field = o.image_field || "input_image";

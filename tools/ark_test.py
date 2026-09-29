@@ -48,7 +48,8 @@ KEY_URL = "https://ai.byteplus.com/ark/region:ap-southeast-1/apiKey"
 LITE, PRO = "seedream-5-0-260128", "dola-seedream-5-0-pro-260628"
 LITE_PIXELS, PRO_PIXELS = (3686400, 16777216), (921600, 4624220)
 BODY_KEYS = {"model", "prompt", "image", "size", "watermark", "response_format", "output_format"}
-EDIT_PREFIX = "Edit the first image and keep its size and framing."
+# refs.instruction under the Seedream recipes' refs.name "Image {n}": the crop is Image 1
+EDIT_PREFIX = "Edit Image 1 and keep its size and framing."
 PROMPT = "a red car in the rain"
 TEXT_PROMPT = "a lighthouse at dusk"
 
@@ -348,7 +349,8 @@ def check_edit(mock, res, model, pixels, region):
     prompt = str(b.get("prompt") or "")
     if not prompt.startswith(EDIT_PREFIX) or PROMPT not in prompt:
         raise Exception("the prompt: %s" % prompt[:200])
-    if len(refs) > 1 and "reference material" not in prompt:
+    # the pictures after the crop are reference images, or the Original ("Image 2 is Image 1 before ...")
+    if len(refs) > 1 and "reference image" not in prompt and "before the selected area was filled" not in prompt:
         raise Exception("%d pictures, but the prompt does not say what the others are" % len(refs))
     if posts[0]["auth"] != "Bearer " + KEY:
         raise Exception("the request's Authorization: %r" % posts[0]["auth"])

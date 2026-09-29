@@ -10,7 +10,8 @@ key starts with "test-": the adapter sends such a key only to a loopback base, a
   the last provider of every recipe it joined with the defaults kept, the six new recipes on it, Generate new offering
   Mystic and the text variants, the upscale list as it was;
 - an instruction edit on Seedream 5.0 Pro widens the crop to a preset shape: the picture sent is within 1 % of the
-  aspect_ratio it names, the prompt starts "Edit the first image", no mask goes out, a result layer lands;
+  aspect_ratio it names, the prompt starts "Edit Image 1" (refs.instruction with the recipe's refs.name), no mask goes
+  out, a result layer lands;
 - Ideogram Inpaint sends the mask inverted (black at the selection's centre, white in the corner) at the picture's
   size, and the answer is stretched onto the crop;
 - Image Expand after Extend canvas: the kept picture with the four margins and no mask goes out, and an answer 1.024
@@ -400,7 +401,8 @@ async def run_all(c):
             pw, ph = pics[0]["dims"]
             if pics[0]["field"] != "reference_images" or abs(pw / ph / want - 1) > 0.01:
                 raise Exception("the picture sent %s against %s" % (pics[0], body.get("aspect_ratio")))
-            if not str(body.get("prompt", "")).startswith("Edit the first image") or "mask" in body:
+            # Seedream's refs.name is "Image {n}", so the instruction reads "Edit Image 1"
+            if not str(body.get("prompt", "")).startswith("Edit Image 1 and keep its size and framing.") or "mask" in body:
                 raise Exception("the body: %s" % {k: v for k, v in body.items() if k != "reference_images"})
             px, py, pw2, ph2 = res["plain"]
             if not (x <= px and y <= py and x + w >= px + pw2 and y + h >= py + ph2):

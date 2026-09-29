@@ -202,8 +202,9 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
 
     // ---- 2. golden bodies ----------------------------------------------------------------------------------------
     {
-        const FILL = "Edit the first image. The second image is a mask: change only the white area of the mask, keep everything else exactly as it is, and keep the image size and framing. a red door";
-        const EDIT = "Edit the first image and keep its size and framing. a red door";
+        // refs.instruction numbered by Oxen's layout: a mask that goes as mask_url is no picture (gpt_image_2 is EDIT)
+        const FILL = "Edit image 1. Image 2 is a mask: change only the white area of the mask, keep everything else exactly as it is, and keep the image size and framing. a red door";
+        const EDIT = "Edit image 1 and keep its size and framing. a red door";
         const g = [];
         const want = (name, body, exp) => { if (!eq(norm(body), exp)) g.push(`${name}: ${short(norm(body))}`); };
         want("gpt_image_2 fill", await bodyOf(editReq(V("gpt_image_2"))),
@@ -217,7 +218,7 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
         want("qwen_image_edit alone", await bodyOf(editReq(V("qwen_image_edit"), { negative: "blur" })),
             { model: "qwen-image-3", prompt: EDIT, response_format: "b64_json", input_images: ["<png CROP>"], enable_prompt_expansion: false, watermark: false, resolution: "1K", aspect_ratio: "auto", seed: 1234, negative_prompt: "blur" });
         want("qwen_image_edit with a reference", await bodyOf(editReq(V("qwen_image_edit"), { references: [pngOf(512, 512, 70, "REF")] })),
-            { model: "qwen-image-3", prompt: EDIT + " The remaining image is reference material.", response_format: "b64_json", input_images: ["<png CROP>", "<png REF>"], enable_prompt_expansion: false, watermark: false, resolution: "1K", aspect_ratio: "4:3", seed: 1234 });
+            { model: "qwen-image-3", prompt: EDIT + " Image 2 is a reference image.", response_format: "b64_json", input_images: ["<png CROP>", "<png REF>"], enable_prompt_expansion: false, watermark: false, resolution: "1K", aspect_ratio: "4:3", seed: 1234 });
         want("grok edit", await bodyOf(editReq(V("grok_imagine"))),
             { model: "xai-grok-imagine-image-edit", prompt: EDIT, response_format: "b64_json", input_image: "<png CROP>", output_format: "png" });
         want("grok text", await bodyOf(textReq(V("grok_imagine"), { aspect: "16:9", width: 1920, height: 1080 })),
@@ -243,6 +244,8 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
         want("qwen_image_2_1 edit", await bodyOf(editReq(V("qwen_image_2_1"))),
             { model: "qwen-image-2-1", prompt: EDIT, response_format: "b64_json", input_images: ["<png CROP>"], output_format: "png", resolution: "1K", aspect_ratio: "4:3" });
         check("golden_bodies_of_every_dialect", !g.length, g.join(" | ") || "17 bodies");
+        const orig = await bodyOf(editReq(V("gpt_image_2"), { references: [pngOf(1024, 768, 80, "ORIG")], original: 1 }));
+        check("an_Original_on_a_mask_url_fill_is_image_2_the_mask_no_picture", orig.prompt === EDIT + " Image 2 is image 1 before the selected area was filled.", orig.prompt);
         check("a_cut_prompt_is_logged", bloomLogs.some((m) => /cut to the model's 1024/.test(m)), short(bloomLogs));
     }
 

@@ -235,22 +235,117 @@ of the request, and each family has its own word for it (the vendors' prompting 
   safety net refuses any `@img` token or `{@ref:` that is still in the prompt or the negative, so no raw token ever
   reaches a model. The answer carries the prompt as sent and `refs: [{ ref, name }]`; the log's success record holds
   the first 500 characters of that prompt.
-- **`max`** is the adapter's own refusal threshold as `countOf` counts it (every picture but a mask in its own field),
-  null where the builder does not check: ToAPIs per channel, OpenRouter 16 (or `max_images`), ModelArk 10, Oxen 16
-  (1 with `single`), Comfy Router `max_images` (plus one for its Gemini dialect's mask picture), HY 5, Magnific per
-  route. **`drops`** is one sentence whenever the route leaves out references it may be given: every fill without an
-  image list (fal, BFL, Replicate, WaveSpeed, In-app LaMa), BFL past the 7th reference, Comfy Cloud's Qwen node past
-  the 2nd and its one-picture nodes, Magnific Image Expand. It is set at route level, so it also stands on a request
-  that loses nothing (0 references, or fewer than the cap); which references are left out is read from `pictures`.
-  Routes that make pictures from the prompt alone (Comfy Router's xai / ideogram / krea, Magnific's Z-Image and
-  Mystic) and routes that need a mask refuse an edit run in their layout with the builder's own words.
+- **`max`** is the most pictures the route takes, as `countOf` counts them: the crop, the mask where it goes as a
+  picture, the Original and the reference layers; a mask in a field of its own (fal's `mask_url`, OpenAI's `mask`) is
+  in `pictures` with `n` null and does not count, Magnific Ideogram's style references do. Null where neither the
+  variant nor the adapter names a number (the undocumented list below). A variant sets it as `options.max_images`,
+  read as a number above 0 everywhere (`"0"`, `-2` or `"many"` is no cap, never a refusal of every run): fal,
+  Replicate, WaveSpeed and Gemini take it as it is, OpenRouter defaults to 16, ModelArk to 10, Oxen to 16 (1 with
+  `single`), Comfy Router to 1 (its Gemini dialect counts the mask picture inside `max_images`), HY to 5, and on
+  ToAPIs the Channel row's own `max_images` wins over the variant's (`capOf(channelOf(req))`, the one reading the
+  layout and the builder share, so the cap follows a channel switch). The adapter's own number: BFL by endpoint
+  (FLUX.2 klein 4, pro / flex / max 8), Comfy Cloud by partner node (`NODE_PICTURES`, read in the local ComfyUI's
+  `comfy_api_nodes` on 2026-09-29: GPT Image 16, Nano Banana 2 14, Seedream 10 and lite 14, FLUX.2 8, Qwen 3; the
+  one-picture nodes 1), Magnific by route (`maxImages`). The three OpenAI variants carry `max_images: 16`, which
+  `openai.js` reads like the others and refuses past.
+- **Refused or declared, never silent** (step 26a2). `refs.checkPictures(lay, req, who)` runs in `providers/index.js`
+  right after the layout, before the markers are resolved, for fills and edits (text and upscale runs are left to
+  step 26f):
+  - More pictures than `max`: refused before any upload or request, with the parts named: "WaveSpeedAI
+    wavespeed-ai/flux-2-pro/edit takes at most 3 pictures; this run has 4 (the crop, the Original, 2 reference
+    layers): hide reference layers or turn Original off."
+  - A route that declares **`drops`** gets no Original and no reference at all: `drops` is all or nothing, so no
+    route sends some references and leaves out the rest, and past the cap is always a refusal. The adapter never
+    sees them (nothing unwired is uploaded), the layout is computed again for the stripped request, and the answer's
+    `notes` say what was left out: "Black Forest Labs flux-pro-1.0-fill: FLUX.1 Fill takes no reference images; the
+    Original and 2 reference layers not sent." `host.runProvider` appends the notes to the status line after the
+    answered line and returns them, and `generate` over MCP returns them as `notes`. A drop with no reference given
+    notes nothing. A prompt that names a reference on such a route is refused ("…, so the prompt cannot name a
+    reference image. Take the name out or pick a recipe that sends references."), and so is a marker for a style
+    reference. `provider:layout` answers a dropping route's `names` all null.
+  - The routes that declare a drop: the fills without an image list (fal FLUX.1 Fill, Qwen inpaint and Z-Image turbo,
+    "This endpoint takes the crop and the mask only"; fal Ideogram 4, "This endpoint takes one picture"; BFL, Comfy
+    Cloud and Comfy Router FLUX.1 Fill, "FLUX.1 Fill takes no reference images"; the Replicate and WaveSpeed fills),
+    Replicate's one-image edit (Qwen Image Edit, "This endpoint takes one picture"), Comfy Cloud's one-picture nodes
+    (the two Gemini image nodes and the upscaler nodes, "this node takes one picture"), In-app LaMa ("LaMa fills from
+    the picture alone") and Magnific Image Expand ("Image Expand takes the picture alone").
+  - Routes that make pictures from the prompt alone (Comfy Router's xai / ideogram / krea, Magnific's Z-Image and
+    Mystic) and routes that need a mask refuse an edit run in their layout with the builder's own words. The adapters
+    that count their own pictures keep that check with their own wording (a direct call, from a test, is refused
+    before any request); in the app the central check runs first.
+- **One instruction.** The adapters that tell the model what its pictures are build that text with one helper,
+  `refs.instruction(req, lay, text)`, numbered by the same layout and named by the same `refs.name`, so the sentence
+  and a resolved marker name the same picture: Gemini, OpenRouter, Oxen (with its own layout), ModelArk, Comfy
+  Router's vertexai, byteplus and qwen dialects, Comfy Partner (HY) and Magnific's FLUX.2, Seedream and GPT Image
+  routes. The others send the prompt as it is written. The text is the head, the user's prompt (trimmed), then one
+  sentence for the Original and one per run of consecutive references (the old "The remaining image is reference
+  material." is gone):
+  - no mask picture, two references: `Edit image 1 and keep its size and framing. a red door Images 2 and 3 are
+    reference images.`
+  - a mask picture, the Original and two references (a Nano Banana fill on OpenRouter): `Edit image 1. Image 2 is a
+    mask: change only the white area of the mask, keep everything else exactly as it is, and keep the image size and
+    framing. a red door Image 3 is image 1 before the selected area was filled. Images 4 and 5 are reference images.`
+    The clause after "is a mask:" is word for word the one that ran live on OpenRouter.
+  - `Image {n}` (HY Image): `Edit Image 1 and keep its size and framing. put Image 2 on the table Image 2 is a
+    reference image.`
+  - Range words (`Images 2 to 5 are reference images.`) only for a pattern that is one word and the number; any other
+    pattern lists the names: `<image2>, <image3> and <image4> are reference images.` A name at the start of a
+    sentence gets a capital only when it begins with a lower-case letter.
+  - Style references (Magnific Ideogram) get no reference sentence; text and upscale runs send the prompt unchanged.
+- **Label parts.** Gemini direct and Comfy Router's vertexai dialect send text and pictures as parts; with more than
+  one picture each picture gets a text part before it (`refs.labelParts(lay, refName)`), so a fill with the Original
+  and one reference goes as `[text, "Image 1:", crop, "Image 2:", mask, "Image 3:", Original, "Image 4:", reference]`
+  and picture n sits at `contents[0].parts[2n]`. One picture alone goes as `[text, crop]`, as before.
+- **The caps set in step 26a2** (`options.max_images`, the crop included; the pages read on 2026-09-29):
+
+  | Recipe · variant | Cap | Source |
+  |---|---|---|
+  | `flux2_pro`, `_flex`, `_max` · fal | 8 | BFL's own limit, https://docs.bfl.ai/flux_2/flux2_image_editing (the fal pages name no number) |
+  | `flux2_pro`, `_max` · Replicate | 8 | https://replicate.com/black-forest-labs/flux-2-pro ("up to eight reference images at once on the API"), `/flux-2-max` |
+  | `flux2_flex` · Replicate | 10 | https://replicate.com/black-forest-labs/flux-2-flex ("up to ten reference photos (14 MB total)") |
+  | `flux2_pro`, `_flex`, `_max` · WaveSpeed | 3 | https://wavespeed.ai/docs/docs-api/wavespeed-ai/flux-2-pro-edit (`images` "0 ~ 3 items") |
+  | `flux2_klein` · fal | 4 | https://fal.ai/models/fal-ai/flux-2/klein/9b/edit/api |
+  | `flux2_klein` · WaveSpeed | 3 | https://wavespeed.ai/docs/docs-api/wavespeed-ai/flux-2-klein-9b-edit |
+  | `seedream_5_lite`, `_pro` · fal | 10 | https://fal.ai/models/fal-ai/bytedance/seedream/v5/lite/edit/api, https://fal.ai/models/bytedance/seedream/v5/pro/edit/api ("only the last 10 are used", which would drop the crop) |
+  | `seedream_5_lite` · Replicate | 14 | https://replicate.com/bytedance/seedream-5-lite ("Combine up to 14 reference images") |
+  | `seedream_5_lite`, `_pro` · WaveSpeed | 10 | https://wavespeed.ai/docs/docs-api/bytedance/bytedance-seedream-v5.0-lite-edit, `…-v5.0-pro-edit` ("0 ~ 10 items") |
+  | `qwen_image_edit` · WaveSpeed | 3 | https://wavespeed.ai/docs/docs-api/wavespeed-ai/qwen-image-edit-plus |
+  | `gpt_image_2` · fal | 16 | https://fal.ai/models/openai/gpt-image-2/edit/api |
+  | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · WaveSpeed | 16 | https://wavespeed.ai/docs/docs-api/openai/openai-gpt-image-2-edit, `…-2.5-flare-edit`, `…-2.5-sunburst-edit` ("0 ~ 16 items") |
+  | `gpt_image_2`, `_2_5_flare`, `_2_5_sunburst` · OpenAI | 16 | OpenAI's `image[]` (not read at a URL in this step; not read by `openai.js` yet, above) |
+  | `nano_banana_2`, `_2_lite`, `_pro` · Gemini | 14 | Google's limit (not read at a URL in this step) |
+  | `nano_banana_2`, `_pro` · Replicate | 14 | https://replicate.com/google/nano-banana-2 ("Use up to 14 reference images."), https://replicate.com/google/nano-banana-pro ("combine up to 14 images") |
+  | `nano_banana_2`, `_pro` · WaveSpeed | 14 | https://wavespeed.ai/docs/docs-api/google/google-nano-banana-2-edit, `…-pro-edit` ("0 ~ 14 items") |
+  | `grok_imagine` · fal | 5 | https://fal.ai/models/xai/grok-imagine-image/v2.0/edit/api ("A maximum of 5 images are supported.") |
+
+  The Replicate pages that say "reference images" are read as the length of the `image_input` list, which carries
+  the crop too (the lower of the two readings). The caps that were there before (OpenRouter, ModelArk, Oxen, Comfy
+  Router, ToAPIs, Magnific, HY) are in their providers' sections below.
+- **Undocumented** (no cap set: such a variant may still lose pictures on the host's side without a word; the sweep
+  of `tools/refs_layout_test.js` keeps the same list):
+  - `nano_banana_2`, `nano_banana_pro` · fal: neither the page nor the OpenAPI schema names a number (`image_urls`
+    has no `maxItems`).
+  - `gpt_image_2` · Replicate: the page says "pass multiple images" and names no number; its schema page did not
+    render.
+  - `nano_banana_2_lite` · WaveSpeed: the `images` row has no range.
+  - `reve` · WaveSpeed: no docs page found (the edit pages answered 404). A search summary says the endpoint takes a
+    single input image, unconfirmed; if that holds, the recipe's "crop plus the reference layers" is wrong and the
+    route should declare a drop.
+  - `gpt_image_2_5_flare`, `_sunburst` · ToAPIs, channels official, VIP and standard: none of the pages (English and
+    Chinese) names a maximum.
+  - `flux2_klein` · Oxen: the hub schema's `input_image` list has no `maxItems`, so the adapter's default of 16
+    stands, not a documented number (BFL's own klein takes 4). The same schema names the pictures "@Image1,
+    @Image2" while the recipe's `refs.name` is `image {n}`; a live key settles both.
 - **`provider:layout(shape)`** (`window.scumble.providers.layout`) answers the same for a request of a shape, for the
   previews of the steps to come: shape `{ provider, model, kind, fields, options, params, original, count, refName }`
   (`count` includes the Original; the mask follows from `kind`), answer the layout plus `names` (per reference
   index, null when left out), `sent` and `over`.
 - `tools/refs_layout_test.js` pins every layout against the request the real builder sends, for every shipped
-  variant (every ToAPIs channel) with 0, 1 and 3 references and the Original on and off; `tools/refs_cases.json`
-  holds the token grammar main and the renderer share.
+  variant (every ToAPIs channel) with 0, 1 and 3 references and the Original on and off, holds the caps (at `max`
+  the request goes out, one more is refused before any request), the instruction, the label parts and
+  `checkPictures` to literals, and runs the drop and the cap through `index.js` with the loopback's test hooks
+  (`options.drops`, `options.max_images`); `tools/refs_cases.json` holds the token grammar main and the renderer
+  share.
 
 ### Transparent results (`background`)
 
@@ -339,7 +434,8 @@ carries the WaveSpeed referral code), **comfycloud** (Comfy Cloud API with `X-AP
 the adapter builds a workflow from LoadImage, one Partner Node named in `options.node`
 (`OpenAIGPTImageNodeV2`, `GeminiNanoBanana2V2`, `GeminiImage2Node`, `GeminiImageNode`,
 `ByteDanceSeedreamNodeV3`, `Flux2ImageNode`, `FluxProFillNode`, `QwenImageEditApi`) and
-SaveImage, submits it to `/api/prompt`, polls `/api/job/<id>/status`, reads the image from
+SaveImage (only the pictures the node wires are uploaded; how many each node takes is in "Reference pictures"
+above), submits it to `/api/prompt`, polls `/api/job/<id>/status`, reads the image from
 `/api/history/<id>` and `/api/view`; settings keys are the node's full input keys, dotted
 for the model combos such as `model.quality`; needs a paid plan), **openrouter** (`POST
 /api/v1/images`, one synchronous request with the pictures inline as data URLs and the image back
@@ -527,7 +623,9 @@ from a recipe, because an imported recipe could otherwise send the key anywhere.
 **Channels.** Normal, VIP and official are different model ids with different rules. The variant's
 `model` is the default channel's id, and `options.channels` maps each value of the *Channel* settings
 row to its overrides (`model`, `mask`, `size`, `ratios`, `tiers`, `tier_key`, `urls`, `drop`,
-`transparent_only`, `max_images`), for edit and text runs alike. The default is the official channel
+`transparent_only`, `max_images`), for edit and text runs alike; the cap is the chosen channel's own `max_images`,
+else the variant's (`capOf(channelOf(req))`, read by the layout and the builder alike, so `provider:layout` and the
+send follow the Channel row; the GPT Image 2.5 channels name none, "Reference pictures" above). The default is the official channel
 wherever one exists: the vendor's own cloud (Azure for GPT, Vertex AI for Gemini), the only mask
 endpoint, plain string URLs. The docs never name the upstream of the normal and VIP channels; their
 prices, far below the vendor's, suggest third-party backends.
@@ -556,7 +654,8 @@ base against the long side, as every tier of the Nano Banana models is. A tier's
 FLUX 1K 16:9 is 1820 × 1024 and GPT Image 2 1k 2:1 is 2048 × 1024, so the base alone bought the dearer 2K
 for every non-square FLUX crop), `urls: "objects"` (`image_urls` as `[{ url }]`), `images`
 (another image field), `drop` (parameters a channel does not take), `transparent_only`, `max_images`
-(more images are refused before any upload), `max_ratio` (the steepest input the model takes: Seedream's 3;
+(the pictures of the chosen channel, crop included, read as a number above 0; more are refused before any upload,
+in the app by the central check first), `max_ratio` (the steepest input the model takes: Seedream's 3;
 the variant's `limits.ratio` widens the crop to it, and a reference layer steeper than that, or an image
 too narrow to widen, is refused before any upload), `seed` and `negative` (where a model takes them).
 Settings pass through by key and **dotted keys nest** (`metadata.resolution` becomes
@@ -678,9 +777,12 @@ $25.50 used this month", never the all-time `usage` beside it; a reset the adapt
    { ignore } }`, of which only the fields the model takes go out (below). The pictures go inline as data
    URLs, `{ type: "image_url", image_url: { url: "data:image/png;base64,..." } }`, in this order: the crop,
    the mask (fill only), then the references (*Original* first, then the reference layers). An edit's
-   prompt starts with what the pictures are ("Edit the first image and keep its size and framing.", or the
-   mask sentence below) and ends with "The remaining image is reference material." ("images are" for
-   more) when there are references; a text run sends the prompt as it is and no `input_references`.
+   prompt is `refs.instruction` numbered by this layout ("Reference pictures" above): it starts with what the
+   first picture is ("Edit image 1 and keep its size and framing.", or the mask sentence below), then the
+   user's text, then what the Original and the references are ("Image 3 is image 1 before the selected area
+   was filled. Images 4 and 5 are reference images.", in the recipe's `refs.name`); a text run sends the
+   prompt as it is and no `input_references`. `promptFor(req, lay)` is exported for Oxen, which passes its own
+   layout.
 2. The answer is `{ created, data: [{ b64_json, media_type }], usage: { cost, ... } }`: the first `data`
    entry with `b64_json` is the image (PNG unless `media_type` says otherwise). The run's `info` (model,
    `resolution`, `aspect_ratio`, each picture and whether it went as PNG or JPEG, and `usage.cost` in USD)
@@ -695,14 +797,16 @@ Streaming exists for OpenAI's models only and is not used.
 alone. So the variants split three ways:
 
 - **GPT Image 2 / 2.5 and Nano Banana** (`input: "fill"`): the mask (`req.mask`, white = repaint) goes along
-  as the **second picture**, and the prompt begins "Edit the first image. The second image is a mask: change
-  only the white area of the mask, keep everything else exactly as it is, and keep the image size and
-  framing.", as the Gemini adapter does. Both families read several pictures and take instructions about
+  as the **second picture**, and the prompt begins "Edit image 1. Image 2 is a mask: change only the white
+  area of the mask, keep everything else exactly as it is, and keep the image size and framing." ("Edit Image
+  1. …" under GPT Image's `refs.name`, `Image {n}`), as the Gemini adapter does; the clause after the colon is
+  the one that ran live here before step 26a2 renamed the pictures. Both families read several pictures and take instructions about
   them; whether they keep to the mask is not verified, and the stitch keeps only the selection either way.
   The mask is never re-encoded.
 - **FLUX.2, Seedream 5 and Grok Imagine** (`input: "edit"`): an instruction edit of the crop plus the
   references, no mask, as on every other provider of these models; the stitch keeps the selection. For
-  area-directed edits set Fill to green and Original on, and say "fill the green area".
+  area-directed edits set Fill to green and Original on, and say "fill the green area": the Original's own
+  sentence tells the model which picture is the one before the fill.
 - **Krea 2 and Recraft V4** (`edit: false`): text to image, in Generate new only. Each lists one
   `input_references` slot, and neither page says whether that picture is edited or used as a style
   reference, so the variants offer no edit.
@@ -747,9 +851,10 @@ ToAPIs, not to a fixed 2K.
 - `ratios`: the model's `aspect_ratio` presets without `auto` (text runs only);
 - `tiers`: `{ "1K": 1024, ... }`, the model's `resolution` values with the long side each stands for;
 - `max_images`: the model's `input_references` maximum, or the host's own documented limit where it is lower
-  (Seedream 5.0 pro: 10, which ModelArk documents, against OpenRouter's 14); a run with more pictures (crop,
-  mask, *Original* and reference layers together) is refused **before any request**, with the count and "turn
-  Original off or hide reference layers";
+  (Seedream 5.0 pro: 10, which ModelArk documents, against OpenRouter's 14), 16 when unset; a run with more
+  pictures (crop, mask picture, *Original* and reference layers together) is refused **before any request**,
+  in the app by the central check ("Reference pictures" above), in a direct call by the adapter's own, with the
+  count and "turn Original off or hide reference layers";
 - `max_ratio`: the steepest picture the model takes (Seedream: 16, ModelArk's documented range); a steeper
   crop or reference is refused before any request;
 - `only_for`: `{ <resolution>: [host slugs] }`, a tier only some of the model's hosts serve, sent with
@@ -1026,8 +1131,9 @@ model on the Model activation page, and then find its Model ID". A model that is
    `{ model, prompt, image, size, watermark: false, response_format: "b64_json", output_format: "png" }`:
    - `model`: the variant's id. Pro is `dola-seedream-5-0-pro-260628`. Lite is `seedream-5-0-260128`, the model
      list's id, which "also supports" `seedream-5-0-lite-260128`, the id on the pricing page.
-   - `prompt`: an edit's prompt starts with "Edit the first image and keep its size and framing.". When there are
-     references it ends with "The remaining image is reference material." ("images are" for more). A text run
+   - `prompt`: an edit's prompt is `refs.instruction` ("Reference pictures" above), in Seedream's `refs.name`
+     `Image {n}`: "Edit Image 1 and keep its size and framing.", the user's text, then with the Original and one
+     reference "Image 2 is Image 1 before the selected area was filled. Image 3 is a reference image." A text run
      sends the prompt as it is, and an empty one is refused before any request. The reference recommends "no more
      than 300 Chinese characters or 600 English words"; that is advice, and Scumble does not cut. No negative
      prompt goes out, because the API has none.
@@ -1440,17 +1546,18 @@ on a queued run.
 | Recipe | Router model | Kind | What goes in |
 |---|---|---|---|
 | `gpt_image_2`, `gpt_image_2_5_flare`, `_sunburst` | `openai/gpt-image-2`, `-2.5-flare`, `-2.5-sunburst` | fill | OpenAI's body: `image` (data URLs, crop first, at most 16), `mask` (the RGBA mask, at most 4 MB), `size`, `n: 1`, the OpenAI variant's settings (`openai._common`) |
-| `nano_banana_2`, `_lite`, `nano_banana_pro` | `vertexai/gemini-3.1-flash-image`, `-3.1-flash-lite-image`, `gemini-3-pro-image` | fill | Gemini's `generateContent`: the instruction, the crop, the mask as a second picture, the references, all as camelCase `inlineData` (the schema's spelling); `responseModalities: ["IMAGE"]`, `imageConfig` (1K / 2K / 4K; no 0.5K in the schema) |
+| `nano_banana_2`, `_lite`, `nano_banana_pro` | `vertexai/gemini-3.1-flash-image`, `-3.1-flash-lite-image`, `gemini-3-pro-image` | fill | Gemini's `generateContent`: the instruction (`refs.instruction`), then the crop, the mask as a second picture, the Original and the references, each with a label part before it ("Image 1:", ... `refs.labelParts`) when more than one picture goes, all as camelCase `inlineData` (the schema's spelling); the mask picture counts against `max_images`; `responseModalities: ["IMAGE"]`, `imageConfig` (1K / 2K / 4K; no 0.5K in the schema) |
 | `flux2_pro`, `flux2_max` | `bfl/flux-2-pro`, `bfl/flux-2-max` | edit | `input_image` .. `input_image_9` (plain base64), `width` / `height` held to 256..2048 in 16 px steps, the seed, `output_format: "png"`, *Prompt upsampling* off (the Router's default is on), Max's *Safety tolerance* 0..5 |
-| `flux1_fill` | `bfl/flux-pro-1.0-fill` | fill | `image`, `mask` (white = repaint), steps, guidance, safety tolerance; no text shape |
+| `flux1_fill` | `bfl/flux-pro-1.0-fill` | fill | `image`, `mask` (white = repaint), steps, guidance, safety tolerance; no text shape. The layout declares the drop "FLUX.1 Fill takes no reference images": a run with reference layers or the Original goes out with the crop and the mask, and the status line says what was not sent (until step 26a2 it was refused) |
 | `seedream_5_lite`, `seedream_5_pro` | `byteplus/seedream-5-0-260128`, `-5-0-pro-260628` | edit | ModelArk's body (`ark._size`): `image` data URLs, `size` "WxH" in the crop's shape, `watermark: false`, `response_format: "b64_json"`, `output_format: "png"`, the seed. **The Router's schema gives other pixel ranges than ModelArk's docs**: lite 3,686,400 to ~9,437,184 (ModelArk: to 16.8 MP), pro 1,048,576 to 4,194,304; lite takes pictures of at most 10 MB |
 | `qwen_image_edit` | `qwen/qwen-image-3.0` | edit | `input.messages[0].content`: the pictures (at most three) then the text; `parameters`: `size` "W*H" (0.26 to 6.55 MP, no steeper than 8:1), `prompt_extend: false`, `watermark: false`, seed, negative prompt |
 | `magnific_precision` | `freepik/ai-image-upscaler-precision-v2` | upscale | `image` (plain base64), `scale_factor` 2..16, the four Magnific settings |
 | `grok_imagine`, `ideogram_4`, `krea_2` | `xai/grok-imagine-image-2.0`, `ideogram/ideogram-v4`, `krea/krea-2-large` | text only (`edit: false`) | The Router's schemas for these take **no input picture**, so the variants work in Generate new only: the closest preset aspect (Grok's 13, Krea's 8), Ideogram's closest of its 21 2K sizes, Grok's tier 1k / 2k |
 
-An edit without a mask input starts its prompt with "Edit the first image and keep its size and framing." and says
-what the other pictures are, as the ModelArk and OpenRouter adapters do. `model` is never in a body: the Router
-splices in the model the path names.
+The Seedream, Qwen and Gemini bodies carry `refs.instruction`, numbered by the dialect's layout, as the ModelArk
+and OpenRouter adapters do ("Reference pictures" above): Seedream and Qwen "Edit Image 1 and keep its size and
+framing. …", Gemini the mask sentence; the OpenAI and FLUX bodies send the prompt as written. `model` is never in a
+body: the Router splices in the model the path names.
 
 **Not wired, and why:** Recraft V4 (`recraft/recraftv4`: text only, and its schema documents no size list), SeedVR2
 (`wavespeed/seedvr2`: its `image` is a URL and its size a target resolution, not a factor), FLUX.2 [flex] and
@@ -1498,7 +1605,10 @@ says the set will grow). The key is taken out of every message.
 
 **Pictures before any call.** Every picture at most 25 MB and all of them 64 MB (the Router's media caps), the
 whole body at most 100 MB; per variant `options.max_images`, `max_bytes` (Seedream lite 10 MB, pro 25 MB) and
-`max_ratio`. An opaque picture over its limit goes as JPEG; one with transparency is refused.
+`max_ratio`. An opaque picture over its limit goes as JPEG; one with transparency is refused. `max_images` counts
+every picture the model sees, the Gemini fill's mask picture too (`picturesFor` counts no mask, so the vertexai
+body checks it before any call): Nano Banana with the crop, the mask and 13 references was let through before step
+26a2 and is refused now.
 
 **Hosts and keys.** The host is `api.comfy.org`, never a URL from a recipe. `settings.comfyrouter.base` may name a
 loopback mock (`http://127.0.0.1:<port>`), and then only a key starting `test-` goes there, while such a key never
@@ -1545,9 +1655,12 @@ new runs the same model without pictures. The loopback mock is the one of Comfy 
    { type: "image_url", image_url: { url: <download_url> } } ...] }], size: "WxH", seed, logo_add: 0,
    resize_max_pixels }`. `size` is the crop's own size, both sides in 16 px steps, at most 4096 x 4096 in area.
    `resize_max_pixels` is *Detail* (standard 1,048,576, high 4,194,304: how much of each picture the model sees);
-   a text run sends none. The text of an edit starts "Edit Image 1 and keep its size and framing." and names the
-   references ("Image 2 is reference material."). `@Image2` in the user's prompt becomes "Image 2", as the node does,
-   and a number past the pictures sent is refused before any call.
+   a text run sends none. The text of an edit is `refs.instruction` in the recipe's `refs.name`, `Image {n}` ("Reference
+   pictures" above): "Edit Image 1 and keep its size and framing. put Image 2 on the table Image 2 is a reference
+   image.", and with Original on "Image 2 is Image 1 before the selected area was filled." first. The legacy
+   `@Image2` in the user's prompt still becomes "Image 2", as the node does (with Original on that is the
+   Original), and a number past the pictures sent is refused before any call; the layout's `max` is the five
+   pictures (`HY_MAX_IMAGES`).
 3. The answer is `{ choices: [{ delta: { image: { url, width, height } } }], error, request_id }` in the same
    request, nothing is polled. The picture is fetched from its link without the key. An `error` in the answer reads
    as its text after `msg:`. "download image failed" (the service could not fetch an uploaded picture yet) is sent
@@ -1634,10 +1747,14 @@ against it.
   always PNG, through Electron's `nativeImage`) and refuses a mask of another size. The prompt goes as written
   (*Magic prompt* defaults to OFF: the spec gives no default), reference layers go as `style_reference_images` (10 MB
   together, the docs' limit), the picture at most 10 MB (an opaque one as JPEG), the seed held to 2^31 − 1. Turn
-  *Original* off: it would go as a style reference. The docs name no Ideogram version (the fields are version 3's).
+  *Original* off: it would go as a style reference. The layout says `style: true` and `max` 11 (the crop and the
+  style references; the mask has its own field): style references have no number, so the prompt gets no reference
+  sentence and a prompt that names one is refused. The docs name no Ideogram version (the fields are version 3's).
 - **Instruction edits** (FLUX.2, Seedream, GPT Image): the crop first, then Original and the reference layers, as
-  plain base64 (no `data:` prefix), and the prompt with the sentence the other instruction-edit adapters use ("Edit
-  the first image and keep its size and framing. … The remaining images are reference material."). No mask field:
+  plain base64 (no `data:` prefix), and the prompt is `refs.instruction`, the text the other instruction-edit
+  adapters send ("Reference pictures" above; Seedream with two references: "Edit Image 1 and keep its size and
+  framing. a red door Images 2 and 3 are reference images."). The layout's `max` is the route's `maxImages`, so a
+  FLUX.2 run with five pictures is refused before anything is sent. No mask field:
   the stitch keeps the selection. FLUX.2 takes `width` / `height` (the emitted size, 256 to 1440 px on [pro] and 1920
   on [flex], in 16s) and answers that size. **Seedream and GPT Image 2 take only an `aspect_ratio` preset** (eight
   and ten shapes): their variants carry the presets as `limits.aspects`, `planCrop` widens the crop's context to the
@@ -1672,7 +1789,9 @@ is selected above 3/4, because *Feather* on auto rounds the kept box's inner cor
 128 and over after *Extend canvas*, none above 190), a selection that reaches no edge; FLUX Pro also a kept part
 under 256 px a side or over 20 MP, every route a margin over 2048 px at the size it is sent; Seedream 4.5 sends a
 kept part over 10 MB as JPEG when it is opaque. The prompt goes only when there is one (Ideogram and Seedream then
-write their own), the seed on Ideogram and Seedream, reference layers not at all (a log line says so). The answer
+write their own), the seed on Ideogram and Seedream, reference layers and the Original not at all: the layout declares
+the drop "Image Expand takes the picture alone", so the adapter never gets them and the status line says what was
+not sent (before step 26a2 a log line said so), and a prompt that names a reference is refused. The answer
 is the whole canvas at the model's own size (the docs: FLUX Pro "capped at
 roughly 1.6 megapixels", sides in 16s; Ideogram "approximately 1 megapixel", sides in 32s, only the aspect kept;
 Seedream 4.5 "between 3,686,400 and 16,777,216 pixels"), so the recipes' `limits` send the crop at that size and
@@ -1789,7 +1908,7 @@ Oxen serves `qwen-image-2-1`. Whether it is the same 2.1 as the local recipe's o
 | `seedream_5_lite` | `bytedance-seedream-5-lite` | edit | none (no aspect field) | `size` 2K / 3K / 4K | 14, 16:1 | $0.04 |
 | `flux2_pro` | `flux-2-pro` | edit | `match_input_image` | 0.5 / 1 / 2 MP by area | 8 (BFL's number) | $0.10 |
 | `flux2_flex` | `flux-2-flex` | edit, steps and guidance | `match_input_image` | as above | 8 | $0.12 |
-| `flux2_klein` | `black-forest-labs-flux-2-klein-9b` | edit, steps, output quality | the closest of 5 presets | none | not stated | $0.02 |
+| `flux2_klein` | `black-forest-labs-flux-2-klein-9b` | edit, steps, output quality | the closest of 5 presets | none | not stated (the schema's list has no `maxItems`; the adapter's default 16 holds, BFL's own klein takes 4; "Undocumented" above) | $0.02 |
 | `qwen_image_edit` | `qwen-image-3` (Qwen Image 3.0) | edit, `input_images`, negative prompt | `auto` with the crop alone, else the closest preset | 1K / 2K | 3 | $0.039 |
 | `qwen_image_2_1` | `qwen-image-2-1` | edit, `input_images`, negative prompt | the closest of 7 presets | 1K / 2K | 10 | $0.109 |
 | `grok_imagine` | `xai-grok-imagine-image-edit`; Generate new `xai-grok-imagine-image` | edit, one picture only | none | Generate new 1k / 2k | 1 | $0.022 edit, $0.02 text |
@@ -1836,8 +1955,10 @@ upscale variants go and the Generate-new-only variants and the chat rows stay; a
 `req.mask`); GPT Image 2.5 as an RGBA mask whose transparent pixels are repainted (`"alpha"`, `req.maskAlpha`); the
 2.5 schema says the mask must match the first picture's size, which the crop's mask always does. Nano Banana 2 and
 Pro have no mask field: a `fill` variant without `options.mask` sends the mask as the second picture and the prompt
-says what it means (the sentences of the OpenRouter adapter, `openrouter.promptFor`, which ran live there). Every
-other variant is an instruction edit of the crop plus the reference layers; the stitch keeps the selection either way.
+says what it means. Every other variant is an instruction edit of the crop plus the reference layers; the stitch
+keeps the selection either way. The prompt of every edit and fill is `refs.instruction` through
+`openrouter.promptFor(req, lay)` with Oxen's own layout ("Reference pictures" above): the mask is a numbered picture
+only where it goes as one, so on a `mask_url` fill the Original is picture 2 and the mask is not named.
 
 **Sizes.** No model takes a pixel size: a Resolution (or Size) row left on *auto* takes the smallest tier that covers
 the crop's long side (FLUX: its area, "0.5 MP" / "1 MP" / "2 MP"), else the largest. The aspect of an edit follows
@@ -1855,7 +1976,8 @@ an empty value or an "auto" not in `keep_auto`), `image_field` (`input_image`, o
 (the picture field is one string: Grok's edit, the upscalers; one picture only), `mask` (`white` / `alpha`),
 `edit_aspect`, `ratios`, `tiers` / `tier_key` (default `resolution`; Seedream's is `size`) / `tier_unit` (`area`),
 `presets` / `preset_key` (Ideogram), `keep_auto` (Moderation's "auto" is a real value), `numbers` (Bloom's
-creativity goes as a number), `max_images` (crop, mask picture and references; more are refused before sending),
+creativity goes as a number), `max_images` (crop, mask picture, Original and references, 16 when unset; more are
+refused before sending),
 `max_ratio` (Seedream: 16), `factor_key` / `factor_form` (`upscale_factor: "4x"`, `scale: "6x"`), `prompt_max`
 (Bloom: 1024 characters, cut with a log line), and `text` (options that replace these for Generate new: Grok's text
 model takes `aspect_ratio` and `resolution`, its edit model neither). A `seed` goes out where the schema takes one,

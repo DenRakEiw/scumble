@@ -21,8 +21,8 @@
 //
 //   openai/*     OpenAI images: prompt, image [data URLs], mask (RGBA PNG, transparent = repaint), size, quality ...
 //                -> data[0].b64_json
-//   vertexai/*   Gemini generateContent: contents[].parts (text, inlineData), generationConfig.imageConfig
-//                -> candidates[0].content.parts[].inlineData
+//   vertexai/*   Gemini generateContent: contents[].parts (text, then a label part and inlineData per picture),
+//                generationConfig.imageConfig -> candidates[0].content.parts[].inlineData
 //   bfl/*        FLUX.2: prompt, input_image .. input_image_9 (base64), width, height; FLUX.1 Fill: image, mask
 //                (base64, white = repaint) -> result.sample (a URL on Comfy storage)
 //   byteplus/*   Seedream: prompt, image [data URLs], size "WxH", watermark false, response_format b64_json
@@ -34,7 +34,9 @@
 //
 // A variant's `options` say what the model takes: max_images, max_bytes (per picture), pixels [min, max] (Seedream),
 // ratios (the aspect presets of the text-only models), tiers ({ "1K": 1024, .. }, Gemini's and Grok's size classes).
-// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3); the instruction an edit goes out with is
+// refs.instruction, numbered by that layout, so it names the pictures as the resolved markers do. A route whose layout
+// declares a drop (FLUX.1 Fill) sends the crop alone.
 //
 // The host is api.comfy.org and never a URL from a recipe; settings.comfyrouter.base may name a loopback mock for
 // the tests, and then only a key that starts with "test-" goes there, while such a key never goes to Comfy. Answer
@@ -43,7 +45,7 @@
 
 const { randomUUID } = require("node:crypto");
 const { dataUri, b64, fetchImage, sleep: realSleep, fitPixels, closestAspect } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, countOf, instruction, labelParts } = require("./refs");
 const openai = require("./openai");
 const ark = require("./ark");
 
@@ -241,15 +243,8 @@ const inOrder = (req, field) => [["crop", field(0)], ...refRoles(req).map(([role
 
 const uri = (p) => dataUri(p.bytes, p.mime);
 
-/** The instruction an edit without a mask input goes out with (the same words as the ModelArk and OpenRouter adapters). */
-function editPrompt(req, pics) {
-    const text = String(req.prompt || "");
-    if (req.kind === "text") return text;
-    const refs = pics.length - 1;
-    let out = `Edit the first image and keep its size and framing. ${text}`;
-    if (refs > 0) out += ` The remaining image${refs > 1 ? "s are" : " is"} reference material.`;
-    return out.trim();
-}
+/** The instruction an edit goes out with, numbered by the dialect's layout (refs.instruction); a text run's prompt as it is. */
+const editPrompt = (req, lay) => instruction(req, lay, String(req.prompt || ""));
 
 /** The tier ("1K", "2K" ..) whose size covers the long side, else the largest; null without tiers. */
 function tierFor(long, tiers) {
@@ -301,21 +296,27 @@ const DIALECTS = {
     },
 
     vertexai: {
-        body(req, o, pics) {
+        body(req, o, pics, model) {
             const p = req.params || {};
             const parts = [];
-            let text = String(req.prompt || "");
             if (pics.length) {
-                const masked = req.kind === "fill" && req.mask && req.mask.length;
-                text = masked
-                    ? `Edit the first image. The second image is a mask: change only the white area of the mask, keep everything else exactly as it is, and keep the image size and framing. ${text}`
-                    : `Edit this image and keep its size and framing. ${text}`;
-                if (pics.length > 1) text += ` The remaining image${pics.length > 2 ? "s are" : " is"} reference material.`;
-                parts.push({ text: text.trim() });
-                parts.push({ inlineData: { mimeType: pics[0].mime, data: pics[0].bytes.toString("base64") } });
-                if (masked) parts.push({ inlineData: { mimeType: "image/png", data: b64(req.mask) } });
-                for (const r of pics.slice(1)) parts.push({ inlineData: { mimeType: r.mime, data: r.bytes.toString("base64") } });
-            } else parts.push({ text });
+                const lay = DIALECTS.vertexai.layout(req, o);
+                // index.js refuses a run past the cap before this; picturesFor counts no mask, so the mask picture is counted here
+                const max = +lay.max > 0 ? +lay.max : null, count = countOf(lay);
+                if (max != null && count > max) {
+                    const refs = pics.length - 1, mask = lay.pictures.some((pic) => pic.role === "mask");
+                    throw new Error(`Comfy Router vertexai/${model} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${count} (the crop${mask ? ", the mask" : ""}${refs ? `, ${refs} reference${refs === 1 ? "" : "s"}` : ""}): turn Original off or hide reference layers.`);
+                }
+                // the instruction, then each picture by n, with a label part before it when more than one goes
+                parts.push({ text: instruction(req, lay, req.prompt) });
+                const labels = labelParts(lay, req.refName);
+                const inline = (pic) => (pic.role === "crop" ? pics[0] : pic.role === "mask" ? { mime: "image/png", bytes: Buffer.from(req.mask) } : pics[pic.ref + 1]);
+                lay.pictures.filter((pic) => pic.n != null).sort((a, b) => a.n - b.n).forEach((pic, k) => {
+                    const x = inline(pic);
+                    if (labels.length) parts.push(labels[k]);
+                    parts.push({ inlineData: { mimeType: x.mime, data: x.bytes.toString("base64") } });
+                });
+            } else parts.push({ text: String(req.prompt || "") });
             const imageConfig = {};
             const aspect = setting(p, "aspect_ratio") || (req.kind === "text" ? req.aspect : null);
             if (aspect) imageConfig.aspectRatio = String(aspect);
@@ -325,12 +326,13 @@ const DIALECTS = {
             if (Object.keys(imageConfig).length) generationConfig.imageConfig = imageConfig;
             return { contents: [{ role: "user", parts }], generationConfig };
         },
-        // parts[0] is the instruction; the mask picture is not in picturesFor's count, so `max` is one more with it
+        // parts[0] is the instruction; with more than one picture each has its label part before it, so picture n sits
+        // at part 2n, else the one picture at part 1. The mask picture counts against max_images like any other.
         layout(req, o) {
             const masked = req.kind === "fill" && req.mask && req.mask.length;
-            const seq = [["crop", "contents[0].parts[1]"], ...(masked ? [["mask", "contents[0].parts[2]"]] : [])];
-            for (const [role, i] of refRoles(req)) seq.push([role, `contents[0].parts[${seq.length + 1}]`, i]);
-            return layoutOf({ seq, max: picturesMax(o) + (masked ? 1 : 0) });
+            const seq = [["crop"], ...(masked ? [["mask"]] : []), ...refRoles(req).map(([role, i]) => [role, i])];
+            const at = (k) => `contents[0].parts[${seq.length > 1 ? 2 * (k + 1) : 1}]`;
+            return layoutOf({ seq: seq.map(([role, i], k) => [role, at(k), i]), max: picturesMax(o) });
         },
         read(j) {
             const cand = Array.isArray(j.candidates) ? j.candidates[0] : null;
@@ -368,7 +370,7 @@ const DIALECTS = {
         },
         layout(req, o, model) {
             if (model === "flux-pro-1.0-fill") {
-                return layoutOf({ seq: [["crop", "image"]], own: req.mask && req.mask.length ? [["mask", "mask"]] : [], max: picturesMax(o), drops: "FLUX.1 Fill takes the crop and the mask only: reference images are left out." });
+                return layoutOf({ seq: [["crop", "image"]], own: req.mask && req.mask.length ? [["mask", "mask"]] : [], max: picturesMax(o), drops: "FLUX.1 Fill takes no reference images" });
             }
             return layoutOf({ seq: inOrder(req, (k) => (k ? `input_image_${k + 1}` : "input_image")), max: picturesMax(o) });
         },
@@ -381,7 +383,7 @@ const DIALECTS = {
 
     byteplus: {
         body(req, o, pics) {
-            const body = { prompt: editPrompt(req, pics), size: ark._size(req, o), watermark: false, response_format: "b64_json", output_format: "png" };
+            const body = { prompt: editPrompt(req, DIALECTS.byteplus.layout(req, o)), size: ark._size(req, o), watermark: false, response_format: "b64_json", output_format: "png" };
             if (req.seed != null && !(req.params || {}).random_seed) body.seed = (req.seed >>> 0) % 2147483648;
             if (pics.length) body.image = pics.map(uri);
             return body;
@@ -401,7 +403,7 @@ const DIALECTS = {
         body(req, o, pics) {
             const p = req.params || {};
             const content = pics.map((x) => ({ image: uri(x) }));
-            content.push({ text: editPrompt(req, pics) });
+            content.push({ text: editPrompt(req, DIALECTS.qwen.layout(req, o)) });
             const [w, h] = fitPixels(req.width || 1024, req.height || 1024, { step: 16, max: 4096, minPixels: 262144, maxPixels: 6553600, maxRatio: 8 });
             const parameters = { n: 1, size: `${w}*${h}`, prompt_extend: false, watermark: false };
             if (req.seed != null && !p.random_seed) parameters.seed = (req.seed >>> 0) % 2147483648;
@@ -635,6 +637,9 @@ async function run(req, ctx, kind) {
     if (kind === "edit" && d.edit === false) throw new Error(`Comfy Router ${modelId} makes pictures from the prompt alone: use Generate new.`);
     const o = req.options || {};
     req = { ...req, params: req.params || {}, references: req.kind === "text" ? [] : (req.references || []) };
+    // a route whose layout declares a drop (FLUX.1 Fill) sends no reference at all, as index.js's checkPictures leaves
+    // the request; a direct call gets the crop alone too instead of a refusal of pictures the route never sends
+    if (kind === "edit" && req.references.length && d.layout(req, o, model).drops) req = { ...req, references: [], original: 0 };
     if (kind === "text" && !String(req.prompt || "").trim()) throw new Error(`Comfy Router ${modelId}: a new image needs a prompt.`);
     if (kind !== "text" && !req.image) throw new Error(`Comfy Router ${modelId}: no picture to ${kind === "upscale" ? "upscale" : "edit"}.`);
     const pics = kind === "upscale" ? [] : await picturesFor(req, o, ctx, modelId);

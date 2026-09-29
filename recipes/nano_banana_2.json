@@ -119,6 +119,9 @@
     "gemini": {
       "model": "gemini-3.1-flash-image",
       "input": "fill",
+      "options": {
+        "max_images": 14
+      },
       "settings": [
         {
           "index": 1,
@@ -210,6 +213,9 @@
       "fields": {
         "images": "image_input"
       },
+      "options": {
+        "max_images": 14
+      },
       "fixed": {
         "output_format": "png",
         "aspect_ratio": "match_input_image"
@@ -237,6 +243,7 @@
       "model": "google/nano-banana-2/edit",
       "input": "edit",
       "options": {
+        "max_images": 14,
         "aspect_ratios": [
           "1:1",
           "3:2",

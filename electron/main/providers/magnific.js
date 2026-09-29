@@ -38,7 +38,7 @@
 
 const { fetchImage, sleep: realSleep, closestAspect } = require("./util");
 const { picturesFor } = require("./comfyrouter")._shared;
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, instruction } = require("./refs");
 
 const HOST = "https://api.magnific.com";
 const CREATIVE_MAX_PIXELS = 25300000;
@@ -172,20 +172,21 @@ async function picturesOf(req, R, ctx) {
             if (s && (s[0] < 256 || s[1] < 256)) throw new Error(`${R.label}: the ${what} is ${s[0]} × ${s[1]}, under the 256 × 256 Seedream takes. Use a larger reference layer or turn Original off.`);
         }
     }
-    return picturesFor(req, { max_images: R.maxImages || 1, max_bytes: R.maxBytes || 0 }, { ...ctx, who: R.label }, R.label);
+    return picturesFor(req, { max_images: maxOf(R), max_bytes: R.maxBytes || 0 }, { ...ctx, who: R.label }, R.label);
 }
+
+/** How many pictures a route takes (its maxImages, crop included): picturesOf's cap and the layouts' `max`. */
+const maxOf = (R) => (+R.maxImages > 0 ? +R.maxImages : 1);
 
 /** picturesOf's order as a layout's numbered pictures, picture k (0-based) in `field(k)`: the crop, then the references. */
 const inOrder = (req, field) => [["crop", field(0)], ...refRoles(req).map(([role, i]) => [role, field(i + 1), i])];
 
-/** The instruction an edit without a mask input goes out with (the same words as the Comfy Router and ModelArk adapters). */
-function editPrompt(req, pics) {
-    const text = String(req.prompt || "");
-    if (req.kind === "text") return text;
-    const refs = pics.length - 1;
-    let out = `Edit the first image and keep its size and framing. ${text}`;
-    if (refs > 0) out += ` The remaining image${refs > 1 ? "s are" : " is"} reference material.`;
-    return out.trim();
+/**
+ * The instruction an edit without a mask input goes out with: refs.instruction numbered by the dialect's own layout,
+ * so the sentence and a marker index.js resolved name the same picture.
+ */
+function editPrompt(req, R) {
+    return instruction(req, DIALECTS[R.dialect].layout(req, R), req.prompt);
 }
 
 /** The seed as the route takes it, or undefined (no seed, or the Random seed row on). */
@@ -289,7 +290,7 @@ function keptRect(bm, who = "Magnific Image Expand") {
 // ---- dialects --------------------------------------------------------------------------------------------------
 // Each: async body(req, R, ctx, kind) -> { body, info, pictures }; kind "edit" or "text" (checked against the route
 // before). read(task, info, ctx) adds what the answer says to info. layout(req, R) -> where body() puts each picture of
-// an edit, with picturesOf's count as `max` (the edit dialects only).
+// an edit, with the route's maxImages as `max` (maxOf, picturesOf's cap; the edit dialects only).
 
 const DIALECTS = {
     ideogram: {
@@ -306,10 +307,11 @@ const DIALECTS = {
             if (refs.length) body.style_reference_images = refs.map((p) => b64(p.bytes));
             return { body, info: { fit: "stretch", style_references: refs.length }, pictures: pics.length };
         },
-        // the references go as style references, outside the numbered pictures
+        // the references go as style references, outside the numbered pictures (no marker names one), and count
+        // against the 11 pictures with the crop
         layout(req, R) {
             const style = refRoles(req).map(([role, i]) => [role, `style_reference_images[${i}]`, i]);
-            return layoutOf({ seq: [["crop", "image"]], own: [["mask", "mask"], ...style], max: R.maxImages || 1, style: true });
+            return layoutOf({ seq: [["crop", "image"]], own: [["mask", "mask"], ...style], max: maxOf(R), style: true });
         },
     },
 
@@ -349,12 +351,12 @@ const DIALECTS = {
             if (prompt) body.prompt = prompt;
             const seed = seedOf(req, R.seedMax);
             if (seed !== undefined) body.seed = seed;
-            if ((req.references || []).length) ctx.log(`Image Expand takes no reference pictures: ${req.references.length} left out`);
             return { body, info: { fit: "stretch", kept: [k.x, k.y, k.width, k.height], margins: m, format }, pictures: 1 };
         },
-        // `image` is the part of the crop outside the selection; the mask only gives the margins and is not sent
+        // `image` is the part of the crop outside the selection; the mask only gives the margins and is not sent. The
+        // declared drop has index.js strip the references before this builder runs, and the status line says so
         layout() {
-            return layoutOf({ seq: [["crop", "image"]], drops: "Image Expand takes the kept part of the crop alone: reference images are left out." });
+            return layoutOf({ seq: [["crop", "image"]], drops: "Image Expand takes the picture alone" });
         },
     },
 
@@ -372,13 +374,13 @@ const DIALECTS = {
             let pics = [];
             if (kind !== "text") {
                 pics = await picturesOf(req, R, ctx);
-                body.prompt = editPrompt(req, pics);
+                body.prompt = editPrompt(req, R);
                 body.input_image = b64(pics[0].bytes);
                 pics.slice(1).forEach((p, i) => { body[`input_image_${i + 2}`] = b64(p.bytes); });
             }
             return { body, info: kind === "text" ? {} : { fit: fitFor(`${body.width}:${body.height}`, +req.width || body.width, +req.height || body.height) ? "stretch" : null }, pictures: pics.length };
         },
-        layout(req, R) { return layoutOf({ seq: inOrder(req, (k) => (k ? `input_image_${k + 1}` : "input_image")), max: R.maxImages || 1 }); },
+        layout(req, R) { return layoutOf({ seq: inOrder(req, (k) => (k ? `input_image_${k + 1}` : "input_image")), max: maxOf(R) }); },
     },
 
     seedream: {
@@ -396,12 +398,12 @@ const DIALECTS = {
             }
             const pics = await picturesOf(req, R, ctx);
             const p = preset(+req.width, +req.height, R.aspects);
-            const body = { prompt: editPrompt(req, pics), reference_images: pics.map((x) => b64(x.bytes)), aspect_ratio: p.value, ...rows };
+            const body = { prompt: editPrompt(req, R), reference_images: pics.map((x) => b64(x.bytes)), aspect_ratio: p.value, ...rows };
             const seed = seedOf(req, R.seedMax);
             if (seed !== undefined) body.seed = seed;
             return { body, info: { aspect: p.ratio, fit: fitFor(p.ratio, +req.width, +req.height) }, pictures: pics.length };
         },
-        layout(req, R) { return layoutOf({ seq: inOrder(req, (k) => `reference_images[${k}]`), max: R.maxImages || 1 }); },
+        layout(req, R) { return layoutOf({ seq: inOrder(req, (k) => `reference_images[${k}]`), max: maxOf(R) }); },
     },
 
     gpt: {
@@ -414,7 +416,7 @@ const DIALECTS = {
                 return { body, info: { aspect: p.ratio }, pictures: 0 };
             }
             const pics = await picturesOf(req, R, ctx);
-            const body = { prompt: editPrompt(req, pics), reference_images: pics.map((x) => b64(x.bytes)), num_images: 1, ...rows, output_format: "png" };
+            const body = { prompt: editPrompt(req, R), reference_images: pics.map((x) => b64(x.bytes)), num_images: 1, ...rows, output_format: "png" };
             let info;
             if (R.auto) {
                 // with aspect_ratio auto only 1k leaves the size to the model; 2k and 4k render a square
@@ -429,7 +431,7 @@ const DIALECTS = {
             }
             return { body, info, pictures: pics.length };
         },
-        layout(req, R) { return layoutOf({ seq: inOrder(req, (k) => `reference_images[${k}]`), max: R.maxImages || 1 }); },
+        layout(req, R) { return layoutOf({ seq: inOrder(req, (k) => `reference_images[${k}]`), max: maxOf(R) }); },
     },
 
     zimage: {

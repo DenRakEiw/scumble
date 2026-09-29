@@ -325,7 +325,7 @@ async function main() {
         let x = await runEdit(sp, editReq(sp, { references: refs }));
         const imgs = (x.body || {}).reference_images || [];
         check("Seedream 5.0 Pro: the crop first, the references after, plain base64", !x.err && imgs.length === 3 && tagOf(unb64(imgs[0])) === "CROP" && tagOf(unb64(imgs[1])) === "REF1" && tagOf(unb64(imgs[2])) === "REF2" && !imgs.some((s) => /^data:/.test(s)), x.err || short(imgs.map((s) => s.slice(0, 12))));
-        check("the instruction prompt names the references; no mask field; the aspect preset from the emitted 1024 x 576; its resolution row", x.body.prompt === "Edit the first image and keep its size and framing. a red door The remaining images are reference material." && !("mask" in x.body) && x.body.aspect_ratio === "widescreen_16_9" && x.body.resolution === "2k" && x.out.info.fit === "stretch" && x.out.info.aspect === "16:9", short({ ...x.body, reference_images: undefined, info: x.out.info }));
+        check("the instruction prompt names the references; no mask field; the aspect preset from the emitted 1024 x 576; its resolution row", x.body.prompt === "Edit image 1 and keep its size and framing. a red door Images 2 and 3 are reference images." && !("mask" in x.body) && x.body.aspect_ratio === "widescreen_16_9" && x.body.resolution === "2k" && x.out.info.fit === "stretch" && x.out.info.aspect === "16:9", short({ ...x.body, reference_images: undefined, info: x.out.info }));
         x = await runEdit(sp, editReq(sp, { width: 1024, height: 640 }));
         check("1024 x 640 is nearest 3:2 but more than 3 % off it: no stretch (the stitch centre-crops)", x.body.aspect_ratio === "standard_3_2" && x.out.info.fit === null, short(x.out && x.out.info));
         x = await runEdit(sp, editReq(sp, { width: 1024, height: 690 }));
@@ -359,6 +359,23 @@ async function main() {
         check("FLUX.2 [pro]: input_image, input_image_2 and _3, the emitted size, prompt upsampling", !x.err && tagOf(unb64(x.body.input_image)) === "CROP" && tagOf(unb64(x.body.input_image_3)) === "R2" && !("input_image_4" in x.body) && x.body.width === 1440 && x.body.height === 800 && x.body.prompt_upsampling === false && x.out.info.fit === "stretch", x.err || short({ ...x.body, input_image: 1, input_image_2: 1, input_image_3: 1 }));
         x = await runEdit(fp, editReq(fp, { references: Array.from({ length: 4 }, (_, i) => pngOf(64, 64, 64, "R" + i)) }));
         check("FLUX.2: a fifth picture is refused", /takes at most 4 pictures; this run has 5/.test(x.err || "") && x.s.calls.length === 0, x.err);
+        // the one instruction (refs.instruction), numbered by the dialect's layout: the names a resolved marker gets
+        const cases = [
+            ["FLUX.2 [pro], the Original and one reference, a name index.js resolved", fp, { references: [pngOf(1024, 576, 64, "ORIG"), pngOf(512, 512, 64, "R1")], original: 1, prompt: "the coat from image 3" }, "input_image_3", "Edit image 1 and keep its size and framing. the coat from image 3 Image 2 is image 1 before the selected area was filled. Image 3 is a reference image."],
+            ["GPT Image 2, no reference, the prompt trimmed", g, { prompt: "  a red door  " }, null, "Edit image 1 and keep its size and framing. a red door"],
+            ["Seedream 5.0 Lite, three references under the pattern <image{n}> (listed)", lite, { references: [1, 2, 3].map((i) => pngOf(512, 512, 64, "R" + i)), refName: "<image{n}>" }, "reference_images", "Edit <image1> and keep its size and framing. a red door <image2>, <image3> and <image4> are reference images."],
+        ];
+        for (const [what, v, extra, field, want] of cases) {
+            x = await runEdit(v, editReq(v, extra));
+            check(`the instruction: ${what}`, !x.err && x.body.prompt === want && (!field || field in x.body), x.err || x.body.prompt);
+        }
+        const lay = mag.layout(editReq(fp, { references: [pngOf(1024, 576, 64, "ORIG"), pngOf(512, 512, 64, "R1")], original: 1 }));
+        check("the FLUX.2 layout the sentence is numbered by: input_image, input_image_2 (the Original), input_image_3, max 4 (the route's maxImages)", eq(lay.pictures.map((p) => [p.role, p.field, p.n]), [["crop", "input_image", 1], ["original", "input_image_2", 2], ["reference", "input_image_3", 3]]) && lay.max === 4 && lay.max === ROUTES["text-to-image/flux-2-pro"].maxImages, short(lay));
+        const caps = Object.entries(ROUTES).filter(([, R]) => R.edit && R.dialect !== "expand").map(([route, R]) => {
+            const req = editReq({ model: route, input: R.fill ? "fill" : "edit" }, R.fill ? { mask: maskPng(8, 8, () => 255) } : {});
+            return [route, mag.layout(req).max, R.maxImages];
+        });
+        check("every edit route's layout max is its maxImages", caps.length >= 8 && caps.every(([, max, want]) => max === want), short(caps));
         x = await runEdit(sp, editReq(sp, { prompt: "   " }));
         check("an edit without a prompt is refused before anything is sent", /an edit needs a prompt/.test(x.err || "") && x.s.calls.length === 0, x.err);
     });
@@ -444,7 +461,9 @@ async function main() {
         let x = await runEdit(v, req);
         const kept = codec.cropPng(req.image, { x: 50, y: 40, width: 480, height: 330 });
         check("FLUX Pro Expand: the kept rectangle cut out of the crop byte for byte, the four margins, no mask, the prompt, no seed", !x.err && Buffer.compare(unb64(x.body.image), kept) === 0 && x.body.left === 50 && x.body.top === 40 && x.body.right === 70 && x.body.bottom === 30 && !("mask" in x.body) && x.body.prompt === "a red door" && !("seed" in x.body), x.err || short({ ...x.body, image: 1 }));
-        check("the answer is stretched onto the crop; the references are left out with a log line", x.out && x.out.info.fit === "stretch" && eq(x.out.info.margins, { left: 50, top: 40, right: 70, bottom: 30 }) && x.ctx.logs.some((l) => /takes no reference pictures/.test(l)), short(x.out && x.out.info));
+        check("the answer is stretched onto the crop; a reference handed to the builder directly goes nowhere, without a log line", x.out && x.out.info.fit === "stretch" && eq(x.out.info.margins, { left: 50, top: 40, right: 70, bottom: 30 }) && x.out.info.pictures === 1 && !JSON.stringify(x.body).includes(req.references[0].toString("base64")) && !x.ctx.logs.some((l) => /reference/.test(l)), short(x.out && x.out.info));
+        const lay = mag.layout(req);
+        check("its layout: the kept part as the one picture, the drop declared (index.js strips the references and says so)", eq(lay.pictures, [{ role: "crop", field: "image", n: 1 }]) && lay.drops === "Image Expand takes the picture alone" && lay.max === null && lay.style === false, short(lay));
         x = await runEdit(v, maskedReq(v, 400, 300, (xx) => (xx >= 350 ? 255 : 0), { prompt: "" }));
         check("one strip: all four edges are sent (0 where nothing grows: FLUX puts 512 / 256 on a missing one); an empty prompt is left out", !x.err && x.body.left === 0 && x.body.top === 0 && x.body.bottom === 0 && x.body.right === 50 && !("prompt" in x.body), x.err || short({ ...x.body, image: 1 }));
         x = await runEdit(v, maskedReq(v, 400, 300, frame(100, 100, 100, 100, 400, 300)));
@@ -637,6 +656,34 @@ async function main() {
         const bm = ctx && ctx.bitmap(Buffer.from("x"));
         check("the context carries bitmap, fromBitmap and cropPng on nativeImage, and the mock base from the settings",
             !!ctx && ctx.base === BASE && ctx.key === KEY && bm && bm.width === 2 && bm.height === 1 && bm.data.length === 8 && String(ctx.fromBitmap({ width: 2, height: 1, data: bm.data })) === "PNG:bitmap 8 2x1" && String(ctx.cropPng(Buffer.from("x"), { x: 1, y: 2, width: 3, height: 4 })) === "PNG:crop 1,2,3,4", short(ctx && Object.keys(ctx)));
+
+        // the check before the adapter (refs.checkPictures): Image Expand's declared drop, the caps of the layouts
+        const seen = [];
+        index.PROVIDERS.magnific.edit = async (req) => { seen.push(req); return { bytes: RESULT, mime: "image/png", info: {} }; };
+        const pic = (tag) => new Uint8Array(pngOf(64, 64, 64, tag));
+        const via = async (model, kind, n, original, prompt = "a red door") => {
+            seen.length = 0;
+            const references = Array.from({ length: original + n }, (_, i) => pic(i < original ? "ORIG" : "R" + i));
+            let out = null, err = null;
+            try { out = await index.edit({ provider: "magnific", kind, model, prompt, negative: "", image: pic("CROP"), mask: pic("MASK"), references, original, params: {} }); } catch (e) { err = String(e.message || e); }
+            return { out, err, calls: seen.length, req: seen[0] };
+        };
+        try {
+            let y = await via("image-expand/flux-pro", "fill", 1, 1);
+            check("Image Expand with the Original and a reference: the adapter gets neither, and the answer's notes say so", !y.err && y.calls === 1 && y.req.references.length === 0 && y.req.original === 0 && eq(y.out.notes, ["Magnific image-expand/flux-pro: Image Expand takes the picture alone; the Original and 1 reference layer not sent."]), y.err || short(y.out && y.out.notes));
+            y = await via("image-expand/ideogram", "fill", 2, 0, "the sky of {@ref:1}");
+            check("Image Expand with a marker: refused before the adapter", y.err === "Magnific image-expand/ideogram: Image Expand takes the picture alone, so the prompt cannot name a reference image. Take the name out or pick a recipe that sends references." && y.calls === 0, y.err);
+            y = await via("image-expand/seedream-v4-5", "fill", 0, 0);
+            check("Image Expand without references: no note", !y.err && y.calls === 1 && eq(y.out.notes, []), y.err || short(y.out && y.out.notes));
+            y = await via("text-to-image/flux-2-pro", "edit", 4, 0);
+            check("FLUX.2 [pro] with 5 pictures: refused in index.js by its layout's max 4, before the adapter", y.err === "Magnific text-to-image/flux-2-pro takes at most 4 pictures; this run has 5 (the crop, 4 reference layers): hide reference layers or turn Original off." && y.calls === 0, y.err);
+            y = await via("ideogram-image-edit", "fill", 10, 1);
+            check("Ideogram with 12 pictures: its style references count against 11 (the mask field does not)", y.err === "Magnific ideogram-image-edit takes at most 11 pictures; this run has 12 (the crop, the Original, 10 reference layers): hide reference layers or turn Original off." && y.calls === 0, y.err);
+            y = await via("ideogram-image-edit", "fill", 10, 0);
+            check("... and goes with 11", !y.err && y.calls === 1 && y.req.references.length === 10, y.err);
+            y = await via("ideogram-image-edit", "fill", 1, 0, "in the style of {@ref:0}");
+            check("Ideogram with a marker: a style reference has no number, refused", /style references, which have no number/.test(y.err || "") && y.calls === 0, y.err);
+        } finally { index.PROVIDERS.magnific.edit = keep; }
     });
 
     // ---- 13. the whole run ----

@@ -11,7 +11,8 @@
       "model": "xai/grok-imagine-image/v2.0/edit",
       "input": "edit",
       "options": {
-        "sizing": "none"
+        "sizing": "none",
+        "max_images": 5
       },
       "text": {
         "model": "xai/grok-imagine-image/v2.0/text-to-image"
@@ -46,7 +47,7 @@
           ]
         }
       ],
-      "note": "At most three images go in (crop plus two references). The output size is Resolution, not the crop; aspect_ratio stays auto, which keeps the crop's shape. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+      "note": "At most five images go in (the crop, the Original and the reference layers together). The output size is Resolution, not the crop; aspect_ratio stays auto, which keeps the crop's shape. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     },
     "openrouter": {
       "model": "x-ai/grok-imagine-image-2.0",

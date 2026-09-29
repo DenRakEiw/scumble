@@ -122,7 +122,8 @@
       ],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The crop goes out under a 4 MP budget (fal's image_size is an area range, not a side limit), so a wide selection passes 2048 px on the long side; Size picks the answer's resolution.",
       "options": {
-        "sizing": "none"
+        "sizing": "none",
+        "max_images": 10
       },
       "limits": {
         "max": 4096,
@@ -134,6 +135,7 @@
       "model": "bytedance/seedream-v5.0-pro/edit",
       "input": "edit",
       "options": {
+        "max_images": 10,
         "aspect_ratios": [
           "1:1",
           "1:2",

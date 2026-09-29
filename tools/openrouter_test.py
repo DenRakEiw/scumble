@@ -395,7 +395,8 @@ def check_fill(mock, res):
         raise Exception("an edit sent aspect_ratio %s" % b["aspect_ratio"])
     if b.get("n") != 1 or any(k in b for k in ("mask", "mask_url", "seed", "output_format")):
         raise Exception("the parameters: %s" % json.dumps({k: v for k, v in b.items() if k not in ("prompt", "input_references")}))
-    if not str(b.get("prompt") or "").startswith("Edit the first image. The second image is a mask"):
+    # refs.instruction under Nano Banana 2's refs.name "image {n}"
+    if not str(b.get("prompt") or "").startswith("Edit image 1. Image 2 is a mask"):
         raise Exception("the prompt does not say what the second picture is: %s" % str(b.get("prompt"))[:160])
     ignore = check_routing(b, "the edit")
     if set((b.get("provider") or {}).keys()) != {"ignore"}:
@@ -425,7 +426,8 @@ def check_edit(mock, res, fill_pictures):
         raise Exception("output_format / seed / n: %s" % json.dumps({k: v for k, v in b.items() if k not in ("prompt", "input_references")}))
     if any(k in b for k in ("aspect_ratio", "resolution", "mask", "mask_url")):
         raise Exception("fields the variant does not send: %s" % sorted(b))
-    if not str(b.get("prompt") or "").startswith("Edit the first image and keep its size and framing."):
+    # refs.instruction under FLUX.2 pro's refs.name "image {n}"
+    if not str(b.get("prompt") or "").startswith("Edit image 1 and keep its size and framing."):
         raise Exception("the prompt: %s" % str(b.get("prompt"))[:160])
     check_routing(b, "the FLUX edit")
     if posts[0]["auth"] != "Bearer " + KEY:

@@ -11,14 +11,15 @@
 //   edit: { images: [crop, references...], prompt }   (nano-banana, gpt-image, seedream, flux-2, qwen)
 // A recipe variant may rename the inputs with `fields` ({ image, images, mask }); `options`:
 // `aspect_ratios` (the model's presets, the closest to the crop is sent unless the settings
-// pick one), `size: "star"` (send the crop size as "W*H", fitted to `max_side`).
+// pick one), `size: "star"` (send the crop size as "W*H", fitted to `max_side`), `max_images` (how many pictures the
+// image list takes, the crop included; a run with more is refused before any upload).
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
 // Referral: the key link (keyUrl) carries DenRakEiw's WaveSpeed referral code.
 "use strict";
 
 const { fetchImage, readError, sleep, num, closestAspect } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://api.wavespeed.ai/api/v3/";
 const POLL_MS = 2000;
@@ -63,6 +64,9 @@ async function inputFor(req, ctx) {
     if (req.kind === "text") {
         if (o.size === "star") input.size = `${req.width}*${req.height}`;
     } else if (req.kind === "edit" || f.images) {
+        // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from uploading one
+        const lay = layout(req), n = countOf(lay);
+        if (lay.max != null && n > lay.max) throw new Error(`WaveSpeed ${String(req.model || "")} takes at most ${lay.max} picture${lay.max === 1 ? "" : "s"}; this run has ${n}: hide reference layers or turn Original off.`);
         const urls = [await upload(ctx, req.image, `scumble-${stamp}-crop.png`)];
         for (let i = 0; i < req.references.length; i++) urls.push(await upload(ctx, req.references[i], `scumble-${stamp}-ref${i + 1}.png`));
         input[f.images || "images"] = urls;
@@ -82,14 +86,18 @@ async function inputFor(req, ctx) {
     return input;
 }
 
-/** Where inputFor above puts each picture of a fill or an edit (the image list carries no mask). */
+/**
+ * Where inputFor above puts each picture of a fill or an edit (the image list carries no mask). `max` is the variant's
+ * options.max_images (the pictures in the list); the fill shape sends no reference.
+ */
 function layout(req) {
-    const f = req.fields || {};
+    const f = req.fields || {}, o = req.options || {};
+    const max = +o.max_images > 0 ? +o.max_images : null;
     if (req.kind === "edit" || f.images) {
         const F = f.images || "images";
-        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])] });
+        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])], max });
     }
-    return layoutOf({ seq: [["crop", f.image || "image"]], own: req.mask ? [["mask", f.mask || "mask_image"]] : [], drops: "This endpoint takes the crop and the mask only: reference images are left out." });
+    return layoutOf({ seq: [["crop", f.image || "image"]], own: req.mask ? [["mask", f.mask || "mask_image"]] : [], max, drops: "This endpoint takes the crop and the mask only" });
 }
 
 module.exports = {

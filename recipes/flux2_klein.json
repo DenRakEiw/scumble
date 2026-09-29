@@ -30,6 +30,9 @@
     "fal": {
       "model": "fal-ai/flux-2/klein/9b/edit",
       "input": "edit",
+      "options": {
+        "max_images": 4
+      },
       "settings": [
         {
           "index": 1,
@@ -50,6 +53,9 @@
     "wavespeed": {
       "model": "wavespeed-ai/flux-2-klein-9b/edit",
       "input": "edit",
+      "options": {
+        "max_images": 3
+      },
       "settings": [],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     },

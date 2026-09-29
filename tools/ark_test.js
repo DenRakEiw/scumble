@@ -40,9 +40,10 @@ function check(what, ok, detail) {
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const short = (v) => { const s = typeof v === "string" ? v : JSON.stringify(v); return s && s.length > 400 ? s.slice(0, 400) + " ..." : s; };
 
-const EDIT_PREFIX = "Edit the first image and keep its size and framing.";
-const REF_ONE = "The remaining image is reference material.";
-const REF_MANY = "The remaining images are reference material.";
+// refs.instruction, numbered by the layout: the crop is image 1, the references follow
+const EDIT_PREFIX = "Edit image 1 and keep its size and framing.";
+const REF_ONE = "Image 2 is a reference image.";
+const REF_MANY = "Images 2 and 3 are reference images.";
 
 /** A PNG as far as the adapter looks: the signature, a real IHDR (width, height, 8 bit, colour type) and padding. */
 function pngOf(w, h, size = 64, tag = "", colour = 6) {
@@ -198,6 +199,9 @@ async function main() {
         const s0 = fakeServer();
         await ark.edit(editReq(v), ctxFor(s0));
         check("no reference: the edit sentence and the prompt only, the crop alone", s0.posts[0].body.prompt === `${EDIT_PREFIX} a red door` && picsOf(s0.posts[0].body).length === 1 && picsOf(s0.posts[0].body)[0].bytes.equals(editReq(v).image), s0.posts[0].body.prompt);
+        const sO = fakeServer();
+        await ark.edit(editReq(v, { references: refs, original: 1, refName: "Image {n}" }), ctxFor(sO));
+        check("the Original (references[0]) gets its own sentence, the reference after it its number; refName names both", sO.posts[0].body.prompt === "Edit Image 1 and keep its size and framing. a red door Image 2 is Image 1 before the selected area was filled. Image 3 is a reference image.", sO.posts[0].body.prompt);
 
         // the answer's format comes from its bytes
         const sj = fakeServer({ answers: [(body) => okFor(body, { data: [{ b64_json: RESULT_JPEG.toString("base64"), size: body.size }] })] });

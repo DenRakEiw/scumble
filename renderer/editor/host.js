@@ -83,6 +83,15 @@ function docMeta(ed, clean = false) {
 
 const plainObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
 
+/** One provider request (main's `provider:edit`); a refusal comes back without Electron's "Error invoking remote method" wrapper. */
+async function providerEdit(request) {
+    try {
+        return await window.scumble.providers.edit(request);
+    } catch (err) {
+        throw new Error(String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
+    }
+}
+
 /** "a", "a and b", "a, b and c" */
 function listWords(items) {
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
@@ -1233,7 +1242,7 @@ export const host = {
                 image: prep.image, mask: prep.mask, maskAlpha: prep.maskAlpha, width: prep.width, height: prep.height, references,
                 params: shape.params, original: shape.original, refName: shape.refName,
             };
-            res = await window.scumble.providers.edit(request);
+            res = await providerEdit(request);
             editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
             editor.lastRunNotes = res.notes || [];
         } finally {
@@ -1341,7 +1350,7 @@ export const host = {
                 Object.assign(request, { image, width: W, height: H });
                 editor.setStatus(`Upscaling the picture ${W} × ${H} by ${by} on ${label} ...${slow}`);
             }
-            res = await window.scumble.providers.edit(request);
+            res = await providerEdit(request);
         } finally {
             if (editor.providerPending === token) editor.providerPending = null;
             this._providerRuns.delete(token);
@@ -1425,7 +1434,7 @@ export const host = {
                 fields: r.fields || null, options: r.options || null,
                 params: genParams,
             };
-            res = await window.scumble.providers.edit(request);
+            res = await providerEdit(request);
         } finally {
             if (editor.providerPending === token) editor.providerPending = null;
             this._providerRuns.delete(token);

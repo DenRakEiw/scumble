@@ -300,29 +300,47 @@ on open is fixed for 0.1.32, above):
 
 **Written** 2026-09-29 while `docs/PLAN_REFS.md` was researched (code and vendor docs read, nothing run). A visible
 reference layer can fail to reach the model without any message. Steps 26a2 and 26e of that plan fix these. The Klein
-item could also be fixed on its own.
+item could also be fixed on its own. **Step 26a2 (2026-09-29, plain-Node tests, not run live)** fixed the provider
+items: every route now sends every picture, refuses before any request past its cap, or declares the drop, and then
+sends no reference at all and says so in the status line (`docs/RECIPES.md` "Reference pictures"). The local, Info
+panel and node items stay for step 26e.
 
 - **`flux2_klein_local` reads only batch pictures 0 and 1**, the crop and the next one. With Original on, no reference
   layer reaches the model. With Original off, only ref 1 does, and ref 2+ are dropped. The recipe's description names
   only the Original case. `qwen_image_edit_2_1_local` reads 3 pictures, and `ImageFromBatch` clamps, so with fewer
   pictures the last one is repeated into the empty slots.
 - **BFL keeps 7 references** (`bfl.js:23`, `slice(0, 7)`) and drops the rest silently. FLUX.2 klein on BFL takes only
-  4 pictures in total, and nothing enforces that.
+  4 pictures in total, and nothing enforces that. **Fixed in 26a2 (2026-09-29):** every reference goes
+  (`input_image_2` ..), the layout's `max` is 4 for klein and 8 for FLUX.2 pro / flex / max, and a run past it is
+  refused before any request (the builder checks too, for a direct call).
 - **Comfy Cloud cuts Qwen after 3 pictures** (`comfycloud.js:105`). `GeminiImage2Node`, `GeminiImageNode` and
   `FluxProFillNode` upload the references but never wire them; so do the four upscaler nodes when a recipe runs them
   as an edit, and an OpenAI node edit without `options.mask` uploads the mask and wires nothing (step 26a1's layout
-  pin, 2026-09-29: every reference gets a LoadImage node, linked or not).
+  pin, 2026-09-29: every reference gets a LoadImage node, linked or not). **Fixed in 26a2 (2026-09-29):** a cap per
+  node (`NODE_PICTURES`: Qwen 3, FLUX.2 8, GPT Image 16, Nano Banana 2 14, Seedream 10 / lite 14) refuses past it
+  before any upload; the one-picture nodes and FLUX.1 Fill declare the drop; `buildGraph` uploads only the references
+  and the mask the node wires. The `nano_banana_pro` Comfy Cloud note no longer contradicts itself or advises Original on.
 - **Fill routes without an images field drop references**: flux1_fill on BFL / fal / Replicate / WaveSpeed, Qwen
   inpaint on fal, Z-Image turbo, Ideogram 4 on fal, and Replicate's Qwen Image Edit (`replicate.js:47-52`, crop only,
-  although its note says "crop plus the reference layers").
-- **FLUX.2 klein on Oxen has no `max_images`** and falls back to Oxen's default of 16.
+  although its note says "crop plus the reference layers"). **Fixed in 26a2 (2026-09-29):** each declares the drop,
+  so no reference and no Original goes and the status line says what was not sent; Replicate's Qwen Image Edit note
+  says the endpoint takes one picture.
+- **FLUX.2 klein on Oxen has no `max_images`** and falls back to Oxen's default of 16. **Moved on in 26a2
+  (2026-09-29):** Oxen's hub schema names no maximum either, so no cap was set; the variant is on the undocumented
+  list in `docs/RECIPES.md` (BFL's own klein takes 4), until a live key shows what Oxen does past 4.
 - **fal's caps are not checked**: Seedream edit on fal is said to keep the *last* pictures past its cap, which would
   drop the crop. Re-read the v5 lite / pro edit pages before relying on this. `flux-2/klein/9b/edit` uses only the first 4.
+  **Fixed in 26a2 (2026-09-29):** fal's layout reads `options.max_images` and a run past it is refused before any
+  request: Seedream 5 lite / pro 10, klein 4, FLUX.2 pro / flex / max 8, GPT Image 2 16, Grok Imagine 5 (sources in
+  `docs/RECIPES.md`); fal's Nano Banana 2 and Pro name no number and are on the undocumented list.
 - **flux1_fill on Comfy Router refuses any run with a visible reference** (`comfyrouter.js:205-209`, `max_images`
   defaults to 1), although its note says "The reference layers are not sent." `picturesFor` counts the references
   before the fill body drops them; step 26a1's layout declares the drop and `max` 1, and its pin expects the refusal.
+  **Fixed in 26a2 (2026-09-29):** the declared drop strips the references before the adapter, so the run goes out
+  with the crop and the mask and the status line says what was not sent; the recipe's note says so too.
 - **A WaveSpeed fill whose variant sets `fields.images` sends no mask**: `inputFor` takes the image-list branch for
   it and never adds `mask_image` (found by step 26a1's layout check, 2026-09-29). No shipped variant does this.
+  Still open after 26a2 (not a reference drop; the layout describes it as it is sent).
 - **The Info panel's batch count ignores the refine pass**, which leaves the Original out (`inpaint_canvas.js:13225`).
 - **The node skips a reference it cannot load** (`nodes.py` about 682, "reference skipped"), with only a print, and
   every later reference moves up one place.

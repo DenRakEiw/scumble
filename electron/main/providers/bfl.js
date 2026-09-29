@@ -4,14 +4,28 @@
 //   fill: /v1/flux-pro-1.0-fill    { image, mask (base64, white = repaint), prompt, steps, guidance, seed }
 //   edit: /v1/flux-2-pro | flux-2-flex | flux-2-max | flux-2-klein-9b | flux-kontext-pro
 //         { prompt, input_image, input_image_2.., width, height, seed }
+//         klein takes 4 pictures, pro / flex / max 8 (the crop included; docs.bfl.ai, read 2026-09-29): a run with
+//         more is refused before sending, never cut short
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
 const { b64, fetchImage, readError, sleep, num } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://api.bfl.ai";
 const PASS = new Set(["steps", "guidance", "safety_tolerance", "output_format", "prompt_upsampling", "aspect_ratio"]);   // "endpoint" picks the model, "random_seed" is the app's
+
+/** The endpoint a request goes to: the `endpoint` setting, else the model, else the fill endpoint. */
+function endpointOf(req) {
+    return String((req.params && req.params.endpoint) || req.model || "flux-pro-1.0-fill").replace(/^\/+|\/+$/g, "").replace(/^v1\//, "");
+}
+
+/** How many pictures an edit endpoint takes, the crop included (input_image .. input_image_N); null where not known. */
+function maxOf(endpoint) {
+    if (/^flux-2-klein(-|$)/.test(endpoint)) return 4;
+    if (/^flux-2-(pro|flex|max)(-|$)/.test(endpoint)) return 8;
+    return null;
+}
 
 function bodyFor(req) {
     const p = req.params;
@@ -21,8 +35,11 @@ function bodyFor(req) {
         // no input_image: the flux-2 endpoints then generate from the prompt alone
         body.width = req.width; body.height = req.height;
     } else if (req.kind === "edit") {
+        // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from sending one
+        const lay = layout(req), n = countOf(lay);
+        if (lay.max != null && n > lay.max) throw new Error(`BFL ${endpointOf(req)} takes at most ${lay.max} pictures; this run has ${n}: hide reference layers or turn Original off.`);
         body.input_image = b64(req.image);
-        req.references.slice(0, 7).forEach((r, i) => { body[`input_image_${i + 2}`] = b64(r); });
+        req.references.forEach((r, i) => { body[`input_image_${i + 2}`] = b64(r); });
         body.width = req.width; body.height = req.height;
     } else {
         body.image = b64(req.image);
@@ -32,15 +49,12 @@ function bodyFor(req) {
     return body;
 }
 
-/** Where bodyFor puts each picture: an edit numbers input_image .. input_image_8, the fill endpoint takes crop and mask. */
+/** Where bodyFor puts each picture: an edit numbers input_image, input_image_2 .., the fill endpoint takes crop and mask. */
 function layout(req) {
     if (req.kind === "edit") {
-        return layoutOf({
-            seq: [["crop", "input_image"], ...refRoles(req, 7).map(([role, i]) => [role, `input_image_${i + 2}`, i])],
-            drops: "This endpoint takes 8 pictures: references past the 7th are left out.",
-        });
+        return layoutOf({ seq: [["crop", "input_image"], ...refRoles(req).map(([role, i]) => [role, `input_image_${i + 2}`, i])], max: maxOf(endpointOf(req)) });
     }
-    return layoutOf({ seq: [["crop", "image"]], own: req.mask ? [["mask", "mask"]] : [], drops: "This endpoint takes the crop and the mask only: reference images are left out." });
+    return layoutOf({ seq: [["crop", "image"]], own: req.mask ? [["mask", "mask"]] : [], drops: "FLUX.1 Fill takes no reference images" });
 }
 
 module.exports = {
@@ -52,7 +66,7 @@ module.exports = {
     },
     layout,
     async edit(req, ctx) {
-        const endpoint = String(req.params.endpoint || req.model || "flux-pro-1.0-fill").replace(/^\/+|\/+$/g, "").replace(/^v1\//, "");
+        const endpoint = endpointOf(req);
         const headers = { "x-key": ctx.key, "Content-Type": "application/json", accept: "application/json" };
         const submit = await ctx.fetch(`${BASE}/v1/${endpoint}`, { method: "POST", headers, body: JSON.stringify(bodyFor(req)) });
         if (!submit.ok) throw new Error(`BFL ${endpoint}: ${await readError(submit)}`);

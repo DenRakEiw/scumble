@@ -9,11 +9,13 @@
 // Models differ in their input names, so a recipe may set `fields`:
 //   fill: { image: "image", mask: "mask" }                  (flux-fill-pro, flux-fill-dev, ...)
 //   edit: { images: "image_input" } or { image: "image" }   (nano-banana, qwen-image-edit, ...)
+// `options.max_images` is how many pictures the image list takes (the crop included); a run with more is refused
+// before any upload.
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
 const { dataUri, fetchImage, readError, sleep, num } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://api.replicate.com/v1";
 const DATA_URI_MAX = 256 * 1024;   // Replicate's guidance: data URLs up to 256 kB, larger files by URL
@@ -45,6 +47,9 @@ async function inputFor(req, ctx) {
         // no image field at all; the shape goes as the model's aspect_ratio
         if (req.aspect && input.aspect_ratio === undefined) input.aspect_ratio = req.aspect;
     } else if (req.kind === "edit") {
+        // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from uploading one
+        const lay = layout(req), n = countOf(lay);
+        if (lay.max != null && n > lay.max) throw new Error(`Replicate ${String(req.model || "")} takes at most ${lay.max} picture${lay.max === 1 ? "" : "s"}; this run has ${n}: hide reference layers or turn Original off.`);
         const crop = await fileUrl(req.image, "crop.png", ctx);
         if (fields.images || !fields.image) {
             const refs = [];
@@ -65,15 +70,20 @@ async function inputFor(req, ctx) {
     return input;
 }
 
-/** Where inputFor above puts each picture of a fill or an edit (the request body is { input } or { version, input }). */
+/**
+ * Where inputFor above puts each picture of a fill or an edit (the request body is { input } or { version, input }).
+ * `max` is the variant's options.max_images (the pictures in the list); a fill, and an edit with one image field
+ * (Qwen Image Edit), send no reference.
+ */
 function layout(req) {
-    const fields = req.fields || {};
+    const fields = req.fields || {}, o = req.options || {};
+    const max = +o.max_images > 0 ? +o.max_images : null;
     if (req.kind === "edit" && (fields.images || !fields.image)) {
         const F = `input.${fields.images || "image_input"}`;
-        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])] });
+        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])], max });
     }
-    if (req.kind === "edit") return layoutOf({ seq: [["crop", `input.${fields.image}`]], drops: "This endpoint takes one picture: reference images are left out." });
-    return layoutOf({ seq: [["crop", `input.${fields.image || "image"}`]], own: req.mask ? [["mask", `input.${fields.mask || "mask"}`]] : [], drops: "This endpoint takes the crop and the mask only: reference images are left out." });
+    if (req.kind === "edit") return layoutOf({ seq: [["crop", `input.${fields.image}`]], max, drops: "This endpoint takes one picture" });
+    return layoutOf({ seq: [["crop", `input.${fields.image || "image"}`]], own: req.mask ? [["mask", `input.${fields.mask || "mask"}`]] : [], max, drops: "This endpoint takes the crop and the mask only" });
 }
 
 module.exports = {

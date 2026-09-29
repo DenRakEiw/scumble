@@ -30,10 +30,12 @@ function check(what, ok, detail) {
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const short = (v) => { const s = typeof v === "string" ? v : JSON.stringify(v); return s && s.length > 400 ? s.slice(0, 400) + " ..." : s; };
 
-const EDIT_PREFIX = "Edit the first image and keep its size and framing.";
-const FILL_PREFIX = "Edit the first image. The second image is a mask: change only the white area of the mask, keep everything else exactly as it is, and keep the image size and framing.";
-const REF_ONE = "The remaining image is reference material.";
-const REF_MANY = "The remaining images are reference material.";
+// refs.instruction, numbered by the layout: the crop is image 1, a fill's mask image 2, the references follow
+const EDIT_PREFIX = "Edit image 1 and keep its size and framing.";
+const FILL_PREFIX = "Edit image 1. Image 2 is a mask: change only the white area of the mask, keep everything else exactly as it is, and keep the image size and framing.";
+const REF_ONE = "Image 2 is a reference image.";
+const REF_MANY = "Images 2 and 3 are reference images.";
+const FILL_REF_MANY = "Images 3 and 4 are reference images.";
 
 /** A PNG as far as the adapter looks: the signature, a real IHDR (width, height, 8 bit, colour type) and padding. */
 function pngOf(w, h, size = 64, tag = "", colour = 6) {
@@ -229,11 +231,14 @@ async function main() {
         const b = s.images[0];
         const pics = refsOf(b);
         check("fill: the crop, then the luminance mask (not maskAlpha), then the references", pics.length === 4 && pics[0].bytes.equals(req.image) && pics[1].bytes.equals(req.mask) && !pics[1].bytes.equals(req.maskAlpha) && pics[2].bytes.equals(req.references[0]) && pics[3].bytes.equals(req.references[1]), pics.map((p) => p && tagOf(p.bytes)).join(", "));
-        check("fill: the mask sentence, the prompt, the references sentence", b.prompt === `${FILL_PREFIX} a red door ${REF_MANY}`, b.prompt);
+        check("fill: the mask sentence, the prompt, the references sentence (numbered after the mask)", b.prompt === `${FILL_PREFIX} a red door ${FILL_REF_MANY}`, b.prompt);
         check("fill: no mask or mask_url field (the Image API has none)", !("mask" in b) && !("mask_url" in b), Object.keys(b).join(","));
         const s1 = fakeServer();
         await openrouter.edit(editReq(v), ctxFor(s1));
         check("fill without references: the mask sentence and the prompt only", s1.images[0].prompt === `${FILL_PREFIX} a red door` && refsOf(s1.images[0]).length === 2, s1.images[0].prompt);
+        const sO = fakeServer();
+        await openrouter.edit(editReq(v, { references: req.references, original: 1 }), ctxFor(sO));
+        check("fill with the Original: its own sentence after the prompt, the reference after it", sO.images[0].prompt === `${FILL_PREFIX} a red door Image 3 is image 1 before the selected area was filled. Image 4 is a reference image.` && refsOf(sO.images[0]).length === 4, sO.images[0].prompt);
         const e = variant("flux2_pro");   // edit input
         const s2 = fakeServer();
         const req2 = editReq(e, { references: [pngOf(640, 480, 70, "REF1")] });

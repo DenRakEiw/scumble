@@ -174,6 +174,32 @@ async function main() {
         check("gpt 2.5 standard: a preset ratio, the 2K tier, no quality", b6.model === "gpt-image-2.5-flare" && b6.size === "4:3" && b6.resolution === "2K" && !("quality" in b6), JSON.stringify(b6));
     });
 
+    // ---- 2b. caps: layout(req) and the builder read one cap, the chosen channel's, as +x > 0 (docs/PLAN_REFS.md 26a2) ----
+    await section("2b. caps: the layout and the builder read the chosen channel's max_images alike", async () => {
+        const opts = { max_images: 4, channels: { a: {}, three: { max_images: "3" }, zero: { max_images: "0" }, neg: { max_images: -2 }, word: { max_images: "many" } } };
+        const v = { model: "cap-test", input: "edit", options: opts };
+        const refsOf = (n) => Array.from({ length: n }, (_, i) => png("R" + (i + 1)));
+        const probe = async (channel, n) => {
+            const req = editReq(v, { references: refsOf(n), params: { channel } });
+            const s = fakeServer();
+            const err = await throws(() => toapis.edit(req, ctxFor(s)));
+            return { max: toapis.layout(req).max, err, calls: s.calls.length, sent: s.submits[0] ? s.submits[0].image_urls.length : 0 };
+        };
+        const a3 = await probe("a", 3), a4 = await probe("a", 4);
+        check("the variant's own cap (channel a, no override): max 4; 4 pictures go, 5 are refused before any request", a3.max === 4 && !a3.err && a3.sent === 4 && a4.err === "ToAPIs cap-test takes 4 images, this run has 5 (the crop and 4 references)." && a4.calls === 0, JSON.stringify([a3, a4]));
+        const t2 = await probe("three", 2), t3 = await probe("three", 3);
+        check("a channel's override as a string (\"3\"): max 3 in the layout, the builder refuses 4 pictures", t2.max === 3 && !t2.err && t2.sent === 3 && /takes 3 images, this run has 4/.test(t3.err || "") && t3.calls === 0, JSON.stringify([t2, t3]));
+        const odd = [];
+        for (const ch of ["zero", "neg", "word"]) {
+            const x = await probe(ch, 6);
+            if (x.max !== null || x.err || x.sent !== 7) odd.push(`${ch}: ${JSON.stringify(x)}`);
+        }
+        check("\"0\", -2 and \"many\" are no cap: the layout declares none and the builder sends all 7 pictures", !odd.length, odd.join(" | "));
+        const g = variant("gpt_image_2");
+        const off = toapis.layout(editReq(g, { references: refsOf(1), params: { channel: "official" } })), std = toapis.layout(editReq(g, { references: refsOf(1), params: { channel: "standard" } }));
+        check("gpt_image_2: official max 16 with the mask in its own field, standard max 6 without", off.max === 16 && off.pictures.some((p) => p.role === "mask" && p.n === null) && std.max === 6 && !std.pictures.some((p) => p.role === "mask"), JSON.stringify({ off: off.max, std: std.max }));
+    });
+
     // ---- 3. polling: queued, a 429 with Retry-After, in progress, completed; both result shapes; a submit 429 ----
     await section("3. polling: queued, a 429 with Retry-After, in progress, completed; both result shapes; a submit 429", async () => {
         const v = variant("flux2_pro");

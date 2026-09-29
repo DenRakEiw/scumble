@@ -9,7 +9,8 @@
 // takes image_urls plus mask_url) and switch the size hint off with options.sizing = "none" for
 // endpoints without a free image_size (nano-banana, seedream, gpt-image). `fields.mask: false`
 // drops the mask for an image-to-image endpoint that has none (Ideogram 4), and `options.omit`
-// lists input fields a strict endpoint refuses (Recraft V4, Krea 2).
+// lists input fields a strict endpoint refuses (Recraft V4, Krea 2). `options.max_images` is how many pictures the
+// image list takes (the crop included); a run with more is refused before sending.
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
 // upscale (kind "upscale", docs/RECIPES.md "Upscale recipes"): { image_url, upscale_factor, output_format,
@@ -20,7 +21,7 @@
 "use strict";
 
 const { dataUri, fetchImage, readError, sleep, num } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, countOf } = require("./refs");
 
 const QUEUE = "https://queue.fal.run/";
 
@@ -34,6 +35,9 @@ function inputFor(req) {
         if (sizing === "image_size") input.image_size = { width: req.width, height: req.height };
         else if (req.aspect) input.aspect_ratio = req.aspect;
     } else if (req.kind === "edit" || f.images) {
+        // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from sending one
+        const lay = layout(req), n = countOf(lay);
+        if (lay.max != null && n > lay.max) throw new Error(`fal.ai ${String(req.model || "")} takes at most ${lay.max} picture${lay.max === 1 ? "" : "s"}; this run has ${n}: hide reference layers or turn Original off.`);
         input[f.images || "image_urls"] = [dataUri(req.image), ...req.references.map((r) => dataUri(r))];
         // keep the crop's size: the stitch stretches only a same-aspect result back exactly
         if (sizing === "image_size" && req.kind === "edit") input.image_size = { width: req.width, height: req.height };
@@ -53,16 +57,20 @@ function inputFor(req) {
     return input;
 }
 
-/** Where inputFor puts each picture of a fill or an edit: the crop and the references in one list, the mask on its own. */
+/**
+ * Where inputFor puts each picture of a fill or an edit: the crop and the references in one list, the mask on its own.
+ * `max` is the variant's options.max_images (the pictures in the list); a route without the list sends no reference.
+ */
 function layout(req) {
-    const f = req.fields || {};
+    const f = req.fields || {}, o = req.options || {};
+    const max = +o.max_images > 0 ? +o.max_images : null;
     const own = req.mask && req.kind !== "edit" && f.mask !== false ? [["mask", f.mask || "mask_url"]] : [];
     if (req.kind === "edit" || f.images) {
         const F = f.images || "image_urls";
-        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])], own });
+        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])], own, max });
     }
-    const drops = f.mask === false ? "This endpoint takes one picture: reference images are left out." : "This endpoint takes the crop and the mask only: reference images are left out.";
-    return layoutOf({ seq: [["crop", f.image || "image_url"]], own, drops });
+    const drops = f.mask === false ? "This endpoint takes one picture" : "This endpoint takes the crop and the mask only";
+    return layoutOf({ seq: [["crop", f.image || "image_url"]], own, max, drops });
 }
 
 /** The input of an upscale: the picture, the factor, the variant's own settings. */

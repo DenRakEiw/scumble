@@ -43,7 +43,7 @@
 "use strict";
 
 const { sleep: realSleep, closestAspect } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, instruction } = require("./refs");
 
 const DEFAULT_BASE = "https://openrouter.ai";
 const ALLOWED_HOSTS = new Set(["https://openrouter.ai"]);
@@ -280,15 +280,14 @@ function aspectFor(req, o) {
     return closestAspect(Math.max(1, +req.width || 1024), Math.max(1, +req.height || 1024), ratios);
 }
 
-function promptFor(req, pics) {
-    const text = String(req.prompt || "");
-    if (req.kind === "text") return text;
-    const refs = pics.filter((p) => p.what.startsWith("reference")).length;
-    let out = pics.some((p) => p.what === "mask")
-        ? `Edit the first image. The second image is a mask: change only the white area of the mask, keep everything else exactly as it is, and keep the image size and framing. ${text}`
-        : `Edit the first image and keep its size and framing. ${text}`;
-    if (refs) out += ` The remaining image${refs > 1 ? "s are" : " is"} reference material.`;
-    return out.trim();
+/**
+ * The prompt of a run: a text run's as it is, else refs.instruction (what to edit, what the mask picture means, the
+ * user's text, what the Original and the references are), numbered by `lay`: this adapter's layout, or the one Oxen
+ * passes for its own picture fields.
+ */
+function promptFor(req, lay) {
+    if (req.kind === "text") return String(req.prompt || "");
+    return instruction(req, lay || module.exports.layout(req), req.prompt);
 }
 
 /** The JSON body of one request; `pics` are the pictures of an edit (none for a text run), `ignore` the hosts left out. */
@@ -296,7 +295,7 @@ function bodyFor(req, pics, ignore) {
     const o = req.options || {};
     const p = req.params || {};
     const accepts = new Set(Array.isArray(o.accepts) ? o.accepts : []);
-    const body = { model: String(req.model || ""), prompt: promptFor(req, pics) };
+    const body = { model: String(req.model || ""), prompt: promptFor(req) };
     for (const [k, v] of [...Object.entries(p)]) {
         if (!PARAMS.includes(k) || !accepts.has(k) || v === "" || v == null || String(v).toLowerCase() === "auto") continue;
         body[k] = v;
@@ -430,7 +429,7 @@ module.exports = {
     // llm.js: a failed chat request on the OpenRouter key is read and put in the same words
     explain,
     readFailure,
-    // providers/oxen.js: the same mask and reference sentences for a model without a mask input
+    // providers/oxen.js: the same instruction for a model without a mask input, numbered by Oxen's own layout
     promptFor,
     // exported for tools/openrouter_test.js
     _allowedBase: allowedBase,

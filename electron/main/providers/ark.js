@@ -29,7 +29,7 @@
 "use strict";
 
 const { fetchImage, sleep: realSleep, fitPixels } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, instruction } = require("./refs");
 
 const REGIONS = {
     "ap-southeast": "https://ark.ap-southeast.bytepluses.com",   // Johor, Malaysia
@@ -244,17 +244,14 @@ function sizeFor(req, o) {
     return `${pw}x${ph}`;
 }
 
-function promptFor(req, pics) {
-    const text = String(req.prompt || "");
-    if (req.kind === "text") return text;
-    const refs = pics.length - 1;
-    let out = `Edit the first image and keep its size and framing. ${text}`;
-    if (refs) out += ` The remaining image${refs > 1 ? "s are" : " is"} reference material.`;
-    return out.trim();
+/** The prompt of a run: a text run's as it is, else refs.instruction numbered by layout() (no mask picture here). */
+function promptFor(req) {
+    if (req.kind === "text") return String(req.prompt || "");
+    return instruction(req, layout(req), req.prompt);
 }
 
 function bodyFor(req, o, pics) {
-    const body = { model: String(req.model || ""), prompt: promptFor(req, pics), size: sizeFor(req, o), watermark: false, response_format: "b64_json" };
+    const body = { model: String(req.model || ""), prompt: promptFor(req), size: sizeFor(req, o), watermark: false, response_format: "b64_json" };
     if (o.png) body.output_format = "png";
     if (pics.length) body.image = pics.map((p) => `data:${p.mime};base64,${p.bytes.toString("base64")}`);
     return body;

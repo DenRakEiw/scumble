@@ -64,6 +64,9 @@
     "gemini": {
       "model": "gemini-3.1-flash-lite-image",
       "input": "fill",
+      "options": {
+        "max_images": 14
+      },
       "settings": [
         {
           "index": 1,

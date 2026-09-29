@@ -149,11 +149,14 @@
           ]
         }
       ],
-      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+      "note": "Instruction edit of the crop alone: this endpoint takes one picture, so the reference layers and the Original are not sent (the status line says so). No mask input: the stitch keeps the selection. For area-directed edits set Fill to green and say \"fill the green area\"."
     },
     "wavespeed": {
       "model": "wavespeed-ai/qwen-image/edit-plus",
       "input": "edit",
+      "options": {
+        "max_images": 3
+      },
       "settings": [],
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
     },

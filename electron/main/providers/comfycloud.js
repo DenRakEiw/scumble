@@ -24,11 +24,12 @@
 // downscale the picture on their own (auto_downscale false: Scumble refuses a picture above the variant's
 // limit instead); Recraft's take the picture alone.
 //
-// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3) and how many pictures the node takes
+// (NODE_PICTURES); buildGraph uploads only the pictures the layout wires and refuses a run past that count.
 "use strict";
 
 const { readError, sleep, num, closestAspect } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://cloud.comfy.org";
 const POLL_MS = 2000;
@@ -105,30 +106,47 @@ const SHAPES = {
     QwenImageEditApi(g, v) {
         g.set("model", v.model); g.set("model.prompt", v.prompt); g.set("model.negative_prompt", v.negative || "");
         g.set("size", "match input"); g.set("n", 1); g.set("seed", v.seed); g.set("prompt_extend", true); g.set("watermark", false);
-        g.images("model.images.image_", [g.crop, ...g.refs].slice(0, 3));
+        g.images("model.images.image_", [g.crop, ...g.refs]);
     },
 };
 
+// How many pictures each node with an image list takes, the crop included (a mask input of its own is no picture), as
+// its source says (the local ComfyUI's comfy_api_nodes, read on 2026-09-29): nodes_openai.py image_1 .. image_16,
+// nodes_gemini.py image_1 .. image_14 ("the current maximum number of supported images is 14"), nodes_bytedance.py
+// max_ref_images 14 for Seedream 5.0 lite and 10 for the others, nodes_bfl.py "n_images > 8", nodes_qwen.py "a maximum
+// of 3 reference images". buildGraph refuses a run past it before any upload.
+const NODE_PICTURES = {
+    OpenAIGPTImageNodeV2: 16,
+    GeminiNanoBanana2V2: 14,
+    ByteDanceSeedreamNodeV3: (model) => (/lite/i.test(String(model || "")) ? 14 : 10),
+    Flux2ImageNode: 8,
+    QwenImageEditApi: 3,
+};
+const picturesOf = (node, model) => (typeof NODE_PICTURES[node] === "function" ? NODE_PICTURES[node](model) : NODE_PICTURES[node]);
+
 // Where each node above takes the pictures of an edit: `field` the exact input key on the partner node, `mask` whether
-// buildGraph's g.mask() gives a link. The references not wired are still uploaded as LoadImage nodes of their own.
-const autogrow = (req, cap) => [["crop", "model.images.image_1"], ...refRoles(req, cap).map(([role, i]) => [role, `model.images.image_${i + 2}`, i])];
-const cropOnly = (field) => layoutOf({ seq: [["crop", field]], drops: "This node takes the crop alone: reference images are left out." });
+// buildGraph's g.mask() gives a link. A node with one image input takes the crop alone and declares the drop: index.js
+// then sends it no reference at all (a note says so), and buildGraph never uploads one it does not wire.
+const autogrow = (req) => [["crop", "model.images.image_1"], ...refRoles(req).map(([role, i]) => [role, `model.images.image_${i + 2}`, i])];
+const list = (node, req, own = []) => layoutOf({ seq: autogrow(req), own, max: picturesOf(node, req.model) });
+const ONE_PICTURE = "this node takes one picture";
+const cropOnly = (field) => layoutOf({ seq: [["crop", field]], max: 1, drops: ONE_PICTURE });
 const LAYOUTS = {
-    OpenAIGPTImageNodeV2: (req, mask) => layoutOf({ seq: autogrow(req), own: mask ? [["mask", "model.mask"]] : [] }),
-    GeminiNanoBanana2V2: (req) => layoutOf({ seq: autogrow(req) }),
+    OpenAIGPTImageNodeV2: (req, mask) => list("OpenAIGPTImageNodeV2", req, mask ? [["mask", "model.mask"]] : []),
+    GeminiNanoBanana2V2: (req) => list("GeminiNanoBanana2V2", req),
     GeminiImage2Node: () => cropOnly("images"),
     GeminiImageNode: () => cropOnly("images"),
-    ByteDanceSeedreamNodeV3: (req) => layoutOf({ seq: autogrow(req) }),
-    Flux2ImageNode: (req) => layoutOf({ seq: autogrow(req) }),
+    ByteDanceSeedreamNodeV3: (req) => list("ByteDanceSeedreamNodeV3", req),
+    Flux2ImageNode: (req) => list("Flux2ImageNode", req),
     FluxProFillNode(req, mask) {
         if (!mask) throw new Error("Flux.1 Fill on Comfy Cloud needs a selection mask.");
-        return layoutOf({ seq: [["crop", "image"]], own: [["mask", "mask"]], drops: "This node takes the crop and the mask only: reference images are left out." });
+        return layoutOf({ seq: [["crop", "image"]], own: [["mask", "mask"]], max: 1, drops: "FLUX.1 Fill takes no reference images" });
     },
     MagnificImageUpscalerPreciseV2Node: () => cropOnly("image"),
     MagnificImageUpscalerCreativeNode: () => cropOnly("image"),
     RecraftCrispUpscaleNode: () => cropOnly("image"),
     RecraftCreativeUpscaleNode: () => cropOnly("image"),
-    QwenImageEditApi: (req) => layoutOf({ seq: autogrow(req, 2), drops: "This node takes 3 pictures: reference images past the 2nd are left out." }),
+    QwenImageEditApi: (req) => list("QwenImageEditApi", req),
 };
 
 /** Magnific's nodes take 2x, 4x, 8x or 16x. */
@@ -151,14 +169,23 @@ async function upload(ctx, bytes, name) {
 }
 
 async function buildGraph(req, ctx, node) {
+    // the layout first: it refuses what the node cannot take (no node, Fill without a mask) before any upload
+    const lay = layout(req);
+    const max = +lay.max > 0 ? +lay.max : null, count = countOf(lay);
+    // index.js refuses a run past the node's count before this; the check keeps a direct call from uploading one
+    if (max != null && count > max) throw new Error(`Comfy Cloud ${node} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${count}: hide reference layers or turn Original off.`);
     const stamp = Date.now().toString(36);
     const graph = {};
     let n = 0;
     const load = (file) => { const id = String(++n); graph[id] = { class_type: "LoadImage", inputs: { image: file } }; return [id, 0]; };
     const crop = load(await upload(ctx, req.image, `scumble-${stamp}-crop.png`));
+    // the references the node wires, in the order its image list takes them; one it does not wire is never uploaded
     const refs = [];
-    for (let i = 0; i < req.references.length; i++) refs.push(load(await upload(ctx, req.references[i], `scumble-${stamp}-ref${i + 1}.png`)));
-    const uploadedMask = req.mask ? await upload(ctx, req.mask, `scumble-${stamp}-mask.png`) : null;
+    for (const p of lay.pictures.filter((x) => x.ref != null && x.n != null).sort((a, b) => a.n - b.n)) {
+        refs.push(load(await upload(ctx, req.references[p.ref], `scumble-${stamp}-ref${p.ref + 1}.png`)));
+    }
+    // the mask only where the layout wires one (g.mask()'s rule), never for a node that takes none
+    const uploadedMask = req.mask && lay.pictures.some((p) => p.role === "mask") ? await upload(ctx, req.mask, `scumble-${stamp}-mask.png`) : null;
     let maskLink = null;
     const partner = { class_type: node, inputs: {} };
     const g = {

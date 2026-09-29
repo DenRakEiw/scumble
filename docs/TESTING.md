@@ -97,7 +97,17 @@ as `@img?<id>`, a named snapshot with Revert). 26b2 adds `refs_send` (a loopback
 pictures by their place, with the Original too; a hidden reference's token, a literal `{@ref:` and a token on a stubbed
 ComfyUI recipe each refuse at once with nothing sent), `refs_names` (an upscale writes the cleaned layer name, the
 Generate new dialog's prefill too) and `refs_agents` (labels in `list_layers` / `status`, `status.references[].sent_as`
-with and without the Original, `set_prompt refs`); `tools/assistant_test.js` checks the state note's `ref @img1`. Every
+with and without the Original, `set_prompt refs`); `tools/assistant_test.js` checks the state note's `ref @img1`. 26a2
+adds `refs_layout_test.js` sections 8 (`refs.instruction`, `labelParts` and `checkPictures` against literals: 0 to 4
+references, a mask picture or field, the Original, `Image {n}` and `<image{n}>`, style layouts, the exact drop notes
+and cap messages, a cap that is no number above 0) and 9 (`index.js` with the loopback's `options.drops` and
+`options.max_images`: the stripped request, `notes` in the answer and the log record, refusals before the adapter,
+`layout(shape)`'s `names` and `over`), and its caps section moves to 26a2's caps (every reference or a refusal, no
+partial drop); the adapter tests (`ark`, `openrouter`, `oxen`, `comfyrouter`, `magnific`, `toapis`, plain Node and
+gates) take the new sentences. The `commands` steps `refs_declared_drop` (a loopback recipe with `options.drops` and
+two visible references: the loopback gets none, the status says "not sent", `generate` returns one note) and
+`refs_over_cap` (`options.max_images: 2`: refused with "at most 2 pictures; this run has 3", no loopback call) run
+the path through the app. Every
 gate that touches references ends with `ed._refDrift` 0: a change of the shown references that no site remapped is
 counted in `renderReferences`.
 

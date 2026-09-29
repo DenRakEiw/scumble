@@ -352,7 +352,11 @@ directly; comfy steps stub `host.connected`, `objectInfo`, `ensureOnServer` and 
 - 26a2: the instruction sentence changes on every route that had one ("Edit image 1 ... Images 3 and 4 are reference
   images"); the Original gets its own sentence; declared drops are reported in the status line; WaveSpeed FLUX.2
   takes 3 pictures (runs with the Original and two references are refused now); flux1_fill on Comfy Router runs
-  again and leaves the references out, as its note says.
+  again and leaves the references out, as its note says. Built: every route either sends every picture, refuses before
+  anything is sent, or says in the status line what it left out; caps per variant (BFL klein 4 and FLUX.2 8 without
+  the old silent cut at 7, Grok on fal 5, GPT Image 16 on OpenAI, Nano Banana 14, Seedream on fal 10, ...); Gemini
+  direct and Comfy Router's Google route put a label ("Image 1:") before each picture when more than one goes; Comfy
+  Cloud uploads only the pictures its node reads.
 - 26b: reference badges read `img1`; hiding a reference renumbers the prompt; a new reference goes below the others;
   a role change to reference moves the layer there; up / down in the reference list steps past the next reference.
   26b1 also: a role change (the layer panel's kind and Role selects, the list's "back to image", `set_layer role`) is
@@ -992,6 +996,44 @@ Tier: **normal**, plus the pure function with the most cases. No pixel path chan
 `Item 26 step 26b: @img tokens (reftokens.js), img N labels, the remap at every mutation site, the click snapshot and one run helper`
 
 ## 26a2: Routes: drops, caps, one instruction, label parts
+
+**Built (2026-09-29, S2).** `electron/main/providers/refs.js` gains `instruction(req, lay, text)` (the head with or
+without the mask clause, the text trimmed, the Original's sentence, one sentence per run of references; range words
+only for a one-word `{n}` pattern, else a list; nothing for `style`; text and upscale unchanged), `labelParts(lay,
+pattern)` (by `n`, `[]` for one picture) and `checkPictures(lay, req, who)` (every count `countOf`, every cap read `+x >
+0`; drops all or nothing with the note "`who`: `drops`; the Original and 2 reference layers not sent."; a marker on a
+dropping route or a style marker refused; over `max` refused with the parts named). `index.js` `edit()`: `layoutFor`
+-> `checkPictures` -> the layout again after a strip -> `resolveNames` -> the safety net -> the adapter; the answer and
+the success record carry `notes` (the record also `pictures: countOf`), `layout(shape)` answers all `names` null for a
+dropping route; `runProvider` (26b2) already shows and returns them. Per adapter: **BFL** `max` by endpoint (klein 4,
+FLUX.2 pro / flex / max 8, else null), every reference as `input_image_2..N` with a guard in `bodyFor`, FLUX.1 Fill a
+drop; **fal**, **Replicate**, **WaveSpeed** `max` from `options.max_images` with a guard before the first upload (Replicate
+beyond the plan: its variants carry caps too), their drop sentences shortened because the note appends "; … not sent."
+("This endpoint takes the crop and the mask only", "This endpoint takes one picture"), Replicate's one-image edit a
+drop; **In-app** "LaMa fills from the picture alone"; **loopback** honours `options.drops` / `options.max_images`;
+**Comfy Cloud** `NODE_PICTURES` as read in `comfy_api_nodes` (GPT Image 16, Nano Banana 2 14, Seedream 10 / lite 14,
+FLUX.2 8, Qwen 3), the one-picture nodes `max` 1 and a drop, the Qwen slice gone, `buildGraph` refusing past the count
+before any upload and uploading only the references and the mask the node wires (the unwired mask was not in the
+plan); **Comfy Router** `editPrompt` (byteplus, qwen) and vertexai through `instruction`, vertexai's label parts (picture
+n at `parts[2n]`), its mask picture counted inside `max_images` with a guard in the body (`picturesFor` counts no mask),
+FLUX.1 Fill a drop, and `run()` strips the references of a dropping route for a direct call too; **Comfy Partner**
+`editText` = `instruction` around the legacy `resolveRefs`; **Gemini** `instruction`, label parts, the mask a picture
+only for `req.mask && kind !== "edit"`, `max` from `max_images`, a guard in `edit()`; **OpenRouter** `promptFor(req,
+lay)`, **Oxen** through it with its own layout, **ModelArk** `promptFor` = `instruction`; **Magnific** `editPrompt` =
+`instruction` (flux2, seedream, gpt), `maxOf(R)` as the picture cap and every layout's `max`, Image Expand a drop (the
+log line gone), Ideogram `style` and 11; **ToAPIs** `capOf(ch)` shared by the layout and the guard, so `"0"` is no cap.
+`grep "reference material" electron/main/providers` finds nothing. Recipes: the caps of the table plus the ones read at
+build time (Grok on fal 5; Nano Banana 2 / Pro and Seedream lite on Replicate 14; Nano Banana 2 / Pro 14, GPT Image 2 /
+2.5 16 and Seedream 5 10 on WaveSpeed), and three notes (Replicate Qwen Image Edit, Comfy Cloud Nano Banana Pro, Comfy
+Router FLUX.1 Fill). **Not as planned:** `flux2_klein` on Oxen got no cap (Oxen's schema names none; the adapter's 16
+holds, undocumented) instead of the table's 4; `openai.js`'s layout did not read `max_images`, so the sweep made it read
+the cap and `edit()` refuse past it, as the other adapters do; undocumented as well: fal Nano Banana 2 / Pro, Replicate GPT Image 2, WaveSpeed Nano
+Banana 2 Lite and Reve (no page found; a search summary says it takes one picture, unconfirmed), the ToAPIs GPT Image
+2.5 channels; the WaveSpeed fill with `fields.images` still sends no mask (`docs/BUGS.md`). The Original's own sentence
+is in (§7's default). Tests: `refs_layout_test.js` sections 8 and 9 and its caps rows moved to the new caps; `ark`,
+`openrouter`, `oxen`, `comfyrouter`, `magnific`, `toapis` plain-Node tests green with the new sentences and caps (their
+`.py` gates edited by reading, run in the main loop's gate line with the `commands` steps `refs_declared_drop` and
+`refs_over_cap`). No live run.
 
 ### Read first: corrections from the review (they win over the text below)
 

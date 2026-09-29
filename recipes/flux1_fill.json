@@ -313,7 +313,7 @@
         }
       ],
       "text": false,
-      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The crop and the selection mask go inline in the request to Comfy, which passes them to Black Forest Labs; the answer comes back through Comfy's storage. Mask inpainting: the stitch blends the answer back. The reference layers are not sent."
+      "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The crop and the selection mask go inline in the request to Comfy, which passes them to Black Forest Labs; the answer comes back through Comfy's storage. Mask inpainting: the stitch blends the answer back. FLUX.1 Fill takes the crop and the mask only: the reference layers and the Original are not sent, and the status line says so."
     }
   },
   "limits": {

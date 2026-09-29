@@ -11,7 +11,9 @@
 //              repaint), width, height (of the crop), references: [PNG bytes], params,
 //              original (1: references[0] is the crop before the fill), refName (the recipe's refs.name) }
 //   layout(req)              where each picture goes and what the model calls it (refs.js, docs/PLAN_REFS.md C3);
-//                            a marker {@ref:i} in the prompt becomes that picture's name here, before the adapter runs
+//                            a marker {@ref:i} in the prompt becomes that picture's name here, before the adapter runs;
+//                            before that, checkPictures strips the references of a route that declares `drops` (the
+//                            answer's `notes` say so) and refuses a run past the route's `max`
 //   ctx:     { key, fetch, log, base, toJpeg, opaque, bitmap, fromBitmap, cropPng }   base: the adapter's own allowlisted host from
 //            settings (ToAPIs, OpenRouter; ModelArk's and Oxen.ai's loopback mock; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
 //            nativeImage, opaque(png): whether it has no transparent pixel; bitmap(png): { width, height, data } (BGRA),
@@ -28,7 +30,7 @@ const log = require("../log");
 
 const keys = require("../keys");
 const settings = require("../settings");
-const { MARKER_ANY, TOKEN, REF_NAME_DEFAULT, validRefName, nameOf, refRoles, layoutOf, countOf, checkLayout, resolveMarkers } = require("./refs");
+const { MARKER_ANY, TOKEN, REF_NAME_DEFAULT, validRefName, nameOf, refRoles, layoutOf, countOf, checkLayout, resolveMarkers, checkPictures } = require("./refs");
 
 // how much of a prompt goes into a log record
 const PROMPT_LOG = 500;
@@ -147,7 +149,7 @@ async function edit(request) {
     const key = p.needsKey === false ? "" : keys.get(keyNameOf(id, p));
     if (p.needsKey !== false && !key) throw new Error(`No API key for ${p.label}. Add it under Settings › API providers.`);
     const given = (request.references || []).length;
-    const req = {
+    let req = {
         ...request,
         image: toBuffer(request.image),
         mask: toBuffer(request.mask),
@@ -163,10 +165,19 @@ async function edit(request) {
     const ctx = contextFor(id, p, key);
     // the request's shape for the log: never the key, never the pixels
     const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
-    let out, named;
+    let out, named, lay, notes = [];
     try {
         if (req.original && !req.references.length) throw new Error("The request marks an Original picture but carries no reference picture: nothing was sent.");
-        named = resolveNames(p, req, layoutFor(id, p, req), given);
+        lay = layoutFor(id, p, req);
+        // a declared drop takes every reference out (the adapter never sees or uploads them), a run past the cap is refused
+        const chk = checkPictures(lay, req, `${p.label} ${req.model}`);
+        notes = chk.notes;
+        const stripped = chk.req !== req;
+        if (stripped) {
+            req = chk.req;
+            lay = layoutFor(id, p, req);   // so a marker can only resolve against what is sent
+        }
+        named = resolveNames(p, req, lay, stripped ? 0 : given);
         req.prompt = named.prompt;
         req.negative = named.negative;
         out = text ? await p.generate(req, ctx) : upscale ? await p.upscale(req, ctx) : await p.edit(req, ctx);
@@ -175,17 +186,17 @@ async function edit(request) {
         throw err;
     }
     if (!out || !out.bytes) { log.record({ level: "error", source: id, message: p.label + " returned no image.", detail: shape() }); throw new Error(p.label + " returned no image."); }
-    log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) } });
+    log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG), pictures: countOf(lay), notes } });
     const bytes = toBuffer(out.bytes);
-    return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, negative: req.negative == null ? null : req.negative, refs: named.refs };
+    return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, negative: req.negative == null ? null : req.negative, refs: named.refs, notes };
 }
 
 /**
  * The layout of a request of this shape, for the renderer's preview (the reference bar, the hover card, `status`):
  * shape { provider, model, kind, fields, options, params, original, count, refName }, `count` the references
  * including the Original. The mask follows from `kind` as the builders read it. Answers the layout plus `names` (the
- * name of each reference index, null when the route leaves it out or cannot number it), `sent` (countOf) and `over`
- * (more than the route's `max`).
+ * name of each reference index, null when the route leaves it out or cannot number it, all null when it declares a
+ * drop: the send strips every reference then), `sent` (countOf) and `over` (more than the route's `max`).
  */
 function layout(shape) {
     const s = shape || {};
@@ -204,7 +215,11 @@ function layout(shape) {
         refName: validRefName(s.refName) ? s.refName : REF_NAME_DEFAULT,
     };
     const l = layoutFor(id, p, req);
+    // what edit() does with this request: a declared drop strips every reference (a refusal over the cap is `over`)
+    let strips = false;
+    try { strips = checkPictures(l, req, p.label).req !== req; } catch (_) { /* refused: not a strip */ }
     const names = req.references.map((_, i) => {
+        if (strips) return null;
         const pic = l.pictures.find((x) => x.ref === i);
         return pic && pic.n != null ? nameOf(req.refName, pic.n) : null;
     });

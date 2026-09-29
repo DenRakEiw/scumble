@@ -793,6 +793,120 @@ if (ed.referenceLayers().map((l) => l.id).join() !== [A, B].join()) throw new Er
 if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift + " times without a remap");
 return out;
 """.replace("__LOOP_EDIT__", LOOP_EDIT)),
+    # 26a2: a route that declares a drop gets neither the Original nor a reference (main strips them), the run goes and
+    # says so in the status and in generate's notes; a prompt that names a reference there is refused at once
+    ("refs_declared_drop", """
+const ed = window.editor;
+const { host } = await import("./editor/host.js");
+const A = window.__refA, B = window.__refB;
+const P0 = "jacket from @img2, style of @img1", N0 = "no @img2";
+if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the prompt the step starts from: " + JSON.stringify([ed.promptText, ed.negativeText]));
+const prev = host.recipe;
+const crop0 = { fill: ed.cropSettings.fill, withOriginal: ed.cropSettings.withOriginal };
+const newLayers = async (before) => { for (const l of ed.layers.filter((x) => !before.has(x.id))) await c("remove_layer", { layer: l.id }); };
+const WHO = "Loopback (test) loopback";
+const NOTE = WHO + ": test drop; the Original and 2 reference layers not sent.";
+const out = {};
+try {
+    host.setRecipe({ ...__LOOP_EDIT__, options: { drops: "test drop" } });
+    await c("select_rect", { x: 40, y: 40, w: 120, h: 90 });
+    await c("set_crop", { fill: "green", withOriginal: true });
+    if (ed.predictOriginal() !== 1) throw new Error("predictOriginal with a green fill and the Original on: " + ed.predictOriginal());
+    // the preview says it before the click: no reference gets a picture name, and why
+    const lay = await host.refLayout(ed);
+    if (!lay || lay.none !== "test drop" || lay.names.get(A) !== null || lay.names.get(B) !== null || lay.over.size) throw new Error("refLayout of a drop: " + JSON.stringify(lay && { names: [...lay.names], over: [...lay.over], none: lay.none }));
+    // 1. the prompt names references this route does not send: refused at once, nothing added
+    const h0 = ed.history.length, n0 = ed.layers.length, t0 = Date.now();
+    let msg = null;
+    try { await c("generate", { timeout: 60 }); } catch (err) { msg = String(err.message || err); }
+    if (!msg || !msg.includes(WHO + ": test drop, so the prompt cannot name a reference image")) throw new Error("tokens on a route that drops the references: " + msg);
+    if (Date.now() - t0 > 5000) throw new Error("the refusal took " + (Date.now() - t0) + " ms");
+    if (ed.history.length !== h0 || ed.layers.length !== n0) throw new Error("a refused run added a result");
+    out.named = msg;
+    // 2. no token: the run goes with the crop alone and says what it left out
+    await c("set_prompt", { text: "a red door", negative: "" });
+    let before = new Set(ed.layers.map((l) => l.id));
+    const g = await c("generate", { timeout: 60 });
+    if (!g.layer) throw new Error("no result layer: " + g.status);
+    if (JSON.stringify(g.notes) !== JSON.stringify([NOTE])) throw new Error("generate's notes: " + JSON.stringify(g.notes));
+    if (!g.status.includes("not sent") || !g.status.includes(NOTE)) throw new Error("the status says nothing of the drop: " + g.status);
+    if (JSON.stringify(ed.lastRunNotes) !== JSON.stringify([NOTE])) throw new Error("lastRunNotes: " + JSON.stringify(ed.lastRunNotes));
+    await newLayers(before);
+    out.notes = g.notes;
+    // the run helper called directly: the loopback got neither the Original nor a reference
+    before = new Set(ed.layers.map((l) => l.id));
+    const rp = await host.runProvider(ed);
+    if (!rp.info || rp.info.references !== 0 || rp.info.original !== 0) throw new Error("the loopback got " + JSON.stringify(rp.info));
+    if (JSON.stringify(rp.notes) !== JSON.stringify([NOTE])) throw new Error("runProvider's notes: " + JSON.stringify(rp.notes));
+    if (!ed.status.includes(NOTE)) throw new Error("the status after runProvider: " + ed.status);
+    await newLayers(before);
+    out.info = { references: rp.info.references, original: rp.info.original };
+} finally {
+    host.setRecipe(prev);
+    await c("set_crop", crop0);
+    await c("select_none");
+    await c("set_prompt", { text: P0, negative: N0 });
+}
+if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the prompt after the step: " + JSON.stringify([ed.promptText, ed.negativeText]));
+if (ed.referenceLayers().map((l) => l.id).join() !== [A, B].join()) throw new Error("the references after the step: " + ed.referenceLayers().map((l) => l.name));
+if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift + " times without a remap");
+return out;
+""".replace("__LOOP_EDIT__", LOOP_EDIT)),
+    # 26a2: a run with more pictures than the route takes is refused by main before the adapter runs, at once, with
+    # nothing added; one reference fewer goes
+    ("refs_over_cap", """
+const ed = window.editor;
+const { host } = await import("./editor/host.js");
+const A = window.__refA, B = window.__refB;
+const P0 = "jacket from @img2, style of @img1", N0 = "no @img2";
+if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the prompt the step starts from: " + JSON.stringify([ed.promptText, ed.negativeText]));
+const prev = host.recipe;
+const crop0 = { fill: ed.cropSettings.fill, withOriginal: ed.cropSettings.withOriginal };
+const newLayers = async (before) => { for (const l of ed.layers.filter((x) => !before.has(x.id))) await c("remove_layer", { layer: l.id }); };
+const MSG = "Loopback (test) loopback takes at most 2 pictures; this run has 3 (the crop, 2 reference layers): hide reference layers or turn Original off.";
+const out = {};
+try {
+    host.setRecipe({ ...__LOOP_EDIT__, options: { max_images: 2 } });
+    await c("set_crop", { fill: "none", withOriginal: false });
+    await c("select_rect", { x: 40, y: 40, w: 120, h: 90 });
+    if (ed.predictOriginal() !== 0) throw new Error("predictOriginal without a fill: " + ed.predictOriginal());
+    // the preview marks the reference past the cap (the lower one) before the click
+    const lay = await host.refLayout(ed);
+    if (!lay || lay.over.size !== 1 || !lay.over.has(B) || lay.names.get(A) !== "image 2" || lay.names.get(B) !== "image 3") throw new Error("refLayout over the cap: " + JSON.stringify(lay && { names: [...lay.names], over: [...lay.over], none: lay.none }));
+    // 1. the crop and both references are 3 pictures: refused at once, nothing added, the loopback never ran
+    const mark = await c("read_log", { limit: 1 });
+    const after = mark.entries.length ? mark.entries[mark.entries.length - 1].id : 0;
+    const h0 = ed.history.length, n0 = ed.layers.length, t0 = Date.now();
+    let msg = null;
+    try { await c("generate", { timeout: 60 }); } catch (err) { msg = String(err.message || err); }
+    const ms = Date.now() - t0;
+    if (!msg || !msg.includes(MSG)) throw new Error("over the cap was not refused as expected: " + msg);
+    if (ms > 5000) throw new Error("the refusal took " + ms + " ms (a wait for a result that never comes)");
+    if (ed.history.length !== h0 || ed.layers.length !== n0) throw new Error("a refused run added a result");
+    if (!ed.lastRunError || !ed.lastRunError.message.includes("at most 2 pictures; this run has 3")) throw new Error("lastRunError: " + (ed.lastRunError && ed.lastRunError.message));
+    const recs = (await c("read_log", { after })).entries.filter((e) => e.source === "loopback");
+    if (recs.length !== 1 || recs[0].level !== "error" || !recs[0].message.includes("at most 2 pictures; this run has 3")) throw new Error("the loopback's log records: " + JSON.stringify(recs.map((e) => [e.level, e.message])));
+    out.refused = { msg, ms };
+    // 2. refB hidden (a prompt without tokens first): the crop and refA are 2 pictures, and the run goes
+    await c("set_prompt", { text: "a red door", negative: "" });
+    await c("set_layer", { layer: B, visible: false });
+    const before = new Set(ed.layers.map((l) => l.id));
+    const g = await c("generate", { timeout: 60 });
+    if (!g.layer || JSON.stringify(g.notes) !== "[]") throw new Error("at the cap: " + JSON.stringify({ layer: !!g.layer, notes: g.notes, status: g.status }));
+    await newLayers(before);
+    out.atCap = g.status;
+} finally {
+    host.setRecipe(prev);
+    await c("set_layer", { layer: B, visible: true });
+    await c("set_crop", crop0);
+    await c("select_none");
+    await c("set_prompt", { text: P0, negative: N0 });
+}
+if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the prompt after the step: " + JSON.stringify([ed.promptText, ed.negativeText]));
+if (ed.referenceLayers().map((l) => l.id).join() !== [A, B].join()) throw new Error("the references after the step: " + ed.referenceLayers().map((l) => l.name));
+if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift + " times without a remap");
+return out;
+""".replace("__LOOP_EDIT__", LOOP_EDIT)),
     ("refs_restore", """
 const ed = window.editor;
 const A = window.__refA, B = window.__refB;

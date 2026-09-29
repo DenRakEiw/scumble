@@ -113,6 +113,9 @@
     "gemini": {
       "model": "gemini-3-pro-image",
       "input": "fill",
+      "options": {
+        "max_images": 14
+      },
       "settings": [
         {
           "index": 1,
@@ -203,6 +206,9 @@
       "fields": {
         "images": "image_input"
       },
+      "options": {
+        "max_images": 14
+      },
       "fixed": {
         "output_format": "png",
         "aspect_ratio": "match_input_image"
@@ -230,6 +236,7 @@
       "model": "google/nano-banana-pro/edit",
       "input": "edit",
       "options": {
+        "max_images": 14,
         "aspect_ratios": [
           "1:1",
           "3:2",
@@ -285,7 +292,7 @@
           ]
         }
       ],
-      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). One image input: the references are not sent. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+      "note": "Runs the Partner Node on Comfy Cloud (paid plan, credits). The node takes one picture, the crop: the reference layers and the Original are not sent (the status line says so). Instruction edit, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and say \"fill the green area\"."
     },
     "openrouter": {
       "model": "google/gemini-3-pro-image",

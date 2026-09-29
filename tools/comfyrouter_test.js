@@ -1,5 +1,6 @@
 // The Comfy Router adapter (electron/main/providers/comfyrouter.js), its recipe variants and its wiring in
-// providers/index.js, in plain Node, no Electron and no key:
+// providers/index.js, the Partner API's HY Image (comfypartner.js) and the pictures Comfy Cloud's graph takes per node
+// (comfycloud.js), in plain Node, no Electron and no key:
 //   node tools/comfyrouter_test.js
 // A scripted fetch plays api.comfy.org and the loopback mock: the queue (submit, status, result, cancel), the
 // synchronous route and the asset links the answers name; ctx.sleep records its waits instead of waiting and ctx.uuid
@@ -17,6 +18,8 @@ const Module = require("node:module");
 const ROOT = path.join(__dirname, "..");
 const router = require(path.join(ROOT, "electron", "main", "providers", "comfyrouter.js"));
 const partner = require(path.join(ROOT, "electron", "main", "providers", "comfypartner.js"));
+const cloud = require(path.join(ROOT, "electron", "main", "providers", "comfycloud.js"));
+const refsLib = require(path.join(ROOT, "electron", "main", "providers", "refs.js"));
 
 const KEY = "test-comfyrouter-0123456789";
 const REAL_KEY = "comfyui-0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd";   // the shape of a Comfy key; never a real one
@@ -479,7 +482,8 @@ async function main() {
             const runs = [];
             if (up) runs.push(["upscale", upReq(v)]);
             else {
-                if (v.edit !== false) runs.push(["edit", editReq(v, { references: (v.options.max_images || 1) > 1 ? [pngOf(512, 512, 64, "REF1")] : [] })]);
+                // one reference each: FLUX.1 Fill (max_images 1) declares the drop and goes out with the crop alone
+                if (v.edit !== false) runs.push(["edit", editReq(v, { references: [pngOf(512, 512, 64, "REF1")] })]);
                 if (v.text) runs.push(["text", textReq(v)]);
             }
             for (const [kind, req] of runs) {
@@ -489,11 +493,17 @@ async function main() {
                 const problems = body ? schemaProblems(v.model, body) : ["no submit"];
                 if (problems.length) bad.push(`${r.id} ${kind}: ${problems.slice(0, 4).join("; ")}`);
                 if (!out || !out.bytes || !out.bytes.length) bad.push(`${r.id} ${kind}: no picture back`);
+                // the pictures sent are the layout's: every one it numbers, the crop alone where it declares a drop
+                if (kind === "edit" && out) {
+                    const lay = router.layout(req), numbered = lay.pictures.filter((p) => p.n != null).length;
+                    const sent = out.info.pictures + (lay.pictures.some((p) => p.role === "mask" && p.n != null) ? 1 : 0);
+                    if (lay.drops ? out.info.pictures !== 1 : sent !== numbered) bad.push(`${r.id} edit: ${out.info.pictures} pictures sent, the layout numbers ${numbered}${lay.drops ? " and drops the references" : ""}`);
+                }
                 if (s.submits[0] && s.submits[0].url !== `${BASE}/v2/models/${v.model}/requests`) bad.push(`${r.id} ${kind}: ${s.submits[0].url}`);
                 bodies++;
             }
         }
-        check("each variant: its model, last in the list, the default kept, the description and the note, a dialect that fits its task, the text shape, one slot per setting; every edit, text and upscale body it builds holds against the model's published schema", !bad.length && bodies >= 26, bad.join(" | ") || `${bodies} bodies`);
+        check("each variant: its model, last in the list, the default kept, the description and the note, a dialect that fits its task, the text shape, one slot per setting; every edit (with one reference: the layout's pictures, FLUX.1 Fill the crop alone), text and upscale body it builds holds against the model's published schema",!bad.length && bodies >= 26, bad.join(" | ") || `${bodies} bodies`);
     });
 
     // ---- 7. the dialects field by field ----
@@ -516,7 +526,18 @@ async function main() {
         // Gemini
         x = await run("nano_banana_pro", "edit", { references: [pngOf(512, 512, 64, "REF1")] });
         const parts = x.body.contents[0].parts;
-        check("Gemini fill: the instruction, the crop, the mask, the reference, as camelCase inlineData; IMAGE only; the thought draft skipped in the answer", /^Edit the first image\. The second image is a mask/.test(parts[0].text) && /The remaining image is reference material/.test(parts[0].text) && tagOf(Buffer.from(parts[1].inlineData.data, "base64")) === "CROP" && tagOf(Buffer.from(parts[2].inlineData.data, "base64")) === "MASK-LUMINANCE" && tagOf(Buffer.from(parts[3].inlineData.data, "base64")) === "REF1" && parts.every((p) => !p.inline_data) && eq(x.body.generationConfig.responseModalities, ["IMAGE"]) && x.body.generationConfig.imageConfig.imageSize === "2K" && tagOf(x.out.bytes) === "RESULT", short(x.body.generationConfig));
+        const inl = (k) => tagOf(Buffer.from(parts[k].inlineData.data, "base64"));
+        check("Gemini fill: the instruction, then a label part before the crop, the mask and the reference, as camelCase inlineData; IMAGE only; the thought draft skipped in the answer", parts.length === 7 && parts[0].text === "Edit image 1. Image 2 is a mask: change only the white area of the mask, keep everything else exactly as it is, and keep the image size and framing. a red door Image 3 is a reference image." && eq([parts[1], parts[3], parts[5]], [{ text: "Image 1:" }, { text: "Image 2:" }, { text: "Image 3:" }]) && inl(2) === "CROP" && inl(4) === "MASK-LUMINANCE" && inl(6) === "REF1" && parts.every((p) => !p.inline_data) && eq(x.body.generationConfig.responseModalities, ["IMAGE"]) && x.body.generationConfig.imageConfig.imageSize === "2K" && tagOf(x.out.bytes) === "RESULT", short(parts.map((p) => p.text || tagOf(Buffer.from(p.inlineData.data, "base64")))));
+        x = await run("nano_banana_pro", "edit", { kind: "edit", refName: "<image{n}>", references: [pngOf(512, 512, 64, "REF1"), pngOf(512, 512, 64, "REF2")], original: 1 });
+        const p2 = x.body.contents[0].parts;
+        check("Gemini edit with the Original and a reference under <image{n}>: no mask picture, the Original named as the crop before the fill, the labels in the recipe's names", p2.length === 7 && p2[0].text === "Edit <image1> and keep its size and framing. a red door <image2> is <image1> before the selected area was filled. <image3> is a reference image." && eq([p2[1], p2[3], p2[5]], [{ text: "<image1>:" }, { text: "<image2>:" }, { text: "<image3>:" }]) && tagOf(Buffer.from(p2[2].inlineData.data, "base64")) === "CROP" && tagOf(Buffer.from(p2[4].inlineData.data, "base64")) === "REF1" && tagOf(Buffer.from(p2[6].inlineData.data, "base64")) === "REF2", short(p2.map((p) => p.text || tagOf(Buffer.from(p.inlineData.data, "base64")))));
+        x = await run("nano_banana_2", "edit", { kind: "edit" });
+        check("Gemini with one picture: no label part, the instruction and the crop", x.body.contents[0].parts.length === 2 && x.body.contents[0].parts[0].text === "Edit image 1 and keep its size and framing. a red door" && tagOf(Buffer.from(x.body.contents[0].parts[1].inlineData.data, "base64")) === "CROP", short(x.body.contents[0].parts.map((p) => p.text || "picture")));
+        const sCap = fakeServer();
+        const thirteen = Array.from({ length: 13 }, (_, i) => pngOf(64, 64, 64, "R" + i));
+        const eCap = await throws(() => router.edit(editReq(variant("nano_banana_2"), { references: thirteen }), ctxFor(sCap)));
+        const layCap = router.layout(editReq(variant("nano_banana_2"), { references: thirteen }));
+        check("Gemini fill with the crop, the mask and 13 references (15 pictures, max_images 14): the mask picture counts, refused before any call", layCap.max === 14 && /vertexai\/gemini-3\.1-flash-image takes at most 14 pictures; this run has 15 \(the crop, the mask, 13 references\)/.test(eCap || "") && sCap.calls.length === 0, `max ${layCap.max}: ${eCap}`);
         x = await run("nano_banana_2", "text", { params: { aspect_ratio: "auto", image_size: "auto" }, width: 1536, height: 1024, aspect: "3:2" });
         check("Gemini text: the dialog's aspect and the smallest tier covering its long side", eq(x.body.generationConfig.imageConfig, { aspectRatio: "3:2", imageSize: "2K" }) && x.body.contents[0].parts.length === 1, short(x.body));
         // FLUX.2 and Fill
@@ -524,17 +545,26 @@ async function main() {
         check("FLUX.2 edit: input_image and input_image_2 as plain base64, width and height held to 256..2048, the seed, png, the settings", Buffer.from(x.body.input_image, "base64").toString("latin1").includes("CROP") && Buffer.from(x.body.input_image_2, "base64").toString("latin1").includes("REF1") && x.body.width === 2048 && x.body.height === 256 && x.body.seed === 42 && x.body.output_format === "png" && x.body.safety_tolerance === 3 && x.body.prompt_upsampling === false && x.out.seed === 2784347701, short({ ...x.body, input_image: "..", input_image_2: ".." }));
         x = await run("flux1_fill", "edit", { params: { steps: 40, guidance: 30, safety_tolerance: 2, prompt_upsampling: false } });
         check("FLUX.1 Fill: image and the white-is-repaint mask as base64, steps and guidance, the answer downloaded from the sample link", tagOf(Buffer.from(x.body.image, "base64")) === "CROP" && tagOf(Buffer.from(x.body.mask, "base64")) === "MASK-LUMINANCE" && x.body.steps === 40 && x.body.guidance === 30 && tagOf(x.out.bytes) === "ASSET" && x.s.assets.length === 1, short({ ...x.body, image: "..", mask: ".." }));
+        const fillReq = editReq(variant("flux1_fill"), { references: [pngOf(512, 512, 64, "ORIG"), pngOf(512, 512, 64, "REF1")], original: 1, prompt: "a red door" });
+        const fillLay = router.layout(fillReq);
+        const fillChk = refsLib.checkPictures(fillLay, fillReq, "Comfy Router " + fillReq.model);
+        check("FLUX.1 Fill with the Original and a reference: the layout declares the drop, index.js's check strips both and says so", fillLay.drops === "FLUX.1 Fill takes no reference images" && fillChk.req.references.length === 0 && fillChk.req.original === 0 && eq(fillChk.notes, ["Comfy Router bfl/flux-pro-1.0-fill: FLUX.1 Fill takes no reference images; the Original and 1 reference layer not sent."]), short({ drops: fillLay.drops, notes: fillChk.notes }));
+        x = await run("flux1_fill", "edit", { references: [pngOf(512, 512, 64, "ORIG"), pngOf(512, 512, 64, "REF1")], original: 1 });
+        const fillSent = JSON.stringify(x.body);
+        check("FLUX.1 Fill called directly with references: it goes out with the crop and the mask alone, no reference anywhere in the body", tagOf(Buffer.from(x.body.image, "base64")) === "CROP" && tagOf(Buffer.from(x.body.mask, "base64")) === "MASK-LUMINANCE" && !fillSent.includes(pngOf(512, 512, 64, "REF1").toString("base64")) && !fillSent.includes(pngOf(512, 512, 64, "ORIG").toString("base64")) && x.out.info.pictures === 1, short({ keys: Object.keys(x.body), pictures: x.out.info.pictures }));
         // Seedream
         x = await run("seedream_5_pro", "edit", { width: 1600, height: 900 });
         const [sw, sh] = x.body.size.split("x").map(Number);
-        check("Seedream edit: the instruction, data URL pictures, a size in the crop's shape inside 1 to 4.2 MP, no watermark, b64_json, png, the seed", /^Edit the first image and keep its size and framing\. a red door$/.test(x.body.prompt) && fromDataUrl(x.body.image[0]).mime === "image/png" && sw * sh >= 1048576 && sw * sh <= 4194304 && Math.abs(sw / sh - 16 / 9) < 0.02 && x.body.watermark === false && x.body.response_format === "b64_json" && x.body.output_format === "png" && x.body.seed === 42 && !("model" in x.body), short({ ...x.body, image: 1 }));
+        check("Seedream edit: the instruction, data URL pictures, a size in the crop's shape inside 1 to 4.2 MP, no watermark, b64_json, png, the seed", x.body.prompt === "Edit image 1 and keep its size and framing. a red door" && fromDataUrl(x.body.image[0]).mime === "image/png" && sw * sh >= 1048576 && sw * sh <= 4194304 && Math.abs(sw / sh - 16 / 9) < 0.02 && x.body.watermark === false && x.body.response_format === "b64_json" && x.body.output_format === "png" && x.body.seed === 42 && !("model" in x.body), short({ ...x.body, image: 1 }));
         x = await run("seedream_5_lite", "text", { width: 3072, height: 2048, aspect: "3:2" });
         const [lw, lh] = x.body.size.split("x").map(Number);
         check("Seedream Lite text: no image, 3:2 inside 3.7 to 9.4 MP", !("image" in x.body) && lw * lh >= 3686400 && lw * lh <= 9437184 && Math.abs(lw / lh - 1.5) < 0.01, x.body.size);
         // Qwen
         x = await run("qwen_image_edit", "edit", { references: [pngOf(512, 512, 64, "REF1")] });
         const c = x.body.input.messages[0].content;
-        check("Qwen edit: the pictures then the text in one user message, size W*H, prompt rewriting and watermark off, seed and negative prompt; the answer's image link downloaded", c.length === 3 && tagOf(fromDataUrl(c[0].image).bytes) === "CROP" && tagOf(fromDataUrl(c[1].image).bytes) === "REF1" && /^Edit the first image/.test(c[2].text) && x.body.parameters.size === "1024*768" && x.body.parameters.prompt_extend === false && x.body.parameters.watermark === false && x.body.parameters.seed === 42 && x.body.parameters.negative_prompt === "blurry" && x.body.parameters.n === 1 && tagOf(x.out.bytes) === "ASSET", short(x.body.parameters));
+        check("Qwen edit: the pictures then the instruction in one user message, size W*H, prompt rewriting and watermark off, seed and negative prompt; the answer's image link downloaded", c.length === 3 && tagOf(fromDataUrl(c[0].image).bytes) === "CROP" && tagOf(fromDataUrl(c[1].image).bytes) === "REF1" && c[2].text === "Edit image 1 and keep its size and framing. a red door Image 2 is a reference image." && x.body.parameters.size === "1024*768" && x.body.parameters.prompt_extend === false && x.body.parameters.watermark === false && x.body.parameters.seed === 42 && x.body.parameters.negative_prompt === "blurry" && x.body.parameters.n === 1 && tagOf(x.out.bytes) === "ASSET", short([c[2] && c[2].text, x.body.parameters]));
+        x = await run("seedream_5_lite", "edit", { references: [pngOf(512, 512, 64, "ORIG"), pngOf(512, 512, 64, "REF1"), pngOf(512, 512, 64, "REF2")], original: 1 });
+        check("Seedream edit with the Original and two references: the Original named as the crop before the fill, the references in range words", x.body.prompt === "Edit image 1 and keep its size and framing. a red door Image 2 is image 1 before the selected area was filled. Images 3 and 4 are reference images." && x.body.image.length === 4, x.body.prompt);
         // Freepik
         x = await run("magnific_precision", "upscale", { factor: 20, params: { flavor: "sublime", sharpen: 12, smart_grain: 7, ultra_detail: 30 } });
         check("Magnific Precision: the picture as base64, the factor held to 2..16, the four settings, the answer's link downloaded", tagOf(Buffer.from(x.body.image, "base64")) === "UPSCALE" && x.body.scale_factor === 16 && x.body.flavor === "sublime" && x.body.sharpen === 12 && tagOf(x.out.bytes) === "ASSET", short({ ...x.body, image: ".." }));
@@ -606,7 +636,9 @@ async function main() {
         const recipe = loadRecipes().find((r) => r.id === "hy_image_3_5");
         const v = recipe && recipe.providers.comfypartner;
         check("the recipe: one comfypartner variant, its default, an instruction edit, a text shape of the same model, crops held to 2048 px and 4.2 MP", !!v && recipe.default === "comfypartner" && eq(recipe.providerIds, ["comfypartner"]) && v.model === "hy-image-v3.5-preview" && v.input === "edit" && v.text && v.text.model === v.model && v.limits.max === 2048 && v.limits.pixels === 4194304 && /run against the live API on 2026-09-23/.test(v.note) && /not a documented public API/.test(v.note), short(v && { limits: v.limits, text: v.text }));
-        const req = (extra = {}) => ({ provider: "comfypartner", model: v.model, kind: "edit", options: v.options, prompt: "put @image2 on the table", negative: "", seed: 42, image: pngOf(1024, 768, 96, "CROP"), mask: null, maskAlpha: null, width: 1024, height: 768, references: [pngOf(512, 512, 64, "REF1")], params: defaults(v), ...extra });
+        // refName: the recipe's refs.name, as runProvider sends it
+        check("the recipe names its pictures as the node does: refs.name Image {n}", !!v && !!v.refs && v.refs.name === "Image {n}", short(v && v.refs));
+        const req = (extra = {}) => ({ provider: "comfypartner", model: v.model, kind: "edit", options: v.options, prompt: "put @image2 on the table", negative: "", seed: 42, image: pngOf(1024, 768, 96, "CROP"), mask: null, maskAlpha: null, width: 1024, height: 768, references: [pngOf(512, 512, 64, "REF1")], params: defaults(v), refName: v.refs && v.refs.name, ...extra });
         const s = fakeServer();
         const ctx = ctxFor(s);
         const out = await partner.edit(req(), ctx);
@@ -614,12 +646,16 @@ async function main() {
         const content = b ? b.messages[0].content : [];
         check("an edit: one storage request per picture with the key and its type, the bytes PUT to the signed URL without the key, in order", s.storage.length === 2 && s.storage.every((c) => c.headers["x-api-key"] === KEY && c.body.content_type === "image/png" && /\.png$/.test(c.body.file_name)) && s.uploads.length === 2 && tagOf(s.uploads[0].bytes) === "CROP" && tagOf(s.uploads[1].bytes) === "REF1" && s.uploads.every((c) => !c.headers["x-api-key"] && c.headers["content-type"] === "image/png"), short(s.calls.map((c) => c.method + " " + c.url)));
         check("then one generation request: the model, a user message of the text and the two download URLs, the crop's size, resize_max_pixels for Detail standard, the seed, no watermark", !!b && b.model === "hy-image-v3.5-preview" && b.messages.length === 1 && b.messages[0].role === "user" && content[0].type === "text" && content[1].image_url.url === `${BASE}/stored/1.png?sig=def` && content[2].image_url.url === `${BASE}/stored/2.png?sig=def` && b.size === "1024x768" && b.resize_max_pixels === 1048576 && b.seed === 42 && b.logo_add === 0 && eq(Object.keys(b).sort(), ["logo_add", "messages", "model", "resize_max_pixels", "seed", "size"]), short(b && { ...b, messages: content.map((x) => x.type) }));
-        check("the text: the crop is Image 1, @image2 became Image 2, the reference is named", !!b && content[0].text === "Edit Image 1 and keep its size and framing. put Image 2 on the table Image 2 is reference material.", content[0] && content[0].text);
+        check("the text: the crop is Image 1, @image2 became Image 2, the reference is named", !!b && content[0].text === "Edit Image 1 and keep its size and framing. put Image 2 on the table Image 2 is a reference image.", content[0] && content[0].text);
         check("the generation request carries the key, a UUID Idempotency-Key and JSON; the answer's picture is fetched without the key", s.hy[0].headers["x-api-key"] === KEY && s.hy[0].headers["idempotency-key"] === ctx.uuids[0] && s.assets.length === 1 && eq(Object.keys(s.assets[0].headers), []) && tagOf(out.bytes) === "ASSET" && out.info.answered === "1024x768" && out.info.detail === "standard" && out.seed === 42, short(out.info));
 
         const s2 = fakeServer();
         await partner.edit(req({ params: { reference_detail: "high" }, references: [], prompt: "make it night" }), ctxFor(s2));
         check("Detail high: resize_max_pixels 4194304; one picture, no reference sentence", s2.hy[0].body.resize_max_pixels === 4194304 && s2.hy[0].body.messages[0].content.length === 2 && s2.hy[0].body.messages[0].content[0].text === "Edit Image 1 and keep its size and framing. make it night", short(s2.hy[0].body.messages[0].content[0]));
+        const s2b = fakeServer();
+        await partner.edit(req({ references: [pngOf(512, 512, 64, "ORIG"), pngOf(512, 512, 64, "REF1"), pngOf(512, 512, 64, "REF2")], original: 1, prompt: "put @image3 on the table" }), ctxFor(s2b));
+        const t2b = s2b.hy[0] && s2b.hy[0].body.messages[0].content[0].text;
+        check("the Original on: @image3 still names picture 3, the Original is named as Image 1 before the fill, the references in range words", t2b === "Edit Image 1 and keep its size and framing. put Image 3 on the table Image 2 is Image 1 before the selected area was filled. Images 3 and 4 are reference images." && s2b.uploads.length === 4, t2b);
         const s3 = fakeServer();
         const o3 = await partner.generate({ ...req({ kind: "text", image: null, references: [], prompt: "a lighthouse at dusk" }), width: 4096, height: 2304 }, ctxFor(s3));
         check("Generate new: no storage request, no upload, the prompt alone, the asked size, no resize_max_pixels", s3.storage.length === 0 && s3.uploads.length === 0 && s3.hy[0].body.messages[0].content.length === 1 && s3.hy[0].body.messages[0].content[0].text === "a lighthouse at dusk" && s3.hy[0].body.size === "4096x2304" && !("resize_max_pixels" in s3.hy[0].body) && tagOf(o3.bytes) === "ASSET", short(s3.hy[0].body));
@@ -672,6 +708,56 @@ async function main() {
         const s17 = fakeServer();
         await partner.generate({ ...req({ kind: "text", image: null, references: [], prompt: "a lighthouse" }) }, ctxFor(s17, { key: REAL_KEY, base: undefined }));
         check("a real key never to the mock, a test key never to api.comfy.org, an unknown model refused, all before any call; a real key goes to https://api.comfy.org", /only a test key goes there/.test(e14 || "") && /test key is never sent/.test(e15 || "") && /knows no model "hy-image-v9"/.test(e16 || "") && s14.calls.length + s15.calls.length + s16.calls.length === 0 && s17.hy[0].url === LIVE + partner.HY_PATH && s17.hy[0].headers["x-api-key"] === REAL_KEY, short([e14, e15, e16]));
+    });
+
+    // ---- 11. Comfy Cloud: the pictures each partner node takes ----
+    await section("11. Comfy Cloud pictures per node", async () => {
+        const cv = (id) => rawRecipe(id).providers.comfycloud;
+        const cloudReq = (id, extra = {}) => {
+            const v = cv(id);
+            return { provider: "comfycloud", model: v.model, kind: v.input === "edit" ? "edit" : "fill", options: v.options, prompt: "a red door", negative: "", seed: 42, image: pngOf(1024, 768, 96, "CROP"), mask: pngOf(1024, 768, 96, "MASK-LUMINANCE"), maskAlpha: null, width: 1024, height: 768, references: [], params: {}, ...extra };
+        };
+        const refsN = (n) => Array.from({ length: n }, (_, i) => pngOf(64, 64, 64, "R" + i));
+        // the upload route of cloud.comfy.org, answering each file's name; nothing else is asked by buildGraph
+        const cloudCtx = () => {
+            const uploads = [];
+            return { uploads, key: KEY, fetch: async (url, init = {}) => {
+                const u = new URL(String(url));
+                if (String(init.method).toUpperCase() !== "POST" || u.pathname !== "/api/upload/image") return json(404, { error: "no route " + u.pathname });
+                const file = init.body.get("image");
+                uploads.push(tagOf(Buffer.from(await file.arrayBuffer())));
+                return json(200, { name: `u${uploads.length}.png`, subfolder: "", type: "input" });
+            } };
+        };
+        const maxOf = (id, model) => cloud.layout(cloudReq(id, model ? { model } : {})).max;
+        check("each node's picture count as its source says: GPT Image 16, Nano Banana 2 14, Seedream 5.0 lite 14 and pro 10, FLUX.2 8, Qwen 3", maxOf("gpt_image_2") === 16 && maxOf("nano_banana_2") === 14 && maxOf("nano_banana_2_lite") === 14 && maxOf("seedream_5_lite") === 14 && maxOf("seedream_5_pro") === 10 && maxOf("flux2_pro") === 8 && maxOf("flux2_max") === 8 && maxOf("qwen_image_edit") === 3, short(["gpt_image_2", "nano_banana_2", "seedream_5_lite", "seedream_5_pro", "flux2_pro", "qwen_image_edit"].map((id) => `${id} ${maxOf(id)}`)));
+        const one = cloud.layout(cloudReq("nano_banana_pro", { references: refsN(2) })), fill = cloud.layout(cloudReq("flux1_fill", { references: refsN(2) }));
+        check("the one-picture Gemini node and FLUX.1 Fill declare the drop, the crop alone numbered", one.drops === "this node takes one picture" && one.max === 1 && refsLib.countOf(one) === 1 && fill.drops === "FLUX.1 Fill takes no reference images" && refsLib.countOf(fill) === 1 && !fill.pictures.some((p) => p.ref != null), short({ one, fill }));
+        const oneReq = cloudReq("nano_banana_pro", { references: refsN(2) });
+        const chk = refsLib.checkPictures(one, oneReq, "Comfy Cloud " + oneReq.model);
+        check("index.js's check strips the references of the one-picture node and says so", chk.req.references.length === 0 && eq(chk.notes, ["Comfy Cloud gemini-3-pro-image-preview: this node takes one picture; 2 reference layers not sent."]), short(chk.notes));
+
+        let c = cloudCtx();
+        let g = await cloud._buildGraph(oneReq, c, "GeminiImage2Node");
+        const node = (graph, type) => Object.values(graph).find((x) => x.class_type === type);
+        const loads = (graph) => Object.values(graph).filter((x) => x.class_type === "LoadImage").length;
+        check("GeminiImage2Node called directly with 2 references: the crop alone uploaded and wired, no LoadImage of a reference", eq(c.uploads, ["CROP"]) && loads(g) === 1 && g[node(g, "GeminiImage2Node").inputs.images[0]].inputs.image === "u1.png", short({ uploads: c.uploads, loads: loads(g) }));
+
+        c = cloudCtx();
+        const eQ = await throws(() => cloud._buildGraph(cloudReq("qwen_image_edit", { references: refsN(3) }), c, "QwenImageEditApi"));
+        check("QwenImageEditApi with the crop and 3 references (4 pictures): refused before any upload, not cut to 3", /Comfy Cloud QwenImageEditApi takes at most 3 pictures; this run has 4: hide reference layers or turn Original off\./.test(eQ || "") && c.uploads.length === 0, eQ);
+        c = cloudCtx();
+        g = await cloud._buildGraph(cloudReq("qwen_image_edit", { references: refsN(2), original: 1 }), c, "QwenImageEditApi");
+        const qn = node(g, "QwenImageEditApi").inputs;
+        check("QwenImageEditApi with 3 pictures: all uploaded in order and wired as image_1 .. image_3", eq(c.uploads, ["CROP", "R0", "R1"]) && ["model.images.image_1", "model.images.image_2", "model.images.image_3"].every((k, i) => g[qn[k][0]].inputs.image === `u${i + 1}.png`) && !("model.images.image_4" in qn), short({ uploads: c.uploads, keys: Object.keys(qn).filter((k) => /images/.test(k)) }));
+        c = cloudCtx();
+        const eF = await throws(() => cloud._buildGraph(cloudReq("flux2_pro", { references: refsN(8) }), c, "Flux2ImageNode"));
+        const c7 = cloudCtx();
+        g = await cloud._buildGraph(cloudReq("flux2_pro", { references: refsN(7) }), c7, "Flux2ImageNode");
+        check("Flux2ImageNode: 9 pictures refused before any upload, 8 go as image_1 .. image_8", /takes at most 8 pictures; this run has 9/.test(eF || "") && c.uploads.length === 0 && c7.uploads.length === 8 && "model.images.image_8" in node(g, "Flux2ImageNode").inputs && !("model.images.image_9" in node(g, "Flux2ImageNode").inputs), eF);
+        c = cloudCtx();
+        const eM = await throws(() => cloud._buildGraph(cloudReq("flux1_fill", { mask: null }), c, "FluxProFillNode"));
+        check("FLUX.1 Fill without a mask: refused before any upload", /needs a selection mask/.test(eM || "") && c.uploads.length === 0, eM);
     });
 
     // ---- 9. the whole run ----

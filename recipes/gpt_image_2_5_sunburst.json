@@ -145,6 +145,9 @@
     "openai": {
       "model": "gpt-image-2.5-sunburst",
       "input": "fill",
+      "options": {
+        "max_images": 16
+      },
       "settings": [
         {
           "index": 1,
@@ -261,6 +264,7 @@
       "model": "openai/gpt-image-2.5-sunburst/edit",
       "input": "edit",
       "options": {
+        "max_images": 16,
         "aspect_ratios": [
           "1:1",
           "1:2",

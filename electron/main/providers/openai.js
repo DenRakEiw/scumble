@@ -17,7 +17,7 @@
 "use strict";
 
 const { readError, closestSize, fitPixels } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, countOf } = require("./refs");
 
 const STANDARD_SIZES = ["1024x1024", "1536x1024", "1024x1536"];
 
@@ -99,14 +99,19 @@ module.exports = {
     keyUrl: "https://platform.openai.com/api-keys",
     keyHint: "sk-... from platform.openai.com",
     wantsAlphaMask: true,
-    // edit() below: image[] holds the crop, then the references; the mask goes in a field of its own
+    // edit() below: image[] holds the crop, then the references; the mask goes in a field of its own.
+    // `options.max_images` is the variant's cap on image[] (the crop included; the mask field is no picture)
     layout(req) {
+        const o = req.options || {};
         const own = pickMask(req) && req.kind !== "edit" ? [["mask", "mask"]] : [];
-        return layoutOf({ seq: [["crop", "image[][0]"], ...refRoles(req).map(([role, i]) => [role, `image[][${i + 1}]`, i])], own });
+        return layoutOf({ seq: [["crop", "image[][0]"], ...refRoles(req).map(([role, i]) => [role, `image[][${i + 1}]`, i])], own, max: +o.max_images > 0 ? +o.max_images : null });
     },
     async edit(req, ctx) {
         const p = req.params;
         const model = String(p.model || req.model || "gpt-image-1");
+        // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from sending one
+        const lay = module.exports.layout(req), n = countOf(lay);
+        if (lay.max != null && n > lay.max) throw new Error(`OpenAI ${model} takes at most ${lay.max} picture${lay.max === 1 ? "" : "s"}; this run has ${n}: hide reference layers or turn Original off.`);
         const extra = common(p, model);
         const size = p.size && p.size !== "auto" ? String(p.size) : sizeFor(model, req.width, req.height);
         const fd = new FormData();

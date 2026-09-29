@@ -95,9 +95,12 @@ function transparent(req) {
 module.exports = {
     label: "Loopback (test)",
     needsKey: false,
-    // the crop as `image`, then the references in order (docs/PLAN_REFS.md C3)
+    // the crop as `image`, then the references in order (docs/PLAN_REFS.md C3). Two test hooks for the gates:
+    // options.drops (a sentence) declares a drop, so index.js strips every reference; options.max_images is a cap
     layout(req) {
-        return layoutOf({ seq: [["crop", "image"], ...refRoles(req).map(([role, i]) => [role, `references[${i}]`, i])] });
+        const o = req.options || {};
+        if (typeof o.drops === "string" && o.drops.trim()) return layoutOf({ seq: [["crop", "image"]], drops: o.drops.trim() });
+        return layoutOf({ seq: [["crop", "image"], ...refRoles(req).map(([role, i]) => [role, `references[${i}]`, i])], max: +o.max_images > 0 ? +o.max_images : null });
     },
     async edit(req, ctx) {
         const delay = Math.max(0, +req.params.delay_ms || 0);

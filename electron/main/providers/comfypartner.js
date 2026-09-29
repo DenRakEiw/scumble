@@ -21,7 +21,7 @@
 
 const { randomUUID } = require("node:crypto");
 const { sleep: realSleep, fitPixels } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, instruction } = require("./refs");
 const router = require("./comfyrouter");
 
 const { testBase, checkKey, scrub, picturesFor, download, sniff } = router._shared;
@@ -53,12 +53,12 @@ function sizeFor(w, h) {
     return `${Math.max(256, cw)}x${Math.max(256, ch)}`;
 }
 
-/** The instruction for an edit: the crop is Image 1, the rest are references. */
+/**
+ * The instruction for an edit (refs.instruction, numbered by layout() under the recipe's refs.name, "Image {n}"): the
+ * crop is Image 1, then the Original and the references. The node's own @ImageN in the user's text still names picture N.
+ */
 function editText(req, pics) {
-    const user = resolveRefs(req.prompt, pics.length);
-    let out = `Edit Image 1 and keep its size and framing. ${user}`;
-    if (pics.length > 1) out += pics.length > 2 ? ` Images 2 to ${pics.length} are reference material.` : " Image 2 is reference material.";
-    return out.trim();
+    return instruction(req, layout(req), resolveRefs(req.prompt, pics.length));
 }
 
 /** { message } of a failed answer in any of the envelopes Comfy's API uses, the key taken out. */

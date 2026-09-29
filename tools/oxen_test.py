@@ -331,7 +331,8 @@ async def run_all(c):
             want = min(ratios, key=lambda s: abs(math.log(int(s.split(":")[0]) / int(s.split(":")[1]) / (ew / eh))))
             if b.get("watermark") is not False or b.get("response_format") != "b64_json" or b.get("aspect_ratio") != want or b.get("size") not in ("1K", "2K"):
                 raise Exception("the body (the closest preset to %dx%d is %s): %s" % (ew, eh, want, {k: v for k, v in b.items() if k != "input_image"}))
-            if not str(b.get("prompt", "")).startswith("Edit the first image"):
+            # refs.instruction under Seedream 5 pro's refs.name "Image {n}"
+            if not str(b.get("prompt", "")).startswith("Edit Image 1 "):
                 raise Exception("the prompt: %r" % b.get("prompt"))
             done("an_edit_sends_the_crop_as_a_data_url", {"crop": [ew, eh], "aspect_ratio": b["aspect_ratio"], "size": b["size"], "layer": res["layer"]})
         await step("an_edit_sends_the_crop_as_a_data_url", edit)
