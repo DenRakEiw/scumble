@@ -92,16 +92,21 @@ post `v0-1-33` ("One move, one stroke") is live, website commit 6fe8f1a deployed
 main's `docs/MANUAL.md` already describes S1's img labels, which ship with 0.1.34 (the sync copies main's working tree;
 0.1.33's manual is 0.1.32's). Sync it at the 0.1.34 release. A Store package only on the user's word.
 - **Item 26, reference layers named in the prompt** (`docs/PLAN_REFS.md`; the user answered A-F: `@img1` renamed per
-  API in the backend, hiding renumbers, a contenteditable field exactly like Magnific's, reference pictures to the
+  API in the backend, hiding renumbers, a contenteditable field with inline picture chips, reference pictures to the
   upsampler on with a setting, Generate new with references in this round, categories later). **S1 built and committed
   locally 2026-09-29** (26a1: `layout(req)` per adapter, markers resolved in `providers/index.js`, `provider:layout`,
   `refs.name`; 26b1: `reftokens.js`, img labels, the remap at every change of the shown references, the node stub
   `refTokens: false` committed in the node repo). Both steps have a "Built" paragraph in the plan. Between S1 and S2 a
   typed `@img1` in a provider run is refused by main's safety net, by design. The prompt update ships as **0.1.34**.
   **Next: S2 = 26b2 (the click snapshot, markers from the renderer, `refPrompt`, agents) + 26a2 (routes: drops, caps,
-  one instruction, label parts).** The Magnific-style prompt field is 26c (S3), after S2, and needs 26b2's snapshot and
-  descriptors. Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins). Then package 6
+  one instruction, label parts).** The rich prompt field with chips is 26c (S3), after S2, and needs 26b2's snapshot
+  and descriptors. Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins). Then package 6
   (layers pro) of `docs/PLAN_0_1_31.md`.
+- **To do at the 0.1.34 release (the user, 2026-09-29):** take the other product's name out of the "Next up" line of
+  the `v0-1-33` post (`F:\portfolio_web\lib\scumble-posts.ts`, "... the way X does it"), and write the 0.1.34 post,
+  CHANGELOG section and manual lines without naming any other product as the model for the feature. Still carrying
+  such names in this public repo: `docs/PLAN_REFS.md` (sections 1-3, the step texts) and the file name
+  `docs/PLAN_NIK9.md`; neutralise or rename them on the user's word.
 - **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
   of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
   point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
@@ -140,8 +145,7 @@ The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27
 - **Unverified:** ToAPIs and ModelArk live; OpenRouter beyond GPT Image 2.5 Flare / Sunburst; Magnific beyond the two
   upscalers and Oxen (docs only); the Qwen Image Edit 2.1 local recipe (models not downloaded); a real SAM2 / RMBG model
   on the slice 6 code; the user's own 15k file. Deferred from 3f: the source's EXIF / XMP in exports, an ICC profile in
-  PSD and TIFF. Not checked: a double click in Explorer on an installed build, TIFFs from Photoshop / Affinity /
-  Lightroom.
+  PSD and TIFF. Not checked: a double click in Explorer on an installed build, TIFFs written by other image editors.
 
 ## What comes next (the list)
 
@@ -151,14 +155,15 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   website), 20 (skins; later on the user's word: a theme editor, light / dark after the OS, density, icon sets), 23
   (23a in 0.1.31, 23b for 0.1.32), 24 (the canvas-only view).
 - 5: the object tool's change A (the image-size label map, `dist/c6map/c/objects.md` §7-§9), parked.
-- 14: upscaling beyond Magnific (ComfyUI, ONNX, Topaz by CLI / MCP), parked, only listed.
+- 14: upscaling beyond the API upscalers (ComfyUI, ONNX, a desktop upscaler by CLI / MCP), parked, only listed.
 - 15: Qwen Image Edit 2.1: the local recipe never ran; the API side is open.
 - 16: Oxen.ai: built from the docs, never run (no key).
 - 19: 3D layers from AI models (Meshy / Hunyuan 3D / TRELLIS into glb layers), only listed.
-- 21: lens flares like Flarecore (an optional plugin, 7-9 days), no place in the order yet.
-- 22: Nik 9 parity (an update of its own; `docs/PLAN_NIK9.md`, 34-46 days plus two folded packages), suggested after B3.
+- 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
+- 22: a filter-suite update (an update of its own; `docs/PLAN_NIK9.md`, 34-46 days plus two folded packages), suggested
+  after B3.
 - 25: the app's own dialogs instead of the native boxes (about 1-1.5 days), the user's answers open.
-- 26: Magnific-style prompting: reference layers named in the prompt as `@img1`, written as the API's own name for
+- 26: reference layers named in the prompt as `@img1`, written as the API's own name for
   the picture when sent; the templates learn `{references}`. Planned in `docs/PLAN_REFS.md` (2026-09-29), next. The
   silent reference drops found on the way are in `docs/BUGS.md`.
 
@@ -368,3 +373,6 @@ there; add a new flake there, with the date and what was ruled out.
   use `setTimeout`, never `requestAnimationFrame` (it stops in a hidden window). One instance at a time: stop the dev
   instance before starting `dist/win-unpacked/Scumble.exe`. What each test tool covers: `docs/TESTING.md`.
 - Answer in German; code, comments and docs in English.
+- **No other product's name as the model for a feature** (the user, 2026-09-29: copyright and trademarks) in this file,
+  in the blog posts, the CHANGELOG, the manual or the README: describe what the feature does, not whose it resembles.
+  The providers and models Scumble runs through keep their names where a text is about running them.
