@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "Seedream 4.5",
   "family": "ByteDance",
+  "refs": { "name": "Image {n}" },
   "description": "ByteDance's Seedream 4.5 on Magnific: instruction edits with up to five pictures, and Generate new. Written from Magnific's documentation; not run against the live API yet.",
   "default": "magnific",
   "providers": {

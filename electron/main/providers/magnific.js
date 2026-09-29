@@ -33,10 +33,12 @@
 //
 // The host is https://api.magnific.com, never a URL from a recipe; settings.magnific.base may name a loopback mock for
 // the tests, and then only a key that starts with "test-" goes there, while such a key never goes to Magnific.
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
 const { fetchImage, sleep: realSleep, closestAspect } = require("./util");
 const { picturesFor } = require("./comfyrouter")._shared;
+const { layoutOf, refRoles } = require("./refs");
 
 const HOST = "https://api.magnific.com";
 const CREATIVE_MAX_PIXELS = 25300000;
@@ -173,6 +175,9 @@ async function picturesOf(req, R, ctx) {
     return picturesFor(req, { max_images: R.maxImages || 1, max_bytes: R.maxBytes || 0 }, { ...ctx, who: R.label }, R.label);
 }
 
+/** picturesOf's order as a layout's numbered pictures, picture k (0-based) in `field(k)`: the crop, then the references. */
+const inOrder = (req, field) => [["crop", field(0)], ...refRoles(req).map(([role, i]) => [role, field(i + 1), i])];
+
 /** The instruction an edit without a mask input goes out with (the same words as the Comfy Router and ModelArk adapters). */
 function editPrompt(req, pics) {
     const text = String(req.prompt || "");
@@ -283,7 +288,8 @@ function keptRect(bm, who = "Magnific Image Expand") {
 
 // ---- dialects --------------------------------------------------------------------------------------------------
 // Each: async body(req, R, ctx, kind) -> { body, info, pictures }; kind "edit" or "text" (checked against the route
-// before). read(task, info, ctx) adds what the answer says to info.
+// before). read(task, info, ctx) adds what the answer says to info. layout(req, R) -> where body() puts each picture of
+// an edit, with picturesOf's count as `max` (the edit dialects only).
 
 const DIALECTS = {
     ideogram: {
@@ -299,6 +305,11 @@ const DIALECTS = {
             if (seed !== undefined) body.seed = seed;
             if (refs.length) body.style_reference_images = refs.map((p) => b64(p.bytes));
             return { body, info: { fit: "stretch", style_references: refs.length }, pictures: pics.length };
+        },
+        // the references go as style references, outside the numbered pictures
+        layout(req, R) {
+            const style = refRoles(req).map(([role, i]) => [role, `style_reference_images[${i}]`, i]);
+            return layoutOf({ seq: [["crop", "image"]], own: [["mask", "mask"], ...style], max: R.maxImages || 1, style: true });
         },
     },
 
@@ -341,6 +352,10 @@ const DIALECTS = {
             if ((req.references || []).length) ctx.log(`Image Expand takes no reference pictures: ${req.references.length} left out`);
             return { body, info: { fit: "stretch", kept: [k.x, k.y, k.width, k.height], margins: m, format }, pictures: 1 };
         },
+        // `image` is the part of the crop outside the selection; the mask only gives the margins and is not sent
+        layout() {
+            return layoutOf({ seq: [["crop", "image"]], drops: "Image Expand takes the kept part of the crop alone: reference images are left out." });
+        },
     },
 
     flux2: {
@@ -363,6 +378,7 @@ const DIALECTS = {
             }
             return { body, info: kind === "text" ? {} : { fit: fitFor(`${body.width}:${body.height}`, +req.width || body.width, +req.height || body.height) ? "stretch" : null }, pictures: pics.length };
         },
+        layout(req, R) { return layoutOf({ seq: inOrder(req, (k) => (k ? `input_image_${k + 1}` : "input_image")), max: R.maxImages || 1 }); },
     },
 
     seedream: {
@@ -385,6 +401,7 @@ const DIALECTS = {
             if (seed !== undefined) body.seed = seed;
             return { body, info: { aspect: p.ratio, fit: fitFor(p.ratio, +req.width, +req.height) }, pictures: pics.length };
         },
+        layout(req, R) { return layoutOf({ seq: inOrder(req, (k) => `reference_images[${k}]`), max: R.maxImages || 1 }); },
     },
 
     gpt: {
@@ -412,6 +429,7 @@ const DIALECTS = {
             }
             return { body, info, pictures: pics.length };
         },
+        layout(req, R) { return layoutOf({ seq: inOrder(req, (k) => `reference_images[${k}]`), max: R.maxImages || 1 }); },
     },
 
     zimage: {
@@ -667,11 +685,23 @@ async function run(req, ctx, kind) {
     return { bytes, mime: sniff(bytes, file.mime), seed: body.seed != null ? body.seed : req.seed, info: out };
 }
 
+/** Where each picture of an edit goes: the route and dialect run() picks, refused with run()'s own words. */
+function layout(req) {
+    const route = routeOf(req.model);
+    const R = own(ROUTES, route) ? ROUTES[route] : null;
+    if (!R) throw new Error(`Magnific: Scumble knows no route "${route}".`);
+    if (R.upscale) throw new Error(`${R.label} is an upscaler; run it with Upscale.`);
+    if (!R.edit) throw new Error(`${R.label} makes pictures from the prompt alone: use Generate new.`);
+    if (R.fill && !(req.kind === "fill" && req.mask && req.mask.length)) throw new Error(`${R.label} needs the selection as a mask (the variant's input must be fill).`);
+    return DIALECTS[R.dialect].layout(req, R);
+}
+
 module.exports = {
     label: "Magnific",
     keyUrl: "https://www.magnific.com/user/organization/api-keys",
     keyHint: "API key from Magnific's organization settings (every API call costs credits)",
     edit(req, ctx) { return run(req, ctx, "edit"); },
+    layout,
     generate(req, ctx) { return run(req, ctx, "text"); },
     upscale(req, ctx) { return run(req, ctx, "upscale"); },
     baseUrl,

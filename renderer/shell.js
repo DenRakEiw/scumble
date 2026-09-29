@@ -429,7 +429,7 @@ function resolveRecipe(r) {
     const pid = chosenProvider(r);
     if (!pid) return r;
     const v = r.providers[pid] || {};
-    return { ...r, provider: pid, providerLabel: providerLabel(pid), model: v.model || "", input: v.input || "fill", fields: v.fields || null, fixed: v.fixed || null, settings: v.settings || [], options: v.options || null, note: v.note || "", text: v.text || null, limits: v.limits || null, edit: v.edit !== false, task: r.task || "edit", factor: v.factor || null, usesPrompt: !!v.usesPrompt };
+    return { ...r, provider: pid, providerLabel: providerLabel(pid), model: v.model || "", input: v.input || "fill", fields: v.fields || null, fixed: v.fixed || null, settings: v.settings || [], options: v.options || null, note: v.note || "", text: v.text || null, limits: v.limits || null, edit: v.edit !== false, task: r.task || "edit", factor: v.factor || null, usesPrompt: !!v.usesPrompt, refs: v.refs || null };
 }
 
 function providerKeyState(r) {

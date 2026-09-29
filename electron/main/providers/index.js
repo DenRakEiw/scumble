@@ -8,7 +8,10 @@
 //
 //   request: { model, kind ("fill" = image + mask, "edit" = instruction on the image),
 //              prompt, negative, seed, image (PNG bytes of the crop), mask (PNG, white =
-//              repaint), width, height (of the crop), references: [PNG bytes], params }
+//              repaint), width, height (of the crop), references: [PNG bytes], params,
+//              original (1: references[0] is the crop before the fill), refName (the recipe's refs.name) }
+//   layout(req)              where each picture goes and what the model calls it (refs.js, docs/PLAN_REFS.md C3);
+//                            a marker {@ref:i} in the prompt becomes that picture's name here, before the adapter runs
 //   ctx:     { key, fetch, log, base, toJpeg, opaque, bitmap, fromBitmap, cropPng }   base: the adapter's own allowlisted host from
 //            settings (ToAPIs, OpenRouter; ModelArk's and Oxen.ai's loopback mock; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
 //            nativeImage, opaque(png): whether it has no transparent pixel; bitmap(png): { width, height, data } (BGRA),
@@ -25,6 +28,10 @@ const log = require("../log");
 
 const keys = require("../keys");
 const settings = require("../settings");
+const { MARKER_ANY, TOKEN, REF_NAME_DEFAULT, validRefName, nameOf, refRoles, layoutOf, countOf, checkLayout, resolveMarkers } = require("./refs");
+
+// how much of a prompt goes into a log record
+const PROMPT_LOG = 500;
 
 // The order is the order of Settings › API providers; ToAPIs first (docs/RECIPES.md "ToAPIs").
 const PROVIDERS = {
@@ -83,6 +90,51 @@ function textProviders() {
     return Object.entries(PROVIDERS).filter(([, p]) => typeof p.generate === "function").map(([id]) => id);
 }
 
+/**
+ * Where each picture of this request goes (refs.js). Text and upscale runs are laid out here: Generate new sends no
+ * picture at all, an upscale the picture alone. Every other kind asks the adapter, whose declaration is checked
+ * against the request; a layout that throws refuses the run before anything is sent.
+ */
+function layoutFor(id, p, req) {
+    if (req.kind === "text") return checkLayout(layoutOf({ drops: "Generate new sends no reference images." }), req);
+    if (req.kind === "upscale") return checkLayout(layoutOf({ seq: [["crop", "image"]], drops: "An upscale sends the picture alone: reference images are left out." }), req);
+    if (typeof p.edit !== "function") throw new Error(`${p.label} edits no images in Scumble; pick another provider for this model.`);
+    const l = typeof p.layout === "function" ? p.layout(req) : layoutOf({ seq: [["crop", "image"], ...refRoles(req).map(([role, i]) => [role, `references[${i}]`, i])] });
+    return checkLayout(l, { ...req, provider: id });
+}
+
+/**
+ * The markers {@ref:i} of the prompt and the negative turned into the names this route gives those pictures ("image
+ * 3"); a marker it cannot name refuses the run. Then the safety net: an @img token or a marker that is still there
+ * never reaches a model. Returns { prompt, negative, refs: [{ ref, name }] }.
+ */
+function resolveNames(p, req, lay, given) {
+    const out = { prompt: req.prompt, negative: req.negative, refs: [] };
+    const seen = new Set();
+    for (const k of ["prompt", "negative"]) {
+        const t = req[k];
+        if (typeof t !== "string" || !MARKER_ANY.test(t)) continue;
+        // an empty picture was taken out of the list, so every index after it points at the next picture
+        if (given !== req.references.length) throw new Error("A reference picture of the request was empty, so the reference names would point at the wrong pictures: nothing was sent.");
+        const r = resolveMarkers(t, lay.pictures, req.refName);
+        for (const left of r.left) {
+            if (left.ref >= req.references.length) throw new Error(`The prompt names reference picture ${left.ref + 1}, and the request carries ${req.references.length}: nothing was sent.`);
+            if (left.why === "unnumbered") throw new Error(`${p.label} ${req.model}: this route sends the reference images as style references, which have no number the prompt could name: take the reference out of the prompt.`);
+            throw new Error(`${p.label} ${req.model}: ${lay.drops || "this route leaves that reference image out."}`);
+        }
+        out[k] = r.text;
+        for (const x of r.refs) if (!seen.has(x.ref)) { seen.add(x.ref); out.refs.push(x); }
+    }
+    for (const k of ["prompt", "negative"]) {
+        const t = out[k];
+        if (typeof t !== "string") continue;
+        const m = TOKEN.exec(t);
+        if (m) throw new Error(`The ${k} holds the reference token "${m[0]}", which was not resolved to a picture: nothing was sent.`);
+        if (MARKER_ANY.test(t)) throw new Error(`The ${k} holds "{@ref:", which Scumble keeps for itself: reword it. Nothing was sent.`);
+    }
+    return out;
+}
+
 async function edit(request) {
     const id = String(request.provider || "");
     const p = Object.prototype.hasOwnProperty.call(PROVIDERS, id) ? PROVIDERS[id] : null;
@@ -94,6 +146,7 @@ async function edit(request) {
     const verb = text ? "generate" : upscale ? "upscale" : "edit";
     const key = p.needsKey === false ? "" : keys.get(keyNameOf(id, p));
     if (p.needsKey !== false && !key) throw new Error(`No API key for ${p.label}. Add it under Settings › API providers.`);
+    const given = (request.references || []).length;
     const req = {
         ...request,
         image: toBuffer(request.image),
@@ -103,22 +156,60 @@ async function edit(request) {
         options: request.options || null,         // adapter switches from the recipe variant (fal: sizing)
         references: (request.references || []).map(toBuffer).filter(Boolean),
         params: request.params || {},
+        original: request.original ? 1 : 0,      // references[0] is the crop before the fill (docs/PLAN_REFS.md C3)
+        refName: validRefName(request.refName) ? request.refName : REF_NAME_DEFAULT,   // IPC input is never trusted
     };
     const t0 = Date.now();
     const ctx = contextFor(id, p, key);
     // the request's shape for the log: never the key, never the pixels
-    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, 200) });
-    let out;
+    const shape = () => ({ model: req.model, kind: verb === "upscale" ? "upscale" : text ? "text" : "edit", factor: upscale ? req.factor : undefined, image: req.image ? req.image.length : 0, mask: req.mask ? req.mask.length : 0, references: req.references.length, original: req.original, params: req.params, fields: req.fields, options: req.options, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) });
+    let out, named;
     try {
+        if (req.original && !req.references.length) throw new Error("The request marks an Original picture but carries no reference picture: nothing was sent.");
+        named = resolveNames(p, req, layoutFor(id, p, req), given);
+        req.prompt = named.prompt;
+        req.negative = named.negative;
         out = text ? await p.generate(req, ctx) : upscale ? await p.upscale(req, ctx) : await p.edit(req, ctx);
     } catch (err) {
         log.record({ level: "error", source: id, message: `${p.label} ${verb} failed after ${((Date.now() - t0) / 1000).toFixed(1)} s: ${err && err.message || err}`, detail: { request: shape(), stack: err && err.stack } });
         throw err;
     }
     if (!out || !out.bytes) { log.record({ level: "error", source: id, message: p.label + " returned no image.", detail: shape() }); throw new Error(p.label + " returned no image."); }
-    log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info } });
+    log.record({ source: id, message: `${p.label} ${verb} ok in ${((Date.now() - t0) / 1000).toFixed(1)} s`, detail: { model: req.model, bytes: out.bytes.length || out.bytes.byteLength, seed: out.seed, info: out.info, prompt: String(req.prompt || "").slice(0, PROMPT_LOG) } });
     const bytes = toBuffer(out.bytes);
-    return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000 };
+    return { bytes: new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime: out.mime || "image/png", seed: out.seed, info: out.info || null, seconds: (Date.now() - t0) / 1000, prompt: req.prompt, negative: req.negative == null ? null : req.negative, refs: named.refs };
+}
+
+/**
+ * The layout of a request of this shape, for the renderer's preview (the reference bar, the hover card, `status`):
+ * shape { provider, model, kind, fields, options, params, original, count, refName }, `count` the references
+ * including the Original. The mask follows from `kind` as the builders read it. Answers the layout plus `names` (the
+ * name of each reference index, null when the route leaves it out or cannot number it), `sent` (countOf) and `over`
+ * (more than the route's `max`).
+ */
+function layout(shape) {
+    const s = shape || {};
+    const id = String(s.provider || "");
+    const p = Object.prototype.hasOwnProperty.call(PROVIDERS, id) ? PROVIDERS[id] : null;
+    if (!p) throw new Error("Unknown provider: " + id);
+    const kind = ["fill", "edit", "text", "upscale"].includes(s.kind) ? s.kind : "fill";
+    const count = Math.max(0, Math.min(64, Math.floor(+s.count) || 0));
+    const stand = Buffer.from([0]);   // a picture as far as a layout looks: there
+    const withMask = kind === "fill" || kind === "edit";
+    const req = {
+        provider: id, model: String(s.model || ""), kind, fields: s.fields || null, options: s.options || null, params: s.params || {},
+        prompt: "", negative: null, width: 1024, height: 1024,
+        image: kind === "text" ? null : stand, mask: withMask ? stand : null, maskAlpha: withMask ? stand : null,
+        references: Array.from({ length: count }, () => stand), original: s.original && count ? 1 : 0,
+        refName: validRefName(s.refName) ? s.refName : REF_NAME_DEFAULT,
+    };
+    const l = layoutFor(id, p, req);
+    const names = req.references.map((_, i) => {
+        const pic = l.pictures.find((x) => x.ref === i);
+        return pic && pic.n != null ? nameOf(req.refName, pic.n) : null;
+    });
+    const sent = countOf(l);
+    return { ...l, names, sent, over: l.max != null && sent > l.max };
 }
 
 /** A crop as JPEG through Electron's decoder and encoder (nativeImage); null when it cannot be decoded. */
@@ -190,4 +281,4 @@ async function balance(id) {
     }
 }
 
-module.exports = { edit, balance, describeAll, textProviders, upscaleProviders, PROVIDERS };
+module.exports = { edit, layout, balance, describeAll, textProviders, upscaleProviders, PROVIDERS };

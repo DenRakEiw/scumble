@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "Nano Banana Pro (Gemini 3 Pro Image)",
   "family": "Google",
+  "refs": { "name": "image {n}" },
   "description": "Google's premium image model for complex edits, 1K to 4K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Comfy Router. Also on Oxen.ai. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {

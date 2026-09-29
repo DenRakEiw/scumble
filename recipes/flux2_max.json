@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "FLUX.2 [max]",
   "family": "Black Forest Labs",
+  "refs": { "name": "image {n}" },
   "description": "BFL's highest-fidelity FLUX.2, multi-reference editing. Also on WaveSpeedAI. Also on Comfy Cloud. Also on OpenRouter. Also on Comfy Router. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "bfl",
   "providers": {

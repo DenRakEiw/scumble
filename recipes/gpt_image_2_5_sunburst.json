@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "GPT Image 2.5 Sunburst",
   "family": "OpenAI",
+  "refs": { "name": "Image {n}" },
   "description": "OpenAI's high-fidelity image model (September 2026) for detail-rich edits; slower than Flare. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Run against the live API through OpenRouter since 2026-09-21; the other providers' adapters are written from their docs and not run live yet. Also on Comfy Router. Also on Oxen.ai. Also on Magnific.",
   "default": "openai",
   "providers": {

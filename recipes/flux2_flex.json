@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "FLUX.2 [flex]",
   "family": "Black Forest Labs",
+  "refs": { "name": "image {n}" },
   "description": "FLUX.2 with exposed steps and guidance, up to ten references. Also on WaveSpeedAI. Also on ToAPIs. Also on OpenRouter. Also on Oxen.ai. Also on Magnific. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "bfl",
   "providers": {

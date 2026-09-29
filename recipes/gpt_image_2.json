@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "GPT Image 2",
   "family": "OpenAI",
+  "refs": { "name": "Image {n}" },
   "description": "OpenAI's April 2026 image model; custom sizes in multiples of 16. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Comfy Router. Also on Oxen.ai. Also on Magnific. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "openai",
   "providers": {

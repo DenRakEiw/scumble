@@ -14,6 +14,7 @@
 // (it would need a public Oxen repository, whose history keeps every crop), no async queue (it stores every job's
 // request, the crop included, and answers URLs only) and no balance route (the hub API has none). Oxen keeps every
 // generated image in the user's account.
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
 // A recipe variant describes the model with `options` (each key checked against tools/refs/oxen/ by tools/oxen_test.js):
 //   accepts       the parameters the model's request_schema names; nothing else is sent
@@ -41,6 +42,7 @@
 "use strict";
 
 const { fetchImage, sleep: realSleep, closestAspect } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 const openrouter = require("./openrouter");
 
 const DEFAULT_ORIGIN = "https://hub.oxen.ai";
@@ -232,6 +234,23 @@ async function picturesFor(req, o, ctx, model) {
     }
     for (const p of pics) p.url = dataUrl(p);
     return { pics, mask: mask ? dataUrl(mask) : null };
+}
+
+/**
+ * Where picturesFor above and bodyFor put each picture of a fill or an edit: the picture field holds the crop, the mask
+ * (a fill without `o.mask`), the references; a fill with `o.mask` sends the mask as mask_url.
+ */
+function layout(req) {
+    const o = req.options || {};
+    const F = o.image_field || "input_image";
+    const at = (k) => (o.single ? F : `${F}[${k}]`);
+    const maskUrl = req.kind === "fill" && (o.mask === "white" || o.mask === "alpha");
+    const first = req.kind === "fill" && !maskUrl ? [["crop", at(0)], ["mask", at(1)]] : [["crop", at(0)]];
+    return layoutOf({
+        seq: [...first, ...refRoles(req).map(([role, i]) => [role, at(first.length + i), i])],
+        own: maskUrl ? [["mask", "mask_url"]] : [],
+        max: o.single ? 1 : (+o.max_images > 0 ? +o.max_images : 16),
+    });
 }
 
 // ---- the request -----------------------------------------------------------------------------------------------
@@ -494,6 +513,7 @@ module.exports = {
     edit: run,
     generate: run,   // kind "text": /images/generate, no picture field
     upscale,
+    layout,
 
     baseUrl,
     checkKey,

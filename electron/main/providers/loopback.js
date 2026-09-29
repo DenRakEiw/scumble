@@ -12,6 +12,8 @@
 
 const zlib = require("node:zlib");
 
+const { layoutOf, refRoles } = require("./refs");
+
 function crc32(buf) {
     let c = ~0;
     for (let i = 0; i < buf.length; i++) {
@@ -93,11 +95,16 @@ function transparent(req) {
 module.exports = {
     label: "Loopback (test)",
     needsKey: false,
+    // the crop as `image`, then the references in order (docs/PLAN_REFS.md C3)
+    layout(req) {
+        return layoutOf({ seq: [["crop", "image"], ...refRoles(req).map(([role, i]) => [role, `references[${i}]`, i])] });
+    },
     async edit(req, ctx) {
         const delay = Math.max(0, +req.params.delay_ms || 0);
         if (delay) await new Promise((r) => setTimeout(r, delay));
         if (req.params.fail) throw new Error("loopback failure requested");
-        const info = { width: req.width, height: req.height, references: req.references.length, mask: !!req.mask, background: transparent(req) ? "transparent" : "auto" };
+        // what arrived, so a gate can read the prompt after main resolved its reference names
+        const info = { width: req.width, height: req.height, references: req.references.length, mask: !!req.mask, background: transparent(req) ? "transparent" : "auto", prompt: req.prompt || "", negative: req.negative == null ? null : req.negative, original: req.original ? 1 : 0 };
         if (transparent(req)) return { bytes: discPng(req.width, req.height, req.seed || 0), mime: "image/png", seed: req.seed, info };
         return { bytes: req.image, mime: "image/png", seed: req.seed, info };
     },

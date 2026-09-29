@@ -23,9 +23,12 @@
 // ComfyUI's /object_info on 2026-09-22). Magnific's nodes take the factor as "2x" .. "16x" and are told not to
 // downscale the picture on their own (auto_downscale false: Scumble refuses a picture above the variant's
 // limit instead); Recraft's take the picture alone.
+//
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
 const { readError, sleep, num, closestAspect } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 
 const BASE = "https://cloud.comfy.org";
 const POLL_MS = 2000;
@@ -106,6 +109,28 @@ const SHAPES = {
     },
 };
 
+// Where each node above takes the pictures of an edit: `field` the exact input key on the partner node, `mask` whether
+// buildGraph's g.mask() gives a link. The references not wired are still uploaded as LoadImage nodes of their own.
+const autogrow = (req, cap) => [["crop", "model.images.image_1"], ...refRoles(req, cap).map(([role, i]) => [role, `model.images.image_${i + 2}`, i])];
+const cropOnly = (field) => layoutOf({ seq: [["crop", field]], drops: "This node takes the crop alone: reference images are left out." });
+const LAYOUTS = {
+    OpenAIGPTImageNodeV2: (req, mask) => layoutOf({ seq: autogrow(req), own: mask ? [["mask", "model.mask"]] : [] }),
+    GeminiNanoBanana2V2: (req) => layoutOf({ seq: autogrow(req) }),
+    GeminiImage2Node: () => cropOnly("images"),
+    GeminiImageNode: () => cropOnly("images"),
+    ByteDanceSeedreamNodeV3: (req) => layoutOf({ seq: autogrow(req) }),
+    Flux2ImageNode: (req) => layoutOf({ seq: autogrow(req) }),
+    FluxProFillNode(req, mask) {
+        if (!mask) throw new Error("Flux.1 Fill on Comfy Cloud needs a selection mask.");
+        return layoutOf({ seq: [["crop", "image"]], own: [["mask", "mask"]], drops: "This node takes the crop and the mask only: reference images are left out." });
+    },
+    MagnificImageUpscalerPreciseV2Node: () => cropOnly("image"),
+    MagnificImageUpscalerCreativeNode: () => cropOnly("image"),
+    RecraftCrispUpscaleNode: () => cropOnly("image"),
+    RecraftCreativeUpscaleNode: () => cropOnly("image"),
+    QwenImageEditApi: (req) => layoutOf({ seq: autogrow(req, 2), drops: "This node takes 3 pictures: reference images past the 2nd are left out." }),
+};
+
 /** Magnific's nodes take 2x, 4x, 8x or 16x. */
 function magnificFactor(f) {
     const n = Math.round(+f || 2);
@@ -163,6 +188,16 @@ async function buildGraph(req, ctx, node) {
     return graph;
 }
 
+/** Where each picture of an edit goes: buildGraph's node and mask rule, then LAYOUTS; refused with run()'s and buildGraph's words. */
+function layout(req) {
+    const node = String(req.options && req.options.node || "");
+    if (!node) throw new Error("Comfy Cloud recipe has no partner node (options.node).");
+    if (!Object.prototype.hasOwnProperty.call(LAYOUTS, node)) throw new Error(`Comfy Cloud: no wiring for the node ${node} (known: ${Object.keys(SHAPES).join(", ")})`);
+    // g.mask(): a mask, and on an edit only with options.mask
+    const mask = !!req.mask && !(req.kind === "edit" && !(req.options && req.options.mask));
+    return LAYOUTS[node](req, mask);
+}
+
 async function download(ctx, file) {
     const q = new URLSearchParams({ filename: file.filename, subfolder: file.subfolder || "", type: file.type || "output" });
     const r = await ctx.fetch(`${BASE}/api/view?${q}`, { headers: { "X-API-Key": ctx.key }, redirect: "manual" });
@@ -213,6 +248,7 @@ module.exports = {
     keyUrl: "https://platform.comfy.org/profile/api-keys",
     keyHint: "API key from platform.comfy.org (Comfy Cloud needs a paid plan; Comfy Router and the Partner API run on the same key with credits only)",
     edit(req, ctx) { return run(req, ctx, EDIT_WAIT_MS); },
+    layout,
     upscale(req, ctx) {
         if (!req.image) return Promise.reject(new Error("Comfy Cloud: no picture to upscale."));
         return run({ ...req, references: [], mask: null }, ctx, UPSCALE_WAIT_MS);

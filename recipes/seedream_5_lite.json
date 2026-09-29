@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "Seedream 5.0 Lite",
   "family": "ByteDance",
+  "refs": { "name": "Image {n}" },
   "description": "ByteDance's fast Seedream 5 with built-in reasoning, up to 3K. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on BytePlus ModelArk (ByteDance's own API). Also on Comfy Router. Also on Oxen.ai. Also on Magnific. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {

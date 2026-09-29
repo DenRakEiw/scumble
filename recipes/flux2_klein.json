@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "FLUX.2 [klein] 9B (hosted)",
   "family": "Black Forest Labs",
+  "refs": { "name": "image {n}" },
   "description": "The small FLUX.2, hosted; the local recipe runs the same model on your ComfyUI. Also on WaveSpeedAI. Also on Oxen.ai. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "bfl",
   "providers": {

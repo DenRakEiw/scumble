@@ -12,11 +12,13 @@
 // A recipe variant may rename the inputs with `fields` ({ image, images, mask }); `options`:
 // `aspect_ratios` (the model's presets, the closest to the crop is sent unless the settings
 // pick one), `size: "star"` (send the crop size as "W*H", fitted to `max_side`).
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
 // Referral: the key link (keyUrl) carries DenRakEiw's WaveSpeed referral code.
 "use strict";
 
 const { fetchImage, readError, sleep, num, closestAspect } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 
 const BASE = "https://api.wavespeed.ai/api/v3/";
 const POLL_MS = 2000;
@@ -80,6 +82,16 @@ async function inputFor(req, ctx) {
     return input;
 }
 
+/** Where inputFor above puts each picture of a fill or an edit (the image list carries no mask). */
+function layout(req) {
+    const f = req.fields || {};
+    if (req.kind === "edit" || f.images) {
+        const F = f.images || "images";
+        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])] });
+    }
+    return layoutOf({ seq: [["crop", f.image || "image"]], own: req.mask ? [["mask", f.mask || "mask_image"]] : [], drops: "This endpoint takes the crop and the mask only: reference images are left out." });
+}
+
 module.exports = {
     label: "WaveSpeedAI",
     generate(req, ctx) {
@@ -87,6 +99,7 @@ module.exports = {
     },
     keyUrl: "https://wavespeed.ai/?ref=dennisi6",
     keyHint: "API key from wavespeed.ai > Access Keys (the link carries Scumble's referral code)",
+    layout,
     async edit(req, ctx) {
         const model = String(req.model || "").replace(/^\/+|\/+$/g, "");
         if (!model) throw new Error("WaveSpeed recipe has no model id.");

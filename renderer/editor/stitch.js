@@ -438,6 +438,8 @@ export function planCrop(s, sel) {
         feather: featherUsed, grow: growUsed, blend: blendUsed,
         auto_feather: !!((autoFeather || refine) && hasSelection), color_match: !!cs.colorMatch,
         width, height, has_selection: hasSelection, aspect,
+        // 1: the first reference picture is the crop before the fill (cropPixels), so a reference layer's index moves by one
+        original: hasSelection && fillMode !== "none" && withOriginal ? 1 : 0,
     };
     return { x0, y0, cw, ch, ew, eh, resize: targetSize > 0, growUsed, featherUsed, fillMode, withOriginal, autoFeather, hasSelection, info };
 }

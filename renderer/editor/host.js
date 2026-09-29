@@ -1062,6 +1062,8 @@ export const host = {
                 prompt, negative, seed,
                 image: prep.image, mask: prep.mask, maskAlpha: prep.maskAlpha, width: prep.width, height: prep.height, references,
                 params,
+                // main names a reference picture by its place in the request (docs/PLAN_REFS.md C3)
+                original: info.original ? 1 : 0, refName: (r.refs && r.refs.name) || null,
             };
             res = await window.scumble.providers.edit(request);
         } finally {

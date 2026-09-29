@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "Qwen Image 2.1",
   "family": "Qwen",
+  "refs": { "name": "<image{n}>" },
   "description": "Alibaba's Qwen Image 2.1 as an API model: edits with up to ten pictures, 1K or 2K. Only on Oxen.ai here; Oxen runs it on fal (its schema names fal's endpoint, fal-ai/qwen-image-2.1/edit), and a fal variant can follow once fal's own schema has been read. The local recipe \"Qwen Image Edit 2.1 (ComfyUI)\" runs the open weights on your ComfyUI. Written from Oxen's docs and model list, not run against the live API yet.",
   "default": "oxen",
   "providers": {

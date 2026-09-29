@@ -13,6 +13,7 @@
 //
 // Every image is a task: no base64 anywhere, so crop, mask and references are uploaded first and become
 // public files.toapis.com URLs. Results are downloaded at once and without the key.
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
 // A recipe variant describes the model with `options`:
 //   channels   { <Channel row value>: overrides }   normal, VIP and official are different model ids
@@ -40,6 +41,7 @@
 "use strict";
 
 const { fetchImage, readError, sleep: realSleep, closestAspect, fitPixels } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 
 const DEFAULT_BASE = "https://toapis.com";
 const ALLOWED_HOSTS = new Set(["https://toapis.com", "https://api.toapis.com", "https://toapis.cn", "https://api.toapis.cn"]);
@@ -305,6 +307,17 @@ function bodyFor(req, ch, urls, sz) {
     return body;
 }
 
+/** Where prepareFiles and bodyFor above put each picture: the crop and the references in the channel's image list. */
+function layout(req) {
+    const ch = channelOf(req);
+    const F = ch.images || "image_urls";
+    return layoutOf({
+        seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])],
+        own: req.kind === "fill" && ch.mask ? [["mask", "mask_url"]] : [],
+        max: +ch.max_images || null,
+    });
+}
+
 async function submit(ctx, body) {
     const headers = { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" };
     const post = () => ctx.fetch(api(ctx) + "images/generations", { method: "POST", headers, body: JSON.stringify(body) });
@@ -427,6 +440,7 @@ module.exports = {
     keyHint: "API key from toapis.com › Console › API keys (the link carries Scumble's referral code)",
     edit: run,
     generate: run,   // kind "text": no uploads, the same endpoint
+    layout,
 
     /** GET /v1/balance, free: what the key has left, in USD (1 USD = 200 credits). */
     async balance(ctx) {

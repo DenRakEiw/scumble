@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "Qwen Image Edit",
   "family": "Qwen",
+  "refs": { "name": "Image {n}" },
   "description": "Alibaba's Qwen image editor; fal's inpaint endpoint takes the mask, Replicate's edits the whole crop. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on Comfy Router. Also on Oxen.ai. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "fal",
   "providers": {

@@ -34,6 +34,7 @@
 //
 // A variant's `options` say what the model takes: max_images, max_bytes (per picture), pixels [min, max] (Seedream),
 // ratios (the aspect presets of the text-only models), tiers ({ "1K": 1024, .. }, Gemini's and Grok's size classes).
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
 // The host is api.comfy.org and never a URL from a recipe; settings.comfyrouter.base may name a loopback mock for
 // the tests, and then only a key that starts with "test-" goes there, while such a key never goes to Comfy. Answer
@@ -42,6 +43,7 @@
 
 const { randomUUID } = require("node:crypto");
 const { dataUri, b64, fetchImage, sleep: realSleep, fitPixels, closestAspect } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 const openai = require("./openai");
 const ark = require("./ark");
 
@@ -231,6 +233,12 @@ async function picturesFor(req, o, ctx, model) {
     return pics;
 }
 
+/** picturesFor's count check as a layout's `max`: the crop and the references together. */
+const picturesMax = (o) => (+o.max_images > 0 ? +o.max_images : 1);
+
+/** picturesFor's order as a layout's numbered pictures, picture k (0-based) in `field(k)`: the crop, then the references. */
+const inOrder = (req, field) => [["crop", field(0)], ...refRoles(req).map(([role, i]) => [role, field(i + 1), i])];
+
 const uri = (p) => dataUri(p.bytes, p.mime);
 
 /** The instruction an edit without a mask input goes out with (the same words as the ModelArk and OpenRouter adapters). */
@@ -255,8 +263,9 @@ const setting = (p, k) => (p[k] != null && p[k] !== "" && p[k] !== "auto" ? p[k]
 
 // ---- dialects ------------------------------------------------------------------------------------------------
 // Each: body(req, o, pics, model) -> JSON body; read(json, req, o, ctx) -> { bytes, mime, seed?, info? } or
-// { url } (fetched by the caller). `text: false` where the Router's schema takes no prompt-only run, `edit: false`
-// where it takes no input picture, `upscale: true` for an upscaler.
+// { url } (fetched by the caller); layout(req, o, model) -> where body() puts each picture of an edit. `text: false`
+// where the Router's schema takes no prompt-only run, `edit: false` where it takes no input picture, `upscale: true`
+// for an upscaler.
 
 const DIALECTS = {
     openai: {
@@ -274,6 +283,10 @@ const DIALECTS = {
                 }
             }
             return body;
+        },
+        layout(req, o) {
+            const mask = req.kind === "fill" && req.maskAlpha && req.maskAlpha.length;
+            return layoutOf({ seq: inOrder(req, (k) => `image[${k}]`), own: mask ? [["mask", "mask"]] : [], max: picturesMax(o) });
         },
         read(j, req, o, ctx, body) {
             const item = Array.isArray(j.data) ? j.data.find((d) => d && (d.b64_json || d.url)) : null;
@@ -312,6 +325,13 @@ const DIALECTS = {
             if (Object.keys(imageConfig).length) generationConfig.imageConfig = imageConfig;
             return { contents: [{ role: "user", parts }], generationConfig };
         },
+        // parts[0] is the instruction; the mask picture is not in picturesFor's count, so `max` is one more with it
+        layout(req, o) {
+            const masked = req.kind === "fill" && req.mask && req.mask.length;
+            const seq = [["crop", "contents[0].parts[1]"], ...(masked ? [["mask", "contents[0].parts[2]"]] : [])];
+            for (const [role, i] of refRoles(req)) seq.push([role, `contents[0].parts[${seq.length + 1}]`, i]);
+            return layoutOf({ seq, max: picturesMax(o) + (masked ? 1 : 0) });
+        },
         read(j) {
             const cand = Array.isArray(j.candidates) ? j.candidates[0] : null;
             const parts = (cand && cand.content && cand.content.parts) || [];
@@ -346,6 +366,12 @@ const DIALECTS = {
             for (const k of ["safety_tolerance", "prompt_upsampling"]) if (p[k] !== "" && p[k] != null) body[k] = p[k];
             return body;
         },
+        layout(req, o, model) {
+            if (model === "flux-pro-1.0-fill") {
+                return layoutOf({ seq: [["crop", "image"]], own: req.mask && req.mask.length ? [["mask", "mask"]] : [], max: picturesMax(o), drops: "FLUX.1 Fill takes the crop and the mask only: reference images are left out." });
+            }
+            return layoutOf({ seq: inOrder(req, (k) => (k ? `input_image_${k + 1}` : "input_image")), max: picturesMax(o) });
+        },
         read(j, req) {
             const r = j.result || {};
             if (!r.sample) return { refused: j.status || null };
@@ -360,6 +386,7 @@ const DIALECTS = {
             if (pics.length) body.image = pics.map(uri);
             return body;
         },
+        layout(req, o) { return layoutOf({ seq: inOrder(req, (k) => `image[${k}]`), max: picturesMax(o) }); },
         read(j) {
             if (j.error && (j.error.code || j.error.message)) return { refused: `${j.error.code ? j.error.code + ": " : ""}${j.error.message || ""}` };
             const item = Array.isArray(j.data) ? j.data.find((d) => d && (d.b64_json || d.url)) : null;
@@ -381,6 +408,7 @@ const DIALECTS = {
             if (req.negative) parameters.negative_prompt = String(req.negative);
             return { input: { messages: [{ role: "user", content }] }, parameters };
         },
+        layout(req, o) { return layoutOf({ seq: inOrder(req, (k) => `input.messages[0].content[${k}]`), max: picturesMax(o) }); },
         read(j) {
             if (j.code && !j.output) return { refused: `${j.code}${j.message ? ": " + j.message : ""}` };
             const choices = (j.output && j.output.choices) || [];
@@ -630,12 +658,25 @@ async function run(req, ctx, kind) {
     };
 }
 
+/** Where each picture of an edit goes: the dialect run() picks, refused with run()'s own words. */
+function layout(req) {
+    const modelId = String(req.model || "");
+    if (!modelId) throw new Error("Comfy Router recipe has no model id.");
+    const [prov, model] = splitModel(modelId);
+    if (!Object.prototype.hasOwnProperty.call(DIALECTS, prov)) throw new Error(`Comfy Router: Scumble does not speak the input of ${prov}/* models (${Object.keys(DIALECTS).join(", ")}).`);
+    const d = DIALECTS[prov];
+    if (d.upscale) throw new Error(`Comfy Router ${modelId} is an upscaler; run it with Upscale.`);
+    if (d.edit === false) throw new Error(`Comfy Router ${modelId} makes pictures from the prompt alone: use Generate new.`);
+    return d.layout(req, req.options || {}, model);
+}
+
 module.exports = {
     label: "Comfy Router",
     keyName: "comfycloud",   // the same Comfy key as Comfy Cloud: no key row of its own
     keyUrl: "https://platform.comfy.org/profile/api-keys",
     keyHint: "the Comfy Cloud key (platform.comfy.org); Comfy Router needs no paid plan, only credits",
     edit(req, ctx) { return run(req, ctx, "edit"); },
+    layout,
     generate(req, ctx) { return run(req, ctx, "text"); },
     upscale(req, ctx) { return run(req, ctx, "upscale"); },
     baseUrl,

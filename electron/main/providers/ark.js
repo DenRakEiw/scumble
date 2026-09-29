@@ -12,6 +12,7 @@
 // crop first) and the stitch keeps the selection. The size always goes as pixels ("WxH", the crop's own shape fitted
 // into the model's pixel range; a tier such as "2K" would let the model pick the shape from the prompt). The API
 // adds an "AI-generated" watermark unless it is told not to, so `watermark: false` goes on every request.
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
 // A recipe variant describes the model with `options`:
 //   pixels      [min, max] total pixels of the output ("Total pixels range" of method 2 on the reference page)
@@ -28,6 +29,7 @@
 "use strict";
 
 const { fetchImage, sleep: realSleep, fitPixels } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 
 const REGIONS = {
     "ap-southeast": "https://ark.ap-southeast.bytepluses.com",   // Johor, Malaysia
@@ -186,6 +188,12 @@ async function picturesFor(req, o, ctx, model) {
     return pics;
 }
 
+/** Where picturesFor above puts each picture: `image` holds the crop, then the references (there is no mask input). */
+function layout(req) {
+    const o = req.options || {};
+    return layoutOf({ seq: [["crop", "image[0]"], ...refRoles(req).map(([role, i]) => [role, `image[${i + 1}]`, i])], max: +o.max_images > 0 ? +o.max_images : 10 });
+}
+
 function gcd(a, b) {
     while (b) [a, b] = [b, a % b];
     return a;
@@ -331,6 +339,7 @@ module.exports = {
     keyHint: "API key from the ModelArk console (it belongs to the region it was made in)",
     edit: run,
     generate: run,   // kind "text": the same endpoint without image
+    layout,
     baseUrl,
     // exported for tools/ark_test.js
     _testBase: testBase,

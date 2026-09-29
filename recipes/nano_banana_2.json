@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "Nano Banana 2 (Gemini 3.1 Flash Image)",
   "family": "Google",
+  "refs": { "name": "image {n}" },
   "description": "Google's generalist image model, 0.5K to 4K. Keys: Google AI Studio, fal.ai or Replicate. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Comfy Router. Also on Oxen.ai. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {

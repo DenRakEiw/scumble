@@ -5,11 +5,19 @@
 // Not listed in Settings › API providers (no key); the model is downloaded in Settings › Helpers.
 "use strict";
 
+const { layoutOf } = require("./refs");
+
 const SIZE = 512;
 
 module.exports = {
     label: "In-app",
     needsKey: false,
+
+    // the crop and the mask; LaMa fills from the picture around the hole and takes no reference (docs/PLAN_REFS.md C3)
+    layout(req) {
+        if (req.kind !== "fill") throw new Error("In-app LaMa fills a selection and takes no instruction; use a fill recipe.");
+        return layoutOf({ seq: [["crop", "image"]], own: [["mask", req.mask ? "mask" : "maskAlpha"]], drops: "LaMa takes no reference images: they are left out." });
+    },
 
     async edit(req, ctx) {
         if (req.kind !== "fill") throw new Error("In-app LaMa fills a selection and takes no instruction; use a fill recipe.");

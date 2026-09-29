@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "GPT Image 2.5 Flare",
   "family": "OpenAI",
+  "refs": { "name": "Image {n}" },
   "description": "OpenAI's fast image model (September 2026): custom sizes in multiples of 16 up to 3840 px an edge, quality up to max. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Run against the live API through OpenRouter since 2026-09-21; the other providers' adapters are written from their docs and not run live yet. Also on Comfy Router. Also on Oxen.ai. Also on Magnific.",
   "default": "openai",
   "providers": {

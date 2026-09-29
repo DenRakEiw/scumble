@@ -10,13 +10,16 @@ const path = require("node:path");
 const fsp = require("node:fs/promises");
 const { app } = require("electron");
 
+const { REF_NAME_DEFAULT, validRefName } = require("./providers/refs");
+
 // ---- the shape of a recipe -------------------------------------------------------------
 //
 // docs/RECIPES.md describes this in prose, tools/recipes_test.js checks the shipped files at
 // run time, and the typedefs below are the same agreement in a form a type checker reads.
 // What `normalize()` guarantees to everything downstream - the editor's provider select,
 // the Upscale dialog, `list_recipes`, the adapters - is `providers`, `providerIds`,
-// `default` and `task` on a provider recipe, and per variant `limits`, `edit`, and either
+// `default` and `task` on a provider recipe, and per variant `limits`, `edit`, `refs` (the name
+// a reference picture has in the prompt the model gets, docs/PLAN_REFS.md C3), and either
 // `text` (an edit recipe) or `factor` (an upscaler).
 
 /**
@@ -83,6 +86,7 @@ const { app } = require("electron");
  * @property {TextShape | false | null} [text]   `false` in a file switches "Generate new" off; normalize() leaves a shape or null
  * @property {UpscaleFactor} [factor]         upscalers only
  * @property {boolean} [usesPrompt]           upscalers only: the tab's prompt goes along
+ * @property {{ name: string }} [refs]        what the model calls reference picture n ("image {n}"); always set by normalize()
  */
 
 /**
@@ -119,6 +123,7 @@ const { app } = require("electron");
  * @property {string} [model]
  * @property {string} [input]
  * @property {string} [note]
+ * @property {{ name?: string, slots?: number | null } | null} [refs]   the variants' default name pattern; ComfyUI recipes: slots (26e)
  */
 
 const FIXED_OUTPUTS = 13;   // InpaintCanvas outputs before setting_1 (nodes.py RETURN_NAMES)
@@ -257,6 +262,18 @@ function textVariant(providerId, v) {
  * `text` shape filled in, which is what "Generate new" uses.
  */
 /**
+ * A variant's `refs`: `{ name }`, the name a reference picture has in the prompt the model gets ("image {n}", n its
+ * place among the pictures sent; `{n0}` counts from 0). An invalid pattern warns and takes the default.
+ */
+function refsOf(refs, where) {
+    const name = refs && typeof refs === "object" ? refs.name : undefined;
+    if (name === undefined) return { name: REF_NAME_DEFAULT };
+    if (validRefName(name)) return { name };
+    console.warn(`recipe ${where}: refs.name ${JSON.stringify(name)} is not a valid pattern (1-40 characters with {n} or {n0}, no @ or other braces); using "${REF_NAME_DEFAULT}"`);
+    return { name: REF_NAME_DEFAULT };
+}
+
+/**
  * Fill in everything the rest of the app is allowed to rely on. Runs on every recipe that
  * is read from disk or imported; the shape it answers is the typedef above.
  * @param {Recipe} r
@@ -278,6 +295,7 @@ function normalize(r) {
     r.task = r.task === "upscale" ? "upscale" : "edit";
     for (const [id, v] of Object.entries(r.providers)) {
         v.limits = editLimits(r, v);
+        v.refs = refsOf(v.refs !== undefined ? v.refs : r.refs, `${r.id}/${id}`);
         if (r.task === "upscale") {
             // an upscaler makes nothing from a prompt alone, so it has no Generate new shape
             v.text = null;

@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "Nano Banana 2 Lite (Gemini 3.1 Flash-Lite Image)",
   "family": "Google",
+  "refs": { "name": "image {n}" },
   "description": "Google's fastest and cheapest image model, 1K only. Also on WaveSpeedAI. Also on Comfy Cloud. Also on ToAPIs. Also on OpenRouter. Also on Comfy Router. Also on Oxen.ai. Adapter written from the provider's docs, not run against the live API yet.",
   "default": "gemini",
   "providers": {

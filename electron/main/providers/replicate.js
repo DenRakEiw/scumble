@@ -9,9 +9,11 @@
 // Models differ in their input names, so a recipe may set `fields`:
 //   fill: { image: "image", mask: "mask" }                  (flux-fill-pro, flux-fill-dev, ...)
 //   edit: { images: "image_input" } or { image: "image" }   (nano-banana, qwen-image-edit, ...)
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
 const { dataUri, fetchImage, readError, sleep, num } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 
 const BASE = "https://api.replicate.com/v1";
 const DATA_URI_MAX = 256 * 1024;   // Replicate's guidance: data URLs up to 256 kB, larger files by URL
@@ -63,6 +65,17 @@ async function inputFor(req, ctx) {
     return input;
 }
 
+/** Where inputFor above puts each picture of a fill or an edit (the request body is { input } or { version, input }). */
+function layout(req) {
+    const fields = req.fields || {};
+    if (req.kind === "edit" && (fields.images || !fields.image)) {
+        const F = `input.${fields.images || "image_input"}`;
+        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])] });
+    }
+    if (req.kind === "edit") return layoutOf({ seq: [["crop", `input.${fields.image}`]], drops: "This endpoint takes one picture: reference images are left out." });
+    return layoutOf({ seq: [["crop", `input.${fields.image || "image"}`]], own: req.mask ? [["mask", `input.${fields.mask || "mask"}`]] : [], drops: "This endpoint takes the crop and the mask only: reference images are left out." });
+}
+
 module.exports = {
     label: "Replicate",
     keyUrl: "https://replicate.com/account/api-tokens",
@@ -70,6 +83,7 @@ module.exports = {
     generate(req, ctx) {
         return this.edit(req, ctx);   // inputFor() leaves the image out for kind "text"
     },
+    layout,
     async edit(req, ctx) {
         const model = String(req.model || "").replace(/^\/+|\/+$/g, "");
         if (!model) throw new Error("Replicate recipe has no model (owner/name or owner/name:version).");

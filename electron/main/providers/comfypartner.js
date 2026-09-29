@@ -16,10 +16,12 @@
 // case-sensitive), never on the signed upload or the answer's picture. The same Comfy key as Comfy Cloud and the
 // Router (`keyName`), the same host rule (settings.comfyrouter.base may name the loopback mock, and then only a
 // "test-" key goes there). Answered in one request; nothing is polled.
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
 const { randomUUID } = require("node:crypto");
 const { sleep: realSleep, fitPixels } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 const router = require("./comfyrouter");
 
 const { testBase, checkKey, scrub, picturesFor, download, sniff } = router._shared;
@@ -107,6 +109,15 @@ async function upload(ctx, host, test, pic, n) {
     return down;
 }
 
+/** Where each picture of an edit goes, as run() sends it: content[0] is the instruction, then the crop and the references. */
+function layout(req) {
+    const model = String(req.model || "");
+    if (!Object.prototype.hasOwnProperty.call(HY_MODELS, model)) throw new Error(`Comfy Partner API: Scumble knows no model "${model}" there (hy-image-v3.5-preview).`);
+    const o = { max_images: HY_MAX_IMAGES, ...(req.options || {}) };
+    const seq = [["crop", "messages[0].content[1]"], ...refRoles(req).map(([role, i]) => [role, `messages[0].content[${i + 2}]`, i])];
+    return layoutOf({ seq, max: +o.max_images > 0 ? +o.max_images : 1 });   // picturesFor's count check
+}
+
 async function run(req, ctx, kind) {
     ctx = { ...ctx, sleep: ctx.sleep || realSleep, uuid: ctx.uuid || randomUUID, log: ctx.log || (() => {}), who: "HY Image 3.5" };
     const model = String(req.model || "");
@@ -175,6 +186,7 @@ module.exports = {
     keyUrl: "https://platform.comfy.org/profile/api-keys",
     keyHint: "the Comfy Cloud key (platform.comfy.org); credits only, no paid plan",
     edit(req, ctx) { return run(req, ctx, "edit"); },
+    layout,
     generate(req, ctx) { return run(req, ctx, "text"); },
     baseUrl: router.baseUrl,   // settings.comfyrouter.base: the one loopback mock of api.comfy.org
     // exported for tools/comfyrouter_test.js

@@ -4,9 +4,11 @@
 //   fill: /v1/flux-pro-1.0-fill    { image, mask (base64, white = repaint), prompt, steps, guidance, seed }
 //   edit: /v1/flux-2-pro | flux-2-flex | flux-2-max | flux-2-klein-9b | flux-kontext-pro
 //         { prompt, input_image, input_image_2.., width, height, seed }
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
 const { b64, fetchImage, readError, sleep, num } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 
 const BASE = "https://api.bfl.ai";
 const PASS = new Set(["steps", "guidance", "safety_tolerance", "output_format", "prompt_upsampling", "aspect_ratio"]);   // "endpoint" picks the model, "random_seed" is the app's
@@ -30,6 +32,17 @@ function bodyFor(req) {
     return body;
 }
 
+/** Where bodyFor puts each picture: an edit numbers input_image .. input_image_8, the fill endpoint takes crop and mask. */
+function layout(req) {
+    if (req.kind === "edit") {
+        return layoutOf({
+            seq: [["crop", "input_image"], ...refRoles(req, 7).map(([role, i]) => [role, `input_image_${i + 2}`, i])],
+            drops: "This endpoint takes 8 pictures: references past the 7th are left out.",
+        });
+    }
+    return layoutOf({ seq: [["crop", "image"]], own: req.mask ? [["mask", "mask"]] : [], drops: "This endpoint takes the crop and the mask only: reference images are left out." });
+}
+
 module.exports = {
     label: "Black Forest Labs",
     keyUrl: "https://dashboard.bfl.ai/",
@@ -37,6 +50,7 @@ module.exports = {
     generate(req, ctx) {
         return this.edit(req, ctx);   // bodyFor() leaves the image out for kind "text"
     },
+    layout,
     async edit(req, ctx) {
         const endpoint = String(req.params.endpoint || req.model || "flux-pro-1.0-fill").replace(/^\/+|\/+$/g, "").replace(/^v1\//, "");
         const headers = { "x-key": ctx.key, "Content-Type": "application/json", accept: "application/json" };

@@ -1,6 +1,7 @@
 // OpenAI images: POST /v1/images/edits (multipart) and POST /v1/images/generations (JSON).
 // image[] = crop plus references, mask = PNG whose transparent pixels mark the area to
 // repaint (same size as the crop), the answer carries b64_json.
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
 // The parameters follow developers.openai.com/api/docs/guides/image-prompting and the
 // /v1/images reference, both read 2026-09-11:
@@ -16,6 +17,7 @@
 "use strict";
 
 const { readError, closestSize, fitPixels } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 
 const STANDARD_SIZES = ["1024x1024", "1536x1024", "1024x1536"];
 
@@ -97,6 +99,11 @@ module.exports = {
     keyUrl: "https://platform.openai.com/api-keys",
     keyHint: "sk-... from platform.openai.com",
     wantsAlphaMask: true,
+    // edit() below: image[] holds the crop, then the references; the mask goes in a field of its own
+    layout(req) {
+        const own = pickMask(req) && req.kind !== "edit" ? [["mask", "mask"]] : [];
+        return layoutOf({ seq: [["crop", "image[][0]"], ...refRoles(req).map(([role, i]) => [role, `image[][${i + 1}]`, i])], own });
+    },
     async edit(req, ctx) {
         const p = req.params;
         const model = String(p.model || req.model || "gpt-image-1");

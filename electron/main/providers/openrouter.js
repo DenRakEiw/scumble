@@ -14,6 +14,7 @@
 // Gemini adapter does); an "edit" run sends the crop and the references only. The stitch keeps the
 // selection either way. Billing is all or nothing: a generation that does not finish answers 502 and costs
 // nothing.
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
 // A recipe variant describes the model with `options`:
 //   accepts     the parameters the model's endpoints list in GET /api/v1/images/models; nothing else is sent
@@ -42,6 +43,7 @@
 "use strict";
 
 const { sleep: realSleep, closestAspect } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 
 const DEFAULT_BASE = "https://openrouter.ai";
 const ALLOWED_HOSTS = new Set(["https://openrouter.ai"]);
@@ -249,6 +251,14 @@ async function picturesFor(req, o, ctx, model) {
     return pics;
 }
 
+/** Where picturesFor above puts each picture: input_references holds the crop, the mask (a fill), the references. */
+function layout(req) {
+    const o = req.options || {};
+    const at = (k) => `input_references[${k}]`;
+    const first = req.kind === "fill" && req.mask ? [["crop", at(0)], ["mask", at(1)]] : [["crop", at(0)]];
+    return layoutOf({ seq: [...first, ...refRoles(req).map(([role, i]) => [role, at(first.length + i), i])], max: +o.max_images > 0 ? +o.max_images : 16 });
+}
+
 // ---- the request ---------------------------------------------------------------------------------------
 
 /** The smallest tier whose base covers the long side, else the largest; null without tiers. */
@@ -383,6 +393,7 @@ module.exports = {
     keyHint: "sk-or-v1-... from openrouter.ai › Settings › API keys",
     edit: run,
     generate: run,   // kind "text": the same endpoint without input_references
+    layout,
 
     /**
      * GET /api/v1/key: what this key may still spend. It reports the key's own limit, not the account's credits

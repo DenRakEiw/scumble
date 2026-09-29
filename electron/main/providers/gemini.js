@@ -3,9 +3,11 @@
 // There is no mask input; the mask goes along as a second image and the prompt says what
 // it means. The stitch keeps only the selection anyway (paste = selection), so a model
 // that repaints a little outside the mask does no harm.
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
 const { b64, readError } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
 
@@ -15,6 +17,12 @@ module.exports = {
     keyHint: "API key from Google AI Studio",
     generate(req, ctx) {
         return this.edit(req, ctx);   // edit() leaves every image part out for kind "text"
+    },
+    // edit() below: part 0 is the text, then the crop, the mask (a fill), the references
+    layout(req) {
+        const at = (k) => `contents[0].parts[${k}]`;
+        const first = req.mask && req.kind !== "edit" ? [["crop", at(1)], ["mask", at(2)]] : [["crop", at(1)]];
+        return layoutOf({ seq: [...first, ...refRoles(req).map(([role, i]) => [role, at(first.length + 1 + i), i])] });
     },
     async edit(req, ctx) {
         const p = req.params;

@@ -188,6 +188,46 @@ async function main() {
         fs.rmSync(dir, { recursive: true, force: true });
     });
 
+    await section("3. refs.name (docs/PLAN_REFS.md C3)", async () => {
+        const recipes = loadRecipes();
+        // what each model's docs call its pictures; every other provider recipe takes the default
+        const WANT = {
+            flux2_pro: "image {n}", flux2_flex: "image {n}", flux2_max: "image {n}", flux2_klein: "image {n}",
+            nano_banana_2: "image {n}", nano_banana_2_lite: "image {n}", nano_banana_pro: "image {n}", grok_imagine: "image {n}", reve: "image {n}",
+            gpt_image_2: "Image {n}", gpt_image_2_5_flare: "Image {n}", gpt_image_2_5_sunburst: "Image {n}",
+            seedream_4_5: "Image {n}", seedream_5_lite: "Image {n}", seedream_5_pro: "Image {n}", qwen_image_edit: "Image {n}", hy_image_3_5: "Image {n}",
+            qwen_image_2_1: "<image{n}>",
+        };
+        const wrong = [];
+        for (const name of fs.readdirSync(RECIPES).filter((n) => n.endsWith(".json"))) {
+            const raw = rawFile(name);
+            const r = recipes._normalize(JSON.parse(JSON.stringify(raw)));
+            if (r.kind !== "provider") {
+                if (JSON.stringify(r.refs) !== JSON.stringify(raw.refs)) wrong.push(`${r.id}: a ComfyUI recipe's refs changed`);
+                continue;
+            }
+            const want = WANT[r.id] || "image {n}";
+            for (const [pid, v] of Object.entries(r.providers)) if (!v.refs || v.refs.name !== want) wrong.push(`${r.id}/${pid}: ${short(v.refs)}, not ${want}`);
+        }
+        check("every provider variant of every shipped recipe carries its refs.name", !wrong.length, wrong.join("; "));
+        const warn = console.warn;
+        const warned = [];
+        console.warn = (...a) => warned.push(a.join(" "));
+        try {
+            const r = recipes._normalize({ id: "t", kind: "provider", refs: { name: "Image {n}" }, providers: { a: { model: "m" }, b: { model: "m", refs: { name: "<frame>{n0}</frame>" } }, c: { model: "m", refs: { name: "@img{n}" } }, d: { model: "m", refs: null } } });
+            check("a variant without refs takes the recipe's", r.providers.a.refs.name === "Image {n}", short(r.providers.a.refs));
+            check("a variant's own refs wins", r.providers.b.refs.name === "<frame>{n0}</frame>", short(r.providers.b.refs));
+            check("an invalid pattern gives the default and a warning", r.providers.c.refs.name === "image {n}" && warned.some((w) => /refs\.name/.test(w)), short(r.providers.c.refs) + " " + short(warned));
+            check("refs: null gives the default", r.providers.d.refs.name === "image {n}", short(r.providers.d.refs));
+            const up = recipes._normalize({ id: "u", kind: "provider", task: "upscale", providers: { a: { model: "m" } } });
+            check("an upscaler's variant carries the default too", up.providers.a.refs && up.providers.a.refs.name === "image {n}", short(up.providers.a.refs));
+            const comfy = recipes._normalize({ id: "c", kind: "comfy", refs: { name: "<image{n}>", slots: 4 } });
+            check("a ComfyUI recipe's refs is left as it is (26e checks it)", eq(comfy.refs, { name: "<image{n}>", slots: 4 }), short(comfy.refs));
+        } finally {
+            console.warn = warn;
+        }
+    });
+
     if (USERDATA) fs.rmSync(USERDATA, { recursive: true, force: true });
     const failed = results.filter((x) => !x).length;
     console.log(`\n${results.length - failed} of ${results.length} checks passed`);

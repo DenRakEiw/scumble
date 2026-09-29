@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "Reve 2.1",
   "family": "Reve",
+  "refs": { "name": "image {n}" },
   "description": "Reve's plan-then-render model, cheap instruction editing. On WaveSpeedAI. Model ids from wavespeed.ai/models/reve on 2026-09-11; the input field names follow WaveSpeed's other edit models and have not been verified against the live API.",
   "default": "wavespeed",
   "providers": {

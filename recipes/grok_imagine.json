@@ -3,6 +3,7 @@
   "kind": "provider",
   "name": "Grok Imagine 2.0",
   "family": "xAI",
+  "refs": { "name": "image {n}" },
   "description": "xAI's image model. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. Model id from fal's model index on 2026-09-11; the adapter is written from the provider's schema and has not run against the live API yet. Also on OpenRouter. Also on Comfy Router. Also on Oxen.ai.",
   "default": "fal",
   "providers": {

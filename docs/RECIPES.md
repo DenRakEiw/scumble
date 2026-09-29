@@ -153,8 +153,9 @@ none, its route table knows each route's rules),
 `limits` (the size ceiling, below), `edit: false` (the variant makes images from
 the prompt alone and the Generate button says so), `text` (the Generate new shape, below; **required on every
 `magnific` variant**, as `{ "model": "<text route>", ... }` or `false`, because Magnific's edit routes end in `-edit`
-and `normalize()` would otherwise hand an edit route to Generate new), `note` (shown as the tooltip). `family`
-groups the top-bar list. A recipe with a top-level `provider` instead of `providers` (the
+and `normalize()` would otherwise hand an edit route to Generate new), `refs` (`{ "name": "Image {n}" }`, the name
+a reference picture has in the prompt the model gets; on the recipe for every variant or on one variant, below),
+`note` (shown as the tooltip). `family` groups the top-bar list. A recipe with a top-level `provider` instead of `providers` (the
 old shape, the smoke test's loopback) is read as a one-provider recipe.
 
 ### How big the crop goes out (`limits`)
@@ -204,6 +205,52 @@ as it is. All five are clamped by `min`, `max` and `pixels`, and
 `finishResult()` scales the answer back to the region either way. A ComfyUI recipe gets no
 limits at all (`host.cropLimits()` returns null) and keeps using `target_size`, because
 there the node does the cropping. `tools/size_test.py` is the gate.
+
+### Reference pictures: order, names, caps and drops (`refs`)
+
+Item 26 (`docs/PLAN_REFS.md`) lets the prompt name a reference layer as `@img1`, `@img2`: the shown reference layers,
+top of the list first. A model does not know that name. What it knows is the place of the picture among the pictures
+of the request, and each family has its own word for it (the vendors' prompting guides, `docs/PLAN_REFS.md` §1):
+"image 3" (FLUX.2, Nano Banana, Grok, Reve), "Image 3" (GPT Image, Seedream, Qwen Image Edit, HY Image), `<image3>`
+(Qwen Image 2.1). So the name is written in the main process, at send time, for the route the run really takes.
+
+- **`refs.name`** is that word as a pattern: `{n}` is the picture's 1-based place, `{n0}` the 0-based one (Reve's
+  `<frame>{n0}</frame>`). 1 to 40 characters, at least one `{n}` or `{n0}`, no `@` and no other brace. The recipe's
+  `refs` applies to every variant, a variant's own wins; `normalize()` gives every provider variant one (the default
+  `image {n}`), and an invalid pattern takes the default with a warning. `resolveRecipe` carries it as `r.refs`, and
+  `runProvider` sends it as `request.refName`. ComfyUI recipes keep their own `refs` (`slots`, step 26e).
+- **The order** is each adapter's own: `layout(req)` beside `edit` (`electron/main/providers/refs.js`) declares where
+  each picture goes: `{ pictures: [{ role, ref?, field, n }], max, drops, style }`. Role `crop`, `mask`, `original` (the
+  crop before the fill, `request.references[0]` when `request.original` is 1) or `reference`; `ref` the index in
+  `request.references`; `field` the provider's own input (`image_urls[2]`, `contents[0].parts[3]`, `input_image_3`);
+  `n` the place among the pictures the model numbers, **null** for a picture in a field of its own (a mask field,
+  Magnific Ideogram's style references). The crop is always picture 1, then what the builder sends next: the mask
+  where it goes as a picture (Gemini, OpenRouter, Oxen without a mask field, Comfy Router's Gemini), the Original,
+  the reference layers in list order. Worked example, GPT Image 2 as a fill with the Original and one reference:
+  OpenAI direct names the reference `Image 3` (the mask has its own field), OpenRouter `Image 4`.
+- **The markers.** The renderer writes a named reference as `{@ref:i}` (i = its index in `request.references`, from
+  step 26b2 on); `providers/index.js` computes the layout on every run, turns each marker into `nameOf(refName, n)`,
+  and refuses, before anything is sent, a marker past the last picture, a reference the route leaves out (the route's
+  `drops` sentence), one without a number (style references), and an Original flag without a reference. Then a
+  safety net refuses any `@img` token or `{@ref:` that is still in the prompt or the negative, so no raw token ever
+  reaches a model. The answer carries the prompt as sent and `refs: [{ ref, name }]`; the log's success record holds
+  the first 500 characters of that prompt.
+- **`max`** is the adapter's own refusal threshold as `countOf` counts it (every picture but a mask in its own field),
+  null where the builder does not check: ToAPIs per channel, OpenRouter 16 (or `max_images`), ModelArk 10, Oxen 16
+  (1 with `single`), Comfy Router `max_images` (plus one for its Gemini dialect's mask picture), HY 5, Magnific per
+  route. **`drops`** is one sentence whenever the route leaves out references it may be given: every fill without an
+  image list (fal, BFL, Replicate, WaveSpeed, In-app LaMa), BFL past the 7th reference, Comfy Cloud's Qwen node past
+  the 2nd and its one-picture nodes, Magnific Image Expand. It is set at route level, so it also stands on a request
+  that loses nothing (0 references, or fewer than the cap); which references are left out is read from `pictures`.
+  Routes that make pictures from the prompt alone (Comfy Router's xai / ideogram / krea, Magnific's Z-Image and
+  Mystic) and routes that need a mask refuse an edit run in their layout with the builder's own words.
+- **`provider:layout(shape)`** (`window.scumble.providers.layout`) answers the same for a request of a shape, for the
+  previews of the steps to come: shape `{ provider, model, kind, fields, options, params, original, count, refName }`
+  (`count` includes the Original; the mask follows from `kind`), answer the layout plus `names` (per reference
+  index, null when left out), `sent` and `over`.
+- `tools/refs_layout_test.js` pins every layout against the request the real builder sends, for every shipped
+  variant (every ToAPIs channel) with 0, 1 and 3 references and the Original on and off; `tools/refs_cases.json`
+  holds the token grammar main and the renderer share.
 
 ### Transparent results (`background`)
 

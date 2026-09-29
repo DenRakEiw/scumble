@@ -10,6 +10,7 @@
 // endpoints without a free image_size (nano-banana, seedream, gpt-image). `fields.mask: false`
 // drops the mask for an image-to-image endpoint that has none (Ideogram 4), and `options.omit`
 // lists input fields a strict endpoint refuses (Recraft V4, Krea 2).
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
 // upscale (kind "upscale", docs/RECIPES.md "Upscale recipes"): { image_url, upscale_factor, output_format,
 // the variant's settings, prompt only when the variant takes one }. Topaz, Clarity and SeedVR2 name the
@@ -19,6 +20,7 @@
 "use strict";
 
 const { dataUri, fetchImage, readError, sleep, num } = require("./util");
+const { layoutOf, refRoles } = require("./refs");
 
 const QUEUE = "https://queue.fal.run/";
 
@@ -49,6 +51,18 @@ function inputFor(req) {
     // every other fal model takes; a variant names them in options.omit
     for (const k of (req.options && req.options.omit) || []) delete input[k];
     return input;
+}
+
+/** Where inputFor puts each picture of a fill or an edit: the crop and the references in one list, the mask on its own. */
+function layout(req) {
+    const f = req.fields || {};
+    const own = req.mask && req.kind !== "edit" && f.mask !== false ? [["mask", f.mask || "mask_url"]] : [];
+    if (req.kind === "edit" || f.images) {
+        const F = f.images || "image_urls";
+        return layoutOf({ seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])], own });
+    }
+    const drops = f.mask === false ? "This endpoint takes one picture: reference images are left out." : "This endpoint takes the crop and the mask only: reference images are left out.";
+    return layoutOf({ seq: [["crop", f.image || "image_url"]], own, drops });
 }
 
 /** The input of an upscale: the picture, the factor, the variant's own settings. */
@@ -112,6 +126,7 @@ module.exports = {
     generate(req, ctx) {
         return this.edit(req, ctx);   // inputFor() leaves the images out for kind "text"
     },
+    layout,
     async edit(req, ctx) {
         const model = modelOf(req);
         const out = await queued(model, inputFor(req), ctx, EDIT_WAIT_MS);

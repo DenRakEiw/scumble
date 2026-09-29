@@ -105,6 +105,24 @@ document.getElementById("gen-cancel").click();
 await wait(120);
 return { options: ids };
 """),
+    ("provider_markers_over_ipc", """
+// docs/PLAN_REFS.md 26a1: main turns a marker {@ref:i} into the name the route gives that picture, refuses a raw @img
+// token, and provider:layout answers the names a request of that shape would carry
+const c = new OffscreenCanvas(64, 64);
+c.getContext("2d").fillStyle = "#808080";
+c.getContext("2d").fillRect(0, 0, 64, 64);
+const png = new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer());
+const base = { provider: "loopback", kind: "edit", model: "loopback", image: png, width: 64, height: 64, params: {} };
+const res = await window.scumble.providers.edit({ ...base, prompt: "the coat from {@ref:1}", references: [png, png], original: 1, refName: "Image {n}" });
+if (!res.info || res.info.prompt !== "the coat from Image 3") throw new Error("the loopback got " + JSON.stringify(res.info && res.info.prompt));
+if (res.prompt !== "the coat from Image 3" || !res.refs || res.refs.length !== 1 || res.refs[0].name !== "Image 3" || res.refs[0].ref !== 1) throw new Error("the answer: " + JSON.stringify({ prompt: res.prompt, refs: res.refs }));
+let refused = null;
+try { await window.scumble.providers.edit({ ...base, prompt: "@img1", references: [png] }); } catch (err) { refused = String(err.message || err); }
+if (!refused || !/@img1/.test(refused)) throw new Error("a raw @img1 was not refused: " + refused);
+const lay = await window.scumble.providers.layout({ provider: "openrouter", model: "openai/gpt-image-2", kind: "fill", options: { max_images: 16 }, count: 2, original: 1, refName: "Image {n}" });
+if (JSON.stringify(lay.names) !== JSON.stringify(["Image 3", "Image 4"]) || lay.sent !== 4 || lay.over) throw new Error("layout: " + JSON.stringify({ names: lay.names, sent: lay.sent, over: lay.over }));
+return { prompt: res.info.prompt, refs: res.refs, refused: refused.slice(0, 80), names: lay.names, sent: lay.sent };
+"""),
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";
