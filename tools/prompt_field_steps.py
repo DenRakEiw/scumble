@@ -32,6 +32,9 @@ const pfSetup = async () => {
     await run("add_image_layer", { ...file, role: "reference", name: "jacket", doc: d.id });
     await run("add_image_layer", { ...file, role: "reference", name: "coat", doc: d.id });
     if (!ed.promptField) throw new Error("no prompt field: host.refTokens is off in the app");
+    // showPane remembers the pane for every document opened later ("ipc.pane"): pfClose puts back the one found here,
+    // or a later gate's new document opens on Generate (film's panel_thumbnails rendered nothing, 2026-09-29)
+    if (window.__pfPane === undefined) { try { window.__pfPane = localStorage.getItem("ipc.pane"); } catch (_) { window.__pfPane = null; } }
     ed.showPane("gen");
     const det = ed.promptInput.closest("details");
     if (det) det.open = true;
@@ -42,7 +45,9 @@ const pfSetup = async () => {
 const pfClose = async () => {
     if (window.__pf != null) await run("close_document", { doc: window.__pf, force: true });
     window.__pf = null;
-    host.shell.activate(ednow(window.__t));
+    const t = ednow(window.__t);
+    host.shell.activate(t);
+    if (window.__pfPane !== undefined) { t.showPane(window.__pfPane || "image"); window.__pfPane = undefined; }
 };
 const pf = () => ednow(window.__pf);
 const chips = (ed) => [...ed.promptInput.querySelectorAll(".ipc-chip")].map((c) => c.dataset.token + ":" + c.dataset.state);

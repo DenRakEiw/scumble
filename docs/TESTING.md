@@ -271,3 +271,9 @@ Known flakes; **re-run before believing any of these**:
   `closed_tabs_are_collected` twice with the last two tabs alive, `helper_inputs_read_levels_and_upload_nothing` with
   one upload counted), while the unchanged tree passed once and `closed_tabs_are_collected` alone passed 3 of 3 on
   both trees; not looked into further.
+- The 0.1.34 exe gates on tiles (2026-09-29, one full run of 31 gates) failed two steps once, and both passed at once
+  when `export film` ran again on a fresh instance: `export_test.py` `a_run_reads_its_box_and_a_window_of_the_selection`
+  ("the run's patch differs between the window and the whole selection", one byte, one level; `stitch.js`'s
+  `finishResult` was not touched since 0.1.33, only the reference reads) and `film_test` `panel_thumbnails` ("0 of 5
+  rendered" 4 s into the gate; `plugins/` unchanged since 0.1.33). Neither had failed in an earlier recorded run; not
+  looked into further.

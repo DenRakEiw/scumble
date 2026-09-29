@@ -26,6 +26,48 @@ The block of 2026-09-29 (morning, item 26 S1 built) was moved here at noon, when
 
 The block of 2026-09-29 (evening, item 26 S1 to S4 built) was moved here at night, when S5 (26e, 26f) was built.
 
+The block of 2026-09-29 (night, item 26 built, S1 to S5) was moved here late the same night, when 0.1.34 was prepared.
+
+## Where things stand (2026-09-29, night: 0.1.33 released; item 26 built, S1 to S5)
+
+Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
+verbatim). Check `gh release list` before believing any release state written down anywhere.
+
+**Released:** 0.1.33 is Latest (published 2026-09-29 12:14 CEST), the eraser hotfix, released from `hotfix/0.1.33`
+(tag on a6d0e32); `main` holds the same fix and the merge. The dev blog post `v0-1-33` is live. **The manual was not
+synced at 0.1.33** (main's `docs/MANUAL.md` describes item 26, which ships with 0.1.34): sync it at the 0.1.34 release.
+- **Item 26, reference layers named in the prompt, is built** (`docs/PLAN_REFS.md`, every step's "Built" paragraph;
+  the CHANGELOG notes are its section 6). All local, **not pushed**: S1-S4 (26a1 ... d027f4d), **26e** a608e8d (local
+  ComfyUI recipes write a token as their graph numbers the picture: Qwen 2.1 `<image3>` with 10 slots, Klein `image 3`
+  with 4; unused slots trimmed; `renderer/editor/comfyrefs.js`) and **26f** (the commit after it: Generate new sends
+  the shown references to the text routes that take pictures, `text.refs` on 98 variants, `textLayout` in every
+  adapter, the reference layers stay over the new base, the dialog has the prompt field and the bar; 26e's review fixes
+  landed in that commit). Gates `--offline` green (generate on both backends, commands, recipes, upscale, editor, the
+  six provider gates, assistant, nodecopy, lint, types). **Nothing ran live**: no API call with references, and neither
+  widened local graph ran on ComfyUI (8188 is production). Filed on the way (`docs/BUGS.md`): the local recipes'
+  Model / Text encoder / VAE rows carry over between Qwen and Klein (older; a background-task chip was offered);
+  Gemini direct ignores the asked aspect on Generate new while the Aspect row says "auto" (older).
+- **Next: the 0.1.34 release, only on the user's word** (`docs/RELEASING.md` first): the CHANGELOG section from
+  PLAN_REFS §6's notes (no other product named as a feature's model), `npm run dist`, the exe gates, the manual sync,
+  the dev blog post. Then package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+- **To do at the 0.1.34 release (the user, 2026-09-29):** take the other product's name out of the "Next up" line of
+  the `v0-1-33` post (`F:\portfolio_web\lib\scumble-posts.ts`, "... the way X does it"), and write the 0.1.34 post,
+  CHANGELOG section and manual lines without naming any other product as the model for the feature. **The post gets a
+  picture of the new prompt field (the user, 2026-09-29):** `dist/release-0.1.34/reference-prompt-panel.jpg` (the side
+  panel at 2x: chips, the bar, the card "img2 · sent as image 4"); the blog page renders text only (`Post` in
+  `F:\portfolio_web\lib\scumble.ts` has `body: string[]`, `app/scumble/blog/page.tsx` maps it to `<p>`), so give `Post`
+  an optional image (src, alt, width, height) and render it. **The manual's new chapter "Reference images in the
+  prompt"** (one screenshot per chapter, so the tokens moved out of "Recipes") points at
+  `https://www.denrakeiw.com/projects/scumble/manual/reference-prompt.jpg`: copy `dist/release-0.1.34/reference-prompt.jpg`
+  to `F:\portfolio_web\public\projects\scumble\manual\` with the sync. The user judges both pictures.
+- **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
+  of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
+  point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
+  and 5 (listed in the late-night hand-over of 2026-09-28 in `docs/HISTORY.md`: among them the selection that stays after
+  a patch or a move, the Shift+J ring, Liquify's no-Apply, its strength and keys, the freeze not undone or saved); item
+  25's look and timing; item 26's look in the app (the prompt field, the dialog). The Store resubmission (search terms
+  without "ComfyUI" / "FLUX") is on the user's side.
+
 ## Where things stand (2026-09-29, evening: 0.1.33 released; item 26 S1 to S4 built)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,

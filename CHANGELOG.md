@@ -3,6 +3,116 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.34 — 2026-09-29
+
+- **Name a reference image in the prompt.** The reference list, the layer panel and the canvas now label every shown
+  reference layer img1, img2 and so on from the top of the list (they said "ref 1" before). Write `@img1` in the prompt
+  and the request names that picture the way the chosen model counts its pictures: "image 3" when the crop and the
+  Original go first, say, and on a local recipe the name its workflow reads (below). The status line says what each
+  token went out as ("Named in the prompt: `@img2` → image 3."). A token stays with its picture: a new reference now
+  goes below the others and takes the next number, so nothing is renumbered, and when references are moved, hidden,
+  shown, merged or deleted the tokens in the prompt are rewritten so each still names the same picture (hiding one
+  renumbers the others, and their tokens follow). A token whose reference is hidden or deleted waits, and Generate stops
+  and says why until you show the layer again, undo the delete or take the token out. The negative prompt takes tokens
+  too, as plain text. A run now reads the prompt and the references at the moment you click, so an edit made while it
+  starts no longer changes what goes out. An upscale sends no reference images, so there a token goes out as its layer's
+  name (the Upscale dialog fills its prompt that way), and Select by text, when it asks the language model what the
+  prompt is about, reads a token as "the reference image".
+- **Reference chips in the prompt field.** Each token shows as a chip: a small round picture of the reference and its
+  label. A chip whose reference is hidden is struck through and shows the layer's name; one whose reference was deleted,
+  or whose number no reference holds, is struck through in red. A chip counts as one character: the caret steps over it,
+  and Backspace or Delete takes it whole. A token becomes a chip once you type the space after it (so `@img12` can be
+  typed without a chip for `@img1` on the way), a word typed right against a chip gets a space between the two, and a
+  click on a chip puts the caret beside it. The prompt field keeps its own undo: Ctrl+Z and Ctrl+Y there take back
+  typing, a paste, Upsample, Revert or a prompt an agent set, never an edit of the picture. Its lines are a little
+  taller, to fit the chips.
+- **The @ list, the reference bar and the card.** Type @ at the start of a word and a list of the shown references opens
+  under the caret, each with its picture, label, layer name and what the model gets it as; what you type after the @
+  narrows it. The arrow keys move in it, Enter or Tab puts the reference in, Escape closes it (a second Escape leaves
+  the field). "+ Add reference" at the end of the list adds pictures as new reference layers and names them where the @
+  was, and a picture pasted into the prompt or dropped on it does the same (text still pastes as text). Above the field
+  a bar shows every reference as a chip (a hidden one dimmed), a + that adds pictures, and how many references the
+  recipe takes besides the crop and the Original ("2 of 3 for this recipe"); a click on a chip there names it at the
+  caret. A chip past what the recipe takes gets a yellow edge, and when the recipe sends no reference images at all (an
+  upscale, say) every chip in the prompt is struck through and the bar dims its chips and says the recipe sends none.
+  Rest the mouse on a chip for a moment and a card shows a larger picture, the layer's name and what the token goes out
+  as ("img2 · sent as image 3"), or why it does not go. The small arrow on a chip swaps it for another reference, shows
+  a hidden reference again or takes the token out; a chip can be dragged to another place in the text, and a selection
+  dragged inside the field moves there (hold Ctrl to copy it).
+- **Generate new keeps the reference layers and sends them along.** The new picture replaces the old one and every other
+  layer, but the reference layers stay, and the shown ones go to the models that take reference images for a new image:
+  FLUX.2, GPT Image, Nano Banana, Seedream and HY Image 3.5 on every provider that runs them here, Qwen Image Edit on
+  ToAPIs, WaveSpeed, Comfy Router and Oxen.ai (not on fal or Replicate), Qwen Image 2.1 on Oxen.ai, and Grok Imagine on
+  fal, OpenRouter and Oxen.ai. There is no crop before them, so `@img1` goes out as the model's first picture
+  ("image 1", `<image1>` on Qwen Image 2.1); shown references the prompt does not name go along too, and a hidden one
+  stays in the tab without being sent. A model that makes pictures from the prompt alone (Ideogram, Recraft, Reve and
+  the others) sends none and keeps them in the tab, and stops the run when the prompt names one. Through a provider the
+  status line says what each token went out as and how many other layers were replaced. The dialog's prompt field works
+  like the Generate tab's, with chips, the @ list and the bar, and the card on each chip says what its reference goes
+  out as for the model and provider picked in the dialog; its Upsample keeps the tokens (next item) and has its own
+  Revert. In an empty tab, a reference added through the prompt field (its +, the @ list, a picture pasted or dropped
+  on it) first gets a white 1024 × 1024 canvas for Generate new to replace. On a local recipe the references follow the
+  white canvas the recipe renders on, so there `@img1` is the second picture (the third when Original is on with a
+  fill), and a local Generate new checks the tokens and the connection to ComfyUI before it replaces anything.
+- **Upsampling keeps the tokens and sees the reference images.** The language model is told which reference each token
+  names and to leave the tokens as they are. A token for a hidden or deleted reference, or a number no reference holds,
+  stops the upsampling with the reason. When a rewrite drops a token, adds one or names a picture by number instead
+  ("image 3"), the status line says so ("Check the tokens: the rewrite dropped `@img2`."), and Revert brings your prompt
+  back; a reference moved, hidden or merged while the model answers keeps its tokens in the answer. With an API model or
+  the local endpoint, the language model also sees the reference images the prompt names (up to six, at most 512 px
+  each), so the rewrite knows what each token is; they go to that model's provider along with the crop. The switch that
+  keeps them back is in Settings › Prompt templates (on by default); the ComfyUI helper upsampler gets the names only.
+  On the local endpoint, ToAPIs, OpenRouter and Oxen.ai a model that turns the pictures down is asked again with the
+  crop alone, and the status line says "crop only". Prompt templates get a `{references}` placeholder, which the five
+  shipped ones use; a template of your own without it gets the names added at the end.
+- **Local ComfyUI recipes name the pictures too.** On a local recipe a token goes out as the name that recipe's model
+  reads for its picture: `<image3>` on Qwen Image Edit 2.1, "image 3" on FLUX.2 Klein; the prompt field keeps the token.
+  Klein now reads up to 4 pictures and Qwen Image Edit 2.1 up to 10, the crop and the Original included. Klein used to
+  read the crop and one more picture only, so with Original on no reference reached it at all, and both repeated the
+  last picture into the slots the batch left empty; they no longer do, so the same seed gives another result than in
+  0.1.33. A reference past what the recipe reads is left out with a note ("img3 is not sent"), and a token that names
+  one stops the run and says why. The status line says what each token went out as, and the app's log keeps the prompt
+  as it was sent whenever it named a reference. The References line at the foot of the Crop panel reads "img1 →
+  `<image3>`", and its batch count leaves the Original out on a refine pass, as the node does. A workflow of your own is
+  read the same way; where Scumble cannot tell how its graph numbers the pictures, it writes "image 3" by their place in
+  the batch and says the wording is guessed. Neither widened workflow has run on a real ComfyUI yet.
+- **Every API route says what it sends.** Where a route writes a sentence of its own around your prompt, it now numbers
+  the pictures the way the tokens do ("Edit image 1 and keep its size and framing. … Images 3 and 4 are reference
+  images."), with a sentence for the Original ("Image 2 is image 1 before the selected area was filled."). Nano Banana
+  on Google Gemini and on Comfy Router's Google route gets a label ("Image 1:") before each picture when more than one
+  goes. No reference is left out without a word any more: a route sends every picture; or it refuses before anything is
+  sent when there are more than the model takes, with the count and what to do ("… takes at most 8 pictures; this run
+  has 9 (the crop, the Original, 7 reference layers): hide reference layers or turn Original off."); or, where the
+  endpoint takes no reference at all (the FLUX.1 Fill and other fill endpoints, Replicate's Qwen Image Edit, Nano
+  Banana Pro on Comfy Cloud), it sends none and says so in the status line, and a prompt that names a reference there
+  stops the run. Ideogram Inpaint on Magnific sends the reference layers as style references, which have no number:
+  they go along, but a prompt that names one there stops the run. The limits follow each provider's documentation: on
+  Black Forest Labs FLUX.2 [klein] takes 4 pictures and [pro], [flex] and [max] 8 (it kept 7 references and dropped the
+  rest silently before), FLUX.2 on WaveSpeed 3 (a run with the Original and two references is refused now), Grok
+  Imagine on fal 5, Seedream on fal 10, Nano Banana 14 and GPT Image 16 on most providers. FLUX.1 Fill on Comfy Router
+  runs again while a reference layer is shown (it refused) and leaves the references out, as its note says, and Comfy
+  Cloud uploads only the pictures its node reads. None of this has run against a live API yet.
+- **The reference list keeps the order you give it.** Up and down in the reference list step past the next reference;
+  with an image layer between two references a click used to add an undo step and change nothing. Ctrl+] and Ctrl+[ on a
+  reference do the same. Changing a layer's role (the layer panel's selects, the image button in the reference list,
+  "Turn into a normal image layer") is an undo step of its own ("Layer role"), and a layer made a reference goes below
+  the other references and takes the next number, as a new or a duplicated reference does ("added as `@img3`").
+- **Generate new on Replicate keeps the aspect you ask for.** FLUX.2, Nano Banana and Seedream on Replicate asked for
+  the input image's aspect, with no input image to match; now the chosen aspect goes, and for a free size the model's
+  preset closest to it.
+- **Language models get what their row says.** A model added under Settings › Language models with "Can see the
+  picture" unticked now really gets no picture, the crop included (the local endpoint's model too). The local endpoint
+  asks again without the picture only when the failure is about the request or the images (400, 413, 415, 422, or a
+  message that names images): a wrong key, an empty balance, a rate limit or a missing model costs one request.
+  ToAPIs, OpenRouter and Oxen.ai step down to the crop alone when the server finds the reference pictures too large
+  (413).
+- **For agents and the assistant:** `list_layers` and `status` give each reference layer its `label` (`img1`, null while
+  it is hidden), and `status` its `sent_as` for the selected recipe; `set_prompt` and `generate_new` take `refs` to pin
+  a token to a layer; `generate` returns `prompt_sent` and `notes`, and a run it cannot start fails at once instead of
+  after a wait; `upsample_prompt` returns `check`; `generate_new` returns `references`, `kept` and `dropped` on an API
+  recipe; `list_recipes` says with `textRefs` whether Generate new sends references; `add_image_layer` adds a reference
+  to an empty tab on a white canvas. The assistant sees which layers are references and the token of each.
+
 ## 0.1.33 — 2026-09-29
 
 - **Erasing is fast again.** Since 0.1.32 the eraser, the brush, clone and heal got four to seven times slower with a
