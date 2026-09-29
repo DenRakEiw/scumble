@@ -76,39 +76,42 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-29: 0.1.32 released, item 26 S1 built)
+## Where things stand (2026-09-29, noon: 0.1.33 prepared, not released; item 26 S1 built)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
 **Released:** 0.1.32 is Latest (published 2026-09-28 23:26 CEST: 23b straighten and the canvas frame, package 4 the
 brushes, package 5 Remove with LaMa, Patch, Content-aware move, heal's Poisson blend, Liquify). The dev blog post
-`v0-1-32` ("Brush it away") is live, the manual synced, website commit 5a80cc0 deployed by git. `main` is pushed.
-- Before the release: the CHANGELOG checked by a workflow against the code and the commits (32 of 34 findings applied;
-  among them the PNG switch the update turns on again for those who had unticked it, said in bold), four MANUAL fixes
-  and three strings; the exe gates `--offline` green on both backends (`dist/gates/gates/rel32-exe*`), LaMa's utility
-  process verified in the packaged exe (load 7.4 s, a run 1.4 to 1.7 s, IPC live during a run, no fallback). The step
-  details of 23b and packages 4 and 5 are in the hand-overs in `docs/HISTORY.md` and the plan's "built" paragraphs.
+`v0-1-32` ("Brush it away") is live, the manual synced, website commit 5a80cc0 deployed by git.
+- **0.1.33, the eraser hotfix, prepared and waiting for the user's word** (2026-09-29). The regression of 0.1.32 (every
+  coalesced pen point a stroke of its own) is fixed for erase, paint, mask, remove, clone and heal: `layerStroke`,
+  `cloneStroke`, `pathStamps` (main 80bce51, and 3dfaf61 after a review workflow). Measured and described in
+  `docs/BUGS.md` "Erasing had become very slow since 0.1.32 - fixed for 0.1.33" (erase at 1,000 px with 8 coalesced
+  points: 0.1.31 21.7, 0.1.32 108.8, fix 18.9 ms a move; the same inside a selection). The release is the branch
+  **`hotfix/0.1.33`** off `v0.1.32` (1d7527e the fix, a6d0e32 the CHANGELOG section and the version), **local, not
+  pushed**; `dist/Scumble Setup 0.1.33.exe` is built from it and the exe gates `--offline` are green on both backends
+  (`dist/gates/gates/rel33-exe*`). `main` holds the same fix and the merge of that branch (CHANGELOG, version 0.1.33);
+  local commits on main are not pushed either. **On the user's word:** push `main` and `hotfix/0.1.33`, tag `v0.1.33`
+  on the branch's head (never on main: main holds S1, which must not ship before S2), `gh run watch`, publish the draft,
+  then the dev blog post `v0-1-33` (`docs/RELEASING.md`). A Store package only on their word.
 - **Item 26, reference layers named in the prompt** (`docs/PLAN_REFS.md`; the user answered A-F: `@img1` renamed per
   API in the backend, hiding renumbers, a contenteditable field exactly like Magnific's, reference pictures to the
   upsampler on with a setting, Generate new with references in this round, categories later). **S1 built and committed
   locally 2026-09-29** (26a1: `layout(req)` per adapter, markers resolved in `providers/index.js`, `provider:layout`,
   `refs.name`; 26b1: `reftokens.js`, img labels, the remap at every change of the shown references, the node stub
   `refTokens: false` committed in the node repo). Both steps have a "Built" paragraph in the plan. Between S1 and S2 a
-  typed `@img1` in a provider run is refused by main's safety net, by design. **First in the next session (the user,
-  2026-09-29): the eraser regression of 0.1.32** (`docs/BUGS.md`, "Erasing has become very slow since 0.1.32": measured,
-  cause found, the fix described there; `tools/brush_perf.js` with `COALESCED: 8` and `SIZES: [700, 1000]` gives the
-  rows to beat, 0.1.31 at 8.2-16.7 ms a move against 41.7-92.0). Recommended to the user and waiting for their word: a
-  hotfix **0.1.33** from a branch off the tag `v0.1.32` (main holds S1, which must not ship before S2), the fix merged
-  into main as well, the prompt update then 0.1.34 (the plan's "0.1.33" moves). After that, **S2 = 26b2 (the click snapshot,
-  markers from the renderer, `refPrompt`, agents) + 26a2 (routes: drops, caps, one instruction, label parts).** The
-  user asked on 2026-09-29 where the Magnific-style prompt field is: it is 26c (S3), after S2, and needs 26b2's
-  snapshot and descriptors. Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins). Then
-  package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
-- **Open for the user:** the defaults of packages 4 and 5 (listed in the late-night hand-over of 2026-09-28 in
-  `docs/HISTORY.md`: among them the selection that stays after a patch or a move, the Shift+J ring, Liquify's no-Apply,
-  its strength and keys, the freeze not undone or saved); item 25's look and timing. The Store resubmission (search terms
-  without "ComfyUI" / "FLUX") is on the user's side; a Store package for 0.1.32 (`npm run dist:store`) only on their word.
+  typed `@img1` in a provider run is refused by main's safety net, by design. The prompt update ships as **0.1.34**.
+  **Next: S2 = 26b2 (the click snapshot, markers from the renderer, `refPrompt`, agents) + 26a2 (routes: drops, caps,
+  one instruction, label parts).** The Magnific-style prompt field is 26c (S3), after S2, and needs 26b2's snapshot and
+  descriptors. Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins). Then package 6
+  (layers pro) of `docs/PLAN_0_1_31.md`.
+- **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
+  of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
+  point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
+  and 5 (listed in the late-night hand-over of 2026-09-28 in `docs/HISTORY.md`: among them the selection that stays after
+  a patch or a move, the Shift+J ring, Liquify's no-Apply, its strength and keys, the freeze not undone or saved); item
+  25's look and timing. The Store resubmission (search terms without "ComfyUI" / "FLUX") is on the user's side.
 
 **At most two build steps per session, then `/clear` or `/compact` (the user, 2026-09-28):** the context rose to 85 % in
 one session of eight steps (its own tool output and patch scripts, not this file); commit, write the hand-over, stop.
