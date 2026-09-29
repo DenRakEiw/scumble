@@ -76,43 +76,33 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-29, late night: 0.1.34 prepared, not released)
+## Where things stand (2026-09-29, late night: 0.1.34 released, the post and the header live)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**Released:** 0.1.33 is Latest (published 2026-09-29 12:14 CEST), from `hotfix/0.1.33`; its post `v0-1-33` is live.
-**0.1.34 is prepared locally and waits for the user's word** (the user's "baue fertig", 2026-09-29 night):
-- `main` holds item 26 (S1-S5, `docs/PLAN_REFS.md`) and the commit "0.1.34 prepared" (the CHANGELOG section, the
-  version, the manual's item-26 fixes, a gate fix, a flake entry). **Nothing is pushed** (origin/main is 076b841).
-- `dist/Scumble Setup 0.1.34.exe` is built (again after the manual fixes; the manual ships in the app). Exe gates
-  `--offline`: tiles `rel34-exe` (31 gates) had `export` and `film` red once, both green alone (`rel34-exe-rerun`);
-  canvas `rel34-exe-canvas` (20 gates) had `film` red, **a real test bug, fixed**: the 26c gate steps
-  (`tools/prompt_field_steps.py` `pfSetup`) called `showPane("gen")`, which the app remembers in `ipc.pane` for every
-  document opened later, so `film`'s new document opened on the Generate pane and its thumbnails never rendered (`editor
-  film` red, green after `pfClose` puts the pane back; `rel34-film-e2`). Final exe: `rel34-exe-final` (help, editor,
-  film) and `rel34-exe-canvas-final` (help, film). The `export` step went to TESTING.md's flakes.
-- The CHANGELOG section (11 bullets), the manual's item-26 lines and the post were written, then checked against the
-  code by a workflow (four checkers, three fixers): 8 manual, 12 CHANGELOG and 2 post corrections, each confirmed in the
-  code first. No other product is named as a feature's model in any of them.
-- **The website** (`F:\portfolio_web`, all uncommitted): the `v0-1-34` post draft ("Say which picture"; `time` is a
-  placeholder with a TODO, `hub.version` still 0.1.33) with the prompt-field picture after its first paragraph
-  (`Post.image`, `app/scumble/blog/page.tsx`, `public/projects/scumble/blog/v0-1-34-reference-prompt.jpg`); the manual
-  synced (`content/scumble/MANUAL.md`) with its new figure `public/projects/scumble/manual/reference-prompt.jpg`; the
-  `v0-1-33` "Next up" line without the other product's name. **And the user's header request (2026-09-29):** on /scumble
-  and every page under it the site header shows only DENRAKEIW at the left and the hub's links at the right (← Scumble,
-  Manual, Videos, Dev blog, Download ↗; the page you are on left out), not Work / About / Clients / Awards / Contact and
-  not Let's talk; the phone menu the same (`components/site-header.tsx`; the links in `lib/scumble-nav.ts`, which `hub`
-  reads, so the header does not bundle the manual and the posts). The links at the foot of the pages stay. `tsc` and
-  `next build` green; looked at on `next start` (desktop, phone menu, the home page unchanged).
-- **The chain on the word** (`docs/RELEASING.md`): push main, tag `v0.1.34`, watch the tag's build, publish the draft,
-  then in the website: the post's `time` from `publishedAt` (German time), `hub.version` 0.1.34, `node
-  tools/manual_sync.js --check`, `tsc` + `next build`, commit with the website's own identity (no trailer; the post's,
-  the manual's and the header's files), check the deploy status and the live page.
+**Released:** 0.1.34 is Latest (published 2026-09-29 21:42:53 CEST, tag on e66f48b "0.1.34 prepared"): item 26, the
+reference layers named in the prompt (S1-S5, `docs/PLAN_REFS.md`). Prepared on the user's "baue fertig", released on
+their "ja, push und update der seite" the same night. **The dev blog post `v0-1-34` ("Say which picture", with the
+prompt-field picture) is live**, the manual is synced (its new chapter `#references` with its figure), and the website
+commit 5d95c91 deployed (Vercel: success).
+- How it went: a workflow wrote the CHANGELOG section (11 bullets), the manual's item-26 lines and the post, then four
+  checkers and three fixers corrected 8 manual, 12 CHANGELOG and 2 post lines, each confirmed in the code. Exe gates
+  `--offline` on both backends: tiles `rel34-exe` (31 gates), canvas `rel34-exe-canvas` (20), final `rel34-exe-final` and
+  `rel34-exe-canvas-final`. They found **a real test bug, fixed**: the 26c gate steps (`tools/prompt_field_steps.py`
+  `pfSetup`) called `showPane("gen")`, which the app remembers in `ipc.pane` for every document opened later, so `film`'s
+  new document opened on the Generate pane and its thumbnails never rendered (red only in gate order, `editor film`;
+  `pfClose` puts the pane back). One `export` step red once is filed in TESTING.md's flakes.
+- **The user's header request (2026-09-29), live:** on /scumble and every page under it the site header shows only
+  DENRAKEIW at the left and the hub's links at the right (← Scumble, Manual, Videos, Dev blog, Download ↗; the page you
+  are on left out), not Work / About / Clients / Awards / Contact and not Let's talk; the phone menu the same
+  (`F:\portfolio_web\components\site-header.tsx`; the links in `lib/scumble-nav.ts`, which `hub` reads, so the header
+  does not bundle the manual and the posts). The links at the foot of the pages stay. `Post` has an optional `image`
+  (rendered after the first paragraph, at most 420 px wide).
 - **Nothing of item 26 ran live**: no API call with references, neither widened local graph on ComfyUI (8188 is
   production). Filed earlier (`docs/BUGS.md`): the local recipes' Model / Text encoder / VAE rows carry over between
   Qwen and Klein; Gemini direct ignores the asked aspect on Generate new while the Aspect row says "auto".
-- **Next after the release:** package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+- **Next:** package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 - **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
   of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
   point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
@@ -171,7 +161,7 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   after B3.
 - 25: the app's own dialogs instead of the native boxes (about 1-1.5 days), the user's answers open.
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
-  (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), 0.1.34 prepared the same night, released on the user's word.
+  (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 
 ## Gate runner and flakes
 

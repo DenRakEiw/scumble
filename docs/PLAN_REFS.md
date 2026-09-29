@@ -6,8 +6,8 @@ must be changed so that they understand the reference images too. In the prompt 
 designation under which they are actually sent over the API.
 
 **Status (2026-09-29):** all of it built: S1 (26a1, 26b1), S2 (26b2, 26a2), S3 (26c1, 26c2), S4 (26d1, 26d2) and S5
-(26e, 26f), see their "Built" paragraphs; nothing run against a live API or a real ComfyUI. 0.1.34 prepared (2026-09-29 night), released on
-the user's word (section 6's notes are the CHANGELOG's source). The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+(26e, 26f), see their "Built" paragraphs; nothing run against a live API or a real ComfyUI. Released as 0.1.34 (2026-09-29, 21:42
+CEST) (section 6's notes are the CHANGELOG's source). The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 
 How this plan was made: a code map and a web survey (seven agents), a design review (three critics), the user's
 answers, then one planner per step against the code and two cross-step critics (interfaces; facts and rules). **Where a
