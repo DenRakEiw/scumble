@@ -187,7 +187,7 @@ export const api = {
  * @property {(editor: any) => any} resultInputState     which result input the recipe writes to
  * @property {(editor: any) => any} workflowForPng       the workflow to embed in a saved PNG, null = embed nothing
  * @property {(editor: any, sec: any) => void} buildGenerateExtras   the extra rows under Generate
- * @property {(editor: any) => Promise<any>} queueGenerate           run the recipe
+ * @property {(editor: any, opts?: { refs?: any }) => Promise<any>} queueGenerate   run the recipe; `refs`: the click's reference snapshot (docs/PLAN_REFS.md C3)
  * @property {() => boolean} generateNewAvailable
  * @property {(editor: any) => void} openGenerateNew
  * @property {(editor: any, fmt?: string) => any} exportCanvas
@@ -205,6 +205,7 @@ export const api = {
  * @property {(editor: any, ix: number, iy: number, p?: any) => Promise<any>} selectPoint
  * @property {() => Promise<any>} freeHelpers
  * @property {boolean} removeSupported
+ * @property {boolean} refTokens                                     @img1 in the prompt names a reference layer (docs/PLAN_REFS.md); the node has none yet
  * @property {() => any} removeModel
  * @property {(editor: any, req: { image: Uint8Array, mask: Uint8Array }) => Promise<any>} removeInApp
  * @property {(editor: any) => Promise<any>} warmRemove
@@ -2000,6 +2001,12 @@ export const host = {
 
     /** The Remove tool is in the app (LaMa in-app, PLAN_0_1_31 §5 step 3); the node has none. */
     removeSupported: true,
+
+    /**
+     * @img1, @img2 in the prompt name the shown reference layers, and their numbers follow the layers through every
+     * change (docs/PLAN_REFS.md); the node keeps its positional "ref N" until a node release.
+     */
+    refTokens: true,
 
     /** The inpaint model the Remove tool runs (LaMa): the chosen one when present, else the first present, else null. */
     removeModel() {

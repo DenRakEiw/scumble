@@ -452,6 +452,126 @@ try {
 }
 return out;
 """),
+    # docs/PLAN_REFS.md 26b1: @img1, @img2 name the shown reference layers top first; a new one takes the next number,
+    # and every change of the shown references rewrites the prompt's tokens by layer id
+    ("refs_labels", """
+const d = await c("new_document");
+window.__refsDoc = d.id;
+const file = { filename: "test_base.png", subfolder: "inpaint_canvas", type: "input" };
+await c("load_image", { ...file, doc: d.id });
+const ed = window.editor;
+if (ed.node.id !== d.id) throw new Error("the new document is not the active editor");
+const A = await c("add_image_layer", { ...file, role: "reference", name: "refA" });
+const B = await c("add_image_layer", { ...file, role: "reference", name: "refB" });
+const names = () => ed.referenceLayers().map((l) => l.name);
+if (names().join() !== "refA,refB") throw new Error("a new reference did not go below the others: " + names());
+const dup = await c("duplicate_layer", { layer: "refA" });
+if (names().join() !== "refA,refB,refA copy") throw new Error("the copy of a reference is not the last: " + names());
+if (!/@img3/.test(ed.status)) throw new Error("the duplicate's status names no label: " + ed.status);
+const p = await c("add_paint_layer", { name: "paintRef" });
+await c("set_layer", { layer: p.id, role: "reference" });
+if (names().join() !== "refA,refB,refA copy,paintRef") throw new Error("a role change to reference did not take the next number: " + names());
+const labels = [...ed.refLabels()].map(([id, n]) => n + ":" + ed.layers.find((l) => l.id === id).name);
+const badges = ed.refList ? [...ed.refList.querySelectorAll(".ipc-kind.ipc-ref")].map((e) => e.textContent) : null;
+if (badges && badges.join() !== "img1,img2,img3,img4") throw new Error("the list badges: " + badges);
+await c("remove_layer", { layer: dup.id });
+await c("remove_layer", { layer: p.id });
+window.__refA = A.id; window.__refB = B.id;
+return { labels, badges, drift: ed._refDrift || 0 };
+"""),
+    ("refs_remap", """
+const ed = window.editor;
+const A = window.__refA, B = window.__refB;
+const same = (what, want) => {
+    if (ed.promptText !== want.p || ed.negativeText !== want.n) throw new Error(what + ": " + JSON.stringify([ed.promptText, ed.negativeText]) + " not " + JSON.stringify([want.p, want.n]));
+    if (ed.promptInput && ed.promptInput.value !== ed.promptText) throw new Error(what + ": the field shows " + JSON.stringify(ed.promptInput.value));
+};
+const start = { p: "jacket from @img2, style of @img1", n: "no @img2" };
+await c("set_prompt", { text: start.p, negative: start.n });
+same("start", start);
+await c("set_layer", { layer: A, visible: false });
+same("A hidden", { p: "jacket from @img1, style of @img?" + A, n: "no @img1" });
+await c("set_layer", { layer: A, visible: true });
+same("A shown", start);
+ed.moveReference(ed.layers.find((l) => l.id === B), +1);
+same("B up", { p: "jacket from @img1, style of @img2", n: "no @img1" });
+await c("undo");
+same("undo of B up", start);
+await c("remove_layer", { layer: A });
+same("A deleted", { p: "jacket from @img1, style of @img?" + A, n: "no @img1" });
+await c("undo");
+same("undo of the delete", start);
+await c("set_layer", { layer: A, role: "none" });
+same("A no reference", { p: "jacket from @img1, style of @img?" + A, n: "no @img1" });
+await c("set_layer", { layer: A, role: "reference" });
+same("A a reference again, below B", { p: "jacket from @img1, style of @img2", n: "no @img1" });
+await c("undo");
+same("undo of the role change", { p: "jacket from @img1, style of @img?" + A, n: "no @img1" });
+await c("undo");
+same("undo of both role changes", start);
+// A (right above B in the stack) into B: the absorbed reference's tokens name the survivor
+const order = ed.layers.map((l) => l.id);
+if (order.indexOf(A) !== order.indexOf(B) + 1) throw new Error("refA is not right above refB: " + ed.layers.map((l) => l.name));
+await c("merge_down", { layer: A });
+same("A merged into B", { p: "jacket from @img1, style of @img1", n: "no @img1" });
+await c("undo");
+if (ed.refLabels().size !== 2) throw new Error("the merge's undo did not bring A back");
+// the merge's undo does not split the tokens again (docs/PLAN_REFS.md 26b edge cases): both follow B, now img2
+same("undo of the merge", { p: "jacket from @img2, style of @img2", n: "no @img2" });
+if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift + " times without a remap");
+await c("set_prompt", { text: start.p, negative: start.n });
+return { prompt: ed.promptText, drift: ed._refDrift || 0 };
+"""),
+    ("refs_restore", """
+const ed = window.editor;
+const A = window.__refA, B = window.__refB;
+const P0 = "jacket from @img2, style of @img1";
+if (ed.promptText !== P0) throw new Error("the prompt the step starts from: " + ed.promptText);
+// 1. save and open: the prompt comes back byte for byte
+const path = __OUT__;
+await c("save_document", { path });
+await c("close_document", { doc: window.__refsDoc, force: true });
+const opened = await c("open_document", { path });
+window.__refsDoc = opened.id;
+let e2 = window.editor;
+if (e2.promptText !== P0) throw new Error("the reopened prompt: " + JSON.stringify(e2.promptText));
+if (e2.referenceLayers().map((l) => l.id).join() !== [A, B].join()) throw new Error("the reopened references: " + e2.referenceLayers().map((l) => l.name));
+// 2. a reference whose file is gone: its tokens wait as @img?<id>, the others are renumbered
+const state = JSON.parse(e2.getValue());
+const la = state.layers.find((l) => l.id === A);
+if (!la || !la.ref) throw new Error("the saved state holds no file for refA");
+la.ref = { ...la.ref, filename: "refs_missing_file.png" };
+const d2 = await c("new_document");
+const e3 = window.editor;
+await e3.setValue(JSON.stringify(state));
+const missing = "jacket from @img1, style of @img?" + A;
+if (e3.promptText !== missing) throw new Error("a missing reference: " + JSON.stringify(e3.promptText) + " not " + JSON.stringify(missing));
+if (e3.referenceLayers().length !== 1) throw new Error("the missing reference loaded after all");
+await c("close_document", { doc: d2.id, force: true });
+await c("activate_document", { doc: window.__refsDoc });
+e2 = window.editor;
+// 3. a named snapshot holds the prompt with its layers; Revert's text follows the restore
+let snap = "tiles only";
+if (e2.tileMode) {
+    e2.upsamplePending = { previous: e2.promptText, useCase: "edit" };
+    e2.applyTextResult({ text: "Dress her in the jacket from @img2, in the style of @img1." });
+    const P1 = e2.promptText;
+    await c("take_snapshot", { name: "refs" });
+    e2.moveReference(e2.layers.find((l) => l.id === B), +1);
+    if (e2.promptText !== "Dress her in the jacket from @img1, in the style of @img2.") throw new Error("the move: " + e2.promptText);
+    await c("set_layer", { layer: A, visible: false });
+    await c("restore_snapshot", { name: "refs" });
+    if (e2.promptText !== P1) throw new Error("the restored prompt: " + JSON.stringify(e2.promptText));
+    if (e2.referenceLayers().map((l) => l.id).join() !== [A, B].join()) throw new Error("the restored references");
+    e2.revertPrompt();
+    if (e2.promptText !== P0) throw new Error("Revert after the restore names the wrong pictures: " + JSON.stringify(e2.promptText));
+    snap = "ok";
+}
+if (e2._refDrift) throw new Error("the reference labels drifted " + e2._refDrift + " times without a remap");
+await c("close_document", { doc: window.__refsDoc, force: true });
+await c("activate_document", { doc: window.__testDoc });
+return { reopened: P0, missing, snapshot: snap };
+""".replace("__OUT__", out_path("refs_restore.scumble"))),
     ("close", """
 const before = (await c("list_documents")).documents.length;
 const r = await c("close_document", { doc: window.__testDoc });

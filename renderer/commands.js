@@ -550,8 +550,8 @@ const COMMANDS = {
         description: "Set the prompt (and the negative prompt, used by local chains).",
         params: { text: P.str("the prompt"), negative: P.str("the negative prompt") },
         async run(ed, a) {
-            if (a.text != null) { ed.promptText = String(a.text); if (ed.promptInput) ed.promptInput.value = ed.promptText; }
-            if (a.negative != null) { ed.negativeText = String(a.negative); if (ed.negativeInput) ed.negativeInput.value = ed.negativeText; }
+            if (a.text != null) ed.setPromptText(String(a.text));
+            if (a.negative != null) ed.setNegativeText(String(a.negative));
             ed.notifyChanged();
             return { prompt: ed.promptText, negative: ed.negativeText };
         },
@@ -642,8 +642,8 @@ const COMMANDS = {
                 const [aw, ah] = sizeForAspect(a.aspect, clampInt(a.resolution, 64, 8192, 1024));
                 w = aw; h = ah;
             }
-            if (a.prompt != null) { ed.promptText = String(a.prompt); if (ed.promptInput) ed.promptInput.value = ed.promptText; }
-            if (a.negative != null) { ed.negativeText = String(a.negative); if (ed.negativeInput) ed.negativeInput.value = ed.negativeText; }
+            if (a.prompt != null) ed.setPromptText(String(a.prompt));
+            if (a.negative != null) ed.setNegativeText(String(a.negative));
             if (!String(ed.promptText || "").trim()) throw new Error("write a prompt first");
             if (a.seed != null) { ed.genSettings.seed = Math.abs(Math.round(+a.seed)) >>> 0; ed.genSettings.seedRandom = false; if (ed.seedInput) ed.seedInput.value = ed.genSettings.seed; }
             const t0 = Date.now();
@@ -741,7 +741,7 @@ const COMMANDS = {
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
             if (a.name != null) l.name = String(a.name);
-            if (a.visible != null) l.visible = !!a.visible;
+            if (a.visible != null) { l.visible = !!a.visible; ed.refsMutated(); }
             if (a.opacity != null) l.opacity = Math.min(1, Math.max(0, +a.opacity > 1 ? +a.opacity / 100 : +a.opacity));
             if (a.blend != null) {
                 // a typo drew as normal on every path before (no site checks the name): refused here
@@ -752,7 +752,7 @@ const COMMANDS = {
             if (a.alpha_lock != null) l.alphaLock = !!a.alpha_lock;
             if (a.role != null) {
                 if (!["none", "reference", "control"].includes(a.role)) throw new Error("role must be none, reference or control");
-                l.role = a.role; l.exportRef = null;
+                ed.setLayerRole(l, a.role);
             }
             if (a.match != null || a.match_source != null) {
                 if (l.kind === "filter") throw new Error("filter layers have no colour match");

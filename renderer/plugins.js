@@ -237,6 +237,8 @@ export class Document {
                 ed.markMaskChanged(l);
             }
         }
+        // a raw change may have hidden, shown or re-roled a reference: the prompt's @img tokens follow (docs/PLAN_REFS.md C2)
+        if (this.editor.refsMutated) this.editor.refsMutated();
         touch(this.editor);
     }
 

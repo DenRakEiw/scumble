@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-28, night: 0.1.32 released)
+## Where things stand (2026-09-29: 0.1.32 released, item 26 S1 built)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -89,11 +89,17 @@ brushes, package 5 Remove with LaMa, Patch, Content-aware move, heal's Poisson b
   and three strings; the exe gates `--offline` green on both backends (`dist/gates/gates/rel32-exe*`), LaMa's utility
   process verified in the packaged exe (load 7.4 s, a run 1.4 to 1.7 s, IPC live during a run, no fallback). The step
   details of 23b and packages 4 and 5 are in the hand-overs in `docs/HISTORY.md` and the plan's "built" paragraphs.
-- **Next: item 26, reference layers named in the prompt**, planned in detail in `docs/PLAN_REFS.md` (2026-09-29; the
-  user answered A-F: `@img1` renamed per API in the backend, hiding renumbers, a contenteditable field exactly like
-  Magnific's, reference pictures to the upsampler on with a setting, Generate new with references in this round,
-  categories later). Five sessions: S1 = 26a1 + 26b1. Read the plan's sections 0 and 3-6 and the step's own section
-  ("Read first" wins over its text). Then package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+- **Item 26, reference layers named in the prompt** (`docs/PLAN_REFS.md`; the user answered A-F: `@img1` renamed per
+  API in the backend, hiding renumbers, a contenteditable field exactly like Magnific's, reference pictures to the
+  upsampler on with a setting, Generate new with references in this round, categories later). **S1 built and committed
+  locally 2026-09-29** (26a1: `layout(req)` per adapter, markers resolved in `providers/index.js`, `provider:layout`,
+  `refs.name`; 26b1: `reftokens.js`, img labels, the remap at every change of the shown references, the node stub
+  `refTokens: false` committed in the node repo). Both steps have a "Built" paragraph in the plan. Between S1 and S2 a
+  typed `@img1` in a provider run is refused by main's safety net, by design. **Next: S2 = 26b2 (the click snapshot,
+  markers from the renderer, `refPrompt`, agents) + 26a2 (routes: drops, caps, one instruction, label parts).** The
+  user asked on 2026-09-29 where the Magnific-style prompt field is: it is 26c (S3), after S2, and needs 26b2's
+  snapshot and descriptors. Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins). Then
+  package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 - **Open for the user:** the defaults of packages 4 and 5 (listed in the late-night hand-over of 2026-09-28 in
   `docs/HISTORY.md`: among them the selection that stays after a patch or a move, the Shift+J ring, Liquify's no-Apply,
   its strength and keys, the freeze not undone or saved); item 25's look and timing. The Store resubmission (search terms
@@ -328,9 +334,11 @@ there; add a new flake there, with the date and what was ruled out.
   `electron/main/docfile.js` (the stored zip, temp file and rename, the mirror import). `docs/DOCUMENTS.md`.
 - Provider runs: `host.runProvider` (the recipe resolved to the chosen provider's variant by
   `shell.js`) → `renderer/editor/stitch.js` (crop) → IPC `provider:edit` →
-  `electron/main/providers/index.js` picks the adapter and the key (`keys.js`) →
+  `electron/main/providers/index.js` picks the adapter and the key (`keys.js`), lays the pictures out with the
+  adapter's `layout(req)` and resolves the prompt's markers `{@ref:i}` against it (`providers/refs.js`, item 26) →
   `stitch.js` (composite mask, colour match) → mirror upload → `addResults`. Recipe
-  formats in `docs/RECIPES.md`.
+  formats in `docs/RECIPES.md`. The prompt's `@img1` tokens follow the reference layers by id
+  (`renderer/editor/reftokens.js`, `refsMutated` at every change of the shown references; `docs/PLAN_REFS.md` C2).
 
 ## Working rules
 

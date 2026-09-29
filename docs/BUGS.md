@@ -11,6 +11,13 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### The reference list's up / down moved a reference past the next layer, not the next reference - fixed for 0.1.33
+
+**Found** 2026-09-29 while `docs/PLAN_REFS.md` was researched (read): up / down called `moveLayer(id, ±1)` on the
+whole stack, so with an image layer between two references a click added an undo step and left the reference order as
+it was. `moveReference` (step 26b1) steps past the next reference with `reorderLayer`; Ctrl+] / Ctrl+[ on an active
+reference do the same. The commands gate's `refs_remap` moves one past the other.
+
 ### At the renderer's 15.5 GB of typed arrays the editor threw a RangeError - fixed for 0.1.32
 
 **Found** by phase N1 (2026-09-17, `native_limits.py layers 15000x10000 22`: the 19th full 15k layer) and the gap review
@@ -266,7 +273,9 @@ item could also be fixed on its own.
 - **BFL keeps 7 references** (`bfl.js:23`, `slice(0, 7)`) and drops the rest silently. FLUX.2 klein on BFL takes only
   4 pictures in total, and nothing enforces that.
 - **Comfy Cloud cuts Qwen after 3 pictures** (`comfycloud.js:105`). `GeminiImage2Node`, `GeminiImageNode` and
-  `FluxProFillNode` upload the references but never wire them.
+  `FluxProFillNode` upload the references but never wire them; so do the four upscaler nodes when a recipe runs them
+  as an edit, and an OpenAI node edit without `options.mask` uploads the mask and wires nothing (step 26a1's layout
+  pin, 2026-09-29: every reference gets a LoadImage node, linked or not).
 - **Fill routes without an images field drop references**: flux1_fill on BFL / fal / Replicate / WaveSpeed, Qwen
   inpaint on fal, Z-Image turbo, Ideogram 4 on fal, and Replicate's Qwen Image Edit (`replicate.js:47-52`, crop only,
   although its note says "crop plus the reference layers").
@@ -274,12 +283,14 @@ item could also be fixed on its own.
 - **fal's caps are not checked**: Seedream edit on fal is said to keep the *last* pictures past its cap, which would
   drop the crop. Re-read the v5 lite / pro edit pages before relying on this. `flux-2/klein/9b/edit` uses only the first 4.
 - **flux1_fill on Comfy Router refuses any run with a visible reference** (`comfyrouter.js:205-209`, `max_images`
-  defaults to 1), although its note says "The reference layers are not sent."
+  defaults to 1), although its note says "The reference layers are not sent." `picturesFor` counts the references
+  before the fill body drops them; step 26a1's layout declares the drop and `max` 1, and its pin expects the refusal.
+- **A WaveSpeed fill whose variant sets `fields.images` sends no mask**: `inputFor` takes the image-list branch for
+  it and never adds `mask_image` (found by step 26a1's layout check, 2026-09-29). No shipped variant does this.
 - **The Info panel's batch count ignores the refine pass**, which leaves the Original out (`inpaint_canvas.js:13225`).
 - **The node skips a reference it cannot load** (`nodes.py` about 682, "reference skipped"), with only a print, and
   every later reference moves up one place.
-- **The reference list's up / down** calls `moveLayer(id, ±1)` on the whole stack. With an image layer between two
-  references, a click adds an undo step and leaves the reference order as it was (`inpaint_canvas.js:13854-13859`).
+- (The reference list's up / down: fixed by step 26b1, above under "Fixed".)
 
 ### Found while planning item 26 (2026-09-29, read, not run)
 

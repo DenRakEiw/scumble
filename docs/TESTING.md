@@ -83,6 +83,19 @@ when it leaves; a full-screen exit from outside, a tab switch and closing the ta
 screen before stays so; it takes the test window full screen and back). Every gate name `X` without a rule of its own
 in `tools/run_gates.sh` runs `tools/X_test.py`.
 
+Item 26 (`docs/PLAN_REFS.md`, @img tokens for reference layers): `node tools/refs_layout_test.js` pins every adapter's
+`layout(req)` against the request its real builder sends (every shipped provider variant, every ToAPIs channel, 0 / 1 /
+3 references, the Original on and off; a fake fetch captures the picture-carrying request), the caps, and
+`providers/index.js`'s marker resolution, refusals and `layout(shape)` with Electron stubbed. `node
+tools/reftokens_test.js` covers `renderer/editor/reftokens.js` (the grammar, remap, markers, names, the upsample check,
+the caret mapping). Both read `tools/refs_cases.json`, the grammar main and the renderer share. `tools/recipes_test.js`
+section 3 checks `refs.name`. Gate steps: `generate`'s `provider_markers_over_ipc` (a marker resolved and a raw token
+refused over IPC, `provider:layout`); `commands`' `refs_labels` (img labels, a new reference and a copy take the next
+number), `refs_remap` (hide / show, up / down, delete / undo, role changes, a merge: the prompt's tokens follow their
+layers) and `refs_restore` (a `.scumble` round trip byte for byte, a reference whose file is missing parks its tokens
+as `@img?<id>`, a named snapshot with Revert). Every gate that touches references ends with `ed._refDrift` 0: a change
+of the shown references that no site remapped is counted in `renderReferences`.
+
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:

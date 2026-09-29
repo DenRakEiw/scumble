@@ -5,8 +5,8 @@ reference images (in Scumble: the reference layers) can be named inside the prom
 must be changed so that they understand the reference images too. In the prompt the images must be named with the
 designation under which they are actually sent over the API.
 
-**Status (2026-09-29):** planned in detail, nothing built. The user's answers are in section 0. This plan comes before
-package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+**Status (2026-09-29):** S1 built (26a1 and 26b1, see their "Built" paragraphs); next S2 = 26b2 + 26a2. The user's
+answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 
 How this plan was made: a code map and a web survey (seven agents), a design review (three critics), the user's
 answers, then one planner per step against the code and two cross-step critics (interfaces; facts and rules). **Where a
@@ -354,6 +354,9 @@ directly; comfy steps stub `host.connected`, `objectInfo`, `ensureOnServer` and 
   again and leaves the references out, as its note says.
 - 26b: reference badges read `img1`; hiding a reference renumbers the prompt; a new reference goes below the others;
   a role change to reference moves the layer there; up / down in the reference list steps past the next reference.
+  26b1 also: a role change (the layer panel's kind and Role selects, the list's "back to image", `set_layer role`) is
+  an undo step "Layer role"; Ctrl+] / Ctrl+[ on a reference steps past the next reference; a duplicated reference goes
+  below the others ("added as @img3").
 - 26c: the prompt field shows reference chips; Upsample, Revert and an agent's `set_prompt` are steps of the field's
   own undo.
 - 26d2: the named reference pictures go to the language model's provider when upsampling (a setting turns it off);
@@ -399,6 +402,26 @@ The planners raised these; each has a default the build follows unless the user 
 # The steps
 
 ## 26a1: Positions (main side)
+
+**Built (2026-09-29, S1).** `electron/main/providers/refs.js` (C1's `TOKEN`, `MARKER`, `nameOf`, `validRefName`,
+`refRoles`, `layoutOf`, `countOf`, `checkLayout`, `resolveMarkers(text, pictures, pattern) -> {text, left: [{ref, why:
+absent|unnumbered}], refs}`); `layout(req)` in every adapter with `edit` (fields are paths into the body sent:
+Replicate's start with `input.`, OpenAI's form is `image[][k]`, Comfy Cloud's are the model node's input keys);
+`index.js` computes the layout on every run (`layoutFor` -> `resolveNames` -> the safety net -> the adapter, all inside
+the try, so each refusal has an error record) and exports `layout(shape)`; IPC `provider:layout`; the loopback's info
+carries `prompt`, `negative`, `original`; `normalize` gives every provider variant `refs: {name}` (18 recipes set theirs);
+`planCrop`'s `info.original`; `runProvider` sends `original` and `refName`. What the code showed against the table:
+`drops` is route level (BFL's cap sentence and Comfy Cloud Qwen's stand on every request, also with nothing left out);
+Comfy Router's xai / ideogram / krea and Magnific's Z-Image / Mystic refuse an edit run in their layout with the
+builder's words (they make pictures from the prompt alone) instead of declaring `drops`; routes that need a mask
+(Magnific Ideogram and Expand, Comfy Cloud FLUX.1 Fill) throw for kind edit; Comfy Router's FLUX.1 Fill refuses any
+reference before its body drops them (`picturesFor` counts them; `tools/refs_layout_test.js` lists it in
+`KNOWN_REFUSALS` until 26a2); a WaveSpeed fill with `fields.images` sends no mask (docs/BUGS.md). Tests:
+`tools/refs_layout_test.js` (822 shapes, 264 checks), `recipes_test.js` section 3, `generate`'s
+`provider_markers_over_ipc`. A review sweep ran every shipped variant at 8, 10, 16 and 17 references and custom
+`fields` / `options` shapes against the builders with no mismatch; one thing for 26a2's caps: ToAPIs' builder refuses on
+`ch.max_images` truthy while its layout reads `+ch.max_images || null`, so a value like `"0"` would refuse every run
+with no cap declared (no shipped channel has it); 26a2 reads every cap as `+x > 0`.
 
 ### Read first: corrections from the review (they win over the text below)
 
@@ -663,6 +686,22 @@ Item 26 step 26a1: picture positions per adapter (layout), marker resolution and
 ```
 
 ## 26b (26b1 = sub-tasks 1-10, 26b2 = sub-tasks 11-17): tokens, labels, remap, send-time resolution (renderer)
+
+**26b1 built (2026-09-29, S1).** `renderer/editor/reftokens.js` whole (C1 plus `diffRange`; in the node's `FILES`);
+`host.refTokens` (app true, the node's `js/host.js` false, committed there); the editor's `refLabels`, `refsMutated({alias,
+restore})`, `refsRebuilt({carry})`, `addRemapTarget`, `setPromptText` / `setNegativeText` (every writer and reader of the
+field goes through them or `promptText`), `setLayerRole` (an undo step), `moveReference`; img badges in both lists and on
+the canvas; a new or duplicated reference and a role change to reference go below the others; `refsMutated` at every
+C2 site **and at the layer panel's own eye** (it lists references too; the plan missed it); `setValue` remaps from the
+saved map (`restore: true`, since `_loading` holds the other sites off); the turn restore carries Revert's text; the drift
+counter. Tests: `tools/reftokens_test.js` (277 checks), the commands gate's `refs_labels`, `refs_remap`, `refs_restore`
+(tiles and canvas), the two mutations of section 6 killed (skipping the `setValue` remap by `refs_restore`, no parking
+by `refs_remap`, which runs first). `layerSummary`'s `label` and the agents' fields are 26b2. The plugin API's
+`refresh()` (after raw layer changes) calls `refsMutated` too. A review (three critics, one skeptic per finding)
+confirmed nothing; two edge cases it found are kept as designed: a redo of a reference merge parks tokens written for
+the absorbed layer after the undo (`@img?<id>`, refused as deleted; the layers step carries no alias, and an undo
+brings them back unchanged), and a caret between two tokens that both change goes to the end of the change (C4's
+`mapOffset`).
 
 ### Read first: corrections from the review (they win over the text below)
 

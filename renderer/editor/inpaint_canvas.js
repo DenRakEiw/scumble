@@ -39,6 +39,7 @@ import { THEME } from "./inpaint_theme.js";
 import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap } from "./inpaint_resample.js";
 import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
 import { LiquifyField, gridStep, previewBlock, liquifyFalloff } from "./inpaint_liquify.js";
+import { labelMap, sameLabels, remap, mapOffset } from "./reftokens.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -721,11 +722,30 @@ function meanRGB(d) {
     return n ? [r / n, g / n, b / n] : null;
 }
 
+/** What a shown reference is called in the list and on the canvas: its prompt token's label in the app, its place in the node. */
+function refBadge(i) {
+    return host.refTokens ? "img" + (i + 1) : "ref " + (i + 1);
+}
+
 function el(tag, cls, text) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
     if (text != null) e.textContent = text;
     return e;
+}
+
+/**
+ * A text field's value set from code, without an input event. `keepCaret`: when it has the focus, the caret and the
+ * selection move through the change (reftokens.js mapOffset), so a remap of @img2 to @img1 leaves it after the same word;
+ * a caret between two tokens that both changed goes to the end of the change (docs/PLAN_REFS.md C4).
+ */
+function setFieldText(field, text, keepCaret = false) {
+    if (!field || field.value === text) return;
+    const before = field.value;
+    const focused = keepCaret && typeof document !== "undefined" && document.activeElement === field;
+    const s = focused ? field.selectionStart : 0, e = focused ? field.selectionEnd : 0;
+    field.value = text;
+    if (focused && s != null && e != null) field.setSelectionRange(mapOffset(s, before, text), mapOffset(e, before, text));
 }
 
 function numberInput(value, min, max, title, width = 58) {
@@ -1761,6 +1781,10 @@ class InpaintEditor {
         this.cutoutSettings = { backend: "auto" };
         this.cutoutPending = null;      // {layer, backend} while a background removal runs
         this.promptBackup = null;
+        // @img1, @img2 in the prompt name the shown reference layers (docs/PLAN_REFS.md C2): the labels they had at the
+        // last change, by layer id, so the next change can rewrite them; null until the first document
+        this.refMap = null;
+        this._remapTargets = new Set();   // fields outside the editor whose text names references (addRemapTarget)
         this.selectionLabel = "";       // what the selection is, when it came from "Select by text"
         this.undo = [];
         this.redo = [];
@@ -2595,7 +2619,7 @@ class InpaintEditor {
             if (this.peekHold && (e.key === "\\" || (this.peekCode && e.code === this.peekCode))) { this.peekHold = false; this.peekCode = null; this.peekBase = false; if (this.peekBtn) this.peekBtn.classList.remove("ipc-toggle-on"); this.draw(); }
         };
         window.addEventListener("keyup", this._docKeyUp, true);
-        this.promptInput.value = this.promptText;
+        this.setPromptText(this.promptText, { history: "reset" });
         this.refreshSegmentBackends();
         this.syncRefControls();
         loadFontList().then(() => { if (this.isOpen && this.layers.some((l) => l.kind === "text")) this.renderLayers(); }).catch(() => {});
@@ -2883,7 +2907,14 @@ class InpaintEditor {
         if (ctrl && e.shiftKey && k === "g") { e.preventDefault(); this.toggleGrid(); return; }
         if (ctrl && k === "j") { e.preventDefault(); this.duplicateLayer(); return; }
         if (ctrl && k === "e") { e.preventDefault(); this.mergeDown(); return; }
-        if (ctrl && (e.key === "]" || e.key === "[")) { e.preventDefault(); const l = this.activeLayer(); if (l) this.moveLayer(l.id, e.key === "]" ? +1 : -1, { undo: true }); return; }
+        if (ctrl && (e.key === "]" || e.key === "[")) {
+            e.preventDefault();
+            const l = this.activeLayer();
+            // a reference steps past the next reference, as the list's up / down do
+            if (l && host.refTokens && this.isReference(l)) this.moveReference(l, e.key === "]" ? +1 : -1);
+            else if (l) this.moveLayer(l.id, e.key === "]" ? +1 : -1, { undo: true });
+            return;
+        }
         if (ctrl && k === "z") { e.preventDefault(); e.shiftKey ? this.redoStep() : this.undoStep(); return; }
         if (ctrl && k === "y") { e.preventDefault(); this.redoStep(); return; }
         if (ctrl && k === "d") { e.preventDefault(); this.clearSelection(); return; }
@@ -3190,6 +3221,115 @@ class InpaintEditor {
     /** Visible reference layers in panel order (top of the list = reference 1). */
     referenceLayers() {
         return this.layers.filter((l) => this.isReference(l) && l.visible && l.px).reverse();
+    }
+
+    /** The label of each shown reference by layer id: top of the list = 1, what @img1 names. */
+    refLabels() {
+        return labelMap(this.referenceLayers());
+    }
+
+    /**
+     * The shown references changed (added, deleted, moved, hidden or shown, a role change, a merge, an undo of a layers
+     * step): every @img token of the prompt, the negative, Revert's text, a running upsample's text and the registered
+     * fields is rewritten from the labels of the last change to the labels now, by layer id, so a token keeps naming
+     * its picture. A token whose layer has no label now waits as @img?<id>. Called at the site of the change, before
+     * its first render (renderReferences counts a change nobody reported). `alias`: a merge, the absorbed layer's id to
+     * the survivor's, whose label its tokens take. `restore`: setValue, which runs while `_loading` holds the others off.
+     */
+    refsMutated({ alias = null, restore = false } = {}) {
+        if (!host.refTokens || (this._loading && !restore)) return;
+        const after = this.refLabels(), before = this.refMap || after;
+        let target = after;
+        if (alias) {
+            target = new Map(after);
+            for (const [from, to] of alias) if (after.has(to)) target.set(from, after.get(to));
+        }
+        const r = (t) => (t ? remap(t, before, target) : t);
+        const p = r(this.promptText);
+        if (p !== this.promptText) this.setPromptText(p, { keepCaret: true, history: r });
+        const n = r(this.negativeText);
+        if (n !== this.negativeText) this.setNegativeText(n);
+        this.remapOthers(r);
+        this.refMap = after;
+    }
+
+    /**
+     * The labels read again where the prompt came back together with the layers (a turn snapshot) or the layers went
+     * (a new picture): nothing the snapshot holds is rewritten. `carry`: what it does not hold (Revert's text, a running
+     * upsample's, the registered fields) is remapped from the labels before to the ones now.
+     */
+    refsRebuilt({ carry = false } = {}) {
+        if (!host.refTokens) { this.refMap = null; return; }
+        const after = this.refLabels();
+        if (carry && this.refMap) {
+            const before = this.refMap;
+            this.remapOthers((t) => (t ? remap(t, before, after) : t));
+        }
+        this.refMap = after;
+    }
+
+    /** Revert's text, a running upsample's text and the registered fields through a remap. */
+    remapOthers(r) {
+        if (this.promptBackup != null) this.promptBackup = r(this.promptBackup);
+        if (this.upsamplePending) this.upsamplePending.previous = r(this.upsamplePending.previous);
+        for (const f of this._remapTargets) {
+            const v = f.value, t = r(v);
+            if (t !== v) f.setText(t, { keepCaret: true, history: r });
+        }
+    }
+
+    /**
+     * A field outside the editor whose text names this document's references (the Generate new dialog's prompt): it is
+     * remapped with the prompt. `field` has `value` and `setText(text, { keepCaret, history })`. Returns the dispose.
+     */
+    addRemapTarget(field) {
+        this._remapTargets.add(field);
+        return () => this._remapTargets.delete(field);
+    }
+
+    /**
+     * The prompt set from code (Upsample, Revert, an agent, a remap, a restore). `keepCaret`: the caret stays after the
+     * same word when the field has the focus. `history` is for the prompt field's own undo (docs/PLAN_REFS.md C4:
+     * "push", "reset" or a text-to-text function); the textarea keeps none of its own.
+     */
+    setPromptText(text, { keepCaret = false } = {}) {
+        this.promptText = String(text == null ? "" : text);
+        setFieldText(this.promptInput, this.promptText, keepCaret);
+    }
+
+    /** The negative prompt set from code, as setPromptText. */
+    setNegativeText(text, { keepCaret = false } = {}) {
+        this.negativeText = String(text == null ? "" : text);
+        setFieldText(this.negativeInput, this.negativeText, keepCaret);
+    }
+
+    /** Layer `layer` becomes a reference, an image layer or a control (one undo step); a new reference goes below the others. */
+    setLayerRole(layer, role) {
+        role = role || "none";
+        if (!layer || (layer.role || "none") === role) return;
+        this.pushUndo({ kind: "layers", label: "Layer role" });
+        const was = this.isReference(layer);
+        layer.role = role;
+        layer.exportRef = null;
+        // below the lowest reference, so it takes the next number and none of the others moves
+        if (host.refTokens && !was && this.isReference(layer)) {
+            const rest = this.layers.filter((l) => l !== layer);
+            const j = rest.findIndex((l) => this.isReference(l));
+            if (j >= 0) { rest.splice(j, 0, layer); this.layers = rest; }
+        }
+        this.uploaded.baseHash = null;
+        this.uploaded.controlHash = null;
+        this.refsMutated();
+        this.renderLayers(); this.renderInfo(); this.draw(); this.drawThumb(); this.notifyChanged();
+    }
+
+    /** One place up (dir +1) or down in the reference list: past the next reference, not the next layer of the stack. */
+    moveReference(layer, dir) {
+        const refs = this.layers.filter((l) => this.isReference(l));
+        const i = refs.indexOf(layer);
+        const other = i < 0 ? null : refs[i + (dir > 0 ? 1 : -1)];
+        if (!other) return;
+        this.reorderLayer(layer.id, other.id, dir > 0);
     }
 
     /**
@@ -9813,7 +9953,7 @@ class InpaintEditor {
         if (!this.base) { this.setStatus("Load an image first."); return; }
         let text = (this.segInput.value || "").trim();
         // Empty field but a prompt: let the language model name the object the prompt is about.
-        const fromPrompt = !text && !!(this.promptInput.value || "").trim();
+        const fromPrompt = !text && !!(this.promptText || "").trim();
         const llm = fromPrompt ? (availableUpsampleBackends().find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0]) : null;
         if (!text && !fromPrompt) { this.setStatus("Type what to select, e.g. \"shirt\", or write a prompt and press Go to select what it is about."); this.segInput.focus(); return; }
         if (fromPrompt && !llm) { this.setStatus("Type what to select: no language model nodes installed to derive it from the prompt."); this.segInput.focus(); return; }
@@ -9828,12 +9968,12 @@ class InpaintEditor {
                 seg_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(ref) } },
             };
             if (fromPrompt && llm.inApp) {
-                text = (await host.askLLM(llm, segmentTermInstruction(this.promptInput.value.trim()), await this.promptContextCanvas())).text.replace(/[."']/g, "").trim();
+                text = (await host.askLLM(llm, segmentTermInstruction(this.promptText.trim()), await this.promptContextCanvas())).text.replace(/[."']/g, "").trim();
                 if (!text) throw new Error(`${llm.label} named no object`);
                 this.setStatus(`Segmenting "${text}" (from the prompt, ${llm.label}) with ${backend.label} ...`);
             } else if (fromPrompt) {
                 // term_run: VLM -> STRING, linked straight into the segmentation node's prompt input
-                Object.assign(prompt, llm.build("seg_load", segmentTermInstruction(this.promptInput.value.trim())));
+                Object.assign(prompt, llm.build("seg_load", segmentTermInstruction(this.promptText.trim())));
                 prompt.term_run = prompt.up_run; delete prompt.up_run;
                 text = ["term_run", llm.textOut[1]];
             }
@@ -9968,12 +10108,12 @@ class InpaintEditor {
         if (this.upsamplePending) { this.setStatus("Upsampling is already running."); return; }
         const backend = availableUpsampleBackends().find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0];
         if (!backend) { this.setStatus(hostText("noUpsampleBackend", "No language model: add an OpenAI, Google or Anthropic key in Settings › API providers, or install ComfyUI-QwenVL on the server.")); return; }
-        const text = (this.promptInput.value || "").trim();
+        const text = (this.promptText || "").trim();
         const useCase = this.resolveUseCase();
         const region = this.getBounds() ? (this.cropSettings.fill === "green" ? "the solid green area" : "the area inside the magenta outline") : "the whole image";
         try {
             this.upBtn.disabled = true;
-            this.upsamplePending = { previous: this.promptInput.value, useCase };
+            this.upsamplePending = { previous: this.promptText, useCase };
             this.setStatus(`Upsampling the prompt for "${useCase}" with ${backend.label} ...`);
             if (backend.inApp) { await host.upsampleInApp(this, backend, upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : "")); return; }
             const { ref } = await uploadCanvas(await this.promptContextCanvas(), `n${this.node.id}_promptctx`);
@@ -9999,24 +10139,22 @@ class InpaintEditor {
 
     /** The rewritten prompt came back from the helper prompt. */
     applyTextResult(info) {
-        const pending = this.upsamplePending || { previous: this.promptInput.value, useCase: "?" };
+        const pending = this.upsamplePending || { previous: this.promptText, useCase: "?" };
         this.upsamplePending = null;
         this.upBtn.disabled = false;
         const text = (info.text || "").trim();
         if (!text) { this.setStatus("The model returned an empty prompt."); return; }
         this.promptBackup = pending.previous;
         this.upRevertBtn.disabled = false;
-        this.promptInput.value = text;
-        this.promptText = text;
+        this.setPromptText(text);
         this.notifyChanged();
         this.setStatus(`Prompt upsampled for "${pending.useCase}" (${text.split(/\s+/).length} words). Revert puts the old one back.`);
     }
 
     revertPrompt() {
         if (this.promptBackup === null) return;
-        const current = this.promptInput.value;
-        this.promptInput.value = this.promptBackup;
-        this.promptText = this.promptBackup;
+        const current = this.promptText;
+        this.setPromptText(this.promptBackup);
         this.promptBackup = current;   // revert twice = redo
         this.notifyChanged();
         this.setStatus("Prompt reverted.");
@@ -10280,6 +10418,7 @@ class InpaintEditor {
             }
             this.layers = kept;
             this.activeLayerId = null;
+            this.refsMutated();
             this.base = { ref, px };
             this.width = nw; this.height = nh;
             // a new object (the canvas undo step holds the old one): the new border selected
@@ -10821,6 +10960,7 @@ class InpaintEditor {
             this.activeLayerId = this.layers.some((l) => l.id === snap.activeLayerId) ? snap.activeLayerId : null;
             this.uploaded.baseHash = null;
             this.uploaded.controlHash = null;
+            this.refsMutated();   // an undo or redo of a layers step: the prompt stays, its tokens follow the ids
             this.renderLayers(); this.renderHistory(); this.draw(); this.drawThumb(); this.notifyChanged();
             return;
         }
@@ -10858,14 +10998,10 @@ class InpaintEditor {
             // what no undo step holds: the fields set_prompt, set_generation, set_crop and
             // set_settings change; put back the way setValue puts them back
             const doc = snap.doc || {};
-            if (doc.prompt !== undefined) {
-                this.promptText = doc.prompt;
-                if (this.promptInput) this.promptInput.value = doc.prompt;
-            }
-            if (doc.negative !== undefined) {
-                this.negativeText = doc.negative;
-                if (this.negativeInput) this.negativeInput.value = doc.negative;
-            }
+            if (doc.prompt !== undefined) this.setPromptText(doc.prompt, { history: "reset" });
+            if (doc.negative !== undefined) this.setNegativeText(doc.negative);
+            // the prompt came back with its layers: only what the snapshot does not hold is remapped
+            this.refsRebuilt({ carry: true });
             if (doc.gen) this.genSettings = JSON.parse(JSON.stringify(doc.gen));
             if (doc.crop) { this.cropSettings = JSON.parse(JSON.stringify(doc.crop)); this.syncCropControls(); }
             if (doc.settings) this.settings = JSON.parse(JSON.stringify(doc.settings));
@@ -10907,6 +11043,7 @@ class InpaintEditor {
             this.selectionDirty = true; this.selectionLoose = false;
             this.selectionDataUrl = null; this.selectionEncoded = false;
             if (this.extendInputs) for (const k of Object.keys(this.extendInputs)) this.extendInputs[k].value = 0;
+            this.refsMutated();
             this.renderLayers();
             this.renderHistory();
             this.renderSelectionList();
@@ -12031,13 +12168,16 @@ class InpaintEditor {
         }
         let n = this.layers.filter((l) => this.isReference(l)).length;
         let last = null, layeredFiles = 0;
+        const added = [];
         for (let file of files) {
             try {
                 const layered = await layeredKind(file);
                 if (layered) {
                     // a PSD / ORA dropped on a document: every layer of it, where the file has it, the bottom one included
                     const doc = await this.readLayered(file, layered);
-                    for (const L of doc.layers) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx }, { activate: false });
+                    // each new reference goes below the others (addLayer): top first keeps the file's stacking order
+                    const order = host.refTokens && role === "reference" ? [...doc.layers].reverse() : doc.layers;
+                    for (const L of order) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx }, { activate: false });
                     if (last) this.activeLayerId = last.id;
                     this.setStatus(`${doc.layers.length} layer${doc.layers.length === 1 ? "" : "s"} of ${file.name || "the file"} added.${doc.notes.length ? " " + doc.notes.join("; ") + "." : ""}`);
                     layeredFiles++;
@@ -12079,6 +12219,7 @@ class InpaintEditor {
                     at = [at[0] + 24, at[1] + 24];
                 }
                 last = this.addLayer({ name: (file.name || "image").replace(/\.[a-z0-9]+$/i, ""), kind: "image", role, ref, px, x: lx, y: ly, w: lw, h: lh, dirty: !ref });
+                added.push(last);
                 n++;
             } catch (err) {
                 console.error(err);
@@ -12087,7 +12228,10 @@ class InpaintEditor {
         }
         if (last && layeredFiles < files.length) {
             const refs = this.referenceLayers().length;
-            this.setStatus(role === "reference" ? `${files.length} reference image${files.length > 1 ? "s" : ""} added (${refs} will travel with crop_image). They are not part of the image.` : `${files.length} image layer${files.length > 1 ? "s" : ""} added. Move or scale with T; the role select can turn it into a reference.`);
+            // the labels the prompt names them by (docs/PLAN_REFS.md): "added as @img3, @img4"
+            const labels = this.refLabels(), tokens = host.refTokens ? added.map((l) => labels.get(l.id)).filter(Boolean).map((k) => "@img" + k) : [];
+            const as = tokens.length ? ` as ${tokens.join(", ")}` : "";
+            this.setStatus(role === "reference" ? `${files.length} reference image${files.length > 1 ? "s" : ""} added${as} (${refs} will travel with crop_image). They are not part of the image.` : `${files.length} image layer${files.length > 1 ? "s" : ""} added. Move or scale with T; the role select can turn it into a reference.`);
         }
     }
 
@@ -12214,6 +12358,7 @@ class InpaintEditor {
         if (j < 0) { this.layers.push(src); } else this.layers.splice(above ? j + 1 : j, 0, src);
         this.uploaded.baseHash = null;
         this.uploaded.controlHash = null;
+        this.refsMutated();
         this.renderLayers(); this.draw(); this.drawThumb(); this.notifyChanged();
     }
 
@@ -12233,6 +12378,7 @@ class InpaintEditor {
         }
         this.uploaded.baseHash = null;
         this.uploaded.controlHash = null;
+        this.refsMutated();
         this.renderLayers(); this.renderInfo(); this.draw(); this.drawThumb(); this.notifyChanged();
     }
 
@@ -12257,13 +12403,17 @@ class InpaintEditor {
         if (layer.lut) copy.lut = { ...layer.lut };
         if (layer.plate) copy.plate = { ...layer.plate };
         if (layer.kind === "filter") copy.dirty = false;
-        const i = this.layers.indexOf(layer);
-        this.layers.splice(i + 1, 0, copy);
+        // the copy of a reference goes below the lowest reference, so it takes the next number and none of the others moves
+        const below = host.refTokens && this.isReference(layer);
+        const i = below ? this.layers.findIndex((l) => this.isReference(l)) : this.layers.indexOf(layer) + 1;
+        this.layers.splice(i, 0, copy);
         this.activeLayerId = copy.id;
         this.uploaded.baseHash = null;
         this.uploaded.controlHash = null;
+        this.refsMutated();
         this.renderLayers(); this.draw(); this.drawThumb(); this.notifyChanged();
-        this.setStatus(`${copy.name} added above ${layer.name}.`);
+        const label = below ? this.refLabels().get(copy.id) : null;
+        this.setStatus(below ? `${copy.name} added${label ? ` as @img${label}` : ""}, below the other references.` : `${copy.name} added above ${layer.name}.`);
         return copy;
     }
 
@@ -12344,6 +12494,7 @@ class InpaintEditor {
         below.match = { strength: 0, source: "surroundings" };
         this.layers = this.layers.filter((l) => l !== layer);
         this.activeLayerId = below.id;
+        this.refsMutated({ alias: new Map([[layer.id, below.id]]) });   // the absorbed reference's tokens name the survivor
         this.markLayerChanged(below);
         this.renderLayers(); this.renderHistory(); this.draw();
         this.setStatus(`${layer.name} merged into ${below.name}${this.matchActive(layer) ? " (its colour match was not baked)" : ""}.`);
@@ -13308,7 +13459,7 @@ class InpaintEditor {
         this.height = px.height;
         // the history goes with the layers: a step of the old document applied to a new image put
         // its layers (or its base, for a crop) back on top of it
-        if (!keepLayers || sizeChanged) { this.layers = []; this.activeLayerId = null; this.clearUndo(); }
+        if (!keepLayers || sizeChanged) { this.layers = []; this.activeLayerId = null; this.clearUndo(); this.refsRebuilt(); }
         if (!keepLayers) this.clearSnapshots();   // a new picture is a new document: the snapshots were of the old one
         if (!this.sel || sizeChanged) {
             this.sel = this.pixels.Mask.empty(this.width, this.height);
@@ -13512,10 +13663,14 @@ class InpaintEditor {
         else layer.maskOff = !!layer.maskOff;
         if (!layer.match) layer.match = { strength: 0, source: "surroundings" };
         this.historyGen++;   // no undo step, but a waiting restore of the layer list must not drop it
-        this.layers.push(layer);
+        // a new reference goes below the others, so it takes the next number and none of them is renumbered
+        const lowest = host.refTokens && layer.role === "reference" ? this.layers.findIndex((l) => this.isReference(l)) : -1;
+        if (lowest >= 0) this.layers.splice(lowest, 0, layer);
+        else this.layers.push(layer);
         if (activate) this.activeLayerId = layer.id;
         this.uploaded.baseHash = null;
         this.uploaded.controlHash = null;
+        this.refsMutated();
         this.renderLayers();
         this.draw();
         this.drawThumb();
@@ -13544,6 +13699,7 @@ class InpaintEditor {
         if (this.activeLayerId === id) this.activeLayerId = null;
         this.uploaded.baseHash = null;
         this.uploaded.controlHash = null;
+        this.refsMutated();
         this.renderLayers();
         this.renderHistory();
         this.draw();
@@ -13560,6 +13716,7 @@ class InpaintEditor {
         this.layers.splice(j, 0, l);
         this.uploaded.baseHash = null;
         this.uploaded.controlHash = null;
+        this.refsMutated();
         this.renderLayers();
         this.draw();
         this.drawThumb();
@@ -13642,6 +13799,7 @@ class InpaintEditor {
                 layer.visible = !layer.visible;
                 this.uploaded.baseHash = null;
                 this.uploaded.controlHash = null;
+                this.refsMutated();   // the layers panel lists the references too
                 this.renderLayers(); this.renderInfo(); this.draw(); this.drawThumb(); this.notifyChanged();
             }, layer.visible ? "" : "ipc-off"));
             const th = document.createElement("canvas");
@@ -13655,7 +13813,7 @@ class InpaintEditor {
             top.appendChild(name);
             const refIndex = this.isReference(layer) ? this.referenceLayers().indexOf(layer) : -1;
             const isFx = layer.kind === "filter";
-            const kindText = isFx ? "filter" : (this.isControl(layer) ? layer.role : (this.isReference(layer) ? (refIndex >= 0 ? `ref ${refIndex + 1}` : "ref (hidden)") : layer.kind));
+            const kindText = isFx ? "filter" : (this.isControl(layer) ? layer.role : (this.isReference(layer) ? (refIndex >= 0 ? refBadge(refIndex) : "ref (hidden)") : layer.kind));
             if (isFx || this.isControl(layer)) {
                 top.appendChild(el("span", "ipc-kind" + (isFx ? " ipc-fxk" : " ipc-ctrl"), kindText));
             } else {
@@ -13667,13 +13825,7 @@ class InpaintEditor {
                 ks.value = this.isReference(layer) ? "reference" : layer.kind;
                 ks.addEventListener("click", (e) => e.stopPropagation());
                 ks.addEventListener("keydown", (e) => e.stopPropagation());
-                ks.addEventListener("change", () => {
-                    layer.role = ks.value === "reference" ? "reference" : "none";
-                    layer.exportRef = null;
-                    this.uploaded.baseHash = null;
-                    this.uploaded.controlHash = null;
-                    this.renderLayers(); this.renderInfo(); this.draw(); this.drawThumb(); this.notifyChanged();
-                });
+                ks.addEventListener("change", () => this.setLayerRole(layer, ks.value === "reference" ? "reference" : "none"));
                 top.appendChild(ks);
             }
             top.appendChild(miniButton("lock", layer.locked ? "Locked: no painting, moving, merging or deleting. Click to unlock" : "Lock the layer (no painting, moving, merging or deleting)", () => {
@@ -13749,13 +13901,7 @@ class InpaintEditor {
             modeRow.appendChild(blendLab);
             const roleLab = el("label", null, "Role");
             const role = selectInput(ROLES, layer.role || "none", "Role: none = part of the image; reference = not in the image, sent along with crop_image as an extra batch image (Flux.2 / Kontext multi-reference); scribble, lineart, depth, pose, canny, other = control_image on black");
-            role.addEventListener("change", () => {
-                layer.role = role.value;
-                layer.exportRef = null;
-                this.uploaded.baseHash = null;
-                this.uploaded.controlHash = null;
-                this.renderLayers(); this.renderInfo(); this.draw(); this.drawThumb(); this.notifyChanged();
-            });
+            role.addEventListener("change", () => this.setLayerRole(layer, role.value));
             roleLab.appendChild(role);
             roleLab.hidden = isFx;
             modeRow.appendChild(roleLab);
@@ -13828,6 +13974,12 @@ class InpaintEditor {
         list.innerHTML = "";
         const refs = this.layers.filter((l) => this.isReference(l));
         const sent = this.referenceLayers();
+        // a change of the shown references that no site reported leaves the prompt's @img tokens on the old labels:
+        // counted for the gates (docs/PLAN_REFS.md C2), not remapped here
+        if (host.refTokens && this.refMap && !this._loading && !sameLabels(this.refMap, labelMap(sent))) {
+            this._refDrift = (this._refDrift || 0) + 1;
+            console.warn("Scumble: the reference labels changed without a remap", [...this.refMap], sent.map((l) => l.id));
+        }
         if (this.refCount) this.refCount.textContent = refs.length ? `${sent.length} of ${refs.length} sent` : "";
         for (let i = refs.length - 1; i >= 0; i--) {
             const layer = refs[i];
@@ -13835,9 +13987,11 @@ class InpaintEditor {
             row.dataset.layer = layer.id;
             row.addEventListener("click", () => { if (this.pending) this.cancelPending(); this.activeLayerId = layer.id; this.renderLayers(); this.updateSubbar(); this.draw(); });
             const top = el("div", "ipc-row");
-            top.appendChild(miniButton(layer.visible ? "eye" : "eyeOff", layer.visible ? "Shown and sent with crop_image. Click to hide: a hidden reference is not sent." : "Hidden: not sent. Click to show", () => {
+            const hideTip = host.refTokens ? " Hiding renumbers the others; its @img tokens in the prompt wait as @img? until it is shown again." : "";
+            top.appendChild(miniButton(layer.visible ? "eye" : "eyeOff", layer.visible ? "Shown and sent with crop_image. Click to hide: a hidden reference is not sent." + hideTip : "Hidden: not sent. Click to show", () => {
                 layer.visible = !layer.visible;
                 this.uploaded.baseHash = null;
+                this.refsMutated();
                 this.renderLayers(); this.renderInfo(); this.draw(); this.drawThumb(); this.notifyChanged();
             }, layer.visible ? "" : "ipc-off"));
             const th = document.createElement("canvas");
@@ -13850,18 +14004,16 @@ class InpaintEditor {
             name.addEventListener("dblclick", (e) => { e.stopPropagation(); this.renameLayerInline(layer, name); });
             top.appendChild(name);
             const idx = sent.indexOf(layer);
-            top.appendChild(el("span", "ipc-kind ipc-ref", idx >= 0 ? `ref ${idx + 1}` : "hidden"));
-            const up = miniButton("up", "Earlier in the batch", () => this.moveLayer(layer.id, +1, { undo: true }));
+            top.appendChild(el("span", "ipc-kind ipc-ref", idx >= 0 ? refBadge(idx) : "hidden"));
+            const up = miniButton("up", "Earlier in the batch", () => this.moveReference(layer, +1));
             up.disabled = i === refs.length - 1;
             top.appendChild(up);
-            const down = miniButton("down", "Later in the batch", () => this.moveLayer(layer.id, -1, { undo: true }));
+            const down = miniButton("down", "Later in the batch", () => this.moveReference(layer, -1));
             down.disabled = i === 0;
             top.appendChild(down);
             top.appendChild(miniButton("image", "Turn into a normal image layer (part of the picture)", () => {
-                layer.role = "none"; layer.exportRef = null;
-                this.uploaded.baseHash = null; this.uploaded.controlHash = null;
                 this.activeLayerId = layer.id;
-                this.renderLayers(); this.renderInfo(); this.draw(); this.drawThumb(); this.notifyChanged();
+                this.setLayerRole(layer, "none");
             }));
             top.appendChild(miniButton("trash", "Remove the reference", () => this.removeLayer(layer.id), "ipc-del"));
             row.appendChild(top);
@@ -14118,6 +14270,7 @@ class InpaintEditor {
         const layer = this.layers.find((l) => l.id === h.layerId);
         if (layer) this.activeLayerId = layer.id;
         this.uploaded.baseHash = null;
+        this.refsMutated();   // a result layer may be a reference
         this.renderLayers();
         this.renderInfo();
         this.draw();
@@ -15311,6 +15464,7 @@ class InpaintEditor {
             this.pushUndoSnapshot(before, { tracked: true, label: "Flatten" });
             this.layers = this.layers.filter((l) => this.isControl(l) || this.isReference(l));
             this.activeLayerId = null;
+            this.refsMutated();
             this.base = { ref, px };
             this.uploaded.baseHash = hash;
             this.uploaded.baseRef = ref;
@@ -15774,7 +15928,7 @@ class InpaintEditor {
                 ctx.setLineDash([5 / s, 3 / s]);
                 ctx.strokeRect(l.x, l.y, l.w, l.h);
                 ctx.setLineDash([]);
-                const label = `ref ${i + 1}`;
+                const label = refBadge(i);
                 const tw = ctx.measureText(label).width + 8 / s, th = Math.max(11, 13 / s) + 4 / s;
                 ctx.globalAlpha = 0.85;
                 ctx.fillRect(l.x, l.y, tw, th);
@@ -16369,15 +16523,13 @@ class InpaintEditor {
                 if (stale()) return;
                 await this.setBase(state.base, img, { keepLayers: false });
             }
-            this.promptText = state.prompt || "";
-            if (this.promptInput) this.promptInput.value = this.promptText;
+            this.setPromptText(state.prompt || "", { history: "reset" });
             this.cropSettings = state.crop ? { ...CROP_DEFAULTS, ...state.crop } : { ...CROP_LEGACY };
             this.syncCropControls();
             this.upsampleSettings = { useCase: "auto", backend: "auto", ...(state.upsample || {}) };
             this.refreshSegmentBackends();
             this.genSettings = { ...GEN_DEFAULTS, seed: randomSeed(), ...(state.gen || {}) };
-            this.negativeText = state.negative || "";
-            if (this.negativeInput) this.negativeInput.value = this.negativeText;
+            this.setNegativeText(state.negative || "");
             this.settings = state.settings && typeof state.settings === "object" ? { ...state.settings } : {};
             this.refSettings = { ...REF_DEFAULTS, ...(state.refs || {}) };
             this.cutoutSettings = { backend: "auto", ...(state.cutout || {}) };
@@ -16462,6 +16614,12 @@ class InpaintEditor {
                 if (stale()) return;
                 for (const layer of textToRender) await this.renderTextLayer(layer, { keepScale: false });
                 if (stale()) return;
+            }
+            // the labels the prompt was saved with, then remapped to the labels of what loaded: the same when every
+            // layer came back, and a reference that failed to load gets its tokens parked instead of shifting the others
+            if (host.refTokens) {
+                this.refMap = labelMap((state.layers || []).filter((l) => l && l.role === "reference" && l.visible !== false).reverse());
+                this.refsMutated({ restore: true });
             }
             this.history = (state.history || []).map((h) => ({ ...h }));
             this.savedSelections = Array.isArray(state.selections) ? state.selections.filter((s) => s && s.url).map((s) => ({ name: s.name || "Selection", url: s.url,
