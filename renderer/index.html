@@ -97,7 +97,7 @@
       <h3>Prompt templates</h3>
       <div id="set-prompts"></div>
       <div class="shell-row"><button id="set-prompt-import" type="button">Import .md ...</button><button id="set-prompt-folder" type="button">Open folder</button><span id="set-prompt-note" class="shell-note"></span></div>
-      <p class="shell-help">Markdown files that say how the language model should rewrite a prompt. A front matter with <code>name</code>, <code>description</code>, <code>use</code> (generate, upsample or both) and an optional <code>for</code> (matched against the recipe), then the instruction, with <code>{prompt}</code>, <code>{model}</code>, <code>{aspect}</code>, <code>{region}</code> as placeholders. Yours live in the app data folder and override a built-in of the same name. See docs/PROMPTS.md.</p>
+      <p class="shell-help">Markdown files that say how the language model should rewrite a prompt. A front matter with <code>name</code>, <code>description</code>, <code>use</code> (generate, upsample or both) and an optional <code>for</code> (matched against the recipe), then the instruction, with <code>{prompt}</code>, <code>{model}</code>, <code>{aspect}</code>, <code>{region}</code>, <code>{references}</code> as placeholders; with reference tokens in the prompt the app appends its token rule. Yours live in the app data folder and override a built-in of the same name. See docs/PROMPTS.md.</p>
     </section>
     <section>
       <h3>Recipes</h3>

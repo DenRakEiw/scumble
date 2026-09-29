@@ -650,7 +650,7 @@ const COMMANDS = {
         },
     },
     upsample_prompt: {
-        needsImage: true, description: "Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, an API key for ToAPIs / OpenAI / Google / Anthropic / OpenRouter, or a local OpenAI-compatible server).",
+        needsImage: true, description: "Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, an API key for ToAPIs / OpenAI / Google / Anthropic / OpenRouter, or a local OpenAI-compatible server). @img tokens are kept: every one must name a shown reference, and `check` lists what the rewrite dropped, added or named by number instead.",
         params: { timeout: P.timeout(300) },
         async run(ed, a) {
             if (ed.upsamplePending) throw new Error("an upsampling is still running");
@@ -660,7 +660,8 @@ const COMMANDS = {
             const ok = await until(() => !ed.upsamplePending, clampInt(a.timeout, 5, 3600, 300) * 1000);
             if (!ok) throw new Error("upsampling timed out: " + ed.status);
             if (/failed/i.test(ed.status)) throw new Error(ed.status);
-            return { prompt: ed.promptText, previous: before, status: ed.status };
+            // `previous`: Revert's text, which follows the references like the prompt when they changed meanwhile
+            return { prompt: ed.promptText, previous: ed.promptBackup != null ? ed.promptBackup : before, status: ed.status, check: ed.upsampleCheck || undefined };
         },
     },
     generate_new: {

@@ -187,9 +187,55 @@ export function clean(name) {
     return cut || "unnamed";
 }
 
+/** @typedef {{ id: string, n: number, name: string }} NamedRef  a reference the prompt names: layer id, label, layer name */
+
+/**
+ * How an upsample instruction names one reference (26d1): its token and its layer's name.
+ * @param {NamedRef} r
+ */
+export function referenceName(r) {
+    return `@img${r.n} (the layer "${clean(r.name)}")`;
+}
+
+/**
+ * The `{references}` placeholder (26d1): which tokens the request uses and what each names, with a leading space like
+ * `{hint}`; "" when the prompt names none, so an instruction without references stays as it was.
+ * @param {NamedRef[]} refs  sorted by label
+ */
+export function referencesText(refs) {
+    if (!refs || !refs.length) return "";
+    return ` The request names ${refs.length === 1 ? "this reference image" : "these reference images"} by token: ${refs.map(referenceName).join(", ")}.`;
+}
+
+/**
+ * The rule every upsample instruction gets when the prompt names references (26d1): keep the tokens as they are, add
+ * none, never write a picture's number. "" when it names none.
+ * @param {NamedRef[]} refs  sorted by label
+ */
+export function referencesRule(refs) {
+    if (!refs || !refs.length) return "";
+    const list = refs.map((r) => "@img" + r.n).join(", ");
+    return `Reference tokens: keep every token of the request (${list}) exactly as written, lower case, never translated, quoted or split, as often as the request uses it and next to the words it belongs to. Write no token the request does not use, never replace a token with a description of its picture, and never name a picture by a number such as "image 2".`;
+}
+
+/**
+ * A `compare` result for the status line (26d1); "" when the rewrite kept the tokens. Never the word "failed": an
+ * agent's `upsample_prompt` reads that in the status as an error.
+ * @param {{ dropped: string[], invented: string[], literals: string[] } | null} cmp
+ */
+export function checkNote(cmp) {
+    if (!cmp) return "";
+    const parts = [];
+    if (cmp.dropped && cmp.dropped.length) parts.push("dropped " + cmp.dropped.join(", "));
+    if (cmp.invented && cmp.invented.length) parts.push("added " + cmp.invented.join(", "));
+    if (cmp.literals && cmp.literals.length) parts.push("wrote " + cmp.literals.map((l) => `"${l}"`).join(", "));
+    return parts.length ? `Check the tokens: the rewrite ${parts.join("; ")}.` : "";
+}
+
 // how a model names a picture by number instead of by token (26d1): "image 3", "img1" without the @, "<image3>",
-// "<frame>2</frame>" and the app's own marker; the marker and the bracket forms first, so "<image3>" counts once
-const LITERAL = String.raw`\{@ref:\d+\}|<image\s*\d+>|<frame>\d+</frame>|(?<![@\w])(?:image|picture|img|bild|reference|ref)[ _#-]?\d+`;
+// "<frame>2</frame>" and the app's own marker; the marker and the bracket forms first, so "<image3>" counts once. The
+// number ends the word: "picture 2x sharper" or "image 4k" is no picture's number
+const LITERAL = String.raw`\{@ref:\d+\}|<image\s*\d+>|<frame>\d+</frame>|(?<![@\w])(?:image|picture|img|bild|reference|ref)[ _#-]?\d+(?!\w)`;
 
 /** the tokens of a text, normalised, once each, in order */
 function tokensOf(text) {

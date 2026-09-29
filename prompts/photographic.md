@@ -10,7 +10,7 @@ three-quarter portrait, a wide landscape), the subject's appearance and material
 lighting setup (key direction, softness, colour temperature, any practicals), the depth of
 field and focal length character, and the surface qualities that make it read as a
 photograph (skin texture, fabric weave, specular highlights, grain). Keep every subject,
-colour, material and number the request names. Describe only what is seen. No lists, no
-brand names, no negative prompt.
+colour, material and number the request names, and every reference token next to what it
+stands for. Describe only what is seen. No lists, no brand names, no negative prompt.{references}
 
 Request: {prompt}

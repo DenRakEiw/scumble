@@ -5,8 +5,8 @@ reference images (in Scumble: the reference layers) can be named inside the prom
 must be changed so that they understand the reference images too. In the prompt the images must be named with the
 designation under which they are actually sent over the API.
 
-**Status (2026-09-29):** S1 (26a1, 26b1), S2 (26b2, 26a2) and S3 (26c1, 26c2) built, see their "Built" paragraphs;
-next S4 = 26d1 + 26d2. The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+**Status (2026-09-29):** S1 (26a1, 26b1), S2 (26b2, 26a2), S3 (26c1, 26c2) and 26d1 built, see their "Built"
+paragraphs; next 26d2, then S5 = 26e + 26f. The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 
 How this plan was made: a code map and a web survey (seven agents), a design review (three critics), the user's
 answers, then one planner per step against the code and two cross-step critics (interfaces; facts and rules). **Where a
@@ -382,6 +382,11 @@ directly; comfy steps stub `host.connected`, `objectInfo`, `ensureOnServer` and 
   reference pictures; a card after 400 ms on a chip (a larger picture, the name, "sent as image 3" or why not) replaces
   the chip's tooltip; the chip's arrow swaps it, shows a hidden reference again or takes it out; chips can be dragged in
   the text, a selection dragged inside the field moves (Ctrl copies).
+- 26d1: upsampling keeps the @img tokens: the language model is told which reference each names and a rule to keep
+  them; a token of a hidden or deleted reference (or a number no reference holds) stops the upsampling with the reason;
+  a rewrite that drops, adds or numbers a token says so in the status line (agents: `upsample_prompt`'s `check`); a
+  reference moved, hidden or merged while the model answers keeps its tokens in the answer; templates get
+  `{references}` (the five shipped ones use it, a template of your own gets the names appended).
 - 26d2: the named reference pictures go to the language model's provider when upsampling (a setting turns it off);
   the local endpoint no longer retries a 401 / 402 / 429.
 - 26e: local Klein and Qwen 2.1 no longer repeat the crop into unused slots, so the same seed gives another result;
@@ -1747,6 +1752,28 @@ Tier **normal** (a feature on the tiles backend, and the existing gates it touch
 Both steps together take 2 to 2.25 days, against 1 to 1.5 days for the mirror design. Commits are made as DenRakEiw with no trailer (CLAUDE.md).
 
 ## 26d1: Templates, the token rule and the check after a rewrite
+
+**26d1 built (2026-09-29, S4).** `reftokens.js` gains `referenceName`, `referencesText`, `referencesRule`, `checkNote`
+(section 11 of `reftokens_test.js`); `host.fillPromptTemplate` fills `{references}` and appends the token rule after the
+output rule, the names too when the body has no placeholder; `builtInUpsampleInstruction(..., refs)` adds every
+sentence of sub-task 3 only with references (compared with HEAD for 84 combinations of use case, text, region and
+hint: byte-identical without them); the five `prompts/*.md` bodies of sub-task 8; the help text in `index.html`;
+`electron/main/prompts.js`'s format comment. `upsamplePrompt` reads `refSnapshot()`, first unparks a parked token
+typed for a layer that has a label (`remap(labels, labels)`, as `refPrompt` does), refuses in the editor's own words
+(`upsampleRefProblems`: `"jacket" is hidden`, `is empty`, `is no longer a reference`, `@img?L.. names a deleted
+layer`, `@img5 names none`; `host.refError` is app-only and the node's host lacks it) after the backend check, and
+passes `namedRefs` to both `upsampleInstruction` calls and to `host.upsampleInApp` (fourth argument, typedef).
+`upsample_prompt` returns `check`, and `previous` is Revert's text (remapped when the references changed). Sub-task 7
+stays with 26f. Decisions the plan did not have, from the review (three finders, a verifier each; 7 confirmed): the
+answer is not remapped from the click's labels to now but carried through the **same chain of remaps** Revert's text
+went through (`upsamplePending.carry`, composed in `remapOthers`), so a merge of one reference into another during the
+wait sends the absorbed layer's tokens to the survivor as C2 says (a plain remap parked them); the check's `dropped` /
+`invented` go through that chain too, so the note names tokens as they are now; the check runs only when the request
+named references (no noise on a plain prompt, none on a stray ComfyUI text result); `LITERAL` ends at the end of a word
+("picture 2x", "image 4k" are no numbers); PROMPTS.md says the templates' bodies changed (the plan's "exactly today's
+text" holds for the built-in rules); `docs/COMMANDS.md` regenerated; the gate's "Revert lit" can fail now. Gate step
+`upsample_references` (a)-(f) plus an unknown token in (d), (f2) a swap back with a dropped token, (g) a merge during the
+wait. Gates `--offline --tiles on`: generate, llm, lint, types, nodecopy.
 
 ### Read first: corrections from the review (they win over the text below)
 

@@ -107,7 +107,12 @@ partial drop); the adapter tests (`ark`, `openrouter`, `oxen`, `comfyrouter`, `m
 gates) take the new sentences. The `commands` steps `refs_declared_drop` (a loopback recipe with `options.drops` and
 two visible references: the loopback gets none, the status says "not sent", `generate` returns one note) and
 `refs_over_cap` (`options.max_images: 2`: refused with "at most 2 pictures; this run has 3", no loopback call) run
-the path through the app. Every
+the path through the app. 26d1 adds `generate`'s `upsample_references` (a stub language model in `host.askLLM`
+answering from a queue, two paint references: no token gives the instruction of before, the edit and fill cases name
+only the reference the prompt names and carry the token rule, a hidden reference's token refuses with no call, an
+answer that drops, adds and numbers gives the status note and `check`, and a swap of the references while the model
+answers carries the answer and Revert's text to the new labels), `prompt_templates`' `{references}` checks, and
+`reftokens_test.js` section 11 (`referenceName`, `referencesText`, `referencesRule`, `checkNote`). Every
 gate that touches references ends with `ed._refDrift` 0: a change of the shown references that no site remapped is
 counted in `renderReferences`.
 

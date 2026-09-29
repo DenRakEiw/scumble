@@ -10,7 +10,10 @@
 //   use: generate            # generate | upsample | both (default both)
 //   for: flux, gpt-image     # optional, matched against the recipe id, name and family
 //   ---
-//   <the instruction, with {prompt} {model} {aspect} {width} {height} {useCase} {region} {hint}>
+//   <the instruction, with {prompt} {model} {aspect} {width} {height} {useCase} {region} {hint} {references}>
+//
+// {references} names the reference images the prompt names by @img token (item 26, docs/PROMPTS.md); with any, the app
+// also appends its token rule after the output rule.
 "use strict";
 
 const fs = require("node:fs");

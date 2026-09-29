@@ -17,7 +17,7 @@
 import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, canvasBytes } from "./stitch.js";
 import { glReleasePool } from "./inpaint_filters_gl.js";
 import { withoutSecrets } from "./redact.js";
-import { parse, toMarkers, namesFor, hasTokens, remap } from "./reftokens.js";
+import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule } from "./reftokens.js";
 
 const PROXY = "/comfy";
 const SUBFOLDER = "inpaint_canvas";
@@ -210,7 +210,7 @@ export const api = {
  * @property {(editor: any) => number} exportQuality
  * @property {(blob: Blob, name: string, opts?: { editor?: any, download?: boolean }) => Promise<any>} saveExport   the node takes `opts`, the app ignores it
  * @property {() => any[]} upsampleBackends
- * @property {(editor: any, backend: any, instruction: string) => Promise<any>} upsampleInApp
+ * @property {(editor: any, backend: any, instruction: string, refs?: any[]) => Promise<any>} upsampleInApp   `refs`: the references the prompt names (docs/PLAN_REFS.md 26d1)
  * @property {(ctx: any) => string} upsampleInstruction
  * @property {(backend: any, instruction: string, canvas: any) => Promise<any>} askLLM
  * @property {() => any[]} cutoutBackends
@@ -1537,16 +1537,24 @@ export const host = {
         return this.promptTemplates.filter((t) => !t.error && (t.use === "both" || t.use === use) && (!t.for.length || t.for.some((f) => hay.includes(f))));
     },
 
-    /** Fill the placeholders; the output rule is the app's, never the template's. */
+    /**
+     * Fill the placeholders; the output rule is the app's, never the template's. `ctx.references`: the references the
+     * prompt names (`[{ id, n, name }]`, docs/PLAN_REFS.md 26d1); with any, the token rule follows the output rule, and a
+     * template without `{references}` gets the names there too.
+     */
     fillPromptTemplate(tpl, ctx) {
+        const refs = ctx.references || [];
         const values = {
             prompt: ctx.prompt || "", model: (this.recipe && (this.recipe.model || this.recipe.name)) || "",
             aspect: ctx.aspect || "", width: ctx.width || "", height: ctx.height || "",
             usecase: ctx.useCase || "", useCase: ctx.useCase || "", region: ctx.region || "the whole image",
             hint: ctx.hint ? ` It currently shows: ${ctx.hint}.` : "",
+            references: referencesText(refs),
         };
-        const body = String(tpl.body || "").replace(/\{(\w+)\}/g, (all, k) => (values[k] !== undefined ? String(values[k]) : all));
-        return `${body}\n\nOutput only the prompt text: no preamble, no quotes, no headings, no explanation.`;
+        const src = String(tpl.body || "");
+        const body = src.replace(/\{(\w+)\}/g, (all, k) => (values[k] !== undefined ? String(values[k]) : all));
+        const own = refs.length ? "\n\n" + (/\{references\}/.test(src) ? "" : referencesText(refs).trim() + " ") + referencesRule(refs) : "";
+        return `${body}\n\nOutput only the prompt text: no preamble, no quotes, no headings, no explanation.${own}`;
     },
 
     /** Called by the editor instead of its built-in rule when a template is chosen. */

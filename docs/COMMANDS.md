@@ -356,7 +356,7 @@ Values for the recipe's Settings panel (the editable inputs of the workflow, or 
 
 ### `upsample_prompt` *(image)*
 
-Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, an API key for ToAPIs / OpenAI / Google / Anthropic / OpenRouter, or a local OpenAI-compatible server).
+Let the language model the editor is set to rewrite the prompt with the image in view (a ComfyUI language model node, an API key for ToAPIs / OpenAI / Google / Anthropic / OpenRouter, or a local OpenAI-compatible server). @img tokens are kept: every one must name a shown reference, and `check` lists what the rewrite dropped, added or named by number instead.
 
 | param | type | description |
 |---|---|---|
@@ -757,7 +757,7 @@ Make this tab's base image from the prompt alone, no image needed. A local recip
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `prompt` | string | what to make; the tab's current prompt when left out. It sends no reference image: an @img token goes to the model as its layer's name |
+| `prompt` | string | what to make; the tab's current prompt when left out. It sends no reference image: on an API recipe an @img token goes to the model as its layer's name, a ComfyUI recipe refuses it |
 | `negative` | string | negative prompt (local chains only) |
 | `refs` | object | which layer each @img token of prompt and negative means: {"img1": "<layer id>", ...} (as set_prompt) |
 | `width` | integer | width in pixels (default `1024`) |

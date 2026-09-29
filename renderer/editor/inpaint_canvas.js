@@ -39,7 +39,7 @@ import { THEME } from "./inpaint_theme.js";
 import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap } from "./inpaint_resample.js";
 import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
 import { LiquifyField, gridStep, previewBlock, liquifyFalloff } from "./inpaint_liquify.js";
-import { labelMap, sameLabels, remap, mapOffset, namesFor } from "./reftokens.js";
+import { labelMap, sameLabels, remap, mapOffset, namesFor, parse, normalize, compare, checkNote, referencesText, referencesRule } from "./reftokens.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -1005,35 +1005,43 @@ function segmentTermInstruction(promptText) {
  * The instruction the language model gets. The host may hand out its own text (Scumble's
  * prompt templates); when it does not, the built-in rules below are used.
  */
-function upsampleInstruction(useCase, text, region, hint) {
+function upsampleInstruction(useCase, text, region, hint, refs = []) {
     if (host.upsampleInstruction) {
-        const own = host.upsampleInstruction({ useCase, prompt: text, region, hint });
+        const own = host.upsampleInstruction({ useCase, prompt: text, region, hint, references: refs });
         if (own) return own;
     }
-    return builtInUpsampleInstruction(useCase, text, region, hint);
+    return builtInUpsampleInstruction(useCase, text, region, hint, refs);
 }
 
-function builtInUpsampleInstruction(useCase, text, region, hint) {
+/**
+ * `refs`: the references the prompt names (`[{ id, n, name }]` by label, docs/PLAN_REFS.md 26d1). Every sentence about
+ * them is added only when there are any, so the text without references is the one it always was (the node's too).
+ */
+function builtInUpsampleInstruction(useCase, text, region, hint, refs = []) {
+    const has = refs.length > 0;
     // Kept short and with the request repeated at the end: small VLMs (Qwen3-VL 2B)
     // drop the request when it is buried in a long preamble.
     const req = text ? `"${text}"` : "(no request given: infer the most plausible content from the picture)";
     // what the selection contains, when it came from a text segmentation
-    const look = `Look at the image.${hint ? ` ${region[0].toUpperCase()}${region.slice(1)} currently shows: ${hint}.` : ""}`;
-    const rules = `Rules: obey the request exactly and translate it to English if needed (Seide = silk, Leder = leather); if the request names a colour or material, the prompt must use exactly that colour and material even though the picture currently shows something else; describe only the final content as a direct description of what is seen; the ${region.includes("green") ? "green area" : "magenta outline"} is only a marker, never mention it, the region or the image; no lists, no preamble, no quotes, no negative prompt. Output only the prompt text.`;
+    const look = `${has ? "Look at the picture being edited." : "Look at the image."}${hint ? ` ${region[0].toUpperCase()}${region.slice(1)} currently shows: ${hint}.` : ""}${referencesText(refs)}`;
+    const rules = `Rules: obey the request exactly and translate it to English if needed (Seide = silk, Leder = leather); if the request names a colour or material, the prompt must use exactly that colour and material even though the picture currently shows something else; describe only the final content as a direct description of what is seen; the ${region.includes("green") ? "green area" : "magenta outline"} is only a marker, never mention it, the region or the image${has ? " (the @img tokens are not such mentions: keep them)" : ""}; no lists, no preamble, no quotes, no negative prompt.${has ? " " + referencesRule(refs) : ""} Output only the prompt text.`;
     const tail = `Request again: ${req}`;
+    // what each use case may take from a named reference picture
+    const take = (s) => (has ? " " + s : "");
+    const t0 = has ? "@img" + refs[0].n : "";
     switch (useCase) {
         case "add":
-            return `${look} Something new will be painted into ${region} according to this request: ${req}. Write the image-generation prompt for it: one English paragraph of 40 to 80 words, starting with the requested object, then its shape, material and colour, then how it sits in the scene (size relative to the surroundings, contact with surfaces, cast shadows) under the same lighting and perspective as the rest of the picture. ${rules} ${tail}`;
+            return `${look} Something new will be painted into ${region} according to this request: ${req}. Write the image-generation prompt for it: one English paragraph of 40 to 80 words, starting with the requested object, then its shape, material and colour, then how it sits in the scene (size relative to the surroundings, contact with surfaces, cast shadows) under the same lighting and perspective as the rest of the picture.${take("Take from each named reference image only the object or material the request asks for, and write its token where the request puts it.")} ${rules} ${tail}`;
         case "remove":
-            return `${look} Whatever ${region} contains will be erased as if it had never been there${text ? `; request: ${req}` : ""}. Write the image-generation prompt for that spot: one English paragraph of 30 to 60 words describing only what would be visible with the object gone, the background, surfaces, body or textures continuing naturally from the surroundings. The object that is there now must not appear in the prompt and the word remove must not be used. ${rules}`;
+            return `${look} Whatever ${region} contains will be erased as if it had never been there${text ? `; request: ${req}` : ""}. Write the image-generation prompt for that spot: one English paragraph of 30 to 60 words describing only what would be visible with the object gone, the background, surfaces, body or textures continuing naturally from the surroundings. The object that is there now must not appear in the prompt and the word remove must not be used.${take("A named reference image only shows the surface or texture the uncovered area should continue: write its token where the request puts it and add nothing else from it.")} ${rules}`;
         case "edit":
-            return `You write instructions for an image editing model. Request: ${req}. ${look} Rewrite the request as one English instruction of 15 to 35 words for the editing model: start with a verb, name the subject as it appears in the picture (the woman, the red car, the wall), apply exactly the requested change with the exact colours, materials or objects named in the request, and end with what must stay unchanged. Do not describe the picture, do not describe the current state, do not add a story or mood. Examples: request "change her haircolor to light blue" -> "Change the woman's hair color to light blue, keeping her hairstyle, face, expression, skin, clothing, pose, lighting and background exactly as they are." Request "mach den Stuhl aus Holz" -> "Make the chair out of natural wood with visible grain, keeping its shape, position, the person sitting on it and the rest of the scene unchanged." Output only the instruction. Request again: ${req}`;
+            return `You write instructions for an image editing model. Request: ${req}. ${look} Rewrite the request as one English instruction of 15 to 35 words for the editing model: start with a verb, name the subject as it appears in the picture (the woman, the red car, the wall), apply exactly the requested change with the exact colours, materials or objects named in the request, and end with what must stay unchanged.${take(`Where the request takes something from a reference image, name it by its token, as in "the jacket from ${t0}", and take from that picture only what the request asks for, never its background.`)} Do not describe the picture, do not describe the current state, do not add a story or mood. Examples: request "change her haircolor to light blue" -> "Change the woman's hair color to light blue, keeping her hairstyle, face, expression, skin, clothing, pose, lighting and background exactly as they are." Request "mach den Stuhl aus Holz" -> "Make the chair out of natural wood with visible grain, keeping its shape, position, the person sitting on it and the rest of the scene unchanged."${take(`Request "zieh ihr die Jacke aus ${t0} an" -> "Dress the woman in the jacket from ${t0}, keeping her face, hair, pose, the lighting and the background exactly as they are."`)} ${has ? referencesRule(refs) + " " : ""}Output only the instruction. Request again: ${req}`;
         case "outpaint":
-            return `${look} ${region[0].toUpperCase()}${region.slice(1)} lies at the border and the scene will be extended beyond it${text ? `; request: ${req}` : ""}. Write the image-generation prompt for the extension: one English paragraph of 40 to 80 words describing what appears further out, continuing the same environment, perspective, lighting and style without a visible seam. ${rules} ${tail}`;
+            return `${look} ${region[0].toUpperCase()}${region.slice(1)} lies at the border and the scene will be extended beyond it${text ? `; request: ${req}` : ""}. Write the image-generation prompt for the extension: one English paragraph of 40 to 80 words describing what appears further out, continuing the same environment, perspective, lighting and style without a visible seam.${take("Take from each named reference image only what the request asks for (a subject, a style, a setting), and write its token where the request puts it.")} ${rules} ${tail}`;
         case "upscale":
-            return `${look} ${region[0].toUpperCase()}${region.slice(1)} will be upscaled and refined at a higher resolution without changing what it shows${text ? `; extra guidance on style and detail: ${req}` : ""}. Write the image-generation prompt for the refinement: one English paragraph of 40 to 80 words describing faithfully what is already there (subjects, materials, colours, lighting, style), then the fine detail a sharp high-resolution version would show (surface textures, pores, fabric weave, hair strands, foliage, crisp edges). Do not add, remove or change any object, do not change colours or composition. ${rules}${text ? ` ${tail}` : ""}`;
+            return `${look} ${region[0].toUpperCase()}${region.slice(1)} will be upscaled and refined at a higher resolution without changing what it shows${text ? `; extra guidance on style and detail: ${req}` : ""}. Write the image-generation prompt for the refinement: one English paragraph of 40 to 80 words describing faithfully what is already there (subjects, materials, colours, lighting, style), then the fine detail a sharp high-resolution version would show (surface textures, pores, fabric weave, hair strands, foliage, crisp edges). Do not add, remove or change any object, do not change colours or composition.${take("A named reference image is guidance for style and detail only: write its token where the request puts it and never add its content.")} ${rules}${text ? ` ${tail}` : ""}`;
         default:
-            return `${look} ${region[0].toUpperCase()}${region.slice(1)} will be repainted according to this request: ${req}. Write the image-generation prompt for that area: one English paragraph of 40 to 80 words, starting with the requested subject, then its materials and colours, then how its lighting, perspective and scale match the surroundings so the result blends in. ${rules} ${tail}`;
+            return `${look} ${region[0].toUpperCase()}${region.slice(1)} will be repainted according to this request: ${req}. Write the image-generation prompt for that area: one English paragraph of 40 to 80 words, starting with the requested subject, then its materials and colours, then how its lighting, perspective and scale match the surroundings so the result blends in.${take("Take from each named reference image only what the request asks for (a subject, a garment, a material, a style or a pose), never its background, and write its token where the request puts it.")} ${rules} ${tail}`;
     }
 }
 
@@ -1852,6 +1860,7 @@ class InpaintEditor {
         this.cutoutSettings = { backend: "auto" };
         this.cutoutPending = null;      // {layer, backend} while a background removal runs
         this.promptBackup = null;
+        this.upsampleCheck = null;      // the last upsample's token check when it found something ({ dropped, invented, literals }, 26d1)
         // @img1, @img2 in the prompt name the shown reference layers (docs/PLAN_REFS.md C2): the labels they had at the
         // last change, by layer id, so the next change can rewrite them; null until the first document
         this.refMap = null;
@@ -3395,7 +3404,12 @@ class InpaintEditor {
     /** Revert's text, a running upsample's text and the registered fields through a remap. */
     remapOthers(r) {
         if (this.promptBackup != null) this.promptBackup = r(this.promptBackup);
-        if (this.upsamplePending) this.upsamplePending.previous = r(this.upsamplePending.previous);
+        if (this.upsamplePending) {
+            // the answer still to come is in the numbering of the click: it goes through every remap since (26d1)
+            const p = this.upsamplePending, prev = p.carry;
+            p.previous = r(p.previous);
+            p.carry = prev ? (t) => r(prev(t)) : r;
+        }
         for (const f of this._remapTargets) {
             const v = f.value, t = r(v);
             if (t !== v) f.setText(t, { keepCaret: true, history: r });
@@ -10429,18 +10443,30 @@ class InpaintEditor {
         if (this.upsamplePending) { this.setStatus("Upsampling is already running."); return; }
         const backend = availableUpsampleBackends().find((b) => b.id === this.upBackendSel.value) || availableUpsampleBackends()[0];
         if (!backend) { this.setStatus(hostText("noUpsampleBackend", "No language model: add an OpenAI, Google or Anthropic key in Settings › API providers, or install ComfyUI-QwenVL on the server.")); return; }
-        const text = (this.promptText || "").trim();
+        // the @img tokens (docs/PLAN_REFS.md 26d1): the request and its labels as they are now, the references it names
+        let request = this.promptText || "", labels = null, refs = [];
+        if (host.refTokens) {
+            const snap = this.refSnapshot();
+            labels = snap.labels;
+            request = remap(snap.prompt, labels, labels);   // a parked token typed for a layer that has a label names it
+            const why = this.upsampleRefProblems(request, labels);
+            if (why) { this.setStatus(`Upsampling needs every @img token to name a shown reference: ${why}. Show or restore the layer, or take the token out.`); return; }
+            refs = this.namedRefs(request, labels);
+        }
+        const text = request.trim();
         const useCase = this.resolveUseCase();
         const region = this.getBounds() ? (this.cropSettings.fill === "green" ? "the solid green area" : "the area inside the magenta outline") : "the whole image";
         try {
             this.upBtn.disabled = true;
-            this.upsamplePending = { previous: this.promptText, useCase };
+            this.upsamplePending = { previous: this.promptText, useCase, ...(labels ? { request, labels: new Map(labels), refs } : {}) };
+            this.upsampleCheck = null;
             this.setStatus(`Upsampling the prompt for "${useCase}" with ${backend.label} ...`);
-            if (backend.inApp) { await host.upsampleInApp(this, backend, upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : "")); return; }
+            if (backend.inApp) { await host.upsampleInApp(this, backend, upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : "", refs), refs); return; }
             const { ref } = await uploadCanvas(await this.promptContextCanvas(), `n${this.node.id}_promptctx`);
             const prompt = {
                 up_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(ref) } },
-                ...backend.build("up_load", upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : "")),
+                // the ComfyUI helper gets the names and the rule, no pictures (26d2: until a node release)
+                ...backend.build("up_load", upsampleInstruction(useCase, text, region, this.getBounds() ? this.selectionLabel : "", refs)),
                 up_out: { class_type: "InpaintCanvasTextOut", inputs: { text: backend.textOut, canvas_node: String(this.node.id), purpose: "upsample" } },
             };
             this.helperUsed = true;   // a helper model (SAM2 / SAM3 / RMBG / Qwen-VL) may now sit in VRAM outside ComfyUI's model management
@@ -10458,18 +10484,68 @@ class InpaintEditor {
         }
     }
 
-    /** The rewritten prompt came back from the helper prompt. */
+    /**
+     * Why the prompt's tokens cannot be upsampled (26d1), or "": a parked token has no picture and no line in
+     * `{references}`, and a number no shown reference holds names nothing. `labels`: the labels of the request.
+     */
+    upsampleRefProblems(text, labels) {
+        const out = [], seen = new Set();
+        const held = new Set(labels.values());
+        for (const seg of parse(text)) {
+            if (seg.type !== "token") continue;
+            const tok = normalize(seg.text);
+            if (seen.has(tok)) continue;
+            seen.add(tok);
+            if ("n" in seg) { if (!held.has(seg.n)) out.push(`${tok} names none`); continue; }
+            const l = this.layers.find((x) => x.id === seg.id);
+            if (!l) out.push(`${tok} names a deleted layer`);
+            else if (!this.isReference(l)) out.push(`"${l.name}" is no longer a reference`);
+            else out.push(`"${l.name}" is ${l.visible ? "empty" : "hidden"}`);
+        }
+        return out.join(", ");
+    }
+
+    /** The references a text's live tokens name, by label (26d1): `[{ id, n, name }]`. */
+    namedRefs(text, labels) {
+        const idOf = new Map([...labels].map(([id, n]) => [n, id]));
+        const ns = [...new Set(parse(text).filter((s) => s.type === "token" && "n" in s).map((s) => /** @type {any} */ (s).n))].sort((a, b) => a - b);
+        return ns.filter((n) => idOf.has(n)).map((n) => {
+            const id = idOf.get(n), l = this.layers.find((x) => x.id === id);
+            return { id, n, name: (l && l.name) || "" };
+        });
+    }
+
+    /**
+     * The rewritten prompt came back from the helper prompt. With @img tokens (26d1) the answer is checked against the
+     * request when that named references (a token dropped or added, a picture named by number: `upsampleCheck` and a
+     * note in the status), and then carried through every change of the references since the click (`carry`, the same
+     * remaps Revert's text went through: a reorder, a hide, a merge into another reference), the check's tokens too.
+     */
     applyTextResult(info) {
         const pending = this.upsamplePending || { previous: this.promptText, useCase: "?" };
         this.upsamplePending = null;
         this.upBtn.disabled = false;
-        const text = (info.text || "").trim();
+        let text = (info.text || "").trim();
         if (!text) { this.setStatus("The model returned an empty prompt."); return; }
+        let note = "";
+        if (host.refTokens) {
+            text = normalize(text);
+            const carry = pending.carry || ((t) => t);
+            if (pending.refs && pending.refs.length) {
+                // compared in the numbering of the click, as both texts are, then told in the numbering of now
+                const cmp = compare(pending.request || "", text, pending.refs.map((r) => r.n));
+                cmp.dropped = cmp.dropped.map(carry);
+                cmp.invented = cmp.invented.map(carry);
+                if (cmp.dropped.length || cmp.invented.length || cmp.literals.length) this.upsampleCheck = cmp;
+                note = checkNote(cmp);
+            }
+            if (pending.labels) text = carry(text);
+        }
         this.promptBackup = pending.previous;
         this.upRevertBtn.disabled = false;
         this.setPromptText(text);
         this.notifyChanged();
-        this.setStatus(`Prompt upsampled for "${pending.useCase}" (${text.split(/\s+/).length} words). Revert puts the old one back.`);
+        this.setStatus(`Prompt upsampled for "${pending.useCase}" (${text.split(/\s+/).length} words).${note ? " " + note : ""} Revert puts the old one back.`);
     }
 
     revertPrompt() {

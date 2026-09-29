@@ -48,7 +48,9 @@ implementation:
 - Everything app-only answers "not here" in the node: `objectsInApp()` false,
   `upsampleBackends()` / `cutoutBackends()` empty, `generateNewAvailable()` false,
   `upsampleInstruction` null, the plugin hooks no-ops, `exportCanvas` the full-size flatten and
-  `exportQuality` 0.92.
+  `exportQuality` 0.92. `upsampleInstruction(ctx)` gets `ctx.references` since item 26 step 26d1 (the
+  references the prompt names, `[{ id, n, name }]`), and `upsampleInApp(editor, backend, instruction,
+  refs)` a fourth argument; the node gets `[]` from the editor, because its `refTokens` is false.
 
 Since 2026-09-23 the same contract also stands as a typedef, `EditorHost` in
 `renderer/editor/host.js` (with `EditorApi` beside it): the 40 members and what they take and

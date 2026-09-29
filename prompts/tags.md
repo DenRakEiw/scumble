@@ -8,6 +8,7 @@ that was trained on tags rather than sentences.
 
 Between 15 and 30 tags, most important first: subject, then its attributes, then the setting,
 then the lighting, then the style and quality words. Lower case, no sentences, no weights, no
-parentheses, no negative prompt. Keep every subject, colour and material the request names.
+parentheses, no negative prompt. Keep every subject, colour and material the request names;
+a reference token is kept exactly as written, beside the tag it belongs to.{references}
 
 Request: {prompt}

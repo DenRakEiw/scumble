@@ -10,11 +10,13 @@ transparent ground.
 
 Rewrite the request as one English prompt of 25 to 60 words. Name the subject and its
 material, colour and lighting as it should appear, framed straight on with generous padding
-and nothing cropped at the edge. Then state the delivery plainly: fully transparent
-background, no backdrop, no ground plane, no drop shadow touching the edge, clean alpha
-edges around hair, glass and thin detail. Never ask for a checkerboard, a white card or any
-other stand-in for transparency, and do not describe a scene the subject sits in.
+and nothing cropped at the edge. If the request names the subject by a reference token, keep
+the token next to the subject and take only the subject from that picture. Then state the
+delivery plainly: fully transparent background, no backdrop, no ground plane, no drop shadow
+touching the edge, clean alpha edges around hair, glass and thin detail. Never ask for a
+checkerboard, a white card or any other stand-in for transparency, and do not describe a
+scene the subject sits in.
 
-The area being worked on is {region}.{hint}
+The area being worked on is {region}.{hint}{references}
 
 Request: {prompt}

@@ -36,7 +36,7 @@ async function main() {
 
     await section("0. exports", async () => {
         same("the module exports exactly C1's names", Object.keys(T).sort(),
-            ["TOKEN", "clean", "compare", "diffRange", "hasTokens", "labelMap", "mapOffset", "namesFor", "normalize", "parse", "remap", "sameLabels", "toMarkers"]);
+            ["TOKEN", "checkNote", "clean", "compare", "diffRange", "hasTokens", "labelMap", "mapOffset", "namesFor", "normalize", "parse", "referenceName", "referencesRule", "referencesText", "remap", "sameLabels", "toMarkers"]);
         check("TOKEN is a source string", typeof T.TOKEN === "string");
         check("main's TOKEN is the same grammar, without flags", refs.TOKEN.source === T.TOKEN && refs.TOKEN.flags === "", `${refs.TOKEN.source} /${refs.TOKEN.flags}`);
     });
@@ -205,6 +205,7 @@ async function main() {
         same("a token is no literal", T.compare("@img1", "@img1 and @img3", [1]), { dropped: [], invented: ["@img3"], literals: [] });
         same("a parked token in the answer is invented", T.compare("@img1", "@img1 @img?Lz", [1]).invented, ["@img?Lz"]);
         same("a number allowed beyond the request", T.compare("@img2", "@img2 @img1", [1, 2]).invented, []);
+        same("a number that runs into a word is no literal", T.compare("", "picture 2x sharper, image 4k, img2b, but image 5.", []).literals, ["image 5"]);
         same("without allowed only the request counts", T.compare("@img2", "@img2 @img1").invented, ["@img1"]);
     });
 
@@ -233,6 +234,25 @@ async function main() {
         const at = T.mapOffset(word(before, ", and"), before, after);
         check("a caret after a word behind the token stays after that word", after.slice(0, at).endsWith("@img?L1k3, and") && at === word(after, ", and"), String(at));
         check("a caret at the end stays at the end", T.mapOffset(before.length, before, after) === after.length);
+    });
+
+    await section("11. the upsample pieces (26d1)", async () => {
+        const one = [{ id: "La", n: 2, name: 'the "red"\njacket @x' }];
+        const two = [{ id: "La", n: 1, name: "jacket" }, { id: "Lb", n: 3, name: "" }];
+        same("referenceName cleans the name", T.referenceName(one[0]), '@img2 (the layer "the red jacket x")');
+        same("referencesText: nothing without references", [T.referencesText([]), T.referencesText(null)], ["", ""]);
+        same("referencesText: one", T.referencesText(one), ' The request names this reference image by token: @img2 (the layer "the red jacket x").');
+        same("referencesText: two, an empty name is unnamed", T.referencesText(two),
+            ' The request names these reference images by token: @img1 (the layer "jacket"), @img3 (the layer "unnamed").');
+        same("referencesRule: nothing without references", T.referencesRule([]), "");
+        const rule = T.referencesRule(two);
+        check("referencesRule lists the tokens", rule.startsWith("Reference tokens: keep every token of the request (@img1, @img3) exactly as written"), rule);
+        check("referencesRule forbids numbers", rule.endsWith('never name a picture by a number such as "image 2".'), rule);
+        same("checkNote: nothing when all is kept", [T.checkNote({ dropped: [], invented: [], literals: [] }), T.checkNote(null)], ["", ""]);
+        same("checkNote: every part", T.checkNote(T.compare("the coat from @img2", "the coat from @img1 as in image 3", [2])),
+            'Check the tokens: the rewrite dropped @img2; added @img1; wrote "image 3".');
+        same("checkNote: one part, two tokens", T.checkNote({ dropped: ["@img1", "@img2"], invented: [], literals: [] }), "Check the tokens: the rewrite dropped @img1, @img2.");
+        check("checkNote never says failed", !/failed/i.test(T.checkNote({ dropped: ["@img1"], invented: ["@img2"], literals: ["failed 1"] }).replace(/"failed 1"/, "")));
     });
 
     const failed = results.filter((x) => !x).length;
