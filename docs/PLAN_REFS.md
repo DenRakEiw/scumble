@@ -5,8 +5,8 @@ reference images (in Scumble: the reference layers) can be named inside the prom
 must be changed so that they understand the reference images too. In the prompt the images must be named with the
 designation under which they are actually sent over the API.
 
-**Status (2026-09-29):** S1 built (26a1 and 26b1, see their "Built" paragraphs); next S2 = 26b2 + 26a2. The user's
-answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+**Status (2026-09-29):** S1 (26a1, 26b1) and S2 (26b2, 26a2) built, see their "Built" paragraphs; next S3 = 26c1, the
+field core, then the user looks at it in the app before 26c2. The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 
 How this plan was made: a code map and a web survey (seven agents), a design review (three critics), the user's
 answers, then one planner per step against the code and two cross-step critics (interfaces; facts and rules). **Where a

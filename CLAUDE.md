@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-29, noon: 0.1.33 released; item 26 S1 built)
+## Where things stand (2026-09-29, afternoon: 0.1.33 released; item 26 S1 and S2 built)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -93,15 +93,18 @@ main's `docs/MANUAL.md` already describes S1's img labels, which ship with 0.1.3
 0.1.33's manual is 0.1.32's). Sync it at the 0.1.34 release. A Store package only on the user's word.
 - **Item 26, reference layers named in the prompt** (`docs/PLAN_REFS.md`; the user answered A-F: `@img1` renamed per
   API in the backend, hiding renumbers, a contenteditable field with inline picture chips, reference pictures to the
-  upsampler on with a setting, Generate new with references in this round, categories later). **S1 built and committed
-  locally 2026-09-29** (26a1: `layout(req)` per adapter, markers resolved in `providers/index.js`, `provider:layout`,
-  `refs.name`; 26b1: `reftokens.js`, img labels, the remap at every change of the shown references, the node stub
-  `refTokens: false` committed in the node repo). Both steps have a "Built" paragraph in the plan. Between S1 and S2 a
-  typed `@img1` in a provider run is refused by main's safety net, by design. The prompt update ships as **0.1.34**.
-  **Next: S2 = 26b2 (the click snapshot, markers from the renderer, `refPrompt`, agents) + 26a2 (routes: drops, caps,
-  one instruction, label parts).** The rich prompt field with chips is 26c (S3), after S2, and needs 26b2's snapshot
-  and descriptors. Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins). Then package 6
-  (layers pro) of `docs/PLAN_0_1_31.md`.
+  upsampler on with a setting, Generate new with references in this round, categories later). **S1 and S2 built and
+  committed locally 2026-09-29** (not pushed): 26a1 `layout(req)` per adapter; 26b1 `reftokens.js`, img labels, the
+  remap; 26b2 (07be10c) the click snapshot, markers sent from the renderer, `host.refPrompt` / `refLayout` /
+  `layoutShape`, agents' `label`, `sent_as`, `set_prompt refs`, `prompt_sent`; 26a2 (270bd7b) every drop refused or
+  declared, caps per variant from the vendors' pages, one instruction sentence numbered like the markers, label parts.
+  A typed `@img1` now works end to end on API recipes (ComfyUI recipes refuse it until 26e). Each step has a "Built"
+  paragraph in the plan; gates `--offline --tiles on` green (commands, generate, upscale, the provider gates, editor,
+  document, mcp, assistant, nodecopy, lint, types). The prompt update ships as **0.1.34**. **Next: S3 = 26c1**, the
+  rich prompt field (contenteditable with chips), then the user looks at it in the app before 26c2 (picker, bar,
+  hover, swap). Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins); 26c1 adds the node
+  stub `async refLayout() { return null; }` if shared code calls `host.refLayout`. Then package 6 (layers pro) of
+  `docs/PLAN_0_1_31.md`.
 - **To do at the 0.1.34 release (the user, 2026-09-29):** take the other product's name out of the "Next up" line of
   the `v0-1-33` post (`F:\portfolio_web\lib\scumble-posts.ts`, "... the way X does it"), and write the 0.1.34 post,
   CHANGELOG section and manual lines without naming any other product as the model for the feature. Still carrying
