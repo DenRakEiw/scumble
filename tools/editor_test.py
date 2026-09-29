@@ -9677,7 +9677,7 @@ try {
     // end nudged by 0.01 px, which makes a lone press a dot, turns a short last piece a little more than a long one)
     // clone and heal: Alt+click sets the source 200 px above the press, not aligned, the layer's own pixels sampled
     const source = () => { pid++; send("pointerdown", 150, 150, 0, null, { altKey: true }); send("pointerup", 150, 150, 0); };
-    const pair = async (name, setup, tool = "erase", line_ = false) => {
+    const pair = async (name, setup, tool = "erase", line_ = false, path = line) => {
         setup();
         ed.setTool(tool);
         const A = filled(name + " one"), B = filled(name + " coalesced");
@@ -9688,7 +9688,8 @@ try {
         for (const [L, k, draws] of [[A, 1, one], [B, 8, co]]) {
             ed.activeLayerId = L.id; ed.renderLayers();
             if (tool === "clone" || tool === "heal") source();
-            draws.push(...stroke(line, k));
+            ed._tipAngle = 0;   // "Follow stroke" starts both strokes level
+            draws.push(...stroke(path, k));
             if (ed.healPending) await ed.healPending;   // a heal blends at the release, a large one in a worker
         }
         const r = compare(A, B, orig);
@@ -9704,6 +9705,13 @@ try {
     const sq = mk(64, 64); sq.getContext("2d").fillRect(8, 8, 48, 48);
     ed.brushTips.push({ id: "coalesced-square", name: "square", canvas: sq, spacing: 0.2 });
     await pair("tip", () => { ed.eraseHardness = 0.5; ed.brushTipId = "coalesced-square"; ed.brushFlow = 1; });
+    // "Follow stroke" on a slow diagonal: moves of 3.2 px, 0.4 px a coalesced point. The tip turns by the move's direction
+    // either way (0.1.32 took it from each point's piece, and pieces under 0.5 px never turned it: the square stayed level)
+    const slow = Array.from({ length: 21 }, (_, i) => [300 + 2.263 * i, 300 + 2.263 * i]);
+    try {
+        await pair("follow", () => { ed.eraseHardness = 0.5; ed.brushTipId = "coalesced-square"; ed.brushFlow = 1; ed.tipRotate = true; }, "erase", false, slow);
+        await pair("follow flow", () => { ed.eraseHardness = 0.5; ed.brushTipId = "coalesced-square"; ed.brushFlow = 0.5; ed.tipRotate = true; }, "erase", false, slow);
+    } finally { ed.tipRotate = false; }
     await pair("hard", () => { ed.eraseHardness = 1; ed.brushTipId = ""; ed.brushFlow = 1; }, "erase", true);
     await pair("flow", () => { ed.eraseHardness = 0.5; ed.brushTipId = ""; ed.brushFlow = 0.3; });
     await pair("paint", () => { ed.hardness = 0.5; ed.brushTipId = ""; ed.brushFlow = 1; ed.color = "#e0a020"; }, "paint");
@@ -9732,6 +9740,20 @@ try {
     if (n !== 1) throw new Error("the pen's move drew the buffer " + n + " times, not once");
     // at 190 the first segment is 116 px wide and the round cap of the second (142 px) reaches over it; at 540 the last is 300
     if (!(out.pen.start >= 100 && out.pen.start <= 150 && out.pen.end >= 280 && out.pen.end <= 310)) throw new Error("the pressure did not size the segments of the move: " + JSON.stringify(out.pen));
+    // the soft dabs of that move are spaced by each segment's own radius: radii 32 to 150 px give about 31 steps of 0.18
+    // of the radius over the 400 px (33 dabs), where the smallest radius's spacing all along would give 71
+    ed.eraseHardness = 0.5;
+    pid++;
+    send("pointerdown", 150, 550, 0.1);
+    const ramp = Array.from({ length: 8 }, (_, j) => [150 + 400 * (j + 1) / 8, 550, 0.1 + 0.9 * (j + 1) / 8]);
+    const protos = [CanvasRenderingContext2D.prototype, typeof OffscreenCanvasRenderingContext2D === "undefined" ? null : OffscreenCanvasRenderingContext2D.prototype].filter(Boolean);
+    const arcs0 = protos.map((pr) => pr.arc);
+    let arcs = 0;
+    protos.forEach((pr, i) => { pr.arc = function (...a) { if (this.canvas !== ed.canvas) arcs++; return arcs0[i].apply(this, a); }; });
+    try { send("pointermove", 550, 550, 1, ramp); } finally { protos.forEach((pr, i) => { pr.arc = arcs0[i]; }); }
+    send("pointerup", 550, 550, 1);
+    out.pen.softDabs = arcs;
+    if (!(arcs >= 28 && arcs <= 36)) throw new Error("the soft dabs of a move whose pressure rises are not spaced by their own radius: " + arcs + " (about 33; 71 at the smallest's spacing)");
 } finally {
     ed.brushSize = keep.size; ed.eraseHardness = keep.eh; ed.hardness = keep.hard; ed.brushFlow = keep.flow; ed.stabiliser = keep.stab;
     ed.pressureCurve = keep.curve; ed.tipRotate = keep.rot; ed.color = keep.color;

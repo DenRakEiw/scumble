@@ -5483,15 +5483,15 @@ class InpaintEditor {
         const full = this.brushSize * (sx + sy) / 4;
         const segs = [];
         let ix = x0, iy = y0, lx = (x0 - layer.x) * sx, ly = (y0 - layer.y) * sy;
-        let bx0 = lx, by0 = ly, bx1 = lx, by1 = ly, rMin = Infinity, rMax = 0;
+        let bx0 = lx, by0 = ly, bx1 = lx, by1 = ly, rMax = 0;
         for (const [x, y, pr] of pts) {
             this.strokeBounds(p, ix, iy, x, y, this.brushSize / 2 + 2);
             this.strokeDirty(p, ix, iy, x, y, this.brushSize / 2 + 2);
             const nx = (x - layer.x) * sx, ny = (y - layer.y) * sy;
             const radius = full * (pr == null ? 1 : Math.max(0.05, Math.min(1, pr)));
-            segs.push({ x0: lx, y0: ly, x1: nx, y1: ny, radius, len: Math.hypot(nx - lx, ny - ly) });
+            segs.push({ x0: lx, y0: ly, x1: nx, y1: ny, radius, len: Math.hypot(nx - lx, ny - ly), step: 1 });
             if (nx < bx0) bx0 = nx; if (nx > bx1) bx1 = nx; if (ny < by0) by0 = ny; if (ny > by1) by1 = ny;
-            if (radius < rMin) rMin = radius; if (radius > rMax) rMax = radius;
+            if (radius > rMax) rMax = radius;
             ix = x; iy = y; lx = nx; ly = ny;
         }
         // the buffer holds the path plus the dab (a tip may be wider than round, and turned)
@@ -5500,10 +5500,16 @@ class InpaintEditor {
         const hardness = p.erase ? this.eraseHardness : this.hardness;
         const tip = p.remove ? null : this.brushTip();   // Remove marks a hole with the round brush
         const flow = p.flow == null ? 1 : Math.max(0.01, Math.min(1, p.flow));
+        // "Follow stroke": the tip turns with the move's direction, from its start to its end (as one segment did before
+        // 0.1.32; a pen's points a pixel apart turned it every which way, or not at all); a stationary dab keeps the last
+        if (tip && this.tipRotate) {
+            const dx = lx - segs[0].x0, dy = ly - segs[0].y0;
+            if (Math.hypot(dx, dy) > 0.5) this._tipAngle = Math.atan2(dy, dx);
+        }
         c.draw(bx0 - R, by0 - R, bx1 + R, by1 + R, (ctx) => {
             ctx.globalCompositeOperation = "source-over";
             if (flow < 1) { for (const s of segs) this.flowStamps(ctx, p, tip, s.x0, s.y0, s.x1, s.y1, s.radius, color, hardness, flow); return; }
-            if (tip) { this.stampDab(ctx, tip, segs, rMin, color); return; }
+            if (tip) { this.stampDab(ctx, tip, segs, color); return; }
             if (hardness >= 0.98) {
                 ctx.strokeStyle = color;
                 ctx.lineCap = "round";
@@ -5525,7 +5531,8 @@ class InpaintEditor {
             // the gradient belongs to the context that made it, and on the tile backend every dab
             // draws on a scratch of its own, so it is cached per context as well as per radius
             const rgb = color.length === 7 ? `${parseInt(color.slice(1, 3), 16)},${parseInt(color.slice(3, 5), 16)},${parseInt(color.slice(5, 7), 16)}` : "0,0,0";
-            this.pathStamps(segs, Math.max(1, rMin * 0.18), (x, y, s) => {
+            for (const s of segs) s.step = Math.max(1, s.radius * 0.18);
+            this.pathStamps(segs, (x, y, s) => {
                 const radius = s.radius;
                 if (!p.gradient || p.gradientRadius !== radius || p.gradientCtx !== ctx) {
                     const g = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
@@ -5549,24 +5556,36 @@ class InpaintEditor {
 
     /**
      * The places a move's dabs go (layer pixels): `steps + 1` evenly along the whole path of `segs`, both ends included,
-     * `steps` the fewest that keep them at most `spacing` apart. One segment gives the places its own loop gave before
-     * (the fraction i / steps, exactly); the points of a pen's move no longer stamp every joint twice. `fn(x, y, seg)` per
-     * place, `seg` the segment it lies on (a place on a joint belongs to the segment it ends). `first` false leaves out the
-     * path's start when the path has a length (clone and heal: the last move put its dab there).
+     * `steps` the fewest that keep them at most each segment's `step` apart. One segment gives the places its own loop
+     * gave before (the fraction i / steps, exactly); the points of a pen's move no longer stamp every joint twice. Where
+     * the steps differ (a pen's pressure changing within the move) a segment's share of the places follows its length in
+     * its own steps, so a large dab is not spaced as the move's smallest. `fn(x, y, seg)` per place, `seg` the segment it
+     * lies on (a place on a joint belongs to the segment it ends). `first` false leaves out the path's start when the path
+     * has a length (clone and heal: the last move put its dab there).
      */
-    pathStamps(segs, spacing, fn, first = true) {
+    pathStamps(segs, fn, first = true) {
         const n = segs.length;
-        let total = 0;
-        for (const s of segs) total += s.len;
-        const steps = Math.max(1, Math.ceil(total / spacing));
+        let total = 0, weight = 0, step = 0, one = true;
+        for (const s of segs) {
+            total += s.len;
+            if (!(s.len > 0)) continue;
+            weight += s.len / s.step;
+            if (!step) step = s.step; else if (s.step !== step) one = false;
+        }
+        // one step for the whole path (the mouse, a steady pen): the arithmetic of one segment, so a straight move of
+        // several points puts its dabs where one point did
+        const steps = Math.max(1, Math.ceil(one && step ? total / step : weight));
         if (!(total > 0)) {
             // a press, or a pen that did not move: the path's point, at the first segment's size and then the last's
             for (let i = 0; i <= steps; i++) { const s = segs[i === 0 ? 0 : n - 1]; fn(s.x0, s.y0, s); }
             return;
         }
-        // where each segment starts and ends, as a fraction of the path; the last ends at exactly 1
-        const f = new Float64Array(n + 1);
-        for (let k = 0, acc = 0; k < n; k++) { acc += segs[k].len; f[k + 1] = k === n - 1 ? 1 : acc / total; }
+        // where each segment starts and ends, as a fraction of the path (of its length, or of its steps); the last ends at 1
+        const f = new Float64Array(n + 1), sum = one ? total : weight;
+        for (let k = 0, acc = 0; k < n; k++) {
+            if (segs[k].len > 0) acc += one ? segs[k].len : segs[k].len / segs[k].step;
+            f[k + 1] = k === n - 1 ? 1 : acc / sum;
+        }
         let k = 0;
         for (let i = first ? 0 : 1; i <= steps; i++) {
             const u = i / steps;
@@ -5601,9 +5620,8 @@ class InpaintEditor {
             }
             fill = p.gradient;
         }
-        const rotate = !!(tip && this.tipRotate);
-        if (rotate && dist > 0.5) this._tipAngle = Math.atan2(ly1 - ly0, lx1 - lx0);
-        const angle = rotate ? (this._tipAngle || 0) : 0;
+        // "Follow stroke": the angle `layerStroke` took from the whole move
+        const angle = tip && this.tipRotate ? (this._tipAngle || 0) : 0;
         ctx.globalAlpha = flow;
         let next = p.rest == null ? 0 : p.rest;
         while (next <= dist) {
@@ -7072,17 +7090,15 @@ class InpaintEditor {
     /**
      * One move's path (`layerStroke`'s segments) stamped with the imported tip instead of the round dab, evenly along it
      * (`pathStamps`). The step follows the tip's own spacing when the file carried one, otherwise a quarter of the
-     * stamp, which is close to what the round dab uses; it is the smallest stamp's (`rMin`), whose long side is its size.
+     * stamp, which is close to what the round dab uses; a stamp's long side is its size. "Follow stroke" turns it by the
+     * angle `layerStroke` took from the move.
      */
-    stampDab(ctx, tip, segs, rMin, color) {
-        const step = Math.max(1, Math.max(1, Math.round(rMin * 2)) * (tip.spacing || this.brushTipSpacing));
-        // "Follow stroke": the tip turns with the direction of travel; a stationary dab keeps the last angle
-        const rotate = !!this.tipRotate;
-        this.pathStamps(segs, step, (x, y, s) => {
+    stampDab(ctx, tip, segs, color) {
+        for (const s of segs) s.step = Math.max(1, Math.max(1, Math.round(s.radius * 2)) * (tip.spacing || this.brushTipSpacing));
+        const angle = this.tipRotate ? (this._tipAngle || 0) : 0;
+        this.pathStamps(segs, (x, y, s) => {
             const stamp = this.tipStamp(tip, s.radius * 2, color);
             const w = stamp.width, h = stamp.height;
-            if (rotate && s.len > 0.5) this._tipAngle = Math.atan2(s.y1 - s.y0, s.x1 - s.x0);
-            const angle = rotate ? (this._tipAngle || 0) : 0;
             if (angle) {
                 ctx.save();
                 ctx.translate(x, y);
@@ -7318,21 +7334,21 @@ class InpaintEditor {
         const qOf = (x, y) => (xf ? [S.x + xf.A[0] * (x - Dx) + xf.A[1] * (y - Dy), S.y + xf.A[2] * (x - Dx) + xf.A[3] * (y - Dy)] : [x + cl.off.x, y + cl.off.y]);
         // the path in image pixels, each segment with its dab: R in image px, r in layer px, the dab's side
         const segs = [];
-        let ax = x0, ay = y0, Rmin = Infinity, Rmax = 0;
+        let ax = x0, ay = y0, Rmax = 0;
         let q = qOf(x0, y0), qb = [q[0], q[1], q[0], q[1]], db = [x0, y0, x0, y0];
         for (const [x, y, pr] of pts) {
             const R = Math.max(0.5, this.brushSize / 2 * Math.max(0.05, Math.min(1, pr || 1)));
             const r = Math.max(1, R * (sx + sy) / 2);
             this.strokeBounds(p, ax, ay, x, y, R + 2);
             this.strokeDirty(p, ax, ay, x, y, R + 2);
-            segs.push({ x0: ax, y0: ay, x1: x, y1: y, len: Math.hypot(x - ax, y - ay), R, r, size: Math.ceil(r * 2) });
-            if (R < Rmin) Rmin = R; if (R > Rmax) Rmax = R;
+            const step = Math.max(1, tip ? (tip.spacing || this.brushTipSpacing || 0.25) * 2 * R : R * 0.25);
+            segs.push({ x0: ax, y0: ay, x1: x, y1: y, len: Math.hypot(x - ax, y - ay), R, r, size: Math.ceil(r * 2), step });
+            if (R > Rmax) Rmax = R;
             q = qOf(x, y);
             qb = [Math.min(qb[0], q[0]), Math.min(qb[1], q[1]), Math.max(qb[2], q[0]), Math.max(qb[3], q[1])];
             db = [Math.min(db[0], x), Math.min(db[1], y), Math.max(db[2], x), Math.max(db[3], y)];
             ax = x; ay = y;
         }
-        const spacing = Math.max(1, tip ? (tip.spacing || this.brushTipSpacing || 0.25) * 2 * Rmin : Rmin * 0.25);
         const reach = xf ? Rmax * Math.SQRT2 / xf.k : Rmax;   // a turned, scaled dab reads up to its corners
         const span = (b, e) => [Math.floor(b[0] - e) - 2, Math.floor(b[1] - e) - 2, Math.ceil(b[2] + e) + 2, Math.ceil(b[3] + e) + 2];
         const src = cl.src.read(span(qb, reach), 0);
@@ -7341,7 +7357,7 @@ class InpaintEditor {
         s.draw((db[0] - layer.x) * sx - rMax - 1, (db[1] - layer.y) * sy - rMax - 1, (db[2] - layer.x) * sx + rMax + 1, (db[3] - layer.y) * sy + rMax + 1, (sctx) => {
             if (!src) return;   // the source lies outside the picture: nothing to copy
             let d = null, dctx = null, mask = null, at = null;
-            this.pathStamps(segs, spacing, (x, y, g) => {
+            this.pathStamps(segs, (x, y, g) => {
                 const { R, r, size } = g;
                 if (at !== g && (!at || at.size !== size || at.r !== r)) {
                     d = this._cloneDab = cpuDab(this._cloneDab, size);
