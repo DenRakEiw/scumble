@@ -76,25 +76,21 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-29, noon: 0.1.33 prepared, not released; item 26 S1 built)
+## Where things stand (2026-09-29, noon: 0.1.33 released; item 26 S1 built)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**Released:** 0.1.32 is Latest (published 2026-09-28 23:26 CEST: 23b straighten and the canvas frame, package 4 the
-brushes, package 5 Remove with LaMa, Patch, Content-aware move, heal's Poisson blend, Liquify). The dev blog post
-`v0-1-32` ("Brush it away") is live, the manual synced, website commit 5a80cc0 deployed by git.
-- **0.1.33, the eraser hotfix, prepared and waiting for the user's word** (2026-09-29). The regression of 0.1.32 (every
-  coalesced pen point a stroke of its own) is fixed for erase, paint, mask, remove, clone and heal: `layerStroke`,
-  `cloneStroke`, `pathStamps` (main 80bce51, and 3dfaf61 after a review workflow). Measured and described in
-  `docs/BUGS.md` "Erasing had become very slow since 0.1.32 - fixed for 0.1.33" (erase at 1,000 px with 8 coalesced
-  points: 0.1.31 21.7, 0.1.32 108.8, fix 18.9 ms a move; the same inside a selection). The release is the branch
-  **`hotfix/0.1.33`** off `v0.1.32` (1d7527e the fix, a6d0e32 the CHANGELOG section and the version), **local, not
-  pushed**; `dist/Scumble Setup 0.1.33.exe` is built from it and the exe gates `--offline` are green on both backends
-  (`dist/gates/gates/rel33-exe*`). `main` holds the same fix and the merge of that branch (CHANGELOG, version 0.1.33);
-  local commits on main are not pushed either. **On the user's word:** push `main` and `hotfix/0.1.33`, tag `v0.1.33`
-  on the branch's head (never on main: main holds S1, which must not ship before S2), `gh run watch`, publish the draft,
-  then the dev blog post `v0-1-33` (`docs/RELEASING.md`). A Store package only on their word.
+**Released:** 0.1.33 is Latest (published 2026-09-29 12:14 CEST), the eraser hotfix. The regression of 0.1.32 (every
+coalesced pen point a stroke of its own) is fixed for erase, paint, mask, remove, clone and heal: `layerStroke`,
+`cloneStroke`, `pathStamps` (main 80bce51, and 3dfaf61 after a review workflow); measured and described in
+`docs/BUGS.md` "Erasing had become very slow since 0.1.32 - fixed for 0.1.33" (erase at 1,000 px with 8 coalesced
+points: 0.1.31 21.7, 0.1.32 108.8, 0.1.33 18.9 ms a move; the same inside a selection). It was released from the
+branch `hotfix/0.1.33` off `v0.1.32` (tag `v0.1.33` on a6d0e32; exe gates `--offline` green on both backends,
+`dist/gates/gates/rel33-exe*`); `main` holds the same fix and the merge of that branch. Both are pushed. The dev blog
+post `v0-1-33` ("One move, one stroke") is live, website commit 6fe8f1a deployed by git. **The manual was not synced:**
+main's `docs/MANUAL.md` already describes S1's img labels, which ship with 0.1.34 (the sync copies main's working tree;
+0.1.33's manual is 0.1.32's). Sync it at the 0.1.34 release. A Store package only on the user's word.
 - **Item 26, reference layers named in the prompt** (`docs/PLAN_REFS.md`; the user answered A-F: `@img1` renamed per
   API in the backend, hiding renumbers, a contenteditable field exactly like Magnific's, reference pictures to the
   upsampler on with a setting, Generate new with references in this round, categories later). **S1 built and committed
