@@ -15,7 +15,10 @@
         "max_images": 5
       },
       "text": {
-        "model": "xai/grok-imagine-image/v2.0/text-to-image"
+        "model": "xai/grok-imagine-image/v2.0/text-to-image",
+        "refs": {
+          "model": "xai/grok-imagine-image/v2.0/edit"
+        }
       },
       "settings": [
         {
@@ -115,7 +118,8 @@
         "sizes": [
           1024,
           2048
-        ]
+        ],
+        "refs": {}
       },
       "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. The pictures go inline in the request to OpenRouter, which passes them to xAI. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. At most three pictures go in (the crop plus two). Resolution auto takes the smallest tier that covers the crop."
     },
@@ -244,7 +248,10 @@
               }
             ]
           }
-        ]
+        ],
+        "refs": {
+          "model": "xai-grok-imagine-image-edit"
+        }
       },
       "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. One picture only: the edit takes the crop and nothing else, so turn Original off and hide the reference layers. Instruction edit, no mask: the stitch keeps the selection. An answer of another shape is centre-cropped. \"Generate new\" runs Oxen's text model (xai-grok-imagine-image) at 1k or 2k. Oxen names no Grok Imagine version. List price $0.022 an edit, $0.02 a new image (2026-09-26)."
     }

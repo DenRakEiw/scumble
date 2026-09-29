@@ -639,6 +639,20 @@ export async function canvasBytes(canvas) {
     return new Uint8Array(await blob.arrayBuffer());
 }
 
+/**
+ * The reference layers `ids` as PNG bytes, in that order, for a run without a crop (Generate new, docs/PLAN_REFS.md
+ * 26f): the pixels are read now, before the first await, as prepareCropAsync reads them; a layer deleted since the click
+ * refuses (refLayersFor).
+ * @param {any} editor
+ * @param {string[]} ids
+ */
+export async function referenceBytes(editor, ids) {
+    const refs = editor.refLayersFor(ids).map((l) => editor.layerPixels(l));
+    const out = [];
+    for (const c of refs) out.push(await canvasBytes(c));
+    return out;
+}
+
 export function bytesToImage(bytes, mime = "image/png") {
     return new Promise((resolve, reject) => {
         const url = URL.createObjectURL(new Blob([bytes], { type: mime }));

@@ -25,7 +25,10 @@
           ]
         }
       ],
-      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "text": {
+        "refs": {}
+      }
     },
     "fal": {
       "model": "fal-ai/flux-2/klein/9b/edit",
@@ -48,7 +51,12 @@
           ]
         }
       ],
-      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "text": {
+        "refs": {
+          "model": "fal-ai/flux-2/klein/9b/edit"
+        }
+      }
     },
     "wavespeed": {
       "model": "wavespeed-ai/flux-2-klein-9b/edit",
@@ -57,7 +65,12 @@
         "max_images": 3
       },
       "settings": [],
-      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "text": {
+        "refs": {
+          "model": "wavespeed-ai/flux-2-klein-9b/edit"
+        }
+      }
     },
     "oxen": {
       "model": "black-forest-labs-flux-2-klein-9b",
@@ -116,7 +129,10 @@
       "text": {
         "sizes": [
           1024
-        ]
+        ],
+        "refs": {
+          "max": 4
+        }
       },
       "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. FLUX.2 [klein] 9B on Oxen takes five aspect presets and no \"match input\": the one closest to the crop is sent. An answer of another shape is centre-cropped. Oxen states no picture count (not verified). List price $0.02 (2026-09-26)."
     }

@@ -113,7 +113,7 @@ const POLICY = {
     cutout_layer: () => ASK("without an in-app matting model this queues on your ComfyUI"),
     upsample_prompt: () => ASK("rewrites the prompt on a paid model or your ComfyUI"),
     generate: (call, facts) => ASK("renders: this costs money, or queues on your ComfyUI", renderCard(call, facts)),
-    generate_new: (call, facts) => ASK("renders a new base image, and clears the undo history", renderCard(call, facts)),
+    generate_new: (call, facts) => ASK("renders a new base image, replaces every layer but the reference layers and clears the undo history", renderCard(call, facts)),
     upscale: (call, facts) => ASK(call.args && call.args.scope === "document"
         ? "upscales the whole picture on a paid model: every layer is scaled along"
         : "upscales the selection: this costs money, or queues on your ComfyUI", renderCard(call, facts)),

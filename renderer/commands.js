@@ -18,7 +18,7 @@ import { api, host } from "./editor/host.js";
 import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { fontList } from "./editor/inpaint_text.js";
-import { parse, remap, hasTokens } from "./editor/reftokens.js";
+import { parse, remap } from "./editor/reftokens.js";
 
 const VERSION = 2;   // 1 = the node's bridge
 
@@ -410,13 +410,13 @@ const COMMANDS = {
         async run(ed) { const id = ed.node.id; host.shell.closeDocument(ed, { force: true }); return { closed: id, documents: host.editors().map(docSummary) }; },
     },
     list_recipes: {
-        scope: "app", description: "The recipes (ComfyUI workflows and API providers) and which one is selected.",
+        scope: "app", description: "The recipes (ComfyUI workflows and API providers) and which one is selected. textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone.",
         params: {},
         async run() {
             const cur = host.recipe;
             return { selected: cur ? cur.id : null, provider: cur && cur.kind === "provider" ? cur.provider : null, recipes: host.shell.recipes().map((r) => {
                 const v = host.shell.resolveRecipe(r);
-                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: r.mode || (r.kind === "provider" ? "api" : "local"), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, description: r.description || "", source: r.source || "builtin" };
+                return { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", family: r.family || null, mode: r.mode || (r.kind === "provider" ? "api" : "local"), provider: v.provider || null, providers: r.providerIds || [], model: v.model || null, task: r.task || "edit", factor: r.task === "upscale" ? v.factor || null : undefined, usesPrompt: r.task === "upscale" ? !!v.usesPrompt : undefined, textRefs: r.task === "upscale" ? undefined : r.kind === "provider" ? !!(v.text && v.text.refs) : ((s) => s == null || s > 1)(host.comfyPlan(null, r, 0, { hasSelection: true }).spec.slots), description: r.description || "", source: r.source || "builtin" };
             }) };
         },
     },
@@ -485,14 +485,15 @@ const COMMANDS = {
         },
     },
     add_image_layer: {
-        needsImage: true,
-        description: "Add an image file as a new layer. role \"none\": part of the picture (fitted to the canvas, or placed at x,y with width/height); role \"reference\": a reference image for multi-reference models, not part of the picture. An SVG is rasterised to fit the document first, so it stays sharp.",
+        description: "Add an image file as a new layer. role \"none\": part of the picture (fitted to the canvas, or placed at x,y with width/height); role \"reference\": a reference image for multi-reference models, not part of the picture (in an empty tab it gets a white 1024 x 1024 canvas, which generate_new replaces while the reference stays). An SVG is rasterised to fit the document first, so it stays sharp.",
         params: { ...FILE_PARAMS, role: P.str("none or reference", { enum: ["none", "reference"], default: "none" }), name: P.str("layer name (default the file name)"), x: P.int("left edge in image pixels"), y: P.int("top edge"), width: P.int("width; without height the aspect is kept"), height: P.int("height") },
         async run(ed, a) {
             const role = a.role === "reference" ? "reference" : "none";
+            // a reference may start an empty tab (a white canvas under it, 26f); a picture layer needs a picture
+            if (role !== "reference") requireImage(ed);
             const before = new Set(ed.layers.map((l) => l.id));
             const at = Number.isFinite(+a.x) && Number.isFinite(+a.y) ? [+a.x, +a.y] : null;
-            await ed.addImageLayers([await fileFrom(a)], role, at ? { place: "at", at } : { place: role === "reference" ? "cascade" : "fit" });
+            await ed.addImageLayers([await fileFrom(a)], role, at ? { place: "at", at, blank: true } : { place: role === "reference" ? "cascade" : "fit", blank: true });
             const layer = ed.layers.find((l) => !before.has(l.id));
             if (!layer) throw new Error(ed.status || "the layer was not added");
             if (a.name) layer.name = String(a.name);
@@ -665,9 +666,9 @@ const COMMANDS = {
         },
     },
     generate_new: {
-        description: "Make this tab's base image from the prompt alone, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image endpoint. Replaces the image, the layers and the history of this tab.",
+        description: "Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture (\"image 1\"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first.",
         params: {
-            prompt: P.str("what to make; the tab's current prompt when left out. It sends no reference image: on an API recipe an @img token goes to the model as its layer's name, a ComfyUI recipe refuses it"),
+            prompt: P.str("what to make; the tab's current prompt when left out. An @img token names a shown reference layer; a model that makes new images from the prompt alone refuses it"),
             negative: P.str("negative prompt (local chains only)"),
             refs: P.obj("which layer each @img token of prompt and negative means: {\"img1\": \"<layer id>\", ...} (as set_prompt)"),
             width: P.int("width in pixels", { default: 1024 }),
@@ -694,22 +695,27 @@ const COMMANDS = {
             if (r.kind === "provider") {
                 const out = await host.runGenerate(ed, { width: w, height: h, aspect: a.aspect || null, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed, background: a.background || null });
                 ed.notifyChanged();
-                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, prompt_sent: out.prompt, status: ed.status };
+                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, prompt_sent: out.prompt, references: out.references, kept: out.kept, dropped: out.dropped, notes: out.notes || [], info: out.info || null, status: ed.status };
             }
             if (a.background === "transparent" && r.kind !== "provider") throw new Error("a transparent background is an API model's parameter; this is a local ComfyUI recipe");
-            // a ComfyUI recipe cannot take an @img token: said before the canvas replaces the picture (and the references)
-            if (host.refTokens && (hasTokens(ed.promptText) || hasTokens(ed.negativeText))) {
-                throw new Error(`Generate new on ${r.name || r.id} (ComfyUI) sends no reference images and cannot name them: write what the @img tokens stand for instead.`);
+            // the run's token check, made before the canvas replaces the picture: the references stay, so this snapshot
+            // is the run's, and the run selects the whole canvas (a token past the recipe's slots, a parked one, or one
+            // that names nothing refuses here, not after the wipe); an unreachable server too
+            if (host.refTokens && r.task !== "upscale") {
+                const snap = ed.refSnapshot();
+                host.refPrompt(ed, snap, "comfy", { recipe: r, comfy: host.comfyPlan(ed, r, snap.refIds.length, { hasSelection: true, crop: ed.cropSettings, gen: ed.genSettings }) });
             }
-            // local: a flat canvas of the wanted size, everything selected, the recipe run,
-            // then the result flattened into the base. Nothing of the flat canvas survives.
-            await ed.newCanvas(`${w}x${h}`);
+            if (!host.connected) throw new Error("Not connected to ComfyUI.");
+            // local: a flat canvas of the wanted size (the reference layers stay and go along in the crop_image batch, after
+            // the white crop: 26e names them), everything selected, the recipe run, then the result flattened into the
+            // base; flatten keeps the reference layers
+            await ed.newCanvas(`${w}x${h}`, { keepRefs: true });
             if (ed.width !== w || ed.height !== h) throw new Error(ed.status);
             ed.applyMaskToSelection(rectMask(ed, 0, 0, ed.width, ed.height), "replace");
             const res = await COMMANDS.generate.run(ed, { timeout: a.timeout });
             await ed.flatten();
             ed.notifyChanged();
-            return { mode: "local", recipe: r.id, width: ed.width, height: ed.height, seconds: Math.round((Date.now() - t0) / 1000), result: res && res.layer ? res.layer : null, status: ed.status };
+            return { mode: "local", recipe: r.id, width: ed.width, height: ed.height, seconds: Math.round((Date.now() - t0) / 1000), result: res && res.layer ? res.layer : null, prompt_sent: res ? res.prompt_sent : null, notes: res ? res.notes || [] : [], status: ed.status };
         },
     },
     upscale: {

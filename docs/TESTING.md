@@ -96,7 +96,8 @@ layers) and `refs_restore` (a `.scumble` round trip byte for byte, a reference w
 as `@img?<id>`, a named snapshot with Revert). 26b2 adds `refs_send` (a loopback edit run: `prompt_sent` names the
 pictures by their place, with the Original too; a hidden reference's token and a literal `{@ref:` each refuse at once
 with nothing sent; its step 5, a stubbed ComfyUI recipe, is 26e's since then, below), `refs_names` (an upscale writes
-the cleaned layer name, the Generate new dialog's prefill too) and `refs_agents` (labels in `list_layers` / `status`,
+the cleaned layer name, the Upscale dialog's prefill too; since 26f the Generate new dialog's prefill keeps the
+tokens) and `refs_agents` (labels in `list_layers` / `status`,
 `status.references[].sent_as` with and without the Original, `set_prompt refs`); `tools/assistant_test.js` checks the state note's `ref @img1`. 26a2
 adds `refs_layout_test.js` sections 8 (`refs.instruction`, `labelParts` and `checkPictures` against literals: 0 to 4
 references, a mask picture or field, the Original, `Image {n}` and `<image{n}>`, style layouts, the exact drop notes
@@ -184,6 +185,52 @@ status, `named_refs` and `hasSelection` in the state, the document's prompt unch
 run: `node tools/comfyrefs_test.js`, then `bash tools/run_gates.sh <label> --offline --tiles on recipes upscale
 nodecopy lint types` (`upscale` for the ComfyUI upscale path through `queueGenerate`, `nodecopy` for the shared
 `serializeForPrompt` and Info panel edits). No `smoke`: it runs `flux2_klein_local` on the user's ComfyUI.
+
+26f, Generate new with reference layers (`docs/RECIPES.md` "Generating without an image"): nothing of it has run
+against a live API. Plain Node: `node tools/refs_layout_test.js` sections 6 to 9 are rewritten for text runs that send
+references (every adapter exports `textLayout` beside `generate`, a text run with two references sends them and no
+crop, the text markers resolve from 1, `checkPictures` refuses past the cap in the words for a new image), and its new
+section 12 sends every shipped variant with `text.refs` through a fake fetch (the route, the picture order against
+`textLayout`, no "Edit" sentence, the asked size or aspect, the reference sentence where the adapter writes one, 0
+references byte for byte, one past the cap refused with no fetch); `node tools/recipes_test.js` gets a section
+"text.refs" (every shipped variant against the expected route and cap, the list of those that take none, `true`,
+`false` and a bad value); `node tools/reftokens_test.js` covers the text-run markers (`@img2` with 3 shown references
+becomes `{@ref:1}`, a hidden or parked token refused). The adapter tests take new text-run cases, each with 0
+references pinned to the old body: `toapis_test.js` section 2c (`textLayout`, the uploads and `image_urls` in order,
+the size and tier, the per-channel caps, the ratio and 10 MB rules on references) and section 7 (a text run with two
+references on every variant and channel, the text cap equal to the edit cap); `openrouter_test.js` section 3 (two
+references in `input_references` with their sentence, one reference, `refName`, the cap, ratio and size refusals) and
+section 10's sweep; `ark_test.js` sections 1, 4 and 6 (the same for `image`, eleven references on 5.0 pro refused and
+ten sent, and `index.edit` with markers and `refsMax`); `comfyrouter_test.js` section 12 (every dialect, the drops of
+xai / ideogram / krea and FLUX.1 Fill, Gemini's closest ratio for a free size, `text.refs` on exactly the variants
+that take references) and text-run cases in sections 8 (`index.js`) and 10 (HY Image through the Partner API);
+`magnific_test.js` section 4b (the FLUX.2 routes and the `-edit` routes, never `auto` for GPT Image, Seedream's 256 px
+floor) and checks in sections 11 and 12; `oxen_test.js` section 8b (`/images/edit`, the fields, the Grok edit id
+without an aspect, the name pattern, the count and size refusals) and section 9 (`index.layout` for the dialog), with
+the schema sweep sending reference runs where `text.refs` is set.
+Run: `bash tools/run_gates.sh <label> --offline --tiles on toapis openrouter ark comfyrouter oxen magnific recipes`.
+
+The app: `tools/generate_test.py` gets eight steps, all against the loopback. `refs_in_an_empty_tab`
+(`add_image_layer role:"reference"` in a new tab gives a white 1024 × 1024 base with one reference, `refContext`'s
+`canAdd`, `role:"none"` still refused with "no image loaded"); `text_with_references` (two references and a paint
+layer, `generate_new` at 16:9: `info.references` 2, `prompt_sent` "the jacket of image 2 on the person of image 1",
+`references` with `sentAs`, `kept` 2 and `dropped` 1, the paint layer gone, the references' ids, order, pixel objects
+and a sample unchanged and inside 1024 × 576, the tab's prompt unchanged, the status line's "@img2 → image 2" and
+"The reference layers stay, 1 other layer was replaced", `_refDrift` 0); `hidden_reference_not_sent`
+(`info.references` 1, the hidden reference kept hidden); `refuses` (`text.refs.max: 1` with two references gives
+"takes at most 1 reference picture for a new image; this run has 2: hide reference layers", a token on a text shape
+without `refs` gives "makes new images from the prompt alone", neither changes the tab; without a token that shape
+runs, sends none and keeps both); `local_keeps_refs` (`newCanvas("512x512", {keepRefs: true})` keeps and places the
+references; the live ComfyUI run is left out, 8188 is a production machine); `dialog_field_and_bar` (a fake recipe in
+the dialog's list: `#gen-prompt` is the prompt field and keeps the tokens, two chips, `sentAs` "image 1" / "image 2",
+two bar chips, a text shape without `refs` shows "sends no reference images"); `dialog_escape_closes_the_picker_first`,
+a Python step with real keys (`run_all` now takes callable steps beside JS strings): a typed @ opens the picker, the
+first Escape closes only the picker, the second the dialog; and `dialog_upsample_refs` (`host.upsampleBackends` and
+`host.askLLM` stubbed, the pictures switched off: the instruction names both references and carries the token rule,
+an answer that drops `@img2` gives "dropped @img2" in the note, Revert puts the old text back). `commands`'
+`refs_names` now expects the Generate new prefill to keep the tokens. The run: `bash tools/run_gates.sh <label>
+--offline --tiles on generate commands lint types nodecopy`, then `generate` again with `--tiles off` (the reference
+layers now live across a base swap).
 
 ## Known flakes
 

@@ -628,6 +628,18 @@ async function main() {
         const x3 = await viaIndex(base);
         check("settings.comfyrouter.base outside the rule is ignored, and the test key then refused before any call", !!x3.err && /test key is never sent/.test(x3.err) && x3.s.calls.length === 0, x3.err);
         currentSettings = { comfyrouter: { base: BASE } };
+
+        // a text run with references (26f): textLayout, the check, the markers named from 1, then the adapter
+        const nb = variant("nano_banana_2"), gv = variant("grok_imagine");
+        const T = (tag) => new Uint8Array(pngOf(512, 512, 64, tag));
+        const tbase = { provider: "comfyrouter", model: nb.model, kind: "text", options: nb.options, prompt: "the coat of {@ref:1} on the person of {@ref:0}", negative: "", seed: 3, width: 1024, height: 1024, aspect: "1:1", image: null, mask: null, maskAlpha: null, references: [T("TREF1"), T("TREF2")], original: 0, params: {}, refName: "image {n}" };
+        const x4 = await viaIndex(tbase);
+        const tp = x4.s.submits[0] && x4.s.submits[0].body.contents[0].parts;
+        check("index.edit, a Gemini text run with 2 references: the markers become image 2 and image 1, the reference sentence after the prompt, both references sent after their labels, no note", !x4.err && !!tp && tp.length === 5 && tp[0].text === "the coat of image 2 on the person of image 1 Images 1 and 2 are reference images." && tp[1].text === "Image 1:" && tagOf(Buffer.from(tp[2].inlineData.data, "base64")) === "TREF1" && x4.out.prompt === "the coat of image 2 on the person of image 1" && eq(x4.out.notes, []), x4.err || short(tp && tp.map((p) => p.text || "picture")));
+        const x5 = await viaIndex({ ...tbase, model: gv.model, options: gv.options, prompt: "a lighthouse" });
+        check("... on Grok: the drop, the prompt alone to the Router, a note", !x5.err && x5.s.submits.length === 1 && x5.out.info.pictures === 0 && eq(x5.out.notes, ["Comfy Router xai/grok-imagine-image-2.0: this model takes no reference images for a new image; 2 reference layers not sent."]), x5.err || short(x5.out && x5.out.notes));
+        const x6 = await viaIndex({ ...tbase, model: gv.model, options: gv.options });
+        check("... and with a marker in the prompt: refused before any call", /this model takes no reference images for a new image, so the prompt cannot name a reference image/.test(x6.err || "") && x6.s.calls.length === 0, x6.err);
         check("index.js logged no key", !JSON.stringify(logged).includes(KEY), `${logged.length} records`);
     });
 
@@ -708,6 +720,27 @@ async function main() {
         const s17 = fakeServer();
         await partner.generate({ ...req({ kind: "text", image: null, references: [], prompt: "a lighthouse" }) }, ctxFor(s17, { key: REAL_KEY, base: undefined }));
         check("a real key never to the mock, a test key never to api.comfy.org, an unknown model refused, all before any call; a real key goes to https://api.comfy.org", /only a test key goes there/.test(e14 || "") && /test key is never sent/.test(e15 || "") && /knows no model "hy-image-v9"/.test(e16 || "") && s14.calls.length + s15.calls.length + s16.calls.length === 0 && s17.hy[0].url === LIVE + partner.HY_PATH && s17.hy[0].headers["x-api-key"] === REAL_KEY, short([e14, e15, e16]));
+
+        // Generate new with reference layers (26f): the references alone, uploaded in order, the node's @ImageN kept
+        const T1 = pngOf(512, 512, 64, "TREF1"), T2 = pngOf(600, 400, 64, "TREF2");
+        const textWith = (refs, prompt = "the coat of @image2 on the person of @image1") => ({ ...req({ kind: "text", image: null, references: refs, prompt }), width: 1536, height: 1024 });
+        const s18 = fakeServer();
+        const o18 = await partner.generate(textWith([T1, T2]), ctxFor(s18));
+        const b18 = s18.hy[0] && s18.hy[0].body;
+        const c18 = b18 ? b18.messages[0].content : [];
+        check("Generate new with 2 references: one storage request and one upload per reference in order, no crop; the text, then the two URLs; the asked size; resize_max_pixels for Detail standard", s18.storage.length === 2 && eq(s18.uploads.map((u) => tagOf(u.bytes)), ["TREF1", "TREF2"]) && c18.length === 3 && c18[1].image_url.url === `${BASE}/stored/1.png?sig=def` && c18[2].image_url.url === `${BASE}/stored/2.png?sig=def` && b18.size === partner._sizeFor(1536, 1024) && b18.resize_max_pixels === 1048576 && o18.info.pictures === 2 && o18.info.detail === "standard", short(b18 && { ...b18, messages: c18.map((x) => x.type) }));
+        check("... the text: @image2 and @image1 as Image 2 and Image 1, then the reference sentence in the recipe's names (no Edit sentence)", c18[0] && c18[0].text === "the coat of Image 2 on the person of Image 1 Images 1 and 2 are reference images.", c18[0] && c18[0].text);
+        const tl = partner.textLayout(textWith([T1, T2]));
+        check("textLayout: the references at messages[0].content[1] and [2], no crop, max 5 (the edit's)", eq(tl.pictures.map((p) => [p.role, p.ref, p.field, p.n]), [["reference", 0, "messages[0].content[1]", 1], ["reference", 1, "messages[0].content[2]", 2]]) && tl.max === 5 && tl.max === partner.layout(req()).max && !refsLib.checkLayout(tl, textWith([T1, T2])).drops, short(tl));
+        const s19 = fakeServer();
+        const e19 = await throws(() => partner.generate(textWith([T1, T2, T1, T2, T1, T2], "a lighthouse"), ctxFor(s19)));
+        check("six references for a new image: refused in words before any call", e19 === "HY Image 3.5 takes at most 5 reference pictures for a new image; this run has 6: hide reference layers." && s19.calls.length === 0, e19);
+        const s20 = fakeServer();
+        const e20 = await throws(() => partner.generate(textWith([T1, T2], "use @Image3"), ctxFor(s20)));
+        check("@Image3 with two references: refused before any call", /names @Image3, but only 2 pictures go in/.test(e20 || "") && s20.calls.length === 0, e20);
+        const s22 = fakeServer();
+        await partner.generate(textWith([T1], "a lighthouse"), ctxFor(s22, { opaque: () => false }));
+        check("a reference with transparency goes as JPEG (the node sends no alpha); one reference, one sentence", s22.storage[0].body.content_type === "image/jpeg" && tagOf(s22.uploads[0].bytes) === "JPEG" && s22.hy[0].body.messages[0].content[0].text === "a lighthouse Image 1 is a reference image.", short(s22.hy[0] && s22.hy[0].body.messages[0].content[0]));
     });
 
     // ---- 11. Comfy Cloud: the pictures each partner node takes ----
@@ -758,6 +791,106 @@ async function main() {
         c = cloudCtx();
         const eM = await throws(() => cloud._buildGraph(cloudReq("flux1_fill", { mask: null }), c, "FluxProFillNode"));
         check("FLUX.1 Fill without a mask: refused before any upload", /needs a selection mask/.test(eM || "") && c.uploads.length === 0, eM);
+    });
+
+    // ---- 12. Generate new with reference layers (26f): the references alone, no crop, no mask, the asked size ----
+    await section("12. text runs with references", async () => {
+        const T1 = pngOf(512, 512, 64, "TREF1"), T2 = pngOf(600, 400, 64, "TREF2");
+        const run = async (id, extra = {}, ctxExtra = {}) => {
+            const v = variant(id);
+            const s = fakeServer();
+            const req = textReq(v, extra);
+            const out = await router.generate(req, ctxFor(s, ctxExtra));
+            return { v, req, out, s, body: s.submits[0].body };
+        };
+        const without = (o, ...keys) => { const c = { ...o }; for (const k of keys) delete c[k]; return c; };
+        const inl = (p) => tagOf(Buffer.from(p.inlineData.data, "base64"));
+        const fields = (l) => l.pictures.map((p) => [p.role, p.ref, p.field, p.n]);
+        const bad = [];
+        const schema = (x) => { const p = schemaProblems(x.v.model, x.body); if (p.length) bad.push(`${x.v.model}: ${p.slice(0, 3).join("; ")}`); };
+
+        // every shipped variant with a text shape: its text layout holds for 2 references (no crop, numbered 1..N), with
+        // the edit's cap; xai, ideogram and krea declare the drop
+        const shapes = [];
+        for (const r of loadRecipes().filter((x) => x.providers && x.providers.comfyrouter && x.task !== "upscale")) {
+            const v = r.providers.comfyrouter;
+            if (!v.text) continue;
+            const req = { ...textReq(v), references: [T1, T2] };
+            let l;
+            try { l = refsLib.checkLayout(router.textLayout(req), req); } catch (e) { shapes.push(`${r.id}: ${e.message}`); continue; }
+            const prov = v.model.split("/")[0];
+            if (["xai", "ideogram", "krea"].includes(prov)) { if (l.drops !== "this model takes no reference images for a new image" || l.pictures.length) shapes.push(`${r.id}: ${short(l)}`); continue; }
+            const want = +(v.options || {}).max_images > 0 ? +v.options.max_images : 1;
+            if (l.drops || refsLib.countOf(l) !== 2 || l.max !== want || l.max !== router.layout(editReq(v)).max) shapes.push(`${r.id}: ${short(l)}`);
+            if (!!v.text.refs === !!l.drops) shapes.push(`${r.id}: text.refs ${JSON.stringify(v.text.refs)} against the layout's ${l.drops ? "drop" : "pictures"}`);
+        }
+        check("each shipped variant's text layout: 2 references numbered 1 and 2 without a crop, the edit's max_images as the cap, text.refs where it takes them; the drop on Grok, Ideogram and Krea", !shapes.length, shapes.join(" | "));
+        const fill = router.textLayout({ ...textReq(variant("flux1_fill")), references: [T1] });
+        check("FLUX.1 Fill's text layout (it has no text shape): the drop, no crop", fill.drops === "FLUX.1 Fill takes no reference images" && !fill.pictures.length, short(fill));
+
+        // OpenAI: image = the references, no mask, the asked size, the prompt as it is (no sentence on an edit either)
+        let x0 = await run("gpt_image_2_5_flare", { width: 2048, height: 1152 });
+        let x = await run("gpt_image_2_5_flare", { width: 2048, height: 1152, references: [T1, T2] });
+        const op = (x.body.image || []).map(fromDataUrl);
+        check("OpenAI text with 2 references: image = the references in order as data URLs, no mask, the asked size, the prompt as it is; the rest as without references", op.length === 2 && tagOf(op[0].bytes) === "TREF1" && tagOf(op[1].bytes) === "TREF2" && !("mask" in x.body) && x.body.size === "2048x1152" && x.body.prompt === "a lighthouse at dusk" && eq(without(x.body, "image"), x0.body) && !("image" in x0.body) && x.out.info.pictures === 2 && x0.out.info.pictures === 0 && eq(fields(router.textLayout(x.req)), [["reference", 0, "image[0]", 1], ["reference", 1, "image[1]", 2]]), short({ ...x.body, image: op.length }));
+        schema(x);
+        // Gemini (vertexai): the prompt and the reference sentence, a label part before each picture; one picture, no label
+        const gp = { aspect_ratio: "auto", image_size: "auto" };
+        x0 = await run("nano_banana_2", { params: gp, width: 1536, height: 1024, aspect: "3:2" });
+        x = await run("nano_banana_2", { params: gp, width: 1536, height: 1024, aspect: "3:2", references: [T1, T2] });
+        const parts = x.body.contents[0].parts;
+        check("Gemini text with 2 references: the prompt and \"Images 1 and 2 are reference images.\" (no Edit sentence), a label part before each reference, no crop; the asked aspect and tier as without references", parts.length === 5 && parts[0].text === "a lighthouse at dusk Images 1 and 2 are reference images." && eq([parts[1], parts[3]], [{ text: "Image 1:" }, { text: "Image 2:" }]) && inl(parts[2]) === "TREF1" && inl(parts[4]) === "TREF2" && eq(x.body.generationConfig, x0.body.generationConfig) && eq(x.body.generationConfig.imageConfig, { aspectRatio: "3:2", imageSize: "2K" }) && eq(x0.body.contents[0].parts, [{ text: "a lighthouse at dusk" }]) && eq(fields(router.textLayout(x.req)).map((f) => f[2]), ["contents[0].parts[2]", "contents[0].parts[4]"]), short(parts.map((p) => p.text || inl(p))));
+        schema(x);
+        x = await run("nano_banana_pro", { params: gp, references: [T1], refName: "<image{n}>" });
+        const p1 = x.body.contents[0].parts;
+        check("Gemini text with 1 reference under <image{n}>: no label part, the prompt then the sentence in the recipe's name, the picture at part 1", p1.length === 2 && p1[0].text === "a lighthouse at dusk <image1> is a reference image." && inl(p1[1]) === "TREF1" && eq(fields(router.textLayout(x.req)).map((f) => f[2]), ["contents[0].parts[1]"]), short(p1.map((p) => p.text || inl(p))));
+        // a free size (no aspect asked): with references the closest aspect goes (else the answer takes a reference's
+        // shape), without them the body stays as it was (no aspectRatio)
+        x0 = await run("nano_banana_2", { params: gp, width: 2048, height: 1152, aspect: null });
+        x = await run("nano_banana_2", { params: gp, width: 2048, height: 1152, aspect: null, references: [T1, T2] });
+        check("Gemini text with a free 2048 x 1152 size: with 2 references aspectRatio 16:9 and the 2K tier, without references no aspectRatio", eq(x.body.generationConfig.imageConfig, { aspectRatio: "16:9", imageSize: "2K" }) && eq(x0.body.generationConfig.imageConfig, { imageSize: "2K" }), short([x.body.generationConfig, x0.body.generationConfig]));
+        schema(x);
+        // FLUX.2 (bfl): input_image .. from the references, the asked width and height, the prompt as it is
+        x0 = await run("flux2_pro");
+        x = await run("flux2_pro", { references: [T1, T2] });
+        check("FLUX.2 text with 2 references: input_image and input_image_2 the references, the asked 1536 x 1024, the prompt as it is, no image or mask field; the rest as without references", tagOf(Buffer.from(x.body.input_image, "base64")) === "TREF1" && tagOf(Buffer.from(x.body.input_image_2, "base64")) === "TREF2" && !("input_image_3" in x.body) && x.body.width === 1536 && x.body.height === 1024 && x.body.prompt === "a lighthouse at dusk" && !("image" in x.body) && !("mask" in x.body) && eq(without(x.body, "input_image", "input_image_2"), x0.body) && eq(fields(router.textLayout(x.req)).map((f) => f[2]), ["input_image", "input_image_2"]), short({ ...x.body, input_image: "..", input_image_2: ".." }));
+        schema(x);
+        // Seedream (byteplus): image = the references, the reference sentence, the text size
+        x0 = await run("seedream_5_pro");
+        x = await run("seedream_5_pro", { references: [T1, T2] });
+        check("Seedream text with 2 references: image = the references as data URLs, the prompt and the reference sentence, the text run's size; the rest as without references", (x.body.image || []).length === 2 && tagOf(fromDataUrl(x.body.image[0]).bytes) === "TREF1" && tagOf(fromDataUrl(x.body.image[1]).bytes) === "TREF2" && x.body.prompt === "a lighthouse at dusk Images 1 and 2 are reference images." && x0.body.prompt === "a lighthouse at dusk" && eq(without(x.body, "image", "prompt"), without(x0.body, "prompt")) && eq(fields(router.textLayout(x.req)).map((f) => f[2]), ["image[0]", "image[1]"]), short({ ...x.body, image: 2 }));
+        schema(x);
+        // Qwen: the references, then the prompt and the sentence, in one message
+        x0 = await run("qwen_image_edit");
+        x = await run("qwen_image_edit", { references: [T1, T2] });
+        const qc = x.body.input.messages[0].content;
+        check("Qwen text with 2 references: the references then the prompt and the reference sentence in one message; the parameters as without references", qc.length === 3 && tagOf(fromDataUrl(qc[0].image).bytes) === "TREF1" && tagOf(fromDataUrl(qc[1].image).bytes) === "TREF2" && qc[2].text === "a lighthouse at dusk Images 1 and 2 are reference images." && eq(x.body.parameters, x0.body.parameters) && eq(x0.body.input.messages[0].content, [{ text: "a lighthouse at dusk" }]) && eq(fields(router.textLayout(x.req)).map((f) => f[2]), ["input.messages[0].content[0]", "input.messages[0].content[1]"]), short(qc.map((c) => c.text || tagOf(fromDataUrl(c.image).bytes))));
+        schema(x);
+        check("every text body with references holds against the model's published schema", !bad.length, bad.join(" | "));
+
+        // the models that take no picture: the drop, and a direct call sends the prompt alone
+        const gReq = { ...textReq(variant("grok_imagine")), references: [T1, T2] };
+        const gLay = router.textLayout(gReq);
+        const gChk = refsLib.checkPictures(gLay, gReq, "Comfy Router " + gReq.model);
+        x0 = await run("grok_imagine");
+        x = await run("grok_imagine", { references: [T1, T2] });
+        check("Grok with 2 references: index.js's check strips both and says so; called directly, the body as without references", gChk.req.references.length === 0 && eq(gChk.notes, ["Comfy Router xai/grok-imagine-image-2.0: this model takes no reference images for a new image; 2 reference layers not sent."]) && eq(x.body, x0.body) && x.out.info.pictures === 0, short({ notes: gChk.notes, pictures: x.out.info.pictures }));
+
+        // refusals before any call
+        const four = [T1, T2, pngOf(512, 512, 64, "TREF3"), pngOf(512, 512, 64, "TREF4")];
+        const qReq = { ...textReq(variant("qwen_image_edit")), references: four };
+        const qLay = router.textLayout(qReq);
+        let eChk = null;
+        try { refsLib.checkPictures(qLay, qReq, "Comfy Router " + qReq.model); } catch (e) { eChk = e.message; }
+        const sCap = fakeServer();
+        const eCap = await throws(() => router.generate(qReq, ctxFor(sCap)));
+        const want = "Comfy Router qwen/qwen-image-3.0 takes at most 3 reference pictures for a new image; this run has 4: hide reference layers.";
+        check("Qwen text with 4 references (it takes 3): the text layout's cap is the edit's 3; index.js's check and the adapter both refuse in the same words before any call", qLay.max === 3 && eChk === want && eCap === want && sCap.calls.length === 0, short([eChk, eCap]));
+        const sBig = fakeServer();
+        const eBig = await throws(() => router.generate(textReq(variant("seedream_5_lite"), { references: [pngOf(3000, 2000, 10_000_001, "BIGREF", 2)] }), ctxFor(sBig, { opaque: () => false })));
+        check("a reference over the model's bytes with transparency: refused before any call, without the edit's Highres fix advice", /the reference 1 is 9\.5 MB, more than the 10 MB a picture may have \(it has transparency, so it stays PNG\)\. Use a smaller reference layer\.$/.test(eBig || "") && sBig.calls.length === 0, eBig);
+        const x2 = await run("seedream_5_lite", { references: [pngOf(3000, 2000, 10_000_001, "BIGREF", 2)] });
+        check("... an opaque one goes as JPEG", fromDataUrl(x2.body.image[0]).mime === "image/jpeg" && tagOf(fromDataUrl(x2.body.image[0]).bytes) === "JPEG", short(fromDataUrl(x2.body.image[0]).mime));
     });
 
     // ---- 9. the whole run ----

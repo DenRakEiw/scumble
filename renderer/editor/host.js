@@ -14,7 +14,7 @@
 //           that asked: results by prompt id, helper masks / texts by the canvas_node id
 //           the helper prompt carried (= editor.node.id).
 
-import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, canvasBytes } from "./stitch.js";
+import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, canvasBytes, referenceBytes } from "./stitch.js";
 import { glReleasePool } from "./inpaint_filters_gl.js";
 import { withoutSecrets } from "./redact.js";
 import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
@@ -1139,9 +1139,13 @@ export const host = {
      */
     slotsError(r, spec, lay, snap, token) {
         const tok = String(token || "").replace(/^@img/i, "@img");
+        const who = r.name || r.id || "this recipe";
+        if (spec.slots === 1) return `${tok} cannot be named: ${who} reads the crop alone, its graph takes no reference picture. Take ${tok} out.`;
         const read = ["the crop", ...(lay.original ? ["the Original"] : []), ...snap.refIds.slice(0, lay.kept).map((id) => "img" + snap.labels.get(id))];
-        const ways = lay.original ? `Hide a reference, turn Original off, or take ${tok} out.` : `Hide a reference, or take ${tok} out.`;
-        return `${tok} cannot be named: ${r.name || r.id || "this recipe"} reads ${spec.slots} picture${spec.slots === 1 ? "" : "s"} (${listWords(read)}). ${ways}`;
+        // only the ways that make room: hiding a reference needs one that goes, Original off needs the Original
+        const ways = [...(lay.kept > 0 ? ["hide a reference"] : []), ...(lay.original ? ["turn Original off"] : []), `take ${tok} out`];
+        const say = ways.length === 1 ? ways[0] : `${ways.slice(0, -1).join(", ")}, or ${ways[ways.length - 1]}`;
+        return `${tok} cannot be named: ${who} reads ${spec.slots} pictures (${listWords(read)}). ${say.charAt(0).toUpperCase()}${say.slice(1)}.`;
     },
 
     /** Why a token cannot go (refPrompt): `seg` a token segment of `parse`, `k` which text holds it. */
@@ -1192,6 +1196,7 @@ export const host = {
             params: over.params || this.providerParams(editor),
             original, count: over.count != null ? over.count : editor.referenceLayers().length + original,
             refName: over.refName !== undefined ? over.refName : (r.refs && r.refs.name) || null,
+            refsMax: over.refsMax || null,
         };
     },
 
@@ -1201,19 +1206,39 @@ export const host = {
      * the route takes | null, refuse: why a token cannot go although the pictures do | null (26c2's bar and card) }`.
      * `keep` (the editor's own refresh): also kept as `editor.refLayoutInfo`, by the last call made, not the last to
      * answer; an agent's `status` reads it without touching that. Null without a recipe. Asks main once
-     * (`provider:layout`).
+     * (`provider:layout`). `over.recipe`: another recipe than the tab's (the Generate new dialog's variant, which passes
+     * `{ keep: false }`); `over.kind` "text": a new image from that variant's `text` shape (26f), the references
+     * numbered from 1, none going along where the shape has no `refs`.
      */
     async refLayout(editor, over = {}, { keep = true } = {}) {
-        const r = this.recipe;
+        const r = over.recipe || this.recipe;
         if (!r || !editor) { if (editor && keep) editor.refLayoutInfo = null; return null; }
         const seq = keep ? (editor._refLayoutSeq = (editor._refLayoutSeq || 0) + 1) : 0;
         const refs = editor.referenceLayers();
         const blank = (none, local = false) => ({ names: new Map(refs.map((l) => [l.id, null])), over: new Set(), none, local, cap: null, refuse: null });
         let info;
-        if (r.kind !== "provider" && r.task === "upscale") info = blank("An upscale sends the picture alone: reference images are left out.", true);
+        const text = over.kind === "text";
+        if (text) {
+            // Generate new: the variant's text shape; its refs say whether the pictures go and to which route
+            const t = r.kind === "provider" ? r.text : null, tr = t && t.refs;
+            if (!t || !tr) over = null;
+            else {
+                over = {
+                    ...over, recipe: r, kind: "text", provider: over.provider || r.provider, model: over.model || tr.model || t.model,
+                    options: over.options !== undefined ? over.options : tr.options ? { ...(r.options || {}), ...tr.options } : r.options || null,
+                    // the tab's own Settings rows (a ToAPIs Channel, say) when the dialog is on the tab's recipe and provider,
+                    // as runGenerate will send them; another variant's rows go back to their defaults on Go
+                    params: over.params || (this.recipe && this.recipe.id === r.id && this.recipe.provider === r.provider ? { ...this.providerParams(editor), ...(t.fixed || {}) } : { ...(t.fixed || {}) }),
+                    original: 0, refName: over.refName !== undefined ? over.refName : tr.name || (r.refs && r.refs.name) || null, refsMax: tr.max || null,
+                };
+            }
+        }
+        if (text && !over) info = blank(`${r.name || r.id} makes new images from the prompt alone: the reference layers stay in the tab, none go along.`);
+        else if (r.kind !== "provider" && r.task === "upscale") info = blank("An upscale sends the picture alone: reference images are left out.", true);
         else if (r.kind !== "provider") {
             // a local recipe: the names its graph gives the pictures of the node's batch, worked out here (comfyrefs.js)
-            const { spec, lay } = this.comfyPlan(editor, r, refs.length);
+            // `over.state`: the run a caller has in mind (Generate new's white canvas, all of it selected), else the editor now
+            const { spec, lay } = this.comfyPlan(editor, r, refs.length, over.state || null);
             const names = new Map(refs.map((l, k) => {
                 const pic = lay.pictures.find((p) => p.role === "reference" && p.ref === lay.original + k);
                 return [l.id, pic ? refName(spec.name, pic.n) : null];
@@ -1239,7 +1264,7 @@ export const host = {
                 const cap = ans.max != null ? Math.max(0, ans.max - (ans.sent - shape.count) - shape.original) : null;
                 // style references go without a number: a token for one refuses the run (refs.js checkPictures)
                 const refuse = ans.style ? "this route sends reference images as style references, which have no number: take the token out to run" : null;
-                info = { names, over: overSet, none, local: false, cap, refuse };
+                info = { names, over: overSet, none, local: false, cap, refuse, style: !!ans.style };
             } catch (err) {
                 info = blank(String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
             }
@@ -1472,9 +1497,13 @@ export const host = {
     },
 
     /**
-     * "Generate new": one call to the provider with the prompt alone, no crop, no mask and
-     * no references, and the answer becomes the document's base image. The recipe variant's
-     * `text` shape says which model id does that at this provider (docs/RECIPES.md).
+     * "Generate new": one call to the provider's text-to-image route, no crop and no mask, and the answer becomes the
+     * document's base image. The recipe variant's `text` shape says which model id does that at this provider
+     * (docs/RECIPES.md). With `text.refs` the shown reference layers go along (docs/PLAN_REFS.md 26f): each @img token
+     * is written as the route's name for its picture ("image 1": there is no crop before them), a variant may send them
+     * to another route (`text.refs.model`), and the reference layers stay in the tab over the new base. A variant
+     * without it makes pictures from the prompt alone: a token there refuses the run. `opts.refs`: the click's snapshot
+     * (refSnapshot), else the references of now; `opts.prompt` / `opts.negative` replace its texts.
      */
     async runGenerate(editor, opts = {}) {
         const r = this.recipe;
@@ -1482,26 +1511,46 @@ export const host = {
         const t = r.text;
         if (!t || !t.model) throw new Error(`${r.providerLabel || r.provider} cannot make an image from the prompt alone for this model.`);
         const label = r.providerLabel || r.provider;
+        // the answer replaces the base: not while a job would land in the picture it replaces
+        if (editor._localRuns && editor._localRuns.size) throw new Error("A render on your ComfyUI is still running: its result would land in the picture Generate new replaces. Try again when it is in.");
+        if (editor.providerPending || editor.segmentPending || editor.cutoutPending || editor.objectsPending || editor._pointPending || editor._loading || editor._docSaving) {
+            throw new Error("Wait for the running job to finish: it would land in the picture Generate new replaces.");
+        }
         const width = Math.max(64, Math.round(opts.width || editor.width || 1024));
         const height = Math.max(64, Math.round(opts.height || editor.height || 1024));
-        // Generate new sends no reference picture (until 26f): a token goes as its layer's name, in the request only
-        const texts = this.refPrompt(editor, opts.refs || null, "none", { prompt: opts.prompt != null ? opts.prompt : editor.promptText || "", negative: opts.negative != null ? opts.negative : editor.negativeText || "", who: "Generate new" });
+        // the prompt and the references of the click; a token that cannot go refuses before anything is sent
+        const base = opts.refs || editor.refSnapshot();
+        const snap = { ...base, prompt: opts.prompt != null ? String(opts.prompt) : base.prompt, negative: opts.negative != null ? String(opts.negative) : base.negative };
+        const takes = !!(this.refTokens && t.refs);
+        // a model that sends no picture: the tab's negative (which the dialog neither shows nor sends) gets its tokens
+        // written as layer names, as before 26f; only the prompt's tokens refuse
+        const neg = takes || !this.refTokens ? null : this.refPrompt(editor, snap, "none", { prompt: "", negative: snap.negative, who: "Generate new" });
+        const named = this.refPrompt(editor, neg ? { ...snap, negative: neg.negative } : snap, "edit", { sent: takes ? snap.refIds : null, who: "Generate new" });
+        if (!takes && this.refTokens && hasTokens(named.prompt)) {
+            throw new Error(`${r.name || r.id} on ${label} makes new images from the prompt alone: take the @img tokens out, or pick a model that takes reference images for a new image (FLUX.2, GPT Image, Nano Banana, Seedream).`);
+        }
+        const refIds = takes ? snap.refIds : [];
+        const tr = t.refs || {};
         const token = { provider: r.provider, label, started: Date.now(), editor };
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
         const genParams = { ...this.providerParams(editor, opts.background ? { background: opts.background } : null), ...(t.fixed || {}) };
         const cutout = this.wantsTransparent(genParams);
-        let res;
+        let res, request, references = [];
         try {
-            editor.setStatus(`Asking ${label} for a new ${width} × ${height} image${cutout ? " on a transparent ground" : ""} ...`);
-            const request = {
-                provider: r.provider, model: t.model, kind: "text",
-                prompt: texts.prompt, negative: texts.negative,
+            // the pixels are read now, before the first await (referenceBytes)
+            references = refIds.length ? await referenceBytes(editor, refIds) : [];
+            const withRefs = references.length > 0;
+            editor.setStatus(`Asking ${label} for a new ${width} × ${height} image${withRefs ? ` with ${references.length} reference image${references.length > 1 ? "s" : ""}` : ""}${cutout ? " on a transparent ground" : ""} ...`);
+            request = {
+                provider: r.provider, model: (withRefs && tr.model) || t.model, kind: "text",
+                prompt: named.prompt, negative: named.negative,
                 seed: opts.seed != null ? opts.seed : editor.genSettings.seed,
                 width, height, aspect: opts.aspect || null,
-                image: null, mask: null, maskAlpha: null, references: [],
-                fields: r.fields || null, options: r.options || null,
+                image: null, mask: null, maskAlpha: null, references, original: 0,
+                refName: tr.name || (r.refs && r.refs.name) || null, refsMax: withRefs ? tr.max || null : null,
+                fields: r.fields || null, options: withRefs && tr.options ? { ...(r.options || {}), ...tr.options } : r.options || null,
                 params: genParams,
             };
             res = await providerEdit(request);
@@ -1515,10 +1564,27 @@ export const host = {
         c.width = img.naturalWidth || img.width;
         c.height = img.naturalHeight || img.height;
         c.getContext("2d").drawImage(img, 0, 0);
-        await editor.setBaseFromCanvas(c);
+        // the reference layers stay (they name what the prompt refers to), every other layer goes with the old base
+        const swap = await editor.setBaseFromCanvas(c, { keepRefs: true });
         const gotAlpha = cutout && transparentPixels(c);
-        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image${cutout ? (gotAlpha ? " with a transparent background" : " (the model returned no transparency)") : ""}.${texts.note ? " " + texts.note : ""}`);
-        return { provider: r.provider, model: t.model, seconds: res.seconds, width: c.width, height: c.height, transparent: !!gotAlpha, prompt: res.prompt != null ? res.prompt : texts.prompt, note: texts.note, info: res.info || null };
+        const notes = res.notes || [];
+        const sentAs = named.pairs.map((p) => {
+            const got = (res.refs || []).find((x) => x.ref === p.ref);
+            return got ? `${p.label} → ${got.name}` : null;
+        }).filter(Boolean);
+        const kept = swap && swap.kept ? swap.kept : 0, dropped = swap && swap.dropped ? swap.dropped : 0;
+        const stay = kept ? ` The reference layer${kept > 1 ? "s stay" : " stays"}${dropped ? `, ${dropped} other layer${dropped > 1 ? "s were" : " was"} replaced` : ""}.` : "";
+        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image${cutout ? (gotAlpha ? " with a transparent background" : " (the model returned no transparency)") : ""}.${sentAs.length ? ` Named in the prompt: ${sentAs.join(", ")}.` : ""}${stay}${notes.length ? " " + notes.join(" ") : ""}`);
+        const labels = snap.labels;
+        return {
+            provider: r.provider, model: request.model, seconds: res.seconds, width: c.width, height: c.height, transparent: !!gotAlpha,
+            prompt: res.prompt != null ? res.prompt : named.prompt, note: notes.join(" "), notes, info: res.info || null,
+            references: refIds.map((id, i) => {
+                const got = (res.refs || []).find((x) => x.ref === i);
+                return { label: "img" + labels.get(id), id, sentAs: got ? got.name : null };
+            }),
+            kept, dropped,
+        };
     },
 
     // ---- prompt instruction templates (electron/main/prompts.js) -------------------

@@ -3349,10 +3349,10 @@ class InpaintEditor {
     /**
      * Every reference layer, top first, as the prompt field and agents describe it (C4): label null for one that is
      * hidden (or has no pixels), `sentAs` the name the chosen route gives its picture (`refLayoutInfo`, null unknown),
-     * `over` past the route's cap.
+     * `over` past the route's cap. `info`: another route's layout than the tab's (the Generate new dialog's, 26f).
      */
-    refDescriptors() {
-        const labels = this.refLabels(), info = this.refLayoutInfo;
+    refDescriptors(info = this.refLayoutInfo) {
+        const labels = this.refLabels();
         return this.layers.filter((l) => this.isReference(l)).reverse().map((l) => ({
             id: l.id, label: labels.get(l.id) || null, name: l.name || "", visible: !!l.visible, thumb: null,
             sentAs: info && info.names && labels.has(l.id) ? info.names.get(l.id) || null : null,
@@ -3410,15 +3410,15 @@ class InpaintEditor {
             p.previous = r(p.previous);
             p.carry = prev ? (t) => r(prev(t)) : r;
         }
-        for (const f of this._remapTargets) {
-            const v = f.value, t = r(v);
-            if (t !== v) f.setText(t, { keepCaret: true, history: r });
-        }
+        // every registered field gets the remap, its text unchanged too: its own undo is mapped and it redraws (the
+        // Generate new dialog's bar follows a hide or an add from an agent)
+        for (const f of this._remapTargets) f.setText(r(f.value), { keepCaret: true, history: r });
     }
 
     /**
      * A field outside the editor whose text names this document's references (the Generate new dialog's prompt): it is
-     * remapped with the prompt. `field` has `value` and `setText(text, { keepCaret, history })`. Returns the dispose.
+     * remapped with the prompt. `field` has `value` and `setText(text, { keepCaret, history })`, called at every remap
+     * (with the same text too, so the field can map its undo and redraw). Returns the dispose.
      */
     addRemapTarget(field) {
         this._remapTargets.add(field);
@@ -3447,17 +3447,17 @@ class InpaintEditor {
      * (`refLayoutInfo`, 26c2) the cap on reference layers, why none goes (`none`), a ComfyUI recipe (`local`: its
      * pictures go in the crop_image batch, named as its graph numbers them, 26e), why a token cannot go although the
      * pictures do (`refuse`); `reason` says why a parked token's layer has no descriptor, `show` shows a hidden
-     * reference as its eye does.
+     * reference as its eye does. `info`: another route's layout than the tab's (the Generate new dialog's, 26f). A
+     * reference can be added to an empty tab too: it gets a white canvas, which Generate new then replaces (26f).
      */
-    refContext() {
+    refContext(info = this.refLayoutInfo) {
         const byId = new Map(this.layers.map((l) => [l.id, l]));
-        const refs = this.refDescriptors().map((d) => ({ ...d, thumb: this.refAvatar(byId.get(d.id)) }));
-        const info = this.refLayoutInfo;
+        const refs = this.refDescriptors(info).map((d) => ({ ...d, thumb: this.refAvatar(byId.get(d.id)) }));
         const local = !!(info && info.local);
         return {
             refs, cap: info && info.cap != null ? info.cap : null, none: (info && info.none) || null, local,
             refuse: (info && info.refuse) || null,
-            canAdd: !!this.width,
+            canAdd: !!this.width || !!host.refTokens,
             reason: (id) => (byId.has(id) ? "no longer a reference: make it a reference again to send it" : "deleted: an undo brings it back"),
             show: (id) => this.showReference(id),
         };
@@ -3496,14 +3496,15 @@ class InpaintEditor {
 
     /**
      * Pictures added as reference layers for the prompt field (its picker's "+ Add reference", the bar's "+", a paste
-     * or a drop on it): the new references' ids, top first. Never a base: without a picture it only says so.
+     * or a drop on it): the new references' ids, top first. Never a base: in an empty tab the app makes a white canvas
+     * first (Generate new replaces it and keeps the references, 26f); the node's editor only says so.
      * @param {File[]} files
      * @returns {Promise<string[]>}
      */
     async addReferencesForPrompt(files) {
-        if (!this.width) { this.setStatus("Load an image first: a reference goes beside a picture."); return []; }
+        if (!this.width && !host.refTokens) { this.setStatus("Load an image first: a reference goes beside a picture."); return []; }
         const before = new Set(this.layers.map((l) => l.id));
-        await this.addImageLayers(Array.from(files || []), "reference");
+        await this.addImageLayers(Array.from(files || []), "reference", { blank: true });
         return this.layers.filter((l) => !before.has(l.id) && this.isReference(l)).reverse().map((l) => l.id);
     }
 
@@ -12559,11 +12560,29 @@ class InpaintEditor {
         this.refreshCutoutBackends();
     }
 
-    /** Upload image files and add each as a layer (role "reference" by default). */
-    async addImageLayers(files, role = "reference", { place = "cascade", at = null } = {}) {
+    /**
+     * Where reference number `k` (0-based, counting every reference) of `px`'s size goes: a third of the canvas, cascaded
+     * from the top left. The file itself stays the reference; the box is only how it is shown.
+     */
+    referenceBox(px, k) {
+        const nw = px.width, nh = px.height;
+        const s = Math.min(1, (Math.max(this.width, this.height) / 3) / Math.max(nw, nh));
+        const off = 16 + (k % 8) * 24;
+        return { x: off, y: off, w: Math.max(1, Math.round(nw * s)), h: Math.max(1, Math.round(nh * s)) };
+    }
+
+    /**
+     * Upload image files and add each as a layer (role "reference" by default). In an empty tab the first file becomes
+     * the picture, except with `blank` (the app, for references: the prompt field and add_image_layer, 26f): then a white
+     * 1024 x 1024 canvas comes first, which Generate new replaces while the references stay.
+     */
+    async addImageLayers(files, role = "reference", { place = "cascade", at = null, blank = false } = {}) {
         files = Array.from(files || []).filter((f) => f && ((f.type && f.type.startsWith("image/")) || LAYERED_EXT.test(f.name || "") || TIFF_EXT.test(f.name || "")));
         if (!files.length) return;
-        if (!this.width) {
+        if (!this.width && blank && role === "reference" && host.refTokens) {
+            await this.newCanvas("1024x1024");
+            if (!this.width) return;
+        } else if (!this.width) {
             await this.loadFile(files.shift());
             if (!files.length || !this.width) return;
         }
@@ -12606,9 +12625,9 @@ class InpaintEditor {
                 }
                 const nw = px.width, nh = px.height;
                 // Shown at a third of the canvas, cascaded from the top left; the file itself stays the reference.
-                const s = Math.min(1, (Math.max(this.width, this.height) / 3) / Math.max(nw, nh));
-                const w = Math.max(1, Math.round(nw * s)), h = Math.max(1, Math.round(nh * s));
-                const off = place === "cascade" ? 16 + (n % 8) * 24 : 0;
+                const box = this.referenceBox(px, n);
+                const w = box.w, h = box.h;
+                const off = place === "cascade" ? box.x : 0;
                 // origin: native size; fit: native size unless larger than the canvas; cascade: a third of the canvas (references)
                 const fs = place === "fit" || place === "at" ? Math.min(1, this.width / nw, this.height / nh) : 1;
                 const lw = place === "cascade" ? w : Math.max(1, Math.round(nw * fs)), lh = place === "cascade" ? h : Math.max(1, Math.round(nh * fs));
@@ -13804,7 +13823,9 @@ class InpaintEditor {
             const ctrl = this.layers.filter((l) => this.isControl(l) && l.visible).length;
             rows.push(["Control", ctrl ? `${ctrl} layer${ctrl > 1 ? "s" : ""}` : "none (black)"]);
             const refs = shown.length;
-            if (lay && lay.names && refs && !lay.none) {
+            // a route that sends the references as style references gives them no number: they go, unnamed
+            if (lay && lay.style && refs && !lay.none) rows.push(["References", `${refs} image${refs > 1 ? "s" : ""} as style references (no number)`]);
+            else if (lay && lay.names && refs && !lay.none) {
                 // the app: what each shown reference goes as ("img1 → <image3>"), what is left out, and a guessed wording
                 const labels = this.refLabels();
                 const arrows = sent.map((l) => `img${labels.get(l.id)} → ${lay.names.get(l.id)}`);
@@ -13876,8 +13897,12 @@ class InpaintEditor {
     /** Is this document larger than any canvas (268 MP)? Then nothing may ask for a canvas, a bitmap or an ImageData of it. */
     get huge() { return this.width * this.height > CANVAS_MAX_PIXELS; }
 
-    /** A new base from pixels the caller made for it (and does not write again); `ref` is their file in the mirror. */
-    async setBasePixels(ref, px, { keepLayers = true } = {}) {
+    /**
+     * A new base from pixels the caller made for it (and does not write again); `ref` is their file in the mirror.
+     * `keep`: layers that stay when the others go (Generate new's reference layers, 26f): kept as they are, and on a size
+     * change placed again the way a new reference is (referenceBox), their masks, opacity and visibility unchanged.
+     */
+    async setBasePixels(ref, px, { keepLayers = true, keep = null } = {}) {
         this.checkBaseSize(px.width, px.height);
         const sizeChanged = px.width !== this.width || px.height !== this.height;
         this.historyGen++;   // a restore still loading must not put the old document over the new image
@@ -13888,7 +13913,15 @@ class InpaintEditor {
         this.height = px.height;
         // the history goes with the layers: a step of the old document applied to a new image put
         // its layers (or its base, for a crop) back on top of it
-        if (!keepLayers || sizeChanged) { this.layers = []; this.activeLayerId = null; this.clearUndo(); this.refsRebuilt(); }
+        if (!keepLayers || sizeChanged) {
+            // the kept layers are in the list before the detached release below looks for live pixels
+            this.layers = keep ? keep.slice() : [];
+            if (keep && sizeChanged) this.layers.forEach((l, k) => { if (l.px) Object.assign(l, this.referenceBox(l.px, k)); });
+            this.activeLayerId = null;
+            this.clearUndo();
+            // the ids and the order of kept references are unchanged: the labels stay, nothing is rewritten
+            this.refsRebuilt();
+        }
         if (!keepLayers) this.clearSnapshots();   // a new picture is a new document: the snapshots were of the old one
         if (!this.sel || sizeChanged) {
             this.sel = this.pixels.Mask.empty(this.width, this.height);
@@ -14713,14 +14746,17 @@ class InpaintEditor {
 
     /**
      * Replace the base image with these pixels. Used by "Generate new" (the model's answer
-     * becomes the image) and by anything that turns a result into the new base.
+     * becomes the image) and by anything that turns a result into the new base. `keepRefs`: the reference layers stay
+     * (hidden ones too), every other layer goes (26f). Returns { width, height, kept, dropped } (layers).
      */
-    async setBaseFromCanvas(canvas, { keepLayers = false } = {}) {
+    async setBaseFromCanvas(canvas, { keepLayers = false, keepRefs = false } = {}) {
         if (this.pending) this.cancelPending();
         if (this.textEdit) this.endTextEdit(false);
         const { ref } = await uploadCanvas(canvas, `n${this.node.id}_base`);
         // C6 (d): a copy of the caller's canvas (the canvas backend adopts a canvas it is given), not the upload decoded again
         const px = this.pixels.Layer.fromImage(canvas, canvas.width, canvas.height);
+        const keep = keepRefs && !keepLayers ? this.layers.filter((l) => this.isReference(l)) : null;
+        const dropped = keepLayers ? 0 : this.layers.length - (keep ? keep.length : 0);
         if (!keepLayers) {
             this.layers = [];
             this.activeLayerId = null;
@@ -14730,15 +14766,18 @@ class InpaintEditor {
             this.compare = null;
             this.sel = null;
         }
-        await this.setBasePixels(ref, px, { keepLayers });
+        await this.setBasePixels(ref, px, { keepLayers, keep });
         this.clearUndo();
         this.renderHistory();
         this.renderSelectionList();
-        return { width: this.width, height: this.height };
+        return { width: this.width, height: this.height, kept: keep ? keep.length : 0, dropped };
     }
 
-    /** A fresh white canvas after a confirmation; the size is asked for in the same dialog. */
-    async newCanvas(size = null) {
+    /**
+     * A fresh white canvas after a confirmation; the size is asked for in the same dialog. `keepRefs`: the reference
+     * layers stay, placed again on the new canvas (generate_new's local path, 26f).
+     */
+    async newCanvas(size = null, { keepRefs = false } = {}) {
         const curW = this.width || 1024, curH = this.height || 1024;
         const what = this.base ? `This discards the current image, ${this.layers.length} layer${this.layers.length === 1 ? "" : "s"}, the selection and ${this.history.length} history entr${this.history.length === 1 ? "y" : "ies"} in this editor.` : "";
         let w, h;
@@ -14771,6 +14810,7 @@ class InpaintEditor {
             ctx.fillRect(0, 0, w, h);
             const { ref } = await uploadCanvas(c, `n${this.node.id}_base`);
             const px = this.pixels.Layer.fromCanvas(c);   // C6 (d): not the upload decoded again
+            const keep = keepRefs ? this.layers.filter((l) => this.isReference(l)) : null;
             this.layers = [];
             this.activeLayerId = null;
             this.history = [];
@@ -14778,11 +14818,11 @@ class InpaintEditor {
             this.guides = { x: [], y: [] };
             this.compare = null;
             this.sel = null;
-            await this.setBasePixels(ref, px, { keepLayers: false });
+            await this.setBasePixels(ref, px, { keepLayers: false, keep });
             this.clearUndo();
             this.renderHistory();
             this.renderSelectionList();
-            this.setStatus(`New ${w} × ${h} canvas. Load an image as a layer, paint, or select and generate.`);
+            this.setStatus(`New ${w} × ${h} canvas.${keep && keep.length ? ` The reference layer${keep.length > 1 ? "s stay" : " stays"}.` : ""} Load an image as a layer, paint, or select and generate.`);
         } catch (err) {
             console.error(err);
             this.setStatus("Could not create the canvas: " + (err.message || err));

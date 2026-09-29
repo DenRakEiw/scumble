@@ -151,9 +151,10 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 #gen-dialog::backdrop { background: var(--sc-backdrop, rgba(0, 0, 0, 0.55)); }
 #gen-dialog form { padding: 16px 20px 14px; display: flex; flex-direction: column; gap: 12px; }
 #gen-dialog h2 { margin: 0 0 4px; font-size: 16px; color: var(--sc-accent, #f0c674); }
-#gen-dialog button { background: var(--sc-btn, #2d2d2d); color: var(--sc-fg, #ddd); border: 1px solid var(--sc-border, #444); border-radius: var(--sc-radius, 3px); padding: 4px 12px; font: inherit; cursor: pointer; }
-#gen-dialog button:hover { background: var(--sc-btn-hover, #3a3a3a); }
-#gen-dialog button:disabled { opacity: 0.5; cursor: default; }
+/* the prompt field's chips, bar and picker rows are buttons with their own look (inpaint_canvas.js STYLE) */
+#gen-dialog button:not([class*="ipc-"]) { background: var(--sc-btn, #2d2d2d); color: var(--sc-fg, #ddd); border: 1px solid var(--sc-border, #444); border-radius: var(--sc-radius, 3px); padding: 4px 12px; font: inherit; cursor: pointer; }
+#gen-dialog button:not([class*="ipc-"]):hover { background: var(--sc-btn-hover, #3a3a3a); }
+#gen-dialog button:not([class*="ipc-"]):disabled { opacity: 0.5; cursor: default; }
 #gen-dialog #gen-go { background: var(--sc-go, #2f6b3f); border-color: var(--sc-go, #3d8a52); }
 #gen-dialog #gen-go:hover { background: var(--sc-go, #37804a); }
 #gen-dialog .shell-field { display: flex; gap: 8px; align-items: center; }
@@ -168,7 +169,6 @@ body.shell-canvas-only #editor-host { position: fixed !important; inset: 0 !impo
 #up-dialog #up-go:hover { background: var(--sc-go, #37804a); }
 #up-dialog .shell-field { display: flex; gap: 8px; align-items: center; }
 #gen-dialog .gen-wide { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
-#gen-dialog textarea { width: 100%; box-sizing: border-box; font: inherit; resize: vertical; background: var(--sc-field, #1b1b1b); color: var(--sc-fg, #eee); border: 1px solid var(--sc-line, #4a4a4a); border-radius: var(--sc-radius, 4px); padding: 6px 8px; }
 #gen-dialog .shell-check { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 #gen-dialog .shell-note, #gen-dialog .shell-help { white-space: normal; overflow: visible; text-overflow: clip; }
 #gen-dialog #gen-note { color: var(--sc-muted, #9a9a9a); }

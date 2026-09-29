@@ -248,13 +248,55 @@ async function main() {
         check("kind edit: no word about a mask in the prompt", !/mask/i.test(s2.images[0].prompt) && s2.images[0].prompt === `${EDIT_PREFIX} a red door ${REF_ONE}`, s2.images[0].prompt);
     });
 
-    // ---- 3. text (Generate new): no pictures, the aspect preset, the tier from the asked size ----
+    // ---- 3. text (Generate new): the references alone (none without), the aspect preset, the tier from the asked size ----
     await section("3. text (generate)", async () => {
         const v = variant("nano_banana_2");
         const run = async (extra) => { const s = fakeServer(); await openrouter.generate(textReq(v, extra), ctxFor(s)); return s.images[0]; };
-        const b = await run({ aspect: "16:9", width: 2048, height: 1152, references: [pngOf(10, 10, 40, "IGNORED")] });
-        check("a text run sends no input_references, even when the request carries references", !("input_references" in b), Object.keys(b).join(","));
+        const b = await run({ aspect: "16:9", width: 2048, height: 1152 });
+        check("a text run without references sends no input_references", !("input_references" in b), Object.keys(b).join(","));
         check("a text run: the prompt as it is, the asked aspect (a preset), the tier of the asked long side", b.prompt === "a lighthouse at dusk" && b.aspect_ratio === "16:9" && b.resolution === "2K" && b.n === 1 && b.model === "google/gemini-3.1-flash-image", short(b));
+        check("a text run without references: the body as before 26f, key for key", JSON.stringify(b) === JSON.stringify({ model: "google/gemini-3.1-flash-image", prompt: "a lighthouse at dusk", resolution: "2K", aspect_ratio: "16:9", n: 1, provider: { ignore: EXPECT_IGNORE } }), short(b));
+
+        // with references (26f): the references alone in input_references, in order, no crop and no mask, the asked
+        // aspect, and the sentence for them after the prompt (a request that also carries a picture and a mask sends neither)
+        const refs = [pngOf(800, 600, 70, "REF1"), pngOf(600, 800, 70, "REF2")];
+        const sr = fakeServer();
+        const tr = textReq(v, { aspect: "16:9", width: 2048, height: 1152, references: refs, image: pngOf(64, 64, 40, "IGNORED"), mask: pngOf(64, 64, 40, "IGNOREDMASK") });
+        const outR = await openrouter.generate(tr, ctxFor(sr));
+        const br = sr.images[0];
+        const picsR = refsOf(br);
+        const postsR = sr.calls.filter((c) => c.method === "POST");
+        check("a text run with 2 references: one POST to <base>/api/v1/images (the same endpoint)", postsR.length === 1 && postsR[0].url === BASE + "/api/v1/images", sr.calls.map((c) => c.method + " " + c.url).join(", "));
+        check("a text run with 2 references: input_references are the two references in order, no crop, no mask", !!br && picsR.length === 2 && picsR[0].bytes.equals(refs[0]) && picsR[1].bytes.equals(refs[1]) && picsR.every((p) => p.mime === "image/png"), picsR.map((p) => p && tagOf(p.bytes)).join(", "));
+        check("a text run with 2 references: the prompt, then the sentence for them, no edit sentence", !!br && br.prompt === "a lighthouse at dusk Images 1 and 2 are reference images." && !/\bEdit\b/.test(br.prompt), br && br.prompt);
+        check("a text run with 2 references: the asked aspect, the tier of the asked size, the text model", !!br && br.aspect_ratio === "16:9" && br.resolution === "2K" && br.model === v.model && br.n === 1, short(br && { ...br, input_references: picsR.length }));
+        const { input_references: _ir, ...restR } = br || {};
+        check("a text run with 2 references: the body without references plus input_references and the sentence, nothing else", eq({ ...restR, prompt: b.prompt }, b), short(restR));
+        check("a text run with 2 references: info.pictures names the references", eq(outR.info.pictures, ["reference 1 png", "reference 2 png"]), short(outR.info.pictures));
+        const b1 = await run({ aspect: "16:9", width: 2048, height: 1152, references: [refs[0]] });
+        check("a text run with one reference: the singular sentence, one picture", b1.prompt === "a lighthouse at dusk Image 1 is a reference image." && refsOf(b1).length === 1 && refsOf(b1)[0].bytes.equals(refs[0]), b1.prompt);
+        const bn = await run({ aspect: "16:9", width: 2048, height: 1152, references: refs, refName: "<image{n}>" });
+        check("a text run: the request's refName names the pictures in the sentence", bn.prompt === "a lighthouse at dusk <image1> and <image2> are reference images.", bn.prompt);
+        const tl = openrouter.textLayout(tr);
+        check("textLayout: input_references[0] and [1], numbered 1 and 2, role reference, max = options.max_images (14), no drop", eq(tl.pictures, [{ role: "reference", ref: 0, field: "input_references[0]", n: 1 }, { role: "reference", ref: 1, field: "input_references[1]", n: 2 }]) && tl.max === 14 && tl.drops === null && tl.style === false, short(tl));
+        const tl0 = openrouter.textLayout({ kind: "text", references: [refs[0]], options: {} });
+        check("textLayout without max_images: 16, as the edit layout's", tl0.max === 16 && openrouter.layout({ kind: "edit", references: [], options: {} }).max === 16 && tl0.pictures.length === 1, short(tl0));
+        check("textLayout without references: no pictures", eq(openrouter.textLayout(textReq(v)).pictures, []), short(openrouter.textLayout(textReq(v))));
+        const three = { model: "test/three", options: { accepts: [], max_images: 3 } };
+        const tiny = (n) => Array.from({ length: n }, (_, i) => pngOf(10, 10, 40, "R" + i));
+        const sc = fakeServer();
+        const ec = await throws(() => openrouter.generate(textReq(three, { references: tiny(4) }), ctxFor(sc)));
+        check("a text run past max_images (4 on 3): refused before any call, in the words for a new image", !!ec && /test\/three takes at most 3 reference pictures for a new image; this run has 4: hide reference layers\./.test(ec) && sc.calls.length === 0, ec);
+        const sc3 = fakeServer();
+        await openrouter.generate(textReq(three, { references: tiny(3) }), ctxFor(sc3));
+        check("three references on max_images 3 go out (the crop's slot is a reference's)", sc3.images.length === 1 && refsOf(sc3.images[0]).length === 3, String(sc3.images.length));
+        const sq = fakeServer();
+        const eq1 = await throws(() => openrouter.generate(textReq(variant("seedream_5_lite"), { references: [pngOf(100, 1700, 64, "TALL")] }), ctxFor(sq)));
+        check("a text run's reference steeper than max_ratio: refused before any call, naming the reference layer only", !!eq1 && /reference 1 is 100 × 1700\. Use a less narrow reference layer\./.test(eq1) && sq.calls.length === 0, eq1);
+        const MAXB = openrouter.MAX_INLINE, RB = Math.floor(MAXB * 3 / 4);
+        const sb2 = fakeServer();
+        const eb = await throws(() => openrouter.generate(textReq(v, { references: [pngOf(2048, 1536, Math.round(1.2 * RB), "ALPHABIG")] }), ctxFor(sb2)));
+        check("a text run's references over the inline budget: refused before any call, no Highres fix or Original in the remedy", !!eb && /more than the 18 MB/.test(eb) && /Use fewer or smaller reference layers\./.test(eb) && !/Highres|Original/.test(eb) && sb2.calls.length === 0, eb);
         const b2 = await run({ aspect: "7:3", width: 2100, height: 900 });
         check("an aspect that is no preset takes the closest one (7:3 -> 21:9)", b2.aspect_ratio === "21:9", b2.aspect_ratio);
         const b3 = await run({ aspect: null, width: 2000, height: 1000 });
@@ -686,9 +728,22 @@ async function main() {
             if (textExtra.length) bad.push(r.id + " text: keys outside accepts: " + textExtra.join(","));
             if (tb && accepts.includes("aspect_ratio") && tb.aspect_ratio !== "1:1") bad.push(r.id + " text: aspect_ratio " + tb.aspect_ratio);
             if (tb && ("input_references" in tb)) bad.push(r.id + " text: input_references");
+            // a variant that edits takes references on a text run too (26f): the two alone, accepted keys only
+            if (v.edit !== false) {
+                const t2 = fakeServer();
+                const refs2 = [pngOf(640, 480, 70, "REF1"), pngOf(480, 640, 70, "REF2")];
+                await openrouter.generate(textReq(v, { params: tparams, aspect: "1:1", width: 1024, height: 1024, references: refs2 }), ctxFor(t2));
+                const tb2 = t2.images[0];
+                const extra2 = tb2 ? Object.keys(tb2).filter((k) => !allowed(k, "edit")) : ["no request"];
+                if (extra2.length) bad.push(r.id + " text with references: keys outside accepts: " + extra2.join(","));
+                const got2 = tb2 ? refsOf(tb2) : [];
+                if (got2.length !== 2 || !got2[0].bytes.equals(refs2[0]) || !got2[1].bytes.equals(refs2[1])) bad.push(r.id + " text with references: " + got2.length + " pictures");
+                if (tb2 && tb2.prompt !== "a lighthouse at dusk Images 1 and 2 are reference images.") bad.push(r.id + " text with references: prompt " + tb2.prompt);
+                if (tb2 && tb && tb2.aspect_ratio !== tb.aspect_ratio) bad.push(r.id + " text with references: aspect_ratio " + tb2.aspect_ratio);
+            }
             texts++;
         }
-        check("every variant: openrouter last, the home default kept, toapis first where present, a text shape, settings within accepts, ratios, max_images, tiers, the notes; each builds an edit and a text request with accepted keys only", !bad.length, bad.join("; ") || `${served.length} recipes, ${edits} edits, ${texts} text runs`);
+        check("every variant: openrouter last, the home default kept, toapis first where present, a text shape, settings within accepts, ratios, max_images, tiers, the notes; each builds an edit and a text request with accepted keys only, and one that edits a text request with its two references alone", !bad.length, bad.join("; ") || `${served.length} recipes, ${edits} edits, ${texts} text runs`);
         const krea = served.find((r) => r.id === "krea_2"), recraft = served.find((r) => r.id === "recraft_v4");
         check("Krea 2 and Recraft V4 are text to image only on OpenRouter (edit false)", !!krea && krea.providers.openrouter.edit === false && !!recraft && recraft.providers.openrouter.edit === false, short({ krea: krea && krea.providers.openrouter.edit, recraft: recraft && recraft.providers.openrouter.edit }));
     });

@@ -13,7 +13,9 @@
 //
 // Every image is a task: no base64 anywhere, so crop, mask and references are uploaded first and become
 // public files.toapis.com URLs. Results are downloaded at once and without the key.
-// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3), textLayout(req) the same for a new image
+// with reference layers (Generate new, 26f): the same endpoint, model and channel, the references alone in the
+// channel's image field.
 //
 // A recipe variant describes the model with `options`:
 //   channels   { <Channel row value>: overrides }   normal, VIP and official are different model ids
@@ -139,7 +141,10 @@ function channelOf(req) {
     return { name: name || "default", ...ch };
 }
 
-/** How many images a channel takes (its max_images, crop included), or null: the one reading the layout and the builder share. */
+/**
+ * How many images a channel takes (its max_images, crop included; on a new image every slot is a reference's), or
+ * null: the one reading the layouts and the builder share.
+ */
 function capOf(ch) {
     return +ch.max_images > 0 ? +ch.max_images : null;
 }
@@ -227,31 +232,37 @@ const mb = (n) => (Math.ceil(n / 100000) / 10).toFixed(1);   // decimal MB, roun
  * goes out. A crop over the limit is re-encoded as JPEG (ctx.toJpeg, Electron's nativeImage in the app), and
  * so is a reference with no transparent pixel (ctx.opaque; the Original copy of the crop is one); a reference
  * with transparency keeps its PNG (a JPEG would flatten the cut-out) and the mask always does (its alpha is
- * the mask).
+ * the mask). A new image (kind "text", Generate new) has no crop and no mask: its files are the references alone,
+ * held to the same ratio, size and count rules; with none it uploads nothing, as before 26f.
  */
 async function prepareFiles(req, ctx, ch, stamp) {
     const files = [];
-    if (req.kind === "text") return { images: files, mask: null };
-    if (!req.image || !req.image.length) throw new Error("ToAPIs: the run has no crop.");
+    const text = req.kind === "text";
+    if (!text && (!req.image || !req.image.length)) throw new Error("ToAPIs: the run has no crop.");
     const refs = req.references || [];
     if (ch.max_ratio) {
         const r = +ch.max_ratio;
-        if (steeper(+req.width, +req.height, r)) throw new Error(`ToAPIs ${ch.model} takes no image longer than ${r}:1, and the crop is ${req.width} × ${req.height}: select a less elongated area, or a larger one around it.`);
+        // the asked size of a new image is no input picture: only a crop is held to the ratio
+        if (!text && steeper(+req.width, +req.height, r)) throw new Error(`ToAPIs ${ch.model} takes no image longer than ${r}:1, and the crop is ${req.width} × ${req.height}: select a less elongated area, or a larger one around it.`);
         refs.forEach((b, i) => {
             const s = pngSize(b);
             if (s && steeper(s[0], s[1], r)) throw new Error(`ToAPIs ${ch.model} takes no image longer than ${r}:1, and reference ${i + 1} is ${s[0]} × ${s[1]}: crop that reference layer closer to square.`);
         });
     }
-    let crop = { bytes: req.image, mime: "image/png", name: `scumble-${stamp}-crop.png` };
-    if (crop.bytes.length > MAX_UPLOAD && typeof ctx.toJpeg === "function") {
-        const jpeg = await ctx.toJpeg(req.image, 92);
-        if (jpeg && jpeg.length) {
-            ctx.log(`crop ${mb(req.image.length)} MB as PNG, ${mb(jpeg.length)} MB as JPEG`);
-            crop = { bytes: Buffer.from(jpeg), mime: "image/jpeg", name: `scumble-${stamp}-crop.jpg` };
+    if (!text) {
+        let crop = { bytes: req.image, mime: "image/png", name: `scumble-${stamp}-crop.png` };
+        if (crop.bytes.length > MAX_UPLOAD && typeof ctx.toJpeg === "function") {
+            const jpeg = await ctx.toJpeg(req.image, 92);
+            if (jpeg && jpeg.length) {
+                ctx.log(`crop ${mb(req.image.length)} MB as PNG, ${mb(jpeg.length)} MB as JPEG`);
+                crop = { bytes: Buffer.from(jpeg), mime: "image/jpeg", name: `scumble-${stamp}-crop.jpg` };
+            }
         }
+        if (crop.bytes.length > MAX_UPLOAD) throw new Error(`ToAPIs: the crop is ${mb(crop.bytes.length)} MB, ToAPIs takes 10 MB per image: set Highres fix lower.`);
+        files.push(crop);
     }
-    if (crop.bytes.length > MAX_UPLOAD) throw new Error(`ToAPIs: the crop is ${mb(crop.bytes.length)} MB, ToAPIs takes 10 MB per image: set Highres fix lower.`);
-    files.push(crop);
+    // a new image has no Highres fix and no Original: the reference layer itself is the only remedy
+    const remedy = text ? "use a smaller reference layer" : "set Highres fix lower, turn Original off, or use a smaller reference layer";
     for (let i = 0; i < refs.length; i++) {
         const r = refs[i];
         let ref = { bytes: r, mime: "image/png", name: `scumble-${stamp}-ref${i + 1}.png` };
@@ -265,11 +276,15 @@ async function prepareFiles(req, ctx, ch, stamp) {
                 ref = { bytes: Buffer.from(jpeg), mime: "image/jpeg", name: `scumble-${stamp}-ref${i + 1}.jpg` };
             }
         }
-        if (ref.bytes.length > MAX_UPLOAD) throw new Error(`ToAPIs: reference ${i + 1} is ${mb(ref.bytes.length)} MB${transparent ? " (with transparency, so it stays a PNG)" : ""}, ToAPIs takes 10 MB per image: set Highres fix lower, turn Original off, or use a smaller reference layer.`);
+        if (ref.bytes.length > MAX_UPLOAD) throw new Error(`ToAPIs: reference ${i + 1} is ${mb(ref.bytes.length)} MB${transparent ? " (with transparency, so it stays a PNG)" : ""}, ToAPIs takes 10 MB per image: ${remedy}.`);
         files.push(ref);
     }
+    // the safety net behind main's checkPictures, which refuses first with the same count
     const max = capOf(ch);
-    if (max != null && files.length > max) throw new Error(`ToAPIs ${ch.model} takes ${max} image${max > 1 ? "s" : ""}, this run has ${files.length} (the crop and ${files.length - 1} reference${files.length === 2 ? "" : "s"}).`);
+    if (max != null && files.length > max) {
+        if (text) throw new Error(`ToAPIs ${ch.model} takes at most ${max} reference picture${max === 1 ? "" : "s"} for a new image; this run has ${files.length}: hide reference layers.`);
+        throw new Error(`ToAPIs ${ch.model} takes ${max} image${max > 1 ? "s" : ""}, this run has ${files.length} (the crop and ${files.length - 1} reference${files.length === 2 ? "" : "s"}).`);
+    }
     let mask = null;
     if (req.kind === "fill" && ch.mask) {
         if (!req.maskAlpha || !req.maskAlpha.length) throw new Error(`ToAPIs ${ch.model}: the run has no alpha mask.`);
@@ -323,6 +338,20 @@ function layout(req) {
     return layoutOf({
         seq: [["crop", `${F}[0]`], ...refRoles(req).map(([role, i]) => [role, `${F}[${i + 1}]`, i])],
         own: req.kind === "fill" && ch.mask ? [["mask", "mask_url"]] : [],
+        max: capOf(ch),
+    });
+}
+
+/**
+ * A new image with reference layers (kind "text", docs/PLAN_REFS.md 26f): the same endpoint, model and channel as an
+ * edit, so every channel takes them. The references alone fill the channel's image list from its first slot, no
+ * crop and no mask; the cap is the channel's own (the crop's slot becomes a reference slot).
+ */
+function textLayout(req) {
+    const ch = channelOf(req);
+    const F = ch.images || "image_urls";
+    return layoutOf({
+        seq: refRoles(req).map(([role, i]) => [role, `${F}[${i}]`, i]),
         max: capOf(ch),
     });
 }
@@ -448,8 +477,9 @@ module.exports = {
     keyUrl: "https://toapis.com/login?aff=vfR1",
     keyHint: "API key from toapis.com › Console › API keys (the link carries Scumble's referral code)",
     edit: run,
-    generate: run,   // kind "text": no uploads, the same endpoint
+    generate: run,   // kind "text": the same endpoint, the reference layers the only uploads (none without them)
     layout,
+    textLayout,
 
     /** GET /v1/balance, free: what the key has left, in USD (1 USD = 200 credits). */
     async balance(ctx) {

@@ -411,6 +411,74 @@ async function main() {
         check("a text-only route refuses an edit, an edit-only route a text run", /makes pictures from the prompt alone: use Generate new/.test(e1.err || "") && /needs a picture: use Generate/.test(e2.err || "") && e1.s.calls.length + e2.s.calls.length === 0, short([e1.err, e2.err]));
     });
 
+    // ---- 4b. Generate new with reference layers (26f) ----
+    await section("4b. text runs with references", async () => {
+        const T1 = pngOf(512, 512, 64, "TREF1"), T2 = pngOf(600, 400, 64, "TREF2");
+        const refsRoute = (v) => (v.text.refs && v.text.refs.model) || v.text.model;
+        const runRefs = async (id, extra = {}) => { const v = variant(id); return runText(v, textReq(v, { model: refsRoute(v), references: [T1, T2], ...extra })); };
+        const run0 = async (id, extra = {}) => { const v = variant(id); return runText(v, textReq(v, extra)); };
+        const without = (o, ...keys) => { const c = { ...o }; for (const k of keys) delete c[k]; return c; };
+        const tags = (list) => (list || []).map((s) => tagOf(unb64(s)));
+        const bad = [];
+        const schema = (x, route) => { const p = x.body ? validate(schemaOf(route), x.body) : ["no body"]; if (p.length) bad.push(`${route}: ${p.slice(0, 3).join("; ")}`); };
+
+        let x = await runRefs("flux2_pro", { width: 3000, height: 2000 });
+        let y = await run0("flux2_pro", { width: 3000, height: 2000 });
+        check("FLUX.2 [pro] with 2 references: the same route, input_image and input_image_2 the references (no crop), the text size (long side 1440), the prompt and the reference sentence; the rest as without references", !x.err && x.s.posts[0].route === "text-to-image/flux-2-pro" && tagOf(unb64(x.body.input_image)) === "TREF1" && tagOf(unb64(x.body.input_image_2)) === "TREF2" && !("input_image_3" in x.body) && x.body.width === 1440 && x.body.height === 960 && x.body.prompt === "a lighthouse at dusk Images 1 and 2 are reference images." && y.body.prompt === "a lighthouse at dusk" && eq(without(x.body, "input_image", "input_image_2", "prompt"), without(y.body, "prompt")) && x.out.info.pictures === 2 && y.out.info.pictures === 0, x.err || short({ ...x.body, input_image: tagOf(unb64(x.body.input_image)), input_image_2: undefined }));
+        schema(x, "text-to-image/flux-2-pro");
+        x = await runRefs("flux2_flex", { width: 1000, height: 1000, references: [T1] });
+        check("FLUX.2 [flex] with 1 reference: input_image alone, 1008 x 1008, one reference sentence", !x.err && tagOf(unb64(x.body.input_image)) === "TREF1" && !("input_image_2" in x.body) && x.body.width === 1008 && x.body.height === 1008 && x.body.prompt === "a lighthouse at dusk Image 1 is a reference image.", x.err || short(x.body.prompt));
+        schema(x, "text-to-image/flux-2-flex");
+
+        x = await runRefs("seedream_5_pro", { width: 2048, height: 1152, aspect: "16:9" });
+        y = await runRefs("seedream_5_pro", { width: 1536, height: 1536, aspect: "1:1" });
+        check("Seedream 5.0 Pro with 2 references: the -edit route, reference_images the references (no crop), the asked 16:9 preset and the tier of the long side (1.5k for 1536), the reference sentence", !x.err && x.s.posts[0].route === "text-to-image/seedream-v5-pro-edit" && eq(tags(x.body.reference_images), ["TREF1", "TREF2"]) && x.body.aspect_ratio === "widescreen_16_9" && x.body.resolution === "2k" && y.body.aspect_ratio === "square_1_1" && y.body.resolution === "1.5k" && x.body.prompt === "a lighthouse at dusk Images 1 and 2 are reference images." && x.body.seed === 7 && x.out.info.pictures === 2 && x.out.info.aspect === "16:9", x.err || short({ ...x.body, reference_images: tags(x.body.reference_images) }));
+        schema(x, "text-to-image/seedream-v5-pro-edit");
+        schema(y, "text-to-image/seedream-v5-pro-edit");
+        x = await runRefs("seedream_5_lite", { width: 2048, height: 1152 });
+        check("Seedream 5.0 Lite with 2 references: the -edit route, the references, the preset, no resolution (the route has no tiers), the safety checker row", !x.err && x.s.posts[0].route === "text-to-image/seedream-v5-lite-edit" && eq(tags(x.body.reference_images), ["TREF1", "TREF2"]) && x.body.aspect_ratio === "widescreen_16_9" && !("resolution" in x.body) && x.body.enable_safety_checker === true, x.err || short({ ...x.body, reference_images: undefined }));
+        schema(x, "text-to-image/seedream-v5-lite-edit");
+        x = await runRefs("seedream_4_5", { width: 1024, height: 1536 });
+        check("Seedream 4.5 with 2 references: the -edit route, the 2:3 preset", !x.err && x.s.posts[0].route === "text-to-image/seedream-v4-5-edit" && x.body.aspect_ratio === "portrait_2_3" && x.body.reference_images.length === 2, x.err || short(x.body.aspect_ratio));
+        schema(x, "text-to-image/seedream-v4-5-edit");
+
+        x = await runRefs("gpt_image_2_5_flare", { width: 2048, height: 1152, aspect: "16:9" });
+        check("GPT Image 2.5 with 2 references: the -edit route, the preset of the asked 16:9 and the 2k tier (never the edit's auto at 1k), the variant, the references, the reference sentence", !x.err && x.s.posts[0].route === "text-to-image/gpt-image-2-5-edit" && x.body.aspect_ratio === "widescreen_16_9" && x.body.resolution === "2k" && x.body.variant === "flare" && eq(tags(x.body.reference_images), ["TREF1", "TREF2"]) && x.body.prompt === "a lighthouse at dusk Images 1 and 2 are reference images." && x.body.num_images === 1 && x.body.output_format === "png" && x.out.info.aspect === "16:9", x.err || short({ ...x.body, reference_images: undefined }));
+        schema(x, "text-to-image/gpt-image-2-5-edit");
+        x = await runRefs("gpt_image_2", { width: 3000, height: 2000 });
+        y = await runRefs("gpt_image_2", { width: 1024, height: 1024 });
+        check("GPT Image 2 with 2 references: the -edit route, 4k for 3000 and 1k for 1024 (the tier of the asked size), the 3:2 preset, quality and moderation", !x.err && x.s.posts[0].route === "text-to-image/gpt-image-2-edit" && x.body.resolution === "4k" && x.body.aspect_ratio === "standard_3_2" && y.body.resolution === "1k" && y.body.aspect_ratio === "square_1_1" && x.body.quality === "high" && x.body.moderation === "auto" && x.body.reference_images.length === 2, x.err || short([x.body.resolution, y.body.resolution]));
+        schema(x, "text-to-image/gpt-image-2-edit");
+        check("every text body with references holds against its route's published schema", !bad.length, bad.join(" | "));
+
+        // the layouts: the references alone from the first field on, the route's maxImages as the cap
+        const refsLib = require(path.join(ROOT, "electron", "main", "providers", "refs.js"));
+        const lay = (route, n = 2) => { const req = { provider: "magnific", model: route, kind: "text", references: Array.from({ length: n }, () => T1), original: 0 }; return refsLib.checkLayout(mag.textLayout(req), req); };
+        const fields = (l) => l.pictures.map((p) => [p.role, p.ref, p.field, p.n]);
+        check("textLayout: FLUX.2 input_image, input_image_2 (max 4); Seedream and GPT reference_images[0], [1] (max 10 and 16); no crop", eq(fields(lay("text-to-image/flux-2-pro")), [["reference", 0, "input_image", 1], ["reference", 1, "input_image_2", 2]]) && lay("text-to-image/flux-2-pro").max === 4 && eq(fields(lay("text-to-image/seedream-v5-pro-edit")), [["reference", 0, "reference_images[0]", 1], ["reference", 1, "reference_images[1]", 2]]) && lay("text-to-image/seedream-v5-pro-edit").max === 10 && lay("text-to-image/gpt-image-2-5-edit").max === 16, short(fields(lay("text-to-image/flux-2-pro"))));
+        const dropped = ["mystic", "text-to-image/z-image", "text-to-image/seedream-v5-pro", "text-to-image/gpt-image-2", "ideogram-image-edit", "image-expand/flux-pro"].map((r) => lay(r));
+        check("textLayout: a route without refs (the text-only routes, Ideogram, Image Expand) declares the drop, no picture", dropped.every((l) => l.drops === "this model takes no reference images for a new image" && !l.pictures.length), short(dropped[0]));
+        const eUp = await throws(() => mag.textLayout({ model: "image-upscaler", kind: "text", references: [T1] }));
+        check("textLayout of an upscaler refuses in run()'s words", /is an upscaler; run it with Upscale/.test(eUp || ""), eUp);
+        const withRefs = Object.entries(ROUTES).filter(([, R]) => R.refs);
+        check("refs only on routes with a layout, each a FLUX.2 route or an -edit route", withRefs.length === 7 && withRefs.every(([route, R]) => R.edit && typeof mag._dialects[R.dialect].layout === "function" && (/-edit$/.test(route) || R.dialect === "flux2")), short(withRefs.map(([r]) => r)));
+
+        // refusals before anything is sent, and a route that takes none
+        x = await runRefs("flux2_pro", { references: [T1, T2, T1, T2, T1] });
+        check("FLUX.2 with 5 references: refused in words, nothing sent", x.err === "FLUX.2 [pro] on Magnific takes at most 4 reference pictures for a new image; this run has 5: hide reference layers." && x.s.calls.length === 0, x.err);
+        x = await runRefs("seedream_5_pro", { references: [T1, pngOf(200, 300, 64, "SMALL")] });
+        check("a Seedream reference under 256 x 256 on a new image: refused, nothing sent", x.err === "Seedream 5.0 Pro on Magnific: the reference 2 is 200 × 300, under the 256 × 256 Seedream takes. Use a larger reference layer or hide it." && x.s.calls.length === 0, x.err);
+        x = await runRefs("gpt_image_2", { references: [pngOf(1024, 1024, 21 * 1024 * 1024, "BIG")] });
+        const xT = await runText(variant("gpt_image_2"), textReq(variant("gpt_image_2"), { model: "text-to-image/gpt-image-2-edit", references: [pngOf(1024, 1024, 21 * 1024 * 1024, "BIG")] }), { opaque: () => false });
+        check("a reference over the route's bytes: an opaque one goes as JPEG, one with transparency is refused without the edit's advice", !x.err && tagOf(unb64(x.body.reference_images[0])) === "JPEG" && /the reference 1 is 21\.0 MB, more than the 20 MB a picture may have \(it has transparency, so it stays PNG\)\. Use a smaller reference layer\.$/.test(xT.err || "") && xT.s.calls.length === 0, x.err || xT.err);
+        const m = variant("mystic");
+        x = await runText(m, textReq(m, { references: [T1, T2] }));
+        y = await runText(m, textReq(m));
+        check("a text-only route called directly with 2 references: the prompt alone, the body as without them", !x.err && eq(x.body, y.body) && x.out.info.pictures === 0, x.err || short(x.body));
+        x = await runRefs("seedream_5_pro", { references: [] });
+        check("an -edit route asked for a new image without references still refuses (the renderer then names the text route)", /needs a picture: use Generate/.test(x.err || "") && x.s.calls.length === 0, x.err);
+    });
+
     // ---- 5. Ideogram ----
     await section("5. Ideogram", async () => {
         const v = variant("ideogram_inpaint");
@@ -617,13 +685,22 @@ async function main() {
                 const tacc = new Set(mag._routes[v.text.model].accepts || []);
                 for (const k of [...(v.text.settings || []).map((s) => s.key), ...Object.keys(v.text.fixed || {})]) if (!tacc.has(k)) bad.push(`${id}: ${k} is not accepted by ${v.text.model}`);
             }
+            // Generate new with reference layers (26f): text.refs names a route marked refs (its own text route for
+            // FLUX.2, the -edit route for the others), and the text shape's rows and fixed values reach it too
+            if (v.text && v.text.refs) {
+                const rr = v.text.refs.model || v.text.model, RR = mag._routes[rr];
+                if (!RR || !RR.refs) bad.push(`${id}: text.refs goes to ${rr}, which takes no reference pictures for a new image`);
+                else for (const k of [...(v.text.settings || []).map((s) => s.key), ...Object.keys(v.text.fixed || {})]) if (!(RR.accepts || []).includes(k)) bad.push(`${id}: ${k} is not accepted by ${rr}`);
+            } else if (v.text && (mag._routes[v.text.model] || {}).refs) bad.push(`${id}: ${v.text.model} takes reference pictures, and the variant has no text.refs`);
             const slots = (v.settings || []).map((s) => s.index);
             if (new Set(slots).size !== slots.length || slots.some((i) => !(i >= 1 && i <= 8))) bad.push(`${id}: slots ${slots}`);
             // the crop is widened to the presets only where an edit sends one (not GPT Image 2.5's auto, not a text-only route)
             const want = v.edit !== false && R.aspects && !R.auto ? Object.keys(R.aspects) : [];
             if (!eq(v.limits.aspects, want)) bad.push(`${id}: limits.aspects ${v.limits.aspects} against ${want}`);
         }
-        check("each variant: last, the default kept, Also on Magnific, the note's opening and privacy sentence, a text shape of a text route, an edit route, every key accepted, one slot each, the route's presets as limits.aspects", !bad.length, bad.join(" | "));
+        check("each variant: last, the default kept, Also on Magnific, the note's opening and privacy sentence, a text shape of a text route, an edit route, every key accepted, one slot each, the route's presets as limits.aspects; text.refs on a refs route that accepts the text rows, and on every variant whose text route takes references", !bad.length, bad.join(" | "));
+        const withTextRefs = served.filter((id) => { const v = recipes.find((x) => x.id === id).providers.magnific; return v.text && v.text.refs; }).sort();
+        check("Generate new with reference layers on the eight FLUX.2, Seedream and GPT Image variants (not Mystic, not Z-Image)", eq(withTextRefs, ["flux2_flex", "flux2_pro", "gpt_image_2", "gpt_image_2_5_flare", "gpt_image_2_5_sunburst", "seedream_4_5", "seedream_5_lite", "seedream_5_pro"]), withTextRefs.join(", "));
         const lim = (id) => recipes.find((x) => x.id === id).providers.magnific.limits;
         check("the expand limits from the docs' output sizes", lim("expand_flux_pro").pixels === 1600000 && lim("expand_ideogram").step === 32 && lim("expand_ideogram").pixels === 1048576 && lim("expand_seedream_4_5").minPixels === 3686400 && lim("expand_seedream_4_5").max === 4096 && lim("flux2_flex").max === 1920 && lim("flux2_pro").max === 1440, short([lim("expand_flux_pro"), lim("expand_ideogram")]));
         check("no background row on GPT Image 2 (its route has no transparency), one on 2.5", !variant("gpt_image_2").settings.some((s) => s.key === "background") && variant("gpt_image_2_5_flare").settings.some((s) => s.key === "background"));
@@ -684,6 +761,34 @@ async function main() {
             y = await via("ideogram-image-edit", "fill", 1, 0, "in the style of {@ref:0}");
             check("Ideogram with a marker: a style reference has no number, refused", /style references, which have no number/.test(y.err || "") && y.calls === 0, y.err);
         } finally { index.PROVIDERS.magnific.edit = keep; }
+
+        // a text run with references (26f): laid out by textLayout, held to its cap, the markers named from 1
+        const keepGen = index.PROVIDERS.magnific.generate;
+        const gen = [];
+        index.PROVIDERS.magnific.generate = async (req) => { gen.push(req); return { bytes: RESULT, mime: "image/png", info: {} }; };
+        const viaText = async (model, n, prompt = "a lighthouse", extra = {}) => {
+            gen.length = 0;
+            const references = Array.from({ length: n }, (_, i) => new Uint8Array(pngOf(512, 512, 64, "R" + i)));
+            let out = null, err = null;
+            try { out = await index.edit({ provider: "magnific", kind: "text", model, prompt, negative: "", image: null, mask: null, references, original: 0, width: 1024, height: 1024, params: {}, ...extra }); } catch (e) { err = String(e.message || e); }
+            return { out, err, calls: gen.length, req: gen[0] };
+        };
+        try {
+            let t = await viaText("text-to-image/seedream-v5-pro-edit", 2, "the coat of {@ref:1} on the person of {@ref:0}");
+            check("Seedream 5.0 Pro -edit with 2 references: both reach the adapter, the markers become image 2 and image 1, no note", !t.err && t.calls === 1 && t.req.references.length === 2 && t.req.prompt === "the coat of image 2 on the person of image 1" && eq(t.out.notes, []) && eq(t.out.refs, [{ ref: 1, name: "image 2" }, { ref: 0, name: "image 1" }]), t.err || short(t.out && { prompt: t.req.prompt, refs: t.out.refs }));
+            t = await viaText("text-to-image/flux-2-pro", 5);
+            check("FLUX.2 [pro] with 5 references: refused in index.js by the text layout's max 4, before the adapter", t.err === "Magnific text-to-image/flux-2-pro takes at most 4 reference pictures for a new image; this run has 5: hide reference layers." && t.calls === 0, t.err);
+            t = await viaText("text-to-image/flux-2-pro", 3, "a lighthouse", { refsMax: 2 });
+            check("... and a variant's text.refs.max (refsMax 2) lowers it", t.err === "Magnific text-to-image/flux-2-pro takes at most 2 reference pictures for a new image; this run has 3: hide reference layers." && t.calls === 0, t.err);
+            t = await viaText("mystic", 2);
+            check("Mystic with 2 references: the drop, the prompt alone to the adapter, a note", !t.err && t.calls === 1 && t.req.references.length === 0 && eq(t.out.notes, ["Magnific mystic: this model takes no reference images for a new image; 2 reference layers not sent."]), t.err || short(t.out && t.out.notes));
+            t = await viaText("mystic", 2, "the coat of {@ref:0}");
+            check("Mystic with a marker: refused before the adapter", /Magnific mystic: this model takes no reference images for a new image, so the prompt cannot name a reference image/.test(t.err || "") && t.calls === 0, t.err);
+            t = await viaText("mystic", 0);
+            check("Mystic without references: the request as before, no note", !t.err && t.calls === 1 && t.req.references.length === 0 && eq(t.out.notes, []), t.err);
+            const l = index.layout({ provider: "magnific", model: "text-to-image/gpt-image-2-edit", kind: "text", count: 2, original: 1 });
+            check("layout of a text shape on a refs route: the references numbered from 1 in reference_images, the names, no Original on a new image, max 16", eq(l.pictures.map((p) => p.field), ["reference_images[0]", "reference_images[1]"]) && eq(l.names, ["image 1", "image 2"]) && l.max === 16 && l.sent === 2 && !l.over && !l.drops, short(l));
+        } finally { index.PROVIDERS.magnific.generate = keepGen; }
     });
 
     // ---- 13. the whole run ----

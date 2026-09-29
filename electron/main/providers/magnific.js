@@ -28,8 +28,10 @@
 // `accepts` names its key; `webhook_url` and `filter_nsfw` are never sent.
 //
 // A recipe variant names the route in `model` (the path after /v1/ai/), and for Generate new the text route in
-// `text.model`; an upscaler names the factor's form in `options.factor`: "int" (precision, the number) or "x" (creative,
-// "4x").
+// `text.model`, for Generate new with reference layers the route that takes them in `text.refs.model` (the `-edit`
+// route; FLUX.2's routes take them as they are): a route marked `refs` sends the references alone, no crop, at the
+// asked shape (26f); an upscaler names the factor's form in `options.factor`: "int" (precision, the number) or "x"
+// (creative, "4x").
 //
 // The host is https://api.magnific.com, never a URL from a recipe; settings.magnific.base may name a loopback mock for
 // the tests, and then only a key that starts with "test-" goes there, while such a key never goes to Magnific.
@@ -77,8 +79,10 @@ const TIERS = Object.freeze({ "1k": 1024, "2k": 2048, "4k": 4096 });
 
 // ---- the routes ------------------------------------------------------------------------------------------------
 // label: the words of a refusal; dialect: DIALECTS below; edit / text / fill / upscale: what the route does (fill: it
-// needs the selection as a mask); maxImages / maxBytes: the pictures it takes (crop first); maxSide: FLUX's side;
-// aspects / tiers: its presets; accepts: the settings keys it takes; seedMax: the largest seed, null for none.
+// needs the selection as a mask); refs: it makes a new image from the prompt and reference pictures (Generate new
+// with reference layers); maxImages / maxBytes: the pictures it takes (crop first; a new image's references alone);
+// maxSide: FLUX's side; aspects / tiers: its presets; accepts: the settings keys it takes; seedMax: the largest seed,
+// null for none.
 
 const ROUTES = Object.freeze({
     "image-upscaler-precision-v2": { label: "Magnific Precision", dialect: "upscale", upscale: true },
@@ -87,17 +91,17 @@ const ROUTES = Object.freeze({
     "image-expand/flux-pro": { label: "FLUX Pro Expand on Magnific", dialect: "expand", edit: true, fill: true, minKept: EXPAND_FLUX_MIN_SIDE, maxKeptPixels: EXPAND_FLUX_MAX_PIXELS, seedMax: null, accepts: [], fit: "stretch" },
     "image-expand/ideogram": { label: "Ideogram Expand on Magnific", dialect: "expand", edit: true, fill: true, seedMax: IDEOGRAM_SEED_MAX, accepts: [], fit: "stretch" },
     "image-expand/seedream-v4-5": { label: "Seedream 4.5 Expand on Magnific", dialect: "expand", edit: true, fill: true, maxBytes: MB10, seedMax: IDEOGRAM_SEED_MAX, accepts: [], fit: "stretch" },
-    "text-to-image/flux-2-pro": { label: "FLUX.2 [pro] on Magnific", dialect: "flux2", edit: true, text: true, maxImages: 4, maxSide: 1440, seedMax: UINT32_MAX, accepts: ["prompt_upsampling"], fit: "stretch" },
-    "text-to-image/flux-2-flex": { label: "FLUX.2 [flex] on Magnific", dialect: "flux2", edit: true, text: true, maxImages: 4, maxSide: 1920, seedMax: UINT32_MAX, accepts: ["guidance", "steps", "safety_tolerance", "prompt_upsampling", "output_format"], fit: "stretch" },
-    "text-to-image/seedream-v5-pro-edit": { label: "Seedream 5.0 Pro on Magnific", dialect: "seedream", edit: true, maxImages: 10, maxBytes: MB10, aspects: SEEDREAM_ASPECTS, seedMax: UINT32_MAX, accepts: ["resolution"] },
+    "text-to-image/flux-2-pro": { label: "FLUX.2 [pro] on Magnific", dialect: "flux2", edit: true, text: true, refs: true, maxImages: 4, maxSide: 1440, seedMax: UINT32_MAX, accepts: ["prompt_upsampling"], fit: "stretch" },
+    "text-to-image/flux-2-flex": { label: "FLUX.2 [flex] on Magnific", dialect: "flux2", edit: true, text: true, refs: true, maxImages: 4, maxSide: 1920, seedMax: UINT32_MAX, accepts: ["guidance", "steps", "safety_tolerance", "prompt_upsampling", "output_format"], fit: "stretch" },
+    "text-to-image/seedream-v5-pro-edit": { label: "Seedream 5.0 Pro on Magnific", dialect: "seedream", edit: true, refs: true, maxImages: 10, maxBytes: MB10, aspects: SEEDREAM_ASPECTS, tiers: { "1.5k": 1536, "2k": 2048 }, seedMax: UINT32_MAX, accepts: ["resolution"] },
     "text-to-image/seedream-v5-pro": { label: "Seedream 5.0 Pro on Magnific", dialect: "seedream", text: true, aspects: SEEDREAM_ASPECTS, tiers: { "1.5k": 1536, "2k": 2048 }, seedMax: UINT32_MAX, accepts: [] },
-    "text-to-image/seedream-v5-lite-edit": { label: "Seedream 5.0 Lite on Magnific", dialect: "seedream", edit: true, maxImages: 5, maxBytes: MB10, aspects: SEEDREAM_ASPECTS, seedMax: UINT32_MAX, accepts: ["enable_safety_checker"] },
+    "text-to-image/seedream-v5-lite-edit": { label: "Seedream 5.0 Lite on Magnific", dialect: "seedream", edit: true, refs: true, maxImages: 5, maxBytes: MB10, aspects: SEEDREAM_ASPECTS, seedMax: UINT32_MAX, accepts: ["enable_safety_checker"] },
     "text-to-image/seedream-v5-lite": { label: "Seedream 5.0 Lite on Magnific", dialect: "seedream", text: true, aspects: SEEDREAM_ASPECTS, seedMax: UINT32_MAX, accepts: ["enable_safety_checker"] },
-    "text-to-image/seedream-v4-5-edit": { label: "Seedream 4.5 on Magnific", dialect: "seedream", edit: true, maxImages: 5, maxBytes: MB10, aspects: SEEDREAM_ASPECTS, seedMax: UINT32_MAX, accepts: ["enable_safety_checker"] },
+    "text-to-image/seedream-v4-5-edit": { label: "Seedream 4.5 on Magnific", dialect: "seedream", edit: true, refs: true, maxImages: 5, maxBytes: MB10, aspects: SEEDREAM_ASPECTS, seedMax: UINT32_MAX, accepts: ["enable_safety_checker"] },
     "text-to-image/seedream-v4-5": { label: "Seedream 4.5 on Magnific", dialect: "seedream", text: true, aspects: SEEDREAM_ASPECTS, seedMax: UINT32_MAX, accepts: ["enable_safety_checker"] },
-    "text-to-image/gpt-image-2-edit": { label: "GPT Image 2 on Magnific", dialect: "gpt", edit: true, maxImages: 16, maxBytes: MIB20, aspects: GPT_ASPECTS, tiers: TIERS, accepts: ["quality", "resolution", "moderation"] },
+    "text-to-image/gpt-image-2-edit": { label: "GPT Image 2 on Magnific", dialect: "gpt", edit: true, refs: true, maxImages: 16, maxBytes: MIB20, aspects: GPT_ASPECTS, tiers: TIERS, accepts: ["quality", "resolution", "moderation"] },
     "text-to-image/gpt-image-2": { label: "GPT Image 2 on Magnific", dialect: "gpt", text: true, aspects: GPT_ASPECTS, tiers: TIERS, accepts: ["quality", "moderation"] },
-    "text-to-image/gpt-image-2-5-edit": { label: "GPT Image 2.5 on Magnific", dialect: "gpt", edit: true, auto: true, maxImages: 16, maxBytes: MIB20, aspects: GPT_ASPECTS, tiers: TIERS, accepts: ["quality", "background", "moderation", "variant"] },
+    "text-to-image/gpt-image-2-5-edit": { label: "GPT Image 2.5 on Magnific", dialect: "gpt", edit: true, auto: true, refs: true, maxImages: 16, maxBytes: MIB20, aspects: GPT_ASPECTS, tiers: TIERS, accepts: ["quality", "background", "moderation", "variant"] },
     "text-to-image/gpt-image-2-5": { label: "GPT Image 2.5 on Magnific", dialect: "gpt", text: true, auto: true, aspects: GPT_ASPECTS, tiers: TIERS, accepts: ["quality", "background", "moderation", "variant"] },
     "text-to-image/z-image": { label: "Z-Image on Magnific", dialect: "zimage", text: true, seedMax: UINT32_MAX, accepts: ["num_inference_steps", "enable_safety_checker", "output_format"] },
     "mystic": { label: "Mystic on Magnific", dialect: "mystic", text: true, aspects: MYSTIC_ASPECTS, tiers: TIERS, accepts: ["model", "engine", "creative_detailing", "fixed_generation"] },
@@ -161,29 +165,37 @@ function sniff(bytes, fallback) {
 const b64 = (buf) => Buffer.from(buf).toString("base64");
 
 /**
- * The pictures of an edit, the crop first, then the references, each held to the route's count and bytes (an opaque
- * picture over the bytes goes as JPEG). Seedream takes no picture under 256 × 256. Throws before any request.
+ * The pictures of an edit, the crop first, then the references; of a new image (kind "text") the references alone;
+ * each held to the route's count and bytes (an opaque picture over the bytes goes as JPEG). Seedream takes no picture
+ * under 256 × 256. Throws before any request.
  */
 async function picturesOf(req, R, ctx) {
     if (R.dialect === "seedream") {
-        const all = [["crop", req.image], ...(req.references || []).map((r, i) => [`reference ${i + 1}`, r])];
+        const text = req.kind === "text";
+        const all = [...(text ? [] : [["crop", req.image]]), ...(req.references || []).map((r, i) => [`reference ${i + 1}`, r])];
         for (const [what, bytes] of all) {
             const s = pngSize(Buffer.from(bytes));
-            if (s && (s[0] < 256 || s[1] < 256)) throw new Error(`${R.label}: the ${what} is ${s[0]} × ${s[1]}, under the 256 × 256 Seedream takes. Use a larger reference layer or turn Original off.`);
+            if (s && (s[0] < 256 || s[1] < 256)) throw new Error(`${R.label}: the ${what} is ${s[0]} × ${s[1]}, under the 256 × 256 Seedream takes. ${text ? "Use a larger reference layer or hide it." : "Use a larger reference layer or turn Original off."}`);
         }
     }
     return picturesFor(req, { max_images: maxOf(R), max_bytes: R.maxBytes || 0 }, { ...ctx, who: R.label }, R.label);
 }
 
-/** How many pictures a route takes (its maxImages, crop included): picturesOf's cap and the layouts' `max`. */
+/** How many pictures a route takes (its maxImages, crop included; a new image's references): picturesOf's cap and the layouts' `max`. */
 const maxOf = (R) => (+R.maxImages > 0 ? +R.maxImages : 1);
 
-/** picturesOf's order as a layout's numbered pictures, picture k (0-based) in `field(k)`: the crop, then the references. */
-const inOrder = (req, field) => [["crop", field(0)], ...refRoles(req).map(([role, i]) => [role, field(i + 1), i])];
+/**
+ * picturesOf's order as a layout's numbered pictures, picture k (0-based) in `field(k)`: the crop, then the
+ * references; a new image's references from field(0) on.
+ */
+const inOrder = (req, field) => (req.kind === "text"
+    ? refRoles(req).map(([role, i]) => [role, field(i), i])
+    : [["crop", field(0)], ...refRoles(req).map(([role, i]) => [role, field(i + 1), i])]);
 
 /**
  * The instruction an edit without a mask input goes out with: refs.instruction numbered by the dialect's own layout,
- * so the sentence and a marker index.js resolved name the same picture.
+ * so the sentence and a marker index.js resolved name the same picture. A new image with references: the prompt, then
+ * what the references are ("Images 1 and 2 are reference images.").
  */
 function editPrompt(req, R) {
     return instruction(req, DIALECTS[R.dialect].layout(req, R), req.prompt);
@@ -290,7 +302,8 @@ function keptRect(bm, who = "Magnific Image Expand") {
 // ---- dialects --------------------------------------------------------------------------------------------------
 // Each: async body(req, R, ctx, kind) -> { body, info, pictures }; kind "edit" or "text" (checked against the route
 // before). read(task, info, ctx) adds what the answer says to info. layout(req, R) -> where body() puts each picture of
-// an edit, with the route's maxImages as `max` (maxOf, picturesOf's cap; the edit dialects only).
+// an edit, and of a new image with references on a `refs` route (req.kind "text", no crop), with the route's
+// maxImages as `max` (maxOf, picturesOf's cap; the edit dialects only).
 
 const DIALECTS = {
     ideogram: {
@@ -372,7 +385,9 @@ const DIALECTS = {
             const seed = seedOf(req, R.seedMax);
             if (seed !== undefined) body.seed = seed;
             let pics = [];
-            if (kind !== "text") {
+            // an edit: the crop in input_image, the references after it; a new image: its references from input_image
+            // on, at the text size above
+            if (kind !== "text" || (R.refs && (req.references || []).length)) {
                 pics = await picturesOf(req, R, ctx);
                 body.prompt = editPrompt(req, R);
                 body.input_image = b64(pics[0].bytes);
@@ -394,7 +409,14 @@ const DIALECTS = {
                 if (tier) body.resolution = tier;
                 const seed = seedOf(req, R.seedMax);
                 if (seed !== undefined) body.seed = seed;
-                return { body, info: { aspect: p.ratio }, pictures: 0 };
+                // with reference layers (an -edit route): the references alone, the asked shape's preset kept
+                let pics = [];
+                if (R.refs && (req.references || []).length) {
+                    pics = await picturesOf(req, R, ctx);
+                    body.prompt = editPrompt(req, R);
+                    body.reference_images = pics.map((x) => b64(x.bytes));
+                }
+                return { body, info: { aspect: p.ratio }, pictures: pics.length };
             }
             const pics = await picturesOf(req, R, ctx);
             const p = preset(+req.width, +req.height, R.aspects);
@@ -413,7 +435,15 @@ const DIALECTS = {
                 const [w, h] = textShape(req);
                 const p = preset(w, h, R.aspects);
                 const body = { prompt: String(req.prompt || ""), num_images: 1, ...rows, aspect_ratio: p.value, resolution: tierFor(Math.max(+req.width || 0, +req.height || 0), R.tiers), output_format: "png" };
-                return { body, info: { aspect: p.ratio }, pictures: 0 };
+                // with reference layers (an -edit route): the references alone at the asked shape's preset and tier,
+                // never the edit's auto at 1k
+                let pics = [];
+                if (R.refs && (req.references || []).length) {
+                    pics = await picturesOf(req, R, ctx);
+                    body.prompt = editPrompt(req, R);
+                    body.reference_images = pics.map((x) => b64(x.bytes));
+                }
+                return { body, info: { aspect: p.ratio }, pictures: pics.length };
             }
             const pics = await picturesOf(req, R, ctx);
             const body = { prompt: editPrompt(req, R), reference_images: pics.map((x) => b64(x.bytes)), num_images: 1, ...rows, output_format: "png" };
@@ -655,12 +685,16 @@ async function run(req, ctx, kind) {
     } else {
         if (R.upscale) throw new Error(`${R.label} is an upscaler; run it with Upscale.`);
         if (kind === "edit" && !R.edit) throw new Error(`${R.label} makes pictures from the prompt alone: use Generate new.`);
-        if (kind === "text" && !R.text) throw new Error(`${R.label} needs a picture: use Generate.`);
+        // an edit-only route makes a new image when it takes reference pictures for one and the run carries some
+        if (kind === "text" && !R.text && !(R.refs && (req.references || []).length)) throw new Error(`${R.label} needs a picture: use Generate.`);
         if (kind === "edit" && R.fill && !(req.kind === "fill" && req.mask && req.mask.length)) throw new Error(`${R.label} needs the selection as a mask (the variant's input must be fill).`);
         if (R.dialect !== "expand" && !String(req.prompt || "").trim()) throw new Error(`${R.label}: ${kind === "text" ? "a new image needs a prompt" : "an edit needs a prompt"}.`);
         if (kind === "edit" && !req.image) throw new Error(`${R.label}: no picture to edit.`);
         const d = DIALECTS[R.dialect];
-        req = { ...req, params: req.params || {}, references: kind === "text" ? [] : (req.references || []), kind: kind === "text" ? "text" : req.kind };
+        req = { ...req, params: req.params || {}, references: req.references || [], kind: kind === "text" ? "text" : req.kind };
+        // a text route that takes no reference picture declares the drop (textLayout), and index.js's checkPictures
+        // leaves such a request without references; a direct call sends the prompt alone too
+        if (kind === "text" && req.references.length && !R.refs) req = { ...req, references: [], original: 0 };
         const made = await d.body(req, R, ctx, kind);
         body = made.body;
         info = { ...made.info };
@@ -698,12 +732,26 @@ function layout(req) {
     return DIALECTS[R.dialect].layout(req, R);
 }
 
+/**
+ * Where each reference of a new image goes (Generate new with reference layers, 26f): on a `refs` route the dialect's
+ * fields from the first on, no crop, the route's maxImages as the cap; any other route declares the drop.
+ */
+function textLayout(req) {
+    const route = routeOf(req.model);
+    const R = own(ROUTES, route) ? ROUTES[route] : null;
+    if (!R) throw new Error(`Magnific: Scumble knows no route "${route}".`);
+    if (R.upscale) throw new Error(`${R.label} is an upscaler; run it with Upscale.`);
+    if (!R.refs) return layoutOf({ drops: "this model takes no reference images for a new image" });
+    return DIALECTS[R.dialect].layout({ ...req, kind: "text" }, R);
+}
+
 module.exports = {
     label: "Magnific",
     keyUrl: "https://www.magnific.com/user/organization/api-keys",
     keyHint: "API key from Magnific's organization settings (every API call costs credits)",
     edit(req, ctx) { return run(req, ctx, "edit"); },
     layout,
+    textLayout,
     generate(req, ctx) { return run(req, ctx, "text"); },
     upscale(req, ctx) { return run(req, ctx, "upscale"); },
     baseUrl,

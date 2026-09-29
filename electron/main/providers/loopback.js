@@ -102,6 +102,12 @@ module.exports = {
         if (typeof o.drops === "string" && o.drops.trim()) return layoutOf({ seq: [["crop", "image"]], drops: o.drops.trim() });
         return layoutOf({ seq: [["crop", "image"], ...refRoles(req).map(([role, i]) => [role, `references[${i}]`, i])], max: +o.max_images > 0 ? +o.max_images : null });
     },
+    // a text run (Generate new, 26f): the references alone, in order, with the same two hooks
+    textLayout(req) {
+        const o = req.options || {};
+        if (typeof o.drops === "string" && o.drops.trim()) return layoutOf({ drops: o.drops.trim() });
+        return layoutOf({ seq: refRoles(req).map(([role, i]) => [role, `references[${i}]`, i]), max: +o.max_images > 0 ? +o.max_images : null });
+    },
     async edit(req, ctx) {
         const delay = Math.max(0, +req.params.delay_ms || 0);
         if (delay) await new Promise((r) => setTimeout(r, delay));
@@ -141,6 +147,7 @@ module.exports = {
         if (req.params.fail) throw new Error("loopback failure requested");
         const w = Math.max(16, Math.min(4096, req.width | 0)), h = Math.max(16, Math.min(4096, req.height | 0));
         const bytes = transparent(req) ? discPng(w, h, req.seed || 0) : rampPng(w, h, req.seed || 0);
-        return { bytes, mime: "image/png", seed: req.seed, info: { width: w, height: h, prompt: req.prompt || "", aspect: req.aspect || null, background: transparent(req) ? "transparent" : "auto" } };
+        // what arrived, as edit() reports it: the references and the texts after main resolved their names
+        return { bytes, mime: "image/png", seed: req.seed, info: { width: w, height: h, prompt: req.prompt || "", negative: req.negative == null ? null : req.negative, aspect: req.aspect || null, background: transparent(req) ? "transparent" : "auto", references: (req.references || []).length, model: req.model || "" } };
     },
 };

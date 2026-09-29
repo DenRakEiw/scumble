@@ -12,9 +12,9 @@
 // One synchronous request per image: the pictures go inline as data URLs, the answer is base64. There is no
 // mask input, so a "fill" run sends the mask as the second picture and the prompt says what it means (as the
 // Gemini adapter does); an "edit" run sends the crop and the references only. The stitch keeps the
-// selection either way. Billing is all or nothing: a generation that does not finish answers 502 and costs
-// nothing.
-// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
+// selection either way. A text run (Generate new) sends its references alone, none without. Billing is all
+// or nothing: a generation that does not finish answers 502 and costs nothing.
+// layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3, 26f).
 //
 // A recipe variant describes the model with `options`:
 //   accepts     the parameters the model's endpoints list in GET /api/v1/images/models; nothing else is sent
@@ -211,16 +211,20 @@ function pngSize(b) {
 const b64Length = (n) => 4 * Math.ceil(n / 3);
 
 /**
- * The pictures of an edit or fill run, in order: the crop, the mask (fill only), the references. Checks the
- * count and the steepest ratio, and holds the inline size under MAX_INLINE by sending opaque pictures as JPEG,
- * largest first. The mask is never re-encoded. Throws before any request.
+ * The pictures of a run, in order: the crop, the mask (fill only), the references; a text run (Generate new) has the
+ * references alone, none without. Checks the count and the steepest ratio, and holds the inline size under
+ * MAX_INLINE by sending opaque pictures as JPEG, largest first. The mask is never re-encoded. Throws before any
+ * request.
  */
 async function picturesFor(req, o, ctx, model) {
-    const pics = [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png", jpeg: true }];
+    const text = req.kind === "text";
+    const pics = text ? [] : [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png", jpeg: true }];
     if (req.kind === "fill" && req.mask) pics.push({ what: "mask", bytes: Buffer.from(req.mask), mime: "image/png", jpeg: false });
     req.references.forEach((r, i) => pics.push({ what: `reference ${i + 1}`, bytes: Buffer.from(r), mime: "image/png", jpeg: true }));
     const max = +o.max_images > 0 ? +o.max_images : 16;
     if (pics.length > max) {
+        // index.js refuses first (refs.checkPictures, in the same words for a text run); this stays the safety net
+        if (text) throw new Error(`OpenRouter ${model} takes at most ${max} reference picture${max === 1 ? "" : "s"} for a new image; this run has ${pics.length}: hide reference layers.`);
         const parts = [`the crop`, ...(pics.some((p) => p.what === "mask") ? ["the mask"] : []), `${req.references.length} reference${req.references.length === 1 ? "" : "s"}`];
         throw new Error(`OpenRouter ${model} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${pics.length} (${parts.join(", ")}): turn Original off or hide reference layers.`);
     }
@@ -228,7 +232,7 @@ async function picturesFor(req, o, ctx, model) {
         for (const p of pics) {
             const s = pngSize(p.bytes);
             if (s && Math.max(s[0], s[1]) > +o.max_ratio * Math.min(s[0], s[1]) + 1e-9) {
-                throw new Error(`OpenRouter ${model} takes pictures no steeper than ${o.max_ratio}:1; the ${p.what} is ${s[0]} × ${s[1]}. Use a less narrow selection or reference layer.`);
+                throw new Error(`OpenRouter ${model} takes pictures no steeper than ${o.max_ratio}:1; the ${p.what} is ${s[0]} × ${s[1]}. Use a less narrow ${text ? "reference layer" : "selection or reference layer"}.`);
             }
         }
     }
@@ -245,7 +249,7 @@ async function picturesFor(req, o, ctx, model) {
             p.mime = "image/jpeg";
         }
         if (total > MAX_INLINE) {
-            throw new Error(`OpenRouter ${model}: the pictures come to ${(total / 1e6).toFixed(1)} MB, more than the ${MAX_INLINE / 1e6} MB this app sends in one request. Set Highres fix lower, turn Original off, or use fewer or smaller reference layers.`);
+            throw new Error(`OpenRouter ${model}: the pictures come to ${(total / 1e6).toFixed(1)} MB, more than the ${MAX_INLINE / 1e6} MB this app sends in one request. ${text ? "Use fewer or smaller reference layers." : "Set Highres fix lower, turn Original off, or use fewer or smaller reference layers."}`);
         }
     }
     return pics;
@@ -257,6 +261,15 @@ function layout(req) {
     const at = (k) => `input_references[${k}]`;
     const first = req.kind === "fill" && req.mask ? [["crop", at(0)], ["mask", at(1)]] : [["crop", at(0)]];
     return layoutOf({ seq: [...first, ...refRoles(req).map(([role, i]) => [role, at(first.length + i), i])], max: +o.max_images > 0 ? +o.max_images : 16 });
+}
+
+/**
+ * The same for a text run (Generate new, 26f): input_references holds the references alone, numbered from 1, as many
+ * as an edit takes pictures (the crop's slot becomes a reference's).
+ */
+function textLayout(req) {
+    const o = req.options || {};
+    return layoutOf({ seq: refRoles(req).map(([role, i]) => [role, `input_references[${i}]`, i]), max: +o.max_images > 0 ? +o.max_images : 16 });
 }
 
 // ---- the request ---------------------------------------------------------------------------------------
@@ -281,16 +294,15 @@ function aspectFor(req, o) {
 }
 
 /**
- * The prompt of a run: a text run's as it is, else refs.instruction (what to edit, what the mask picture means, the
- * user's text, what the Original and the references are), numbered by `lay`: this adapter's layout, or the one Oxen
- * passes for its own picture fields.
+ * The prompt of a run: refs.instruction (what to edit, what the mask picture means, the user's text, what the
+ * Original and the references are; a text run's text as it is, then what its references are, if any), numbered by
+ * `lay`: this adapter's layout (textLayout for a text run), or the one Oxen passes for its own picture fields.
  */
 function promptFor(req, lay) {
-    if (req.kind === "text") return String(req.prompt || "");
-    return instruction(req, lay || module.exports.layout(req), req.prompt);
+    return instruction(req, lay || (req.kind === "text" ? module.exports.textLayout(req) : module.exports.layout(req)), req.prompt);
 }
 
-/** The JSON body of one request; `pics` are the pictures of an edit (none for a text run), `ignore` the hosts left out. */
+/** The JSON body of one request; `pics` are the pictures of the run (a text run's references, if any), `ignore` the hosts left out. */
 function bodyFor(req, pics, ignore) {
     const o = req.options || {};
     const p = req.params || {};
@@ -361,10 +373,11 @@ async function run(req, ctx) {
     const base = root(ctx);
     checkKey(base, ctx.key);
     const o = req.options || {};
-    req = { ...req, references: req.kind === "text" ? [] : (req.references || []) };
+    req = { ...req, references: req.references || [] };
     if (req.kind === "text" && !String(req.prompt || "").trim()) throw new Error(`OpenRouter ${model}: a new image needs a prompt.`);
     if (req.kind !== "text" && !req.image) throw new Error(`OpenRouter ${model}: no crop to edit.`);
-    const pics = req.kind === "text" ? [] : await picturesFor(req, o, ctx, model);
+    // a text run's pictures are its references (none without: then the body is the text-to-image one as before)
+    const pics = await picturesFor(req, o, ctx, model);
     const ignore = await chinaHosts(ctx);
     const body = bodyFor(req, pics, ignore);
     const r = await post(ctx, body);
@@ -391,8 +404,9 @@ module.exports = {
     keyUrl: "https://openrouter.ai/settings/keys",
     keyHint: "sk-or-v1-... from openrouter.ai › Settings › API keys",
     edit: run,
-    generate: run,   // kind "text": the same endpoint without input_references
+    generate: run,   // kind "text": the same endpoint, input_references the references alone (none without)
     layout,
+    textLayout,
 
     /**
      * GET /api/v1/key: what this key may still spend. It reports the key's own limit, not the account's credits

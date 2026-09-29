@@ -36,7 +36,9 @@
 // ratios (the aspect presets of the text-only models), tiers ({ "1K": 1024, .. }, Gemini's and Grok's size classes).
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3); the instruction an edit goes out with is
 // refs.instruction, numbered by that layout, so it names the pictures as the resolved markers do. A route whose layout
-// declares a drop (FLUX.1 Fill) sends the crop alone.
+// declares a drop (FLUX.1 Fill) sends the crop alone. textLayout(req) does the same for Generate new with reference
+// layers (26f): the same fields without the crop, the references numbered from 1, the edit cap as the reference cap
+// (the crop's slot becomes a reference slot); xai, ideogram and krea take no picture and declare the drop.
 //
 // The host is api.comfy.org and never a URL from a recipe; settings.comfyrouter.base may name a loopback mock for
 // the tests, and then only a key that starts with "test-" goes there, while such a key never goes to Comfy. Answer
@@ -65,6 +67,9 @@ const MASK_BYTES_MAX = 4 * 1024 * 1024;        // OpenAI's mask ("under 4 MiB", 
 const JPEG_QUALITY = 92;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MODEL_ID = /^([a-z0-9][a-z0-9_-]{0,63})\/([a-z0-9][a-z0-9._-]{0,127})$/;
+// Gemini's aspectRatio values (as gemini.js): a text run with references and a free size gets the closest, since
+// without one the answer takes the shape of a reference picture
+const GEMINI_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"];
 
 // ---- host and key --------------------------------------------------------------------------------------------
 
@@ -197,16 +202,19 @@ function pngSize(b) {
 }
 
 /**
- * The pictures of an edit, crop first, then the references (and none for a text run). Checks the count, the
- * steepest shape and the bytes a model takes; a picture over its byte limit goes as JPEG when it has no transparent
- * pixel. Throws before any request.
+ * The pictures of an edit, crop first, then the references; of a text run (Generate new) the references alone (none
+ * without reference layers). Checks the count, the steepest shape and the bytes a model takes; a picture over its byte
+ * limit goes as JPEG when it has no transparent pixel. Throws before any request.
  */
 async function picturesFor(req, o, ctx, model) {
-    if (req.kind === "text" || !req.image) return [];
+    const text = req.kind === "text";
+    if (!text && !req.image) return [];
     const who = ctx.who || `Comfy Router ${model}`;
-    const pics = [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png" }];
+    const pics = text ? [] : [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png" }];
     (req.references || []).forEach((r, i) => pics.push({ what: `reference ${i + 1}`, bytes: Buffer.from(r), mime: "image/png" }));
+    if (!pics.length) return pics;
     const max = +o.max_images > 0 ? +o.max_images : 1;
+    if (pics.length > max && text) throw new Error(`${who} takes at most ${max} reference picture${max === 1 ? "" : "s"} for a new image; this run has ${pics.length}: hide reference layers.`);
     if (pics.length > max) {
         const refs = pics.length - 1;
         throw new Error(`${who} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${pics.length} (the crop, ${refs} reference${refs === 1 ? "" : "s"}): turn Original off or hide reference layers.`);
@@ -223,7 +231,7 @@ async function picturesFor(req, o, ctx, model) {
             const jpeg = opaque && typeof ctx.toJpeg === "function" ? await ctx.toJpeg(p.bytes, JPEG_QUALITY) : null;
             const mb = (limit / 1024 / 1024).toFixed(0);
             if (!jpeg || !jpeg.length || jpeg.length > limit) {
-                throw new Error(`${who}: the ${p.what} is ${(p.bytes.length / 1024 / 1024).toFixed(1)} MB, more than the ${mb} MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. Set Highres fix lower or use a smaller reference layer.`);
+                throw new Error(`${who}: the ${p.what} is ${(p.bytes.length / 1024 / 1024).toFixed(1)} MB, more than the ${mb} MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. ${text ? "Use a smaller reference layer." : "Set Highres fix lower or use a smaller reference layer."}`);
             }
             ctx.log(`${p.what} ${p.bytes.length} bytes as JPEG ${jpeg.length} bytes`);
             p.bytes = Buffer.from(jpeg);
@@ -231,19 +239,27 @@ async function picturesFor(req, o, ctx, model) {
         }
     }
     const total = pics.reduce((n, p) => n + p.bytes.length, 0);
-    if (total > PICTURES_BYTES_MAX) throw new Error(`${who}: the pictures are ${(total / 1024 / 1024).toFixed(1)} MB together, more than the 64 MB one request may carry. Set Highres fix lower or hide reference layers.`);
+    if (total > PICTURES_BYTES_MAX) throw new Error(`${who}: the pictures are ${(total / 1024 / 1024).toFixed(1)} MB together, more than the 64 MB one request may carry. ${text ? "Hide reference layers or use smaller ones." : "Set Highres fix lower or hide reference layers."}`);
     return pics;
 }
 
-/** picturesFor's count check as a layout's `max`: the crop and the references together. */
+/** picturesFor's count check as a layout's `max`: the crop and the references together (a text run: the references). */
 const picturesMax = (o) => (+o.max_images > 0 ? +o.max_images : 1);
 
-/** picturesFor's order as a layout's numbered pictures, picture k (0-based) in `field(k)`: the crop, then the references. */
-const inOrder = (req, field) => [["crop", field(0)], ...refRoles(req).map(([role, i]) => [role, field(i + 1), i])];
+/**
+ * picturesFor's order as a layout's numbered pictures, picture k (0-based) in `field(k)`: the crop, then the
+ * references; a text run's references from field(0) on.
+ */
+const inOrder = (req, field) => (req.kind === "text"
+    ? refRoles(req).map(([role, i]) => [role, field(i), i])
+    : [["crop", field(0)], ...refRoles(req).map(([role, i]) => [role, field(i + 1), i])]);
 
 const uri = (p) => dataUri(p.bytes, p.mime);
 
-/** The instruction an edit goes out with, numbered by the dialect's layout (refs.instruction); a text run's prompt as it is. */
+/**
+ * The instruction an edit goes out with, numbered by the dialect's layout (refs.instruction); a text run's prompt and
+ * what its references are ("Images 1 and 2 are reference images."), the prompt as it is without any.
+ */
 const editPrompt = (req, lay) => instruction(req, lay, String(req.prompt || ""));
 
 /** The tier ("1K", "2K" ..) whose size covers the long side, else the largest; null without tiers. */
@@ -258,7 +274,8 @@ const setting = (p, k) => (p[k] != null && p[k] !== "" && p[k] !== "auto" ? p[k]
 
 // ---- dialects ------------------------------------------------------------------------------------------------
 // Each: body(req, o, pics, model) -> JSON body; read(json, req, o, ctx) -> { bytes, mime, seed?, info? } or
-// { url } (fetched by the caller); layout(req, o, model) -> where body() puts each picture of an edit. `text: false`
+// { url } (fetched by the caller); layout(req, o, model) -> where body() puts each picture of an edit, and of a text
+// run with references (req.kind "text": no crop, the references from the first picture field on). `text: false`
 // where the Router's schema takes no prompt-only run, `edit: false` where it takes no input picture, `upscale: true`
 // for an upscaler.
 
@@ -300,17 +317,21 @@ const DIALECTS = {
             const p = req.params || {};
             const parts = [];
             if (pics.length) {
+                const text = req.kind === "text";
                 const lay = DIALECTS.vertexai.layout(req, o);
                 // index.js refuses a run past the cap before this; picturesFor counts no mask, so the mask picture is counted here
                 const max = +lay.max > 0 ? +lay.max : null, count = countOf(lay);
+                if (max != null && count > max && text) throw new Error(`Comfy Router vertexai/${model} takes at most ${max} reference picture${max === 1 ? "" : "s"} for a new image; this run has ${count}: hide reference layers.`);
                 if (max != null && count > max) {
                     const refs = pics.length - 1, mask = lay.pictures.some((pic) => pic.role === "mask");
                     throw new Error(`Comfy Router vertexai/${model} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${count} (the crop${mask ? ", the mask" : ""}${refs ? `, ${refs} reference${refs === 1 ? "" : "s"}` : ""}): turn Original off or hide reference layers.`);
                 }
-                // the instruction, then each picture by n, with a label part before it when more than one goes
+                // the instruction (a text run: the prompt, then what the references are), then each picture by n, with a
+                // label part before it when more than one goes
                 parts.push({ text: instruction(req, lay, req.prompt) });
                 const labels = labelParts(lay, req.refName);
-                const inline = (pic) => (pic.role === "crop" ? pics[0] : pic.role === "mask" ? { mime: "image/png", bytes: Buffer.from(req.mask) } : pics[pic.ref + 1]);
+                // a text run's pictures are its references alone, reference i at pics[i]
+                const inline = (pic) => (pic.role === "crop" ? pics[0] : pic.role === "mask" ? { mime: "image/png", bytes: Buffer.from(req.mask) } : pics[pic.ref + (text ? 0 : 1)]);
                 lay.pictures.filter((pic) => pic.n != null).sort((a, b) => a.n - b.n).forEach((pic, k) => {
                     const x = inline(pic);
                     if (labels.length) parts.push(labels[k]);
@@ -318,7 +339,8 @@ const DIALECTS = {
                 });
             } else parts.push({ text: String(req.prompt || "") });
             const imageConfig = {};
-            const aspect = setting(p, "aspect_ratio") || (req.kind === "text" ? req.aspect : null);
+            const free = req.kind === "text" && !req.aspect && pics.length ? closestAspect(req.width || 1, req.height || 1, GEMINI_RATIOS) : null;
+            const aspect = setting(p, "aspect_ratio") || (req.kind === "text" ? req.aspect || free : null);
             if (aspect) imageConfig.aspectRatio = String(aspect);
             const size = setting(p, "image_size") || (req.kind === "text" ? tierFor(Math.max(req.width || 0, req.height || 0), o.tiers) : null);
             if (size) imageConfig.imageSize = String(size);
@@ -327,10 +349,11 @@ const DIALECTS = {
             return { contents: [{ role: "user", parts }], generationConfig };
         },
         // parts[0] is the instruction; with more than one picture each has its label part before it, so picture n sits
-        // at part 2n, else the one picture at part 1. The mask picture counts against max_images like any other.
+        // at part 2n, else the one picture at part 1. The mask picture counts against max_images like any other. A text
+        // run has no crop: its references are pictures 1..N.
         layout(req, o) {
             const masked = req.kind === "fill" && req.mask && req.mask.length;
-            const seq = [["crop"], ...(masked ? [["mask"]] : []), ...refRoles(req).map(([role, i]) => [role, i])];
+            const seq = [...(req.kind === "text" ? [] : [["crop"]]), ...(masked ? [["mask"]] : []), ...refRoles(req).map(([role, i]) => [role, i])];
             const at = (k) => `contents[0].parts[${seq.length > 1 ? 2 * (k + 1) : 1}]`;
             return layoutOf({ seq: seq.map(([role, i], k) => [role, at(k), i]), max: picturesMax(o) });
         },
@@ -370,6 +393,7 @@ const DIALECTS = {
         },
         layout(req, o, model) {
             if (model === "flux-pro-1.0-fill") {
+                if (req.kind === "text") return layoutOf({ drops: "FLUX.1 Fill takes no reference images" });
                 return layoutOf({ seq: [["crop", "image"]], own: req.mask && req.mask.length ? [["mask", "mask"]] : [], max: picturesMax(o), drops: "FLUX.1 Fill takes no reference images" });
             }
             return layoutOf({ seq: inOrder(req, (k) => (k ? `input_image_${k + 1}` : "input_image")), max: picturesMax(o) });
@@ -636,10 +660,12 @@ async function run(req, ctx, kind) {
     if (kind !== "upscale" && d.upscale) throw new Error(`Comfy Router ${modelId} is an upscaler; run it with Upscale.`);
     if (kind === "edit" && d.edit === false) throw new Error(`Comfy Router ${modelId} makes pictures from the prompt alone: use Generate new.`);
     const o = req.options || {};
-    req = { ...req, params: req.params || {}, references: req.kind === "text" ? [] : (req.references || []) };
-    // a route whose layout declares a drop (FLUX.1 Fill) sends no reference at all, as index.js's checkPictures leaves
-    // the request; a direct call gets the crop alone too instead of a refusal of pictures the route never sends
+    req = { ...req, params: req.params || {}, references: req.references || [], kind: kind === "text" ? "text" : req.kind };
+    // a route whose layout declares a drop (FLUX.1 Fill; for a new image xai, ideogram and krea) sends no reference at
+    // all, as index.js's checkPictures leaves the request; a direct call gets the crop alone (a new image: the prompt
+    // alone) too instead of a refusal of pictures the route never sends
     if (kind === "edit" && req.references.length && d.layout(req, o, model).drops) req = { ...req, references: [], original: 0 };
+    if (kind === "text" && req.references.length && textLayoutOf(d, req, o, model).drops) req = { ...req, references: [], original: 0 };
     if (kind === "text" && !String(req.prompt || "").trim()) throw new Error(`Comfy Router ${modelId}: a new image needs a prompt.`);
     if (kind !== "text" && !req.image) throw new Error(`Comfy Router ${modelId}: no picture to ${kind === "upscale" ? "upscale" : "edit"}.`);
     const pics = kind === "upscale" ? [] : await picturesFor(req, o, ctx, modelId);
@@ -663,16 +689,38 @@ async function run(req, ctx, kind) {
     };
 }
 
-/** Where each picture of an edit goes: the dialect run() picks, refused with run()'s own words. */
-function layout(req) {
+/** The dialect of a request's model id and the model part, refused with run()'s own words. */
+function dialectOf(req) {
     const modelId = String(req.model || "");
     if (!modelId) throw new Error("Comfy Router recipe has no model id.");
     const [prov, model] = splitModel(modelId);
     if (!Object.prototype.hasOwnProperty.call(DIALECTS, prov)) throw new Error(`Comfy Router: Scumble does not speak the input of ${prov}/* models (${Object.keys(DIALECTS).join(", ")}).`);
     const d = DIALECTS[prov];
     if (d.upscale) throw new Error(`Comfy Router ${modelId} is an upscaler; run it with Upscale.`);
+    return { d, model, modelId };
+}
+
+/** Where each picture of an edit goes: the dialect run() picks, refused with run()'s own words. */
+function layout(req) {
+    const { d, model, modelId } = dialectOf(req);
     if (d.edit === false) throw new Error(`Comfy Router ${modelId} makes pictures from the prompt alone: use Generate new.`);
     return d.layout(req, req.options || {}, model);
+}
+
+/**
+ * A text run's pictures in dialect `d`: its references alone, in the fields an edit puts them in from the first on,
+ * capped by the model's max_images (the crop's slot becomes a reference slot); a model whose schema takes no input
+ * picture (xai, ideogram, krea) declares the drop.
+ */
+function textLayoutOf(d, req, o, model) {
+    if (d.edit === false || typeof d.layout !== "function") return layoutOf({ drops: "this model takes no reference images for a new image" });
+    return d.layout(req, o, model);
+}
+
+/** Where each reference of a text run (Generate new, 26f) goes: the dialect run() picks. */
+function textLayout(req) {
+    const { d, model } = dialectOf(req);
+    return textLayoutOf(d, { ...req, kind: "text" }, req.options || {}, model);
 }
 
 module.exports = {
@@ -682,6 +730,7 @@ module.exports = {
     keyHint: "the Comfy Cloud key (platform.comfy.org); Comfy Router needs no paid plan, only credits",
     edit(req, ctx) { return run(req, ctx, "edit"); },
     layout,
+    textLayout,
     generate(req, ctx) { return run(req, ctx, "text"); },
     upscale(req, ctx) { return run(req, ctx, "upscale"); },
     baseUrl,

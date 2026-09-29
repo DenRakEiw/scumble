@@ -2,6 +2,8 @@
 // image[] = crop plus references, mask = PNG whose transparent pixels mark the area to
 // repaint (same size as the crop), the answer carries b64_json.
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
+// Generate new (kind "text") posts to /generations; with reference layers it takes /edits instead, image[] the
+// references alone (no crop, no mask) at the asked size (textLayout, 26f).
 //
 // The parameters follow developers.openai.com/api/docs/guides/image-prompting and the
 // /v1/images reference, both read 2026-09-11:
@@ -84,6 +86,33 @@ function pickMask(req) {
     return req.maskAlpha || null;
 }
 
+/**
+ * POST /v1/images/edits: the pictures in image[] in order ([bytes, file name]), the mask in a field of its own when
+ * given. Returns the answer's JSON.
+ */
+async function postEdits(ctx, model, prompt, pictures, mask, size, extra) {
+    const fd = new FormData();
+    fd.append("model", model);
+    fd.append("prompt", prompt || "");
+    for (const [bytes, name] of pictures) fd.append("image[]", new Blob([bytes], { type: "image/png" }), name);
+    if (mask) fd.append("mask", new Blob([mask], { type: "image/png" }), "mask.png");
+    fd.append("size", size);
+    for (const [k, v] of Object.entries(extra)) fd.append(k, String(v));
+    fd.append("n", "1");
+    const r = await ctx.fetch("https://api.openai.com/v1/images/edits", { method: "POST", headers: { Authorization: "Bearer " + ctx.key }, body: fd });
+    if (!r.ok) throw new Error(`OpenAI ${model}: ${await readError(r)}`);
+    return r.json();
+}
+
+/**
+ * Where a text run's references go (Generate new, 26f): image[] of /edits, numbered from 1 (no crop, no mask), up to
+ * options.max_images, the edit run's cap (the crop's slot becomes a reference slot). Every GPT Image model takes them.
+ */
+function textLayout(req) {
+    const o = req.options || {};
+    return layoutOf({ seq: refRoles(req).map(([role, i]) => [role, `image[][${i}]`, i]), max: +o.max_images > 0 ? +o.max_images : null });
+}
+
 function unpack(out, model, size, extra) {
     const item = out.data && out.data[0];
     if (!item || !item.b64_json) throw new Error("OpenAI: no b64_json in the answer");
@@ -114,28 +143,31 @@ module.exports = {
         if (lay.max != null && n > lay.max) throw new Error(`OpenAI ${model} takes at most ${lay.max} picture${lay.max === 1 ? "" : "s"}; this run has ${n}: hide reference layers or turn Original off.`);
         const extra = common(p, model);
         const size = p.size && p.size !== "auto" ? String(p.size) : sizeFor(model, req.width, req.height);
-        const fd = new FormData();
-        fd.append("model", model);
-        fd.append("prompt", req.prompt || "");
-        fd.append("image[]", new Blob([req.image], { type: "image/png" }), "crop.png");
-        req.references.forEach((r, i) => fd.append("image[]", new Blob([r], { type: "image/png" }), `reference_${i + 1}.png`));
+        const pictures = [[req.image, "crop.png"], ...req.references.map((r, i) => [r, `reference_${i + 1}.png`])];
         const mask = pickMask(req);
-        if (mask && req.kind !== "edit") fd.append("mask", new Blob([mask], { type: "image/png" }), "mask.png");
-        fd.append("size", size);
-        for (const [k, v] of Object.entries(extra)) fd.append(k, String(v));
-        fd.append("n", "1");
-        const r = await ctx.fetch("https://api.openai.com/v1/images/edits", { method: "POST", headers: { Authorization: "Bearer " + ctx.key }, body: fd });
-        if (!r.ok) throw new Error(`OpenAI ${model}: ${await readError(r)}`);
-        const out = unpack(await r.json(), model, size, extra);
+        const json = await postEdits(ctx, model, req.prompt, pictures, mask && req.kind !== "edit" ? mask : null, size, extra);
+        const out = unpack(json, model, size, extra);
         return { ...out, seed: req.seed };
     },
 
-    /** From the prompt alone: POST /v1/images/generations, no image and no mask. */
+    textLayout,
+
+    /**
+     * From the prompt alone: POST /v1/images/generations, no image and no mask. With reference layers (26f) the same
+     * run goes to /edits with the references alone in image[], no mask, at the asked size.
+     */
     async generate(req, ctx) {
         const p = req.params;
         const model = String(p.model || req.model || "gpt-image-2");
         const extra = common(p, model);
         const size = p.size && p.size !== "auto" ? String(p.size) : sizeFor(model, req.width, req.height);
+        if ((req.references || []).length) {
+            // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from sending one
+            const lay = textLayout(req), n = countOf(lay);
+            if (lay.max != null && n > lay.max) throw new Error(`OpenAI ${model} takes at most ${lay.max} reference picture${lay.max === 1 ? "" : "s"} for a new image; this run has ${n}: hide reference layers.`);
+            const json = await postEdits(ctx, model, req.prompt, req.references.map((r, i) => [r, `reference_${i + 1}.png`]), null, size, extra);
+            return { ...unpack(json, model, size, extra), seed: req.seed };
+        }
         const body = { model, prompt: req.prompt || "", size, n: 1, ...extra };
         const r = await ctx.fetch("https://api.openai.com/v1/images/generations", {
             method: "POST", headers: { Authorization: "Bearer " + ctx.key, "Content-Type": "application/json" }, body: JSON.stringify(body),

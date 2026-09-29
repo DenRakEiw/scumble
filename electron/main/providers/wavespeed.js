@@ -13,7 +13,11 @@
 // `aspect_ratios` (the model's presets, the closest to the crop is sent unless the settings
 // pick one), `size: "star"` (send the crop size as "W*H", fitted to `max_side`), `max_images` (how many pictures the
 // image list takes, the crop included; a run with more is refused before any upload).
-// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
+// A text run (Generate new) sends the prompt alone to the text model; with reference layers the recipe names the edit
+// route (`text.refs.model`, ".../edit") and they are uploaded into the image list in order, the crop's slot being a
+// reference's, the shape as for a text run (the closest `aspect_ratios` preset; a variant without them, FLUX.2,
+// Seedream 5 lite and Qwen edit-plus, sends no shape, so the route may follow the first reference's).
+// layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3).
 //
 // Referral: the key link (keyUrl) carries DenRakEiw's WaveSpeed referral code.
 "use strict";
@@ -23,6 +27,8 @@ const { layoutOf, refRoles, countOf } = require("./refs");
 
 const BASE = "https://api.wavespeed.ai/api/v3/";
 const POLL_MS = 2000;
+// an edit route, the only kind that takes pictures ("google/nano-banana-2/edit", ".../qwen-image/edit-plus")
+const EDIT_ROUTE = /(?:^|[/-])edit(?:[/-]|$)/;
 
 async function upload(ctx, bytes, name) {
     const auth = { Authorization: "Bearer " + ctx.key };
@@ -62,6 +68,18 @@ async function inputFor(req, ctx) {
     const input = { prompt: req.prompt || "" };
     if (req.seed != null && !p.random_seed) input.seed = req.seed >>> 0;
     if (req.kind === "text") {
+        // reference layers go to an edit route's image list (index.js refuses a run past the cap first; this keeps a
+        // direct call from uploading one)
+        const given = req.references || [];
+        if (given.length) {
+            const lay = textLayout(req), n = countOf(lay);
+            if (lay.max != null && n > lay.max) throw new Error(`WaveSpeed ${String(req.model || "")} takes at most ${lay.max} reference picture${lay.max === 1 ? "" : "s"} for a new image; this run has ${n}: hide reference layers.`);
+            if (!lay.drops) {
+                const urls = [];
+                for (let i = 0; i < given.length; i++) urls.push(await upload(ctx, given[i], `scumble-${stamp}-ref${i + 1}.png`));
+                input[f.images || "images"] = urls;
+            }
+        }
         if (o.size === "star") input.size = `${req.width}*${req.height}`;
     } else if (req.kind === "edit" || f.images) {
         // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from uploading one
@@ -100,14 +118,28 @@ function layout(req) {
     return layoutOf({ seq: [["crop", f.image || "image"]], own: req.mask ? [["mask", f.mask || "mask_image"]] : [], max, drops: "This endpoint takes the crop and the mask only" });
 }
 
+/**
+ * Where inputFor puts the references of a text run: the image list from its first place, as many as
+ * options.max_images (the crop's slot is a reference's here). Only an edit route takes pictures; a text-to-image model
+ * and the fill models make the image from the prompt alone.
+ */
+function textLayout(req) {
+    const f = req.fields || {}, o = req.options || {};
+    const model = String(req.model || "").replace(/^\/+|\/+$/g, "");
+    if (!EDIT_ROUTE.test(model)) return layoutOf({ drops: "this model takes no reference images for a new image" });
+    const F = f.images || "images";
+    return layoutOf({ seq: refRoles(req).map(([role, i]) => [role, `${F}[${i}]`, i]), max: +o.max_images > 0 ? +o.max_images : null });
+}
+
 module.exports = {
     label: "WaveSpeedAI",
     generate(req, ctx) {
-        return this.edit(req, ctx);   // inputFor() leaves the images out for kind "text"
+        return this.edit(req, ctx);   // inputFor() leaves the crop out for kind "text" (the references alone go)
     },
     keyUrl: "https://wavespeed.ai/?ref=dennisi6",
     keyHint: "API key from wavespeed.ai > Access Keys (the link carries Scumble's referral code)",
     layout,
+    textLayout,
     async edit(req, ctx) {
         const model = String(req.model || "").replace(/^\/+|\/+$/g, "");
         if (!model) throw new Error("WaveSpeed recipe has no model id.");

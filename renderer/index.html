@@ -202,7 +202,7 @@
 <dialog id="gen-dialog">
   <form method="dialog">
     <h2>Generate a new image</h2>
-    <p class="shell-help">No image needed: the model works from the prompt alone. The answer becomes this tab's base image and replaces what is in it.</p>
+    <p class="shell-help">No image needed: the model works from the prompt, and from the reference layers where it takes them. The answer becomes this tab's base image and replaces its other layers; the reference layers stay.</p>
     <div class="shell-grid">
       <label class="shell-field">Where <select id="gen-mode">
         <option value="local">local (your ComfyUI)</option>
@@ -212,7 +212,7 @@
       <label class="shell-field" id="gen-provider-row">Provider <select id="gen-provider"></select></label>
     </div>
     <p id="gen-note" class="shell-note"></p>
-    <label class="shell-field gen-wide">Prompt <textarea id="gen-prompt" rows="4" spellcheck="false" placeholder="what the picture shows"></textarea></label>
+    <div class="shell-field gen-wide">Prompt <div id="gen-refbar"></div><div id="gen-prompt-host"></div></div>
     <div class="shell-row">
       <select id="gen-template" title="How the prompt should be written (a .md template)"></select>
       <select id="gen-upsample" title="The language model that rewrites the prompt"></select>

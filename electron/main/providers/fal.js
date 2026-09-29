@@ -13,6 +13,10 @@
 // image list takes (the crop included); a run with more is refused before sending.
 // layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
 //
+// text (kind "text", Generate new): the text-to-image route takes no picture. With reference layers the recipe's
+// `text.refs.model` sends the run to the edit route (".../edit"), which gets the references alone in its image list
+// (no crop, no mask) and the asked size as `options.sizing` says; textLayout(req) declares them (26f).
+//
 // upscale (kind "upscale", docs/RECIPES.md "Upscale recipes"): { image_url, upscale_factor, output_format,
 // the variant's settings, prompt only when the variant takes one }. Topaz, Clarity and SeedVR2 name the
 // factor `upscale_factor`; a variant renames it with `fields.factor`, or leaves it out with `fields.factor:
@@ -20,10 +24,21 @@
 // upscale waits up to 30 minutes in the queue, not 15.
 "use strict";
 
-const { dataUri, fetchImage, readError, sleep, num } = require("./util");
+const { dataUri, fetchImage, readError, sleep, num, fitPixels, closestAspect } = require("./util");
 const { layoutOf, refRoles, countOf } = require("./refs");
 
 const QUEUE = "https://queue.fal.run/";
+
+/**
+ * The asked size inside an edit route's area range (`text.refs.options.pixels` [min, max]; Seedream 5 on fal: pro 1 to
+ * 4 MP, lite 3.7 to 16.8 MP), multiples of 16 and never over the ceiling after the rounding.
+ */
+function fittedSize(w, h, range) {
+    const lo = +range[0] || 0, hi = +range[1] || 0;
+    let [fw, fh] = fitPixels(w, h, { step: 16, max: 4096, minPixels: lo, maxPixels: hi });
+    while (hi && fw * fh > hi && fw > 16 && fh > 16) { if (fw >= fh) fw -= 16; else fh -= 16; }
+    return { width: fw, height: fh };
+}
 
 function inputFor(req) {
     const p = req.params;
@@ -31,9 +46,22 @@ function inputFor(req) {
     if (req.seed != null && !p.random_seed) input.seed = req.seed >>> 0;
     const f = req.fields || {};
     const sizing = (req.options && req.options.sizing) || "image_size";
+    // a text run with references on an edit route: the pictures are the references alone (textLayout)
+    const refLay = req.kind === "text" && (req.references || []).length ? textLayout(req) : null;
+    const withRefs = !!(refLay && !refLay.drops);
     if (req.kind === "text") {
-        if (sizing === "image_size") input.image_size = { width: req.width, height: req.height };
+        const o = req.options || {};
+        if (sizing === "image_size") input.image_size = withRefs && Array.isArray(o.pixels) ? fittedSize(req.width, req.height, o.pixels) : { width: req.width, height: req.height };
         else if (req.aspect) input.aspect_ratio = req.aspect;
+        // a free size on an edit route that takes presets only: the closest one, not the first picture's shape
+        // (`text.refs.options.aspect_ratios`; Nano Banana 2 and Pro)
+        else if (withRefs && Array.isArray(o.aspect_ratios) && o.aspect_ratios.length) input.aspect_ratio = closestAspect(req.width || 1, req.height || 1, o.aspect_ratios);
+        if (withRefs) {
+            // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from sending one
+            const n = countOf(refLay), max = refLay.max;
+            if (max != null && n > max) throw new Error(`fal.ai ${String(req.model || "")} takes at most ${max} reference picture${max === 1 ? "" : "s"} for a new image; this run has ${n}: hide reference layers.`);
+            input[f.images || "image_urls"] = req.references.map((r) => dataUri(r));
+        }
     } else if (req.kind === "edit" || f.images) {
         // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from sending one
         const lay = layout(req), n = countOf(lay);
@@ -45,12 +73,17 @@ function inputFor(req) {
         input[f.image || "image_url"] = dataUri(req.image);
     }
     if (req.mask && req.kind !== "edit" && f.mask !== false) input[f.mask || "mask_url"] = dataUri(req.mask);
-    // recipe settings are passed through by name; the recipe decides which exist for the model
+    // recipe settings are passed through by name; the recipe decides which exist for the model. On an edit route an
+    // "auto" size or aspect follows the first picture, so with references the asked one written above stays
+    // (Seedream's "auto_2K" Size row)
+    const auto = (v) => typeof v === "string" && (/^auto/i.test(v) || v === "match_input_image");
     for (const [k, v] of Object.entries(p)) {
         if (k === "random_seed" || k === "model" || v === "" || v == null) continue;
+        if (withRefs && (k === "image_size" || k === "aspect_ratio") && input[k] !== undefined && auto(v)) continue;
         input[k] = v;
     }
-    if (req.negative && input.negative_prompt === undefined && req.kind !== "edit") input.negative_prompt = req.negative;
+    // an edit route takes no negative prompt on an edit run, and a text run with references goes to that route
+    if (req.negative && input.negative_prompt === undefined && req.kind !== "edit" && !withRefs) input.negative_prompt = req.negative;
     // endpoints that validate their input strictly (Recraft V4, Krea 2) reject the fields
     // every other fal model takes; a variant names them in options.omit
     for (const k of (req.options && req.options.omit) || []) delete input[k];
@@ -71,6 +104,18 @@ function layout(req) {
     }
     const drops = f.mask === false ? "This endpoint takes one picture" : "This endpoint takes the crop and the mask only";
     return layoutOf({ seq: [["crop", f.image || "image_url"]], own, max, drops });
+}
+
+/**
+ * Where inputFor puts the references of a text run (Generate new, 26f): an edit route (".../edit", the recipe's
+ * `text.refs.model`) takes them in its image list, numbered from 1 (no crop), up to options.max_images, the edit
+ * run's cap (the crop's slot becomes a reference slot); a text-to-image route takes none.
+ */
+function textLayout(req) {
+    const f = req.fields || {}, o = req.options || {};
+    if (!/\/edit$/.test(String(req.model || "").replace(/\/+$/, ""))) return layoutOf({ drops: "This text-to-image endpoint takes no reference images" });
+    const F = f.images || "image_urls";
+    return layoutOf({ seq: refRoles(req).map(([role, i]) => [role, `${F}[${i}]`, i]), max: +o.max_images > 0 ? +o.max_images : null });
 }
 
 /** The input of an upscale: the picture, the factor, the variant's own settings. */
@@ -132,9 +177,10 @@ module.exports = {
     keyUrl: "https://fal.ai/dashboard/keys",
     keyHint: "FAL_KEY from the fal.ai dashboard",
     generate(req, ctx) {
-        return this.edit(req, ctx);   // inputFor() leaves the images out for kind "text"
+        return this.edit(req, ctx);   // inputFor() sends a text run's references alone (textLayout), or no picture
     },
     layout,
+    textLayout,
     async edit(req, ctx) {
         const model = modelOf(req);
         const out = await queued(model, inputFor(req), ctx, EDIT_WAIT_MS);

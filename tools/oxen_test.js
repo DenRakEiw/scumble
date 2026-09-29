@@ -169,8 +169,20 @@ const upReq = (v, extra = {}) => ({
     model: v.model, kind: "upscale", options: v.options, params: paramsOf(v.settings, v.fixed), factor: v.factor.fixed ? null : v.factor.default,
     prompt: "", seed: 5, image: pngOf(800, 600, 80, "UP"), width: 800, height: 600, references: [], ...extra,
 });
+/**
+ * A new image with reference layers (26f), as host.runGenerate sends it: text.refs.model, else the text model (Oxen's
+ * edit id is its text id but for Grok, whose text.refs names the edit id), text.refs.options over the edit's options,
+ * the text settings' params, `k` references tagged R0..R(k-1).
+ */
+const refsReq = (v, k, extra = {}) => {
+    const t = v.text.refs || {};
+    return textReq(v, {
+        model: t.model || v.text.model, options: t.options ? { ...(v.options || {}), ...t.options } : v.options, refName: t.name || (v.refs && v.refs.name) || "image {n}",
+        references: Array.from({ length: k }, (_, i) => pngOf(640, 480, 60, "R" + i)), ...extra,
+    });
+};
 async function bodyOf(req, ctx = ctxFor(fakeServer())) {
-    if (req.kind === "text") return oxen._body(req);
+    if (req.kind === "text" && !(req.references || []).length) return oxen._body(req);
     const { pics, mask } = await oxen._pictures(req, req.options || {}, ctx, req.model);
     return oxen._body(req, pics, mask);
 }
@@ -289,6 +301,11 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
             if (v.text) {
                 for (const aspect of ["1:1", "16:9", "9:16", "4:3", "3:2"]) await run(textReq(v, { aspect }));
                 for (const ov of variantsOf(v.text.settings)) await run(textReq(v, { params: { ...paramsOf(v.text.settings, v.text.fixed), ...ov } }));
+            }
+            // a new image with references goes to the edit model (26f): one reference and as many as the edit takes
+            if (v.text && v.text.refs) {
+                const most = o.single ? 1 : (o.max_images || 16);
+                for (const k of [...new Set([1, most])]) for (const aspect of ["1:1", "16:9"]) await run(refsReq(v, k, { aspect }));
             }
         }
         check("every_body_validates_against_its_schema", !bad.length, bad.slice(0, 12).join(" | ") || `${served.length} recipes, ${n} bodies`);
@@ -444,6 +461,68 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
         check("a_new_image_needs_a_prompt", /a new image needs a prompt/.test(np) && t.posts.length === 1, np);
     }
 
+    // ---- 8b. a new image with reference layers (Generate new, 26f) ------------------------------------------------------
+    {
+        const pic = (l) => l.pictures.map((p) => `${p.role} ${p.ref} ${p.field} ${p.n}`).join(", ");
+        const two = (v) => oxen.textLayout(refsReq(v, 2));
+        check("textLayout_the_references_alone_from_the_first_place_under_the_edit_cap",
+            pic(two(V("flux2_pro"))) === "reference 0 input_image[0] 1, reference 1 input_image[1] 2" && two(V("flux2_pro")).max === 8 && !two(V("flux2_pro")).drops
+            && pic(two(V("qwen_image_edit"))) === "reference 0 input_images[0] 1, reference 1 input_images[1] 2" && two(V("qwen_image_edit")).max === 3
+            && two(V("flux2_klein")).max === 16 && two(V("nano_banana_2")).max === 14 && two(V("gpt_image_2")).max === 16
+            && pic(oxen.textLayout(refsReq(V("grok_imagine"), 1))) === "reference 0 input_image 1" && oxen.textLayout(refsReq(V("grok_imagine"), 1)).max === 1,
+            [pic(two(V("flux2_pro"))), pic(two(V("qwen_image_edit"))), pic(oxen.textLayout(refsReq(V("grok_imagine"), 1)))].join(" | "));
+
+        // FLUX.2 [pro]: /images/edit, the two references in order, no crop or mask, the asked aspect and its tier
+        const s = fakeServer();
+        const out = await oxen.generate(refsReq(V("flux2_pro"), 2, { aspect: "16:9", width: 1920, height: 1080 }), ctxFor(s));
+        const b = s.posts.length === 1 ? s.posts[0].body : {};
+        check("two_references_post_to_images_edit_in_order_at_the_asked_aspect",
+            s.posts.length === 1 && s.posts[0].url === BASE + "/api/ai/images/edit" && out.info.route === "edit"
+            && eq(norm(b), { model: "flux-2-pro", prompt: "a lighthouse Images 1 and 2 are reference images.", response_format: "b64_json", input_image: ["<png R0>", "<png R1>"], output_format: "png", resolution: "2 MP", aspect_ratio: "16:9", seed: 99 })
+            && eq(out.info.pictures, ["reference 1 png", "reference 2 png"]) && out.info.mask === null,
+            short({ url: s.posts[0] && s.posts[0].url, body: norm(b), info: out.info }));
+
+        // GPT Image 2 (a fill variant, mask as mask_url, edit aspect "auto") and Nano Banana 2 (the mask as a picture on a fill)
+        const g = await bodyOf(refsReq(V("gpt_image_2"), 2, { aspect: "3:2", width: 1536, height: 1024 }));
+        const nb = await bodyOf(refsReq(V("nano_banana_2"), 2, { aspect: "9:16", width: 1152, height: 2048 }));
+        check("no_mask_no_crop_no_edit_sentence_and_never_auto_on_a_fill_variant",
+            eq(norm(g), { model: "gpt-image-2", prompt: "a lighthouse Images 1 and 2 are reference images.", response_format: "b64_json", input_image: ["<png R0>", "<png R1>"], quality: "high", output_format: "png", resolution: "2K", aspect_ratio: "3:2" })
+            && eq(norm(nb), { model: "nano-banana-2", prompt: "a lighthouse Images 1 and 2 are reference images.", response_format: "b64_json", input_image: ["<png R0>", "<png R1>"], thinking_level: "minimal", resolution: "2K", aspect_ratio: "9:16" }),
+            short([norm(g), norm(nb)]));
+
+        // Grok: the edit id with the edit's options (text.refs.model), never the text model's fields; one picture as a string
+        const gs = fakeServer();
+        await oxen.generate(refsReq(V("grok_imagine"), 1, { aspect: "16:9", width: 1920, height: 1080, params: { resolution: "2k", output_format: "png" } }), ctxFor(gs));
+        const gb = gs.posts.length === 1 ? gs.posts[0].body : {};
+        check("grok_goes_to_its_edit_id_with_the_edit_options_not_options_text",
+            gs.posts[0].url === BASE + "/api/ai/images/edit" && eq(norm(gb), { model: "xai-grok-imagine-image-edit", prompt: "a lighthouse Image 1 is a reference image.", response_format: "b64_json", input_image: "<png R0>", output_format: "png" }) && !problems("xai-grok-imagine-image-edit", gb).length,
+            short(norm(gb)));
+
+        // the recipe's own name pattern (Qwen Image 2.1: "<image{n}>") in the sentence
+        const q = await bodyOf(refsReq(V("qwen_image_2_1"), 3, { refName: "<image{n}>" }));
+        check("the_sentence_uses_the_recipes_name_pattern", q.prompt === "a lighthouse <image1>, <image2> and <image3> are reference images." && q.input_images.length === 3, q.prompt);
+
+        // the count and size refusals name the references alone, before any call
+        const r = fakeServer();
+        const over = await throws(() => oxen.generate(refsReq(V("qwen_image_edit"), 4), ctxFor(r)));
+        const grok2 = await throws(() => oxen.generate(refsReq(V("grok_imagine"), 2), ctxFor(r)));
+        const big = (tag) => pngOf(1024, 1024, 7 * 1000 * 1000, tag);
+        const huge = await throws(() => oxen.generate(refsReq(V("flux2_pro"), 0, { references: [big("R0"), big("R1")] }), ctxFor(r, { opaque: async () => false })));
+        check("refusals_name_the_references_of_a_new_image_before_any_call",
+            over === "Oxen.ai qwen-image-3 takes at most 3 reference pictures for a new image; this run has 4: hide reference layers."
+            && grok2 === "Oxen.ai xai-grok-imagine-image-edit takes at most 1 reference picture for a new image; this run has 2: hide reference layers."
+            && /more than the 18 MB this app sends in one request\. Use fewer or smaller reference layers\.$/.test(huge) && r.calls.length === 0,
+            `${over} | ${grok2} | ${huge}`);
+
+        // 0 references: the text route, the text model and today's body, byte for byte (Grok keeps options.text)
+        const z = fakeServer();
+        await oxen.generate(textReq(V("grok_imagine"), { aspect: "16:9", width: 1920, height: 1080 }), ctxFor(z));
+        const zb = z.posts.length === 1 ? z.posts[0].body : {};
+        check("no_references_the_text_route_and_todays_body",
+            z.posts[0].url === BASE + "/api/ai/images/generate" && JSON.stringify(zb) === JSON.stringify({ model: "xai-grok-imagine-image", prompt: "a lighthouse", response_format: "b64_json", output_format: "png", resolution: "2k", aspect_ratio: "16:9" }),
+            short(zb));
+    }
+
     // ---- 9. providers/index.js ----------------------------------------------------------------------------------------
     {
         const keysPath = path.join(ROOT, "electron", "main", "keys.js");
@@ -466,6 +545,16 @@ async function bodyOf(req, ctx = ctxFor(fakeServer())) {
         check("oxen_makes_new_images_and_upscales", index.textProviders().includes("oxen") && index.upscaleProviders().includes("oxen"));
         const e = await throws(() => index.edit({ provider: "oxen", kind: "fill", model: "gpt-image-2", image: CROP() }));
         check("no_key_names_the_row", /No API key for Oxen\.ai/.test(e), e);
+        // the preview of a new image with references (26f): index.js lays it out through oxen.textLayout, capped by refsMax
+        const shape = (v, extra = {}) => ({ provider: "oxen", model: (v.text.refs && v.text.refs.model) || v.text.model, kind: "text", options: v.options, params: {}, count: 3, ...extra });
+        const lp = index.layout(shape(V("flux2_pro")));
+        const lg = index.layout(shape(V("grok_imagine")));
+        const lc = index.layout(shape(V("flux2_pro"), { refsMax: 2 }));
+        check("index_layout_of_a_new_image_names_the_references_from_image_1",
+            eq(lp.names, ["image 1", "image 2", "image 3"]) && lp.sent === 3 && lp.max === 8 && !lp.over && !lp.drops
+            && lg.max === 1 && lg.over === true && lg.sent === 3
+            && lc.max === 2 && lc.over === true,
+            short({ lp: [lp.names, lp.max], lg: [lg.names, lg.max, lg.over], lc: [lc.max, lc.over] }));
     }
 
     // ---- 10. the recipes ---------------------------------------------------------------------------------------------

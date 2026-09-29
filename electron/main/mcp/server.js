@@ -28,7 +28,8 @@ name, a unique part of the name, or "active". generate needs a selected recipe
 (role "reference") are named in the prompt as @img1, @img2 ... (list_layers gives each its label;
 set_prompt refs {"img1": "<layer id>"} pins a token to a layer); a run sends each token as the
 name the model knows that picture by, on a local ComfyUI recipe as its graph numbers the picture
-(generate's prompt_sent shows it); upscale and generate_new write a token as its layer's name. Always screenshot
+(generate's prompt_sent shows it); generate_new sends the shown references where the model takes them for a
+new image and keeps the reference layers; upscale writes a token as its layer's name. Always screenshot
 after a change you cannot judge from numbers. Selections, layers and settings persist in the
 editor between calls; the user may be looking at the same window.`;
 

@@ -154,7 +154,7 @@ async function main() {
         const s3 = fakeServer();
         await toapis.generate({ ...editReq(v, { kind: "text", image: null, mask: null, maskAlpha: null, width: 2048, height: 1152, aspect: "16:9", params: { channel: "official" } }) }, ctxFor(s3));
         const b3 = s3.submits[0];
-        check("a text run uploads nothing and sends the asked aspect with the tier", s3.uploads.length === 0 && !s3.calls.some((c) => /uploads/.test(c.url)) && !("image_urls" in b3) && b3.size === "16:9" && b3.metadata.resolution === "2K", JSON.stringify(b3));
+        check("a text run without reference layers uploads nothing and sends the asked aspect with the tier", s3.uploads.length === 0 && !s3.calls.some((c) => /uploads/.test(c.url)) && !("image_urls" in b3) && b3.size === "16:9" && b3.metadata.resolution === "2K", JSON.stringify(b3));
         const q = variant("qwen_image_edit");
         const s4 = fakeServer();
         await toapis.edit(editReq(q, { width: 1536, height: 864, negative: "blurry", seed: 7, params: { ...q.fixed, channel: "pro" } }), ctxFor(s4));
@@ -198,6 +198,77 @@ async function main() {
         const g = variant("gpt_image_2");
         const off = toapis.layout(editReq(g, { references: refsOf(1), params: { channel: "official" } })), std = toapis.layout(editReq(g, { references: refsOf(1), params: { channel: "standard" } }));
         check("gpt_image_2: official max 16 with the mask in its own field, standard max 6 without", off.max === 16 && off.pictures.some((p) => p.role === "mask" && p.n === null) && std.max === 6 && !std.pictures.some((p) => p.role === "mask"), JSON.stringify({ off: off.max, std: std.max }));
+    });
+
+    // ---- 2c. a new image with reference layers (docs/PLAN_REFS.md 26f): the references alone, the asked size ----
+    await section("2c. a new image with reference layers: textLayout and the request", async () => {
+        const textReq = (v, extra = {}) => editReq(v, { kind: "text", image: null, mask: null, maskAlpha: null, original: 0, refName: "image {n}", width: 2048, height: 1152, aspect: "16:9", prompt: "a lighthouse shaped like image 1, lit as in image 2", ...extra });
+        const refsOf = (n) => Array.from({ length: n }, (_, i) => png("REF" + (i + 1)));
+        const g = variant("gpt_image_2");
+        const req = textReq(g, { references: refsOf(2), params: { channel: "official", resolution: "auto" } });
+        const lay = toapis.textLayout(req);
+        check("textLayout: the two references in image_urls[0] and [1], numbered 1 and 2, no crop, no mask, the channel's cap 16", eq(lay, { pictures: [{ role: "reference", ref: 0, field: "image_urls[0]", n: 1 }, { role: "reference", ref: 1, field: "image_urls[1]", n: 2 }], max: 16, drops: null, style: false }), JSON.stringify(lay));
+        const s = fakeServer();
+        await toapis.generate(req, ctxFor(s));
+        const b = s.submits[0];
+        const byName = (re) => s.uploads.find((u) => re.test(u.name));
+        const r1 = byName(/-ref1\.png$/), r2 = byName(/-ref2\.png$/);
+        check("a text run with 2 references uploads exactly those two, as PNGs, and nothing else (no crop, no mask)", s.uploads.length === 2 && !!r1 && !!r2 && r1.bytes.equals(png("REF1")) && r2.bytes.equals(png("REF2")) && r1.type === "image/png" && !s.uploads.some((u) => /-(crop|mask)\./.test(u.name)), s.uploads.map((u) => u.name).join(", "));
+        check("the submit goes to /v1/images/generations with image_urls in the references' order and no mask_url", !!b && !!r1 && !!r2 && eq(b.image_urls, [r1.url, r2.url]) && !("mask_url" in b) && s.calls.filter((c) => c.method === "POST" && /\/v1\/images\/generations$/.test(c.url)).length === 1, JSON.stringify(b && { image_urls: b.image_urls, mask_url: b.mask_url }));
+        check("the asked aspect and its tier (16:9, 2k at 2048 x 1152), the model of the channel, the prompt as written (ToAPIs writes no instruction sentence)", !!b && b.size === "16:9" && b.resolution === "2k" && b.model === "gpt-image-2-official" && b.prompt === req.prompt && b.n === 1, JSON.stringify(b));
+        const s0 = fakeServer();
+        await toapis.generate(textReq(g, { references: [], params: { channel: "official", resolution: "auto" } }), ctxFor(s0));
+        const b0 = s0.submits[0];
+        const { image_urls: _urls, ...rest } = b || {};
+        check("0 references: no upload, no image_urls, and the body with references is that body plus image_urls, nothing else", s0.uploads.length === 0 && !!b0 && !("image_urls" in b0) && eq(rest, b0), JSON.stringify({ b0, rest }));
+        check("0 references: textLayout declares no picture", eq(toapis.textLayout(textReq(g, { references: [], params: { channel: "official" } })).pictures, []));
+
+        // the channel picks the model and the cap, as on an edit
+        const n = variant("nano_banana_2");
+        const sn = fakeServer();
+        const nreq = textReq(n, { references: refsOf(2), aspect: "1:1", width: 1024, height: 1024, params: { channel: "standard", "metadata.resolution": "auto" } });
+        await toapis.generate(nreq, ctxFor(sn));
+        const bn = sn.submits[0];
+        const n1 = sn.uploads.find((u) => /-ref1\.png$/.test(u.name)), n2 = sn.uploads.find((u) => /-ref2\.png$/.test(u.name));
+        check("nano banana standard: the references as [{url}] objects in order, its own model, the asked 1:1", !!bn && !!n1 && !!n2 && eq(bn.image_urls, [{ url: n1.url }, { url: n2.url }]) && bn.model === "gemini-3.1-flash-image-preview" && bn.size === "1:1" && toapis.textLayout(nreq).max === 6, JSON.stringify(bn));
+        const caps = [
+            ["gpt_image_2 standard", toapis.textLayout(textReq(g, { references: refsOf(1), params: { channel: "standard" } })).max, 6],
+            ["gpt_image_2 vip", toapis.textLayout(textReq(g, { references: refsOf(1), params: { channel: "vip" } })).max, 16],
+            ["gpt_image_2_5_flare official", toapis.textLayout(textReq(variant("gpt_image_2_5_flare"), { references: refsOf(1), params: { channel: "official" } })).max, null],
+            ["flux2_pro", toapis.textLayout(textReq(variant("flux2_pro"), { references: refsOf(1) })).max, 8],
+            ["seedream_5_lite", toapis.textLayout(textReq(variant("seedream_5_lite"), { references: refsOf(1) })).max, 10],
+            ["qwen_image_edit pro", toapis.textLayout(textReq(variant("qwen_image_edit"), { references: refsOf(1), params: { channel: "pro" } })).max, 3],
+            ["no params (the dialog's shape)", toapis.textLayout({ kind: "text", model: g.model, options: g.options, references: refsOf(1) }).max, 16],
+        ];
+        const off = caps.filter(([, got, want]) => got !== want);
+        check("textLayout's cap is the channel's edit cap (the crop's slot becomes a reference's): gpt standard 6, vip 16, flare none, flux 8, seedream 10, qwen 3", !off.length, JSON.stringify(off.length ? off : caps));
+
+        // the count: the crop's slot is a reference's now; the builder's refusal is the safety net behind checkPictures
+        const q = variant("qwen_image_edit");
+        const sq = fakeServer();
+        await toapis.generate(textReq(q, { references: refsOf(3), width: 1536, height: 864, params: { ...q.fixed, channel: "pro" } }), ctxFor(sq));
+        check("qwen: 3 references on a new image go (the edit cap of 3, crop included, is 3 references here), at the asked pixels", sq.submits.length === 1 && sq.submits[0].image_urls.length === 3 && sq.submits[0].size === "1536x864" && sq.uploads.length === 3, JSON.stringify(sq.submits[0]));
+        const s4 = fakeServer();
+        const e4 = await throws(() => toapis.generate(textReq(q, { references: refsOf(4), params: { ...q.fixed, channel: "pro" } }), ctxFor(s4)));
+        check("qwen: 4 references on a new image are refused before any request, in the text wording", e4 === "ToAPIs qwen-image-3.0-pro takes at most 3 reference pictures for a new image; this run has 4: hide reference layers." && s4.calls.length === 0, e4);
+
+        // the ratio and the 10 MB rules hold the references; the asked size is no input picture
+        const lite = variant("seedream_5_lite");
+        const sw = fakeServer();
+        await toapis.generate(textReq(lite, { references: [png("R1")], aspect: "4:1", width: 2048, height: 512 }), ctxFor(sw));
+        check("seedream lite: a new image asked at 2048 x 512 (4:1) is not held to the 3:1 input ratio", sw.submits.length === 1 && sw.submits[0].image_urls.length === 1, String(sw.submits.length));
+        const ihdr = (w, h) => { const x = Buffer.alloc(64, 0); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]).copy(x); x.writeUInt32BE(w, 16); x.writeUInt32BE(h, 20); return x; };
+        const sr = fakeServer();
+        const er = await throws(() => toapis.generate(textReq(lite, { references: [png("R1"), ihdr(400, 1600)] }), ctxFor(sr)));
+        check("seedream lite: a reference of 400 x 1600 on a new image is refused before any upload", !!er && /reference 2 is 400 × 1600/.test(er) && sr.calls.length === 0, er);
+        const MB = 1000 * 1000;
+        const sj = fakeServer();
+        await toapis.generate(textReq(g, { references: [png("BIGREF", 11 * MB), png("REF2")], params: { channel: "official" } }), ctxFor(sj, { toJpeg: async () => png("REFJPEG", MB), opaque: async () => true }));
+        const j1 = sj.uploads.find((u) => /-ref1\./.test(u.name));
+        check("an opaque 11 MB reference on a new image goes up as a JPEG, still first", !!j1 && j1.type === "image/jpeg" && /-ref1\.jpg$/.test(j1.name) && eq(sj.submits[0].image_urls[0], j1.url) && sj.submits[0].image_urls.length === 2, JSON.stringify(sj.uploads.map((u) => [u.name, u.type])));
+        const st = fakeServer();
+        const et = await throws(() => toapis.generate(textReq(g, { references: [png("CUTOUT", 11 * MB)], params: { channel: "official" } }), ctxFor(st, { toJpeg: async () => png("J"), opaque: async () => false })));
+        check("an 11 MB reference with transparency on a new image is refused with the one remedy that applies (no Highres fix, no Original)", et === "ToAPIs: reference 1 is 11.0 MB (with transparency, so it stays a PNG), ToAPIs takes 10 MB per image: use a smaller reference layer." && st.calls.length === 0, et);
     });
 
     // ---- 3. polling: queued, a 429 with Retry-After, in progress, completed; both result shapes; a submit 429 ----
@@ -386,9 +457,20 @@ async function main() {
                 const t = fakeServer();
                 await toapis.generate({ ...req, kind: "text", model: v.text.model, image: null, mask: null, maskAlpha: null, aspect: "1:1", width: 1024, height: 1024 }, ctxFor(t));
                 if (t.uploads.length || !t.submits[0] || !t.submits[0].size) bad.push(r.id + "/" + value + " text: " + JSON.stringify(t.submits[0]));
+                // 26f: the same text run with two reference layers sends them alone, in order, under the edit cap
+                const tr = { ...req, kind: "text", model: v.text.model, image: null, mask: null, maskAlpha: null, aspect: "1:1", width: 1024, height: 1024, original: 0, references: [png("TREF1"), png("TREF2")] };
+                const lay = toapis.textLayout(tr), editMax = toapis.layout(req).max;
+                const F = ch.images || "image_urls";
+                if (!eq(lay.pictures.map((p) => [p.role, p.field, p.n]), [["reference", `${F}[0]`, 1], ["reference", `${F}[1]`, 2]]) || lay.max !== editMax || lay.drops) bad.push(r.id + "/" + value + " textLayout: " + JSON.stringify(lay));
+                const t2 = fakeServer();
+                await toapis.generate(tr, ctxFor(t2));
+                const tb = t2.submits[0];
+                const urls = tb && tb[F] ? tb[F].map((x) => (typeof x === "string" ? x : x.url)) : [];
+                const want = ["TREF1", "TREF2"].map((tag) => (t2.uploads.find((u) => u.bytes.equals(png(tag))) || {}).url);
+                if (t2.uploads.length !== 2 || !eq(urls, want) || "mask_url" in tb || !tb.size) bad.push(r.id + "/" + value + " text with references: " + JSON.stringify(tb));
             }
         }
-        check("every variant: toapis first, the home default kept, a text shape, the notes, each channel builds a request", !bad.length, bad.join("; ") || `${served.length} recipes`);
+        check("every variant: toapis first, the home default kept, a text shape, the notes, each channel builds a request (a text run with two references included)", !bad.length, bad.join("; ") || `${served.length} recipes`);
     });
 
     // ---- 8. prompt upsampling on the ToAPIs key (llm.js), review F7 ----

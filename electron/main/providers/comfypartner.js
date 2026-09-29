@@ -16,7 +16,8 @@
 // case-sensitive), never on the signed upload or the answer's picture. The same Comfy key as Comfy Cloud and the
 // Router (`keyName`), the same host rule (settings.comfyrouter.base may name the loopback mock, and then only a
 // "test-" key goes there). Answered in one request; nothing is polled.
-// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3), textLayout(req) the same for Generate new with
+// reference layers (26f): the references alone from content[1] on, at most five as for an edit.
 "use strict";
 
 const { randomUUID } = require("node:crypto");
@@ -55,10 +56,12 @@ function sizeFor(w, h) {
 
 /**
  * The instruction for an edit (refs.instruction, numbered by layout() under the recipe's refs.name, "Image {n}"): the
- * crop is Image 1, then the Original and the references. The node's own @ImageN in the user's text still names picture N.
+ * crop is Image 1, then the Original and the references. A text run: the prompt, then what its references are
+ * ("Images 1 and 2 are reference images.", numbered by textLayout()), the prompt alone without any. The node's own
+ * @ImageN in the user's text still names picture N.
  */
 function editText(req, pics) {
-    return instruction(req, layout(req), resolveRefs(req.prompt, pics.length));
+    return instruction(req, req.kind === "text" ? textLayout(req) : layout(req), resolveRefs(req.prompt, pics.length));
 }
 
 /** { message } of a failed answer in any of the envelopes Comfy's API uses, the key taken out. */
@@ -118,6 +121,15 @@ function layout(req) {
     return layoutOf({ seq, max: +o.max_images > 0 ? +o.max_images : 1 });   // picturesFor's count check
 }
 
+/** Where each reference of a text run goes: content[0] is the prompt, then the references; the edit's cap. */
+function textLayout(req) {
+    const model = String(req.model || "");
+    if (!Object.prototype.hasOwnProperty.call(HY_MODELS, model)) throw new Error(`Comfy Partner API: Scumble knows no model "${model}" there (hy-image-v3.5-preview).`);
+    const o = { max_images: HY_MAX_IMAGES, ...(req.options || {}) };
+    const seq = refRoles(req).map(([role, i]) => [role, `messages[0].content[${i + 1}]`, i]);
+    return layoutOf({ seq, max: +o.max_images > 0 ? +o.max_images : 1 });   // picturesFor's count check
+}
+
 async function run(req, ctx, kind) {
     ctx = { ...ctx, sleep: ctx.sleep || realSleep, uuid: ctx.uuid || randomUUID, log: ctx.log || (() => {}), who: "HY Image 3.5" };
     const model = String(req.model || "");
@@ -127,10 +139,11 @@ async function run(req, ctx, kind) {
     const host = test || BASE;
     const o = { max_images: HY_MAX_IMAGES, ...(req.options || {}) };
     const p = req.params || {};
-    req = { ...req, references: kind === "text" ? [] : (req.references || []) };
+    req = { ...req, references: req.references || [], kind: kind === "text" ? "text" : req.kind };
     if (!String(req.prompt || "").trim()) throw new Error(`HY Image: ${kind === "text" ? "a new image needs a prompt" : "an edit needs a prompt that says what to change"}.`);
     if (kind !== "text" && !req.image) throw new Error("HY Image: no crop to edit.");
-    const pics = kind === "text" ? [] : await picturesFor(req, o, ctx, "HY Image 3.5");
+    // an edit's pictures: the crop, then the references; a new image's: the references alone (none without any)
+    const pics = await picturesFor(req, o, ctx, "HY Image 3.5");
     // the node sends the pictures without alpha; a picture with transparency goes as JPEG (flattened) where it can
     for (const pic of pics) {
         if (pic.mime !== "image/png") continue;
@@ -139,7 +152,7 @@ async function run(req, ctx, kind) {
         const jpeg = typeof ctx.toJpeg === "function" ? await ctx.toJpeg(pic.bytes, 92) : null;
         if (jpeg && jpeg.length) { pic.bytes = Buffer.from(jpeg); pic.mime = "image/jpeg"; }
     }
-    const text = kind === "text" ? resolveRefs(req.prompt, 0) : editText(req, pics);
+    const text = editText(req, pics);
     const content = [{ type: "text", text }];
     for (let i = 0; i < pics.length; i++) content.push({ type: "image_url", image_url: { url: await upload(ctx, host, test, pics[i], i + 1) } });
     const detail = Object.prototype.hasOwnProperty.call(HY_DETAIL, p.reference_detail) ? p.reference_detail : "standard";
@@ -187,6 +200,7 @@ module.exports = {
     keyHint: "the Comfy Cloud key (platform.comfy.org); credits only, no paid plan",
     edit(req, ctx) { return run(req, ctx, "edit"); },
     layout,
+    textLayout,
     generate(req, ctx) { return run(req, ctx, "text"); },
     baseUrl: router.baseUrl,   // settings.comfyrouter.base: the one loopback mock of api.comfy.org
     // exported for tools/comfyrouter_test.js

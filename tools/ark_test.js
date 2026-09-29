@@ -225,14 +225,37 @@ async function main() {
         const pf = picsOf(sf.posts[0].body);
         check("kind fill sends the crop alone as well: no mask picture, no mask field, no word about a mask", pf.length === 1 && pf[0].bytes.equals(editReq(v).image) && !("mask" in sf.posts[0].body) && !/mask/i.test(sf.posts[0].body.prompt), pf.map((p) => tagOf(p.bytes)).join(", "));
 
-        // a text run (Generate new): the same endpoint without image
+        // a text run (Generate new) without references: the same endpoint without image, even when the request carries a picture
         const st = fakeServer();
-        const ot = await ark.generate(textReq(v, { aspect: "16:9", width: 1024, height: 576, references: [pngOf(64, 64, 40, "IGNORED")], image: pngOf(64, 64, 40, "IGNORED2") }), ctxFor(st));
+        const ot = await ark.generate(textReq(v, { aspect: "16:9", width: 1024, height: 576, image: pngOf(64, 64, 40, "IGNORED2") }), ctxFor(st));
         const tb = st.posts[0] && st.posts[0].body;
         check("a text run: one POST to the same endpoint", st.calls.length === 1 && st.calls[0].url === BASE + PATH, st.calls.map((c) => c.url).join(", "));
-        check("a text run sends no image, even when the request carries a picture and references", !!tb && eq(Object.keys(tb).sort(), TEXT_KEYS), tb && Object.keys(tb).sort().join(","));
+        check("a text run without references sends no image, even when the request carries a picture", !!tb && eq(Object.keys(tb).sort(), TEXT_KEYS), tb && Object.keys(tb).sort().join(","));
         check("a text run: the prompt as it is, the size of the asked aspect, watermark false, b64_json, png", !!tb && tb.prompt === "a lighthouse at dusk" && tb.size === "1280x720" && tb.watermark === false && tb.response_format === "b64_json" && tb.output_format === "png" && tb.model === PRO_ID, short(tb));
+        check("a text run without references: the body as before 26f, key for key", JSON.stringify(tb) === JSON.stringify({ model: PRO_ID, prompt: "a lighthouse at dusk", size: "1280x720", watermark: false, response_format: "b64_json", output_format: "png" }), short(tb));
         check("a text run's answer: the bytes, no pictures in info", ot.bytes.equals(RESULT) && eq(ot.info.pictures, []) && ot.info.size === "1280x720", short(ot.info));
+
+        // with references (26f): `image` holds the references alone, in order (no crop, no mask), the size of the asked
+        // aspect as without them, and the sentence for them after the prompt
+        const str = fakeServer();
+        const trq = textReq(v, { aspect: "16:9", width: 1024, height: 576, references: refs, image: pngOf(64, 64, 40, "IGNORED2"), mask: pngOf(64, 64, 40, "IGNOREDMASK") });
+        const otr = await ark.generate(trq, ctxFor(str));
+        const rb = str.posts[0] && str.posts[0].body;
+        const rp = picsOf(rb);
+        check("a text run with 2 references: one POST to the same endpoint", str.calls.length === 1 && str.calls[0].url === BASE + PATH, str.calls.map((c) => c.url).join(", "));
+        check("a text run with 2 references: image is the two references in order, no crop, no mask", !!rb && eq(Object.keys(rb).sort(), BODY_KEYS) && rp.length === 2 && rp[0].bytes.equals(refs[0]) && rp[1].bytes.equals(refs[1]) && rb.image.every((u) => u.startsWith("data:image/png;base64,")), rp.map((p) => p && tagOf(p.bytes)).join(", "));
+        check("a text run with 2 references: the prompt, then the sentence for them, no edit sentence", !!rb && rb.prompt === "a lighthouse at dusk Images 1 and 2 are reference images." && !/\bEdit\b/.test(rb.prompt), rb && rb.prompt);
+        check("a text run with 2 references: the size of the asked aspect (1280x720), the text model", !!rb && rb.size === "1280x720" && rb.model === PRO_ID, short(rb && { ...rb, image: rp.length }));
+        const { image: _ri, ...restR } = rb || {};
+        check("a text run with 2 references: the body without references plus image and the sentence, nothing else", eq({ ...restR, prompt: tb.prompt }, tb), short(restR));
+        check("a text run with 2 references: info.pictures names the references", eq(otr.info.pictures, ["reference 1 png", "reference 2 png"]) && otr.info.size === "1280x720", short(otr.info));
+        const st1 = fakeServer();
+        await ark.generate(textReq(v, { aspect: "16:9", width: 1024, height: 576, references: [refs[1]], refName: "Image {n}" }), ctxFor(st1));
+        const b1t = st1.posts[0] && st1.posts[0].body;
+        check("a text run with one reference: the singular sentence in the request's refName, one picture", !!b1t && b1t.prompt === "a lighthouse at dusk Image 1 is a reference image." && picsOf(b1t).length === 1 && picsOf(b1t)[0].bytes.equals(refs[1]), b1t && b1t.prompt);
+        const tl = ark.textLayout(trq);
+        check("textLayout: image[0] and image[1], numbered 1 and 2, role reference, max = options.max_images (10 on 5.0 pro), no drop", eq(tl.pictures, [{ role: "reference", ref: 0, field: "image[0]", n: 1 }, { role: "reference", ref: 1, field: "image[1]", n: 2 }]) && tl.max === 10 && tl.drops === null && tl.style === false, short(tl));
+        check("textLayout: 14 on 5.0 lite, 10 without max_images (as the edit layout), no pictures without references", ark.textLayout(textReq(variant("seedream_5_lite"), { references: refs })).max === 14 && ark.textLayout({ kind: "text", references: refs, options: {} }).max === 10 && ark.layout({ kind: "edit", references: [], options: {} }).max === 10 && eq(ark.textLayout(textReq(v)).pictures, []), short(ark.textLayout({ kind: "text", references: refs, options: {} })));
 
         const se = fakeServer();
         const e1 = await throws(() => ark.generate(textReq(v, { prompt: "   " }), ctxFor(se)));
@@ -446,6 +469,19 @@ async function main() {
         const s6 = fakeServer();
         const e6 = await throws(() => ark.edit(editReq(noMax, { references: tiny(10, "R") }), ctxFor(s6)));
         check("a variant without max_images takes at most 10 (the smaller documented count)", !!e6 && /at most 10 pictures/.test(e6) && s6.calls.length === 0, e6);
+        // a text run (Generate new, 26f): the references alone, so the crop's slot is a reference's
+        const s7 = fakeServer();
+        const e7 = await throws(() => ark.generate(textReq(pro, { references: tiny(11, "R") }), ctxFor(s7)));
+        check("a text run on 5.0 pro with eleven references: refused before any call, in the words for a new image", !!e7 && /takes at most 10 reference pictures for a new image; this run has 11: hide reference layers\./.test(e7) && s7.calls.length === 0, e7);
+        const s8 = fakeServer();
+        await ark.generate(textReq(pro, { references: tiny(10, "R") }), ctxFor(s8));
+        check("a text run on 5.0 pro with ten references: all ten go out in order", s8.posts.length === 1 && picsOf(s8.posts[0].body).length === 10 && tagOf(picsOf(s8.posts[0].body)[0].bytes) === "R0" && tagOf(picsOf(s8.posts[0].body)[9].bytes) === "R9", String(s8.posts.length));
+        const s9 = fakeServer();
+        const e9 = await throws(() => ark.generate(textReq(lite, { references: [pngOf(100, 1700, 64, "TALL")] }), ctxFor(s9)));
+        check("a text run's reference steeper than 16:1: refused before any call, naming the reference layer only", !!e9 && /the reference 1 is 100 × 1700\. Use a less narrow reference layer\./.test(e9) && s9.calls.length === 0, e9);
+        const s10 = fakeServer();
+        const e10 = await throws(() => ark.generate(textReq(lite, { references: [pngOf(4096, 4096, ark.MAX_PICTURE_BYTES + 1, "ALPHAREF")] }), ctxFor(s10, { toJpeg: () => null, opaque: () => false })));
+        check("a text run's transparent reference over 30 MB: refused before any call, no Highres fix in the remedy", !!e10 && /the reference 1 is 30\.0 MB/.test(e10) && /\. Use a smaller reference layer\./.test(e10) && !/Highres/.test(e10) && s10.calls.length === 0, e10);
 
         const refused = async (req, re, what) => {
             const s = fakeServer();
@@ -701,6 +737,13 @@ async function main() {
             await ark.generate(textReq(v, { params, aspect: "1:1", width: w.sizes[0], height: w.sizes[0] }), ctxFor(t));
             const tb = t.posts[0] && t.posts[0].body;
             if (!tb || !eq(Object.keys(tb).sort(), TEXT_KEYS) || tb.model !== w.model || tb.size !== `${w.sizes[0]}x${w.sizes[0]}`) bad.push(`${r.id} text: ${short(tb)}`);
+            // and a text run with two references (26f): the two alone in image, the same size
+            const t2 = fakeServer();
+            const refs2 = [pngOf(640, 480, 70, "REF1"), pngOf(480, 640, 70, "REF2")];
+            await ark.generate(textReq(v, { params, aspect: "1:1", width: w.sizes[0], height: w.sizes[0], references: refs2 }), ctxFor(t2));
+            const tb2 = t2.posts[0] && t2.posts[0].body;
+            const p2 = tb2 ? picsOf(tb2) : [];
+            if (!tb2 || !eq(Object.keys(tb2).sort(), BODY_KEYS) || tb2.size !== `${w.sizes[0]}x${w.sizes[0]}` || p2.length !== 2 || !p2[0].bytes.equals(refs2[0]) || !p2[1].bytes.equals(refs2[1]) || tb2.prompt !== "a lighthouse at dusk Images 1 and 2 are reference images.") bad.push(`${r.id} text with references: ${short(tb2 && { ...tb2, image: p2.length })}`);
             // each region the row offers goes to its host with a real key
             for (const region of o.regions) {
                 const sr = fakeServer();
@@ -709,7 +752,7 @@ async function main() {
             }
             runs++;
         }
-        check("each ark variant: right after toapis, the default fal kept, its model id, input edit, the text shape and sizes, options.pixels = limits (pixels, minPixels, ratio 16, step 16), max_images, png, regions and the Region row, the notes; each builds an edit and a text request and reaches each region's host", !bad.length && runs === 2, bad.join("; ") || `${runs} variants`);
+        check("each ark variant: right after toapis, the default fal kept, its model id, input edit, the text shape and sizes, options.pixels = limits (pixels, minPixels, ratio 16, step 16), max_images, png, regions and the Region row, the notes; each builds an edit, a text request and one with two references, and reaches each region's host", !bad.length && runs === 2, bad.join("; ") || `${runs} variants`);
 
         // providers/index.js: ark in PROVIDERS after openrouter, a text provider, and the app's context
         const idxPath = path.join(ROOT, "electron", "main", "providers", "index.js");
@@ -743,6 +786,14 @@ async function main() {
         check("index.edit: the stored key, settings.ark.base as the mock, one POST there, the bytes back", !x1.err && x1.s.calls.length === 1 && x1.s.calls[0].url === BASE + PATH && x1.s.calls[0].headers.authorization === "Bearer " + KEY && Buffer.from(x1.out.bytes).equals(RESULT) && x1.out.mime === "image/png" && x1.out.info.region === "eu-west", short({ err: x1.err, calls: x1.s.calls.map((c) => c.url) }));
         const x2 = await viaIndex({ ...base, kind: "text", image: null, aspect: "16:9", width: 2560, height: 1440 });
         check("index.edit with kind text: the same endpoint without image", !x2.err && x2.s.posts.length === 1 && !("image" in x2.s.posts[0].body) && x2.s.posts[0].body.size === "2560x1440", short({ err: x2.err, body: x2.s.posts[0] && x2.s.posts[0].body }));
+        // Generate new with references (26f): textLayout numbers them, the markers become their names, the sentence follows
+        const tRefs = [new Uint8Array(pngOf(640, 480, 70, "TREF1")), new Uint8Array(pngOf(480, 640, 70, "TREF2"))];
+        const x2r = await viaIndex({ ...base, kind: "text", image: null, aspect: "16:9", width: 2560, height: 1440, prompt: "the jacket of {@ref:1} on the person of {@ref:0}", references: tRefs, original: 0, refName: "image {n}" });
+        const b2r = x2r.s.posts[0] && x2r.s.posts[0].body;
+        const p2r = b2r ? picsOf(b2r) : [];
+        check("index.edit with kind text and 2 references: the markers named, the sentence after them, both references in image in order, the asked size", !x2r.err && !!b2r && b2r.prompt === "the jacket of image 2 on the person of image 1 Images 1 and 2 are reference images." && p2r.length === 2 && tagOf(p2r[0].bytes) === "TREF1" && tagOf(p2r[1].bytes) === "TREF2" && b2r.size === "2560x1440" && x2r.out.prompt === "the jacket of image 2 on the person of image 1" && eq(x2r.out.refs, [{ ref: 1, name: "image 2" }, { ref: 0, name: "image 1" }]) && eq(x2r.out.info.pictures, ["reference 1 png", "reference 2 png"]), short({ err: x2r.err, prompt: b2r && b2r.prompt, pics: p2r.map((p) => tagOf(p.bytes)), out: x2r.out && { prompt: x2r.out.prompt, refs: x2r.out.refs } }));
+        const x2c = await viaIndex({ ...base, kind: "text", image: null, aspect: "16:9", width: 2560, height: 1440, prompt: "like {@ref:0}", references: tRefs, original: 0, refsMax: 1 });
+        check("index.edit with kind text past the variant's refsMax (2 on 1): refused centrally before any call", !!x2c.err && /takes at most 1 reference picture for a new image; this run has 2: hide reference layers\./.test(x2c.err) && x2c.s.calls.length === 0, x2c.err);
         const x3 = await viaIndex({ ...base, image: new Uint8Array(pngOf(4096, 4096, ark.MAX_PICTURE_BYTES + 1, "CROP", 2)) });
         const p3 = x3.s.posts.length ? picsOf(x3.s.posts[0].body) : [];
         check("index.edit: the app's toJpeg and opaque reach the adapter (an opaque RGB crop over 30 MB goes as JPEG)", !x3.err && p3.length === 1 && p3[0].mime === "image/jpeg" && tagOf(p3[0].bytes) === "NATIVE", short({ err: x3.err, mimes: p3.map((p) => p.mime) }));

@@ -17,6 +17,264 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
 
+LOOP_REFS = """{ id: "loopback_refs", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", text: { model: "loopback", refs: {} }, refs: { name: "image {n}" }, name: "Loopback refs", settings: [] }"""
+
+# a recipe the dialog lists: a loopback variant whose text shape takes reference pictures (26f)
+FAKE = """{ id: "loopback_refs_dialog", kind: "provider", name: "Loopback refs", family: "test", default: "loopback", providerIds: ["loopback"], providers: { loopback: { model: "loopback", input: "edit", settings: [], fields: null, options: null, fixed: null, note: "", edit: true, refs: { name: "image {n}" }, limits: { min: 64, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0, aspects: [] }, text: { model: "loopback", sizes: [512, 1024], fixed: null, settings: [], note: "", refs: { max: null, field: null, model: null, options: null, name: null } } } } }"""
+
+STEPS_26F = [
+    # 26f: a reference layer can start an empty tab; the white canvas under it is what Generate new replaces
+    ("refs_in_an_empty_tab", """
+const d = await run("new_document");
+window.__r = d.id;
+const ed = ednow(d.id);
+host.shell.activate(ed);
+if (ed.width) throw new Error("a new tab has a picture: " + ed.width);
+if (!ed.refContext().canAdd) throw new Error("canAdd is false in an empty tab (host.refTokens)");
+const l = await run("add_image_layer", { doc: d.id, filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", role: "reference" });
+if (ed.width !== 1024 || ed.height !== 1024) throw new Error("the empty tab got " + ed.width + "x" + ed.height + ", not a 1024 x 1024 canvas");
+const refs = ed.referenceLayers();
+if (refs.length !== 1 || refs[0].id !== l.id) throw new Error("the reference: " + JSON.stringify(refs.map((x) => x.name)));
+const px = ed.basePx.readRect(5, 5, 1, 1).data;
+if (px[0] < 250 || px[1] < 250 || px[2] < 250) throw new Error("the canvas under the reference is not white: " + [px[0], px[1], px[2]]);
+// a picture layer still needs a picture
+const d2 = await run("new_document");
+let msg = "";
+try { await run("add_image_layer", { doc: d2.id, filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", role: "none" }); }
+catch (err) { msg = String(err.message || err); }
+try { await run("close_document", { doc: d2.id, force: true }); } catch (_) { /* gone */ }
+if (!/no image loaded/.test(msg)) throw new Error("role none in an empty tab: " + msg);
+host.shell.activate(ed);
+return { size: [ed.width, ed.height], ref: l.id, refused: msg };
+"""),
+    # 26f: the shown references go along to a text shape that takes them, named "image 1" (no crop before them); the
+    # reference layers stay with their ids, order and pixels, every other layer goes with the old base
+    ("text_with_references", """
+const ed = ednow(window.__r);
+const prev = host.recipe;
+const A = ed.referenceLayers()[0].id;
+const b = await run("add_image_layer", { doc: window.__r, filename: "test_base.png", subfolder: "inpaint_canvas", type: "input", role: "reference" });
+const B = b.id;
+const paint = await run("add_paint_layer", { doc: window.__r, name: "paint" });
+if (ed.refSnapshot().refIds.join() !== [A, B].join()) throw new Error("the references before: " + ed.refSnapshot().refIds);
+const layerOf = (id) => ed.layers.find((l) => l.id === id);
+const pxBefore = [layerOf(A).px, layerOf(B).px];
+const sample = (id) => Array.from(layerOf(id).px.readRect(3, 3, 1, 1).data).join();
+const sampleBefore = [sample(A), sample(B)];
+host.setRecipe(__LOOP_REFS__);
+let out;
+try { out = await run("generate_new", { doc: window.__r, prompt: "the jacket of @img2 on the person of @img1", aspect: "16:9", resolution: 1024, seed: 7 }); }
+finally { host.setRecipe(prev); }
+if (!out.info || out.info.references !== 2) throw new Error("the loopback got " + JSON.stringify(out.info));
+if (out.prompt_sent !== "the jacket of image 2 on the person of image 1" || out.info.prompt !== out.prompt_sent) throw new Error("sent: " + JSON.stringify([out.prompt_sent, out.info.prompt]));
+const want = [{ label: "img1", id: A, sentAs: "image 1" }, { label: "img2", id: B, sentAs: "image 2" }];
+if (JSON.stringify(out.references) !== JSON.stringify(want)) throw new Error("references: " + JSON.stringify(out.references));
+if (out.kept !== 2 || out.dropped !== 1) throw new Error("kept / dropped: " + out.kept + " / " + out.dropped);
+if (ed.width !== 1024 || ed.height !== 576) throw new Error("16:9 at 1024: " + ed.width + "x" + ed.height);
+if (layerOf(paint.id)) throw new Error("the paint layer stayed");
+if (ed.refSnapshot().refIds.join() !== [A, B].join()) throw new Error("the references after: " + ed.refSnapshot().refIds);
+if (ed.promptText !== "the jacket of @img2 on the person of @img1") throw new Error("the tab's prompt: " + ed.promptText);
+for (const l of ed.referenceLayers()) if (l.x < 0 || l.y < 0 || l.x + l.w > 1024 || l.y + l.h > 576) throw new Error("a reference outside the new canvas: " + JSON.stringify([l.x, l.y, l.w, l.h]));
+if (layerOf(A).px !== pxBefore[0] || layerOf(B).px !== pxBefore[1]) throw new Error("a reference's pixels were replaced");
+if (sample(A) !== sampleBefore[0] || sample(B) !== sampleBefore[1]) throw new Error("a reference's pixels changed");
+if (!/@img2 . image 2/.test(ed.status) || !/The reference layers stay, 1 other layer was replaced/.test(ed.status)) throw new Error("the status: " + ed.status);
+if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift + " times without a remap");
+return { sent: out.prompt_sent, refs: out.references.length, kept: out.kept, dropped: out.dropped, status: ed.status };
+""".replace("__LOOP_REFS__", LOOP_REFS)),
+    ("hidden_reference_not_sent", """
+const ed = ednow(window.__r);
+const prev = host.recipe;
+const [A, B] = ed.refSnapshot().refIds;
+await run("set_layer", { doc: window.__r, layer: B, visible: false });
+host.setRecipe(__LOOP_REFS__);
+let out;
+try { out = await run("generate_new", { doc: window.__r, prompt: "a portrait after @img1", aspect: "1:1", resolution: 768 }); }
+finally { host.setRecipe(prev); }
+if (out.info.references !== 1 || out.kept !== 2) throw new Error("a hidden reference: sent " + out.info.references + ", kept " + out.kept);
+const bl = ed.layers.find((l) => l.id === B);
+if (!bl || bl.visible) throw new Error("the hidden reference was not kept hidden");
+await run("set_layer", { doc: window.__r, layer: B, visible: true });
+if (ed.refSnapshot().refIds.join() !== [A, B].join()) throw new Error("the references after showing it again: " + ed.refSnapshot().refIds);
+return { sent: out.info.references, kept: out.kept };
+""".replace("__LOOP_REFS__", LOOP_REFS)),
+    ("refuses", """
+const ed = ednow(window.__r);
+const prev = host.recipe;
+const base = __LOOP_REFS__;
+const w0 = ed.width, ids0 = ed.layers.map((l) => l.id).join();
+const refused = async (recipe, args, re, what) => {
+    host.setRecipe(recipe);
+    let msg = "";
+    try { await run("generate_new", { doc: window.__r, aspect: "1:1", resolution: 512, ...args }); }
+    catch (err) { msg = String(err.message || err); }
+    finally { host.setRecipe(prev); }
+    if (!re.test(msg)) throw new Error(what + ": " + msg);
+    if (ed.width !== w0 || ed.layers.map((l) => l.id).join() !== ids0) throw new Error(what + ": the refused run changed the tab");
+    return msg;
+};
+const out = {};
+out.cap = await refused({ ...base, text: { model: "loopback", refs: { max: 1 } } }, { prompt: "the two of them" }, /takes at most 1 reference picture for a new image; this run has 2: hide reference layers/, "past text.refs.max");
+out.alone = await refused({ ...base, text: { model: "loopback" } }, { prompt: "a room like @img1" }, /makes new images from the prompt alone/, "a token on a text shape without refs");
+// without a token such a model runs, sends no picture and keeps the references
+host.setRecipe({ ...base, text: { model: "loopback" } });
+let o;
+try { o = await run("generate_new", { doc: window.__r, prompt: "a quiet lake", aspect: "1:1", resolution: 512 }); }
+finally { host.setRecipe(prev); }
+if (o.info.references !== 0 || o.kept !== 2 || ed.referenceLayers().length !== 2) throw new Error("prompt alone: sent " + o.info.references + ", kept " + o.kept);
+out.alone_runs = [o.width, o.height];
+return out;
+""".replace("__LOOP_REFS__", LOOP_REFS)),
+    # generate_new's local path checks the run's tokens and the server before the canvas replaces the picture (the
+    # review of 26f: it used to wipe the tab first)
+    ("local_refuses_before_the_wipe", """
+const ed = ednow(window.__r);
+const prev = host.recipe;
+const before = () => [ed.width, ed.height, ed.layers.map((l) => l.id).join(), !!ed.base].join("|");
+const b0 = before();
+const stub = { id: "comfy_one_slot", kind: "comfy", name: "Comfy one slot", mode: "local", result: "9:0", canvas: "1", refs: { name: "image {n}", slots: 1 }, prompt: { "1": { class_type: "InpaintCanvas", inputs: {} } }, settings: [], needs: [] };
+const refused = async (args, re, what) => {
+    host.setRecipe(stub);
+    let msg = "";
+    try { await run("generate_new", { doc: window.__r, width: 640, height: 640, ...args }); } catch (err) { msg = String(err.message || err); }
+    finally { host.setRecipe(prev); }
+    if (!re.test(msg)) throw new Error(what + ": " + msg);
+    if (before() !== b0) throw new Error(what + ": the refused run changed the tab");
+    return msg;
+};
+const out = {};
+out.token = await refused({ prompt: "a barn in the style of @img1" }, /@img1 cannot be named: Comfy one slot reads the crop alone/, "a token past the slots");
+out.offline = await refused({ prompt: "a barn" }, /Not connected to ComfyUI/, "no server");
+return out;
+"""),
+    # generate_new's local path keeps the references on its fresh canvas (the live ComfyUI run is left out: 8188 is
+    # a production machine)
+    ("local_keeps_refs", """
+const ed = ednow(window.__r);
+const ids = ed.refSnapshot().refIds;
+const w0 = ed.width;
+await run("add_paint_layer", { doc: window.__r, name: "paint" });
+await ed.newCanvas("1024x768", { keepRefs: true });
+if (ed.width !== 1024 || ed.height !== 768 || w0 === 1024) throw new Error("the new canvas: " + ed.width + "x" + ed.height + " from " + w0);
+if (ed.refSnapshot().refIds.join() !== ids.join() || ed.layers.length !== ids.length || ed.layers.some((l) => !ed.isReference(l))) throw new Error("the layers: " + ed.layers.map((l) => l.name));
+// placed again for the new long side, k the place in the kept list as setBasePixels counts it
+ed.layers.forEach((l, k) => { const b = ed.referenceBox(l.px, k); if (l.x !== b.x || l.y !== b.y || l.w !== b.w || l.h !== b.h) throw new Error("not placed again: " + JSON.stringify([l.x, l.y, l.w, l.h, b])); });
+if (!/The reference layers stay/.test(ed.status)) throw new Error("the status: " + ed.status);
+return { refs: ids.length, box: [ed.layers[0].w, ed.layers[0].h], status: ed.status };
+"""),
+    # the dialog: the prompt field with chips, the reference bar and what each goes as with the dialog's own model
+    ("dialog_field_and_bar", """
+const ed = ednow(window.__r);
+host.shell.activate(ed);
+const list = host.shell.recipes();
+const fake = __FAKE__;
+list.push(fake);
+window.__genFake = fake;
+await run("set_prompt", { doc: window.__r, text: "the coat of @img2 on @img1" });
+await host.shell.openGenerateNew(ed);
+const pick = (id, v) => { const s = document.getElementById(id); s.value = v; s.dispatchEvent(new Event("change")); };
+pick("gen-mode", "api");
+pick("gen-recipe", fake.id);
+pick("gen-provider", "loopback");
+await host.shell.genSyncRefs();
+await wait(150);
+const f = host.shell.genField();
+if (!f || f.el.id !== "gen-prompt" || f.el.contentEditable !== "plaintext-only") throw new Error("the dialog's prompt is no prompt field");
+if (f.el.value !== "the coat of @img2 on @img1") throw new Error("the prefill: " + JSON.stringify(f.el.value));
+if (f.el.querySelectorAll(".ipc-chip").length !== 2) throw new Error("chips in the field: " + f.el.querySelectorAll(".ipc-chip").length);
+const sent = f.fullContext().refs.filter((x) => x.label != null).map((x) => x.sentAs);
+if (sent.join() !== "image 1,image 2") throw new Error("sent as: " + JSON.stringify(sent));
+const chips = document.querySelectorAll("#gen-refbar .ipc-refbar-chip");
+if (chips.length !== 2) throw new Error("bar chips: " + chips.length);
+// a variant whose text shape takes no pictures: the bar says so
+const refs0 = fake.providers.loopback.text.refs;
+fake.providers.loopback.text.refs = null;
+await host.shell.genSyncRefs();
+await wait(150);
+const count = document.querySelector("#gen-refbar .ipc-refbar-count");
+const none = count ? count.textContent : "";
+fake.providers.loopback.text.refs = refs0;
+await host.shell.genSyncRefs();
+await wait(150);
+if (!/sends no reference images/.test(none)) throw new Error("the bar for a model without references: " + none);
+f.focus();
+return { sent, none };
+""".replace("__FAKE__", FAKE)),
+]
+
+
+async def dialog_escape_closes_the_picker_first(c, pre):
+    """A real @ opens the picker; the first Escape closes it and leaves the dialog open, the second closes the dialog."""
+    from prompt_field_steps import key, typ
+    state = 'await wait(200); const f = host.shell.genField(); return { picker: f.popupOpen(), dialog: document.getElementById("gen-dialog").open, text: f.el.value };'
+    await c.eval(pre % 'const f = host.shell.genField(); f.setText("", { history: "reset" }); f.focus(); return 1;')
+    await typ(c, "@")
+    a = await c.eval(pre % state)
+    if not a["picker"] or not a["dialog"]:
+        raise Exception("the @ picker did not open in the dialog: %s" % a)
+    await key(c, "Escape")
+    b = await c.eval(pre % state)
+    if b["picker"] or not b["dialog"]:
+        raise Exception("the first Escape did not close only the picker: %s" % b)
+    # a click on a chip's chevron (the form is method=dialog: it must not close it), the focus on another control, then
+    # Escape: the dialog's cancel handler closes the swap menu and keeps the dialog open
+    xy = await c.eval(pre % 'const f = host.shell.genField(); f.setText("on @img1 ", { history: "reset" }); await wait(200); document.getElementById("gen-aspect").focus(); const n = f.el.querySelector(".ipc-chip .ipc-chip-chev"); if (!n) throw new Error("no chevron in the dialog field"); const r = n.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2];')
+    for kind in ("mousePressed", "mouseReleased"):
+        await c.call("Input.dispatchMouseEvent", type=kind, x=xy[0], y=xy[1], button="left", clickCount=1)
+    s = await c.eval(pre % 'await wait(250); const f = host.shell.genField(); return { menu: f.popupOpen(), dialog: document.getElementById("gen-dialog").open, focus: document.activeElement && document.activeElement.id };')
+    if not s["menu"] or not s["dialog"]:
+        raise Exception("a click on a chip's chevron in the dialog: %s" % s)
+    await key(c, "Escape")
+    t = await c.eval(pre % state)
+    if t["picker"] or not t["dialog"]:
+        raise Exception("Escape with the swap menu open closed the dialog, or not the menu: %s" % t)
+    await key(c, "Escape")
+    d = await c.eval(pre % state)
+    if d["dialog"]:
+        raise Exception("the last Escape did not close the dialog: %s" % d)
+    return {"opened": a, "after_first": b, "chevron": s, "after_menu": t, "after_last": d}
+
+
+STEPS_26F_AFTER = [
+    ("dialog_upsample_refs", """
+const ed = ednow(window.__r);
+const fake = window.__genFake;
+const saved = { ask: host.askLLM, backends: host.upsampleBackends, pics: host.llmRefPictures };
+let got = null;
+try {
+    host.upsampleBackends = () => [{ id: "stub", label: "Stub LLM" }];
+    host.llmRefPictures = false;
+    host.askLLM = async (backend, instruction, canvas, images) => { got = { instruction, images: (images || []).length }; return { text: "a long coat on @img1", seconds: 0.1, note: "" }; };
+    await host.shell.openGenerateNew(ed);
+    const pick = (id, v) => { const s = document.getElementById(id); s.value = v; s.dispatchEvent(new Event("change")); };
+    pick("gen-mode", "api");
+    pick("gen-recipe", fake.id);
+    pick("gen-provider", "loopback");
+    const f = host.shell.genField();
+    f.setText("the coat of @img2 on @img1");
+    document.getElementById("gen-upsample-go").click();
+    await wait(400);
+    if (!got) throw new Error("the language model was not asked");
+    if (!/@img1 \\(the layer/.test(got.instruction) || !/@img2 \\(the layer/.test(got.instruction) || !/Reference tokens: keep every token/.test(got.instruction)) throw new Error("the instruction: " + got.instruction);
+    if (f.el.value !== "a long coat on @img1") throw new Error("the answer: " + f.el.value);
+    const note = document.getElementById("gen-upsample-note").textContent;
+    if (!/dropped @img2/.test(note)) throw new Error("the check did not say @img2 was dropped: " + note);
+    const revert = document.getElementById("gen-upsample-revert");
+    if (!revert) throw new Error("no Revert button");
+    revert.click();
+    if (f.el.value !== "the coat of @img2 on @img1") throw new Error("Revert: " + f.el.value);
+    return { note, images: got.images };
+} finally {
+    host.askLLM = saved.ask; host.upsampleBackends = saved.backends; host.llmRefPictures = saved.pics;
+    const dlg = document.getElementById("gen-dialog");
+    if (dlg.open) dlg.close();
+    const list = host.shell.recipes();
+    if (list.includes(fake)) list.splice(list.indexOf(fake), 1);
+    try { await run("close_document", { doc: window.__r, force: true }); } catch (_) { /* gone */ }
+}
+"""),
+]
+
+
 STEPS = [
     ("api_text_to_image", """
 const d = await run("new_document");
@@ -275,6 +533,9 @@ const lay = await window.scumble.providers.layout({ provider: "openrouter", mode
 if (JSON.stringify(lay.names) !== JSON.stringify(["Image 3", "Image 4"]) || lay.sent !== 4 || lay.over) throw new Error("layout: " + JSON.stringify({ names: lay.names, sent: lay.sent, over: lay.over }));
 return { prompt: res.info.prompt, refs: res.refs, refused: refused.slice(0, 80), names: lay.names, sent: lay.sent };
 """),
+    *STEPS_26F,
+    ("dialog_escape_closes_the_picker_first", dialog_escape_closes_the_picker_first),
+    *STEPS_26F_AFTER,
     ("cleanup", """
 try { await run("close_document", { doc: window.__g }); } catch (_) { /* gone */ }
 return "ok";
@@ -295,7 +556,8 @@ async def run_all(c):
     ok = True
     for name, body in STEPS:
         try:
-            res = await c.eval(PRE % body, timeout=240)
+            # a step is JS for the page, or a Python function that drives real keys (26f's Escape in the dialog)
+            res = await (body(c, PRE) if callable(body) else c.eval(PRE % body, timeout=240))
             print("[ok] %s: %s" % (name, json.dumps(res)[:280]))
         except Exception as err:  # noqa: BLE001
             ok = False

@@ -150,11 +150,17 @@ function referenceSentences(ns, pat) {
  * The prompt an adapter sends with the pictures of this layout: what to edit (with a mask picture, what the mask
  * means), the user's text, then what the Original and the references are, each picture by the name the layout gives it
  * (so a resolved marker and the sentence agree). A layout of style references gets no reference sentence (they have no
- * number). Kind "text" and "upscale" take the text unchanged (26f extends the text form).
+ * number). Kind "upscale" takes the text unchanged; kind "text" (Generate new, 26f) edits no picture: the text, then
+ * what the references are ("Image 1 is a reference image.", "Images 1 to 3 are reference images."), and the text
+ * unchanged without any.
  */
 function instruction(req, lay, text) {
     const t = String(text == null ? "" : text);
-    if (req && (req.kind === "text" || req.kind === "upscale")) return t;
+    if (req && req.kind === "upscale") return t;
+    if (req && req.kind === "text") {
+        const ns = lay && !lay.style ? numbered(lay).filter((p) => p.role === "reference").map((p) => p.n) : [];
+        return ns.length ? [t.trim(), ...referenceSentences(ns, patternOf(req))].filter(Boolean).join(" ") : t;
+    }
     const pat = patternOf(req);
     const pics = numbered(lay);
     const name = (p) => nameOf(pat, p.n);
@@ -206,11 +212,13 @@ function partsOf(lay) {
  * fal-ai/flux-pro/v1/fill"). A route that declares `drops` gets no Original and no reference at all (all or nothing),
  * and a note says what was left out; a prompt that names a reference there, or names a style reference, is refused; a
  * run with more pictures than `max` (countOf) is refused. Returns { req, notes }: `req` the same object when nothing
- * changed, else a copy with references [] and original 0. Kind "text" and "upscale" pass (26f extends the text form).
+ * changed, else a copy with references [] and original 0. Kind "upscale" passes (index.js lays it out without
+ * references); kind "text" (Generate new, 26f) is held to its text layout the same way, its refusal naming the
+ * references only (a new image has no crop and no Original).
  */
 function checkPictures(lay, req, who) {
     const given = (req.references || []).length;
-    if (!given || req.kind === "text" || req.kind === "upscale") return { req, notes: [] };
+    if (!given || req.kind === "upscale") return { req, notes: [] };
     const marker = MARKER_ONE.test(`${req.prompt || ""} ${req.negative || ""}`);
     const drops = lay.drops ? String(lay.drops).replace(/[\s.]+$/, "") : "";
     if (drops) {
@@ -219,6 +227,9 @@ function checkPictures(lay, req, who) {
     }
     if (lay.style && marker) throw new Error(`${who} sends reference layers as style references, which have no number: take the name out of the prompt.`);
     const max = +lay.max > 0 ? +lay.max : null, count = countOf(lay);
+    if (max != null && count > max && req.kind === "text") {
+        throw new Error(`${who} takes at most ${max} reference picture${max === 1 ? "" : "s"} for a new image; this run has ${count}: hide reference layers.`);
+    }
     if (max != null && count > max) {
         throw new Error(`${who} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${count} (${partsOf(lay)}): hide reference layers or turn Original off.`);
     }

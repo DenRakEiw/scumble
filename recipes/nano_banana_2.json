@@ -112,7 +112,8 @@
           1024,
           2048,
           4096
-        ]
+        ],
+        "refs": {}
       },
       "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The model takes aspect presets: a crop of another shape comes back re-framed and is centre-cropped. Channel official is Google's own cloud (Vertex AI); vip and standard cost less, and their image list form is not verified."
     },
@@ -161,7 +162,10 @@
           ]
         }
       ],
-      "note": "Gemini has no mask input: the crop and the mask go along and the prompt tells the model to change the white area only; the stitch keeps the selection."
+      "note": "Gemini has no mask input: the crop and the mask go along and the prompt tells the model to change the white area only; the stitch keeps the selection.",
+      "text": {
+        "refs": {}
+      }
     },
     "fal": {
       "model": "fal-ai/nano-banana-2/edit",
@@ -205,6 +209,25 @@
       "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
       "options": {
         "sizing": "none"
+      },
+      "text": {
+        "refs": {
+          "model": "fal-ai/nano-banana-2/edit",
+          "options": {
+            "aspect_ratios": [
+              "1:1",
+              "2:3",
+              "3:2",
+              "3:4",
+              "4:3",
+              "4:5",
+              "5:4",
+              "9:16",
+              "16:9",
+              "21:9"
+            ]
+          }
+        }
       }
     },
     "replicate": {
@@ -237,7 +260,10 @@
           ]
         }
       ],
-      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "text": {
+        "refs": {}
+      }
     },
     "wavespeed": {
       "model": "google/nano-banana-2/edit",
@@ -279,7 +305,12 @@
           ]
         }
       ],
-      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". WaveSpeed sends the aspect preset closest to the crop."
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". WaveSpeed sends the aspect preset closest to the crop.",
+      "text": {
+        "refs": {
+          "model": "google/nano-banana-2/edit"
+        }
+      }
     },
     "comfycloud": {
       "model": "Nano Banana 2 (Gemini 3.1 Flash Image)",
@@ -363,7 +394,8 @@
           1024,
           2048,
           4096
-        ]
+        ],
+        "refs": {}
       },
       "note": "Runs on OpenRouter (one key for many models); the adapter has run against the live API with GPT Image 2.5, this model not yet. The pictures go inline in the request to OpenRouter, which passes them to Google (AI Studio, which keeps data 55 days, or Vertex AI, which keeps none; OpenRouter picks). No mask input on OpenRouter: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. An edit sends no aspect, so the host keeps the crop's shape as its own edit endpoint does (not verified); an answer of another shape is centre-cropped. Resolution auto takes the smallest tier that covers the crop."
     },
@@ -421,7 +453,8 @@
           1024,
           2048,
           4096
-        ]
+        ],
+        "refs": {}
       },
       "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; run against the live API on 2026-09-23 (an inpaint at Size 1K, 16 s, about $0.08). The pictures go inline in the request to Comfy, which passes them to Google's Vertex AI. No mask input: the crop and the mask go along and the prompt tells the model to change the white area only; the stitch keeps the selection. Size takes 1K, 2K or 4K (the Router's schema lists no 0.5K). At most fourteen pictures go in besides the mask."
     },
@@ -497,7 +530,8 @@
           1024,
           2048,
           4096
-        ]
+        ],
+        "refs": {}
       },
       "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. No mask input for this model on Oxen: the mask goes along as a second picture and the prompt says what it means; the stitch keeps the selection anyway. The edit asks for aspect \"auto\" (not verified to keep the crop's shape). An answer of another shape is centre-cropped. Resolution 512 to 4K, on auto the smallest that covers the crop; at most fourteen pictures. List price $0.0585 (512) to $0.1963 (4K), 2026-09-26."
     }

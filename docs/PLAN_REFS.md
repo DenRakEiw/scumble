@@ -5,8 +5,9 @@ reference images (in Scumble: the reference layers) can be named inside the prom
 must be changed so that they understand the reference images too. In the prompt the images must be named with the
 designation under which they are actually sent over the API.
 
-**Status (2026-09-29):** S1 (26a1, 26b1), S2 (26b2, 26a2), S3 (26c1, 26c2), S4 (26d1, 26d2) and 26e built, see their
-"Built" paragraphs; next 26f (S5). The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+**Status (2026-09-29):** all of it built: S1 (26a1, 26b1), S2 (26b2, 26a2), S3 (26c1, 26c2), S4 (26d1, 26d2) and S5
+(26e, 26f), see their "Built" paragraphs; nothing run against a live API or a real ComfyUI. Next: the 0.1.34 release on
+the user's word (section 6's notes are the CHANGELOG's source). The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 
 How this plan was made: a code map and a web survey (seven agents), a design review (three critics), the user's
 answers, then one planner per step against the code and two cross-step critics (interfaces; facts and rules). **Where a
@@ -401,7 +402,16 @@ directly; comfy steps stub `host.connected`, `objectInfo`, `ensureOnServer` and 
   Original on a refine pass; the reference bar counts "2 of 8 for this recipe" on a local recipe; a graph Scumble cannot
   trace names the pictures by their place in the batch and says the wording is guessed.
 - 26f: Generate new keeps the reference layers and sends them where the model takes pictures; Replicate text runs
-  send the chosen aspect instead of `match_input_image`.
+  send the chosen aspect instead of `match_input_image`. Built: Generate new sends the shown reference layers to the
+  models that take pictures for a new image (FLUX.2, GPT Image, Nano Banana, Seedream, Qwen, HY Image, Grok on some
+  providers), numbered from 1 ("@img1" goes out as "image 1"); a model that makes pictures from the prompt alone refuses
+  a token and keeps the references in the tab; the reference layers stay over the new picture, every other layer goes;
+  the status line says what went out and how many layers were replaced; a reference added in an empty tab through the
+  prompt field or an agent gets a white canvas first; the dialog's prompt is the same field as the Generate tab's
+  (chips, @, the bar with what each goes as for the dialog's own model), and its Upsample keeps the tokens with a Revert;
+  local Generate new keeps the references too and stops before it replaces anything when a token cannot go or ComfyUI
+  is not connected; agents: `generate_new` returns `references`, `kept`, `dropped`, `list_recipes` gives `textRefs`,
+  `add_image_layer` takes a reference in an empty tab.
 
 ## 7. Defaults taken for the smaller questions
 
@@ -2134,7 +2144,15 @@ the pre-check use the node's refine rule from the editor's mode (a comfy recipe 
 `local_recipes_name_the_batch_pictures_and_trim_the_unused_slots` (through `ed.generate()` too), `refs_send` step 5
 rewritten (a graph that cannot be traced names by the batch, a guess; a refusal past declared slots), `prompt_field_test`
 +3. Gates `--offline --tiles on`: recipes, upscale, commands, nodecopy, lint, types. Nothing queued on 8188; neither
-widened graph has run.
+widened graph has run. **The review** (four finders, a verifier each, after the commit a608e8d; its fixes landed with
+26f's commit, since the same files carried 26f by then) confirmed: a graph with a one-picture picker outside the traced
+encoders (a CLIP vision, style or IPAdapter input on batch 1) counted as an identity and cut that reference off
+(`pickedBatches`: no identity then; a regression case in `comfyrefs_test.js`); the Info row called a style route's
+references "not sent" (`refLayout` keeps `style`, the row says "as style references (no number)"); `slotsError`
+offered ways that make no room (a one-slot graph: "reads the crop alone"; "hide a reference" only when one goes, "turn
+Original off" only when it goes). Filed, older than 26e: the local recipes' Model / Text encoder / VAE rows carry over
+between Qwen and Klein (`docs/BUGS.md`). Rejected: a Klein negative token refused although the graph does not read it
+(the documented design).
 
 ### Read first: corrections from the review (they win over the text below)
 
@@ -2345,6 +2363,44 @@ About 1 day: graphs 1 h, `comfyrefs.js` 3 h, `queueGenerate` and host 2 h, Info 
 `Item 26 step 26e: local ComfyUI recipes resolve @img tokens to the picture's name in the batch (Qwen 2.1 <imageN>, 10 slots; Klein image N, 4 slots), trim unused slots, refuse past them, and the Info panel counts the refine pass`
 
 ## 26f: Generate new with references
+
+**26f built (2026-09-29, S5).** Main: `index.js` `layoutFor` lays out a text run itself (no references: nothing, the
+request byte for byte as before; with references the adapter's new export **`textLayout(req)`**, a separate hook
+rather than a text branch in every `layout`, so an adapter without one declares the drop), `request.refsMax` (the
+variant's `text.refs.max`, carried in the request and the `provider:layout` shape; the plan had no carrier) caps it,
+an Original on a text run is refused, `layout(shape)` answers kind text; `refs.js` `instruction` and `checkPictures`
+got their text forms ("Images 1 to 3 are reference images.", "... takes at most N reference pictures for a new image;
+this run has M: hide reference layers."). Every adapter got `textLayout` and a text builder that sends the references
+(one workflow: six file groups, each built and then reviewed by a second agent; OpenAI switches to
+`/v1/images/edits`, Oxen to `/images/edit`, Magnific's routes carry `refs: true`, Comfy Router's vertexai sends the
+closest Gemini ratio for a free size, Replicate never sends `match_input_image` on a text run: the BUGS.md item is
+fixed). `recipes.js` `textRefsOf`; 98 shipped variants carry `text.refs` (the table in the scratch script, checked
+against each variant's own edit model; Oxen klein `max: 4`). Renderer: `runGenerate` (the snapshot, markers for the
+shown references, a live token refused on a variant without `text.refs`, the refusals before anything is sent, the
+status and return with `references` / `kept` / `dropped`), `stitch.js` `referenceBytes`, `setBasePixels` `keep`,
+`setBaseFromCanvas` / `newCanvas` `keepRefs`, `referenceBox`, `addImageLayers` `blank` (an explicit option, not a
+default, so the reference list's + and a Shift+drop still load the first file as the picture in an empty tab; the
+prompt field and `add_image_layer` get the white canvas), `refContext(info)` / `refDescriptors(info)` for another
+route's layout, `refLayout` with `over.recipe`, kind "text" and `over.state` (a local recipe's preview with the white
+canvas all selected); `generate_new` (the local path keeps the references and checks the tokens and the server before
+the wipe), `add_image_layer` without `needsImage`, `list_recipes` `textRefs` (a boolean; a local recipe's is whether
+its graph reads more than the crop). The dialog: the PromptField and RefBar (`#gen-refbar`, `#gen-prompt-host`, the
+label wrapper gone so a click on "Prompt" presses no chip; the dialog's button rules scoped off the `ipc-` buttons),
+`genSyncRefs`, the remap target per opening, the cancel handler, Upsample with `{references}`, the rule, the pictures,
+the check, a carried Revert and an answer dropped when the dialog was reopened. **The review** (five finders, 18
+confirmed, none rejected) fixed: local Generate new wiped the tab before refusing a token (high: the check and the
+server check now come first); fal Seedream 5 sent the raw size outside the model's area range (`text.refs.options.
+pixels`, `fittedSize`); fal Nano Banana with a free size sent no shape (`aspect_ratios`); the dialog's ToAPIs preview
+ignored the Channel row (the tab's recipe compared by id and provider); `textRefs` false on local recipes; Revert's
+numbering; a late answer in a reopened dialog; `remapOthers` skipped a field whose text did not change (every target
+gets the remap now); the tab's hidden negative refused a prompt-only model (written as layer names there); a CSS rule
+that broke the field's 22 px lines; three tests that passed vacuously (canAdd, the placement, the Escape handler: a
+chevron click now opens the swap menu with the focus outside the field). Filed, older than 26f: Gemini direct ignores
+the asked aspect while the Aspect row says "auto" (BUGS.md). Tests: `refs_layout_test` 653 (sections 6-9 rewritten, 12
+new), `recipes_test` "text.refs", `reftokens_test` text markers, the adapters' own text-run cases, `generate_test`'s
+nine new steps. Gates `--offline`: generate (both backends), commands, recipes, upscale, editor (a known flake,
+green on the rerun), toapis, openrouter, ark, comfyrouter, oxen, magnific, assistant, nodecopy, lint, types. Nothing
+ran against a live API.
 
 ### Read first: corrections from the review (they win over the text below)
 

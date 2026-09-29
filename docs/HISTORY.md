@@ -24,6 +24,61 @@ The block of 2026-09-28 (late night, package 5 complete) was moved here the same
 
 The block of 2026-09-29 (morning, item 26 S1 built) was moved here at noon, when the eraser hotfix 0.1.33 was prepared.
 
+The block of 2026-09-29 (evening, item 26 S1 to S4 built) was moved here at night, when S5 (26e, 26f) was built.
+
+## Where things stand (2026-09-29, evening: 0.1.33 released; item 26 S1 to S4 built)
+
+Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
+verbatim). Check `gh release list` before believing any release state written down anywhere.
+
+**Released:** 0.1.33 is Latest (published 2026-09-29 12:14 CEST), the eraser hotfix. The regression of 0.1.32 (every
+coalesced pen point a stroke of its own) is fixed for erase, paint, mask, remove, clone and heal: `layerStroke`,
+`cloneStroke`, `pathStamps` (main 80bce51, and 3dfaf61 after a review workflow); measured and described in
+`docs/BUGS.md` "Erasing had become very slow since 0.1.32 - fixed for 0.1.33" (erase at 1,000 px with 8 coalesced
+points: 0.1.31 21.7, 0.1.32 108.8, 0.1.33 18.9 ms a move; the same inside a selection). It was released from the
+branch `hotfix/0.1.33` off `v0.1.32` (tag `v0.1.33` on a6d0e32; exe gates `--offline` green on both backends,
+`dist/gates/gates/rel33-exe*`); `main` holds the same fix and the merge of that branch. Both are pushed. The dev blog
+post `v0-1-33` ("One move, one stroke") is live, website commit 6fe8f1a deployed by git. **The manual was not synced:**
+main's `docs/MANUAL.md` already describes S1's img labels, which ship with 0.1.34 (the sync copies main's working tree;
+0.1.33's manual is 0.1.32's). Sync it at the 0.1.34 release. A Store package only on the user's word.
+- **Item 26, reference layers named in the prompt** (`docs/PLAN_REFS.md`; the user answered A-F: `@img1` renamed per
+  API in the backend, hiding renumbers, a contenteditable field with inline picture chips, reference pictures to the
+  upsampler on with a setting, Generate new with references in this round, categories later). **S1 and S2 built and
+  committed locally 2026-09-29** (not pushed): 26a1 `layout(req)` per adapter; 26b1 `reftokens.js`, img labels, the
+  remap; 26b2 (07be10c) the click snapshot, markers sent from the renderer, `host.refPrompt` / `refLayout` /
+  `layoutShape`, agents' `label`, `sent_as`, `set_prompt refs`, `prompt_sent`; 26a2 (270bd7b) every drop refused or
+  declared, caps per variant from the vendors' pages, one instruction sentence numbered like the markers, label parts.
+  A typed `@img1` now works end to end on API recipes (ComfyUI recipes refuse it until 26e). Each step has a "Built"
+  paragraph in the plan; gates `--offline --tiles on` green (commands, generate, upscale, the provider gates, editor,
+  document, mcp, assistant, nodecopy, lint, types). The prompt update ships as **0.1.34**. **26c1 built and committed
+  locally 2026-09-29 (S3, not pushed):** `renderer/editor/prompt_field.js`, the prompt as a contenteditable with
+  reference chips, its own undo, whole-chip deletes, an automatic space between a chip and a word typed against it
+  (its "Built" paragraph in the plan lists what the code showed and the review's ten fixes). **26c2 built and committed
+  locally 2026-09-29 evening (S3 done, not pushed; the user's go "baue weiter"):** the @ picker, the reference bar above
+  the prompt, the 400 ms hover card, the chevron's swap menu, chip drag, pictures pasted or dropped into the prompt
+  become references; `host.refLayout` gives `cap` / `refuse` and a `{keep}` option; the node repo got the stub `async
+  refLayout() { return null; }` (committed there, not pushed). Screenshots were sent; the user judges the look. Its
+  "Built" paragraph lists the decisions the plan did not have and the review's 13 fixes. **S4 built and committed
+  locally 2026-09-29 evening (not pushed; the user's "baue S4"):** 26d1 (2678428): `{references}` in the templates and
+  the built-in rules, the token rule, a refusal for a hidden / deleted / unknown token, the check after a rewrite (only
+  when the request named references) and the answer carried through the same remaps as Revert's text (a merge during
+  the wait included); 26d2: the named reference pictures (six at most, 512 px) to API and local-endpoint models, the
+  switch in Settings › Prompt templates (`llm.refPictures`, absent = on), the compatible client's steps all -> crop ->
+  text, `vision: false` honoured, the local endpoint no longer retries a failure that names no image. No live model
+  run (mock and stubs only). **Next: S5 = 26e + 26f** (local ComfyUI recipes, Generate new with references; 26f also
+  owns the Generate new dialog's upsample, 26d1 sub-task 7 and 26d2 sub-task 4), in a fresh session. Read the plan's
+  sections 0 and 3-6 and the step's own section ("Read first" wins). Then package 6 (layers pro) of
+  `docs/PLAN_0_1_31.md`.
+- **To do at the 0.1.34 release (the user, 2026-09-29):** take the other product's name out of the "Next up" line of
+  the `v0-1-33` post (`F:\portfolio_web\lib\scumble-posts.ts`, "... the way X does it"), and write the 0.1.34 post,
+  CHANGELOG section and manual lines without naming any other product as the model for the feature.
+- **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
+  of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
+  point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
+  and 5 (listed in the late-night hand-over of 2026-09-28 in `docs/HISTORY.md`: among them the selection that stays after
+  a patch or a move, the Shift+J ring, Liquify's no-Apply, its strength and keys, the freeze not undone or saved); item
+  25's look and timing. The Store resubmission (search terms without "ComfyUI" / "FLUX") is on the user's side.
+
 ## Where things stand (2026-09-29, morning: 0.1.32 released, item 26 S1 built)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,

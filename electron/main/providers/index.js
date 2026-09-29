@@ -14,6 +14,10 @@
 //                            a marker {@ref:i} in the prompt becomes that picture's name here, before the adapter runs;
 //                            before that, checkPictures strips the references of a route that declares `drops` (the
 //                            answer's `notes` say so) and refuses a run past the route's `max`
+//   textLayout(req)          the same for kind "text" with references (Generate new, 26f): no crop, the references
+//                            numbered from 1 in the order the text route sends them; an adapter without it leaves
+//                            references out of a new image. `request.refsMax` (the variant's `text.refs.max`) lowers
+//                            the route's cap.
 //   ctx:     { key, fetch, log, base, toJpeg, opaque, bitmap, fromBitmap, cropPng }   base: the adapter's own allowlisted host from
 //            settings (ToAPIs, OpenRouter; ModelArk's and Oxen.ai's loopback mock; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
 //            nativeImage, opaque(png): whether it has no transparent pixel; bitmap(png): { width, height, data } (BGRA),
@@ -93,12 +97,21 @@ function textProviders() {
 }
 
 /**
- * Where each picture of this request goes (refs.js). Text and upscale runs are laid out here: Generate new sends no
- * picture at all, an upscale the picture alone. Every other kind asks the adapter, whose declaration is checked
- * against the request; a layout that throws refuses the run before anything is sent.
+ * Where each picture of this request goes (refs.js). An upscale sends the picture alone (laid out here). A text run
+ * (Generate new) without references sends no picture; with references the adapter's `textLayout` numbers them from 1
+ * (no crop), capped by the request's `refsMax`, and a route without one declares the drop. Every other kind asks the
+ * adapter's `layout`. Each declaration is checked against the request; a layout that throws refuses the run before
+ * anything is sent.
  */
 function layoutFor(id, p, req) {
-    if (req.kind === "text") return checkLayout(layoutOf({ drops: "Generate new sends no reference images." }), req);
+    if (req.kind === "text") {
+        if (!(req.references || []).length) return checkLayout(layoutOf({}), req);
+        if (typeof p.textLayout !== "function") return checkLayout(layoutOf({ drops: `${p.label} makes a new image from the prompt alone: reference images are left out` }), req);
+        const l = p.textLayout(req);
+        const cap = +req.refsMax > 0 ? Math.floor(+req.refsMax) : null;
+        if (cap != null && l) l.max = l.max == null ? cap : Math.min(+l.max, cap);
+        return checkLayout(l, { ...req, provider: id });
+    }
     if (req.kind === "upscale") return checkLayout(layoutOf({ seq: [["crop", "image"]], drops: "An upscale sends the picture alone: reference images are left out." }), req);
     if (typeof p.edit !== "function") throw new Error(`${p.label} edits no images in Scumble; pick another provider for this model.`);
     const l = typeof p.layout === "function" ? p.layout(req) : layoutOf({ seq: [["crop", "image"], ...refRoles(req).map(([role, i]) => [role, `references[${i}]`, i])] });
@@ -160,6 +173,7 @@ async function edit(request) {
         params: request.params || {},
         original: request.original ? 1 : 0,      // references[0] is the crop before the fill (docs/PLAN_REFS.md C3)
         refName: validRefName(request.refName) ? request.refName : REF_NAME_DEFAULT,   // IPC input is never trusted
+        refsMax: +request.refsMax > 0 ? Math.floor(+request.refsMax) : null,   // a text run's cap from the variant (26f)
     };
     const t0 = Date.now();
     const ctx = contextFor(id, p, key);
@@ -168,6 +182,7 @@ async function edit(request) {
     let out, named, lay, notes = [];
     try {
         if (req.original && !req.references.length) throw new Error("The request marks an Original picture but carries no reference picture: nothing was sent.");
+        if (req.original && text) throw new Error("A new image has no Original picture, and the request marks one: nothing was sent.");
         lay = layoutFor(id, p, req);
         // a declared drop takes every reference out (the adapter never sees or uploads them), a run past the cap is refused
         const chk = checkPictures(lay, req, `${p.label} ${req.model}`);
@@ -193,8 +208,8 @@ async function edit(request) {
 
 /**
  * The layout of a request of this shape, for the renderer's preview (the reference bar, the hover card, `status`):
- * shape { provider, model, kind, fields, options, params, original, count, refName }, `count` the references
- * including the Original. The mask follows from `kind` as the builders read it. Answers the layout plus `names` (the
+ * shape { provider, model, kind, fields, options, params, original, count, refName, refsMax }, `count` the references
+ * including the Original (a text run has none). The mask follows from `kind` as the builders read it. Answers the layout plus `names` (the
  * name of each reference index, null when the route leaves it out or cannot number it, all null when it declares a
  * drop: the send strips every reference then), `sent` (countOf) and `over` (more than the route's `max`).
  */
@@ -204,6 +219,7 @@ function layout(shape) {
     const p = Object.prototype.hasOwnProperty.call(PROVIDERS, id) ? PROVIDERS[id] : null;
     if (!p) throw new Error("Unknown provider: " + id);
     const kind = ["fill", "edit", "text", "upscale"].includes(s.kind) ? s.kind : "fill";
+    if (kind === "text" && typeof p.generate !== "function") throw new Error(`${p.label} has no text-to-image endpoint in Scumble; pick another provider for this model.`);
     const count = Math.max(0, Math.min(64, Math.floor(+s.count) || 0));
     const stand = Buffer.from([0]);   // a picture as far as a layout looks: there
     const withMask = kind === "fill" || kind === "edit";
@@ -211,8 +227,9 @@ function layout(shape) {
         provider: id, model: String(s.model || ""), kind, fields: s.fields || null, options: s.options || null, params: s.params || {},
         prompt: "", negative: null, width: 1024, height: 1024,
         image: kind === "text" ? null : stand, mask: withMask ? stand : null, maskAlpha: withMask ? stand : null,
-        references: Array.from({ length: count }, () => stand), original: s.original && count ? 1 : 0,
+        references: Array.from({ length: count }, () => stand), original: s.original && count && kind !== "text" ? 1 : 0,
         refName: validRefName(s.refName) ? s.refName : REF_NAME_DEFAULT,
+        refsMax: +s.refsMax > 0 ? Math.floor(+s.refsMax) : null,
     };
     const l = layoutFor(id, p, req);
     // what edit() does with this request: a declared drop strips every reference (a refusal over the cap is `over`)

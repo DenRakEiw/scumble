@@ -9,12 +9,17 @@
 //     -> { model, created, images: [{ b64_json } | { url }] }
 //   errors: { error: { type, title, detail }, status: "error", status_message } | { error: { message } }
 //
+// A new image (Generate new) with reference layers goes to /images/edit with the references alone in the picture field
+// (no crop, no mask) and the asked aspect where the edit model takes one (Grok's edit takes none): the route and fields
+// an edit uses (docs/PLAN_REFS.md 26f). Oxen's model list names /images/generate for every model, picture fields
+// included; neither route has run live with pictures.
+//
 // One synchronous request per image. The pictures go inline as data URLs ("Data URIs work as an alternative but
 // aren't recommended for production", docs.oxen.ai/inference-api/reference/image_editing.md); there is no upload route
 // (it would need a public Oxen repository, whose history keeps every crop), no async queue (it stores every job's
 // request, the crop included, and answers URLs only) and no balance route (the hub API has none). Oxen keeps every
 // generated image in the user's account.
-// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
+// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3), textLayout(req) the same for a new image.
 //
 // A recipe variant describes the model with `options` (each key checked against tools/refs/oxen/ by tools/oxen_test.js):
 //   accepts       the parameters the model's request_schema names; nothing else is sent
@@ -35,14 +40,15 @@
 //   max_ratio     the steepest picture it takes; a steeper one is refused before sending
 //   factor_key / factor_form   an upscaler's factor field and its form ("x": "4x", else the number)
 //   prompt_max    an upscaler's longest prompt (Bloom: 1024 characters)
-//   text          options that replace these for Generate new (Grok's text model takes other fields)
+//   text          options that replace these for Generate new (Grok's text model takes other fields); a new image with
+//                 reference layers goes to the edit model and keeps the edit's options
 //
 // The host is https://hub.oxen.ai, never a URL from a recipe; settings.oxen.base may name a loopback mock for the tests,
 // and then only a key that starts with "test-" goes there, while such a key never goes to hub.oxen.ai.
 "use strict";
 
 const { fetchImage, sleep: realSleep, closestAspect } = require("./util");
-const { layoutOf, refRoles } = require("./refs");
+const { layoutOf, refRoles, instruction } = require("./refs");
 const openrouter = require("./openrouter");
 
 const DEFAULT_ORIGIN = "https://hub.oxen.ai";
@@ -178,15 +184,32 @@ function pngSize(b) {
 const b64Length = (n) => 4 * Math.ceil(n / 3);
 const dataUrl = (p) => `data:${p.mime};base64,${Buffer.from(p.bytes).toString("base64")}`;
 
+/** A new image (Generate new) that carries reference pictures: it goes to /images/edit with them (26f). */
+const textWithRefs = (req) => req.kind === "text" && (req.references || []).length > 0;
+
+/**
+ * The options of one run: a new image without references takes `options.text` over them (Grok's text model takes
+ * other fields); one with references goes to the edit model (the variant's text.refs.model) and keeps the edit's.
+ */
+function optionsOf(req) {
+    const o = req.options || {};
+    return req.kind === "text" && !textWithRefs(req) && o.text && typeof o.text === "object" ? { ...o, ...o.text } : o;
+}
+
+/** How many pictures the model takes (crop, mask picture and references): max_images, 16 without it, 1 with `single`. */
+const capOf = (o) => (o.single ? 1 : (+o.max_images > 0 ? +o.max_images : 16));
+
 /**
  * The pictures of an edit, fill or upscale run, in order: the crop, the mask (a fill without `o.mask` only), the
- * references; and the mask that goes as mask_url (a fill with `o.mask`). Checks the count and the steepest ratio, and
- * holds the inline size under MAX_INLINE by sending opaque pictures as JPEG, largest first; a mask is never
- * re-encoded. Throws before any request. Returns { pics: [{ what, bytes, mime, jpeg, url }], mask: data URL | null }.
+ * references; and the mask that goes as mask_url (a fill with `o.mask`). A new image's pictures are its references
+ * alone. Checks the count and the steepest ratio, and holds the inline size under MAX_INLINE by sending opaque
+ * pictures as JPEG, largest first; a mask is never re-encoded. Throws before any request. Returns { pics: [{ what,
+ * bytes, mime, jpeg, url }], mask: data URL | null }.
  */
 async function picturesFor(req, o, ctx, model) {
     const upscale = req.kind === "upscale";
-    const pics = [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png", jpeg: true }];
+    const text = req.kind === "text";
+    const pics = text ? [] : [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png", jpeg: true }];
     let mask = null;
     if (req.kind === "fill") {
         if (o.mask === "white" || o.mask === "alpha") {
@@ -201,7 +224,10 @@ async function picturesFor(req, o, ctx, model) {
     }
     const refs = upscale ? [] : (req.references || []);
     refs.forEach((r, i) => pics.push({ what: `reference ${i + 1}`, bytes: Buffer.from(r), mime: "image/png", jpeg: true }));
-    const max = o.single || upscale ? 1 : (+o.max_images > 0 ? +o.max_images : 16);
+    const max = upscale ? 1 : capOf(o);
+    if (pics.length > max && text) {
+        throw new Error(`Oxen.ai ${model} takes at most ${max} reference picture${max === 1 ? "" : "s"} for a new image; this run has ${pics.length}: hide reference layers.`);
+    }
     if (pics.length > max) {
         const parts = ["the crop", ...(pics.some((p) => p.what === "mask") ? ["the mask"] : []), `${refs.length} reference${refs.length === 1 ? "" : "s"}`];
         throw new Error(`Oxen.ai ${model} takes at most ${max} picture${max === 1 ? "" : "s"}; this run has ${pics.length} (${parts.join(", ")}): turn Original off or hide reference layers.`);
@@ -228,12 +254,18 @@ async function picturesFor(req, o, ctx, model) {
             p.mime = "image/jpeg";
         }
         if (total > MAX_INLINE) {
-            const advice = upscale ? "Set a smaller selection, or upscale the selection instead of the whole picture." : "Set Highres fix lower, turn Original off, or use fewer or smaller reference layers.";
+            const advice = upscale ? "Set a smaller selection, or upscale the selection instead of the whole picture." : text ? "Use fewer or smaller reference layers." : "Set Highres fix lower, turn Original off, or use fewer or smaller reference layers.";
             throw new Error(`Oxen.ai ${model}: the pictures come to ${(total / 1e6).toFixed(1)} MB, more than the ${MAX_INLINE / 1e6} MB this app sends in one request. ${advice}`);
         }
     }
     for (const p of pics) p.url = dataUrl(p);
     return { pics, mask: mask ? dataUrl(mask) : null };
+}
+
+/** Picture k's place in the model's picture field: `input_image[k]`, or the field itself for a one-picture model. */
+function fieldAt(o) {
+    const F = o.image_field || "input_image";
+    return (k) => (o.single ? F : `${F}[${k}]`);
 }
 
 /**
@@ -242,15 +274,24 @@ async function picturesFor(req, o, ctx, model) {
  */
 function layout(req) {
     const o = req.options || {};
-    const F = o.image_field || "input_image";
-    const at = (k) => (o.single ? F : `${F}[${k}]`);
+    const at = fieldAt(o);
     const maskUrl = req.kind === "fill" && (o.mask === "white" || o.mask === "alpha");
     const first = req.kind === "fill" && !maskUrl ? [["crop", at(0)], ["mask", at(1)]] : [["crop", at(0)]];
     return layoutOf({
         seq: [...first, ...refRoles(req).map(([role, i]) => [role, at(first.length + i), i])],
         own: maskUrl ? [["mask", "mask_url"]] : [],
-        max: o.single ? 1 : (+o.max_images > 0 ? +o.max_images : 16),
+        max: capOf(o),
     });
+}
+
+/**
+ * The same for a new image with references (Generate new, 26f): they go to the edit model's picture field alone, from
+ * the first place, under the edit's cap (the crop's place becomes a reference's).
+ */
+function textLayout(req) {
+    const o = optionsOf(req);
+    const at = fieldAt(o);
+    return layoutOf({ seq: refRoles(req).map(([role, i]) => [role, at(i), i]), max: capOf(o) });
 }
 
 // ---- the request -----------------------------------------------------------------------------------------------
@@ -293,19 +334,19 @@ function aspectFor(req, o, list, pictures) {
 
 /**
  * The prompt of an edit or fill: the OpenRouter adapter's instruction (its mask clause ran live there), numbered by
- * this adapter's own layout, so a mask that goes as mask_url is no picture of the sentence.
+ * this adapter's own layout, so a mask that goes as mask_url is no picture of the sentence. A new image takes the
+ * prompt as it is, followed by what its references are when it carries any.
  */
 function promptFor(req) {
-    if (req.kind === "text") return String(req.prompt || "");
+    if (req.kind === "text") return textWithRefs(req) ? instruction(req, textLayout(req), req.prompt) : String(req.prompt || "");
     return openrouter.promptFor(req, layout(req));
 }
 
-/** The JSON body of one request; `pics` and `mask` from picturesFor (none for a text run). */
+/** The JSON body of one request; `pics` and `mask` from picturesFor (a text run: its references, none without). */
 function bodyFor(req, pics = [], mask = null) {
-    let o = req.options || {};
+    const o = optionsOf(req);
     const text = req.kind === "text";
     const upscale = req.kind === "upscale";
-    if (text && o.text && typeof o.text === "object") o = { ...o, ...o.text };
     const p = req.params || {};
     const accepts = new Set(Array.isArray(o.accepts) ? o.accepts : []);
     const keepAuto = new Set(Array.isArray(o.keep_auto) ? o.keep_auto : []);
@@ -313,7 +354,7 @@ function bodyFor(req, pics = [], mask = null) {
     const body = { model: String(req.model || "") };
     if (!upscale) body.prompt = promptFor(req);
     body.response_format = "b64_json";
-    if (!text && pics.length) {
+    if (pics.length) {
         const field = o.image_field || "input_image";
         body[field] = o.single || upscale ? pics[0].url : pics.map((x) => x.url);
     }
@@ -475,19 +516,20 @@ async function run(req, ctx) {
     if (!text && !req.image) throw new Error(`Oxen.ai ${model}: no ${upscale ? "picture to upscale" : "crop to edit"}.`);
     const base = root(ctx);
     checkKey(base, ctx.key);
-    let o = req.options || {};
-    if (text && o.text && typeof o.text === "object") o = { ...o, ...o.text };
-    req = { ...req, references: text || upscale ? [] : (req.references || []), log: ctx.log };
-    const { pics, mask } = text ? { pics: [], mask: null } : await picturesFor(req, o, ctx, model);
+    // an upscale sends the picture alone; a new image sends its references alone (26f)
+    req = { ...req, references: upscale ? [] : (req.references || []), log: ctx.log };
+    const o = optionsOf(req);
+    // the text route takes no pictures: a new image with references goes to the edit route (text.refs.model)
+    const bare = text && !textWithRefs(req);
+    const { pics, mask } = bare ? { pics: [], mask: null } : await picturesFor(req, o, ctx, model);
     const body = bodyFor(req, pics, mask);
-    const route = text ? "generate" : "edit";
+    const route = bare ? "generate" : "edit";
     const r = await post(ctx, "/images/" + route, body, model);
     if (!r.ok) throw new Error(`Oxen.ai ${model}: ${await failure(r, ctx.key, upscale)}${r.waitSeconds ? `; try again in ${r.waitSeconds} s` : ""}`);
     let j;
     try { j = (await r.json()) || {}; } catch (_) { throw new Error(`Oxen.ai ${model}: the answer is not JSON.`); }
     const got = await readAnswer(j, ctx, model);
-    const oo = text && (req.options || {}).text ? { ...(req.options || {}), ...req.options.text } : (req.options || {});
-    const tierKey = oo.tier_key || "resolution";
+    const tierKey = o.tier_key || "resolution";
     return {
         bytes: got.bytes,
         mime: got.mime,
@@ -496,9 +538,9 @@ async function run(req, ctx) {
             model, route,
             pictures: pics.map((x) => `${x.what} ${x.mime === "image/jpeg" ? "jpeg" : "png"}`),
             mask: mask ? "mask_url" : pics.some((x) => x.what === "mask") ? "picture" : null,
-            aspect_ratio: body.aspect_ratio || (oo.preset_key && body[oo.preset_key]) || null,
+            aspect_ratio: body.aspect_ratio || (o.preset_key && body[o.preset_key]) || null,
             tier: body[tierKey] != null ? body[tierKey] : null,
-            factor: oo.factor_key && body[oo.factor_key] != null ? body[oo.factor_key] : null,
+            factor: o.factor_key && body[o.factor_key] != null ? body[o.factor_key] : null,
             answer: got.answer,
         },
     };
@@ -514,9 +556,10 @@ module.exports = {
     keyUrl: "https://oxen.ai/settings/profile",   // docs.oxen.ai/inference-api/overview.md, "Authentication"
     keyHint: "API key from oxen.ai › Settings › Profile (every call costs Oxen credits)",
     edit: run,
-    generate: run,   // kind "text": /images/generate, no picture field
+    generate: run,   // kind "text": /images/generate, no picture field; with references /images/edit (26f)
     upscale,
     layout,
+    textLayout,
 
     baseUrl,
     checkKey,

@@ -6,7 +6,10 @@
 //         { prompt, input_image, input_image_2.., width, height, seed }
 //         klein takes 4 pictures, pro / flex / max 8 (the crop included; docs.bfl.ai, read 2026-09-29): a run with
 //         more is refused before sending, never cut short
-// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
+//   text: the same flux-2 endpoints without an image { prompt, width, height, seed }; with reference layers (Generate
+//         new, 26f) they go as input_image, input_image_2 .. in order, the crop's slot being a reference's (klein 4,
+//         pro / flex / max 8); the fill endpoint makes a new image from the prompt alone
+// layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3).
 "use strict";
 
 const { b64, fetchImage, readError, sleep, num } = require("./util");
@@ -32,7 +35,14 @@ function bodyFor(req) {
     const body = { prompt: req.prompt || "", output_format: "png" };
     if (req.seed != null && !p.random_seed) body.seed = req.seed >>> 0;
     if (req.kind === "text") {
-        // no input_image: the flux-2 endpoints then generate from the prompt alone
+        // no crop: without references the flux-2 endpoints generate from the prompt alone; reference layers go as the
+        // numbered inputs (index.js refuses a run past the cap first; this keeps a direct call from sending one)
+        const given = req.references || [];
+        if (given.length) {
+            const lay = textLayout(req), n = countOf(lay);
+            if (lay.max != null && n > lay.max) throw new Error(`BFL ${endpointOf(req)} takes at most ${lay.max} reference picture${lay.max === 1 ? "" : "s"} for a new image; this run has ${n}: hide reference layers.`);
+            for (const pic of lay.pictures) body[pic.field] = b64(given[pic.ref]);
+        }
         body.width = req.width; body.height = req.height;
     } else if (req.kind === "edit") {
         // index.js refuses a run past the cap first (refs.checkPictures); this keeps a direct call from sending one
@@ -57,14 +67,26 @@ function layout(req) {
     return layoutOf({ seq: [["crop", "image"]], own: req.mask ? [["mask", "mask"]] : [], drops: "FLUX.1 Fill takes no reference images" });
 }
 
+/**
+ * Where bodyFor puts the references of a text run: reference 1 in input_image, reference k in input_image_k, as many
+ * as the endpoint takes pictures on an edit (the crop's slot is a reference's here). An endpoint with no known picture
+ * inputs (the fill endpoint, the text shape of FLUX.1 Fill) makes the image from the prompt alone.
+ */
+function textLayout(req) {
+    const endpoint = endpointOf(req), max = maxOf(endpoint);
+    if (max == null) return layoutOf({ drops: /fill/.test(endpoint) ? "FLUX.1 Fill takes no reference images" : "this endpoint takes no reference images for a new image" });
+    return layoutOf({ seq: refRoles(req).map(([role, i]) => [role, i ? `input_image_${i + 1}` : "input_image", i]), max });
+}
+
 module.exports = {
     label: "Black Forest Labs",
     keyUrl: "https://dashboard.bfl.ai/",
     keyHint: "API key from dashboard.bfl.ai",
     generate(req, ctx) {
-        return this.edit(req, ctx);   // bodyFor() leaves the image out for kind "text"
+        return this.edit(req, ctx);   // bodyFor() leaves the image out for kind "text" (the references alone go)
     },
     layout,
+    textLayout,
     async edit(req, ctx) {
         const endpoint = endpointOf(req);
         const headers = { "x-key": ctx.key, "Content-Type": "application/json", accept: "application/json" };

@@ -59,7 +59,8 @@
           1024,
           1536,
           2048
-        ]
+        ],
+        "refs": {}
       },
       "note": "Runs on ToAPIs (a reseller); not run against the live API yet. Crop, mask and references are uploaded to public files.toapis.com URLs. Qwen Image 3.0 (standard) or 3.0 Pro, not the inpaint model: Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The crop goes at its own size in pixels, with the seed and the negative prompt; the model's own prompt rewriting is switched off. At most two reference layers (three images in all)."
     },
@@ -158,7 +159,10 @@
         "max_images": 3
       },
       "settings": [],
-      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\"."
+      "note": "Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\".",
+      "text": {
+        "refs": {}
+      }
     },
     "comfycloud": {
       "model": "qwen-image-3.0",
@@ -190,7 +194,8 @@
           1536,
           2048,
           2560
-        ]
+        ],
+        "refs": {}
       },
       "note": "Runs on Comfy Router (api.comfy.org) with the Comfy Cloud key, billed in Comfy credits, no paid plan needed; not run against the live API yet. The pictures go inline in the request to Comfy, which passes them to Alibaba Cloud (Qwen); the Router's docs do not say in which region it runs. Qwen Image 3.0, not the inpaint model: Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. For area-directed edits set Fill to green and Original on, and say \"fill the green area\". The crop goes at its own size (0.26 to 6.5 megapixels, no steeper than 8:1), with the seed and the negative prompt; the model's own prompt rewriting is switched off. At most two reference layers (three pictures in all)."
     },
@@ -252,7 +257,8 @@
         "sizes": [
           1024,
           2048
-        ]
+        ],
+        "refs": {}
       },
       "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Qwen Image 3.0 on Oxen. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. With the crop alone the edit asks for aspect \"auto\" (Oxen: the aspect of the last picture); with references the preset closest to the crop. An answer of another shape is centre-cropped. Resolution 1K or 2K, on auto the smallest that covers the crop; at most three pictures; the negative prompt goes along; prompt expansion and the watermark are off. List price $0.039 (2026-09-26)."
     }

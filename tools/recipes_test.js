@@ -7,6 +7,9 @@
 // 2026-09-20 (docs/BUGS.md, "What OpenRouter (item 12) found on the way"). Then importFile: a provider recipe in
 // the shape every shipped one has (a `providers` map) has to import, so a user can copy a recipe, add a variant
 // and bring it back in; the old one-provider shape keeps working, and a file that is neither is still refused.
+// Then the reference names (docs/PLAN_REFS.md): §3 each variant's refs.name, §4 each text shape's text.refs (26f,
+// Generate new with references) against the table of 26f sub-task 1 and the takes-none list, and how normalize() reads
+// a hand-made text.refs (true, false, a bad field, a bad value).
 "use strict";
 
 const fs = require("node:fs");
@@ -223,6 +226,138 @@ async function main() {
             check("an upscaler's variant carries the default too", up.providers.a.refs && up.providers.a.refs.name === "image {n}", short(up.providers.a.refs));
             const comfy = recipes._normalize({ id: "c", kind: "comfy", refs: { name: "<image{n}>", slots: 4 } });
             check("a valid ComfyUI refs is kept as it is", eq(comfy.refs, { name: "<image{n}>", slots: 4 }), short(comfy.refs));
+        } finally {
+            console.warn = warn;
+        }
+    });
+
+    await section("4. text.refs (docs/PLAN_REFS.md 26f)", async () => {
+        const recipes = loadRecipes();
+        // which text shapes send the shown reference layers along to a new image, and through which route: the table
+        // of 26f sub-task 1 (written by its patch script). {} = the text route itself takes pictures; `model` = the edit
+        // route a run with references goes to where the text route takes none; `options` merged over the variant's
+        const TEXT_REFS = {
+            flux2_pro: { toapis: {}, bfl: {}, fal: { model: "fal-ai/flux-2-pro/edit" }, replicate: {}, wavespeed: { model: "wavespeed-ai/flux-2-pro/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: {} },
+            flux2_flex: { toapis: {}, bfl: {}, fal: { model: "fal-ai/flux-2-flex/edit" }, replicate: {}, wavespeed: { model: "wavespeed-ai/flux-2-flex/edit" }, openrouter: {}, oxen: {}, magnific: {} },
+            flux2_max: { bfl: {}, fal: { model: "fal-ai/flux-2-max/edit" }, replicate: {}, wavespeed: { model: "wavespeed-ai/flux-2-max/edit" }, openrouter: {}, comfyrouter: {} },
+            // Oxen's own cap is 16 for every model; FLUX.2 [klein] takes four pictures (BFL)
+            flux2_klein: { bfl: {}, fal: { model: "fal-ai/flux-2/klein/9b/edit" }, wavespeed: { model: "wavespeed-ai/flux-2-klein-9b/edit" }, oxen: { max: 4 } },
+            gpt_image_2: { toapis: {}, openai: {}, fal: { model: "openai/gpt-image-2/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-edit" } },
+            gpt_image_2_5_flare: { toapis: {}, openai: {}, wavespeed: { model: "openai/gpt-image-2.5-flare/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-5-edit" } },
+            gpt_image_2_5_sunburst: { toapis: {}, openai: {}, wavespeed: { model: "openai/gpt-image-2.5-sunburst/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-5-edit" } },
+            nano_banana_2: { toapis: {}, gemini: {}, fal: { model: "fal-ai/nano-banana-2/edit", options: { aspect_ratios: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] } }, replicate: {}, wavespeed: { model: "google/nano-banana-2/edit" }, openrouter: {}, comfyrouter: {}, oxen: {} },
+            nano_banana_2_lite: { toapis: {}, gemini: {}, wavespeed: { model: "google/nano-banana-2-lite/edit" }, openrouter: {}, comfyrouter: {}, oxen: {} },
+            nano_banana_pro: { toapis: {}, gemini: {}, fal: { model: "fal-ai/nano-banana-pro/edit", options: { aspect_ratios: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] } }, replicate: {}, wavespeed: { model: "google/nano-banana-pro/edit" }, openrouter: {}, comfyrouter: {}, oxen: {} },
+            seedream_4_5: { magnific: { model: "text-to-image/seedream-v4-5-edit" } },
+            seedream_5_lite: { toapis: {}, ark: {}, fal: { model: "fal-ai/bytedance/seedream/v5/lite/edit", options: { sizing: "image_size", pixels: [3686400, 16777216] } }, replicate: {}, wavespeed: { model: "bytedance/seedream-v5.0-lite/edit" }, openrouter: {}, comfyrouter: {}, magnific: { model: "text-to-image/seedream-v5-lite-edit" } },
+            seedream_5_pro: { toapis: {}, ark: {}, fal: { model: "bytedance/seedream/v5/pro/edit", options: { sizing: "image_size", pixels: [1048576, 4194304] } }, wavespeed: { model: "bytedance/seedream-v5.0-pro/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/seedream-v5-pro-edit" } },
+            qwen_image_edit: { toapis: {}, comfyrouter: {}, oxen: {}, wavespeed: {} },
+            qwen_image_2_1: { oxen: {} },
+            hy_image_3_5: { comfypartner: {} },
+            grok_imagine: { fal: { model: "xai/grok-imagine-image/v2.0/edit" }, openrouter: {}, oxen: { model: "xai-grok-imagine-image-edit" } },
+        };
+        // the text shapes that make a new image from the prompt alone (26f's "None" row): text-only or inpaint-only
+        // models, a single-picture edit field, a Comfy Router dialect with no input picture, Reve (its edit cap unread)
+        const TAKES_NONE = {
+            flux1_fill: ["bfl", "fal", "replicate", "wavespeed"], ideogram_4: ["fal", "comfyrouter", "oxen"], krea_2: ["fal", "openrouter", "comfyrouter", "oxen"],
+            recraft_v4: ["fal", "openrouter"], z_image: ["fal"], z_image_turbo: ["fal", "oxen", "magnific"], mystic: ["magnific"], reve: ["wavespeed"],
+            qwen_image_edit: ["fal", "replicate"], grok_imagine: ["comfyrouter"],
+        };
+        const NULLS = { max: null, field: null, model: null, options: null, name: null };
+        const list = await recipes.list(RECIPES);
+        const wrong = [], seen = new Set(), none = [];
+        let withRefs = 0, withText = 0;
+        for (const r of list.filter((x) => x.kind === "provider" && x.source === "builtin")) {
+            for (const [pid, v] of Object.entries(r.providers)) {
+                const name = `${r.id}/${pid}`;
+                const want = TEXT_REFS[r.id] && TEXT_REFS[r.id][pid];
+                if (want) seen.add(name);
+                if (!v.text) { if (want) wrong.push(`${name}: in the table, but the variant has no text shape`); continue; }
+                withText++;
+                if (want) {
+                    withRefs++;
+                    if (!eq(v.text.refs, { ...NULLS, ...want })) wrong.push(`${name}: text.refs ${short(v.text.refs)}, not ${short({ ...NULLS, ...want })}`);
+                } else {
+                    if (v.text.refs !== null) wrong.push(`${name}: text.refs ${short(v.text.refs)}, not null (takes none)`);
+                    if (!(TAKES_NONE[r.id] || []).includes(pid)) none.push(name);
+                }
+            }
+        }
+        const stale = Object.entries(TEXT_REFS).flatMap(([id, rows]) => Object.keys(rows).map((pid) => `${id}/${pid}`)).filter((n) => !seen.has(n));
+        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 98, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
+        check("every row of the table names a shipped provider variant", !stale.length, stale.join(", "));
+        check("every text shape without text.refs is on the takes-none list", !none.length, none.join(", "));
+        const noneStale = Object.entries(TAKES_NONE).flatMap(([id, pids]) => pids.map((pid) => `${id}/${pid}`)).filter((n) => { const [id, pid] = n.split("/"); const r = list.find((x) => x.id === id); return !r || !r.providers[pid] || !r.providers[pid].text || r.providers[pid].text.refs !== null; });
+        check("every takes-none entry names a shipped text shape without text.refs", !noneStale.length, noneStale.join(", "));
+
+        // the routes the table names: the variant's own edit model (an id the edit runs already use), another route
+        // than the text one, on Magnific a route that takes references; options only where the table sets them
+        const magnific = require(path.join(ROOT, "electron", "main", "providers", "magnific.js"));
+        const routeBad = [];
+        let routes = 0;
+        for (const [id, rows] of Object.entries(TEXT_REFS)) for (const [pid, want] of Object.entries(rows)) {
+            if (!want.model) continue;
+            routes++;
+            const r = list.find((x) => x.id === id), v = r && r.providers[pid];
+            if (!v) continue;
+            if (want.model !== v.model) routeBad.push(`${id}/${pid}: ${want.model} is not the variant's edit model ${v.model}`);
+            if (v.text && want.model === v.text.model) routeBad.push(`${id}/${pid}: ${want.model} is the text route itself`);
+            if (pid === "fal" && !/\/edit$/.test(want.model)) routeBad.push(`${id}/${pid}: ${want.model} is no fal /edit route`);
+            if (pid === "wavespeed" && !/(?:^|[/-])edit(?:[/-]|$)/.test(want.model)) routeBad.push(`${id}/${pid}: ${want.model} is no WaveSpeed edit route`);
+            if (pid === "magnific") {
+                const R = magnific._routes[want.model];
+                if (!R || !R.refs) routeBad.push(`${id}/${pid}: ${want.model} is ${R ? "a Magnific route without refs" : "no Magnific route"}`);
+            }
+        }
+        check(`every route the table names (${routes}) is the variant's own edit model, not its text route (fal /edit, WaveSpeed edit, a Magnific route with refs)`, !routeBad.length && routes >= 20, routeBad.join(" | "));
+        const magBad = Object.entries(TEXT_REFS).filter(([, rows]) => rows.magnific).map(([id, rows]) => [id, rows.magnific.model || list.find((x) => x.id === id).providers.magnific.text.model]).filter(([, m]) => !(magnific._routes[m] && magnific._routes[m].refs)).map(([id, m]) => `${id}: ${m}`);
+        check("every Magnific row sends references through a route that takes them (refs: true)", !magBad.length, magBad.join(", "));
+
+        // recipes._normalize of hand-made variants
+        const warn = console.warn;
+        const warned = [];
+        console.warn = (...a) => warned.push(a.join(" "));
+        const textRefs = (refs) => {
+            const before = warned.length;
+            const r = recipes._normalize({ id: "t26f", kind: "provider", providers: { fal: { model: "fal-ai/x/edit", input: "edit", text: refs === undefined ? {} : { refs } } } });
+            return { refs: r.providers.fal.text.refs, warnings: warned.slice(before) };
+        };
+        try {
+            let x = textRefs(true);
+            check("text.refs true: every field null, no warning", eq(x.refs, NULLS) && !x.warnings.length, short(x));
+            x = textRefs(false);
+            check("text.refs false: null (the prompt alone), no warning", x.refs === null && !x.warnings.length, short(x));
+            x = textRefs(undefined);
+            check("text.refs absent: null, no warning", x.refs === null && !x.warnings.length, short(x));
+            x = textRefs(null);
+            check("text.refs null: null, no warning", x.refs === null && !x.warnings.length, short(x));
+            x = textRefs({});
+            check("text.refs {}: every field null, no warning", eq(x.refs, NULLS) && !x.warnings.length, short(x));
+            x = textRefs({ max: 0 });
+            check("text.refs { max: 0 }: max null and a warning naming the recipe and the field", eq(x.refs, NULLS) && x.warnings.length === 1 && /t26f\/fal/.test(x.warnings[0]) && /text\.refs\.max/.test(x.warnings[0]), short(x));
+            x = textRefs({ max: 2.5 });
+            const x2 = textRefs({ max: "3" });
+            check("text.refs max 2.5 or \"3\": max null and a warning (a whole number above 0 only)", eq(x.refs, NULLS) && x.warnings.length === 1 && eq(x2.refs, NULLS) && x2.warnings.length === 1, short({ x, x2 }));
+            x = textRefs({ name: "x" });
+            check("text.refs { name: \"x\" }: name null and a warning (no {n})", eq(x.refs, NULLS) && x.warnings.length === 1 && /text\.refs\.name/.test(x.warnings[0]), short(x));
+            x = textRefs({ name: "@img{n}" });
+            check("text.refs { name: \"@img{n}\" }: name null and a warning (checked with validRefName)", eq(x.refs, NULLS) && x.warnings.length === 1, short(x));
+            const good = { name: "Image {n}", max: 3, model: "m/edit", options: { sizing: "image_size" }, field: "images" };
+            x = textRefs(good);
+            check("text.refs with every field valid is kept as it is, no warning", eq(x.refs, { max: 3, field: "images", model: "m/edit", options: { sizing: "image_size" }, name: "Image {n}" }) && !x.warnings.length, short(x));
+            x = textRefs({ model: "  m/edit  ", field: " images " });
+            check("text.refs model and field are trimmed", x.refs && x.refs.model === "m/edit" && x.refs.field === "images" && !x.warnings.length, short(x));
+            x = textRefs({ model: "", field: 3, options: [1], name: "Image {n}", max: 2 });
+            check("text.refs: an empty model, a number as field, an array as options each null with a warning; the valid fields kept", eq(x.refs, { ...NULLS, name: "Image {n}", max: 2 }) && x.warnings.length === 3, short(x));
+            x = textRefs("yes");
+            check("text.refs a string: null and a warning", x.refs === null && x.warnings.length === 1 && /t26f\/fal/.test(x.warnings[0]) && /text\.refs/.test(x.warnings[0]), short(x));
+            x = textRefs(4);
+            const x3 = textRefs(["a"]);
+            check("text.refs a number or an array: null and a warning", x.refs === null && x.warnings.length === 1 && x3.refs === null && x3.warnings.length === 1, short({ x, x3 }));
+            const off = recipes._normalize({ id: "t26f", kind: "provider", providers: { fal: { model: "fal-ai/x/edit", text: false }, comfycloud: { model: "m", text: { refs: true } } } });
+            check("no text shape, no text.refs: text false, or a provider without a text route (Comfy Cloud)", off.providers.fal.text === null && off.providers.comfycloud.text === null, short({ fal: off.providers.fal.text, comfycloud: off.providers.comfycloud.text }));
+            const up = recipes._normalize({ id: "u26f", kind: "provider", task: "upscale", providers: { fal: { model: "m", text: { refs: true } } } });
+            check("an upscaler has no text shape, so no text.refs", up.providers.fal.text === null, short(up.providers.fal.text));
         } finally {
             console.warn = warn;
         }

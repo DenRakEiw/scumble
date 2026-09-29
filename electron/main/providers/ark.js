@@ -9,10 +9,11 @@
 //                                     or { error: { code, message, param, type } }
 //
 // One synchronous request per image. There is no mask input: an edit sends the crop and the references ("image",
-// crop first) and the stitch keeps the selection. The size always goes as pixels ("WxH", the crop's own shape fitted
-// into the model's pixel range; a tier such as "2K" would let the model pick the shape from the prompt). The API
-// adds an "AI-generated" watermark unless it is told not to, so `watermark: false` goes on every request.
-// layout(req) declares where each picture goes (docs/PLAN_REFS.md C3).
+// crop first) and the stitch keeps the selection; a text run (Generate new) sends its references alone, none without.
+// The size always goes as pixels ("WxH", the crop's own shape fitted into the model's pixel range, or the asked
+// aspect for a text run; a tier such as "2K" would let the model pick the shape from the prompt). The API adds an
+// "AI-generated" watermark unless it is told not to, so `watermark: false` goes on every request.
+// layout(req) and textLayout(req) declare where each picture goes (docs/PLAN_REFS.md C3, 26f).
 //
 // A recipe variant describes the model with `options`:
 //   pixels      [min, max] total pixels of the output ("Total pixels range" of method 2 on the reference page)
@@ -154,15 +155,18 @@ function pngSize(b) {
 }
 
 /**
- * The pictures of an edit, in order: the crop, then the references. Checks count, shape, pixels and bytes against
- * the reference page's input rules; a picture over 30 MB goes as JPEG when it has no transparent pixel. Throws
- * before any request.
+ * The pictures of a run, in order: the crop, then the references; a text run (Generate new) has the references alone,
+ * none without. Checks count, shape, pixels and bytes against the reference page's input rules; a picture over 30 MB
+ * goes as JPEG when it has no transparent pixel. Throws before any request.
  */
 async function picturesFor(req, o, ctx, model) {
-    const pics = [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png" }];
+    const text = req.kind === "text";
+    const pics = text ? [] : [{ what: "crop", bytes: Buffer.from(req.image), mime: "image/png" }];
     req.references.forEach((r, i) => pics.push({ what: `reference ${i + 1}`, bytes: Buffer.from(r), mime: "image/png" }));
     const max = +o.max_images > 0 ? +o.max_images : 10;
     if (pics.length > max) {
+        // index.js refuses first (refs.checkPictures, in the same words for a text run); this stays the safety net
+        if (text) throw new Error(`ModelArk ${model} takes at most ${max} reference picture${max === 1 ? "" : "s"} for a new image; this run has ${pics.length}: hide reference layers.`);
         const refs = req.references.length;
         throw new Error(`ModelArk ${model} takes at most ${max} pictures; this run has ${pics.length} (the crop, ${refs} reference${refs === 1 ? "" : "s"}): turn Original off or hide reference layers.`);
     }
@@ -171,14 +175,14 @@ async function picturesFor(req, o, ctx, model) {
         if (s) {
             const [w, h] = s;
             if (Math.min(w, h) < MIN_PICTURE_EDGE) throw new Error(`ModelArk ${model}: the ${p.what} is ${w} × ${h}; every picture must be more than 14 px a side.`);
-            if (Math.max(w, h) > MAX_RATIO * Math.min(w, h)) throw new Error(`ModelArk ${model} takes pictures no steeper than 16:1; the ${p.what} is ${w} × ${h}. Use a less narrow selection or reference layer.`);
+            if (Math.max(w, h) > MAX_RATIO * Math.min(w, h)) throw new Error(`ModelArk ${model} takes pictures no steeper than 16:1; the ${p.what} is ${w} × ${h}. Use a less narrow ${text ? "reference layer" : "selection or reference layer"}.`);
             if (w * h > MAX_PICTURE_PIXELS) throw new Error(`ModelArk ${model} takes pictures of at most 36 megapixels; the ${p.what} is ${w} × ${h}. Use a smaller reference layer.`);
         }
         if (p.bytes.length > MAX_PICTURE_BYTES) {
             const opaque = typeof ctx.opaque === "function" && (await ctx.opaque(p.bytes));
             const jpeg = opaque && typeof ctx.toJpeg === "function" ? await ctx.toJpeg(p.bytes, JPEG_QUALITY) : null;
             if (!jpeg || !jpeg.length || jpeg.length > MAX_PICTURE_BYTES) {
-                throw new Error(`ModelArk ${model}: the ${p.what} is ${(p.bytes.length / 1e6).toFixed(1)} MB, more than the 30 MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. Set Highres fix lower or use a smaller reference layer.`);
+                throw new Error(`ModelArk ${model}: the ${p.what} is ${(p.bytes.length / 1e6).toFixed(1)} MB, more than the 30 MB a picture may have${opaque ? " even as JPEG" : " (it has transparency, so it stays PNG)"}. ${text ? "Use" : "Set Highres fix lower or use"} a smaller reference layer.`);
             }
             ctx.log(`${p.what} ${p.bytes.length} bytes as JPEG ${jpeg.length} bytes`);
             p.bytes = Buffer.from(jpeg);
@@ -192,6 +196,15 @@ async function picturesFor(req, o, ctx, model) {
 function layout(req) {
     const o = req.options || {};
     return layoutOf({ seq: [["crop", "image[0]"], ...refRoles(req).map(([role, i]) => [role, `image[${i + 1}]`, i])], max: +o.max_images > 0 ? +o.max_images : 10 });
+}
+
+/**
+ * The same for a text run (Generate new, 26f): `image` holds the references alone, numbered from 1, as many as an edit
+ * takes pictures (the crop's slot becomes a reference's).
+ */
+function textLayout(req) {
+    const o = req.options || {};
+    return layoutOf({ seq: refRoles(req).map(([role, i]) => [role, `image[${i}]`, i]), max: +o.max_images > 0 ? +o.max_images : 10 });
 }
 
 function gcd(a, b) {
@@ -244,10 +257,12 @@ function sizeFor(req, o) {
     return `${pw}x${ph}`;
 }
 
-/** The prompt of a run: a text run's as it is, else refs.instruction numbered by layout() (no mask picture here). */
+/**
+ * The prompt of a run: refs.instruction numbered by layout() (no mask picture here), or by textLayout() for a text run
+ * (its text as it is, then what its references are, if any).
+ */
 function promptFor(req) {
-    if (req.kind === "text") return String(req.prompt || "");
-    return instruction(req, layout(req), req.prompt);
+    return instruction(req, req.kind === "text" ? textLayout(req) : layout(req), req.prompt);
 }
 
 function bodyFor(req, o, pics) {
@@ -294,10 +309,11 @@ async function run(req, ctx) {
     const p = req.params || {};
     const where = hostFor(ctx, p.region, o.regions);
     checkKey(where.test, ctx.key);
-    req = { ...req, references: req.kind === "text" ? [] : (req.references || []) };
+    req = { ...req, references: req.references || [] };
     if (req.kind === "text" && !String(req.prompt || "").trim()) throw new Error(`ModelArk ${model}: a new image needs a prompt.`);
     if (req.kind !== "text" && !req.image) throw new Error(`ModelArk ${model}: no crop to edit.`);
-    const pics = req.kind === "text" ? [] : await picturesFor(req, o, ctx, model);
+    // a text run's pictures are its references (none without: then the body is the text-to-image one as before)
+    const pics = await picturesFor(req, o, ctx, model);
     const body = bodyFor(req, o, pics);
     const r = await post(ctx, where.host + PATH, body);
     const at = { region: where.region, regions: o.regions };
@@ -335,8 +351,9 @@ module.exports = {
     keyUrl: "https://ai.byteplus.com/ark/region:ap-southeast-1/apiKey",
     keyHint: "API key from the ModelArk console (it belongs to the region it was made in)",
     edit: run,
-    generate: run,   // kind "text": the same endpoint without image
+    generate: run,   // kind "text": the same endpoint, `image` the references alone (none without)
     layout,
+    textLayout,
     baseUrl,
     // exported for tools/ark_test.js
     _testBase: testBase,

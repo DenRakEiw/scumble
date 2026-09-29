@@ -76,58 +76,45 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-29, evening: 0.1.33 released; item 26 S1 to S4 built)
+## Where things stand (2026-09-29, night: 0.1.33 released; item 26 built, S1 to S5)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**Released:** 0.1.33 is Latest (published 2026-09-29 12:14 CEST), the eraser hotfix. The regression of 0.1.32 (every
-coalesced pen point a stroke of its own) is fixed for erase, paint, mask, remove, clone and heal: `layerStroke`,
-`cloneStroke`, `pathStamps` (main 80bce51, and 3dfaf61 after a review workflow); measured and described in
-`docs/BUGS.md` "Erasing had become very slow since 0.1.32 - fixed for 0.1.33" (erase at 1,000 px with 8 coalesced
-points: 0.1.31 21.7, 0.1.32 108.8, 0.1.33 18.9 ms a move; the same inside a selection). It was released from the
-branch `hotfix/0.1.33` off `v0.1.32` (tag `v0.1.33` on a6d0e32; exe gates `--offline` green on both backends,
-`dist/gates/gates/rel33-exe*`); `main` holds the same fix and the merge of that branch. Both are pushed. The dev blog
-post `v0-1-33` ("One move, one stroke") is live, website commit 6fe8f1a deployed by git. **The manual was not synced:**
-main's `docs/MANUAL.md` already describes S1's img labels, which ship with 0.1.34 (the sync copies main's working tree;
-0.1.33's manual is 0.1.32's). Sync it at the 0.1.34 release. A Store package only on the user's word.
-- **Item 26, reference layers named in the prompt** (`docs/PLAN_REFS.md`; the user answered A-F: `@img1` renamed per
-  API in the backend, hiding renumbers, a contenteditable field with inline picture chips, reference pictures to the
-  upsampler on with a setting, Generate new with references in this round, categories later). **S1 and S2 built and
-  committed locally 2026-09-29** (not pushed): 26a1 `layout(req)` per adapter; 26b1 `reftokens.js`, img labels, the
-  remap; 26b2 (07be10c) the click snapshot, markers sent from the renderer, `host.refPrompt` / `refLayout` /
-  `layoutShape`, agents' `label`, `sent_as`, `set_prompt refs`, `prompt_sent`; 26a2 (270bd7b) every drop refused or
-  declared, caps per variant from the vendors' pages, one instruction sentence numbered like the markers, label parts.
-  A typed `@img1` now works end to end on API recipes (ComfyUI recipes refuse it until 26e). Each step has a "Built"
-  paragraph in the plan; gates `--offline --tiles on` green (commands, generate, upscale, the provider gates, editor,
-  document, mcp, assistant, nodecopy, lint, types). The prompt update ships as **0.1.34**. **26c1 built and committed
-  locally 2026-09-29 (S3, not pushed):** `renderer/editor/prompt_field.js`, the prompt as a contenteditable with
-  reference chips, its own undo, whole-chip deletes, an automatic space between a chip and a word typed against it
-  (its "Built" paragraph in the plan lists what the code showed and the review's ten fixes). **26c2 built and committed
-  locally 2026-09-29 evening (S3 done, not pushed; the user's go "baue weiter"):** the @ picker, the reference bar above
-  the prompt, the 400 ms hover card, the chevron's swap menu, chip drag, pictures pasted or dropped into the prompt
-  become references; `host.refLayout` gives `cap` / `refuse` and a `{keep}` option; the node repo got the stub `async
-  refLayout() { return null; }` (committed there, not pushed). Screenshots were sent; the user judges the look. Its
-  "Built" paragraph lists the decisions the plan did not have and the review's 13 fixes. **S4 built and committed
-  locally 2026-09-29 evening (not pushed; the user's "baue S4"):** 26d1 (2678428): `{references}` in the templates and
-  the built-in rules, the token rule, a refusal for a hidden / deleted / unknown token, the check after a rewrite (only
-  when the request named references) and the answer carried through the same remaps as Revert's text (a merge during
-  the wait included); 26d2: the named reference pictures (six at most, 512 px) to API and local-endpoint models, the
-  switch in Settings › Prompt templates (`llm.refPictures`, absent = on), the compatible client's steps all -> crop ->
-  text, `vision: false` honoured, the local endpoint no longer retries a failure that names no image. No live model
-  run (mock and stubs only). **Next: S5 = 26e + 26f** (local ComfyUI recipes, Generate new with references; 26f also
-  owns the Generate new dialog's upsample, 26d1 sub-task 7 and 26d2 sub-task 4), in a fresh session. Read the plan's
-  sections 0 and 3-6 and the step's own section ("Read first" wins). Then package 6 (layers pro) of
-  `docs/PLAN_0_1_31.md`.
+**Released:** 0.1.33 is Latest (published 2026-09-29 12:14 CEST), the eraser hotfix, released from `hotfix/0.1.33`
+(tag on a6d0e32); `main` holds the same fix and the merge. The dev blog post `v0-1-33` is live. **The manual was not
+synced at 0.1.33** (main's `docs/MANUAL.md` describes item 26, which ships with 0.1.34): sync it at the 0.1.34 release.
+- **Item 26, reference layers named in the prompt, is built** (`docs/PLAN_REFS.md`, every step's "Built" paragraph;
+  the CHANGELOG notes are its section 6). All local, **not pushed**: S1-S4 (26a1 ... d027f4d), **26e** a608e8d (local
+  ComfyUI recipes write a token as their graph numbers the picture: Qwen 2.1 `<image3>` with 10 slots, Klein `image 3`
+  with 4; unused slots trimmed; `renderer/editor/comfyrefs.js`) and **26f** (the commit after it: Generate new sends
+  the shown references to the text routes that take pictures, `text.refs` on 98 variants, `textLayout` in every
+  adapter, the reference layers stay over the new base, the dialog has the prompt field and the bar; 26e's review fixes
+  landed in that commit). Gates `--offline` green (generate on both backends, commands, recipes, upscale, editor, the
+  six provider gates, assistant, nodecopy, lint, types). **Nothing ran live**: no API call with references, and neither
+  widened local graph ran on ComfyUI (8188 is production). Filed on the way (`docs/BUGS.md`): the local recipes'
+  Model / Text encoder / VAE rows carry over between Qwen and Klein (older; a background-task chip was offered);
+  Gemini direct ignores the asked aspect on Generate new while the Aspect row says "auto" (older).
+- **Next: the 0.1.34 release, only on the user's word** (`docs/RELEASING.md` first): the CHANGELOG section from
+  PLAN_REFS §6's notes (no other product named as a feature's model), `npm run dist`, the exe gates, the manual sync,
+  the dev blog post. Then package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 - **To do at the 0.1.34 release (the user, 2026-09-29):** take the other product's name out of the "Next up" line of
   the `v0-1-33` post (`F:\portfolio_web\lib\scumble-posts.ts`, "... the way X does it"), and write the 0.1.34 post,
-  CHANGELOG section and manual lines without naming any other product as the model for the feature.
+  CHANGELOG section and manual lines without naming any other product as the model for the feature. **The post gets a
+  picture of the new prompt field (the user, 2026-09-29):** `dist/release-0.1.34/reference-prompt-panel.jpg` (the side
+  panel at 2x: chips, the bar, the card "img2 · sent as image 4"); the blog page renders text only (`Post` in
+  `F:\portfolio_web\lib\scumble.ts` has `body: string[]`, `app/scumble/blog/page.tsx` maps it to `<p>`), so give `Post`
+  an optional image (src, alt, width, height) and render it. **The manual's new chapter "Reference images in the
+  prompt"** (one screenshot per chapter, so the tokens moved out of "Recipes") points at
+  `https://www.denrakeiw.com/projects/scumble/manual/reference-prompt.jpg`: copy `dist/release-0.1.34/reference-prompt.jpg`
+  to `F:\portfolio_web\public\projects\scumble\manual\` with the sync. The user judges both pictures.
 - **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
   of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
   point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
   and 5 (listed in the late-night hand-over of 2026-09-28 in `docs/HISTORY.md`: among them the selection that stays after
   a patch or a move, the Shift+J ring, Liquify's no-Apply, its strength and keys, the freeze not undone or saved); item
-  25's look and timing. The Store resubmission (search terms without "ComfyUI" / "FLUX") is on the user's side.
+  25's look and timing; item 26's look in the app (the prompt field, the dialog). The Store resubmission (search terms
+  without "ComfyUI" / "FLUX") is on the user's side.
 
 **At most two build steps per session, then `/clear` or `/compact` (the user, 2026-09-28):** the context rose to 85 % in
 one session of eight steps (its own tool output and patch scripts, not this file); commit, write the hand-over, stop.
@@ -178,9 +165,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 22: a filter-suite update (an update of its own; `docs/PLAN_NIK9.md`, 34-46 days plus two folded packages), suggested
   after B3.
 - 25: the app's own dialogs instead of the native boxes (about 1-1.5 days), the user's answers open.
-- 26: reference layers named in the prompt as `@img1`, written as the API's own name for
-  the picture when sent; the templates learn `{references}`. Planned in `docs/PLAN_REFS.md` (2026-09-29), next. The
-  silent reference drops found on the way are in `docs/BUGS.md`.
+- 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
+  (S1-S5, 2026-09-29, local, not pushed; `docs/PLAN_REFS.md`), ships as 0.1.34 on the user's word.
 
 ## Gate runner and flakes
 

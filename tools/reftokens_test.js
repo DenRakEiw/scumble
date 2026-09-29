@@ -162,6 +162,22 @@ async function main() {
         const sent = T.toMarkers("the coat from @img1", labels("La"), [null, "La"]);
         same("the marker the renderer writes is the one main resolves", sent.text, v.text);
         same("main names it", refs.resolveMarkers(sent.text, v.pictures, v.pattern).text, v.out);
+
+        // a text run (Generate new with references, 26f): no Original, sent = the shown references in label order
+        const abc = labels("La", "Lb", "Lc");
+        const all = ["La", "Lb", "Lc"];
+        same("text run: @img2 of 3 is marker 1", T.toMarkers("@img2", abc, all), { text: "{@ref:1}", errors: [] });
+        same("text run: @img3 and @img1 are markers 2 and 0", T.toMarkers("@img3 and @img1", abc, all), { text: "{@ref:2} and {@ref:0}", errors: [] });
+        same("text run: a token twice, in any case", T.toMarkers("@img1, @IMG1 and @img3", abc, all).text, "{@ref:0}, {@ref:0} and {@ref:2}");
+        same("text run: the negative the same way", T.toMarkers("no @img2", abc, all), { text: "no {@ref:1}", errors: [] });
+        same("text run: a parked token (a hidden or deleted reference) is refused", T.toMarkers("the hat of @img?Lh on @img1", abc, all), { text: "the hat of @img?Lh on {@ref:0}", errors: [{ kind: "parked", token: "@img?Lh", id: "Lh" }] });
+        same("text run: a number no reference holds is unknown", T.toMarkers("from @img4", abc, all), { text: "from @img4", errors: [{ kind: "unknown", token: "@img4", n: 4 }] });
+        same("text run: a hidden reference's token, once parked by the remap, stays refused", T.toMarkers(T.remap("from @img2", abc, labels("La", "Lc")), labels("La", "Lc"), ["La", "Lc"]).errors, [{ kind: "parked", token: "@img?Lb", id: "Lb" }]);
+        same("text run: validation only (sent null) keeps the tokens and finds the errors", T.toMarkers("@img2 @img?Lh @img9", abc, null), { text: "@img2 @img?Lh @img9", errors: [{ kind: "parked", token: "@img?Lh", id: "Lh" }, { kind: "unknown", token: "@img9", n: 9 }] });
+        // on into main: a text layout numbers the references from 1 (no crop), so marker i is "image i+1"
+        const textPics = all.map((_, i) => ({ role: "reference", ref: i, field: `image_urls[${i}]`, n: i + 1 }));
+        const textSent = T.toMarkers("the jacket of @img2 on the person of @img1", abc, all);
+        same("text run on into main: the markers name image 2 and image 1", refs.resolveMarkers(textSent.text, textPics, "image {n}"), { text: "the jacket of image 2 on the person of image 1", left: [], refs: [{ ref: 1, name: "image 2" }, { ref: 0, name: "image 1" }] });
     });
 
     await section("7. namesFor", async () => {

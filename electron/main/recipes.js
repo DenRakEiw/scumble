@@ -68,6 +68,21 @@ const { REF_NAME_DEFAULT, validRefName } = require("./providers/refs");
  * @property {any} fixed
  * @property {SettingRow[]} settings
  * @property {string} note
+ * @property {TextRefs | null} refs   the reference layers go along to a new image (26f); null: the prompt alone
+ */
+
+/**
+ * A text shape's reference pictures (docs/PLAN_REFS.md 26f): `max` lowers the route's own cap (null: the route's),
+ * `model` / `options` the route a run with references goes to where the text route takes no pictures (fal's and
+ * WaveSpeed's edit routes, Magnific's "-edit" routes), `field` the picture field where it differs, `name` the naming
+ * pattern where it differs from the variant's refs.name.
+ *
+ * @typedef {Object} TextRefs
+ * @property {number | null} max
+ * @property {string | null} field
+ * @property {string | null} model
+ * @property {Record<string, any> | null} options
+ * @property {string | null} name
  */
 
 /**
@@ -239,7 +254,7 @@ function textModelOf(providerId, model) {
  * @param {ProviderVariant} v
  * @returns {TextShape | null}
  */
-function textVariant(providerId, v) {
+function textVariant(providerId, v, where = providerId) {
     if (v.text === false) return null;
     if (!TEXT_PROVIDERS.has(providerId)) return null;
     const t = v.text && typeof v.text === "object" ? v.text : {};
@@ -251,7 +266,31 @@ function textVariant(providerId, v) {
         fixed: t.fixed || v.fixed || null,
         settings: Array.isArray(t.settings) ? t.settings : (v.settings || []),
         note: t.note || "",
+        refs: textRefsOf(t.refs, where),
     };
+}
+
+/**
+ * A text shape's `refs` (26f): absent or false: null (the prompt alone); true: every field null; an object: each field
+ * checked, a bad one null with a warning; anything else null with a warning.
+ * @param {any} refs
+ * @param {string} where
+ * @returns {TextRefs | null}
+ */
+function textRefsOf(refs, where) {
+    if (refs === undefined || refs === null || refs === false) return null;
+    const out = { max: null, field: null, model: null, options: null, name: null };
+    if (refs === true) return out;
+    if (typeof refs !== "object" || Array.isArray(refs)) {
+        console.warn(`recipe ${where}: text.refs ${JSON.stringify(refs)} is neither true nor an object; this model makes new images from the prompt alone`);
+        return null;
+    }
+    const bad = (k) => console.warn(`recipe ${where}: text.refs.${k} ${JSON.stringify(refs[k])} is not valid; left out`);
+    if (refs.max !== undefined) { if (Number.isInteger(refs.max) && refs.max > 0) out.max = refs.max; else bad("max"); }
+    for (const k of ["field", "model"]) if (refs[k] !== undefined) { if (typeof refs[k] === "string" && refs[k].trim()) out[k] = refs[k].trim(); else bad(k); }
+    if (refs.options !== undefined) { if (refs.options && typeof refs.options === "object" && !Array.isArray(refs.options)) out.options = refs.options; else bad("options"); }
+    if (refs.name !== undefined) { if (validRefName(refs.name)) out.name = refs.name; else bad("name"); }
+    return out;
 }
 
 /**
@@ -331,7 +370,7 @@ function normalize(r) {
             v.usesPrompt = v.usesPrompt === true || (v.usesPrompt === undefined && r.usesPrompt === true);
             continue;
         }
-        v.text = textVariant(id, v);
+        v.text = textVariant(id, v, `${r.id}/${id}`);
         v.edit = v.edit !== false;   // false: text to image only, no Generate on a crop
     }
     r.providerIds = Object.keys(r.providers);

@@ -58,7 +58,8 @@
         "sizes": [
           1024,
           2048
-        ]
+        ],
+        "refs": {}
       },
       "note": "Runs on Oxen.ai (one key for many models); not run against the live API yet (written from Oxen's docs and model list, 2026-09-26). The pictures go inline (data URLs, which Oxen's docs allow but do not recommend for production) in the request to Oxen.ai, which runs the model or passes it on; Oxen keeps every generated image in your Oxen account, and its terms could not be read, so how long it keeps what you send is not stated. Instruction edit of the crop plus the reference layers, no mask input: the stitch keeps the selection. Qwen Image 2.1 on Oxen takes no \"auto\" aspect: the preset closest to the crop is sent (seven of them). An answer of another shape is centre-cropped. Resolution 1K or 2K, on auto the smallest that covers the crop; at most ten pictures; the negative prompt goes along. List price $0.109 (2026-09-26)."
     }

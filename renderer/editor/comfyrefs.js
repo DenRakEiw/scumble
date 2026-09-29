@@ -114,9 +114,25 @@ function readsWholeBatch(prompt, canvasId) {
 }
 
 /**
+ * The batch index of every one-picture ImageFromBatch of the crop batch, read by an encoder or not (null: not a literal
+ * index >= 0). A picker the trace does not reach (a CLIP vision, style or IPAdapter input) still reads a picture.
+ */
+function pickedBatches(prompt, canvasId) {
+    const out = [];
+    for (const node of Object.values(prompt || {})) {
+        if (!node || node.class_type !== "ImageFromBatch") continue;
+        const inputs = node.inputs || {}, src = inputs.image;
+        if (!isLink(src) || String(src[0]) !== String(canvasId) || src[1] !== 0) continue;
+        out.push(Number.isInteger(inputs.batch_index) && inputs.batch_index >= 0 ? inputs.batch_index : null);
+    }
+    return out;
+}
+
+/**
  * What a ComfyUI recipe calls its pictures and how many it reads: `{ name, slots, guess, trim }`.
  * - The trace is an *identity* when the batch indices its encoder inputs read are exactly 0 .. k-1, one encoder class
- *   reads them all, each input's number is its batch index + 1, and no other node takes the whole batch.
+ *   reads them all, each input's number is its batch index + 1, no other node takes the whole batch, and no picker
+ *   outside the encoders reads an index past k - 1 (else a reference that node reads would be cut off).
  * - `name`: the recipe's `refs.name` when valid, else the class's wording when an identity, else "image {n}".
  * - `slots` (pictures, the crop included): an identity's k (a declared value only lowers it), else the declared
  *   value, else null (no limit known).
@@ -133,7 +149,8 @@ export function comfyRefSpec(recipe) {
     const k = batches.size;
     const identity = slots.length > 0 && classes.size === 1 && !readsWholeBatch(prompt, canvasId)
         && slots.every((s) => s.batch != null && s.batch === s.num - 1)
-        && [...batches].every((b) => b != null && b < k);
+        && [...batches].every((b) => b != null && b < k)
+        && pickedBatches(prompt, canvasId).every((b) => b != null && b < k);
     const refs = recipe && recipe.refs && typeof recipe.refs === "object" ? recipe.refs : null;
     const declaredName = refs && validRefName(refs.name) ? refs.name : null;
     const declaredSlots = refs && Number.isInteger(refs.slots) && refs.slots >= 1 && refs.slots <= 16 ? refs.slots : null;

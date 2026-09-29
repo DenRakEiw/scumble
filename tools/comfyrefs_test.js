@@ -311,6 +311,13 @@ async function main() {
         ({ spec } = specOf({ ...EDIT_PLUS, "70": { class_type: "PreviewImage", inputs: { images: ["1", 0] } } }));
         check("a traceable EditPlus graph with another node reading the whole batch: a guess, slots null, trim null", spec.name === "image {n}" && spec.slots === null && spec.guess === true && spec.trim === null, short(spec));
 
+        // the review of 26e: a picker the trace does not reach (a CLIP vision input) reads batch 1, which an identity of
+        // k = 1 would cut off: no identity, so every reference still goes
+        const side = { "10": IFB(0), "11": IFB(1), "20": { class_type: "TextEncodeQwenImageEditPlus", inputs: { clip: ["4", 0], prompt: ["1", 7], image1: ["10", 0] } }, "30": { class_type: "CLIPVisionEncode", inputs: { image: ["11", 0], crop: "center" } } };
+        ({ spec } = specOf(side));
+        const sideLay = C.comfyLayout(spec, { hasSelection: true, fill: "none", withOriginal: false, refine: false, count: 1 });
+        check("EditPlus image1 <- batch 0 and a CLIPVisionEncode <- batch 1: a guess, slots null, trim null, the reference kept", spec.guess === true && spec.slots === null && spec.trim === null && sideLay.kept === 1, short({ spec, kept: sideLay.kept }));
+
         const gap = { "10": IFB(0), "13": IFB(3), "20": { class_type: "TextEncodeQwenImage21", inputs: { clip: ["4", 0], vae: ["3", 0], prompt: ["1", 7], "images.image_1": ["10", 0], "images.image_2": ["13", 0] } } };
         ({ r, spec } = specOf(gap));
         check("images.image_2 <- batch 3 (image_1 <- batch 0): a guess, trim null, slots null", spec.guess === true && spec.trim === null && spec.slots === null && spec.name === "image {n}", short(spec));

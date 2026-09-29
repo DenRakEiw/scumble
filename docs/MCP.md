@@ -104,11 +104,31 @@ reference layers, top of the reference list first. `list_layers` gives each refe
 `status` adds `references: [{id, name, label, visible, sent_as}]`, where `sent_as` is the name
 the selected recipe's route sends that picture as ("image 3" when the crop, the Original and
 another reference go before it). `set_prompt` and `generate_new` take `refs: {"img1": "<layer
-id>"}`: the agent's tokens are read with its own map and rewritten to the labels now, and the
-answer carries `labels` and `parked`. `generate` returns `prompt_sent` (the prompt as the API got
-it, each token written as that model's name) and `notes` (what the route declared it left out);
-a run that cannot send a token (hidden, deleted, a ComfyUI recipe) throws at once with the
-reason. Upscale and Generate new send no reference picture: a token goes as its layer's name.
+id>"}`: the agent's tokens are read with its own map and rewritten to the labels now (an id no
+layer has is refused), and `set_prompt`'s answer carries `labels` and `parked`. `generate`
+returns `prompt_sent` (the prompt as the model got it, each token written as that model's name,
+on a local ComfyUI recipe as its graph numbers the picture) and `notes` (what the route declared
+it left out); a run that cannot send a token (a hidden or deleted reference, one past a local
+recipe's slots) throws at once with the reason. An upscale sends no reference picture: a token
+goes as its layer's name.
+
+**`generate_new` and reference layers** (step 26f). It replaces the image, the history and every
+layer but the reference layers, which stay with their ids, order, visibility and pixels. The
+shown ones go along where the chosen variant's text shape takes reference images for a new image
+(`list_recipes` gives each recipe `textRefs`: true when `generate_new` sends them with its chosen
+provider, and on a ComfyUI recipe when its graph reads pictures after the white canvas, which is
+image 1 there; false on a model that makes pictures from the prompt alone; absent on an upscaler). They are numbered from 1, with no crop before them, so `@img1` goes out
+as `image 1`; references the prompt does not name go too, hidden ones stay without being sent. A
+token on a model that makes pictures from the prompt alone is refused, and so is a run with more
+references than the model takes, before anything is sent. The API path returns `prompt_sent`,
+`references: [{label, id, sentAs}]` (every reference sent; `sentAs` the name the model got for a
+token the prompt holds, null for a reference the prompt does not name), `kept` (reference
+layers) and `dropped` (other layers replaced), `notes` and `info`. The local path keeps the
+references on its fresh white canvas, which is picture 1 of the recipe's batch, so `@img1` is
+named as picture 2 there (3 when the Original goes too); it returns `prompt_sent` and `notes`.
+`add_image_layer` with `role: "reference"` works in an empty tab: a white 1024 × 1024 canvas
+comes first, which `generate_new` replaces while the reference stays (`role: "none"` there is
+still refused with "no image loaded").
 
 ## How it works
 

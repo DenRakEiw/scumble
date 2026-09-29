@@ -77,7 +77,7 @@ Open a .scumble file as a tab (the tab that already holds it is activated instea
 
 ### `list_recipes` *(app)*
 
-The recipes (ComfyUI workflows and API providers) and which one is selected.
+The recipes (ComfyUI workflows and API providers) and which one is selected. textRefs: whether generate_new sends the shown reference layers along (an API recipe: with the chosen provider's text route; a local recipe: whether its graph reads pictures after the white canvas, which is image 1). false: the prompt alone.
 
 (no parameters)
 
@@ -156,9 +156,9 @@ Load an image as the base image of this tab (replaces its image, layers and hist
 | `width` | integer | SVG only: the pixel width to rasterise at |
 | `height` | integer | SVG only: the pixel height to rasterise at |
 
-### `add_image_layer` *(image)*
+### `add_image_layer`
 
-Add an image file as a new layer. role "none": part of the picture (fitted to the canvas, or placed at x,y with width/height); role "reference": a reference image for multi-reference models, not part of the picture. An SVG is rasterised to fit the document first, so it stays sharp.
+Add an image file as a new layer. role "none": part of the picture (fitted to the canvas, or placed at x,y with width/height); role "reference": a reference image for multi-reference models, not part of the picture (in an empty tab it gets a white 1024 x 1024 canvas, which generate_new replaces while the reference stays). An SVG is rasterised to fit the document first, so it stays sharp.
 
 | param | type | description |
 |---|---|---|
@@ -365,7 +365,7 @@ Let the language model the editor is set to rewrite the prompt with the image in
 
 ### `generate` *(image)*
 
-Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as an API model got it (each @img token written as that model's name for its picture).
+Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out.
 
 | param | type | description |
 |---|---|---|
@@ -752,12 +752,12 @@ A JPEG of the image (what = image: the flattened picture; editor: with hidden he
 
 ### `generate_new`
 
-Make this tab's base image from the prompt alone, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image endpoint. Replaces the image, the layers and the history of this tab.
+Make this tab's base image from the prompt, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image route. Replaces the image, the history and every layer but the reference layers, which stay; the shown ones go along where the model takes reference images for a new image (list_recipes: textRefs), each @img token written as the model's name for its picture ("image 1"; on a local recipe the white canvas is image 1). In an empty tab add_image_layer role reference makes a white canvas first.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `prompt` | string | what to make; the tab's current prompt when left out. It sends no reference image: on an API recipe an @img token goes to the model as its layer's name, a ComfyUI recipe refuses it |
+| `prompt` | string | what to make; the tab's current prompt when left out. An @img token names a shown reference layer; a model that makes new images from the prompt alone refuses it |
 | `negative` | string | negative prompt (local chains only) |
 | `refs` | object | which layer each @img token of prompt and negative means: {"img1": "<layer id>", ...} (as set_prompt) |
 | `width` | integer | width in pixels (default `1024`) |

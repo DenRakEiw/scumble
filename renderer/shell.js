@@ -12,6 +12,8 @@ import { beforeCall as snapshotTurn, watchUserEdits, forgetDocument } from "./as
 import { initAssistant, toggleAssistant, assistantOpen, resetAssistant, refreshAssistantModels } from "./assistant.js";
 import { initHelp, toggleHelp, helpOpen } from "./help.js";
 import { initSkins, applySkin, reloadSkins, renderAppearance } from "./skins.js";
+import { PromptField, RefBar } from "./editor/prompt_field.js";
+import { remap, compare, checkNote, normalize as normalizeTokens, referencesText, referencesRule } from "./editor/reftokens.js";
 
 // the editor's style, in the app's cascade layer (docs/SKINS.md): created here before the first editor, so the
 // editor's own injectStyle() finds it and adds nothing; a skin's rules then beat it as they beat shell.css
@@ -63,7 +65,7 @@ const ui = {
     authSecret: $("set-auth-secret"), authSecretRow: $("set-auth-secret-row"), authSecretLabel: $("set-auth-secret-label"),
     providers: $("set-providers"), keysNote: $("set-keys-note"),
     gen: $("gen-dialog"), genMode: $("gen-mode"), genRecipe: $("gen-recipe"), genProvider: $("gen-provider"),
-    genProviderRow: $("gen-provider-row"), genNote: $("gen-note"), genPrompt: $("gen-prompt"),
+    genProviderRow: $("gen-provider-row"), genNote: $("gen-note"), genPrompt: null, genRefbar: $("gen-refbar"), genPromptHost: $("gen-prompt-host"),
     genUpsample: $("gen-upsample"), genUpsampleGo: $("gen-upsample-go"), genUpsampleNote: $("gen-upsample-note"),
     genAspect: $("gen-aspect"), genResolution: $("gen-resolution"), genWidth: $("gen-width"), genHeight: $("gen-height"),
     genSeed: $("gen-seed"), genSeedRandom: $("gen-seed-random"), genSizeNote: $("gen-size-note"),
@@ -276,7 +278,7 @@ function openInto(file) {
 host.createDocument = (id) => newDocument(id);
 host.onDocsChanged = () => renderTabs();
 // the command core (renderer/commands.js) reaches the shell through this
-host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, openSettings, openGenerateNew: (ed) => openGenerateNew(ed), openUpscale: (ed) => openUpscale(ed) };
+host.shell = { newDocument, activate, closeDocument, selectRecipe: (id, provider) => selectRecipe(id, provider), recipes: () => recipes, resolveRecipe, openSettings, openGenerateNew: (ed) => openGenerateNew(ed), openUpscale: (ed) => openUpscale(ed), genField: () => genField, genSyncRefs: () => genSyncRefs() };
 ui.tabAdd.addEventListener("click", () => activate(newDocument()));
 
 // ---- connection --------------------------------------------------------------------------
@@ -431,8 +433,7 @@ function chosenProvider(r) {
 }
 
 /** The recipe with the chosen provider's variant merged in (what host and the commands see). */
-function resolveRecipe(r) {
-    const pid = chosenProvider(r);
+function resolveRecipe(r, pid = chosenProvider(r)) {
     if (!pid) return r;
     const v = r.providers[pid] || {};
     return { ...r, provider: pid, providerLabel: providerLabel(pid), model: v.model || "", input: v.input || "fill", fields: v.fields || null, fixed: v.fixed || null, settings: v.settings || [], options: v.options || null, note: v.note || "", text: v.text || null, limits: v.limits || null, edit: v.edit !== false, task: r.task || "edit", factor: v.factor || null, usesPrompt: !!v.usesPrompt, refs: v.refs || null };
@@ -891,7 +892,59 @@ const GEN_ASPECTS = ["free", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", 
 const GEN_RESOLUTIONS = [768, 1024, 1280, 1536, 2048, 3072, 4096];
 
 let genEditor = null;
-let genPrefill = null;   // the tab's prompt and the dialog's prefill with its @img tokens as names ({ raw, named })
+// the prompt field with reference chips (docs/PLAN_REFS.md 26f): the tab's references, named as the dialog's model gets them
+let genField = null;
+let genInfo = null;          // host.refLayout's answer for the dialog's model (not the tab's recipe)
+let genInfoSeq = 0;
+let genRemapOff = null;      // the field as a remap target of genEditor while the dialog is open
+let genPrevious = null;      // the text before an upsample (Revert)
+let genOpenSeq = 0;          // counts the dialog's openings: an upsample answer belongs to the one it was asked in
+
+/** The prompt field, made once (after genEditor exists, since its bar asks for the references at once). */
+function genMountField() {
+    if (genField) return;
+    genField = new PromptField({
+        placeholder: "what the picture shows; type @ to name a reference image",
+        refs: () => (genEditor ? genEditor.refContext(genInfo) : null),
+        popupRoot: ui.gen,
+        // a picture pasted, dropped or chosen here becomes a reference layer of the tab (a white canvas first in an
+        // empty tab, which Generate new replaces)
+        addReferences: async (files) => {
+            const ids = genEditor ? await genEditor.addReferencesForPrompt(files) : [];
+            await genSyncRefs();
+            return ids;
+        },
+        preview: (id, canvas) => { if (genEditor) genEditor.refPreview(id, canvas); },
+    });
+    genField.el.id = "gen-prompt";
+    genField.el.spellcheck = false;
+    ui.genPromptHost.appendChild(genField.el);
+    new RefBar(genField, { mount: ui.genRefbar });
+    ui.genPrompt = genField.el;
+}
+
+/**
+ * What each reference goes as with the dialog's model: an API variant's text route (host.refLayout kind "text"), a
+ * local recipe's batch with the white canvas as picture 1, all of it selected (generate_new's local path); then the
+ * chips and the bar are drawn again. The last call wins.
+ */
+async function genSyncRefs() {
+    if (!genEditor || !genField) return;
+    const seq = ++genInfoSeq;
+    const r = recipes.find((x) => x.id === ui.genRecipe.value);
+    let info = null;
+    try {
+        if (r && r.kind === "provider" && ui.genProvider.value) {
+            info = await host.refLayout(genEditor, { recipe: resolveRecipe(r, ui.genProvider.value), kind: "text" }, { keep: false });
+        } else if (r && r.kind !== "provider" && r.task !== "upscale") {
+            const gen = { ...genEditor.genSettings, mode: r.mode === "api" ? "api" : "local" };
+            info = await host.refLayout(genEditor, { recipe: r, state: { hasSelection: true, crop: genEditor.cropSettings, gen } }, { keep: false });
+        }
+    } catch (err) { console.warn("generate new: reference layout", err); }
+    if (seq !== genInfoSeq) return;
+    genInfo = info;
+    genField.refresh();
+}
 
 /** The recipes that can start from nothing, for the mode the dialog is on. */
 function genRecipesFor(mode) {
@@ -968,6 +1021,7 @@ function genFillProviders() {
     genFillSizes();
     genTransparencyRow();
     genSyncNote();
+    genSyncRefs();
 }
 
 /** Does the chosen provider variant take a `background` parameter (docs/RECIPES.md)? */
@@ -1039,13 +1093,18 @@ function genSyncTemplateNote() {
     ui.genTemplateNote.textContent = t ? t.description || "" : "The prompt is rewritten richer, without a house style.";
 }
 
-/** The instruction for "Upsample prompt" in this dialog: a template, or the plain rewrite. */
-function genInstruction(text) {
+/**
+ * The instruction for "Upsample prompt" in this dialog: a template, or the plain rewrite. `refs`: the references the
+ * prompt names ([{ id, n, name }], 26d1): the template's {references} and the token rule, or the same after the plain
+ * rewrite's request.
+ */
+function genInstruction(text, refs = []) {
     const t = host.promptTemplates.find((x) => x.id === ui.genTemplate.value);
     const [w, h] = genSize();
-    const ctx = { prompt: text, aspect: ui.genAspect.value === "free" ? `${w}:${h}` : ui.genAspect.value, width: w, height: h, useCase: "generate" };
+    const ctx = { prompt: text, aspect: ui.genAspect.value === "free" ? `${w}:${h}` : ui.genAspect.value, width: w, height: h, useCase: "generate", references: refs };
     if (t) return host.fillPromptTemplate(t, ctx);
-    return `Rewrite this into one rich prompt for a text-to-image model. Keep every subject, colour and material the request names. Describe only what is seen, as one paragraph, no lists, no preamble, no quotes. Request: ${text}`;
+    const plain = `Rewrite this into one rich prompt for an image model. Keep every subject, colour and material the request names. Describe only what is seen, as one paragraph, no lists, no preamble, no quotes. Request: ${text}`;
+    return refs.length ? `${plain}\n\n${referencesText(refs).trim()} ${referencesRule(refs)}` : plain;
 }
 
 function genFillUpsample() {
@@ -1076,6 +1135,7 @@ function genFillUpsample() {
 export async function openGenerateNew(editor) {
     genEditor = editor || host.editor;
     if (!genEditor) return;
+    genOpenSeq++;
     if (!ui.genAspect.options.length) {
         for (const a of GEN_ASPECTS) {
             const o = document.createElement("option");
@@ -1089,28 +1149,33 @@ export async function openGenerateNew(editor) {
         ? (host.recipe && host.recipe.kind === "comfy" ? "local" : "api")
         : (genRecipesFor("local").length ? "local" : "api");
     if (!ui.genResolution.options.length) ui.genResolution.value = "1024";
+    genMountField();
+    genInfo = null;
     genFillRecipes();
     genFillUpsample();
     genFillTemplates();
-    // Generate new sends no reference picture yet: the prompt's @img tokens come in as the layers' names
-    const named = host.refNames(genEditor, genEditor.promptText || "");
-    ui.genPrompt.value = named.text;
-    genPrefill = { raw: genEditor.promptText || "", named: named.text };
+    // the tab's prompt with its @img tokens as chips (26f): they name the reference layers, which go along where the
+    // model takes them; the field follows the references like the tab's own prompt while the dialog is open
+    genField.setText(genEditor.promptText || "", { history: "reset" });
+    genPrevious = null;
+    if (genRemapOff) genRemapOff();
+    const field = genField;
+    genRemapOff = genEditor.addRemapTarget({ get value() { return field.el.value; }, setText: (t, o) => { field.setText(t, o); genSyncRefs(); } });
     // the boxes take 64 to 8192 (genSize clamps to that too): a larger document shows what will be asked for
     ui.genWidth.value = Math.max(64, Math.min(8192, genEditor.width || 1024));
     ui.genHeight.value = Math.max(64, Math.min(8192, genEditor.height || 1024));
     ui.genSeed.value = genEditor.genSettings.seed;
     ui.genSeedRandom.checked = !!genEditor.genSettings.seedRandom;
-    ui.genState.textContent = named.note;
+    ui.genState.textContent = "";
     ui.genUpsampleNote.textContent = "";
     genSyncSize();
     ui.gen.showModal();
-    ui.genPrompt.focus();
+    genField.focus();
 }
 
 ui.genMode.addEventListener("change", genFillRecipes);
 ui.genRecipe.addEventListener("change", genFillProviders);
-ui.genProvider.addEventListener("change", () => { genFillSizes(); genTransparencyRow(); genSyncNote(); });
+ui.genProvider.addEventListener("change", () => { genFillSizes(); genTransparencyRow(); genSyncNote(); genSyncRefs(); });
 ui.genTemplate.addEventListener("change", () => {
     genSyncTemplateNote();
     window.scumble.settings.set({ promptTemplates: { ...(settings.promptTemplates || {}), generate: ui.genTemplate.value } }).then((s) => { settings = s; }).catch(() => { /* not fatal */ });
@@ -1119,22 +1184,70 @@ ui.genAspect.addEventListener("change", genSyncSize);
 ui.genResolution.addEventListener("change", genSyncSize);
 for (const el of [ui.genWidth, ui.genHeight]) el.addEventListener("input", genSyncSize);
 ui.gen.addEventListener("keydown", (e) => { if (e.key !== "Escape") e.stopPropagation(); });
+// Escape with the @ picker or the swap menu open closes that, not the dialog (a file input's cancel bubbles here too)
+ui.gen.addEventListener("cancel", (e) => {
+    if (e.target !== ui.gen || !genField || !genField.popupOpen()) return;
+    e.preventDefault();
+    genField.closePopups();
+});
+ui.gen.addEventListener("close", () => {
+    if (genRemapOff) { genRemapOff(); genRemapOff = null; }
+    if (genField) genField.closePopups();
+});
 
 ui.genUpsampleGo.addEventListener("click", async () => {
     const backend = host.upsampleBackends().find((b) => b.id === ui.genUpsample.value);
     if (!backend) return;
-    const text = (ui.genPrompt.value || "").trim();
-    if (!text) { ui.genUpsampleNote.textContent = "Write something first."; return; }
+    // the dialog and the tab of the click: an answer that comes back after the dialog was closed or opened again (for
+    // another tab, say) is dropped, never written into that other prompt
+    const ed = genEditor, seq = genOpenSeq;
+    const stale = () => seq !== genOpenSeq || ed !== genEditor || !ui.gen.open;
+    const before = genField.el.value;
+    if (!before.trim()) { ui.genUpsampleNote.textContent = "Write something first."; return; }
+    // the @img tokens (26d1): the request and its labels as they are now, the references it names
+    const labels = ed ? ed.refLabels() : new Map();
+    const request = remap(before, labels, labels).trim();
+    const why = ed ? ed.upsampleRefProblems(request, labels) : "";
+    if (why) { ui.genUpsampleNote.textContent = `Upsampling needs every @img token to name a shown reference: ${why}.`; return; }
+    const refs = ed ? ed.namedRefs(request, labels) : [];
     ui.genUpsampleGo.disabled = true;
     ui.genUpsampleNote.textContent = "asking " + backend.label.replace(/ \(.*\)$/, "") + " ...";
     try {
-        const res = await host.askLLM(backend, genInstruction(text), null);
-        ui.genPrompt.value = res.text;
-        ui.genUpsampleNote.textContent = `${res.text.split(/\s+/).length} words in ${res.seconds.toFixed(1)} s${res.note ? ", " + res.note : ""}.`;
+        // the named reference pictures go along while the setting is on (26d2)
+        const images = host.llmRefPictures && refs.length && ed ? await host.llmPictures(ed, refs) : [];
+        if (stale()) return;
+        const res = await host.askLLM(backend, genInstruction(request, refs), null, images);
+        if (stale()) return;
+        let text = normalizeTokens(String(res.text || "").trim());
+        // checked in the numbering of the click, then carried to the references of now (a hide or a move meanwhile);
+        // Revert's text is carried the same way, so it names the same layers the answer does
+        const cmp = refs.length ? compare(request, text, refs.map((x) => x.n)) : null;
+        const now = ed ? ed.refLabels() : labels;
+        const carry = (t) => remap(t, labels, now);
+        if (cmp) { cmp.dropped = cmp.dropped.map(carry); cmp.invented = cmp.invented.map(carry); }
+        text = carry(text);
+        genPrevious = carry(before);
+        genField.setText(text);
+        const note = cmp ? checkNote(cmp) : "";
+        ui.genUpsampleNote.textContent = `${text.split(/\s+/).length} words in ${res.seconds.toFixed(1)} s${res.note ? ", " + res.note : ""}.${note ? " " + note : ""}`;
+        const revert = document.createElement("button");
+        revert.type = "button";
+        revert.id = "gen-upsample-revert";
+        revert.textContent = "Revert";
+        revert.title = "Put the prompt from before the upsample back";
+        revert.addEventListener("click", () => {
+            if (stale() || genPrevious == null) return;
+            // the old text follows the references too
+            genField.setText(remap(genPrevious, now, ed ? ed.refLabels() : now));
+            genPrevious = null;
+            revert.remove();
+        });
+        ui.genUpsampleNote.append(" ", revert);
     } catch (err) {
-        ui.genUpsampleNote.textContent = String(err.message || err);
+        if (!stale()) ui.genUpsampleNote.textContent = String(err.message || err);
     } finally {
-        ui.genUpsampleGo.disabled = false;
+        // a stale answer leaves the button to the dialog that is open now
+        if (!stale()) ui.genUpsampleGo.disabled = false;
     }
 });
 
@@ -1143,22 +1256,21 @@ ui.genGo.addEventListener("click", async () => {
     if (!ed) return;
     const id = ui.genRecipe.value;
     if (!id) { ui.genState.textContent = "No model to run this on."; return; }
-    const prompt = (ui.genPrompt.value || "").trim();
-    if (!prompt) { ui.genState.textContent = "Write a prompt first."; ui.genPrompt.focus(); return; }
+    const prompt = (genField.el.value || "").trim();
+    if (!prompt) { ui.genState.textContent = "Write a prompt first."; genField.focus(); return; }
+    // which layer each token means at the click (a change after it refuses rather than re-points)
+    const refs = Object.fromEntries([...ed.refLabels()].map(([lid, n]) => ["img" + n, lid]));
     const [w, h] = genSize();
     ui.genGo.disabled = true;
     ui.genState.textContent = "running ...";
     try {
         await selectRecipe(id, ui.genProvider.value || undefined);
-        // the prefill untouched: an API run gets the tab's own prompt, so its @img tokens stay in the tab (the request
-        // writes them as names), and a failed run leaves the prompt as it was
-        const own = genPrefill && ed === genEditor && prompt === genPrefill.named.trim() && genPrefill.raw !== genPrefill.named && host.recipe && host.recipe.kind === "provider";
-        const sent = own ? genPrefill.raw.trim() : prompt;
         // a chosen aspect goes along as itself (the same size as genSize), so a ratio channel is asked for
         // "3:2", not the reduced ratio of the rounded 1024 x 688 ("64:43")
         const args = genAspectFree()
-            ? { doc: ed.node.id, prompt: sent, width: w, height: h, timeout: 900 }
-            : { doc: ed.node.id, prompt: sent, aspect: ui.genAspect.value, resolution: +ui.genResolution.value || 1024, timeout: 900 };
+            ? { doc: ed.node.id, prompt, width: w, height: h, timeout: 900 }
+            : { doc: ed.node.id, prompt, aspect: ui.genAspect.value, resolution: +ui.genResolution.value || 1024, timeout: 900 };
+        if (Object.keys(refs).length) args.refs = refs;
         if (!ui.genSeedRandom.checked) args.seed = Math.abs(Math.round(+ui.genSeed.value) || 0);
         if (!ui.genAlphaRow.hidden && ui.genAlpha.checked) args.background = "transparent";
         const out = await commands.run("generate_new", args);

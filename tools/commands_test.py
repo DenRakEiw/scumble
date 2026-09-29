@@ -652,7 +652,7 @@ if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift
 return out;
 """.replace("__LOOP_EDIT__", LOOP_EDIT)),
     # 26b2: a route that sends no pictures writes the tokens as the layers' names, cleaned (no @, quotes or braces), in
-    # the request only; the Generate new and Upscale dialogs are prefilled the same way
+    # the request only; the Upscale dialog is prefilled the same way (Generate new keeps the tokens since 26f)
     ("refs_names", """
 const ed = window.editor;
 const { host } = await import("./editor/host.js");
@@ -689,13 +689,14 @@ try {
     if (plain.text !== "plain words") throw new Error("refNames without a token: " + JSON.stringify(plain));
     const parked = await host.refNames(ed, "no @img?" + B);
     if (parked.text !== "no refB") throw new Error("refNames of a parked token whose layer exists: " + JSON.stringify(parked));
-    // 3. the dialogs' own fields hold the names; the document's prompt keeps its tokens
+    // 3. the Upscale dialog's field holds the names; Generate new keeps the tokens since 26f (it sends the references
+    // where the model takes them); the document's prompt keeps its tokens
     const want = "jacket from refB, style of " + clean;
     await host.shell.openGenerateNew(ed);
     const gen = document.getElementById("gen-prompt").value;
     document.getElementById("gen-cancel").click();
     await wait(80);
-    if (gen !== want) throw new Error("the Generate new prefill: " + JSON.stringify(gen));
+    if (gen !== P0) throw new Error("the Generate new prefill: " + JSON.stringify(gen));
     host.shell.openUpscale(ed);
     const up = document.getElementById("up-prompt").value;
     document.getElementById("up-cancel").click();

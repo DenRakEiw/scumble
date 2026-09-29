@@ -15,6 +15,13 @@
 // order, max + 1 is refused by checkPictures and by the builder itself, every variant has a max, a drop or an entry in
 // UNDOCUMENTED, and a resolved marker names a picture by the number the instruction's sentence gives it. §11 the routes
 // 26a2 changed one by one (BFL klein through index.js, Comfy Cloud's one-picture node, Gemini and vertexai parts).
+// Text runs (Generate new with references, 26f): §6 one per adapter and `layout(shape)` of kind text, §7-9 the markers,
+// refusals, instruction and checkPictures of kind text, §12 every shipped variant whose text shape declares `text.refs`
+// as host.runGenerate builds the request (the route of text.refs.model, its options, refsMax): the endpoint, the
+// references alone in order in textLayout's fields, no edit sentence, the asked shape, the reference sentence where the
+// route writes one, the text cap equal to the edit cap and lowered by text.refs.max, max + 1 refused by index.js before
+// any fetch; with 0 references every text variant's request against the adapters of a608e8d (git, the commit before
+// 26f; skipped without git) and a marker resolved through index.js on two shipped variants.
 //
 // A field is a path into the request the builder sends ("image_urls[0]", "contents[0].parts[2]",
 // "input.messages[0].content[1]"); OpenAI's multipart form is read as an object whose "x[]" keys and repeated keys hold
@@ -326,7 +333,7 @@ async function capture(p, req, verb = "edit") {
             shot.pending.set(put, dl);
             return json(200, { upload_url: put, download_url: dl });
         }
-        if (!shot.request) shot.request = await bodyOf(init.body);   // a resend of it (Comfy Router) is not kept again
+        if (!shot.request) { shot.request = await bodyOf(init.body); shot.url = String(url); }   // a resend of it (Comfy Router) is not kept again
         throw new Error(SENTINEL);
     }
     const ctx = {
@@ -586,6 +593,64 @@ function partsAsIds(parts, fx, shot) {
     });
 }
 
+// ---- 26f: text runs with references ------------------------------------------------------------------------------
+
+/**
+ * Every shipped provider variant with a text shape (ToAPIs once per channel): { recipe, provider, variant, channel,
+ * takes }, `takes` whether its text shape declares `text.refs` (the shown reference layers go along, 26f).
+ */
+function textShapesOf() {
+    const out = [];
+    for (const r of loadRecipes()) {
+        if (r.kind !== "provider" || r.task === "upscale") continue;
+        for (const [id, v] of Object.entries(r.providers)) {
+            if (!v.text || !v.text.model || typeof adapter(id).generate !== "function") continue;
+            const channels = id === "toapis" && v.options && v.options.channels ? Object.keys(v.options.channels) : [null];
+            for (const channel of channels) out.push({ recipe: r.id, provider: id, variant: v, channel, takes: !!v.text.refs });
+        }
+    }
+    return out;
+}
+
+/**
+ * The request host.runGenerate builds for a text run with `n` reference pictures (docs/PLAN_REFS.md 26f sub-task 7),
+ * as index.js hands it on: with references the route `text.refs.model` names, `text.refs.options` over the variant's
+ * options and `refsMax` the variant's cap; without, the text request of today. The pictures are the fixtures REF<i>.
+ */
+function textRequestFor(s, n, extra = {}) {
+    const v = s.variant, t = v.text, tr = t.refs || {};
+    const fx = fixturesFor(s.provider, t.model, n, 0);
+    const withRefs = n > 0;
+    const params = defaults(t.settings, t.fixed);
+    if (s.channel) params.channel = s.channel;
+    const req = {
+        provider: s.provider, model: (withRefs && tr.model) || t.model, kind: "text", prompt: "a lighthouse at dusk", negative: "", seed: 7,
+        width: 1344, height: 768, aspect: "16:9", image: null, mask: null, maskAlpha: null, references: fx.references, original: 0,
+        refName: tr.name || (v.refs && v.refs.name) || refs.REF_NAME_DEFAULT, refsMax: withRefs ? tr.max || null : null,
+        fields: v.fields || null, options: withRefs && tr.options ? { ...(v.options || {}), ...tr.options } : v.options || null, params, ...extra,
+    };
+    return { fx, req };
+}
+
+/** Every string under `v`. */
+function stringsIn(v, out = []) {
+    if (typeof v === "string") { out.push(v); return out; }
+    if (v == null || typeof v !== "object" || Buffer.isBuffer(v) || v instanceof Uint8Array) return out;
+    for (const x of Array.isArray(v) ? v : Object.values(v)) stringsIn(x, out);
+    return out;
+}
+
+/** The request with each fixture as "<id>" and long strings cut: what REFS_VERBOSE prints. */
+function redacted(v, fx, shot) {
+    const id = fixtureOf(v, fx, shot);
+    if (id) return `<${id}>`;
+    if (typeof v === "string") return v.length > 120 ? v.slice(0, 120) + " ..." : v;
+    if (v == null || typeof v !== "object") return v;
+    if (Buffer.isBuffer(v) || v instanceof Uint8Array) return `<${v.length} bytes>`;
+    if (Array.isArray(v)) return v.map((x) => redacted(x, fx, shot));
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, redacted(x, fx, shot)]));
+}
+
 /** One shape end to end: fixtures, request, the adapter's layout, the capture. */
 async function runShape(s, nRefs = s.refs, original = s.original) {
     const fx = fixturesFor(s.provider, s.variant.model, nRefs, original);
@@ -759,33 +824,53 @@ async function main() {
         }
     });
 
-    // ---- 6. central kinds: a text run carries no reference ----
+    // ---- 6. central kinds: a text run sends the references where the variant takes them (26f) ----
     await section("6. text runs", async () => {
         const idx = (() => { try { return loadIndex(); } catch (_) { return null; } })();
         const ids = idx ? Object.keys(idx.PROVIDERS) : fs.readdirSync(PROV).filter((f) => f.endsWith(".js") && f !== "index.js" && f !== "refs.js" && f !== "util.js").map((f) => f.replace(/\.js$/, ""));
+        const TEXT = textShapesOf();
         for (const id of ids) {
             const p = adapter(id);
             if (typeof p.generate !== "function") continue;
-            // a shipped variant's text shape, an edit route's first (the fill models' text shapes are the odd ones)
-            const withText = loadRecipes().filter((r) => r.kind === "provider" && r.task !== "upscale" && r.providers[id] && r.providers[id].text && r.providers[id].text.model).map((r) => r.providers[id]);
-            const v = withText.find((x) => x.input === "edit") || withText[0] || null;
-            if (!v && id !== "loopback") { console.log(`[skip] ${id}: no shipped variant with a text shape`); continue; }
-            const t = v ? v.text : { model: "loopback", settings: [], fixed: null };
-            const fx = fixturesFor(id, t.model, 2, 0);
-            const req = {
-                provider: id, model: t.model, kind: "text", prompt: "a lighthouse at dusk", negative: "", seed: 7, width: 1024, height: 768, aspect: null,
-                image: null, mask: null, maskAlpha: null, references: fx.references, fields: (v && v.fields) || null, options: (v && v.options) || null,
-                params: defaults((t.settings && t.settings.length ? t.settings : v && v.settings) || [], { ...((v && v.fixed) || {}), ...(t.fixed || {}) }), original: 0, refName: refs.REF_NAME_DEFAULT,
-            };
+            // the first shipped variant whose text shape takes references (§12 runs every one); the loopback has its own
+            const s = TEXT.find((x) => x.provider === id && x.takes && !x.channel) || TEXT.find((x) => x.provider === id && x.takes)
+                || (id === "loopback" ? { recipe: "(test)", provider: id, channel: null, takes: true, variant: { model: "loopback", refs: { name: "image {n}" }, text: { model: "loopback", settings: [], fixed: null, refs: { max: null, field: null, model: null, options: null, name: null } } } } : null);
+            if (!s) { check(`${id}: a shipped variant whose text shape takes references`, false, "none: add text.refs or drop generate"); continue; }
+            check(`${id}: exports textLayout(req) beside generate`, typeof p.textLayout === "function");
+            // two references, or one on a route that takes one (Grok's edit id on Oxen)
+            const cap = (() => { try { return p.textLayout({ ...textRequestFor(s, 1).req }).max; } catch (_) { return null; } })();
+            const n = cap != null && cap < 2 ? cap : 2;
+            const { fx, req } = textRequestFor(s, n);
             const shot = await capture(p, req, "generate");
-            const carried = shot.request ? picturesIn(shot, fx) : walk(shot.result && shot.result.info, "info", fx, shot);
-            const uploaded = [...shot.uploads.values()].filter((b) => fixtureOf(b, fx, shot));
-            const reached = !!shot.request || (id === "loopback" && !!shot.result);
-            check(`${id} (${t.model}): a text run with 2 references sends none of them`, reached && !carried.length && !uploaded.length, reached ? short(carried.map((x) => `${x.id}@${x.path}`)) : `no request: ${shot.error}`);
+            const carried = shot.request ? picturesIn(shot, fx) : [];
+            const uploaded = [...shot.uploads.values()].map((b) => fixtureOf(b, fx, shot)).filter(Boolean);
+            const want = Array.from({ length: n }, (_, i) => `ref${i}`);
+            if (id === "loopback") {
+                const info = shot.result && shot.result.info;
+                check(`${id}: a text run with ${n} references hands both to the model (info.references)`, !!info && info.references === n, short(info) || shot.error);
+                continue;
+            }
+            const got = carried.map((x) => x.id);
+            check(`${id} ${s.recipe} (${req.model}): a text run with ${n} reference${n === 1 ? "" : "s"} sends ${n === 1 ? "it" : "them"} in order, and no other picture`, !!shot.request && eq(got, want) && uploaded.every((u) => want.includes(u)), shot.request ? short(carried.map((x) => `${x.id}@${x.path}`)) : `no request: ${shot.error}`);
         }
         if (idx && typeof idx.layout === "function") {
-            const l = await idx.layout({ provider: "fal", model: "fal-ai/nano-banana-2/edit", kind: "text", count: 2 });
-            check("layout of a text shape: no pictures, drops says Generate new sends none, no names", !!l && eq(l.pictures, []) && l.drops === "Generate new sends no reference images." && eq(l.names, [null, null]) && l.sent === 0, short(l));
+            const refPic = (i, field) => ({ role: "reference", ref: i, field, n: i + 1 });
+            let l = await idx.layout({ provider: "fal", model: "fal-ai/nano-banana-2/edit", kind: "text", count: 2 });
+            check("layout of a text shape on a route that takes references (fal nano-banana-2/edit): the references numbered 'image 1', 'image 2', no crop, no drop", !!l && eq(l.pictures, [refPic(0, "image_urls[0]"), refPic(1, "image_urls[1]")]) && l.drops === null && eq(l.names, ["image 1", "image 2"]) && l.sent === 2 && l.over === false, short(l));
+            l = await idx.layout({ provider: "fal", model: "fal-ai/nano-banana-2", kind: "text", count: 2 });
+            check("layout of a text shape on a route that takes none (fal's text-to-image route): no pictures, the drop said, no names", !!l && eq(l.pictures, []) && !!l.drops && eq(l.names, [null, null]) && l.sent === 0 && l.over === false, short(l));
+            l = await idx.layout({ provider: "fal", model: "fal-ai/nano-banana-2/edit", kind: "text", count: 0 });
+            const l0 = await idx.layout({ provider: "fal", model: "fal-ai/nano-banana-2", kind: "text", count: 0 });
+            check("layout of a text shape with count 0: no pictures, no drop, no names (either route)", [l, l0].every((x) => !!x && eq(x.pictures, []) && x.drops === null && eq(x.names, []) && x.sent === 0 && x.over === false), short({ edit: l, text: l0 }));
+            l = await idx.layout({ provider: "fal", model: "fal-ai/flux-2-pro/edit", kind: "text", count: 2, refsMax: 1, refName: "Image {n}" });
+            check("layout of a text shape: refsMax lowers the route's max (8 to 1), over past it, the names by refName", !!l && l.max === 1 && l.over === true && l.sent === 2 && eq(l.names, ["Image 1", "Image 2"]), short(l));
+            l = await idx.layout({ provider: "fal", model: "fal-ai/flux-2-pro/edit", kind: "text", count: 2, original: 1 });
+            check("layout of a text shape ignores original: 1 (a new image has no Original): both counted as references", !!l && eq(l.names, ["image 1", "image 2"]) && l.pictures.every((x) => x.role === "reference"), short(l));
+            const e = await throws(() => idx.layout({ provider: "comfycloud", model: "Flux.2 [pro]", kind: "text", count: 1 }));
+            check("layout of a text shape on a provider with no text-to-image endpoint throws", !!e && /no text-to-image endpoint/.test(e), e);
+            idx.PROVIDERS.refsstub = { label: "Refs stub", needsKey: false, async generate() { return { bytes: RESULT, mime: "image/png", info: {} }; } };
+            try { l = await idx.layout({ provider: "refsstub", model: "stub", kind: "text", count: 2 }); } finally { delete idx.PROVIDERS.refsstub; }
+            check("layout of a text shape on an adapter without textLayout: index.js declares the drop in its own words", !!l && eq(l.pictures, []) && l.drops === "Refs stub makes a new image from the prompt alone: reference images are left out" && eq(l.names, [null, null]), short(l));
         } else check("index.js exports layout(shape)", false);
     });
 
@@ -815,6 +900,11 @@ async function main() {
         x = await viaIndex(loop({ prompt: long }));
         const rec = x.recs.find((r) => r.level !== "error" && r.source === "loopback");
         check("a long prompt: the result keeps it whole, the success record at most 500 characters", !x.err && x.out.prompt === "image 3 " + "x".repeat(700) && !!rec && typeof rec.detail.prompt === "string" && rec.detail.prompt.length <= 500 && rec.detail.prompt.startsWith("image 3 "), x.err || short(rec && rec.detail && rec.detail.prompt.length));
+        // a text run (26f): no crop, so the first reference is picture 1
+        x = await viaIndex({ provider: "loopback", kind: "text", model: "loopback", prompt: "the jacket of {@ref:1} on the person of {@ref:0}", negative: "not {@ref:1}", seed: 3, references: [png("REF0"), png("REF1")], original: 0, refName: "image {n}", image: null, mask: null, width: 64, height: 64, params: {} }, ["loopback"]);
+        check("loopback, a text run with 2 references: {@ref:1} is 'image 2', {@ref:0} 'image 1' (no crop), both references reach the model", !x.err && x.calls.adapter === 1 && x.out.prompt === "the jacket of image 2 on the person of image 1" && x.out.info.prompt === x.out.prompt && x.out.negative === "not image 2" && x.out.info.references === 2 && eq(x.out.refs, [{ ref: 1, name: "image 2" }, { ref: 0, name: "image 1" }]) && eq(x.out.notes, []), x.err || short({ prompt: x.out.prompt, negative: x.out.negative, refs: x.out.refs, info: x.out.info }));
+        x = await viaIndex({ provider: "loopback", kind: "text", model: "loopback", prompt: "a lighthouse", seed: 3, references: [], original: 0, width: 64, height: 64, params: {} }, ["loopback"]);
+        check("loopback, a text run without references: the prompt as given, refs [], no notes", !x.err && x.out.prompt === "a lighthouse" && x.out.info.references === 0 && eq(x.out.refs, []) && eq(x.out.notes, []), x.err || short(x.out));
 
         const flux1 = variantOf("flux1_fill", "fal");
         const ideo = variantOf("ideogram_inpaint", "magnific");
@@ -822,7 +912,9 @@ async function main() {
             ["an index past the end ({@ref:5} with 2 references)", loop({ prompt: "from {@ref:5}" }), ["loopback"], null],
             ["a reference the route drops (fal's FLUX.1 Fill, no fields.images)", { provider: "fal", kind: "fill", model: flux1.model, fields: flux1.fields || null, options: flux1.options || null, prompt: "the coat from {@ref:0}", references: [png("REF0")], original: 0, image: png("CROP"), mask: png("MASK"), maskAlpha: png("MASKA"), width: 64, height: 64, params: defaults(flux1.settings, flux1.fixed) }, ["fal"], /left out|takes the crop/i],
             ["an Ideogram style reference (no number)", { provider: "magnific", kind: "fill", model: ideo.model, prompt: "in the style of {@ref:0}", references: [png("REF0")], original: 0, image: png("CROP"), mask: png("MASK"), maskAlpha: png("MASKA"), width: 64, height: 64, params: defaults(ideo.settings, ideo.fixed) }, ["magnific"], /no number/i],
-            ["a text run with a marker", { provider: "loopback", kind: "text", model: "loopback", prompt: "like {@ref:0}", references: [png("REF0")], original: 0, width: 64, height: 64, params: {} }, ["loopback"], /Generate new sends no reference/i],
+            ["a text run with a marker on a route that drops the references (loopback options.drops)", { provider: "loopback", kind: "text", model: "loopback", prompt: "like {@ref:0}", references: [png("REF0")], original: 0, width: 64, height: 64, params: {}, options: { drops: "test drop" } }, ["loopback"], /test drop, so the prompt cannot name a reference image/],
+            ["a text run that marks an Original", { provider: "loopback", kind: "text", model: "loopback", prompt: "like {@ref:1}", references: [png("ORIG"), png("REF1")], original: 1, width: 64, height: 64, params: {} }, ["loopback"], /A new image has no Original picture/],
+            ["a text run with a marker past its references ({@ref:2} with 2)", { provider: "loopback", kind: "text", model: "loopback", prompt: "like {@ref:2}", references: [png("REF0"), png("REF1")], original: 0, width: 64, height: 64, params: {} }, ["loopback"], /names reference picture 3, and the request carries 2/],
             ["a raw @img2", loop({ prompt: "the coat from @img2" }), ["loopback"], null],
             ["a raw parked @img?Lk3", loop({ prompt: "the coat from @img?Lk3" }), ["loopback"], null],
             ["a malformed {@ref:x}", loop({ prompt: "the coat from {@ref:x}" }), ["loopback"], null],
@@ -931,7 +1023,37 @@ async function main() {
             const out = refs.instruction({ kind, refName: "image {n}", references: [1, 2], original: 0 }, L(), t);
             if (out !== t) passBad.push(`${kind} ${JSON.stringify(t)} -> ${JSON.stringify(out)}`);
         }
-        check("instruction: kind text and upscale take the text unchanged", !passBad.length, passBad.join(" | "));
+        check("instruction: kind upscale takes the text unchanged, and kind text without a numbered reference", !passBad.length, passBad.join(" | "));
+        const upNumbered = refs.instruction({ kind: "upscale", refName: "image {n}", references: [1, 2], original: 0 }, L({ seq: [["crop", "image"], ["reference", "r[0]", 0]] }), " a lighthouse ");
+        check("instruction: kind upscale stays unchanged even with a numbered layout", upNumbered === " a lighthouse ", upNumbered);
+        // kind text (Generate new, 26f): no crop, the references numbered from 1, the sentence after the text
+        const textReq = (n, refName = "image {n}") => ({ kind: "text", refName, original: 0, references: Array.from({ length: n }, (_, i) => i) });
+        const textLay = (n) => L({ seq: refs.refRoles(textReq(n)).map(([role, i]) => [role, `image_urls[${i}]`, i]) });
+        const textCases = [
+            ["1 reference", 1, "image {n}", "a lighthouse", "a lighthouse Image 1 is a reference image."],
+            ["2 references", 2, "image {n}", "a lighthouse", "a lighthouse Images 1 and 2 are reference images."],
+            ["3 references", 3, "image {n}", "a lighthouse", "a lighthouse Images 1 to 3 are reference images."],
+            ["5 references", 5, "image {n}", "a lighthouse", "a lighthouse Images 1 to 5 are reference images."],
+            ["'Image {n}' and 2 references", 2, "Image {n}", "a lighthouse", "a lighthouse Images 1 and 2 are reference images."],
+            ["'<image{n}>' and 2 references: a list", 2, "<image{n}>", "a lighthouse", "a lighthouse <image1> and <image2> are reference images."],
+            ["'<image{n}>' and 3 references", 3, "<image{n}>", "a lighthouse", "a lighthouse <image1>, <image2> and <image3> are reference images."],
+            ["'<image{n}>' and 1 reference", 1, "<image{n}>", "a lighthouse", "a lighthouse <image1> is a reference image."],
+            ["'picture {n0}': counted from 0, the first letter capitalised", 2, "picture {n0}", "a lighthouse", "a lighthouse Picture 0 and picture 1 are reference images."],
+            ["an invalid refName takes 'image {n}'", 2, "@img{n}", "a lighthouse", "a lighthouse Images 1 and 2 are reference images."],
+            ["the text trimmed, one space between the parts", 2, "image {n}", "  a lighthouse  ", "a lighthouse Images 1 and 2 are reference images."],
+            ["an empty text: the sentence alone", 2, "image {n}", "", "Images 1 and 2 are reference images."],
+            ["no text at all: the sentence alone", 1, "image {n}", null, "Image 1 is a reference image."],
+        ];
+        for (const [what, n, pat, t, want] of textCases) {
+            const out = refs.instruction(textReq(n, pat), textLay(n), t);
+            check(`instruction, kind text: ${what}`, out === want, out);
+        }
+        const noEdit = [];
+        for (const n of [1, 2, 3]) { const out = refs.instruction(textReq(n), textLay(n), "a lighthouse"); if (/\bEdit\b|before the selected area|\bmask\b/.test(out)) noEdit.push(out); }
+        check("instruction, kind text: never an 'Edit ...' head, a mask or an Original sentence", !noEdit.length, noEdit.join(" | "));
+        const textDrop = refs.instruction(textReq(2), L({ drops: "test drop" }), " a lighthouse ");
+        const textStyle = refs.instruction(textReq(2), L({ own: [["reference", "style[0]", 0], ["reference", "style[1]", 1]], style: true }), " a lighthouse ");
+        check("instruction, kind text: a drop layout (no pictures) and a style layout leave the text unchanged", textDrop === " a lighthouse " && textStyle === " a lighthouse ", short({ textDrop, textStyle }));
 
         const five = reqOf(2, { kind: "fill", original: 1 });
         let parts = refs.labelParts(layOf(five, { mask: true }), "image {n}");
@@ -997,13 +1119,37 @@ async function main() {
         e = await throws(() => refs.checkPictures(capped(reqOf(5), "5"), reqOf(5), WHO));
         check("checkPictures: a max given as the string '5' caps at 5", chk.notes.length === 0 && !!e && e.includes("takes at most 5 pictures; this run has 6"), e);
         const leftAlone = [];
-        for (const kind of ["text", "upscale"]) {
-            req = reqOf(2, { kind, prompt: "like {@ref:0}" });
-            for (const lay of [cropOnly(DROP), capped(reqOf(0), 1), style]) {
-                try { const c = refs.checkPictures(lay, req, WHO); if (c.req !== req || c.notes.length) leftAlone.push(`${kind}: changed`); } catch (err) { leftAlone.push(`${kind}: ${err.message}`); }
-            }
+        req = reqOf(2, { kind: "upscale", prompt: "like {@ref:0}" });
+        for (const lay of [cropOnly(DROP), capped(reqOf(0), 1), style]) {
+            try { const c = refs.checkPictures(lay, req, WHO); if (c.req !== req || c.notes.length) leftAlone.push("upscale: changed"); } catch (err) { leftAlone.push(`upscale: ${err.message}`); }
         }
-        check("checkPictures: kind text and upscale are left alone (26f extends them)", !leftAlone.length, leftAlone.join(" | "));
+        check("checkPictures: kind upscale is left alone (index.js lays it out without references)", !leftAlone.length, leftAlone.join(" | "));
+
+        // kind text (26f): held to its text layout, the refusal names reference pictures only
+        const textOf = (n, extra = {}) => ({ kind: "text", refName: "image {n}", original: 0, prompt: "a lighthouse", negative: "", ...extra, references: Array.from({ length: n }, (_, i) => i) });
+        const textLayOf = (n, max = null) => L({ seq: refs.refRoles(textOf(n)).map(([role, i]) => [role, `image_urls[${i}]`, i]), max });
+        const TDROP = "this model takes no reference images for a new image";
+        req = textOf(2);
+        chk = refs.checkPictures(L({ drops: TDROP }), req, WHO);
+        check("checkPictures, kind text: a declared drop strips both references and says so", chk.req !== req && eq(chk.req.references, []) && chk.req.original === 0 && chk.req.kind === "text" && eq(chk.notes, [`${WHO}: ${TDROP}; 2 reference layers not sent.`]) && req.references.length === 2, short(chk));
+        chk = refs.checkPictures(L({ drops: TDROP + "." }), textOf(1), WHO);
+        check("checkPictures, kind text: a drop with 1 reference, the full stop taken off", eq(chk.notes, [`${WHO}: ${TDROP}; 1 reference layer not sent.`]), short(chk.notes));
+        e = await throws(() => refs.checkPictures(L({ drops: TDROP }), textOf(2, { prompt: "like {@ref:1}" }), WHO));
+        check("checkPictures, kind text: a drop with a marker is refused", e === `${WHO}: ${TDROP}, so the prompt cannot name a reference image. Take the name out or pick a recipe that sends references.`, e);
+        e = await throws(() => refs.checkPictures(textLayOf(3, 2), textOf(3), WHO));
+        check("checkPictures, kind text: past max, the words of a new image (reference pictures, no crop, no Original)", e === `${WHO} takes at most 2 reference pictures for a new image; this run has 3: hide reference layers.`, e);
+        e = await throws(() => refs.checkPictures(textLayOf(2, 1), textOf(2), WHO));
+        check("checkPictures, kind text: max 1 in the singular", e === `${WHO} takes at most 1 reference picture for a new image; this run has 2: hide reference layers.`, e);
+        e = await throws(() => refs.checkPictures(textLayOf(9, 8), textOf(9, { prompt: "like {@ref:0}" }), WHO));
+        check("checkPictures, kind text: the cap refuses before a marker is looked at", !!e && e.includes("takes at most 8 reference pictures for a new image; this run has 9"), e);
+        req = textOf(3, { prompt: "like {@ref:2}" });
+        chk = refs.checkPictures(textLayOf(3, 3), req, WHO);
+        check("checkPictures, kind text: at max the request goes unchanged, no notes", chk.req === req && eq(chk.notes, []), short(chk));
+        req = textOf(0);
+        chk = refs.checkPictures(L({ drops: TDROP }), req, WHO);
+        check("checkPictures, kind text: no reference given, nothing changes (a drop included)", chk.req === req && eq(chk.notes, []), short(chk));
+        e = await throws(() => refs.checkPictures(L({ own: [["reference", "style[0]", 0]], style: true }), textOf(1, { prompt: "like {@ref:0}" }), WHO));
+        check("checkPictures, kind text: a style reference named by a marker is refused", e === `${WHO} sends reference layers as style references, which have no number: take the name out of the prompt.`, e);
     });
 
     // ---- 9. providers/index.js: the check before the adapter, the notes (26a2) ----
@@ -1038,8 +1184,22 @@ async function main() {
         check("options.max_images 4 with 4 pictures: the run goes, the marker resolves, notes [], pictures 4", !x.err && x.calls.adapter === 1 && x.out.info.references === 3 && x.out.prompt === "from image 4" && eq(x.out.notes, []) && !!rec && rec.detail.pictures === 4 && eq(rec.detail.notes, []), x.err || short({ out: x.out.notes, rec: rec && rec.detail }));
         x = await viaIndex(loop(), ["loopback"]);
         check("a plain run answers notes: []", !x.err && Array.isArray(x.out.notes) && x.out.notes.length === 0 && x.out.info.references === 3, x.err || short(x.out.notes));
-        x = await viaIndex({ provider: "loopback", kind: "text", model: "loopback", prompt: "a lighthouse", options: { drops: "test drop", max_images: 1 }, references: [png("REF0"), png("REF1")], original: 0, width: 64, height: 64, params: {} }, ["loopback"]);
-        check("a text run is left alone (26f extends it): no strip, no cap, notes []", !x.err && x.calls.adapter === 1 && eq(x.out.notes, []), x.err || short(x.out.notes));
+        // a text run (26f) is held to its text layout the same way
+        const text = (extra = {}) => ({ provider: "loopback", kind: "text", model: "loopback", prompt: "a lighthouse", negative: "", seed: 3, references: [png("REF0"), png("REF1")], original: 0, refName: "image {n}", width: 64, height: 64, params: {}, ...extra });
+        x = await viaIndex(text({ options: { drops: "test drop" } }), ["loopback"]);
+        rec = okRec(x);
+        check("a text run, options.drops: the adapter runs once with no reference, the note says 2 reference layers", !x.err && x.calls.adapter === 1 && x.out.info.references === 0 && eq(x.out.notes, [`${WHO}: test drop; 2 reference layers not sent.`]) && !!rec && rec.detail.pictures === 0, x.err || short({ info: x.out.info, notes: x.out.notes }));
+        x = await viaIndex(text({ options: { max_images: 1 } }), ["loopback"]);
+        check("a text run, options.max_images 1 with 2 references: refused before the adapter and any request, the words of a new image", x.err === `${WHO} takes at most 1 reference picture for a new image; this run has 2: hide reference layers.` && x.calls.adapter === 0 && x.calls.fetch === 0 && x.errors.length >= 1, `${x.err} (adapter ${x.calls.adapter})`);
+        x = await viaIndex(text({ refsMax: 1 }), ["loopback"]);
+        check("a text run, refsMax 1 (the variant's text.refs.max) with 2 references: refused the same way", x.err === `${WHO} takes at most 1 reference picture for a new image; this run has 2: hide reference layers.` && x.calls.adapter === 0, `${x.err} (adapter ${x.calls.adapter})`);
+        x = await viaIndex(text({ options: { max_images: 4 }, refsMax: 2 }), ["loopback"]);
+        check("a text run, refsMax 2 under the route's max 4: the lower cap wins, 2 references go", !x.err && x.calls.adapter === 1 && x.out.info.references === 2 && eq(x.out.notes, []), x.err || short(x.out.notes));
+        x = await viaIndex(text({ options: { max_images: 1 }, refsMax: 3 }), ["loopback"]);
+        check("a text run, refsMax 3 over the route's max 1: the route's cap still refuses", !!x.err && x.err.includes("takes at most 1 reference picture for a new image; this run has 2") && x.calls.adapter === 0, x.err);
+        x = await viaIndex(text({ options: { max_images: 2 }, prompt: "like {@ref:1}" }), ["loopback"]);
+        rec = okRec(x);
+        check("a text run at max 2: the run goes, {@ref:1} is 'image 2', notes [], pictures 2", !x.err && x.calls.adapter === 1 && x.out.prompt === "like image 2" && x.out.info.references === 2 && eq(x.out.notes, []) && !!rec && rec.detail.pictures === 2, x.err || short({ prompt: x.out.prompt, rec: rec && rec.detail }));
 
         let l = await idx.layout({ provider: "loopback", model: "loopback", kind: "edit", options: { drops: "test drop" }, count: 3, original: 1 });
         check("layout(shape) of a route that declares a drop: every name null, the drop said", !!l && eq(l.names, [null, null, null]) && l.drops === "test drop" && l.sent === 1 && l.over === false, short(l));
@@ -1049,6 +1209,12 @@ async function main() {
         check("layout(shape) at the cap: not over", !!l && l.over === false && l.sent === 3 && eq(l.names, ["image 2", "image 3"]), short(l));
         l = await idx.layout({ provider: "loopback", model: "loopback", kind: "edit", options: { drops: "test drop" }, count: 0 });
         check("layout(shape) of a drop with no references: no names", !!l && eq(l.names, []), short(l));
+        l = await idx.layout({ provider: "loopback", model: "loopback", kind: "text", options: { drops: "test drop" }, count: 2 });
+        check("layout(shape) of a text run on a route that drops: every name null, nothing sent, the drop said", !!l && eq(l.names, [null, null]) && l.drops === "test drop" && l.sent === 0 && l.over === false, short(l));
+        l = await idx.layout({ provider: "loopback", model: "loopback", kind: "text", options: { max_images: 1 }, count: 2 });
+        check("layout(shape) of a text run over the cap: over true, the names from 'image 1'", !!l && l.over === true && l.sent === 2 && l.max === 1 && eq(l.names, ["image 1", "image 2"]), short(l));
+        l = await idx.layout({ provider: "loopback", model: "loopback", kind: "text", count: 3, refsMax: 3 });
+        check("layout(shape) of a text run at refsMax: not over, three names", !!l && l.over === false && l.max === 3 && eq(l.names, ["image 1", "image 2", "image 3"]), short(l));
     });
 
     // ---- 10. the sweep: every provider edit variant as index.js runs it (26a2) ----
@@ -1218,6 +1384,235 @@ async function main() {
         check("Comfy Router vertexai nano_banana_2, a fill with 1 reference: parts [text, Image 1:, crop, Image 2:, mask, Image 3:, reference]", eq(ids, ["text", "Image 1:", "crop", "Image 2:", "mask", "Image 3:", "ref0"]) && !pin(r.req, r.fx, r.lay, r.shot).length, short(ids));
         const vt = r.shot.request ? r.shot.request.contents[0].parts[0].text : "";
         check("Comfy Router vertexai: the text part is the instruction numbered as the parts", /^Edit image 1\. Image 2 is a mask: .* a red door Image 3 is a reference image\.$/.test(vt), vt);
+    });
+
+    // ---- 12. text runs with references (26f): every variant whose text shape takes them, as its builder sends it ----
+    await section("12. text runs with references", async () => {
+        const idx = loadIndex();
+        const TEXT = textShapesOf();
+        const takes = TEXT.filter((s) => s.takes);
+        const dialectOf = (s, model) => (s.provider === "comfyrouter" ? adapter("comfyrouter")._splitModel(model)[0] : null);
+        const keyOf = (s, model) => (s.provider === "comfyrouter" ? `comfyrouter:${dialectOf(s, model)}` : s.provider);
+        const tally = { variants: 0, capped: 0, uncapped: 0, sentence: 0, parts: 0, noShape: 0, routes: new Set() };
+        for (const s of takes) {
+            const name = labelOf(s);
+            const bad = [];
+            const p = adapter(s.provider);
+            const tr = s.variant.text.refs;
+            if (typeof p.textLayout !== "function") { check(`${name}: textLayout`, false, "the adapter exports none"); continue; }
+            // the route's own cap (refsMax aside) and the central one; two references, or one where the route takes one
+            const own = p.textLayout({ ...textRequestFor(s, 1).req }).max;
+            const n = own != null && own < 2 ? own : 2;
+            const { fx, req } = textRequestFor(s, n);
+            const key = keyOf(s, req.model);
+            tally.routes.add(key);
+            let lay = null;
+            try { lay = refs.checkLayout(p.textLayout({ ...req }), req); } catch (err) { bad.push(`textLayout: ${err.message}`); }
+            if (lay) {
+                const want = Array.from({ length: n }, (_, i) => ({ role: "reference", ref: i, n: i + 1 }));
+                if (!eq(lay.pictures.map((x) => ({ role: x.role, ref: x.ref, n: x.n })), want) || lay.drops) bad.push(`textLayout: ${short(lay)}, not ${n} references numbered from 1 without a drop`);
+            }
+            const shot = await capture(p, req, "generate");
+            if (!shot.request) { bad.push(`no request: ${shot.error} (${shot.calls.join(", ")})`); check(`${name}: ${n} references`, false, bad.join(" | ")); continue; }
+            tally.variants++;
+            // the endpoint and the route
+            const url = shot.url;
+            const ENDPOINT = {
+                toapis: `${LOOP}/v1/images/generations`, bfl: `https://api.bfl.ai/v1/${req.model}`, fal: `https://queue.fal.run/${req.model}`,
+                replicate: `https://api.replicate.com/v1/models/${req.model}/predictions`, wavespeed: `https://api.wavespeed.ai/api/v3/${req.model}`,
+                openai: "https://api.openai.com/v1/images/edits", gemini: `https://generativelanguage.googleapis.com/v1beta/models/${req.model}:generateContent`,
+                openrouter: `${LOOP}/api/v1/images`, ark: `${LOOP}/api/v3/images/generations`, oxen: `${LOOP}/api/ai/images/edit`,
+                magnific: `${LOOP}/v1/ai/${req.model}`, comfyrouter: `${LOOP}/v2/models/${req.model}/requests`, comfypartner: `${LOOP}/proxy/tencent/v1/wand/hunyuan-image/v35-generation`,
+            };
+            if (!(s.provider in ENDPOINT)) bad.push(`no endpoint known for ${s.provider}: add it to this test`);
+            else if (url !== ENDPOINT[s.provider]) bad.push(`POSTs to ${url}, not ${ENDPOINT[s.provider]}`);
+            if (tr.model && req.model !== tr.model) bad.push(`goes to ${req.model}, not text.refs.model ${tr.model}`);
+            if (tr.model && tr.model !== s.variant.model) bad.push(`text.refs.model ${tr.model} is not the variant's edit model ${s.variant.model}`);
+            if (s.provider === "fal" && !/\/edit$/.test(req.model)) bad.push(`fal: ${req.model} is no /edit route`);
+            if (s.provider === "wavespeed" && !/(?:^|[/-])edit(?:[/-]|$)/.test(req.model)) bad.push(`WaveSpeed: ${req.model} is no edit route`);
+            if (s.provider === "magnific" && !/^text-to-image\/flux-2-|-edit$/.test(req.model)) bad.push(`Magnific: ${req.model} is neither a flux-2 route nor an -edit route`);
+            if (s.provider === "openai") {
+                const imgs = shot.request["image[]"];
+                if (!Array.isArray(imgs) || imgs.length !== n) bad.push(`OpenAI: image[] holds ${Array.isArray(imgs) ? imgs.length : "no"} pictures, not ${n}`);
+            }
+            // the pictures: the references in order, each in its layout field, nothing else (no crop, no mask)
+            const found = picturesIn(shot, fx).map((x) => x.id);
+            const refIds = Array.from({ length: n }, (_, i) => `ref${i}`);
+            if (!eq(found, refIds)) bad.push(`carries [${found.join(", ")}], not [${refIds.join(", ")}]`);
+            const uploaded = [...shot.uploads.values()].map((b) => fixtureOf(b, fx, shot));
+            if (uploaded.some((u) => !refIds.includes(u))) bad.push(`uploads [${uploaded.join(", ")}]`);
+            if (lay) {
+                const inOrder = numberedOf(lay).map((x) => { const at = picturesAt(shot, x.field, fx); return at && at.length === 1 ? at[0].id : `?${x.field}`; });
+                if (!eq(inOrder, refIds)) bad.push(`by the layout's fields the request holds [${inOrder.join(", ")}]`);
+            }
+            const keys = new Set();
+            (function keysOf(v) { if (v == null || typeof v !== "object" || Buffer.isBuffer(v) || v instanceof Uint8Array) return; for (const [k, x] of Object.entries(v)) { keys.add(k); keysOf(x); } })(shot.request);
+            const maskKeys = [...keys].filter((k) => /^mask/i.test(k));
+            if (maskKeys.length) bad.push(`mask fields [${maskKeys.join(", ")}]`);
+            // no edit sentence, the asked shape
+            const all = stringsIn(shot.request);
+            const edits = all.filter((t) => /\bEdit (?:the|this|image|Image|<image)/.test(t));
+            if (edits.length) bad.push(`an edit sentence: ${short(edits[0])}`);
+            const shape = [];
+            (function shapeOf(v) {
+                if (v == null || typeof v !== "object" || Buffer.isBuffer(v) || v instanceof Uint8Array) return;
+                if (!Array.isArray(v) && typeof v.width === "number" && typeof v.height === "number") shape.push(["width x height", `${v.width}x${v.height}`]);
+                for (const [k, x] of Object.entries(v)) { if (/^(size|aspect_ratio|aspectRatio|image_size)$/.test(k)) shape.push([k, x]); else shapeOf(x); }
+            })(shot.request);
+            // the asked pixels (1344 x 768), a size of the asked aspect picked from it (ModelArk), or the aspect by name
+            // a route with an area range (`text.refs.options.pixels`, fal Seedream 5) gets the asked shape inside it
+            const px = req.options && Array.isArray(req.options.pixels) ? req.options.pixels : null;
+            const is169 = ([k, v]) => {
+                if (v && typeof v === "object" && px) return v.width % 16 === 0 && v.height % 16 === 0 && v.width * v.height >= px[0] && v.width * v.height <= px[1] && Math.abs(v.width / v.height - 16 / 9) < 0.04;
+                if (v && typeof v === "object") return v.width === 1344 && v.height === 768;
+                const t = String(v), m = /^(\d+)\s*[x*]\s*(\d+)$/.exec(t);
+                if (m) return (+m[1] === 1344 && +m[2] === 768) || (k !== "width x height" && Math.abs(+m[1] / +m[2] - 16 / 9) < 0.01);
+                return /^(16:9|widescreen_16_9)$/.test(t);
+            };
+            const auto = shape.filter(([, v]) => typeof v === "string" && /^(auto|match_input_image)/i.test(v));
+            if (auto.length) bad.push(`sends ${short(auto)}`);
+            const NO_SHAPE = /^(flux2_(pro|flex|max|klein)|seedream_5_lite|qwen_image_edit)\/wavespeed$|^grok_imagine\/oxen$/;
+            if (NO_SHAPE.test(name)) { tally.noShape++; if (shape.length) bad.push(`on the no-shape list, yet it sends ${short(shape)}`); }
+            else if (!shape.some(is169)) bad.push(`the asked 16:9 at 1344 x 768 is not in ${short(shape)}`);
+            // the instruction sentence where the route writes one, the prompt as given where it does not
+            const SENTENCE = new Set(["gemini", "openrouter", "ark", "oxen", "magnific", "comfypartner", "comfyrouter:vertexai", "comfyrouter:byteplus", "comfyrouter:qwen"]);
+            const sent = [...new Set(stringsWith(shot.request, req.prompt))];
+            const wantText = SENTENCE.has(key) && lay ? refs.instruction(req, lay, req.prompt) : req.prompt;
+            if (SENTENCE.has(key)) tally.sentence++;
+            if (!eq(sent, [wantText])) bad.push(`the prompt goes as ${short(sent)}, not ${JSON.stringify(wantText)}`);
+            if (!SENTENCE.has(key) && all.some((t) => /reference image/.test(t))) bad.push("a reference sentence on a route that writes none");
+            if (/^(gemini|comfyrouter:vertexai)$/.test(key) && lay) {
+                tally.parts++;
+                const pat = patternOfReq(req);
+                const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+                const want = ["text", ...(n > 1 ? refIds.flatMap((id, k) => [`${cap(refs.nameOf(pat, k + 1))}:`, id]) : refIds)];
+                const got = partsAsIds(shot.request.contents[0].parts, fx, shot);
+                if (!eq(got, want)) bad.push(`parts [${got.join(", ")}], not [${want.join(", ")}]`);
+            }
+            // the cap: the text route's is the edit route's (the crop's slot becomes a reference slot), text.refs.max
+            // lowers it, max + 1 is refused by index.js before the adapter and any request, max goes out
+            if (typeof p.layout === "function" && s.variant.edit !== false) {
+                const es = { recipe: s.recipe, provider: s.provider, variant: s.variant, channel: s.channel };
+                const e0 = requestFor(es, fixturesFor(s.provider, s.variant.model, 0, 0));
+                let editMax;
+                try { editMax = p.layout({ ...e0 }).max; } catch (err) { editMax = `threw: ${err.message}`; }
+                if (editMax !== own) bad.push(`the text route's max is ${own}, the edit layout's ${editMax}`);
+            }
+            const shapeReq = { provider: s.provider, model: req.model, kind: "text", fields: req.fields, options: req.options, params: req.params, count: 1, refName: req.refName, refsMax: req.refsMax };
+            const central = (await idx.layout(shapeReq)).max;
+            const wantMax = tr.max ? (own == null ? tr.max : Math.min(own, tr.max)) : own;
+            if (central !== wantMax) bad.push(`index.js's max is ${central}, not ${wantMax} (route ${own}, text.refs.max ${tr.max})`);
+            if (central == null) {
+                tally.uncapped++;
+                if (!UNDOCUMENTED[name] || UNDOCUMENTED[name].max !== null) bad.push("no max, and not on the undocumented list");
+            } else {
+                tally.capped++;
+                const over = textRequestFor(s, central + 1).req;
+                const x = await viaIndex(over, [s.provider]);
+                const words = `${p.label} ${over.model} takes at most ${central} reference picture${central === 1 ? "" : "s"} for a new image; this run has ${central + 1}: hide reference layers.`;
+                if (x.err !== words || x.calls.adapter || x.calls.fetch) bad.push(`max + 1 (${central + 1}) through index.js: ${x.err} (adapter ${x.calls.adapter}, fetch ${x.calls.fetch})`);
+                const at = textRequestFor(s, central);
+                const atShot = await capture(p, at.req, "generate");
+                const atIds = atShot.request ? picturesIn(atShot, at.fx).map((f) => f.id) : null;
+                if (!atIds || atIds.length !== central) bad.push(`at max (${central}) the builder sent ${atIds ? atIds.length + " pictures" : "nothing: " + atShot.error}`);
+            }
+            check(`${name}: ${n} reference${n === 1 ? "" : "s"} to ${url.replace(LOOP, "<test host>")}${central != null ? `, max ${central}` : ", no max"}`, !bad.length, (VERBOSE ? bad : bad.slice(0, 3)).join(" | ") + (!VERBOSE && bad.length > 3 ? ` (+${bad.length - 3} more)` : ""));
+            if (VERBOSE) console.log("   " + JSON.stringify(redacted(shot.request, fx, shot)));
+        }
+        const DIALECTS = ["openai", "vertexai", "bfl", "byteplus", "qwen"].map((d) => `comfyrouter:${d}`);
+        const ADAPTERS = ["toapis", "bfl", "fal", "replicate", "wavespeed", "openai", "gemini", "openrouter", "ark", "oxen", "magnific", "comfypartner"];
+        const missing = [...ADAPTERS, ...DIALECTS].filter((k) => !tally.routes.has(k));
+        check(`the text runs covered ${tally.variants} variants: every adapter and every Comfy Router dialect with a text route (${tally.routes.size}); ${tally.capped} capped, ${tally.uncapped} uncapped; ${tally.sentence} with the reference sentence, ${tally.parts} with label parts, ${tally.noShape} with no shape field`, !missing.length && tally.variants >= 90, missing.length ? "none for " + missing.join(", ") : short({ ...tally, routes: [...tally.routes] }));
+
+        // 0 references: today's request, the new request shape (refName, refsMax) changing nothing; against the adapters
+        // of the last commit before 26f too, when git has it
+        const BEFORE_26F = "a608e8d";
+        let before = null, why = "";
+        const { execFileSync } = require("node:child_process");
+        const os = require("node:os");
+        let dir = null;
+        try {
+            const names = execFileSync("git", ["-C", ROOT, "ls-tree", "--name-only", `${BEFORE_26F}:electron/main/providers`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split(/\r?\n/).filter((f) => f.endsWith(".js"));
+            dir = fs.mkdtempSync(path.join(os.tmpdir(), "refs-layout-before-26f-"));
+            for (const f of names) fs.writeFileSync(path.join(dir, f), execFileSync("git", ["-C", ROOT, "show", `${BEFORE_26F}:electron/main/providers/${f}`], { stdio: ["ignore", "pipe", "ignore"] }));
+            before = (id) => require(path.join(dir, id + ".js"));
+        } catch (err) { why = String(err && err.message || err).split(/\r?\n/)[0]; }
+        const reset = (m) => { if (m && typeof m._resetHosts === "function") m._resetHosts(); };
+        /** Where two values differ: "path: a -> b" per leaf (a Buffer is a leaf). */
+        const diffPaths = (a, b, at = "", out = []) => {
+            const leaf = (v) => v == null || typeof v !== "object" || Buffer.isBuffer(v) || v instanceof Uint8Array;
+            if (leaf(a) || leaf(b) || Array.isArray(a) !== Array.isArray(b)) { if (JSON.stringify(a) !== JSON.stringify(b)) out.push(`${at || "(top)"}: ${short(a)} -> ${short(b)}`); return out; }
+            for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) diffPaths(a[k], b[k], at ? `${at}.${k}` : k, out);
+            if (!Array.isArray(a) && !eq(Object.keys(a), Object.keys(b)) && !out.length) out.push(`${at || "(top)"}: key order ${short(Object.keys(a))} -> ${short(Object.keys(b))}`);
+            return out;
+        };
+        const calls = (x) => x.calls.filter((c) => !c.startsWith("GET"));
+        /** What differs between two captures (the URL, the POSTs, the error, the body), [] when nothing. */
+        const differs = (a, b) => [...(a.url !== b.url ? [`url: ${a.url} -> ${b.url}`] : []), ...(!eq(calls(a), calls(b)) ? [`calls: ${short(calls(a))} -> ${short(calls(b))}`] : []), ...(a.error !== b.error ? [`error: ${a.error} -> ${b.error}`] : []), ...diffPaths(a.request, b.request)];
+        // the one change 26f makes to a text run without references (docs/BUGS.md, found in 26f): Replicate sends the
+        // asked aspect where a fixed "match_input_image" went before, which made every such run follow no picture at all
+        const FIXED_IN_26F = (s, d) => s.provider === "replicate" && /^input\.aspect_ratio: match_input_image -> (?!match_input_image$)\d+:\d+$/.test(d);
+        const zero = { shapes: 0, sameShape: [], sameBefore: [], fixed: 0 };
+        const zeroShape = async (s, extra) => {
+            const name = `${labelOf(s)}${extra.aspect === null ? " (a free size)" : ""}`;
+            const p = adapter(s.provider);
+            const now = textRequestFor(s, 0, extra).req;
+            // what index.js handed an adapter before 26f: references [], original 0, the default refName, no refsMax
+            const old = { ...now, refName: refs.REF_NAME_DEFAULT };
+            delete old.refsMax;
+            zero.shapes++;
+            reset(p);
+            const a = await capture(p, now, "generate");
+            reset(p);
+            const b = await capture(p, old, "generate");
+            const d1 = differs(b, a);
+            if (d1.length) zero.sameShape.push(`${name}: ${d1.join("; ")}`);
+            if (!before) return;
+            const q = before(s.provider);
+            reset(p); reset(q);
+            const c = await capture(q, old, "generate");
+            const d2 = differs(c, a);
+            const fixed = d2.filter((d) => FIXED_IN_26F(s, d));
+            if (fixed.length) zero.fixed++;
+            if (d2.length > fixed.length) zero.sameBefore.push(`${name}: ${d2.filter((d) => !FIXED_IN_26F(s, d)).join("; ")}`);
+        };
+        try {
+            for (const s of TEXT) for (const extra of [{}, { aspect: null, width: 1536, height: 1024 }]) await zeroShape(s, extra);
+        } finally { if (dir) fs.rmSync(dir, { recursive: true, force: true }); }
+        check(`0 references: every text variant's request (${zero.shapes} shapes, ${TEXT.length} variants with a text route) is the same with the new request fields (refName, refsMax) as without`, !zero.sameShape.length, zero.sameShape.slice(0, 3).join(" | "));
+        if (before) check(`0 references: every text variant's request is byte for byte what the adapters of ${BEFORE_26F} (before 26f) sent, but Replicate's aspect_ratio on ${zero.fixed} shapes (match_input_image -> the asked aspect, the fix of 26f)`, !zero.sameBefore.length && zero.fixed > 0, zero.sameBefore.slice(0, 3).join(" | ") + (zero.sameBefore.length > 3 ? ` (+${zero.sameBefore.length - 3} more)` : ""));
+        else console.log(`[skip] 0 references against ${BEFORE_26F}: ${why}`);
+
+        // a marker in a text prompt through index.js on shipped variants: the route's name for that picture, res.refs
+        const answer = { "/api/v1/images": () => json(200, { data: [{ b64_json: RESULT.toString("base64"), media_type: "image/png" }] }), "/api/ai/images/edit": () => json(200, { images: [{ b64_json: RESULT.toString("base64") }] }) };
+        for (const [recipe, provider, names, field] of [["gpt_image_2", "openrouter", ["Image 1", "Image 2"], "input_references"], ["qwen_image_2_1", "oxen", ["<image1>", "<image2>"], "input_images"]]) {
+            const s = TEXT.find((x) => x.recipe === recipe && x.provider === provider);
+            if (!s) { check(`${recipe}/${provider}: a shipped text variant`, false); continue; }
+            const bodies = [];
+            FETCH = async (url, init = {}) => {
+                const u = new URL(String(url));
+                if (u.pathname === "/api/v1/providers") return json(200, { data: [] });
+                if (answer[u.pathname]) { bodies.push(JSON.parse(init.body)); return answer[u.pathname](); }
+                return json(404, { error: { message: "no route" } });
+            };
+            reset(adapter(provider));
+            const { req } = textRequestFor(s, 2, { prompt: "the jacket of {@ref:1} on the person of {@ref:0}" });
+            let x;
+            try { x = await viaIndex(req); } finally { FETCH = null; }
+            const resolved = `the jacket of ${names[1]} on the person of ${names[0]}`;
+            const body = bodies[0];
+            const sentence = refs.instruction({ kind: "text", refName: req.refName, references: [0, 1], original: 0 }, refs.layoutOf({ seq: [["reference", "a", 0], ["reference", "b", 1]] }), resolved);
+            check(`${recipe}/${provider} through index.js: {@ref:1} and {@ref:0} in a text prompt with 2 references become "${names[1]}" and "${names[0]}", res.refs says so, the body carries the sentence and both pictures in ${field}`, !x.err && x.out.prompt === resolved && eq(x.out.refs, [{ ref: 1, name: names[1] }, { ref: 0, name: names[0] }]) && !!body && body.prompt === sentence && !/\{@ref|@img/.test(body.prompt) && Array.isArray(body[field]) && body[field].length === 2 && eq(x.out.notes, []), x.err || short({ prompt: x.out.prompt, refs: x.out.refs, body: body && body.prompt, pictures: body && Array.isArray(body[field]) ? body[field].length : null }));
+        }
+        // the review of 26f: a free size on fal's Nano Banana edit routes goes as the closest of the model's ratios
+        // (text.refs.options.aspect_ratios), not in the first reference's shape; without references nothing changes
+        for (const recipe of ["nano_banana_2", "nano_banana_pro"]) {
+            const s = textShapesOf().find((x) => x.recipe === recipe && x.provider === "fal");
+            if (!s) { check(`${recipe}/fal: a shipped text variant`, false); continue; }
+            const one = await capture(adapter("fal"), textRequestFor(s, 1, { aspect: null, width: 1536, height: 1024 }).req, "generate");
+            const none = await capture(adapter("fal"), textRequestFor(s, 0, { aspect: null, width: 1536, height: 1024 }).req, "generate");
+            check(`${recipe}/fal: a free 1536 x 1024 with a reference asks for aspect_ratio 3:2; without references no aspect_ratio goes`, !!one.request && one.request.aspect_ratio === "3:2" && !!none.request && !("aspect_ratio" in none.request), short({ with: one.request && one.request.aspect_ratio, without: none.request && none.request.aspect_ratio, err: one.error || none.error }));
+        }
     });
 
     const failed = results.filter((ok) => !ok).length;

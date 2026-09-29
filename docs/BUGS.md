@@ -262,6 +262,31 @@ An entry here leaves the file when the release named in it is published.
 
 ## Open
 
+### Switching between the local recipes keeps the other recipe's model files (found by the 26e review, 2026-09-29)
+
+**Found** by the review of item 26 step 26e (read, and reproduced in a plain-Node copy of the three functions; not run in
+the app, not queued): Qwen Image Edit 2.1 and FLUX.2 Klein (both local) name their loaders `unet`, `clip` and `vae`
+(settings rows 1-3). `host.settingTargets`' local branch sets the target's `node.id` to the bare node name, and
+`settingsChanged` (`inpaint_canvas.js`) keeps a stored value while `${node.id}:${inputName}` stays the same, so after Qwen
+then Klein the Klein chain is queued with `unet_name = qwen_image_2.1_int8_convrot.safetensors`, Qwen's text encoder
+(with `CLIPLoader` type `flux2`) and Qwen's VAE; the other way round too. The combo fallback only changes a value missing
+from the server's list, and both families' files can be installed. Older than 26e (the rows are the same before it). The
+provider branch of `settingTargets` already has the fix for the same collision (the recipe id in the node id). Fix: a
+target key with the recipe id (`${r.id}/${node}:${input}`) for the local rows, compared and stored by `settingsChanged`
+(the node's editor has no such key and keeps its behaviour); a document saved before the fix then resets these rows once
+to the recipe's defaults. Test: the recipes gate's 26e step queues Qwen then Klein; assert Klein's own `unet_name`,
+`clip_name`, `vae_name`, and the reverse.
+
+### Generate new on Gemini direct ignores the asked aspect while the Aspect row says "auto" (found by the 26f adapter review, 2026-09-29, read)
+
+**Found** by the adapter review of item 26 step 26f (read, not run live): `gemini.js` sets `imageConfig.aspectRatio =
+req.aspect` on a text run only when the params hold no `aspect_ratio`, and the variants' Aspect row defaults to "auto",
+which the later line skips; so a Generate new without reference layers sends no aspect at all and the model answers in its
+own shape, whatever the dialog asked (16:9 comes back square). With reference layers 26f already sends the asked aspect
+(or the closest of Gemini's ratios for a free size). Fix: treat "auto" like no row on a text run (`!p.aspect_ratio ||
+p.aspect_ratio === "auto"`); it changes the 0-reference request, so `tools/refs_layout_test.js`'s byte-for-byte check of
+Gemini's text body moves with it. The Router's vertexai dialect had the same gap with references and was fixed in 26f.
+
 ### Smudge and the tone brushes still dab once per coalesced point (measured 2026-09-29, not a regression)
 
 **Found** by the review of the eraser fix (0.1.33): `smudgeDab` (smudge, blur, sharpen, dodge / burn, sponge) is still
@@ -361,9 +386,13 @@ items (`docs/RECIPES.md` "Reference images named in the prompt (local)"); the no
 **Written** 2026-09-29 by the step planners of `docs/PLAN_REFS.md` (code read, nothing run). Each is fixed by the step
 named.
 
-- **Replicate text runs send `aspect_ratio: "match_input_image"`**: `providerParams` includes `r.fixed`, and the
+- ~~**Replicate text runs send `aspect_ratio: "match_input_image"`**: `providerParams` includes `r.fixed`, and the
   params loop in `replicate.js` (about 42-60) overwrites the aspect the user asked for, so every Replicate FLUX.2, Nano
-  Banana and Seedream Generate new sends it. Step 26f.
+  Banana and Seedream Generate new sends it. Step 26f.~~ **Fixed in 26f (2026-09-29):** `replicate.js` holds a text run
+  to its shape after the settings: the asked aspect wins, and without one (a free size, an agent's width and height) a
+  fixed `match_input_image` becomes the preset closest to the asked size (1:1, 3:2, 2:3, 4:3, 3:4, 16:9, 9:16); a
+  model that names no `aspect_ratio` (GPT Image 2) keeps its own default as before. Checked with a fake fetch against
+  every shipped Replicate text shape (only the aspect changed); not run live.
 - ~~**`llm.ask` never reads a language model row's `vision: false`**~~ **Fixed in 26d2 (2026-09-29):** a user row
   marked "Can see the picture: no" gets no picture at all, the crop included (the local endpoint's model too, looked up
   in every row of Settings › Language models); a built-in model id keeps winning over a user row of the same id, as
