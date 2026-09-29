@@ -3,6 +3,20 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## 0.1.33 — 2026-09-29
+
+- **Erasing is fast again.** Since 0.1.32 the eraser, the brush, clone and heal got four to seven times slower with a
+  large brush (700 px and up) on a large picture whenever the pen, or a fast mouse, sent more points than the screen
+  showed frames, which a pen does all the time: each of those points was painted as a little stroke of its own, and
+  every slow frame made the next one slower still. It was felt most inside a selection. A move is one piece of the
+  stroke again: erasing and painting cost what they did in 0.1.31, clone and heal about a fifth of what they cost in
+  0.1.32. The stroke still follows every point the pen sends, and the pressure still sizes the brush point by point.
+- **A soft brush under a pen is as even as under the mouse.** 0.1.32 put a dab down twice at every point the pen sent,
+  and where the pressure changed within a frame it spaced the large dabs as the smallest, so a soft edge came out a
+  little harder with a pen than with the mouse.
+- **Follow stroke** turns an imported tip with the stroke again when the pen moves slowly; in 0.1.32 it could keep the
+  angle of the stroke before.
+
 ## 0.1.32 — 2026-09-28
 
 - **Remove.** A new tool (Shift+J, beside heal) takes things out of the picture: brush over an object, a person, a
