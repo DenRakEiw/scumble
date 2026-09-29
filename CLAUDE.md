@@ -107,9 +107,7 @@ main's `docs/MANUAL.md` already describes S1's img labels, which ship with 0.1.3
   `docs/PLAN_0_1_31.md`.
 - **To do at the 0.1.34 release (the user, 2026-09-29):** take the other product's name out of the "Next up" line of
   the `v0-1-33` post (`F:\portfolio_web\lib\scumble-posts.ts`, "... the way X does it"), and write the 0.1.34 post,
-  CHANGELOG section and manual lines without naming any other product as the model for the feature. Still carrying
-  such names in this public repo: `docs/PLAN_REFS.md` (sections 1-3, the step texts) and the file name
-  `docs/PLAN_NIK9.md`; neutralise or rename them on the user's word.
+  CHANGELOG section and manual lines without naming any other product as the model for the feature.
 - **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
   of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
   point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
@@ -378,4 +376,5 @@ there; add a new flake there, with the date and what was ruled out.
 - Answer in German; code, comments and docs in English.
 - **No other product's name as the model for a feature** (the user, 2026-09-29: copyright and trademarks) in this file,
   in the blog posts, the CHANGELOG, the manual or the README: describe what the feature does, not whose it resembles.
-  The providers and models Scumble runs through keep their names where a text is about running them.
+  The providers and models Scumble runs through keep their names where a text is about running them. Plans and
+  research notes under `docs/` may name them (the user: "bei Plan ist es nicht so schlimm, nur nicht auf der Webseite").
