@@ -5,8 +5,8 @@ reference images (in Scumble: the reference layers) can be named inside the prom
 must be changed so that they understand the reference images too. In the prompt the images must be named with the
 designation under which they are actually sent over the API.
 
-**Status (2026-09-29):** S1 (26a1, 26b1) and S2 (26b2, 26a2) built, and 26c1 (the field core) of S3, see their "Built"
-paragraphs; the user looks at the field in the app before 26c2 (picker, bar, hover card, swap) is built. The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+**Status (2026-09-29):** S1 (26a1, 26b1), S2 (26b2, 26a2) and S3 (26c1, 26c2) built, see their "Built" paragraphs;
+next S4 = 26d1 + 26d2. The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 
 How this plan was made: a code map and a web survey (seven agents), a design review (three critics), the user's
 answers, then one planner per step against the code and two cross-step critics (interfaces; facts and rules). **Where a
@@ -374,7 +374,14 @@ directly; comfy steps stub `host.connected`, `objectInfo`, `ensureOnServer` and 
   a chip gets a space (a typed space steps over it), and the space between a chip and a word is stepped over by
   Backspace / Delete instead of gluing them; a press on a chip puts the caret beside it; Ctrl+Z / Ctrl+Y in the field
   are the field's own (word steps), and an undo there names the references as they are now; the field's line height
-  is 22 px (the textarea's was 17.5).
+  is 22 px (the textarea's was 17.5). 26c2 built: @ at the start of a word opens a list of the shown references (picture,
+  label, name, what the model gets it as), narrowed by what is typed after the @; arrows, Enter / Tab, Escape (first the
+  list, then the field); "+ Add reference" in the list, and a picture pasted into or dropped on the prompt, becomes a
+  reference layer named there; a bar above the prompt (a chip per reference, a hidden one dimmed, "+", "2 of 4 for this
+  recipe"); a chip past the recipe's cap gets a warning edge, every chip is struck through when the recipe sends no
+  reference pictures; a card after 400 ms on a chip (a larger picture, the name, "sent as image 3" or why not) replaces
+  the chip's tooltip; the chip's arrow swaps it, shows a hidden reference again or takes it out; chips can be dragged in
+  the text, a selection dragged inside the field moves (Ctrl copies).
 - 26d2: the named reference pictures go to the language model's provider when upsampling (a setting turns it off);
   the local endpoint no longer retries a 401 / 402 / 429.
 - 26e: local Klein and Qwen 2.1 no longer repeat the crop into unused slots, so the same seed gives another result;
@@ -1324,6 +1331,41 @@ render now snaps the selection, to the chip's end after typing), a click on a ch
 undo missed remaps that left the text alone, writes during a composition, a delete gluing a word to a chip, the
 thumbnail cache on mask changes and rotations, and a probe that asserted nothing; a mutation of the render snap turns
 `prompt_field_types_deletes_and_moves_over_chips` red.
+
+**26c2 built (2026-09-29, S3; the user's go: "baue weiter").** In `prompt_field.js`: the pure `pickerRows`, `barCount`,
+`cardLine`, `imageFiles`, `chipState`'s states `over` (a descriptor past the cap, `--sc-warn` edge) and `none` (the recipe
+sends no reference: struck through); `PromptField`'s picker session (`afterEdit` from the input event of either path, native
+or controlled; `openPicker` / `followSession` / `endSession` / `pickItem`; the @word drawn as text through `open` while the
+session runs), `replaceWith` / `removeToken` / `insertToken` (one field-undo step each, spaces so a token stays a token),
+`chooseFiles` / `addReferences` (the session survives the file dialog and the load), the hover card (`hoverStart` /
+`hoverEnd` / `showCard`, 400 ms, a 120 ms grace to reach the card), the swap menu (`openSwap`; it follows its chip through a
+remap), the chip drag by the pointer (`chipDrag`, `pointOffset`, a drop caret, `moveRange`), HTML5 drops of selections
+(move; Ctrl copies) and of pictures, image paste; classes `RefPicker` (no focus of its own: its keys come from the field's
+keydown; closed by a press outside; placed below the line, above when under 200 px are free, clamped to the popup root)
+and `RefBar` (mounted as `.ipc-prompt`'s first child; a signature so it redraws only on change). In the editor:
+`refContext` gains `cap`, `none`, `local`, `refuse`, `show`; `refDescriptors` gains `over`; `showReference(id)` (the eye's
+path), `refreshRefLayout()` (120 ms debounce and its own sequence; from `renderInfo`, `renderReferences`, `renderSettings`
+and the settings row `commit`), `addReferencesForPrompt(files)` (never a base: "Load an image first"), `refPreview(id,
+canvas)`; the Escape capture closes the field's popup first; CSS for `.ipc-refbar`, `.ipc-refpop`, `.ipc-refcard`, the drop
+caret. `host.refLayout(editor, over, {keep})` returns `cap` (the route's `max` less the crop, a mask sent as a picture and
+the Original) and `refuse` (a route of style references), and only a `keep` call (the editor's) writes `refLayoutInfo`,
+by the last call made; `status` reads with `keep: false`. The node repo: the stub `async refLayout() { return null; }`
+(commit "host.js: refLayout stub for the app's reference tokens").
+**Decisions the plan did not have:** on a ComfyUI recipe (until 26e) a chip stays live and the card and the bar's title
+say the token refuses (`refuse`), rather than striking through pictures that do go in the batch; the same for a route of
+style references; a pick replaces the @ and what the session typed, never a word or chip that stood after the @ when it was
+typed (`tail`), and with no reference listed Enter and Tab do what they do without the list (the cursor starts on the
+first reference, "+ Add reference" only by the arrows or the mouse); the mouse picks a row only when it really moves (a
+list opening under a resting pointer keeps its first row); a chip is dragged by the pointer, not by the browser's drag and
+drop (a press on a chip must stay cancelled to keep the caret out of its label); an edit made while the field has no
+focus (a bar click, the swap menu, a drop) fires `change` at once, since no blur would report it; a paste of pictures,
+a drop and "+" all go through `addReferences`, which takes the focus back only when nobody took it meanwhile. **C4 changes:** `RefContext` gains `local`, `refuse`, `show(id)`; `Descriptor` gains `over`;
+`host.refLayout` gains `{keep}` and the answer `cap` and `refuse`. Tests: `tools/prompt_field_test.js` section 8 (192
+checks in all), the editor gate's `tools/ref_picker_steps.py` (five steps) and the two 26c1 steps adjusted (the chip has no
+`title`, its reason is `data-reason`; the chevron opens the swap menu, the first Escape closes it). A review (three
+reviewers, a skeptic per finding) confirmed 14 of 17 findings (13 distinct), all fixed; `ref_picker_keeps_what_stood_there`
+holds the ones a gate can show (an @ before a word or a chip, Enter with nothing listed, a move in front of a chip, a
+swap menu under a remap, the change of an unfocused edit).
 
 ### Read first: corrections from the review (they win over the text below)
 

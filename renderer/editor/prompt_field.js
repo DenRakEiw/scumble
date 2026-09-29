@@ -12,7 +12,7 @@
 // In the node's FILES (tools/build_node.py), although only the app builds it (its host's `refTokens`). Nothing touches
 // `document` or `window` at import time, so tools/prompt_field_test.js runs the helpers in plain Node.
 
-import { parse, normalize, hasTokens, diffRange, mapOffset } from "./reftokens.js";
+import { parse, normalize, hasTokens, diffRange, mapOffset, TOKEN } from "./reftokens.js";
 
 export { diffRange, mapOffset };
 
@@ -211,9 +211,60 @@ export class EditHistory {
 }
 
 /**
- * @typedef {{ id: string, label: number | null, name: string, visible: boolean, thumb: string | null, sentAs: string | null }} Descriptor
- * @typedef {{ refs: Descriptor[], cap: number | null, none: string | null, canAdd: boolean, reason: (id: string) => string }} RefContext
+ * `over`: past the route's cap (the host's refLayout), `sentAs`: the name the route gives its picture (null unknown).
+ * @typedef {{ id: string, label: number | null, name: string, visible: boolean, thumb: string | null, sentAs: string | null, over?: boolean }} Descriptor
+ * `cap`: the reference layers the route takes (null: none declared), `none`: why none goes with this recipe, `local`: a
+ * ComfyUI recipe (its crop_image batch), `refuse`: why a token cannot go although the pictures do (a ComfyUI recipe
+ * until 26e; the hover card and the bar say it, the chip stays live), `show(id)`: a hidden reference shown the way its eye shows it (26c2's swap menu).
+ * @typedef {{ refs: Descriptor[], cap: number | null, none: string | null, local?: boolean, refuse?: string | null, canAdd: boolean, reason: (id: string) => string, show?: (id: string) => void }} RefContext
  */
+
+/**
+ * The picker's rows for what was typed after the @ (26c2): the shown references whose `img<n>` or name holds every
+ * word of the query, in list order. Hidden ones are not listed (they cannot be sent).
+ * @param {RefContext | null} ctx
+ * @param {string} query
+ * @returns {Descriptor[]}
+ */
+export function pickerRows(ctx, query) {
+    const words = String(query == null ? "" : query).toLowerCase().split(/\s+/).filter(Boolean);
+    const refs = ((ctx && ctx.refs) || []).filter((d) => d.label != null);
+    return refs.filter((d) => {
+        const hay = `img${d.label} ${d.name || ""}`.toLowerCase();
+        return words.every((w) => hay.includes(w));
+    });
+}
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The count at the right of the reference bar (26c2): how many shown references go, against what the recipe takes.
+ * @param {RefContext | null} ctx
+ * @returns {{ text: string, title: string, over: boolean }}
+ */
+export function barCount(ctx) {
+    const c = ctx || EMPTY_CONTEXT;
+    const n = (c.refs || []).filter((d) => d.label != null).length;
+    if (c.none) return { text: "This recipe sends no reference images", title: c.none, over: false };
+    if (c.local) return { text: `${n} in crop_image`, title: "A ComfyUI recipe takes the shown reference layers in its crop_image batch, after the crop" + (c.refuse ? "; an @img token: " + c.refuse : "") + ".", over: false };
+    const why = c.refuse ? `; an @img token: ${c.refuse}` : "";
+    if (c.cap != null) return { text: `${n} of ${c.cap} for this recipe`, title: `This recipe takes ${plural(c.cap, "reference image", "reference images")}${why}.`, over: n > c.cap };
+    return { text: plural(n, "reference image", "reference images"), title: c.refuse ? `An @img token: ${c.refuse}.` : "", over: false };
+}
+
+/**
+ * The line of the hover card under the name (26c2): what the token goes out as, or why it does not.
+ * @param {{ state: string, label: string, reason: string, ref: Descriptor | null }} st a chipState
+ * @param {RefContext | null} ctx
+ */
+export function cardLine(st, ctx) {
+    if (st.state !== "live") return st.reason ? `${st.label} \u00b7 ${st.reason}` : st.label;
+    const d = st.ref;
+    if (d && d.sentAs) return `${st.label} \u00b7 sent as ${d.sentAs}`;
+    if (ctx && ctx.local) return `${st.label} \u00b7 in the crop_image batch${ctx.refuse ? "; " + ctx.refuse : ""}`;
+    if (ctx && ctx.refuse) return `${st.label} \u00b7 ${ctx.refuse}`;
+    return st.label;
+}
 
 /** a name cut for a chip: at most 14 characters (graphemes), the last an ellipsis when it was longer */
 function cut(name, n = 14) {
@@ -225,16 +276,22 @@ function cut(name, n = 14) {
 
 /**
  * How a token is drawn (C4): `live` when a shown reference holds its label, `broken` when none does or its layer is
- * gone, `inactive` for a parked token whose layer is still a reference (hidden, or without pixels yet). `label` is what
- * the chip says, `reason` its tooltip, `ref` the reference's descriptor.
+ * gone, `inactive` for a parked token whose layer is still a reference (hidden, or without pixels yet). A live token is
+ * `none` when the recipe sends no reference image and `over` when its picture is past the recipe's cap (26c2). `label`
+ * is what the chip says, `reason` why it does not go as it is, `ref` the reference's descriptor.
  * @param {{ n?: number, id?: string }} seg a token of `parse`
  * @param {RefContext | null} ctx
- * @returns {{ state: "live" | "inactive" | "broken", label: string, reason: string, ref: Descriptor | null }}
+ * @returns {{ state: "live" | "over" | "none" | "inactive" | "broken", label: string, reason: string, ref: Descriptor | null }}
  */
 export function chipState(seg, ctx) {
     const refs = (ctx && ctx.refs) || [];
     if (seg.n != null) {
         const d = refs.find((r) => r.label === seg.n);
+        if (d && ctx.none) return { state: "none", label: "img" + seg.n, reason: ctx.none, ref: d };
+        if (d && d.over) {
+            const cap = ctx.cap;
+            return { state: "over", label: "img" + seg.n, reason: cap != null ? `this recipe takes ${plural(cap, "reference image", "reference images")}` : "past what this recipe takes", ref: d };
+        }
         if (d) return { state: "live", label: "img" + seg.n, reason: "", ref: d };
         return { state: "broken", label: "img" + seg.n, reason: `no reference img${seg.n}`, ref: null };
     }
@@ -611,6 +668,18 @@ export class PromptField {
         }
         el.classList.toggle("ipc-pf-empty", !this.text);
         this.markSel();
+        this.afterRender();
+    }
+
+    /** A swap menu follows its chip into the new DOM (or closes when the chip is gone); a card of a gone chip goes. */
+    afterRender() {
+        const s = this.session;
+        if (s && s.mode === "swap") {
+            const r = this.runs.find((x) => x.kind === "chip" && x.start === s.start && x.node.dataset.token === s.token);
+            if (!r) this.endSession();
+            else if (r.node !== s.chip) { s.chip.classList.remove("ipc-open"); s.chip = r.node; r.node.classList.add("ipc-open"); }
+        }
+        if (this.cardFor && !this.cardFor.isConnected) this.hideCard(true);
     }
 
     run(it, node) {
@@ -631,8 +700,8 @@ export class PromptField {
         if (key) c.dataset.scMentionKey = key;
         const name = seg.ref && seg.ref.name ? seg.ref.name : "";
         c.setAttribute("aria-label", `reference ${seg.label}${name && name !== seg.label ? ", " + name : ""}${seg.reason ? ": " + seg.reason : ""}`);
-        // 26c1: the tooltip until 26c2's hover card takes its place
-        c.title = seg.reason ? `${seg.label}: ${seg.reason}` : name ? `${seg.label}: ${name}` : seg.label;
+        // no title: the hover card is the tooltip (a title would show beside it); the reason stays readable here
+        if (seg.reason) c.dataset.reason = seg.reason;
         c._sig = sig;
         const at = document.createElement("span");
         at.className = "ipc-chip-at";
@@ -651,8 +720,16 @@ export class PromptField {
         chev.className = "ipc-chip-chev";
         chev.tabIndex = -1;
         chev.setAttribute("aria-label", "Swap");
-        // the swap menu is 26c2; a press on the chevron keeps the caret where it is
+        chev.setAttribute("aria-haspopup", "listbox");
+        // a press on the chevron keeps the caret where it is; a click opens the chip's swap menu, or closes it again
         chev.addEventListener("mousedown", (e) => e.preventDefault());
+        chev.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (this.el.getAttribute("aria-disabled") === "true") return;
+            if (this.session && this.session.mode === "swap" && this.session.chip === c) this.endSession();
+            else this.openSwap(c);
+        });
         c.append(at, av, lab, chev);
         return c;
     }
@@ -660,14 +737,19 @@ export class PromptField {
     /** The chips drawn again when a reference changed (a state, a label, a name); a thumbnail alone is swapped in place. */
     refresh() {
         if (this.destroyed) return;
+        if (this.bar) this.bar.refresh();
         if (this.composing) { this.needRender = true; return; }
         this.render();
         this.updateThumbs();
+        // the picker's rows follow the references (a name, a label, the layout's "sent as")
+        if (this.session && this.session.mode === "insert" && this.picker) this.followSession();
     }
 
     /** The thumbnails of the chips of these layers (all when no ids are given) from the context, without a render. */
     updateThumbs(ids = null) {
-        if (this.destroyed || !this.runs.some((r) => r.kind === "chip")) return;
+        if (this.destroyed) return;
+        if (this.bar) this.bar.refresh();
+        if (!this.runs.some((r) => r.kind === "chip")) return;
         const ctx = this.context();
         const want = ids ? new Set(ids) : null;
         for (const r of this.runs) {
@@ -710,13 +792,26 @@ export class PromptField {
         const e = keepCaret ? mapOffset(pe, this.text, next) : next.length;
         if (history !== "reset" && !remap) this.history.record({ text: this.text, start: ps, end: pe }, { text: next, start: s, end: e }, "set");
         const backward = this.focusOff < this.anchor;
+        // a remap keeps a session on its @ (or its chip); any other write ends it
+        const sess = this.session;
+        if (sess && remap) {
+            sess.start = mapOffset(sess.start, this.text, next);
+            if (sess.end != null) sess.end = mapOffset(sess.end, this.text, next);
+            if (sess.mode === "swap") sess.token = null;
+        } else if (sess) this.endSession();
         this.text = next;
         this.open = null;
         this.autoSpace = null;
         this.anchor = backward ? e : s;
         this.focusOff = backward ? s : e;
+        if (sess && remap && sess.mode === "swap") {
+            // the chip's token may have a new number now: the menu follows the chip that starts where it started
+            const seg = renderPlan(next, this.context(), null).find((g) => g.type === "chip" && g.start === sess.start);
+            if (seg) { sess.token = seg.token; sess.end = seg.end; } else this.endSession();
+        }
         this.render();
         if (this.hasFocus()) this.applySel();
+        if (this.session && this.session.mode === "insert") this.followSession();
     }
 
     /** While composing: the text the queued writes will leave, on what the DOM holds now (the editor reads this). */
@@ -753,6 +848,8 @@ export class PromptField {
      * DOM drawn again and an input event of `inputType`.
      */
     edit(s, t, ins, kind, inputType, data = null) {
+        // an edit in the text closes a chip's swap menu (its chip may move or go)
+        if (this.session && this.session.mode === "swap") this.endSession();
         const prev = this.pre || this.state();
         this.pre = null;
         const clean = String(ins == null ? "" : ins).replace(/\r\n?/g, "\n").replace(GUARDS, "");
@@ -768,6 +865,8 @@ export class PromptField {
         this.render({ typed: !!clean });
         if (this.hasFocus()) this.applySel();
         this.fire(inputType, data);
+        if (!this.hasFocus()) this.el.dispatchEvent(new Event("change", { bubbles: true }));
+        if (kind === "type" || kind === "delete") this.afterEdit(inputType, data);
         return true;
     }
 
@@ -820,6 +919,7 @@ export class PromptField {
     }
 
     restore(e, inputType) {
+        this.endSession();
         this.text = e.text;
         this.open = null;
         this.autoSpace = null;
@@ -851,6 +951,7 @@ export class PromptField {
                 // a chip holds no caret (the browser would leave it in the chip's label, where no key reaches the
                 // field): a press puts it beside the chip, on the side that was pressed; the chevron keeps it where it is
                 e.preventDefault();
+                this.hideCard(true);
                 if (e.target.closest(".ipc-chip-chev")) return;
                 const r = this.runs.find((x) => x.node === chip);
                 if (!r) return;
@@ -858,6 +959,14 @@ export class PromptField {
                 const off = e.clientX < box.left + box.width / 2 ? r.start : r.end;
                 if (!this.hasFocus()) el.focus({ preventScroll: true });
                 this.setSel(e.shiftKey ? this.anchor : off, off);
+                this.hideCard(true);
+                // a press that moves on drags the chip to another place in the text (the pointer's own drag: the
+                // browser's would need the press it was just denied)
+                if (!e.shiftKey && el.getAttribute("aria-disabled") !== "true") {
+                    this.chipDrag = { start: r.start, end: r.end, x: e.clientX, y: e.clientY, moved: false };
+                    window.addEventListener("mousemove", this.onChipMove, true);
+                    window.addEventListener("mouseup", this.onChipUp, true);
+                }
                 return;
             }
             // the browser puts the caret where the press was: a focus that comes with it keeps that caret
@@ -866,8 +975,38 @@ export class PromptField {
             setTimeout(() => { this.fromPointer = false; }, 0);
             window.addEventListener("mouseup", this.onPointerUp, true);
         });
-        // a chip is not dragged in 26c1 (26c2 moves it); a selection dragged out copies its text
-        el.addEventListener("dragstart", (e) => { if (e.target && isChip(e.target)) e.preventDefault(); });
+        // the hover card of a chip (the bar's chips have their own listeners)
+        el.addEventListener("pointerover", (e) => {
+            const chip = e.target && e.target.closest ? e.target.closest(".ipc-chip") : null;
+            if (chip && el.contains(chip) && !this.chipDrag) this.hoverStart(chip, e);
+        });
+        el.addEventListener("pointerout", (e) => {
+            const chip = e.target && e.target.closest ? e.target.closest(".ipc-chip") : null;
+            if (chip && el.contains(chip)) this.hoverEnd(chip, e.relatedTarget);
+        });
+        // a selection dragged in the field moves (Ctrl: copies), dragged out copies its text; pictures dropped here
+        // become reference layers named where they fell; a chip is dragged by the pointer (above), not by the browser
+        el.addEventListener("dragstart", (e) => this.onDragStart(e));
+        el.addEventListener("dragover", (e) => this.onDragOver(e));
+        el.addEventListener("dragleave", (e) => { if (!e.relatedTarget || !el.contains(e.relatedTarget)) this.hideDropCaret(); });
+        el.addEventListener("drop", (e) => this.onDrop(e));
+        el.addEventListener("dragend", () => { this.drag = null; this.hideDropCaret(); });
+        this.onChipMove = (e) => {
+            const d = this.chipDrag;
+            if (!d) return;
+            if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return;
+            d.moved = true;
+            el.classList.add("ipc-pf-dragging");
+            const off = this.pointOffset(e.clientX, e.clientY);
+            if (off == null) this.hideDropCaret(); else this.showDropCaret(off);
+        };
+        this.onChipUp = (e) => {
+            const d = this.chipDrag;
+            this.endChipDrag();
+            if (!d || !d.moved) return;
+            const off = this.pointOffset(e.clientX, e.clientY);
+            if (off != null) this.moveRange(d.start, d.end, off, false);
+        };
         this.onSelChange = () => this.selectionChanged();
         this.onPointerUp = () => {
             window.removeEventListener("mouseup", this.onPointerUp, true);
@@ -1001,17 +1140,31 @@ export class PromptField {
             const at = prev.start <= this.autoSpace ? this.autoSpace + next.length - this.text.length : this.autoSpace;
             this.autoSpace = next[at] === " " && at === caret ? at : null;
         }
+        if (this.session && this.session.mode === "swap") this.endSession();
         this.open = this.openAfter(this.text, next, caret);
         this.text = next;
         if (d) { this.anchor = d[0]; this.focusOff = d[1]; } else this.anchor = this.focusOff = caret;
         // an @ typed in front of "img1" makes a chip around the caret: the caret goes after it
         this.render({ typed: kind === "type" });
+        this.afterEdit(e.inputType || "", e.data);
     }
 
     onKeyDown(e) {
         if (e.isComposing || e.keyCode === 229 || this.composing) return;
         const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
         const k = e.key;
+        this.hideCard(true);
+        if (this.popupOpen()) {
+            // the picker's keys come first: ↑ ↓ move (with wrap), Enter and Tab insert, Esc closes it (and only it)
+            const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+            if (plain && (k === "ArrowDown" || k === "ArrowUp")) { e.preventDefault(); this.picker.move(k === "ArrowDown" ? 1 : -1); return; }
+            if (plain && !e.shiftKey && (k === "Enter" || k === "Tab")) {
+                const it = this.picker.current();
+                if (it) { e.preventDefault(); this.pickItem(it); return; }
+                this.endSession();   // nothing to pick: the key does what it does without the picker
+            }
+            if (k === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); this.endSession(); return; }
+        }
         if (ctrl && !e.shiftKey && (k === "z" || k === "Z")) { e.preventDefault(); this.undo(); return; }
         if (ctrl && (k === "y" || k === "Y" || (e.shiftKey && (k === "z" || k === "Z")))) { e.preventDefault(); this.redo(); return; }
         if (k === "Enter" && !e.ctrlKey && !e.metaKey) {
@@ -1031,8 +1184,11 @@ export class PromptField {
     /** ArrowLeft / ArrowRight: a grapheme or a whole chip; without Shift a selection collapses to its side */
     arrow(dir, shift) {
         const [s, t] = this.readSel();
-        // the token being typed is left: it becomes a chip first, and the step goes over the whole of it
-        if (this.open) { this.open = null; this.render(); }
+        // a selection ends a picker session (it would end at the selectionchange anyway, after the step)
+        if (shift && this.session && this.session.mode === "insert") this.endSession();
+        // the token being typed is left: it becomes a chip first, and the step goes over the whole of it (the @word of
+        // a picker session stays text: the session follows the caret)
+        if (this.open && !(this.session && this.session.mode === "insert")) { this.open = null; this.render(); }
         if (!shift && s !== t) { const c = dir < 0 ? s : t; this.setSel(c, c); return; }
         const f = this.focusOff;
         const u = dir < 0 ? unitBefore(this.text, f, this.plan) : unitAfter(this.text, f, this.plan);
@@ -1045,9 +1201,14 @@ export class PromptField {
         e.preventDefault();
         e.stopPropagation();
         if (this.el.getAttribute("aria-disabled") === "true") return;
-        // text only: an image pasted here does nothing, as in the textarea (26c2 makes it a reference)
+        // text wins (a copy from a word processor brings a picture of the text too); pictures alone become reference
+        // layers, named at the caret
         const d = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
-        if (!d) return;
+        if (!d) {
+            const files = imageFiles(e.clipboardData);
+            if (files.length) this.addReferences(files);
+            return;
+        }
         const [s, t] = this.readSel();
         this.pre = { text: this.text, start: s, end: t };
         this.edit(s, t, d, "paste", "insertFromPaste");
@@ -1088,7 +1249,9 @@ export class PromptField {
             this.text = next;
         }
         if (d) { this.anchor = d[0]; this.focusOff = d[1]; } else this.anchor = this.focusOff = caret;
+        if (this.session && this.session.mode === "swap" && changed) this.endSession();
         this.render({ typed: true });
+        if (this.session && this.session.mode === "insert") this.followSession();
         // the writes that came while composing, in order: an explicit one replaces the composed text, a remap applies
         // to what stands then
         const q = this.queued;
@@ -1110,8 +1273,12 @@ export class PromptField {
 
     onBlur() {
         document.removeEventListener("selectionchange", this.onSelChange);
-        if (this.open) { this.open = null; this.render(); }
-        this.closePopups();
+        this.hideCard(true);
+        // the file dialog of "+ Add reference" takes the focus: its session stays open through it
+        if (!this.choosing && !this.adding) {
+            this.closePopups();
+            if (this.open) { this.open = null; this.render(); }
+        }
         const was = this.focusText;
         this.focusText = null;
         if (was != null && was !== this.text) this.el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -1119,6 +1286,11 @@ export class PromptField {
 
     /** The caret left the token being typed: it becomes a chip. */
     leaveOpen() {
+        // a picker session keeps its @word as text and follows the caret itself
+        if (this.session && this.session.mode === "insert") {
+            if (this.pointerHeld) this.renderAfterPointer = true; else this.followSession();
+            return;
+        }
         if (!this.open) return;
         const c = this.anchor === this.focusOff ? this.focusOff : -1;
         if (c === this.open[1]) return;
@@ -1145,21 +1317,757 @@ export class PromptField {
         this.leaveOpen();
     }
 
-    // ---- 26c2 -----------------------------------------------------------------------------------------------------
+    // ---- 26c2: the @ picker, the swap menu, adding references, the hover card ------------------------------------
 
-    /** Is a popup of the field open (the picker, the swap menu)? None before 26c2. */
-    popupOpen() { return false; }
+    /** Is a popup of the field open (the picker, the swap menu)? The editor's Escape closes it before anything else. */
+    popupOpen() { return !!(this.picker && this.picker.isOpen); }
 
-    /** Close the field's popups. */
-    closePopups() { /* 26c2 */ }
+    /** Close the field's popups: the picker or the swap menu, and the hover card. */
+    closePopups() {
+        this.endSession();
+        this.hideCard(true);
+    }
+
+    /** the context for the picker, the bar and the card, asked whatever the text holds */
+    fullContext() {
+        try { return this.refs() || EMPTY_CONTEXT; } catch (_) { return EMPTY_CONTEXT; }
+    }
+
+    /** the @word a picker session types in: from its @ to the first white space after it */
+    sessionWord(start) {
+        const m = /^[^\s]*/.exec(this.text.slice(start + 1));
+        return [start, start + 1 + (m ? m[0].length : 0)];
+    }
+
+    /**
+     * After an edit the user made (typed here or by the browser): an @ typed at a word start opens the picker (from the
+     * input event and never from a key: @ is AltGr+Q on a German keyboard); a running session follows the caret.
+     */
+    afterEdit(inputType, data) {
+        if (this.composing || this.destroyed) return;
+        if (this.session && this.session.mode === "insert") { this.followSession(); return; }
+        if (inputType !== "insertText" || data !== "@") return;
+        const [s, t] = this.readSel();
+        if (s !== t || this.text[s - 1] !== "@" || !atWordStart(this.text, s - 1)) return;
+        this.openPicker(s - 1);
+    }
+
+    /** The @ picker at `start` (the @), filtered by what is typed after it. */
+    openPicker(start) {
+        this.endSession();
+        // `tail`: what already stood after the @ when it was typed (an @ typed in front of a word or a chip): a pick
+        // replaces only what the session typed, never that
+        this.session = { mode: "insert", start, tail: this.sessionWord(start)[1] - (start + 1) };
+        this.picker = new RefPicker(this, "insert");
+        this.followSession();
+    }
+
+    /**
+     * The session after a caret move or an edit: it ends when the @ is gone, the caret leaves the @word or white space
+     * is typed; else the rows follow the query (the text between the @ and the caret). The @word is drawn as text while
+     * the session runs (`open`), so a typed "@img1" is no chip before it is picked.
+     */
+    followSession() {
+        const s = this.session;
+        if (!s || s.mode !== "insert") return;
+        const lost = () => this.text[s.start] !== "@" || !atWordStart(this.text, s.start);
+        // while pictures load for it, the session keeps its @ whatever the caret does
+        if (this.adding) { if (lost()) this.endSession(); return; }
+        const [a, b] = this.readSel();
+        const we = this.sessionWord(s.start)[1];
+        if (lost() || a !== b || b <= s.start || b > we) { this.endSession(); return; }
+        // what a pick replaces: the @ and what the session typed after it (not the word or chip that stood there)
+        s.end = Math.max(b, we - (s.tail || 0));
+        s.query = this.text.slice(s.start + 1, b);
+        const want = [s.start, s.end];
+        if (!this.open || this.open[0] !== want[0] || this.open[1] !== want[1]) { this.open = want; this.render(); }
+        this.picker.show(this.pickerItems(), this.anchorRect(s.start), s.query);
+    }
+
+    /** The rows of the @ picker: the references the query matches, then "+ Add reference". */
+    pickerItems() {
+        const ctx = this.fullContext();
+        const q = this.session ? this.session.query || "" : "";
+        const items = pickerRows(ctx, q).map((d) => ({ kind: "ref", ref: d, n: d.label }));
+        items.push({ kind: "add", disabled: !ctx.canAdd, title: ctx.canAdd ? "Add an image as a reference layer and name it here" : "Load an image first" });
+        const hidden = (ctx.refs || []).filter((d) => d.label == null).length;
+        this.picker.note = hidden ? `${plural(hidden, "hidden reference is", "hidden references are")} not listed` : "";
+        return items;
+    }
+
+    /** The swap menu of a chip: the other shown references, "Show <name>" for a hidden one, "Remove from prompt". */
+    openSwap(chip) {
+        const r = this.runs.find((x) => x.node === chip);
+        if (!r) return;
+        const seg = this.plan.find((g) => g.type === "chip" && g.start === r.start);
+        if (!seg) return;
+        this.endSession();
+        this.hideCard(true);
+        this.session = { mode: "swap", start: seg.start, end: seg.end, token: seg.token, chip };
+        this.picker = new RefPicker(this, "swap");
+        const ctx = this.fullContext();
+        const items = (ctx.refs || []).filter((d) => d.label != null && !(seg.n != null && d.label === seg.n)).map((d) => ({ kind: "ref", ref: d, n: d.label }));
+        const own = seg.ref || (seg.id ? (ctx.refs || []).find((d) => d.id === seg.id) : null);
+        if (own && own.label == null && !own.visible && typeof ctx.show === "function") items.push({ kind: "show", ref: own });
+        items.push({ kind: "remove" });
+        chip.classList.add("ipc-open");
+        this.picker.show(items, chip.getBoundingClientRect(), null);
+    }
+
+    /** Where the picker hangs: a collapsed range at the offset (the @), else the field. */
+    anchorRect(off) {
+        try {
+            const [n, o] = this.offsetToDom(off);
+            const rg = document.createRange();
+            rg.setStart(n, o);
+            rg.collapse(true);
+            const rect = rg.getClientRects()[0];
+            if (rect && (rect.height || rect.width)) return rect;
+        } catch (_) { /* the field's box */ }
+        return this.el.getBoundingClientRect();
+    }
+
+    /** The session ended: the picker closed, the @word drawn as the text it is. */
+    endSession() {
+        const s = this.session;
+        this.session = null;
+        if (this.picker) { const p = this.picker; this.picker = null; p.close(); }
+        if (s && s.chip) s.chip.classList.remove("ipc-open");
+        if (s && s.mode === "insert" && this.open) {
+            // what was typed after the @ stays text only while the caret stands at its end, as any token being typed
+            const c = this.anchor === this.focusOff ? this.focusOff : -1;
+            this.open = c === this.open[1] && hasTokens(this.text.slice(this.open[0], this.open[1])) ? this.open : null;
+            if (!this.destroyed) this.render();
+        }
+    }
+
+    /** A row of the picker or the swap menu was chosen. */
+    pickItem(item) {
+        const s = this.session;
+        if (!s || !item || item.disabled) return;
+        if (item.kind === "add") { this.chooseFiles(); return; }
+        if (item.kind === "show") {
+            this.endSession();
+            const ctx = this.fullContext();
+            // the eye's path: the layer is shown and its parked token comes back as @img<n> (the editor's remap)
+            try { ctx.show(item.ref.id); } catch (_) { /* the layer went meanwhile */ }
+            return;
+        }
+        if (s.mode === "swap") {
+            this.endSession();
+            if (item.kind === "remove") this.removeToken(s.start, s.end);
+            else this.replaceWith(s.start, s.end, "@img" + item.n, { spaces: false });
+            return;
+        }
+        const end = s.end != null ? s.end : s.start + 1;
+        this.endSession();
+        this.replaceWith(s.start, end, "@img" + item.n);
+    }
+
+    /**
+     * [a, b) of the text becomes `token`, one undo step. `spaces`: a space before it when it does not start a word and
+     * one after it unless white space follows, so the token stays a token (C1); the caret goes after the space.
+     */
+    replaceWith(a, b, token, { spaces = true } = {}) {
+        [a, b] = this.widen(a, b);
+        const pre = spaces && !atWordStart(this.text, a) ? " " : "";
+        const after = this.text[b];
+        const post = spaces && (after === undefined || !/\s/.test(after)) ? " " : "";
+        this.pre = { text: this.text, start: a, end: b };
+        this.edit(a, b, pre + token + post, "pick", "insertReplacementText");
+    }
+
+    /** A token taken out of the text with one of the spaces around it, one undo step. */
+    removeToken(a, b) {
+        const t = this.text;
+        let s = a, e = b;
+        if (t[e] === " ") e++;
+        else if (t[s - 1] === " ") s--;
+        this.pre = { text: t, start: a, end: b };
+        if (this.glues(s, e)) this.edit(s, e, " ", "pick", "deleteContent");
+        else this.edit(s, e, "", "pick", "deleteContent");
+    }
+
+    /**
+     * `@img<n>` at the kept selection (the reference bar), one undo step, the field focused with the caret after it. At
+     * the end of the text when the field never had a caret.
+     */
+    insertToken(n, { replace = null } = {}) {
+        const [s, t] = replace || this.readSel();
+        this.endSession();
+        this.replaceWith(s, t, "@img" + n);
+        this.focus();
+    }
+
+    /** The field focused with its kept selection, without scrolling the panel. */
+    focus() {
+        if (this.hasFocus() || this.destroyed) return;
+        try { this.el.focus({ preventScroll: true }); } catch (_) { /* detached */ }
+        this.applySel();
+    }
+
+    /** The file dialog of "+ Add reference" (the picker's row, the bar's "+"); the session stays open through it. */
+    chooseFiles() {
+        if (!this.fullContext().canAdd) return;
+        if (!this.fileInput) {
+            const inp = document.createElement("input");
+            inp.type = "file";
+            inp.accept = "image/*,.tif,.tiff";
+            inp.multiple = true;
+            inp.style.display = "none";
+            inp.addEventListener("change", () => {
+                const files = Array.from(inp.files || []);
+                inp.value = "";
+                this.choosing = false;
+                if (files.length) this.addReferences(files);
+                else this.endSession();
+            });
+            // the dialog closed without a file: the picker closes and the @ stays
+            inp.addEventListener("cancel", () => { this.choosing = false; this.endSession(); this.focus(); });
+            (this.popupRoot || this.el).appendChild(inp);
+            this.fileInput = inp;
+        }
+        this.choosing = true;
+        this.fileInput.click();
+    }
+
+    /**
+     * Pictures as new reference layers (C4's `addReferences`), their tokens where the @ of the session was typed, else at
+     * the kept selection (a paste, a drop, the bar's "+"). Answers the new layers' ids.
+     * @param {File[]} files
+     * @returns {Promise<string[]>}
+     */
+    async addReferences(files) {
+        const fn = this.addReferencesFn;
+        const list = Array.from(files || []);
+        if (!fn || !list.length || !this.fullContext().canAdd) { this.endSession(); return []; }
+        // the focus goes back to the field afterwards only when nobody took it meanwhile (a click on the canvas while a
+        // large picture loads keeps the editor's keys working)
+        const before = document.activeElement;
+        this.adding = true;
+        let ids = [];
+        try { ids = (await fn(list)) || []; } catch (_) { ids = []; } finally { this.adding = false; }
+        if (this.destroyed) return ids;
+        const ctx = this.fullContext();
+        const tokens = ids.map((id) => (ctx.refs || []).find((d) => d.id === id)).filter((d) => d && d.label != null).map((d) => "@img" + d.label);
+        const s = this.session && this.session.mode === "insert" ? this.session : null;
+        const range = s ? [s.start, s.end != null ? s.end : s.start + 1] : this.readSel();
+        this.endSession();
+        if (tokens.length) {
+            this.replaceWith(range[0], range[1], tokens.join(" "));
+            const now = document.activeElement;
+            if (now === before || !now || now === document.body) this.focus();
+        }
+        return ids;
+    }
+
+    // ---- the hover card ------------------------------------------------------------------------------------------
+
+    /**
+     * A chip of the field or the bar under the pointer: after 400 ms its card (a larger picture, the layer's name, what
+     * it is sent as or why not). Not while a button is held or a popup is open.
+     */
+    hoverStart(node, e) {
+        if (this.cardFor === node) { clearTimeout(this.cardHide); return; }
+        this.hideCard(true);
+        if ((e && e.buttons) || this.popupOpen() || this.destroyed) return;
+        this.cardFor = node;
+        this.cardTimer = setTimeout(() => this.showCard(node), 400);
+    }
+
+    /** The pointer left for `to`: the card goes unless it went to the chip or the card itself. */
+    hoverEnd(node, to) {
+        if (to && ((this.card && this.card.contains(to)) || (node && node.contains(to)))) return;
+        clearTimeout(this.cardTimer);
+        clearTimeout(this.cardHide);
+        // a short grace, so the pointer can cross to the card
+        this.cardHide = setTimeout(() => this.hideCard(true), this.card ? 120 : 0);
+    }
+
+    /** what a chip node of the field or the bar stands for: the chip state and the layer's id */
+    cardInfo(node) {
+        const ctx = this.fullContext();
+        if (node.classList.contains("ipc-refbar-chip")) {
+            const d = (ctx.refs || []).find((x) => x.id === node.dataset.id);
+            if (!d) return null;
+            if (d.label == null) return { st: { state: "inactive", label: cut(d.name || "reference"), reason: d.visible ? "no pixels: this reference is not loaded" : "hidden: show it under References to send it", ref: d }, ctx };
+            return { st: chipState({ n: d.label }, ctx), ctx };
+        }
+        const r = this.runs.find((x) => x.node === node);
+        const seg = r && this.plan.find((g) => g.type === "chip" && g.start === r.start);
+        return seg ? { st: chipState(seg.n != null ? { n: seg.n } : { id: seg.id }, ctx), ctx } : null;
+    }
+
+    showCard(node) {
+        if (this.destroyed || !node.isConnected || this.popupOpen()) { this.cardFor = null; return; }
+        const info = this.cardInfo(node);
+        if (!info) { this.cardFor = null; return; }
+        const { st, ctx } = info;
+        const root = this.popupRoot || document.body;
+        const card = mk("div", "ipc-refcard");
+        card.setAttribute("role", "tooltip");
+        card.dataset.state = st.state;
+        if (st.ref && typeof this.preview === "function") {
+            const dpr = (typeof window !== "undefined" && window.devicePixelRatio) || 1;
+            const cv = document.createElement("canvas");
+            cv.width = cv.height = Math.round(160 * dpr);
+            cv.className = "ipc-refcard-pic";
+            try { this.preview(st.ref.id, cv); card.appendChild(cv); } catch (_) { /* no picture */ }
+        }
+        const name = st.ref && st.ref.name ? st.ref.name : st.label;
+        card.appendChild(mk("div", "ipc-refcard-name", name));
+        card.appendChild(mk("div", "ipc-refcard-line", cardLine(st, ctx)));
+        for (const type of ["pointerdown", "click", "wheel", "contextmenu"]) card.addEventListener(type, (e) => e.stopPropagation());
+        card.addEventListener("mousedown", (e) => e.preventDefault());
+        card.addEventListener("pointerenter", () => clearTimeout(this.cardHide));
+        card.addEventListener("pointerleave", (e) => this.hoverEnd(node, e.relatedTarget));
+        root.appendChild(card);
+        this.card = card;
+        placeBox(card, root, node.getBoundingClientRect(), 4);
+    }
+
+    hideCard(now = false) {
+        clearTimeout(this.cardTimer);
+        clearTimeout(this.cardHide);
+        if (!now) return;
+        if (this.card) this.card.remove();
+        this.card = null;
+        this.cardFor = null;
+    }
+
+    // ---- moving text and chips, dropping pictures ------------------------------------------------------------------
+
+    endChipDrag() {
+        this.chipDrag = null;
+        window.removeEventListener("mousemove", this.onChipMove, true);
+        window.removeEventListener("mouseup", this.onChipUp, true);
+        this.el.classList.remove("ipc-pf-dragging");
+        this.hideDropCaret();
+    }
+
+    /**
+     * The text offset at a point of the field, or null outside it: beside a chip on the side the point is on, else
+     * where the browser would put the caret, never inside a chip.
+     */
+    pointOffset(x, y) {
+        const b = this.el.getBoundingClientRect();
+        if (x < b.left || x > b.right || y < b.top || y > b.bottom) return null;
+        const hit = document.elementFromPoint(x, y);
+        const chip = hit && hit.closest ? hit.closest(".ipc-chip") : null;
+        if (chip && this.el.contains(chip)) {
+            const r = this.runs.find((q) => q.node === chip);
+            if (r) { const cb = chip.getBoundingClientRect(); return x < cb.left + cb.width / 2 ? r.start : r.end; }
+        }
+        let node = null, off = 0;
+        if (typeof document.caretPositionFromPoint === "function") {
+            const p = document.caretPositionFromPoint(x, y);
+            if (p) { node = p.offsetNode; off = p.offset; }
+        } else if (typeof document.caretRangeFromPoint === "function") {
+            const rg = document.caretRangeFromPoint(x, y);
+            if (rg) { node = rg.startContainer; off = rg.startOffset; }
+        }
+        if (!node || !this.el.contains(node)) return this.text.length;
+        return this.snap(clamp(this.domToOffset(node, off), 0, this.text.length));
+    }
+
+    /** a thin line where a drop would land */
+    showDropCaret(off) {
+        const root = this.popupRoot || document.body;
+        if (!this.dropCaret) {
+            this.dropCaret = mk("div", "ipc-pf-dropcaret");
+            root.appendChild(this.dropCaret);
+        }
+        const r = this.anchorRect(off), rb = root.getBoundingClientRect();
+        const h = Math.max(14, Math.min(24, r.height || 18));
+        Object.assign(this.dropCaret.style, { left: `${r.left - rb.left - 1}px`, top: `${r.top - rb.top + ((r.height || h) - h) / 2}px`, height: `${h}px` });
+    }
+
+    hideDropCaret() {
+        if (this.dropCaret) this.dropCaret.remove();
+        this.dropCaret = null;
+    }
+
+    onDragStart(e) {
+        const t = e.target;
+        if (t && t.nodeType === 1 && t.closest && t.closest(".ipc-chip")) { e.preventDefault(); return; }
+        const [a, b] = this.readSel();
+        if (a === b || !e.dataTransfer) return;
+        this.drag = [a, b];
+        this.hideCard(true);
+        e.dataTransfer.setData("text/plain", this.text.slice(a, b));
+        e.dataTransfer.setData(RANGE_TYPE, "1");
+        e.dataTransfer.effectAllowed = "copyMove";
+    }
+
+    onDragOver(e) {
+        const dt = e.dataTransfer;
+        if (!dt) return;
+        const types = Array.from(dt.types || []);
+        const inner = !!this.drag && types.includes(RANGE_TYPE);
+        if (!types.includes("Files") && !inner && !types.includes("text/plain")) return;
+        // ours: the editor's drop handlers (a picture onto the canvas's root) stay out
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.el.getAttribute("aria-disabled") === "true") { dt.dropEffect = "none"; return; }
+        dt.dropEffect = inner && !e.ctrlKey ? "move" : "copy";
+        const off = this.pointOffset(e.clientX, e.clientY);
+        if (off == null) this.hideDropCaret(); else this.showDropCaret(off);
+    }
+
+    onDrop(e) {
+        const dt = e.dataTransfer;
+        if (!dt) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.hideDropCaret();
+        const inner = this.drag;
+        this.drag = null;
+        if (this.el.getAttribute("aria-disabled") === "true") return;
+        const off = this.pointOffset(e.clientX, e.clientY);
+        const at = off == null ? this.text.length : off;
+        const files = imageFiles(dt);
+        if (files.length) {
+            this.endSession();
+            this.setSel(at, at);
+            this.focus();
+            this.addReferences(files);
+            return;
+        }
+        if (inner && Array.from(dt.types || []).includes(RANGE_TYPE)) { this.moveRange(inner[0], inner[1], at, e.ctrlKey); return; }
+        const d = dt.getData("text/plain");
+        if (!d) return;
+        this.pre = { text: this.text, start: at, end: at };
+        this.edit(at, at, d, "paste", "insertFromDrop");
+        this.focus();
+    }
+
+    /**
+     * [a, b) of the text moved (or, `copy`, copied) to offset `to`, one undo step, the moved text selected after it. The
+     * gap it leaves loses one of two spaces, and it gets a space against a word on either side at its new place, so a
+     * chip stays a chip (C1).
+     */
+    moveRange(a, b, to, copy = false) {
+        [a, b] = this.widen(a, b);
+        to = this.snap(to);
+        if (a === b || (!copy && to >= a && to <= b)) { this.setSel(to, to); return false; }
+        const piece = this.text.slice(a, b);
+        let rest = copy ? this.text : this.text.slice(0, a) + this.text.slice(b);
+        let at = !copy && to > b ? to - (b - a) : to;
+        if (!copy && rest[a - 1] === " " && rest[a] === " ") { rest = rest.slice(0, a) + rest.slice(a + 1); if (at > a) at--; }
+        const W = /[\w-]/;
+        const pre = at > 0 && W.test(rest[at - 1]) && !/^\s/.test(piece) ? " " : "";
+        // against a word, or against a token's @ when the piece ends in a word character (C1: "red@img1" is no token)
+        const post = at < rest.length && !/\s$/.test(piece) && (W.test(rest[at]) || (W.test(piece[piece.length - 1]) && TOKEN_AT.test(rest.slice(at)))) ? " " : "";
+        const next = normalize(rest.slice(0, at) + pre + piece + post + rest.slice(at));
+        if (next === this.text) { this.setSel(to, to); return false; }
+        const s = at + pre.length, e = s + piece.length;
+        if (this.session) this.endSession();
+        const had = this.hasFocus();
+        this.history.record(this.state(), { text: next, start: s, end: e }, copy ? "paste" : "move");
+        this.text = next;
+        this.open = null;
+        this.autoSpace = null;
+        this.anchor = s;
+        this.focusOff = e;
+        this.render();
+        this.focus();
+        if (this.hasFocus()) this.applySel();
+        this.fire("insertFromDrop");
+        if (!had) this.el.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+    }
 
     destroy() {
         this.destroyed = true;
         document.removeEventListener("selectionchange", this.onSelChange);
         window.removeEventListener("mouseup", this.onPointerUp, true);
+        this.endChipDrag();
         this.closePopups();
+        if (this.fileInput) { this.fileInput.remove(); this.fileInput = null; }
+        if (this.bar) this.bar.destroy();
+        this.bar = null;
         this.refs = () => EMPTY_CONTEXT;
         this.addReferencesFn = null;
         this.preview = null;
     }
+}
+
+/** a token right at the start of a string (C1's grammar) */
+const TOKEN_AT = new RegExp("^" + TOKEN);
+
+/** the drag data type that marks a selection dragged inside the field (moved, not copied) */
+const RANGE_TYPE = "application/x-scumble-range";
+
+/**
+ * The pictures of a paste or a drop: image files (and TIFFs, which a browser may type as nothing), from the files or
+ * the file items.
+ * @param {DataTransfer | null} dt
+ * @returns {File[]}
+ */
+export function imageFiles(dt) {
+    if (!dt) return [];
+    const isImage = (f) => !!f && ((f.type || "").startsWith("image/") || /\.tiff?$/i.test(f.name || ""));
+    let files = Array.from(dt.files || []).filter(isImage);
+    if (!files.length && dt.items) {
+        files = Array.from(dt.items).filter((it) => it.kind === "file").map((it) => it.getAsFile()).filter(isImage);
+    }
+    return files;
+}
+
+function mk(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+}
+
+/**
+ * A popup under a rect (or above it when less than `room` px are free below), inside `root`: positions relative to
+ * the root's box, as the brush tips' picker does.
+ */
+function placeBox(box, root, rect, gap = 6, room = 200) {
+    const rb = root.getBoundingClientRect();
+    const w = box.offsetWidth || 240, h = box.offsetHeight || 120;
+    const left = clamp(rect.left - rb.left, 4, Math.max(4, rb.width - w - 4));
+    const below = rb.bottom - rect.bottom;
+    const top = below < Math.min(room, h + gap + 4) && rect.top - rb.top > below ? rect.top - rb.top - h - gap : rect.bottom - rb.top + gap;
+    box.style.left = `${left}px`;
+    box.style.top = `${clamp(top, 4, Math.max(4, rb.height - h - 4))}px`;
+}
+
+/**
+ * The popover of the @ picker and of a chip's swap menu (26c2), built like the brush tips' picker
+ * (inpaint_tippicker.js): absolute in the field's popup root, its presses kept from the editor, closed by a press
+ * outside it. It never takes the focus: its keys come from the field's keydown (`key`), so the caret stays in the text.
+ */
+export class RefPicker {
+    constructor(field, mode) {
+        this.field = field;
+        this.mode = mode;
+        this.el = null;
+        this.items = [];
+        this.cursor = -1;
+        this.note = "";
+    }
+
+    get isOpen() { return !!this.el; }
+
+    build() {
+        const pop = mk("div", "ipc-refpop");
+        pop.setAttribute("role", "listbox");
+        pop.setAttribute("aria-label", this.mode === "swap" ? "Swap the reference" : "Reference images");
+        pop.dataset.mode = this.mode;
+        this.head = mk("div", "ipc-rp-head");
+        this.list = mk("div", "ipc-rp-list");
+        this.noteEl = mk("div", "ipc-rp-note");
+        pop.append(this.head, this.list, this.noteEl);
+        if (this.mode === "insert") pop.appendChild(mk("div", "ipc-rp-foot", "\u2191\u2193 Navigate \u00b7 \u23ce Insert \u00b7 Esc Close"));
+        for (const type of ["pointerdown", "pointerup", "click", "dblclick", "wheel", "contextmenu"]) pop.addEventListener(type, (e) => e.stopPropagation());
+        // a press in it keeps the focus (and the caret) in the field
+        pop.addEventListener("mousedown", (e) => e.preventDefault());
+        (this.field.popupRoot || document.body).appendChild(pop);
+        this.el = pop;
+        this.outside = (e) => {
+            if (!this.el || this.el.contains(e.target)) return;
+            const f = this.field;
+            // a press in the field moves the caret: the session follows it (or ends); the swap chip's chevron toggles
+            if (this.mode === "insert" && (f.el.contains(e.target) || f.adding)) return;
+            if (this.mode === "swap" && f.session && f.session.chip && f.session.chip.contains(e.target) && e.target.closest(".ipc-chip-chev")) return;
+            f.endSession();
+        };
+        window.addEventListener("pointerdown", this.outside, true);
+    }
+
+    /** The rows (and the anchor) of now; the cursor stays on the same row when it is still there. */
+    show(items, rect, query) {
+        if (!this.el) this.build();
+        const prev = this.items[this.cursor];
+        this.items = items;
+        // the cursor stays on its row: a reference, or another row the user moved to; else the first reference (in the
+        // @ picker Enter and Tab never open the file dialog on their own: with no reference listed they do what they do)
+        const same = !prev ? -1 : prev.kind === "ref" ? items.findIndex((it) => it.kind === "ref" && it.ref.id === prev.ref.id)
+            : this.moved ? items.findIndex((it) => it.kind === prev.kind) : -1;
+        const first = this.mode === "insert" ? items.findIndex((it) => it.kind === "ref" && !it.disabled) : items.findIndex((it) => !it.disabled);
+        this.cursor = same >= 0 && !items[same].disabled ? same : first;
+        this.head.textContent = this.mode === "swap" ? "Swap for" : query ? `@${query}` : "Reference images";
+        this.head.classList.toggle("ipc-rp-query", this.mode === "insert" && !!query);
+        this.list.replaceChildren(...items.map((it, i) => this.row(it, i)));
+        if (!items.some((it) => it.kind === "ref") && this.mode === "insert") this.list.prepend(mk("div", "ipc-rp-empty", query ? `No reference matches "${query}"` : this.note ? "No shown reference images" : "No reference images yet"));
+        this.noteEl.textContent = this.note || "";
+        this.noteEl.hidden = !this.note;
+        this.mark();
+        if (rect) placeBox(this.el, this.field.popupRoot || document.body, rect, 6, 200);
+    }
+
+    row(it, i) {
+        const b = mk("button", "ipc-rp-row");
+        b.type = "button";
+        b.tabIndex = -1;
+        b.dataset.kind = it.kind;
+        b.setAttribute("role", "option");
+        if (it.disabled) { b.disabled = true; b.setAttribute("aria-disabled", "true"); }
+        if (it.title) b.title = it.title;
+        if (it.kind === "ref") {
+            const d = it.ref;
+            b.dataset.id = d.id;
+            const av = mk("img", "ipc-rp-av");
+            av.alt = "";
+            av.draggable = false;
+            if (d.thumb) av.src = d.thumb; else av.hidden = true;
+            b.append(av, mk("span", "ipc-rp-label", "img" + d.label), mk("span", "ipc-rp-name", d.name || ""));
+            if (d.sentAs) b.appendChild(mk("span", "ipc-rp-sent", d.sentAs));
+            if (d.over) b.appendChild(mk("span", "ipc-rp-over", "over"));
+        } else if (it.kind === "add") b.append(mk("span", "ipc-rp-plus", "+"), mk("span", "ipc-rp-name", "Add reference"));
+        else if (it.kind === "show") b.append(mk("span", "ipc-rp-plus", "\u25c9"), mk("span", "ipc-rp-name", `Show ${cut(it.ref.name || "reference", 24)}`));
+        else b.append(mk("span", "ipc-rp-plus", "\u00d7"), mk("span", "ipc-rp-name", "Remove from prompt"));
+        // the mouse picks a row only when it moves: a list that opens under a resting pointer (Chromium sends a move
+        // of no distance after the layout) keeps its first row for Enter
+        b.addEventListener("pointermove", (e) => {
+            if (it.disabled || (!e.movementX && !e.movementY) || this.cursor === i) return;
+            this.cursor = i;
+            this.moved = true;
+            this.mark();
+        });
+        b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); this.field.pickItem(it); });
+        return b;
+    }
+
+    mark() {
+        if (!this.list) return;
+        const rows = this.list.querySelectorAll(".ipc-rp-row");
+        rows.forEach((r, i) => r.classList.toggle("ipc-rp-cur", i === this.cursor));
+        const cur = rows[this.cursor];
+        if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" });
+    }
+
+    /** ↑ / ↓ with wrap over the rows that can be chosen */
+    move(d) {
+        const n = this.items.length;
+        if (!n) return;
+        this.moved = true;
+        let i = this.cursor < 0 && d < 0 ? 0 : this.cursor;
+        for (let k = 0; k < n; k++) {
+            i = (i + d + n) % n;
+            if (!this.items[i].disabled) { this.cursor = i; break; }
+        }
+        this.mark();
+    }
+
+    /** the row under the cursor, or null */
+    current() {
+        const it = this.items[this.cursor];
+        return it && !it.disabled ? it : null;
+    }
+
+    close() {
+        if (this.outside) window.removeEventListener("pointerdown", this.outside, true);
+        this.outside = null;
+        if (this.el) this.el.remove();
+        this.el = this.head = this.list = this.noteEl = null;
+        this.items = [];
+        this.cursor = -1;
+    }
+}
+
+/**
+ * The reference bar above the prompt (26c2): a chip per reference in list order (a hidden one dimmed, not insertable),
+ * a "+" that adds pictures as references, and the count against what the recipe takes. A click names the reference at
+ * the field's kept caret.
+ */
+export class RefBar {
+    constructor(field, { mount } = {}) {
+        this.field = field;
+        field.bar = this;
+        const bar = mk("div", "ipc-refbar");
+        this.chips = mk("div", "ipc-refbar-chips");
+        this.add = mk("button", "ipc-refbar-add", "+");
+        this.add.type = "button";
+        this.add.tabIndex = -1;
+        this.add.setAttribute("aria-label", "Add reference");
+        this.count = mk("span", "ipc-refbar-count");
+        bar.append(this.chips, this.add, this.count);
+        // presses stay out of the editor (its root click takes the focus) and keep the caret in the field
+        bar.addEventListener("mousedown", (e) => { e.preventDefault(); field.hideCard(true); });
+        bar.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const t = e.target && e.target.closest ? e.target : null;
+            if (!t) return;
+            if (t.closest(".ipc-refbar-add")) { if (!this.add.disabled) field.chooseFiles(); return; }
+            const chip = t.closest(".ipc-refbar-chip");
+            if (!chip || chip.dataset.state === "hidden") return;
+            field.insertToken(+chip.dataset.label);
+        });
+        bar.addEventListener("pointerover", (e) => {
+            const chip = e.target && e.target.closest ? e.target.closest(".ipc-refbar-chip") : null;
+            if (chip) field.hoverStart(chip, e);
+        });
+        bar.addEventListener("pointerout", (e) => {
+            const chip = e.target && e.target.closest ? e.target.closest(".ipc-refbar-chip") : null;
+            if (chip) field.hoverEnd(chip, e.relatedTarget);
+        });
+        this.el = bar;
+        if (mount) mount.insertBefore(bar, mount.firstChild);
+        this.sig = null;
+        this.refresh();
+    }
+
+    /** Drawn again from the field's context; nothing is touched when nothing changed. */
+    refresh() {
+        if (!this.el) return;
+        const ctx = this.field.fullContext();
+        const refs = ctx.refs || [];
+        const cnt = barCount(ctx);
+        const sig = JSON.stringify([refs.map((d) => [d.id, d.label, d.name, d.visible, d.thumb, d.sentAs, !!d.over]), cnt, ctx.canAdd, ctx.none, ctx.refuse || null]);
+        if (sig === this.sig) return;
+        this.sig = sig;
+        this.chips.replaceChildren(...refs.map((d) => {
+            const st = d.label == null ? "hidden" : chipState({ n: d.label }, ctx).state;
+            const b = mk("button", "ipc-refbar-chip");
+            b.type = "button";
+            b.tabIndex = -1;
+            b.dataset.id = d.id;
+            b.dataset.state = st;
+            if (d.label != null) b.dataset.label = String(d.label);
+            const av = mk("img", "ipc-chip-av");
+            av.alt = "";
+            av.draggable = false;
+            if (d.thumb) av.src = d.thumb; else av.hidden = true;
+            b.appendChild(av);
+            if (d.label == null) b.appendChild(eyeOff());
+            b.appendChild(mk("span", "ipc-chip-label", d.label != null ? "img" + d.label : cut(d.name || "reference")));
+            b.setAttribute("aria-label", d.label != null ? `name img${d.label}, ${d.name || "reference"}, in the prompt` : `${d.name || "reference"}: hidden`);
+            if (d.label == null) b.setAttribute("aria-disabled", "true");
+            return b;
+        }));
+        this.add.disabled = !ctx.canAdd;
+        this.add.title = ctx.canAdd ? "Add images as reference layers and name them in the prompt" : "Load an image first";
+        this.count.textContent = cnt.text;
+        this.count.title = cnt.title;
+        this.count.classList.toggle("ipc-refbar-over", cnt.over);
+        this.el.classList.toggle("ipc-refbar-empty", !refs.length);
+    }
+
+    destroy() {
+        if (this.el) this.el.remove();
+        this.el = null;
+    }
+}
+
+/** the eye with a stroke through it (a hidden reference in the bar), the path of the editor's own eyeOff icon */
+function eyeOff() {
+    const ns = "http://www.w3.org/2000/svg";
+    const s = document.createElementNS(ns, "svg");
+    s.setAttribute("viewBox", "0 0 24 24");
+    s.setAttribute("class", "ipc-refbar-eye");
+    s.setAttribute("aria-hidden", "true");
+    s.setAttribute("fill", "none");
+    s.setAttribute("stroke", "currentColor");
+    s.setAttribute("stroke-width", "2");
+    s.setAttribute("stroke-linecap", "round");
+    for (const d of ["M4 4l16 16", "M10 6.3A10 10 0 0112 6c6 0 10 6 10 6a17 17 0 01-3.2 3.4", "M6.6 8.6C4 10.4 2 12 2 12s4 6 10 6a10 10 0 003-.5"]) {
+        const p = document.createElementNS(ns, "path");
+        p.setAttribute("d", d);
+        s.appendChild(p);
+    }
+    return s;
 }

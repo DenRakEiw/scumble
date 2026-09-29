@@ -50,6 +50,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cdp import session  # noqa: E402
 from prompt_field_steps import STEPS as PROMPT_FIELD_STEPS  # noqa: E402
+from ref_picker_steps import STEPS as REF_PICKER_STEPS  # noqa: E402
 
 async def escape_closes_the_shell_dialogs(c):
     """Settings and Generate-new are native <dialog>s; the browser closes them on Escape unless a
@@ -10978,6 +10979,8 @@ return out;
 """),
     # item 26 step 26c1: the prompt field with its reference chips (tools/prompt_field_steps.py)
     *[(name, (lambda f: lambda c: f(c, PRE))(f)) for name, f in PROMPT_FIELD_STEPS],
+    # item 26 step 26c2: the @ picker, the reference bar, the hover card, the swap menu, the chip drag (tools/ref_picker_steps.py)
+    *[(name, (lambda f: lambda c: f(c, PRE))(f)) for name, f in REF_PICKER_STEPS],
     ("cleanup", """
 for (const id of [window.__tv, window.__t3, window.__t2, window.__t]) { try { await run("close_document", { doc: id }); } catch (_) { /* gone */ } }
 return "ok";

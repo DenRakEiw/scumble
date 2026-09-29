@@ -221,6 +221,7 @@ export const api = {
  * @property {() => Promise<any>} freeHelpers
  * @property {boolean} removeSupported
  * @property {boolean} refTokens                                     @img1 in the prompt names a reference layer (docs/PLAN_REFS.md); the node has none yet
+ * @property {(editor: any, over?: any, opts?: { keep?: boolean }) => Promise<any>} refLayout   the chosen route's name for each shown reference ({ names, over, none, local, cap, refuse }); the node answers null
  * @property {() => any} removeModel
  * @property {(editor: any, req: { image: Uint8Array, mask: Uint8Array }) => Promise<any>} removeInApp
  * @property {(editor: any) => Promise<any>} warmRemove
@@ -1169,14 +1170,18 @@ export const host = {
 
     /**
      * What the chosen route calls each shown reference now (C3): `{ names: Map<layer id, name | null>, over: Set<layer
-     * id> (past the route's cap), none: why no reference goes | null, local: a ComfyUI recipe }`, also kept as
-     * `editor.refLayoutInfo`; null without a recipe. Asks main once (`provider:layout`).
+     * id> (past the route's cap), none: why no reference goes | null, local: a ComfyUI recipe, cap: the reference layers
+     * the route takes | null, refuse: why a token cannot go although the pictures do | null (26c2's bar and card) }`.
+     * `keep` (the editor's own refresh): also kept as `editor.refLayoutInfo`, by the last call made, not the last to
+     * answer; an agent's `status` reads it without touching that. Null without a recipe. Asks main once
+     * (`provider:layout`).
      */
-    async refLayout(editor, over = {}) {
+    async refLayout(editor, over = {}, { keep = true } = {}) {
         const r = this.recipe;
-        if (!r || !editor) { if (editor) editor.refLayoutInfo = null; return null; }
+        if (!r || !editor) { if (editor && keep) editor.refLayoutInfo = null; return null; }
+        const seq = keep ? (editor._refLayoutSeq = (editor._refLayoutSeq || 0) + 1) : 0;
         const refs = editor.referenceLayers();
-        const blank = (none, local = false) => ({ names: new Map(refs.map((l) => [l.id, null])), over: new Set(), none, local });
+        const blank = (none, local = false) => ({ names: new Map(refs.map((l) => [l.id, null])), over: new Set(), none, local, cap: null, refuse: null });
         let info;
         if (r.kind !== "provider") info = blank(null, true);
         else if (r.task === "upscale") info = blank("An upscale sends the picture alone: reference images are left out.");
@@ -1189,12 +1194,17 @@ export const host = {
                 const past = ans.over && ans.max != null ? Math.max(0, ans.sent - ans.max) : 0;
                 const overSet = new Set(past ? refs.slice(Math.max(0, refs.length - past)).map((l) => l.id) : []);
                 const none = ans.drops && [...names.values()].every((n) => n == null) ? ans.drops : null;
-                info = { names, over: overSet, none, local: false };
+                // the route's pictures that are no reference layer (the crop, a mask sent as a picture, the Original)
+                // come off its max
+                const cap = ans.max != null ? Math.max(0, ans.max - (ans.sent - shape.count) - shape.original) : null;
+                // style references go without a number: a token for one refuses the run (refs.js checkPictures)
+                const refuse = ans.style ? "this route sends reference images as style references, which have no number: take the token out to run" : null;
+                info = { names, over: overSet, none, local: false, cap, refuse };
             } catch (err) {
                 info = blank(String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
             }
         }
-        editor.refLayoutInfo = info;
+        if (keep && editor._refLayoutSeq === seq) editor.refLayoutInfo = info;
         return info;
     },
 

@@ -15,7 +15,8 @@ Input.dispatchMouseEvent). Each step makes its own document (the test base and t
   Enter, the commit, and a remap that arrives mid-composition applied to the composed text.
 - prompt_field_keeps_the_editor_keys: Ctrl+Enter and Ctrl+U reach their methods, Escape hands the focus to the editor,
   Backspace / Delete / Ctrl+Z in the field touch no layer and no editor undo, the AltGr probe (Ctrl+Alt "@") runs no
-  shortcut, and a click on a chip's chevron keeps the focus in the field.
+  shortcut, and a click on a chip's chevron keeps the focus in the field (and opens its swap menu, which the first
+  Escape closes).
 """
 import asyncio
 import json
@@ -118,7 +119,8 @@ try {
     same("states", chips(ed), ["@img?" + coat.id + ":inactive", "@img9:broken"]);
     const labels = [...el.querySelectorAll(".ipc-chip-label")].map((x) => x.textContent);
     same("labels", labels, ["coat", "img9"]);
-    out.reasons = [...el.querySelectorAll(".ipc-chip")].map((x) => x.title);
+    // the reason a chip does not go (26c2: the hover card shows it; the chip has no title)
+    out.reasons = [...el.querySelectorAll(".ipc-chip")].map((x) => x.dataset.reason || "");
     if (!/hidden/.test(out.reasons[0]) || !/no reference img9/.test(out.reasons[1])) throw new Error("the reasons: " + JSON.stringify(out.reasons));
     await run("set_layer", { layer: coat.id, visible: true });
     same("shown again", [ed.promptText, chips(ed)], ["the @img2 on @img9", ["@img2:live", "@img9:broken"]]);
@@ -444,9 +446,14 @@ return { value: el.value };
         for kind in ("mousePressed", "mouseReleased"):
             await c.call("Input.dispatchMouseEvent", type=kind, x=x, y=y, button="left", buttons=1 if kind == "mousePressed" else 0, clickCount=1)
         await asyncio.sleep(0.1)
-        focused = await js(c, pre, "return document.activeElement === pf().promptInput;")
-        if not focused:
-            raise Exception("a click on the chevron took the focus from the field")
+        focused = await js(c, pre, "return [document.activeElement === pf().promptInput, document.querySelectorAll('.ipc-refpop[data-mode=swap]').length];")
+        if focused != [True, 1]:
+            raise Exception("a click on the chevron: focus in the field, one swap menu: %s" % json.dumps(focused))
+        # the first Escape closes the swap menu (26c2) and leaves the focus in the field, the second hands it on
+        await key(c, "Escape")
+        first = await js(c, pre, "return [document.activeElement === pf().promptInput, document.querySelectorAll('.ipc-refpop').length];")
+        if first != [True, 0]:
+            raise Exception("the first Escape: focus in the field, no menu: %s" % json.dumps(first))
         await key(c, "Escape")
         r2 = await js(c, pre, r"""
 const ed = pf();

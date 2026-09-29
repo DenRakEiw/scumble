@@ -449,7 +449,7 @@ const COMMANDS = {
         async run(ed) {
             const s = status(ed);
             let info = null;
-            try { info = await host.refLayout(ed); } catch (_) { info = null; }
+            try { info = await host.refLayout(ed, {}, { keep: false }); } catch (_) { info = null; }
             s.references = s.references.map((x) => ({ ...x, sent_as: info && x.label ? info.names.get(x.id) || null : null }));
             return { ...s, memory: await memoryMB() };
         },

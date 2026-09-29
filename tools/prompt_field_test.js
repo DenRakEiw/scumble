@@ -1,11 +1,12 @@
-// The pure helpers of renderer/editor/prompt_field.js (item 26 step 26c1, docs/PLAN_REFS.md 26c and C4) in plain Node,
+// The pure helpers of renderer/editor/prompt_field.js (item 26 steps 26c1 and 26c2, docs/PLAN_REFS.md 26c and C4) in plain Node,
 // no Electron and no DOM:
 //   node tools/prompt_field_test.js
 // Importing the module here proves that nothing touches `document` or `window` at import time. Covered: sanitize (line
 // breaks, caret guards, the case of a token), the re-exported mapOffset / diffRange, atWordStart, the units Backspace,
 // Delete and the arrows cross (chips, graphemes, emoji, surrogate pairs, an open token, the path without
 // Intl.Segmenter), the field's own undo (EditHistory: merging, word steps, undo / redo, map, reset, the cap), chipState
-// for each state and renderPlan with and without an open range. PromptField itself needs a DOM: the editor gate's job.
+// for each state and renderPlan with and without an open range; 26c2's pickerRows, barCount, cardLine, the over and
+// none states and imageFiles. PromptField, RefPicker and RefBar need a DOM: the editor gate's job.
 "use strict";
 
 const path = require("node:path");
@@ -90,7 +91,7 @@ async function main() {
 
     await section("0. exports", async () => {
         same("the module exports the field and its helpers", Object.keys(P).sort(),
-            ["EditHistory", "GUARD", "PromptField", "atWordStart", "chipState", "diffRange", "mapOffset", "renderPlan", "sanitize", "unitAfter", "unitBefore"]);
+            ["EditHistory", "GUARD", "PromptField", "RefBar", "RefPicker", "atWordStart", "barCount", "cardLine", "chipState", "diffRange", "imageFiles", "mapOffset", "pickerRows", "renderPlan", "sanitize", "unitAfter", "unitBefore"]);
         check("GUARD is one U+200B", P.GUARD === ZWSP && P.GUARD.length === 1);
         check("mapOffset and diffRange are reftokens.js's own", P.mapOffset === T.mapOffset && P.diffRange === T.diffRange);
         check("PromptField is a class (not built here: it needs a DOM)", typeof P.PromptField === "function");
@@ -450,6 +451,50 @@ async function main() {
             [["text", 0, 2, "a "], ["chip", 2, 7, "@img1"], ["text", 7, 15, " b @img2"]]);
         same("an open token that is the whole text is one text piece", P.renderPlan("@img1", CTX, [0, 5]), [{ type: "text", text: "@img1", start: 0, end: 5 }]);
     });
+
+    await section("8. the picker's rows, the bar's count, the card's line (26c2)", async () => {
+        const ids = (a) => a.map((d) => d.id);
+        same("no query: every shown reference, hidden ones left out", ids(P.pickerRows(CTX, "")), ["Lk", "Lv"]);
+        same("a query matches the name", ids(P.pickerRows(CTX, "sho")), ["Lv"]);
+        same("and the label", ids(P.pickerRows(CTX, "img1")), ["Lk"]);
+        same("case does not matter", ids(P.pickerRows(CTX, "COAT")), ["Lk"]);
+        same("every word must match", ids(P.pickerRows(CTX, "img2 coat")), []);
+        same("a hidden one is never listed", ids(P.pickerRows(CTX, "long")), []);
+        same("no context", P.pickerRows(null, "x"), []);
+
+        same("no cap", P.barCount(CTX), { text: "2 reference images", title: "", over: false });
+        same("one", P.barCount({ ...CTX, refs: [REFS[0]] }).text, "1 reference image");
+        same("a cap", P.barCount({ ...CTX, cap: 4 }), { text: "2 of 4 for this recipe", title: "This recipe takes 4 reference images.", over: false });
+        same("past the cap", P.barCount({ ...CTX, cap: 1 }), { text: "2 of 1 for this recipe", title: "This recipe takes 1 reference image.", over: true });
+        same("none wins", P.barCount({ ...CTX, cap: 4, none: "An upscale sends the picture alone." }), { text: "This recipe sends no reference images", title: "An upscale sends the picture alone.", over: false });
+        const loc = P.barCount({ ...CTX, local: true, refuse: "not yet" });
+        same("a ComfyUI recipe", [loc.text, /crop_image/.test(loc.title), /not yet/.test(loc.title)], ["2 in crop_image", true, true]);
+
+        const over = P.chipState({ n: 2 }, { ...CTX, cap: 1, refs: [REFS[0], { ...REFS[1], over: true }, REFS[2]] });
+        same("a descriptor past the cap is over", [over.state, over.label, over.reason], ["over", "img2", "this recipe takes 1 reference image"]);
+        const overNoCap = P.chipState({ n: 2 }, { ...CTX, refs: [REFS[0], { ...REFS[1], over: true }] });
+        same("over without a cap", overNoCap.reason, "past what this recipe takes");
+        const none = P.chipState({ n: 1 }, { ...CTX, none: "no references here" });
+        same("none strikes a live token", [none.state, none.reason, none.ref && none.ref.id], ["none", "no references here", "Lk"]);
+        same("none leaves a broken token broken", P.chipState({ n: 9 }, { ...CTX, none: "x" }).state, "broken");
+        same("a ComfyUI recipe's refusal keeps the chip live", P.chipState({ n: 1 }, { ...CTX, local: true, refuse: "not yet" }).state, "live");
+
+        const withSent = { ...CTX, refs: [{ ...REFS[0], sentAs: "image 3" }, REFS[1]] };
+        same("the card: sent as", P.cardLine(P.chipState({ n: 1 }, withSent), withSent), "img1 · sent as image 3");
+        same("the card: no name known", P.cardLine(P.chipState({ n: 2 }, withSent), withSent), "img2");
+        same("the card: a ComfyUI recipe", P.cardLine(P.chipState({ n: 2 }, { ...CTX, local: true, refuse: "take it out" }), { ...CTX, local: true, refuse: "take it out" }), "img2 · in the crop_image batch; take it out");
+        same("the card: the reason of a broken chip", P.cardLine(P.chipState({ n: 9 }, CTX), CTX), "img9 · no reference img9");
+
+        const sty = { ...CTX, cap: 3, refuse: "style references have no number" };
+        same("the card: a route that cannot name them", P.cardLine(P.chipState({ n: 1 }, sty), sty), "img1 · style references have no number");
+        same("the bar says why too", P.barCount(sty).title, "This recipe takes 3 reference images; an @img token: style references have no number.");
+        same("and without a cap", P.barCount({ ...CTX, refuse: "no" }).title, "An @img token: no.");
+        const f = (name, type) => ({ name, type });
+        same("imageFiles: files", P.imageFiles({ files: [f("a.png", "image/png"), f("b.txt", "text/plain"), f("c.TIF", "")] }).map((x) => x.name), ["a.png", "c.TIF"]);
+        same("imageFiles: from items when files is empty", P.imageFiles({ files: [], items: [{ kind: "file", getAsFile: () => f("d.jpg", "image/jpeg") }, { kind: "string", getAsFile: () => null }] }).map((x) => x.name), ["d.jpg"]);
+        same("imageFiles: none", P.imageFiles(null), []);
+    });
+
 
     const failed = results.filter((x) => !x).length;
     console.log(`${results.length - failed} of ${results.length} checks passed`);

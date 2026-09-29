@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-29, afternoon: 0.1.33 released; item 26 S1 and S2 built)
+## Where things stand (2026-09-29, evening: 0.1.33 released; item 26 S1, S2 and S3 built)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -103,10 +103,15 @@ main's `docs/MANUAL.md` already describes S1's img labels, which ship with 0.1.3
   document, mcp, assistant, nodecopy, lint, types). The prompt update ships as **0.1.34**. **26c1 built and committed
   locally 2026-09-29 (S3, not pushed):** `renderer/editor/prompt_field.js`, the prompt as a contenteditable with
   reference chips, its own undo, whole-chip deletes, an automatic space between a chip and a word typed against it
-  (its "Built" paragraph in the plan lists what the code showed and the review's ten fixes). **Waiting for the user**:
-  they look at the field in the app (a screenshot was sent) and say go before **26c2** (picker, bar, hover card, swap
-  menu; it adds the node stub `async refLayout() { return null; }` with `refreshRefLayout`). Read the plan's sections
-  0 and 3-6 and the step's own section ("Read first" wins). Then package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+  (its "Built" paragraph in the plan lists what the code showed and the review's ten fixes). **26c2 built and committed
+  locally 2026-09-29 evening (S3 done, not pushed; the user's go "baue weiter"):** the @ picker, the reference bar above
+  the prompt, the 400 ms hover card, the chevron's swap menu, chip drag, pictures pasted or dropped into the prompt
+  become references; `host.refLayout` gives `cap` / `refuse` and a `{keep}` option; the node repo got the stub `async
+  refLayout() { return null; }` (committed there, not pushed). Screenshots were sent; the user judges the look. Its
+  "Built" paragraph lists the decisions the plan did not have and the review's 13 fixes. **Next: S4 = 26d1 + 26d2**
+  (templates learn `{references}`, the token check after a rewrite, the named pictures to the language model), in a
+  fresh session. Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins). Then S5 (26e, 26f),
+  then package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 - **To do at the 0.1.34 release (the user, 2026-09-29):** take the other product's name out of the "Next up" line of
   the `v0-1-33` post (`F:\portfolio_web\lib\scumble-posts.ts`, "... the way X does it"), and write the 0.1.34 post,
   CHANGELOG section and manual lines without naming any other product as the model for the feature.
@@ -215,6 +220,9 @@ there; add a new flake there, with the date and what was ruled out.
   2026-09-29): the prompt field computes every delete from its own string. `innerText` breaks lines around flex items and
   absolutely positioned elements (both are blockified): a chip that `innerText` must read as `@img1` is `inline-block`
   with `inline-block` children.
+- A popup that opens under a resting pointer gets `pointerenter` / `pointermove` from Chromium's move of no distance
+  after the layout (measured 2026-09-29, the @ picker's rows): hover-select on `pointermove` with a non-zero
+  `movementX` / `movementY`, or the row under the mouse steals Enter.
 - `texSubImage2D` and `readPixels` take a view on a `SharedArrayBuffer` here (Electron's Chromium): no copy between the
   workers' buffer and the GPU (B item 7 part 2). 572 MB go up in 0.1 s and come back in 0.2 s, on the main thread.
 

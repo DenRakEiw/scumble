@@ -129,6 +129,28 @@ editor, Backspace / Delete / Ctrl+Z / the AltGr probe run no editor shortcut, a 
 focus). While iterating: `SCUMBLE_EDITOR_ONLY=prompt_field_is_the_textarea_for_every_reader,... bash tools/run_gates.sh
 26c-it --offline --tiles on editor`.
 
+26c2, the @ picker, the reference bar, the hover card, the swap menu and the chip drag: `node tools/prompt_field_test.js`
+section 8 covers `pickerRows`, `barCount`, `cardLine`, the `over` and `none` chip states and `imageFiles`. The editor
+gate's steps in `tools/ref_picker_steps.py` (the same document and helpers as the 26c1 steps): `ref_picker_opens_on_at_and_inserts`
+(an @ at a word start opens one picker and after "mail" none, the query filters, the first Escape closes it and keeps
+text and focus, the second leaves the field, the arrows wrap, Enter and Tab insert as one field-undo step, the AltGr
+probe opens it once, a hidden reference is left out with a note, `ed.undo` untouched), `ref_picker_adds_a_reference_in_place`
+(`addReferences` in a session puts the token where the @ was, without one at the kept caret; a pasted and a dropped
+picture become references named where they came in; pasted text stays text; `_refDrift` 0),
+`ref_bar_hover_and_swap` (with the host's `refLayout` stubbed and put back: cap 1 gives an over chip and "2 of 1 for
+this recipe", none strikes every chip; a bar click inserts at the kept caret; the hover card is absent at 250 ms and
+there within 1.5 s with "sent as image 2", gone after the pointer leaves; the chevron's menu swaps a token as one undo
+step, "Show jacket" brings a hidden reference and its token back, "Remove from prompt" takes the token and a space),
+`ref_picker_keeps_what_stood_there` (the review's findings: an @ typed before a word or a chip is replaced alone, Enter
+with nothing listed is a new line, a chip or word moved in front of a chip keeps a space, a swap menu under a remap
+removes its own chip, an edit of an unfocused field reports one change) and
+`prompt_field_drags_a_chip` (a press without a move only places the caret, a press moved to the end of the text moves
+the chip there with a drop caret on the way, one undo puts it back). `prompt_field_keeps_the_editor_keys` now expects
+the chevron click to open the swap menu and the first Escape to close it. While iterating:
+`SCUMBLE_EDITOR_ONLY=ref_picker_opens_on_at_and_inserts,ref_picker_adds_a_reference_in_place,ref_bar_hover_and_swap,prompt_field_drags_a_chip
+bash tools/run_gates.sh 26c-it --offline --tiles on editor`. The hover and drag steps call `Page.bringToFront` first:
+synthetic pointer events are unreliable while a real mouse is over the window (see the flakes below).
+
 ## Known flakes
 
 Known flakes; **re-run before believing any of these**:

@@ -5,7 +5,7 @@
 // the editor, as the method did: they are construction, not state of their own.
 import { host } from "./host.js";
 import { el, iconButton, miniButton, selectInput, numberInput, hostText, REF_FITS, REF_DEFAULTS, UPSAMPLE_CASES, randomSeed, brushSizeToSlider, sliderToBrushSize } from "./inpaint_canvas.js";
-import { PromptField } from "./prompt_field.js";
+import { PromptField, RefBar } from "./prompt_field.js";
 
 /**
  * The whole dialog of one editor. The order is the one the method had, and the two joints it kept
@@ -761,8 +761,12 @@ function buildPrompt(ed, section) {
                 placeholder: "Describe the change. Type @ to name a reference image.",
                 refs: () => ed.refContext(),
                 popupRoot: ed.root,
+                addReferences: (files) => ed.addReferencesForPrompt(files),
+                preview: (id, canvas) => ed.refPreview(id, canvas),
             });
             ed.promptInput = ed.promptField.el;
+            // the reference bar above the field: a chip per reference, "+", the count against the recipe (26c2)
+            new RefBar(ed.promptField, { mount: wrap });
         } else {
             ed.promptInput = document.createElement("textarea");
             ed.promptInput.placeholder = "Describe what should appear in the selection. Available as the node's prompt output.";

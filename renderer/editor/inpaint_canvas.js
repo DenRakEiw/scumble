@@ -1466,7 +1466,57 @@ const STYLE = `
 .ipc-chip[data-state=inactive] .ipc-chip-label, .ipc-chip[data-state=broken] .ipc-chip-label { text-decoration:line-through; }
 .ipc-chip[data-state=broken] { color:var(--sc-error, #f66); }
 .ipc-chip[data-state=over] { border-color:var(--sc-warn, #ffb347); }
+.ipc-chip[data-state=none] { opacity:.7; }
+.ipc-chip[data-state=none] .ipc-chip-label { text-decoration:line-through; }
 .ipc-chip.ipc-in-sel { outline:2px solid var(--sc-active, #4a90d9); outline-offset:-1px; }
+.ipc-chip.ipc-open > .ipc-chip-chev { color:var(--sc-active, #4a90d9); }
+.ipc-pf.ipc-pf-dragging, .ipc-pf.ipc-pf-dragging .ipc-chip { cursor:grabbing; }
+.ipc-pf-dropcaret { position:absolute; z-index:8; width:2px; background:var(--sc-active, #4a90d9); pointer-events:none; }
+.ipc-refbar { display:flex; align-items:center; gap:4px; margin-bottom:6px; min-height:22px; }
+.ipc-refbar-chips { display:flex; flex-wrap:wrap; gap:4px; min-width:0; flex:0 1 auto; }
+.ipc-refbar-chip { display:inline-flex; align-items:center; gap:3px; height:22px; box-sizing:border-box; max-width:120px; padding:0 7px 0 2px; margin:0;
+  border:1px solid var(--sc-line, #3a3a3a); border-radius:11px; background:var(--sc-btn, #2a2a2a); color:var(--sc-fg, #ddd); font:12px/20px var(--sc-font, system-ui, sans-serif); cursor:pointer; white-space:nowrap; }
+.ipc-refbar-chip:hover { background:var(--sc-btn-hover, #333); }
+.ipc-refbar-chip .ipc-chip-av { flex:none; width:16px; height:16px; border-radius:50%; object-fit:cover; background:var(--sc-well, #111); }
+.ipc-refbar-chip .ipc-chip-av[hidden] { display:none; }
+.ipc-refbar-chip .ipc-chip-label { overflow:hidden; text-overflow:ellipsis; }
+.ipc-refbar-chip[data-state=hidden] { opacity:.5; cursor:default; }
+.ipc-refbar-chip[data-state=over] { border-color:var(--sc-warn, #ffb347); }
+.ipc-refbar-chip[data-state=none] { opacity:.7; }
+.ipc-refbar-eye { flex:none; width:12px; height:12px; color:var(--sc-muted, #999); }
+.ipc-refbar-add { flex:none; width:22px; height:22px; padding:0; margin:0; border:1px dashed var(--sc-line, #3a3a3a); border-radius:11px; background:transparent;
+  color:var(--sc-fg-2, #bbb); font:14px/20px var(--sc-font, system-ui, sans-serif); cursor:pointer; }
+.ipc-refbar-add:hover:not(:disabled) { background:var(--sc-btn-hover, #333); color:var(--sc-fg, #ddd); }
+.ipc-refbar-add:disabled { opacity:.45; cursor:default; }
+.ipc-refbar-count { margin-left:auto; padding-left:6px; flex:none; font-size:10px; color:var(--sc-muted, #999); white-space:nowrap; }
+.ipc-refbar-count.ipc-refbar-over { color:var(--sc-warn, #ffb347); }
+.ipc-refpop { position:absolute; z-index:8; width:280px; max-height:320px; box-sizing:border-box; display:flex; flex-direction:column; gap:4px; padding:6px;
+  background:var(--sc-raised, #262626); border:1px solid var(--sc-border, #444); border-radius:var(--sc-radius-lg, 8px); box-shadow:var(--sc-shadow, 0 8px 24px rgba(0,0,0,.55));
+  color:var(--sc-fg, #ddd); font-size:12px; }
+.ipc-refpop [hidden] { display:none !important; }
+.ipc-refpop .ipc-rp-head { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--sc-muted, #999); padding:2px 4px 0; }
+.ipc-refpop .ipc-rp-head.ipc-rp-query { text-transform:none; letter-spacing:0; font-size:11px; color:var(--sc-fg-2, #bbb); }
+.ipc-refpop .ipc-rp-list { display:flex; flex-direction:column; gap:1px; overflow:auto; min-height:0; }
+.ipc-refpop .ipc-rp-row { display:flex; align-items:center; gap:8px; width:100%; box-sizing:border-box; padding:3px 6px; margin:0; border:0; border-radius:var(--sc-radius, 4px);
+  background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.ipc-refpop .ipc-rp-row.ipc-rp-cur { background:var(--sc-btn-hover, #3a3a3a); }
+.ipc-refpop .ipc-rp-row:disabled { opacity:.45; cursor:default; }
+.ipc-refpop .ipc-rp-av { flex:none; width:24px; height:24px; border-radius:50%; object-fit:cover; background:var(--sc-well, #111); }
+.ipc-refpop .ipc-rp-label { flex:none; color:var(--sc-link, #7cc7ff); }
+.ipc-refpop .ipc-rp-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ipc-refpop .ipc-rp-sent { flex:none; font-size:10px; color:var(--sc-muted, #999); }
+.ipc-refpop .ipc-rp-over { flex:none; font-size:10px; color:var(--sc-warn, #ffb347); }
+.ipc-refpop .ipc-rp-plus { flex:none; width:24px; text-align:center; color:var(--sc-fg-2, #bbb); }
+.ipc-refpop .ipc-rp-empty, .ipc-refpop .ipc-rp-note { color:var(--sc-faint, #777); padding:2px 6px; font-size:11px; }
+.ipc-refpop .ipc-rp-foot { font-size:10px; color:var(--sc-faint, #777); padding:2px 4px 0; border-top:1px solid var(--sc-line, #3a3a3a); }
+.ipc-refcard { position:absolute; z-index:9; box-sizing:border-box; max-width:192px; padding:8px; display:flex; flex-direction:column; gap:4px; pointer-events:auto;
+  background:var(--sc-raised, #262626); border:1px solid var(--sc-border, #444); border-radius:var(--sc-radius-lg, 8px); box-shadow:var(--sc-shadow, 0 8px 24px rgba(0,0,0,.55));
+  color:var(--sc-fg, #ddd); font-size:12px; }
+.ipc-refcard .ipc-refcard-pic { display:block; background:var(--sc-well, #111); border-radius:var(--sc-radius-sm, 3px); }
+.ipc-refcard .ipc-refcard-name { font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ipc-refcard .ipc-refcard-line { font-size:11px; color:var(--sc-fg-2, #bbb); overflow-wrap:anywhere; }
+.ipc-refcard[data-state=broken] .ipc-refcard-line { color:var(--sc-error, #f66); }
+.ipc-refcard[data-state=over] .ipc-refcard-line { color:var(--sc-warn, #ffb347); }
 .ipc-hist { max-height:30vh; overflow:auto; }
 .ipc-hitem { display:flex; align-items:center; gap:8px; padding:5px 8px; border-bottom:1px solid var(--sc-line, #161616); }
 .ipc-hitem.ipc-gone { opacity:.55; }
@@ -2606,6 +2656,8 @@ class InpaintEditor {
             const inField = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
             if (e.key === "Escape") {
                 if (this.tipPicker && this.tipPicker.isOpen) { e.stopImmediatePropagation(); e.preventDefault(); this.closeTipPicker(); return; }
+                // the prompt field's picker or swap menu goes first; a second Escape leaves the field
+                if (this.promptField && this.promptField.popupOpen()) { e.stopImmediatePropagation(); e.preventDefault(); this.promptField.closePopups(); return; }
                 if (t === this.promptInput) return;
                 e.stopImmediatePropagation(); e.preventDefault();
                 if (this.pointer && this.pointer.kind === "patchdrag") { const p = this.pointer; this.pointer = null; this.patchDone(p); this.draw(); this.setStatus(`${p.tool === "contentmove" ? "Move" : "Patch"} cancelled.`); }
@@ -3287,13 +3339,15 @@ class InpaintEditor {
 
     /**
      * Every reference layer, top first, as the prompt field and agents describe it (C4): label null for one that is
-     * hidden (or has no pixels), `sentAs` the name the chosen route gives its picture (`refLayoutInfo`, null unknown).
+     * hidden (or has no pixels), `sentAs` the name the chosen route gives its picture (`refLayoutInfo`, null unknown),
+     * `over` past the route's cap.
      */
     refDescriptors() {
         const labels = this.refLabels(), info = this.refLayoutInfo;
         return this.layers.filter((l) => this.isReference(l)).reverse().map((l) => ({
             id: l.id, label: labels.get(l.id) || null, name: l.name || "", visible: !!l.visible, thumb: null,
             sentAs: info && info.names && labels.has(l.id) ? info.names.get(l.id) || null : null,
+            over: !!(info && info.over && labels.has(l.id) && info.over.has(l.id)),
         }));
     }
 
@@ -3374,16 +3428,76 @@ class InpaintEditor {
     }
 
     /**
-     * What the prompt field draws its chips from (docs/PLAN_REFS.md C4): every reference layer, top first, hidden ones
-     * with label null, each with a 32 px thumbnail; `reason` says why a parked token's layer has no descriptor.
+     * What the prompt field draws its chips, its picker and its bar from (docs/PLAN_REFS.md C4): every reference layer,
+     * top first, hidden ones with label null, each with a 32 px thumbnail; from the chosen route's layout
+     * (`refLayoutInfo`, 26c2) the cap on reference layers, why none goes (`none`), a ComfyUI recipe (`local`, whose
+     * tokens refuse until 26e: `refuse`); `reason` says why a parked token's layer has no descriptor, `show` shows a
+     * hidden reference as its eye does.
      */
     refContext() {
         const byId = new Map(this.layers.map((l) => [l.id, l]));
         const refs = this.refDescriptors().map((d) => ({ ...d, thumb: this.refAvatar(byId.get(d.id)) }));
+        const info = this.refLayoutInfo;
+        const local = !!(info && info.local);
         return {
-            refs, cap: null, none: null, canAdd: !!this.width,
+            refs, cap: info && info.cap != null ? info.cap : null, none: (info && info.none) || null, local,
+            refuse: local ? "a ComfyUI recipe cannot name it yet, take the token out to run" : (info && info.refuse) || null,
+            canAdd: !!this.width,
             reason: (id) => (byId.has(id) ? "no longer a reference: make it a reference again to send it" : "deleted: an undo brings it back"),
+            show: (id) => this.showReference(id),
         };
+    }
+
+    /**
+     * A hidden reference shown, as its eye in the reference list shows it (no undo step): its parked tokens come back as
+     * @img<n> (refsMutated). The swap menu's "Show <name>".
+     */
+    showReference(id) {
+        const layer = this.layers.find((l) => l.id === id);
+        if (!layer || !this.isReference(layer) || layer.visible) return false;
+        layer.visible = true;
+        this.uploaded.baseHash = null;
+        this.refsMutated();
+        this.renderLayers(); this.renderInfo(); this.draw(); this.drawThumb(); this.notifyChanged();
+        return true;
+    }
+
+    /**
+     * The chosen route's layout of the shown references read again (`host.refLayout`, which keeps it as
+     * `refLayoutInfo`), 120 ms after the last call, and the prompt field drawn from it: the names on the hover card and
+     * in the picker, the cap in the bar, an over or none chip. A later call wins over an answer still on its way.
+     */
+    refreshRefLayout() {
+        if (!host.refTokens || !this.promptField || this._destroyed) return;
+        clearTimeout(this._refLayTimer);
+        this._refLayTimer = setTimeout(async () => {
+            const seq = this._refLaySeq = (this._refLaySeq || 0) + 1;
+            try { await host.refLayout(this); } catch (_) { /* the chips stay as they are */ }
+            if (seq !== this._refLaySeq || this._destroyed || !this.promptField) return;
+            this.promptField.refresh();
+        }, 120);
+    }
+
+    /**
+     * Pictures added as reference layers for the prompt field (its picker's "+ Add reference", the bar's "+", a paste
+     * or a drop on it): the new references' ids, top first. Never a base: without a picture it only says so.
+     * @param {File[]} files
+     * @returns {Promise<string[]>}
+     */
+    async addReferencesForPrompt(files) {
+        if (!this.width) { this.setStatus("Load an image first: a reference goes beside a picture."); return []; }
+        const before = new Set(this.layers.map((l) => l.id));
+        await this.addImageLayers(Array.from(files || []), "reference");
+        return this.layers.filter((l) => !before.has(l.id) && this.isReference(l)).reverse().map((l) => l.id);
+    }
+
+    /** A reference's picture for the prompt field's hover card, fitted into the canvas's own size. */
+    refPreview(id, canvas) {
+        const layer = this.layers.find((l) => l.id === id);
+        if (!layer || !canvas) return;
+        const css = Math.round(canvas.width / ((typeof window !== "undefined" && window.devicePixelRatio) || 1));
+        canvas.style.width = canvas.style.height = `${css}px`;
+        this.drawLayerThumb(canvas, layer);
     }
 
     /**
@@ -13571,6 +13685,8 @@ class InpaintEditor {
     }
 
     renderInfo() {
+        // the recipe, the selection, the fill and the Original all change what the references go as
+        this.refreshRefLayout();
         if (this.resizeW && this.width && document.activeElement !== this.resizeW && document.activeElement !== this.resizeH) { this.resizeW.value = this.width; this.resizeH.value = this.height; }
         if (!this.infoEl) return;
         const rows = [];
@@ -14180,6 +14296,7 @@ class InpaintEditor {
 
     /** The reference list: batch order top first, thumbnail, name, eye, order, back to image, delete. */
     renderReferences() {
+        this.refreshRefLayout();
         if (!this.refList) return;
         const list = this.refList;
         list.innerHTML = "";
@@ -16395,6 +16512,8 @@ class InpaintEditor {
     }
 
     renderSettings() {
+        // a preset or a recipe may switch a row the layout reads (a ToAPIs channel)
+        this.refreshRefLayout();
         if (!this.settingsList) return;
         const list = this.settingsList;
         list.innerHTML = "";
@@ -16412,7 +16531,7 @@ class InpaintEditor {
             const lab = el("label", null, entry.label);
             lab.title = `setting_${t.index} → ${entry.label}`;
             let control;
-            const commit = (v) => { entry.value = v; if (t.widget) { try { t.widget.value = v; } catch (_) { /* read-only */ } } this.notifyChanged(); };
+            const commit = (v) => { entry.value = v; if (t.widget) { try { t.widget.value = v; } catch (_) { /* read-only */ } } this.notifyChanged(); this.refreshRefLayout(); };
             if (k.kind === "combo") {
                 control = selectInput(k.options.map(String), String(entry.value), entry.label);
                 if (!k.options.map(String).includes(String(entry.value)) && k.options.length) { entry.value = k.options[0]; control.value = String(entry.value); }
@@ -17133,6 +17252,8 @@ class InpaintEditor {
     }
 
     destroy() {
+        this._destroyed = true;
+        clearTimeout(this._refLayTimer);
         if (this._compositor) { try { this._compositor.dispose(); } catch (_) { /* context gone */ } this._compositor = null; }
         this.close();
         if (this.promptField) this.promptField.destroy();   // its document listener and the context callback
