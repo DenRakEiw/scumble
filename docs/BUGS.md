@@ -236,6 +236,45 @@ An entry here leaves the file when the release named in it is published.
 
 ## Open
 
+### Erasing has become very slow since 0.1.32 (reported by the user, 2026-09-29, measured)
+
+**Reported** 2026-09-29 by the user: "das radieren ist seit dem letzten update mega langsam geworden", then "auf
+hochauflösenden bildern sehr langsam und ruckelig" (very slow and jerky on high-resolution pictures). Not yet known:
+pen or mouse, the brush size, the layer kind.
+
+**Measured** 2026-09-29, `tools/brush_perf.js` at 15000 x 10000 on tiles, a full-size paint layer, a fresh instance per
+version, 0.1.31 (`git archive v0.1.31` in the scratchpad) against HEAD, ms per pointer move (median):
+- mouse events (none coalesced), eraser 50 / 200 / 400 px: the same in both (2-8 ms). No regression.
+- 4 coalesced points per move (a pen faster than the screen; emulated through `getCoalescedEvents`), 200 / 400 px:
+  HEAD 5.0 / 7.1 at fit, 2.8 / 6.7 at 1:1 against 0.1.31 3.0 / 4.7 and 2.2 / 2.9.
+- 8 coalesced points, 700 / 1,000 px: HEAD 41.7 / 92.0 at fit, 42.0 / 90.3 at 1:1 against 0.1.31 11.1 / 16.7 and
+  8.2 / 14.6: **four to six times slower**, well past a frame. The main thread was held 3.0 s in 30 moves at 1,000 px
+  (0.1.31: 0.9 s).
+
+**Cause** (read against the numbers): package 4 step 5 (788e26e) paints every coalesced pen point as a segment of its
+own (`strokePoints`, one `layerDab` each). The soft round dab stamps `steps + 1` discs per segment, both ends included
+(`layerDab`'s gradient loop, spacing 0.18 of the radius), so a move of N points stamps about 2N full discs where one
+segment stamped 2-3; each disc of a 1,000 px brush is a radial gradient over 1 MP, and every segment also takes its own
+stroke-buffer box (`c.draw`, the segment plus 1.5 radius around it). The eraser is soft by default (`eraseHardness`
+0.5) while the paint brush is hard (`hardness` 1, one line per segment), which is why erasing shows it. A tip
+(`stampDab`) stamps both ends of every segment as well. Flow below 100 % already carries its spacing over the
+segments (`flowStamps`, `p.rest`). A code read of the diff (a background agent, same day) adds:
+- On tiles every `c.draw` is a whole scratch round trip (`_scratchDraw`, `inpaint_tiles.js`: a power-of-two scratch,
+  2048² for a 1,000 px brush, `putImageData` of the stroke tiles in the box, the arcs, `getImageData` of the box,
+  `_putBlock`'s scans), now N times a frame over nearly the same box.
+- It feeds on itself: a slow frame makes Chromium coalesce more events into the next move, so N grows with the frame
+  time and the lag keeps growing once the rate times the cost per dab reaches 1 (a 200 Hz pen at about 5 ms a dab, a
+  1,000 Hz mouse at 1 ms). 0.1.31 only drew one longer segment. A high-rate mouse is hit too; the synthetic mouse
+  rows above carry no coalesced events.
+- With a pen the pressure changes per point, so the gradient and `tipStamp` caches miss per point (an imported tip
+  scales a canvas per point). A stabiliser switched on once for any brush is remembered (`ipc.stabiliser`) and makes
+  the eraser trail the cursor: rule it out on the user's machine first.
+- The repeated stamp at every joint also erases more densely than 0.1.31 did.
+
+**Fix** (not built yet): stamp the soft round dab and the tips at even spacing along the whole stroke with the rest
+carried from one segment to the next (as `flowStamps` does), and draw the points of one move in one stroke-buffer box;
+then measure the same rows again (target: 0.1.31's numbers at 8 coalesced points).
+
 ### Found by reading on 2026-09-26 (not yet measured)
 
 **Written** 2026-09-26 by a gap review of the whole app (read, not run). Each has to be measured before it is fixed.

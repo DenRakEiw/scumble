@@ -95,7 +95,12 @@ brushes, package 5 Remove with LaMa, Patch, Content-aware move, heal's Poisson b
   locally 2026-09-29** (26a1: `layout(req)` per adapter, markers resolved in `providers/index.js`, `provider:layout`,
   `refs.name`; 26b1: `reftokens.js`, img labels, the remap at every change of the shown references, the node stub
   `refTokens: false` committed in the node repo). Both steps have a "Built" paragraph in the plan. Between S1 and S2 a
-  typed `@img1` in a provider run is refused by main's safety net, by design. **Next: S2 = 26b2 (the click snapshot,
+  typed `@img1` in a provider run is refused by main's safety net, by design. **First in the next session (the user,
+  2026-09-29): the eraser regression of 0.1.32** (`docs/BUGS.md`, "Erasing has become very slow since 0.1.32": measured,
+  cause found, the fix described there; `tools/brush_perf.js` with `COALESCED: 8` and `SIZES: [700, 1000]` gives the
+  rows to beat, 0.1.31 at 8.2-16.7 ms a move against 41.7-92.0). Recommended to the user and waiting for their word: a
+  hotfix **0.1.33** from a branch off the tag `v0.1.32` (main holds S1, which must not ship before S2), the fix merged
+  into main as well, the prompt update then 0.1.34 (the plan's "0.1.33" moves). After that, **S2 = 26b2 (the click snapshot,
   markers from the renderer, `refPrompt`, agents) + 26a2 (routes: drops, caps, one instruction, label parts).** The
   user asked on 2026-09-29 where the Magnific-style prompt field is: it is 26c (S3), after S2, and needs 26b2's
   snapshot and descriptors. Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins). Then

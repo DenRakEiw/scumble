@@ -6,7 +6,7 @@ in a running instance (port SCUMBLE_CDP_PORT, default 9555) and prints its table
 
 Start a fresh instance per tool, on its own profile, `--no-comfy`, the window in front and no hand on the mouse
 (tools/run_gates.sh does not run it: it is a measurement, not a gate). The JSON sets `window.__bp` (W, H, TOOLS, SIZES,
-SAMPLES, VIEWS, MOVES, MOVE_CSS, MODE, GAP, PEN, BASE_ROW, KEEP; defaults in the script). The rows go to
+SAMPLES, VIEWS, MOVES, MOVE_CSS, MODE, GAP, PEN, COALESCED, BASE_ROW, KEEP; defaults in the script). The rows go to
 `brush_perf.out.json` in the working directory as well.
 """
 import asyncio

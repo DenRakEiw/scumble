@@ -319,7 +319,8 @@ At most two build steps per session (the user, 2026-09-28), a local commit per s
 
 About 8.5 to 9.5 days in all. Between S1 and S2 a typed `@img1` is refused by main (the safety net) until 26b2 sends
 markers; there is no release in between. After S5: the CHANGELOG section from the notes in section 6, the manual's
-figures, exe gates, and a release (0.1.33) only on the user's word.
+figures, exe gates, and a release (0.1.34 if the eraser hotfix of docs/BUGS.md goes out as 0.1.33) only on the
+user's word.
 
 ## 6. Tests, docs and the CHANGELOG notes
 

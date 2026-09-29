@@ -16,6 +16,7 @@
         MODE: "sync",                    // "sync": each move, then one draw() timed here; "raf": the app's own frames (window in front)
         GAP: 4,                          // ms between moves (sync: lets the probe run; raf: use 16)
         PEN: 0,                          // 0 = mouse; 0 < p <= 1 = pointerType "pen" at that pressure (the radius scales with it)
+        COALESCED: 1,                    // coalesced points per move (4 a pen, 8+ a slow frame or a 1,000 Hz mouse)
         BASE_ROW: true,                  // smudge with the base active: the press adds a layer (a full "Base copy" before 0.1.32)
         KEEP: false,                     // keep the document (window.__bpDoc) for the next run
     }, window.__bp || {});
@@ -93,11 +94,24 @@
         const [sx, sy] = ed.imageToScreen(ix, iy);
         return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height };
     };
-    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({
+    const init = (type, ix, iy, extra = {}) => Object.assign({
         bubbles: true, cancelable: true, pointerId: pid, isPrimary: true,
         pointerType: P.PEN ? "pen" : "mouse", pressure: type === "pointerup" ? 0 : (P.PEN || 0.5),
         button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1,
-    }, client(ix, iy), extra));
+    }, client(ix, iy), extra);
+    // COALESCED > 1: each move carries that many coalesced points, evenly between the last point and this one, as a pen
+    // or a 1,000 Hz mouse faster than the screen gives them (a synthetic event has none of its own; docs/BUGS.md, the eraser)
+    let lastPt = null;
+    const ev = (type, ix, iy, extra = {}) => {
+        const e = new PointerEvent(type, init(type, ix, iy, extra));
+        if (type === "pointermove" && (P.COALESCED || 1) > 1 && lastPt) {
+            const k = P.COALESCED, pts = [];
+            for (let j = 1; j <= k; j++) pts.push(new PointerEvent(type, init(type, lastPt[0] + (ix - lastPt[0]) * j / k, lastPt[1] + (iy - lastPt[1]) * j / k, extra)));
+            Object.defineProperty(e, "getCoalescedEvents", { value: () => pts });
+        }
+        lastPt = type === "pointerup" ? null : [ix, iy];
+        return e;
+    };
     // dispatchEvent runs the handler synchronously: the time around it is the handler's
     const send = (type, ix, iy, extra) => { const t = performance.now(); ed.canvas.dispatchEvent(ev(type, ix, iy, extra)); return performance.now() - t; };
     // every stroke on a row of its own (strokes may overlap other tools' rows: the costs do not depend on it)
