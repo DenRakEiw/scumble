@@ -1351,7 +1351,8 @@ caret. `host.refLayout(editor, over, {keep})` returns `cap` (the route's `max` l
 the Original) and `refuse` (a route of style references), and only a `keep` call (the editor's) writes `refLayoutInfo`,
 by the last call made; `status` reads with `keep: false`. The node repo: the stub `async refLayout() { return null; }`
 (commit "host.js: refLayout stub for the app's reference tokens").
-**Decisions the plan did not have:** on a ComfyUI recipe (until 26e) a chip stays live and the card and the bar's title
+**Decisions the plan did not have** (the user agreed to the first, the drag by the pointer and the bar wrapping onto a
+second line in a narrow panel, 2026-09-29): on a ComfyUI recipe (until 26e) a chip stays live and the card and the bar's title
 say the token refuses (`refuse`), rather than striking through pictures that do go in the batch; the same for a route of
 style references; a pick replaces the @ and what the session typed, never a word or chip that stood after the @ when it was
 typed (`tail`), and with no reference listed Enter and Tab do what they do without the list (the cursor starts on the
