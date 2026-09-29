@@ -17,6 +17,8 @@
         GAP: 4,                          // ms between moves (sync: lets the probe run; raf: use 16)
         PEN: 0,                          // 0 = mouse; 0 < p <= 1 = pointerType "pen" at that pressure (the radius scales with it)
         COALESCED: 1,                    // coalesced points per move (4 a pen, 8+ a slow frame or a 1,000 Hz mouse)
+        HARDNESS: 0.5,                   // the brush's hardness; the eraser uses ed.eraseHardness
+        SELECT: false,                   // a rectangle selection over 5-95 % of the picture: every stroke clipped to it (p.clip)
         BASE_ROW: true,                  // smudge with the base active: the press adds a layer (a full "Base copy" before 0.1.32)
         KEEP: false,                     // keep the document (window.__bpDoc) for the next run
     }, window.__bp || {});
@@ -86,6 +88,10 @@
     }
     shell.activate(ed);
     const W = ed.width, H = ed.height, dpr = window.devicePixelRatio || 1;
+    // erasing inside a selection felt worst to the user (docs/BUGS.md, the eraser of 0.1.32): the live stroke is drawn
+    // through the selection's clip on every frame, and the marching ants are drawn over it
+    if (P.SELECT) { ed.selectRectangle([Math.round(W * 0.05), Math.round(H * 0.05), Math.round(W * 0.95), Math.round(H * 0.95)], "replace"); await ed.mipsSettled(); }
+    else if (ed.getBounds()) ed.clearSelection();
 
     // ---- the real pointer handlers, driven by synthetic PointerEvents (the brush / editor gates' client() helper) ----
     let k = 0, pid = 60;
@@ -135,7 +141,7 @@
         const { x0, y } = place();
         pid++;
         ed.setTool(tool);
-        ed.brushSize = size; ed.hardness = 0.5; ed.brushOpacity = 1; ed.brushTipId = null;
+        ed.brushSize = size; ed.hardness = P.HARDNESS; ed.eraseHardness = P.HARDNESS; ed.brushOpacity = 1; ed.brushTipId = null;
         if (ed.smudgeOpts) ed.smudgeOpts.strength = 60;
         ed.activeLayerId = opts.onBase ? null : L.id;
         ed.renderLayers();
