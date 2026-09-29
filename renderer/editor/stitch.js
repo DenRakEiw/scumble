@@ -486,7 +486,8 @@ export function prepareCrop(editor, params, limits, opts = {}) {
     // E2: the crop box composited on its own (`readBox`: a region pass at full resolution, or the box cut out of the
     // whole flatten when no margin gives those pixels), never the whole image for a box of it
     const { crop, mask, maskAlpha, references } = cropPixels(p, sel, regionOf(editor, p.x0, p.y0, p.cw, p.ch));
-    if (opts.references !== false) for (const l of editor.referenceLayers()) references.push(editor.layerPixels(l));
+    // `refIds`: the references of the click (docs/PLAN_REFS.md C3), in their order, a hidden one included
+    if (opts.references !== false) for (const l of editor.refLayersFor(opts.refIds)) references.push(editor.layerPixels(l));
     return { crop, mask, maskAlpha, references, info: p.info, sel };
 }
 
@@ -721,11 +722,13 @@ export async function prepareCropAsync(editor, params, limits, opts = {}) {
     if (STITCH_IN_WORKER && stitchWorker()) {
         // one moment, as the synchronous crop had it: the selection's window, the stack the box is composited from (its
         // clones are taken before `holdRunStack` returns) and the reference layers are read here, before any await
+        // a reference of the click that is gone refuses here, not as a worker failure
+        const refLayers = withRefs ? editor.refLayersFor(opts.refIds) : [];
         let held = null, holding = null;
         try {
             const win = selectionWindowPixels(editor);
             holding = typeof editor.holdRunStack === "function" ? editor.holdRunStack({ forRun: true }) : null;
-            const refs = withRefs ? editor.referenceLayers().map((l) => editor.layerPixels(l)) : [];
+            const refs = refLayers.map((l) => editor.layerPixels(l));
             const planned = await stitchCall("plan", { settings, sel: { data: win.img.data, width: win.img.width, height: win.img.height, ox: win.ox, oy: win.oy, fullW: win.fullW, fullH: win.fullH } }, [win.img.data.buffer]);
             held = holding ? await holding : null;
             const p = planned.plan;

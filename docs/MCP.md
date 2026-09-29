@@ -98,6 +98,18 @@ The server's instructions text (what the model reads at connect) describes the r
 load_image → select_rect / select_by_text → set_prompt → generate → screenshot →
 set_layer(match) → export.
 
+**Reference layers in the prompt** (docs/PLAN_REFS.md). `@img1`, `@img2` ... name the shown
+reference layers, top of the reference list first. `list_layers` gives each reference its
+`label` (`"img1"`, or `null` while it is hidden: its tokens then wait as `@img?<layer id>`);
+`status` adds `references: [{id, name, label, visible, sent_as}]`, where `sent_as` is the name
+the selected recipe's route sends that picture as ("image 3" when the crop, the Original and
+another reference go before it). `set_prompt` and `generate_new` take `refs: {"img1": "<layer
+id>"}`: the agent's tokens are read with its own map and rewritten to the labels now, and the
+answer carries `labels` and `parked`. `generate` returns `prompt_sent` (the prompt as the API got
+it, each token written as that model's name) and `notes` (what the route declared it left out);
+a run that cannot send a token (hidden, deleted, a ComfyUI recipe) throws at once with the
+reason. Upscale and Generate new send no reference picture: a token goes as its layer's name.
+
 ## How it works
 
 ```

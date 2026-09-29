@@ -59,7 +59,8 @@ provider, and its own error comes back into the chat.
 You write a line and press Enter. The assistant then:
 
 1. reads which documents are open and what is in the one in front (the **pinned** document: every
-   call of that turn goes to it, even when you switch tabs);
+   call of that turn goes to it, even when you switch tabs); a reference layer's line says the
+   token that names it in the prompt (`ref @img1`), or `reference, hidden` while it has none;
 2. asks the model, streaming its answer into the panel;
 3. runs the tools the model asks for, one card per call - the arguments, how long it took, the
    first of what came back, and a screenshot as a thumbnail;

@@ -885,6 +885,7 @@ const GEN_ASPECTS = ["free", "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", 
 const GEN_RESOLUTIONS = [768, 1024, 1280, 1536, 2048, 3072, 4096];
 
 let genEditor = null;
+let genPrefill = null;   // the tab's prompt and the dialog's prefill with its @img tokens as names ({ raw, named })
 
 /** The recipes that can start from nothing, for the mode the dialog is on. */
 function genRecipesFor(mode) {
@@ -1085,13 +1086,16 @@ export async function openGenerateNew(editor) {
     genFillRecipes();
     genFillUpsample();
     genFillTemplates();
-    ui.genPrompt.value = genEditor.promptText || "";
+    // Generate new sends no reference picture yet: the prompt's @img tokens come in as the layers' names
+    const named = host.refNames(genEditor, genEditor.promptText || "");
+    ui.genPrompt.value = named.text;
+    genPrefill = { raw: genEditor.promptText || "", named: named.text };
     // the boxes take 64 to 8192 (genSize clamps to that too): a larger document shows what will be asked for
     ui.genWidth.value = Math.max(64, Math.min(8192, genEditor.width || 1024));
     ui.genHeight.value = Math.max(64, Math.min(8192, genEditor.height || 1024));
     ui.genSeed.value = genEditor.genSettings.seed;
     ui.genSeedRandom.checked = !!genEditor.genSettings.seedRandom;
-    ui.genState.textContent = "";
+    ui.genState.textContent = named.note;
     ui.genUpsampleNote.textContent = "";
     genSyncSize();
     ui.gen.showModal();
@@ -1140,11 +1144,15 @@ ui.genGo.addEventListener("click", async () => {
     ui.genState.textContent = "running ...";
     try {
         await selectRecipe(id, ui.genProvider.value || undefined);
+        // the prefill untouched: an API run gets the tab's own prompt, so its @img tokens stay in the tab (the request
+        // writes them as names), and a failed run leaves the prompt as it was
+        const own = genPrefill && ed === genEditor && prompt === genPrefill.named.trim() && genPrefill.raw !== genPrefill.named && host.recipe && host.recipe.kind === "provider";
+        const sent = own ? genPrefill.raw.trim() : prompt;
         // a chosen aspect goes along as itself (the same size as genSize), so a ratio channel is asked for
         // "3:2", not the reduced ratio of the rounded 1024 x 688 ("64:43")
         const args = genAspectFree()
-            ? { doc: ed.node.id, prompt, width: w, height: h, timeout: 900 }
-            : { doc: ed.node.id, prompt, aspect: ui.genAspect.value, resolution: +ui.genResolution.value || 1024, timeout: 900 };
+            ? { doc: ed.node.id, prompt: sent, width: w, height: h, timeout: 900 }
+            : { doc: ed.node.id, prompt: sent, aspect: ui.genAspect.value, resolution: +ui.genResolution.value || 1024, timeout: 900 };
         if (!ui.genSeedRandom.checked) args.seed = Math.abs(Math.round(+ui.genSeed.value) || 0);
         if (!ui.genAlphaRow.hidden && ui.genAlpha.checked) args.background = "transparent";
         const out = await commands.run("generate_new", args);
@@ -1293,8 +1301,10 @@ export function openUpscale(editor) {
     upFillRecipes();
     const hasSel = !!(upEditor.getBounds && upEditor.getBounds());
     (hasSel ? ui.upScopeSel : ui.upScopeDoc).checked = true;
-    ui.upState.textContent = "";
-    ui.upPrompt.value = upEditor.promptText || "";
+    // an upscale sends no reference picture: the prompt's @img tokens come in as the layers' names
+    const named = host.refNames(upEditor, upEditor.promptText || "");
+    ui.upState.textContent = named.note;
+    ui.upPrompt.value = named.text;
     upSyncNote();
     ui.up.showModal();
 }

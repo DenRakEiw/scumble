@@ -838,6 +838,16 @@ async function main() {
             await a.close();
         }
         {
+            // docs/PLAN_REFS.md 26b2: a reference's line in the state note names its token, or says it is hidden
+            const { _layerLine } = require(path.join(ROOT, "electron", "main", "assistant", "prompt.js"));
+            const shown = _layerLine({ id: "L1", name: "coat", kind: "image", role: "reference", label: "img1", visible: true });
+            const hidden = _layerLine({ id: "L2", name: "hat", kind: "image", role: "reference", label: null, visible: false });
+            const plain = _layerLine({ id: "L3", name: "photo", kind: "image", role: "none", visible: true });
+            check("a_shown_reference_line_names_its_token", shown.includes("ref @img1") && !shown.includes("hidden"), shown);
+            check("a_hidden_reference_line_says_reference_hidden", hidden.includes("reference, hidden") && !hidden.includes("@img"), hidden);
+            check("a_layer_that_is_no_reference_names_no_token", !/ref|@img/.test(plain), plain);
+        }
+        {
             const editor = new FakeEditor();
             const { a } = assistantOn(editor, [
                 anthropicStream([{ type: "tool_use", id: "c1", name: "add_paint_layer", raw: "{not json", input: {} }]),

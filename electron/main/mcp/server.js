@@ -24,7 +24,11 @@ loaded) -> select_rect / select_by_text -> set_prompt -> generate (the result co
 layer over the selection) -> screenshot to look at it -> set_layer(match=...) to blend the
 colours -> export. Coordinates are image pixels, origin top left. Layers are addressed by id,
 name, a unique part of the name, or "active". generate needs a selected recipe
-(list_recipes / select_recipe) and, for local recipes, a connected ComfyUI. Always screenshot
+(list_recipes / select_recipe) and, for local recipes, a connected ComfyUI. Reference layers
+(role "reference") are named in the prompt as @img1, @img2 ... (list_layers gives each its label;
+set_prompt refs {"img1": "<layer id>"} pins a token to a layer); an API run sends each token as
+the name the model knows that picture by (generate's prompt_sent shows it); upscale and
+generate_new write a token as its layer's name, and a ComfyUI recipe refuses tokens. Always screenshot
 after a change you cannot judge from numbers. Selections, layers and settings persist in the
 editor between calls; the user may be looking at the same window.`;
 

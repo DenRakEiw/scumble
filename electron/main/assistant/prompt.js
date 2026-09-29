@@ -48,6 +48,8 @@ function layerLine(layer) {
     const bits = [`${layer.id} "${layer.name}"`];
     if (layer.kind && layer.kind !== "paint") bits.push(layer.kind);
     if (layer.filter) bits.push(`filter ${layer.filter}`);
+    // a reference layer: the @img token that names it in the prompt, or none while it is hidden
+    if (layer.role === "reference") bits.push(layer.label ? `ref @${layer.label}` : "reference");
     if (layer.locked) bits.push("locked");
     if (layer.visible === false) bits.push("hidden");
     if (layer.active) bits.push("active");

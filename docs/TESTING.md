@@ -93,8 +93,13 @@ section 3 checks `refs.name`. Gate steps: `generate`'s `provider_markers_over_ip
 refused over IPC, `provider:layout`); `commands`' `refs_labels` (img labels, a new reference and a copy take the next
 number), `refs_remap` (hide / show, up / down, delete / undo, role changes, a merge: the prompt's tokens follow their
 layers) and `refs_restore` (a `.scumble` round trip byte for byte, a reference whose file is missing parks its tokens
-as `@img?<id>`, a named snapshot with Revert). Every gate that touches references ends with `ed._refDrift` 0: a change
-of the shown references that no site remapped is counted in `renderReferences`.
+as `@img?<id>`, a named snapshot with Revert). 26b2 adds `refs_send` (a loopback edit run: `prompt_sent` names the
+pictures by their place, with the Original too; a hidden reference's token, a literal `{@ref:` and a token on a stubbed
+ComfyUI recipe each refuse at once with nothing sent), `refs_names` (an upscale writes the cleaned layer name, the
+Generate new dialog's prefill too) and `refs_agents` (labels in `list_layers` / `status`, `status.references[].sent_as`
+with and without the Original, `set_prompt refs`); `tools/assistant_test.js` checks the state note's `ref @img1`. Every
+gate that touches references ends with `ed._refDrift` 0: a change of the shown references that no site remapped is
+counted in `renderReferences`.
 
 ## Known flakes
 

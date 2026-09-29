@@ -18,6 +18,7 @@ import { api, host } from "./editor/host.js";
 import { viewUrl, loadImageEl, makeCanvas, BRUSH_MAX, BLEND_MODES } from "./editor/inpaint_canvas.js";
 import { FILTERS } from "./editor/inpaint_filters.js";
 import { fontList } from "./editor/inpaint_text.js";
+import { parse, remap, hasTokens } from "./editor/reftokens.js";
 
 const VERSION = 2;   // 1 = the node's bridge
 
@@ -61,6 +62,8 @@ export function layerSummary(ed, l) {
         blend: l.blend || "normal", x: l.x, y: l.y, w: l.w, h: l.h, locked: !!l.locked, alpha_lock: !!l.alphaLock, mask: !!l.maskPx,
         active: l.id === ed.activeLayerId,
     };
+    // a reference's label: what @img1 in the prompt names (null while it is hidden: its tokens wait as @img?<id>)
+    if (ed.isReference(l)) { const n = ed.refLabels().get(l.id); out.label = n ? "img" + n : null; }
     if (l.maskPx && l.maskOff) out.mask_off = true;   // the mask is kept but switched off
     if (l.match && l.match.strength > 0) out.match = { strength: l.match.strength, source: l.match.source };
     if (l.kind === "filter") { out.filter = l.filter; out.params = { ...(l.params || {}) }; if (l.lut) out.lut = l.lut.name || true; }
@@ -72,6 +75,36 @@ export function layerSummary(ed, l) {
         if (l.text.flip) out.text.flipped = true;
     }
     return out;
+}
+
+/**
+ * An agent's text with its @img tokens read by its own map (`refs`: {"img1": "<layer id>"}) and rewritten to the
+ * labels now (docs/PLAN_REFS.md 26b sub-task 17); a token the map does not hold stays as it is. No `refs`: unchanged.
+ */
+function agentRefs(ed, text, refs) {
+    const now = ed.refLabels();
+    // without refs the text is read with the labels of now: only a parked token of a shown layer changes (it unparks)
+    if (refs == null) return remap(text, now, now);
+    if (typeof refs !== "object" || Array.isArray(refs)) throw new Error('refs must be an object like {"img1": "<layer id>"}');
+    const mine = new Map();
+    for (const [k, id] of Object.entries(refs)) {
+        const m = /^@?img([1-9]\d{0,2})$/i.exec(k);
+        if (!m) throw new Error(`refs: "${k}" is no label (img1, img2 ...)`);
+        if (!ed.layers.some((l) => l.id === String(id))) throw new Error(`refs: ${k} names no layer "${id}" (list_layers gives the ids)`);
+        if (mine.has(String(id))) throw new Error(`refs: img${mine.get(String(id))} and ${k} both name layer "${id}": give each layer one label`);
+        if ([...mine.values()].includes(+m[1])) throw new Error(`refs: img${m[1]} is given twice`);
+        mine.set(String(id), +m[1]);
+    }
+    return remap(text, mine, now);
+}
+
+/** The labels of the shown references ({"img1": "<layer id>"}) and the tokens of the prompt that wait for a hidden or removed one. */
+function refsReport(ed) {
+    const labels = {};
+    for (const [id, n] of ed.refLabels()) labels["img" + n] = id;
+    const parked = [];
+    for (const t of [ed.promptText, ed.negativeText]) for (const seg of parse(t)) if (seg.type === "token" && "id" in seg && !parked.includes(seg.text)) parked.push(seg.text);
+    return { labels, parked };
 }
 
 /** A layer by id, exact name, or unique name fragment; "active" / empty = the active layer. */
@@ -195,6 +228,9 @@ export function status(ed) {
         generation: { mode: ed.genSettings.mode, seed: ed.genSettings.seed, seed_random: !!ed.genSettings.seedRandom, denoise: ed.genSettings.denoise },
         crop: { ...ed.cropSettings }, selection: bounds(ed), active_layer: ed.activeLayerId,
         layers: ed.layers.map((l) => layerSummary(ed, l)), results: results.length, history: ed.history.length,
+        // every reference layer top first: its label (what @img<n> names; null while hidden) and, from the `status`
+        // command, the name the chosen route sends its picture as
+        references: ed.refDescriptors().map((d) => ({ id: d.id, name: d.name, label: d.label ? "img" + d.label : null, visible: d.visible })),
         pending: { segment: !!ed.segmentPending, cutout: !!ed.cutoutPending, upsample: !!ed.upsamplePending, transform: !!ed.pending, objects: !!ed.objectsPending, provider: !!ed.providerPending },
         recipe: r ? { id: r.id, name: r.name || r.id, kind: r.kind || "comfy", provider: r.provider || null } : null,
         connected: !!host.connected, status: ed.status || "",
@@ -408,9 +444,15 @@ const COMMANDS = {
 
     // -- document --
     status: {
-        description: "What the document holds: image size, prompt, generation settings, selection bounds, every layer, pending jobs, the recipe, and what the app is using in memory.",
+        description: "What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory.",
         params: {},
-        async run(ed) { return { ...status(ed), memory: await memoryMB() }; },
+        async run(ed) {
+            const s = status(ed);
+            let info = null;
+            try { info = await host.refLayout(ed); } catch (_) { info = null; }
+            s.references = s.references.map((x) => ({ ...x, sent_as: info && x.label ? info.names.get(x.id) || null : null }));
+            return { ...s, memory: await memoryMB() };
+        },
     },
     new_canvas: {
         description: "Start a new white canvas of the given size in this tab (discards its image and layers).",
@@ -547,13 +589,13 @@ const COMMANDS = {
 
     // -- prompt and generation --
     set_prompt: {
-        description: "Set the prompt (and the negative prompt, used by local chains).",
-        params: { text: P.str("the prompt"), negative: P.str("the negative prompt") },
+        description: "Set the prompt (and the negative prompt, used by local chains). @img1, @img2 ... name the shown reference layers, top of the reference list first (list_layers / status give each its label); an API run sends each as the name its model knows the picture by. Pass refs {\"img1\": \"<layer id>\"} to say which layer your tokens mean: they are rewritten to that layer's label now, whatever the order is.",
+        params: { text: P.str("the prompt"), negative: P.str("the negative prompt"), refs: P.obj("which layer each @img token of text and negative means: {\"img1\": \"<layer id>\", ...}") },
         async run(ed, a) {
-            if (a.text != null) ed.setPromptText(String(a.text));
-            if (a.negative != null) ed.setNegativeText(String(a.negative));
+            if (a.text != null) ed.setPromptText(agentRefs(ed, String(a.text), a.refs));
+            if (a.negative != null) ed.setNegativeText(agentRefs(ed, String(a.negative), a.refs));
             ed.notifyChanged();
-            return { prompt: ed.promptText, negative: ed.negativeText };
+            return { prompt: ed.promptText, negative: ed.negativeText, ...refsReport(ed) };
         },
     },
     set_generation: {
@@ -624,8 +666,9 @@ const COMMANDS = {
     generate_new: {
         description: "Make this tab's base image from the prompt alone, no image needed. A local recipe renders onto a fresh canvas and is flattened into the base; an API recipe calls the model's text-to-image endpoint. Replaces the image, the layers and the history of this tab.",
         params: {
-            prompt: P.str("what to make; the tab's current prompt when left out"),
+            prompt: P.str("what to make; the tab's current prompt when left out. It sends no reference image: on an API recipe an @img token goes to the model as its layer's name, a ComfyUI recipe refuses it"),
             negative: P.str("negative prompt (local chains only)"),
+            refs: P.obj("which layer each @img token of prompt and negative means: {\"img1\": \"<layer id>\", ...} (as set_prompt)"),
             width: P.int("width in pixels", { default: 1024 }),
             height: P.int("height in pixels", { default: 1024 }),
             aspect: P.str("aspect ratio like 16:9; used with resolution instead of width and height"),
@@ -642,17 +685,21 @@ const COMMANDS = {
                 const [aw, ah] = sizeForAspect(a.aspect, clampInt(a.resolution, 64, 8192, 1024));
                 w = aw; h = ah;
             }
-            if (a.prompt != null) ed.setPromptText(String(a.prompt));
-            if (a.negative != null) ed.setNegativeText(String(a.negative));
+            if (a.prompt != null) ed.setPromptText(agentRefs(ed, String(a.prompt), a.refs));
+            if (a.negative != null) ed.setNegativeText(agentRefs(ed, String(a.negative), a.refs));
             if (!String(ed.promptText || "").trim()) throw new Error("write a prompt first");
             if (a.seed != null) { ed.genSettings.seed = Math.abs(Math.round(+a.seed)) >>> 0; ed.genSettings.seedRandom = false; if (ed.seedInput) ed.seedInput.value = ed.genSettings.seed; }
             const t0 = Date.now();
             if (r.kind === "provider") {
                 const out = await host.runGenerate(ed, { width: w, height: h, aspect: a.aspect || null, prompt: ed.promptText, negative: ed.negativeText, seed: ed.genSettings.seed, background: a.background || null });
                 ed.notifyChanged();
-                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, status: ed.status };
+                return { mode: "api", provider: out.provider, model: out.model, width: out.width, height: out.height, seconds: out.seconds, transparent: !!out.transparent, prompt_sent: out.prompt, status: ed.status };
             }
             if (a.background === "transparent" && r.kind !== "provider") throw new Error("a transparent background is an API model's parameter; this is a local ComfyUI recipe");
+            // a ComfyUI recipe cannot take an @img token: said before the canvas replaces the picture (and the references)
+            if (host.refTokens && (hasTokens(ed.promptText) || hasTokens(ed.negativeText))) {
+                throw new Error(`Generate new on ${r.name || r.id} (ComfyUI) sends no reference images and cannot name them: write what the @img tokens stand for instead.`);
+            }
             // local: a flat canvas of the wanted size, everything selected, the recipe run,
             // then the result flattened into the base. Nothing of the flat canvas survives.
             await ed.newCanvas(`${w}x${h}`);
@@ -701,13 +748,17 @@ const COMMANDS = {
         },
     },
     generate: {
-        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it.",
+        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as an API model got it (each @img token written as that model's name for its picture).",
         params: { timeout: P.timeout(600) },
         async run(ed, a) {
             const n0 = ed.history.length;
             const { wired } = host.resultInputState(ed);
             if (!wired) throw new Error("the recipe has no result output for this mode: select a recipe first");
-            await ed.generate();
+            ed.lastSentPrompt = null;
+            ed.lastRunNotes = [];
+            // a refusal of this run (a token that cannot go, a missing key, ...) is said at once, not after the wait below
+            const run = await ed.generate();
+            if (run && run.error) throw run.error;
             if (/^Error|failed/i.test(ed.status)) throw new Error(ed.status);
             const t0 = Date.now(), limit = clampInt(a.timeout, 5, 3600, 600) * 1000;
             const provider = host.recipe && host.recipe.kind === "provider";
@@ -728,7 +779,9 @@ const COMMANDS = {
             if (ed.history.length <= n0) throw new Error("no result arrived: " + (ed.status || "the run produced nothing"));
             const h = ed.history[ed.history.length - 1];
             const layer = ed.layers.find((l) => l.id === h.layerId);
-            return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - t0) / 100) / 10 };
+            // prompt_sent: the prompt as the API got it, each @img token written as the model's name for its picture;
+            // notes: what the route said it left out
+            return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - t0) / 100) / 10, prompt_sent: ed.lastSentPrompt, notes: provider ? (ed.lastRunNotes || []) : [] };
         },
     },
 

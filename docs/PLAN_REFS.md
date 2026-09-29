@@ -357,7 +357,12 @@ directly; comfy steps stub `host.connected`, `objectInfo`, `ensureOnServer` and 
   a role change to reference moves the layer there; up / down in the reference list steps past the next reference.
   26b1 also: a role change (the layer panel's kind and Role selects, the list's "back to image", `set_layer role`) is
   an undo step "Layer role"; Ctrl+] / Ctrl+[ on a reference steps past the next reference; a duplicated reference goes
-  below the others ("added as @img3").
+  below the others ("added as @img3"). 26b2: `@img1` in the prompt goes to an API model as its own name for that
+  picture, and the status line says which ("@img2 → image 3"); a run reads the prompt and the references at the click;
+  a token for a hidden or deleted reference stops the run with the reason; Upscale and Generate new write a token as the
+  layer's name (their dialogs' prefill too); ComfyUI recipes refuse tokens for now; Select by text reads a token as "the
+  reference image"; agents get `label`, `status.references[].sent_as`, `set_prompt refs` and `generate`'s
+  `prompt_sent`, and a refused `generate` returns at once.
 - 26c: the prompt field shows reference chips; Upsample, Revert and an agent's `set_prompt` are steps of the field's
   own undo.
 - 26d2: the named reference pictures go to the language model's provider when upsampling (a setting turns it off);
@@ -703,6 +708,21 @@ confirmed nothing; two edge cases it found are kept as designed: a redo of a ref
 the absorbed layer after the undo (`@img?<id>`, refused as deleted; the layers step carries no alias, and an undo
 brings them back unchanged), and a caret between two tokens that both change goes to the end of the change (C4's
 `mapOffset`).
+
+**26b2 built (2026-09-29, S2).** The editor's `refSnapshot`, `refLayersFor`, `predictOriginal`, `refDescriptors`,
+`lastSentPrompt` / `lastRunNotes` / `lastRunError`; `generate()` takes the snapshot before any await and passes it as
+`host.queueGenerate(editor, {refs})`; `prepareCrop*` and `serializeForPrompt(opts)` send the snapshot's references (a
+hidden one still goes, a deleted one refuses before the crop). In `host.js`: `refPrompt` (routes `edit`, `none`,
+`local`; every refusal message of sub-task 14, plus one for a token of the negative), `refError`, `refNames` (the two
+dialogs' prefill), `layoutShape` (`runProvider`'s request is built from it), `refLayout` (kept as
+`editor.refLayoutInfo`). `runProvider` validates before the crop, sends markers with the Original first, and appends
+"Named in the prompt: @img2 → image 3" and the route's notes to the status after `addResults`'s line; it returns
+`prompt`, `refs`, `pairs`, `notes`, `info`. Upscale and Generate new write names into the request only; a ComfyUI
+recipe refuses tokens before `connected` is checked, a ComfyUI upscale writes names, and `generate_new` on a local
+recipe refuses before `newCanvas` wipes the picture. Agents: `label` in `list_layers`, `references` (with `sent_as` from
+the `status` command), `set_prompt` / `generate_new` `refs` (answer `labels`, `parked`), `generate`'s `prompt_sent` and
+`notes` and its fast throw of `lastRunError`; the assistant's state note prints `ref @img1`. Select by text gives the
+language model "the reference image" for a token.
 
 ### Read first: corrections from the review (they win over the text below)
 

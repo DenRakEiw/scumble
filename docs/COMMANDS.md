@@ -126,7 +126,7 @@ The filter layer types (built-in and from plugins) with their parameters.
 
 ### `status`
 
-What the document holds: image size, prompt, generation settings, selection bounds, every layer, pending jobs, the recipe, and what the app is using in memory.
+What the document holds: image size, prompt, generation settings, selection bounds, every layer, the reference layers (label = what @img1, @img2 in the prompt name; sent_as = the name the selected recipe's route sends that picture as), pending jobs, the recipe, and what the app is using in memory.
 
 | param | type | description |
 |---|---|---|
@@ -307,13 +307,14 @@ Select what SAM2 (in-app) sees at a point; needs a downloaded SAM2 model (Settin
 
 ### `set_prompt`
 
-Set the prompt (and the negative prompt, used by local chains).
+Set the prompt (and the negative prompt, used by local chains). @img1, @img2 ... name the shown reference layers, top of the reference list first (list_layers / status give each its label); an API run sends each as the name its model knows the picture by. Pass refs {"img1": "<layer id>"} to say which layer your tokens mean: they are rewritten to that layer's label now, whatever the order is.
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
 | `text` | string | the prompt |
 | `negative` | string | the negative prompt |
+| `refs` | object | which layer each @img token of text and negative means: {"img1": "<layer id>", ...} |
 
 ### `set_generation`
 
@@ -364,7 +365,7 @@ Let the language model the editor is set to rewrite the prompt with the image in
 
 ### `generate` *(image)*
 
-Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it.
+Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as an API model got it (each @img token written as that model's name for its picture).
 
 | param | type | description |
 |---|---|---|
@@ -756,8 +757,9 @@ Make this tab's base image from the prompt alone, no image needed. A local recip
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `prompt` | string | what to make; the tab's current prompt when left out |
+| `prompt` | string | what to make; the tab's current prompt when left out. It sends no reference image: an @img token goes to the model as its layer's name |
 | `negative` | string | negative prompt (local chains only) |
+| `refs` | object | which layer each @img token of prompt and negative means: {"img1": "<layer id>", ...} (as set_prompt) |
 | `width` | integer | width in pixels (default `1024`) |
 | `height` | integer | height in pixels (default `1024`) |
 | `aspect` | string | aspect ratio like 16:9; used with resolution instead of width and height |

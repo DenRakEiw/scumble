@@ -24,6 +24,14 @@ def out_path(name):
     return json.dumps(os.path.join(OUT, name).replace(os.sep, "/"))
 
 
+# docs/PLAN_REFS.md 26b2: a loopback edit recipe that names its pictures "image {n}" (the crop is image 1, then the
+# Original when it goes along, then the references top first), and a loopback upscaler that takes a prompt
+LOOP_EDIT = """{ id: "loopback_refs", kind: "provider", provider: "loopback", providerLabel: "Loopback", model: "loopback", input: "edit", name: "Loopback", settings: [], refs: { name: "image {n}" } }"""
+LOOP_UP = """{ id: "loopback_up_refs", kind: "provider", task: "upscale", provider: "loopback", providerLabel: "Loopback", model: "loopback", name: "Loopback upscale",
+    factor: { default: 2, min: 1, max: 4, steps: null, fixed: false }, limits: { min: 32, max: 4096, step: 1, pixels: 0, minPixels: 0, ratio: 0 },
+    settings: [], usesPrompt: true, input: "fill" }"""
+
+
 # every step is a JS async function body; `c` is commands.run, `raw` the module
 STEPS = [
     ("ping", """
@@ -522,6 +530,269 @@ if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift
 await c("set_prompt", { text: start.p, negative: start.n });
 return { prompt: ed.promptText, drift: ed._refDrift || 0 };
 """),
+    # 26b2: a provider run sends markers that main names by the route's own pattern; what cannot be sent is refused at
+    # once (no request, no 30 s wait), and a ComfyUI recipe refuses tokens for now
+    ("refs_send", """
+const ed = window.editor;
+const { host, api } = await import("./editor/host.js");
+const A = window.__refA, B = window.__refB;
+const P0 = "jacket from @img2, style of @img1", N0 = "no @img2";
+if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the prompt the step starts from: " + JSON.stringify([ed.promptText, ed.negativeText]));
+const prev = host.recipe, mode0 = ed.genSettings.mode, refine0 = !!ed.genSettings.refine;
+const crop0 = { fill: ed.cropSettings.fill, withOriginal: ed.cropSettings.withOriginal };
+const newLayers = async (before) => { for (const l of ed.layers.filter((x) => !before.has(x.id))) await c("remove_layer", { layer: l.id }); };
+// a refused Generate: the message, fast, nothing added
+const refused = async (re, what) => {
+    const h0 = ed.history.length, n0 = ed.layers.length, t0 = Date.now();
+    let msg = null;
+    try { await c("generate", { timeout: 60 }); } catch (err) { msg = String(err.message || err); }
+    const ms = Date.now() - t0;
+    if (!msg || !re.test(msg)) throw new Error(what + " was not refused as expected: " + msg);
+    if (ms > 5000) throw new Error(what + ": the refusal took " + ms + " ms (a wait for a result that never comes)");
+    if (ed.history.length !== h0 || ed.layers.length !== n0) throw new Error(what + ": a refused run added a result");
+    if (!ed.lastRunError || !re.test(ed.lastRunError.message)) throw new Error(what + ": lastRunError is " + (ed.lastRunError && ed.lastRunError.message));
+    return { msg, ms };
+};
+const out = {};
+try {
+    host.setRecipe(__LOOP_EDIT__);
+    await c("set_crop", { fill: "none", withOriginal: false });
+    await c("select_rect", { x: 40, y: 40, w: 120, h: 90 });
+    // the click snapshot: the shown references top first, their labels, both texts
+    const snap = ed.refSnapshot();
+    if (snap.prompt !== P0 || snap.negative !== N0 || snap.refIds.join() !== [A, B].join() || snap.labels.get(A) !== 1 || snap.labels.get(B) !== 2) throw new Error("the snapshot: " + JSON.stringify({ ...snap, labels: [...snap.labels] }));
+    if (ed.predictOriginal() !== 0) throw new Error("predictOriginal without a fill: " + ed.predictOriginal());
+    // 1. no Original: the crop is image 1, refA (img1) image 2, refB (img2) image 3
+    let before = new Set(ed.layers.map((l) => l.id));
+    let g = await c("generate", { timeout: 60 });
+    if (g.prompt_sent !== "jacket from image 3, style of image 2") throw new Error("sent without the Original: " + JSON.stringify(g.prompt_sent));
+    if (ed.lastSentPrompt !== g.prompt_sent) throw new Error("lastSentPrompt: " + JSON.stringify(ed.lastSentPrompt));
+    if (ed.lastRunError) throw new Error("a run that went through left lastRunError: " + ed.lastRunError.message);
+    if (!/@img2 . image 3/.test(g.status) || !/@img1 . image 2/.test(g.status)) throw new Error("the status names no mapping: " + g.status);
+    if (!g.layer || g.layer.role !== "none" || "label" in g.layer) throw new Error("the result layer: " + JSON.stringify(g.layer));
+    if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the run changed the document's prompt: " + JSON.stringify([ed.promptText, ed.negativeText]));
+    await newLayers(before);
+    out.plain = g.prompt_sent;
+    // 2. a green fill with the Original: the Original is image 2, the references image 3 and image 4
+    await c("set_crop", { fill: "green", withOriginal: true });
+    if (ed.predictOriginal() !== 1) throw new Error("predictOriginal with a green fill and the Original on: " + ed.predictOriginal());
+    await c("set_generation", { refine: true });
+    const withRefine = [ed.predictOriginal(), ed.predictOriginal({ local: true })];
+    await c("set_generation", { refine: refine0 });
+    if (withRefine.join() !== "1,0") throw new Error("predictOriginal with refine on (api, local): " + withRefine);
+    before = new Set(ed.layers.map((l) => l.id));
+    g = await c("generate", { timeout: 60 });
+    if (g.prompt_sent !== "jacket from image 4, style of image 3") throw new Error("sent with the Original: " + JSON.stringify(g.prompt_sent));
+    if (!/@img2 . image 4/.test(g.status) || !/@img1 . image 3/.test(g.status)) throw new Error("the status with the Original: " + g.status);
+    await newLayers(before);
+    out.original = g.prompt_sent;
+    // the run helper called directly (no snapshot passed): the Original goes along as the first reference
+    before = new Set(ed.layers.map((l) => l.id));
+    const rp = await host.runProvider(ed);
+    if (!rp.info || rp.info.original !== 1 || rp.info.references !== 3) throw new Error("the loopback got " + JSON.stringify(rp.info));
+    if (rp.info.prompt !== "jacket from image 4, style of image 3" || rp.info.negative !== "no image 4") throw new Error("the texts the loopback got: " + JSON.stringify([rp.info.prompt, rp.info.negative]));
+    if (rp.prompt !== rp.info.prompt) throw new Error("runProvider's prompt: " + JSON.stringify(rp.prompt));
+    const byRef = Object.fromEntries((rp.refs || []).map((r) => [r.ref, r.name]));
+    if (byRef[1] !== "image 3" || byRef[2] !== "image 4") throw new Error("runProvider's refs: " + JSON.stringify(rp.refs));
+    await newLayers(before);
+    // 3. a parked token (refA hidden) is refused, fast, before anything is sent
+    await c("set_layer", { layer: A, visible: false });
+    if (ed.promptText !== "jacket from @img1, style of @img?" + A) throw new Error("A hidden: " + ed.promptText);
+    const hid = await refused(/hidden reference/, "a hidden reference's token");
+    if (!hid.msg.includes('"refA"') || !hid.msg.includes("@img?" + A)) throw new Error("the refusal names neither the layer nor the token: " + hid.msg);
+    await c("set_layer", { layer: A, visible: true });
+    if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("A shown again: " + JSON.stringify([ed.promptText, ed.negativeText]));
+    out.parked = hid;
+    // 4. a number no reference holds, and the marker syntax typed by hand
+    await c("set_prompt", { text: "a hat from @img3" });
+    out.unknown = await refused(/@img3 names no reference image/, "@img3 with two references");
+    if (!/@img1 to @img2/.test(out.unknown.msg)) throw new Error("the refusal does not say which tokens exist: " + out.unknown.msg);
+    await c("set_prompt", { text: "x {@ref:1}" });
+    out.literal = await refused(/keeps for itself/, "a literal marker");
+    await c("set_prompt", { text: P0, negative: N0 });
+    // 5. a ComfyUI recipe refuses tokens (26e resolves them); nothing is queued
+    const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, helper: ed.helperUsed };
+    let queued = 0;
+    try {
+        host.connected = true;
+        host.objectInfo = {};
+        host.ensureOnServer = async () => null;
+        api.queuePrompt = async () => { queued++; return { prompt_id: "gate-refs" }; };
+        ed.helperUsed = false;
+        host.setRecipe({ id: "comfy_refs_stub", kind: "comfy", name: "Comfy stub", mode: "local", result: ["9", 0], canvas: "1", prompt: { "1": { class_type: "InpaintCanvas", inputs: {} } }, settings: [], needs: [] });
+        out.comfy = await refused(/API recipes only/, "tokens on a ComfyUI recipe");
+        if (!/Comfy stub runs on ComfyUI/.test(out.comfy.msg)) throw new Error("the refusal does not name the recipe: " + out.comfy.msg);
+        if (queued) throw new Error("the refused run queued " + queued + " prompts");
+    } finally {
+        host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; ed.helperUsed = saved.helper;
+    }
+} finally {
+    host.setRecipe(prev);
+    if (ed.genSettings.mode !== mode0) { ed.genSettings.mode = mode0; if (ed.syncGenControls) ed.syncGenControls(); }
+    if (!!ed.genSettings.refine !== refine0) await c("set_generation", { refine: refine0 });
+    await c("set_crop", crop0);
+    await c("select_none");
+    if (ed.promptText !== P0 || ed.negativeText !== N0) await c("set_prompt", { text: P0, negative: N0 });
+}
+if (ed.referenceLayers().map((l) => l.id).join() !== [A, B].join()) throw new Error("the references after the step: " + ed.referenceLayers().map((l) => l.name));
+if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift + " times without a remap");
+return out;
+""".replace("__LOOP_EDIT__", LOOP_EDIT)),
+    # 26b2: a route that sends no pictures writes the tokens as the layers' names, cleaned (no @, quotes or braces), in
+    # the request only; the Generate new and Upscale dialogs are prefilled the same way
+    ("refs_names", """
+const ed = window.editor;
+const { host } = await import("./editor/host.js");
+const rt = await import("./editor/reftokens.js");
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const A = window.__refA, B = window.__refB;
+const P0 = "jacket from @img2, style of @img1", N0 = "no @img2";
+if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the prompt the step starts from: " + JSON.stringify([ed.promptText, ed.negativeText]));
+const prev = host.recipe;
+const odd = "@img2 {@ref:1} coat", clean = rt.clean(odd);
+if (clean !== "img2 ref:1 coat") throw new Error("clean(): " + JSON.stringify(clean));
+const out = {};
+try {
+    await c("set_layer", { layer: A, name: odd });
+    if (ed.promptText !== P0) throw new Error("a rename changed the prompt: " + ed.promptText);
+    // 1. an upscaler that takes a prompt: the token goes out as the cleaned name, and the status says so
+    host.setRecipe(__LOOP_UP__);
+    await c("select_rect", { x: 40, y: 40, w: 120, h: 90 });
+    const u = await c("upscale", { scope: "selection", prompt: "crisp @img1" });
+    const got = u.info && u.info.prompt;
+    if (got !== "crisp " + clean) throw new Error("the upscaler got " + JSON.stringify(got));
+    if (got.includes("@img") || got.includes("{@ref")) throw new Error("a token or a marker reached the upscaler: " + got);
+    if (u.info.references !== 0) throw new Error("the upscale sent reference pictures: " + u.info.references);
+    if (!/Upscale sends no reference images/.test(u.status) || !/written as/.test(u.status) || !u.status.includes(clean)) throw new Error("the status: " + u.status);
+    if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the names were written into the document's prompt: " + JSON.stringify([ed.promptText, ed.negativeText]));
+    if (u.layer) await c("remove_layer", { layer: u.layer.id });
+    out.upscale = got;
+    host.setRecipe(prev);
+    // 2. the helper the dialogs use: live and parked tokens of existing layers get the names
+    const rn = await host.refNames(ed, "the coat of @img1");
+    if (rn.text !== "the coat of " + clean) throw new Error("refNames: " + JSON.stringify(rn));
+    if (typeof rn.note !== "string" || !rn.note) throw new Error("refNames wrote a name and gave no note: " + JSON.stringify(rn));
+    const plain = await host.refNames(ed, "plain words");
+    if (plain.text !== "plain words") throw new Error("refNames without a token: " + JSON.stringify(plain));
+    const parked = await host.refNames(ed, "no @img?" + B);
+    if (parked.text !== "no refB") throw new Error("refNames of a parked token whose layer exists: " + JSON.stringify(parked));
+    // 3. the dialogs' own fields hold the names; the document's prompt keeps its tokens
+    const want = "jacket from refB, style of " + clean;
+    await host.shell.openGenerateNew(ed);
+    const gen = document.getElementById("gen-prompt").value;
+    document.getElementById("gen-cancel").click();
+    await wait(80);
+    if (gen !== want) throw new Error("the Generate new prefill: " + JSON.stringify(gen));
+    host.shell.openUpscale(ed);
+    const up = document.getElementById("up-prompt").value;
+    document.getElementById("up-cancel").click();
+    await wait(80);
+    if (up !== want) throw new Error("the Upscale prefill: " + JSON.stringify(up));
+    if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("a prefill changed the document's prompt: " + ed.promptText);
+    out.prefill = gen;
+} finally {
+    host.setRecipe(prev);
+    for (const id of ["gen-dialog", "up-dialog"]) { const d = document.getElementById(id); if (d && d.open) d.close(); }
+    await c("set_layer", { layer: A, name: "refA" });
+    await c("select_none");
+}
+if (ed.promptText !== P0) throw new Error("the prompt after the step: " + ed.promptText);
+if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift + " times without a remap");
+return out;
+""".replace("__LOOP_UP__", LOOP_UP)),
+    # 26b2: what an agent sees and writes: labels in the layer summaries, status.references with sent_as, set_prompt
+    # with the agent's own numbers (refs), read by layer id and written as the labels of now
+    ("refs_agents", """
+const ed = window.editor;
+const { host } = await import("./editor/host.js");
+const A = window.__refA, B = window.__refB;
+const P0 = "jacket from @img2, style of @img1", N0 = "no @img2";
+if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the prompt the step starts from: " + JSON.stringify([ed.promptText, ed.negativeText]));
+const prev = host.recipe;
+const crop0 = { fill: ed.cropSettings.fill, withOriginal: ed.cropSettings.withOriginal };
+const layer = (ls, id) => ls.find((l) => l.id === id) || {};
+const ref = (st, id) => (st.references || []).find((r) => r.id === id) || {};
+const out = {};
+try {
+    host.setRecipe(__LOOP_EDIT__);
+    await c("set_crop", { fill: "none", withOriginal: false });
+    await c("select_none");
+    // 1. the layer summaries: a shown reference names its token, other layers carry no label
+    let ls = (await c("list_layers")).layers;
+    if (layer(ls, A).label !== "img1" || layer(ls, B).label !== "img2") throw new Error("list_layers labels: " + JSON.stringify(ls.map((l) => [l.name, l.label])));
+    const stray = ls.filter((l) => l.role !== "reference" && "label" in l);
+    if (stray.length) throw new Error("a layer that is no reference has a label: " + stray.map((l) => l.name));
+    let st = await c("status");
+    if ((st.references || []).map((r) => r.id).join() !== [A, B].join()) throw new Error("status.references, top first: " + JSON.stringify(st.references));
+    if (ref(st, A).label !== "img1" || ref(st, A).name !== "refA" || ref(st, A).visible !== true) throw new Error("status.references for refA: " + JSON.stringify(ref(st, A)));
+    if (layer(st.layers, B).label !== "img2") throw new Error("status.layers label of refB: " + JSON.stringify(layer(st.layers, B)));
+    // sent_as: the loopback's picture names; no selection, so no Original: refA image 2, refB image 3
+    if (ref(st, A).sent_as !== "image 2" || ref(st, B).sent_as !== "image 3") throw new Error("sent_as without the Original: " + JSON.stringify(st.references));
+    // 2. refB hidden: no label, no picture name, and the descriptors agree
+    await c("set_layer", { layer: B, visible: false });
+    ls = (await c("list_layers")).layers;
+    if (layer(ls, B).label !== null || layer(ls, A).label !== "img1") throw new Error("list_layers with refB hidden: " + JSON.stringify(ls.map((l) => [l.name, l.label])));
+    st = await c("status");
+    const rb = ref(st, B);
+    if (rb.label !== null || rb.visible !== false || rb.sent_as !== null) throw new Error("status.references for the hidden refB: " + JSON.stringify(rb));
+    if (ref(st, A).sent_as !== "image 2") throw new Error("sent_as of refA with refB hidden: " + JSON.stringify(ref(st, A)));
+    const desc = ed.refDescriptors().map((d) => [d.id, d.label, d.visible]);
+    if (JSON.stringify(desc) !== JSON.stringify([[A, 1, true], [B, null, false]])) throw new Error("refDescriptors: " + JSON.stringify(desc));
+    // the agent's img1 is the hidden refB: its token waits as @img?<id> and comes back when refB is shown
+    let r = await c("set_prompt", { text: "coat of @img1", refs: { img1: B } });
+    if (r.prompt !== "coat of @img?" + B || !(r.parked || []).includes("@img?" + B)) throw new Error("set_prompt refs to a hidden reference: " + JSON.stringify(r));
+    await c("set_layer", { layer: B, visible: true });
+    if (ed.promptText !== "coat of @img2") throw new Error("refB shown again: " + ed.promptText);
+    await c("set_prompt", { text: P0, negative: N0 });
+    // 3. a selection, a green fill and the Original: the references move one picture on
+    await c("select_rect", { x: 40, y: 40, w: 120, h: 90 });
+    await c("set_crop", { fill: "green", withOriginal: true });
+    st = await c("status");
+    if (ref(st, A).sent_as !== "image 3" || ref(st, B).sent_as !== "image 4") throw new Error("sent_as with the Original: " + JSON.stringify(st.references));
+    const lay = await host.refLayout(ed);
+    if (!lay || lay.local !== false || lay.names.get(A) !== "image 3" || lay.names.get(B) !== "image 4" || lay.over.size) throw new Error("refLayout: " + JSON.stringify(lay && { names: [...lay.names], over: [...lay.over], local: lay.local, none: lay.none }));
+    out.sent_as = st.references.map((x) => x.sent_as);
+    await c("set_crop", crop0);
+    await c("select_none");
+    // 4. set_prompt with the agent's numbers: its img1 is refB, written as refB's label now (the negative too)
+    r = await c("set_prompt", { text: "the coat of @img1", negative: "no @img1", refs: { img1: B } });
+    if (r.prompt !== "the coat of @img2" || r.negative !== "no @img2" || ed.promptText !== r.prompt) throw new Error("set_prompt refs: " + JSON.stringify(r));
+    if (!r.labels || r.labels.img1 !== A || r.labels.img2 !== B || Object.keys(r.labels).length !== 2 || (r.parked || []).length) throw new Error("set_prompt's labels: " + JSON.stringify(r));
+    // after a reorder (refB up: refB img1, refA img2) the agent's img1 = refA is written as @img2
+    ed.moveReference(ed.layers.find((l) => l.id === B), +1);
+    if (ed.promptText !== "the coat of @img1") throw new Error("refB up: " + ed.promptText);
+    r = await c("set_prompt", { text: "sleeves of @img1", refs: { img1: A } });
+    if (r.prompt !== "sleeves of @img2" || r.labels.img1 !== B || r.labels.img2 !== A) throw new Error("set_prompt refs after the reorder: " + JSON.stringify(r));
+    // the undo puts refA back to img1, and the token follows it
+    await c("undo");
+    if (ed.promptText !== "sleeves of @img1") throw new Error("the undo of the reorder: " + ed.promptText);
+    if (ed.refLabels().get(A) !== 1) throw new Error("the undo did not put refA back on top");
+    // the key forms: "@img2", and a number the document does not have
+    r = await c("set_prompt", { text: "belt of @img2", refs: { "@img2": B } });
+    if (r.prompt !== "belt of @img2") throw new Error("the key @img2: " + JSON.stringify(r));
+    r = await c("set_prompt", { text: "hat of @img7", refs: { img7: A } });
+    if (r.prompt !== "hat of @img1") throw new Error("the key img7: " + JSON.stringify(r));
+    // refused, and the prompt left as it was: an unknown layer id, keys that are no token
+    const kept = ed.promptText;
+    out.refused = [];
+    for (const bad of [{ img1: "Lnope" }, { foo: A }, { img0: A }]) {
+        let m = null;
+        try { await c("set_prompt", { text: "x @img1", refs: bad }); } catch (err) { m = String(err.message || err); }
+        if (!m) throw new Error("set_prompt took refs " + JSON.stringify(bad));
+        if (ed.promptText !== kept) throw new Error("a refused set_prompt changed the prompt: " + ed.promptText);
+        out.refused.push(m);
+    }
+} finally {
+    host.setRecipe(prev);
+    await c("set_crop", crop0);
+    await c("select_none");
+    await c("set_prompt", { text: P0, negative: N0 });
+}
+if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the prompt after the step: " + JSON.stringify([ed.promptText, ed.negativeText]));
+if (ed.referenceLayers().map((l) => l.id).join() !== [A, B].join()) throw new Error("the references after the step: " + ed.referenceLayers().map((l) => l.name));
+if (ed._refDrift) throw new Error("the reference labels drifted " + ed._refDrift + " times without a remap");
+return out;
+""".replace("__LOOP_EDIT__", LOOP_EDIT)),
     ("refs_restore", """
 const ed = window.editor;
 const A = window.__refA, B = window.__refB;

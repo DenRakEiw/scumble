@@ -17,6 +17,7 @@
 import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, canvasBytes } from "./stitch.js";
 import { glReleasePool } from "./inpaint_filters_gl.js";
 import { withoutSecrets } from "./redact.js";
+import { parse, toMarkers, namesFor, hasTokens, remap } from "./reftokens.js";
 
 const PROXY = "/comfy";
 const SUBFOLDER = "inpaint_canvas";
@@ -81,6 +82,11 @@ function docMeta(ed, clean = false) {
 }
 
 const plainObject = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
+
+/** "a", "a and b", "a, b and c" */
+function listWords(items) {
+    return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
 
 const CLOSED_MAX = 10;    // closed tabs kept for Reopen Closed Tab (docs/PLAN_DOCUMENTS.md §5.4)
 
@@ -1030,43 +1036,206 @@ export const host = {
         return String((params || {}).background || "").toLowerCase() === "transparent";
     },
 
+    // ---- @img tokens at send time (docs/PLAN_REFS.md C3) ------------------------------------
+
+    /**
+     * The prompt and the negative of a run with their @img tokens made fit for its route, from the click's snapshot
+     * `snap` (`editor.refSnapshot()`; the texts default to its own):
+     * - "edit": each token becomes a marker {@ref:i}, i = its layer's index in `sent` (the order of the request's
+     *   references, null for the Original), which main turns into the route's own name for the picture; `sent` null
+     *   only checks that every token can be sent. `pairs` lists [{ label, id, ref }] for the status line.
+     * - "none": a run that sends no reference picture (an upscale, Generate new): each token is written as its layer's
+     *   name, in the request text only; `note` says so, `who` names the run in it.
+     * - "local": a ComfyUI recipe, which cannot name its pictures yet: a token refuses.
+     * A token that cannot go refuses the run with the reason and what to do.
+     * @param {any} editor
+     * @param {{ prompt: string, negative: string, refIds: string[], labels: Map<string, number> } | null} snap
+     * @param {"edit" | "none" | "local"} route
+     * @param {{ prompt?: string, negative?: string, sent?: (string | null)[] | null, who?: string, recipe?: any }} [opts]
+     * @returns {{ prompt: string, negative: string, note: string, pairs: { label: string, id: string, ref: number }[] }}
+     */
+    refPrompt(editor, snap, route, { prompt, negative, sent = null, who = "This run", recipe = null } = {}) {
+        const s = snap || editor.refSnapshot();
+        const texts = { prompt: String(prompt != null ? prompt : s.prompt || ""), negative: String(negative != null ? negative : s.negative || "") };
+        const out = { prompt: texts.prompt, negative: texts.negative, note: "", pairs: [] };
+        if (!this.refTokens) return out;
+        const where = (k) => (k === "negative" ? "The negative prompt" : "The prompt");
+        for (const k of ["prompt", "negative"]) if (/\{@ref:/i.test(texts[k])) throw new Error(`${where(k)} holds "{@ref:", which Scumble keeps for itself: reword it.`);
+        if (route === "local") {
+            if (hasTokens(texts.prompt) || hasTokens(texts.negative)) {
+                const r = recipe || this.recipe || {};
+                throw new Error(`@img tokens name reference images on API recipes only for now; ${r.name || r.id || "this recipe"} runs on ComfyUI: take them out of the prompt (the reference layers still go along in the crop_image batch).`);
+            }
+            return out;
+        }
+        const idOf = new Map([...s.labels].map(([id, n]) => [n, id]));
+        if (route === "none") {
+            const replaced = [];
+            for (const k of ["prompt", "negative"]) {
+                const res = namesFor(texts[k], (key) => {
+                    const id = key[0] === "?" ? key.slice(1) : idOf.get(+key.slice(3));
+                    const l = id && editor.layers.find((x) => x.id === id);
+                    return l ? l.name || "" : null;
+                });
+                if (res.missing.length) throw new Error(this.refError(editor, s, parse(res.missing[0])[0], k));
+                out[k] = res.text;
+                for (const x of res.replaced) if (!replaced.some((y) => y.token === x.token)) replaced.push(x);
+            }
+            if (replaced.length) {
+                const tokens = listWords(replaced.map((x) => x.token)), names = listWords(replaced.map((x) => `"${x.name}"`));
+                out.note = replaced.length === 1
+                    ? `${who} sends no reference images: ${tokens} was written as its layer name ${names}.`
+                    : `${who} sends no reference images: ${tokens} were written as their layer names ${names}.`;
+            }
+            return out;
+        }
+        for (const k of ["prompt", "negative"]) {
+            // a parked token typed or pasted for a layer that has a label now names it (remap from the labels to themselves)
+            texts[k] = remap(texts[k], s.labels, s.labels);
+            const res = toMarkers(texts[k], s.labels, sent);
+            if (res.errors.length) {
+                const e = res.errors[0];
+                throw new Error(this.refError(editor, s, { type: "token", text: e.token, n: e.n, id: e.kind === "parked" ? e.id : undefined, kind: e.kind }, k));
+            }
+            out[k] = res.text;
+            for (const seg of parse(texts[k])) {
+                if (seg.type !== "token" || !("n" in seg)) continue;
+                const id = idOf.get(seg.n), label = "@img" + seg.n;
+                if (id && !out.pairs.some((p) => p.label === label)) out.pairs.push({ label, id, ref: sent ? sent.indexOf(id) : -1 });
+            }
+        }
+        return out;
+    },
+
+    /** Why a token cannot go (refPrompt): `seg` a token segment of `parse`, `k` which text holds it. */
+    refError(editor, snap, seg, k) {
+        const where = k === "negative" ? "The negative prompt" : "The prompt";
+        const tok = String(seg.text || "").replace(/^@img/i, "@img");
+        const count = snap.labels.size;
+        if (seg.kind === "unsent") return `${tok} is not among the pictures this run sends: take it out of the ${k === "negative" ? "negative prompt" : "prompt"}.`;
+        if (seg.id == null) {
+            const has = count === 0 ? "has none; add a reference layer first" : count === 1 ? "has @img1 only" : `has @img1 to @img${count}`;
+            return `${tok} names no reference image: this document ${has}.`;
+        }
+        const l = editor.layers.find((x) => x.id === seg.id);
+        if (!l) return `${where} names a deleted reference (${tok}): undo the delete, or take the token out.`;
+        if (!editor.isReference(l)) return `${where} names "${l.name}" (${tok}), which is no longer a reference layer: make it a reference again, or take the token out.`;
+        return `${where} names "${l.name}" (${tok}), a hidden reference: show it in the reference list, or take the token out.`;
+    },
+
+    /**
+     * A text for a field that sends no reference picture (the Generate new and Upscale dialogs' prefill): each token
+     * written as its layer's name; a token without one stays (the run then says why). `{ text, note }`.
+     */
+    refNames(editor, text) {
+        const s = String(text == null ? "" : text);
+        if (!this.refTokens || !editor || !hasTokens(s)) return { text: s, note: "" };
+        const idOf = new Map([...editor.refLabels()].map(([id, n]) => [n, id]));
+        const res = namesFor(s, (key) => {
+            const id = key[0] === "?" ? key.slice(1) : idOf.get(+key.slice(3));
+            const l = id && editor.layers.find((x) => x.id === id);
+            return l ? l.name || "" : null;
+        });
+        return { text: res.text, note: res.replaced.length ? `The reference ${res.replaced.length === 1 ? "token is" : "tokens are"} written as layer names here: this run sends no reference images.` : "" };
+    },
+
+    /**
+     * The shape of a provider request as main's `provider:layout` reads it (C3), from the recipe and the editor; `over`
+     * replaces parts (`kind`, `provider`, `model`, `params`, `original`, `count` = the references including the
+     * Original). runProvider builds its request from the same shape.
+     */
+    layoutShape(editor, over = {}) {
+        // `over.recipe`: a run's own recipe, taken at the click (the list may change while its crop is made)
+        const r = over.recipe || this.recipe || {};
+        const original = over.original != null ? (over.original ? 1 : 0) : editor.predictOriginal();
+        return {
+            provider: over.provider || r.provider, model: over.model || r.model,
+            kind: over.kind || (r.input === "edit" ? "edit" : "fill"),
+            fields: over.fields !== undefined ? over.fields : r.fields || null, options: over.options !== undefined ? over.options : r.options || null,
+            params: over.params || this.providerParams(editor),
+            original, count: over.count != null ? over.count : editor.referenceLayers().length + original,
+            refName: over.refName !== undefined ? over.refName : (r.refs && r.refs.name) || null,
+        };
+    },
+
+    /**
+     * What the chosen route calls each shown reference now (C3): `{ names: Map<layer id, name | null>, over: Set<layer
+     * id> (past the route's cap), none: why no reference goes | null, local: a ComfyUI recipe }`, also kept as
+     * `editor.refLayoutInfo`; null without a recipe. Asks main once (`provider:layout`).
+     */
+    async refLayout(editor, over = {}) {
+        const r = this.recipe;
+        if (!r || !editor) { if (editor) editor.refLayoutInfo = null; return null; }
+        const refs = editor.referenceLayers();
+        const blank = (none, local = false) => ({ names: new Map(refs.map((l) => [l.id, null])), over: new Set(), none, local });
+        let info;
+        if (r.kind !== "provider") info = blank(null, true);
+        else if (r.task === "upscale") info = blank("An upscale sends the picture alone: reference images are left out.");
+        else if (r.edit === false && !over.kind) info = blank(`${r.name || r.id} makes pictures from the prompt alone.`);
+        else {
+            const shape = this.layoutShape(editor, over);
+            try {
+                const ans = await window.scumble.providers.layout(shape);
+                const names = new Map(refs.map((l, k) => [l.id, (ans.names && ans.names[shape.original + k]) || null]));
+                const past = ans.over && ans.max != null ? Math.max(0, ans.sent - ans.max) : 0;
+                const overSet = new Set(past ? refs.slice(Math.max(0, refs.length - past)).map((l) => l.id) : []);
+                const none = ans.drops && [...names.values()].every((n) => n == null) ? ans.drops : null;
+                info = { names, over: overSet, none, local: false };
+            } catch (err) {
+                info = blank(String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
+            }
+        }
+        editor.refLayoutInfo = info;
+        return info;
+    },
+
     /**
      * A run through an API provider: crop in the app (stitch.js), one request to the
      * main process (electron/main/providers), the answer stitched back into an RGBA
      * patch that is stored in the file mirror as a result and added like a result from
-     * the node. No ComfyUI involved.
+     * the node. No ComfyUI involved. `opts.refs`: the click's reference snapshot.
      */
     async runProvider(editor, opts = {}) {
         const r = this.recipe;
         if (!editor.base) throw new Error("Load an image first.");
         const label = r.providerLabel || r.provider;
         if (r.edit === false) throw new Error(`${r.name || r.id} on ${label} makes images from the prompt alone: use "Generate new", not Generate.`);
+        // the prompt and the references of the click; a token that cannot go refuses before anything is made
+        const snap = opts.refs || editor.refSnapshot();
+        this.refPrompt(editor, snap, "edit");
+        editor.lastSentPrompt = null;
+        editor.lastRunNotes = [];
         const token = { provider: r.provider, label, started: Date.now(), editor };
         editor.providerPending = token;
         this._providerRuns.add(token);
         this.notifyProviderRuns();
-        let res, info, sel, x, y, w, h, params = {};
+        let res, info, sel, x, y, w, h, params = {}, named = null;
         try {
             // what the request says is read at the click, as the crop is: the window stays usable while it is made
             params = this.providerParams(editor, opts.background ? { background: opts.background } : null);
             const keepAlpha = this.wantsTransparent(params);
-            const prompt = editor.promptText || "", negative = editor.negativeText || "", seed = editor.genSettings.seed;
-            // the crop and its masks off the window: the box from the tile workers, the pixels in the stitch worker
-            const prep = await prepareCropAsync(editor, this.nodeParams, this.cropLimits());
+            const seed = editor.genSettings.seed;
+            // the crop and its masks off the window: the box from the tile workers, the pixels in the stitch worker;
+            // the references are the click's
+            const prep = await prepareCropAsync(editor, this.nodeParams, this.cropLimits(), { refIds: snap.refIds });
             const references = prep.references;
             info = prep.info; sel = prep.sel;
             [x, y, w, h] = info.bbox;
             info.keepAlpha = keepAlpha;
+            // main names a reference picture by its place in the request: the Original first when it goes
+            const original = info.original ? 1 : 0;
+            named = this.refPrompt(editor, snap, "edit", { sent: [...Array(original).fill(null), ...snap.refIds] });
         editor.setStatus(`Sending crop ${w} × ${h} at ${x}, ${y} (${info.emitted[0]} × ${info.emitted[1]}${references.length ? `, ${references.length} reference${references.length > 1 ? "s" : ""}` : ""}) to ${label}${info.keepAlpha ? ", transparent background" : ""} ...`);
+            const shape = this.layoutShape(editor, { recipe: r, params, original, count: references.length });
             const request = {
-                provider: r.provider, model: r.model, kind: r.input === "edit" ? "edit" : "fill", fields: r.fields || null, options: r.options || null,
-                prompt, negative, seed,
+                provider: shape.provider, model: shape.model, kind: shape.kind, fields: shape.fields, options: shape.options,
+                prompt: named.prompt, negative: named.negative, seed,
                 image: prep.image, mask: prep.mask, maskAlpha: prep.maskAlpha, width: prep.width, height: prep.height, references,
-                params,
-                // main names a reference picture by its place in the request (docs/PLAN_REFS.md C3)
-                original: info.original ? 1 : 0, refName: (r.refs && r.refs.name) || null,
+                params: shape.params, original: shape.original, refName: shape.refName,
             };
             res = await window.scumble.providers.edit(request);
+            editor.lastSentPrompt = res.prompt != null ? res.prompt : request.prompt;
+            editor.lastRunNotes = res.notes || [];
         } finally {
             if (editor.providerPending === token) editor.providerPending = null;
             this._providerRuns.delete(token);
@@ -1082,9 +1251,16 @@ export const host = {
         editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s${res.info && res.info.width ? ` (${res.info.width} × ${res.info.height})` : ""}.`);
         const cutout = info.keepAlpha ? fin.cutout : false;
         await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align, canvas_node: editor.node.id, provider: r.provider }]);
-        // addResults writes its own line, so the cut-out note goes on afterwards
+        // addResults writes its own line, so the cut-out note, the names the references went as and what the route left
+        // out go on afterwards
         if (info.keepAlpha) editor.setStatus(`${editor.status} ${cutout ? "The layer is a cut-out on a transparent ground." : "The model returned no transparency, so the layer is opaque."}`);
-        return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout };
+        const sentAs = named.pairs.map((p) => {
+            const got = (res.refs || []).find((x) => x.ref === p.ref);
+            return got ? `${p.label} → ${got.name}` : null;
+        }).filter(Boolean);
+        if (sentAs.length) editor.setStatus(`${editor.status} Named in the prompt: ${sentAs.join(", ")}.`);
+        if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`);
+        return { provider: r.provider, seconds: res.seconds, x, y, w, h, transparent: !!info.keepAlpha, cutout, prompt: editor.lastSentPrompt, refs: res.refs || [], pairs: named.pairs, notes: editor.lastRunNotes, info: res.info || null };
     },
 
     /**
@@ -1129,6 +1305,11 @@ export const host = {
             throw new Error(`The picture is ${editor.width} × ${editor.height}; ${r.name || r.id} on ${label} takes at most ${max} px on the long side. Upscale a selection instead.`);
         }
         const params = this.providerParams(editor);
+        // an upscale sends no reference picture: a token is written as its layer's name, in the request only
+        // (the texts of the click's snapshot, or of now, unless the dialog or the command brings its own prompt)
+        const texts = r.usesPrompt
+            ? this.refPrompt(editor, opts.refs || null, "none", { prompt: opts.prompt != null ? opts.prompt : undefined, who: "Upscale" })
+            : { prompt: "", negative: "", note: "" };
         const slow = /topaz/i.test(`${r.id} ${r.model}`) ? " Topaz can take several minutes; the window stays usable."
             : /precision/i.test(r.model || "") && r.provider === "magnific" ? " Magnific Precision can take several minutes; the window stays usable." : "";
         const by = factor ? `${factor}×` : "the model's own factor";
@@ -1142,8 +1323,7 @@ export const host = {
                 provider: r.provider, model: r.model, kind: "upscale", fields: r.fields || null, options: r.options || null,
                 factor, params, seed: editor.genSettings.seed,
                 // the Upscale dialog's (or the command's) own prompt, else the document's
-                prompt: r.usesPrompt ? String(opts.prompt != null ? opts.prompt : editor.promptText || "") : "",
-                negative: r.usesPrompt ? String(editor.negativeText || "") : "",
+                prompt: texts.prompt, negative: r.usesPrompt ? texts.negative : "",
                 mask: null, maskAlpha: null, references: [],
             };
             if (scope === "selection") {
@@ -1175,8 +1355,8 @@ export const host = {
             const ref = await this.uploadResult(fin.blob, `n${editor.node.id}_upscale_${stamp}.png`);
             await editor.addResults([{ filename: ref.filename, subfolder: ref.subfolder, type: ref.type, x, y, width: w, height: h, align: fin.align, canvas_node: editor.node.id, provider: r.provider }]);
             const got = res.info && res.info.width ? ` (${res.info.width} × ${res.info.height} came back)` : "";
-            editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.`);
-            return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null };
+            editor.setStatus(`${label} upscaled the selection in ${Math.round(res.seconds)} s${got}; it is fitted back into ${w} × ${h} as a new layer.${texts.note ? " " + texts.note : ""}`);
+            return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, x, y, w, h, info: res.info || null, note: texts.note };
         }
         // the whole picture: the answer at its own size, stretched to the document's aspect if the model rounded
         const img = await bytesToImage(res.bytes, res.mime);
@@ -1193,8 +1373,8 @@ export const host = {
         await editor.resizeImage(nw, nh, { base: nb });
         nb.width = nb.height = 0;
         if (editor.width !== nw || editor.height !== nh) throw new Error(editor.status || "the upscaled picture could not be taken");
-        editor.setStatus(`${label} upscaled the picture in ${Math.round(res.seconds)} s: ${W} × ${H} is now ${nw} × ${nh}, every layer scaled along (Ctrl+Z takes it back).`);
-        return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: nw, height: nh, answered: [aw, ah], info: res.info || null };
+        editor.setStatus(`${label} upscaled the picture in ${Math.round(res.seconds)} s: ${W} × ${H} is now ${nw} × ${nh}, every layer scaled along (Ctrl+Z takes it back).${texts.note ? " " + texts.note : ""}`);
+        return { scope, provider: r.provider, recipe: r.id, factor, seconds: res.seconds, from: [W, H], width: nw, height: nh, answered: [aw, ah], info: res.info || null, note: texts.note };
     },
 
     /** The Upscale button in the editor's top bar, next to Generate new (the app's, so the node's host needs none). */
@@ -1225,6 +1405,8 @@ export const host = {
         const label = r.providerLabel || r.provider;
         const width = Math.max(64, Math.round(opts.width || editor.width || 1024));
         const height = Math.max(64, Math.round(opts.height || editor.height || 1024));
+        // Generate new sends no reference picture (until 26f): a token goes as its layer's name, in the request only
+        const texts = this.refPrompt(editor, opts.refs || null, "none", { prompt: opts.prompt != null ? opts.prompt : editor.promptText || "", negative: opts.negative != null ? opts.negative : editor.negativeText || "", who: "Generate new" });
         const token = { provider: r.provider, label, started: Date.now(), editor };
         editor.providerPending = token;
         this._providerRuns.add(token);
@@ -1236,8 +1418,7 @@ export const host = {
             editor.setStatus(`Asking ${label} for a new ${width} × ${height} image${cutout ? " on a transparent ground" : ""} ...`);
             const request = {
                 provider: r.provider, model: t.model, kind: "text",
-                prompt: String(opts.prompt != null ? opts.prompt : editor.promptText || ""),
-                negative: String(opts.negative != null ? opts.negative : editor.negativeText || ""),
+                prompt: texts.prompt, negative: texts.negative,
                 seed: opts.seed != null ? opts.seed : editor.genSettings.seed,
                 width, height, aspect: opts.aspect || null,
                 image: null, mask: null, maskAlpha: null, references: [],
@@ -1257,8 +1438,8 @@ export const host = {
         c.getContext("2d").drawImage(img, 0, 0);
         await editor.setBaseFromCanvas(c);
         const gotAlpha = cutout && transparentPixels(c);
-        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image${cutout ? (gotAlpha ? " with a transparent background" : " (the model returned no transparency)") : ""}.`);
-        return { provider: r.provider, model: t.model, seconds: res.seconds, width: c.width, height: c.height, transparent: !!gotAlpha };
+        editor.setStatus(`${label} answered after ${Math.round(res.seconds)} s: a new ${c.width} × ${c.height} base image${cutout ? (gotAlpha ? " with a transparent background" : " (the model returned no transparency)") : ""}.${texts.note ? " " + texts.note : ""}`);
+        return { provider: r.provider, model: t.model, seconds: res.seconds, width: c.width, height: c.height, transparent: !!gotAlpha, prompt: res.prompt != null ? res.prompt : texts.prompt, note: texts.note, info: res.info || null };
     },
 
     // ---- prompt instruction templates (electron/main/prompts.js) -------------------
@@ -1386,19 +1567,33 @@ export const host = {
         if (this.onProviderRuns) { try { this.onProviderRuns(Array.from(this._providerRuns)); } catch (err) { console.warn(err); } }
     },
 
-    /** Fill the recipe with the editor state and queue it. Called by editor.generate(). */
-    async queueGenerate(editor) {
+    /**
+     * Fill the recipe with the editor state and queue it. Called by editor.generate(); `opts.refs` is the click's
+     * reference snapshot (docs/PLAN_REFS.md C3; a caller without one gets the references of now).
+     */
+    async queueGenerate(editor, opts = {}) {
         const r = this.recipe;
         if (!r) throw new Error("No recipe selected.");
-        if (r.kind === "provider" && r.task === "upscale") return this.runUpscale(editor, { scope: "selection" });
-        if (r.kind === "provider") return this.runProvider(editor);
+        if (r.kind === "provider" && r.task === "upscale") return this.runUpscale(editor, { scope: "selection", refs: opts.refs });
+        if (r.kind === "provider") return this.runProvider(editor, { refs: opts.refs });
         if (!r.prompt) throw new Error("No recipe selected.");
+        const upscale = r.task === "upscale";
+        // a ComfyUI recipe cannot name its pictures yet: a token refuses. An upscaler there sends no reference picture
+        // and may not read the prompt at all: its tokens go as names where a layer has one, and nothing refuses it
+        const snap = opts.refs || editor.refSnapshot();
+        let texts;
+        if (upscale) {
+            const p = this.refNames(editor, snap.prompt), n = this.refNames(editor, snap.negative);
+            texts = { prompt: p.text, negative: n.text, note: p.note || n.note ? "Upscale sends no reference images: the prompt's @img tokens were written as layer names." : "" };
+        } else texts = this.refPrompt(editor, snap, "local", { recipe: r });
         if (!this.connected) throw new Error("Not connected to ComfyUI.");
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
-        const upscale = r.task === "upscale";
         if (upscale && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
-        const state = upscale ? this.upscaleState(await editor.serializeForPrompt()) : await editor.serializeForPrompt();
+        // an upscale's canvas state carries no references (upscaleState), so none is read or uploaded for it
+        const sopts = { refIds: upscale ? [] : snap.refIds, prompt: texts.prompt, negative: texts.negative };
+        const state = upscale ? this.upscaleState(await editor.serializeForPrompt(sopts)) : await editor.serializeForPrompt(sopts);
+        if (texts.note) editor.setStatus(`${editor.status} ${texts.note}`);
         await this.ensureOnServer(state, editor);
         const prompt = JSON.parse(JSON.stringify(r.prompt));
         const canvas = prompt[r.canvas];

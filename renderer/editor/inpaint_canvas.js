@@ -39,7 +39,7 @@ import { THEME } from "./inpaint_theme.js";
 import { XF_IDENTITY, xfMul, xfInv, xfApply, xfBox, xfTranslate, xfScale, xfRotate, pixelMap } from "./inpaint_resample.js";
 import { removeCrop, toModelImage, toModelMask, fromModel } from "./inpaint_remove.js";
 import { LiquifyField, gridStep, previewBlock, liquifyFalloff } from "./inpaint_liquify.js";
-import { labelMap, sameLabels, remap, mapOffset } from "./reftokens.js";
+import { labelMap, sameLabels, remap, mapOffset, namesFor } from "./reftokens.js";
 
 /**
  * The pixel backend a new editor takes (docs/PLAN_BCE.md §C2 step b): the host's choice when it made
@@ -1785,6 +1785,10 @@ class InpaintEditor {
         // last change, by layer id, so the next change can rewrite them; null until the first document
         this.refMap = null;
         this._remapTargets = new Set();   // fields outside the editor whose text names references (addRemapTarget)
+        this.refLayoutInfo = null;      // the app's reference layout for the chosen route: the name each reference goes as
+        this.lastSentPrompt = null;     // the prompt main sent in the last provider run, the names written in
+        this.lastRunNotes = [];         // what the last run's route declared it left out
+        this.lastRunError = null;       // why the last Generate click was refused (commands.generate throws it)
         this.selectionLabel = "";       // what the selection is, when it came from "Select by text"
         this.undo = [];
         this.redo = [];
@@ -3226,6 +3230,48 @@ class InpaintEditor {
     /** The label of each shown reference by layer id: top of the list = 1, what @img1 names. */
     refLabels() {
         return labelMap(this.referenceLayers());
+    }
+
+    /**
+     * What a run sends, read at the click (docs/PLAN_REFS.md C3): the prompt, the negative, the shown references by id
+     * (top first) and their labels. A reference hidden while the crop is made still goes; one deleted refuses.
+     */
+    refSnapshot() {
+        const refs = this.referenceLayers();
+        return { prompt: this.promptText || "", negative: this.negativeText || "", refIds: refs.map((l) => l.id), labels: labelMap(refs) };
+    }
+
+    /** The reference layers of a snapshot, in its order; no ids: the shown ones now. */
+    refLayersFor(ids) {
+        if (!ids) return this.referenceLayers();
+        return ids.map((id) => {
+            const l = this.layers.find((x) => x.id === id);
+            if (!l || !this.isReference(l) || !l.px) throw new Error("A reference layer was deleted while the run was being prepared: press Generate again.");
+            return l;
+        });
+    }
+
+    /**
+     * 1 when a run would send the Original (the crop before the fill) as the first reference picture, as planCrop decides
+     * it: a selection, a fill, "Original" on, and no refine pass (a local run's refine sends no fill). `local`: the run is
+     * a local one whatever the mode switch says.
+     */
+    predictOriginal({ local = false } = {}) {
+        const cs = this.cropSettings || {};
+        const refine = !!this.genSettings.refine && (local || this.genSettings.mode === "local");
+        return this.getBounds && this.getBounds() && cs.fill && cs.fill !== "none" && cs.withOriginal && !refine ? 1 : 0;
+    }
+
+    /**
+     * Every reference layer, top first, as the prompt field and agents describe it (C4): label null for one that is
+     * hidden (or has no pixels), `sentAs` the name the chosen route gives its picture (`refLayoutInfo`, null unknown).
+     */
+    refDescriptors() {
+        const labels = this.refLabels(), info = this.refLayoutInfo;
+        return this.layers.filter((l) => this.isReference(l)).reverse().map((l) => ({
+            id: l.id, label: labels.get(l.id) || null, name: l.name || "", visible: !!l.visible, thumb: null,
+            sentAs: info && info.names && labels.has(l.id) ? info.names.get(l.id) || null : null,
+        }));
     }
 
     /**
@@ -10061,13 +10107,15 @@ class InpaintEditor {
             const prompt = {
                 seg_load: { class_type: "InpaintCanvasLoadRef", inputs: { ref: JSON.stringify(ref) } },
             };
+            // the language model sees the crop alone, so an @img token is "the reference image" to it
+            const asked = host.refTokens ? namesFor(this.promptText.trim(), () => "the reference image").text : this.promptText.trim();
             if (fromPrompt && llm.inApp) {
-                text = (await host.askLLM(llm, segmentTermInstruction(this.promptText.trim()), await this.promptContextCanvas())).text.replace(/[."']/g, "").trim();
+                text = (await host.askLLM(llm, segmentTermInstruction(asked), await this.promptContextCanvas())).text.replace(/[."']/g, "").trim();
                 if (!text) throw new Error(`${llm.label} named no object`);
                 this.setStatus(`Segmenting "${text}" (from the prompt, ${llm.label}) with ${backend.label} ...`);
             } else if (fromPrompt) {
                 // term_run: VLM -> STRING, linked straight into the segmentation node's prompt input
-                Object.assign(prompt, llm.build("seg_load", segmentTermInstruction(this.promptText.trim())));
+                Object.assign(prompt, llm.build("seg_load", segmentTermInstruction(asked)));
                 prompt.term_run = prompt.up_run; delete prompt.up_run;
                 text = ["term_run", llm.textOut[1]];
             }
@@ -16456,7 +16504,11 @@ class InpaintEditor {
     }
 
     async generate() {
+        this.lastRunError = null;
         if (!this.base) { this.setStatus("Load an image first."); return; }
+        // the prompt and the references as they are at the click (docs/PLAN_REFS.md C3): a later hide or move does not
+        // change what this run sends
+        const refs = this.refSnapshot();
         if (this.removePending || this.healPending || this.liquifyPending) { this.setStatus("Waiting for the stroke to land..."); await this.heldEdit(); }
         if (this.genSettings.seedRandom) { this.genSettings.seed = randomSeed(); if (this.seedInput) this.seedInput.value = this.genSettings.seed; }
         const { name, wired } = this.resultInputState();
@@ -16467,10 +16519,13 @@ class InpaintEditor {
             // model such as Flux.2 gets the whole card; in API mode they simply stay resident.
             if (this.genSettings.mode === "local" && this.helperUsed) await this.freeHelperModels();
             this.setStatus(wired ? `Queueing (${this.genSettings.mode}, seed ${this.genSettings.seed}, result from ${name}) ...` : `Queueing, but nothing is wired into "result" or "result_local": the result will not come back into the canvas.`);
-            await host.queueGenerate(this);
+            await host.queueGenerate(this, { refs });
         } catch (err) {
             console.error(err);
+            // kept for the app's generate command, which throws it at once; also returned, so a caller gets its own run's
+            this.lastRunError = err instanceof Error ? err : new Error(String(err));
             this.setStatus(String(err.message || err));
+            return { error: this.lastRunError };
         } finally {
             this.generateBtn.disabled = false;
             if (this.isOpen) this.root.focus({ preventScroll: true });
@@ -16762,8 +16817,11 @@ class InpaintEditor {
         }
     }
 
-    /** Called when the prompt is built: upload flattened image, mask and control, return the prompt JSON. */
-    async serializeForPrompt() {
+    /**
+     * Called when the prompt is built: upload flattened image, mask and control, return the prompt JSON. `opts` (the
+     * app): `refIds` the click's references (refLayersFor), `prompt` / `negative` the texts to send instead of the fields'.
+     */
+    async serializeForPrompt(opts = {}) {
         if (!this.base) return "{}";
         const id = this.node.id;
         await this.syncLayers();
@@ -16799,7 +16857,7 @@ class InpaintEditor {
         // Reference layers at their native size: the uploaded file itself when it is
         // untouched, otherwise the pixels with the mask applied (cached per layer).
         const references = [];
-        for (const l of this.referenceLayers()) {
+        for (const l of this.refLayersFor(opts.refIds)) {
             if (!l.maskPx && l.ref && !l.dirty) { references.push(l.ref); continue; }
             if (!l.exportRef) {
                 const up = await uploadCanvas(this.layerPixels(l), `n${id}_ref`);
@@ -16815,11 +16873,11 @@ class InpaintEditor {
             base: baseRef,
             mask: maskRef,
             control: controlRef,
-            prompt: this.promptText,
+            prompt: opts.prompt != null ? opts.prompt : this.promptText,
             layers: this.layers.length,
             crop: this.cropSettings,
             gen: this.genSettings,
-            negative: this.negativeText,
+            negative: opts.negative != null ? opts.negative : this.negativeText,
             settings: this.settings,
             references,
             refs: this.refSettings,
