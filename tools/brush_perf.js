@@ -16,6 +16,9 @@
         MODE: "sync",                    // "sync": each move, then one draw() timed here; "raf": the app's own frames (window in front)
         GAP: 4,                          // ms between moves (sync: lets the probe run; raf: use 16)
         PEN: 0,                          // 0 = mouse; 0 < p <= 1 = pointerType "pen" at that pressure (the radius scales with it)
+        COALESCED: 1,                    // coalesced points per move (4 a pen, 8+ a slow frame or a 1,000 Hz mouse)
+        HARDNESS: 0.5,                   // the brush's hardness; the eraser uses ed.eraseHardness
+        SELECT: false,                   // a rectangle selection over 5-95 % of the picture: every stroke clipped to it (p.clip)
         BASE_ROW: true,                  // smudge with the base active: the press adds a layer (a full "Base copy" before 0.1.32)
         KEEP: false,                     // keep the document (window.__bpDoc) for the next run
     }, window.__bp || {});
@@ -85,6 +88,10 @@
     }
     shell.activate(ed);
     const W = ed.width, H = ed.height, dpr = window.devicePixelRatio || 1;
+    // erasing inside a selection felt worst to the user (docs/BUGS.md, the eraser of 0.1.32): the live stroke is drawn
+    // through the selection's clip on every frame, and the marching ants are drawn over it
+    if (P.SELECT) { ed.selectRectangle([Math.round(W * 0.05), Math.round(H * 0.05), Math.round(W * 0.95), Math.round(H * 0.95)], "replace"); await ed.mipsSettled(); }
+    else if (ed.getBounds()) ed.clearSelection();
 
     // ---- the real pointer handlers, driven by synthetic PointerEvents (the brush / editor gates' client() helper) ----
     let k = 0, pid = 60;
@@ -93,11 +100,24 @@
         const [sx, sy] = ed.imageToScreen(ix, iy);
         return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height };
     };
-    const ev = (type, ix, iy, extra = {}) => new PointerEvent(type, Object.assign({
+    const init = (type, ix, iy, extra = {}) => Object.assign({
         bubbles: true, cancelable: true, pointerId: pid, isPrimary: true,
         pointerType: P.PEN ? "pen" : "mouse", pressure: type === "pointerup" ? 0 : (P.PEN || 0.5),
         button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1,
-    }, client(ix, iy), extra));
+    }, client(ix, iy), extra);
+    // COALESCED > 1: each move carries that many coalesced points, evenly between the last point and this one, as a pen
+    // or a 1,000 Hz mouse faster than the screen gives them (a synthetic event has none of its own; docs/BUGS.md, the eraser)
+    let lastPt = null;
+    const ev = (type, ix, iy, extra = {}) => {
+        const e = new PointerEvent(type, init(type, ix, iy, extra));
+        if (type === "pointermove" && (P.COALESCED || 1) > 1 && lastPt) {
+            const k = P.COALESCED, pts = [];
+            for (let j = 1; j <= k; j++) pts.push(new PointerEvent(type, init(type, lastPt[0] + (ix - lastPt[0]) * j / k, lastPt[1] + (iy - lastPt[1]) * j / k, extra)));
+            Object.defineProperty(e, "getCoalescedEvents", { value: () => pts });
+        }
+        lastPt = type === "pointerup" ? null : [ix, iy];
+        return e;
+    };
     // dispatchEvent runs the handler synchronously: the time around it is the handler's
     const send = (type, ix, iy, extra) => { const t = performance.now(); ed.canvas.dispatchEvent(ev(type, ix, iy, extra)); return performance.now() - t; };
     // every stroke on a row of its own (strokes may overlap other tools' rows: the costs do not depend on it)
@@ -121,7 +141,7 @@
         const { x0, y } = place();
         pid++;
         ed.setTool(tool);
-        ed.brushSize = size; ed.hardness = 0.5; ed.brushOpacity = 1; ed.brushTipId = null;
+        ed.brushSize = size; ed.hardness = P.HARDNESS; ed.eraseHardness = P.HARDNESS; ed.brushOpacity = 1; ed.brushTipId = null;
         if (ed.smudgeOpts) ed.smudgeOpts.strength = 60;
         ed.activeLayerId = opts.onBase ? null : L.id;
         ed.renderLayers();

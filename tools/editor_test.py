@@ -9597,6 +9597,171 @@ try {
 }
 return out;
 """),
+    ("a_move_of_coalesced_points_is_one_box_and_one_run_of_dabs", """
+// docs/BUGS.md, the eraser of 0.1.32 (fixed for 0.1.33): the coalesced points of a move go into one box of the stroke
+// buffer and one run of dabs spaced along the whole path, as one segment was before 0.1.32. A straight move of 8
+// coalesced points writes the bytes the same move of one point writes (the eraser soft, with a tip, hard and at flow
+// 30 %, the soft paint brush, clone and heal), every move is one draw of the buffer, and a pen's pressure still sizes
+// each segment inside a move
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = { tiles: !!ed.tileMode, cases: {} };
+const keep = { size: ed.brushSize, eh: ed.eraseHardness, hard: ed.hardness, tip: ed.brushTipId, flow: ed.brushFlow, stab: ed.stabiliser, curve: ed.pressureCurve, rot: ed.tipRotate, color: ed.color };
+const tips0 = ed.brushTips.slice();
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+try {
+    await run("new_canvas", { width: 900, height: 700, doc: d.id });
+    ed.view.angle = 0; ed.view.scale = 1; ed._fitted = false; ed.view.x = 10; ed.view.y = 10; ed.draw();
+    ed.stabiliser = 0; ed.pressureCurve = "linear"; ed.tipRotate = false; ed.brushOpacity = 1;
+    // an opaque layer with a texture that changes along y, so a clone from 200 px above changes what it covers
+    const filled = (name) => {
+        const c = mk(900, 700), x = c.getContext("2d");
+        const g = x.createLinearGradient(0, 0, 900, 700);
+        g.addColorStop(0, "#3070c0"); g.addColorStop(1, "#c07030");
+        x.fillStyle = g; x.fillRect(0, 0, 900, 700);
+        x.fillStyle = "rgba(255,255,255,0.35)";
+        for (let y = 0; y < 700; y += 37) x.fillRect(0, y, 900, 13);
+        return ed.addLayer({ name, kind: "paint", px: ed.pixels.Layer.fromCanvas(c), x: 0, y: 0, w: 900, h: 700, dirty: true });
+    };
+    let pid = 2600;
+    const client = (ix, iy) => { const rect = ed.canvas.getBoundingClientRect(); const [sx, sy] = ed.imageToScreen(ix, iy); return { clientX: rect.left + sx * rect.width / ed.canvas.width, clientY: rect.top + sy * rect.height / ed.canvas.height }; };
+    const init = (type, ix, iy, pen, extra = {}) => Object.assign({ bubbles: true, cancelable: true, pointerId: pid, isPrimary: true, pointerType: pen ? "pen" : "mouse", pressure: type === "pointerup" ? 0 : (pen || 0.5), button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1 }, client(ix, iy), extra);
+    // co: the move's coalesced points [x, y, pen pressure or 0]
+    const send = (type, ix, iy, pen, co, extra) => ed.canvas.dispatchEvent(new PointerEvent(type, Object.assign(init(type, ix, iy, pen, extra), co ? { coalescedEvents: co.map(([x, y, pp]) => new PointerEvent("pointermove", init("pointermove", x, y, pp))) } : {})));
+    // a stroke through pts, k coalesced points per move evenly from the last point; the buffer draws of every move
+    const stroke = (pts, k, pen = 0) => {
+        pid++;
+        send("pointerdown", pts[0][0], pts[0][1], pen);
+        const draws = [];
+        for (let i = 1; i < pts.length; i++) {
+            const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+            const co = k > 1 ? Array.from({ length: k }, (_, j) => [ax + (bx - ax) * (j + 1) / k, ay + (by - ay) * (j + 1) / k, pen]) : null;
+            const s = ed.pointer.stroke, d0 = s.draw;
+            let n = 0;
+            s.draw = function (...a) { n++; return d0.apply(this, a); };
+            try { send("pointermove", bx, by, pen, co); } finally { delete s.draw; }
+            draws.push(n);
+        }
+        const [ex, ey] = pts[pts.length - 1];
+        send("pointerup", ex, ey, pen);
+        return draws;
+    };
+    // moves of 40 px: with a 300 px brush the soft dab's spacing is 27 px, so 40 / 27 is far from a whole number of steps
+    const line = Array.from({ length: 11 }, (_, i) => [150 + 40 * i, 350]);
+    // alpha apart, and the colour where both pixels keep at least 32 of alpha (below it the stored colour is rounding)
+    const compare = (a, b, orig) => {
+        const x = a.px.readRect(0, 0, 900, 700).data, y = b.px.readRect(0, 0, 900, 700).data;
+        let differ = 0, alphaDiffer = 0, alphaMax = 0, inner = 0, touched = 0;
+        // no pixel within 2 of this one is partly erased in a: it lies inside the stroke or outside it, not on its edge
+        const solid = (p) => {
+            const px = p % 900, py = (p - px) / 900;
+            for (let yy = Math.max(0, py - 2); yy <= Math.min(699, py + 2); yy++) for (let xx = Math.max(0, px - 2); xx <= Math.min(899, px + 2); xx++) {
+                const al = x[(yy * 900 + xx) * 4 + 3];
+                if (al > 0 && al < 255) return false;
+            }
+            return true;
+        };
+        for (let i = 0; i < x.length; i += 4) {
+            if (x[i] !== orig[i] || x[i + 1] !== orig[i + 1] || x[i + 2] !== orig[i + 2] || x[i + 3] !== orig[i + 3]) touched++;
+            if (x[i] === y[i] && x[i + 1] === y[i + 1] && x[i + 2] === y[i + 2] && x[i + 3] === y[i + 3]) continue;
+            differ++;
+            const e = Math.abs(x[i + 3] - y[i + 3]);
+            if (e) { alphaDiffer++; if (e > alphaMax) alphaMax = e; }
+            if (solid(i / 4) && (e || Math.min(x[i + 3], y[i + 3]) > 0)) inner++;
+        }
+        return { differ, alphaDiffer, alphaMax, inner, touched };
+    };
+    // the dabs land on the same places, so the bytes are the same. A hard brush draws one line through the move where it
+    // drew a line per point: the shape is the same, and only its antialiased outline moves, most on the round ends (the
+    // end nudged by 0.01 px, which makes a lone press a dot, turns a short last piece a little more than a long one)
+    // clone and heal: Alt+click sets the source 200 px above the press, not aligned, the layer's own pixels sampled
+    const source = () => { pid++; send("pointerdown", 150, 150, 0, null, { altKey: true }); send("pointerup", 150, 150, 0); };
+    const pair = async (name, setup, tool = "erase", line_ = false, path = line) => {
+        setup();
+        ed.setTool(tool);
+        const A = filled(name + " one"), B = filled(name + " coalesced");
+        // both read before the strokes: on canvases a readback can move a canvas off the GPU, and the two then round apart
+        const orig = A.px.readRect(0, 0, 900, 700).data.slice();
+        B.px.readRect(0, 0, 900, 700);
+        const one = [], co = [];
+        for (const [L, k, draws] of [[A, 1, one], [B, 8, co]]) {
+            ed.activeLayerId = L.id; ed.renderLayers();
+            if (tool === "clone" || tool === "heal") source();
+            ed._tipAngle = 0;   // "Follow stroke" starts both strokes level
+            draws.push(...stroke(path, k));
+            if (ed.healPending) await ed.healPending;   // a heal blends at the release, a large one in a worker
+        }
+        const r = compare(A, B, orig);
+        out.cases[name] = { ...r, drawsOne: Math.max(...one), drawsCoalesced: Math.max(...co) };
+        if (!(r.touched > 20000)) throw new Error(name + ": the stroke changed too little: " + JSON.stringify(out.cases[name]));
+        if (co.some((n) => n !== 1)) throw new Error(name + ": a move of 8 coalesced points drew the buffer " + JSON.stringify(co) + " times, not once");
+        const same = line_ ? r.inner === 0 && r.alphaDiffer < r.touched / 100 : r.differ === 0;
+        if (!same) throw new Error(name + ": 8 coalesced points on the line erased other bytes than one point: " + JSON.stringify(out.cases[name]));
+        ed.removeLayer(A.id); ed.removeLayer(B.id); ed.renderLayers();
+    };
+    ed.brushSize = 300;
+    await pair("soft", () => { ed.eraseHardness = 0.5; ed.brushTipId = ""; ed.brushFlow = 1; });
+    const sq = mk(64, 64); sq.getContext("2d").fillRect(8, 8, 48, 48);
+    ed.brushTips.push({ id: "coalesced-square", name: "square", canvas: sq, spacing: 0.2 });
+    await pair("tip", () => { ed.eraseHardness = 0.5; ed.brushTipId = "coalesced-square"; ed.brushFlow = 1; });
+    // "Follow stroke" on a slow diagonal: moves of 3.2 px, 0.4 px a coalesced point. The tip turns by the move's direction
+    // either way (0.1.32 took it from each point's piece, and pieces under 0.5 px never turned it: the square stayed level)
+    const slow = Array.from({ length: 21 }, (_, i) => [300 + 2.263 * i, 300 + 2.263 * i]);
+    try {
+        await pair("follow", () => { ed.eraseHardness = 0.5; ed.brushTipId = "coalesced-square"; ed.brushFlow = 1; ed.tipRotate = true; }, "erase", false, slow);
+        await pair("follow flow", () => { ed.eraseHardness = 0.5; ed.brushTipId = "coalesced-square"; ed.brushFlow = 0.5; ed.tipRotate = true; }, "erase", false, slow);
+    } finally { ed.tipRotate = false; }
+    await pair("hard", () => { ed.eraseHardness = 1; ed.brushTipId = ""; ed.brushFlow = 1; }, "erase", true);
+    await pair("flow", () => { ed.eraseHardness = 0.5; ed.brushTipId = ""; ed.brushFlow = 0.3; });
+    await pair("paint", () => { ed.hardness = 0.5; ed.brushTipId = ""; ed.brushFlow = 1; ed.color = "#e0a020"; }, "paint");
+    // clone and heal space their dabs at a quarter of the radius, 37.5 px here: 40 / 37.5 is two steps a move either way
+    const cloneOpts0 = ed.cloneOpts;
+    try {
+        ed.cloneOpts = { sample: "layer", aligned: false };
+        await pair("clone", () => { ed.hardness = 0.5; ed.brushTipId = ""; ed.brushFlow = 1; }, "clone");
+        await pair("heal", () => { ed.hardness = 0.5; ed.brushTipId = ""; ed.brushFlow = 1; }, "heal");
+    } finally { ed.cloneOpts = cloneOpts0; ed.cloneSource = null; }
+    // a pen's pressure rising within one move: the segments near its start erase narrower than those near its end
+    ed.eraseHardness = 1; ed.brushTipId = ""; ed.brushFlow = 1;
+    ed.setTool("erase");
+    const P = filled("pen");
+    ed.activeLayerId = P.id; ed.renderLayers();
+    pid++;
+    send("pointerdown", 150, 350, 0.3);
+    const co = Array.from({ length: 8 }, (_, j) => [150 + 400 * (j + 1) / 8, 350, 0.3 + 0.7 * (j + 1) / 8]);
+    const s = ed.pointer.stroke, d0 = s.draw;
+    let n = 0;
+    s.draw = function (...a) { n++; return d0.apply(this, a); };
+    try { send("pointermove", 550, 350, 1, co); } finally { delete s.draw; }
+    send("pointerup", 550, 350, 1);
+    const width = (x) => { const col = P.px.readRect(x, 150, 1, 400).data; let w = 0; for (let i = 3; i < col.length; i += 4) if (col[i] < 128) w++; return w; };
+    out.pen = { draws: n, start: width(190), end: width(540) };
+    if (n !== 1) throw new Error("the pen's move drew the buffer " + n + " times, not once");
+    // at 190 the first segment is 116 px wide and the round cap of the second (142 px) reaches over it; at 540 the last is 300
+    if (!(out.pen.start >= 100 && out.pen.start <= 150 && out.pen.end >= 280 && out.pen.end <= 310)) throw new Error("the pressure did not size the segments of the move: " + JSON.stringify(out.pen));
+    // the soft dabs of that move are spaced by each segment's own radius: radii 32 to 150 px give about 31 steps of 0.18
+    // of the radius over the 400 px (33 dabs), where the smallest radius's spacing all along would give 71
+    ed.eraseHardness = 0.5;
+    pid++;
+    send("pointerdown", 150, 550, 0.1);
+    const ramp = Array.from({ length: 8 }, (_, j) => [150 + 400 * (j + 1) / 8, 550, 0.1 + 0.9 * (j + 1) / 8]);
+    const protos = [CanvasRenderingContext2D.prototype, typeof OffscreenCanvasRenderingContext2D === "undefined" ? null : OffscreenCanvasRenderingContext2D.prototype].filter(Boolean);
+    const arcs0 = protos.map((pr) => pr.arc);
+    let arcs = 0;
+    protos.forEach((pr, i) => { pr.arc = function (...a) { if (this.canvas !== ed.canvas) arcs++; return arcs0[i].apply(this, a); }; });
+    try { send("pointermove", 550, 550, 1, ramp); } finally { protos.forEach((pr, i) => { pr.arc = arcs0[i]; }); }
+    send("pointerup", 550, 550, 1);
+    out.pen.softDabs = arcs;
+    if (!(arcs >= 28 && arcs <= 36)) throw new Error("the soft dabs of a move whose pressure rises are not spaced by their own radius: " + arcs + " (about 33; 71 at the smallest's spacing)");
+} finally {
+    ed.brushSize = keep.size; ed.eraseHardness = keep.eh; ed.hardness = keep.hard; ed.brushFlow = keep.flow; ed.stabiliser = keep.stab;
+    ed.pressureCurve = keep.curve; ed.tipRotate = keep.rot; ed.color = keep.color;
+    ed.brushTips.splice(0, ed.brushTips.length, ...tips0); ed.brushTipId = keep.tip;
+    await run("close_document", { doc: d.id, force: true });
+}
+return out;
+"""),
     ("blur_and_sharpen_modes_soften_and_crisp_an_edge", """
 // PLAN_0_1_31 §4 step 6: the smudge tool's Blur and Sharpen modes through the real handlers. A hard black / white edge
 // gets a ramp where the blur passes and stays hard where it does not; a linear ramp gets darker below its dark end and
