@@ -74,6 +74,7 @@ const ui = {
     upNote: $("up-note"), upScopeSel: $("up-scope-sel"), upScopeDoc: $("up-scope-doc"), upFactor: $("up-factor"),
     upFactorRow: $("up-factor-row"), upSizeNote: $("up-size-note"), upPromptRow: $("up-prompt-row"), upPrompt: $("up-prompt"), upState: $("up-state"), upGo: $("up-go"),
     promptList: $("set-prompts"), promptImport: $("set-prompt-import"), promptFolder: $("set-prompt-folder"), promptNote: $("set-prompt-note"),
+    promptRefPics: $("set-prompt-refpics"),
     compatUrl: $("set-compat-url"), compatModel: $("set-compat-model"), compatModels: $("set-compat-models"),
     compatKey: $("set-compat-key"), compatKeySave: $("set-compat-key-save"), compatKeyClear: $("set-compat-key-clear"),
     compatKeyState: $("set-compat-key-state"), compatTest: $("set-compat-test"), compatState: $("set-compat-state"),
@@ -102,7 +103,12 @@ ui.url.value = (settings.comfy && settings.comfy.url) || "http://127.0.0.1:8188"
 
 // ---- documents (tabs) --------------------------------------------------------------------
 
-host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize, embedRecipe: settings.embedRecipe });
+host.configure({ mount: $("editor-host"), nodeParams: settings.nodeParams, apiSize: settings.apiSize, embedRecipe: settings.embedRecipe, llmRefPictures: refPicturesOn(settings) });
+
+/** settings.llm.refPictures: the reference pictures go to the upsampling model unless it is false (absent = on, 26d2). */
+function refPicturesOn(set) {
+    return ((set && set.llm) || {}).refPictures !== false;
+}
 
 /**
  * The compositor's tile atlas budget (settings.memory.atlasMB, docs/PLAN_BCE.md §C3). Kept on every
@@ -1395,6 +1401,14 @@ function renderPrompts() {
     ui.promptNote.textContent = `${list.length} template${list.length === 1 ? "" : "s"}`;
 }
 
+// the llm object is read fresh and spread, as the other llm writers do, so the endpoint and the rows stay
+ui.promptRefPics.addEventListener("change", async () => {
+    const on = ui.promptRefPics.checked;
+    host.llmRefPictures = on;
+    const set = await window.scumble.settings.get();
+    settings = await window.scumble.settings.set({ llm: { ...(set.llm || {}), refPictures: on } });
+});
+
 ui.promptImport.addEventListener("click", async () => {
     try {
         const r = await window.scumble.prompts.import();
@@ -1828,6 +1842,7 @@ async function openSettings() {
         ui.setAbout.textContent = `Scumble ${info.version} · Electron ${info.electron} · ${info.platform} · data in ${info.userData}. Film names are trademarks of their owners; the looks are Scumble's own approximations, not licensed products.`;
     } catch (_) { /* ignore */ }
     ui.updateAuto.checked = !(settings.updates && settings.updates.check === false);
+    ui.promptRefPics.checked = refPicturesOn(settings);
     try { renderUpdate(await window.scumble.updates.status()); } catch (_) { /* ignore */ }
     refreshFileStats();
     renderGenerations();

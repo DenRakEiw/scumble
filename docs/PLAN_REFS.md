@@ -5,8 +5,8 @@ reference images (in Scumble: the reference layers) can be named inside the prom
 must be changed so that they understand the reference images too. In the prompt the images must be named with the
 designation under which they are actually sent over the API.
 
-**Status (2026-09-29):** S1 (26a1, 26b1), S2 (26b2, 26a2), S3 (26c1, 26c2) and 26d1 built, see their "Built"
-paragraphs; next 26d2, then S5 = 26e + 26f. The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+**Status (2026-09-29):** S1 (26a1, 26b1), S2 (26b2, 26a2), S3 (26c1, 26c2) and S4 (26d1, 26d2) built, see their
+"Built" paragraphs; next S5 = 26e + 26f. The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 
 How this plan was made: a code map and a web survey (seven agents), a design review (three critics), the user's
 answers, then one planner per step against the code and two cross-step critics (interfaces; facts and rules). **Where a
@@ -388,7 +388,10 @@ directly; comfy steps stub `host.connected`, `objectInfo`, `ensureOnServer` and 
   reference moved, hidden or merged while the model answers keeps its tokens in the answer; templates get
   `{references}` (the five shipped ones use it, a template of your own gets the names appended).
 - 26d2: the named reference pictures go to the language model's provider when upsampling (a setting turns it off);
-  the local endpoint no longer retries a 401 / 402 / 429.
+  the local endpoint no longer retries a 401 / 402 / 429, nor a 403 / 404 or any other failure that names no image
+  (a wrong key or a missing model costs one request); a model that takes one picture per request is asked again with
+  the crop ("crop only"); a Settings › Language models row marked "Can see the picture: no" now really gets no picture
+  (the crop included); ToAPIs, OpenRouter and Oxen.ai step down to the crop on a 413.
 - 26e: local Klein and Qwen 2.1 no longer repeat the crop into unused slots, so the same seed gives another result;
   Klein with Original on now sends the references at all.
 - 26f: Generate new keeps the reference layers and sends them where the model takes pictures; Replicate text runs
@@ -1945,6 +1948,28 @@ Normal tier.
 0.5 to 0.75 day. `Item 26 step 26d1: {references} in the templates and the built-in rules, the token rule, the check and remap after a rewrite`
 
 ## 26d2: The named reference pictures to the language model
+
+**26d2 built (2026-09-29, S4).** Main side (a background agent against the plan, then a reviewer): `llm.js` gains
+`refPictures()` (at most six, bytes from a Uint8Array / Buffer / ArrayBuffer, the label on one line and cut at 120
+**code points**), the neutral `turn()` that all four builders map (Anthropic with the instruction last), the compatible
+client's steps all -> crop -> text with the notes "crop only" / "text only" and `pictures`, `ask()` with the switch and
+`vision: false` (custom rows through `customModel`; the local endpoint's model looked up in **every** custom row, not
+only the upsample ones: the flag describes the model); 28 request bodies saved before the change are byte-identical
+after it without reference pictures. `settings.js` a comment. `tools/llm_mock.py`: `images_of`, the token echo, the
+model `mock-one`; `tools/llm_images_test.js` (55 checks). Renderer: `host.llmRefPictures` (configure), `askLLM(...,
+images)` (sent only when there are any), `upsampleInApp(..., refs)` with ", 2 reference pictures" in the status,
+`host.llmPictures` (512 px through `drawLayerFitted`); the switch is `set-prompt-refpics` / `ui.promptRefPics` in
+Settings › Prompt templates (the plan's `ui.upRefPics` would sit among the upscale dialog's `ui.up*`), written by
+spreading the stored `llm` like the other writers. `llm_test.py` runs `llm_images_test.js` and step 5c; `generate`'s
+`upsample_references` checks the stub's two pictures and none with the switch off. Decisions the plan did not have:
+the non-strict retry reads the server's own text (`err.raw`) with the **model id taken out** (a model id holding
+"vision" made a 404 "model not found" look like an image failure: three requests instead of one); on the strict hosts
+a **413 on every picture** also steps down to the crop (a proxy's page names no image, and the pictures are on by
+default); a picture without bytes or label is dropped. The review (two workflows: the builder's own reviewer, then three
+finders with a verifier each) confirmed 4 more: the emoji cut, the model id, `llm_test.py`'s finally now puts
+`host.llmRefPictures` back and closes the dialog, BUGS.md's two 26d2 items marked fixed; rejected: `vision: false` on a
+user row that repeats a built-in id (a built-in id wins everywhere). Gates `--offline --tiles on`: llm, generate,
+openrouter, oxen, toapis, lint, types, nodecopy. Sub-task 4 (`genUpsampleGo`) stays with 26f.
 
 ### Read first: corrections from the review (they win over the text below)
 

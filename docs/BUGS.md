@@ -354,11 +354,14 @@ named.
 - **Replicate text runs send `aspect_ratio: "match_input_image"`**: `providerParams` includes `r.fixed`, and the
   params loop in `replicate.js` (about 42-60) overwrites the aspect the user asked for, so every Replicate FLUX.2, Nano
   Banana and Seedream Generate new sends it. Step 26f.
-- **`llm.ask` never reads a language model row's `vision: false`**: the "Can see the picture" tooltip
-  (`renderer/index.html:89`) promises it, but the upsampler sends the picture to every row and relies on the
-  text-only retry. Step 26d2.
-- **The local OpenAI-compatible endpoint retries any 4xx without the picture**: the non-strict predicate
-  (`llm.js:265`) also retries a 401 / 402 / 429, so a wrong key costs two requests. Step 26d2.
+- ~~**`llm.ask` never reads a language model row's `vision: false`**~~ **Fixed in 26d2 (2026-09-29):** a user row
+  marked "Can see the picture: no" gets no picture at all, the crop included (the local endpoint's model too, looked up
+  in every row of Settings › Language models); a built-in model id keeps winning over a user row of the same id, as
+  everywhere. `tools/llm_images_test.js`.
+- ~~**The local OpenAI-compatible endpoint retries any 4xx without the picture**~~ **Fixed in 26d2 (2026-09-29):** it
+  steps down only on a 400 / 413 / 415 / 422 or a failure whose own text (the model id taken out) names images; a 401 /
+  402 / 429, a 403 / 404 that names no image, or a server that cannot be reached costs one request.
+  `tools/llm_images_test.js`.
 
 ### Linux: built, never run (B2, 2026-09-22)
 

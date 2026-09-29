@@ -76,7 +76,7 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-29, evening: 0.1.33 released; item 26 S1, S2 and S3 built)
+## Where things stand (2026-09-29, evening: 0.1.33 released; item 26 S1 to S4 built)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
@@ -108,10 +108,17 @@ main's `docs/MANUAL.md` already describes S1's img labels, which ship with 0.1.3
   the prompt, the 400 ms hover card, the chevron's swap menu, chip drag, pictures pasted or dropped into the prompt
   become references; `host.refLayout` gives `cap` / `refuse` and a `{keep}` option; the node repo got the stub `async
   refLayout() { return null; }` (committed there, not pushed). Screenshots were sent; the user judges the look. Its
-  "Built" paragraph lists the decisions the plan did not have and the review's 13 fixes. **Next: S4 = 26d1 + 26d2**
-  (templates learn `{references}`, the token check after a rewrite, the named pictures to the language model), in a
-  fresh session. Read the plan's sections 0 and 3-6 and the step's own section ("Read first" wins). Then S5 (26e, 26f),
-  then package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+  "Built" paragraph lists the decisions the plan did not have and the review's 13 fixes. **S4 built and committed
+  locally 2026-09-29 evening (not pushed; the user's "baue S4"):** 26d1 (2678428): `{references}` in the templates and
+  the built-in rules, the token rule, a refusal for a hidden / deleted / unknown token, the check after a rewrite (only
+  when the request named references) and the answer carried through the same remaps as Revert's text (a merge during
+  the wait included); 26d2: the named reference pictures (six at most, 512 px) to API and local-endpoint models, the
+  switch in Settings › Prompt templates (`llm.refPictures`, absent = on), the compatible client's steps all -> crop ->
+  text, `vision: false` honoured, the local endpoint no longer retries a failure that names no image. No live model
+  run (mock and stubs only). **Next: S5 = 26e + 26f** (local ComfyUI recipes, Generate new with references; 26f also
+  owns the Generate new dialog's upsample, 26d1 sub-task 7 and 26d2 sub-task 4), in a fresh session. Read the plan's
+  sections 0 and 3-6 and the step's own section ("Read first" wins). Then package 6 (layers pro) of
+  `docs/PLAN_0_1_31.md`.
 - **To do at the 0.1.34 release (the user, 2026-09-29):** take the other product's name out of the "Next up" line of
   the `v0-1-33` post (`F:\portfolio_web\lib\scumble-posts.ts`, "... the way X does it"), and write the 0.1.34 post,
   CHANGELOG section and manual lines without naming any other product as the model for the feature.
@@ -247,6 +254,9 @@ there; add a new flake there, with the date and what was ruled out.
 - The Bash tool's heredoc breaks on an apostrophe in its text even with a quoted delimiter (`unexpected EOF while looking
   for matching`), and turns `\u0080` in Python source into the character. Write scripts and JS with the Write tool; a
   patch script imports a small `patch(path, [(old, new)])` helper and asserts each `old` occurs once.
+- A patch script's `open(p, "w").write(s)` truncates first: when the heredoc turned `\ud800` into a lone surrogate, the
+  write failed and left an empty file (an untracked test, 2026-09-29; recovered from a review agent's full Read in its
+  transcript). Encode first (`b = s.encode("utf-8")`, then write the bytes), or use the Edit tool.
 - The Write tool itself turns `\u0080` in a JS regex into the literal character. Check a written file for non-ASCII
   (`grep -nP "[^\x00-\x7F]"`) when it holds escapes.
 - A backtick in a comment inside a GLSL template literal ends the JS string; `node --check` on an ES module file here

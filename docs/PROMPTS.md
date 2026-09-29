@@ -74,6 +74,10 @@ labels that hold when it arrives, through the same remaps the prompt and Revert'
 meanwhile, so a reference moved, hidden, deleted or merged into another while the model was answering
 keeps its tokens pointing at the same picture; the note names the tokens as they are then.
 
+With an API model or the local endpoint the language model also sees the pictures of the references the prompt
+names, each after a line with its token (at most six, 512 px; Settings › Prompt templates has the switch, and a
+template changes nothing about it). `docs/HELPERS.md` has the details.
+
 The **assistant** (`docs/ASSISTANT.md`) is not a template and uses none: a template is one call
 with no tools, the assistant is a loop with the editor's commands in its hand. It is an app
 feature beside templates, like prompt upsampling itself.

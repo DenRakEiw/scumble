@@ -97,6 +97,7 @@
       <h3>Prompt templates</h3>
       <div id="set-prompts"></div>
       <div class="shell-row"><button id="set-prompt-import" type="button">Import .md ...</button><button id="set-prompt-folder" type="button">Open folder</button><span id="set-prompt-note" class="shell-note"></span></div>
+      <div class="shell-row"><label class="shell-check" title="The reference images the prompt names by @img token go to the language model's provider as pictures of at most 512 px, so the rewrite knows what each token is. API and local-endpoint models only: the ComfyUI helper upsampler gets their names."><input id="set-prompt-refpics" type="checkbox" checked> Upsampling shows API and local-endpoint models the reference images the prompt names</label></div>
       <p class="shell-help">Markdown files that say how the language model should rewrite a prompt. A front matter with <code>name</code>, <code>description</code>, <code>use</code> (generate, upsample or both) and an optional <code>for</code> (matched against the recipe), then the instruction, with <code>{prompt}</code>, <code>{model}</code>, <code>{aspect}</code>, <code>{region}</code>, <code>{references}</code> as placeholders; with reference tokens in the prompt the app appends its token rule. Yours live in the app data folder and override a built-in of the same name. See docs/PROMPTS.md.</p>
     </section>
     <section>

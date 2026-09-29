@@ -46,13 +46,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def node_test():
-    """tools/models_test.js: the rules the stored model rows are held to, without the app."""
-    r = subprocess.run(["node", os.path.join(ROOT, "tools", "models_test.js")], cwd=ROOT,
-                       capture_output=True, text=True, encoding="utf-8", errors="replace")
-    tail = (r.stdout or "") + (r.stderr or "")
-    if r.returncode != 0:
-        raise Exception("tools/models_test.js: " + tail[-1500:])
-    print("[ok] models_test.js:", tail.strip().splitlines()[-1])
+    """tools/models_test.js (the rules the stored model rows are held to) and tools/llm_images_test.js (the reference
+    pictures each builder sends, item 26 step 26d2), without the app."""
+    for name in ("models_test.js", "llm_images_test.js"):
+        r = subprocess.run(["node", os.path.join(ROOT, "tools", name)], cwd=ROOT,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        tail = (r.stdout or "") + (r.stderr or "")
+        if r.returncode != 0:
+            raise Exception("tools/%s: %s" % (name, tail[-1500:]))
+        lines = (r.stdout or "").strip().splitlines()
+        print("[ok] %s: %s" % (name, lines[-1] if lines else ""))
 
 
 async def run(c):
@@ -254,6 +257,76 @@ async def run(c):
             if want not in text:
                 raise RuntimeError("the upscale instruction lacks %r: %s" % (want, text[:400]))
 
+        # 5c. item 26 step 26d2: the reference pictures the prompt names go to the model, each after a line with its
+        #     token; the switch in Settings keeps them back (the instruction still names them); a model that takes one
+        #     picture per request is asked again with the crop alone ("crop only")
+        from llm_mock import images_of, instruction_of
+        before = len(mock.posts())
+        res = await c.eval(js("""
+    const setModel = async (model) => {
+        const cur = (await window.scumble.settings.get()).llm || {};
+        await window.scumble.settings.set({ llm: { ...cur, compat: { url: %s, model } } });
+        await host.refreshLLMs();
+        ed.refreshSegmentBackends();
+        ed.upBackendSel.value = "app:compat:" + model;
+        if (ed.upBackendSel.value !== "app:compat:" + model) throw new Error(model + " is not in the select");
+    };
+    const TWO = "the coat from @img1 over the dress of @img2";
+    const a = await c("add_paint_layer", { name: "a" });
+    await c("set_layer", { layer: a.id, role: "reference" });
+    const b = await c("add_paint_layer", { name: "b" });
+    await c("set_layer", { layer: b.id, role: "reference" });
+    ed.upCaseSel.value = "edit";
+    ed.upCaseSel.dispatchEvent(new Event("change"));
+    await setModel("mock-vision");
+    await c("set_prompt", { text: TWO });
+    await c("upsample_prompt");
+    const s1 = ed.status;
+    // the switch, as the user flips it
+    const shell = await import("./shell.js");
+    await shell.openSettings();
+    const box = document.getElementById("set-prompt-refpics");
+    const flip = async (on) => {
+        box.checked = on;
+        box.dispatchEvent(new Event("change"));
+        for (let i = 0; i < 40 && ((await window.scumble.settings.get()).llm || {}).refPictures !== on; i++) await new Promise((r) => setTimeout(r, 50));
+        return ((await window.scumble.settings.get()).llm || {}).refPictures;
+    };
+    const stored = await flip(false);
+    const hostOff = host.llmRefPictures;
+    await c("set_prompt", { text: TWO });
+    await c("upsample_prompt");
+    const s2 = ed.status;
+    const storedOn = await flip(true);
+    if (document.getElementById("shell-settings").open) document.getElementById("shell-settings").close();
+    await setModel("mock-one");
+    await c("set_prompt", { text: TWO });
+    await c("upsample_prompt");
+    const s3 = ed.status;
+    // what the offline step below asks, as before this step
+    await setModel("mock-text");
+    ed.upCaseSel.value = "auto";
+    ed.upCaseSel.dispatchEvent(new Event("change"));
+    return { s1, s2, s3, stored, hostOff, storedOn, hostOn: host.llmRefPictures };
+""" % json.dumps(mock.url)))
+        print("[ok] reference pictures:", json.dumps(res)[:400])
+        new = mock.posts()[before:]
+        if [images_of(p) for p in new] != [3, 1, 3, 1]:
+            raise RuntimeError("the pictures per request are wrong: %s (want 3, 1, 3, 1)" % [images_of(p) for p in new])
+        texts = [part.get("text") for part in new[0]["messages"][0]["content"] if part.get("type") == "text"]
+        want = ["The picture being edited:", 'Reference picture @img1 (the layer "a"):', 'Reference picture @img2 (the layer "b"):']
+        if texts[1:] != want:
+            raise RuntimeError("the labels are not in order: %s" % texts[1:])
+        if "2 reference pictures" not in res["s1"] or "Check the tokens" in res["s1"]:
+            raise RuntimeError("the vision model's status: " + res["s1"])
+        second = instruction_of(new[1])
+        if res["stored"] is not False or res["hostOff"] is not False or "reference picture" in res["s2"] or '@img2 (the layer "b")' not in second:
+            raise RuntimeError("the switch off: %s / %s" % (json.dumps(res), second[:300]))
+        if res["storedOn"] is not True or res["hostOn"] is not True:
+            raise RuntimeError("the switch did not come back on: %s" % json.dumps(res))
+        if "crop only" not in res["s3"] or "dropped @img1" not in res["s3"]:
+            raise RuntimeError("the one-picture model's status: " + res["s3"])
+
         # 6. the server is gone: the error names the URL
         mock.stop()
         mock = None
@@ -279,6 +352,11 @@ async def run(c):
             await c.eval("""(async () => {
     const host = window.__llm.host, raw = window.__llm.commands;
     await window.scumble.settings.set({ llm: window.__llmSaved || { compat: { url: "", model: "" }, models: [] } });
+    // step 5c flips the reference pictures switch through the dialog: a failure half way must not leave it off for the
+    // gates after this one (the host keeps its own copy) or the dialog open over them
+    host.llmRefPictures = ((window.__llmSaved || {}).refPictures !== false);
+    const dlg = document.getElementById("shell-settings");
+    if (dlg && dlg.open) dlg.close();
     if (window.__llmToapisKey) { await window.scumble.keys.clear("toapis"); window.__llmToapisKey = false; }
     if ("__llmToapisBase" in window) { await window.scumble.settings.set({ toapis: window.__llmToapisBase }); delete window.__llmToapisBase; }
     await host.refreshLLMs();

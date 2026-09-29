@@ -154,6 +154,21 @@ try {
     const c = calls[n].instruction;
     const c1 = c.indexOf("Rules:"), c2 = c.indexOf("Reference tokens:"), c3 = c.indexOf("Output only the prompt text.");
     if (!(c1 >= 0 && c1 < c2 && c2 < c3) || !c.includes("(the @img tokens are not such mentions: keep them)")) throw new Error("(c) " + c);
+    // 26d2: the pictures of the references the prompt names go along, labelled, at most 512 px; none with the switch off
+    n = calls.length;
+    await up("edit", "the coat from @img1 over the dress of @img2", "Put the coat from @img1 over the dress of @img2.");
+    const pics = calls[n].images;
+    if (pics.length !== 2 || pics[0].label !== '@img1 (the layer "jacket")' || pics[1].label !== '@img2 (the layer "dress")') throw new Error("pictures: " + JSON.stringify(pics.map((p) => p.label)));
+    const sizes = [];
+    for (const p of pics) { const bm = await createImageBitmap(new Blob([p.png], { type: "image/png" })); sizes.push([bm.width, bm.height]); bm.close(); }
+    if (sizes.some(([w, h]) => Math.max(w, h) > 512 || Math.max(w, h) < 256)) throw new Error("picture sizes " + JSON.stringify(sizes));
+    out.pictures = sizes;
+    host.llmRefPictures = false;
+    try {
+        n = calls.length;
+        await up("edit", "the coat from @img1 over the dress of @img2", "Put the coat from @img1 over the dress of @img2 now.");
+        if (calls[n].images.length !== 0 || !calls[n].instruction.includes('@img2 (the layer "dress")')) throw new Error("switch off: " + calls[n].images.length + " pictures");
+    } finally { host.llmRefPictures = true; }
     // (d) a hidden reference's token refuses, names the layer, asks nothing
     await run("set_prompt", { doc, text: "the coat from @img1" });
     await run("set_layer", { doc, layer: j.id, visible: false });

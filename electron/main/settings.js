@@ -25,6 +25,9 @@ const DEFAULTS = {
     // Studio, vLLM, a proxy); an optional key lives in keys.js under the name "compat"
     // `models` are the rows the user added under Settings > Language models
     // (electron/main/llm_custom.js): { provider, model, label, upsample, assistant, vision }
+    // `refPictures: false` keeps the reference pictures the prompt names away from the upsampling model (llm.js ask,
+    // item 26 step 26d2); absent means on. It is deliberately not a default here: set() writes the whole object, so a
+    // stored default could no longer be told from the user's choice (the embedRecipe trap in get() below)
     llm: { compat: { url: "", model: "" }, models: [] },
     // which prompt instruction template (electron/main/prompts.js) each use takes; "" = built in
     promptTemplates: { upsample: "", generate: "" },

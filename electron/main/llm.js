@@ -13,10 +13,14 @@
 // /api/ai/chat/completions (no /v1), at the host providers/oxen.js allows (settings.oxen.base: the loopback mock only).
 //
 //   list()            -> [{ id, provider, model, label, key: bool }]
-//   ask({ id, instruction, image, maxTokens }) -> { text, seconds, model, note }
+//   ask({ id, instruction, image, images, maxTokens }) -> { text, seconds, model, note, pictures }
 //   compatModels(url) -> [model id] from GET <url>/v1/models
 //
-// `image` is PNG bytes (Uint8Array / Buffer) or null. Model ids checked on 2026-09-09.
+// `image` is PNG bytes (Uint8Array / Buffer) or null: the crop. `images` are the reference pictures the prompt names
+// ([{ png, label }], item 26, docs/PLAN_REFS.md 26d2): at most six go out, each after a line with its label; absent or
+// empty, every request is the one it was before them. `pictures` is how many of them went out. settings.llm.refPictures
+// false keeps them all back, and a row the user marked `vision: false` gets no picture at all. Model ids checked on
+// 2026-09-09.
 "use strict";
 
 const keys = require("./keys");
@@ -142,13 +146,52 @@ function toBuffer(v) {
     return Buffer.from(v);
 }
 
+const MAX_REF_PICTURES = 6;
+const MAX_LABEL = 120;
+
+/**
+ * The reference pictures of a request, cleaned: PNG bytes (a Uint8Array from IPC, a Buffer or an ArrayBuffer) and a
+ * label on one line of at most MAX_LABEL characters, at most MAX_REF_PICTURES of them. A picture without bytes or
+ * without a label is left out: the model could not tie it to a token.
+ */
+function refPictures(list) {
+    const out = [];
+    for (const r of Array.isArray(list) ? list : []) {
+        if (out.length >= MAX_REF_PICTURES) break;
+        const v = r && r.png;
+        const png = v && (Buffer.isBuffer(v) || v instanceof Uint8Array || v instanceof ArrayBuffer) ? toBuffer(v) : null;
+        // cut by code points: a cut through an emoji's surrogate pair makes a string some JSON parsers refuse
+        const label = Array.from(String((r && r.label) || "").replace(/\s+/g, " ").trim()).slice(0, MAX_LABEL).join("").trim();
+        if (png && png.length && label) out.push({ png, label });
+    }
+    return out;
+}
+
+/**
+ * The user turn as neutral parts, [{ text } | { png }], which each builder maps to its own part types. Without
+ * reference pictures it is exactly the turn from before them (the instruction, then the crop when there is one), so
+ * such a request is byte-identical. With them: the instruction and a sentence on the order, the crop after a line that
+ * says so, then each reference picture after a line with its label. The labels carry the tokens ("@img1 (the layer
+ * "jacket")"), never numbers, so the model is not invited to write "picture 2".
+ */
+function turn(instruction, image, images) {
+    if (!images || !images.length) return [{ text: instruction }, ...(image ? [{ png: image }] : [])];
+    const out = [{ text: instruction + "\n\n" + (image
+        ? "The first picture is the one being edited; the reference pictures follow it, each after a line that gives its token."
+        : "The pictures are reference images, each after a line that gives its token.") }];
+    if (image) out.push({ text: "The picture being edited:" }, { png: image });
+    for (const r of images) out.push({ text: `Reference picture ${r.label}:` }, { png: r.png });
+    return out;
+}
+
 // ---- adapters -----------------------------------------------------------------------
 
-async function askOpenAI({ model, key, instruction, image, maxTokens }) {
-    // Responses API: one user turn with the text and the image as a data URI. The
+async function askOpenAI({ model, key, instruction, image, images, maxTokens }) {
+    // Responses API: one user turn with the text and the pictures as data URIs. The
     // 5.x models reason before they answer; low effort keeps a prompt rewrite quick.
-    const content = [{ type: "input_text", text: instruction }];
-    if (image) content.push({ type: "input_image", image_url: dataUri(image), detail: "auto" });
+    const content = turn(instruction, image, images).map((p) => (p.png
+        ? { type: "input_image", image_url: dataUri(p.png), detail: "auto" }
+        : { type: "input_text", text: p.text }));
     const body = { model, input: [{ role: "user", content }], max_output_tokens: maxTokens, reasoning: { effort: "low" } };
     const r = await fetch("https://api.openai.com/v1/responses", {
         method: "POST", headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -168,9 +211,8 @@ async function askOpenAI({ model, key, instruction, image, maxTokens }) {
     return text;
 }
 
-async function askGemini({ model, key, instruction, image, maxTokens }) {
-    const parts = [{ text: instruction }];
-    if (image) parts.push({ inline_data: { mime_type: "image/png", data: b64(image) } });
+async function askGemini({ model, key, instruction, image, images, maxTokens }) {
+    const parts = turn(instruction, image, images).map((p) => (p.png ? { inline_data: { mime_type: "image/png", data: b64(p.png) } } : { text: p.text }));
     // Thinking tokens count against maxOutputTokens, so the limit stays generous and the
     // Gemini 3 models think at the low level (thinkingLevel is a Gemini 3 field).
     const generationConfig = { maxOutputTokens: maxTokens, responseModalities: ["TEXT"] };
@@ -191,10 +233,13 @@ async function askGemini({ model, key, instruction, image, maxTokens }) {
     return text;
 }
 
-async function askAnthropic({ model, key, instruction, image, maxTokens }) {
-    const content = [];
-    if (image) content.push({ type: "image", source: { type: "base64", media_type: "image/png", data: b64(image) } });
-    content.push({ type: "text", text: instruction });
+async function askAnthropic({ model, key, instruction, image, images, maxTokens }) {
+    // the pictures first and the instruction last, as this request always had it: the turn with its first part
+    // (the instruction) moved to the end, which is [crop, instruction] when there are no reference pictures
+    const [first, ...rest] = turn(instruction, image, images);
+    const content = [...rest, first].map((p) => (p.png
+        ? { type: "image", source: { type: "base64", media_type: "image/png", data: b64(p.png) } }
+        : { type: "text", text: p.text }));
     const body = { model, max_tokens: maxTokens, messages: [{ role: "user", content }] };
     // Opus 5 thinks adaptively by default; low effort is enough for a prompt rewrite.
     // Haiku 4.5 does not take the effort field.
@@ -216,26 +261,34 @@ async function askAnthropic({ model, key, instruction, image, maxTokens }) {
 /**
  * Any OpenAI-compatible /v1/chat/completions server: Ollama, LM Studio, vLLM, a proxy.
  * The key is optional (local servers want none, OpenRouter and some proxies do).
- * A text-only model answers 400 on the image; we retry once without it and say so, so the
- * user learns the model never saw the crop.
+ * The request goes in steps: every picture (the crop and the reference pictures), then the crop
+ * alone, then the text alone (a plain string). A model that takes one picture per request answers
+ * 400 on several, a text-only model on any; each step down is taken only on a failure a second
+ * request can fix, and the note says what the model did not see ("crop only", "text only").
+ * Without reference pictures the steps are the crop, then the text, as before item 26.
  *
- * `strict` (ToAPIs, whose rows are all vision models): the retry without the image only for a
- * 400 / 413 / 415 / 422 that names the image, never for a refused key, an empty balance, a rate
- * limit or a server error, which a second request cannot fix; `explain(status, message)` puts
+ * A step down, for the local endpoint: a 400 / 413 / 415 / 422, or a failure whose own words are
+ * about images; never a refused key, an empty balance or a rate limit (401 / 402 / 429), a server
+ * that cannot be reached, or another failure that does not name images, so a wrong key costs one
+ * request. `strict` (ToAPIs, whose rows are all vision models, and the other hosted rows): only a
+ * 400 / 413 / 415 / 422 that names the image, never a refused key, an empty balance, a rate limit
+ * or a server error, which a second request cannot fix. `explain(status, message)` puts
  * plain words in front of the server's message and gets the error's metadata when `readFailure(r)`
  * ({ message, meta }) reads it (OpenRouter). `extra` goes into the body as it is (OpenRouter: reasoning
  * and provider). `exact`: the URL is the base as it is, without the /v1 compatBase adds (Oxen.ai's /api/ai). The key
  * is taken out of a failed answer's text, whatever the server echoed.
  */
-async function askCompatible({ model, key, instruction, image, maxTokens, url, label, strict, explain, extra, readFailure, exact }) {
+async function askCompatible({ model, key, instruction, image, images = [], maxTokens, url, label, strict, explain, extra, readFailure, exact }) {
     const base = exact ? String(url || "").trim().replace(/\/+$/, "") : compatBase(url);
     const endpoint = base + "/chat/completions";
     const headers = { "Content-Type": "application/json", ...(key ? { Authorization: "Bearer " + key } : {}) };
 
-    async function once(withImage) {
-        const content = withImage
-            ? [{ type: "text", text: instruction }, { type: "image_url", image_url: { url: dataUri(image) } }]
-            : instruction;                                   // a plain string is what every server understands
+    async function once(step) {
+        const content = step === "text"
+            ? instruction                                    // a plain string is what every server understands
+            : turn(instruction, image, step === "all" ? images : []).map((p) => (p.png
+                ? { type: "image_url", image_url: { url: dataUri(p.png) } }
+                : { type: "text", text: p.text }));
         const body = { model, messages: [{ role: "user", content }], max_tokens: maxTokens, stream: false, ...(extra || {}) };
         let r;
         try {
@@ -254,21 +307,30 @@ async function askCompatible({ model, key, instruction, image, maxTokens, url, l
         return await r.json();
     }
 
-    let textOnly = false;
+    // err.raw is the server's own text, without the model id in front, and the id is taken out of it too (a server
+    // repeats it: 'model "llama3.2-vision" not found'): a model called "llava-vision" does not make a refused key or a
+    // missing model look like a failure about images
+    const aboutImage = (s) => /image|vision|multimodal|content part/i.test(model ? String(s == null ? "" : s).split(String(model)).join("") : String(s));
+    const badRequest = (s) => [400, 413, 415, 422].includes(s);
+    // a 413 on every picture is the reference pictures' size wherever the server sends its answer from (a proxy's page
+    // names no image): the crop alone is a smaller request, on a strict host too
+    const retry = (err, step) => (strict
+        ? (badRequest(err.status) && aboutImage(err.raw)) || (step === "all" && err.status === 413)
+        : !!err.status && ![401, 402, 429].includes(err.status) && (badRequest(err.status) || aboutImage(err.raw)));
+    const steps = [images.length && "all", image && "crop", "text"].filter(Boolean);
     let out;
-    if (image) {
+    let step;
+    for (let i = 0; i < steps.length; i++) {
+        step = steps[i];
         try {
-            out = await once(true);
+            out = await once(step);
+            break;
         } catch (err) {
-            // a 4xx, or a message about images: the model has no vision, ask again without it
-            const aboutImage = (s) => /image|vision|multimodal|content part/i.test(String(s));
-            if (strict ? !([400, 413, 415, 422].includes(err.status) && aboutImage(err.raw)) : (!(err.status >= 400 && err.status < 500) && !aboutImage(err.message))) throw err;
-            textOnly = true;
-            out = await once(false);
+            if (i === steps.length - 1 || !retry(err, step)) throw err;
         }
-    } else {
-        out = await once(false);
     }
+    const textOnly = step === "text" && (!!image || images.length > 0);
+    const note = textOnly ? "text only" : step === "crop" && images.length ? "crop only" : "";
 
     const choice = (out.choices && out.choices[0]) || {};
     // an error after the answer began comes as HTTP 200 (OpenRouter): what came before it is not the prompt
@@ -289,7 +351,7 @@ async function askCompatible({ model, key, instruction, image, maxTokens, url, l
         const why = (out.choices && out.choices[0] && out.choices[0].finish_reason) || (out.error && out.error.message) || "no text in the answer";
         throw new Error(`${model} at ${compatHost(url)}: ${why}`);
     }
-    return { text, textOnly };
+    return { text, textOnly, step, note, pictures: step === "all" ? images.length : 0 };
 }
 
 /** ToAPIs' /v1/chat/completions: the OpenAI-compatible client with the image key and ToAPIs' host. */
@@ -346,46 +408,64 @@ async function ask(req) {
     const instruction = String(req.instruction || "").trim();
     if (!instruction) throw new Error("empty instruction");
     const maxTokens = Math.max(256, Math.min(8192, +req.maxTokens || 4096));
-    const image = toBuffer(req.image);
+    let image = toBuffer(req.image);
+    // the reference pictures: none when the user switched them off (settings.llm.refPictures false; absent means on)
+    let images = (settings.get().llm || {}).refPictures === false ? [] : refPictures(req.images);
     const t0 = Date.now();
     let text;
     let note = "";
+    let pictures = 0;
     let model;
     if (id.startsWith("compat:")) {
         const c = compatConfig();
         model = id.slice("compat:".length) || c.model;
         if (!c.url) throw new Error("No endpoint URL. Set one under Settings › Local / OpenAI-compatible endpoint.");
+        // a row of the endpoint's model under Settings > Language models, whichever use it is ticked for: its
+        // "Can see the picture" is about the model
+        const row = custom.find(custom.rows(settings.get()), "compat", model);
+        if (row && row.vision === false) { image = null; images = []; }
         const key = keys.get("compat");
         let res;
         try {
-            res = await askCompatible({ model, key, instruction, image, maxTokens, url: c.url });
+            res = await askCompatible({ model, key, instruction, image, images, maxTokens, url: c.url });
         } catch (err) {
             throw new Error(scrubKey(err && err.message || err, key));
         }
         text = res.text;
-        if (res.textOnly) note = "text only";
+        note = res.note;
+        pictures = res.pictures;
     } else {
         const m = MODELS.find((x) => `${x.provider}:${x.model}` === id) || customModel(id);
         if (!m) throw new Error("Unknown language model: " + id);
         const key = keys.get(m.provider);
         if (!key) throw new Error(`No API key for ${PROVIDER_LABEL[m.provider]}. Add it under Settings › API providers.`);
         model = m.model;
+        // a row the user marked as not seeing pictures gets none, the crop included, and no note: the user set it so
+        if (m.vision === false) { image = null; images = []; }
         let res;
         try {
-            res = await ADAPTERS[m.provider]({ provider: m.provider, model: m.model, key, instruction, image, maxTokens, row: m });
+            res = await ADAPTERS[m.provider]({ provider: m.provider, model: m.model, key, instruction, image, images, maxTokens, row: m });
         } catch (err) {
             // every provider's error text, a failed status or an error inside an HTTP 200, without the key
             throw new Error(scrubKey(err && err.message || err, key));
         }
-        // the OpenAI-compatible client (ToAPIs, OpenRouter) says whether the answer came without the image
-        text = typeof res === "string" ? res : res.text;
-        if (res && res.textOnly) note = "text only";
+        // the OpenAI-compatible client (ToAPIs, OpenRouter, Oxen.ai, the Chat providers) says what the answer came
+        // without and how many reference pictures went; the other three send every picture or fail
+        if (typeof res === "string") {
+            text = res;
+            pictures = images.length;
+        } else {
+            text = res.text;
+            note = res.note;
+            pictures = res.pictures;
+        }
     }
     // Models like to wrap the prompt in quotes or a code fence even when told not to.
     text = text.replace(/^```[a-z]*\s*|\s*```$/g, "").trim();
     if (/^".*"$/s.test(text) && !text.slice(1, -1).includes('"')) text = text.slice(1, -1).trim();
-    console.log(`[llm] ${id} ${((Date.now() - t0) / 1000).toFixed(1)} s, ${text.split(/\s+/).length} words${note ? ", " + note : ""}`);
-    return { text, seconds: (Date.now() - t0) / 1000, model, note };
+    const refs = pictures ? `, ${pictures} reference picture${pictures === 1 ? "" : "s"}` : "";
+    console.log(`[llm] ${id} ${((Date.now() - t0) / 1000).toFixed(1)} s, ${text.split(/\s+/).length} words${refs}${note ? ", " + note : ""}`);
+    return { text, seconds: (Date.now() - t0) / 1000, model, note, pictures };
 }
 
 /** One of the user's own rows as a MODELS entry, or null (Settings > Language models). */
@@ -396,7 +476,7 @@ function customModel(id) {
     const model = id.slice(at + 1);
     const row = custom.find(custom.forUpsample(settings.get()), provider, model);
     if (!row || !ADAPTERS[Object.prototype.hasOwnProperty.call(ADAPTERS, provider) ? provider : ""]) return null;
-    return { provider, model, label: row.label || model };
+    return { provider, model, label: row.label || model, vision: row.vision !== false };
 }
 
 module.exports = { list, ask, compatModels, MODELS };

@@ -17,7 +17,7 @@
 import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, canvasBytes } from "./stitch.js";
 import { glReleasePool } from "./inpaint_filters_gl.js";
 import { withoutSecrets } from "./redact.js";
-import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule } from "./reftokens.js";
+import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
 
 const PROXY = "/comfy";
 const SUBFOLDER = "inpaint_canvas";
@@ -212,7 +212,7 @@ export const api = {
  * @property {() => any[]} upsampleBackends
  * @property {(editor: any, backend: any, instruction: string, refs?: any[]) => Promise<any>} upsampleInApp   `refs`: the references the prompt names (docs/PLAN_REFS.md 26d1)
  * @property {(ctx: any) => string} upsampleInstruction
- * @property {(backend: any, instruction: string, canvas: any) => Promise<any>} askLLM
+ * @property {(backend: any, instruction: string, canvas: any, images?: { png: Uint8Array, label: string }[]) => Promise<any>} askLLM   `images`: reference pictures (docs/PLAN_REFS.md 26d2)
  * @property {() => any[]} cutoutBackends
  * @property {(editor: any, layer: any, backend: any) => Promise<any>} cutoutInApp
  * @property {() => boolean} objectsInApp
@@ -259,13 +259,14 @@ export const host = {
 
     /**
      * Shell setup: where editors mount and the persisted node params.
-     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string, embedRecipe?: boolean }} [opts]
+     * @param {{ mount?: HTMLElement, nodeParams?: any, apiSize?: string, embedRecipe?: boolean, llmRefPictures?: boolean }} [opts]
      */
-    configure({ mount, nodeParams, apiSize, embedRecipe } = {}) {
+    configure({ mount, nodeParams, apiSize, embedRecipe, llmRefPictures } = {}) {
         this.mountEl = mount || document.body;
         if (nodeParams) this.nodeParams = { ...this.nodeParams, ...nodeParams };
         if (API_SIZES.some(([id]) => id === apiSize)) this.apiSize = apiSize;
         if (typeof embedRecipe === "boolean") this.embedRecipe = embedRecipe;
+        if (typeof llmRefPictures === "boolean") this.llmRefPictures = llmRefPictures;
     },
 
     /**
@@ -2152,6 +2153,9 @@ export const host = {
     // ---- language models on the provider keys (electron/main/llm.js) ----------------
 
     llms: [],   // [{ id, provider, model, label, key }] from the main process
+    // settings.llm.refPictures (absent = on): an upsample shows the language model the reference images the prompt
+    // names (docs/PLAN_REFS.md 26d2); main enforces the setting where the request leaves, this only saves the drawing
+    llmRefPictures: true,
 
     /** Which API language models have a key, then refresh the editors' upsample lists. */
     async refreshLLMs() {
@@ -2165,15 +2169,18 @@ export const host = {
         return this.llms.filter((l) => l.key).map((l) => ({ id: "app:" + l.id, label: l.label, inApp: true, llm: l.id, needs: [] }));
     },
 
-    /** One question to an API language model with a canvas in view; { text, seconds }. */
-    async askLLM(backend, instruction, canvas) {
+    /**
+     * One question to an API language model with a canvas in view; { text, seconds, note, pictures }. `images`: the
+     * reference pictures to show it too, [{ png, label }] (`llmPictures`); main sends at most six.
+     */
+    async askLLM(backend, instruction, canvas, images = []) {
         let image = null;
         if (canvas) {
             const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
             image = new Uint8Array(await blob.arrayBuffer());
         }
         try {
-            return await window.scumble.llm.ask({ id: backend.llm, instruction, image });
+            return await window.scumble.llm.ask({ id: backend.llm, instruction, image, ...(images && images.length ? { images } : {}) });
         } catch (err) {
             // strip Electron's "Error invoking remote method 'llm:ask': Error: " wrapper
             throw new Error(String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
@@ -2186,12 +2193,42 @@ export const host = {
      * the ComfyUI path does through the InpaintCanvasTextOut event. Throws on failure
      * (the editor's catch resets the pending state).
      */
-    async upsampleInApp(editor, backend, instruction) {
-        const res = await this.askLLM(backend, instruction, await editor.promptContextCanvas());
+    async upsampleInApp(editor, backend, instruction, refs = []) {
+        // the pictures of the references the prompt names (26d2), unless the setting keeps them back
+        const images = this.llmRefPictures && refs.length ? await this.llmPictures(editor, refs) : [];
+        const res = await this.askLLM(backend, instruction, await editor.promptContextCanvas(), images);
         if (!editor.upsamplePending) return;   // cancelled meanwhile
         editor.applyTextResult({ text: res.text });
-        const note = res.note ? `, ${res.note}` : "";   // "text only": the model refused the crop and answered on the words alone
-        editor.setStatus(editor.status.replace(/\.$/, "") + ` (${backend.label.replace(/ \(.*\)$/, "")}, ${res.seconds.toFixed(1)} s${note}).`);
+        const pics = res.pictures ? `, ${res.pictures} reference picture${res.pictures === 1 ? "" : "s"}` : "";
+        // "crop only": the model took no reference picture; "text only": it refused every picture and answered on the words alone
+        const note = res.note ? `, ${res.note}` : "";
+        editor.setStatus(editor.status.replace(/\.$/, "") + ` (${backend.label.replace(/ \(.*\)$/, "")}, ${res.seconds.toFixed(1)} s${pics}${note}).`);
+    },
+
+    /**
+     * The pictures of the references an upsample names (26d2): at most six, in label order, each layer drawn with its
+     * mask at 512 px on its long side at most (from the tiles' thumbnails on tiles: never a full-size mirror), as PNG
+     * bytes after a label with its token and name. A layer without pixels is left out. App only: the editor never
+     * calls it.
+     * @param {any} editor
+     * @param {{ id: string, n: number, name: string }[]} refs  sorted by label
+     * @returns {Promise<{ png: Uint8Array, label: string }[]>}
+     */
+    async llmPictures(editor, refs) {
+        const out = [];
+        for (const r of (refs || []).slice(0, 6)) {
+            const layer = editor.layers.find((l) => l.id === r.id);
+            if (!layer || !layer.px) continue;
+            const s = Math.min(1, 512 / Math.max(layer.px.width, layer.px.height));
+            const w = Math.max(1, Math.round(layer.px.width * s)), h = Math.max(1, Math.round(layer.px.height * s));
+            const c = document.createElement("canvas");
+            c.width = w;
+            c.height = h;
+            editor.drawLayerFitted(c.getContext("2d"), layer, 0, 0, w, h);
+            const blob = await new Promise((res) => c.toBlob(res, "image/png"));
+            if (blob) out.push({ png: new Uint8Array(await blob.arrayBuffer()), label: referenceName(r) });
+        }
+        return out;
     },
 
     /**

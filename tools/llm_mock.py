@@ -2,23 +2,29 @@
 
 Answers the two routes electron/main/llm.js talks to:
 
-    GET  /v1/models             {"data": [{"id": "mock-vision"}, {"id": "mock-text"}]}
-    POST /v1/chat/completions   the instruction's first five words + " UPSAMPLED, image: yes|no"
+    GET  /v1/models             {"data": [{"id": "mock-vision"}, {"id": "mock-text"}, {"id": "mock-one"}]}
+    POST /v1/chat/completions   the instruction's first five words + " UPSAMPLED, image: yes|no, images: N",
+                                then the distinct @img tokens of the instruction (" @img1 @img2")
 
+N is the number of `image_url` parts (the crop and the reference pictures, item 26 step 26d2);
+echoing the tokens keeps them in the rewrite, so the editor's token check stays quiet.
 Model `mock-text` refuses a request that carries an `image_url` part with HTTP 400, the way
-a text-only model does, so the adapter's retry-without-image can be tested. The three ToAPIs
-upsample models (electron/main/llm.js) answer like `mock-vision`, so the same server plays
-ToAPIs' Chat Completions. Every request body is appended to `requests`, its Authorization
-header to `auths`, so the test can assert what was sent and with which key.
+a text-only model does, so the adapter's retry-without-image can be tested. Model `mock-one`
+takes one picture per request and refuses more with HTTP 400 ("only one image per request is
+supported"), so the steps all pictures -> crop only can be tested; it echoes no tokens. The
+three ToAPIs upsample models (electron/main/llm.js) answer like `mock-vision`, so the same
+server plays ToAPIs' Chat Completions. Every request body is appended to `requests`, its
+Authorization header to `auths`, so the test can assert what was sent and with which key.
 
     python tools/llm_mock.py [port]     runs it standalone for poking at by hand
 """
 import json
+import re
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-MODELS = ["mock-vision", "mock-text"]
+MODELS = ["mock-vision", "mock-text", "mock-one"]
 TOAPIS_MODELS = ["gemini-3.8-flash", "claude-haiku-4-5", "gpt-5.6-terra"]
 
 
@@ -62,13 +68,28 @@ class Mock(ThreadingHTTPServer):
 
 
 def has_image(body):
+    return images_of(body) > 0
+
+
+def images_of(body):
+    """The number of `image_url` parts of a request: the crop and the reference pictures."""
+    n = 0
     for m in body.get("messages") or []:
         content = m.get("content")
         if isinstance(content, list):
             for part in content:
                 if isinstance(part, dict) and part.get("type") == "image_url":
-                    return True
-    return False
+                    n += 1
+    return n
+
+
+def tokens_of(text):
+    """The distinct @img tokens of a text, in the order they first appear."""
+    out = []
+    for t in re.findall(r"@img\d+", text or ""):
+        if t not in out:
+            out.append(t)
+    return out
 
 
 def instruction_of(body):
@@ -120,15 +141,23 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": {"message": "no route " + self.path}})
             return
         model = body.get("model") or ""
-        image = has_image(body)
+        n = images_of(body)
+        image = n > 0
         if model == "mock-text" and image:
             self._send(400, {"error": {"message": "image input is not supported by this model"}})
+            return
+        if model == "mock-one" and n > 1:
+            self._send(400, {"error": {"message": "only one image per request is supported"}})
             return
         if model not in MODELS and model not in TOAPIS_MODELS:
             self._send(404, {"error": {"message": f"model '{model}' not found"}})
             return
-        words = " ".join((instruction_of(body) or "").split()[:5])
-        text = f"{words} UPSAMPLED, image: {'yes' if image else 'no'}"
+        instruction = instruction_of(body) or ""
+        words = " ".join(instruction.split()[:5])
+        text = f"{words} UPSAMPLED, image: {'yes' if image else 'no'}, images: {n}"
+        tokens = [] if model == "mock-one" else tokens_of(instruction)
+        if tokens:
+            text += " " + " ".join(tokens)
         self._send(200, {
             "id": "mock-1", "object": "chat.completion", "model": model,
             "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": text}}],

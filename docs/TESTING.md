@@ -112,7 +112,14 @@ answering from a queue, two paint references: no token gives the instruction of 
 only the reference the prompt names and carry the token rule, a hidden reference's token refuses with no call, an
 answer that drops, adds and numbers gives the status note and `check`, and a swap of the references while the model
 answers carries the answer and Revert's text to the new labels), `prompt_templates`' `{references}` checks, and
-`reftokens_test.js` section 11 (`referenceName`, `referencesText`, `referencesRule`, `checkNote`). Every
+`reftokens_test.js` section 11 (`referenceName`, `referencesText`, `referencesRule`, `checkNote`). 26d2 adds
+`node tools/llm_images_test.js` (plain Node, `llm.js` with `./keys` and `./settings` stubbed and a scripted fetch: each
+builder's part sequence with the reference pictures, the bodies without them byte for byte, the cap of six, the
+switch, `vision: false`, the compatible client's steps all -> crop -> text with their notes, which failures step down
+and which do not, labels on one line), run by `llm_test.py`'s `node_test()` too; `llm_test.py` step 5c (two paint
+references against `tools/llm_mock.py`: `mock-vision` gets 3 pictures in label order, the Settings switch off gives
+1 and the instruction still names both, the new `mock-one` gets 3 then 1 with "crop only"); and in `generate`'s
+`upsample_references` the stub's two pictures (labels, 512 px) and none with `host.llmRefPictures` off. Every
 gate that touches references ends with `ed._refDrift` 0: a change of the shown references that no site remapped is
 counted in `renderReferences`.
 

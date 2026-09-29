@@ -22,6 +22,24 @@ against a live key yet (the wiring was verified up to the providers' "invalid ke
 answers). IPC `llm:list` / `llm:ask`, `host.upsampleBackends()`, `host.askLLM()`,
 `host.upsampleInApp()`; the host members the editor calls are in docs/BUILD_NODE.md.
 
+**Reference pictures (item 26 step 26d2).** When the prompt names reference layers (`@img1`, docs/PLAN_REFS.md),
+the upsample also sends the pictures of the references it names, at most six in label order, each drawn with its
+mask at 512 px on the long side at most (`host.llmPictures`, from the tiles' thumbnails on the tiles backend) and
+put after a text line with its token and layer name ("Reference picture @img1 (the layer "jacket"):"); the crop
+comes first after "The picture being edited:", and a sentence after the instruction says so. The labels carry
+tokens, never numbers, so the model is not invited to write "picture 2". Every builder maps the same neutral turn
+(`turn()` in `llm.js`): OpenAI `input_text` / `input_image`, Gemini `text` / `inline_data`, Anthropic the same with
+the instruction last, the compatible client `text` / `image_url`. Without named references every request body is the
+one it was before. The compatible client (the local endpoint, ToAPIs, OpenRouter, Oxen.ai and the Chat providers)
+steps down from every picture to the crop alone, then to the text ("crop only", "text only" in the status); on the
+strict hosts a 413 on every picture steps down too, whatever its text says (a proxy's page names no image). The status
+names how many went ("2 reference pictures"). A row marked "Can see the picture: no" (Settings › Language models,
+also for the local endpoint's model) gets no picture at all, not even the crop, and no note. Settings › Prompt
+templates has the switch (`settings.llm.refPictures`, absent = on): off, the pictures stay back and the instruction
+still names every token. The ComfyUI helper upsampler gets the names only (the node takes one picture).
+`node tools/llm_images_test.js` checks every builder's part sequence, the byte-identical bodies without references,
+the cap, the switch, `vision: false`, the steps and the notes against a scripted fetch.
+
 ### Through the ToAPIs key
 
 A stored ToAPIs key (the image provider, docs/RECIPES.md "ToAPIs") adds three rows **at the top** of
@@ -186,9 +204,15 @@ reopening the dialog.
 - The URL may end in `/v1` or not, a trailing slash is stripped.
 - *Test* asks `GET <base>/models` (IPC `llm:models`) and fills a `<datalist>` on the model
   field with what came back; the state line names the first three.
-- The image goes as a `data:` URI in an `image_url` content part. **A text-only model gets
-  one retry without the image** (a 4xx answer, or an error that mentions images or vision),
-  and the status line then ends with "text only" so it is clear the model never saw the crop.
+- The image goes as a `data:` URI in an `image_url` content part. **A model that cannot take
+  the pictures gets asked again in steps**: every picture (the crop and the named reference
+  pictures), then the crop alone, then the text alone. A step down is taken on a 400 / 413 / 415 /
+  422, or a failure whose own text is about images or vision (the model id taken out of it, so
+  a 'model "llama3.2-vision" not found' is no such failure);
+  never on a 401, 402 or 429, a server that cannot be reached, or another status that names no
+  image, so a wrong key costs one request (before item 26 step 26d2 any 4xx was retried once).
+  The status line then ends with "crop only" (the reference pictures were left out) or "text
+  only" (the model saw no picture at all).
 - A `<think>...</think>` block is stripped from the answer (Ollama's Qwen3 and DeepSeek put
   their thinking into the content); `reasoning_content` is ignored. The quote and code-fence
   stripping of the other backends applies afterwards.
