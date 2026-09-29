@@ -253,6 +253,48 @@ on open is fixed for 0.1.32, above):
   another hash. Tiles (the default) is exact. A fix would hash the pixels with transparent colour zeroed, or zero it
   before the encode.
 
+### Reference layers dropped without a word (found for item 26, 2026-09-29, read, not run)
+
+**Written** 2026-09-29 while `docs/PLAN_REFS.md` was researched (code and vendor docs read, nothing run). A visible
+reference layer can fail to reach the model without any message. Steps 26a2 and 26e of that plan fix these. The Klein
+item could also be fixed on its own.
+
+- **`flux2_klein_local` reads only batch pictures 0 and 1**, the crop and the next one. With Original on, no reference
+  layer reaches the model. With Original off, only ref 1 does, and ref 2+ are dropped. The recipe's description names
+  only the Original case. `qwen_image_edit_2_1_local` reads 3 pictures, and `ImageFromBatch` clamps, so with fewer
+  pictures the last one is repeated into the empty slots.
+- **BFL keeps 7 references** (`bfl.js:23`, `slice(0, 7)`) and drops the rest silently. FLUX.2 klein on BFL takes only
+  4 pictures in total, and nothing enforces that.
+- **Comfy Cloud cuts Qwen after 3 pictures** (`comfycloud.js:105`). `GeminiImage2Node`, `GeminiImageNode` and
+  `FluxProFillNode` upload the references but never wire them.
+- **Fill routes without an images field drop references**: flux1_fill on BFL / fal / Replicate / WaveSpeed, Qwen
+  inpaint on fal, Z-Image turbo, Ideogram 4 on fal, and Replicate's Qwen Image Edit (`replicate.js:47-52`, crop only,
+  although its note says "crop plus the reference layers").
+- **FLUX.2 klein on Oxen has no `max_images`** and falls back to Oxen's default of 16.
+- **fal's caps are not checked**: Seedream edit on fal is said to keep the *last* pictures past its cap, which would
+  drop the crop. Re-read the v5 lite / pro edit pages before relying on this. `flux-2/klein/9b/edit` uses only the first 4.
+- **flux1_fill on Comfy Router refuses any run with a visible reference** (`comfyrouter.js:205-209`, `max_images`
+  defaults to 1), although its note says "The reference layers are not sent."
+- **The Info panel's batch count ignores the refine pass**, which leaves the Original out (`inpaint_canvas.js:13225`).
+- **The node skips a reference it cannot load** (`nodes.py` about 682, "reference skipped"), with only a print, and
+  every later reference moves up one place.
+- **The reference list's up / down** calls `moveLayer(id, ±1)` on the whole stack. With an image layer between two
+  references, a click adds an undo step and leaves the reference order as it was (`inpaint_canvas.js:13854-13859`).
+
+### Found while planning item 26 (2026-09-29, read, not run)
+
+**Written** 2026-09-29 by the step planners of `docs/PLAN_REFS.md` (code read, nothing run). Each is fixed by the step
+named.
+
+- **Replicate text runs send `aspect_ratio: "match_input_image"`**: `providerParams` includes `r.fixed`, and the
+  params loop in `replicate.js` (about 42-60) overwrites the aspect the user asked for, so every Replicate FLUX.2, Nano
+  Banana and Seedream Generate new sends it. Step 26f.
+- **`llm.ask` never reads a language model row's `vision: false`**: the "Can see the picture" tooltip
+  (`renderer/index.html:89`) promises it, but the upsampler sends the picture to every row and relies on the
+  text-only retry. Step 26d2.
+- **The local OpenAI-compatible endpoint retries any 4xx without the picture**: the non-strict predicate
+  (`llm.js:265`) also retries a 401 / 402 / 429, so a wrong key costs two requests. Step 26d2.
+
 ### Linux: built, never run (B2, 2026-09-22)
 
 **Written** 2026-09-22 with the Linux job of `.github/workflows/build.yml` (AppImage and .deb, `latest-linux.yml`).

@@ -89,7 +89,11 @@ brushes, package 5 Remove with LaMa, Patch, Content-aware move, heal's Poisson b
   and three strings; the exe gates `--offline` green on both backends (`dist/gates/gates/rel32-exe*`), LaMa's utility
   process verified in the packaged exe (load 7.4 s, a run 1.4 to 1.7 s, IPC live during a run, no fallback). The step
   details of 23b and packages 4 and 5 are in the hand-overs in `docs/HISTORY.md` and the plan's "built" paragraphs.
-- **Next: package 6 (layers pro)** of `docs/PLAN_0_1_31.md` in the user's order.
+- **Next: item 26, reference layers named in the prompt**, planned in detail in `docs/PLAN_REFS.md` (2026-09-29; the
+  user answered A-F: `@img1` renamed per API in the backend, hiding renumbers, a contenteditable field exactly like
+  Magnific's, reference pictures to the upsampler on with a setting, Generate new with references in this round,
+  categories later). Five sessions: S1 = 26a1 + 26b1. Read the plan's sections 0 and 3-6 and the step's own section
+  ("Read first" wins over its text). Then package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 - **Open for the user:** the defaults of packages 4 and 5 (listed in the late-night hand-over of 2026-09-28 in
   `docs/HISTORY.md`: among them the selection that stays after a patch or a move, the Shift+J ring, Liquify's no-Apply,
   its strength and keys, the freeze not undone or saved); item 25's look and timing. The Store resubmission (search terms
@@ -144,8 +148,9 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 21: lens flares like Flarecore (an optional plugin, 7-9 days), no place in the order yet.
 - 22: Nik 9 parity (an update of its own; `docs/PLAN_NIK9.md`, 34-46 days plus two folded packages), suggested after B3.
 - 25: the app's own dialogs instead of the native boxes (about 1-1.5 days), the user's answers open.
-- 26: Magnific-style prompting with reference images referenced in the prompt (the user, 2026-09-28; they explain it
-  later), only listed.
+- 26: Magnific-style prompting: reference layers named in the prompt as `@img1`, written as the API's own name for
+  the picture when sent; the templates learn `{references}`. Planned in `docs/PLAN_REFS.md` (2026-09-29), next. The
+  silent reference drops found on the way are in `docs/BUGS.md`.
 
 ## Gate runner and flakes
 
