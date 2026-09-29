@@ -214,8 +214,9 @@ export class EditHistory {
  * `over`: past the route's cap (the host's refLayout), `sentAs`: the name the route gives its picture (null unknown).
  * @typedef {{ id: string, label: number | null, name: string, visible: boolean, thumb: string | null, sentAs: string | null, over?: boolean }} Descriptor
  * `cap`: the reference layers the route takes (null: none declared), `none`: why none goes with this recipe, `local`: a
- * ComfyUI recipe (its crop_image batch), `refuse`: why a token cannot go although the pictures do (a ComfyUI recipe
- * until 26e; the hover card and the bar say it, the chip stays live), `show(id)`: a hidden reference shown the way its eye shows it (26c2's swap menu).
+ * ComfyUI recipe (its crop_image batch; with a `cap` its graph was traced and each descriptor's `sentAs` is the name
+ * the graph gives the picture, 26e), `refuse`: why a token cannot go although the pictures do (the hover card and the
+ * bar say it, the chip stays live), `show(id)`: a hidden reference shown the way its eye shows it (26c2's swap menu).
  * @typedef {{ refs: Descriptor[], cap: number | null, none: string | null, local?: boolean, refuse?: string | null, canAdd: boolean, reason: (id: string) => string, show?: (id: string) => void }} RefContext
  */
 
@@ -246,7 +247,8 @@ export function barCount(ctx) {
     const c = ctx || EMPTY_CONTEXT;
     const n = (c.refs || []).filter((d) => d.label != null).length;
     if (c.none) return { text: "This recipe sends no reference images", title: c.none, over: false };
-    if (c.local) return { text: `${n} in crop_image`, title: "A ComfyUI recipe takes the shown reference layers in its crop_image batch, after the crop" + (c.refuse ? "; an @img token: " + c.refuse : "") + ".", over: false };
+    // a local recipe whose graph could not be traced: no count known, the pictures ride in its crop_image batch
+    if (c.local && c.cap == null) return { text: `${n} in crop_image`, title: "A ComfyUI recipe takes the shown reference layers in its crop_image batch, after the crop" + (c.refuse ? "; an @img token: " + c.refuse : "") + ".", over: false };
     const why = c.refuse ? `; an @img token: ${c.refuse}` : "";
     if (c.cap != null) return { text: `${n} of ${c.cap} for this recipe`, title: `This recipe takes ${plural(c.cap, "reference image", "reference images")}${why}.`, over: n > c.cap };
     return { text: plural(n, "reference image", "reference images"), title: c.refuse ? `An @img token: ${c.refuse}.` : "", over: false };

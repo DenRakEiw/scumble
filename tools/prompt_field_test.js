@@ -469,6 +469,9 @@ async function main() {
         same("none wins", P.barCount({ ...CTX, cap: 4, none: "An upscale sends the picture alone." }), { text: "This recipe sends no reference images", title: "An upscale sends the picture alone.", over: false });
         const loc = P.barCount({ ...CTX, local: true, refuse: "not yet" });
         same("a ComfyUI recipe", [loc.text, /crop_image/.test(loc.title), /not yet/.test(loc.title)], ["2 in crop_image", true, true]);
+        // 26e: a local recipe whose graph was traced counts against its slots like an API route
+        same("a traced ComfyUI recipe", P.barCount({ ...CTX, local: true, cap: 3 }), { text: "2 of 3 for this recipe", title: "This recipe takes 3 reference images.", over: false });
+        same("a traced ComfyUI recipe, past its slots", P.barCount({ ...CTX, local: true, cap: 1 }).over, true);
 
         const over = P.chipState({ n: 2 }, { ...CTX, cap: 1, refs: [REFS[0], { ...REFS[1], over: true }, REFS[2]] });
         same("a descriptor past the cap is over", [over.state, over.label, over.reason], ["over", "img2", "this recipe takes 1 reference image"]);
@@ -482,6 +485,8 @@ async function main() {
         const withSent = { ...CTX, refs: [{ ...REFS[0], sentAs: "image 3" }, REFS[1]] };
         same("the card: sent as", P.cardLine(P.chipState({ n: 1 }, withSent), withSent), "img1 · sent as image 3");
         same("the card: no name known", P.cardLine(P.chipState({ n: 2 }, withSent), withSent), "img2");
+        const localSent = { ...CTX, local: true, cap: 2, refs: [{ ...REFS[0], sentAs: "<image3>" }, REFS[1]] };
+        same("the card: a traced ComfyUI recipe names the picture", P.cardLine(P.chipState({ n: 1 }, localSent), localSent), "img1 · sent as <image3>");
         same("the card: a ComfyUI recipe", P.cardLine(P.chipState({ n: 2 }, { ...CTX, local: true, refuse: "take it out" }), { ...CTX, local: true, refuse: "take it out" }), "img2 · in the crop_image batch; take it out");
         same("the card: the reason of a broken chip", P.cardLine(P.chipState({ n: 9 }, CTX), CTX), "img9 · no reference img9");
 

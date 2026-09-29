@@ -24,6 +24,9 @@ layer, exactly like in the ComfyUI node.
   "canvas": "canvas",               // prompt id of the InpaintCanvas node
   "result": "decode:0",             // "node id:output slot" wired back into the canvas
   "needs": ["InpaintCanvas", ...],  // class types the server must know
+  "refs": { "name": "image {n}", "slots": 4 },   // optional: what the model calls picture n, and how many
+                                                  // pictures the graph reads, the crop included (1-16); see
+                                                  // "Reference images named in the prompt (local)"
   "settings": [ { "index": 1, "node": "unet", "input": "unet_name", "label": "Model",
                   "spec": [["file.safetensors"], {}] } ],   // spec optional: /object_info wins when connected
   "models": { "diffusion_models": ["..."] },                // informational
@@ -38,22 +41,35 @@ input spec format: `["INT", {default, min, max}]`, `[["a", "b"], {}]` for a comb
 
 ### The shipped ComfyUI recipes
 
-- `flux2_klein_local`, **Flux.2 Klein 4B / 9B**: the crop and the Original copy as reference latents, 20 steps,
-  CFG 5.
+- `flux2_klein_local`, **Flux.2 Klein 4B / 9B**: reads up to **4 pictures** of the crop batch, `refs: { "name":
+  "image {n}", "slots": 4 }`. Each picture goes `ImageFromBatch` (`img0` to `img3`, batch index 0 to 3) ->
+  `ImageScaleToTotalPixels` -> `VAEEncode` -> a `ReferenceLatent` on the positive chain and one on the negative chain
+  (`ref_pos0..3`, `ref_neg0..3`, each conditioning the next). The crop (`scale0`) follows the Megapixels setting; the
+  other three (the Original copy with a fill mode, then the reference layers) stay at a fixed 1 MP each. A token is
+  written as `image 3`. The inputs past the batch a run sends are left out of the queued prompt, so no picture
+  repeats ("Reference images named in the prompt (local)" below). The negative is a fixed empty `CLIPTextEncode`: a
+  token there is resolved but not read. 20 steps, CFG 5. Until step 26e (2026-09-29) the graph read batch pictures 0
+  and 1 only: with Original on no reference layer reached the model, with Original off only the first one did, and
+  with the crop alone `ImageFromBatch`'s clamp repeated it into the second slot. **The widened graph has not run**
+  (three more 1 MP reference latents cost memory and time).
 - `qwen_image_edit_2_1_local`, **Qwen Image Edit 2.1** (added for 0.1.23): ComfyUI's own template
   `image_qwen_image_2_1_image_edit.json` with its subgraph flattened and its save and compare nodes left out (they
   would write every run into the server's output folder). `TextEncodeQwenImage21` takes **one picture per input**
   (`image[:1]`, `comfy_extras/nodes_qwen.py`), so the crop batch is split with `ImageFromBatch`: the crop is
-  `images.image_1` (`<image1>` in the prompt), batch pictures 1 and 2 (the Original copy with a fill mode, then the
-  reference layers) are `images.image_2` / `images.image_3`. `ImageFromBatch` clamps its index, so with fewer
-  pictures the last one repeats, as in the Klein recipe. `resolution` 0 keeps the crop's size (the crop already
+  `images.image_1` (`<image1>` in the prompt), batch pictures 1 to 9 (the Original copy with a fill mode, then the
+  reference layers; `img1` to `img9`) are `images.image_2` to `images.image_10`. So it reads up to **10 pictures**,
+  `refs: { "name": "<image{n}>", "slots": 10 }` (the autogrow input takes up to 16). A token is written as
+  `<image3>`. The encoder numbers the pictures that are present by rank, so the inputs past the batch a run sends are
+  left out of the queued prompt and none repeats; until step 26e (2026-09-29) it had three inputs, and with fewer
+  pictures `ImageFromBatch`'s clamp repeated the last one into them. The negative prompt comes from the canvas node
+  (`["canvas", 12]`), so a token there is resolved too. `resolution` 0 keeps the crop's size (the crop already
   comes at `target_size`, a multiple of 64), the sampler's latent is the encoder's own (`latent_image` from the
   encode's third output, so the output keeps `<image1>`'s size), 25 steps, CFG 1 (the negative prompt counts only
   above 1). Settings: Model, Text encoder, VAE, Steps, CFG, Resolution. An autogrow input is a flat dotted key in
   an API prompt (`"images.image_1"`), which is how ComfyUI's `build_nested_inputs` reads it. Needs a ComfyUI with
   `TextEncodeQwenImage21` and `QwenImage21Cache` and the three model files the recipe's `models` names. Checked
-  against the user's `/object_info` on 2026-09-21 (every class, input and link); **not run** (the model files were
-  not on that server yet).
+  against the user's `/object_info` on 2026-09-21 (every class, input and link, with three inputs); **not run** (the
+  model files were not on that server yet), and the ten-input graph has not run either.
 - `upscale_model_local`, **Upscale model (ComfyUI)** (added for 0.1.25, session U2): `InpaintCanvas` ->
   `ImageFromBatch` (the crop only) -> `UpscaleModelLoader` (`model_name` as *Model*, slot 1, the server's
   `models/upscale_models` list from `/object_info`; default `4x-UltraSharp.pth`) -> `ImageUpscaleWithModel` ->
@@ -218,7 +234,8 @@ of the request, and each family has its own word for it (the vendors' prompting 
   `<frame>{n0}</frame>`). 1 to 40 characters, at least one `{n}` or `{n0}`, no `@` and no other brace. The recipe's
   `refs` applies to every variant, a variant's own wins; `normalize()` gives every provider variant one (the default
   `image {n}`), and an invalid pattern takes the default with a warning. `resolveRecipe` carries it as `r.refs`, and
-  `runProvider` sends it as `request.refName`. ComfyUI recipes keep their own `refs` (`slots`, step 26e).
+  `runProvider` sends it as `request.refName`. ComfyUI recipes keep their own `refs` (`name` and `slots`, resolved in
+  the renderer: "Reference images named in the prompt (local)" below).
 - **The order** is each adapter's own: `layout(req)` beside `edit` (`electron/main/providers/refs.js`) declares where
   each picture goes: `{ pictures: [{ role, ref?, field, n }], max, drops, style }`. Role `crop`, `mask`, `original` (the
   crop before the fill, `request.references[0]` when `request.original` is 1) or `reference`; `ref` the index in
@@ -346,6 +363,73 @@ of the request, and each family has its own word for it (the vendors' prompting 
   `checkPictures` to literals, and runs the drop and the cap through `index.js` with the loopback's test hooks
   (`options.drops`, `options.max_images`); `tools/refs_cases.json` holds the token grammar main and the renderer
   share.
+
+### Reference images named in the prompt (local)
+
+Step 26e (`docs/PLAN_REFS.md`). On a ComfyUI recipe the renderer writes each `@imgN` as the name the recipe's model
+reads for that picture (`renderer/editor/comfyrefs.js`, called from `host.queueGenerate`); main is not involved, and
+the node resolves no token. Upscale recipes are left out: there a token goes as its layer's name, as on every upscale.
+
+- **The batch** is the node's (`nodes.py` `InpaintCanvas.run`): picture 1 is the crop; picture 2 is the Original copy
+  of the crop when there is a selection, a fill other than none, Original on and no refine pass in local mode; then
+  the shown reference layers of `canvas_state.references`, top of the list first. Reference k (0-based) is picture
+  **n = 2 + Original + k** (`comfyLayout`). In the shipped graphs the encoder numbers the pictures in batch order.
+- **`refs`** on a ComfyUI recipe: `name` is the pattern the model reads picture n by, with the rules of the provider
+  `refs.name` above (`{n}` 1-based, `{n0}` 0-based, 1 to 40 characters, no `@` and no other brace); `slots` is how
+  many pictures the graph reads, the crop included, an integer from 1 to 16 (the most `TextEncodeQwenImage21` takes).
+  `normalize()` (`electron/main/recipes.js` `comfyRefs`) drops a `refs` that is no object or has a bad name, with a
+  warning, and the names then come from the graph; a bad `slots` becomes null, with a warning. A recipe needs no
+  `refs`: the wording is worked out from the graph in the renderer, so a workflow imported before 26e gets it too.
+- **Traced from the graph** (`comfyRefSpec`): each encoder input (`TextEncodeQwenImage21` `images.image_k`,
+  `TextEncodeQwenImageEditPlus` `image1` to `image3`, a `ReferenceLatent`'s `latent`) is followed back through the
+  single linked `pixels` / `image` / `samples` input of each node on the way (a scale, a VAE encode; 8 steps at most)
+  to an `ImageFromBatch` of the canvas node's `crop_image` (output 0) with a literal `batch_index` and `length` 1. The
+  trace is an **identity** when the batch indices are exactly 0 to k-1, one encoder class reads them all, each
+  input's number is its batch index + 1 (Qwen Image 2.1 numbers the `images.image_k` that are present by rank, Edit
+  Plus by input, a `ReferenceLatent` by its place in the conditioning chain), and no other node reads the whole batch.
+  Then:
+  - the wording is the class's: `<image{n}>` (Qwen Image 2.1), `Picture {n}` (Qwen Image Edit Plus), `image {n}` (a
+    `ReferenceLatent` chain, FLUX.2); a declared `name` wins;
+  - `slots` is k, and a declared `slots` can only lower it;
+  - the inputs a run does not fill are trimmed (below).
+- **Otherwise the wording is a guess** (the whole batch into one node such as an API node, a linked `batch_index`,
+  another order, two encoder classes, no encoder the trace knows): the names go by batch position as `image {n}` (or
+  the declared `name`, which is then no guess), nothing is trimmed, and there is no slot limit unless `refs.slots`
+  declares one. The status line adds "(wording guessed from the graph)" when a token was named, and the Info panel
+  says so too. A graph that picks fixed batch indices then still gets the last picture repeated into its unused
+  inputs (`ImageFromBatch` clamps the index), as every graph did before 26e.
+- **Trimming** (`trimSlots`, identity traces only): the encoder inputs whose batch index is past the batch the run
+  sends (1 + Original + the references kept) are deleted from the queued prompt. A `ReferenceLatent` without its
+  `latent` passes the conditioning on, an absent Qwen 2.1 image is not numbered, and Edit Plus's `image2` / `image3`
+  are optional. The crop's input (batch 0) is never removed. The nodes that fed a removed input are then read by
+  nothing and do not run: the canvas node expands only what its result source reaches. **Behaviour change:** until
+  26e Klein repeated the crop into its second input and Qwen 2.1 into its second and third when fewer pictures were
+  sent, so the same seed now gives another result.
+- **Refused or left out.** A run checks the tokens twice: against the editor before anything is uploaded, then
+  against the canvas state it built, and the state decides (a selection, the fill or Original changed during the
+  uploads; a refusal there comes after the mirror uploads only). A token of a hidden or deleted reference, or a
+  number no reference has, refuses as on API recipes. A token for a reference past the recipe's slots refuses before
+  anything is queued: "@img3 cannot be named: Flux.2 Klein 4B / 9B (ComfyUI) reads 4 pictures (the crop, the
+  Original, img1 and img2). Hide a reference, turn Original off, or take @img3 out." (without the Original: "Hide a
+  reference, or take @img3 out."). A reference past the slots that no token names is left out and not uploaded, and
+  the status line says so: "img3 is not sent: Flux.2 Klein 4B / 9B (ComfyUI) reads 4 pictures."
+- **What goes out.** Only `canvas_state`'s `prompt` and `negative` carry the names (`<image3>`, `image 3`); the
+  editor's prompt keeps the token, and so do the history and the PNG metadata. A literal `<image3>` typed by the user
+  goes as it is. After queueing, the status line adds "Named in the prompt: @img1 → <image3>." and the notes, and the
+  app log gets an info entry "local run <id>: prompt as sent" with the resolved prompt. `generate` over MCP returns
+  that prompt as `prompt_sent` and the notes as `notes`, for local runs too. `canvas_state` gains `hasSelection`
+  (whether the mask holds a selection, read in the same tick as the mask) and `named_refs: true` when the prompt named
+  a reference; the node ignores both until its next release.
+- **Before the run.** `host.refLayout` answers a local recipe at once, from the same layout. The Info panel's
+  References row reads `img1 → <image3>, img2 → <image4> (pad)` (the reference fit), plus `· img3 not sent` and
+  `· wording guessed from the graph` where they apply, and its batch count no longer counts the Original on a refine
+  pass. The prompt field's bar shows "2 of 8 for this recipe" (the pictures the graph reads minus the crop and the
+  Original; a guessed graph without `slots` shows "2 in crop_image"), and a chip's card "img1 · sent as <image3>". A
+  graph that reads the crop alone (`slots` 1) sends no reference, and every chip is struck through.
+- **Known limit.** The node skips a reference file it cannot read and moves the later ones up (`nodes.py`, "reference
+  skipped", a print only); the names would then point one picture off. `ensureOnServer` only makes sure each file is
+  on the server, not that it can be read. Since 26e the app sends `named_refs: true`, so that the next node release
+  can raise instead when it is set (`docs/BUGS.md` "Reference layers dropped without a word").
 
 ### Transparent results (`background`)
 

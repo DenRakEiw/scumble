@@ -531,7 +531,7 @@ await c("set_prompt", { text: start.p, negative: start.n });
 return { prompt: ed.promptText, drift: ed._refDrift || 0 };
 """),
     # 26b2: a provider run sends markers that main names by the route's own pattern; what cannot be sent is refused at
-    # once (no request, no 30 s wait), and a ComfyUI recipe refuses tokens for now
+    # once (no request, no 30 s wait); a ComfyUI recipe names them in the renderer (26e)
     ("refs_send", """
 const ed = window.editor;
 const { host, api } = await import("./editor/host.js");
@@ -610,19 +610,32 @@ try {
     await c("set_prompt", { text: "x {@ref:1}" });
     out.literal = await refused(/keeps for itself/, "a literal marker");
     await c("set_prompt", { text: P0, negative: N0 });
-    // 5. a ComfyUI recipe refuses tokens (26e resolves them); nothing is queued
+    // 5. a ComfyUI recipe names the tokens itself (26e): a graph it cannot trace names them by the batch's order (the
+    //    crop, the Original, the references; a guess, and the status says so); past the recipe's declared slots a token
+    //    refuses before anything is queued
     const saved = { connected: host.connected, objectInfo: host.objectInfo, ensure: host.ensureOnServer, queue: api.queuePrompt, helper: ed.helperUsed };
-    let queued = 0;
+    let queued = 0, sent = null;
     try {
         host.connected = true;
         host.objectInfo = {};
         host.ensureOnServer = async () => null;
-        api.queuePrompt = async () => { queued++; return { prompt_id: "gate-refs" }; };
+        api.queuePrompt = async (n, body) => { queued++; sent = body; return { prompt_id: "gate-refs" }; };
         ed.helperUsed = false;
-        host.setRecipe({ id: "comfy_refs_stub", kind: "comfy", name: "Comfy stub", mode: "local", result: ["9", 0], canvas: "1", prompt: { "1": { class_type: "InpaintCanvas", inputs: {} } }, settings: [], needs: [] });
-        out.comfy = await refused(/API recipes only/, "tokens on a ComfyUI recipe");
-        if (!/Comfy stub runs on ComfyUI/.test(out.comfy.msg)) throw new Error("the refusal does not name the recipe: " + out.comfy.msg);
-        if (queued) throw new Error("the refused run queued " + queued + " prompts");
+        const stub = { id: "comfy_refs_stub", kind: "comfy", name: "Comfy stub", mode: "local", result: ["9", 0], canvas: "1", prompt: { "1": { class_type: "InpaintCanvas", inputs: {} } }, settings: [], needs: [] };
+        host.setRecipe(stub);
+        await host.queueGenerate(ed);
+        if (queued !== 1) throw new Error("the ComfyUI run queued " + queued + " prompts");
+        const st = JSON.parse(sent.output["1"].inputs.canvas_state);
+        if (st.prompt !== "jacket from image 4, style of image 3" || st.negative !== "no image 4") throw new Error("the ComfyUI state's texts: " + JSON.stringify([st.prompt, st.negative]));
+        if (st.named_refs !== true || st.hasSelection !== true || (st.references || []).length !== 2) throw new Error("the ComfyUI state: " + JSON.stringify({ named: st.named_refs, sel: st.hasSelection, refs: (st.references || []).length }));
+        if (!/@img2 . image 4/.test(ed.status) || !/wording guessed from the graph/.test(ed.status)) throw new Error("the ComfyUI status: " + ed.status);
+        if (ed.lastSentPrompt !== st.prompt) throw new Error("lastSentPrompt of the ComfyUI run: " + JSON.stringify(ed.lastSentPrompt));
+        if (ed.promptText !== P0 || ed.negativeText !== N0) throw new Error("the ComfyUI run changed the document's prompt: " + JSON.stringify([ed.promptText, ed.negativeText]));
+        out.comfy = st.prompt;
+        // three pictures: the crop, the Original, img1 (Original on from 2.)
+        host.setRecipe({ ...stub, id: "comfy_refs_stub3", refs: { name: "image {n}", slots: 3 } });
+        out.slots = await refused(/@img2 cannot be named: Comfy stub reads 3 pictures \\(the crop, the Original and img1\\)\\. Hide a reference, turn Original off, or take @img2 out\\./, "a token past the recipe's slots");
+        if (queued !== 1) throw new Error("the refused run queued a prompt");
     } finally {
         host.connected = saved.connected; host.objectInfo = saved.objectInfo; host.ensureOnServer = saved.ensure; api.queuePrompt = saved.queue; ed.helperUsed = saved.helper;
     }

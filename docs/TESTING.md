@@ -94,10 +94,10 @@ refused over IPC, `provider:layout`); `commands`' `refs_labels` (img labels, a n
 number), `refs_remap` (hide / show, up / down, delete / undo, role changes, a merge: the prompt's tokens follow their
 layers) and `refs_restore` (a `.scumble` round trip byte for byte, a reference whose file is missing parks its tokens
 as `@img?<id>`, a named snapshot with Revert). 26b2 adds `refs_send` (a loopback edit run: `prompt_sent` names the
-pictures by their place, with the Original too; a hidden reference's token, a literal `{@ref:` and a token on a stubbed
-ComfyUI recipe each refuse at once with nothing sent), `refs_names` (an upscale writes the cleaned layer name, the
-Generate new dialog's prefill too) and `refs_agents` (labels in `list_layers` / `status`, `status.references[].sent_as`
-with and without the Original, `set_prompt refs`); `tools/assistant_test.js` checks the state note's `ref @img1`. 26a2
+pictures by their place, with the Original too; a hidden reference's token and a literal `{@ref:` each refuse at once
+with nothing sent; its step 5, a stubbed ComfyUI recipe, is 26e's since then, below), `refs_names` (an upscale writes
+the cleaned layer name, the Generate new dialog's prefill too) and `refs_agents` (labels in `list_layers` / `status`,
+`status.references[].sent_as` with and without the Original, `set_prompt refs`); `tools/assistant_test.js` checks the state note's `ref @img1`. 26a2
 adds `refs_layout_test.js` sections 8 (`refs.instruction`, `labelParts` and `checkPictures` against literals: 0 to 4
 references, a mask picture or field, the Original, `Image {n}` and `<image{n}>`, style layouts, the exact drop notes
 and cap messages, a cap that is no number above 0) and 9 (`index.js` with the loopback's `options.drops` and
@@ -162,6 +162,28 @@ the chevron click to open the swap menu and the first Escape to close it. While 
 `SCUMBLE_EDITOR_ONLY=ref_picker_opens_on_at_and_inserts,ref_picker_adds_a_reference_in_place,ref_bar_hover_and_swap,prompt_field_drags_a_chip
 bash tools/run_gates.sh 26c-it --offline --tiles on editor`. The hover and drag steps call `Page.bringToFront` first:
 synthetic pointer events are unreliable while a real mouse is over the window (see the flakes below).
+
+26e, @img tokens on local ComfyUI recipes (`renderer/editor/comfyrefs.js`, `docs/RECIPES.md` "Reference images named
+in the prompt (local)"): `node tools/comfyrefs_test.js` (plain Node, run by `recipes_test.py`'s node step after
+`recipes_test.js`) covers the shipped specs (Qwen 2.1 `<image{n}>` with 10 slots, Klein `image {n}` with 4, both
+identity traces), the layout matrix (selection × fill × Original × refine × 0 / 1 / 3 / 12 references: each picture's
+number, `kept`, the drops), the trim (only the inputs past the batch, never the crop's, Klein's conditioning chain
+intact), the marker vectors of `tools/refs_cases.json` against both resolvers (`comfyrefs.js` and
+`providers/refs.js`), and imported graphs through `recipes.fromPrompt` (Edit Plus, Qwen 2.1, a `ReferenceLatent`
+chain, the whole batch into one node, an input on another batch index: the wording, the slots, a guess and no trim
+where the trace is no identity; `normalize` dropping a bad `refs`). The `recipes` gate's step
+`local_recipes_name_the_batch_pictures_and_trim_the_unused_slots` stubs `host.connected`, `objectInfo`,
+`ensureOnServer` and `api.queuePrompt` (nothing is queued on a server; all four are put back) and runs both shipped
+recipes through `host.queueGenerate`: no reference (the prompt unchanged, no `named_refs`, only the crop's input
+left), a reference with the Original, the same on a refine pass, three references with a negative, Klein past its
+slots (a named reference refused with nothing queued, an unnamed one left out with "not sent"), a hidden reference,
+the Info panel's References row and the prompt field's context. `commands`' `refs_send` step 5 now checks a ComfyUI
+recipe whose graph cannot be traced (the tokens named by batch position, "wording guessed from the graph" in the
+status, `named_refs` and `hasSelection` in the state, the document's prompt unchanged) and a refusal past declared
+`slots`; `prompt_field_test.js` section 8 adds the bar's count and the card's name for a traced local recipe. The
+run: `node tools/comfyrefs_test.js`, then `bash tools/run_gates.sh <label> --offline --tiles on recipes upscale
+nodecopy lint types` (`upscale` for the ComfyUI upscale path through `queueGenerate`, `nodecopy` for the shared
+`serializeForPrompt` and Info panel edits). No `smoke`: it runs `flux2_klein_local` on the user's ComfyUI.
 
 ## Known flakes
 

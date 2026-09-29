@@ -303,12 +303,17 @@ reference layer can fail to reach the model without any message. Steps 26a2 and 
 item could also be fixed on its own. **Step 26a2 (2026-09-29, plain-Node tests, not run live)** fixed the provider
 items: every route now sends every picture, refuses before any request past its cap, or declares the drop, and then
 sends no reference at all and says so in the status line (`docs/RECIPES.md` "Reference pictures"). The local, Info
-panel and node items stay for step 26e.
+panel and node items stay for step 26e. **Step 26e (2026-09-29, not run on ComfyUI)** fixed the local and Info panel
+items (`docs/RECIPES.md` "Reference images named in the prompt (local)"); the node item waits for a node release.
 
 - **`flux2_klein_local` reads only batch pictures 0 and 1**, the crop and the next one. With Original on, no reference
   layer reaches the model. With Original off, only ref 1 does, and ref 2+ are dropped. The recipe's description names
   only the Original case. `qwen_image_edit_2_1_local` reads 3 pictures, and `ImageFromBatch` clamps, so with fewer
-  pictures the last one is repeated into the empty slots.
+  pictures the last one is repeated into the empty slots. **Fixed in 26e (2026-09-29):** Klein reads up to 4 pictures
+  (the crop and three more as reference latents at 1 MP each), Qwen 2.1 up to 10; the encoder inputs past the batch a
+  run sends are left out of the queued prompt, so nothing repeats (the same seed now gives another result). A
+  reference past the recipe's slots is refused when the prompt names it and otherwise left out with "img3 is not
+  sent" in the status line. Neither widened graph has run.
 - **BFL keeps 7 references** (`bfl.js:23`, `slice(0, 7)`) and drops the rest silently. FLUX.2 klein on BFL takes only
   4 pictures in total, and nothing enforces that. **Fixed in 26a2 (2026-09-29):** every reference goes
   (`input_image_2` ..), the layout's `max` is 4 for klein and 8 for FLUX.2 pro / flex / max, and a run past it is
@@ -342,8 +347,13 @@ panel and node items stay for step 26e.
   it and never adds `mask_image` (found by step 26a1's layout check, 2026-09-29). No shipped variant does this.
   Still open after 26a2 (not a reference drop; the layout describes it as it is sent).
 - **The Info panel's batch count ignores the refine pass**, which leaves the Original out (`inpaint_canvas.js:13225`).
+  **Fixed in 26e (2026-09-29):** the count leaves the Original out on a refine pass in local mode (the node's copy
+  with its next build), and on a local recipe of the app counts only the references the graph reads; the References
+  row names each one (`img1 → <image3>`) and what is not sent.
 - **The node skips a reference it cannot load** (`nodes.py` about 682, "reference skipped"), with only a print, and
-  every later reference moves up one place.
+  every later reference moves up one place. Still open after 26e, where it would make a local run's names point one
+  picture off. Since 26e the app sends `named_refs: true` in `canvas_state` when the prompt named a reference; the
+  next node release should raise instead of print at `nodes.py:684-685` when it is set.
 - (The reference list's up / down: fixed by step 26b1, above under "Fixed".)
 
 ### Found while planning item 26 (2026-09-29, read, not run)

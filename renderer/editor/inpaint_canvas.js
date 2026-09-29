@@ -3444,9 +3444,10 @@ class InpaintEditor {
     /**
      * What the prompt field draws its chips, its picker and its bar from (docs/PLAN_REFS.md C4): every reference layer,
      * top first, hidden ones with label null, each with a 32 px thumbnail; from the chosen route's layout
-     * (`refLayoutInfo`, 26c2) the cap on reference layers, why none goes (`none`), a ComfyUI recipe (`local`, whose
-     * tokens refuse until 26e: `refuse`); `reason` says why a parked token's layer has no descriptor, `show` shows a
-     * hidden reference as its eye does.
+     * (`refLayoutInfo`, 26c2) the cap on reference layers, why none goes (`none`), a ComfyUI recipe (`local`: its
+     * pictures go in the crop_image batch, named as its graph numbers them, 26e), why a token cannot go although the
+     * pictures do (`refuse`); `reason` says why a parked token's layer has no descriptor, `show` shows a hidden
+     * reference as its eye does.
      */
     refContext() {
         const byId = new Map(this.layers.map((l) => [l.id, l]));
@@ -3455,7 +3456,7 @@ class InpaintEditor {
         const local = !!(info && info.local);
         return {
             refs, cap: info && info.cap != null ? info.cap : null, none: (info && info.none) || null, local,
-            refuse: local ? "a ComfyUI recipe cannot name it yet, take the token out to run" : (info && info.refuse) || null,
+            refuse: (info && info.refuse) || null,
             canAdd: !!this.width,
             reason: (id) => (byId.has(id) ? "no longer a reference: make it a reference again to send it" : "deleted: an undo brings it back"),
             show: (id) => this.showReference(id),
@@ -3489,6 +3490,7 @@ class InpaintEditor {
             try { await host.refLayout(this); } catch (_) { /* the chips stay as they are */ }
             if (seq !== this._refLaySeq || this._destroyed || !this.promptField) return;
             this.promptField.refresh();
+            this.renderInfoRows();
         }, 120);
     }
 
@@ -13763,6 +13765,11 @@ class InpaintEditor {
     renderInfo() {
         // the recipe, the selection, the fill and the Original all change what the references go as
         this.refreshRefLayout();
+        this.renderInfoRows();
+    }
+
+    /** The Info panel's rows (renderInfo, and again when the references' layout has answered: refreshRefLayout). */
+    renderInfoRows() {
         if (this.resizeW && this.width && document.activeElement !== this.resizeW && document.activeElement !== this.resizeH) { this.resizeW.value = this.width; this.resizeH.value = this.height; }
         if (!this.infoEl) return;
         const rows = [];
@@ -13776,7 +13783,13 @@ class InpaintEditor {
             if (ap) rows.push(["Edge", this.cropSettings.feather === "auto" ? `grow ${ap.grow}, feather ${ap.feather}, blend ${ap.blend} px` : `feather ${this.widgetValue("feather", 0)} px`]);
             const target = this.widgetValue("target_size", 0);
             const m = Math.max(1, this.widgetValue("multiple_of", 64) || 64);
-            const nBatch = 1 + (b && this.cropSettings.withOriginal && this.cropSettings.fill && this.cropSettings.fill !== "none" ? 1 : 0) + this.referenceLayers().length;
+            // the node's batch: the crop, the Original (not on a refine pass, which fills nothing), the references; a
+            // local recipe of the app sends only those its graph reads (host.refLayout, 26e)
+            const refine = this.genSettings.mode === "local" && !!this.genSettings.refine;
+            const shown = this.referenceLayers();
+            const lay = host.refTokens ? this.refLayoutInfo : null;
+            const sent = lay && lay.names ? shown.filter((l) => lay.names.get(l.id)) : shown;
+            const nBatch = 1 + (b && !refine && this.cropSettings.withOriginal && this.cropSettings.fill && this.cropSettings.fill !== "none" ? 1 : 0) + (lay && lay.local && lay.names ? sent.length : shown.length);
             const pair = nBatch > 1 ? ` ×${nBatch} (batch)` : "";
             if (target > 0) {
                 const s = target / Math.max(cw, ch);
@@ -13790,12 +13803,25 @@ class InpaintEditor {
             }
             const ctrl = this.layers.filter((l) => this.isControl(l) && l.visible).length;
             rows.push(["Control", ctrl ? `${ctrl} layer${ctrl > 1 ? "s" : ""}` : "none (black)"]);
-            const refs = this.referenceLayers().length;
-            rows.push(["References", refs ? `${refs} image${refs > 1 ? "s" : ""} in crop_image (${this.refSettings.fit})` : "none"]);
+            const refs = shown.length;
+            if (lay && lay.names && refs && !lay.none) {
+                // the app: what each shown reference goes as ("img1 → <image3>"), what is left out, and a guessed wording
+                const labels = this.refLabels();
+                const arrows = sent.map((l) => `img${labels.get(l.id)} → ${lay.names.get(l.id)}`);
+                const left = shown.filter((l) => !lay.names.get(l.id)).map((l) => `img${labels.get(l.id)}`);
+                rows.push(["References", (arrows.length ? arrows.join(", ") + (lay.local ? ` (${this.refSettings.fit})` : "") : "none sent")
+                    + (left.length ? ` · ${left.join(", ")} not sent` : "") + (lay.guess ? " · wording guessed from the graph" : "")]);
+            } else if (lay && lay.none && refs) rows.push(["References", `none sent: ${lay.none}`]);
+            else rows.push(["References", refs ? `${refs} image${refs > 1 ? "s" : ""} in crop_image (${this.refSettings.fit})` : "none"]);
             const rs = this.resultInputState();
             rows.push(["Result", `${this.genSettings.mode} → ${rs.name}${rs.wired ? (rs.fallback ? " (only input wired)" : "") : " (not wired!)"}` + (this.genSettings.mode === "local" && this.genSettings.refine ? " · refine" : "")]);
         }
-        this.infoEl.innerHTML = rows.map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join("");
+        // as text: a name such as "<image3>" is no tag
+        this.infoEl.replaceChildren(...rows.flatMap(([k, v]) => {
+            const key = document.createElement("span"), val = document.createElement("b");
+            key.textContent = k; val.textContent = v;
+            return [key, val];
+        }));
         if (this.canvasInfo) this.canvasInfo.textContent = this.frameInfoText();
     }
 
@@ -17104,6 +17130,9 @@ class InpaintEditor {
             this.uploaded.baseHash = hash;
             this.uploaded.baseRef = baseRef;
         }
+        // the selection the mask below holds, read in the same tick (the app numbers the batch's pictures from it; the
+        // node ignores the key)
+        const hasSelection = !!this.getBounds();
         let maskRef = this.uploaded.maskRef;
         if (!this.uploaded.maskHash || !maskRef) {
             const up = await uploadCanvas(this.maskToCanvas(), `n${id}_mask`);
@@ -17138,6 +17167,7 @@ class InpaintEditor {
             height: this.height,
             base: baseRef,
             mask: maskRef,
+            hasSelection,
             control: controlRef,
             prompt: opts.prompt != null ? opts.prompt : this.promptText,
             layers: this.layers.length,

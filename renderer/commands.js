@@ -749,7 +749,7 @@ const COMMANDS = {
         },
     },
     generate: {
-        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as an API model got it (each @img token written as that model's name for its picture).",
+        needsImage: true, description: "Generate with the selected recipe: the selected area (with context) goes to the model, the answer comes back as a result layer. Waits for it. prompt_sent is the prompt as the model got it (each @img token written as that model's name for its picture; on a local ComfyUI recipe as the graph numbers the picture in the node's batch, e.g. <image3>); notes says what the route or the recipe left out.",
         params: { timeout: P.timeout(600) },
         async run(ed, a) {
             const n0 = ed.history.length;
@@ -780,9 +780,9 @@ const COMMANDS = {
             if (ed.history.length <= n0) throw new Error("no result arrived: " + (ed.status || "the run produced nothing"));
             const h = ed.history[ed.history.length - 1];
             const layer = ed.layers.find((l) => l.id === h.layerId);
-            // prompt_sent: the prompt as the API got it, each @img token written as the model's name for its picture;
-            // notes: what the route said it left out
-            return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - t0) / 100) / 10, prompt_sent: ed.lastSentPrompt, notes: provider ? (ed.lastRunNotes || []) : [] };
+            // prompt_sent: the prompt as the model got it, each @img token written as the model's name for its picture;
+            // notes: what the route (or a local recipe's slots) left out
+            return { layer: layer ? layerSummary(ed, layer) : null, seed: h.seed, mode: h.mode, status: ed.status, seconds: Math.round((Date.now() - t0) / 100) / 10, prompt_sent: ed.lastSentPrompt, notes: ed.lastRunNotes || [] };
         },
     },
 

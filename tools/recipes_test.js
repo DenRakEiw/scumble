@@ -222,7 +222,7 @@ async function main() {
             const up = recipes._normalize({ id: "u", kind: "provider", task: "upscale", providers: { a: { model: "m" } } });
             check("an upscaler's variant carries the default too", up.providers.a.refs && up.providers.a.refs.name === "image {n}", short(up.providers.a.refs));
             const comfy = recipes._normalize({ id: "c", kind: "comfy", refs: { name: "<image{n}>", slots: 4 } });
-            check("a ComfyUI recipe's refs is left as it is (26e checks it)", eq(comfy.refs, { name: "<image{n}>", slots: 4 }), short(comfy.refs));
+            check("a valid ComfyUI refs is kept as it is", eq(comfy.refs, { name: "<image{n}>", slots: 4 }), short(comfy.refs));
         } finally {
             console.warn = warn;
         }

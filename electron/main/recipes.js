@@ -274,6 +274,31 @@ function refsOf(refs, where) {
 }
 
 /**
+ * A ComfyUI recipe's declared `refs` (docs/PLAN_REFS.md 26e): `name` a valid pattern, `slots` the pictures its graph
+ * reads, the crop included (an integer 1 to 16, the most TextEncodeQwenImage21 takes; null otherwise). A `refs` that
+ * is no object or has a bad name is dropped with a warning, so the renderer derives both from the graph
+ * (renderer/editor/comfyrefs.js).
+ * @param {Recipe} r
+ */
+function comfyRefs(r) {
+    if (r.refs === undefined || r.refs === null) return;
+    const where = `recipe ${r.id}`;
+    if (typeof r.refs !== "object" || Array.isArray(r.refs) || (r.refs.name !== undefined && !validRefName(r.refs.name))) {
+        console.warn(`${where}: refs ${JSON.stringify(r.refs)} is not { name: a pattern with {n} or {n0}, slots: 1-16 }; the names come from the graph`);
+        delete r.refs;
+        return;
+    }
+    const out = {};
+    if (r.refs.name !== undefined) out.name = r.refs.name;
+    if (r.refs.slots !== undefined) {
+        const s = r.refs.slots;
+        out.slots = Number.isInteger(s) && s >= 1 && s <= 16 ? s : null;
+        if (out.slots === null && s !== null) console.warn(`${where}: refs.slots ${JSON.stringify(s)} is not an integer from 1 to 16; the graph decides`);
+    }
+    r.refs = out;
+}
+
+/**
  * Fill in everything the rest of the app is allowed to rely on. Runs on every recipe that
  * is read from disk or imported; the shape it answers is the typedef above.
  * @param {Recipe} r
@@ -285,6 +310,7 @@ function normalize(r) {
         // factor, and only the selection mode exists (the node's stitch fits the answer back into the box)
         if (r.task === "upscale") r.factor = { ...FACTOR_DEFAULT, fixed: true };
         else if (r.task !== undefined) r.task = "edit";
+        comfyRefs(r);
         return r;
     }
     if (!r.providers || typeof r.providers !== "object" || !Object.keys(r.providers).length) {

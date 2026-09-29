@@ -18,6 +18,7 @@ import { prepareCropAsync, finishResultAsync, bytesToImage, transparentPixels, c
 import { glReleasePool } from "./inpaint_filters_gl.js";
 import { withoutSecrets } from "./redact.js";
 import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
+import { comfyRefSpec, comfyLayout, trimSlots, refName, resolveMarkers as resolveComfyMarkers } from "./comfyrefs.js";
 
 const PROXY = "/comfy";
 const SUBFOLDER = "inpaint_canvas";
@@ -221,7 +222,7 @@ export const api = {
  * @property {() => Promise<any>} freeHelpers
  * @property {boolean} removeSupported
  * @property {boolean} refTokens                                     @img1 in the prompt names a reference layer (docs/PLAN_REFS.md); the node has none yet
- * @property {(editor: any, over?: any, opts?: { keep?: boolean }) => Promise<any>} refLayout   the chosen route's name for each shown reference ({ names, over, none, local, cap, refuse }); the node answers null
+ * @property {(editor: any, over?: any, opts?: { keep?: boolean }) => Promise<any>} refLayout   the chosen route's name for each shown reference ({ names, over, none, local, cap, refuse, guess? }); the node answers null
  * @property {() => any} removeModel
  * @property {(editor: any, req: { image: Uint8Array, mask: Uint8Array }) => Promise<any>} removeInApp
  * @property {(editor: any) => Promise<any>} warmRemove
@@ -1057,28 +1058,23 @@ export const host = {
      *   only checks that every token can be sent. `pairs` lists [{ label, id, ref }] for the status line.
      * - "none": a run that sends no reference picture (an upscale, Generate new): each token is written as its layer's
      *   name, in the request text only; `note` says so, `who` names the run in it.
-     * - "local": a ComfyUI recipe, which cannot name its pictures yet: a token refuses.
+     * - "comfy": a local ComfyUI recipe (26e): `comfy` = { spec, lay } of comfyrefs.js (the recipe's names and slots, the
+     *   run's batch); each token becomes the name the graph gives its picture ("<image3>", "image 3") right here, and
+     *   a token for a reference past the recipe's slots refuses. `pairs` also carry that `name`.
      * A token that cannot go refuses the run with the reason and what to do.
      * @param {any} editor
      * @param {{ prompt: string, negative: string, refIds: string[], labels: Map<string, number> } | null} snap
-     * @param {"edit" | "none" | "local"} route
-     * @param {{ prompt?: string, negative?: string, sent?: (string | null)[] | null, who?: string, recipe?: any }} [opts]
-     * @returns {{ prompt: string, negative: string, note: string, pairs: { label: string, id: string, ref: number }[] }}
+     * @param {"edit" | "none" | "comfy"} route
+     * @param {{ prompt?: string, negative?: string, sent?: (string | null)[] | null, who?: string, recipe?: any, comfy?: { spec: any, lay: any } | null }} [opts]
+     * @returns {{ prompt: string, negative: string, note: string, pairs: { label: string, id: string, ref: number, name?: string | null }[] }}
      */
-    refPrompt(editor, snap, route, { prompt, negative, sent = null, who = "This run", recipe = null } = {}) {
+    refPrompt(editor, snap, route, { prompt, negative, sent = null, who = "This run", recipe = null, comfy = null } = {}) {
         const s = snap || editor.refSnapshot();
         const texts = { prompt: String(prompt != null ? prompt : s.prompt || ""), negative: String(negative != null ? negative : s.negative || "") };
         const out = { prompt: texts.prompt, negative: texts.negative, note: "", pairs: [] };
         if (!this.refTokens) return out;
         const where = (k) => (k === "negative" ? "The negative prompt" : "The prompt");
         for (const k of ["prompt", "negative"]) if (/\{@ref:/i.test(texts[k])) throw new Error(`${where(k)} holds "{@ref:", which Scumble keeps for itself: reword it.`);
-        if (route === "local") {
-            if (hasTokens(texts.prompt) || hasTokens(texts.negative)) {
-                const r = recipe || this.recipe || {};
-                throw new Error(`@img tokens name reference images on API recipes only for now; ${r.name || r.id || "this recipe"} runs on ComfyUI: take them out of the prompt (the reference layers still go along in the crop_image batch).`);
-            }
-            return out;
-        }
         const idOf = new Map([...s.labels].map(([id, n]) => [n, id]));
         if (route === "none") {
             const replaced = [];
@@ -1100,22 +1096,52 @@ export const host = {
             }
             return out;
         }
+        // a comfy run's markers index the pictures its graph reads: the Original when it goes, then the kept references
+        const lay = route === "comfy" && comfy ? comfy.lay : null;
+        const ids = lay ? [...Array(lay.original).fill(null), ...s.refIds.slice(0, lay.kept)] : sent;
         for (const k of ["prompt", "negative"]) {
             // a parked token typed or pasted for a layer that has a label now names it (remap from the labels to themselves)
             texts[k] = remap(texts[k], s.labels, s.labels);
-            const res = toMarkers(texts[k], s.labels, sent);
+            const res = toMarkers(texts[k], s.labels, ids);
             if (res.errors.length) {
                 const e = res.errors[0];
+                if (lay && e.kind === "unsent") throw new Error(this.slotsError(recipe || this.recipe || {}, comfy.spec, lay, s, e.token));
                 throw new Error(this.refError(editor, s, { type: "token", text: e.token, n: e.n, id: e.kind === "parked" ? e.id : undefined, kind: e.kind }, k));
             }
             out[k] = res.text;
             for (const seg of parse(texts[k])) {
                 if (seg.type !== "token" || !("n" in seg)) continue;
                 const id = idOf.get(seg.n), label = "@img" + seg.n;
-                if (id && !out.pairs.some((p) => p.label === label)) out.pairs.push({ label, id, ref: sent ? sent.indexOf(id) : -1 });
+                if (id && !out.pairs.some((p) => p.label === label)) out.pairs.push({ label, id, ref: ids ? ids.indexOf(id) : -1 });
             }
         }
+        if (!lay) return out;
+        // the names, as the node batches the pictures and the graph's encoder numbers them (comfyrefs.js)
+        for (const k of ["prompt", "negative"]) {
+            const res = resolveComfyMarkers(out[k], lay.pictures, comfy.spec.name);
+            if (res.left.length || /\{@ref:/i.test(res.text) || hasTokens(res.text)) throw new Error(`${where(k)} names a picture ${(recipe || this.recipe || {}).name || "this recipe"} does not read: take the token out.`);
+            out[k] = res.text;
+        }
+        for (const p of out.pairs) {
+            const pic = lay.pictures.find((x) => x.ref === p.ref);
+            p.name = pic ? refName(comfy.spec.name, pic.n) : null;
+        }
         return out;
+    },
+
+    /**
+     * Why a token past a local recipe's slots cannot go (26e): what the graph reads, and the three ways out.
+     * @param {any} r the recipe
+     * @param {{ slots: number | null }} spec
+     * @param {{ original: number, kept: number }} lay
+     * @param {{ refIds: string[], labels: Map<string, number> }} snap
+     * @param {string} token
+     */
+    slotsError(r, spec, lay, snap, token) {
+        const tok = String(token || "").replace(/^@img/i, "@img");
+        const read = ["the crop", ...(lay.original ? ["the Original"] : []), ...snap.refIds.slice(0, lay.kept).map((id) => "img" + snap.labels.get(id))];
+        const ways = lay.original ? `Hide a reference, turn Original off, or take ${tok} out.` : `Hide a reference, or take ${tok} out.`;
+        return `${tok} cannot be named: ${r.name || r.id || "this recipe"} reads ${spec.slots} picture${spec.slots === 1 ? "" : "s"} (${listWords(read)}). ${ways}`;
     },
 
     /** Why a token cannot go (refPrompt): `seg` a token segment of `parse`, `k` which text holds it. */
@@ -1184,7 +1210,20 @@ export const host = {
         const refs = editor.referenceLayers();
         const blank = (none, local = false) => ({ names: new Map(refs.map((l) => [l.id, null])), over: new Set(), none, local, cap: null, refuse: null });
         let info;
-        if (r.kind !== "provider") info = blank(null, true);
+        if (r.kind !== "provider" && r.task === "upscale") info = blank("An upscale sends the picture alone: reference images are left out.", true);
+        else if (r.kind !== "provider") {
+            // a local recipe: the names its graph gives the pictures of the node's batch, worked out here (comfyrefs.js)
+            const { spec, lay } = this.comfyPlan(editor, r, refs.length);
+            const names = new Map(refs.map((l, k) => {
+                const pic = lay.pictures.find((p) => p.role === "reference" && p.ref === lay.original + k);
+                return [l.id, pic ? refName(spec.name, pic.n) : null];
+            }));
+            info = {
+                names, over: new Set(refs.slice(lay.kept).map((l) => l.id)),
+                none: spec.slots === 1 ? `${r.name || r.id} reads the crop alone: its graph takes no reference picture.` : null,
+                local: true, cap: spec.slots == null ? null : Math.max(0, spec.slots - 1 - lay.original), refuse: null, guess: spec.guess,
+            };
+        }
         else if (r.task === "upscale") info = blank("An upscale sends the picture alone: reference images are left out.");
         else if (r.edit === false && !over.kind) info = blank(`${r.name || r.id} makes pictures from the prompt alone.`);
         else {
@@ -1207,6 +1246,26 @@ export const host = {
         }
         if (keep && editor._refLayoutSeq === seq) editor.refLayoutInfo = info;
         return info;
+    },
+
+    _comfySpecs: new WeakMap(),
+
+    /**
+     * A local recipe's names and slots (comfyrefs.js `comfyRefSpec`, kept per recipe object) and the batch a run of it
+     * sends (`comfyLayout`, the node's rule): from a canvas state `st` when given (what the node will read), else from
+     * the editor now. `count`: the reference layers that would go.
+     */
+    comfyPlan(editor, r, count, st = null) {
+        let spec = this._comfySpecs.get(r);
+        if (!spec) { spec = comfyRefSpec(r); this._comfySpecs.set(r, spec); }
+        const cs = st ? st.crop || {} : editor.cropSettings || {};
+        const gs = st ? st.gen || {} : editor.genSettings || {};
+        const lay = comfyLayout(spec, {
+            hasSelection: st ? !!st.hasSelection : !!(editor.getBounds && editor.getBounds()),
+            fill: cs.fill || "none", withOriginal: !!cs.withOriginal,
+            refine: !!gs.refine && gs.mode === "local", count,
+        });
+        return { spec, lay };
     },
 
     /**
@@ -1606,26 +1665,54 @@ export const host = {
         if (r.kind === "provider") return this.runProvider(editor, { refs: opts.refs });
         if (!r.prompt) throw new Error("No recipe selected.");
         const upscale = r.task === "upscale";
-        // a ComfyUI recipe cannot name its pictures yet: a token refuses. An upscaler there sends no reference picture
-        // and may not read the prompt at all: its tokens go as names where a layer has one, and nothing refuses it
+        // An upscaler sends no reference picture and may not read the prompt at all: its tokens go as names where a
+        // layer has one, and nothing refuses it. Any other recipe names each token's picture the way its graph numbers
+        // the node's batch (26e): checked here against the editor now, before anything is uploaded, and again below
+        // against the canvas state the node will read.
         const snap = opts.refs || editor.refSnapshot();
-        let texts;
+        let texts, early = null;
         if (upscale) {
             const p = this.refNames(editor, snap.prompt), n = this.refNames(editor, snap.negative);
             texts = { prompt: p.text, negative: n.text, note: p.note || n.note ? "Upscale sends no reference images: the prompt's @img tokens were written as layer names." : "" };
-        } else texts = this.refPrompt(editor, snap, "local", { recipe: r });
+        } else {
+            early = this.comfyPlan(editor, r, snap.refIds.length);
+            texts = this.refPrompt(editor, snap, "comfy", { recipe: r, comfy: early });
+        }
         if (!this.connected) throw new Error("Not connected to ComfyUI.");
         const missing = (r.needs || []).filter((n) => this.objectInfo && !this.objectInfo[n]);
         if (missing.length) throw new Error("The server lacks these node types: " + missing.join(", "));
         if (upscale && !(editor.getBounds && editor.getBounds())) throw new Error("Select an area first: an upscale model on ComfyUI sharpens the selection's box.");
-        // an upscale's canvas state carries no references (upscaleState), so none is read or uploaded for it
-        const sopts = { refIds: upscale ? [] : snap.refIds, prompt: texts.prompt, negative: texts.negative };
-        const state = upscale ? this.upscaleState(await editor.serializeForPrompt(sopts)) : await editor.serializeForPrompt(sopts);
+        editor.lastSentPrompt = null;
+        editor.lastRunNotes = [];
+        // an upscale's canvas state carries no references (upscaleState), so none is read or uploaded for it; a reference
+        // past the recipe's slots is not uploaded either
+        const sopts = upscale ? { refIds: [], prompt: texts.prompt, negative: texts.negative } : { refIds: snap.refIds.slice(0, early.lay.kept), prompt: snap.prompt, negative: snap.negative };
+        let state, plan = null;
+        if (upscale) state = this.upscaleState(await editor.serializeForPrompt(sopts));
+        else {
+            // the state decides: a selection, the fill or Original changed while the references were uploaded
+            const st = JSON.parse(await editor.serializeForPrompt(sopts));
+            plan = this.comfyPlan(editor, r, (st.references || []).length, st);
+            st.references = (st.references || []).slice(0, plan.lay.kept);
+            texts = this.refPrompt(editor, snap, "comfy", { recipe: r, comfy: plan });
+            st.prompt = texts.prompt;
+            st.negative = texts.negative;
+            if (texts.pairs.length) st.named_refs = true;
+            state = JSON.stringify(st);
+            editor.lastSentPrompt = st.prompt;
+            if (snap.refIds.length > plan.lay.kept) {
+                const left = snap.refIds.slice(plan.lay.kept).map((id) => "img" + snap.labels.get(id));
+                editor.lastRunNotes.push(`${listWords(left)} ${left.length === 1 ? "is" : "are"} not sent: ${r.name || r.id} reads ${plan.spec.slots} picture${plan.spec.slots === 1 ? "" : "s"}.`);
+            }
+            if (plan.spec.guess && texts.pairs.length) editor.lastRunNotes.push("(wording guessed from the graph)");
+        }
         if (texts.note) editor.setStatus(`${editor.status} ${texts.note}`);
         await this.ensureOnServer(state, editor);
         const prompt = JSON.parse(JSON.stringify(r.prompt));
         const canvas = prompt[r.canvas];
         if (!canvas) throw new Error(`Recipe "${r.id}" has no canvas node "${r.canvas}".`);
+        // the encoder inputs whose picture this batch does not hold are left out, so none repeats the last one
+        if (plan) trimSlots(prompt, plan.spec, 1 + plan.lay.original + plan.lay.kept);
         canvas.inputs = { ...(canvas.inputs || {}), ...this.nodeParams, canvas_state: state };
         // an upscaler sees the crop at its native size: the node grows the box to a multiple instead of scaling it
         if (upscale) canvas.inputs.target_size = 0;
@@ -1639,6 +1726,14 @@ export const host = {
         }
         const res = await api.queuePrompt(0, { output: prompt, workflow: this.workflowInfo() });
         editor.lastPromptId = res && res.prompt_id;
+        if (plan) {
+            const named = texts.pairs.filter((p) => p.name).map((p) => `${p.label} → ${p.name}`);
+            if (named.length) editor.setStatus(`${editor.status} Named in the prompt: ${named.join(", ")}.`);
+            if (editor.lastRunNotes.length) editor.setStatus(`${editor.status} ${editor.lastRunNotes.join(" ")}`);
+            if (named.length && window.scumble && window.scumble.log) {
+                Promise.resolve(window.scumble.log.add({ level: "info", source: "comfy", message: `local run ${(res && res.prompt_id) || ""}: prompt as sent`, detail: editor.lastSentPrompt })).catch(() => { /* the log is optional */ });
+            }
+        }
         // open until ComfyUI says the prompt ended (success, error, interrupt) or its queue is empty: a turn of the whole
         // picture waits for it, since the result lands in the geometry it was made for (PLAN_0_1_31 §7)
         if (res && res.prompt_id) (editor._localRuns || (editor._localRuns = new Set())).add(res.prompt_id);

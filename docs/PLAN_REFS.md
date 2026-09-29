@@ -5,8 +5,8 @@ reference images (in Scumble: the reference layers) can be named inside the prom
 must be changed so that they understand the reference images too. In the prompt the images must be named with the
 designation under which they are actually sent over the API.
 
-**Status (2026-09-29):** S1 (26a1, 26b1), S2 (26b2, 26a2), S3 (26c1, 26c2) and S4 (26d1, 26d2) built, see their
-"Built" paragraphs; next S5 = 26e + 26f. The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+**Status (2026-09-29):** S1 (26a1, 26b1), S2 (26b2, 26a2), S3 (26c1, 26c2), S4 (26d1, 26d2) and 26e built, see their
+"Built" paragraphs; next 26f (S5). The user's answers are in section 0. This plan comes before package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
 
 How this plan was made: a code map and a web survey (seven agents), a design review (three critics), the user's
 answers, then one planner per step against the code and two cross-step critics (interfaces; facts and rules). **Where a
@@ -393,7 +393,13 @@ directly; comfy steps stub `host.connected`, `objectInfo`, `ensureOnServer` and 
   the crop ("crop only"); a Settings › Language models row marked "Can see the picture: no" now really gets no picture
   (the crop included); ToAPIs, OpenRouter and Oxen.ai step down to the crop on a 413.
 - 26e: local Klein and Qwen 2.1 no longer repeat the crop into unused slots, so the same seed gives another result;
-  Klein with Original on now sends the references at all.
+  Klein with Original on now sends the references at all. Built: a local ComfyUI recipe writes `@img1` as its model's
+  name for the picture (`<image3>` on Qwen Image Edit 2.1, `image 3` on FLUX.2 Klein) in what it sends, the prompt field
+  keeps the token; Klein reads up to 4 pictures, Qwen 2.1 up to 10 (the crop and the Original included); a reference past
+  them is left out with "img3 is not sent", a token that names one stops the run with the reason; the status line and
+  the app log say what went out; the Info panel's References row reads "img1 → <image3>" and no longer counts the
+  Original on a refine pass; the reference bar counts "2 of 8 for this recipe" on a local recipe; a graph Scumble cannot
+  trace names the pictures by their place in the batch and says the wording is guessed.
 - 26f: Generate new keeps the reference layers and sends them where the model takes pictures; Replicate text runs
   send the chosen aspect instead of `match_input_image`.
 
@@ -2106,6 +2112,29 @@ Normal tier for the renderer, light tier for the builders.
 About 0.5 day. `Item 26 step 26d2: the named reference pictures to the language model (on by default, a setting), the stepped retry, vision: false honoured`
 
 ## 26e: local ComfyUI recipes
+
+**26e built (2026-09-29, S5).** `renderer/editor/comfyrefs.js` (app-only, pure): `batchOf`, `comfySlots` (Qwen 2.1's
+`images.image_k` numbered by rank, Edit Plus's `image1..3` by input, a `ReferenceLatent`'s place in its chain),
+`comfyRefSpec` (identity: batches 0..k-1, one class, number = batch + 1, and no node reading the whole batch; a
+declared `slots` only lowers an identity's k), `comfyLayout` (the node's rule; `drops` is a **count**, the host words
+the note), `trimSlots`, `refName`, `validRefName` and the resolver twin. `recipes.js` `comfyRefs` in `normalize`. Both
+graphs widened (Qwen 10, Klein 4) with `refs`. `host.js`: `refPrompt` route `"comfy"` (replaces `"local"`; an unsent
+token past the slots gets `slotsError`'s text), `comfyPlan` (spec cached per recipe object, the layout from the editor
+or from a canvas state), `refLayout`'s comfy branch (names, `over`, `cap` = slots - crop - Original, `none` for a
+one-slot graph, `guess`), `queueGenerate` checks twice: before any upload (from the editor, **uploading only the
+references that fit**), then from the state it built; `lastSentPrompt` / `lastRunNotes` for local runs too
+(`generate` returns `notes` on every route now), the status "Named in the prompt: @img1 → <image3>." and the notes,
+the log entry. Editor: `serializeForPrompt` writes `hasSelection`; `renderInfo` = `refreshRefLayout` +
+`renderInfoRows` (the rows again when the layout answers; `replaceChildren` with text, `<image3>` is no tag; the batch
+count leaves the Original out on a refine pass); `refContext` no longer refuses local tokens. `prompt_field.js`
+`barCount`: a traced local recipe counts "2 of 8 for this recipe". Decisions the plan did not have: the Info panel and
+the pre-check use the node's refine rule from the editor's mode (a comfy recipe with `mode: "api"` never refines), not
+`predictOriginal({ local: true })`; `generate_new`'s local path still refuses tokens (26f). Tests: `tools/comfyrefs_test.js`
+(94 checks, run by `recipes_test.py`'s node step, a background agent against the stated API), the `recipes` gate step
+`local_recipes_name_the_batch_pictures_and_trim_the_unused_slots` (through `ed.generate()` too), `refs_send` step 5
+rewritten (a graph that cannot be traced names by the batch, a guess; a refusal past declared slots), `prompt_field_test`
++3. Gates `--offline --tiles on`: recipes, upscale, commands, nodecopy, lint, types. Nothing queued on 8188; neither
+widened graph has run.
 
 ### Read first: corrections from the review (they win over the text below)
 
