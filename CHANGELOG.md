@@ -11,6 +11,10 @@ the section for its version; `docs/` and the commit history hold the technical d
   topmost; Delete removes them; the eye and the lock of a selected row switch all of them. Each is one undo step. Locked
   and filter layers stay put, and rotate, distort and warp still take one layer at a time. Agents select several with
   `set_active_layer` `layers`, and `list_layers` says which are selected.
+- **Align and distribute layers.** The transform tool's bar lines up the selected layers on their left, centre, right,
+  top, middle or bottom edge, and spaces them with equal gaps across or down, within the box around them or within the
+  canvas (one layer aligns to the canvas). They go by each layer's box, not by its painted pixels. Each click is one undo
+  step; locked and filter layers stay put. Agents do the same with `align_layers`.
 - **Show only one layer, and back.** Alt+click on a layer's eye showed only that layer before; now it also works for
   several selected layers, a right click on a row offers it as *Show only this layer* beside *Show all layers*, merge
   and delete, and moving the solo from one layer to another keeps what was visible before the first one, so the way

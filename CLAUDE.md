@@ -107,7 +107,10 @@ commit 5d95c91 deployed (Vercel: success).
   solo (Alt+click on the eye, the user's "one click hides every layer but the chosen one") works on the selection, keeps
   the visibility from before the first solo and sits in a new right-click menu of the row; `set_active_layer { layers }`.
   The details and what was left out are in the plan's 6.1 "Built" paragraph; CHANGELOG "Unreleased", manual lines under
-  Layers. **Next: 6.2 align and distribute.** Open for the user: how the multi-selection and the solo feel.
+  Layers. **6.2 built 2026-09-30 (local, not pushed):** the transform tool's bar aligns the selected layers (six edges /
+  centres) and distributes them with equal gaps, *To* Selection (the box around them) or Canvas; one layer aligns to the
+  canvas; by the layer box, not the painted pixels; MCP `align_layers`. **Next: 6.3 clipping (full tier).** Open for the
+  user: how the multi-selection, the solo and the align row feel (and whether aligning by painted pixels is wanted).
 - **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
   of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
   point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4

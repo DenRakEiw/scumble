@@ -1158,6 +1158,14 @@ const ICONS = {
     rotCCW: '<path d="M20 12a8 8 0 00-8-8H7"/><path d="M10 1L7 4l3 3"/><rect x="4" y="12" width="9" height="8"/>',
     rot180: '<path d="M5 13a7 7 0 1014 0"/><path d="M16 16l3-3 3 3"/><rect x="8" y="3" width="8" height="6"/>',
     center: '<rect x="3" y="3" width="18" height="18"/><path d="M12 8v8M8 12h8"/>',
+    alignLeft: '<path d="M4 3v18"/><rect x="7" y="6" width="12" height="4"/><rect x="7" y="14" width="7" height="4"/>',
+    alignHCenter: '<path d="M12 3v3M12 10v4M12 18v3"/><rect x="5" y="6" width="14" height="4"/><rect x="8" y="14" width="8" height="4"/>',
+    alignRight: '<path d="M20 3v18"/><rect x="5" y="6" width="12" height="4"/><rect x="10" y="14" width="7" height="4"/>',
+    alignTop: '<path d="M3 4h18"/><rect x="6" y="7" width="4" height="12"/><rect x="14" y="7" width="4" height="7"/>',
+    alignVCenter: '<path d="M3 12h3M10 12h4M18 12h3"/><rect x="6" y="5" width="4" height="14"/><rect x="14" y="8" width="4" height="8"/>',
+    alignBottom: '<path d="M3 20h18"/><rect x="6" y="5" width="4" height="12"/><rect x="14" y="10" width="4" height="7"/>',
+    distH: '<path d="M3 4v16M21 4v16"/><rect x="6" y="7" width="3" height="10"/><rect x="10.5" y="7" width="3" height="10"/><rect x="15" y="7" width="3" height="10"/>',
+    distV: '<path d="M4 3h16M4 21h16"/><rect x="7" y="6" width="10" height="3"/><rect x="7" y="10.5" width="10" height="3"/><rect x="7" y="15" width="10" height="3"/>',
     resize: '<rect x="3" y="3" width="18" height="18"/><path d="M8 16l8-8"/><path d="M12 8h4v4"/><path d="M12 16H8v-4"/>',
     wand: '<path d="M4 20L15 9"/><path d="M15 9l-2-2 4-4 2 2z"/><path d="M19 2v2M22 5h-2M21 9l-1.5-.5M17 1l-.5 1.5"/>',
     ellipse: '<ellipse cx="12" cy="12" rx="9" ry="6" stroke-dasharray="3 2"/>',
@@ -2133,6 +2141,23 @@ class InpaintEditor {
         this.geoBox.appendChild(iconButton("rotCW", "Rotate 90° clockwise", () => this.rotateLayer90(1)));
         this.geoBox.appendChild(iconButton("center", "Centre the layer on the canvas", () => this.centerLayer()));
         bar.appendChild(this.geoBox);
+        // align and distribute: the selected layers to the box around them, or to the canvas (one layer: the canvas)
+        this.alignBox = el("span", "ipc-geo");
+        this.alignSep = this.alignBox.appendChild(el("span", "ipc-sep"));
+        for (const [how, ic, title] of [["left", "alignLeft", "Align left edges"], ["hcenter", "alignHCenter", "Align horizontal centres"], ["right", "alignRight", "Align right edges"], ["top", "alignTop", "Align top edges"], ["vcenter", "alignVCenter", "Align vertical centres"], ["bottom", "alignBottom", "Align bottom edges"]]) {
+            this.alignBox.appendChild(iconButton(ic, title, () => this.alignLayers(how, { to: this.alignToSel.value.toLowerCase() })));
+        }
+        this.distButtons = [
+            iconButton("distH", "Distribute horizontally: equal gaps between the layers", () => this.distributeLayers("x", { to: this.alignToSel.value.toLowerCase() })),
+            iconButton("distV", "Distribute vertically: equal gaps between the layers", () => this.distributeLayers("y", { to: this.alignToSel.value.toLowerCase() })),
+        ];
+        for (const b of this.distButtons) this.alignBox.appendChild(b);
+        const toLab = el("label", null, "To");
+        this.alignToSel = selectInput(["Selection", "Canvas"], "Selection", "Align and distribute within the box around the selected layers, or within the canvas");
+        this.alignToSel.addEventListener("change", () => this.updateSubbar());
+        toLab.appendChild(this.alignToSel);
+        this.alignBox.appendChild(toLab);
+        bar.appendChild(this.alignBox);
         this.subHint = el("span", "ipc-hint", "");
         bar.appendChild(this.subHint);
         for (const type of ["pointerdown", "pointermove", "pointerup", "wheel"]) bar.addEventListener(type, (e) => e.stopPropagation());
@@ -2443,6 +2468,14 @@ class InpaintEditor {
             if (!this.geoBox.hidden && document.activeElement && !this.geoBox.contains(document.activeElement)) for (const k of ["x", "y", "w", "h"]) this.geoInputs[k].value = Math.round(active[k]);
         }
         const many = !pending && this.multiSelected() ? this.selectedLayers().length : 0;
+        if (this.alignBox) {
+            const movable = this.alignTargets().length;
+            this.alignBox.hidden = !(mode === "scale" && !pending && movable);
+            this.alignToSel.parentElement.hidden = movable < 2;
+            this.alignSep.hidden = !!(this.geoBox && this.geoBox.hidden);   // the bar's own separator stands before it then
+            const toCanvas = movable < 2 || this.alignToSel.value === "Canvas";
+            for (const b of this.distButtons) b.disabled = movable < (toCanvas ? 2 : 3);
+        }
         this.subHint.textContent = !active ? "Select a layer first" : many ? `${many} layers selected: drag moves them, the handles scale them together, arrow keys nudge` : (pending ? (mode === "rotate" ? "Drag outside to rotate (Shift snaps), handles scale, inside moves. Enter applies, Esc cancels" : "Enter applies, Esc cancels") : (mode === "scale" ? "Drag outside a corner to rotate, arrow keys nudge" : "Click a mode to start"));
     }
 
@@ -4194,6 +4227,68 @@ class InpaintEditor {
         l.y = Math.round((this.height - l.h) / 2);
         this.uploaded.baseHash = null; this.uploaded.controlHash = null;
         this.renderLayers(); this.updateSubbar(); this.draw(); this.drawThumb(); this.notifyChanged();
+    }
+
+    /** The layers align and distribute move: the selected ones (filter and locked layers stay where they are), or the active one. */
+    alignTargets() {
+        if (this.multiSelected()) { const group = this.groupBox(); return group ? group.layers : []; }
+        const l = this.activeLayer();
+        return l && l.kind !== "filter" && !l.locked ? [l] : [];
+    }
+
+    /** The box to align within: the canvas, or (several layers, `to` "selection") the box around them. */
+    alignFrame(layers, to) {
+        if (to === "canvas" || layers.length < 2) return { x: 0, y: 0, w: this.width, h: this.height };
+        const x0 = Math.min(...layers.map((l) => l.x)), y0 = Math.min(...layers.map((l) => l.y));
+        return { x: x0, y: y0, w: Math.max(...layers.map((l) => l.x + l.w)) - x0, h: Math.max(...layers.map((l) => l.y + l.h)) - y0 };
+    }
+
+    /**
+     * Line the selected layers' boxes up on an edge or a centre (`how`: left, hcenter, right, top, vcenter, bottom) of
+     * the box around them or of the canvas (`to`: selection or canvas; one layer always aligns to the canvas). One undo
+     * step; returns the layers that moved.
+     */
+    alignLayers(how, { to = "selection" } = {}) {
+        if (this.pending) { this.setStatus("Apply or cancel the transform first."); return []; }
+        const layers = this.alignTargets();
+        if (!layers.length) { this.setStatus("Select a layer to align. Filter and locked layers stay where they are."); return []; }
+        const f = this.alignFrame(layers, to);
+        const at = {
+            left: (l) => [f.x, l.y], hcenter: (l) => [f.x + (f.w - l.w) / 2, l.y], right: (l) => [f.x + f.w - l.w, l.y],
+            top: (l) => [l.x, f.y], vcenter: (l) => [l.x, f.y + (f.h - l.h) / 2], bottom: (l) => [l.x, f.y + f.h - l.h],
+        }[how];
+        if (!at) throw new Error(`unknown alignment ${how}`);
+        return this.placeLayers(layers.map((l) => [l, ...at(l)]), layers.length > 1 ? "Align layers" : "Align layer");
+    }
+
+    /**
+     * Space the selected layers with equal gaps along `axis` (x or y), in the order of their left (top) edges: within
+     * the box around them (the outer two stay put; three layers at least) or across the canvas (two at least).
+     */
+    distributeLayers(axis, { to = "selection" } = {}) {
+        if (this.pending) { this.setStatus("Apply or cancel the transform first."); return []; }
+        const layers = this.alignTargets();
+        const least = to === "canvas" ? 2 : 3;
+        if (layers.length < least) { this.setStatus(`Select ${least} layers or more to distribute${to === "canvas" ? " across the canvas" : ""}.`); return []; }
+        const f = this.alignFrame(layers, to);
+        const [pos, size] = axis === "y" ? ["y", "h"] : ["x", "w"];
+        const order = [...layers].sort((a, b) => a[pos] - b[pos] || a[size] - b[size]);
+        const gap = (f[size] - order.reduce((s, l) => s + l[size], 0)) / (order.length - 1);
+        let at = f[pos];
+        const moves = order.map((l) => { const p = at; at += l[size] + gap; return axis === "y" ? [l, l.x, p] : [l, p, l.y]; });
+        return this.placeLayers(moves, "Distribute layers");
+    }
+
+    /** Move layers to [layer, x, y] places (rounded) as one undo step; returns the layers that moved. */
+    placeLayers(moves, label) {
+        const moved = moves.map(([l, x, y]) => [l, Math.round(x), Math.round(y)]).filter(([l, x, y]) => x !== l.x || y !== l.y);
+        if (!moved.length) { this.setStatus("The layers are already in place."); return []; }
+        if (moved.length > 1) this.pushUndo({ kind: "transforms", ids: moved.map(([l]) => l.id), label });
+        else this.pushUndo({ kind: "transform", id: moved[0][0].id, label });
+        for (const [l, x, y] of moved) { l.x = x; l.y = y; }
+        this.uploaded.baseHash = null; this.uploaded.controlHash = null;
+        this.renderLayers(); this.updateSubbar(); this.draw(); this.drawThumb(); this.notifyChanged();
+        return moved.map(([l]) => l);
     }
 
     /** Mirror the active layer's pixels (and mask) horizontally or vertically. */

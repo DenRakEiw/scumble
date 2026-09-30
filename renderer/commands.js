@@ -887,6 +887,23 @@ const COMMANDS = {
     },
     flip_layer: { description: "Mirror a layer horizontally (axis x) or vertically (axis y).", params: { layer: P.layer(), axis: P.str("x or y", { enum: ["x", "y"], default: "x" }) }, async run(ed, a) { const l = findLayer(ed, a.layer); ed.activeLayerId = l.id; ed.flipLayer(a.axis === "y" || a.axis === "vertical" ? "y" : "x"); return layerSummary(ed, l); } },
     center_layer: { description: "Centre a layer on the canvas.", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); ed.activeLayerId = l.id; ed.centerLayer(); return layerSummary(ed, l); } },
+    align_layers: {
+        description: "Align the selected layers (or `layers`, which get selected) on an edge or a centre, or distribute them with equal gaps, within the box around them or within the canvas (one layer aligns to the canvas). Filter and locked layers stay put. One undo step.",
+        params: {
+            layers: { type: "array", items: { type: "string" }, description: "the layers (ids, names or unique name fragments); default: the selected layers" },
+            align: P.str("the edge or centre to line up", { enum: ["left", "hcenter", "right", "top", "vcenter", "bottom"] }),
+            distribute: P.str("equal gaps along x (horizontal) or y (vertical); three layers at least within the selection, two across the canvas", { enum: ["x", "y"] }),
+            to: P.str("selection (the box around the layers) or canvas", { enum: ["selection", "canvas"], default: "selection" }),
+        },
+        async run(ed, a) {
+            if (!a.align === !a.distribute) throw new Error("give `align` or `distribute`");
+            if (Array.isArray(a.layers) && a.layers.length) ed.selectLayers(a.layers.map((x) => findLayer(ed, x, { allowActive: false }).id));
+            const opts = { to: a.to === "canvas" ? "canvas" : "selection" };
+            const moved = a.align ? ed.alignLayers(a.align, opts) : ed.distributeLayers(a.distribute === "y" ? "y" : "x", opts);
+            if (!moved.length && !/already in place/.test(ed.status)) throw new Error(ed.status);
+            return { moved: moved.map((l) => l.id), layers: ed.alignTargets().map((l) => layerSummary(ed, l)) };
+        },
+    },
     flatten: { needsImage: true, description: "Flatten all visible layers into the base image.", params: {}, async run(ed) { await ed.flatten(); return { layers: ed.layers.length, status: ed.status }; } },
     cutout_layer: {
         description: "Remove the background of a layer with the cutout model the editor is set to (in-app when a matting model is downloaded); the mask becomes the layer's transparency.",

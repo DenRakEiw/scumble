@@ -49,7 +49,7 @@ const POLICY = {
 
     // ---- layers -------------------------------------------------------------------------
     add_paint_layer: AUTO, add_filter: AUTO, add_text: AUTO, set_active_layer: AUTO,
-    move_layer: AUTO, duplicate_layer: AUTO, frequency_separation: AUTO, dodge_burn_layer: AUTO, flip_layer: AUTO, center_layer: AUTO,
+    move_layer: AUTO, duplicate_layer: AUTO, frequency_separation: AUTO, dodge_burn_layer: AUTO, flip_layer: AUTO, center_layer: AUTO, align_layers: AUTO,
     film_apply_look: AUTO, film_add_point: AUTO,
 
     set_filter: (call) => (hasParams(call) && !call.args.type

@@ -493,6 +493,18 @@ Centre a layer on the canvas.
 | `doc` | integer | document id (default the active tab) |
 | `layer` | string | the layer: id, name, a unique part of the name, or "active" (default `"active"`) |
 
+### `align_layers`
+
+Align the selected layers (or `layers`, which get selected) on an edge or a centre, or distribute them with equal gaps, within the box around them or within the canvas (one layer aligns to the canvas). Filter and locked layers stay put. One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layers` | array | the layers (ids, names or unique name fragments); default: the selected layers |
+| `align` | string | the edge or centre to line up (one of `left`, `hcenter`, `right`, `top`, `vcenter`, `bottom`) |
+| `distribute` | string | equal gaps along x (horizontal) or y (vertical); three layers at least within the selection, two across the canvas (one of `x`, `y`) |
+| `to` | string | selection (the box around the layers) or canvas (default `"selection"`; one of `selection`, `canvas`) |
+
 ### `flatten` *(image)*
 
 Flatten all visible layers into the base image.

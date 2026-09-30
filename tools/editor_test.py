@@ -10231,6 +10231,72 @@ try {
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;
 """),
+    ("layers_align_and_distribute", """
+// PLAN_0_1_31 6.2: the move tool's bar aligns the selected layers' boxes to the box around them or to the canvas, and
+// spaces them with equal gaps; each one undo step; locked layers stay; align_layers does the same over MCP
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+try {
+    await run("new_canvas", { width: 400, height: 300, doc: d.id });
+    const mk = async (name, x, y, w, h) => { const L = ed.addPaintLayer(); L.name = name; await run("set_layer", { layer: L.id, x, y, w, h, doc: d.id }); return L.id; };
+    const A = await mk("A", 10, 20, 50, 40), B = await mk("B", 100, 60, 80, 30), C = await mk("C", 300, 150, 60, 60);
+    const lay = (id) => ed.layers.find((l) => l.id === id);
+    const xs = () => [A, B, C].map((id) => lay(id).x).join(","), ys = () => [A, B, C].map((id) => lay(id).y).join(",");
+    await run("set_active_layer", { layers: [A, B, C], doc: d.id });
+    ed.setTool("transform");
+    if (ed.alignBox.hidden || ed.alignToSel.parentElement.hidden || ed.distButtons.some((b) => b.disabled)) throw new Error("the align row is not offered for three layers");
+    // the bar's first button: left edges to the box around them, one step, undone in one
+    const n0 = ed.undo.length;
+    ed.alignBox.querySelector("button").click();
+    if (xs() !== "10,10,10") throw new Error("align left: " + xs());
+    if (ed.undo.length !== n0 + 1 || ed.undo[ed.undo.length - 1].kind !== "transforms") throw new Error("align left is not one transforms step");
+    await ed.undoStep();
+    if (xs() !== "10,100,300") throw new Error("the undo of align left: " + xs());
+    ed.alignLayers("hcenter", { to: "canvas" });
+    if (xs() !== "175,160,170") throw new Error("centres on the canvas: " + xs());
+    await ed.undoStep();
+    // bottom edges: C is already at the bottom of the box and stays out of the step
+    ed.alignLayers("bottom");
+    if (ys() !== "170,180,150") throw new Error("align bottom: " + ys());
+    if (ed.undo[ed.undo.length - 1].items.length !== 2) throw new Error("the step holds a layer that did not move");
+    await ed.undoStep();
+    // equal gaps: in the box the outer two stay (gap 80), across the canvas from edge to edge (gap 85)
+    ed.distributeLayers("x");
+    if (xs() !== "10,140,300") throw new Error("distribute x: " + xs());
+    await ed.undoStep();
+    ed.distributeLayers("y", { to: "canvas" });
+    if (ys() !== "0,125,240") throw new Error("distribute y on the canvas: " + ys());
+    await ed.undoStep();
+    // one layer aligns to the canvas; the To choice is hidden, distributing needs more layers
+    await run("set_active_layer", { layer: A, doc: d.id });
+    if (ed.alignBox.hidden || !ed.alignToSel.parentElement.hidden || !ed.distButtons.every((b) => b.disabled)) throw new Error("the align row for one layer");
+    ed.alignLayers("right");
+    if (lay(A).x !== 350) throw new Error("one layer to the right edge: " + lay(A).x);
+    await ed.undoStep();
+    // a locked layer stays where it is
+    await run("set_layer", { layer: B, locked: true, doc: d.id });
+    await run("set_active_layer", { layers: [A, B, C], doc: d.id });
+    ed.alignLayers("top");
+    if (ys() !== "20,60,20") throw new Error("align top with B locked: " + ys());
+    await ed.undoStep();
+    await run("set_layer", { layer: B, locked: false, doc: d.id });
+    // the command: it selects the layers it is given; two layers do not distribute within their own box
+    let r = await run("align_layers", { layers: [A, C], align: "vcenter", doc: d.id });
+    if (r.moved.length !== 2 || lay(A).y !== lay(C).y + 10) throw new Error("align_layers vcenter: " + JSON.stringify(r) + " " + ys());
+    let err = "";
+    try { await run("align_layers", { distribute: "x", doc: d.id }); } catch (e) { err = String(e.message || e); }
+    if (!/3 layers/.test(err)) throw new Error("distribute of two layers: " + err);
+    err = "";
+    try { await run("align_layers", { doc: d.id }); } catch (e) { err = String(e.message || e); }
+    if (!/align. or .distribute/.test(err)) throw new Error("no align, no distribute: " + err);
+    r = await run("align_layers", { distribute: "x", to: "canvas", doc: d.id });
+    if (lay(A).x !== 0 || lay(C).x !== 340) throw new Error("distribute across the canvas: " + xs());
+    out.ok = true;
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
     ("side_panel_width_drags_and_is_kept", """
 // item 17: the grip on the side panel's left edge sets its width, clamped; every tab shows it; it is kept; the view refits
 const d = await run("new_document");
