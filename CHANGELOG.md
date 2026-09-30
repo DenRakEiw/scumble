@@ -3,13 +3,15 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.35 — 2026-09-30
 
 - **Select several layers.** Ctrl+click a layer row to add it to the selection or take it out, Shift+click to select
   the rows in between. With the transform tool the selected layers move together, scale together by the handles of the
   box around them and nudge together with the arrow keys; Ctrl+E merges them into one layer at the place of the
-  topmost; Delete removes them; the eye and the lock of a selected row switch all of them. Each is one undo step. Locked
-  and filter layers stay put, and rotate, distort and warp still take one layer at a time. Agents select several with
+  topmost; Delete removes them; the eye and the lock of a selected row switch all of them. Moving, scaling, nudging, merging and
+  deleting are one undo step each; the eye and the lock take none, as always. Locked and filter layers stay where they
+  are when the others move, Ctrl+E refuses while one of them is selected, Delete keeps the locked ones, and rotate,
+  distort and warp still take one layer at a time. Agents select several with
   `set_active_layer` `layers`, and `list_layers` says which are selected.
 - **Align and distribute layers.** The transform tool's bar lines up the selected layers on their left, centre, right,
   top, middle or bottom edge, and spaces them with equal gaps across or down, within the box around them or within the
@@ -25,26 +27,26 @@ the section for its version; `docs/` and the commit history hold the technical d
   pixels, its mask and its opacity decide how much. Several layers in a row can clip to the same layer; a filter layer
   clipped this way filters only what lies under that layer's pixels. The row gets a small arrow and the layer it clips
   to an underline. A hidden base hides its clipped layers too; over a filter layer, or as the bottom layer, a clip has no
-  effect (the arrow is dimmed). The same again releases it; each switch is one undo step. Merging a clipped layer into
+  effect (the arrow is dimmed); a fill layer counts as a filter layer here. The same again releases it; each switch is one undo step. Merging a clipped layer into
   the layer it clips to bakes the clip in. The clip is saved with the document and kept in PSD files both ways (a
   layer clipped to a group or to a layer Scumble leaves out opens unclipped, and says so); ORA has no clipping. Agents
   switch it with `set_layer` `clip`, and `list_layers` says what each clipped layer clips to.
-- **Groups.** Ctrl+G (or *Group layers* in a row's right-click menu) puts the selected layers into a group, a folder in
+- **Groups.** Ctrl+G (or *Group* in a row's right-click menu) puts the selected layers into a group, a folder in
   the layer list with its own row: fold it open or shut, hide every layer in it with its eye (their own eyes stay as
   they were), lock them all with its lock, rename it with a double click. A click on the group's row selects its layers,
   so they move and scale together. Drag a layer onto a row to put it next to that row in the same group; drag it onto
   the lower half of a group's row to put it into the group at its top; groups drag the same way, and groups go inside
   groups. Ctrl+] and Ctrl+[ step a layer past the next one, into a group next to it or out of its own. Ungroup leaves
-  the layers where they are; the group's trash deletes it with its layers. Each change of the list is one undo step, the
+  the layers where they are (those of a hidden or locked group stay hidden or locked); the group's trash deletes it with its layers. Each change of the list is one undo step, the
   eye, lock and fold of a group take none, as a layer's do. A group has no opacity or blend mode of its own: the layers
   in it are drawn as if it were not there. A clip stays inside its group. Groups are saved with the document and kept
   in PSD files both ways (a group's opacity goes into its layers when a PSD opens, and says so); ORA gets the layers
   without the groups, those of a hidden group hidden. Agents use `group_layers`, `ungroup_layers` and `set_group`, and
   `list_layers` lists the groups and says which group each layer is in.
 - **Fill layers.** The new button beside the filter button in the layer list adds a layer of one colour, which starts in
-  the paint colour; its row switches it to a gradient: linear along an angle, reflected from the centre both ways, or
-  radial from the centre out, from one colour to another, each end with its own opacity, with a scale and a movable
-  centre. The row's picker and sliders change it at any time, and each change is one undo step. A fill layer covers
+  the paint colour; its row switches it to a gradient, from that colour to transparent to start with: linear along an angle, reflected from the centre both ways, or
+  radial from the centre out, from one colour to another, each end with its own opacity, with a scale and a
+  centre set in per cent. The row's picker and sliders change it at any time, and each change is one undo step. A fill layer covers
   what lies below it, and its blend mode, opacity and mask let the picture through: a gradient to transparent in
   multiply darkens one side and leaves the other as it is. It stays sharp at any size and is saved with the document.
   PSD and ORA files get it as a layer of pixels (PSD with its mask, ORA with the mask applied). Agents add one with

@@ -12284,8 +12284,14 @@ class InpaintEditor {
     setFilterType(layer, id) {
         if (!FILTERS[id] || layer.filter === id) return;
         this.pushUndo({ kind: "filter", id: layer.id, label: "Filter type" });
+        // a fill switched to a gradient keeps its colour (to transparent) and back; other types start in the paint colour
+        const was = layer.filter, prev = layer.params || {};
+        const hex = (c) => (/^#[0-9a-f]{6}$/i.test(c || "") ? c.toLowerCase() : null);
+        const seed = was === "fill" ? hex(prev.color) : was === "gradient" ? hex(prev.from) : hex(this.color);
         layer.filter = id;
         layer.params = filterDefaults(id);
+        if (seed && id === "fill") layer.params.color = seed;
+        if (seed && id === "gradient") { layer.params.from = seed; layer.params.to = seed; layer.params.to_opacity = 0; }
         // layer names are not editable: the type (or a preset, see the preset select) names the layer
         layer.name = `${FILTERS[id].label} ${this.filterCounter}`;
         this.markFilterChanged(layer);
@@ -16358,11 +16364,19 @@ class InpaintEditor {
         const g = this.groupById(gid);
         if (!g) { this.setStatus("No such group."); return false; }
         this.pushUndo({ kind: "layers", label: "Ungroup" });
-        for (const l of this.layers) if (l.group === g.id) l.group = g.parent || null;
-        for (const s of this.groups) if (s.parent === g.id) s.parent = g.parent || null;
+        // a hidden or locked group gave its layers and groups that state; they keep it as their own
+        for (const l of this.layers) if (l.group === g.id) {
+            l.group = g.parent || null;
+            if (!g.visible) l.visible = false;
+            if (g.locked) l.locked = true;
+        }
+        for (const s of this.groups) if (s.parent === g.id) {
+            s.parent = g.parent || null;
+            if (!g.visible) s.visible = false;
+            if (g.locked) s.locked = true;
+        }
         this.groups = this.groups.filter((x) => x !== g);
         if (this.activeGroupId === g.id) this.activeGroupId = null;
-        // a hidden or locked group gave its layers that state; they keep it as their own
         this.layersRestacked();
         this.setStatus(`${g.name} ungrouped.`);
         return true;

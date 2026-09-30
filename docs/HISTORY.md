@@ -28,6 +28,67 @@ The block of 2026-09-29 (evening, item 26 S1 to S4 built) was moved here at nigh
 
 The block of 2026-09-29 (night, item 26 built, S1 to S5) was moved here late the same night, when 0.1.34 was prepared.
 
+## Where things stand (2026-09-29, late night: 0.1.34 released, the post and the header live)
+
+Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
+verbatim). Check `gh release list` before believing any release state written down anywhere.
+
+**Released:** 0.1.34 is Latest (published 2026-09-29 21:42:53 CEST, tag on e66f48b "0.1.34 prepared"): item 26, the
+reference layers named in the prompt (S1-S5, `docs/PLAN_REFS.md`). Prepared on the user's "baue fertig", released on
+their "ja, push und update der seite" the same night. **The dev blog post `v0-1-34` ("Say which picture", with the
+prompt-field picture) is live**, the manual is synced (its new chapter `#references` with its figure), and the website
+commit 5d95c91 deployed (Vercel: success).
+- How it went: a workflow wrote the CHANGELOG section (11 bullets), the manual's item-26 lines and the post, then four
+  checkers and three fixers corrected 8 manual, 12 CHANGELOG and 2 post lines, each confirmed in the code. Exe gates
+  `--offline` on both backends: tiles `rel34-exe` (31 gates), canvas `rel34-exe-canvas` (20), final `rel34-exe-final` and
+  `rel34-exe-canvas-final`. They found **a real test bug, fixed**: the 26c gate steps (`tools/prompt_field_steps.py`
+  `pfSetup`) called `showPane("gen")`, which the app remembers in `ipc.pane` for every document opened later, so `film`'s
+  new document opened on the Generate pane and its thumbnails never rendered (red only in gate order, `editor film`;
+  `pfClose` puts the pane back). One `export` step red once is filed in TESTING.md's flakes.
+- **The user's header request (2026-09-29), live:** on /scumble and every page under it the site header shows only
+  DENRAKEIW at the left and the hub's links at the right (← Scumble, Manual, Videos, Dev blog, Download ↗; the page you
+  are on left out), not Work / About / Clients / Awards / Contact and not Let's talk; the phone menu the same
+  (`F:\portfolio_web\components\site-header.tsx`; the links in `lib/scumble-nav.ts`, which `hub` reads, so the header
+  does not bundle the manual and the posts). The links at the foot of the pages stay. `Post` has an optional `image`
+  (rendered after the first paragraph, at most 420 px wide).
+- **Nothing of item 26 ran live**: no API call with references, neither widened local graph on ComfyUI (8188 is
+  production). Filed earlier (`docs/BUGS.md`): the local recipes' Model / Text encoder / VAE rows carry over between
+  Qwen and Klein; Gemini direct ignores the asked aspect on Generate new while the Aspect row says "auto".
+- **Next:** package 6 (layers pro) of `docs/PLAN_0_1_31.md`. **6.1 built 2026-09-30 (local, not pushed):** several
+  layers selected by Ctrl / Shift + click move, scale, nudge, merge (Ctrl+E), delete and switch eye / lock together, and
+  solo (Alt+click on the eye, the user's "one click hides every layer but the chosen one") works on the selection, keeps
+  the visibility from before the first solo and sits in a new right-click menu of the row; `set_active_layer { layers }`.
+  The details and what was left out are in the plan's 6.1 "Built" paragraph; CHANGELOG "Unreleased", manual lines under
+  Layers. **6.2 built 2026-09-30 (local, not pushed):** the transform tool's bar aligns the selected layers (six edges /
+  centres) and distributes them with equal gaps, *To* Selection (the box around them) or Canvas; one layer aligns to the
+  canvas; by the layer box, not the painted pixels; MCP `align_layers`. **6.3 built 2026-09-30 (local, not pushed):**
+  clipping (`layer.clip`; Alt+click the line between two rows, Ctrl+Alt+G, the row menu; `set_layer clip`; PSD both ways)
+  on every path, the clip being the base's coverage used as the layer's mask: not an isolated group, so at a partial
+  coverage it differs from Photoshop's group (the plan's 6.3 "Built"); `composite_tile` unchanged; gate `clip` (both
+  backends, 13 mutations red), 15k measured. **6.5 built 2026-09-30 (local, not pushed):** groups as folders
+  (`ed.groups` beside the flat stack, `layer.group`; pass-through: `shown(l)` / `isLocked(l)` in every walk and guard;
+  Ctrl+G, the group row with fold / eye / lock / ungroup / trash, drag into groups, Ctrl+] / [ through the tree; PSD
+  `lsct` both ways, a dropped PSD too; `.scumble`; MCP `group_layers`, `ungroup_layers`, `set_group`); gate `groups`
+  (both backends, 19 mutations red), 15k measured (no cost); the worker PSD path dropped `clip` before (fixed).
+  **6.6 built 2026-09-30 (local, not pushed):** fill layers as two filter types, `fill` (a colour) and `gradient`
+  (linear / reflected / radial, two colours each with an opacity, angle, scale, centre), a param type `color`; the def's
+  `over` makes the result go over the picture as a layer (blend, opacity, mask), not in its place (`isFillLayer`, both
+  `plain` flags); `fillPixels` is a function of the pixel's place only; the fill button in the layer head; PSD / ORA
+  write a fill as a pixel layer; gate `fill` (both backends). **Package 6 is complete; next: a release of package 6
+  (0.1.35) only on the user's word** (prepare CHANGELOG / dist / exe gates locally first if asked). Open for the user:
+  how the fills feel (the gradient from the paint colour to transparent as the default; no on-canvas dragging of a
+  gradient, no more than two stops); how the multi-selection, the solo and the align row feel (and whether
+  aligning by painted pixels is wanted); whether the clip at soft edges looks right or wants the isolated group (7 - 9
+  days). Decided for groups (the user, 2026-09-30): no empty groups, no ungroup key, no group opacity / blend (the
+  layers' own opacity is enough; the group opacity parked as item 27).
+- **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
+  of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
+  point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
+  and 5 (listed in the late-night hand-over of 2026-09-28 in `docs/HISTORY.md`: among them the selection that stays after
+  a patch or a move, the Shift+J ring, Liquify's no-Apply, its strength and keys, the freeze not undone or saved); item
+  25's look and timing; item 26's look in the app (the prompt field, the dialog); the post's two pictures. The Store
+  resubmission (search terms without "ComfyUI" / "FLUX") is on the user's side.
+
 ## Where things stand (2026-09-29, night: 0.1.33 released; item 26 built, S1 to S5)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,

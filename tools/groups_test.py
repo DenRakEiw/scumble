@@ -290,6 +290,17 @@ JS = r"""
     check("ungroup: the layers stay, in the group around", where() === "D A:Outer B:Outer C:Outer E:Outer F" && ed.groups.length === 1, where());
     await ed.undoStep();
     check("ungroup: undo", where() === "D A:Outer B:Inner C:Inner E:Outer F", where());
+    {
+        // a hidden, locked group hands that state to its layers: an ungroup shows or unlocks nothing
+        const kids = ed.layers.filter((l) => l.group === inner.id);
+        ed.setGroupFlag(inner.id, "visible", false); ed.setGroupFlag(inner.id, "locked", true);
+        ed.ungroup(inner.id);
+        check("ungroup: a hidden, locked group's layers stay hidden and locked", kids.length === 2 && kids.every((l) => !ed.shown(l) && ed.isLocked(l) && l.visible === false && l.locked === true), kids.map((l) => [l.name, l.visible, l.locked]));
+        await ed.undoStep();
+        const back = ed.layers.filter((l) => l.group === inner.id);
+        check("ungroup: undo gives the layers their own eye and lock back", back.length === 2 && back.every((l) => l.visible !== false && !l.locked) && where() === "D A:Outer B:Inner C:Inner E:Outer F", back.map((l) => [l.name, l.visible, l.locked]));
+        ed.setGroupFlag(inner.id, "visible", true); ed.setGroupFlag(inner.id, "locked", false);
+    }
     const n0 = ed.layers.length;
     ed.removeGroup(outer.id);
     check("delete group: with its layers and the group inside", ed.layers.length === n0 - 4 && ed.groups.length === 0 && where() === "D F", where());

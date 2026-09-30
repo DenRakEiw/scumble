@@ -196,6 +196,15 @@ JS = r"""
     }
 
     // ---- 3. the row, undo, getValue / setValue ---------------------------------------------------------------------------
+    {
+        // switching the type keeps the colour: a fill becomes a gradient from it to transparent, and back
+        const sw = ed.addFilterLayer("fill");
+        ed.setFilterType(sw, "gradient");
+        const gp = { ...sw.params };
+        ed.setFilterType(sw, "fill");
+        check("type switch: fill -> gradient from its colour to transparent, and back", gp.from === sw.params.color && gp.to === gp.from && gp.to_opacity === 0 && /^#[0-9a-f]{6}$/.test(sw.params.color), [gp, sw.params]);
+        ed.removeLayer(sw.id);
+    }
     ed.activeLayerId = refl.id; ed.renderLayers();
     {
         const row = ed.layerList.querySelector(`.ipc-layer[data-layer="${refl.id}"]`);
