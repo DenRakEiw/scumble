@@ -3,6 +3,20 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- **Select several layers.** Ctrl+click a layer row to add it to the selection or take it out, Shift+click to select
+  the rows in between. With the transform tool the selected layers move together, scale together by the handles of the
+  box around them and nudge together with the arrow keys; Ctrl+E merges them into one layer at the place of the
+  topmost; Delete removes them; the eye and the lock of a selected row switch all of them. Each is one undo step. Locked
+  and filter layers stay put, and rotate, distort and warp still take one layer at a time. Agents select several with
+  `set_active_layer` `layers`, and `list_layers` says which are selected.
+- **Show only one layer, and back.** Alt+click on a layer's eye showed only that layer before; now it also works for
+  several selected layers, a right click on a row offers it as *Show only this layer* beside *Show all layers*, merge
+  and delete, and moving the solo from one layer to another keeps what was visible before the first one, so the way
+  back always ends where you started (it brought back the first solo before). Solo leaves reference layers alone: a
+  hidden reference is not sent, and solo hid them before.
+
 ## 0.1.34 — 2026-09-29
 
 - **Name a reference image in the prompt.** The reference list, the layer panel and the canvas now label every shown

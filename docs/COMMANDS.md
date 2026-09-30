@@ -388,7 +388,7 @@ Upscale with the selected upscale recipe (list_recipes: task "upscale"; select_r
 
 ### `list_layers`
 
-All layers bottom to top with their properties.
+All layers bottom to top with their properties; `selected` lists the layers selected with the active one.
 
 | param | type | description |
 |---|---|---|
@@ -396,12 +396,13 @@ All layers bottom to top with their properties.
 
 ### `set_active_layer`
 
-Make a layer the active one.
+Make a layer the active one, or select several (`layers`: they move and scale together with the move tool, merge with Ctrl+E, delete together; the first becomes active).
 
 | param | type | description |
 |---|---|---|
 | `doc` | integer | document id (default the active tab) |
-| `layer` | string | the layer: id, name or unique name fragment (required; default `"active"`) |
+| `layer` | string | the layer: id, name or unique name fragment |
+| `layers` | array | several layers (ids, names or unique name fragments) to select together |
 
 ### `set_layer`
 

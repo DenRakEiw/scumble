@@ -10138,6 +10138,99 @@ try {
 } finally { await run("close_document", { doc: d.id, force: true }); }
 return out;
 """),
+    ("layer_multi_selection_moves_merges_and_solos", """
+// PLAN_0_1_31 6.1: Ctrl / Shift + click selects several layers; they nudge, scale, merge and delete together, each one
+// undo step; solo shows only them and the restore brings back what was visible before the first solo
+const d = await run("new_document");
+const ed = ednow(d.id);
+host.shell.activate(ed);
+const out = {};
+try {
+    await run("new_canvas", { width: 400, height: 300, doc: d.id });
+    const mk = (name, box, colour) => { const L = ed.addPaintLayer(); L.name = name; L.px.fill(box, colour); ed.markLayerChanged(L); return L.id; };
+    // fill takes [x0, y0, x1, y1]
+    const A = mk("A", [0, 0, 100, 100], "#ff0000"), B = mk("B", [150, 0, 250, 100], "#00ff00"), C = mk("C", [300, 0, 400, 100], "#0000ff");
+    const lay = (id) => ed.layers.find((l) => l.id === id);   // a "layers" step puts copies back: looked up each time
+    const sel = () => ed.selectedLayers().map((l) => l.name).join(",");
+    const row = (id) => ed.layerList.querySelector(`[data-layer="${id}"]`);
+    const click = (id, mods = {}) => row(id).dispatchEvent(new MouseEvent("click", { bubbles: true, ...mods }));
+    // the command selects a list; the rows show it
+    let r = await run("set_active_layer", { layers: [A, C], doc: d.id });
+    if (r.active !== A || r.selected.join() !== [A, C].join()) throw new Error("set_active_layer layers: " + JSON.stringify(r));
+    if (ed.layerList.querySelectorAll(".ipc-multi").length !== 1 || !row(A).classList.contains("ipc-selected")) throw new Error("the rows do not show the selection");
+    // Ctrl + click adds and takes away, Shift + click selects the range, a plain click one layer
+    click(B, { ctrlKey: true });
+    if (sel() !== "A,B,C" || ed.activeLayerId !== B) throw new Error("Ctrl + click did not add B: " + sel());
+    click(B, { ctrlKey: true });
+    if (sel() !== "A,C") throw new Error("Ctrl + click did not take B away: " + sel());
+    click(A); click(C, { shiftKey: true });
+    if (sel() !== "A,B,C") throw new Error("Shift + click did not select the range: " + sel());
+    click(B);
+    if (sel() !== "B") throw new Error("a plain click did not select one layer: " + sel());
+    // the arrow keys nudge the selected layers together, one undo step
+    await run("set_active_layer", { layers: [A, C], doc: d.id });
+    ed.setTool("transform");
+    const n0 = ed.undo.length;
+    ed.onKey({ key: "ArrowRight", shiftKey: true, preventDefault() {}, getModifierState() { return false; } });
+    if (lay(A).x !== 10 || lay(C).x !== 10 || lay(B).x !== 0) throw new Error("nudge: " + [lay(A).x, lay(B).x, lay(C).x]);
+    if (ed.undo.length !== n0 + 1 || ed.undo[ed.undo.length - 1].kind !== "transforms") throw new Error("the nudge is not one transforms step");
+    await ed.undoStep();
+    if (lay(A).x !== 0 || lay(C).x !== 0) throw new Error("the undo did not put both back");
+    await ed.redoStep();
+    if (lay(A).x !== 10 || lay(C).x !== 10) throw new Error("the redo did not move both again");
+    await ed.undoStep();
+    // a scale of the box maps every layer into it
+    const g = ed.groupBox();
+    if (!g || g.w !== 400 || g.h !== 300) throw new Error("the group box: " + JSON.stringify(g && { x: g.x, y: g.y, w: g.w, h: g.h }));
+    const p = { orig: { x: 0, y: 0, w: 400, h: 300 }, layer: { x: 0, y: 0, w: 200, h: 150 }, group: g.layers.map((l) => ({ layer: l, x: l.x, y: l.y, w: l.w, h: l.h })) };
+    ed.applyGroupBox(p);
+    if (lay(A).w !== 200 || lay(C).h !== 150 || lay(C).x !== 0) throw new Error("the box scale: " + JSON.stringify([lay(A).w, lay(C).x, lay(C).h]));
+    for (const m of p.group) Object.assign(m.layer, { x: m.x, y: m.y, w: m.w, h: m.h });
+    // rotate, distort and warp take one layer
+    ed.startPending("rotate");
+    if (ed.pending) throw new Error("a rotation started on a multi-selection");
+    // solo: B hidden before; solo A + C, then C alone, then off: the state from before the first solo comes back
+    const ref = mk("Ref", [0, 200, 50, 250], "#ffffff");
+    ed.setLayerRole(lay(ref), "reference");
+    await run("set_layer", { layer: B, visible: false, doc: d.id });
+    await run("set_active_layer", { layers: [A, C], doc: d.id });
+    ed.soloLayer(lay(A));
+    if (!lay(A).visible || !lay(C).visible || lay(B).visible) throw new Error("solo of A + C: " + [lay(A).visible, lay(B).visible, lay(C).visible]);
+    await run("set_active_layer", { layer: C, doc: d.id });
+    ed.soloLayer(lay(C));
+    if (lay(A).visible || !lay(C).visible || !lay(ref).visible) throw new Error("solo of C: " + [lay(A).visible, lay(C).visible, lay(ref).visible]);
+    ed.soloLayer(lay(C));
+    if (!lay(A).visible || lay(B).visible || !lay(C).visible) throw new Error("the restore is not the state before the first solo: " + [lay(A).visible, lay(B).visible, lay(C).visible]);
+    // the row's menu offers solo on the selection; an entry runs it
+    await run("set_active_layer", { layers: [A, C], doc: d.id });
+    row(A).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    const fly = ed.root.querySelector(".ipc-flyout");
+    if (!fly) throw new Error("the layer menu did not open");
+    out.menu = [...fly.querySelectorAll("button")].map((b) => b.textContent.trim());
+    [...fly.querySelectorAll("button")].find((b) => /Show only these/.test(b.textContent)).click();
+    if (lay(B).visible || !lay(A).visible) throw new Error("the menu's solo did not run");
+    ed.showAllLayers();
+    await run("set_layer", { layer: B, visible: true, doc: d.id });
+    // merge: A and C with B between; the survivor is A's layer at C's place, one step, both pictures in it
+    await run("set_active_layer", { layers: [A, C], doc: d.id });
+    const n1 = ed.undo.length;
+    if (!ed.mergeSelected()) throw new Error("merge refused: " + ed.status);
+    const order = ed.layers.filter((l) => !ed.isReference(l)).map((l) => l.name).join(",");
+    if (order !== "B,A" || lay(C)) throw new Error("after the merge: " + order);
+    if (ed.undo.length !== n1 + 1) throw new Error("the merge pushed " + (ed.undo.length - n1) + " steps");
+    const at = (x, y) => Array.from(lay(A).px.readRect(x - lay(A).x, y - lay(A).y, 1, 1).data);
+    if (at(50, 50)[0] !== 255 || at(350, 50)[2] !== 255) throw new Error("the merged layer lost a part: " + at(50, 50) + " / " + at(350, 50));
+    await ed.undoStep();
+    if (ed.layers.filter((l) => !ed.isReference(l)).length !== 3) throw new Error("the undo of the merge did not bring three layers back");
+    // delete: a locked one stays and is named
+    await run("set_layer", { layer: B, locked: true, doc: d.id });
+    await run("set_active_layer", { layers: [A, B], doc: d.id });
+    ed.onKey({ key: "Delete", preventDefault() {}, getModifierState() { return false; } });
+    if (lay(A) || !lay(B) || !/locked/.test(ed.status)) throw new Error("delete of A + locked B: " + ed.layers.map((l) => l.name) + " / " + ed.status);
+    out.ok = true;
+} finally { await run("close_document", { doc: d.id, force: true }); }
+return out;
+"""),
     ("side_panel_width_drags_and_is_kept", """
 // item 17: the grip on the side panel's left edge sets its width, clamped; every tab shows it; it is kept; the view refits
 const d = await run("new_document");

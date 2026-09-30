@@ -102,7 +102,12 @@ commit 5d95c91 deployed (Vercel: success).
 - **Nothing of item 26 ran live**: no API call with references, neither widened local graph on ComfyUI (8188 is
   production). Filed earlier (`docs/BUGS.md`): the local recipes' Model / Text encoder / VAE rows carry over between
   Qwen and Klein; Gemini direct ignores the asked aspect on Generate new while the Aspect row says "auto".
-- **Next:** package 6 (layers pro) of `docs/PLAN_0_1_31.md`.
+- **Next:** package 6 (layers pro) of `docs/PLAN_0_1_31.md`. **6.1 built 2026-09-30 (local, not pushed):** several
+  layers selected by Ctrl / Shift + click move, scale, nudge, merge (Ctrl+E), delete and switch eye / lock together, and
+  solo (Alt+click on the eye, the user's "one click hides every layer but the chosen one") works on the selection, keeps
+  the visibility from before the first solo and sits in a new right-click menu of the row; `set_active_layer { layers }`.
+  The details and what was left out are in the plan's 6.1 "Built" paragraph; CHANGELOG "Unreleased", manual lines under
+  Layers. **Next: 6.2 align and distribute.** Open for the user: how the multi-selection and the solo feel.
 - **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
   of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
   point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
@@ -111,7 +116,8 @@ commit 5d95c91 deployed (Vercel: success).
   25's look and timing; item 26's look in the app (the prompt field, the dialog); the post's two pictures. The Store
   resubmission (search terms without "ComfyUI" / "FLUX") is on the user's side.
 
-**At most two build steps per session, then `/clear` or `/compact` (the user, 2026-09-28):** the context rose to 85 % in
+**One section per session, then `/clear` (the user, 2026-09-30: "immer clear nach abschnitten"; before: at most two
+build steps, 2026-09-28):** one numbered step of the plan, its commit and the hand-over, then stop. the context rose to 85 % in
 one session of eight steps (its own tool output and patch scripts, not this file); commit, write the hand-over, stop.
 Read maps and code with grep and offsets, edit with Edit rather than long patch scripts, keep gate output to a summary.
 

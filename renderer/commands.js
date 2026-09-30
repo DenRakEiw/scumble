@@ -293,7 +293,7 @@ const FILE_PARAMS = {
  * One parameter, in the subset of JSON Schema the MCP server emits.
  *
  * @typedef {Object} CommandParam
- * @property {"string" | "number" | "integer" | "boolean" | "object"} type
+ * @property {"string" | "number" | "integer" | "boolean" | "object" | "array"} type
  * @property {string} [description]
  * @property {any} [default]
  * @property {boolean} [required]
@@ -793,8 +793,25 @@ const COMMANDS = {
     },
 
     // -- layers --
-    list_layers: { description: "All layers bottom to top with their properties.", params: {}, async run(ed) { return { active: ed.activeLayerId, layers: ed.layers.map((l) => layerSummary(ed, l)) }; } },
-    set_active_layer: { description: "Make a layer the active one.", params: { layer: P.layer("the layer: id, name or unique name fragment", { required: true }) }, async run(ed, a) { const l = findLayer(ed, a.layer, { allowActive: false }); ed.activeLayerId = l.id; touch(ed); if (ed.updateSubbar) ed.updateSubbar(); return layerSummary(ed, l); } },
+    list_layers: { description: "All layers bottom to top with their properties; `selected` lists the layers selected with the active one.", params: {}, async run(ed) { return { active: ed.activeLayerId, selected: ed.selectedLayers ? ed.selectedLayers().map((l) => l.id) : [], layers: ed.layers.map((l) => layerSummary(ed, l)) }; } },
+    set_active_layer: {
+        description: "Make a layer the active one, or select several (`layers`: they move and scale together with the move tool, merge with Ctrl+E, delete together; the first becomes active).",
+        params: { layer: P.layer("the layer: id, name or unique name fragment", { default: "" }), layers: { type: "array", items: { type: "string" }, description: "several layers (ids, names or unique name fragments) to select together" } },
+        async run(ed, a) {
+            if (Array.isArray(a.layers) && a.layers.length) {
+                const ls = a.layers.map((x) => findLayer(ed, x, { allowActive: false }));
+                if (ls.some((l) => ed.isReference(l)) && ls.length > 1) throw new Error("reference layers are selected one at a time");
+                const sel = ed.selectLayers(ls.map((l) => l.id), { active: a.layer ? findLayer(ed, a.layer, { allowActive: false }).id : null });
+                touch(ed);
+                return { active: ed.activeLayerId, selected: sel.map((l) => l.id), layers: sel.map((l) => layerSummary(ed, l)) };
+            }
+            if (!a.layer) throw new Error("give `layer` or `layers`");
+            const l = findLayer(ed, a.layer, { allowActive: false });
+            if (ed.selectLayers) ed.selectLayers([l.id]); else ed.activeLayerId = l.id;
+            touch(ed); if (ed.updateSubbar) ed.updateSubbar();
+            return layerSummary(ed, l);
+        },
+    },
     set_layer: {
         description: "Change a layer: name, visible, opacity (0..1 or percent), blend, locked, alpha_lock, role, colour match (0..100 %, match_source surroundings / below), geometry x y w h, active.",
         params: { layer: P.layer(), name: P.str(""), visible: P.bool(""), opacity: P.num("0..1 (or 0..100)"), blend: P.str("the blend mode", { enum: BLEND_MODES }), locked: P.bool(""), alpha_lock: P.bool(""), role: P.str("none, reference or control", { enum: ["none", "reference", "control"] }), match: P.num("colour match strength 0..100"), match_source: P.str("surroundings or below", { enum: ["surroundings", "below"] }), x: P.int(""), y: P.int(""), w: P.int("width (alias width); without h the aspect is kept"), h: P.int("height (alias height)"), active: P.bool("also make it the active layer") },
