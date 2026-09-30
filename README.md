@@ -30,7 +30,7 @@ run inside the app through ONNX Runtime (SAM2, BiRefNet, RMBG). The editor is th
 code as the ComfyUI node [Inpaint Canvas](https://github.com/DenRakEiw/ComfyUI-InpaintCanvas);
 Scumble is the standalone window around it, plus recipes, plugins, an MCP server and the assistant.
 
-Windows first (installer below), a Linux build (AppImage, .deb) that has not been tried on Linux yet, macOS is planned. Free software, GPL-3.0.
+Windows first (from the [Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R) or the installer below), a Linux build (AppImage, .deb) that has not been tried on Linux yet, macOS is planned. Free software, GPL-3.0.
 What has been verified so far: local rendering through ComfyUI, the in-app helper models,
 the film pack, the command core, the MCP server, the tile engine on large documents and
 auto-update; the API providers and the assistant's model calls are untested against the live
@@ -130,11 +130,19 @@ was generated with Scumble.
 
 ## Install (Windows)
 
-Download `Scumble Setup <version>.exe` from the
-[latest release](https://github.com/DenRakEiw/scumble/releases/latest) and run it. The
-installer is not code-signed yet, so SmartScreen shows "Windows protected your PC" once:
-click *More info*, then *Run anyway*. Updates are downloaded by the app itself (Settings >
-Updates), which also shows what changed, and do not go through SmartScreen again.
+Two ways to the same app:
+
+- **From the Microsoft Store:** [Scumble in the Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R).
+  Microsoft signs the Store copy, so it installs without a SmartScreen warning, and the Store
+  keeps it up to date. A new version reaches the Store after Microsoft has certified it, so it
+  can arrive a little later than the GitHub release. The Store copy keeps its own settings, API
+  keys and files (`%APPDATA%\Scumble Store`), so it can be installed beside the GitHub one.
+- **From GitHub:** download `Scumble Setup <version>.exe` from the
+  [latest release](https://github.com/DenRakEiw/scumble/releases/latest) and run it. This
+  installer is not code-signed, so SmartScreen shows "Windows protected your PC" once: click
+  *More info*, then *Run anyway*. Updates are downloaded by the app itself (Settings >
+  Updates), which also shows what changed, and do not go through SmartScreen again.
+
 [CHANGELOG.md](CHANGELOG.md) lists every version. How releases are built, who approves
 them and what the app sends over the network is in the
 [code signing policy](docs/CODE_SIGNING_POLICY.md).

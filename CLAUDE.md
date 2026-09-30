@@ -124,9 +124,11 @@ prepared locally.
 ## Open threads
 
 The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27 night).
+- **The Store listing is live** (the user, 2026-09-30: https://apps.microsoft.com/detail/9NDBTNNMXF2R, signed by
+  Microsoft; identity `DenRakEiw.Scumble`). The README links it (Install (Windows): Store or GitHub). Not done yet: the
+  link on the website hub and a post; which version the Store holds was not checked.
 - **Not started:** B3, the macOS build (`docs/PLAN_0_1_24.md`); the Store package per release (`npm run dist:store`,
-  `docs/STORE.md`; listing submitted 2026-09-23, identity `DenRakEiw.Scumble`, Store ID `9NDBTNNMXF2R`; when it is live
-  the link goes on the website hub, the README and a post; coupling it to GitHub releases only on the user's word); the
+  `docs/STORE.md`; coupling it to GitHub releases only on the user's word); the
   headless MCP instance of this repo's `.mcp.json` intercepts the installed app (a fix offered, BUGS.md); Comfy Router
   live runs (offered; the key in `dist/live-keys`); Linux built by CI, never run; types stage 3 (`docs/PLAN_TYPES.md`);
   the manual's empty assistant and log screenshots and a missing colour-match figure (`docs/MANUAL.md` is the one
