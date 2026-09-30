@@ -76,14 +76,15 @@ code.
   chain, the post's shape, and the Vercel trap (commit the website with its own identity, never the `DenRakEiw`
   noreply address of this repo, and no `Co-Authored-By` trailer: a second author blocks a Hobby deploy).
 
-## Where things stand (2026-09-30, late: package 6 complete, 0.1.35 prepared locally, not pushed)
+## Where things stand (2026-10-01, just after midnight: 0.1.35 released, the post live)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
-**Released:** 0.1.34 is Latest (2026-09-29 21:42:53 CEST, item 26, the post `v0-1-34` live).
-**Prepared, not pushed: 0.1.35 = package 6 of `docs/PLAN_0_1_31.md` (layers pro)** on the user's "baue weiter"
-(2026-09-30): multi-selection with solo, align / distribute, clipping, groups as folders, fill layers (6.1 - 6.6, the
+**Released:** 0.1.35 is Latest (published 2026-10-01 00:02:51 CEST, tag on ee4ee33 "0.1.35 prepared"; the tag build's
+windows / linux / draft jobs green) on the user's "ja, release". **The post `v0-1-35` ("Many layers, one hand", no
+picture) is live**, the manual synced, `hub.version` 0.1.35, website commit 11d5c42 deployed (Vercel: success).
+0.1.35 = package 6 of `docs/PLAN_0_1_31.md` (layers pro), prepared on the user's "baue weiter" (2026-09-30): multi-selection with solo, align / distribute, clipping, groups as folders, fill layers (6.1 - 6.6, the
 "Built" paragraphs in the plan). The CHANGELOG section `0.1.35 — 2026-09-30` (six bullets), `package.json` 0.1.35,
 `npm run dist` (`dist/Scumble Setup 0.1.35.exe`). A check agent compared the section and the manual with the code:
 - **Two code fixes** (the plan's 6.6 "release check" paragraph): `ungroup` hands a hidden / locked group's state to its
@@ -97,11 +98,7 @@ verbatim). Check `gh release list` before believing any release state written do
 - Left as it is: a clip onto a reference layer is allowed and draws nothing (a reference is not drawn), in a run too.
 - **Exe gates `--offline` all green:** tiles `rel35-exe` (36 gates, the 0.1.34 list plus `clip groups fill`), canvas
   `rel35-exe-canvas` (23). `lint` and `types` green. `build_node.py --check` shows only the known "node is behind".
-- **The post draft is `dist/post-v0-1-35.ts`** ("Many layers, one hand", 9 paragraphs, `time` still TODO): an entry for
-  the top of `devlog` in `F:\portfolio_web\lib\scumble-posts.ts`, no picture yet; `hub.version` to 0.1.35 with it.
-- **Next: the release only on the user's word** ("push" / "release"): then the whole chain of `docs/RELEASING.md`
-  without asking again (push, tag `v0.1.35`, watch the build, publish the draft, manual sync, the post, the live check).
-  The node repo stays behind (no node release).
+- The node repo stays behind (no node release). The Store package of 0.1.35 was not built (on the user's word).
 - **Open for the user** (carried over): how the fills feel (no on-canvas dragging of a gradient, two stops), the
   multi-selection, solo and align row (and whether aligning by painted pixels is wanted), whether the clip at soft
   edges looks right or wants the isolated group (7 - 9 days); whether 0.1.33 feels right under their pen; the smudge
