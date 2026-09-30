@@ -49,6 +49,8 @@ uniform sampler2D u_source;     // the layer's pixels, premultiplied
 uniform int u_mode;
 uniform float u_opacity;
 uniform vec2 u_size;            // framebuffer size, to sample the backdrop by position
+uniform sampler2D u_clip;       // clipping (PLAN_0_1_31 6.3): the base's coverage in its alpha, by position
+uniform int u_hasClip;
 
 float bScreen(float b, float s) { return b + s - b * s; }
 float bHardLight(float b, float s) { return s <= 0.5 ? b * (2.0 * s) : bScreen(b, 2.0 * s - 1.0); }
@@ -73,6 +75,8 @@ vec4 blendOver(vec4 Sp) {
     // The backdrop is a framebuffer texture: same orientation as gl_FragCoord, no flip.
     vec2 fb = gl_FragCoord.xy / u_size;
     vec4 B = texture(u_backdrop, fb);
+    // a clipped layer shows where its base is: the base's coverage scales the premultiplied source, as a mask does
+    if (u_hasClip == 1) Sp *= texture(u_clip, fb).a;
     // Source textures are premultiplied so that scaling interpolates the way Canvas 2D does
     // (straight alpha bleeds colour across transparent edges); the blend maths needs straight
     // values again.
@@ -307,6 +311,8 @@ export class GLCompositor {
             meanT: gl.getUniformLocation(this.atlasProg, "u_meanT"),
             mScale: gl.getUniformLocation(this.atlasProg, "u_mScale"),
             mK: gl.getUniformLocation(this.atlasProg, "u_mK"),
+            clip: gl.getUniformLocation(this.atlasProg, "u_clip"),
+            hasClip: gl.getUniformLocation(this.atlasProg, "u_hasClip"),
         };
         // record id -> { id, ref, levels: level -> { pages } }; the pages hold the tiles the screen showed.
         // The pixels are held weakly (C6 a): pixels a flip, a new mask or an undo replaced are in neither
@@ -357,6 +363,20 @@ export class GLCompositor {
             t.w = w; t.h = h;
         }
         return t;
+    }
+
+    /** A 1 x 1 transparent texture: the backdrop a clipping base's coverage is drawn over. */
+    _emptyTexture() {
+        const gl = this.gl;
+        if (this.emptyTex) return this.emptyTex;
+        this.emptyTex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.emptyTex);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        return this.emptyTex;
     }
 
     /**
@@ -809,13 +829,19 @@ export class GLCompositor {
         return true;
     }
 
-    /** Draw one layer's tiles, blended with the backdrop `srcTex`, into the bound framebuffer. */
-    _drawTiles(prepared, srcTex, W, H, region) {
+    /** Draw one layer's tiles, blended with the backdrop `srcTex`, into the bound framebuffer; `clipTex` the base's coverage of a clipped layer. */
+    _drawTiles(prepared, srcTex, W, H, region, clipTex = null) {
         const gl = this.gl;
         gl.useProgram(this.atlasProg);
         gl.bindVertexArray(this.vaoTiles);
         gl.uniform1i(this.atlasU.backdrop, 0);
         gl.uniform1i(this.atlasU.source, 1);
+        gl.uniform1i(this.atlasU.clip, 3);
+        gl.uniform1i(this.atlasU.hasClip, clipTex ? 1 : 0);
+        if (clipTex) {
+            gl.activeTexture(gl.TEXTURE3);
+            gl.bindTexture(gl.TEXTURE_2D, clipTex);
+        }
         gl.uniform1i(this.atlasU.mode, BLEND_INDEX[prepared.blend] || 0);
         gl.uniform1f(this.atlasU.opacity, prepared.opacity == null ? 1 : prepared.opacity);
         gl.uniform2f(this.atlasU.size, W, H);
@@ -922,7 +948,8 @@ export class GLCompositor {
      *   spec.region                { x, y, w, h } of the image the output shows
      *   spec.layers                bottom first: { source, version, x, y, w, h, opacity, blend }, or a tile
      *                              store: { pixels, mask, level, match, x, y, w, h, opacity, blend }, `match`
-     *                              { meanS, meanT, scale, k } or null (C6 c 7d)
+     *                              { meanS, meanT, scale, k } or null (C6 c 7d); `clipId` on a clipping base,
+     *                              `clipTo` (that id) on a layer clipped to it (PLAN_0_1_31 §6 step 3)
      *                              in image coordinates. `source` is a canvas the caller
      *                              already prepared (mask, colour match, stroke preview).
      *
@@ -981,13 +1008,59 @@ export class GLCompositor {
         const uMode = gl.getUniformLocation(this.prog, "u_mode");
         const uOpacity = gl.getUniformLocation(this.prog, "u_opacity");
         const uSize = gl.getUniformLocation(this.prog, "u_size");
+        const uHasClip = gl.getUniformLocation(this.prog, "u_hasClip");
         gl.uniform1i(gl.getUniformLocation(this.prog, "u_backdrop"), 0);
         gl.uniform1i(gl.getUniformLocation(this.prog, "u_source"), 1);
+        gl.uniform1i(gl.getUniformLocation(this.prog, "u_clip"), 3);
         const loc = gl.getAttribLocation(this.prog, "a_pos");
         gl.enableVertexAttribArray(loc);
         gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
+        // Clipping (PLAN_0_1_31 §6 step 3): a base (`clipId`) leaves its coverage - itself drawn alone over nothing, at its
+        // opacity - in a third target, and a layer clipped to it (`clipTo`) multiplies its source by that. A clipped layer
+        // whose base drew nothing here (off screen, no tile in the view) shows nothing either.
+        let covId = null;
+        const cov = prepared.some((l) => l.clipTo != null) ? this._target(2, W, H) : null;
+        const quadRect = (l) => {
+            const sx = (l.x - region.x) / region.w, sy = (l.y - region.y) / region.h;
+            const sw = l.w / region.w, sh = l.h / region.h;
+            return [sx * 2 - 1, 1 - sy * 2 - sh * 2, sw * 2, sh * 2];   // clip space, y up
+        };
+        const coverage = (l) => {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, cov.fb);
+            gl.clearColor(0, 0, 0, 0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            const none = this._emptyTexture();
+            gl.activeTexture(gl.TEXTURE3);
+            gl.bindTexture(gl.TEXTURE_2D, none);   // never the target being drawn: a sampler on it is a feedback loop
+            if (l.tiles) this._drawTiles(l, none, W, H, region, null);
+            else {
+                gl.useProgram(this.prog);
+                gl.enableVertexAttribArray(loc);
+                gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+                gl.uniform4f(uRect, ...quadRect(l));
+                gl.uniform1i(uMode, 0);
+                gl.uniform1f(uOpacity, l.opacity == null ? 1 : l.opacity);
+                gl.uniform2f(uSize, W, H);
+                gl.uniform1i(uHasClip, 0);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, none);
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, l.tex);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            }
+            covId = l.clipId;
+            gl.useProgram(this.prog);
+            gl.enableVertexAttribArray(loc);
+            gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+        };
+
         for (const l of prepared) {
+            let clipTex = null;
+            if (l.clipTo != null) {
+                if (l.clipTo !== covId) continue;
+                clipTex = cov.tex;
+            }
             if (l.tiles) {
                 gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
                 gl.clearColor(0, 0, 0, 0);
@@ -1001,11 +1074,12 @@ export class GLCompositor {
                 gl.enableVertexAttribArray(tloc);
                 gl.vertexAttribPointer(tloc, 2, gl.FLOAT, false, 0, 0);
                 gl.drawArrays(gl.TRIANGLES, 0, 6);
-                this._drawTiles(l, src.tex, W, H, region);
+                this._drawTiles(l, src.tex, W, H, region, clipTex);
                 const t2 = src; src = dst; dst = t2;
                 gl.useProgram(this.prog);
                 gl.enableVertexAttribArray(loc);
                 gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+                if (l.clipId != null) coverage(l);
                 continue;
             }
             // the layer's rectangle in the output, then in clip space (-1..1, y up)
@@ -1036,12 +1110,18 @@ export class GLCompositor {
             gl.uniform1i(uMode, BLEND_INDEX[l.blend] || 0);
             gl.uniform1f(uOpacity, l.opacity == null ? 1 : l.opacity);
             gl.uniform2f(uSize, W, H);
+            gl.uniform1i(uHasClip, clipTex ? 1 : 0);
+            if (clipTex) {
+                gl.activeTexture(gl.TEXTURE3);
+                gl.bindTexture(gl.TEXTURE_2D, clipTex);
+            }
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, src.tex);
             gl.activeTexture(gl.TEXTURE1);
             gl.bindTexture(gl.TEXTURE_2D, l.tex);
             gl.drawArrays(gl.TRIANGLES, 0, 6);
             const t = src; src = dst; dst = t;
+            if (l.clipId != null) coverage(l);
         }
 
         // the result to the visible canvas
@@ -1088,6 +1168,7 @@ export class GLCompositor {
             gl.deleteProgram(this.atlasProg);
             for (const t of this.targets) { if (t) { gl.deleteFramebuffer(t.fb); gl.deleteTexture(t.tex); } }
             this.targets = [];
+            if (this.emptyTex) { gl.deleteTexture(this.emptyTex); this.emptyTex = null; }
             if (this.scratch) { this.scratch.width = this.scratch.height = 0; this.scratch = null; }
             gl.deleteProgram(this.prog);
             gl.deleteProgram(this.copy);

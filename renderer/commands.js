@@ -59,11 +59,12 @@ function busy(ed) {
 export function layerSummary(ed, l) {
     const out = {
         id: l.id, name: l.name, kind: l.kind, role: l.role || "none", visible: !!l.visible, opacity: Math.round((l.opacity == null ? 1 : l.opacity) * 100) / 100,
-        blend: l.blend || "normal", x: l.x, y: l.y, w: l.w, h: l.h, locked: !!l.locked, alpha_lock: !!l.alphaLock, mask: !!l.maskPx,
+        blend: l.blend || "normal", x: l.x, y: l.y, w: l.w, h: l.h, locked: !!l.locked, alpha_lock: !!l.alphaLock, clip: !!l.clip, mask: !!l.maskPx,
         active: l.id === ed.activeLayerId,
     };
     // a reference's label: what @img1 in the prompt names (null while it is hidden: its tokens wait as @img?<id>)
     if (ed.isReference(l)) { const n = ed.refLabels().get(l.id); out.label = n ? "img" + n : null; }
+    if (l.clip) { const b = ed.clipBaseOf ? ed.clipBaseOf(l) : null; out.clip_base = b ? b.id : null; }   // null: the clip has no effect
     if (l.maskPx && l.maskOff) out.mask_off = true;   // the mask is kept but switched off
     if (l.match && l.match.strength > 0) out.match = { strength: l.match.strength, source: l.match.source };
     if (l.kind === "filter") { out.filter = l.filter; out.params = { ...(l.params || {}) }; if (l.lut) out.lut = l.lut.name || true; }
@@ -813,8 +814,8 @@ const COMMANDS = {
         },
     },
     set_layer: {
-        description: "Change a layer: name, visible, opacity (0..1 or percent), blend, locked, alpha_lock, role, colour match (0..100 %, match_source surroundings / below), geometry x y w h, active.",
-        params: { layer: P.layer(), name: P.str(""), visible: P.bool(""), opacity: P.num("0..1 (or 0..100)"), blend: P.str("the blend mode", { enum: BLEND_MODES }), locked: P.bool(""), alpha_lock: P.bool(""), role: P.str("none, reference or control", { enum: ["none", "reference", "control"] }), match: P.num("colour match strength 0..100"), match_source: P.str("surroundings or below", { enum: ["surroundings", "below"] }), x: P.int(""), y: P.int(""), w: P.int("width (alias width); without h the aspect is kept"), h: P.int("height (alias height)"), active: P.bool("also make it the active layer") },
+        description: "Change a layer: name, visible, opacity (0..1 or percent), blend, locked, alpha_lock, clip (clipped to the layer below: shown only where that layer has pixels; its own undo step), role, colour match (0..100 %, match_source surroundings / below), geometry x y w h, active.",
+        params: { layer: P.layer(), name: P.str(""), visible: P.bool(""), opacity: P.num("0..1 (or 0..100)"), blend: P.str("the blend mode", { enum: BLEND_MODES }), locked: P.bool(""), alpha_lock: P.bool(""), clip: P.bool("clip to the layer below (true) or release (false)"), role: P.str("none, reference or control", { enum: ["none", "reference", "control"] }), match: P.num("colour match strength 0..100"), match_source: P.str("surroundings or below", { enum: ["surroundings", "below"] }), x: P.int(""), y: P.int(""), w: P.int("width (alias width); without h the aspect is kept"), h: P.int("height (alias height)"), active: P.bool("also make it the active layer") },
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
             if (a.name != null) l.name = String(a.name);
@@ -827,6 +828,7 @@ const COMMANDS = {
             }
             if (a.locked != null) l.locked = !!a.locked;
             if (a.alpha_lock != null) l.alphaLock = !!a.alpha_lock;
+            if (a.clip != null && !!a.clip !== !!l.clip && !ed.setLayerClip(l, !!a.clip, { only: true })) throw new Error(ed.status);
             if (a.role != null) {
                 if (!["none", "reference", "control"].includes(a.role)) throw new Error("role must be none, reference or control");
                 ed.setLayerRole(l, a.role);

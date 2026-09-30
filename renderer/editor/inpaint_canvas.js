@@ -324,6 +324,12 @@ const LINEAR_LIGHT_SHADER = {
     return ao > 0.0 ? vec4(co / ao, ao) : vec4(0.0);
 }`,
 };
+// the same, clipped (PLAN_0_1_31 §6 step 3): the base's coverage scales the layer's alpha, as the compositor's u_clip does
+const LINEAR_LIGHT_CLIP_SHADER = {
+    label: "linear light, clipped",
+    uniforms: { u_layer: "sampler2D", u_clip: "sampler2D", u_opacity: "float" },
+    code: LINEAR_LIGHT_SHADER.code.replace("float as = S.a * u_opacity,", "float as = S.a * u_opacity * texture(u_clip, uv).a,"),
+};
 const ROLES = ["none", "reference", "scribble", "lineart", "depth", "pose", "canny", "other"];
 // Outputs after the setting slots (none at the moment). The backend would declare
 // them after setting_8, the frontend shows them right after the connected settings
@@ -1187,6 +1193,7 @@ const ICONS = {
     alphaLock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/><path d="M8 14h3v3H8zM13 17h3v3h-3z" fill="currentColor" stroke="none"/>',
     duplicate: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/>',
     merge: '<path d="M12 3v10"/><path d="M8 9l4 4 4-4"/><rect x="4" y="16" width="16" height="5" rx="1"/>',
+    clip: '<path d="M7 3v8a4 4 0 004 4h8"/><path d="M15 11l4 4-4 4"/>',
     bold: '<path d="M7 4h6a4 4 0 010 8H7z"/><path d="M7 12h7a4 4 0 010 8H7z"/>',
     italic: '<path d="M14 4h6"/><path d="M4 20h6"/><path d="M15 4l-6 16"/>',
     canvas: '<rect x="4" y="4" width="16" height="16" stroke-dasharray="3 2"/><path d="M12 1v3"/><path d="M12 20v3"/><path d="M1 12h3"/><path d="M20 12h3"/><path d="M10 2l2-1 2 1"/><path d="M10 22l2 1 2-1"/><path d="M2 10l-1 2 1 2"/><path d="M22 10l1 2-1 2"/>',
@@ -1424,6 +1431,10 @@ const STYLE = `
 .ipc-layer.ipc-drop-below { box-shadow: inset 0 -3px 0 var(--sc-active, #7cc7ff); }
 .ipc-layer.ipc-dragging { opacity:.5; }
 .ipc-layer.ipc-locked .ipc-name { color:var(--sc-muted, #999); }
+.ipc-layer .ipc-clipmark { flex:none; display:flex; color:var(--sc-muted, #999); margin-right:-1px; }
+.ipc-layer .ipc-clipmark.ipc-noeffect { opacity:.4; }
+.ipc-layer.ipc-clipbase .ipc-name { text-decoration:underline; text-decoration-color:var(--sc-faint, #777); text-underline-offset:3px; }
+.ipc-layer.ipc-clipedge { cursor:alias; }
 .ipc-mini.ipc-dim { opacity:.35; }
 .ipc-mini.ipc-dim:hover { opacity:1; }
 .ipc-layer select.ipc-kindsel { background:var(--sc-field, #262626); border:1px solid var(--sc-line, #3a3a3a); border-radius:var(--sc-radius, 4px); padding:0 1px; font:inherit; font-size:10px; text-transform:uppercase; color:var(--sc-muted, #888); cursor:pointer; flex:0 1 auto; min-width:44px; max-width:84px; }
@@ -3036,6 +3047,8 @@ class InpaintEditor {
         }
         if (ctrl && e.shiftKey && k === "n") { e.preventDefault(); this.addPaintLayer(); return; }
         if (ctrl && e.shiftKey && k === "r") { e.preventDefault(); this.toggleRulers(); return; }
+        // Ctrl+Alt+G by the key, not `ctrl`: Windows reports a real Ctrl+Alt as AltGr, which types nothing on G in the usual layouts
+        if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === "KeyG") { e.preventDefault(); const l = this.activeLayer(); if (l) this.setLayerClip(l, !l.clip); else this.setStatus("Select a layer to clip."); return; }
         if (ctrl && e.shiftKey && k === "g") { e.preventDefault(); this.toggleGrid(); return; }
         if (ctrl && k === "j") { e.preventDefault(); this.duplicateLayer(); return; }
         if (ctrl && k === "e") { e.preventDefault(); if (this.multiSelected()) this.mergeSelected(); else this.mergeDown(); return; }
@@ -6523,10 +6536,16 @@ class InpaintEditor {
         const out = [{ px: bs, mask: null, x: 0, y: 0, alpha: 255 }];
         const end = upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
         let sawFilter = false;
+        // clipping (PLAN_0_1_31 §6 step 3), as drawLayersInto: an entry clipped to its base's entry (`clip`), which the
+        // consumers turn into a coverage (the base's alpha through its mask at its opacity) folded into the entry's mask
+        const entryOf = new Map();
         for (let i = 0; i < end; i++) {
             const l = this.layers[i];
             if (this.compareShow && l.kind === "result" && l.id !== this.compareShow) continue;
             if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
+            const cb = this.clipBaseOf(l, i);
+            const clip = cb ? entryOf.get(cb) : null;
+            if (cb && !clip) continue;
             if (l.kind === "filter") {
                 if (!filters || InpaintEditor.stackFilters === false) return null;
                 if (!forRun && ((this.pointer && this.pointer.layer) || this.pending)) return null;
@@ -6540,7 +6559,7 @@ class InpaintEditor {
                 const fm = this.liveMask(l) || null;
                 if (fm && (!isTilePixels(fm) || fm.width !== this.width || fm.height !== this.height || (this.pointer && this.pointer.layer === l))) return null;
                 const falpha = Math.round(Math.max(0, Math.min(1, l.opacity ?? 1)) * 255);
-                if (falpha > 0) { out.push({ filter: l, reach: Math.ceil(r), mask: fm, alpha: falpha, op: fop }); sawFilter = true; }
+                if (falpha > 0) { out.push({ filter: l, reach: Math.ceil(r), mask: fm, alpha: falpha, op: fop, clip }); sawFilter = true; }
                 continue;
             }
             if (forRun && (this.isControl(l) || this.isReference(l))) continue;
@@ -6554,7 +6573,9 @@ class InpaintEditor {
             const mask = this.liveMask(l) ? this.tileMaskOf(l) : null;
             if (this.liveMask(l) && !mask) return null;
             const alpha = Math.round(Math.max(0, Math.min(1, l.opacity ?? 1)) * 255);
-            out.push({ px, mask, x: l.x, y: l.y, alpha, op, match: matched ? l : null });
+            const entry = { px, mask, x: l.x, y: l.y, alpha, op, match: matched ? l : null, clip };
+            entryOf.set(l, entry);
+            out.push(entry);
         }
         return out;
     }
@@ -6589,7 +6610,14 @@ class InpaintEditor {
     holdStackNow(plan, { forRun = true } = {}) {
         if (!plan) return null;
         for (const s of plan) if (s && ((s.px && !stackInArena(s.px)) || (s.mask && !stackInArena(s.mask)))) return null;
-        const hold = (s) => s && ({ snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0, layer: s.match || null, match: null });
+        // a clipped entry's `clip` becomes the held store of its base (PLAN_0_1_31 §6 step 3); a base comes before its layers
+        const heldOf = new Map();
+        const hold = (s) => {
+            if (!s) return s;
+            const h = { snap: s.px.clone(), mask: s.mask ? s.mask.clone() : null, x: s.x, y: s.y, alpha: s.alpha, op: s.op | 0, layer: s.match || null, match: null, clip: s.clip ? heldOf.get(s.clip) || null : null };
+            heldOf.set(s, h);
+            return h;
+        };
         if (!plan.some((s) => s && s.filter)) {
             const stores = plan.map(hold);
             return { stores, release() { for (const s of stores) if (s) { s.snap.release(); if (s.mask) s.mask.release(); } } };
@@ -6600,7 +6628,8 @@ class InpaintEditor {
             if (s && s.filter) {
                 const mask = s.mask ? s.mask.clone() : null;
                 if (mask) clones.push(mask);
-                steps.push({ filter: s.filter, plain: !mask && s.alpha === 255 && !s.op, mask, alpha: s.alpha, op: s.op | 0 });
+                const clip = s.clip ? heldOf.get(s.clip) || null : null;
+                steps.push({ filter: s.filter, plain: !mask && s.alpha === 255 && !s.op && !clip, mask, alpha: s.alpha, op: s.op | 0, clip });
                 reach += s.reach;
                 run = null;
                 return;
@@ -6802,7 +6831,7 @@ class InpaintEditor {
                 if (out !== input) free(out);
                 free(input); gpu = null;
                 t0 = now();
-                await s.composite(stackArgs([null, { sab: prog.b, mask: st.mask, x: 0, y: 0, w: W, h: H, alpha: st.alpha, op: st.op }]));
+                await s.composite(stackArgs([null, { sab: prog.b, mask: st.mask, x: 0, y: 0, w: W, h: H, alpha: st.alpha, op: st.op, clip: st.clip }]));
                 T.pool += now() - t0;
             }
             // without `into` the bytes are the program's own, good until the next band is read (`bandRows` has copied its parts by then)
@@ -12000,8 +12029,12 @@ class InpaintEditor {
      * formula through runShader: a readback of the view canvas every frame would trip Chromium's acceleration latch),
      * else on the CPU through `compositeTile`, the worker stack's own kernel (the flatten, the bands, the merges). A
      * colour-matched layer drawn into the scratch finds no backdrop there: its statistics come from the sampled passes.
+     *
+     * `clip` (PLAN_0_1_31 §6 step 3): the coverage of a clipped layer's base (`clipCoverage`, a canvas of `ctx`'s size in
+     * its pixels): the scratch keeps the layer only where the base is (`destination-in`), and then goes over the canvas
+     * in any blend mode, the ones Canvas 2D has as well.
      */
-    blendEmulated(ctx, mode, draw, opacity = 1) {
+    blendEmulated(ctx, mode, draw, opacity = 1, clip = null) {
         const cv = ctx.canvas, W = cv.width, H = cv.height;
         if (!W || !H) return;
         const screen = !!(this.viewPass && this.viewPass.screen);
@@ -12017,9 +12050,29 @@ class InpaintEditor {
         draw(sc);
         sc.setTransform(1, 0, 0, 1, 0, 0);
         sc.globalAlpha = 1;
+        const op = mode && mode !== "normal" ? OPS[mode] : 0;
+        // a clip on the screen in a mode Canvas 2D has (or in one the kernel lacks): the scratch cut to the base's coverage
+        // and drawn over. Off the screen the kernel below takes the coverage as the layer's mask, as the workers do:
+        // `destination-in` rounds the premultiplied scratch, which a mode's slope then magnifies (5 levels, measured)
+        if (clip && !EMULATED_BLENDS.has(mode) && (screen || !(op >= 0))) {
+            sc.globalCompositeOperation = "destination-in";
+            sc.globalAlpha = (clip._clipAlpha ?? 255) / 255;
+            sc.drawImage(clip, 0, 0);
+            sc.globalAlpha = 1;
+            sc.globalCompositeOperation = "source-over";
+        }
+        if (!EMULATED_BLENDS.has(mode) && (screen || !clip || !(op >= 0))) {
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
+            ctx.globalCompositeOperation = mode && mode !== "normal" ? mode : "source-over";
+            ctx.drawImage(s, 0, 0);
+            ctx.restore();
+            return;
+        }
         if (screen && mode === "linear-light") {
             let out = null;
-            try { out = runShader(LINEAR_LIGHT_SHADER, cv, { u_layer: s, u_opacity: Math.max(0, Math.min(1, opacity)) }); } catch (err) { console.warn("Inpaint Canvas: the linear light shader failed, blending on the CPU:", err); }
+            try { out = clip ? runShader(LINEAR_LIGHT_CLIP_SHADER, cv, { u_layer: s, u_clip: clip, u_opacity: Math.max(0, Math.min(1, opacity)) }) : runShader(LINEAR_LIGHT_SHADER, cv, { u_layer: s, u_opacity: Math.max(0, Math.min(1, opacity)) }); } catch (err) { console.warn("Inpaint Canvas: the linear light shader failed, blending on the CPU:", err); }
             if (out) {
                 const img = isGLSurface(out) ? surfaceToCanvas(out) : out;
                 ctx.save();
@@ -12033,7 +12086,15 @@ class InpaintEditor {
             }
         }
         const b = ctx.getImageData(0, 0, W, H), t = sc.getImageData(0, 0, W, H);
-        compositeTile(new Uint8Array(b.data.buffer, b.data.byteOffset, W * H * 4), [new Uint8Array(t.data.buffer, t.data.byteOffset, W * H * 4)], [OPS[mode]], [Math.round(Math.max(0, Math.min(1, opacity)) * 255)], [null]);
+        let mask = null;
+        if (clip) {
+            const cd = clip.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+            mask = new Uint8Array(W * H);
+            const ca = clip._clipAlpha ?? 255;
+            if (ca === 255) for (let i = 0; i < mask.length; i++) mask[i] = cd[i * 4 + 3];
+            else for (let i = 0; i < mask.length; i++) { const t = cd[i * 4 + 3] * ca + 128; mask[i] = (t + (t >> 8)) >> 8; }
+        }
+        compositeTile(new Uint8Array(b.data.buffer, b.data.byteOffset, W * H * 4), [new Uint8Array(t.data.buffer, t.data.byteOffset, W * H * 4)], [op], [Math.round(Math.max(0, Math.min(1, opacity)) * 255)], [mask]);
         ctx.putImageData(b, 0, 0);
     }
 
@@ -12341,7 +12402,10 @@ class InpaintEditor {
      * goes onto the canvas is drawn over the composite exactly as before, and the held chain is
      * flushed first (flushFilterChain), so only the upload of the next filter's input is saved.
      */
-    applyFilterLayer(ctx, layer, index, forRun, chain = null, more = false) {
+    // `clip`: the filter layer is clipped to the layer below (PLAN_0_1_31 §6 step 3), `() => coverage` (`clipCoverage`, asked for
+    // once the filter has run: its input's statistics may walk the stack again): the result goes over the picture where the
+    // base is, `mix(in, filtered, baseAlpha)`
+    applyFilterLayer(ctx, layer, index, forRun, chain = null, more = false, clip = null) {
         if (!forRun) {
             // While something below the filter is being painted or moved, the cached
             // result would hide the live change: show the layers unfiltered instead.
@@ -12358,7 +12422,7 @@ class InpaintEditor {
         if (chain && preview) chain = this.flushFilterChain(ctx, chain);   // the preview downscales on a canvas
         // A filter layer that covers its input one to one can leave its result on the GPU; a
         // mask, an opacity or a blend mode has to composite it onto the canvas.
-        const plain = !this.liveMask(layer) && layer.opacity >= 1 && (!layer.blend || layer.blend === "normal") && !preview;
+        const plain = !this.liveMask(layer) && layer.opacity >= 1 && (!layer.blend || layer.blend === "normal") && !preview && !clip;
         const keepSurface = plain && more && !this.filterChainOff && glChainUsable(ctx.canvas.width, ctx.canvas.height);
         const out = this.filteredCanvas(layer, chain ? chain.surface : ctx.canvas, forRun, preview, keepSurface);
         const rx = vp ? vp.x : 0, ry = vp ? vp.y : 0;
@@ -12422,8 +12486,8 @@ class InpaintEditor {
             mctx.globalCompositeOperation = "source-over";
             src = m;
         }
-        if (EMULATED_BLENDS.has(layer.blend)) {
-            this.blendEmulated(ctx, layer.blend, (c) => { c.drawImage(src, rx, ry, rw, rh); }, layer.opacity);
+        if (clip || EMULATED_BLENDS.has(layer.blend)) {
+            this.blendEmulated(ctx, layer.blend, (c) => { c.drawImage(src, rx, ry, rw, rh); }, layer.opacity, clip ? clip() : null);
             return null;
         }
         ctx.globalAlpha = layer.opacity;
@@ -12742,12 +12806,66 @@ class InpaintEditor {
                 { icon: "eye", label: "Show all layers", title: this._solo ? "End the solo: every layer as visible as it was before" : "Show every layer of the picture",
                     onClick: () => this.showAllLayers() },
                 { sep: true },
+                { icon: "clip", label: layer.clip ? (many ? "Release clipping" : "Release clipping mask") : "Clip to layer below", key: "Ctrl+Alt+G",
+                    title: layer.clip ? "Draw the layer on its own again" : "Show this layer only where the layer under it has pixels (also: Alt+click the line between the two rows)",
+                    onClick: () => { const l = live(); if (l.length) this.setLayerClip(l.find((x) => x.id === layer.id) || l[0], !layer.clip); } },
+                { sep: true },
                 { icon: "merge", label: many ? `Merge ${sel.length} layers` : "Merge down", key: "Ctrl+E", title: many ? "Merge the selected layers into one, at the place of the topmost" : "Merge into the layer below",
                     onClick: () => (many ? this.mergeSelected() : this.mergeDown(live()[0])) },
                 { icon: "trash", label: many ? `Delete ${sel.length} layers` : "Delete layer", key: "Del", title: "Locked layers stay",
                     onClick: () => this.removeLayers(ids) },
             ],
         }, row);
+    }
+
+    /**
+     * Clip a layer to the layer below it, or release it (PLAN_0_1_31 §6 step 3): `on` true / false, null switches. With
+     * `layer` in a multi-selection every selected layer goes the same way. One "layers" undo step; false when nothing
+     * changed or the change was refused (the bottom layer, a reference or control layer).
+     */
+    setLayerClip(layer, on = null, { only = false } = {}) {
+        if (!layer) { this.setStatus("Select a layer to clip."); return false; }
+        const sel = this.selectedLayers();
+        const ls = !only && sel.length > 1 && sel.includes(layer) ? sel : [layer];
+        const want = on == null ? !layer.clip : !!on;
+        if (want) {
+            const bad = ls.find((l) => this.isReference(l) || this.isControl(l));
+            if (bad) { this.setStatus(`${bad.name} is not part of the picture (${this.isReference(bad) ? "a reference" : "a control layer"}): there is nothing to clip.`); return false; }
+            const lowest = ls.reduce((m, l) => Math.min(m, this.layers.indexOf(l)), Infinity);
+            if (lowest <= 0 || ls.length === this.layers.length) { this.setStatus("The bottom layer has no layer below it to clip to."); return false; }
+        }
+        const change = ls.filter((l) => !!l.clip !== want);
+        if (!change.length) { this.setStatus(want ? "Already clipped to the layer below." : "Not clipped."); return false; }
+        this.pushUndo({ kind: "layers", label: want ? "Clip to layer below" : "Release clipping" });
+        for (const l of change) l.clip = want;
+        this.visibilityChanged();
+        const base = want ? this.clipBaseOf(change[0]) : null;
+        this.setStatus(want ? (base ? `${change.length > 1 ? `${change.length} layers` : change[0].name} clipped to ${base.name}: shown only where it is. Alt+click the line between the rows releases it.` : `${change[0].name} is clipped, but the layer below is a filter layer: the clip has no effect until a picture layer is below.`)
+            : `${change.length > 1 ? `${change.length} layers` : change[0].name} released: drawn as a layer of its own again.`);
+        return true;
+    }
+
+    /**
+     * The layer an Alt+click at `e` on a row of the layer list would clip or release: the pointer within a few pixels of
+     * the line between two rows names the upper row's layer (the row itself at its bottom edge, the row above at its top
+     * edge); null elsewhere, on a control, or at the edge of the list.
+     */
+    clipEdgeLayer(row, e) {
+        if (e.target && e.target.closest && e.target.closest("input, select, button, textarea")) return null;
+        const r = row.getBoundingClientRect(), edge = 5;
+        let upper = null;
+        if (e.clientY >= r.bottom - edge) upper = row.nextElementSibling && row.nextElementSibling.dataset && row.nextElementSibling.dataset.layer ? row : null;
+        else if (e.clientY <= r.top + edge) upper = row.previousElementSibling && row.previousElementSibling.dataset && row.previousElementSibling.dataset.layer ? row.previousElementSibling : null;
+        return upper ? this.layers.find((l) => l.id === upper.dataset.layer) || null : null;
+    }
+
+    /** Alt+click on the line between two rows: the upper layer is clipped to the one below, or released. True when it was that. */
+    clipEdgeClick(row, e) {
+        const l = this.clipEdgeLayer(row, e);
+        if (!l) return false;
+        e.preventDefault(); e.stopPropagation();
+        this.setLayerClip(l, !l.clip, { only: true });
+        return true;
     }
 
     /** "Show all layers": ends a solo if one is on, else shows every layer of the picture. */
@@ -12863,7 +12981,7 @@ class InpaintEditor {
                     const doc = await this.readLayered(file, layered);
                     // each new reference goes below the others (addLayer): top first keeps the file's stacking order
                     const order = host.refTokens && role === "reference" ? [...doc.layers].reverse() : doc.layers;
-                    for (const L of order) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx }, { activate: false });
+                    for (const L of order) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx, clip: role !== "reference" && !!L.clip }, { activate: false });
                     if (last) this.activeLayerId = last.id;
                     this.setStatus(`${doc.layers.length} layer${doc.layers.length === 1 ? "" : "s"} of ${file.name || "the file"} added.${doc.notes.length ? " " + doc.notes.join("; ") + "." : ""}`);
                     layeredFiles++;
@@ -13226,8 +13344,36 @@ class InpaintEditor {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         ctx.drawImage(this.layerPixels(below), (below.x - x0) * res, (below.y - y0) * res, below.w * res, below.h * res);
-        if (EMULATED_BLENDS.has(layer.blend)) {
-            this.blendEmulated(ctx, layer.blend, (lc) => { lc.imageSmoothingEnabled = true; lc.imageSmoothingQuality = "high"; lc.drawImage(this.layerPixels(layer), (layer.x - x0) * res, (layer.y - y0) * res, layer.w * res, layer.h * res); }, layer.opacity);
+        // clipping (PLAN_0_1_31 §6 step 3) is baked in: a clipped layer merged into its base shows only where the base is;
+        // a clipped layer below an unclipped one is cut to its own base first, and the result is no longer clipped
+        const belowBase = below.clip && !layer.clip ? this.clipBaseOf(below) : null;
+        if (belowBase) {
+            ctx.globalCompositeOperation = "destination-in";
+            ctx.globalAlpha = Math.max(0, Math.min(1, belowBase.opacity ?? 1));
+            ctx.drawImage(this.layerPixels(belowBase), (belowBase.x - x0) * res, (belowBase.y - y0) * res, belowBase.w * res, belowBase.h * res);
+            ctx.globalCompositeOperation = "source-over";
+            ctx.globalAlpha = 1;
+        }
+        if (below.clip && !layer.clip) below.clip = false;
+        const clipTo = layer.clip && this.clipBaseOf(layer) === below;
+        if (clipTo && (!layer.blend || layer.blend === "normal")) {
+            // into its base: over the base's colour and inside its alpha, which stays (the layers still clipped to it keep
+            // their coverage); at a partial alpha this is the base's picture with the layer on it, not the live stack
+            ctx.globalAlpha = layer.opacity;
+            ctx.globalCompositeOperation = "source-atop";
+            ctx.drawImage(this.layerPixels(layer), (layer.x - x0) * res, (layer.y - y0) * res, layer.w * res, layer.h * res);
+        } else if (clipTo || EMULATED_BLENDS.has(layer.blend)) {
+            // the layer's pixels where `below` (all the canvas holds yet) is; in a blend mode the base's alpha is put back after
+            const cov = clipTo ? cpuDab(null, c.width, c.height) : null;
+            if (cov) cov.getContext("2d").drawImage(c, 0, 0);
+            this.blendEmulated(ctx, layer.blend, (lc) => { lc.imageSmoothingEnabled = true; lc.imageSmoothingQuality = "high"; lc.drawImage(this.layerPixels(layer), (layer.x - x0) * res, (layer.y - y0) * res, layer.w * res, layer.h * res); }, layer.opacity, cov);
+            if (cov) {
+                const a = cov.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+                const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data;
+                for (let i = 3; i < d.length; i += 4) d[i] = a[i];
+                ctx.putImageData(img, 0, 0);
+                cov.width = 1; cov.height = 1;
+            }
         } else {
             ctx.globalAlpha = layer.opacity;
             ctx.globalCompositeOperation = layer.blend && layer.blend !== "normal" ? layer.blend : "source-over";
@@ -13614,6 +13760,7 @@ class InpaintEditor {
      * "Background". The descriptors are not layers: each holds its own export copy as `canvas`.
      * PSD (docs/PLAN_0_1_31.md 3e): a layer's pixels as they are and its mask as `mask: { canvas, disabled }` (the mask's
      * alpha, at the layer's export size), switched off or not; ORA has no masks, so its layers bake the live one.
+     * A clipped layer is clipped in the PSD too (`clip`, when its base is exported); ORA has no clipping, its layers go unclipped.
      */
     exportLayerStack(fmt = "psd") {
         const psd = fmt === "psd";
@@ -13642,7 +13789,7 @@ class InpaintEditor {
                 mask = { canvas: mc, disabled: !!l.maskOff };
             }
             const aside = this.isControl(l) || this.isReference(l);
-            layers.push({ name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), canvas: c, opacity: l.opacity ?? 1, visible: l.visible !== false && !aside, blend: l.blend || "normal", ...(mask ? { mask } : {}) });
+            layers.push({ name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), canvas: c, opacity: l.opacity ?? 1, visible: l.visible !== false && !aside, blend: l.blend || "normal", ...(mask ? { mask } : {}), ...(psd && this.clipBaseOf(l) ? { clip: true } : {}) });
         }
         return { layers, skipped };
     }
@@ -13681,7 +13828,7 @@ class InpaintEditor {
             const plain = isTilePixels(l.px) && (mask || !this.liveMask(l)) && l.px.width === w && l.px.height === h && still;
             const smooth = (ctx) => { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; };
             out.push({
-                meta: { name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), opacity: l.opacity ?? 1, visible: l.visible !== false && !aside, blend: l.blend || "normal", ...(mask ? { mask: { disabled: !!l.maskOff } } : {}) },
+                meta: { name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), opacity: l.opacity ?? 1, visible: l.visible !== false && !aside, blend: l.blend || "normal", ...(mask ? { mask: { disabled: !!l.maskOff } } : {}), ...(psd && this.clipBaseOf(l) ? { clip: true } : {}) },
                 open: plain ? fromTiles(l.px) : fromCanvas((ctx) => { smooth(ctx); ctx.drawImage(mask ? this.layerWithStroke(l) : this.layerPixels(l), 0, 0, w, h); }, w, h),
                 // the mask at the pixels' size: its own tiles when it has that size already, else drawn to it
                 ...(mask ? { openMask: isTilePixels(mask) && mask.width === w && mask.height === h && still ? fromTiles(mask) : fromCanvas((ctx) => { smooth(ctx); mask.drawTo(ctx, 0, 0, w, h); }, w, h) } : {}),
@@ -14374,6 +14521,8 @@ class InpaintEditor {
         let basePx = null;
         const b = layers[0];
         if (b && b.x === 0 && b.y === 0 && b.w === W && b.h === H && b.visible && b.opacity >= 0.999 && b.blend === "normal" && !b.maskPx) { basePx = b.px; layers.shift(); }
+        // a layer clipped to what became the base would show "clipped without effect": the base covers the picture anyway
+        if (basePx) for (const L of layers) { if (!L.clip) break; L.clip = false; }
         else if (!layers.length && doc.composite) basePx = this.pixels.Layer.fromImageData(new ImageData(doc.composite, W, H));
         else basePx = this.pixels.Layer.empty(W, H);
         const stem = (file.name || "layered").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9._-]/gi, "_") || "layered";
@@ -14382,7 +14531,7 @@ class InpaintEditor {
         if (later()) return;
         await this.setBasePixels(ref, basePx, { keepLayers: false });
         let top = null;
-        for (const L of layers) top = this.addLayer({ name: L.name, kind: "image", ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx }, { activate: false });
+        for (const L of layers) top = this.addLayer({ name: L.name, kind: "image", ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx, clip: !!L.clip }, { activate: false });
         if (top) this.activeLayerId = top.id;
         this.renderLayers();
         this.draw();
@@ -14586,9 +14735,14 @@ class InpaintEditor {
             const inSel = multi.has(layer.id);
             const row = el("div", "ipc-layer" + (layer.id === this.activeLayerId ? " ipc-selected" : (inSel ? " ipc-multi" : "")));
             row.dataset.layer = layer.id;
-            row.addEventListener("click", (e) => this.clickLayerRow(layer, e));
+            row.addEventListener("click", (e) => { if (e.altKey && this.clipEdgeClick(row, e)) return; this.clickLayerRow(layer, e); });
             row.addEventListener("contextmenu", (e) => { e.preventDefault(); e.stopPropagation(); this.openLayerMenu(layer, e); });
+            // Alt over the line between two rows: the cursor says a click clips the upper layer to the lower one
+            row.addEventListener("pointermove", (e) => row.classList.toggle("ipc-clipedge", !!e.altKey && !!this.clipEdgeLayer(row, e)));
+            row.addEventListener("pointerleave", () => row.classList.remove("ipc-clipedge"));
             if (layer.locked) row.classList.add("ipc-locked");
+            const cbase = this.clipBaseOf(layer, i);
+            if (i + 1 < this.layers.length && this.layers[i + 1].clip && !layer.clip && layer.kind !== "filter") row.classList.add("ipc-clipbase");
             const top = el("div", "ipc-row");
             // drag the header row to reorder (the sliders below stay draggable as sliders)
             top.draggable = true;
@@ -14624,6 +14778,12 @@ class InpaintEditor {
                 if (e && e.altKey) { this.soloLayer(layer); return; }
                 this.setSelectedFlag(layer, "visible", !layer.visible);
             }, layer.visible ? "" : "ipc-off"));
+            if (layer.clip) {
+                const mark = el("span", "ipc-clipmark" + (cbase ? "" : " ipc-noeffect"));
+                mark.innerHTML = icon("clip", 14);
+                mark.title = cbase ? `Clipped to ${cbase.name}: shown only where it has pixels. Alt+click the line below this row releases it` : "Clipped, but without effect: the layer below is a filter layer or there is none";
+                top.appendChild(mark);
+            }
             const th = document.createElement("canvas");
             th.className = "ipc-lthumb";
             th.width = 40; th.height = 28;
@@ -15554,6 +15714,20 @@ class InpaintEditor {
         const base = this.basePx;
         if (base) layers.push(this.glLayerSpec(base, 0, 0, this.width, this.height, 1, "normal", sx));
         const vp = { x: region.x, y: region.y, w: region.w, h: region.h, sx, sy: vh / region.h };
+        // clipping (PLAN_0_1_31 §6 step 3), as drawLayersInto: a clipped layer only over a base this pass draws, which then
+        // leaves its coverage for it (`clipId` / `clipTo`)
+        const specOf = new Map();
+        const push = (layer, spec) => {
+            const cb = this.clipBaseOf(layer);
+            if (cb) {
+                const bs = specOf.get(cb);
+                if (!bs) return;
+                if (bs.clipId == null) bs.clipId = specOf.size;
+                spec.clipTo = bs.clipId;
+            }
+            specOf.set(layer, spec);
+            layers.push(spec);
+        };
         try {
             for (const layer of opts.baseOnly ? [] : this.layers) {
                 if (!layer.visible || !layer.px) continue;
@@ -15566,7 +15740,7 @@ class InpaintEditor {
                     const k = Math.min(1, Math.max(0, ((layer.match && layer.match.strength) || 0) / 100));
                     const spec = this.glLayerSpec(layer.px, layer.x, layer.y, layer.w, layer.h, opacity, blend, sx, this.tileMaskOf(layer));
                     spec.match = st && k > 0 ? { meanS: st.meanS, meanT: st.meanT, scale: st.scale, k } : null;
-                    layers.push(spec);
+                    push(layer, spec);
                     continue;
                 }
                 // the statistics are the layer's shared entry (C6 c 7c): no backdrop of this pass is read for them
@@ -15577,7 +15751,7 @@ class InpaintEditor {
                 const tileMask = matched ? null : this.tileMaskOf(layer);
                 const px = matched || (this.liveMask(layer) && !tileMask ? this.layerPixels(layer, true) : layer.px);
                 if (!px || px._livePreview) return null;
-                layers.push(this.glLayerSpec(px, layer.x, layer.y, layer.w, layer.h, opacity, blend, sx, tileMask));
+                push(layer, this.glLayerSpec(px, layer.x, layer.y, layer.w, layer.h, opacity, blend, sx, tileMask));
             }
             return comp.composite({ width: vw, height: vh, region, layers });
         } catch (err) {
@@ -15694,23 +15868,86 @@ class InpaintEditor {
         }
         let chain = null;   // filter layers that follow each other keep the composite on the GPU
         const end = baseOnly ? 0 : upTo == null ? this.layers.length : Math.max(0, Math.min(this.layers.length, upTo));
-        for (let i = 0; i < end; i++) {
-            const layer = this.layers[i];
-            if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
-            if ((!layer.visible && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
-            if (layer.kind === "filter") { if (!controlOnly) chain = this.applyFilterLayer(ctx, layer, i, forRun, chain, this.nextIsFilterLayer(i, forRun, end)); continue; }
-            const ctrl = this.isControl(layer);
-            if (controlOnly && !ctrl) continue;
-            if (forRun && (ctrl || this.isReference(layer))) continue;
+        // clipping (PLAN_0_1_31 §6 step 3): a clipped layer is drawn only when this pass drew its base, through the base's
+        // coverage, made once per base for the layers clipped to it
+        const drawn = new Set();
+        let cov = null;
+        const coverage = (b) => { if (!cov || cov.base !== b) cov = { base: b, canvas: this.clipCoverage(ctx, b) }; return cov.canvas; };
+        this._walkDepth = (this._walkDepth || 0) + 1;
+        try {
+            for (let i = 0; i < end; i++) {
+                const layer = this.layers[i];
+                if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
+                if ((!layer.visible && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
+                const cb = controlOnly ? null : this.clipBaseOf(layer, i);
+                if (cb && !drawn.has(cb)) continue;
+                if (layer.kind === "filter") {
+                    if (!controlOnly) { chain = this.applyFilterLayer(ctx, layer, i, forRun, chain, this.nextIsFilterLayer(i, forRun, end), cb ? () => coverage(cb) : null); drawn.add(layer); }
+                    continue;
+                }
+                const ctrl = this.isControl(layer);
+                if (controlOnly && !ctrl) continue;
+                if (forRun && (ctrl || this.isReference(layer))) continue;
+                chain = this.flushFilterChain(ctx, chain);
+                drawn.add(layer);
+                if (cb || (!controlOnly && EMULATED_BLENDS.has(layer.blend))) { this.blendEmulated(ctx, layer.blend, (lc) => { this.drawLayer(lc, layer); }, layer.opacity, cb ? coverage(cb) : null); continue; }
+                ctx.globalAlpha = layer.opacity;
+                ctx.globalCompositeOperation = (!controlOnly && layer.blend && layer.blend !== "normal") ? layer.blend : "source-over";
+                this.drawLayer(ctx, layer);
+            }
             chain = this.flushFilterChain(ctx, chain);
-            if (!controlOnly && EMULATED_BLENDS.has(layer.blend)) { this.blendEmulated(ctx, layer.blend, (lc) => { this.drawLayer(lc, layer); }, layer.opacity); continue; }
-            ctx.globalAlpha = layer.opacity;
-            ctx.globalCompositeOperation = (!controlOnly && layer.blend && layer.blend !== "normal") ? layer.blend : "source-over";
-            this.drawLayer(ctx, layer);
+        } finally {
+            this._walkDepth--;
         }
-        chain = this.flushFilterChain(ctx, chain);
         ctx.globalAlpha = 1;
         ctx.globalCompositeOperation = "source-over";
+    }
+
+    /**
+     * Clipping (PLAN_0_1_31 §6 step 3): the layer a clipped layer (`clip`) is clipped to, its base: the nearest layer below
+     * it that is not clipped, when that is a layer of pixels. Null for a layer drawn as it is: not clipped, or a clip
+     * without effect (below it only clipped layers and the picture, or a filter layer as the base). A walk of the stack
+     * draws a clipped layer only where the base is, and not at all when the walk left the base out (hidden, a reference
+     * in a run): `drawLayersInto`, `glViewComposite` and `stackPlan` do it the same way.
+     */
+    clipBaseOf(layer, i = this.layers.indexOf(layer)) {
+        if (!layer || !layer.clip) return null;
+        for (let j = i - 1; j >= 0; j--) {
+            const b = this.layers[j];
+            if (b.clip) continue;
+            return b.kind === "filter" ? null : b;
+        }
+        return null;
+    }
+
+    /**
+     * The coverage of a clipping base in a pass onto `ctx`: the base drawn alone at its opacity (its pixels' alpha
+     * through its mask, whatever its blend mode) into a scratch of `ctx`'s canvas size with its transform, returned
+     * in canvas pixels. One scratch per depth of the walk, so a walk nested in a filter's statistics keeps it.
+     */
+    clipCoverage(ctx, base) {
+        const cv = ctx.canvas, W = cv.width, H = cv.height;
+        const screen = !!(this.viewPass && this.viewPass.screen);
+        const key = (screen ? "gpu" : "cpu") + (this._walkDepth || 0);
+        const m = this._walkScratches || (this._walkScratches = new Map());
+        let c = m.get(key);
+        if (!c || c.width !== W || c.height !== H) { c = screen ? makeCanvas(W, H) : cpuDab(null, W, H); m.set(key, c); }
+        const x = c.getContext("2d");
+        x.setTransform(1, 0, 0, 1, 0, 0);
+        x.globalAlpha = 1;
+        x.globalCompositeOperation = "source-over";
+        x.clearRect(0, 0, W, H);
+        x.setTransform(ctx.getTransform());
+        x.imageSmoothingEnabled = ctx.imageSmoothingEnabled;
+        // on the screen the opacity goes into the scratch (`destination-in` takes it from there); off the screen the kernel
+        // multiplies it into the mask (`_clipAlpha`, mul255 as the workers do: drawn in, it came out 3 levels apart)
+        const op = Math.max(0, Math.min(1, base.opacity ?? 1));
+        x.globalAlpha = screen ? op : 1;
+        c._clipAlpha = screen ? 255 : Math.round(op * 255);
+        this.drawLayer(x, base);
+        x.setTransform(1, 0, 0, 1, 0, 0);
+        x.globalAlpha = 1;
+        return c;
     }
 
     drawLayer(ctx, layer) {
@@ -17124,6 +17361,7 @@ class InpaintEditor {
             if (this[name]) { freed += px(this[name].c || this[name]); this[name] = null; }
         }
         if (this._brushRead) { for (const c of this._brushRead) if (c) freed += px(c); this._brushRead = null; }
+        if (this._walkScratches) { for (const c of this._walkScratches.values()) freed += px(c); this._walkScratches = null; }
         releaseBoxBuffers();
         if (this.flatCache) { freed += px(this.flatCache.canvas); this.flatCache = null; }
         this.sceneSig = null;
@@ -17317,6 +17555,7 @@ class InpaintEditor {
                 ...(l.match && l.match.strength > 0 ? { match: l.match } : {}),
                 ...(l.locked ? { locked: true } : {}),
                 ...(l.alphaLock ? { alphaLock: true } : {}),
+                ...(l.clip ? { clip: true } : {}),
                 ...(l.kind === "filter" ? { filter: l.filter, params: l.params, lut: l.lut || null, plate: l.plate || null } : {}),
                 ...(l.kind === "text" && l.text ? { text: l.text } : {}),
             })),
@@ -17407,7 +17646,7 @@ class InpaintEditor {
                         const fid = typeof l.filter === "string" && l.filter ? l.filter : "grain";
                         this.layers.push(installLayerAliases({
                             id: l.id, name: l.name, kind: "filter", role: "none", blend: l.blend || "normal", ref: null, px: pixels,
-                            x: 0, y: 0, w: this.width, h: this.height, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked,
+                            x: 0, y: 0, w: this.width, h: this.height, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, clip: !!l.clip,
                             maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
                             filter: fid, params: FILTERS[fid] ? { ...filterDefaults(fid), ...(l.params || {}) } : { ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,
                             plate: plateImg ? l.plate : null, _plateImg: plateImg,
@@ -17420,7 +17659,7 @@ class InpaintEditor {
                 }
                 if (l.kind === "text" && l.text && !l.ref) {
                     // never uploaded (editor closed without sync): render it again from its description
-                    const layer = { id: l.id, name: l.name, kind: "text", role: l.role || "none", blend: l.blend || "normal", ref: null, px: this.pixels.Layer.empty(1, 1), x: l.x, y: l.y, w: 1, h: 1, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: true, locked: !!l.locked, alphaLock: !!l.alphaLock, maskPx: null, maskRef: null, maskDirty: false, maskEdit: false, match: { strength: 0, source: "surroundings" }, text: { ...TEXT_DEFAULTS, ...l.text } };
+                    const layer = { id: l.id, name: l.name, kind: "text", role: l.role || "none", blend: l.blend || "normal", ref: null, px: this.pixels.Layer.empty(1, 1), x: l.x, y: l.y, w: 1, h: 1, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: true, locked: !!l.locked, alphaLock: !!l.alphaLock, clip: !!l.clip, maskPx: null, maskRef: null, maskDirty: false, maskEdit: false, match: { strength: 0, source: "surroundings" }, text: { ...TEXT_DEFAULTS, ...l.text } };
                     this.layers.push(installLayerAliases(layer, this.pixels));
                     this.textCounter = (this.textCounter || 0) + 1;
                     textToRender.push(layer);
@@ -17444,7 +17683,7 @@ class InpaintEditor {
                     this.layers.push(installLayerAliases({
                         id: l.id, name: l.name, kind: l.kind || "result", role: l.role || "none", blend: l.blend || "normal",
                         ref: l.ref, px: pixels,
-                        x: l.x, y: l.y, w: l.w, h: l.h, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, alphaLock: !!l.alphaLock,
+                        x: l.x, y: l.y, w: l.w, h: l.h, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, alphaLock: !!l.alphaLock, clip: !!l.clip,
                         maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
                         match: l.match && typeof l.match === "object" ? { strength: +l.match.strength || 0, source: l.match.source === "underneath" ? "underneath" : "surroundings" } : { strength: 0, source: "surroundings" },
                         ...(l.kind === "text" && l.text ? { text: { ...TEXT_DEFAULTS, ...l.text } } : {}),

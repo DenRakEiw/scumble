@@ -20,6 +20,15 @@ the section for its version; `docs/` and the commit history hold the technical d
   and delete, and moving the solo from one layer to another keeps what was visible before the first one, so the way
   back always ends where you started (it brought back the first solo before). Solo leaves reference layers alone: a
   hidden reference is not sent, and solo hid them before.
+- **Clip a layer to the layer below.** Alt+click the line between two rows, press Ctrl+Alt+G or pick *Clip to layer
+  below* in a row's right-click menu, and the upper layer shows only where the layer under it has pixels: its own
+  pixels, its mask and its opacity decide how much. Several layers in a row can clip to the same layer; a filter layer
+  clipped this way filters only what lies under that layer's pixels. The row gets a small arrow and the layer it clips
+  to an underline. A hidden base hides its clipped layers too; over a filter layer, or as the bottom layer, a clip has no
+  effect (the arrow is dimmed). The same again releases it; each switch is one undo step. Merging a clipped layer into
+  the layer it clips to bakes the clip in. The clip is saved with the document and kept in PSD files both ways (a
+  layer clipped to a group or to a layer Scumble leaves out opens unclipped, and says so); ORA has no clipping. Agents
+  switch it with `set_layer` `clip`, and `list_layers` says what each clipped layer clips to.
 
 ## 0.1.34 — 2026-09-29
 

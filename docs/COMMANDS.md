@@ -406,7 +406,7 @@ Make a layer the active one, or select several (`layers`: they move and scale to
 
 ### `set_layer`
 
-Change a layer: name, visible, opacity (0..1 or percent), blend, locked, alpha_lock, role, colour match (0..100 %, match_source surroundings / below), geometry x y w h, active.
+Change a layer: name, visible, opacity (0..1 or percent), blend, locked, alpha_lock, clip (clipped to the layer below: shown only where that layer has pixels; its own undo step), role, colour match (0..100 %, match_source surroundings / below), geometry x y w h, active.
 
 | param | type | description |
 |---|---|---|
@@ -418,6 +418,7 @@ Change a layer: name, visible, opacity (0..1 or percent), blend, locked, alpha_l
 | `blend` | string | the blend mode (one of `normal`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `soft-light`, `hard-light`, `linear-light`, `difference`) |
 | `locked` | boolean |  |
 | `alpha_lock` | boolean |  |
+| `clip` | boolean | clip to the layer below (true) or release (false) |
 | `role` | string | none, reference or control (one of `none`, `reference`, `control`) |
 | `match` | number | colour match strength 0..100 |
 | `match_source` | string | surroundings or below (one of `surroundings`, `below`) |

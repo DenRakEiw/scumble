@@ -11,8 +11,9 @@
  * no `mask`. What a PSD holds and the editor has no place for is turned into what it looks like, where that is cheap
  * and exact enough: a group's visibility and opacity go into its layers'
  * (exact for a group in pass-through or normal mode), 16-bit samples are rounded to 8. What has no pixels of its own
- * is left out and named: adjustment and fill layers, empty layers. Clipping masks and blend modes the editor lacks
- * are named too (the layer stays, clipped to nothing and in normal mode). RGB and grayscale, 8 and 16 bit; PSB,
+ * is left out and named: adjustment and fill layers, empty layers. A clipped layer stays clipped to the layer below
+ * (`clip`) unless its base was a group or a layer left out; that, and blend modes the editor lacks, are named too
+ * (the layer stays, unclipped or in normal mode). RGB and grayscale, 8 and 16 bit; PSB,
  * CMYK, Lab, indexed and 32-bit files are refused with their name. `inflate(bytes)` (async, zlib) is only needed
  * for ZIP-compressed channels (Photoshop writes RLE unless told otherwise).
  *
@@ -338,10 +339,14 @@ export async function readPsd(input, { inflate = null } = {}) {
     const layers = [];
     let open = 0;   // open groups
     const adjust = [], empty = [], clipped = [], blends = [];
-    let masks = 0, masksOff = 0, grouped = 0;
+    let masks = 0, masksOff = 0, grouped = 0, clips = 0;
+    // a clipped record is clipped to the nearest record below it that is not clipped (PLAN_0_1_31 §6 step 3): kept when
+    // that base became a layer here; a group (flattened into its layers) or a left-out layer as the base drops the clip
+    let baseKept = false;
     for (const L of records) {
-        if (L.section === 3) { open++; continue; }   // a group's bounding divider, below its layers
+        if (L.section === 3) { open++; baseKept = false; continue; }   // a group's bounding divider, below its layers
         if (L.section === 1 || L.section === 2) {
+            baseKept = false;
             // the folder record above them: its visibility and opacity go into every layer since the divider
             open = Math.max(0, open - 1);
             for (let i = layers.length - 1; i >= 0 && layers[i]._depth > open; i--) {
@@ -353,21 +358,26 @@ export async function readPsd(input, { inflate = null } = {}) {
             continue;
         }
         const w = L.right - L.left, h = L.bottom - L.top;
-        if (Object.keys(L.info).some((k) => ADJUSTMENTS.has(k))) { adjust.push(L.name); continue; }
-        if (!(w > 0 && h > 0) || !L.ch[0]) { if (L.name) empty.push(L.name); continue; }
+        if (Object.keys(L.info).some((k) => ADJUSTMENTS.has(k))) { adjust.push(L.name); if (!L.clipping) baseKept = false; continue; }
+        if (!(w > 0 && h > 0) || !L.ch[0]) { if (L.name) empty.push(L.name); if (!L.clipping) baseKept = false; continue; }
         const rgba = interleave(L.ch, w, h, gray);
         const mask = layerMask(L, w, h);
         if (mask) { masks++; if (mask.disabled) masksOff++; }
         let blend = PSD_BLENDS[L.blendKey];
         if (!blend) { blends.push(`${L.name} (${L.blendKey.trim()})`); blend = "normal"; }
-        if (L.clipping) clipped.push(L.name);
+        const clip = !!L.clipping && baseKept;
+        if (L.clipping && !clip) clipped.push(L.name);
+        if (clip) clips++;
+        if (!L.clipping) baseKept = true;
         const layer = { name: L.name || "Layer", x: L.left, y: L.top, w, h, opacity: L.opacity, visible: !(L.flags & 2), blend, rgba, _depth: open };
+        if (clip) layer.clip = true;
         if (mask) layer.mask = mask;
         layers.push(layer);
     }
     for (const l of layers) delete l._depth;
     if (adjust.length) notes.push(`${adjust.length} adjustment or fill layer${adjust.length > 1 ? "s" : ""} left out (${listNames(adjust)}): the picture can look different`);
-    if (clipped.length) notes.push(`clipping masks are not kept (${listNames(clipped)} now cover${clipped.length > 1 ? "" : "s"} more)`);
+    if (clips) notes.push(`${clips} clipped layer${clips > 1 ? "s" : ""} kept clipped`);
+    if (clipped.length) notes.push(`clipping to a group or a left-out layer is not kept (${listNames(clipped)} now cover${clipped.length > 1 ? "" : "s"} more)`);
     if (blends.length) notes.push(`blend modes the editor lacks became normal: ${listNames(blends)}`);
     if (masks === 1) notes.push(`1 layer mask kept as a mask${masksOff ? " (switched off)" : ""}`);
     else if (masks > 1) notes.push(`${masks} layer masks kept as masks${masksOff ? ` (${masksOff === masks ? "all" : masksOff} switched off)` : ""}`);

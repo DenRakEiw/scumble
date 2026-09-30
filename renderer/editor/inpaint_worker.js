@@ -44,7 +44,7 @@
  * milliseconds of their parts.
  */
 import { PsdWriter, OraWriter } from "./inpaint_export.js";
-import { floodMask, maskToColorCanvas, clipMaskToSelection, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
+import { floodMask, maskToColorCanvas, clipMaskToSelection, clipCoverage, growMaskBounds, invertMask, maskBounds, hexToRgb } from "./inpaint_raster.js";
 import { pngChunk, crc32, readPng, PNG_LEVEL, NO_PARTS } from "./inpaint_png.js";
 import { readTiff, tiffPart } from "./inpaint_tiff.js";
 import { resampleStore } from "./inpaint_resample.js";
@@ -248,6 +248,14 @@ function rowsOfStack(msg, above = false, into = null) {
         }
         let mask = null;
         if (l.mask) { mask = new Uint8Array(W * n); storeRows({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, X0, W, Y0, n, mask, true); }
+        if (l.clip) {
+            // clipped (PLAN_0_1_31 §6 step 3): the base's coverage folded into the layer's mask
+            const c = l.clip, cov = new Uint8Array(W * n);
+            storeRows(c, X0, W, Y0, n, cov, true);
+            let bm = null;
+            if (c.mask) { bm = new Uint8Array(W * n); storeRows({ x: c.x, y: c.y, w: c.w, h: c.h, tiles: c.mask }, X0, W, Y0, n, bm, true); }
+            mask = clipCoverage(cov, bm, c.alpha, mask);
+        }
         srcs.push(src); alphas.push(l.alpha); masks.push(mask); ops.push(l.op | 0);
     }
     if (srcs.length) compositeTile(dst, srcs, ops, alphas, masks);
@@ -323,6 +331,13 @@ async function stackPoints(msg) {
         if (l.match) matchPixels(src, l.match);
         let mask = null;
         if (l.mask) { mask = new Uint8Array(n); gatherStore({ x: l.x, y: l.y, w: l.w, h: l.h, tiles: l.mask }, xs, ys, mask, true, clip); }
+        if (l.clip) {
+            const c = l.clip, cov = new Uint8Array(n);
+            gatherStore(c, xs, ys, cov, true, clip);
+            let bm = null;
+            if (c.mask) { bm = new Uint8Array(n); gatherStore({ x: c.x, y: c.y, w: c.w, h: c.h, tiles: c.mask }, xs, ys, bm, true, clip); }
+            mask = clipCoverage(cov, bm, c.alpha, mask);
+        }
         srcs.push(src); alphas.push(l.alpha); masks.push(mask); ops.push(l.op | 0);
     }
     if (srcs.length) compositeTile(bel, srcs, ops, alphas, masks);

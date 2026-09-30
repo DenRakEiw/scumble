@@ -250,3 +250,18 @@ export function clipMaskToSelection(mask, selection) {
     for (let p = 0, i = 3; p < mask.length; p++, i += 4) if (s[i] < 128) mask[p] = 0;
     return mask;
 }
+
+/**
+ * The mask of a clipped layer in a stack composited from tiles (docs/PLAN_0_1_31.md §6 step 3), in place in `cov`: the
+ * base's alpha bytes there (`cov`, one a pixel) through the base's mask (`baseMask`, the same, or null) at the base's
+ * opacity (`alpha`, 0..255), times the layer's own mask (`own`, or null). Rounded as the compositing kernel's mul255;
+ * the kernel then takes it as the layer's coverage, which is what a mask is.
+ */
+export function clipCoverage(cov, baseMask, alpha, own) {
+    const n = cov.length;
+    const mul = (x, y) => { const t = x * y + 128; return (t + (t >> 8)) >> 8; };
+    if (baseMask) for (let i = 0; i < n; i++) cov[i] = mul(cov[i], baseMask[i]);
+    if (alpha < 255) for (let i = 0; i < n; i++) cov[i] = mul(cov[i], alpha);
+    if (own) for (let i = 0; i < n; i++) cov[i] = mul(cov[i], own[i]);
+    return cov;
+}

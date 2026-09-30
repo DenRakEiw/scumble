@@ -1,7 +1,7 @@
 /**
  * Layered export: PSD (Photoshop, 8-bit RGB, PackBits) and ORA (OpenRaster, the native
  * layered format of Krita and GIMP: a zip of PNGs plus stack.xml). Both take the same
- * description: { width, height, layers: [{ name, x, y, canvas, opacity, visible, blend }],
+ * description: { width, height, layers: [{ name, x, y, canvas, opacity, visible, blend, clip }],
  * composite }. `layers` are bottom first, each canvas holds the layer's pixels at image
  * resolution (canvas.width × canvas.height placed at x, y); `composite` is the flattened
  * image. Filter layers cannot be represented and are left out by the caller. A layer may carry `mask: { canvas,
@@ -154,7 +154,7 @@ export class PsdWriter {
         records.ascii("8BIM");
         records.ascii(PSD_BLEND[L.blend] || "norm");
         records.u8(Math.round(Math.max(0, Math.min(1, L.opacity ?? 1)) * 255));
-        records.u8(0);
+        records.u8(L.clip ? 1 : 0);   // clipping: 1 = clipped to the layer below (PLAN_0_1_31 §6 step 3)
         records.u8(L.visible === false ? 2 : 0);
         records.u8(0);
         const name = pascal(L.name, 4), uni = luni(L.name);

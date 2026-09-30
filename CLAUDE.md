@@ -109,8 +109,13 @@ commit 5d95c91 deployed (Vercel: success).
   The details and what was left out are in the plan's 6.1 "Built" paragraph; CHANGELOG "Unreleased", manual lines under
   Layers. **6.2 built 2026-09-30 (local, not pushed):** the transform tool's bar aligns the selected layers (six edges /
   centres) and distributes them with equal gaps, *To* Selection (the box around them) or Canvas; one layer aligns to the
-  canvas; by the layer box, not the painted pixels; MCP `align_layers`. **Next: 6.3 clipping (full tier).** Open for the
-  user: how the multi-selection, the solo and the align row feel (and whether aligning by painted pixels is wanted).
+  canvas; by the layer box, not the painted pixels; MCP `align_layers`. **6.3 built 2026-09-30 (local, not pushed):**
+  clipping (`layer.clip`; Alt+click the line between two rows, Ctrl+Alt+G, the row menu; `set_layer clip`; PSD both ways)
+  on every path, the clip being the base's coverage used as the layer's mask: not an isolated group, so at a partial
+  coverage it differs from Photoshop's group (the plan's 6.3 "Built"); `composite_tile` unchanged; gate `clip` (both
+  backends, 13 mutations red), 15k measured. **Next: 6.5 groups as folders (full tier; 6.4 came in 0.1.31), then 6.6.**
+  Open for the user: how the multi-selection, the solo and the align row feel (and whether aligning by painted pixels is
+  wanted); whether the clip at soft edges looks right or wants the isolated group (7 - 9 days).
 - **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
   of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
   point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
@@ -181,7 +186,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff canvasonly`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly clip`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is

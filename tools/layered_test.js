@@ -553,17 +553,20 @@ async function writerChecks(readPsd) {
             { name: "empty", top: 0, left: 0, w: 0, h: 0, ch: {} },
             { name: "Levels 1", top: 0, left: 0, w: 0, h: 0, ch: {}, info: { levl: new Uint8Array(4) } },
             { name: "Curves over pixels", top: 0, left: 0, w: 2, h: 2, ch: solid(2, 2, 9, 9, 9), info: { curv: new Uint8Array(4) } },
+            { name: "clipped to curves", top: 0, left: 0, w: 2, h: 2, ch: solid(2, 2, 4, 5, 6), clipping: 1 },
         ];
         const doc = await readPsd(psd({ width: W, height: H, layers }));
         const names = doc.layers.map((l) => l.name);
-        check("layers bottom first, adjustments and empty layers left out", JSON.stringify(names) === JSON.stringify(["Background", "Ebene äöü ✓", "hidden", "odd blend", "clipped"]), short(names));
+        check("layers bottom first, adjustments and empty layers left out", JSON.stringify(names) === JSON.stringify(["Background", "Ebene äöü ✓", "hidden", "odd blend", "clipped", "clipped to curves"]), short(names));
         check("layers without a mask have no mask field, and no note speaks of layer masks", doc.layers.every((l) => !("mask" in l)) && !doc.notes.some((n) => /layer mask/.test(n)), short(doc.notes));
         const L = doc.layers[1];
         check("the Unicode name wins over the Pascal one", L.name === "Ebene äöü ✓");
         check("position, size, blend and opacity", L.x === 3 && L.y === 2 && L.w === 4 && L.h === 3 && L.blend === "multiply" && Math.abs(L.opacity - 128 / 255) < 1e-9, short({ x: L.x, y: L.y, w: L.w, h: L.h, blend: L.blend, opacity: L.opacity }));
         check("a hidden layer (flag 2) is hidden, a negative offset kept", doc.layers[2].visible === false && doc.layers[2].x === -1 && doc.layers[2].y === -2 && doc.layers[1].visible === true);
         check("an unknown blend mode becomes normal and is named", doc.layers[3].blend === "normal" && doc.notes.some((n) => /blend modes.*odd blend \(vLit\)/.test(n)), short(doc.notes));
-        check("a clipping mask is named", doc.notes.some((n) => /clipping masks.*"clipped"/.test(n)), short(doc.notes));
+        // PLAN_0_1_31 §6 step 3: a clip onto a kept layer stays, a clip onto a left-out one (an adjustment here) goes and is named
+        check("a clipped layer stays clipped", doc.layers[4].clip === true && doc.layers.filter((l) => l.clip).length === 1 && doc.notes.some((n) => /1 clipped layer kept clipped/.test(n)), short(doc.notes));
+        check("a clip onto a left-out layer is dropped and named", !doc.layers[5].clip && doc.notes.some((n) => /not kept.*"clipped to curves"/.test(n)), short(doc.notes));
         check("adjustment layers are named, with and without pixels", doc.notes.some((n) => /2 adjustment or fill layers left out \("Levels 1", "Curves over pixels"\)/.test(n)), short(doc.notes));
         check("the merged picture is read", doc.composite && doc.composite.length === W * H * 4 && doc.composite[3] === 255);
         const every = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light", "linear-light", "difference"];

@@ -80,7 +80,11 @@ view of item 24: real Tab and Escape presses over CDP; the chrome hidden, the vi
 fitted picture while on, the view / rulers / chrome / window put back after; Tab ignored in a text field, a dialog, the
 editor's ask and with Shift; Escape cancels a pending transform or an open polygon first and never reaches the editor
 when it leaves; a full-screen exit from outside, a tab switch and closing the tab end the view; a window that was full
-screen before stays so; it takes the test window full screen and back). Every gate name `X` without a rule of its own
+screen before stays so; it takes the test window full screen and back), `tools/clip_test.py` (gate `clip`, layers
+clipped to the layer below, PLAN_0_1_31 §6 step 3: analytic on the flatten and the workers' export (coverage 0 = the
+clipped layers hidden, 255 = their clip off), every path against the flatten, the GPU view against Canvas 2D at 1:1,
+at a base of 60 %, over an emptied base and with the base off the view, a hidden base, a filter base, undo, getValue,
+PSD both ways, the merges; run it on both backends). Every gate name `X` without a rule of its own
 in `tools/run_gates.sh` runs `tools/X_test.py`.
 
 Item 26 (`docs/PLAN_REFS.md`, @img tokens for reference layers): `node tools/refs_layout_test.js` pins every adapter's

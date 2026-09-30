@@ -14,6 +14,7 @@
  * is left out.
  */
 import { compositeTile, matchPixels } from "./px/kernels.js";
+import { clipCoverage } from "./inpaint_raster.js";
 
 const TILE = 256;
 
@@ -82,6 +83,14 @@ export function compositeBox(stack, X0, Y0, W, H, pw = Infinity, ph = Infinity) 
         if (l.match) matchPixels(src, l.match);
         let mask = null;
         if (l.mask) { mask = buffer(slot++, n); storeBox(l.mask, l.x | 0, l.y | 0, X0, Y0, W, H, mask, true, pw, ph); }
+        if (l.clip) {
+            // clipped (PLAN_0_1_31 §6 step 3): `clip` is the base's entry; where the base has no tile the layer shows nothing
+            const c = l.clip, cov = buffer(slot++, n);
+            if (!(c.alpha > 0) || !storeBox(c.px, c.x | 0, c.y | 0, X0, Y0, W, H, cov, true, pw, ph)) { slot--; continue; }
+            let bm = null;
+            if (c.mask) { bm = buffer(slot++, n); storeBox(c.mask, c.x | 0, c.y | 0, X0, Y0, W, H, bm, true, pw, ph); }
+            mask = clipCoverage(cov, bm, c.alpha, mask);
+        }
         srcs.push(src); alphas.push(l.alpha); masks.push(mask); ops.push(l.op | 0);
     }
     if (srcs.length) compositeTile(dst, srcs, ops, alphas, masks);

@@ -111,17 +111,26 @@ export function stackArgs(stores) {
         }
         return any ? out : null;
     };
+    // a clipped store's base (`clip`, a held store; PLAN_0_1_31 §6 step 3) as the worker reads it, or false when the base
+    // has no tile in these rows (the clipped layer shows nothing there); `rowsOfStack` folds its coverage into the mask
+    const clipOf = (c, a, b) => {
+        const tiles = rowsOf(c.snap, c.y, a, b);
+        if (!tiles || !(c.alpha > 0)) return false;
+        return { x: c.x, y: c.y, w: c.snap.width, h: c.snap.height, alpha: c.alpha, tiles, mask: c.mask ? rowsOf(c.mask, c.y, a, b) || {} : null };
+    };
     return (a, b) => {
         const [base, ...over] = stores;
         const layers = [];
         for (const s of over) {
+            const clip = s.clip ? clipOf(s.clip, a, b) : null;
+            if (clip === false) continue;
             if (s.sab) {   // a filtered band over the band it was made from (B item 7 part 2): bytes of the job's own box
-                layers.push({ x: s.x, y: s.y, w: s.w, h: s.h, alpha: s.alpha, op: s.op | 0, sab: s.sab, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null });
+                layers.push({ x: s.x, y: s.y, w: s.w, h: s.h, alpha: s.alpha, op: s.op | 0, sab: s.sab, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null, clip });
                 continue;
             }
             const tiles = rowsOf(s.snap, s.y, a, b);
             if (!tiles || !(s.alpha > 0)) continue;
-            layers.push({ x: s.x, y: s.y, w: s.snap.width, h: s.snap.height, alpha: s.alpha, op: s.op | 0, tiles, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null, match: s.match || null });
+            layers.push({ x: s.x, y: s.y, w: s.snap.width, h: s.snap.height, alpha: s.alpha, op: s.op | 0, tiles, mask: s.mask ? rowsOf(s.mask, s.y, a, b) || {} : null, match: s.match || null, clip });
         }
         return { base: base ? { x: 0, y: 0, w: base.snap.width, h: base.snap.height, tiles: rowsOf(base.snap, 0, a, b) || {} } : null, layers };
     };
@@ -295,7 +304,7 @@ export class PsdBandWriter {
         rec.ascii("8BIM");
         rec.ascii(PSD_BLEND[L.blend] || "norm");
         rec.u8(Math.round(Math.max(0, Math.min(1, L.opacity ?? 1)) * 255));
-        rec.u8(0);
+        rec.u8(L.clip ? 1 : 0);   // clipped to the layer below, as PsdWriter writes it
         rec.u8(L.visible === false ? 2 : 0);
         rec.u8(0);
         const name = pascal(L.name, 4), uni = luni(L.name);
