@@ -118,7 +118,14 @@ commit 5d95c91 deployed (Vercel: success).
   Ctrl+G, the group row with fold / eye / lock / ungroup / trash, drag into groups, Ctrl+] / [ through the tree; PSD
   `lsct` both ways, a dropped PSD too; `.scumble`; MCP `group_layers`, `ungroup_layers`, `set_group`); gate `groups`
   (both backends, 19 mutations red), 15k measured (no cost); the worker PSD path dropped `clip` before (fixed).
-  **Next: 6.6 fill layers.** Open for the user: how the multi-selection, the solo and the align row feel (and whether
+  **6.6 built 2026-09-30 (local, not pushed):** fill layers as two filter types, `fill` (a colour) and `gradient`
+  (linear / reflected / radial, two colours each with an opacity, angle, scale, centre), a param type `color`; the def's
+  `over` makes the result go over the picture as a layer (blend, opacity, mask), not in its place (`isFillLayer`, both
+  `plain` flags); `fillPixels` is a function of the pixel's place only; the fill button in the layer head; PSD / ORA
+  write a fill as a pixel layer; gate `fill` (both backends). **Package 6 is complete; next: a release of package 6
+  (0.1.35) only on the user's word** (prepare CHANGELOG / dist / exe gates locally first if asked). Open for the user:
+  how the fills feel (the gradient from the paint colour to transparent as the default; no on-canvas dragging of a
+  gradient, no more than two stops); how the multi-selection, the solo and the align row feel (and whether
   aligning by painted pixels is wanted); whether the clip at soft edges looks right or wants the isolated group (7 - 9
   days). Decided for groups (the user, 2026-09-30): no empty groups, no ungroup key, no group opacity / blend (the
   layers' own opacity is enough; the group opacity parked as item 27).

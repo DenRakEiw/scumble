@@ -405,6 +405,7 @@ function buildLayers(ed) {
     ed.fontInput.accept = ".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2";
     layersHead.appendChild(miniButton("image", "Import images as layers (one layer per file, part of the image, fitted to the canvas). Dropping files on this list does the same.", () => ed.imageInput.click()));
     layersHead.appendChild(miniButton("fx", "Add a filter layer (film grain, sharpen, blur, levels, curves, brightness / contrast, hue / saturation, colour balance, black & white, invert, LUT, vignette). It filters everything below it; give it a mask to limit where it applies.", () => ed.addFilterLayer()));
+    layersHead.appendChild(miniButton("fill", "Add a fill layer (a colour, or a gradient: linear, reflected or radial; it starts in the paint colour). It covers everything below it; its blend mode, opacity and mask let the picture through. The fill's type is in its row.", () => ed.addFilterLayer("fill")));
     layersHead.appendChild(miniButton("plus", "Add a paint layer (Ctrl+Shift+N)", () => ed.addPaintLayer()));
     ed.panes.image.appendChild(layersHead);
     ed.layerList = el("div", "ipc-list");

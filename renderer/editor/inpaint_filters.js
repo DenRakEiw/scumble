@@ -490,6 +490,91 @@ function applyVignette(src, p, info = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// fill layers (PLAN_0_1_31 §6 step 6): a colour or a gradient
+// ---------------------------------------------------------------------------
+
+/** `#rrggbb` (or `rrggbb`, `#rgb`) as [r, g, b]; `fallback` for anything else. */
+export function hexRgb(s, fallback = [128, 128, 128]) {
+    let m = /^#?([0-9a-f]{6})$/i.exec(String(s || "").trim());
+    if (!m) { const k = /^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(String(s || "").trim()); if (k) m = [0, k[1] + k[1] + k[2] + k[2] + k[3] + k[3]]; }
+    if (!m) return fallback.slice();
+    const v = parseInt(m[1], 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+/**
+ * A fill layer's own pixels (RGBA8, not premultiplied) for the `w` x `h` part at `origin` of a picture of `full`
+ * ([FW, FH], in the same pixels). A pixel's value is a function of where it sits in the picture only, so every pass
+ * (the screen's region, a band of an export, the whole flatten) gives the same bytes. Colour fill: the colour, opaque.
+ * Gradient: the colour and the opacity each mixed straight between the two ends; linear runs along `angle` (0° left
+ * to right, 90° top to bottom) across the picture's extent in that direction, reflected mirrors it at the centre,
+ * radial runs from the centre to the half diagonal; `scale` stretches it, `x` / `y` move its centre.
+ */
+export function fillPixels(id, p, full, origin, w, h) {
+    const out = new Uint8ClampedArray(w * h * 4);
+    const u32 = new Uint32Array(out.buffer);
+    const pack = (r, g, b, a) => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;   // little endian: RGBA in memory
+    if (id === "fill") { const [r, g, b] = hexRgb(p.color); u32.fill(pack(r, g, b, 255)); return out; }
+    const N = 1024;
+    const lut = new Uint32Array(N);
+    const c0 = hexRgb(p.from, [0, 0, 0]), c1 = hexRgb(p.to, [255, 255, 255]);
+    const a0 = Math.max(0, Math.min(100, p.from_opacity ?? 100)) / 100 * 255, a1 = Math.max(0, Math.min(100, p.to_opacity ?? 100)) / 100 * 255;
+    for (let k = 0; k < N; k++) {
+        const t = k / (N - 1), m = (x, y) => Math.round(x + (y - x) * t);
+        lut[k] = pack(m(c0[0], c1[0]), m(c0[1], c1[1]), m(c0[2], c1[2]), m(a0, a1));
+    }
+    const [FW, FH] = full, [ox, oy] = origin;
+    const cx = ((p.x ?? 50) / 100) * FW - ox, cy = ((p.y ?? 50) / 100) * FH - oy;   // the centre, in this part's pixels
+    const scale = Math.max(0.01, (p.scale ?? 100) / 100);
+    const shape = p.shape || "linear";
+    const K = N - 1;
+    if (shape === "radial") {
+        const R = (Math.hypot(FW, FH) / 2) * scale;
+        const inv = K / Math.max(1e-6, R);
+        for (let j = 0, i4 = 0; j < h; j++) {
+            const dy = j + 0.5 - cy, dy2 = dy * dy;
+            for (let i = 0; i < w; i++, i4++) {
+                const dx = i + 0.5 - cx;
+                const k = Math.round(Math.sqrt(dx * dx + dy2) * inv);
+                u32[i4] = lut[k < K ? k : K];
+            }
+        }
+        return out;
+    }
+    const th = ((p.angle ?? 90) * Math.PI) / 180, ux = Math.cos(th), uy = Math.sin(th);
+    const L = ((Math.abs(FW * ux) + Math.abs(FH * uy)) / 2) * scale;   // half the length: the picture's extent along the direction
+    const inv = K / Math.max(1e-6, L);
+    const reflected = shape === "reflected";
+    for (let j = 0, i4 = 0; j < h; j++) {
+        const row = (j + 0.5 - cy) * uy;
+        for (let i = 0; i < w; i++, i4++) {
+            const u = (i + 0.5 - cx) * ux + row;   // along the direction, from the centre
+            let k = reflected ? Math.round(Math.abs(u) * inv) : Math.round((u + L) * inv * 0.5);
+            k = k < 0 ? 0 : k > K ? K : k;
+            u32[i4] = lut[k];
+        }
+    }
+    return out;
+}
+
+/** The filter's apply(): the fill as a canvas of the input's size. It never reads the input, only its size; kept in `info.cache` until the parameters or the part change. */
+function fillApply(id) {
+    return (src, p, info = {}) => {
+        const W = src.width, H = src.height;
+        const full = info.full || [W, H], origin = info.full ? info.origin || [0, 0] : [0, 0];
+        const key = JSON.stringify([id, p, W, H, full, origin]);
+        const cache = info.cache;
+        if (cache && cache.fill && cache.fill.key === key) return cache.fill.canvas;
+        const out = makeCanvas(W, H);
+        const ctx = out.getContext("2d");
+        if (id === "fill") { const [r, g, b] = hexRgb(p.color); ctx.fillStyle = `rgb(${r},${g},${b})`; ctx.fillRect(0, 0, W, H); }
+        else ctx.putImageData(new ImageData(fillPixels(id, p, full, origin, W, H), W, H), 0, 0);
+        if (cache) cache.fill = { key, canvas: out };
+        return out;
+    };
+}
+
+// ---------------------------------------------------------------------------
 // point adjustments: shared helpers
 // ---------------------------------------------------------------------------
 
@@ -976,6 +1061,38 @@ export const FILTERS = {
         ],
         reach: 0,
         apply: applyVignette,
+    },
+    // fill layers: `over` - the result goes over the picture below as a layer would (its own alpha, the layer's blend
+    // mode, opacity and mask), it does not stand for that picture; `chain` - apply() takes a GPU surface as it is (it
+    // reads only the input's size, so nothing is read back)
+    fill: {
+        label: "Colour fill",
+        params: [
+            { key: "color", label: "Colour", type: "color", default: "#808080" },
+        ],
+        over: true,
+        chain: true,
+        reach: 0,
+        apply: fillApply("fill"),
+    },
+    gradient: {
+        label: "Gradient fill",
+        params: [
+            { key: "shape", label: "Shape", type: "select", default: "linear", title: "Linear: along the angle across the picture. Reflected: from the centre out both ways. Radial: from the centre out to the corners.",
+                options: [{ id: "linear", label: "Linear" }, { id: "reflected", label: "Reflected" }, { id: "radial", label: "Radial" }] },
+            { key: "from", label: "From", type: "color", default: "#000000" },
+            { key: "from_opacity", label: "From opacity", min: 0, max: 100, step: 1, default: 100, unit: "%" },
+            { key: "to", label: "To", type: "color", default: "#ffffff" },
+            { key: "to_opacity", label: "To opacity", min: 0, max: 100, step: 1, default: 100, unit: "%" },
+            { key: "angle", label: "Angle", min: -180, max: 180, step: 1, default: 90, unit: "°" },
+            { key: "scale", label: "Scale", min: 10, max: 300, step: 1, default: 100, unit: "%" },
+            { key: "x", label: "Centre X", min: 0, max: 100, step: 1, default: 50, unit: "%" },
+            { key: "y", label: "Centre Y", min: 0, max: 100, step: 1, default: 50, unit: "%" },
+        ],
+        over: true,
+        chain: true,
+        reach: 0,
+        apply: fillApply("gradient"),
     },
 };
 

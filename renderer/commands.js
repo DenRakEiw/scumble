@@ -996,12 +996,12 @@ const COMMANDS = {
 
     // -- filters --
     filter_types: {
-        scope: "app", description: "The filter layer types (built-in and from plugins) with their parameters.",
+        scope: "app", description: "The filter layer types (built-in and from plugins) with their parameters; `fill: true` marks a fill layer's type (fill: a colour, gradient: two colours with their opacities), which covers what is below instead of filtering it.",
         params: {},
-        async run() { return { filters: Object.entries(FILTERS).map(([id, f]) => ({ id, label: f.label, plugin: f.plugin || null, params: (f.params || []).map((p) => ({ key: p.key, label: p.label, type: p.type || "number", min: p.min, max: p.max, default: p.type === "custom" ? undefined : p.default, options: p.options ? p.options.map((o) => (o.id != null ? o.id : o)) : undefined })) })) }; },
+        async run() { return { filters: Object.entries(FILTERS).map(([id, f]) => ({ id, label: f.label, plugin: f.plugin || null, ...(f.over ? { fill: true } : {}), params: (f.params || []).map((p) => ({ key: p.key, label: p.label, type: p.type || "number", min: p.min, max: p.max, default: p.type === "custom" ? undefined : p.default, options: p.options ? p.options.map((o) => (o.id != null ? o.id : o)) : undefined })) })) }; },
     },
     add_filter: {
-        needsImage: true, description: "Add a non-destructive filter layer on top of the stack (see filter_types for types and params).",
+        needsImage: true, description: "Add a non-destructive filter layer on top of the stack (see filter_types for types and params). A fill layer is one too: type \"fill\" (params color \"#rrggbb\") or \"gradient\" (shape linear / reflected / radial, from, to, from_opacity, to_opacity, angle, scale, x, y); it covers what is below, and set_layer's opacity, blend and a mask let the picture through.",
         params: { type: P.str("filter type id", { default: "grain" }), params: P.obj("parameter values {key: value}"), name: P.str("layer name") },
         async run(ed, a) {
             const type = String(a.type || "grain");
@@ -1322,6 +1322,11 @@ function applyParams(ed, l, params) {
         }
         else if (p.type === "bool") l.params[k] = !!v;
         else if (p.type === "custom") l.params[k] = v;
+        else if (p.type === "color") {
+            const m = /^#?([0-9a-f]{6})$/i.exec(String(v).trim());
+            if (!m) throw new Error(`${k} takes a colour as "#rrggbb", not "${v}"`);
+            l.params[k] = "#" + m[1].toLowerCase();
+        }
         else l.params[k] = Math.min(p.max, Math.max(p.min, +v));
     }
     ed.markFilterChanged(l);

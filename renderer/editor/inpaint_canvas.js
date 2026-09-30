@@ -13,7 +13,7 @@
 //   * receive stitched results from the backend and add them as layers
 
 import { api, host } from "./host.js";
-import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromCube, lutToCanvas, lutFromImage, plateStats, colourStats } from "./inpaint_filters.js";
+import { FILTERS, FILTER_IDS, filterDefaults, applyFilter, matchCanvas, lutFromCube, lutToCanvas, lutFromImage, plateStats, colourStats, fillPixels, hexRgb } from "./inpaint_filters.js";
 import { isGLSurface, glChainUsable, beginScope, endScope, releaseSurface, surfaceToCanvas, drawSurfaceTo, surfaceFromBytes, readSurfaceBytes, glMaxSide, glReleaseLargeSurfaces, runShader } from "./inpaint_filters_gl.js";
 import { TEXT_DEFAULTS, FONT_CATEGORIES, loadFontList, fontList, addUserFont, renderText, textAngle, textFrame, fontCss } from "./inpaint_text.js";
 import { readAbr, tipCanvas } from "./inpaint_brushes.js";
@@ -1459,6 +1459,8 @@ const STYLE = `
 .ipc-fx { display:grid; grid-template-columns:auto 1fr auto; gap:3px 6px; align-items:center; font-size:11px; color:var(--sc-muted, #888); }
 .ipc-fx .ipc-sel { grid-column:1 / -1; max-width:none; }
 .ipc-fx input[type=range] { width:100%; min-width:0; margin:0; }
+.ipc-fx input.ipc-fxcolor { width:100%; min-width:0; height:20px; margin:0; padding:0 2px; border:1px solid var(--sc-line, #111); border-radius:var(--sc-radius-sm, 3px); background:none; cursor:pointer; }
+.ipc-fx b.ipc-hex { width:auto; font-family:ui-monospace, monospace; }
 .ipc-fx b { width:42px; text-align:right; font-weight:500; color:var(--sc-fg-2, #bbb); }
 .ipc-fx .ipc-lutrow { grid-column:1 / -1; display:flex; gap:6px; align-items:center; min-width:0; }
 .ipc-fx .ipc-lutrow span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--sc-fg-2, #aaa); }
@@ -6644,7 +6646,8 @@ class InpaintEditor {
                 const mask = s.mask ? s.mask.clone() : null;
                 if (mask) clones.push(mask);
                 const clip = s.clip ? heldOf.get(s.clip) || null : null;
-                steps.push({ filter: s.filter, plain: !mask && s.alpha === 255 && !s.op && !clip, mask, alpha: s.alpha, op: s.op | 0, clip });
+                const over = !!(FILTERS[s.filter.filter] && FILTERS[s.filter.filter].over);   // a fill layer goes over the band as a layer
+                steps.push({ filter: s.filter, plain: !mask && s.alpha === 255 && !s.op && !clip && !over, mask, alpha: s.alpha, op: s.op | 0, clip });
                 reach += s.reach;
                 run = null;
                 return;
@@ -12263,11 +12266,18 @@ class InpaintEditor {
         if (!this.width) { this.setStatus("Load an image first."); return null; }
         if (!FILTERS[id]) id = "grain";
         this.filterCounter += 1;
+        const params = filterDefaults(id);
+        // a colour fill starts in the paint colour, a gradient from it to transparent
+        const paint = /^#[0-9a-f]{6}$/i.test(this.color || "") ? this.color.toLowerCase() : null;
+        if (paint && id === "fill") params.color = paint;
+        if (paint && id === "gradient") { params.from = paint; params.to = paint; params.to_opacity = 0; }
         const layer = this.addLayer({
-            name: `${FILTERS[id].label} ${this.filterCounter}`, kind: "filter", filter: id, params: filterDefaults(id), lut: null,
+            name: `${FILTERS[id].label} ${this.filterCounter}`, kind: "filter", filter: id, params, lut: null,
             ref: null, px: this.pixels.Layer.empty(this.width, this.height), x: 0, y: 0, w: this.width, h: this.height, dirty: false,
         });
-        this.setStatus(`${layer.name} added. It filters everything below it; pick the type and drag the sliders in the layer list.`);
+        this.setStatus(FILTERS[id].over
+            ? `${layer.name} added. It covers everything below it; set the colour in the layer list, the blend mode, the opacity or a mask to let the picture through.`
+            : `${layer.name} added. It filters everything below it; pick the type and drag the sliders in the layer list.`);
         return layer;
     }
 
@@ -12282,10 +12292,33 @@ class InpaintEditor {
         this.renderLayers();
     }
 
+    /** A fill layer (PLAN_0_1_31 §6 step 6): a filter layer whose type gives pixels of its own (`over`: a colour, a gradient). */
+    isFillLayer(l) {
+        return !!(l && l.kind === "filter" && FILTERS[l.filter] && FILTERS[l.filter].over);
+    }
+
+    /** A fill layer's pixels at the picture's size as a canvas (the PSD / ORA layer), with its live mask baked in when `bake`. */
+    fillLayerCanvas(l, bake) {
+        const W = this.width, H = this.height;
+        const c = makeCanvas(W, H), ctx = c.getContext("2d");
+        ctx.putImageData(new ImageData(fillPixels(l.filter, l.params || {}, [W, H], [0, 0], W, H), W, H), 0, 0);
+        const m = bake ? this.liveMask(l) : null;
+        if (m) { ctx.globalCompositeOperation = "destination-in"; m.drawTo(ctx, 0, 0, W, H); ctx.globalCompositeOperation = "source-over"; }
+        return c;
+    }
+
+    /** `exportLayerSources`' `open` of a fill layer: its rows as `fillPixels` makes them, band by band; drawn once into a canvas when its live mask is to be baked (ORA). */
+    fillLayerRows(l, bake) {
+        const W = this.width, H = this.height, id = l.filter, p = JSON.parse(JSON.stringify(l.params || {}));
+        if (bake && this.liveMask(l)) return () => { const c = this.fillLayerCanvas(l, true); return { source: canvasRows(c), close() { c.width = 1; c.height = 1; } }; };
+        return () => ({ source: bandRows(W, H, (y0, y1) => fillPixels(id, p, [W, H], [0, y0], W, y1 - y0)), close() {} });
+    }
+
     markFilterChanged(layer, { soon = false } = {}) {
         layer._fcache = null;
         layer._fcacheView = null; layer._fcacheSample = null; layer._fxCacheSample = null;
         this.uploaded.baseHash = null;
+        if (this.isFillLayer(layer)) this.redrawThumbsOf(layer);   // a fill layer's row shows its fill
         if (soon) { this.drawSoon(); return; }   // slider drag: one draw per frame, thumbnail and save on release
         this.draw();
         this.drawThumb();
@@ -12441,7 +12474,8 @@ class InpaintEditor {
         if (chain && preview) chain = this.flushFilterChain(ctx, chain);   // the preview downscales on a canvas
         // A filter layer that covers its input one to one can leave its result on the GPU; a
         // mask, an opacity or a blend mode has to composite it onto the canvas.
-        const plain = !this.liveMask(layer) && layer.opacity >= 1 && (!layer.blend || layer.blend === "normal") && !preview && !clip;
+        // a fill layer (`over`) goes over the picture as a layer does: its result never stands for the picture
+        const plain = !this.liveMask(layer) && layer.opacity >= 1 && (!layer.blend || layer.blend === "normal") && !preview && !clip && !this.isFillLayer(layer);
         const keepSurface = plain && more && !this.filterChainOff && glChainUsable(ctx.canvas.width, ctx.canvas.height);
         const out = this.filteredCanvas(layer, chain ? chain.surface : ctx.canvas, forRun, preview, keepSurface);
         const rx = vp ? vp.x : 0, ry = vp ? vp.y : 0;
@@ -13077,6 +13111,12 @@ class InpaintEditor {
     drawLayerThumb(canvas, layer) {
         const ctx = canvas.getContext("2d");
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (this.isFillLayer(layer)) {
+            // a fill layer: its fill (a gradient's transparent end shows the thumbnail's background)
+            const w = canvas.width, h = canvas.height;
+            ctx.putImageData(new ImageData(fillPixels(layer.filter, layer.params || {}, [w, h], [0, 0], w, h), w, h), 0, 0);
+            return;
+        }
         if (layer.kind === "filter") {
             ctx.fillStyle = "#3a2f52";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -13831,14 +13871,15 @@ class InpaintEditor {
         let skipped = 0;
         for (const l of this.layers) {
             if (sec) layers.push(...sec.at(l));
-            if (l.kind === "filter" || !l.px) { skipped++; continue; }
+            if ((l.kind === "filter" && !this.isFillLayer(l)) || !l.px) { skipped++; continue; }
             const w = Math.max(1, Math.round(l.w)), h = Math.max(1, Math.round(l.h));
             const c = makeCanvas(w, h);
             const ctx = c.getContext("2d");
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = "high";
             const keepMask = psd && !!l.maskPx;
-            ctx.drawImage(keepMask ? this.layerWithStroke(l) : this.layerPixels(l), 0, 0, w, h);
+            if (this.isFillLayer(l)) ctx.drawImage(this.fillLayerCanvas(l, !keepMask), 0, 0, w, h);   // its fill, the live mask baked unless it goes along
+            else ctx.drawImage(keepMask ? this.layerWithStroke(l) : this.layerPixels(l), 0, 0, w, h);
             let mask = null;
             if (keepMask) {
                 // the mask at the pixels' export size, the same resampling as the pixels
@@ -13884,7 +13925,7 @@ class InpaintEditor {
         const sections = (list) => list.map((meta) => ({ meta, open: null }));
         for (const l of this.layers) {
             if (sec) out.push(...sections(sec.at(l)));
-            if (l.kind === "filter" || !l.px) { skipped++; continue; }
+            if ((l.kind === "filter" && !this.isFillLayer(l)) || !l.px) { skipped++; continue; }
             const w = Math.max(1, Math.round(l.w)), h = Math.max(1, Math.round(l.h));
             const aside = this.isControl(l) || this.isReference(l);
             const mask = psd ? l.maskPx : null;   // kept as a mask, switched off or not
@@ -13894,7 +13935,7 @@ class InpaintEditor {
             const smooth = (ctx) => { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; };
             out.push({
                 meta: { name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), opacity: l.opacity ?? 1, visible: (psd ? l.visible !== false : this.shown(l)) && !aside, blend: l.blend || "normal", ...(mask ? { mask: { disabled: !!l.maskOff } } : {}), ...(psd && this.clipBaseOf(l) ? { clip: true } : {}) },
-                open: plain ? fromTiles(l.px) : fromCanvas((ctx) => { smooth(ctx); ctx.drawImage(mask ? this.layerWithStroke(l) : this.layerPixels(l), 0, 0, w, h); }, w, h),
+                open: this.isFillLayer(l) ? this.fillLayerRows(l, !mask) : plain ? fromTiles(l.px) : fromCanvas((ctx) => { smooth(ctx); ctx.drawImage(mask ? this.layerWithStroke(l) : this.layerPixels(l), 0, 0, w, h); }, w, h),
                 // the mask at the pixels' size: its own tiles when it has that size already, else drawn to it
                 ...(mask ? { openMask: isTilePixels(mask) && mask.width === w && mask.height === h && still ? fromTiles(mask) : fromCanvas((ctx) => { smooth(ctx); mask.drawTo(ctx, 0, 0, w, h); }, w, h) } : {}),
             });
@@ -14886,7 +14927,7 @@ class InpaintEditor {
             top.appendChild(name);
             const refIndex = this.isReference(layer) ? this.referenceLayers().indexOf(layer) : -1;
             const isFx = layer.kind === "filter";
-            const kindText = isFx ? "filter" : (this.isControl(layer) ? layer.role : (this.isReference(layer) ? (refIndex >= 0 ? refBadge(refIndex) : "ref (hidden)") : layer.kind));
+            const kindText = isFx ? (this.isFillLayer(layer) ? "fill" : "filter") : (this.isControl(layer) ? layer.role : (this.isReference(layer) ? (refIndex >= 0 ? refBadge(refIndex) : "ref (hidden)") : layer.kind));
             if (isFx || this.isControl(layer)) {
                 top.appendChild(el("span", "ipc-kind" + (isFx ? " ipc-fxk" : " ipc-ctrl"), kindText));
             } else {
@@ -15209,8 +15250,10 @@ class InpaintEditor {
         const stop = (e) => e.stopPropagation();
         const typeSel = document.createElement("select");
         typeSel.className = "ipc-sel";
-        typeSel.title = "Filter type";
-        for (const id of FILTER_IDS) { const o = document.createElement("option"); o.value = id; o.textContent = FILTERS[id].label; typeSel.appendChild(o); }
+        // a fill layer picks among the fills, a filter layer among the filters
+        const fill = !!(FILTERS[layer.filter] && FILTERS[layer.filter].over);
+        typeSel.title = fill ? "Fill type" : "Filter type";
+        for (const id of FILTER_IDS) { if (!!FILTERS[id].over !== fill) continue; const o = document.createElement("option"); o.value = id; o.textContent = FILTERS[id].label; typeSel.appendChild(o); }
         // a filter whose plugin is off or missing keeps its id and settings and passes the picture through; picking a
         // type replaces it
         const missing = !FILTERS[layer.filter];
@@ -15323,6 +15366,36 @@ class InpaintEditor {
                     this.markFilterChanged(layer);
                 });
                 box.appendChild(cb);
+                box.appendChild(val);
+                continue;
+            }
+            if (p.type === "color") {
+                // a fill's colour: the picture follows the picker while it is open, one undo step when it closes
+                const [r, g, b] = hexRgb(cur);
+                const hex = (v) => "#" + v.map((c) => c.toString(16).padStart(2, "0")).join("");
+                const ci = document.createElement("input");
+                ci.type = "color"; ci.className = "ipc-fxcolor"; ci.value = hex([r, g, b]); ci.title = p.label;
+                val.textContent = ci.value;
+                val.className = "ipc-hex";
+                ci.addEventListener("click", stop);
+                ci.addEventListener("pointerdown", stop);
+                ci.addEventListener("keydown", stop);
+                ci.addEventListener("input", () => {
+                    if (!layer._undoPending) layer._undoPending = this.snapshot({ kind: "filter", id: layer.id });
+                    layer.params[p.key] = ci.value;
+                    val.textContent = ci.value;
+                    this.filterPreview = layer.id;
+                    this.markFilterChanged(layer, { soon: true });
+                });
+                ci.addEventListener("change", () => {
+                    this.filterPreview = null;
+                    if (layer._undoPending) { this.pushUndoSnapshot(layer._undoPending, { label: stepLabel(p) }); layer._undoPending = null; }
+                    else if (layer.params[p.key] !== ci.value) this.pushUndo({ kind: "filter", id: layer.id, label: stepLabel(p) });
+                    layer.params[p.key] = ci.value;
+                    val.textContent = ci.value;
+                    this.markFilterChanged(layer);
+                });
+                box.appendChild(ci);
                 box.appendChild(val);
                 continue;
             }

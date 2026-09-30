@@ -221,11 +221,14 @@ A filter in Scumble is a layer, not a one-way change to your pixels. Add one and
 
 The built-in set covers the photographic basics: grain with film presets, curves, levels, colour balance, HSL, exposure and contrast, sharpen, blur, normalise, vignette, and LUTs from .cube files. They run on the GPU through WebGL2, so they stay interactive on large pictures, with a processor path as a fallback.
 
+A fill layer works the same way but paints instead of filtering: the fill button in the layer list adds a layer of one colour (the paint colour to start with), and its row turns it into a gradient, linear, reflected or radial, between two colours that each have their own opacity, with an angle, a scale and a centre you can move. It covers what is below it until its blend mode, its opacity or a mask lets the picture through, and it can be changed as long as the document exists. PSD and ORA exports write it as an ordinary layer of pixels.
+
 The film pack is a plugin that ships with the app and goes further: film looks with real film names, halation, glow, bleach bypass, cross processing, split toning, light leaks, frames, and control points that steer a look locally. The names are there so you know what a look is after; the values are Scumble's own approximations, not licensed manufacturer data, and the tooltip and the About dialog say so.
 
 ### Notes
 
 - A filter layer over an inpaint result is often the cheapest way to make the result belong: one grain layer over everything hides a lot of difference in texture.
+- A gradient fill from a colour to transparent in multiply or overlay is a quick graduated filter for a sky; a warm colour fill in soft light at a low opacity warms the whole picture.
 - LUTs: drop a .cube file into the LUT filter and it is applied at full precision, with a strength slider.
 - Filters render in tiles on large documents, so a 15,000 pixel picture does not stall the window.
 

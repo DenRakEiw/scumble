@@ -41,6 +41,14 @@ the section for its version; `docs/` and the commit history hold the technical d
   in PSD files both ways (a group's opacity goes into its layers when a PSD opens, and says so); ORA gets the layers
   without the groups, those of a hidden group hidden. Agents use `group_layers`, `ungroup_layers` and `set_group`, and
   `list_layers` lists the groups and says which group each layer is in.
+- **Fill layers.** The new button beside the filter button in the layer list adds a layer of one colour, which starts in
+  the paint colour; its row switches it to a gradient: linear along an angle, reflected from the centre both ways, or
+  radial from the centre out, from one colour to another, each end with its own opacity, with a scale and a movable
+  centre. The row's picker and sliders change it at any time, and each change is one undo step. A fill layer covers
+  what lies below it, and its blend mode, opacity and mask let the picture through: a gradient to transparent in
+  multiply darkens one side and leaves the other as it is. It stays sharp at any size and is saved with the document.
+  PSD and ORA files get it as a layer of pixels (PSD with its mask, ORA with the mask applied). Agents add one with
+  `add_filter` of type `fill` or `gradient`, and `filter_types` marks the fill types.
 
 ## 0.1.34 — 2026-09-29
 

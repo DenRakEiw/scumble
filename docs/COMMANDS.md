@@ -118,7 +118,7 @@ Run a plugin action (a Plugins menu entry) on the document.
 
 ### `filter_types` *(app)*
 
-The filter layer types (built-in and from plugins) with their parameters.
+The filter layer types (built-in and from plugins) with their parameters; `fill: true` marks a fill layer's type (fill: a colour, gradient: two colours with their opacities), which covers what is below instead of filtering it.
 
 (no parameters)
 
@@ -570,7 +570,7 @@ Change a layer's mask (white = the layer shows): invert it; reveal (all) or hide
 
 ### `add_filter` *(image)*
 
-Add a non-destructive filter layer on top of the stack (see filter_types for types and params).
+Add a non-destructive filter layer on top of the stack (see filter_types for types and params). A fill layer is one too: type "fill" (params color "#rrggbb") or "gradient" (shape linear / reflected / radial, from, to, from_opacity, to_opacity, angle, scale, x, y); it covers what is below, and set_layer's opacity, blend and a mask let the picture through.
 
 | param | type | description |
 |---|---|---|
