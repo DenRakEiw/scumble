@@ -198,8 +198,9 @@ async function buildLayered(format, { width, height, layers, composite }) {
         try {
             await workerCall("export_begin", { job, format, width, height });
             for (const L of layers) {
+                if (L.section) { await workerCall("export_layer", { job, meta: { ...L } }); continue; }   // a group's record (PSD)
                 const bitmap = await createImageBitmap(L.canvas);
-                const meta = { name: L.name, x: L.x, y: L.y, opacity: L.opacity, visible: L.visible, blend: L.blend };
+                const meta = { name: L.name, x: L.x, y: L.y, opacity: L.opacity, visible: L.visible, blend: L.blend, ...(L.clip ? { clip: true } : {}) };
                 let maskBitmap = null;
                 if (format === "psd" && L.mask) {
                     try { maskBitmap = await createImageBitmap(L.mask.canvas); } catch (err) { bitmap.close(); throw err; }

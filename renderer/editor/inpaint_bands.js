@@ -267,6 +267,18 @@ function luni(name) {
     return out;
 }
 
+/** The `lsct` block of a group's record: the kind (1 / 2 folder, 3 divider), and for a folder its blend mode, pass through. */
+function lsctBlock(kind) {
+    const folder = kind !== 3;
+    const out = new Uint8Array(12 + (folder ? 12 : 4));
+    const v = new DataView(out.buffer);
+    out.set([0x38, 0x42, 0x49, 0x4d, 0x6c, 0x73, 0x63, 0x74], 0);   // "8BIM" "lsct"
+    v.setUint32(8, folder ? 12 : 4);
+    v.setUint32(12, kind);
+    if (folder) out.set([0x38, 0x42, 0x49, 0x4d, 0x70, 0x61, 0x73, 0x73], 16);   // "8BIM" "pass"
+    return out;
+}
+
 /**
  * The PSD of inpaint_export.js `PsdWriter`, byte for byte, from row sources: a layer is packed as soon as it is handed
  * over and kept packed (a 15000 x 10000 layer's four channels are a fraction of its 600 MB), the file is a Blob of the
@@ -332,6 +344,35 @@ export class PsdBandWriter {
         }
         this.channelBlobs.push(new Blob(pieces));
         this.channelSize += size;
+        this.count++;
+    }
+
+    /**
+     * A group's record (PLAN_0_1_31 §6.5): `S.section` 1 / 2 (the folder, above its layers; 2 = folded) or 3 (the
+     * bounding divider below them), as Photoshop writes them: no pixels (four channels of no rows), the folder in blend
+     * mode pass through, flags 24 (bit 4 "pixels irrelevant", bit 3 "bit 4 is set") plus 2 when hidden, the kind in an
+     * `lsct` block.
+     */
+    section(S) {
+        const records = this.records;   // PsdWriter.section, byte for byte
+        records.i32(0); records.i32(0); records.i32(0); records.i32(0);
+        records.u16(4);
+        for (const id of [-1, 0, 1, 2]) { records.i16(id); records.u32(2); }
+        records.ascii("8BIM");
+        records.ascii(S.section === 3 ? "norm" : "pass");
+        records.u8(255);
+        records.u8(0);
+        records.u8(24 | (S.visible === false ? 2 : 0));
+        records.u8(0);
+        const name = pascal(S.name, 4), uni = luni(S.name), lsct = lsctBlock(S.section);
+        records.u32(4 + 4 + name.length + uni.length + lsct.length);
+        records.u32(0);   // no mask
+        records.u32(0);   // blending ranges
+        records.push(name);
+        records.push(uni);
+        records.push(lsct);
+        this.channelBlobs.push(new Blob([Uint8Array.of(0, 1, 0, 1, 0, 1, 0, 1)]));   // four channels: PackBits of no rows
+        this.channelSize += 8;
         this.count++;
     }
 

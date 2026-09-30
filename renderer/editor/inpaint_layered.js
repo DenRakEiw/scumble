@@ -9,8 +9,9 @@
  * at the layer's own size (255 = visible; the mask's own rectangle placed in it, its default colour around it),
  * `disabled` its switched-off flag; the pixels stay as they are (docs/PLAN_0_1_31.md 3e). A layer without one has
  * no `mask`. What a PSD holds and the editor has no place for is turned into what it looks like, where that is cheap
- * and exact enough: a group's visibility and opacity go into its layers'
- * (exact for a group in pass-through or normal mode), 16-bit samples are rounded to 8. What has no pixels of its own
+ * and exact enough: a group comes back as a folder (`groups` [{ id, name, visible, collapsed, parent }], a layer's
+ * `group` the innermost it is in; PLAN_0_1_31 §6.5), its opacity goes into its layers' (a folder has none; exact for a
+ * group in pass-through or normal mode), 16-bit samples are rounded to 8. What has no pixels of its own
  * is left out and named: adjustment and fill layers, empty layers. A clipped layer stays clipped to the layer below
  * (`clip`) unless its base was a group or a layer left out; that, and blend modes the editor lacks, are named too
  * (the layer stays, unclipped or in normal mode). RGB and grayscale, 8 and 16 bit; PSB,
@@ -18,7 +19,8 @@
  * for ZIP-compressed channels (Photoshop writes RLE unless told otherwise).
  *
  * `readOra(bytes, { inflateRaw })` answers `{ width, height, layers, notes }`, each layer with its PNG as `png`
- * (bytes) instead of `rgba`, for the caller to decode; nested stacks are flattened the same way as PSD groups.
+ * (bytes) instead of `rgba`, for the caller to decode; nested stacks are flattened: their visibility and opacity go
+ * into their layers.
  */
 
 export const LAYERED_EXT = /\.(psd|ora)$/i;
@@ -176,6 +178,12 @@ function sectionType(bytes) {
     return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
 }
 
+/** A group's blend mode from its `lsct` block ("8BIM" and the key after the kind), null when the block has none. */
+function sectionBlend(bytes) {
+    if (!bytes || bytes.length < 12) return null;
+    return String.fromCharCode(...bytes.subarray(8, 12));
+}
+
 /** Straight RGBA from the planar channels: gray replicated, a missing alpha opaque. */
 function interleave(ch, w, h, gray) {
     const n = w * h, out = new Uint8ClampedArray(n * 4);
@@ -286,6 +294,7 @@ export async function readPsd(input, { inflate = null } = {}) {
                 r.p = extraEnd;
                 L.name = unicodeName(L.info.luni) || L.name;
                 L.section = sectionType(L.info.lsct || L.info.lsdk);
+                if (L.section === 1 || L.section === 2) L.groupBlend = sectionBlend(L.info.lsct || L.info.lsdk) || L.blendKey;
                 records.push(L);
             }
             // channel image data, in record order
@@ -335,26 +344,31 @@ export async function readPsd(input, { inflate = null } = {}) {
             }
         } catch (_) { composite = null; }
     }
-    // records are bottom first; groups are a bounding divider (3) below their layers and a folder record (1 / 2) above
-    const layers = [];
-    let open = 0;   // open groups
-    const adjust = [], empty = [], clipped = [], blends = [];
-    let masks = 0, masksOff = 0, grouped = 0, clips = 0;
+    // records are bottom first; groups are a bounding divider (3) below their layers and a folder record (1 / 2) above.
+    // A group comes back as a folder (PLAN_0_1_31 §6.5): `groups` [{ id, name, visible, collapsed, parent }], a layer's
+    // `group` its innermost; a folder has no opacity or blend of its own here, so a group's opacity goes into its layers
+    const layers = [], groups = [];
+    const stack = [];   // the groups open at this record, innermost last: { id, parent, from }
+    const adjust = [], empty = [], clipped = [], blends = [], groupBlends = [];
+    let masks = 0, masksOff = 0, clips = 0, faded = 0;
     // a clipped record is clipped to the nearest record below it that is not clipped (PLAN_0_1_31 §6 step 3): kept when
     // that base became a layer here; a group (flattened into its layers) or a left-out layer as the base drops the clip
     let baseKept = false;
     for (const L of records) {
-        if (L.section === 3) { open++; baseKept = false; continue; }   // a group's bounding divider, below its layers
+        if (L.section === 3) {   // a group's bounding divider, below its layers
+            stack.push({ id: "g" + (groups.length + stack.length + 1), parent: stack.length ? stack[stack.length - 1].id : null, from: layers.length });
+            baseKept = false;
+            continue;
+        }
         if (L.section === 1 || L.section === 2) {
             baseKept = false;
-            // the folder record above them: its visibility and opacity go into every layer since the divider
-            open = Math.max(0, open - 1);
-            for (let i = layers.length - 1; i >= 0 && layers[i]._depth > open; i--) {
-                layers[i].opacity *= L.opacity;
-                if (L.flags & 2) layers[i].visible = false;
-                layers[i]._depth = open;
-            }
-            grouped++;
+            // the folder record above them: every layer since its divider is in it
+            const g = stack.pop();
+            if (!g) continue;   // a folder without its divider
+            if (L.opacity < 1) { faded++; for (let i = g.from; i < layers.length; i++) layers[i].opacity *= L.opacity; }
+            const gb = String(L.groupBlend || "pass");
+            if (gb !== "pass" && gb !== "norm") groupBlends.push(`${L.name || "Group"} (${gb.trim()})`);
+            groups.push({ id: g.id, name: L.name || "Group", visible: !(L.flags & 2), collapsed: L.section === 2, parent: g.parent });
             continue;
         }
         const w = L.right - L.left, h = L.bottom - L.top;
@@ -369,22 +383,23 @@ export async function readPsd(input, { inflate = null } = {}) {
         if (L.clipping && !clip) clipped.push(L.name);
         if (clip) clips++;
         if (!L.clipping) baseKept = true;
-        const layer = { name: L.name || "Layer", x: L.left, y: L.top, w, h, opacity: L.opacity, visible: !(L.flags & 2), blend, rgba, _depth: open };
+        const layer = { name: L.name || "Layer", x: L.left, y: L.top, w, h, opacity: L.opacity, visible: !(L.flags & 2), blend, rgba, group: stack.length ? stack[stack.length - 1].id : null };
         if (clip) layer.clip = true;
         if (mask) layer.mask = mask;
         layers.push(layer);
     }
-    for (const l of layers) delete l._depth;
     if (adjust.length) notes.push(`${adjust.length} adjustment or fill layer${adjust.length > 1 ? "s" : ""} left out (${listNames(adjust)}): the picture can look different`);
     if (clips) notes.push(`${clips} clipped layer${clips > 1 ? "s" : ""} kept clipped`);
     if (clipped.length) notes.push(`clipping to a group or a left-out layer is not kept (${listNames(clipped)} now cover${clipped.length > 1 ? "" : "s"} more)`);
     if (blends.length) notes.push(`blend modes the editor lacks became normal: ${listNames(blends)}`);
     if (masks === 1) notes.push(`1 layer mask kept as a mask${masksOff ? " (switched off)" : ""}`);
     else if (masks > 1) notes.push(`${masks} layer masks kept as masks${masksOff ? ` (${masksOff === masks ? "all" : masksOff} switched off)` : ""}`);
-    if (grouped) notes.push(`${grouped} group${grouped > 1 ? "s" : ""} flattened into their layers`);
+    if (groups.length) notes.push(`${groups.length} group${groups.length > 1 ? "s" : ""} kept as folder${groups.length > 1 ? "s" : ""}`);
+    if (faded) notes.push(`the opacity of ${faded} group${faded > 1 ? "s" : ""} went into ${faded > 1 ? "their" : "its"} layers`);
+    if (groupBlends.length) notes.push(`groups are folders here, their blend modes became pass through: ${listNames(groupBlends)}`);
     if (depth === 16) notes.push("16 bits per channel rounded to 8");
     if (empty.length && !layers.length && !composite) notes.push("no layer has pixels");
-    return { width, height, layers, composite, notes };
+    return { width, height, layers, groups, composite, notes };
 }
 
 // ---- OpenRaster -------------------------------------------------------------------------

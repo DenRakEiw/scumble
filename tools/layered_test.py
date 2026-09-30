@@ -6,7 +6,7 @@ No ComfyUI, no key. First `node tools/layered_test.js` (the reader on files buil
   transparent edge) saved as PSD and as ORA through the `export` command, then opened with `load_image`: the same
   size, the base's bytes, every layer's name, box, opacity, visibility, blend and bytes;
 - a file whose bottom layer does not cover the picture opens over a transparent base, its mask kept as a mask (the
-  pixels untouched) and its hidden group hidden, with the notes in the status line;
+  pixels untouched) and its hidden group a hidden folder (its layer's own eye on), with the notes in the status line;
 - layer masks (docs/PLAN_0_1_31.md 3e): a painted layer with a feathered mask from a selection and an image layer whose
   mask is switched off, saved as PSD by the band writer (on tiles) and by the canvas writers (`bands` off), opened
   again: the pixels raw, the masks byte for byte, the switch kept, the note; the worker's layers equal the main
@@ -121,7 +121,10 @@ const names = ed.layers.map((l) => l.name);
 if (JSON.stringify(names) !== JSON.stringify(["Corner", "Hidden inside", "Masked"])) throw new Error("layers: " + names.join(", "));
 const [corner, hidden, masked] = ed.layers;
 if (corner.x !== 3 || corner.y !== 2 || corner.w !== 10 || corner.h !== 8) throw new Error("Corner's box: " + JSON.stringify(shape(corner)));
-if (hidden.visible !== false || corner.visible === false) throw new Error("the hidden group did not hide its layer only");
+// the hidden group comes back as a hidden folder (PLAN_0_1_31 §6.5): its layer keeps its own eye and is not drawn
+const grp = ed.groups.length === 1 ? ed.groups[0] : null;
+if (!grp || grp.name !== "Group" || grp.visible !== false || hidden.group !== grp.id || corner.group || masked.group) throw new Error("the group: " + JSON.stringify(ed.groups) + " " + JSON.stringify(ed.layers.map((l) => l.group)));
+if (hidden.visible !== true || ed.shown(hidden) || !ed.shown(corner)) throw new Error("the hidden group did not hide its layer only");
 // the mask (255 over the left half of the layer, default 0 elsewhere) comes back as a mask, the pixels untouched
 const m = bytesOf(masked.px, 20, 30);
 const alpha = (x, y) => m[(y * 20 + x) * 4 + 3];
@@ -131,7 +134,7 @@ const mm = bytesOf(masked.maskPx, 20, 30);
 const ma = (x, y) => mm[(y * 20 + x) * 4 + 3];
 if (ma(2, 5) !== 255 || ma(9, 29) !== 255 || ma(10, 0) !== 0 || ma(15, 5) !== 0 || masked.maskOff) throw new Error(`the mask: ${ma(2, 5)} ${ma(9, 29)} ${ma(10, 0)} ${ma(15, 5)}, off ${masked.maskOff}`);
 if (corner.maskPx || hidden.maskPx) throw new Error("a layer without a mask came back with one");
-if (!/1 layer mask kept as a mask/.test(ed.status) || /applied/.test(ed.status) || !/1 group flattened/.test(ed.status) || /as the base/.test(ed.status)) throw new Error("status: " + ed.status);
+if (!/1 layer mask kept as a mask/.test(ed.status) || /applied/.test(ed.status) || !/1 group kept as folder/.test(ed.status) || /as the base/.test(ed.status)) throw new Error("status: " + ed.status);
 // the ORA of the same shape: its bottom layer does not cover the picture either; screen at half opacity comes back
 await run("load_image", { doc: d.id, path: %(LOOSE_ORA)s });
 const o = ednow(d.id);

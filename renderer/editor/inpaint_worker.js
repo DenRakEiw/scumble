@@ -823,6 +823,7 @@ async function run(msg) {
     if (msg.op === "export_layer") {
         const job = exports_.get(msg.job);
         if (!job) { for (const b of [msg.bitmap, msg.maskBitmap]) if (b) b.close(); throw new Error("unknown export job"); }
+        if (msg.meta && msg.meta.section) { job.writer.section(msg.meta); return {}; }   // a group's record (PSD)
         // a PSD layer's mask comes as a second bitmap (its alpha the mask), `meta.mask` its flags
         const { mask, ...meta } = msg.meta;
         if (msg.maskBitmap) meta.mask = { canvas: canvasOf(msg.maskBitmap), disabled: !!(mask && mask.disabled) };

@@ -388,7 +388,7 @@ Upscale with the selected upscale recipe (list_recipes: task "upscale"; select_r
 
 ### `list_layers`
 
-All layers bottom to top with their properties; `selected` lists the layers selected with the active one.
+All layers bottom to top with their properties; `selected` lists the layers selected with the active one; `groups` the folders (a layer's `group` is the innermost it is in, `parent` a group's).
 
 | param | type | description |
 |---|---|---|
@@ -466,7 +466,7 @@ Merge a layer into the one below it (into the base image if it is the lowest).
 
 ### `move_layer`
 
-Reorder a layer: to = up, down, top, bottom, or delta = ±n.
+Reorder a layer: to = up, down, top, bottom, or delta = ±n. A step goes past the next layer, into a group next to it or out of its own group at its end; top and bottom leave every group.
 
 | param | type | description |
 |---|---|---|
@@ -505,6 +505,38 @@ Align the selected layers (or `layers`, which get selected) on an edge or a cent
 | `align` | string | the edge or centre to line up (one of `left`, `hcenter`, `right`, `top`, `vcenter`, `bottom`) |
 | `distribute` | string | equal gaps along x (horizontal) or y (vertical); three layers at least within the selection, two across the canvas (one of `x`, `y`) |
 | `to` | string | selection (the box around the layers) or canvas (default `"selection"`; one of `selection`, `canvas`) |
+
+### `group_layers`
+
+Put layers into a new group, a folder in the layer list (the selected layers, or `layers`): its eye hides and its lock locks all of them; it has no opacity or blend mode of its own. The group takes the place of the topmost of them; a group whose layers are all given goes in whole. One undo step; the group's layers become the selection.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `layers` | array | the layers (ids, names or unique name fragments); default: the selected layers |
+| `name` | string | the group's name (default Group n) |
+
+### `ungroup_layers`
+
+Dissolve a group: its layers and groups stay where they are, in the group around it. One undo step.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `group` | string | the group: id or name (required) |
+
+### `set_group`
+
+Change a group: name, visible (hides every layer in it, their own eyes stay), locked (locks every layer in it), collapsed (folded in the layer list). The switches take no undo step, as a layer's eye and lock; a new name does.
+
+| param | type | description |
+|---|---|---|
+| `doc` | integer | document id (default the active tab) |
+| `group` | string | the group: id or name (required) |
+| `name` | string |  |
+| `visible` | boolean |  |
+| `locked` | boolean |  |
+| `collapsed` | boolean |  |
 
 ### `flatten` *(image)*
 

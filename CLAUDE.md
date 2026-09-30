@@ -113,9 +113,15 @@ commit 5d95c91 deployed (Vercel: success).
   clipping (`layer.clip`; Alt+click the line between two rows, Ctrl+Alt+G, the row menu; `set_layer clip`; PSD both ways)
   on every path, the clip being the base's coverage used as the layer's mask: not an isolated group, so at a partial
   coverage it differs from Photoshop's group (the plan's 6.3 "Built"); `composite_tile` unchanged; gate `clip` (both
-  backends, 13 mutations red), 15k measured. **Next: 6.5 groups as folders (full tier; 6.4 came in 0.1.31), then 6.6.**
-  Open for the user: how the multi-selection, the solo and the align row feel (and whether aligning by painted pixels is
-  wanted); whether the clip at soft edges looks right or wants the isolated group (7 - 9 days).
+  backends, 13 mutations red), 15k measured. **6.5 built 2026-09-30 (local, not pushed):** groups as folders
+  (`ed.groups` beside the flat stack, `layer.group`; pass-through: `shown(l)` / `isLocked(l)` in every walk and guard;
+  Ctrl+G, the group row with fold / eye / lock / ungroup / trash, drag into groups, Ctrl+] / [ through the tree; PSD
+  `lsct` both ways, a dropped PSD too; `.scumble`; MCP `group_layers`, `ungroup_layers`, `set_group`); gate `groups`
+  (both backends, 19 mutations red), 15k measured (no cost); the worker PSD path dropped `clip` before (fixed).
+  **Next: 6.6 fill layers.** Open for the user: how the multi-selection, the solo and the align row feel (and whether
+  aligning by painted pixels is wanted); whether the clip at soft edges looks right or wants the isolated group (7 - 9
+  days); groups: empty groups are not kept (a group lives as long as it has a layer), no ungroup key (Ctrl+Shift+G is
+  the grid), groups with their own opacity / blend only on their word (7 - 9 days).
 - **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
   of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
   point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
@@ -186,7 +192,7 @@ port 9555 with its own profile (with `test_base.png`), runs each gate with a tim
 `dist/gates/gates/<label>/` (or `$SCUMBLE_GATES`). `tools/close_app.py` closes an instance by its DevTools port
 (`SCUMBLE_CDP_PORT`). Gates: `pixels editor composite commands shape brush film glb ailabel size transparent generate log
 mcp nodecopy toapis openrouter ark recipes assistant llm export pxjobs upscale layered platform lint types help skins
-magnific oxen quit document docux metadata tiff canvasonly clip`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
+magnific oxen quit document docux metadata tiff canvasonly clip groups`, plus `docperf:<W>x<H>` (a .scumble save and open at size), `smoke` (a real Flux run; check `/queue` first, and not while the user needs
 ComfyUI), `perf:<W>x<H>`, `exportperf:<W>x<H>[,--filter=film.look]`, `tiffperf:<W>x<H>` (a TIFF export and open at size) and `huge:<W>x<H>` (the 30k gate; it refuses to run
 against a connected instance). `quit` and `quit:<W>x<H>` start and close their own instances (port +17): a test that
 closes the app must send WM_CLOSE, since a page's `window.close()` skips the window's close event. **`--offline` starts the instance with `--no-comfy`**: it does not connect, so no upload is

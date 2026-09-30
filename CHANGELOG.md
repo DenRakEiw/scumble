@@ -29,6 +29,18 @@ the section for its version; `docs/` and the commit history hold the technical d
   the layer it clips to bakes the clip in. The clip is saved with the document and kept in PSD files both ways (a
   layer clipped to a group or to a layer Scumble leaves out opens unclipped, and says so); ORA has no clipping. Agents
   switch it with `set_layer` `clip`, and `list_layers` says what each clipped layer clips to.
+- **Groups.** Ctrl+G (or *Group layers* in a row's right-click menu) puts the selected layers into a group, a folder in
+  the layer list with its own row: fold it open or shut, hide every layer in it with its eye (their own eyes stay as
+  they were), lock them all with its lock, rename it with a double click. A click on the group's row selects its layers,
+  so they move and scale together. Drag a layer onto a row to put it next to that row in the same group; drag it onto
+  the lower half of a group's row to put it into the group at its top; groups drag the same way, and groups go inside
+  groups. Ctrl+] and Ctrl+[ step a layer past the next one, into a group next to it or out of its own. Ungroup leaves
+  the layers where they are; the group's trash deletes it with its layers. Each change of the list is one undo step, the
+  eye, lock and fold of a group take none, as a layer's do. A group has no opacity or blend mode of its own: the layers
+  in it are drawn as if it were not there. A clip stays inside its group. Groups are saved with the document and kept
+  in PSD files both ways (a group's opacity goes into its layers when a PSD opens, and says so); ORA gets the layers
+  without the groups, those of a hidden group hidden. Agents use `group_layers`, `ungroup_layers` and `set_group`, and
+  `list_layers` lists the groups and says which group each layer is in.
 
 ## 0.1.34 — 2026-09-29
 

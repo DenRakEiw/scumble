@@ -65,6 +65,11 @@ export function layerSummary(ed, l) {
     // a reference's label: what @img1 in the prompt names (null while it is hidden: its tokens wait as @img?<id>)
     if (ed.isReference(l)) { const n = ed.refLabels().get(l.id); out.label = n ? "img" + n : null; }
     if (l.clip) { const b = ed.clipBaseOf ? ed.clipBaseOf(l) : null; out.clip_base = b ? b.id : null; }   // null: the clip has no effect
+    if (l.group && ed.groupById) {   // the innermost group it is in, and whether a group's eye hides it
+        out.group = l.group;
+        if (l.visible && !ed.shown(l)) out.hidden_by_group = true;
+        if (!l.locked && ed.isLocked(l)) out.locked_by_group = true;
+    }
     if (l.maskPx && l.maskOff) out.mask_off = true;   // the mask is kept but switched off
     if (l.match && l.match.strength > 0) out.match = { strength: l.match.strength, source: l.match.source };
     if (l.kind === "filter") { out.filter = l.filter; out.params = { ...(l.params || {}) }; if (l.lut) out.lut = l.lut.name || true; }
@@ -109,6 +114,21 @@ function refsReport(ed) {
 }
 
 /** A layer by id, exact name, or unique name fragment; "active" / empty = the active layer. */
+/** A group (PLAN_0_1_31 §6.5) by id, or by name (exact, then a unique case-insensitive part). */
+export function findGroup(ed, key) {
+    const s = String(key == null ? "" : key);
+    const gs = ed.groups || [];
+    const g = gs.find((x) => x.id === s) || gs.find((x) => x.name === s);
+    if (g) return g;
+    const part = gs.filter((x) => x.name.toLowerCase().includes(s.toLowerCase()));
+    if (s && part.length === 1) return part[0];
+    throw new Error(part.length > 1 ? `"${s}" names more than one group: ${part.map((x) => x.name).join(", ")}` : `no group "${s}"${gs.length ? ` (groups: ${gs.map((x) => x.name).join(", ")})` : " (the document has none)"}`);
+}
+
+export function groupSummary(ed, g) {
+    return { id: g.id, name: g.name, visible: g.visible !== false, locked: !!g.locked, collapsed: !!g.collapsed, parent: g.parent || null, layers: ed.groupLayers(g.id).map((l) => l.id) };
+}
+
 export function findLayer(ed, key, { allowActive = true } = {}) {
     if (key == null || key === "" || (key === "active" && allowActive)) {
         const a = ed.activeLayer();
@@ -794,7 +814,7 @@ const COMMANDS = {
     },
 
     // -- layers --
-    list_layers: { description: "All layers bottom to top with their properties; `selected` lists the layers selected with the active one.", params: {}, async run(ed) { return { active: ed.activeLayerId, selected: ed.selectedLayers ? ed.selectedLayers().map((l) => l.id) : [], layers: ed.layers.map((l) => layerSummary(ed, l)) }; } },
+    list_layers: { description: "All layers bottom to top with their properties; `selected` lists the layers selected with the active one; `groups` the folders (a layer's `group` is the innermost it is in, `parent` a group's).", params: {}, async run(ed) { return { active: ed.activeLayerId, selected: ed.selectedLayers ? ed.selectedLayers().map((l) => l.id) : [], layers: ed.layers.map((l) => layerSummary(ed, l)), groups: (ed.groups || []).map((g) => groupSummary(ed, g)) }; } },
     set_active_layer: {
         description: "Make a layer the active one, or select several (`layers`: they move and scale together with the move tool, merge with Ctrl+E, delete together; the first becomes active).",
         params: { layer: P.layer("the layer: id, name or unique name fragment", { default: "" }), layers: { type: "array", items: { type: "string" }, description: "several layers (ids, names or unique name fragments) to select together" } },
@@ -875,16 +895,16 @@ const COMMANDS = {
     duplicate_layer: { description: "Duplicate a layer (the copy sits above it).", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); const c = ed.duplicateLayer(l); if (!c) throw new Error(ed.status); return layerSummary(ed, c); } },
     merge_down: { description: "Merge a layer into the one below it (into the base image if it is the lowest).", params: { layer: P.layer() }, async run(ed, a) { const l = findLayer(ed, a.layer); const n = ed.layers.length; await ed.mergeDown(l); if (ed.layers.length === n && ed.layers.includes(l)) throw new Error(ed.status); return { layers: ed.layers.map((x) => layerSummary(ed, x)), status: ed.status }; } },
     move_layer: {
-        description: "Reorder a layer: to = up, down, top, bottom, or delta = ±n.",
+        description: "Reorder a layer: to = up, down, top, bottom, or delta = ±n. A step goes past the next layer, into a group next to it or out of its own group at its end; top and bottom leave every group.",
         params: { layer: P.layer("", { required: true }), to: P.str("up, down, top or bottom", { enum: ["up", "down", "top", "bottom"] }), delta: P.int("steps up (positive) or down") },
         async run(ed, a) {
             const l = findLayer(ed, a.layer);
-            const i = ed.layers.indexOf(l);
-            let delta = 0;
-            if (a.to === "top") delta = ed.layers.length - 1 - i; else if (a.to === "bottom") delta = -i;
-            else if (a.to === "up") delta = 1; else if (a.to === "down") delta = -1; else delta = Math.round(+a.delta || 0);
-            if (delta) ed.moveLayer(l.id, delta, { undo: true });
-            return { index: ed.layers.indexOf(l), layers: ed.layers.map((x) => x.name) };
+            if (a.to === "top" || a.to === "bottom") ed.moveLayer(l.id, 0, { undo: true, to: a.to });
+            else {
+                const delta = a.to === "up" ? 1 : a.to === "down" ? -1 : Math.round(+a.delta || 0);
+                if (delta) ed.moveLayer(l.id, delta, { undo: true });
+            }
+            return { index: ed.layers.indexOf(l), group: l.group || null, layers: ed.layers.map((x) => x.name) };
         },
     },
     flip_layer: { description: "Mirror a layer horizontally (axis x) or vertically (axis y).", params: { layer: P.layer(), axis: P.str("x or y", { enum: ["x", "y"], default: "x" }) }, async run(ed, a) { const l = findLayer(ed, a.layer); ed.activeLayerId = l.id; ed.flipLayer(a.axis === "y" || a.axis === "vertical" ? "y" : "x"); return layerSummary(ed, l); } },
@@ -904,6 +924,37 @@ const COMMANDS = {
             const moved = a.align ? ed.alignLayers(a.align, opts) : ed.distributeLayers(a.distribute === "y" ? "y" : "x", opts);
             if (!moved.length && !/already in place/.test(ed.status)) throw new Error(ed.status);
             return { moved: moved.map((l) => l.id), layers: ed.alignTargets().map((l) => layerSummary(ed, l)) };
+        },
+    },
+    group_layers: {
+        description: "Put layers into a new group, a folder in the layer list (the selected layers, or `layers`): its eye hides and its lock locks all of them; it has no opacity or blend mode of its own. The group takes the place of the topmost of them; a group whose layers are all given goes in whole. One undo step; the group's layers become the selection.",
+        params: {
+            layers: { type: "array", items: { type: "string" }, description: "the layers (ids, names or unique name fragments); default: the selected layers" },
+            name: P.str("the group's name (default Group n)"),
+        },
+        async run(ed, a) {
+            const ls = Array.isArray(a.layers) && a.layers.length ? a.layers.map((x) => findLayer(ed, x, { allowActive: false })) : ed.selectedLayers();
+            if (ls.some((l) => ed.isReference(l))) throw new Error("a reference layer is in no group");
+            const g = ed.groupLayersNow(ls, { name: a.name || null });
+            if (!g) throw new Error(ed.status);
+            touch(ed);
+            return groupSummary(ed, g);
+        },
+    },
+    ungroup_layers: {
+        description: "Dissolve a group: its layers and groups stay where they are, in the group around it. One undo step.",
+        params: { group: P.str("the group: id or name", { required: true }) },
+        async run(ed, a) { const g = findGroup(ed, a.group); ed.ungroup(g.id); touch(ed); return { ungrouped: g.id, groups: ed.groups.map((x) => groupSummary(ed, x)) }; },
+    },
+    set_group: {
+        description: "Change a group: name, visible (hides every layer in it, their own eyes stay), locked (locks every layer in it), collapsed (folded in the layer list). The switches take no undo step, as a layer's eye and lock; a new name does.",
+        params: { group: P.str("the group: id or name", { required: true }), name: P.str(""), visible: P.bool(""), locked: P.bool(""), collapsed: P.bool("") },
+        async run(ed, a) {
+            const g = findGroup(ed, a.group);
+            if (a.name != null && String(a.name).trim()) ed.renameGroup(g.id, a.name);
+            for (const k of ["visible", "locked", "collapsed"]) if (a[k] != null) ed.setGroupFlag(g.id, k, !!a[k]);
+            touch(ed);
+            return groupSummary(ed, ed.groupById(g.id) || g);
         },
     },
     flatten: { needsImage: true, description: "Flatten all visible layers into the base image.", params: {}, async run(ed) { await ed.flatten(); return { layers: ed.layers.length, status: ed.status }; } },

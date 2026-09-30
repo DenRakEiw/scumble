@@ -50,6 +50,8 @@ const POLICY = {
     // ---- layers -------------------------------------------------------------------------
     add_paint_layer: AUTO, add_filter: AUTO, add_text: AUTO, set_active_layer: AUTO,
     move_layer: AUTO, duplicate_layer: AUTO, frequency_separation: AUTO, dodge_burn_layer: AUTO, flip_layer: AUTO, center_layer: AUTO, align_layers: AUTO,
+    group_layers: AUTO, ungroup_layers: AUTO,
+    set_group: (call) => (call.args && call.args.locked === false ? ASK("unlocks a group you locked") : AUTO()),
     film_apply_look: AUTO, film_add_point: AUTO,
 
     set_filter: (call) => (hasParams(call) && !call.args.type

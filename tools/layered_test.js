@@ -469,6 +469,28 @@ async function writerChecks(readPsd) {
     const sha = crypto.createHash("sha256").update(na).digest("hex");
     check("without masks both writers give the same bytes", equalBytes(na, nb), firstDiff(na, nb));
     check("without masks the bytes are the ones of before (SHA-256)", sha === NO_MASK_SHA256, sha);
+
+    // groups (PLAN_0_1_31 §6.5): the section records of both writers, the same bytes, read back as folders
+    {
+        const sect = (section, name, visible = true) => ({ section, name, visible, x: 0, y: 0, opacity: 1, blend: "normal" });
+        const list = [bare[0], sect(3, "</Layer group>"), bare[1], sect(3, "</Layer group>"), bare[2], sect(1, "Inner", false), sect(2, "Outer äö"), bare[3]];
+        const w1 = new X.PsdWriter({ width: DW, height: DH });
+        for (const L of list) { if (L.section) w1.layer(L); else w1.layer(meta(L), standIn(L.w, L.h, L.rgba)); }
+        const ga = new Uint8Array(await w1.finish(standIn(DW, DH, composite)).arrayBuffer());
+        const w2 = new BW.PsdBandWriter({ width: DW, height: DH, run: runWith(packs[packs.length - 1][1]), flights: 2 });
+        for (const L of list) { if (L.section) w2.section(L); else await w2.layer(meta(L), rowsOf(L.w, L.h, L.rgba, 4)); }
+        const gb = new Uint8Array(await (await w2.finish(rowsOf(DW, DH, composite, 5))).arrayBuffer());
+        check("groups: both writers give the same bytes", equalBytes(ga, gb), firstDiff(ga, gb));
+        const gr = await readPsd(ga);
+        const gn = Object.fromEntries((gr.groups || []).map((g) => [g.name, g]));
+        const outer = gn["Outer äö"];
+        check("groups: read back as folders, nested, hidden, folded, the Unicode name", gr.groups.length === 2 && gn.Inner && outer && gn.Inner.parent === outer.id && outer.parent === null && gn.Inner.visible === false && outer.visible === true && outer.collapsed === true && gn.Inner.collapsed === false, short(gr.groups));
+        check("groups: the layers in them, their own eyes kept", JSON.stringify(gr.layers.map((l) => (l.group ? gr.groups.find((g) => g.id === l.group).name : null))) === JSON.stringify([null, outer && outer.name, "Inner", null]) && gr.layers.every((l, i) => l.visible === (bare[i].visible !== false)), short(gr.layers.map((l) => [l.group, l.visible])));
+        check("groups: no note of a group's opacity or blend", !gr.notes.some((n) => /opacity of|pass through/.test(n)) && gr.notes.some((n) => /2 groups kept as folders/.test(n)), short(gr.notes));
+        let Pg = null;
+        try { Pg = parseWritten(ga); } catch (err) { check("the PSD with groups parses strictly", false, err.message); }
+        if (Pg) check("groups: four records with lsct, pass through on the folders", Pg.records.filter((R) => R.infoKeys.includes("lsct")).length === 4 && Pg.records.filter((R) => R.blend === "pass").length === 2, short(Pg.records.map((R) => [R.blend, R.infoKeys.join()])));
+    }
     // per mask: its channel's 6 bytes in the record, the 20-byte mask record and the channel's data
     const extra = P ? P.records.reduce((s, R) => s + R.channels.filter((c) => c.id === -2).reduce((t, c) => t + 6 + 20 + c.len, 0), 0) : -1;
     const pad = (n) => n + (n % 2);   // the layer info is padded to an even length
@@ -692,8 +714,13 @@ async function writerChecks(readPsd) {
         const by = Object.fromEntries(gd.layers.map((l) => [l.name, l]));
         check("group records are not layers", JSON.stringify(gd.layers.map((l) => l.name)) === JSON.stringify(["below", "in outer", "in inner", "above"]), short(gd.layers.map((l) => l.name)));
         check("a group's opacity goes into its layers, nested ones too", Math.abs(by["in outer"].opacity - 128 / 255) < 1e-9 && Math.abs(by["in inner"].opacity - 128 / 255) < 1e-9 && by.below.opacity === 1 && by.above.opacity === 1, short(gd.layers.map((l) => l.opacity)));
-        check("a hidden group hides its layers only", by["in inner"].visible === false && by["in outer"].visible === true && by.above.visible === true && by.below.visible === true);
-        check("the groups are named", gd.notes.some((n) => /2 groups flattened/.test(n)), short(gd.notes));
+        // groups come back as folders (PLAN_0_1_31 §6.5): the layers keep their own eyes, the groups theirs
+        const gby = Object.fromEntries((gd.groups || []).map((g) => [g.name, g]));
+        check("the groups come back as folders", gd.groups.length === 2 && gby.inner && gby.outer && gby.inner.parent === gby.outer.id && gby.outer.parent === null, short(gd.groups));
+        check("a layer names its innermost group", by["in inner"].group === gby.inner.id && by["in outer"].group === gby.outer.id && by.below.group === null && by.above.group === null, short(gd.layers.map((l) => l.group)));
+        check("a hidden group is hidden, its layer keeps its own eye", gby.inner.visible === false && gby.outer.visible === true && by["in inner"].visible === true, short(gd.groups));
+        check("a folded group comes back folded", gby.outer.collapsed === true && gby.inner.collapsed === false);
+        check("the groups are named", gd.notes.some((n) => /2 groups kept as folders/.test(n)) && gd.notes.some((n) => /opacity of 1 group went into its layers/.test(n)), short(gd.notes));
     }
 
     console.log("\n--- PSD: flat files and refusals ---");

@@ -1194,6 +1194,10 @@ const ICONS = {
     duplicate: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/>',
     merge: '<path d="M12 3v10"/><path d="M8 9l4 4 4-4"/><rect x="4" y="16" width="16" height="5" rx="1"/>',
     clip: '<path d="M7 3v8a4 4 0 004 4h8"/><path d="M15 11l4 4-4 4"/>',
+    folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
+    ungroup: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" stroke-dasharray="3 2.5"/>',
+    caretR: '<path d="M10 7l5 5-5 5"/>',
+    caretD: '<path d="M7 10l5 5 5-5"/>',
     bold: '<path d="M7 4h6a4 4 0 010 8H7z"/><path d="M7 12h7a4 4 0 010 8H7z"/>',
     italic: '<path d="M14 4h6"/><path d="M4 20h6"/><path d="M15 4l-6 16"/>',
     canvas: '<rect x="4" y="4" width="16" height="16" stroke-dasharray="3 2"/><path d="M12 1v3"/><path d="M12 20v3"/><path d="M1 12h3"/><path d="M20 12h3"/><path d="M10 2l2-1 2 1"/><path d="M10 22l2 1 2-1"/><path d="M2 10l-1 2 1 2"/><path d="M22 10l1 2-1 2"/>',
@@ -1435,6 +1439,13 @@ const STYLE = `
 .ipc-layer .ipc-clipmark.ipc-noeffect { opacity:.4; }
 .ipc-layer.ipc-clipbase .ipc-name { text-decoration:underline; text-decoration-color:var(--sc-faint, #777); text-underline-offset:3px; }
 .ipc-layer.ipc-clipedge { cursor:alias; }
+.ipc-layer { padding-left:calc(8px + var(--ipc-depth, 0) * 14px); }
+.ipc-layer.ipc-grouprow { padding-top:4px; padding-bottom:4px; background:var(--sc-well, #1e2126); }
+.ipc-layer.ipc-grouprow.ipc-selected { background:var(--sc-selected, #2b3a4f); }
+.ipc-layer.ipc-grouprow .ipc-name { font-weight:600; }
+.ipc-layer .ipc-gicon { flex:none; display:flex; color:var(--sc-muted, #999); }
+.ipc-layer .ipc-row > .ipc-mini.ipc-fold { width:16px; margin-left:-4px; }
+.ipc-layer.ipc-ghidden .ipc-name, .ipc-layer.ipc-ghidden .ipc-lthumb { opacity:.45; }
 .ipc-mini.ipc-dim { opacity:.35; }
 .ipc-mini.ipc-dim:hover { opacity:1; }
 .ipc-layer select.ipc-kindsel { background:var(--sc-field, #262626); border:1px solid var(--sc-line, #3a3a3a); border-radius:var(--sc-radius, 4px); padding:0 1px; font:inherit; font-size:10px; text-transform:uppercase; color:var(--sc-muted, #888); cursor:pointer; flex:0 1 auto; min-width:44px; max-width:84px; }
@@ -1825,6 +1836,8 @@ class InpaintEditor {
         this.activeLayerId = null;   // null = base
         this.layerSel = new Set();   // Ctrl / Shift + click in the layer list: the layers selected with the active one (PLAN_0_1_31 §6.1)
         this.layerAnchorId = null;   // where a Shift + click range starts
+        this.groups = [];            // { id, name, visible, locked, collapsed, parent }: folders of layers (PLAN_0_1_31 §6.5); a layer's `group` names its innermost
+        this.activeGroupId = null;   // the group whose header row was clicked (its layers are the selection)
         this._solo = null;           // { ids, visible }: the layers shown alone, and what was visible before the first solo
         this.sel = null;             // MaskPixels WxH (red, alpha = selected); null before an image is loaded
         this.history = [];           // { key, ref, x, y, w, h, prompt, layerId, thumb }
@@ -3050,6 +3063,7 @@ class InpaintEditor {
         // Ctrl+Alt+G by the key, not `ctrl`: Windows reports a real Ctrl+Alt as AltGr, which types nothing on G in the usual layouts
         if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && e.code === "KeyG") { e.preventDefault(); const l = this.activeLayer(); if (l) this.setLayerClip(l, !l.clip); else this.setStatus("Select a layer to clip."); return; }
         if (ctrl && e.shiftKey && k === "g") { e.preventDefault(); this.toggleGrid(); return; }
+        if (ctrl && !e.shiftKey && !e.altKey && k === "g") { e.preventDefault(); this.groupLayersNow(); return; }
         if (ctrl && k === "j") { e.preventDefault(); this.duplicateLayer(); return; }
         if (ctrl && k === "e") { e.preventDefault(); if (this.multiSelected()) this.mergeSelected(); else this.mergeDown(); return; }
         if (ctrl && (e.key === "]" || e.key === "[")) {
@@ -3386,6 +3400,7 @@ class InpaintEditor {
     /** A click on a layer row: plain selects it alone, Ctrl toggles it in the selection, Shift selects the range from the anchor. */
     clickLayerRow(layer, e) {
         if (this.pending) this.cancelPending();
+        this.activeGroupId = null;
         const ctrl = e && (e.ctrlKey || e.metaKey);
         if (e && e.shiftKey && this.layerAnchorId && this.layerAnchorId !== layer.id && !this.isReference(layer)) {
             const rows = this.layers.filter((l) => !this.isReference(l));
@@ -3422,7 +3437,7 @@ class InpaintEditor {
      */
     groupBox() {
         if (!this.multiSelected()) return null;
-        const layers = this.selectedLayers().filter((l) => l.kind !== "filter" && !l.locked);
+        const layers = this.selectedLayers().filter((l) => l.kind !== "filter" && !this.isLocked(l));
         if (!layers.length) return null;
         const x0 = Math.min(...layers.map((l) => l.x)), y0 = Math.min(...layers.map((l) => l.y));
         const x1 = Math.max(...layers.map((l) => l.x + l.w)), y1 = Math.max(...layers.map((l) => l.y + l.h));
@@ -4180,7 +4195,7 @@ class InpaintEditor {
     /** Numeric X / Y / W / H from the transform bar. */
     setLayerGeometry() {
         const l = this.activeLayer();
-        if (!l || l.kind === "filter" || l.locked) return;
+        if (!l || l.kind === "filter" || this.isLocked(l)) return;
         const g = this.geoInputs;
         const x = Math.round(+g.x.value), y = Math.round(+g.y.value), w = Math.max(1, Math.round(+g.w.value)), h = Math.max(1, Math.round(+g.h.value));
         if (![x, y, w, h].every(Number.isFinite)) return;
@@ -4234,7 +4249,7 @@ class InpaintEditor {
 
     centerLayer() {
         const l = this.activeLayer();
-        if (!l || l.kind === "filter" || l.locked) return;
+        if (!l || l.kind === "filter" || this.isLocked(l)) return;
         this.pushUndo({ kind: "transform", id: l.id, label: "Centre layer" });
         l.x = Math.round((this.width - l.w) / 2);
         l.y = Math.round((this.height - l.h) / 2);
@@ -4246,7 +4261,7 @@ class InpaintEditor {
     alignTargets() {
         if (this.multiSelected()) { const group = this.groupBox(); return group ? group.layers : []; }
         const l = this.activeLayer();
-        return l && l.kind !== "filter" && !l.locked ? [l] : [];
+        return l && l.kind !== "filter" && !this.isLocked(l) ? [l] : [];
     }
 
     /** The box to align within: the canvas, or (several layers, `to` "selection") the box around them. */
@@ -4308,7 +4323,7 @@ class InpaintEditor {
     flipLayer(axis) {
         const l = this.activeLayer();
         if (!l || l.kind === "filter") { this.setStatus("Select a pixel layer to flip."); return; }
-        if (l.locked) { this.setStatus(`${l.name} is locked.`); return; }
+        if (this.isLocked(l)) { this.setStatus(`${l.name} is locked.`); return; }
         if (this.pending) this.cancelPending();
         const op = axis === "h" ? "h" : "v";
         const label = axis === "h" ? "Flip horizontally" : "Flip vertically";
@@ -4374,7 +4389,7 @@ class InpaintEditor {
     rotateLayer90(dir) {
         const l = this.activeLayer();
         if (!l || l.kind === "filter") { this.setStatus("Select a pixel layer to rotate."); return; }
-        if (l.locked) { this.setStatus(`${l.name} is locked.`); return; }
+        if (this.isLocked(l)) { this.setStatus(`${l.name} is locked.`); return; }
         if (this.pending) this.cancelPending();
         const label = dir === 1 ? "Rotate 90° clockwise" : "Rotate 90° counter-clockwise";
         // a text layer keeps the turn in its description (the next edit renders it turned), which only a "layers" step holds
@@ -5308,7 +5323,7 @@ class InpaintEditor {
             // the tone brush (dodge / burn / sponge, PLAN_0_1_31 §4 step 9) rides the smudge's engine as blur and sharpen do
             const toneTool = this.tool === "tone", opts = toneTool ? this.toneOpts : this.smudgeOpts;
             let layer = this.activeLayer();
-            if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+            if (layer && this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
             if (layer && layer.kind === "filter") { this.setStatus(`Filter layers have no pixels to ${toneTool ? "dodge or burn" : "smudge"}.`); return; }
             // the mask or the selection is what the UI says is being edited; these brushes only work on pixels
             if (this.quickMask || (layer && layer.maskEdit)) { this.setStatus(`${this.quickMask ? "Quick mask is on" : `The mask of ${layer.name} is being edited`}: the ${toneTool ? "dodge / burn brush" : "smudge"} works on pixels. ${this.quickMask ? "Press Q to leave it." : "Switch the mask edit off first."}`); return; }
@@ -5353,7 +5368,7 @@ class InpaintEditor {
             }
             if (!this.cloneSource) { this.setStatus("Alt+click to set the source point first."); return; }
             let layer = this.activeLayer();
-            if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+            if (layer && this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
             if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels. Select a paint or image layer."); return; }
             // they paint the layer's pixels, never the mask or the selection the UI says is being edited (the smudge's rule)
             if (this.quickMask || (layer && layer.maskEdit)) { this.setStatus(`${this.quickMask ? "Quick mask is on" : `The mask of ${layer.name} is being edited`}: the ${this.tool === "heal" ? "healing brush" : "clone brush"} works on pixels. ${this.quickMask ? "Press Q to leave it." : "Switch the mask edit off first."}`); return; }
@@ -5374,7 +5389,7 @@ class InpaintEditor {
         } else if (this.tool === "remove") {
             // the stroke marks the hole (REMOVE_MARK, shown half transparent); the fill lands at the release (`removeRun`)
             let layer = this.activeLayer();
-            if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+            if (layer && this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
             if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels. Select a paint or image layer."); return; }
             if (this.quickMask || (layer && layer.maskEdit)) { this.setStatus(`${this.quickMask ? "Quick mask is on" : `The mask of ${layer.name} is being edited`}: Remove works on pixels. ${this.quickMask ? "Press Q to leave it." : "Switch the mask edit off first."}`); return; }
             if (!host.removeModel()) { this.setStatus("Remove needs the LaMa model: download it in Settings › Helpers (in-app models)."); return; }
@@ -5400,7 +5415,7 @@ class InpaintEditor {
             this.liquifyPress(e, ix, iy);
         } else if (this.tool === "gradient") {
             let layer = this.activeLayer();
-            if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+            if (layer && this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
             if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels. Select a paint or image layer."); return; }
             if (!layer) layer = this.addPaintLayer();
             // a gradient rebuilds its whole buffer on every move, so it keeps the canvas buffer on
@@ -5417,7 +5432,7 @@ class InpaintEditor {
             this.selectionDab(ix, iy, ix, iy);
         } else if (this.tool === "paint" || this.tool === "erase") {
             let layer = this.activeLayer();
-            if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+            if (layer && this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
             const pressure = this.pressureOf(e);
             // Shift+click: a straight line from where the last stroke on this layer ended
             const prev = this.lastStrokeEnd;
@@ -5455,7 +5470,7 @@ class InpaintEditor {
             }
             if (this.multiSelected()) { this.setStatus("All selected layers are locked or filter layers: nothing to move."); return; }
             if (layer.kind === "filter") { this.setStatus("Filter layers cover the whole canvas and cannot be transformed."); return; }
-            if (layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+            if (this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
             if (this.pending) { this.pendingPointerDown(ix, iy, e); this.draw(); return; }
             const handle = this.handleAt(ix, iy);
             if (!handle && this.rotateZoneAt(layer, ix, iy)) {
@@ -5473,12 +5488,12 @@ class InpaintEditor {
                 this.pointer = { kind: "move", layer, start: [ix, iy], orig: { x: layer.x, y: layer.y } };
             }
         } else if (this.tool === "text") {
-            const hit = [...this.layers].reverse().find((l) => l.kind === "text" && l.visible && this.textHitAt(l, ix, iy));
+            const hit = [...this.layers].reverse().find((l) => l.kind === "text" && this.shown(l) && this.textHitAt(l, ix, iy));
             if (hit) {
                 this.activeLayerId = hit.id;
                 this.renderLayers();
-                if ((e.detail >= 2 || isDouble) && !hit.locked) { e.preventDefault(); this.beginTextEdit(hit); this.draw(); return; }
-                if (hit.locked) { this.setStatus(`${hit.name} is locked.`); this.draw(); return; }
+                if ((e.detail >= 2 || isDouble) && !this.isLocked(hit)) { e.preventDefault(); this.beginTextEdit(hit); this.draw(); return; }
+                if (this.isLocked(hit)) { this.setStatus(`${hit.name} is locked.`); this.draw(); return; }
                 this.pushUndo({ kind: "transform", id: hit.id, label: "Move layer" });
                 this.pointer = { kind: "move", layer: hit, start: [ix, iy], orig: { x: hit.x, y: hit.y } };
             } else {
@@ -6482,7 +6497,7 @@ class InpaintEditor {
         for (let i = 0; i < end; i++) {
             const l = this.layers[i];
             if (this.compareShow && l.kind === "result" && l.id !== this.compareShow) continue;
-            if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
+            if ((!this.shown(l) && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
             if (l.kind === "filter") {
                 const def = FILTERS[l.filter];
                 let r = def ? def.reach : 0;      // a filter that is not installed hands the picture on (applyFilter)
@@ -6542,7 +6557,7 @@ class InpaintEditor {
         for (let i = 0; i < end; i++) {
             const l = this.layers[i];
             if (this.compareShow && l.kind === "result" && l.id !== this.compareShow) continue;
-            if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
+            if ((!this.shown(l) && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
             const cb = this.clipBaseOf(l, i);
             const clip = cb ? entryOf.get(cb) : null;
             if (cb && !clip) continue;
@@ -7190,7 +7205,7 @@ class InpaintEditor {
         for (let i = 0; i < end; i++) {
             const layer = this.layers[i];
             if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
-            if ((!layer.visible && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
+            if ((!this.shown(layer) && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
             if (layer.kind === "filter") { add(this.liveMask(layer), 0, 0, this.width, this.height); continue; }
             if (forRun && (this.isControl(layer) || this.isReference(layer))) continue;
             // only the layers `drawLayer` really draws from tiles in a region pass. A colour-matched layer off tiles
@@ -8076,7 +8091,7 @@ class InpaintEditor {
     patchRefusal(layer, name = "Patch") {
         if (this.quickMask || (layer && layer.maskEdit)) return `${this.quickMask ? "Quick mask is on" : `The mask of ${layer.name} is being edited`}: ${name} works on pixels. ${this.quickMask ? "Press Q to leave it." : "Switch the mask edit off first."}`;
         if (!layer) return null;
-        if (layer.locked) return `${layer.name} is locked.`;
+        if (this.isLocked(layer)) return `${layer.name} is locked.`;
         if (layer.kind === "filter") return "Filter layers have no pixels. Select a paint or image layer.";
         if (layer.kind === "text") return "Text layers hold text, not pixels. Select a paint or image layer.";
         if (layer.px.width !== layer.w || layer.px.height !== layer.h || layer.x !== Math.round(layer.x) || layer.y !== Math.round(layer.y))
@@ -9482,7 +9497,7 @@ class InpaintEditor {
     /** The layer a shape goes on: the active one, or a new paint layer over the base. */
     shapeTarget() {
         let layer = this.activeLayer();
-        if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return null; }
+        if (layer && this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return null; }
         if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels. Select a paint or image layer."); return null; }
         if (layer && layer.kind === "text") { this.setStatus("Text layers hold text, not pixels. Select a paint or image layer."); return null; }
         if (!layer) layer = this.addPaintLayer();
@@ -9716,7 +9731,7 @@ class InpaintEditor {
     async bucketFill(ix, iy) {
         if (!this.width) return;
         let layer = this.activeLayer();
-        if (layer && layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+        if (layer && this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
         if (layer && layer.kind === "filter") { this.setStatus("Filter layers have no pixels. Select a paint or image layer."); return; }
         const x = Math.floor(ix), y = Math.floor(iy);
         if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
@@ -10297,7 +10312,7 @@ class InpaintEditor {
         if (!this.sel || !this.getBounds()) { this.setStatus("Nothing selected to fill."); return; }
         let layer = this.activeLayer();
         if (!layer) layer = this.addPaintLayer();
-        if (layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+        if (this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
         const onMask = !!(layer.maskPx && layer.maskEdit);
         if (layer.kind === "filter" && !onMask) { this.setStatus("Filter layers have no pixels to fill. Use \"mask from selection\" to limit the filter instead."); return; }
         this.pushUndo(onMask ? { kind: "mask", id: layer.id, label: "Fill mask" } : { kind: "layer", id: layer.id, label: "Fill selection" });
@@ -10367,7 +10382,7 @@ class InpaintEditor {
         if (!this.width) { this.setStatus("Load an image first."); return null; }
         const l = layer || this.activeLayer();
         const useMerged = merged || !l || l.kind === "filter";
-        if (!useMerged && l.locked && cut) { this.setStatus(`${l.name} is locked.`); return null; }
+        if (!useMerged && this.isLocked(l) && cut) { this.setStatus(`${l.name} is locked.`); return null; }
         let c, x, y, name;
         if (useMerged) {
             c = makeCanvas(this.width, this.height);
@@ -10432,7 +10447,7 @@ class InpaintEditor {
         if (!this.sel || !this.getBounds()) { this.setStatus("Nothing selected. Make a selection first, invert it to keep only the selected part."); return; }
         const layer = this.activeLayer();
         if (!layer) { this.setStatus("The base layer cannot be erased. Select a layer, or paint on the base first to get a layer."); return; }
-        if (layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+        if (this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
         const onMask = !!(layer.maskPx && layer.maskEdit);
         if (layer.kind === "filter" && !onMask) { this.setStatus("Filter layers have no pixels. Use \"mask from selection\" to limit the filter instead."); return; }
         this.pushUndo(onMask ? { kind: "mask", id: layer.id, label: "Hide in mask" } : { kind: "layer", id: layer.id, label: "Clear pixels" });
@@ -10593,7 +10608,7 @@ class InpaintEditor {
         }
         let ref = this.uploaded.baseRef;
         if (!this.uploaded.baseHash || !ref) {
-            if (!this.layers.some((l) => l.visible && !this.isControl(l)) && this.base.ref) {
+            if (!this.layers.some((l) => this.shown(l) && !this.isControl(l)) && this.base.ref) {
                 ref = this.base.ref;
                 this.uploaded.baseHash = "orig:" + this.base.ref.filename;
             } else {
@@ -11275,6 +11290,7 @@ class InpaintEditor {
             height: this.height,
             selPx: this.sel.clone(),
             layers,
+            groups: this.groupsCopy(),
             pixels,
             activeLayerId: this.activeLayerId,
             ...this.geometrySnapshot(),
@@ -11402,7 +11418,7 @@ class InpaintEditor {
         }
         if (step.kind === "selection") return this.snapshotSelection();
         if (step.kind === "turn") return this.turnSnapshot();
-        if (step.kind === "layers") return { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), activeLayerId: this.activeLayerId };
+        if (step.kind === "layers") return { kind: "layers", layers: this.layers.map((l) => this.snapshotLayer(l)), groups: this.groupsCopy(), activeLayerId: this.activeLayerId };
         if (step.kind === "transforms") {
             // the places of several layers moved or scaled together (a multi-selection): one step, no pixels
             const ids = step.ids || step.items.map((i) => i.id);
@@ -11419,7 +11435,7 @@ class InpaintEditor {
         if (step.kind === "canvas") {
             // base, size, selection and the layer list (shallow copies: the canvases themselves are never mutated by extend / crop, only replaced)
             const sel = tiles ? { selPx: this.sel.clone() } : { selection: this.snapUrl(this.sel.toCanvas()) };
-            return { kind: "canvas", base: this.base, width: this.width, height: this.height, ...sel, layers: this.layers.map((l) => this.snapshotLayer(l)), activeLayerId: this.activeLayerId,
+            return { kind: "canvas", base: this.base, width: this.width, height: this.height, ...sel, layers: this.layers.map((l) => this.snapshotLayer(l)), groups: this.groupsCopy(), activeLayerId: this.activeLayerId,
                 ...this.geometrySnapshot() };
         }
         const layer = this.layers.find((l) => l.id === step.id);
@@ -11603,6 +11619,7 @@ class InpaintEditor {
             if (this.pending) this.cancelPending();
             // a spread carries px / maskPx and not the non-enumerable aliases: installed again
             this.layers = snap.layers.map((l) => installLayerAliases({ ...l, _maskedValid: false, _mcache: null, _fcache: null }, this.pixels));
+            this.groups = (snap.groups || []).map((g) => ({ ...g }));
             this.activeLayerId = this.layers.some((l) => l.id === snap.activeLayerId) ? snap.activeLayerId : null;
             this.uploaded.baseHash = null;
             this.uploaded.controlHash = null;
@@ -11626,6 +11643,7 @@ class InpaintEditor {
             const byId = new Map((snap.pixels || []).map((p) => [p.id, p]));
             const resized = snap.width !== this.width || snap.height !== this.height;
             this.restoreGeometry(snap);
+            this.groups = (snap.groups || []).map((g) => ({ ...g }));
             this.base = snap.base;
             this.width = snap.width;
             this.height = snap.height;
@@ -11681,6 +11699,7 @@ class InpaintEditor {
             // one kept, and the restored selection's bounds came back empty
             const selImg = images.selection || null;   // null: its encode failed, an empty selection
             this.restoreGeometry(snap);
+            this.groups = (snap.groups || []).map((g) => ({ ...g }));
             this.base = snap.base;
             this.width = snap.width;
             this.height = snap.height;
@@ -12516,7 +12535,7 @@ class InpaintEditor {
         for (let j = i + 1; j < end; j++) {
             const l = this.layers[j];
             if (this.compareShow && l.kind === "result" && l.id !== this.compareShow) continue;
-            if ((!l.visible && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
+            if ((!this.shown(l) && !(this.compareShow && l.id === this.compareShow)) || !l.px) continue;
             if (l.kind === "filter") return true;
             if (forRun && (this.isControl(l) || this.isReference(l))) continue;
             return false;
@@ -12809,6 +12828,8 @@ class InpaintEditor {
                 { icon: "clip", label: layer.clip ? (many ? "Release clipping" : "Release clipping mask") : "Clip to layer below", key: "Ctrl+Alt+G",
                     title: layer.clip ? "Draw the layer on its own again" : "Show this layer only where the layer under it has pixels (also: Alt+click the line between the two rows)",
                     onClick: () => { const l = live(); if (l.length) this.setLayerClip(l.find((x) => x.id === layer.id) || l[0], !layer.clip); } },
+                { icon: "folder", label: many ? `Group ${sel.length} layers` : "Group layer", key: "Ctrl+G", title: "Put the layers into a new group (a folder: its eye and lock count for all of them)",
+                    onClick: () => { const l = live(); if (l.length) this.groupLayersNow(l); } },
                 { sep: true },
                 { icon: "merge", label: many ? `Merge ${sel.length} layers` : "Merge down", key: "Ctrl+E", title: many ? "Merge the selected layers into one, at the place of the topmost" : "Merge into the layer below",
                     onClick: () => (many ? this.mergeSelected() : this.mergeDown(live()[0])) },
@@ -12872,6 +12893,7 @@ class InpaintEditor {
     showAllLayers() {
         if (this._solo) return this.unsolo();
         for (const l of this.layers) if (!this.isReference(l)) l.visible = true;
+        for (const g of this.groups) g.visible = true;
         this.visibilityChanged();
         this.setStatus("All layers shown.");
         return true;
@@ -12981,7 +13003,18 @@ class InpaintEditor {
                     const doc = await this.readLayered(file, layered);
                     // each new reference goes below the others (addLayer): top first keeps the file's stacking order
                     const order = host.refTokens && role === "reference" ? [...doc.layers].reverse() : doc.layers;
-                    for (const L of order) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx, clip: role !== "reference" && !!L.clip }, { activate: false });
+                    // its groups come along as groups (PLAN_0_1_31 §6.5), with ids of this document; references are in none
+                    const gid = new Map();
+                    if (role !== "reference" && doc.groups && doc.groups.length) {
+                        this.groupCounter = (this.groupCounter || 0) + 1;
+                        doc.groups.forEach((g, i) => gid.set(g.id, "G" + Date.now().toString(36) + this.groupCounter + "_" + i));
+                        for (const g of doc.groups) this.groups.push({ id: gid.get(g.id), name: g.name, visible: g.visible !== false, locked: false, collapsed: !!g.collapsed, parent: g.parent ? gid.get(g.parent) || null : null });
+                    }
+                    this.holdGroups = (this.holdGroups || 0) + 1;
+                    try {
+                        for (const L of order) last = this.addLayer({ name: L.name, kind: "image", role, ref: null, group: (L.group && gid.get(L.group)) || null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx, clip: role !== "reference" && !!L.clip }, { activate: false });
+                    } finally { this.holdGroups--; }
+                    this.renderLayers();
                     if (last) this.activeLayerId = last.id;
                     this.setStatus(`${doc.layers.length} layer${doc.layers.length === 1 ? "" : "s"} of ${file.name || "the file"} added.${doc.notes.length ? " " + doc.notes.join("; ") + "." : ""}`);
                     layeredFiles++;
@@ -13156,16 +13189,8 @@ class InpaintEditor {
 
     /** Move layer `srcId` next to layer `targetId` (above it in the panel = after it in the array). */
     reorderLayer(srcId, targetId, above) {
-        const src = this.layers.find((l) => l.id === srcId);
-        if (!src || srcId === targetId) return;
-        this.pushUndo({ kind: "layers", label: "Layer order" });
-        this.layers = this.layers.filter((l) => l !== src);
-        const j = this.layers.findIndex((l) => l.id === targetId);
-        if (j < 0) { this.layers.push(src); } else this.layers.splice(above ? j + 1 : j, 0, src);
-        this.uploaded.baseHash = null;
-        this.uploaded.controlHash = null;
-        this.refsMutated();
-        this.renderLayers(); this.draw(); this.drawThumb(); this.notifyChanged();
+        if (srcId === targetId) return;
+        this.dropInLayers({ layer: srcId }, { layer: targetId }, above);
     }
 
     /**
@@ -13184,9 +13209,13 @@ class InpaintEditor {
         const key = [...ids].sort().join(" ");
         if (this._solo && this._solo.key === key) return this.unsolo();
         const rows = this.layers.filter((l) => !this.isReference(l));
-        if (!this._solo) this._solo = { visible: rows.filter((l) => l.visible).map((l) => l.id), known: new Set(rows.map((l) => l.id)) };
+        if (!this._solo) this._solo = { visible: rows.filter((l) => l.visible).map((l) => l.id), known: new Set(rows.map((l) => l.id)), groups: this.groups.filter((g) => !g.visible).map((g) => g.id) };
         this._solo.key = key;
         for (const l of rows) l.visible = ids.includes(l.id);
+        // a hidden group around a soloed layer would keep it hidden: every group around one is shown during the solo
+        const around = new Set(layers.flatMap((l) => this.groupsOf(l.group).map((g) => g.id)));
+        const hid = new Set(this._solo.groups || []);
+        for (const g of this.groups) g.visible = around.has(g.id) || !hid.has(g.id);
         this.visibilityChanged();
         this.setStatus(`Solo: only ${layers.length > 1 ? `${layers.length} layers are` : `${layers[0].name} is`} shown. Alt+click the eye again (or "Show all layers" in the row's menu) to restore.`);
         return true;
@@ -13197,6 +13226,8 @@ class InpaintEditor {
         if (!this._solo) { this.setStatus("No solo to end."); return false; }
         const was = new Set(this._solo.visible), known = this._solo.known;
         for (const l of this.layers) if (!this.isReference(l) && known.has(l.id)) l.visible = was.has(l.id);
+        const hid = new Set(this._solo.groups || []);
+        for (const g of this.groups) if (hid.has(g.id)) g.visible = false;
         this._solo = null;
         this.visibilityChanged();
         this.setStatus("Solo off, visibility restored.");
@@ -13251,7 +13282,7 @@ class InpaintEditor {
     async mergeDownNow(layer) {
         if (this._turning) { this.setStatus("Wait for the turn to finish."); return; }
         if (!layer) { this.setStatus("Select a layer to merge down."); return; }
-        if (layer.locked) { this.setStatus(`${layer.name} is locked.`); return; }
+        if (this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return; }
         if (layer.kind === "filter") { this.setStatus("Filter layers cannot be merged into a layer; Flatten bakes them into the base."); return; }
         const i = this.layers.indexOf(layer);
         const below = i > 0 ? this.layers[i - 1] : null;
@@ -13290,7 +13321,7 @@ class InpaintEditor {
             }
             return;
         }
-        if (below.locked) { this.setStatus(`${below.name} is locked.`); return; }
+        if (this.isLocked(below)) { this.setStatus(`${below.name} is locked.`); return; }
         if (below.kind === "filter") { this.setStatus("The layer below is a filter layer; move it or merge elsewhere."); return; }
         if (this.isControl(layer) !== this.isControl(below) || this.isReference(layer) !== this.isReference(below)) { this.setStatus("Only layers of the same kind (image, control or reference) can be merged."); return; }
         this.pushUndo({ kind: "layers", label: "Merge down" });
@@ -13310,8 +13341,8 @@ class InpaintEditor {
         if (this._turning) { this.setStatus("Wait for the turn to finish."); return false; }
         const sel = this.selectedLayers();
         if (sel.length < 2) return this.mergeDown();
-        const bad = sel.find((l) => l.locked) || sel.find((l) => l.kind === "filter");
-        if (bad) { this.setStatus(bad.locked ? `${bad.name} is locked.` : `${bad.name} is a filter layer: filter layers cannot be merged into a layer; Flatten bakes them into the base.`); return false; }
+        const bad = sel.find((l) => this.isLocked(l)) || sel.find((l) => l.kind === "filter");
+        if (bad) { this.setStatus(this.isLocked(bad) ? `${bad.name} is locked.` : `${bad.name} is a filter layer: filter layers cannot be merged into a layer; Flatten bakes them into the base.`); return false; }
         if (sel.some((l) => this.isControl(l) !== this.isControl(sel[0]))) { this.setStatus("Only layers of the same kind (image or control) can be merged."); return false; }
         if (this.pending) this.cancelPending();
         this.pushUndo({ kind: "layers", label: `Merge ${sel.length} layers` });
@@ -13397,7 +13428,7 @@ class InpaintEditor {
     pickLayerAt(ix, iy) {
         for (let i = this.layers.length - 1; i >= 0; i--) {
             const l = this.layers[i];
-            if (!l.visible || l.kind === "filter" || !l.px) continue;
+            if (!this.shown(l) || l.kind === "filter" || !l.px) continue;
             if (ix < l.x || iy < l.y || ix >= l.x + l.w || iy >= l.y + l.h) continue;
             // one pixel read from the pixels (and the mask), never through a display canvas: a click must not
             // make a mirror as large as the layer on tiles (C2 step b's review)
@@ -13501,7 +13532,7 @@ class InpaintEditor {
      */
     async setTextAngle(layer, deg, { label = "Text angle", step = true, pivot = "centre" } = {}) {
         if (!layer || layer.kind !== "text" || !layer.text || !Number.isFinite(+deg)) return false;
-        if (layer.locked) { this.setStatus(`${layer.name} is locked.`); return false; }
+        if (this.isLocked(layer)) { this.setStatus(`${layer.name} is locked.`); return false; }
         // a render on its way first: the pixels it makes are what the angle turns from
         if (layer._textTimer || layer._textRendering) {
             clearTimeout(layer._textTimer); layer._textTimer = null;
@@ -13762,14 +13793,44 @@ class InpaintEditor {
      * alpha, at the layer's export size), switched off or not; ORA has no masks, so its layers bake the live one.
      * A clipped layer is clipped in the PSD too (`clip`, when its base is exported); ORA has no clipping, its layers go unclipped.
      */
+    /**
+     * The PSD groups (`lsct`, PLAN_0_1_31 §6.5) of a walk of the layers bottom first: `at(l)` gives the section records
+     * to write before layer `l` (a folder record for each group it is not in any more, then a bounding divider for each
+     * group it opens), `end()` the folder records that close the rest. A reference never closes a group: it is written
+     * where the walk is. A record: `{ section: 1 | 2 | 3, name, visible }` (2 = a folded group, 3 = the divider).
+     */
+    psdSections() {
+        let open = [];
+        const close = (k) => {
+            const out = [];
+            for (let q = open.length - 1; q >= k; q--) out.push({ section: open[q].collapsed ? 2 : 1, name: open[q].name, visible: open[q].visible !== false, x: 0, y: 0, opacity: 1, blend: "normal" });
+            open = open.slice(0, k);
+            return out;
+        };
+        return {
+            at: (l) => {
+                if (this.isReference(l)) return [];
+                const chain = this.groupsOf(l.group).reverse();
+                let k = 0;
+                while (k < open.length && k < chain.length && open[k] === chain[k]) k++;
+                const out = close(k);
+                for (let q = k; q < chain.length; q++) { out.push({ section: 3, name: "</Layer group>", visible: true, x: 0, y: 0, opacity: 1, blend: "normal" }); open.push(chain[q]); }
+                return out;
+            },
+            end: () => close(0),
+        };
+    }
+
     exportLayerStack(fmt = "psd") {
         const psd = fmt === "psd";
+        const sec = psd ? this.psdSections() : null;
         const layers = [];
         const bg = makeCanvas(this.width, this.height);
         this.basePx.drawTo(bg.getContext("2d"), 0, 0);   // unscaled (PLAN_BCE §C1 rule 6)
         layers.push({ name: "Background", x: 0, y: 0, canvas: bg, opacity: 1, visible: true, blend: "normal" });
         let skipped = 0;
         for (const l of this.layers) {
+            if (sec) layers.push(...sec.at(l));
             if (l.kind === "filter" || !l.px) { skipped++; continue; }
             const w = Math.max(1, Math.round(l.w)), h = Math.max(1, Math.round(l.h));
             const c = makeCanvas(w, h);
@@ -13789,8 +13850,9 @@ class InpaintEditor {
                 mask = { canvas: mc, disabled: !!l.maskOff };
             }
             const aside = this.isControl(l) || this.isReference(l);
-            layers.push({ name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), canvas: c, opacity: l.opacity ?? 1, visible: l.visible !== false && !aside, blend: l.blend || "normal", ...(mask ? { mask } : {}), ...(psd && this.clipBaseOf(l) ? { clip: true } : {}) });
+            layers.push({ name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), canvas: c, opacity: l.opacity ?? 1, visible: (psd ? l.visible !== false : this.shown(l)) && !aside, blend: l.blend || "normal", ...(mask ? { mask } : {}), ...(psd && this.clipBaseOf(l) ? { clip: true } : {}) });
         }
+        if (sec) layers.push(...sec.end());
         return { layers, skipped };
     }
 
@@ -13818,7 +13880,10 @@ class InpaintEditor {
             open: isTilePixels(bs) && bs.width === this.width && bs.height === this.height ? fromTiles(bs) : fromCanvas((ctx) => bs.drawTo(ctx, 0, 0), this.width, this.height),
         });
         let skipped = 0;
+        const sec = psd ? this.psdSections() : null;
+        const sections = (list) => list.map((meta) => ({ meta, open: null }));
         for (const l of this.layers) {
+            if (sec) out.push(...sections(sec.at(l)));
             if (l.kind === "filter" || !l.px) { skipped++; continue; }
             const w = Math.max(1, Math.round(l.w)), h = Math.max(1, Math.round(l.h));
             const aside = this.isControl(l) || this.isReference(l);
@@ -13828,12 +13893,13 @@ class InpaintEditor {
             const plain = isTilePixels(l.px) && (mask || !this.liveMask(l)) && l.px.width === w && l.px.height === h && still;
             const smooth = (ctx) => { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; };
             out.push({
-                meta: { name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), opacity: l.opacity ?? 1, visible: l.visible !== false && !aside, blend: l.blend || "normal", ...(mask ? { mask: { disabled: !!l.maskOff } } : {}), ...(psd && this.clipBaseOf(l) ? { clip: true } : {}) },
+                meta: { name: l.name + (aside ? ` (${l.role})` : ""), x: Math.round(l.x), y: Math.round(l.y), opacity: l.opacity ?? 1, visible: (psd ? l.visible !== false : this.shown(l)) && !aside, blend: l.blend || "normal", ...(mask ? { mask: { disabled: !!l.maskOff } } : {}), ...(psd && this.clipBaseOf(l) ? { clip: true } : {}) },
                 open: plain ? fromTiles(l.px) : fromCanvas((ctx) => { smooth(ctx); ctx.drawImage(mask ? this.layerWithStroke(l) : this.layerPixels(l), 0, 0, w, h); }, w, h),
                 // the mask at the pixels' size: its own tiles when it has that size already, else drawn to it
                 ...(mask ? { openMask: isTilePixels(mask) && mask.width === w && mask.height === h && still ? fromTiles(mask) : fromCanvas((ctx) => { smooth(ctx); mask.drawTo(ctx, 0, 0, w, h); }, w, h) } : {}),
             });
         }
+        if (sec) out.push(...sections(sec.end()));
         return { stack: out, skipped };
     }
 
@@ -13860,6 +13926,7 @@ class InpaintEditor {
             let done = 0;
             const report = (f) => { if (progress) progress((done + f) / steps); };
             for (const L of stack) {
+                if (!L.open) { writer.section(L.meta); done++; continue; }   // a group's record (PSD)
                 const o = L.open();
                 const m = L.openMask ? L.openMask() : null;
                 try { await writer.layer(L.meta, o.source, report, m ? m.source : null); } finally { o.close(); if (m) m.close(); }
@@ -13887,7 +13954,7 @@ class InpaintEditor {
                 const thumb = await new Promise((r) => small.toBlob(r, "image/png"));
                 blob = await writer.finish(composite, thumb, report);
             }
-            return { blob, layers: stack.length, skipped };
+            return { blob, layers: stack.filter((L) => L.open).length, skipped };
         } catch (err) {
             editorPool().cancel(group);
             if (partsFailed(err) || String(err && err.message).includes(NO_PROGRAM)) return null;   // the canvas writers take it
@@ -14015,7 +14082,7 @@ class InpaintEditor {
                 const t0 = performance.now();
                 const { layers, skipped } = this.exportLayerStack(fmt);
                 blob = await buildLayered(fmt, { width: this.width, height: this.height, layers, composite: canvas });
-                note = `, ${layers.length} layers${skipped ? `, ${skipped} filter layer${skipped > 1 ? "s" : ""} only in the merged image` : ""}, ${Math.round(performance.now() - t0)} ms`;
+                note = `, ${layers.filter((L) => !L.section).length} layers${skipped ? `, ${skipped} filter layer${skipped > 1 ? "s" : ""} only in the merged image` : ""}, ${Math.round(performance.now() - t0)} ms`;
             } else {
                 blob = await new Promise((r) => canvas.toBlob(r, fmt === "jpg" ? "image/jpeg" : fmt === "webp" ? "image/webp" : "image/png", host.exportQuality(this)));
             }
@@ -14292,7 +14359,7 @@ class InpaintEditor {
             } else {
                 rows.push(["Emitted", `${Math.min(this.width, Math.ceil(cw / m) * m)} × ${Math.min(this.height, Math.ceil(ch / m) * m)}${pair}`]);
             }
-            const ctrl = this.layers.filter((l) => this.isControl(l) && l.visible).length;
+            const ctrl = this.layers.filter((l) => this.isControl(l) && this.shown(l)).length;
             rows.push(["Control", ctrl ? `${ctrl} layer${ctrl > 1 ? "s" : ""}` : "none (black)"]);
             const refs = shown.length;
             // a route that sends the references as style references gives them no number: they go, unnamed
@@ -14531,7 +14598,14 @@ class InpaintEditor {
         if (later()) return;
         await this.setBasePixels(ref, basePx, { keepLayers: false });
         let top = null;
-        for (const L of layers) top = this.addLayer({ name: L.name, kind: "image", ref: null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx, clip: !!L.clip }, { activate: false });
+        // PSD groups as folders (PLAN_0_1_31 §6.5), with ids of this document
+        this.groupCounter = (this.groupCounter || 0) + 1;
+        const gid = new Map((doc.groups || []).map((g, i) => [g.id, "G" + Date.now().toString(36) + this.groupCounter + "_" + i]));
+        this.groups = (doc.groups || []).map((g) => ({ id: gid.get(g.id), name: g.name, visible: g.visible !== false, locked: false, collapsed: !!g.collapsed, parent: g.parent ? gid.get(g.parent) || null : null }));
+        this.holdGroups = (this.holdGroups || 0) + 1;   // the groups wait for their layers: addLayer's list would drop them as empty
+        try {
+            for (const L of layers) top = this.addLayer({ name: L.name, kind: "image", ref: null, group: L.group ? gid.get(L.group) || null : null, px: L.px, x: L.x, y: L.y, w: L.w, h: L.h, opacity: L.opacity, visible: L.visible, blend: L.blend, dirty: true, maskPx: L.maskPx || null, maskOff: !!L.maskOff, maskDirty: !!L.maskPx, clip: !!L.clip }, { activate: false });
+        } finally { this.holdGroups--; }
         if (top) this.activeLayerId = top.id;
         this.renderLayers();
         this.draw();
@@ -14628,7 +14702,7 @@ class InpaintEditor {
     removeLayer(id) {
         const target = this.layers.find((l) => l.id === id);
         if (!target) return;
-        if (target.locked) { this.setStatus(`${target.name} is locked. Unlock it first.`); return; }
+        if (this.isLocked(target)) { this.setStatus(`${target.name} is locked. Unlock it first.`); return; }
         if (this.pending && this.pending.layer.id === id) this.cancelPending();
         this.pushUndo({ kind: "layers", label: "Delete layer" });
         this.layers = this.layers.filter((l) => l.id !== id);
@@ -14647,7 +14721,7 @@ class InpaintEditor {
     removeLayers(ids) {
         const want = new Set(ids);
         const hit = this.layers.filter((l) => want.has(l.id));
-        const locked = hit.filter((l) => l.locked), gone = hit.filter((l) => !l.locked);
+        const locked = hit.filter((l) => this.isLocked(l)), gone = hit.filter((l) => !this.isLocked(l));
         if (!gone.length) { this.setStatus(locked.length ? `${locked.map((l) => l.name).join(", ")} ${locked.length > 1 ? "are" : "is"} locked. Unlock first.` : "No layer to delete."); return 0; }
         if (this.pending && gone.includes(this.pending.layer)) this.cancelPending();
         this.pushUndo({ kind: "layers", label: gone.length > 1 ? `Delete ${gone.length} layers` : "Delete layer" });
@@ -14678,20 +14752,26 @@ class InpaintEditor {
         this.renderLayers(); this.draw(); this.notifyChanged();
     }
 
-    moveLayer(id, delta, { undo = false } = {}) {
-        const i = this.layers.findIndex((l) => l.id === id);
-        const j = i + delta;
-        if (i < 0 || j < 0 || j >= this.layers.length) return;
-        if (undo) this.pushUndo({ kind: "layers", label: delta > 0 ? "Move layer up" : "Move layer down" });
-        const [l] = this.layers.splice(i, 1);
-        this.layers.splice(j, 0, l);
-        this.uploaded.baseHash = null;
-        this.uploaded.controlHash = null;
-        this.refsMutated();
-        this.renderLayers();
-        this.draw();
-        this.drawThumb();
-        this.notifyChanged();
+    /**
+     * Move a layer `delta` steps up (+) or down (-) through the tree (`stepLayer`: past a layer, into or out of a group
+     * each count as one), or with `to` "top" / "bottom" to that end of the stack, out of every group. False when it did
+     * not move.
+     */
+    moveLayer(id, delta, { undo = false, to = null } = {}) {
+        const l = this.layers.find((x) => x.id === id);
+        if (!l) return false;
+        const snap = undo ? this.snapshot({ kind: "layers" }) : null;
+        let moved = false;
+        if (to === "top" || to === "bottom") {
+            const i = this.layers.indexOf(l), j = to === "top" ? this.layers.length - 1 : 0;
+            if (i !== j || l.group) { this.layers.splice(i, 1); this.layers.splice(j, 0, l); if (!this.isReference(l)) l.group = null; moved = true; }
+        } else {
+            for (let k = 0; k < Math.abs(delta); k++) { if (!this.stepLayer(l, Math.sign(delta))) break; moved = true; }
+        }
+        if (!moved) return false;
+        if (snap && this.sel) this.pushUndoSnapshot(snap, { label: delta > 0 || to === "top" ? "Move layer up" : "Move layer down" });
+        this.layersRestacked();
+        return true;
     }
 
     async addResults(results) {
@@ -14722,6 +14802,7 @@ class InpaintEditor {
     }
 
     renderLayers() {
+        this.normalizeGroups();
         if (!this.layerList) return;
         const list = this.layerList;
         // a menu opened from a row (the mask row's) belongs to the row that is about to be rebuilt
@@ -14729,36 +14810,45 @@ class InpaintEditor {
         list.innerHTML = "";
         const selected = this.selectedLayers();
         const multi = new Set(selected.length > 1 ? selected.map((l) => l.id) : []);
+        let open = [];   // the groups around the row before, outermost first (the list is a tree: PLAN_0_1_31 §6.5)
         for (let i = this.layers.length - 1; i >= 0; i--) {
             const layer = this.layers[i];
             if (this.isReference(layer)) continue;   // references have their own list below
+            const chain = this.groupsOf(layer.group).reverse();
+            let k = 0;
+            while (k < open.length && k < chain.length && open[k] === chain[k]) k++;
+            for (let q = k; q < chain.length; q++) if (!chain.slice(0, q).some((g) => g.collapsed)) list.appendChild(this.buildGroupRow(chain[q], q));
+            open = chain;
+            if (chain.some((g) => g.collapsed)) continue;
             const inSel = multi.has(layer.id);
-            const row = el("div", "ipc-layer" + (layer.id === this.activeLayerId ? " ipc-selected" : (inSel ? " ipc-multi" : "")));
+            const row = el("div", "ipc-layer" + (layer.id === this.activeLayerId && !this.activeGroupId ? " ipc-selected" : (inSel || layer.id === this.activeLayerId ? " ipc-multi" : "")));
             row.dataset.layer = layer.id;
+            if (chain.length) row.style.setProperty("--ipc-depth", chain.length);
+            if (layer.visible && !this.shown(layer)) row.classList.add("ipc-ghidden");
             row.addEventListener("click", (e) => { if (e.altKey && this.clipEdgeClick(row, e)) return; this.clickLayerRow(layer, e); });
             row.addEventListener("contextmenu", (e) => { e.preventDefault(); e.stopPropagation(); this.openLayerMenu(layer, e); });
             // Alt over the line between two rows: the cursor says a click clips the upper layer to the lower one
             row.addEventListener("pointermove", (e) => row.classList.toggle("ipc-clipedge", !!e.altKey && !!this.clipEdgeLayer(row, e)));
             row.addEventListener("pointerleave", () => row.classList.remove("ipc-clipedge"));
-            if (layer.locked) row.classList.add("ipc-locked");
+            if (this.isLocked(layer)) row.classList.add("ipc-locked");
             const cbase = this.clipBaseOf(layer, i);
             if (i + 1 < this.layers.length && this.layers[i + 1].clip && !layer.clip && layer.kind !== "filter") row.classList.add("ipc-clipbase");
             const top = el("div", "ipc-row");
             // drag the header row to reorder (the sliders below stay draggable as sliders)
             top.draggable = true;
             top.addEventListener("dragstart", (e) => {
-                this.dragLayerId = layer.id;
+                this.dragLayerId = layer.id; this.dragGroupId = null;
                 e.dataTransfer.effectAllowed = "move";
                 try { e.dataTransfer.setData("text/plain", layer.id); } catch (_) { /* ignore */ }
                 row.classList.add("ipc-dragging");
             });
             top.addEventListener("dragend", () => {
-                this.dragLayerId = null;
+                this.dragLayerId = null; this.dragGroupId = null;
                 row.classList.remove("ipc-dragging");
                 list.querySelectorAll(".ipc-drop-above, .ipc-drop-below").forEach((r) => r.classList.remove("ipc-drop-above", "ipc-drop-below"));
             });
             row.addEventListener("dragover", (e) => {
-                if (!this.dragLayerId || this.dragLayerId === layer.id) return;
+                if (!(this.dragGroupId || (this.dragLayerId && this.dragLayerId !== layer.id))) return;
                 e.preventDefault(); e.stopPropagation();
                 e.dataTransfer.dropEffect = "move";
                 const r = row.getBoundingClientRect();
@@ -14768,11 +14858,12 @@ class InpaintEditor {
             });
             row.addEventListener("dragleave", () => row.classList.remove("ipc-drop-above", "ipc-drop-below"));
             row.addEventListener("drop", (e) => {
-                if (!this.dragLayerId || this.dragLayerId === layer.id) return;
+                if (!(this.dragGroupId || (this.dragLayerId && this.dragLayerId !== layer.id))) return;
                 e.preventDefault(); e.stopPropagation();
                 const r = row.getBoundingClientRect();
-                this.reorderLayer(this.dragLayerId, layer.id, e.clientY < r.top + r.height / 2);
-                this.dragLayerId = null;
+                const what = this.dragGroupId ? { group: this.dragGroupId } : { layer: this.dragLayerId };
+                this.dragLayerId = null; this.dragGroupId = null;
+                this.dropInLayers(what, { layer: layer.id }, e.clientY < r.top + r.height / 2);
             });
             top.appendChild(miniButton(layer.visible ? "eye" : "eyeOff", inSel ? "Show or hide the selected layers. Alt+click: solo (show only the selected layers, again to restore)" : "Toggle visibility. Alt+click: solo (show only this layer, again to restore)", (e) => {
                 if (e && e.altKey) { this.soloLayer(layer); return; }
@@ -14823,7 +14914,7 @@ class InpaintEditor {
             top.appendChild(miniButton("trash", inSel ? "Delete the selected layers (Delete). Ctrl+E merges them into one" : "Delete layer (Delete). Drag the row to reorder, Ctrl+] / Ctrl+[ move it up / down, Ctrl+J duplicates, Ctrl+E merges down. Ctrl / Shift + click selects several", () => (inSel ? this.removeLayers([...multi]) : this.removeLayer(layer.id)), "ipc-del"));
             row.appendChild(top);
 
-            if (layer.id !== this.activeLayerId) { list.appendChild(row); continue; }
+            if (layer.id !== this.activeLayerId || this.activeGroupId) { list.appendChild(row); continue; }
             const opRow = el("div", "ipc-op");
             opRow.appendChild(el("span", null, "Opacity"));
             const op = document.createElement("input");
@@ -14903,6 +14994,111 @@ class InpaintEditor {
         row.appendChild(top);
         list.appendChild(row);
         this.renderReferences();
+    }
+
+    /**
+     * A group's row in the layer list (PLAN_0_1_31 §6.5): the fold, the eye, the name, the number of layers, the lock,
+     * ungroup and delete. A click selects the group's layers (they move and scale together), a drag moves the group, a
+     * drop on it puts a layer or group next to it (upper half) or into it (lower half), a right click opens its menu.
+     */
+    buildGroupRow(g, depth) {
+        const members = this.groupLayers(g.id);
+        const active = this.activeGroupId === g.id && members.some((l) => l.id === this.activeLayerId);
+        const row = el("div", "ipc-layer ipc-grouprow" + (active ? " ipc-selected" : "") + (this.isLocked({ locked: g.locked, group: g.parent }) ? " ipc-locked" : ""));
+        row.dataset.group = g.id;
+        row.style.setProperty("--ipc-depth", depth);
+        if (!g.visible || !this.groupsOf(g.parent).every((p) => p.visible)) row.classList.add("ipc-ghidden");
+        row.addEventListener("click", (e) => this.clickGroupRow(g, e));
+        row.addEventListener("contextmenu", (e) => { e.preventDefault(); e.stopPropagation(); this.openGroupMenu(g); });
+        const top = el("div", "ipc-row");
+        top.draggable = true;
+        top.addEventListener("dragstart", (e) => {
+            this.dragGroupId = g.id; this.dragLayerId = null;
+            e.dataTransfer.effectAllowed = "move";
+            try { e.dataTransfer.setData("text/plain", g.id); } catch (_) { /* ignore */ }
+            row.classList.add("ipc-dragging");
+        });
+        top.addEventListener("dragend", () => {
+            this.dragGroupId = null;
+            row.classList.remove("ipc-dragging");
+            this.layerList.querySelectorAll(".ipc-drop-above, .ipc-drop-below").forEach((r) => r.classList.remove("ipc-drop-above", "ipc-drop-below"));
+        });
+        const dragging = () => (this.dragLayerId || (this.dragGroupId && this.dragGroupId !== g.id)) ? true : false;
+        row.addEventListener("dragover", (e) => {
+            if (!dragging()) return;
+            e.preventDefault(); e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            const r = row.getBoundingClientRect();
+            const above = e.clientY < r.top + r.height / 2;
+            row.classList.toggle("ipc-drop-above", above);
+            row.classList.toggle("ipc-drop-below", !above);
+        });
+        row.addEventListener("dragleave", () => row.classList.remove("ipc-drop-above", "ipc-drop-below"));
+        row.addEventListener("drop", (e) => {
+            if (!dragging()) return;
+            e.preventDefault(); e.stopPropagation();
+            const r = row.getBoundingClientRect();
+            const what = this.dragGroupId ? { group: this.dragGroupId } : { layer: this.dragLayerId };
+            this.dragLayerId = null; this.dragGroupId = null;
+            this.dropInLayers(what, { group: g.id }, e.clientY < r.top + r.height / 2);
+        });
+        const fold = miniButton(g.collapsed ? "caretR" : "caretD", g.collapsed ? "Unfold the group" : "Fold the group", () => this.setGroupFlag(g.id, "collapsed", !g.collapsed), "ipc-fold");
+        top.appendChild(fold);
+        top.appendChild(miniButton(g.visible ? "eye" : "eyeOff", "Show or hide every layer of the group (their own eyes stay as they are)", () => this.setGroupFlag(g.id, "visible", !g.visible), g.visible ? "" : "ipc-off"));
+        const mark = el("span", "ipc-gicon");
+        mark.innerHTML = icon("folder", 16);
+        top.appendChild(mark);
+        const name = el("span", "ipc-name", g.name);
+        name.title = `${members.length} layer${members.length === 1 ? "" : "s"}. Click to select them all (they move together), double-click to rename`;
+        name.addEventListener("dblclick", (e) => { e.stopPropagation(); this.renameGroupInline(g, name); });
+        top.appendChild(name);
+        top.appendChild(el("span", "ipc-kind", String(members.length)));
+        top.appendChild(miniButton("lock", g.locked ? "Locked: no layer of the group can be painted, moved, merged or deleted. Click to unlock" : "Lock every layer of the group", () => this.setGroupFlag(g.id, "locked", !g.locked), g.locked ? "ipc-on" : "ipc-dim"));
+        top.appendChild(miniButton("ungroup", "Ungroup: the layers stay where they are, out of the group", () => this.ungroup(g.id)));
+        top.appendChild(miniButton("trash", "Delete the group with its layers", () => this.removeGroup(g.id), "ipc-del"));
+        row.appendChild(top);
+        return row;
+    }
+
+    renameGroupInline(g, nameEl) {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = g.name;
+        input.title = "Group name";
+        let done = false;
+        const finish = (commit) => {
+            if (done) return;
+            done = true;
+            if (!(commit && this.renameGroup(g.id, input.value))) this.renderLayers();
+            this.root.focus({ preventScroll: true });
+        };
+        for (const type of ["click", "pointerdown", "dblclick", "mousedown"]) input.addEventListener(type, (e) => e.stopPropagation());
+        input.addEventListener("keydown", (e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") { e.preventDefault(); finish(true); }
+            if (e.key === "Escape") { e.preventDefault(); finish(false); }
+        });
+        input.addEventListener("blur", () => finish(true));
+        nameEl.textContent = "";
+        nameEl.appendChild(input);
+        input.focus();
+        input.select();
+    }
+
+    openGroupMenu(g) {
+        const row = this.layerList && this.layerList.querySelector(`[data-group="${CSS.escape(g.id)}"]`);
+        if (!row) return;
+        const id = g.id;
+        this.openFlyout({
+            btn: row, items: [],
+            actions: [
+                { icon: "select", label: "Select its layers", title: "Select every layer of the group: they move and scale together", onClick: () => { const x = this.groupById(id); if (x) this.clickGroupRow(x, null); } },
+                { icon: g.collapsed ? "caretD" : "caretR", label: g.collapsed ? "Unfold" : "Fold", onClick: () => { const x = this.groupById(id); if (x) this.setGroupFlag(id, "collapsed", !x.collapsed); } },
+                { sep: true },
+                { icon: "ungroup", label: "Ungroup", title: "The layers stay where they are, out of the group", onClick: () => this.ungroup(id) },
+                { icon: "trash", label: "Delete group and layers", title: "Refused while one of its layers is locked", onClick: () => this.removeGroup(id) },
+            ],
+        }, row);
     }
 
     /** Transparency mask row of a layer: cutout (RMBG), from selection, edit, apply, remove. */
@@ -15675,7 +15871,7 @@ class InpaintEditor {
         if (this.pending) return false;                       // a transform draws with a mesh
         if (this.pointer && this.pointer.layer) return false;  // a live stroke preview changes every frame
         for (const l of this.layers) {
-            if (!l.visible) continue;
+            if (!this.shown(l)) continue;
             if (l.kind === "filter") return false;             // the filter chain is step 2
             if (l.maskEdit) return false;
         }
@@ -15730,7 +15926,7 @@ class InpaintEditor {
         };
         try {
             for (const layer of opts.baseOnly ? [] : this.layers) {
-                if (!layer.visible || !layer.px) continue;
+                if (!this.shown(layer) || !layer.px) continue;
                 if (this.isControl(layer) && opts.forRun) continue;
                 const opacity = layer.opacity == null ? 1 : layer.opacity, blend = layer.blend || "normal";
                 if (this.matchActive(layer) && this.matchFromTiles(layer)) {
@@ -15835,7 +16031,7 @@ class InpaintEditor {
     drawComposite(ctx, opts = {}) {
         if (!this.base) return;
         const below = opts.baseOnly ? [] : opts.upTo == null ? this.layers : this.layers.slice(0, Math.max(0, opts.upTo));
-        const hasFilters = !opts.controlOnly && below.some((l) => l.visible && (l.kind === "filter" || this.matchActive(l)));
+        const hasFilters = !opts.controlOnly && below.some((l) => this.shown(l) && (l.kind === "filter" || this.matchActive(l)));
         // In a region pass the target canvas is already the filter input: no full-size copy.
         if (this.viewPass || !hasFilters) { this.drawLayersInto(ctx, opts); return; }
         // Filters need the composite below them at image resolution: build it offscreen first.
@@ -15878,7 +16074,7 @@ class InpaintEditor {
             for (let i = 0; i < end; i++) {
                 const layer = this.layers[i];
                 if (this.compareShow && layer.kind === "result" && layer.id !== this.compareShow) continue;
-                if ((!layer.visible && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
+                if ((!this.shown(layer) && !(this.compareShow && layer.id === this.compareShow)) || !layer.px) continue;
                 const cb = controlOnly ? null : this.clipBaseOf(layer, i);
                 if (cb && !drawn.has(cb)) continue;
                 if (layer.kind === "filter") {
@@ -15915,9 +16111,310 @@ class InpaintEditor {
         for (let j = i - 1; j >= 0; j--) {
             const b = this.layers[j];
             if (b.clip) continue;
+            // a clip does not reach out of its group: the base is in the same one (a reference is in none and draws nothing)
+            if (!this.isReference(b) && (b.group || null) !== (layer.group || null)) return null;
             return b.kind === "filter" ? null : b;
         }
         return null;
+    }
+
+    // ---- groups as folders (PLAN_0_1_31 §6 step 5) ------------------------------------------------------------------
+
+    /**
+     * A group is a folder and nothing more (pass-through: no opacity, blend or mask of its own): `this.groups` holds
+     * `{ id, name, visible, locked, collapsed, parent }` and a layer names its innermost group in `layer.group`. A group
+     * changes the picture only by hiding its layers, so every walk of the stack asks `shown(l)` where it asked
+     * `l.visible`, and every edit asks `isLocked(l)`. The layers of a group sit together in the stack (references do not
+     * count: they are in no group and may sit anywhere); `normalizeGroups` keeps it so after every change.
+     */
+    groupById(id) {
+        if (!id) return null;
+        for (const g of this.groups) if (g.id === id) return g;
+        return null;
+    }
+
+    /** The group `id` and the groups it is in, innermost first. */
+    groupsOf(id) {
+        const out = [];
+        for (let g = this.groupById(id); g && out.length <= this.groups.length; g = this.groupById(g.parent)) out.push(g);
+        return out;
+    }
+
+    /** Whether a layer is drawn: its own eye and the eyes of every group it is in. */
+    shown(l) {
+        if (!l.visible) return false;
+        if (!l.group) return true;
+        for (const g of this.groupsOf(l.group)) if (!g.visible) return false;
+        return true;
+    }
+
+    /** Whether a layer is locked, by its own lock or by a group's. */
+    isLocked(l) {
+        if (!l) return false;
+        if (l.locked) return true;
+        if (!l.group) return false;
+        for (const g of this.groupsOf(l.group)) if (g.locked) return true;
+        return false;
+    }
+
+    /** Whether a layer (or a group, by its `parent`) is in group `gid`, at any depth. */
+    inGroup(l, gid) {
+        const start = l && (l.group !== undefined ? l.group : l.parent);
+        return !!start && this.groupsOf(start).some((g) => g.id === gid);
+    }
+
+    /** The layers of a group (and of the groups in it), bottom first. */
+    groupLayers(gid) {
+        return this.layers.filter((l) => !this.isReference(l) && this.inGroup(l, gid));
+    }
+
+    groupsCopy() {
+        return this.groups.map((g) => ({ id: g.id, name: g.name, visible: g.visible !== false, locked: !!g.locked, collapsed: !!g.collapsed, parent: g.parent || null }));
+    }
+
+    /**
+     * Keep the groups sound after any change of the stack: an unknown group id or a reference's group is dropped, a
+     * layer apart from its group's run of layers leaves that group (and the ones inside it), a group without layers
+     * goes. Pass-through groups make this cheap to get wrong only in the panel: leaving a group changes the picture
+     * only when the group was hidden. True when it changed anything.
+     */
+    normalizeGroups() {
+        if (this.holdGroups > 0) return false;   // layers are still being added (a PSD opening, a state loading)
+        let changed = false;
+        if (!this.groups.length) {
+            for (const l of this.layers) if (l.group) { l.group = null; changed = true; }
+            if (this.activeGroupId) this.activeGroupId = null;
+            return changed;
+        }
+        const byId = new Map(this.groups.map((g) => [g.id, g]));
+        for (const g of this.groups) {
+            if (g.parent && !byId.has(g.parent)) { g.parent = null; changed = true; }
+            // a cycle (never made here; a damaged file): the group goes to the top level
+            const seen = new Set([g.id]);
+            for (let p = byId.get(g.parent); p; p = byId.get(p.parent)) {
+                if (seen.has(p.id)) { g.parent = null; changed = true; break; }
+                seen.add(p.id);
+            }
+        }
+        const chainOf = (id) => { const c = []; for (let g = byId.get(id); g; g = byId.get(g.parent)) c.unshift(g.id); return c; };
+        const closed = new Set(), used = new Set();
+        let open = [];
+        for (const l of this.layers) {
+            if (this.isReference(l)) { if (l.group) { l.group = null; changed = true; } continue; }
+            if (l.group && !byId.has(l.group)) { l.group = null; changed = true; }
+            let chain = l.group ? chainOf(l.group) : [];   // outermost first
+            const cut = chain.findIndex((id) => closed.has(id));
+            if (cut >= 0) { chain = chain.slice(0, cut); l.group = chain.length ? chain[chain.length - 1] : null; changed = true; }
+            let k = 0;
+            while (k < open.length && k < chain.length && open[k] === chain[k]) k++;
+            for (let q = k; q < open.length; q++) closed.add(open[q]);
+            open = chain;
+            for (const id of chain) used.add(id);
+        }
+        const before = this.groups.length;
+        this.groups = this.groups.filter((g) => used.has(g.id));
+        if (this.groups.length !== before) changed = true;
+        if (this.activeGroupId && !used.has(this.activeGroupId)) this.activeGroupId = null;
+        return changed;
+    }
+
+    /** Stack order changed: what every change of the layer list does after it. */
+    layersRestacked() {
+        this.normalizeGroups();
+        this.uploaded.baseHash = null;
+        this.uploaded.controlHash = null;
+        this.refsMutated();
+        this.renderLayers(); this.draw(); this.drawThumb(); this.notifyChanged();
+    }
+
+    /**
+     * Put layers (the selected ones by default) into a new group (Ctrl+G), one "layers" undo step. The group takes the
+     * place of the topmost of them, inside the deepest group that holds all of them; a group whose layers are all among
+     * them goes in whole (nested), every other layer moves in by itself, in the order of the stack. The new group is
+     * selected (its layers).
+     */
+    groupLayersNow(layers = this.selectedLayers(), { name = null } = {}) {
+        const pick = this.layers.filter((l) => layers.includes(l) && !this.isReference(l));
+        if (!pick.length) { this.setStatus("Select the layers to group (a reference is in no group)."); return null; }
+        if (this.pending) this.cancelPending();
+        const picked = new Set(pick);
+        const chains = pick.map((l) => this.groupsOf(l.group).map((g) => g.id).reverse());   // outermost first
+        const common = [];
+        for (let k = 0; chains.every((c) => k < c.length && c[k] === chains[0][k]); k++) common.push(chains[0][k]);
+        const parent = common.length ? common[common.length - 1] : null;
+        // where the block goes: above what is left of the topmost layer's unit (its own group within `parent`), or where
+        // that layer was when all of the unit moves
+        const topChain = chains[chains.length - 1].slice(common.length);
+        const unit = topChain.length ? topChain[0] : null;
+        const rest = this.layers.filter((l) => !picked.has(l));
+        const unitRest = unit ? rest.filter((l) => this.inGroup(l, unit)) : [];
+        const topAt = this.layers.indexOf(pick[pick.length - 1]);
+        const at = unitRest.length ? rest.indexOf(unitRest[unitRest.length - 1]) + 1 : rest.filter((l) => this.layers.indexOf(l) < topAt).length;
+        // which groups go in whole: the outermost group below `parent` on a layer's chain whose layers are all picked
+        const whole = new Map();
+        pick.forEach((l, i) => {
+            const c = chains[i].slice(common.length);
+            whole.set(l, c.find((id) => this.groupLayers(id).every((x) => picked.has(x))) || null);
+        });
+        this.pushUndo({ kind: "layers", label: "Group layers" });
+        this.groupCounter = (this.groupCounter || 0) + 1;
+        let n = this.groups.length + 1;
+        while (this.groups.some((g) => g.name === `Group ${n}`)) n++;
+        const g = { id: "G" + Date.now().toString(36) + this.groupCounter, name: name || `Group ${n}`, visible: true, locked: false, collapsed: false, parent };
+        this.groups.push(g);
+        for (const l of pick) {
+            const w = whole.get(l);
+            if (w) this.groupById(w).parent = g.id;
+            else l.group = g.id;
+        }
+        this.layers = [...rest.slice(0, at), ...pick, ...rest.slice(at)];
+        this.normalizeGroups();
+        const ids = pick.map((l) => l.id);
+        this.activeLayerId = ids[ids.length - 1];
+        this.layerSel = new Set(ids.length > 1 ? ids : []);
+        this.layerAnchorId = this.activeLayerId;
+        this.activeGroupId = g.id;
+        this.layersRestacked();
+        this.updateSubbar();
+        this.setStatus(`${g.name}: ${pick.length} layer${pick.length > 1 ? "s" : ""} grouped. The eye and the lock of its row count for all of them; Ctrl+Z takes it back.`);
+        return g;
+    }
+
+    /** Dissolve a group: its layers and groups go to the group around it, where they are. One "layers" undo step. */
+    ungroup(gid) {
+        const g = this.groupById(gid);
+        if (!g) { this.setStatus("No such group."); return false; }
+        this.pushUndo({ kind: "layers", label: "Ungroup" });
+        for (const l of this.layers) if (l.group === g.id) l.group = g.parent || null;
+        for (const s of this.groups) if (s.parent === g.id) s.parent = g.parent || null;
+        this.groups = this.groups.filter((x) => x !== g);
+        if (this.activeGroupId === g.id) this.activeGroupId = null;
+        // a hidden or locked group gave its layers that state; they keep it as their own
+        this.layersRestacked();
+        this.setStatus(`${g.name} ungrouped.`);
+        return true;
+    }
+
+    /** Delete a group with its layers, one "layers" undo step; refused while one of them is locked. */
+    removeGroup(gid) {
+        const g = this.groupById(gid);
+        if (!g) { this.setStatus("No such group."); return 0; }
+        const members = this.groupLayers(g.id);
+        const locked = members.filter((l) => this.isLocked(l));
+        if (locked.length) { this.setStatus(`${locked.map((l) => l.name).join(", ")} ${locked.length > 1 ? "are" : "is"} locked. Unlock first.`); return 0; }
+        if (this.pending && members.includes(this.pending.layer)) this.cancelPending();
+        this.pushUndo({ kind: "layers", label: "Delete group" });
+        this.layers = this.layers.filter((l) => !members.includes(l));
+        if (members.some((l) => l.id === this.activeLayerId)) this.activeLayerId = null;
+        this.layerSel = new Set();
+        const gone = new Set([g.id, ...this.groups.filter((s) => this.inGroup(s, g.id)).map((s) => s.id)]);
+        this.groups = this.groups.filter((s) => !gone.has(s.id));
+        this.layersRestacked();
+        this.renderHistory();
+        this.setStatus(`${g.name} deleted with ${members.length} layer${members.length === 1 ? "" : "s"}. Ctrl+Z takes it back.`);
+        return members.length;
+    }
+
+    /**
+     * A group's switch: `visible`, `locked` or `collapsed`. Like a layer's eye and lock, no undo step; saved with the
+     * document. Locking a group ends a transform pending on one of its layers.
+     */
+    setGroupFlag(gid, key, value) {
+        const g = this.groupById(gid);
+        if (!g || !["visible", "locked", "collapsed"].includes(key)) return false;
+        const v = !!value;
+        if (!!g[key] === v) return false;
+        g[key] = v;
+        if (key === "locked" && v && this.pending && this.inGroup(this.pending.layer, g.id)) this.cancelPending();
+        if (key === "visible") { this.visibilityChanged(); return true; }
+        this.renderLayers();
+        if (key === "locked") this.updateSubbar();
+        this.notifyChanged();
+        return true;
+    }
+
+    renameGroup(gid, name) {
+        const g = this.groupById(gid);
+        const v = String(name || "").trim();
+        if (!g || !v || v === g.name) return false;
+        this.pushUndo({ kind: "layers", label: "Rename group" });
+        g.name = v;
+        this.renderLayers(); this.notifyChanged();
+        return true;
+    }
+
+    /** A click on a group's row selects its layers (Ctrl adds them to the selection); the row shows as selected. */
+    clickGroupRow(g, e) {
+        const members = this.groupLayers(g.id);
+        if (!members.length) return;
+        const ids = members.map((l) => l.id);
+        const ctrl = e && (e.ctrlKey || e.metaKey);
+        const cur = ctrl ? this.selectedLayers().map((l) => l.id) : [];
+        const all = [...new Set([...cur, ...ids])];
+        this.selectLayers(all, { active: ids[ids.length - 1] });
+        this.activeGroupId = g.id;
+        this.renderLayers();
+    }
+
+    /**
+     * Move layers or a group in the panel (drag and drop), one "layers" undo step. `what`: `{ layer }` or `{ group }`;
+     * `onto`: `{ layer }` or `{ group }` (a group's row), `above` as the panel shows it. Onto a layer's row the moved
+     * item joins that layer's group; onto a group's row, above goes next to the group, below goes into it at its top.
+     */
+    dropInLayers(what, onto, above) {
+        const g = what.group ? this.groupById(what.group) : null;
+        const src = what.layer ? this.layers.find((l) => l.id === what.layer) : null;
+        if (!g && !src) return false;
+        const block = g ? this.groupLayers(g.id) : [src];
+        if (!block.length) return false;
+        const tLayer = onto.layer ? this.layers.find((l) => l.id === onto.layer) : null;
+        const tGroup = onto.group ? this.groupById(onto.group) : null;
+        if (!tLayer && !tGroup) return false;
+        if (tLayer && block.includes(tLayer)) return false;
+        if (g && tGroup && (tGroup === g || this.inGroup(tGroup, g.id))) return false;
+        this.pushUndo({ kind: "layers", label: "Layer order" });
+        const rest = this.layers.filter((l) => !block.includes(l));
+        let at, parent;
+        if (tLayer) {
+            const j = rest.indexOf(tLayer);
+            at = above ? j + 1 : j;
+            parent = tLayer.group || null;
+        } else {
+            const mem = rest.filter((l) => this.inGroup(l, tGroup.id));
+            at = mem.length ? rest.indexOf(mem[mem.length - 1]) + 1 : rest.length;
+            parent = above ? (tGroup.parent || null) : tGroup.id;
+        }
+        if (g) g.parent = parent;
+        else if (!this.isReference(src)) src.group = parent;
+        this.layers = [...rest.slice(0, at), ...block, ...rest.slice(at)];
+        this.layersRestacked();
+        return true;
+    }
+
+    /**
+     * One step up (+1) or down (-1) through the tree (Ctrl+] / Ctrl+[): past the next layer of the same group, into a
+     * group that starts next to it (at its near end), or out of its own group when it is at that group's end. False
+     * when it cannot move.
+     */
+    stepLayer(l, dir) {
+        const i = this.layers.indexOf(l);
+        const j = i + dir;
+        const n = this.layers[j];
+        const own = l.group ? this.groupById(l.group) : null;
+        if (!n || (own && !this.isReference(n) && !this.inGroup(n, own.id))) {
+            if (!own || this.isReference(l)) return false;
+            l.group = own.parent || null;   // out of its group, in place
+            return true;
+        }
+        if (this.isReference(n) || this.isReference(l) || (n.group || null) === (l.group || null)) {
+            this.layers[i] = n; this.layers[j] = l;
+            return true;
+        }
+        // `n` is in a group inside the layer's own (or any group, at the top level): into the outermost of them
+        const chain = this.groupsOf(n.group);
+        const k = own ? chain.findIndex((x) => x.id === own.id) : chain.length;
+        l.group = chain[k - 1].id;
+        return true;
     }
 
     /**
@@ -16852,7 +17349,7 @@ class InpaintEditor {
             this.peekBase ? 1 : 0, this.compare ? `${this.compare.a}:${this.compare.b}:${this.compare.split}` : 0,
             this.compareShow || 0, this.filterPreview || 0, this.viewTilt() || 0];
         for (const l of this.layers) {
-            parts.push(l.id, l.visible ? 1 : 0, l.opacity, l.blend, l.role, l.x, l.y, l.w, l.h,
+            parts.push(l.id, this.shown(l) ? 1 : 0, l.opacity, l.blend, l.role, l.x, l.y, l.w, l.h,
                 l.kind === "filter" ? l.filter + JSON.stringify(l.params || {}) : "",
                 l.match ? `${l.match.strength}:${l.match.source}` : "", l.maskPx ? (l.maskOff ? 2 : 1) : 0, l.maskEdit ? 1 : 0);
         }
@@ -17006,7 +17503,7 @@ class InpaintEditor {
             });
             ctx.restore();
         }
-        const maskLayer = this.layers.find((l) => l.maskPx && l.maskEdit && l.visible);
+        const maskLayer = this.layers.find((l) => l.maskPx && l.maskEdit && this.shown(l));
         if (maskLayer) {
             ctx.save();
             ctx.lineWidth = 2 / s;
@@ -17548,6 +18045,7 @@ class InpaintEditor {
             height: this.height,
             base: this.base.ref,
             prompt: this.promptText,
+            groups: this.groupsCopy(),
             layers: this.layers.map((l) => ({
                 id: l.id, name: l.name, kind: l.kind, role: l.role || "none", blend: l.blend || "normal", ref: l.ref,
                 x: l.x, y: l.y, w: l.w, h: l.h, opacity: l.opacity, visible: l.visible, mask: l.maskRef || null,
@@ -17556,6 +18054,7 @@ class InpaintEditor {
                 ...(l.locked ? { locked: true } : {}),
                 ...(l.alphaLock ? { alphaLock: true } : {}),
                 ...(l.clip ? { clip: true } : {}),
+                ...(l.group ? { group: l.group } : {}),
                 ...(l.kind === "filter" ? { filter: l.filter, params: l.params, lut: l.lut || null, plate: l.plate || null } : {}),
                 ...(l.kind === "text" && l.text ? { text: l.text } : {}),
             })),
@@ -17622,78 +18121,87 @@ class InpaintEditor {
             this.syncGenControls();
             this.renderSettings();
             const textToRender = [];
-            for (const l of state.layers || []) {
-                if (l.kind === "filter") {
+            // groups as folders (PLAN_0_1_31 §6.5): the list, each layer's `group` below; normalizeGroups drops what does not fit
+            this.groups = (Array.isArray(state.groups) ? state.groups : []).filter((g) => g && typeof g.id === "string").map((g) => ({
+                id: g.id, name: String(g.name || "Group"), visible: g.visible !== false, locked: !!g.locked, collapsed: !!g.collapsed, parent: typeof g.parent === "string" ? g.parent : null }));
+            this.activeGroupId = null;
+            // a list drawn while a layer loads (an await below) must not drop a group whose layers are not in yet
+            this.holdGroups = (this.holdGroups || 0) + 1;
+            try {
+                for (const l of state.layers || []) {
+                    if (l.kind === "filter") {
+                        try {
+                            const pixels = this.pixels.Layer.empty(this.width, this.height);
+                            let maskPx = null;
+                            if (l.mask && l.mask.filename) {
+                                try { maskPx = this.pixels.Mask.fromImage(await loadImageEl(viewUrl(l.mask)), pixels.width, pixels.height); } catch (err) { console.warn("Inpaint Canvas: layer mask missing", l.mask, err); }
+                                if (stale()) return;
+                            }
+                            let lutData = null;
+                            if (l.lut && l.lut.ref) {
+                                try { lutData = lutFromImage(await loadImageEl(viewUrl(l.lut.ref)), l.lut.size); } catch (err) { console.warn("Inpaint Canvas: LUT missing", l.lut, err); }
+                                if (stale()) return;
+                            }
+                            let plateImg = null;
+                            if (l.plate && l.plate.ref) {
+                                try { plateImg = await loadImageEl(viewUrl(l.plate.ref)); } catch (err) { console.warn("Inpaint Canvas: grain plate missing", l.plate, err); }
+                                if (stale()) return;
+                            }
+                            // an id that is not installed here (a plugin switched off, a document from elsewhere) is kept with
+                            // its params: applyFilter passes the picture through, and the next save writes it back unchanged
+                            const fid = typeof l.filter === "string" && l.filter ? l.filter : "grain";
+                            this.layers.push(installLayerAliases({
+                                id: l.id, name: l.name, kind: "filter", role: "none", blend: l.blend || "normal", ref: null, px: pixels,
+                                x: 0, y: 0, w: this.width, h: this.height, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, clip: !!l.clip, group: l.group || null,
+                                maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
+                                filter: fid, params: FILTERS[fid] ? { ...filterDefaults(fid), ...(l.params || {}) } : { ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,
+                                plate: plateImg ? l.plate : null, _plateImg: plateImg,
+                            }, this.pixels));
+                            this.filterCounter += 1;
+                        } catch (err) {
+                            console.warn("Inpaint Canvas: filter layer skipped", l, err);
+                        }
+                        continue;
+                    }
+                    if (l.kind === "text" && l.text && !l.ref) {
+                        // never uploaded (editor closed without sync): render it again from its description
+                        const layer = { id: l.id, name: l.name, kind: "text", role: l.role || "none", blend: l.blend || "normal", ref: null, px: this.pixels.Layer.empty(1, 1), x: l.x, y: l.y, w: 1, h: 1, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: true, locked: !!l.locked, alphaLock: !!l.alphaLock, clip: !!l.clip, group: l.group || null, maskPx: null, maskRef: null, maskDirty: false, maskEdit: false, match: { strength: 0, source: "surroundings" }, text: { ...TEXT_DEFAULTS, ...l.text } };
+                        this.layers.push(installLayerAliases(layer, this.pixels));
+                        this.textCounter = (this.textCounter || 0) + 1;
+                        textToRender.push(layer);
+                        continue;
+                    }
+                    if (!l.ref) continue;
                     try {
-                        const pixels = this.pixels.Layer.empty(this.width, this.height);
+                        const got = await streamed(l.ref, this.pixels.Layer);
+                        if (stale()) { if (got && got.px) got.px.release(); return; }
+                        let pixels = got && got.px;
+                        if (!pixels) {
+                            const limg = await imageOf(got, l.ref);
+                            if (stale()) return;
+                            pixels = this.pixels.Layer.fromImage(limg);
+                        }
                         let maskPx = null;
                         if (l.mask && l.mask.filename) {
                             try { maskPx = this.pixels.Mask.fromImage(await loadImageEl(viewUrl(l.mask)), pixels.width, pixels.height); } catch (err) { console.warn("Inpaint Canvas: layer mask missing", l.mask, err); }
                             if (stale()) return;
                         }
-                        let lutData = null;
-                        if (l.lut && l.lut.ref) {
-                            try { lutData = lutFromImage(await loadImageEl(viewUrl(l.lut.ref)), l.lut.size); } catch (err) { console.warn("Inpaint Canvas: LUT missing", l.lut, err); }
-                            if (stale()) return;
-                        }
-                        let plateImg = null;
-                        if (l.plate && l.plate.ref) {
-                            try { plateImg = await loadImageEl(viewUrl(l.plate.ref)); } catch (err) { console.warn("Inpaint Canvas: grain plate missing", l.plate, err); }
-                            if (stale()) return;
-                        }
-                        // an id that is not installed here (a plugin switched off, a document from elsewhere) is kept with
-                        // its params: applyFilter passes the picture through, and the next save writes it back unchanged
-                        const fid = typeof l.filter === "string" && l.filter ? l.filter : "grain";
                         this.layers.push(installLayerAliases({
-                            id: l.id, name: l.name, kind: "filter", role: "none", blend: l.blend || "normal", ref: null, px: pixels,
-                            x: 0, y: 0, w: this.width, h: this.height, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, clip: !!l.clip,
+                            id: l.id, name: l.name, kind: l.kind || "result", role: l.role || "none", blend: l.blend || "normal",
+                            ref: l.ref, px: pixels,
+                            x: l.x, y: l.y, w: l.w, h: l.h, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, alphaLock: !!l.alphaLock, clip: !!l.clip, group: l.group || null,
                             maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
-                            filter: fid, params: FILTERS[fid] ? { ...filterDefaults(fid), ...(l.params || {}) } : { ...(l.params || {}) }, lut: l.lut || null, _lutData: lutData,
-                            plate: plateImg ? l.plate : null, _plateImg: plateImg,
+                            match: l.match && typeof l.match === "object" ? { strength: +l.match.strength || 0, source: l.match.source === "underneath" ? "underneath" : "surroundings" } : { strength: 0, source: "surroundings" },
+                            ...(l.kind === "text" && l.text ? { text: { ...TEXT_DEFAULTS, ...l.text } } : {}),
                         }, this.pixels));
-                        this.filterCounter += 1;
+                        if (l.kind === "paint") this.paintCounter += 1;
+                        if (l.kind === "text") this.textCounter = (this.textCounter || 0) + 1;
                     } catch (err) {
-                        console.warn("Inpaint Canvas: filter layer skipped", l, err);
+                        console.warn("Inpaint Canvas: layer missing", l.ref, err);
                     }
-                    continue;
                 }
-                if (l.kind === "text" && l.text && !l.ref) {
-                    // never uploaded (editor closed without sync): render it again from its description
-                    const layer = { id: l.id, name: l.name, kind: "text", role: l.role || "none", blend: l.blend || "normal", ref: null, px: this.pixels.Layer.empty(1, 1), x: l.x, y: l.y, w: 1, h: 1, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: true, locked: !!l.locked, alphaLock: !!l.alphaLock, clip: !!l.clip, maskPx: null, maskRef: null, maskDirty: false, maskEdit: false, match: { strength: 0, source: "surroundings" }, text: { ...TEXT_DEFAULTS, ...l.text } };
-                    this.layers.push(installLayerAliases(layer, this.pixels));
-                    this.textCounter = (this.textCounter || 0) + 1;
-                    textToRender.push(layer);
-                    continue;
-                }
-                if (!l.ref) continue;
-                try {
-                    const got = await streamed(l.ref, this.pixels.Layer);
-                    if (stale()) { if (got && got.px) got.px.release(); return; }
-                    let pixels = got && got.px;
-                    if (!pixels) {
-                        const limg = await imageOf(got, l.ref);
-                        if (stale()) return;
-                        pixels = this.pixels.Layer.fromImage(limg);
-                    }
-                    let maskPx = null;
-                    if (l.mask && l.mask.filename) {
-                        try { maskPx = this.pixels.Mask.fromImage(await loadImageEl(viewUrl(l.mask)), pixels.width, pixels.height); } catch (err) { console.warn("Inpaint Canvas: layer mask missing", l.mask, err); }
-                        if (stale()) return;
-                    }
-                    this.layers.push(installLayerAliases({
-                        id: l.id, name: l.name, kind: l.kind || "result", role: l.role || "none", blend: l.blend || "normal",
-                        ref: l.ref, px: pixels,
-                        x: l.x, y: l.y, w: l.w, h: l.h, opacity: l.opacity ?? 1, visible: l.visible !== false, dirty: false, locked: !!l.locked, alphaLock: !!l.alphaLock, clip: !!l.clip,
-                        maskPx, maskRef: maskPx ? l.mask : null, maskDirty: false, maskEdit: false, maskOff: !!(maskPx && l.maskOff),
-                        match: l.match && typeof l.match === "object" ? { strength: +l.match.strength || 0, source: l.match.source === "underneath" ? "underneath" : "surroundings" } : { strength: 0, source: "surroundings" },
-                        ...(l.kind === "text" && l.text ? { text: { ...TEXT_DEFAULTS, ...l.text } } : {}),
-                    }, this.pixels));
-                    if (l.kind === "paint") this.paintCounter += 1;
-                    if (l.kind === "text") this.textCounter = (this.textCounter || 0) + 1;
-                } catch (err) {
-                    console.warn("Inpaint Canvas: layer missing", l.ref, err);
-                }
-            }
+            } finally { this.holdGroups--; }
+            this.normalizeGroups();   // a layer that failed to load may leave a group empty
             if (textToRender.length) {
                 await loadFontList();
                 if (stale()) return;
@@ -17764,7 +18272,7 @@ class InpaintEditor {
         let baseRef = this.uploaded.baseRef;
         if (!this.uploaded.baseHash || !baseRef) {
             let hash;
-            if (!this.layers.some((l) => l.visible && !this.isControl(l)) && this.base.ref) {
+            if (!this.layers.some((l) => this.shown(l) && !this.isControl(l)) && this.base.ref) {
                 baseRef = this.base.ref;
                 hash = "orig:" + this.base.ref.filename;
             } else {
@@ -17785,7 +18293,7 @@ class InpaintEditor {
             this.uploaded.maskRef = maskRef;
         }
         let controlRef = null;
-        if (this.layers.some((l) => l.visible && this.isControl(l))) {
+        if (this.layers.some((l) => this.shown(l) && this.isControl(l))) {
             if (!this.uploaded.controlHash || !this.uploaded.controlRef) {
                 const up = await uploadCanvas(this.flattenToCanvas({ controlOnly: true }), `n${id}_control`);
                 this.uploaded.controlHash = up.hash;

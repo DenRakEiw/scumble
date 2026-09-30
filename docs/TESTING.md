@@ -84,7 +84,11 @@ screen before stays so; it takes the test window full screen and back), `tools/c
 clipped to the layer below, PLAN_0_1_31 §6 step 3: analytic on the flatten and the workers' export (coverage 0 = the
 clipped layers hidden, 255 = their clip off), every path against the flatten, the GPU view against Canvas 2D at 1:1,
 at a base of 60 %, over an emptied base and with the base off the view, a hidden base, a filter base, undo, getValue,
-PSD both ways, the merges; run it on both backends). Every gate name `X` without a rule of its own
+PSD both ways, the merges; run it on both backends), `tools/groups_test.py` (gate `groups`, groups as folders,
+PLAN_0_1_31 §6 step 5: a hidden group against its layers hidden one by one on every path, byte for byte, the GPU view
+against Canvas 2D, lock, solo, the clip's group edge, the steps and drops through the tree, undo, the panel's tree,
+getValue / setValue with a damaged state repaired, PSD both writers, opened and dropped, ORA, the commands; both
+backends: the PNG export and the stack box are the tiles' only). Every gate name `X` without a rule of its own
 in `tools/run_gates.sh` runs `tools/X_test.py`.
 
 Item 26 (`docs/PLAN_REFS.md`, @img tokens for reference layers): `node tools/refs_layout_test.js` pins every adapter's
