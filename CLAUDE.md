@@ -120,8 +120,8 @@ commit 5d95c91 deployed (Vercel: success).
   (both backends, 19 mutations red), 15k measured (no cost); the worker PSD path dropped `clip` before (fixed).
   **Next: 6.6 fill layers.** Open for the user: how the multi-selection, the solo and the align row feel (and whether
   aligning by painted pixels is wanted); whether the clip at soft edges looks right or wants the isolated group (7 - 9
-  days); groups: empty groups are not kept (a group lives as long as it has a layer), no ungroup key (Ctrl+Shift+G is
-  the grid), groups with their own opacity / blend only on their word (7 - 9 days).
+  days). Decided for groups (the user, 2026-09-30): no empty groups, no ungroup key, no group opacity / blend (the
+  layers' own opacity is enough).
 - **Open for the user:** whether 0.1.33 feels right under their pen, inside a selection too (the benchmark found no cost
   of the selection itself; BUGS.md lists what it did not cover); the smudge and tone brushes still dab once per coalesced
   point (BUGS.md, not a regression; a change would alter a pen's smudge, their eye first); the defaults of packages 4
