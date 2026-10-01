@@ -175,6 +175,16 @@ the chevron click to open the swap menu and the first Escape to close it. While 
 bash tools/run_gates.sh 26c-it --offline --tiles on editor`. The hover and drag steps call `Page.bringToFront` first:
 synthetic pointer events are unreliable while a real mouse is over the window (see the flakes below).
 
+FLUX 3 Image (`electron/main/providers/flux3.js`, `recipes/flux3.json`, `docs/PLAN_FLUX3.md`): `node tools/flux3_test.js`
+(plain Node, a scripted api.bfl.ai, 96 checks) pins the recipe as `recipes.js` serves it, the body against the released
+schema (only prompt, images, aspect_ratio, resolution, safety_tolerance, grounding; every body sent is checked at the
+end), the aspect preset within 3 % or auto, the tiers by area, the 256 px / 16 MP / 20 MB rules (the crop refused, a
+reference scaled through `ctx.resizePng`, the JPEG fallback), the parameter coercion (safety 0 to 4, grounding from an
+agent's words), the poll (Reasoning, 503 / 422 status bodies, dropped connections and gateway pages retried, the
+download tried three times, the regional polling_url allowlist), the answer's info (cost, megapixels, expanded prompt,
+no seed) and that FLUX.2 through the same adapter is unchanged. Light tier: written from the docs; a live call is the
+user's (`docs/PLAN_FLUX3.md`).
+
 26e, @img tokens on local ComfyUI recipes (`renderer/editor/comfyrefs.js`, `docs/RECIPES.md` "Reference images named
 in the prompt (local)"): `node tools/comfyrefs_test.js` (plain Node, run by `recipes_test.py`'s node step after
 `recipes_test.js`) covers the shipped specs (Qwen 2.1 `<image{n}>` with 10 slots, Klein `image {n}` with 4, both

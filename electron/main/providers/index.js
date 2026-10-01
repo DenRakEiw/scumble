@@ -22,7 +22,8 @@
 //            settings (ToAPIs, OpenRouter; ModelArk's and Oxen.ai's loopback mock; never from a recipe), toJpeg(png, quality): an image re-encoded by Electron's
 //            nativeImage, opaque(png): whether it has no transparent pixel; bitmap(png): { width, height, data } (BGRA),
 //            fromBitmap({ width, height, data }): a PNG of it, cropPng(png, { x, y, width, height }): a part of a PNG as PNG
-//            (Magnific's Ideogram mask and Image Expand; only Scumble's own PNGs go through them, never an answer)
+//            (Magnific's Ideogram mask and Image Expand; only Scumble's own PNGs go through them, never an answer),
+//            resizePng(png, { width, height }): a PNG scaled (FLUX 3's reference layers outside 256 px .. 16 MP)
 //
 // The crop and the stitch happen in the renderer (renderer/editor/stitch.js); the
 // adapters only speak HTTP. Keys come from keys.js by the provider's name.
@@ -292,9 +293,16 @@ function cropPng(png, r) {
     return img.crop({ x: r.x, y: r.y, width: r.width, height: r.height }).toPNG();
 }
 
+/** A PNG scaled to width x height (Skia's best filter) as PNG; null when it cannot be decoded. FLUX 3's reference sizes. */
+function resizePng(png, size) {
+    const img = nativeImage.createFromBuffer(Buffer.from(png));
+    if (img.isEmpty()) return null;
+    return img.resize({ width: Math.max(1, Math.round(size.width)), height: Math.max(1, Math.round(size.height)), quality: "best" }).toPNG();
+}
+
 function contextFor(id, p, key) {
     return {
-        key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a), toJpeg, opaque, bitmap, fromBitmap, cropPng,
+        key, fetch: globalThis.fetch, log: (...a) => console.log(`[${id}]`, ...a), toJpeg, opaque, bitmap, fromBitmap, cropPng, resizePng,
         base: typeof p.baseUrl === "function" ? p.baseUrl(settings.get()) : undefined,
     };
 }

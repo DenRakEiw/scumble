@@ -242,6 +242,8 @@ async function main() {
             flux2_max: { bfl: {}, fal: { model: "fal-ai/flux-2-max/edit" }, replicate: {}, wavespeed: { model: "wavespeed-ai/flux-2-max/edit" }, openrouter: {}, comfyrouter: {} },
             // Oxen's own cap is 16 for every model; FLUX.2 [klein] takes four pictures (BFL)
             flux2_klein: { bfl: {}, fal: { model: "fal-ai/flux-2/klein/9b/edit" }, wavespeed: { model: "wavespeed-ai/flux-2-klein-9b/edit" }, oxen: { max: 4 } },
+            // FLUX 3 Image (docs/PLAN_FLUX3.md): the text route takes the reference layers, up to ten
+            flux3: { bfl: {} },
             gpt_image_2: { toapis: {}, openai: {}, fal: { model: "openai/gpt-image-2/edit" }, replicate: {}, wavespeed: { model: "openai/gpt-image-2/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-edit" } },
             gpt_image_2_5_flare: { toapis: {}, openai: {}, wavespeed: { model: "openai/gpt-image-2.5-flare/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-5-edit" } },
             gpt_image_2_5_sunburst: { toapis: {}, openai: {}, wavespeed: { model: "openai/gpt-image-2.5-sunburst/edit" }, openrouter: {}, comfyrouter: {}, oxen: {}, magnific: { model: "text-to-image/gpt-image-2-5-edit" } },
@@ -284,7 +286,7 @@ async function main() {
             }
         }
         const stale = Object.entries(TEXT_REFS).flatMap(([id, rows]) => Object.keys(rows).map((pid) => `${id}/${pid}`)).filter((n) => !seen.has(n));
-        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 98, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
+        check(`every shipped variant with a text shape carries the table's text.refs, normalised (${withRefs} take references of ${withText})`, !wrong.length && withRefs === 99, wrong.slice(0, 5).join(" | ") || `${withRefs} with text.refs`);
         check("every row of the table names a shipped provider variant", !stale.length, stale.join(", "));
         check("every text shape without text.refs is on the takes-none list", !none.length, none.join(", "));
         const noneStale = Object.entries(TAKES_NONE).flatMap(([id, pids]) => pids.map((pid) => `${id}/${pid}`)).filter((n) => { const [id, pid] = n.split("/"); const r = list.find((x) => x.id === id); return !r || !r.providers[pid] || !r.providers[pid].text || r.providers[pid].text.refs !== null; });

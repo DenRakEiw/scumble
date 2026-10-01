@@ -1528,6 +1528,8 @@ async function main() {
         // of the last commit before 26f too, when git has it
         const BEFORE_26F = "a608e8d";
         let before = null, why = "";
+        // a recipe added after 26f (FLUX 3, docs/PLAN_FLUX3.md) has no request of before to compare with
+        let oldRecipes = null;
         const { execFileSync } = require("node:child_process");
         const os = require("node:os");
         let dir = null;
@@ -1536,6 +1538,7 @@ async function main() {
             dir = fs.mkdtempSync(path.join(os.tmpdir(), "refs-layout-before-26f-"));
             for (const f of names) fs.writeFileSync(path.join(dir, f), execFileSync("git", ["-C", ROOT, "show", `${BEFORE_26F}:electron/main/providers/${f}`], { stdio: ["ignore", "pipe", "ignore"] }));
             before = (id) => require(path.join(dir, id + ".js"));
+            oldRecipes = new Set(execFileSync("git", ["-C", ROOT, "ls-tree", "--name-only", `${BEFORE_26F}:recipes`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split(/\r?\n/).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")));
         } catch (err) { why = String(err && err.message || err).split(/\r?\n/)[0]; }
         const reset = (m) => { if (m && typeof m._resetHosts === "function") m._resetHosts(); };
         /** Where two values differ: "path: a -> b" per leaf (a Buffer is a leaf). */
@@ -1569,7 +1572,7 @@ async function main() {
             const b = await capture(p, old, "generate");
             const d1 = differs(b, a);
             if (d1.length) zero.sameShape.push(`${name}: ${d1.join("; ")}`);
-            if (!before) return;
+            if (!before || (oldRecipes && !oldRecipes.has(s.recipe))) return;
             const q = before(s.provider);
             reset(p); reset(q);
             const c = await capture(q, old, "generate");

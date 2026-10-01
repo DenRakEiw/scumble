@@ -5,22 +5,34 @@ the section for its version; `docs/` and the commit history hold the technical d
 
 ## Unreleased
 
+- **FLUX 3 Image from Black Forest Labs**, a new recipe on your Black Forest Labs key. It edits a selection by
+  instruction, with up to nine more pictures (the Original and your reference layers), and in Generate new it makes a
+  picture from the prompt with up to ten reference images. `@img` tokens go out as the model's "image N": on an edit
+  the crop is image 1, so they start at "image 2"; on a new picture at "image 1". The model takes no pixel size:
+  Scumble widens the crop to one of its fifteen shapes and picks the size class from it, 1k or 2k for an edit, up to 4k
+  for a new picture (the larger class costs more). A reference layer under 256 px a side or over 16 megapixels is
+  scaled to fit before it goes. The Settings panel has Safety tolerance (0 to 4) and a **Grounding** switch, on by
+  default, which lets the model search the web and images for what the prompt names before it renders; turn it off
+  to keep your prompt away from search. There is no seed, so two runs of the same prompt differ, and the model
+  expands a short prompt itself (the log keeps that expanded prompt and what the run cost). Every Black Forest Labs
+  run, FLUX.2 included, now waits out a busy server instead of failing and says why a blocked request was refused.
+  Written from Black Forest Labs' documentation; it has not run against the live API yet.
 - **Scumble asks in its own dialogs.** The questions that came in the system's message boxes or the browser's plain box
   now open inside the window, in the colours of the skin in use: Save / Don't Save when a tab closes, a file changed on
   disk or made by a newer Scumble, Save with or without the history, quitting while the last changes are still being
-  saved, removing a recipe, a helper model or unused files, closing or restarting while a document works, clearing
-  the result history. Enter answers the highlighted button, Escape cancels, the arrow keys move between the buttons;
-  a question that deletes something has Cancel highlighted. A skin can recolour them but cannot hide them or change
-  the order of their buttons. When the window is too busy to answer at once (a second close while it saves), the system's
-  box asks instead. The file pickers and the crash message stay the system's own. Plugins get `ui.ask()` for the
-  same dialog.
+  saved, removing a recipe, a helper model or unused files, closing or restarting while a document works. Enter answers
+  the highlighted button, Escape cancels, the arrow keys move between the buttons; a question that deletes something
+  has Cancel highlighted. A skin can recolour them but cannot hide them or change the order of their buttons. When the
+  window is too busy to answer at once (a second close while it saves), the system's box asks instead. Clearing the
+  result history asks in the editor's own box now, like the editor's other questions (Enter clears, Escape cancels).
+  The file pickers and the crash message stay the system's own. Plugins get `ui.ask()` for the app's dialog.
 - **Generate new on Gemini keeps the aspect you ask for.** With the recipe's Aspect row on its default *auto*, Nano
   Banana through a Google key sent no aspect for a new picture without reference layers, and the model answered in its
   own shape (16:9 came back square). The asked aspect goes now; an Aspect row set to a ratio still wins.
-- **Each local recipe keeps its own model files.** Switching between *Qwen Image Edit 2.1 local* and *FLUX.2 Klein
-  local* kept the other recipe's Model, Text encoder and VAE in the Settings panel, so a run loaded the wrong files. Now
-  every local recipe starts from its own. Once after the update, the Settings rows of a local recipe in an open or
-  saved document go back to the recipe's defaults.
+- **Each local recipe keeps its own model files.** Switching between *Qwen Image Edit 2.1 (ComfyUI)* and *Flux.2 Klein
+  4B / 9B (ComfyUI)* kept the other recipe's Model, Text encoder and VAE in the Settings panel, so a run loaded the
+  wrong files. Now every local recipe starts from its own. Once after the update, the Settings rows of a local recipe
+  in an open or saved document go back to the recipe's defaults.
 - **For agents:** `--attach-only` beside `--mcp` (or `--cmd`) makes an MCP registration drive a running Scumble and
   never start one in the background. With no Scumble open it offers `ping` alone and says Scumble is not running; once
   you start Scumble, the next call reaches it and the client gets every tool.

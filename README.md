@@ -22,7 +22,7 @@ voices, one sceptic, the whole app recorded in the app.
 Rendering happens on your own [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
 (local or remote, for example on RunPod) or through API providers: Google (Nano Banana
 2 / 2 Lite / Pro), OpenAI (GPT Image 2.5 Flare / Sunburst, 2), Black Forest Labs
-(FLUX.2 max / pro / flex / klein, FLUX.1 Fill), ByteDance Seedream 5 and 4.5, Qwen Image Edit and Qwen Image 2.1,
+(FLUX 3 Image, FLUX.2 max / pro / flex / klein, FLUX.1 Fill), ByteDance Seedream 5 and 4.5, Qwen Image Edit and Qwen Image 2.1,
 Magnific's Mystic, Ideogram's mask inpainting and Image Expand outpainting (FLUX Pro, Ideogram, Seedream 4.5),
 each through the model's own API where Scumble has one (for Seedream that is ByteDance's BytePlus ModelArk) or
 through ToAPIs, fal.ai, Replicate, WaveSpeedAI, Comfy Cloud, OpenRouter, Oxen.ai and Magnific. Object masks and background removal

@@ -191,14 +191,17 @@ for both), and `ratio` the steepest crop the model takes (3 = at most 3:1, 0 = a
 steeper than that gets more context on its short side, so a thin selection is not refused
 (Seedream on ToAPIs, whose pages say [1/3, 3]; Seedream on ModelArk and OpenRouter 16, ModelArk's
 [1/16, 16]). `aspects` lists the only shapes a model renders, as `"W:H"` (Seedream and GPT Image 2 on
-Magnific, whose edit routes take an `aspect_ratio` preset and no free size): `planCrop` widens the crop's context
+Magnific, whose edit routes take an `aspect_ratio` preset and no free size, and FLUX 3 Image, whose 15 presets are
+the only shapes it takes besides `auto`): `planCrop` widens the crop's context
 to the nearest preset the picture can give (on the short side, as for `ratio`, sets `info.aspect`), so the answer
 comes back in the crop's own shape and the adapter tells the stitch to stretch it (`info.fit`, "Magnific" below);
 a preset the picture cannot give (the whole picture at another shape) leaves the crop as it is, and the answer is
 centre-cropped as before. `[]`, the default, is any shape. Without either, the conservative
 `{ min: 256, max: 2048, step: 16, pixels: 0, minPixels: 0, ratio: 0 }` applies - raise one with a
 source, not with a guess. Today: **FLUX.2 and FLUX.1 Fill 1440** (2048 answers with an
-error), **GPT Image 2.5 Flare and Sunburst 3840 with an 8,294,400 px budget and a 655,360 px
+error), **FLUX 3 Image 2048 in 16 px steps with its 15 aspect presets as `aspects` and a `min` of 608** (the model
+refuses a picture under 256 px a side, and `min` holds the long side: 608 keeps the short side at 256 even at 21:9;
+2048 keeps an edit at the 2k tier, "FLUX 3 Image" below), **GPT Image 2.5 Flare and Sunburst 3840 with an 8,294,400 px budget and a 655,360 px
 floor** (the model's own size rules: both edges a multiple of 16, at most 3840 an edge, a
 ratio no steeper than 3:1), **GPT Image 2 2048 with the same budget** (the size rules of the
 OpenAI partner node), **Seedream 5 on fal 4096 with a 4 MP budget for pro and a 16 MP one
@@ -228,7 +231,7 @@ there the node does the cropping. `tools/size_test.py` is the gate.
 Item 26 (`docs/PLAN_REFS.md`) lets the prompt name a reference layer as `@img1`, `@img2`: the shown reference layers,
 top of the list first. A model does not know that name. What it knows is the place of the picture among the pictures
 of the request, and each family has its own word for it (the vendors' prompting guides, `docs/PLAN_REFS.md` §1):
-"image 3" (FLUX.2, Nano Banana, Grok, Reve), "Image 3" (GPT Image, Seedream, Qwen Image Edit, HY Image), `<image3>`
+"image 3" (FLUX.2, FLUX 3 Image, Nano Banana, Grok, Reve), "Image 3" (GPT Image, Seedream, Qwen Image Edit, HY Image), `<image3>`
 (Qwen Image 2.1). So the name is written in the main process, at send time, for the route the run really takes.
 
 - **`refs.name`** is that word as a pattern: `{n}` is the picture's 1-based place, `{n0}` the 0-based one (Reve's
@@ -266,7 +269,8 @@ of the request, and each family has its own word for it (the vendors' prompting 
   `single`), Comfy Router to 1 (its Gemini dialect counts the mask picture inside `max_images`), HY to 5, and on
   ToAPIs the Channel row's own `max_images` wins over the variant's (`capOf(channelOf(req))`, the one reading the
   layout and the builder share, so the cap follows a channel switch). The adapter's own number: BFL by endpoint
-  (FLUX.2 klein 4, pro / flex / max 8), Comfy Cloud by partner node (`NODE_PICTURES`, read in the local ComfyUI's
+  (FLUX.2 klein 4, pro / flex / max 8; FLUX 3 Image 10 through the variant's `options.max_images`, which is also
+  `flux3.js`'s default), Comfy Cloud by partner node (`NODE_PICTURES`, read in the local ComfyUI's
   `comfy_api_nodes` on 2026-09-29: GPT Image 16, Nano Banana 2 14, Seedream 10 and lite 14, FLUX.2 8, Qwen 3; the
   one-picture nodes 1), Magnific by route (`maxImages`). The three OpenAI variants carry `max_images: 16`, which
   `openai.js` reads like the others and refuses past.
@@ -342,6 +346,7 @@ of the request, and each family has its own word for it (the vendors' prompting 
   | `nano_banana_2`, `_pro` · Replicate | 14 | https://replicate.com/google/nano-banana-2 ("Use up to 14 reference images."), https://replicate.com/google/nano-banana-pro ("combine up to 14 images") |
   | `nano_banana_2`, `_pro` · WaveSpeed | 14 | https://wavespeed.ai/docs/docs-api/google/google-nano-banana-2-edit, `…-pro-edit` ("0 ~ 14 items") |
   | `grok_imagine` · fal | 5 | https://fal.ai/models/xai/grok-imagine-image/v2.0/edit/api ("A maximum of 5 images are supported.") |
+  | `flux3` · bfl | 10 | https://docs.bfl.ai/flux_3/flux3_image_overview (`images`: 1 to 10, the crop included; read on 2026-10-01) |
 
   The Replicate pages that say "reference images" are read as the length of the `image_input` list, which carries
   the crop too (the lower of the two readings). The caps that were there before (OpenRouter, ModelArk, Oxen, Comfy
@@ -544,6 +549,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
   |---|---|---|
   | FLUX.2 [pro], [flex], [max] | BFL, Replicate, OpenRouter, ToAPIs (pro, flex), Comfy Router (pro, max), Oxen.ai (pro, flex), Magnific (pro, flex); fal and WaveSpeed (the `/edit` route) | - |
   | FLUX.2 [klein] | BFL, Oxen.ai (`max: 4`); fal and WaveSpeed (`/edit`) | - |
+  | FLUX 3 Image | BFL | - |
   | GPT Image 2 | OpenAI (`/v1/images/edits`), ToAPIs, Replicate, OpenRouter, Comfy Router, Oxen.ai; fal and WaveSpeed (`/edit`), Magnific (`gpt-image-2-edit`) | - |
   | GPT Image 2.5 Flare, Sunburst | OpenAI, ToAPIs, OpenRouter, Comfy Router, Oxen.ai; WaveSpeed (`/edit`), Magnific (`gpt-image-2-5-edit`) | - |
   | Nano Banana 2, Pro, 2 Lite | Gemini, ToAPIs, OpenRouter, Comfy Router, Oxen.ai, Replicate (2, Pro); fal (2, Pro) and WaveSpeed (`/edit`) | - |
@@ -557,7 +563,7 @@ shown reference layers along; one without makes pictures from the prompt alone.
 
   Comfy Cloud has no text shape, nor do Oxen.ai's Seedream 5 lite and the expand, inpaint and LaMa recipes (`text:
   false`). The caps for a new image: FLUX.2 8 (Replicate flex 10, Comfy Router 9, WaveSpeed 3, Magnific 4), klein 4
-  (WaveSpeed 3), GPT Image 16, Nano Banana 14, Seedream 5 pro 10, 5 lite 14 on ModelArk, Replicate, OpenRouter and
+  (WaveSpeed 3), FLUX 3 Image 10, GPT Image 16, Nano Banana 14, Seedream 5 pro 10, 5 lite 14 on ModelArk, Replicate, OpenRouter and
   Comfy Router and 10 on ToAPIs, fal and WaveSpeed, Magnific's Seedream 4.5 and 5 lite 5, Qwen Image Edit 3, Qwen
   2.1 10, HY 5, Grok 5 on fal, 3 on OpenRouter, 1 on Oxen.ai; on ToAPIs the channel's own cap wins (GPT Image 2 and
   Nano Banana standard 6). The routes the "Undocumented" list above names stay uncapped here too, except Oxen.ai's
@@ -599,7 +605,7 @@ keeps them.
 Adapters (`electron/main/providers/`): **toapis** (uploads, a task and polling; channels,
 sizes and tiers from `options`; see "ToAPIs" below), **fal** (queue API, settings passed by name),
 **bfl** (`steps`, `guidance`, `safety_tolerance`, `prompt_upsampling`; the variant's
-`model` is the endpoint), **openai** (`quality`, `size`, `background`,
+`model` is the endpoint; FLUX 3 Image has a body of its own, "FLUX 3 Image" below), **openai** (`quality`, `size`, `background`,
 `output_format`, `output_compression`, `moderation`, and `input_fidelity` on 1.5 and 1
 only - gpt-image-2 always works at high fidelity and the docs say to omit it; `sizeFor()`
 holds a free size inside each model's own rules), **gemini** (`aspect_ratio`,
@@ -633,6 +639,64 @@ only; see "Magnific" below). Every adapter is written
 from the provider's documentation and has not run against the live API yet; the recipe descriptions say so
 (OpenRouter with GPT Image 2.5 is the exception, below).
 The key of the provider comes from the credential store (Settings › API providers).
+
+**FLUX 3 Image** (`recipes/flux3.json`; the body in `electron/main/providers/flux3.js`, which `bfl.js` sends and
+polls). Written from docs.bfl.ai/flux_3 and `https://api.bfl.ai/openapi.json` as read on 2026-10-01, the day it
+was released; **not run against the live API yet** (`docs/PLAN_FLUX3.md`). One endpoint and no tiers:
+`POST https://api.bfl.ai/v1/flux-3-image` with the `x-key` header, the same Black Forest Labs key row as FLUX.2. A
+`bfl` variant is FLUX 3 when its `options.schema` is `"flux3"` (or its `model` starts with `flux-3`); `bfl.js` then
+takes body, `layout` and `textLayout` from `flux3.js` and keeps its own submit and poll.
+
+- **The body** is `{ prompt, images, aspect_ratio, resolution, safety_tolerance, grounding }` and nothing else. The
+  schema is strict (an unknown field answers 422), so no `seed`, mask, `width` / `height`, `mode`, negative prompt or
+  `output_format` goes, whatever `accepts` says. A blank prompt is refused before anything is sent. `images` is a list
+  of plain base64 strings: on an edit (and a fill, which sends no mask here; the stitch keeps the selection) the crop
+  first, then the Original and the reference layers; on Generate new the reference layers alone, and no `images` field
+  without them. The model names them `image 1`, `image 2` .. in that order, so `refs.name` is `image {n}` and an
+  `@img1` goes out as `image 2` on an edit (`image 3` with the Original) and as `image 1` on a new image. The prompt
+  goes as written, with no instruction sentence added. The model expands it itself before it renders; there is no
+  switch for that.
+- **Sizing.** No pixel size: `aspect_ratio` is one of 15 presets (21:9, 2:1, 16:9, 3:2, 7:5, 4:3, 5:4, 1:1, 4:5,
+  3:4, 5:7, 2:3, 9:16, 1:2, 9:21) or `auto`, `resolution` a tier by pixel area. An edit sends the preset nearest the
+  emitted crop when it is within 3 % (`|ln(crop / preset)| <= 0.03`; the usual case, since `limits.aspects` widened
+  the crop to a preset) and `auto` otherwise, which follows image 1, the crop. A new image always sends the nearest
+  preset (to the asked aspect where it reads `W:H`, else to the size), never `auto`. The tier is the smallest whose
+  area holds the emitted size with 15 % slack: `1k` (about 1 MP) up to 1,205,862 px, `2k` (about 4 MP) up to
+  4,823,449 px, else `4k` (about 16 MP). So an edit at the Highres fix's *Maximum* (2048) goes at 2k, a small crop
+  at *Off (crop size)* can go at 1k, and `text.sizes` `[1024, 2048, 4096]` give a new image 1k, 2k or 4k. `768sq`
+  and the `1.5k` that only the live schema lists are never sent. `resolution` as a Settings row would override the
+  tier where `accepts` names it; none ships.
+- **`info.fit`.** The answer's `info` carries `{ aspect, resolution, fit }` from `flux3.infoOf`. `fit` is `"stretch"`
+  when a preset went out within the 3 %; `host.runProvider` copies it into the stitch's `info`, which stretches the
+  answer onto the crop. After `auto` it is null, and the stitch's own 1 % check stretches or centre-crops.
+- **Checks before sending.** Each picture at least 256 px a side and at most 16,000,000 px (read from its PNG
+  header), and at most 20,000,000 characters of base64: the stricter readings of the docs' "16 MP" and "20 MB". An
+  opaque picture past the 20 MB goes as JPEG (quality 92); one with transparent pixels is refused. Each message
+  names the picture (the crop, the Original, reference picture n), says what to do and ends "Nothing was sent". More
+  than `max_images` pictures (10, the crop included; 10 references for a new image) is refused by the central check
+  first.
+- **The answer.** The submit answers `{ id, polling_url, cost, input_mp, output_mp }`; the poll passes Pending,
+  Reasoning and Generating to Ready, and Error, Request Moderated (the prompt or an input picture was blocked; the
+  same request fails again), Content Moderated (the result was blocked) and Task not found end the run with their
+  details. `info` also carries `cost` (credits; the settled cost where the poll carries one, else the submit's),
+  `input_mp`, `output_mp`, `expanded_prompt` (`result.prompt`, the prompt as the model expanded it, at most 2000
+  characters) and `duration`; the log's success record and `generate` over MCP return it. A FLUX 3 run reports no
+  seed unless the answer names one: two runs of the same prompt differ. The poll is `bfl.js`'s for every BFL
+  endpoint, FLUX.2 included: a `polling_url` is followed only when it is https on a `bfl.ai` host (the key goes with
+  every poll), else `get_result` on the submit host; a 4xx with a status body (422 `Error`) ends the run with its
+  details; a 429 or 5xx without one is retried up to five times, since the job is already paid for; the POST is never
+  repeated; the cost lands in `info` where BFL reports one.
+- **Options** (the variant's `options`): `schema: "flux3"`; `accepts`, the optional fields that may go (default and
+  shipped `["safety_tolerance", "grounding"]`; `resolution` is the only other one `flux3.js` knows); `max_images`
+  (default 10); `images_field` (default `images`). The Settings rows: *Safety tolerance* 0 to 4 (default 2; 5 answers
+  422) and *Grounding (web and image search)*, a BOOLEAN row on by default as in the API: the model may research the
+  prompt with web and image search before it renders; off keeps the prompt from going to search.
+- **Price** (BFL's pricing page): per image by tier, 1k $0.048, 2k $0.10, 4k $0.607 (`768sq` $0.041, not sent).
+  Whether references, input megapixels or Grounding change it is not stated, hence the cost in `info`. The docs say
+  4k "can take several minutes"; the poll waits up to 15 minutes.
+- **Not built:** bounding-box rows in the prompt (the docs' `tgt_bbox` on a 0 to 1000 grid; the green-fill tip of
+  the recipe's note stands in), the regional hosts (the docs name only `api.bfl.ai` for this endpoint), and any
+  aggregator variant.
 
 What a provider run does: `prepareCrop` builds the crop like the node (selection bbox
 plus context, fill mode, scaling to the size the variant's `limits` allow, the grown and feathered
