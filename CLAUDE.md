@@ -90,7 +90,15 @@ Checked live: keys, a hostile skin, the second close on both paths (the late win
 types docux quit document editor commands` green on tiles. **Flux 3 is prepared, uncommitted** (`docs/PLAN_FLUX3.md`,
 `electron/main/providers/flux3.js`, `recipes/flux3.json`, `tools/flux3_test.js`, poll changes in `bfl.js`): released by
 BFL on 2026-10-01 17:00, the final endpoint comes from the user; push nothing of it before the release (pre-release
-details).
+details). (`tools/refs_layout_test.js` carries an uncommitted Flux 3 hunk, `oldRecipes`: commit it with Flux 3.)
+
+**Bug round A done (2026-10-01, afternoon; section A of the day's plan: A bugs, B Flux 3 after 17:00, C prepare 0.1.36),
+three local commits, not pushed:** Gemini direct's Generate new sends the asked aspect when the Aspect row is "auto"
+(2958601); each local recipe keeps its own Model / Text encoder / VAE (a target `key` with the recipe id, 1142a10;
+documents reset these rows once); `--attach-only` for `--mcp` / `--cmd`, passed by the repo's `.mcp.json` (7f6b88d, on
+the user's pick "nur verbinden": the dev tree no longer starts headless on the user's profile; **takes effect at the next
+Claude Code start**; the hand-over itself measured working). `BUGS.md` cleaned (the shipped entries out). Gates green
+offline on tiles: `recipes mcp lint types`, `refs_layout_test.js` 659/659. Next: B (Flux 3) once the user has the endpoint.
 
 **Released:** 0.1.35 is Latest (published 2026-10-01 00:02:51 CEST, tag on ee4ee33 "0.1.35 prepared"; the tag build's
 windows / linux / draft jobs green) on the user's "ja, release". **The post `v0-1-35` ("Many layers, one hand", no
@@ -114,9 +122,7 @@ picture) is live**, the manual synced, `hub.version` 0.1.35, website commit 11d5
   multi-selection, solo and align row (and whether aligning by painted pixels is wanted), whether the clip at soft
   edges looks right or wants the isolated group (7 - 9 days); whether 0.1.33 feels right under their pen; the smudge
   and tone brushes dab once per coalesced point (BUGS.md); the defaults of packages 4 and 5 (`docs/HISTORY.md`, the
-  late-night hand-over of 2026-09-28); item 25's look and timing; item 26's look in the app. Filed earlier
-  (`docs/BUGS.md`): the local recipes' Model / Text encoder / VAE rows carry over between Qwen and Klein; Gemini direct
-  ignores the asked aspect on Generate new. Nothing of item 26 ran live. The Store resubmission is on the user's side.
+  late-night hand-over of 2026-09-28); item 25's look and timing; item 26's look in the app. Nothing of item 26 ran live. The Store resubmission is on the user's side.
 - After 0.1.35 nothing of `docs/PLAN_0_1_31.md` is left; what comes next is the user's pick from the list below (B3
   macOS, item 25, item 22 after B3, ...).
 
@@ -138,8 +144,7 @@ The full text is in `docs/HISTORY.md` ("Open threads", moved there on 2026-09-27
   Microsoft; identity `DenRakEiw.Scumble`). The README links it (Install (Windows): Store or GitHub). Not done yet: the
   link on the website hub and a post; which version the Store holds was not checked.
 - **Not started:** B3, the macOS build (`docs/PLAN_0_1_24.md`); the Store package per release (`npm run dist:store`,
-  `docs/STORE.md`; coupling it to GitHub releases only on the user's word); the
-  headless MCP instance of this repo's `.mcp.json` intercepts the installed app (a fix offered, BUGS.md); Comfy Router
+  `docs/STORE.md`; coupling it to GitHub releases only on the user's word); Comfy Router
   live runs (offered; the key in `dist/live-keys`); Linux built by CI, never run; types stage 3 (`docs/PLAN_TYPES.md`);
   the manual's empty assistant and log screenshots and a missing colour-match figure (`docs/MANUAL.md` is the one
   source, the website copies it via `tools/manual_sync.js`); the node repo is behind (build it only when a node version
