@@ -11,6 +11,27 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### Switching between the local recipes kept the other recipe's model files - fixed for 0.1.36
+
+**Found** by the review of item 26 step 26e (read, and reproduced in a plain-Node copy of the three functions; not run in
+the app, not queued): Qwen Image Edit 2.1 and FLUX.2 Klein (both local) name their loaders `unet`, `clip` and `vae`
+(settings rows 1-3). `host.settingTargets`' local branch sets the target's `node.id` to the bare node name, and
+`settingsChanged` (`inpaint_canvas.js`) keeps a stored value while `${node.id}:${inputName}` stays the same, so after Qwen
+then Klein the Klein chain is queued with `unet_name = qwen_image_2.1_int8_convrot.safetensors`, Qwen's text encoder
+(with `CLIPLoader` type `flux2`) and Qwen's VAE; the other way round too. The combo fallback only changes a value missing
+from the server's list, and both families' files can be installed. Older than 26e (the rows are the same before it). The
+provider branch of `settingTargets` already has the fix for the same collision (the recipe id in the node id). Fix: a
+target key with the recipe id (`${r.id}/${node}:${input}`) for the local rows, compared and stored by `settingsChanged`
+(the node's editor has no such key and keeps its behaviour); a document saved before the fix then resets these rows once
+to the recipe's defaults. Test: the recipes gate's 26e step queues Qwen then Klein; assert Klein's own `unet_name`,
+`clip_name`, `vae_name`, and the reverse.
+
+**Fixed** 2026-10-01: the local rows of `host.settingTargets` carry `key: ${r.id}/${node}:${input}`, and
+`settingsChanged` stores and compares `t.key` when there is one (the node's graph targets have none and keep
+`${node.id}:${input}`). `node.id` stays the bare node name, so saved presets (`recipePresets`, keyed by it) still match.
+The recipes gate's 26e step queues Qwen, Klein, Qwen, Klein and asserts every settings row of each run is its own
+recipe's default; without the key it fails on Klein with Qwen's three files. Tiles, offline; not queued on a server.
+
 ### Generate new on Gemini direct ignored the asked aspect while the Aspect row said "auto" - fixed for 0.1.36
 
 **Found** by the adapter review of item 26 step 26f (read, not run live): `gemini.js` sets `imageConfig.aspectRatio =
@@ -276,21 +297,6 @@ An entry here leaves the file when the release named in it is published.
 ---
 
 ## Open
-
-### Switching between the local recipes keeps the other recipe's model files (found by the 26e review, 2026-09-29)
-
-**Found** by the review of item 26 step 26e (read, and reproduced in a plain-Node copy of the three functions; not run in
-the app, not queued): Qwen Image Edit 2.1 and FLUX.2 Klein (both local) name their loaders `unet`, `clip` and `vae`
-(settings rows 1-3). `host.settingTargets`' local branch sets the target's `node.id` to the bare node name, and
-`settingsChanged` (`inpaint_canvas.js`) keeps a stored value while `${node.id}:${inputName}` stays the same, so after Qwen
-then Klein the Klein chain is queued with `unet_name = qwen_image_2.1_int8_convrot.safetensors`, Qwen's text encoder
-(with `CLIPLoader` type `flux2`) and Qwen's VAE; the other way round too. The combo fallback only changes a value missing
-from the server's list, and both families' files can be installed. Older than 26e (the rows are the same before it). The
-provider branch of `settingTargets` already has the fix for the same collision (the recipe id in the node id). Fix: a
-target key with the recipe id (`${r.id}/${node}:${input}`) for the local rows, compared and stored by `settingsChanged`
-(the node's editor has no such key and keeps its behaviour); a document saved before the fix then resets these rows once
-to the recipe's defaults. Test: the recipes gate's 26e step queues Qwen then Klein; assert Klein's own `unet_name`,
-`clip_name`, `vae_name`, and the reverse.
 
 ### Smudge and the tone brushes still dab once per coalesced point (measured 2026-09-29, not a regression)
 

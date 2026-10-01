@@ -17827,10 +17827,12 @@ class InpaintEditor {
             const label = `${t.node.title || t.node.type} · ${t.inputName}`;
             const type = k.kind === "number" ? k.type : (k.kind === "boolean" ? "BOOLEAN" : (k.kind === "combo" ? "COMBO" : "STRING"));
             const cur = this.settings[key];
-            if (!cur || cur.target !== `${t.node.id}:${t.inputName}`) {
+            // the app's local recipes give a key with the recipe in it; the node's graph targets have none
+            const target = t.key || `${t.node.id}:${t.inputName}`;
+            if (!cur || cur.target !== target) {
                 // new target: start from what the widget shows now, so connecting changes nothing
                 const value = t.widget ? t.widget.value : (k.kind === "combo" ? k.options[0] : (k.kind === "number" ? (k.opts.default ?? 0) : (k.kind === "boolean" ? !!k.opts.default : "")));
-                this.settings[key] = { value, type, label, target: `${t.node.id}:${t.inputName}` };
+                this.settings[key] = { value, type, label, target };
             } else {
                 cur.type = type; cur.label = label;
             }

@@ -1041,10 +1041,12 @@ export const host = {
             const spec = inp && ((inp.required && inp.required[s.input]) || (inp.optional && inp.optional[s.input])) || s.spec || null;
             const current = node.inputs ? node.inputs[s.input] : undefined;
             const value = s.default !== undefined ? s.default : (Array.isArray(current) ? undefined : current);
+            // the key names the recipe too: the editor keeps a stored value while the key stays the same, and Qwen
+            // and Klein both load from nodes "unet", "clip" and "vae", so Klein was queued with Qwen's files
             out.push({
                 index: s.index, output: { name: `setting_${s.index}` },
                 node: { id: s.node, title: s.label || s.input, type: node.class_type },
-                inputName: s.input, spec, widget: value !== undefined ? { value } : null,
+                inputName: s.input, key: `${r.id}/${s.node}:${s.input}`, spec, widget: value !== undefined ? { value } : null,
             });
         }
         return out;

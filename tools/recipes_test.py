@@ -183,6 +183,17 @@ try {
     if (kleinLatents(k.P_) !== "11,00,00,00") throw new Error("Klein's latents without references: " + kleinLatents(k.P_));
     if (k.P_.ref_pos3.inputs.conditioning.join() !== "ref_pos2,0" || k.P_.guider.inputs.positive.join() !== "ref_pos3,0") throw new Error("Klein's chain was cut: " + JSON.stringify([k.P_.ref_pos3.inputs, k.P_.guider.inputs]));
     out.none = { qwen: qwenKeys(q.P_), klein: kleinLatents(k.P_) };
+    // both load from nodes "unet", "clip" and "vae": each run keeps its own recipe's files after the other (Klein was
+    // queued with Qwen's files, docs/BUGS.md)
+    const own = (id, P_) => {
+        const r = host.shell.recipes().find((x) => x.id === id);
+        const bad = (r.settings || []).filter((s) => P_[s.node].inputs[s.input] !== (s.default !== undefined ? s.default : r.prompt[s.node].inputs[s.input]));
+        if (bad.length) throw new Error(id + " after the other recipe sent " + bad.map((s) => s.input + "=" + P_[s.node].inputs[s.input]).join(", "));
+        return P_.unet.inputs.unet_name;
+    };
+    own(KLEIN, k.P_);
+    q = await go(QWEN);
+    out.ownFiles = [own(QWEN, q.P_), own(KLEIN, (await go(KLEIN)).P_)];
     // three references; a new one goes below the others, so r1 is img1
     for (const name of ["r1", "r2", "r3"]) {
         const l = await run("add_paint_layer", { doc, name });

@@ -17,6 +17,10 @@ the section for its version; `docs/` and the commit history hold the technical d
 - **Generate new on Gemini keeps the aspect you ask for.** With the recipe's Aspect row on its default *auto*, Nano
   Banana through a Google key sent no aspect for a new picture without reference layers, and the model answered in its
   own shape (16:9 came back square). The asked aspect goes now; an Aspect row set to a ratio still wins.
+- **Each local recipe keeps its own model files.** Switching between *Qwen Image Edit 2.1 local* and *FLUX.2 Klein
+  local* kept the other recipe's Model, Text encoder and VAE in the Settings panel, so a run loaded the wrong files. Now
+  every local recipe starts from its own. Once after the update, the Settings rows of a local recipe in an open or
+  saved document go back to the recipe's defaults.
 
 ## 0.1.35 — 2026-09-30
 
