@@ -12,10 +12,17 @@ by default, `text.sizes` 1024 / 2048 / 4096 for the 1k / 2k / 4k tiers, `limits`
 `electron/main/providers/flux3.js`; §2, §4, §5 and §7 below are the pre-release preparation and stay as its record
 (the old body with `mode`, `reference_images`, pixel sizes and a seed would answer 422 now).
 
-**No live run yet.** A live call with the node pack's key was refused with "Not authenticated" on `api.bfl.ai` and
-`api.isr.bfl.ai`, so nothing has been generated through FLUX 3 Image from Scumble; the live check (§8) waits for a key
-that has access. Until then the request shapes are checked only by plain-Node tests against a scripted fetch
-(`tools/flux3_test.js`, with the recipe in `recipes_test` and `refs_layout_test`).
+**Ran live on 2026-10-01 (22:20, the 0.1.36 exe, the user's key typed into the gate profile `rel36-exe`).** The node
+pack's key was refused first ("Not authenticated" on `api.bfl.ai` and `api.isr.bfl.ai`: a review key). Through the
+app, driven over CDP: an edit (a 640 × 560 selection on a 2048 × 1536 picture, widened to a 920 × 920 crop, one
+reference layer) went as `1:1` / `2k` with `fit: stretch`, came back after 80 s for 10 credits, and stitched without a
+seam; `@img1` went out as "image 2". Generate new with one reference at 4:3 / 1024 went as `4:3` / `1k`, came back
+after 109 s (99 s of it the model's own `duration`) at 1184 × 880 for 4.8 credits; `@img1` went out as "image 1". No
+422: the strict schema took both bodies. The expanded prompt (`result.prompt`, kept in `info`) shows FLUX 3 planning
+the edit itself as JSON rows with `src_bbox` / `tgt_bbox`. The test's reference was the wrong picture (a paper
+interior instead of the moth meant), so whether the model takes a subject from a reference was not judged; the user
+will see that in their own runs. Runs take one to two minutes. The request shapes are also pinned by plain-Node tests
+against a scripted fetch (`tools/flux3_test.js`, with the recipe in `recipes_test` and `refs_layout_test`).
 
 ## 1. Sources
 

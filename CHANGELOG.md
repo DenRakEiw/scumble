@@ -3,7 +3,7 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
-## Unreleased
+## 0.1.36 — 2026-10-01
 
 - **FLUX 3 Image from Black Forest Labs**, a new recipe on your Black Forest Labs key. It edits a selection by
   instruction, with up to nine more pictures (the Original and your reference layers), and in Generate new it makes a
@@ -16,7 +16,8 @@ the section for its version; `docs/` and the commit history hold the technical d
   to keep your prompt away from search. There is no seed, so two runs of the same prompt differ, and the model
   expands a short prompt itself (the log keeps that expanded prompt and what the run cost). Every Black Forest Labs
   run, FLUX.2 included, now waits out a busy server instead of failing and says why a blocked request was refused.
-  Written from Black Forest Labs' documentation; it has not run against the live API yet.
+  Written from Black Forest Labs' documentation and tried live before the release: an edit with a reference layer
+  and a new picture with one, which took about one and a half minutes each.
 - **Scumble asks in its own dialogs.** The questions that came in the system's message boxes or the browser's plain box
   now open inside the window, in the colours of the skin in use: Save / Don't Save when a tab closes, a file changed on
   disk or made by a newer Scumble, Save with or without the history, quitting while the last changes are still being

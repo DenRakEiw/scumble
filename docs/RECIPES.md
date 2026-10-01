@@ -637,7 +637,7 @@ asynchronous task per run on `api.magnific.com`, one dialect per route: Ideogram
 inverted, Image Expand from the mask's geometry, instruction edits with aspect presets, Mystic and Z-Image text
 only; see "Magnific" below). Every adapter is written
 from the provider's documentation and has not run against the live API yet; the recipe descriptions say so
-(OpenRouter with GPT Image 2.5 is the exception, below).
+(OpenRouter with GPT Image 2.5 and BFL's FLUX 3 Image, one edit and one new image on 2026-10-01, are the exceptions).
 The key of the provider comes from the credential store (Settings › API providers).
 
 **FLUX 3 Image** (`recipes/flux3.json`; the body in `electron/main/providers/flux3.js`, which `bfl.js` sends and
