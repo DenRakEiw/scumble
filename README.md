@@ -1,10 +1,16 @@
 # Scumble
 
+**A free, open-source desktop editor for AI inpainting.** Select part of a picture, describe what should be there,
+and the result comes back as an editable layer, colour-matched to its surroundings. Scumble renders with FLUX 3 Image,
+FLUX.2, GPT Image, Nano Banana, Seedream, Qwen Image Edit and more through your own API key, or locally on your own
+ComfyUI, and keeps the work in layers you can export to PSD. Manual, videos and the dev blog:
+[denrakeiw.com/scumble](https://www.denrakeiw.com/scumble).
+
 > **Work in progress.** Scumble is in an early state (0.1.x). Not every feature has been
 > tested end to end yet. Expect rough edges, keep backups of your images, and please report
 > what breaks in the [issues](https://github.com/DenRakEiw/scumble/issues).
 
-A desktop editor for AI inpainting. Open an image, select an area (brush, shape, magic
+How it works: open an image, select an area (brush, shape, magic
 wand, object hover or a text description), write a prompt, generate. The result lands as a
 layer over the selection and can be blended in with colour match, erased in parts,
 regenerated, stacked with filter and text layers, and exported with all layers to PSD or
@@ -33,8 +39,8 @@ Scumble is the standalone window around it, plus recipes, plugins, an MCP server
 Windows first (from the [Microsoft Store](https://apps.microsoft.com/detail/9NDBTNNMXF2R) or the installer below), a Linux build (AppImage, .deb) that has not been tried on Linux yet, macOS is planned. Free software, GPL-3.0.
 What has been verified so far: local rendering through ComfyUI, the in-app helper models,
 the film pack, the command core, the MCP server, the tile engine on large documents and
-auto-update; the API providers and the assistant's model calls are untested against the live
-services.
+auto-update, and among the API providers FLUX 3 Image on Black Forest Labs and GPT Image 2.5 through OpenRouter; the
+other API providers and the assistant's model calls are untested against the live services.
 
 ## Features
 
