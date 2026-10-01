@@ -694,8 +694,8 @@ takes body, `layout` and `textLayout` from `flux3.js` and keeps its own submit a
 - **Price** (BFL's pricing page): per image by tier, 1k $0.048, 2k $0.10, 4k $0.607 (`768sq` $0.041, not sent).
   Whether references, input megapixels or Grounding change it is not stated, hence the cost in `info`. The docs say
   4k "can take several minutes"; the poll waits up to 15 minutes.
-- **Not built:** bounding-box rows in the prompt (the docs' `tgt_bbox` on a 0 to 1000 grid; the green-fill tip of
-  the recipe's note stands in), the regional hosts (the docs name only `api.bfl.ai` for this endpoint), and any
+- **Not built:** bounding-box rows in the prompt (the docs' `tgt_bbox` on a 0 to 1000 grid, planned in
+  `docs/PLAN_BOXES.md`; the green-fill tip of the recipe's note stands in), the regional hosts (the docs name only `api.bfl.ai` for this endpoint), and any
   aggregator variant.
 
 What a provider run does: `prepareCrop` builds the crop like the node (selection bbox

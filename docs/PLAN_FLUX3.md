@@ -24,6 +24,10 @@ interior instead of the moth meant), so whether the model takes a subject from a
 will see that in their own runs. Runs take one to two minutes. The request shapes are also pinned by plain-Node tests
 against a scripted fetch (`tools/flux3_test.js`, with the recipe in `recipes_test` and `refs_layout_test`).
 
+**Boxes (2026-10-01 night):** BFL documents bounding boxes as JSON rows appended to the prompt (`bbox` for a layout;
+`from` / `src_bbox` / `tgt_bbox` for an edit; `[top, left, bottom, right]` on a 0 to 1000 grid). The research and a
+plan for the selection as a box and a box plugin for FLUX 3 and Ideogram 4 are in `docs/PLAN_BOXES.md`.
+
 ## 1. Sources
 
 Read only, nothing copied but the shapes: the user's own ComfyUI node pack `custom_nodes/Flux_3_API` (branch `dev`:

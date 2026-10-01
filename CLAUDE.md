@@ -103,7 +103,8 @@ commit e124c57 deployed (Vercel: success).
   api.bfl.ai): an edit 1:1 / 2k in 80 s for 10 credits, stitched without a seam, `@img1` -> "image 2"; Generate new 4:3 /
   1k in 109 s for 4.8 credits, 1184 x 880. The test reference was the wrong picture (the folder had changed), so taking
   a subject from a reference was not judged. FLUX 3 plans edits itself with `src_bbox` / `tgt_bbox` rows (seen in the
-  expanded prompt); turning a selection into a bounding box is the obvious next step (not built).
+  expanded prompt); turning a selection into a bounding box is the obvious next step (not built). Later that night
+  the user ran FLUX 3 live themselves: "funktioniert wunderbar".
 - Exe gates `--offline` green: tiles `rel36-exe` (31 gates; `editor` red once from the user's mouse in the window, the
   known live-stroke flake; `help` red because the profile now held a key, its own guard) then `rel36-exe-final` (help,
   editor) on a fresh profile; canvas `rel36-exe-canvas` (20) all green.
@@ -168,8 +169,11 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   after B3.
 - 25: the app's own dialogs instead of the native boxes: built 2026-10-01 (`renderer/dialogs.js`, main's `askWindow`
   with the native box as the fallback), released in 0.1.36.
-- FLUX 3 Image (not numbered; BFL's launch 2026-10-01): released in 0.1.36 the same night; next idea there, a selection
-  sent as a FLUX 3 bounding box (`tgt_bbox` rows in the prompt, `docs/PLAN_FLUX3.md`), only listed.
+- FLUX 3 Image (not numbered; BFL's launch 2026-10-01): released in 0.1.36 the same night.
+- 28: boxes in the prompt for FLUX 3 Image and Ideogram 4 (the user, 2026-10-01 night: the selection as a FLUX 3
+  bounding box, then a plugin like Kijai's Ideogram 4 prompt builder): **researched, nothing built**,
+  `docs/PLAN_BOXES.md` (BFL's documented rows on a 0-1000 grid, the crop as the catch, a prompt hook + a built-in
+  "Boxes" plugin, S1-S5, four live checks with the user present, five open questions).
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended
