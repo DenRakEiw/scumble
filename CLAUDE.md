@@ -171,9 +171,12 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
   with the native box as the fallback), released in 0.1.36.
 - FLUX 3 Image (not numbered; BFL's launch 2026-10-01): released in 0.1.36 the same night.
 - 28: boxes in the prompt for FLUX 3 Image and Ideogram 4 (the user, 2026-10-01 night: the selection as a FLUX 3
-  bounding box, then a plugin like Kijai's Ideogram 4 prompt builder): **researched, nothing built**,
-  `docs/PLAN_BOXES.md` (BFL's documented rows on a 0-1000 grid, the crop as the catch, a prompt hook + a built-in
-  "Boxes" plugin, S1-S5, four live checks with the user present, five open questions).
+  bounding box, then a plugin like Kijai's Ideogram 4 prompt builder): **researched and planned, nothing built**,
+  `docs/PLAN_BOXES.md` (BFL's documented rows on a 0-1000 grid; the design: the renderer sends box geometry as
+  fractions of the crop, main's `providers/boxes.js` writes the rows after `resolveNames`, plugins supply boxes
+  through `scumble.generate.register`; S1 the selection as a box behind a FLUX 3 row, S2 the hook, S3a-c the
+  built-in "Boxes" plugin, S4 Keep rows from the SAM2 objects; §8-§12 the implementation plan per session, §6 the
+  live checks after S1, §7 the open questions). Next session: S1.
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended
