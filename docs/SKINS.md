@@ -171,6 +171,12 @@ A minimal skin:
   before *Don't*. **A skin that fails the check is switched off**: the default look comes back, the reason goes
   into the app log, the status line and the Appearance list, and the skin stays off until it is chosen again.
   That includes a skin that shrinks the chat later, on a delay or when the pointer comes near.
+- **The app's questions** (`renderer/dialogs.js`: Save / Don't Save, a file changed on disk, the second close while
+  it saves, the confirmations before a delete). They read the colour tokens, so a skin recolours them, but their parts
+  sit in a shadow root no selector of a skin matches, the `<dialog>` around them is in the top layer while it is open,
+  and its own box is pinned by inline `!important` values: a skin cannot hide, fade, move or zoom them or reorder their
+  buttons. A skin that sets the text and the surface to the same colour makes them as unreadable as the rest of the
+  app; that is the skin's own fault and not checked.
 - **Masked keys.** A key field shows dots in every skin (the browser pins that).
 - **The picture and what is drawn on it.** The selection outline, the brush ring, the crop and reference
   frames, handles and guides are drawn on the canvas and never read a token, so they keep their contrast on

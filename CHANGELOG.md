@@ -3,6 +3,18 @@
 What changed in each release, for the people who use Scumble. The release on GitHub carries
 the section for its version; `docs/` and the commit history hold the technical detail.
 
+## Unreleased
+
+- **Scumble asks in its own dialogs.** The questions that came in the system's message boxes or the browser's plain box
+  now open inside the window, in the colours of the skin in use: Save / Don't Save when a tab closes, a file changed on
+  disk or made by a newer Scumble, Save with or without the history, quitting while the last changes are still being
+  saved, removing a recipe, a helper model or unused files, closing or restarting while a document works, clearing
+  the result history. Enter answers the highlighted button, Escape cancels, the arrow keys move between the buttons;
+  a question that deletes something has Cancel highlighted. A skin can recolour them but cannot hide them or change
+  the order of their buttons. When the window is too busy to answer at once (a second close while it saves), the system's
+  box asks instead. The file pickers and the crash message stay the system's own. Plugins get `ui.ask()` for the
+  same dialog.
+
 ## 0.1.35 — 2026-09-30
 
 - **Select several layers.** Ctrl+click a layer row to add it to the selection or take it out, Shift+click to select

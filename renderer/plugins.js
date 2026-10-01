@@ -12,6 +12,7 @@ import { FILTERS, FILTER_IDS, filterDefaults, applyFilter } from "./editor/inpai
 import { registerGLFilter, unregisterGLFilter, runShader, glFiltersAvailable, glToCanvas, isGLSurface } from "./editor/inpaint_filters_gl.js";
 import { el, icon, makeCanvas } from "./editor/inpaint_canvas.js";
 import { LayerPixels } from "./editor/inpaint_pixels.js";
+import * as dialogs from "./dialogs.js";
 
 export const API_VERSION = 2;   // 2: documents.data(doc), per-document plugin data (docs/PLAN_DOCUMENTS.md §3.6)
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
@@ -670,7 +671,10 @@ function makeApi(entry) {
 
         ui: {
             status: (text) => { if (host.editor) host.editor.setStatus(String(text)); },
+            // the old synchronous question (the browser's box); ask() is the app's own dialog (renderer/dialogs.js):
+            // { title, message, detail, buttons, defaultId, cancelId, danger } -> the index of the button pressed
             confirm: (text) => window.confirm(String(text)),
+            ask: (spec) => dialogs.ask({ ...(spec || {}), signal: null }),
             el,
             icon,
             button(label, title, onClick) {

@@ -116,6 +116,10 @@ const documents = new Documents({
 });
 const flushWaits = new Map();   // id -> resolve, while the window saves (app:flush / app:flushed)
 let flushSeq = 0;
+const askWaits = new Map();     // id -> { shown, answer }, while the window asks (dialog:ask / dialog:shown / dialog:answer)
+let askSeq = 0;
+/** How long the window has to say it shows a question before main asks in the native box (a busy or hung renderer). */
+const ASK_SHOWN_MS = 1000;
 let startMode = "normal";       // "safe": the window came back after a second crash and must not restore
 let askingToQuit = false;
 let agentsLeft = false;         // the quit under way is maybeQuit's (the last agent left): it re-checks after the save
@@ -307,12 +311,14 @@ function createWindow() {
     win.webContents.on("did-start-navigation", (details) => {
         if (!details || details.isSameDocument || !details.isMainFrame) return;
         for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window reloaded" });
+        for (const w of askWaits.values()) w.gone();
         // the canvas-only view does not survive a reload: its full screen goes with it (F11's stays)
         if (viewFullScreen && !win.isDestroyed()) win.setFullScreen(false);
     });
     // a window whose renderer ended (a crash, out of memory) comes back and restores the autosave (quit.js CrashGuard)
     win.webContents.on("render-process-gone", (_e, d) => {
         for (const resolve of flushWaits.values()) resolve({ ok: false, error: "the window's renderer ended" });
+        for (const w of askWaits.values()) w.gone();
         documents.abortAll();   // its saves: the temporary files go, the targets stay; the reload restores the session
         if (quitGuard.done || quitGuard.flushing || !isCrash(d) || win.isDestroyed()) return;   // not while it closes
         const plan = crashGuard.record();
@@ -401,15 +407,43 @@ async function reloadWindow(ignoreCache) {
     if (ignoreCache) win.webContents.reloadIgnoringCache(); else win.webContents.reload();
 }
 
+/**
+ * A question in the window's own dialog (renderer/dialogs.js): `spec` is { title, message, detail, buttons, defaultId,
+ * cancelId, danger }. Resolves with the index of the button pressed. The window says at once that it shows the question;
+ * when it does not within ASK_SHOWN_MS (busy, hung, crashed, still starting), or goes away before it answers, main asks
+ * in the native box instead and takes the window's question back.
+ */
+function askWindow(spec) {
+    const native = () => dialog.showMessageBox(win, {
+        type: spec.type || "question", noLink: true, buttons: spec.buttons, defaultId: spec.defaultId || 0,
+        cancelId: spec.cancelId != null ? spec.cancelId : spec.buttons.length - 1,
+        message: spec.message || spec.title || "", detail: spec.detail || undefined,
+    }).then(({ response }) => response);
+    if (!win || win.isDestroyed() || win.webContents.isCrashed() || !bridge.ready) return native();
+    const id = ++askSeq;
+    return new Promise((resolve) => {
+        let settled = false;
+        const end = (v) => { if (settled) return; settled = true; clearTimeout(timer); askWaits.delete(id); resolve(v); };
+        const fallBack = () => {
+            if (settled) return;
+            askWaits.delete(id);
+            if (win && !win.isDestroyed() && !win.webContents.isCrashed()) win.webContents.send("dialog:dismiss", id);
+            native().then(end, () => end(spec.cancelId != null ? spec.cancelId : spec.buttons.length - 1));
+        };
+        const timer = setTimeout(fallBack, ASK_SHOWN_MS);
+        askWaits.set(id, { shown: () => clearTimeout(timer), answer: end, gone: () => { clearTimeout(timer); fallBack(); } });
+        win.webContents.send("dialog:ask", { id, spec });
+    });
+}
+
 /** A second close while the window saves: wait, or quit now and lose the last seconds. */
 function askWhileSaving() {
     if (askingToQuit || !windowVisible()) return;
     askingToQuit = true;
-    dialog.showMessageBox(win, {
-        type: "question", buttons: ["Keep waiting", "Quit now"], defaultId: 0, cancelId: 0, noLink: true,
-        message: "Scumble is still saving your last changes.",
-        detail: "Quit now loses what changed in the last seconds.",
-    }).then(({ response }) => {
+    askWindow({
+        title: "Scumble is still saving your last changes.", buttons: ["Keep waiting", "Quit now"], defaultId: 0, cancelId: 0,
+        danger: 1, message: "Quit now loses what changed in the last seconds.",
+    }).then((response) => {
         askingToQuit = false;
         if (response !== 1 || quitGuard.done) return;
         log.record({ level: "warn", source: "main", message: "closed without waiting for the save: the user chose Quit now" });
@@ -754,51 +788,6 @@ function recentMenu() {
     ];
 }
 
-/**
- * A question about a document in a native dialog (host.askDocument): the answer as a word. `close` Save / Don't Save /
- * Cancel; `changed` (the file changed on disk) and `newer` (made by a newer Scumble) Overwrite / Save As / Cancel;
- * `history` (a Save As of a document with results) with / without the result history / Cancel.
- */
-async function askDocument(q) {
-    needWindow("A question about the document");
-    const name = String((q && q.name) || "the document");
-    const box = (o) => dialog.showMessageBox(win, { type: "question", noLink: true, ...o });
-    if (q && q.kind === "close") {
-        const { response } = await box({
-            buttons: [q.hasFile ? "Save" : "Save...", "Don't Save", "Cancel"], defaultId: 0, cancelId: 2,
-            message: q.hasFile ? `Save the changes to ${name}?` : `Save ${name} as a document?`,
-            detail: "Don't Save closes the tab; File › Reopen Closed Tab (Ctrl+Shift+T) brings it back in this session.",
-        });
-        return ["save", "discard", "cancel"][response] || "cancel";
-    }
-    if (q && q.kind === "changed") {
-        const { response } = await box({
-            buttons: ["Overwrite", "Save As...", "Cancel"], defaultId: 1, cancelId: 2,
-            message: `${name} changed on disk since it was opened or saved here.`,
-            detail: "Overwrite replaces the file on disk with this document; Save As keeps it and writes a new file.",
-        });
-        return ["overwrite", "saveas", "cancel"][response] || "cancel";
-    }
-    if (q && q.kind === "newer") {
-        const { response } = await box({
-            buttons: ["Save As...", "Overwrite", "Cancel"], defaultId: 0, cancelId: 2,
-            message: `${name} was made by a newer Scumble.`,
-            detail: "This version keeps what it does not know, but cannot show or check it. Save As leaves the original file as it is.",
-        });
-        return ["saveas", "overwrite", "cancel"][response] || "cancel";
-    }
-    if (q && q.kind === "history") {
-        const n = Math.max(0, Math.round(+q.count || 0));
-        const { response } = await box({
-            buttons: ["Save with History", "Save without History", "Cancel"], defaultId: 0, cancelId: 2,
-            message: `Save ${name} with its result history?`,
-            detail: `The history holds ${n} result${n === 1 ? "" : "s"} with the prompts and settings of the runs. Without it, the file shows the picture and its layers but not how it was made (for sharing). Ctrl+S keeps this choice for this file.`,
-        });
-        return ["with", "without", "cancel"][response] || "cancel";
-    }
-    throw new Error("unknown question: " + (q && q.kind));
-}
-
 /** Save As: where a document goes (null when cancelled); the folder is remembered apart from the picture exports. */
 async function chooseDocumentPath({ name } = {}) {
     needWindow("Save As");
@@ -871,6 +860,8 @@ function installIpc() {
     ipcMain.handle("state:generations", () => autosave.generations(app.getPath("userData")));
     ipcMain.handle("state:startMode", () => { const m = startMode; startMode = "normal"; return m; });
     ipcMain.on("app:flushed", (_e, r) => { const resolve = r && flushWaits.get(r.id); if (resolve) resolve(r); });
+    ipcMain.on("dialog:shown", (_e, id) => { const w = askWaits.get(id); if (w) w.shown(); });
+    ipcMain.on("dialog:answer", (_e, r) => { const w = r && askWaits.get(r.id); if (w) w.answer(Math.max(0, Math.round(+r.index || 0))); });
     ipcMain.handle("state:save", (_e, state) => { settings.saveState(state); return true; });
     ipcMain.handle("comfy:connect", (_e, conn) => connectComfy(conn));
     ipcMain.handle("comfy:probe", (_e, conn) => probeComfy(conn));
@@ -905,7 +896,6 @@ function installIpc() {
             throw err;
         }
     });
-    ipcMain.handle("documents:ask", (_e, q) => askDocument(q || {}));
     ipcMain.on("app:title", (_e, t) => { docTitle = String(t || "").slice(0, 200); showAgents(); });
     // the canvas-only view (renderer/shell.js canvasOnly): the window's full screen, answered with the state after
     const fullScreen = () => !!(win && !win.isDestroyed() && win.isFullScreen());

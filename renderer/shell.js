@@ -12,6 +12,7 @@ import { beforeCall as snapshotTurn, watchUserEdits, forgetDocument } from "./as
 import { initAssistant, toggleAssistant, assistantOpen, resetAssistant, refreshAssistantModels } from "./assistant.js";
 import { initHelp, toggleHelp, helpOpen } from "./help.js";
 import { initSkins, applySkin, reloadSkins, renderAppearance } from "./skins.js";
+import * as dialogs from "./dialogs.js";
 import { PromptField, RefBar } from "./editor/prompt_field.js";
 import { remap, compare, checkNote, normalize as normalizeTokens, referencesText, referencesRule } from "./editor/reftokens.js";
 
@@ -228,7 +229,7 @@ function renderTabs() {
  */
 async function closeDocument(editor, { force = false } = {}) {
     if (!editor || !host.editors().includes(editor)) return false;
-    if (!force && editor.base && busy(editor) && !window.confirm(`${docName(editor)} is still working${editor._docSaving ? " (saving)" : ""}. Close it anyway?`)) return false;
+    if (!force && editor.base && busy(editor) && !(await dialogs.confirm(`${docName(editor)} is still working${editor._docSaving ? " (saving)" : ""}. Close it anyway?`, { ok: "Close", danger: true }))) return false;
     if (!force && editor.base && !editor._docSaving && host.documentDirty(editor)) {
         const choice = await host.askDocument({ kind: "close", name: editor.docFile ? editor.docFile.name : docName(editor), hasFile: !!editor.docFile });
         if (choice === "cancel" || !host.editors().includes(editor)) return false;
@@ -558,7 +559,7 @@ function renderRecipeList() {
         const del = document.createElement("button");
         del.type = "button"; del.textContent = "Remove"; del.disabled = r.source !== "user"; del.title = r.source === "user" ? "Delete this imported recipe" : "Shipped recipe";
         del.addEventListener("click", async () => {
-            if (!window.confirm(`Remove the recipe "${r.name || r.id}"?`)) return;
+            if (!(await dialogs.confirm(`Remove the recipe "${r.name || r.id}"?`, { ok: "Remove", danger: true }))) return;
             try { await window.scumble.recipes.remove(r.id); await loadRecipes(); renderRecipeList(); selectRecipe(settings.recipe); } catch (err) { ui.recipeNoteSet.textContent = String(err.message || err); }
         });
         row.appendChild(del);
@@ -1614,7 +1615,7 @@ function renderHelpers(status) {
         } else if (m.present) {
             btn.textContent = "Remove";
             btn.addEventListener("click", async () => {
-                if (!window.confirm(`Delete the files of ${m.label} (${fmtBytes(m.bytes)})?`)) return;
+                if (!(await dialogs.confirm(`Delete the files of ${m.label} (${fmtBytes(m.bytes)})?`, { ok: "Delete", danger: true }))) return;
                 try { renderHelpers(await window.scumble.helpers.remove(m.id)); } catch (e) { downloadErrors[m.id] = String(e.message || e); renderHelpers(); }
                 host.refreshHelpers();
             });
@@ -1981,7 +1982,7 @@ ui.setPrune.addEventListener("click", async () => {
         const keep = host.referencedFileKeys();
         const dry = await window.scumble.files.prune({ keep, dryRun: true });
         if (!dry.files) { ui.setPruneNote.textContent = "Nothing to remove."; return; }
-        if (!window.confirm(`Remove ${dry.files} file${dry.files === 1 ? "" : "s"} (${fmtBytes(dry.bytes)}) that no open document references?`)) { ui.setPruneNote.textContent = "Kept."; return; }
+        if (!(await dialogs.confirm(`Remove ${dry.files} file${dry.files === 1 ? "" : "s"} (${fmtBytes(dry.bytes)}) that no open document references?`, { ok: "Remove", danger: true }))) { ui.setPruneNote.textContent = "Kept."; return; }
         const r = await window.scumble.files.prune({ keep, dryRun: false });
         ui.setPruneNote.textContent = `Removed ${r.deleted.length} file${r.deleted.length === 1 ? "" : "s"}, ${fmtBytes(r.bytes)}.`;
         refreshFileStats();
@@ -2129,7 +2130,7 @@ ui.setTiles.addEventListener("change", async () => {
 });
 ui.setTilesRestart.addEventListener("click", async () => {
     const working = host.editors().filter(busy);
-    if (working.length && !window.confirm(`${working.length === 1 ? "A document is" : working.length + " documents are"} still working. Restart anyway?`)) return;
+    if (working.length && !(await dialogs.confirm(`${working.length === 1 ? "A document is" : working.length + " documents are"} still working. Restart anyway?`, { ok: "Restart", danger: true }))) return;
     ui.setTilesRestart.disabled = true;
     try {
         await saveBeforeRestart((text) => { ui.setTilesNote.textContent = text; });
@@ -2489,6 +2490,7 @@ window.scumble.commands.onRequest(async ({ id, name, args, meta }) => {
 
 // before any editor: the canvas colours that follow the skin are read once here (renderer/skins.js)
 try { await initSkins(); } catch (err) { console.warn("skins", err); }
+dialogs.listen(window.scumble.dialogs);     // main's questions (main.js askWindow) in the app's own dialog
 try {
     await plugins.loadPlugins();
 } catch (err) {

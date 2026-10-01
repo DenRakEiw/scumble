@@ -81,6 +81,17 @@ code.
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
 verbatim). Check `gh release list` before believing any release state written down anywhere.
 
+**Since (2026-10-01, day), for 0.1.36:** item 25 built and committed (not pushed): the app's own dialogs
+(`renderer/dialogs.js`: a modal `<dialog>` in the top layer, its parts in a shadow root, the skin's colours, its box
+pinned by inline `!important`; `host.askDocument` asks there, main's `askDocument` and `documents:ask` are gone; main's
+second-close question goes over `dialog:ask` / `dialog:shown` / `dialog:answer` and falls back to the native box when the
+window does not say it shows it within 1 s; the seven `window.confirm` calls of the app, plugins' new `ui.ask()`).
+Checked live: keys, a hostile skin, the second close on both paths (the late window question taken back); gates `lint
+types docux quit document editor commands` green on tiles. **Flux 3 is prepared, uncommitted** (`docs/PLAN_FLUX3.md`,
+`electron/main/providers/flux3.js`, `recipes/flux3.json`, `tools/flux3_test.js`, poll changes in `bfl.js`): released by
+BFL on 2026-10-01 17:00, the final endpoint comes from the user; push nothing of it before the release (pre-release
+details).
+
 **Released:** 0.1.35 is Latest (published 2026-10-01 00:02:51 CEST, tag on ee4ee33 "0.1.35 prepared"; the tag build's
 windows / linux / draft jobs green) on the user's "ja, release". **The post `v0-1-35` ("Many layers, one hand", no
 picture) is live**, the manual synced, `hub.version` 0.1.35, website commit 11d5c42 deployed (Vercel: success).
@@ -160,7 +171,8 @@ The numbered list the user adds to (the numbers are cited elsewhere). The full t
 - 21: lens flares (an optional plugin, 7-9 days), no place in the order yet.
 - 22: a filter-suite update (an update of its own; `docs/PLAN_NIK9.md`, 34-46 days plus two folded packages), suggested
   after B3.
-- 25: the app's own dialogs instead of the native boxes (about 1-1.5 days), the user's answers open.
+- 25: the app's own dialogs instead of the native boxes: built 2026-10-01 (`renderer/dialogs.js`, main's `askWindow`
+  with the native box as the fallback; CHANGELOG "Unreleased").
 - 26: reference layers named in the prompt as `@img1`, written as each model's own name for the picture: built
   (S1-S5, 2026-09-29; `docs/PLAN_REFS.md`), released as 0.1.34 the same night.
 - 27: groups with their own opacity and blend mode (isolated groups: the group composited first, then faded or blended

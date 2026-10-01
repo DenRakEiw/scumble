@@ -81,7 +81,8 @@ Plugins* with the stack; errors thrown later in callbacks land in the status bar
 | `documents.data(doc).get()` / `.set(patch)` | (API 2) a JSON object per plugin **and per document**: saved with the document in the session and in its `.scumble` file, where every file ref inside it (`{ filename, subfolder, type }`) is packed and comes back renamed if it had to be; `get()` returns a copy, `set(patch)` merges and marks the document changed. Data of a plugin that is off or missing rides along unchanged |
 | `ui.status(text)` | the status bar of the active tab |
 | `ui.el(tag, cls, text)`, `ui.icon(name)`, `ui.button(label, title, onClick)`, `ui.slider(label, {min, max, step, value, unit}, onChange)` | DOM helpers in the editor's style |
-| `ui.confirm(text)` | a yes / no dialog |
+| `ui.confirm(text)` | a yes / no question in the browser's own box (synchronous: true / false) |
+| `ui.ask({ title, message, detail, buttons, defaultId, cancelId, danger })` | a question in the app's own dialog, in the skin's colours: a promise of the index of the button pressed (Escape: `cancelId`, by default the last button) |
 | `makeCanvas(w, h)` | a canvas |
 | `host` | the app's host object and raw editors: unstable, for what the API does not cover |
 

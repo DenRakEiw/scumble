@@ -19,6 +19,7 @@ import { glReleasePool } from "./inpaint_filters_gl.js";
 import { withoutSecrets } from "./redact.js";
 import { parse, toMarkers, namesFor, hasTokens, remap, referencesText, referencesRule, referenceName } from "./reftokens.js";
 import { comfyRefSpec, comfyLayout, trimSlots, refName, resolveMarkers as resolveComfyMarkers } from "./comfyrefs.js";
+import * as dialogs from "../dialogs.js";
 
 const PROXY = "/comfy";
 const SUBFOLDER = "inpaint_canvas";
@@ -63,6 +64,51 @@ function hashString(s) {
 }
 
 function fmtMB(n) { return n >= 1073741824 ? (n / 1073741824).toFixed(2) + " GB" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB"; }
+
+/**
+ * The dialog of a question about a document (host.askDocument): `spec` for dialogs.ask, `answers` the word of each
+ * button. `close` Save / Don't Save / Cancel; `changed` (the file changed on disk) and `newer` (made by a newer Scumble)
+ * Overwrite / Save As / Cancel; `history` (a Save As of a document with results) with / without the result history.
+ */
+function documentQuestion(q) {
+    const name = String(q.name || "the document");
+    if (q.kind === "close") return {
+        answers: ["save", "discard", "cancel"],
+        spec: {
+            buttons: [q.hasFile ? "Save" : "Save...", "Don't Save", "Cancel"], defaultId: 0, cancelId: 2, danger: 1,
+            title: q.hasFile ? `Save the changes to ${name}?` : `Save ${name} as a document?`,
+            detail: "Don't Save closes the tab; File › Reopen Closed Tab (Ctrl+Shift+T) brings it back in this session.",
+        },
+    };
+    if (q.kind === "changed") return {
+        answers: ["overwrite", "saveas", "cancel"],
+        spec: {
+            buttons: ["Overwrite", "Save As...", "Cancel"], defaultId: 1, cancelId: 2, danger: 0,
+            title: `${name} changed on disk since it was opened or saved here.`,
+            detail: "Overwrite replaces the file on disk with this document; Save As keeps it and writes a new file.",
+        },
+    };
+    if (q.kind === "newer") return {
+        answers: ["saveas", "overwrite", "cancel"],
+        spec: {
+            buttons: ["Save As...", "Overwrite", "Cancel"], defaultId: 0, cancelId: 2, danger: 1,
+            title: `${name} was made by a newer Scumble.`,
+            detail: "This version keeps what it does not know, but cannot show or check it. Save As leaves the original file as it is.",
+        },
+    };
+    if (q.kind === "history") {
+        const n = Math.max(0, Math.round(+q.count || 0));
+        return {
+            answers: ["with", "without", "cancel"],
+            spec: {
+                buttons: ["Save with History", "Save without History", "Cancel"], defaultId: 0, cancelId: 2,
+                title: `Save ${name} with its result history?`,
+                detail: `The history holds ${n} result${n === 1 ? "" : "s"} with the prompts and settings of the runs. Without it, the file shows the picture and its layers but not how it was made (for sharing). Ctrl+S keeps this choice for this file.`,
+            },
+        };
+    }
+    throw new Error("unknown question: " + q.kind);
+}
 
 /** A path as documents are compared (main's pathKey): separators unified; Windows paths case-folded. */
 function normPath(p) {
@@ -2089,12 +2135,13 @@ export const host = {
     },
 
     /**
-     * A question about a document, answered in a dialog of main (documents:ask): `close` -> "save" | "discard" | "cancel",
-     * `changed` and `newer` -> "overwrite" | "saveas" | "cancel", `history` -> "with" | "without" | "cancel". A test
-     * replaces this method in the page.
+     * A question about a document, in the app's own dialog (renderer/dialogs.js): `close` -> "save" | "discard" |
+     * "cancel", `changed` and `newer` -> "overwrite" | "saveas" | "cancel", `history` -> "with" | "without" | "cancel".
+     * A test replaces this method in the page.
      */
     async askDocument(q) {
-        return window.scumble.documents.ask(q);
+        const d = documentQuestion(q || {});
+        return d.answers[await dialogs.ask(d.spec)] || "cancel";
     },
 
     /** Save As: the path from main's dialog, or null when cancelled (a test replaces this method in the page). */

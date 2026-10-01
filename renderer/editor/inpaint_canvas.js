@@ -2727,6 +2727,7 @@ class InpaintEditor {
             const t = e.target;
             if (this.askOpen) return;   // the question dialog has its own keys
             if (t && t.closest && t.closest("dialog[open]")) return;   // a key inside an open <dialog> (a host settings dialog, a plugin's) stays with the dialog: Escape has to reach its native close
+            if (document.querySelector("dialog:modal")) return;        // the rest of the page is inert under a modal dialog (the app's questions)
             const inField = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
             if (e.key === "Escape") {
                 if (this.tipPicker && this.tipPicker.isOpen) { e.stopImmediatePropagation(); e.preventDefault(); this.closeTipPicker(); return; }
@@ -14168,7 +14169,7 @@ class InpaintEditor {
             const msg = `Delete ${plan.removed} file${plan.removed === 1 ? "" : "s"} (${fmt(plan.bytes)}) from the inpaint_canvas folders?\n` +
                 `input ${t.input || 0} · output ${t.output || 0} · temp ${t.temp || 0}\n\n` +
                 `Kept: ${plan.kept} file${plan.kept === 1 ? "" : "s"} used by open editors, open workflow tabs or saved workflows, and anything younger than two minutes. Discarded history results that are deleted cannot be restored.`;
-            if (!window.confirm(msg)) { this.setStatus("Cleanup cancelled."); return; }
+            if (!(await this.ask({ title: "Clean up files", message: msg, ok: "Delete", danger: true }))) { this.setStatus("Cleanup cancelled."); return; }
             const res = await call(false);
             this.setStatus(`Cleanup: ${res.removed} file${res.removed === 1 ? "" : "s"} deleted (${fmt(res.bytes)}), ${res.kept} kept.`);
             if (this.cleanupInfo) this.cleanupInfo.textContent = `${res.removed} deleted, ${fmt(res.bytes)}`;
@@ -15622,12 +15623,12 @@ class InpaintEditor {
         }
     }
 
-    clearHistory() {
+    async clearHistory() {
         if (!this.history.length) { this.setStatus("The history is already empty."); return; }
         const gone = this.history.filter((h) => !this.layers.some((l) => l.id === h.layerId)).length;
         const msg = `Clear ${this.history.length} result${this.history.length === 1 ? "" : "s"} from the history? Layers are kept.` +
             (gone ? ` ${gone} discarded result${gone === 1 ? "" : "s"} can no longer be restored.` : "");
-        if (!window.confirm(msg)) return;
+        if (!(await this.ask({ title: "Clear the history", message: msg, ok: "Clear", danger: true })) || !this.history.length) return;
         this.history = [];
         this.renderHistory();
         this.notifyChanged();

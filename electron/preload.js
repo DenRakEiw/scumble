@@ -82,8 +82,6 @@ contextBridge.exposeInMainWorld("scumble", {
         cancel: (reqId) => ipcRenderer.invoke("documents:cancel", reqId),
         takePending: () => ipcRenderer.invoke("documents:takePending"),
         stat: (file) => ipcRenderer.invoke("documents:stat", file),
-        // a question in a native dialog (close, changed on disk, newer, history): the answer's word (documents.js askDocument)
-        ask: (q) => ipcRenderer.invoke("documents:ask", q),
         onProgress: (cb) => on("documents:progress", cb),
         onOpenRequest: (cb) => on("documents:openRequest", cb),
         // documents from a command line are waiting (takePending): a second start of Scumble named them
@@ -177,6 +175,14 @@ contextBridge.exposeInMainWorld("scumble", {
         get: () => ipcRenderer.invoke("appearance:get"),
         set: (id) => ipcRenderer.invoke("appearance:set", id),
         refuse: (id, reason) => ipcRenderer.invoke("appearance:refuse", { id, reason }),
+    },
+    // main's questions in the app's own dialog (renderer/dialogs.js listen, main.js askWindow): the window says at once
+    // that it shows one, and answers with the button's index; a question main took back is dismissed
+    dialogs: {
+        onAsk: (cb) => on("dialog:ask", cb),
+        onDismiss: (cb) => on("dialog:dismiss", cb),
+        shown: (id) => ipcRenderer.send("dialog:shown", id),
+        answer: (id, index) => ipcRenderer.send("dialog:answer", { id, index }),
     },
     // the command bridge (electron/main/bridge.js): main asks, the renderer runs commands.call
     commands: {
