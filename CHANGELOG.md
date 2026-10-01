@@ -14,6 +14,9 @@ the section for its version; `docs/` and the commit history hold the technical d
   the order of their buttons. When the window is too busy to answer at once (a second close while it saves), the system's
   box asks instead. The file pickers and the crash message stay the system's own. Plugins get `ui.ask()` for the
   same dialog.
+- **Generate new on Gemini keeps the aspect you ask for.** With the recipe's Aspect row on its default *auto*, Nano
+  Banana through a Google key sent no aspect for a new picture without reference layers, and the model answered in its
+  own shape (16:9 came back square). The asked aspect goes now; an Aspect row set to a ratio still wins.
 
 ## 0.1.35 — 2026-09-30
 

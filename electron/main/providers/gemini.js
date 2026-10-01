@@ -72,7 +72,8 @@ module.exports = {
         }
         const generationConfig = { responseModalities: ["IMAGE"] };
         const imageConfig = {};
-        if (req.kind === "text" && req.aspect && !p.aspect_ratio) imageConfig.aspectRatio = req.aspect;
+        // "auto" (the Aspect row's default) on a text run would send no aspect: the asked one goes
+        if (req.kind === "text" && req.aspect && (!p.aspect_ratio || p.aspect_ratio === "auto")) imageConfig.aspectRatio = req.aspect;
         // with references "auto" (the Aspect row's default) takes a picture's shape: the asked one goes instead
         if (withRefs && (!p.aspect_ratio || p.aspect_ratio === "auto")) imageConfig.aspectRatio = req.aspect || closestAspect(req.width || 1, req.height || 1, RATIOS);
         if (req.kind === "text" && !p.image_size) {

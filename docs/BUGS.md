@@ -11,6 +11,21 @@ the ones that were performance work.
 
 ## Fixed, waiting for its release
 
+### Generate new on Gemini direct ignored the asked aspect while the Aspect row said "auto" - fixed for 0.1.36
+
+**Found** by the adapter review of item 26 step 26f (read, not run live): `gemini.js` sets `imageConfig.aspectRatio =
+req.aspect` on a text run only when the params hold no `aspect_ratio`, and the variants' Aspect row defaults to "auto",
+which the later line skips; so a Generate new without reference layers sends no aspect at all and the model answers in its
+own shape, whatever the dialog asked (16:9 comes back square). With reference layers 26f already sends the asked aspect
+(or the closest of Gemini's ratios for a free size). Fix: treat "auto" like no row on a text run (`!p.aspect_ratio ||
+p.aspect_ratio === "auto"`); it changes the 0-reference request, so `tools/refs_layout_test.js`'s byte-for-byte check of
+Gemini's text body moves with it. The Router's vertexai dialect had the same gap with references and was fixed in 26f.
+
+**Fixed** 2026-10-01: the line reads `(!p.aspect_ratio || p.aspect_ratio === "auto")`. `refs_layout_test.js` lets the
+before-26f comparison take Gemini's new `aspectRatio` and checks each Gemini text variant at "auto" (16:9 goes) and at
+3:2 (3:2 goes); the three checks fail on the old adapter. The Size row's "auto" stays the model's own size (Lite offers
+only auto and 1K). Not run live.
+
 ### Erasing had become very slow since 0.1.32 - fixed for 0.1.33
 
 **Reported** 2026-09-29 by the user: "das radieren ist seit dem letzten update mega langsam geworden", then "auf
@@ -276,16 +291,6 @@ target key with the recipe id (`${r.id}/${node}:${input}`) for the local rows, c
 (the node's editor has no such key and keeps its behaviour); a document saved before the fix then resets these rows once
 to the recipe's defaults. Test: the recipes gate's 26e step queues Qwen then Klein; assert Klein's own `unet_name`,
 `clip_name`, `vae_name`, and the reverse.
-
-### Generate new on Gemini direct ignores the asked aspect while the Aspect row says "auto" (found by the 26f adapter review, 2026-09-29, read)
-
-**Found** by the adapter review of item 26 step 26f (read, not run live): `gemini.js` sets `imageConfig.aspectRatio =
-req.aspect` on a text run only when the params hold no `aspect_ratio`, and the variants' Aspect row defaults to "auto",
-which the later line skips; so a Generate new without reference layers sends no aspect at all and the model answers in its
-own shape, whatever the dialog asked (16:9 comes back square). With reference layers 26f already sends the asked aspect
-(or the closest of Gemini's ratios for a free size). Fix: treat "auto" like no row on a text run (`!p.aspect_ratio ||
-p.aspect_ratio === "auto"`); it changes the 0-reference request, so `tools/refs_layout_test.js`'s byte-for-byte check of
-Gemini's text body moves with it. The Router's vertexai dialect had the same gap with references and was fixed in 26f.
 
 ### Smudge and the tone brushes still dab once per coalesced point (measured 2026-09-29, not a regression)
 

@@ -1551,7 +1551,9 @@ async function main() {
         const differs = (a, b) => [...(a.url !== b.url ? [`url: ${a.url} -> ${b.url}`] : []), ...(!eq(calls(a), calls(b)) ? [`calls: ${short(calls(a))} -> ${short(calls(b))}`] : []), ...(a.error !== b.error ? [`error: ${a.error} -> ${b.error}`] : []), ...diffPaths(a.request, b.request)];
         // the one change 26f makes to a text run without references (docs/BUGS.md, found in 26f): Replicate sends the
         // asked aspect where a fixed "match_input_image" went before, which made every such run follow no picture at all
-        const FIXED_IN_26F = (s, d) => s.provider === "replicate" && /^input\.aspect_ratio: match_input_image -> (?!match_input_image$)\d+:\d+$/.test(d);
+        // and since 0.1.36 Gemini direct sends the asked aspect where the Aspect row's "auto" sent none (docs/BUGS.md)
+        const FIXED_IN_26F = (s, d) => (s.provider === "replicate" && /^input\.aspect_ratio: match_input_image -> (?!match_input_image$)\d+:\d+$/.test(d))
+            || (s.provider === "gemini" && /^generationConfig\.imageConfig(\.aspectRatio: undefined -> \d+:\d+|: undefined -> \{"aspectRatio":"\d+:\d+"\})$/.test(d));
         const zero = { shapes: 0, sameShape: [], sameBefore: [], fixed: 0 };
         const zeroShape = async (s, extra) => {
             const name = `${labelOf(s)}${extra.aspect === null ? " (a free size)" : ""}`;
@@ -1580,8 +1582,15 @@ async function main() {
             for (const s of TEXT) for (const extra of [{}, { aspect: null, width: 1536, height: 1024 }]) await zeroShape(s, extra);
         } finally { if (dir) fs.rmSync(dir, { recursive: true, force: true }); }
         check(`0 references: every text variant's request (${zero.shapes} shapes, ${TEXT.length} variants with a text route) is the same with the new request fields (refName, refsMax) as without`, !zero.sameShape.length, zero.sameShape.slice(0, 3).join(" | "));
-        if (before) check(`0 references: every text variant's request is byte for byte what the adapters of ${BEFORE_26F} (before 26f) sent, but Replicate's aspect_ratio on ${zero.fixed} shapes (match_input_image -> the asked aspect, the fix of 26f)`, !zero.sameBefore.length && zero.fixed > 0, zero.sameBefore.slice(0, 3).join(" | ") + (zero.sameBefore.length > 3 ? ` (+${zero.sameBefore.length - 3} more)` : ""));
+        if (before) check(`0 references: every text variant's request is byte for byte what the adapters of ${BEFORE_26F} (before 26f) sent, but the asked aspect on ${zero.fixed} shapes (Replicate's match_input_image, the fix of 26f; Gemini's \"auto\", 0.1.36)`, !zero.sameBefore.length && zero.fixed > 0, zero.sameBefore.slice(0, 3).join(" | ") + (zero.sameBefore.length > 3 ? ` (+${zero.sameBefore.length - 3} more)` : ""));
         else console.log(`[skip] 0 references against ${BEFORE_26F}: ${why}`);
+        // Gemini direct with the Aspect row at its default "auto": the asked aspect goes, an Aspect row set wins over it
+        for (const s of TEXT.filter((x) => x.provider === "gemini")) {
+            const p = adapter("gemini");
+            const ask = async (params) => { const { req } = textRequestFor(s, 0); const r = await capture(p, { ...req, params: { ...req.params, ...params } }, "generate"); return r.request && r.request.generationConfig.imageConfig || {}; };
+            const auto = await ask({ aspect_ratio: "auto" }), set = await ask({ aspect_ratio: "3:2" });
+            check(`${labelOf(s)}, 0 references, Aspect "auto": the asked 16:9 is sent; Aspect 3:2 is sent as 3:2`, auto.aspectRatio === "16:9" && set.aspectRatio === "3:2", short([auto, set]));
+        }
 
         // a marker in a text prompt through index.js on shipped variants: the route's name for that picture, res.refs
         const answer = { "/api/v1/images": () => json(200, { data: [{ b64_json: RESULT.toString("base64"), media_type: "image/png" }] }), "/api/ai/images/edit": () => json(200, { images: [{ b64_json: RESULT.toString("base64") }] }) };
