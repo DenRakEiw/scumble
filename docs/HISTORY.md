@@ -28,6 +28,59 @@ The block of 2026-09-29 (evening, item 26 S1 to S4 built) was moved here at nigh
 
 The block of 2026-09-29 (night, item 26 built, S1 to S5) was moved here late the same night, when 0.1.34 was prepared.
 
+The block of 2026-10-01 (just after midnight, 0.1.35 released; with the day's notes for 0.1.36) was moved here the same
+night, when 0.1.36 was released with FLUX 3 Image.
+
+## Where things stand (2026-10-01, just after midnight: 0.1.35 released, the post live)
+
+Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
+verbatim). Check `gh release list` before believing any release state written down anywhere.
+
+**Since (2026-10-01, day), for 0.1.36:** item 25 built and committed (not pushed): the app's own dialogs
+(`renderer/dialogs.js`: a modal `<dialog>` in the top layer, its parts in a shadow root, the skin's colours, its box
+pinned by inline `!important`; `host.askDocument` asks there, main's `askDocument` and `documents:ask` are gone; main's
+second-close question goes over `dialog:ask` / `dialog:shown` / `dialog:answer` and falls back to the native box when the
+window does not say it shows it within 1 s; the seven `window.confirm` calls of the app, plugins' new `ui.ask()`).
+Checked live: keys, a hostile skin, the second close on both paths (the late window question taken back); gates `lint
+types docux quit document editor commands` green on tiles. **Flux 3 is prepared, uncommitted** (`docs/PLAN_FLUX3.md`,
+`electron/main/providers/flux3.js`, `recipes/flux3.json`, `tools/flux3_test.js`, poll changes in `bfl.js`): released by
+BFL on 2026-10-01 17:00, the final endpoint comes from the user; push nothing of it before the release (pre-release
+details). (`tools/refs_layout_test.js` carries an uncommitted Flux 3 hunk, `oldRecipes`: commit it with Flux 3.)
+
+**Bug round A done (2026-10-01, afternoon; section A of the day's plan: A bugs, B Flux 3 after 17:00, C prepare 0.1.36),
+three local commits, not pushed:** Gemini direct's Generate new sends the asked aspect when the Aspect row is "auto"
+(2958601); each local recipe keeps its own Model / Text encoder / VAE (a target `key` with the recipe id, 1142a10;
+documents reset these rows once); `--attach-only` for `--mcp` / `--cmd`, passed by the repo's `.mcp.json` (7f6b88d, on
+the user's pick "nur verbinden": the dev tree no longer starts headless on the user's profile; **takes effect at the next
+Claude Code start**; the hand-over itself measured working). `BUGS.md` cleaned (the shipped entries out). Gates green
+offline on tiles: `recipes mcp lint types`, `refs_layout_test.js` 659/659. Next: B (Flux 3) once the user has the endpoint.
+
+**Released:** 0.1.35 is Latest (published 2026-10-01 00:02:51 CEST, tag on ee4ee33 "0.1.35 prepared"; the tag build's
+windows / linux / draft jobs green) on the user's "ja, release". **The post `v0-1-35` ("Many layers, one hand", no
+picture) is live**, the manual synced, `hub.version` 0.1.35, website commit 11d5c42 deployed (Vercel: success).
+0.1.35 = package 6 of `docs/PLAN_0_1_31.md` (layers pro), prepared on the user's "baue weiter" (2026-09-30): multi-selection with solo, align / distribute, clipping, groups as folders, fill layers (6.1 - 6.6, the
+"Built" paragraphs in the plan). The CHANGELOG section `0.1.35 — 2026-09-30` (six bullets), `package.json` 0.1.35,
+`npm run dist` (`dist/Scumble Setup 0.1.35.exe`). A check agent compared the section and the manual with the code:
+- **Two code fixes** (the plan's 6.6 "release check" paragraph): `ungroup` hands a hidden / locked group's state to its
+  layers and groups (they showed and unlocked before), `setFilterType` keeps the colour between fill and gradient (it
+  reset to black / white, so nobody saw the "paint colour to transparent" default). A check each in `groups` and
+  `fill`, green on both backends.
+- **Text fixes** in the CHANGELOG and the manual: the eye and lock of a selection take no undo step; Ctrl+E refuses a
+  selection with a locked or filter layer, Delete keeps locked ones; a fill layer is no clip base; the menu entry is
+  *Group*; the gradient's centre is set in per cent (no dragging); the manual's key table got Ctrl+G, Ctrl+Alt+G,
+  Ctrl/Shift+click, Alt+click on an eye, Ctrl+E on several, Ctrl+[ / ] through groups.
+- Left as it is: a clip onto a reference layer is allowed and draws nothing (a reference is not drawn), in a run too.
+- **Exe gates `--offline` all green:** tiles `rel35-exe` (36 gates, the 0.1.34 list plus `clip groups fill`), canvas
+  `rel35-exe-canvas` (23). `lint` and `types` green. `build_node.py --check` shows only the known "node is behind".
+- The node repo stays behind (no node release). The Store package of 0.1.35 was not built (on the user's word).
+- **Open for the user** (carried over): how the fills feel (no on-canvas dragging of a gradient, two stops), the
+  multi-selection, solo and align row (and whether aligning by painted pixels is wanted), whether the clip at soft
+  edges looks right or wants the isolated group (7 - 9 days); whether 0.1.33 feels right under their pen; the smudge
+  and tone brushes dab once per coalesced point (BUGS.md); the defaults of packages 4 and 5 (`docs/HISTORY.md`, the
+  late-night hand-over of 2026-09-28); item 25's look and timing; item 26's look in the app. Nothing of item 26 ran live. The Store resubmission is on the user's side.
+- After 0.1.35 nothing of `docs/PLAN_0_1_31.md` is left; what comes next is the user's pick from the list below (B3
+  macOS, item 25, item 22 after B3, ...).
+
 ## Where things stand (2026-09-29, late night: 0.1.34 released, the post and the header live)
 
 Older hand-overs, the full text of the list and of the open threads are in `docs/HISTORY.md` (newest first,
